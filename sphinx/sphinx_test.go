@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ import (
 
 type nodeParams struct {
 	id         [constants.NodeIDLength]byte
-	privateKey *PrivateKey
+	privateKey *ecdh.PrivateKey
 }
 
 func newNode(require *require.Assertions) *nodeParams {
@@ -36,7 +37,7 @@ func newNode(require *require.Assertions) *nodeParams {
 
 	_, err := rand.Read(n.id[:])
 	require.NoError(err, "newNode(): failed to generate ID")
-	n.privateKey, err = NewKeypair(rand.Reader)
+	n.privateKey, err = ecdh.NewKeypair(rand.Reader)
 	require.NoError(err, "newNode(): NewKeypair() failed")
 	return n
 }

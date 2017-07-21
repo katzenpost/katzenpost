@@ -1,4 +1,4 @@
-// ecdh.go - Sphinx Packet Format ECDH wrappers.
+// ecdh.go - ECDH wrappers.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,29 +14,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package sphinx
+// Package ecdh provides ECDH (X25519) wrappers.
+package ecdh
 
 import (
+	"crypto/sha512"
 	"errors"
 	"io"
 
-	"github.com/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/core/utils"
+	"golang.org/x/crypto/curve25519"
 )
 
 const (
+	// GroupElementLength is the length of a ECDH group element in bytes.
+	GroupElementLength = 32
+
 	// PublicKeySize is the size of a serialized PublicKey in bytes.
-	PublicKeySize = crypto.GroupElementLength
+	PublicKeySize = GroupElementLength
 
 	// PrivateKeySize is the size of a serialized PrivateKey in bytes.
-	PrivateKeySize = crypto.GroupElementLength
+	PrivateKeySize = GroupElementLength
 )
 
 var errInvalidKey = errors.New("sphinx: invalid key")
 
-// PublicKey is a Sphinx Packet Format public key.
+// PublicKey is a ECDH public key.
 type PublicKey struct {
-	pubBytes [crypto.GroupElementLength]byte
+	pubBytes [GroupElementLength]byte
 }
 
 // Bytes returns the raw public key.
@@ -61,14 +66,15 @@ func (k *PublicKey) Reset() {
 	utils.ExplicitBzero(k.pubBytes[:])
 }
 
-func (k *PublicKey) blind(blindingFactor *[crypto.GroupElementLength]byte) {
-	crypto.Exp(&k.pubBytes, &k.pubBytes, blindingFactor)
+// Blind blinds the public key with the provided blinding factor.
+func (k *PublicKey) Blind(blindingFactor *[GroupElementLength]byte) {
+	Exp(&k.pubBytes, &k.pubBytes, blindingFactor)
 }
 
-// PrivateKey is a Sphinx Packet Format private key.
+// PrivateKey is a ECDH private key.
 type PrivateKey struct {
 	pubKey    PublicKey
-	privBytes [crypto.GroupElementLength]byte
+	privBytes [GroupElementLength]byte
 }
 
 // Bytes returns the raw private key.
@@ -83,9 +89,14 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 	}
 
 	copy(k.privBytes[:], b)
-	crypto.ExpG(&k.pubKey.pubBytes, &k.privBytes)
+	expG(&k.pubKey.pubBytes, &k.privBytes)
 
 	return nil
+}
+
+// Exp calculates the shared secret with the provided public key.
+func (k *PrivateKey) Exp(sharedSecret *[GroupElementLength]byte, publicKey *PublicKey) {
+	Exp(sharedSecret, &publicKey.pubBytes, &k.privBytes)
 }
 
 // Reset clears the PrivateKey structure such that no sensitive data is left
@@ -105,10 +116,26 @@ func (k *PrivateKey) PublicKey() *PublicKey {
 func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	k := new(PrivateKey)
 
-	if err := crypto.ExpKeygen(&k.privBytes, r); err != nil {
+	if _, err := io.ReadFull(r, k.privBytes[:]); err != nil {
 		return nil, err
 	}
-	crypto.ExpG(&k.pubKey.pubBytes, &k.privBytes)
+
+	// Do not directly use output from the system entropy source.
+	tmp := sha512.Sum512_256(k.privBytes[:])
+	copy(k.privBytes[:], tmp[:GroupElementLength])
+	utils.ExplicitBzero(tmp[:])
+
+	expG(&k.pubKey.pubBytes, &k.privBytes)
 
 	return k, nil
+}
+
+// Exp sets the group element dst to be the result of x^y, over the ECDH
+// group.
+func Exp(dst, x, y *[GroupElementLength]byte) {
+	curve25519.ScalarMult(dst, y, x)
+}
+
+func expG(dst, y *[GroupElementLength]byte) {
+	curve25519.ScalarBaseMult(dst, y)
 }

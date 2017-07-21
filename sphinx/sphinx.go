@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/sphinx/internal/crypto"
@@ -52,7 +53,7 @@ var (
 // all of the per-hop Commands (excluding NextNodeHop).
 type PathHop struct {
 	ID        [constants.NodeIDLength]byte
-	PublicKey *PublicKey
+	PublicKey *ecdh.PublicKey
 	Commands  []commands.RoutingCommand
 }
 
@@ -92,29 +93,29 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	}
 
 	// Derive the key material for each hop.
-	keypair, err := NewKeypair(r)
+	keypair, err := ecdh.NewKeypair(r)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer keypair.Reset()
 
-	var groupElements [constants.NrHops]PublicKey
+	var groupElements [constants.NrHops]ecdh.PublicKey
 	var keys [constants.NrHops]*crypto.PacketKeys
 
 	var sharedSecret [crypto.GroupElementLength]byte
 	defer utils.ExplicitBzero(sharedSecret[:])
-	crypto.Exp(&sharedSecret, &path[0].PublicKey.pubBytes, &keypair.privBytes)
+	keypair.Exp(&sharedSecret, path[0].PublicKey)
 	keys[0] = crypto.KDF(&sharedSecret)
 	defer keys[0].Reset()
 	groupElements[0].FromBytes(keypair.PublicKey().Bytes())
 	for i := 1; i < nrHops; i++ {
-		crypto.Exp(&sharedSecret, &path[i].PublicKey.pubBytes, &keypair.privBytes)
+		keypair.Exp(&sharedSecret, path[i].PublicKey)
 		for j := 0; j < i; j++ {
-			crypto.Exp(&sharedSecret, &sharedSecret, &keys[j].BlindingFactor)
+			ecdh.Exp(&sharedSecret, &sharedSecret, &keys[j].BlindingFactor)
 		}
 		keys[i] = crypto.KDF(&sharedSecret)
 		defer keys[i].Reset()
-		keypair.PublicKey().blind(&keys[i-1].BlindingFactor)
+		keypair.PublicKey().Blind(&keys[i-1].BlindingFactor)
 		groupElements[i].FromBytes(keypair.PublicKey().Bytes())
 	}
 
@@ -229,7 +230,7 @@ func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 // Unwrap unwraps the provided Sphinx packet pkt in-place, using the provided
 // ECDH private key, and returns the payload (if applicable), replay tag, and
 // routing info command vector.
-func Unwrap(privKey *PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
+func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
 	const (
 		geOff      = 2
 		riOff      = geOff + crypto.GroupElementLength
@@ -246,11 +247,11 @@ func Unwrap(privKey *PrivateKey, pkt []byte) ([]byte, []byte, []commands.Routing
 	}
 
 	// Calculate the hop's shared secret, and replay_tag.
-	var groupElement PublicKey
+	var groupElement ecdh.PublicKey
 	var sharedSecret [crypto.GroupElementLength]byte
 	defer utils.ExplicitBzero(sharedSecret[:])
 	groupElement.FromBytes(pkt[geOff:riOff])
-	crypto.Exp(&sharedSecret, &groupElement.pubBytes, &privKey.privBytes)
+	privKey.Exp(&sharedSecret, &groupElement)
 	replayTag := crypto.Hash(sharedSecret[:])
 
 	// Derive the various keys required for packet processing.
@@ -321,7 +322,7 @@ func Unwrap(privKey *PrivateKey, pkt []byte) ([]byte, []byte, []commands.Routing
 	// Transform the packet for forwarding to the next mix, iff the
 	// routing commands vector included a NextNodeHopCommand.
 	if nextNode != nil {
-		groupElement.blind(&keys.BlindingFactor)
+		groupElement.Blind(&keys.BlindingFactor)
 		copy(pkt[geOff:riOff], groupElement.Bytes()[:])
 		copy(pkt[riOff:macOff], newRoutingInfo)
 		copy(pkt[macOff:payloadOff], nextNode.MAC[:])

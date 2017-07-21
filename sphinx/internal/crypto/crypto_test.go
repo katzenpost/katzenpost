@@ -27,7 +27,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/curve25519"
 )
 
 func TestHash(t *testing.T) {
@@ -128,26 +127,6 @@ func TestSPRP(t *testing.T) {
 
 	dst = SPRPDecrypt(&key, &iv, dst[:])
 	assert.Equal(src[:], dst, "SPRPDecrypt() did not decrypt")
-}
-
-func TestEXP(t *testing.T) {
-	assert := assert.New(t)
-
-	var aliceSk, bobSk, alicePk, bobPk, aliceS, bobS [GroupElementLength]byte
-	err := ExpKeygen(&aliceSk, rand.Reader)
-	require.NoError(t, err, "ExpKeygen() Alice failed")
-	_, err = rand.Read(bobSk[:])
-	require.NoError(t, err, "failed to generate bobSk")
-
-	curve25519.ScalarBaseMult(&alicePk, &aliceSk)
-	ExpG(&bobPk, &aliceSk)
-	assert.Equal(alicePk, bobPk, "ExpG() mismatch against X25519 scalar base mult")
-	curve25519.ScalarBaseMult(&bobPk, &bobSk)
-	assert.NotEqual(bobPk, alicePk, "ExpG(alice) == X25519(bob)")
-
-	Exp(&aliceS, &bobPk, &aliceSk)
-	curve25519.ScalarMult(&bobS, &bobSk, &alicePk)
-	assert.Equal(bobS, aliceS, "Exp() mismatch against X25519 scalar mult")
 }
 
 func TestKDF(t *testing.T) {

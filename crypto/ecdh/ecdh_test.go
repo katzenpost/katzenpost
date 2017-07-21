@@ -1,4 +1,4 @@
-// ecdh_test.go - Sphinx Packet Format ECDH wrapper tests.
+// ecdh_test.go - ECDH wrapper tests.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package sphinx
+package ecdh
 
 import (
 	"crypto/rand"
@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/curve25519"
 )
 
 func TestPrivateKey(t *testing.T) {
@@ -48,4 +49,24 @@ func TestPrivateKey(t *testing.T) {
 	err = pubKey.FromBytes(privKey.PublicKey().Bytes())
 	assert.NoError(err, "PrivateKey.PublicKey().Bytes->FromBytes()")
 	assert.Equal(privKey.PublicKey(), &pubKey, "PrivateKey.PublicKey().Bytes->FromBytes()")
+}
+
+func TestECDHOps(t *testing.T) {
+	assert := assert.New(t)
+
+	aliceKeypair, err := NewKeypair(rand.Reader)
+	require.NoError(t, err, "NewKeygen() Alice failed")
+
+	var bobSk, bobPk, aliceS, bobS, tmp [GroupElementLength]byte
+	_, err = rand.Read(bobSk[:])
+	require.NoError(t, err, "failed to generate bobSk")
+	curve25519.ScalarBaseMult(&bobPk, &bobSk)
+
+	curve25519.ScalarBaseMult(&tmp, &aliceKeypair.privBytes)
+	assert.Equal(aliceKeypair.PublicKey().Bytes(), tmp[:], "ExpG() mismatch against X25519 scalar base mult")
+
+	Exp(&aliceS, &bobPk, &aliceKeypair.privBytes)
+	copy(tmp[:], aliceKeypair.PublicKey().Bytes())
+	curve25519.ScalarMult(&bobS, &bobSk, &tmp)
+	assert.Equal(bobS, aliceS, "Exp() mismatch against X25519 scalar mult")
 }

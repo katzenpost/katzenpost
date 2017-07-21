@@ -24,12 +24,11 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"hash"
-	"io"
 
 	"git.schwanenlied.me/yawning/aez.git"
 	"git.schwanenlied.me/yawning/bsaes.git"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/utils"
-	"golang.org/x/crypto/curve25519"
 )
 
 const (
@@ -55,7 +54,7 @@ const (
 	SPRPIVLength = StreamIVLength
 
 	// GroupElementLength is the length of a DH group element in bytes.
-	GroupElementLength = 32
+	GroupElementLength = ecdh.GroupElementLength
 
 	okmLength = MACKeyLength + StreamKeyLength + StreamIVLength + SPRPKeyLength + GroupElementLength
 	kdfInfo   = "panoramix-kdf-v0-hkdf-sha256"
@@ -141,31 +140,6 @@ func SPRPDecrypt(key *[SPRPKeyLength]byte, iv *[SPRPIVLength]byte, msg []byte) [
 		panic("crypto/SPRPDecrypt: BUG - aez.Decrypt failed with tau = 0")
 	}
 	return dst
-}
-
-// Exp sets the group element dst to be the result of x^y, over the Sphinx DH
-// group.
-func Exp(dst, x, y *[GroupElementLength]byte) {
-	curve25519.ScalarMult(dst, y, x)
-}
-
-// ExpG sets the group element dst to be the result of G^y
-func ExpG(dst, y *[GroupElementLength]byte) {
-	curve25519.ScalarBaseMult(dst, y)
-}
-
-// ExpKeygen sets dst to a new suitable private key for use with Exp, sampled
-// from the provided entropy source.
-func ExpKeygen(dst *[GroupElementLength]byte, r io.Reader) error {
-	if _, err := io.ReadFull(r, dst[:]); err != nil {
-		return err
-	}
-
-	// Do not directly use output from the system entropy source.
-	tmp := sha512.Sum512_256(dst[:])
-	copy(dst[:], tmp[:GroupElementLength])
-	utils.ExplicitBzero(tmp[:])
-	return nil
 }
 
 // PacketKeys are the per-hop Sphinx Packet Keys, derived from the blinded
