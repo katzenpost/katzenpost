@@ -22,7 +22,22 @@ import (
 	"fmt"
 	"io"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func ensureHighEntropy(b []byte) error {
+	var zipBuf bytes.Buffer
+	zipper := zlib.NewWriter(&zipBuf)
+	zipper.Write(b)
+	zipper.Close()
+
+	errorThresh := int(float32(len(b)) * 0.95)
+	if zipBuf.Len()-16 < errorThresh {
+		return fmt.Errorf("random data noticably compressed????: %v", zipBuf.Len())
+	}
+	return nil
+}
 
 func tryRandomRead(n int) error {
 	b := make([]byte, n)
@@ -35,16 +50,7 @@ func tryRandomRead(n int) error {
 	}
 
 	// Statistical test...
-	var zipBuf bytes.Buffer
-	zipper := zlib.NewWriter(&zipBuf)
-	zipper.Write(b[:])
-	zipper.Close()
-
-	errorThresh := int(float32(len(b)) * 0.95)
-	if zipBuf.Len()-16 < errorThresh {
-		return fmt.Errorf("random data noticably compressed????: %v", zipBuf.Len())
-	}
-	return nil
+	return ensureHighEntropy(b[:])
 }
 
 func TestImprovedSyscallRand(t *testing.T) {
@@ -61,4 +67,17 @@ func TestImprovedSyscallRand(t *testing.T) {
 	if err := tryRandomRead(1024); err != nil {
 		t.Errorf("large: %v", err)
 	}
+}
+
+func TestMath(t *testing.T) {
+	assert := assert.New(t)
+
+	mrand := NewMath()
+
+	// Basic statistical test.
+	var b [1024]byte
+	for i := range b {
+		b[i] = byte(mrand.Intn(256))
+	}
+	assert.NoError(ensureHighEntropy(b[:]), "math/rand: Statistical test")
 }
