@@ -18,7 +18,6 @@
 package server
 
 import (
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -51,12 +50,12 @@ type Server struct {
 	listener           net.Listener
 	waitGroup          *sync.WaitGroup
 	stopping           bool
-	connectionCallback func(io.ReadWriteCloser) error
+	connectionCallback func(net.Conn) error
 }
 
 // New creates a new Server given
 // network, address strings and options
-func New(network, address string, connectionCallback func(io.ReadWriteCloser) error, options *Options) *Server {
+func New(network, address string, connectionCallback func(net.Conn) error, options *Options) *Server {
 	wire := Server{
 		network:            network,
 		address:            address,
