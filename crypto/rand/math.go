@@ -21,6 +21,7 @@ package rand
 import (
 	"encoding/binary"
 	"io"
+	"math"
 	"math/rand"
 	"sync"
 
@@ -81,4 +82,13 @@ func NewMath() *rand.Rand {
 	s := new(randSource)
 	s.Seed(0)
 	return rand.New(s)
+}
+
+// Exp returns a random sample from the exponential distribution characterized
+// by lambda (inverse of the mean).
+func Exp(r *rand.Rand, lambda float64) float64 {
+	if lambda < 0 {
+		panic("crypto/rand: lambda out of range")
+	}
+	return (-1.0 / lambda) * math.Log(r.Float64())
 }
