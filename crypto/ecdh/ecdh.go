@@ -18,7 +18,6 @@
 package ecdh
 
 import (
-	"crypto/sha512"
 	"errors"
 	"io"
 
@@ -115,15 +114,9 @@ func (k *PrivateKey) PublicKey() *PublicKey {
 // source.
 func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	k := new(PrivateKey)
-
 	if _, err := io.ReadFull(r, k.privBytes[:]); err != nil {
 		return nil, err
 	}
-
-	// Do not directly use output from the system entropy source.
-	tmp := sha512.Sum512_256(k.privBytes[:])
-	copy(k.privBytes[:], tmp[:GroupElementLength])
-	utils.ExplicitBzero(tmp[:])
 
 	expG(&k.pubKey.pubBytes, &k.privBytes)
 
