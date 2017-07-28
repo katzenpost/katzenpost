@@ -35,7 +35,7 @@ var mNonce [chacha20.NonceSize]byte
 
 type randSource struct {
 	sync.Mutex
-	s   chacha20.Cipher
+	s   *chacha20.Cipher
 	off int
 }
 
@@ -80,6 +80,7 @@ func (s *randSource) Seed(unused int64) {
 // NewMath returns a "cryptographically secure" math/rand.Rand.
 func NewMath() *rand.Rand {
 	s := new(randSource)
+	s.s = new(chacha20.Cipher)
 	s.Seed(0)
 	return rand.New(s)
 }
