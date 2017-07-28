@@ -1,5 +1,5 @@
-// client.go - Mixnet client using Noise based wire protocol.
-// Copyright (C) 2017  David Anthony Stainton
+// constants.go - Katzenpost constants.
+// Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,26 +14,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package client provides the Katzenpost client side.
-package client
+// Package constants contains the constants for Katzenpost.
+package constants
 
-type Config struct {
-	// LongtermX25519PublicKey is the client's longterm X25519 public key
-	// used for private communication between mixnet clients
-	LongtermX25519PublicKey *[32]byte
+import "github.com/katzenpost/core/sphinx"
 
-	// LongtermX25519PrivateKey is the client's longterm X25519 private key
-	// used for private communication between mixnet clients
-	LongtermX25519PrivateKey *[32]byte
-}
+const (
+	// PacketLength is the length of a Sphinx Packet in bytes.
+	PacketLength = sphinx.SURBLength + ForwardPayloadLength
 
-type Client struct {
-	config *Config
-}
-
-func New(config *Config) *Client {
-	client := Client{
-		config: config,
-	}
-	return &client
-}
+	// ForwardPayloadLength is the length of the usable forward payload of a
+	// Sphinx Packet in bytes.
+	ForwardPayloadLength = 50 * 1024
+)
