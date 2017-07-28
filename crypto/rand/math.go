@@ -88,7 +88,7 @@ func NewMath() *rand.Rand {
 // Exp returns a random sample from the exponential distribution characterized
 // by lambda (inverse of the mean).
 func Exp(r *rand.Rand, lambda float64) float64 {
-	if lambda < 0 {
+	if lambda < math.SmallestNonzeroFloat64 {
 		panic("crypto/rand: lambda out of range")
 	}
 	return (-1.0 / lambda) * math.Log(r.Float64())
