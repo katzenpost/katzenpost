@@ -36,7 +36,6 @@ const (
 	MaxAdditionalDataLength = 255
 
 	maxMsgLen = 1048576
-	keyLen    = 32
 	macLen    = 16
 	authLen   = 1 + MaxAdditionalDataLength + 4
 )
@@ -144,12 +143,11 @@ func (s *Session) handshake() error {
 	}
 
 	// Initialize the Noise library.
-	// XXX: NewHope-Simple.
-	cs := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
+	cs := noise.NewCipherSuiteHFS(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b, noise.HFSNewHopeSimple)
 	hs := noise.NewHandshakeState(noise.Config{
 		CipherSuite:   cs,
 		Random:        s.randReader,
-		Pattern:       noise.HandshakeXX,
+		Pattern:       noise.HandshakeXXhfs,
 		Initiator:     s.isInitiator,
 		StaticKeypair: dhKey,
 		Prologue:      prologue,
@@ -158,14 +156,17 @@ func (s *Session) handshake() error {
 
 	const (
 		prologueLen = 1
-		msg1Len     = prologueLen + keyLen                            // -> (prologue), e
-		msg2Len     = (keyLen + macLen + keyLen) + (macLen + authLen) // <- e, ee, s, es, (auth)
-		msg3Len     = (macLen + keyLen) + (macLen + authLen)          // -> s, se, (auth)
+		keyLen      = 32
+		sendALen    = 1824
+		sendBLen    = 2176
+		msg1Len     = prologueLen + keyLen + sendALen                            // -> (prologue), e, f
+		msg2Len     = (keyLen + sendBLen + macLen + keyLen) + (macLen + authLen) // <- e, f, ee, ff, s, es, (auth)
+		msg3Len     = (macLen + keyLen) + (macLen + authLen)                     // -> s, se, (auth)
 	)
 
 	var err error
 	if s.isInitiator {
-		// -> (prologue), e
+		// -> (prologue), e, f
 		msg1 := make([]byte, 0, msg1Len)
 		msg1 = append(msg1, prologue...)
 		msg1, _, _ = hs.WriteMessage(msg1, nil)
@@ -173,7 +174,7 @@ func (s *Session) handshake() error {
 			return err
 		}
 
-		// <- e, ee, s, es, (auth)
+		// <- e, f, ee, ff, s, es, (auth)
 		msg2 := make([]byte, msg2Len)
 		if _, err = io.ReadFull(s.conn, msg2); err != nil {
 			return err
@@ -213,7 +214,7 @@ func (s *Session) handshake() error {
 			return err
 		}
 	} else {
-		// -> (prologue), e
+		// -> (prologue), e, f
 		msg1 := make([]byte, msg1Len)
 		if _, err = io.ReadFull(s.conn, msg1); err != nil {
 			return err
@@ -226,7 +227,7 @@ func (s *Session) handshake() error {
 			return err
 		}
 
-		// <- e, ee, s, es, (auth)
+		// <- e, f, ee, ff, s, es, (auth)
 		ourAuth := &authenticateMessage{
 			ad:       s.additionalData,
 			unixTime: uint32(time.Now().Unix()), // XXX: Add noise.
