@@ -1,7 +1,8 @@
-// priority_queue.go - Priority queue for implementing the Poisson mix strategy.
+// priority_queue.go - Min-Heap based priority queue.
+// Copyright (C) 2017  David Anthony Stainton, Yawning Angel
+//
 // This was inspired by the priority queue example in the godocs:
 // https://golang.org/pkg/container/heap/
-// Copyright (C) 2017  David Anthony Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -16,142 +17,104 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+// Package queue implements a priority queue.
 package queue
 
 import (
 	"container/heap"
-	"encoding/binary"
-	"fmt"
-	"time"
-
-	"github.com/boltdb/bolt"
-	"github.com/op/go-logging"
+	"math/rand"
 )
 
-var log = logging.MustGetLogger("priority_queue")
-
-const (
-	SphinxPacketSize = 30000
-)
-
-type Item struct {
-	sphinx_packet []byte
-	priority      uint32
-	index         int
+// Entry is a PriorityQueue entry.
+type Entry struct {
+	Value    []byte
+	Priority uint64
+	idx      int
 }
 
-type PriorityQueue struct {
-	queue []*Item
-	db    *bolt.DB
+type priorityQueueImpl []*Entry
+
+func (pq priorityQueueImpl) Len() int {
+	return len(pq)
 }
 
-func New(dbname string) *PriorityQueue {
-	pq := PriorityQueue{
-		queue: make([]*Item, 0),
-	}
-	heap.Init(&pq)
-	var err error
-	pq.db, err = bolt.Open(dbname, 0600, &bolt.Options{Timeout: 1 * time.Second})
-	if err != nil {
-		log.Error(err)
-		panic(err)
-	}
-	return &pq
+func (pq priorityQueueImpl) Less(i, j int) bool {
+	return pq[i].Priority < pq[j].Priority
 }
 
-func (pq PriorityQueue) Load() {
-	transaction := func(tx *bolt.Tx) error {
-		bucket := tx.Bucket([]byte("mix_queue"))
-		if bucket == nil {
-			log.Error("failed to retrieve mix_queue bucket")
-			panic("failed to retrieve mix_queue bucket")
-		}
-		cursor := bucket.Cursor()
-		if cursor == nil {
-			log.Error("failed to get bucket cursor")
-			panic("failed to get bucket cursor")
-		}
-		for sphinx_packet, priority := cursor.First(); sphinx_packet != nil; sphinx_packet, priority = cursor.Next() {
-			item := Item{
-				priority:      binary.BigEndian.Uint32(priority[:4]),
-				sphinx_packet: sphinx_packet,
-			}
-			fmt.Println("Push")
-			pq.Push(&item)
-			sphinx_packet, priority = cursor.Next()
-		}
-		return nil
-	}
-
-	err := pq.db.View(transaction)
-	if err != nil {
-		panic(err)
-	}
+func (pq priorityQueueImpl) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].idx = i
+	pq[j].idx = j
 }
 
-func (pq PriorityQueue) Save() error {
-	var err error
-	transaction := func(tx *bolt.Tx) error {
-		bucket, err := tx.CreateBucketIfNotExists([]byte("mix_queue"))
-		if err != nil {
-			log.Errorf("failed to create mix_queue bucket: %s", err)
-			panic(err)
-		}
-		for i := 0; i < len(pq.queue); i++ {
-			item := pq.queue[i]
-			priorityBytes := make([]byte, 4)
-			binary.BigEndian.PutUint32(priorityBytes, item.priority)
-			err = bucket.Put(item.sphinx_packet, priorityBytes)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	err = pq.db.Update(transaction)
-	if err != nil {
-		panic(err)
-	}
-	err = pq.db.Close()
-	if err != nil {
-		log.Error(err)
-	}
-	return err
+func (pq *priorityQueueImpl) Push(x interface{}) {
+	n := len(*pq)
+	entry := x.(*Entry)
+	entry.idx = n
+	*pq = append(*pq, entry)
 }
 
-func (pq PriorityQueue) Len() int {
-	return len(pq.queue)
-}
-
-func (pq PriorityQueue) Less(i, j int) bool {
-	return pq.queue[i].priority < pq.queue[j].priority
-}
-
-func (pq PriorityQueue) Swap(i, j int) {
-	pq.queue[i], pq.queue[j] = pq.queue[j], pq.queue[i]
-	pq.queue[i].index = i
-	pq.queue[j].index = j
-}
-
-func (pq *PriorityQueue) Push(x interface{}) {
-	n := len(pq.queue)
-	item := x.(*Item)
-	item.index = n
-	pq.queue = append(pq.queue, item)
-}
-
-func (pq *PriorityQueue) Pop() interface{} {
-	old := pq.queue
+func (pq *priorityQueueImpl) Pop() interface{} {
+	old := *pq
 	n := len(old)
-	item := old[n-1]
-	item.index = -1
-	pq.queue = old[0 : n-1]
-	return item
+	entry := old[n-1]
+	entry.idx = -1
+	*pq = old[0 : n-1]
+	return entry
 }
 
-func (pq *PriorityQueue) update(item *Item, sphinx_packet []byte, priority uint32) {
-	item.sphinx_packet = sphinx_packet
-	item.priority = priority
-	heap.Fix(pq, item.index)
+// PriorityQueue is a priority queue instance.
+type PriorityQueue struct {
+	heap priorityQueueImpl
+}
+
+// Peek returns the 0th entry (lowest priority) if any, leaving the
+// PriorityQueue unaltered.  Callers MUST NOT alter the Priority of the
+// returned entry.
+func (q *PriorityQueue) Peek() *Entry {
+	if q.Len() <= 0 {
+		return nil
+	}
+	return q.heap[0]
+}
+
+// Pop removes and returns the 0th entry (lowest priority) if any.
+func (q *PriorityQueue) Pop() *Entry {
+	if q.Len() <= 0 {
+		return nil
+	}
+	return heap.Pop(&q.heap).(*Entry)
+}
+
+// Enqueue inserts the provided value, into the queue with the specified
+// priority.
+func (q *PriorityQueue) Enqueue(priority uint64, value []byte) {
+	ent := &Entry{
+		Value:    value,
+		Priority: priority,
+	}
+	heap.Push(&q.heap, ent)
+}
+
+// DequeueRandom removes a random entry from the queue.
+func (q *PriorityQueue) DequeueRandom(r *rand.Rand) *Entry {
+	if q.Len() <= 0 {
+		return nil
+	}
+	return heap.Remove(&q.heap, r.Intn(q.Len())).(*Entry)
+}
+
+// Len returns the current length of the priority queue.
+func (q *PriorityQueue) Len() int {
+	return q.heap.Len()
+}
+
+// New creates a new PriorityQueue.
+func New() *PriorityQueue {
+	q := &PriorityQueue{
+		heap: make(priorityQueueImpl, 0),
+	}
+	heap.Init(&q.heap)
+	return q
 }
