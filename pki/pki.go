@@ -17,9 +17,11 @@
 package pki
 
 import (
+	"net/mail"
+
 	"github.com/katzenpost/core/crypto/ecdh"
 )
 
 type Mix interface {
-	GetLatestConsensusMap() map[string]*ecdh.PublicKey
+	GetLatestConsensusMap() map[*mail.Address]*ecdh.PublicKey
 }
