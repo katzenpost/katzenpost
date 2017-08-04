@@ -17,11 +17,18 @@
 package pki
 
 import (
-	"net/mail"
-
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/sphinx/constants"
 )
 
+type MixDescriptor struct {
+	ID              [constants.NodeIDLength]byte
+	TopologyLayer   uint8
+	EpochAPublicKey *ecdh.PublicKey
+	EpochBPublicKey *ecdh.PublicKey
+	EpochCPublicKey *ecdh.PublicKey
+}
+
 type Mix interface {
-	GetLatestConsensusMap() map[*mail.Address]*ecdh.PublicKey
+	GetLatestConsensusMap() map[[constants.NodeIDLength]byte]*MixDescriptor
 }
