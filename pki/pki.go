@@ -17,18 +17,58 @@
 package pki
 
 import (
+	"encoding/json"
+	"io/ioutil"
+
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
 type MixDescriptor struct {
-	ID              [constants.NodeIDLength]byte
-	TopologyLayer   uint8
-	EpochAPublicKey *ecdh.PublicKey
-	EpochBPublicKey *ecdh.PublicKey
-	EpochCPublicKey *ecdh.PublicKey
+	ID                  [constants.NodeIDLength]byte
+	LoadWeight          uint8
+	EpochATopologyLayer uint8
+	EpochBTopologyLayer uint8
+	EpochCTopologyLayer uint8
+	EpochAPublicKey     *ecdh.PublicKey
+	EpochBPublicKey     *ecdh.PublicKey
+	EpochCPublicKey     *ecdh.PublicKey
 }
 
+type ConsensusList struct {
+	list []MixDescriptor
+}
+
+type ConsensusMap map[[constants.NodeIDLength]byte]*MixDescriptor
+
 type Mix interface {
-	GetLatestConsensusMap() map[[constants.NodeIDLength]byte]*MixDescriptor
+	GetLatestConsensusMap() *ConsensusMap
+}
+
+type StaticConsensus struct {
+	consensusMap ConsensusMap
+}
+
+func ConsensusFromFile(filePath string) (*StaticConsensus, error) {
+	fileData, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	consensus := new(ConsensusList)
+	err = json.Unmarshal(fileData, &consensus)
+	if err != nil {
+		return nil, err
+	}
+	m := make(ConsensusMap)
+	for i := 0; i < len(consensus.list); i++ {
+		m[consensus.list[i].ID] = &consensus.list[i]
+	}
+	j := StaticConsensus{
+		consensusMap: m,
+	}
+	return &j, nil
+}
+
+func (t *StaticConsensus) GetLatestConsensusMap() *ConsensusMap {
+	return &t.consensusMap
 }
