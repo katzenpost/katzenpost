@@ -17,6 +17,7 @@
 package pki
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io/ioutil"
 
@@ -25,6 +26,7 @@ import (
 )
 
 type MixDescriptor struct {
+	Nickname            string
 	ID                  [constants.NodeIDLength]byte
 	LoadWeight          uint8
 	EpochATopologyLayer uint8
@@ -33,13 +35,51 @@ type MixDescriptor struct {
 	EpochAPublicKey     *ecdh.PublicKey
 	EpochBPublicKey     *ecdh.PublicKey
 	EpochCPublicKey     *ecdh.PublicKey
+	Ipv4Address         string
+	TcpPort             int
+}
+
+type JsonMixDescriptor struct {
+	Nickname            string
+	ID                  string
+	LoadWeight          int
+	EpochATopologyLayer int
+	EpochBTopologyLayer int
+	EpochCTopologyLayer int
+	EpochAPublicKey     string
+	EpochBPublicKey     string
+	EpochCPublicKey     string
+	Ipv4Address         string
+	TcpPort             int
 }
 
 type ConsensusList struct {
-	list []MixDescriptor
+	List []MixDescriptor
+}
+
+func (m *MixDescriptor) JsonMixDescriptor() *JsonMixDescriptor {
+	j := JsonMixDescriptor{
+		Nickname:            m.Nickname,
+		ID:                  base64.StdEncoding.EncodeToString(m.ID[:]),
+		LoadWeight:          int(m.LoadWeight),
+		EpochATopologyLayer: int(m.EpochATopologyLayer),
+		EpochBTopologyLayer: int(m.EpochBTopologyLayer),
+		EpochCTopologyLayer: int(m.EpochCTopologyLayer),
+		EpochAPublicKey:     base64.StdEncoding.EncodeToString(m.EpochAPublicKey.Bytes()),
+		//EpochBPublicKey:     base64.StdEncoding.EncodeToString(m.EpochBPublicKey.Bytes()),
+		//EpochCPublicKey:     base64.StdEncoding.EncodeToString(m.EpochCPublicKey.Bytes()),
+		Ipv4Address: m.Ipv4Address,
+		TcpPort:     m.TcpPort,
+	}
+	return &j
 }
 
 type ConsensusMap map[[constants.NodeIDLength]byte]*MixDescriptor
+type JsonConsensusMap map[[constants.NodeIDLength]byte]*JsonMixDescriptor
+
+type JsonConsensus struct {
+	Descriptors []JsonMixDescriptor
+}
 
 type Mix interface {
 	GetLatestConsensusMap() *ConsensusMap
@@ -49,7 +89,11 @@ type StaticConsensus struct {
 	consensusMap ConsensusMap
 }
 
-func ConsensusFromFile(filePath string) (*StaticConsensus, error) {
+func (t *StaticConsensus) GetLatestConsensusMap() *ConsensusMap {
+	return &t.consensusMap
+}
+
+func StaticConsensusFromFile(filePath string) (*StaticConsensus, error) {
 	fileData, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return nil, err
@@ -60,15 +104,11 @@ func ConsensusFromFile(filePath string) (*StaticConsensus, error) {
 		return nil, err
 	}
 	m := make(ConsensusMap)
-	for i := 0; i < len(consensus.list); i++ {
-		m[consensus.list[i].ID] = &consensus.list[i]
+	for i := 0; i < len(consensus.List); i++ {
+		m[consensus.List[i].ID] = &consensus.List[i]
 	}
 	j := StaticConsensus{
 		consensusMap: m,
 	}
 	return &j, nil
-}
-
-func (t *StaticConsensus) GetLatestConsensusMap() *ConsensusMap {
-	return &t.consensusMap
 }
