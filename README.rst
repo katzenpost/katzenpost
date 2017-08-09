@@ -1,8 +1,6 @@
 
-mixspecs - Panoramix Specification Documents
-============================================
-
-
+The Panoramix Decryption Mix Network Design and Specification Documents
+=======================================================================
 
 license
 =======
