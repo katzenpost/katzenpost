@@ -1,0 +1,59 @@
+Notes about mix network PKI design/implementation
+
+
+Mixnets are designed with the assumption that a PKI exists and it gives each client the same
+view of the network, it links mix IDs to public routing keys. However in the context of a production mix network
+the PKI would provide a network consensus document composed of many mix descriptors. The mix descriptors would
+contain relavent information such as:
+
+    - nickname: simply a nickname string that is unique in the consensus document
+    - family: entities operating multiple mixes in the network will mark them all as
+      the same family, which informs the route selection algorithm
+    - connection information: network address to send sphinx packets to
+    - public signing key: signing key is used to sign mix descriptors which the mix uploads to the PKI
+    - public routing key: this is used by the mix to unwrap sphinx packets
+    - public link signing key: this is used by the mix to authenticate itself at the link layer.
+    - stratefied topology layer: this indicates which strata layer a particular mix resides in
+    - self-reported node capacity
+    - supported mix/link protocol versions
+    - expiration
+    - exit policy, if we do something like that (Not 0.1?)
+    - contact info
+    - other random metadata? (Yawningcoin address for donations)
+
+ - The PKI also needs to hold network wide parameters.
+   - number of hops per route
+   - Packet size/Sphinx geometry such as size of Alpha, Beta, Gamma and Delta components of a Sphinx packet.
+     Additionally we may end up adding arbitrary routing commands to Beta for supporting various mix strategies such as
+     encoding a mix delay for Stop and Go mixes. If we do this then we cannot just specify the size of Beta but
+     the per hop Beta overhead. If the field is unused it must be padded to length so that everything is a fixed size.
+   - Allowed protocol versions
+   - network wide tuning parameters
+   - etc????
+
+The PKI must be designed with the following properties:
+    - resistance to sybil attacks
+    - presents consistent network view to clients
+
+Other considerations:
+    - serialization format: json, cbor?
+    - signature voting/threshold scheme: tor dir auth style voting or cothority threshold signatures?
+    - revocation via online shorterm key signed by online midterm key signed by offline longterm key?
+    - submission protocol (Tor uses HTTP POST)
+
+A PKI Client would have the following responsibilities:
+    - key rotation
+    - key persistence
+    - mix descriptor introduction
+    - mix descriptor update
+    - revocation
+
+Eventually (NOT in the 0.1, spec) it will be cool for the PKI infrastructure to handle "random intertubes
+running nodes a la Tor".  This opens up the "We need a way to explicitly reject nodes" and "We need a way to
+do measurements, because self reported capacity may be inaccurate" can of worms, with the latter being
+considered a "hard problem".
+
+For now we can assume a closed pool of mixnode operators.  The initial implementation (to get a prototype
+by september) can be "pki.json" that just has the serialized descriptors. (As long as we specify the descriptors
+in full, people can make forward progress on the rest of the system, up to and including a functional prototype).
+
