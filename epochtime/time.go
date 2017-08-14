@@ -19,7 +19,7 @@ package epochtime
 
 import "time"
 
-const period = 3 * time.Hour
+const Period = 3 * time.Hour
 
 var epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
@@ -34,10 +34,10 @@ func Now() (current uint64, elapsed, till time.Duration) {
 		panic("epochtime: BUG: system time appears to predate the epoch")
 	}
 
-	current = uint64(fromEpoch / period)
+	current = uint64(fromEpoch / Period)
 
-	base := epoch.Add(time.Duration(current) * period)
+	base := epoch.Add(time.Duration(current) * Period)
 	elapsed = now.Sub(base)
-	till = base.Add(period).Sub(now)
+	till = base.Add(Period).Sub(now)
 	return
 }
