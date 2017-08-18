@@ -24,7 +24,7 @@ Introduction
 
 Here we present cryptographic messaging system which uses many Loopix
 designs such as Poisson mix strategy, decoy traffic and Sphinx packet
-format. Here we add to these designs a new reliable network transport
+format. We add to these designs a new reliable network transport
 protocol for decryption mix networks called the Poisson Stop and Wait
 ARQ. In our new messaging system, clients utilize this unidirectional,
 half-duplex protocol to reliably deliver messages to the message
@@ -35,17 +35,17 @@ Other packet switching techniques are also applied here to mix
 networks, such as appropriate used of modern AQMs (active queue
 management) algorithms for various purposes such as: preventing buffer
 bloat, preventing congestion collapse, maintaining flow QoS,
-mitigatings DDoS attacks et cetera.
+mitigating DDoS attacks et cetera.
 
 Our messaging system uses a federated e-mail protocol overlay to
 facilitate user interaction and client interoperability. That is to
 say, any existing e-mail client can be used to send messages to the
 local SMTP submission proxy which proxies messages to the mix network.
 Message retrieval is also done using any ordinary e-mail client
-interacting with the local POP3 retreival proxy daemon. This daemon
-connects to the user's mixnet Provider(s), retreives queued message
+interacting with the local POP3 retrieval proxy daemon. This daemon
+connects to the user's mixnet Provider(s), retrieves queued message
 ciphertext and decrypts the messages making them available for
-retreival locally by POP3.
+retrieval locally by POP3.
 
 
 Terminology
@@ -58,7 +58,7 @@ Terminology
 
 * AQM: Active Queue Management
 
-* SURB - Single Use Reply Block
+* SURB: Single Use Reply Block
 
 
 System Overview
@@ -68,7 +68,7 @@ operated. Operators are a part of a fixed set who all agree to
 cooperatively run an equal size set of mixes and network perimeter
 points, also known as Providers, which are responsible for
 authenticating clients, proxying Sphinx packets to the mix network and
-queueing Sphinx packet payloads on behalf of recipient Clients.
+queuing Sphinx packet payloads on behalf of recipient Clients.
 
 Our mix network design uses the stratified mix network topology.
 Providers collectively represent the mix network perimeter layer and
@@ -95,8 +95,8 @@ approach: Providers can perform rate limiting and enforce maximum
 concurrent connection limitations in order to prevent congestion
 collapse.
 
-Serveral classes of decoy traffic are used as described in the Loopix
-paper to resist end to end Client message corrolation. It should also
+Several classes of decoy traffic are used as described in the Loopix
+paper to resist end to end Client message correlation. It should also
 be noted that several sizes of Sphinx packets are used and therefore
 the classes of dummy traffic are multiplied by the number of sizes.
 For simplicity we choose two sizes of Sphinx packets for message
@@ -122,7 +122,7 @@ Layers of Mix Network Encryption
 
 
 * link layer - The mix network link layer consists of TCP and an
-  interactive Noise protocol pattern.  Our Noise-based linky layer
+  interactive Noise protocol pattern.  Our Noise-based link layer
   crypto is post-quantum and uses
   Noise_NNhfs_25519+NewHope-Simple_ChaChaPoly_Blake2b, described in:
 
@@ -162,7 +162,7 @@ then the ACK will later be queued in the Client's Provider.  If
 however packetloss or a Mix outage has prevented the sending Client's
 sent message from arriving at it's destination Provider, then upon
 reconnecting to the Provider, the Client will not find an ACK message
-in it's queue. Upon finding no ACK within the timeout duraton, the
+in it's queue. Upon finding no ACK within the timeout duration, the
 client will retransmit the message. The full path selection algorithm
 is used for retransmissions.
 
@@ -182,7 +182,7 @@ smoothed RTT estimate for dynamically adjusting protocol
 timers. However in our mix network case we are utilizing the Poisson
 mix strategy which means that the client chooses the mix delays for
 each hop. These delays are sampled from an exponential distribution
-function and could be dynamically tuned for congestion mangement
+function and could be dynamically tuned for congestion management
 purposes.  Therefore the client always knows the approximate
 propagation delay for each mixnet messages and adds some slop to account
 for network congestion delays and endpoint processing delays. This

@@ -14,7 +14,7 @@ Abstract
 
    This user interface is meant to mimic the e-mail experience in
    several ways, by allowing existing e-mail programs to interact with
-   a mixnet SMTP submission proxy and a POP3 recieve proxy. We will
+   a mixnet SMTP submission proxy and a POP3 receive proxy. We will
    also suggest specific e-mail client modifications that will present
    some special mixnet specific indicators to the user.
 
@@ -57,7 +57,7 @@ Abstract
    * The SMTP proxy will refuse to queue a message if the recipient's
      key is not available and issue the SMTP error message:
 
-         455 Server unable to accomodate parameters
+         455 Server unable to accommodate parameters
 
    * The SMTP proxy will refuse to queue the message if the mixnet is
      not available with the following error message:
