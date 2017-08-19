@@ -252,7 +252,7 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 	defer utils.ExplicitBzero(sharedSecret[:])
 	groupElement.FromBytes(pkt[geOff:riOff])
 	privKey.Exp(&sharedSecret, &groupElement)
-	replayTag := crypto.Hash(sharedSecret[:])
+	replayTag := crypto.Hash(groupElement.Bytes())
 
 	// Derive the various keys required for packet processing.
 	keys := crypto.KDF(&sharedSecret)

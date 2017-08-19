@@ -19,6 +19,7 @@ package epochtime
 
 import "time"
 
+// Period is the duration of a Katzenpost epoch.
 const Period = 3 * time.Hour
 
 var epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
