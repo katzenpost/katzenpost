@@ -27,7 +27,7 @@ import (
 
 // Entry is a PriorityQueue entry.
 type Entry struct {
-	Value    []byte
+	Value    interface{}
 	Priority uint64
 	idx      int
 }
@@ -89,7 +89,7 @@ func (q *PriorityQueue) Pop() *Entry {
 
 // Enqueue inserts the provided value, into the queue with the specified
 // priority.
-func (q *PriorityQueue) Enqueue(priority uint64, value []byte) {
+func (q *PriorityQueue) Enqueue(priority uint64, value interface{}) {
 	ent := &Entry{
 		Value:    value,
 		Priority: priority,
