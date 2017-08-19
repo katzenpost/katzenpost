@@ -73,7 +73,8 @@ func TestPriorityQueue(t *testing.T) {
 		require.Equal(expected.Value, ent.Value, "Pop(): Value")
 		require.Equal(expected.Priority, ent.Priority, "Pop(): Priority")
 
-		t.Logf("ent[%d]: %d %s", i, ent.Priority, string(ent.Value))
+		s := ent.Value.([]byte)
+		t.Logf("ent[%d]: %d %s", i, ent.Priority, s)
 	}
 
 	require.Equal(0, q.Len(), "Queue length (empty)")
@@ -89,7 +90,8 @@ func TestPriorityQueue(t *testing.T) {
 	r := rand.New(rand.NewSource(23)) // Don't do this in production.
 	for i := 0; i < len(testEntries); i++ {
 		ent := q.DequeueRandom(r)
-		t.Logf("random ent[%d]: %d %s", i, ent.Priority, string(ent.Value))
+		s := ent.Value.([]byte)
+		t.Logf("random ent[%d]: %d %s", i, ent.Priority, s)
 	}
 	require.Equal(0, q.Len(), "Queue length (empty), post-rand test")
 }
