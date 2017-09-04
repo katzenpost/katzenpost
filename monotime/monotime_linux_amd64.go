@@ -15,6 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 // +build !noasm
+// +build !go1.9
 
 package monotime
 
