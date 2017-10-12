@@ -371,7 +371,9 @@ func (s *Session) Close() {
 		s.rx.Rekey()
 	}
 	s.authenticationKey.Reset()
-	s.conn.Close()
+	if s.conn != nil {
+		s.conn.Close()
+	}
 	s.state = stateInvalid
 }
 
