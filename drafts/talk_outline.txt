@@ -26,8 +26,7 @@ David Stainton
 
    * Problem Statement: Traffic Analysis Problems from global passive adversaries
 
-   Alice is a master chef who is friends with many other chefs around
-   the world.  However she wishes to hide who she knows and with whom
+   Alice wishes to hide who she knows and with whom
    she communicates from passive network observers. PGP encrypted
    email and Signal messaging only hide the communication payload
    contents however all of the other metadata is leaked such as to
