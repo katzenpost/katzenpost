@@ -29,7 +29,7 @@ import (
 
 type EchoSession struct{}
 
-func (e EchoSession) Initiate(conn io.ReadWriteCloser) error {
+func (e EchoSession) Initiate(conn net.Conn) error {
 	if _, err := io.Copy(conn, conn); err != nil {
 		fmt.Println(err.Error())
 		return err
