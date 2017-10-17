@@ -16,6 +16,7 @@
 
 // +build linux,!amd64
 // +build linux,amd64,noasm
+// +build !go1.9
 
 package monotime
 

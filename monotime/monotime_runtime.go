@@ -1,4 +1,4 @@
-// monotime_linux.go - Linux Monotonic clock.
+// monotime_runtime.go - Go Runtime Monotonic clock.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,41 +14,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// +build !go1.9
+// +build go1.9
 
 package monotime
 
 import (
-	"syscall"
 	"time"
-	"unsafe"
 )
 
-var (
-	vdsoClockGettime uintptr
-	useVDSO          = false
-)
+var monoBase time.Time
 
 func nowImpl() time.Duration {
-	const clockMonotonicRaw = 4
-
-	var ts syscall.Timespec
-	res := uintptr(unsafe.Pointer(&ts))
-
-	if useVDSO {
-		vdsoClockGettimeTrampoline(clockMonotonicRaw, res, vdsoClockGettime)
-	} else {
-		_, _, e1 := syscall.Syscall(syscall.SYS_CLOCK_GETTIME, clockMonotonicRaw, res, 0)
-		if e1 != 0 {
-			panic("monotime: clock_gettime(CLOCK_MONOTONIC_RAW, &ts): " + e1.Error())
-		}
-	}
-
-	return time.Duration(ts.Nano()) * time.Nanosecond
+	// Go 1.9 and above has monotonic time support as part of time.Time.
+	//
+	// This routine when built against the appropriate runtime is a thin stub
+	// that just returns the delta-T from when the package was initialized.
+	return time.Now().Sub(monoBase)
 }
 
 func init() {
-	if err := initArchDep(); err == nil {
-		useVDSO = true
-	}
+	monoBase = time.Now()
 }
