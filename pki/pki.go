@@ -1,5 +1,5 @@
 // pki.go - Mixnet PKI interfaces
-// Copyright (C) 2017  David Stainton.
+// Copyright (C) 2017  David Stainton, Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,46 +14,134 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package provider the mix network PKI client interface
+// Package pki provides the mix network PKI related interfaces.
 package pki
 
 import (
+	"bytes"
+	"fmt"
+
 	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/sphinx/constants"
 )
 
-type MixDescriptor struct {
-	Name            string
-	ID              [constants.NodeIDLength]byte
-	IsProvider      bool
-	LoadWeight      uint8
-	TopologyLayer   uint8
-	EpochAPublicKey *ecdh.PublicKey
-	EpochBPublicKey *ecdh.PublicKey
-	EpochCPublicKey *ecdh.PublicKey
-	Ipv4Address     string
-	TcpPort         int
+// LayerProvider is the Layer that providers list in their MixDescriptors.
+const LayerProvider = 255
+
+// Document is a PKI document.
+type Document struct {
+	// Epoch is the epoch for which this Document instance is valid for.
+	Epoch uint64
+
+	// Topology is the mix network topology, excluding providers.
+	Topology [][]*MixDescriptor
+
+	// Providers is the list of providers that can interact with the mix
+	// network.
+	Providers []*MixDescriptor
 }
 
-// Client is the mixnet client PKI interface
-// XXX david: so far this is messy and totally unfinished.
-// we should look at all the requirements of all the places
-// in the code where interaction with the PKI happens and
-// make a proper API. Currently, I have completely skipped messing
-// around with key updates as I am currently working on
-// the client which is not concerned with such things.
+// GetProvider returns the MixDescriptor for the given provider Name.
+func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
+	for _, v := range d.Providers {
+		if v.Name == name {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: provider '%v' not found", name)
+}
+
+// GetProviderByKey returns the specific provider descriptor corresponding
+// to the specified LinkKey.
+func (d *Document) GetProviderByKey(key []byte) (*MixDescriptor, error) {
+	for _, v := range d.Providers {
+		if bytes.Equal(v.LinkKey.Bytes(), key) {
+			return v, nil
+		}
+	}
+	return nil, fmt.Errorf("pki: provider not found")
+}
+
+// GetMix returns the MixDescriptor for the given mix Name.
+func (d *Document) GetMix(name string) (*MixDescriptor, error) {
+	for _, l := range d.Topology {
+		for _, v := range l {
+			if v.Name == name {
+				return v, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("pki: mix '%v' not found", name)
+}
+
+// GetMixesInLayer returns all the mix descriptors for a given layer.
+func (d *Document) GetMixesInLayer(layer uint8) ([]*MixDescriptor, error) {
+	if len(d.Topology)-1 < int(layer) {
+		return nil, fmt.Errorf("pki: invalid layer: '%v'", layer)
+	}
+	return d.Topology[layer], nil
+}
+
+// GetMixByKey returns the specific mix descriptor corresponding
+// to the specified LinkKey.
+func (d *Document) GetMixByKey(key []byte) (*MixDescriptor, error) {
+	for _, l := range d.Topology {
+		for _, v := range l {
+			if bytes.Equal(v.LinkKey.Bytes(), key) {
+				return v, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("pki: mix not found")
+}
+
+// GetNode returns the specific descriptor corresponding to the specified
+// node Name.
+func (d *Document) GetNode(name string) (*MixDescriptor, error) {
+	if m, err := d.GetMix(name); err != nil {
+		return m, nil
+	}
+	if m, err := d.GetProvider(name); err != nil {
+		return m, nil
+	}
+	return nil, fmt.Errorf("pki: node not found")
+}
+
+// GetNodeByKey returns the specific descriptor corresponding to the
+// specified LinkKey.
+func (d *Document) GetNodeByKey(key []byte) (*MixDescriptor, error) {
+	if m, err := d.GetMixByKey(key); err != nil {
+		return m, nil
+	}
+	if m, err := d.GetProviderByKey(key); err != nil {
+		return m, nil
+	}
+	return nil, fmt.Errorf("pki: node not found")
+}
+
+// MixDescriptor is a description of a given Mix or Provider (node).
+type MixDescriptor struct {
+	// Name is the human readable (descriptive) node identifier.
+	Name string
+
+	// LinkKey is the node's wire protocol public key.
+	LinkKey *ecdh.PublicKey
+
+	// MixKeys is a map of epochs to Sphinx keys.
+	MixKeys map[uint64]*ecdh.PublicKey
+
+	// Addresses is a list of address/port combinations that can be used to
+	// reach the node.
+	Addresses []string
+
+	// Layer is the topology layer.
+	Layer uint8
+
+	// LoadWeight is the node's load balancing weight (unused).
+	LoadWeight uint8
+}
+
+// Client is the abstract interface used for PKI interaction.
 type Client interface {
-	// GetLatestConsensusMap returns a fresh mix network map
-	// where the Node ID is the key and the descriptor the value
-	GetLatestConsensusMap() *map[[constants.NodeIDLength]byte]*MixDescriptor
-
-	// GetProviderDescriptor returns the MixDescriptor for the given Provider name
-	GetProviderDescriptor(name string) (*MixDescriptor, error)
-
-	// GetMixesInLayer returns all the mix descriptors for a given layer of mix network topology
-	GetMixesInLayer(layer uint8) []*MixDescriptor
-
-	// GetDescriptor returns the specific mix descriptor corresponding
-	// to the given mix descriptor ID aka Node ID
-	GetDescriptor(id [constants.NodeIDLength]byte) (*MixDescriptor, error)
+	// Get returns the PKI document for the provided epoch.
+	Get(epoch uint64) (*Document, error)
 }
