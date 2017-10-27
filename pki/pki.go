@@ -19,6 +19,7 @@ package pki
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -143,5 +144,5 @@ type MixDescriptor struct {
 // Client is the abstract interface used for PKI interaction.
 type Client interface {
 	// Get returns the PKI document for the provided epoch.
-	Get(epoch uint64) (*Document, error)
+	Get(ctx context.Context, epoch uint64) (*Document, error)
 }
