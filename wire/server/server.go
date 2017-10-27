@@ -94,26 +94,29 @@ func (w *Server) Stop() {
 		if err != nil {
 			log.Debugf("failed to close: %s", err)
 		}
+		w.closeConns(w.conns)
 	}
 	w.waitGroup.Wait()
+}
+
+func (w *Server) closeConns(conns []net.Conn) {
+	for i, conn := range conns {
+		if conn != nil {
+			log.Debugf("Closing connection #%d", i)
+			err := conn.Close()
+			if err != nil {
+				log.Debugf("failed to close: %s", err)
+			}
+		}
+	}
 }
 
 // acceptLoop is called by our Start method
 func (w *Server) acceptLoop() {
 	defer w.waitGroup.Done()
+	defer w.closeConns(w.conns)
 	defer func() {
 		log.Debugf("acceptLoop stopping for listener service %s:%s", w.network, w.address)
-		for i, conn := range w.conns {
-			if conn != nil {
-				log.Debugf("Closing connection #%d", i)
-				err := conn.Close()
-				if err != nil {
-					log.Debugf("failed to close: %s", err)
-				}
-			}
-		}
-	}()
-	defer func() {
 		err := w.listener.Close()
 		if err != nil {
 			log.Debugf("failed to close: %s", err)
