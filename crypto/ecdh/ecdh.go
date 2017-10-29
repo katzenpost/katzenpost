@@ -36,7 +36,7 @@ const (
 	PrivateKeySize = GroupElementLength
 )
 
-var errInvalidKey = errors.New("sphinx: invalid key")
+var errInvalidKey = errors.New("ecdh: invalid key")
 
 // PublicKey is a ECDH public key.
 type PublicKey struct {
