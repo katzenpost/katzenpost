@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/eddsa"
 )
 
 // LayerProvider is the Layer that providers list in their MixDescriptors.
@@ -52,10 +53,10 @@ func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
 }
 
 // GetProviderByKey returns the specific provider descriptor corresponding
-// to the specified LinkKey.
+// to the specified IdentityKey.
 func (d *Document) GetProviderByKey(key []byte) (*MixDescriptor, error) {
 	for _, v := range d.Providers {
-		if bytes.Equal(v.LinkKey.Bytes(), key) {
+		if bytes.Equal(v.IdentityKey.Bytes(), key) {
 			return v, nil
 		}
 	}
@@ -83,11 +84,11 @@ func (d *Document) GetMixesInLayer(layer uint8) ([]*MixDescriptor, error) {
 }
 
 // GetMixByKey returns the specific mix descriptor corresponding
-// to the specified LinkKey.
+// to the specified IdentityKey.
 func (d *Document) GetMixByKey(key []byte) (*MixDescriptor, error) {
 	for _, l := range d.Topology {
 		for _, v := range l {
-			if bytes.Equal(v.LinkKey.Bytes(), key) {
+			if bytes.Equal(v.IdentityKey.Bytes(), key) {
 				return v, nil
 			}
 		}
@@ -108,7 +109,7 @@ func (d *Document) GetNode(name string) (*MixDescriptor, error) {
 }
 
 // GetNodeByKey returns the specific descriptor corresponding to the
-// specified LinkKey.
+// specified IdentityKey.
 func (d *Document) GetNodeByKey(key []byte) (*MixDescriptor, error) {
 	if m, err := d.GetMixByKey(key); err != nil {
 		return m, nil
@@ -123,6 +124,9 @@ func (d *Document) GetNodeByKey(key []byte) (*MixDescriptor, error) {
 type MixDescriptor struct {
 	// Name is the human readable (descriptive) node identifier.
 	Name string
+
+	// IdentityKey is the node's identity (signing) key.
+	IdentityKey *eddsa.PublicKey
 
 	// LinkKey is the node's wire protocol public key.
 	LinkKey *ecdh.PublicKey
