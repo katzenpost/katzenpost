@@ -149,4 +149,7 @@ type MixDescriptor struct {
 type Client interface {
 	// Get returns the PKI document for the provided epoch.
 	Get(ctx context.Context, epoch uint64) (*Document, error)
+
+	// Post posts the node's descriptor to the PKI for the provided epoch.
+	Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *MixDescriptor) error
 }
