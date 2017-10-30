@@ -42,3 +42,20 @@ func Now() (current uint64, elapsed, till time.Duration) {
 	till = base.Add(Period).Sub(now)
 	return
 }
+
+// IsInEpoch returns true iff the epoch e contains the time t, measured in the
+// number of seconds since the UNIX epoch.
+func IsInEpoch(e uint64, t uint64) bool {
+	deltaStart := time.Duration(e) * Period
+	deltaEnd := time.Duration(e+1) * Period
+
+	startTime := epoch.Add(deltaStart)
+	endTime := epoch.Add(deltaEnd)
+
+	tt := time.Unix(int64(t), 0)
+
+	if tt.Equal(startTime) {
+		return true
+	}
+	return tt.After(startTime) && tt.Before(endTime)
+}

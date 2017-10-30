@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,4 +31,18 @@ func TestEpochTime(t *testing.T) {
 	var elapsed, till time.Duration
 	require.NotPanics(func() { now, elapsed, till = Now() }, "Basic Now() sanity check")
 	t.Logf("Epoch: %v, Elapsed: %v Till: %v", now, elapsed, till)
+}
+
+func TestIsInEpoch(t *testing.T) {
+	assert := assert.New(t)
+	e, _, _ := Now()
+	now := uint64(time.Now().Unix())
+
+	assert.True(IsInEpoch(e, now), "IsInEpoch(e, now)")
+
+	nextNow := now + 3*60*60
+	assert.False(IsInEpoch(e, nextNow), "IsInEpoch(e, now+3h)")
+
+	prevNow := now - 3*60*60
+	assert.False(IsInEpoch(e, prevNow), "IsInEpoch(e, now-3h)")
 }
