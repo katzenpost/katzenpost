@@ -23,6 +23,10 @@ const (
 	// PacketLength is the length of a Sphinx Packet in bytes.
 	PacketLength = sphinx.HeaderLength + ForwardPayloadLength
 
+	// SphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
+	// in bytes.
+	SphinxPlaintextHeaderLength = 1 + 1
+
 	// ForwardPayloadLength is the length of the usable forward payload of a
 	// Sphinx Packet in bytes.
 	ForwardPayloadLength = 50 * 1024
