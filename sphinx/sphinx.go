@@ -38,7 +38,9 @@ const (
 	routingInfoLength = perHopRoutingInfoLength * constants.NrHops
 	payloadTagLength  = 16
 	adLength          = 2
-	headerLength      = adLength + crypto.GroupElementLength + routingInfoLength + crypto.MACLength // 460 bytes.
+
+	// HeaderLength is the length of a Sphinx packet header in bytes.
+	HeaderLength      = adLength + crypto.GroupElementLength + routingInfoLength + crypto.MACLength // 460 bytes.
 )
 
 var (
@@ -178,7 +180,7 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 
 	// Assemble the completed Sphinx Packet Header and Sphinx Packet Payload
 	// SPRP key vector.
-	hdr := make([]byte, 0, headerLength)
+	hdr := make([]byte, 0, HeaderLength)
 	hdr = append(hdr, v0AD[:]...)
 	hdr = append(hdr, groupElements[0].Bytes()...)
 	hdr = append(hdr, routingInfo...)
@@ -239,7 +241,7 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 	)
 
 	// Do some basic sanity checking, and validate the AD.
-	if len(pkt) < headerLength {
+	if len(pkt) < HeaderLength {
 		return nil, nil, nil, errors.New("sphinx: invalid packet, truncated")
 	}
 	if subtle.ConstantTimeCompare(v0AD[:], pkt[:2]) != 1 {

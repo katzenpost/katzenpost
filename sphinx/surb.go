@@ -27,7 +27,7 @@ import (
 
 const (
 	// SURBLength is the length of a Sphinx SURB in bytes.
-	SURBLength = headerLength + constants.NodeIDLength + sprpKeyMaterialLength // 556 bytes.
+	SURBLength = HeaderLength + constants.NodeIDLength + sprpKeyMaterialLength // 556 bytes.
 
 	sprpKeyMaterialLength = crypto.SPRPKeyLength + crypto.SPRPIVLength
 )
@@ -71,7 +71,7 @@ func NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 // and payload, and returns the packet and ID of the first hop.
 func NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]byte, error) {
 	const (
-		idOff  = headerLength
+		idOff  = HeaderLength
 		keyOff = idOff + constants.NodeIDLength
 		ivOff  = keyOff + crypto.SPRPKeyLength
 	)
@@ -81,7 +81,7 @@ func NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]b
 	}
 
 	// Deserialize the SURB.
-	hdr := surb[:headerLength]
+	hdr := surb[:HeaderLength]
 	var nodeID [constants.NodeIDLength]byte
 	var sprpKey [crypto.SPRPKeyLength]byte
 	var sprpIV [crypto.SPRPIVLength]byte
