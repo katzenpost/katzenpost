@@ -18,6 +18,7 @@
 package eddsa
 
 import (
+	"encoding/base64"
 	"errors"
 	"io"
 
@@ -57,6 +58,34 @@ func (k *PublicKey) FromBytes(b []byte) error {
 	k.pubKey = make([]byte, PublicKeySize)
 	copy(k.pubKey, b)
 	return nil
+}
+
+// MarshalBinary implements the BinaryMarshaler interface
+// defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) MarshalBinary() ([]byte, error) {
+	return k.Bytes(), nil
+}
+
+// UnmarshalBinary implements the BinaryUnmarshaler interface
+// defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) UnmarshalBinary(data []byte) error {
+	return k.FromBytes(data)
+}
+
+// MarshalText implements the TextMarshaler interface
+// defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) MarshalText() ([]byte, error) {
+	return []byte(base64.StdEncoding.EncodeToString(k.Bytes())), nil
+}
+
+// UnmarshalText implements the TextUnmarshaler interface
+// defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) UnmarshalText(data []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		return err
+	}
+	return k.FromBytes(raw)
 }
 
 // Reset clears the PublicKey structure such that no sensitive data is left in

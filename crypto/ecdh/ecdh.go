@@ -18,6 +18,7 @@
 package ecdh
 
 import (
+	"encoding/base64"
 	"errors"
 	"io"
 
@@ -57,6 +58,34 @@ func (k *PublicKey) FromBytes(b []byte) error {
 	copy(k.pubBytes[:], b)
 
 	return nil
+}
+
+// MarshalBinary is an implementation of a method on the
+// BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) MarshalBinary() ([]byte, error) {
+	return k.Bytes(), nil
+}
+
+// UnmarshalBinary is an implementation of a method on the
+// BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) UnmarshalBinary(data []byte) error {
+	return k.FromBytes(data)
+}
+
+// MarshalText is an implementation of a method on the
+// TextMarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) MarshalText() ([]byte, error) {
+	return []byte(base64.StdEncoding.EncodeToString(k.Bytes())), nil
+}
+
+// UnmarshalText is an implementation of a method on the
+// TextUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) UnmarshalText(data []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		return err
+	}
+	return k.FromBytes(raw)
 }
 
 // Reset clears the PublicKey structure such that no sensitive data is left
