@@ -30,4 +30,7 @@ const (
 	// ForwardPayloadLength is the length of the usable forward payload of a
 	// Sphinx Packet in bytes.
 	ForwardPayloadLength = 50 * 1024
+
+	// UserPaylaodLength is the length of user portion of the forward payload.
+	UserForwardPayloadLength = ForwardPayloadLength - (SphinxPlaintextHeaderLength + sphinx.SURBLength)
 )
