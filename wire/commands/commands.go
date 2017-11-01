@@ -33,8 +33,8 @@ const (
 	messageBaseLength       = 1 + 1 + 4
 	messageACKLength        = messageBaseLength + sphinxConstants.SURBIDLength
 	messageMsgLength        = messageBaseLength + messageMsgPaddingLength
-	messageMsgPaddingLength = sphinxConstants.SURBIDLength + sphinx.SURBLength
-	messageEmptyLength      = messageACKLength + constants.PacketLength
+	messageMsgPaddingLength = sphinxConstants.SURBIDLength + constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
+	messageEmptyLength      = messageACKLength + constants.ForwardPayloadLength
 
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
@@ -138,11 +138,11 @@ type MessageACK struct {
 
 // ToBytes serializes the MessageACK and returns the resulting slice.
 func (c MessageACK) ToBytes() []byte {
-	if len(c.Payload) != constants.PacketLength {
+	if len(c.Payload) != constants.ForwardPayloadLength {
 		panic("wire: invalid MessageACK payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+messageACKLength, cmdOverhead+messageACKLength+constants.PacketLength)
+	out := make([]byte, cmdOverhead+messageACKLength, cmdOverhead+messageACKLength+constants.ForwardPayloadLength)
 
 	out[0] = byte(message)
 	binary.BigEndian.PutUint32(out[2:6], messageACKLength+uint32(len(c.Payload)))
@@ -163,7 +163,7 @@ type Message struct {
 
 // ToBytes serializes the Message and returns the resulting slice.
 func (c Message) ToBytes() []byte {
-	if len(c.Payload) != constants.ForwardPayloadLength {
+	if len(c.Payload) != constants.UserForwardPayloadLength {
 		panic("wire: invalid Message payload when serializing")
 	}
 
@@ -206,7 +206,7 @@ func messageFromBytes(b []byte) (Command, error) {
 
 	switch t {
 	case messageTypeACK:
-		if len(b) != sphinxConstants.SURBIDLength+constants.PacketLength {
+		if len(b) != sphinxConstants.SURBIDLength+constants.ForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
@@ -219,15 +219,15 @@ func messageFromBytes(b []byte) (Command, error) {
 		r.Payload = append(r.Payload, b...)
 		return r, nil
 	case messageTypeMessage:
-		if len(b) != messageMsgPaddingLength+constants.ForwardPayloadLength {
+		if len(b) != messageMsgPaddingLength+constants.UserForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
-		padding := b[constants.ForwardPayloadLength:]
+		padding := b[constants.UserForwardPayloadLength:]
 		if !utils.CtIsZero(padding) {
 			return nil, errInvalidCommand
 		}
-		b = b[:constants.ForwardPayloadLength]
+		b = b[:constants.UserForwardPayloadLength]
 
 		r := new(Message)
 		r.QueueSizeHint = hint

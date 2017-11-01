@@ -94,7 +94,7 @@ func TestMessage(t *testing.T) {
 	require := require.New(t)
 
 	// Generate the payload.
-	payload := make([]byte, constants.PacketLength)
+	payload := make([]byte, constants.ForwardPayloadLength)
 	_, err := rand.Read(payload)
 	require.NoError(err, "Message: failed to generate payload")
 
@@ -111,7 +111,7 @@ func TestMessage(t *testing.T) {
 	require.Equal(uint32(seq), cmdEmpty.Sequence, "MessageEmpty: FromBytes() Sequence")
 
 	// Message
-	msgPayload := payload[:constants.ForwardPayloadLength]
+	msgPayload := payload[:constants.UserForwardPayloadLength]
 	cmdMessage := &Message{
 		QueueSizeHint: hint,
 		Sequence:      seq,
