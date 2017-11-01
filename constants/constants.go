@@ -28,9 +28,15 @@ const (
 	SphinxPlaintextHeaderLength = 1 + 1
 
 	// ForwardPayloadLength is the length of the usable forward payload of a
-	// Sphinx Packet in bytes.
+	// Sphinx Packet in bytes.  This is named `SURB_PAYLOAD_LENGTH` in the
+	// End to End spec due to packets constructed using a SURB having the
+	// SURB's space available for payload.  The Sphinx spec calls this
+	// `PAYLOAD_LENGTH`, since the Sphinx spec is agnostic to how SURBs are
+	// transported.
 	ForwardPayloadLength = 50 * 1024
 
 	// UserPaylaodLength is the length of user portion of the forward payload.
+	// The End to End spec calls this `PAYLOAD_LENGTH` but this is somewhat
+	// shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx spec.
 	UserForwardPayloadLength = ForwardPayloadLength - (SphinxPlaintextHeaderLength + sphinx.SURBLength)
 )
