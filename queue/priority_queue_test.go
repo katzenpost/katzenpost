@@ -41,16 +41,12 @@ func TestPriorityQueue(t *testing.T) {
 			Priority: 2,
 		},
 		{
-			// Test duplicate priorities.
-			//
-			// Note: Duplicate priorities aren't guaranteed to be dequeued in
-			// insertion order, though in this specific instance it will be.
 			Value:    []byte("their common ground is that the abstract can never take the place of the perceptive."),
-			Priority: 2,
+			Priority: 3,
 		},
 		{
 			Value:    []byte(" -- Arthur_Schopenhauer"),
-			Priority: 3,
+			Priority: 4,
 		},
 	}
 
