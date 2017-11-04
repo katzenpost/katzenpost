@@ -56,6 +56,9 @@ func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
 // to the specified IdentityKey.
 func (d *Document) GetProviderByKey(key []byte) (*MixDescriptor, error) {
 	for _, v := range d.Providers {
+		if v.IdentityKey == nil {
+			return nil, fmt.Errorf("pki: document contains invalid descriptors")
+		}
 		if bytes.Equal(v.IdentityKey.Bytes(), key) {
 			return v, nil
 		}
@@ -88,6 +91,9 @@ func (d *Document) GetMixesInLayer(layer uint8) ([]*MixDescriptor, error) {
 func (d *Document) GetMixByKey(key []byte) (*MixDescriptor, error) {
 	for _, l := range d.Topology {
 		for _, v := range l {
+			if v.IdentityKey == nil {
+				return nil, fmt.Errorf("pki: document contains invalid descriptors")
+			}
 			if bytes.Equal(v.IdentityKey.Bytes(), key) {
 				return v, nil
 			}
