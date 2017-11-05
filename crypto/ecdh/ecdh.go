@@ -19,8 +19,10 @@ package ecdh
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/katzenpost/core/utils"
 	"golang.org/x/crypto/curve25519"
@@ -41,7 +43,8 @@ var errInvalidKey = errors.New("ecdh: invalid key")
 
 // PublicKey is a ECDH public key.
 type PublicKey struct {
-	pubBytes [GroupElementLength]byte
+	pubBytes  [GroupElementLength]byte
+	hexString string
 }
 
 // Bytes returns the raw public key.
@@ -56,6 +59,7 @@ func (k *PublicKey) FromBytes(b []byte) error {
 	}
 
 	copy(k.pubBytes[:], b)
+	k.rebuildHexString()
 
 	return nil
 }
@@ -92,11 +96,21 @@ func (k *PublicKey) UnmarshalText(data []byte) error {
 // in memory.
 func (k *PublicKey) Reset() {
 	utils.ExplicitBzero(k.pubBytes[:])
+	k.hexString = "[scrubbed]"
 }
 
 // Blind blinds the public key with the provided blinding factor.
 func (k *PublicKey) Blind(blindingFactor *[GroupElementLength]byte) {
 	Exp(&k.pubBytes, &k.pubBytes, blindingFactor)
+}
+
+// String returns the public key as a hexdecimal encoded string.
+func (k *PublicKey) String() string {
+	return k.hexString
+}
+
+func (k *PublicKey) rebuildHexString() {
+	k.hexString = strings.ToUpper(hex.EncodeToString(k.pubBytes[:]))
 }
 
 // PrivateKey is a ECDH private key.
@@ -118,6 +132,7 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 
 	copy(k.privBytes[:], b)
 	expG(&k.pubKey.pubBytes, &k.privBytes)
+	k.pubKey.rebuildHexString()
 
 	return nil
 }
@@ -148,6 +163,7 @@ func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	}
 
 	expG(&k.pubKey.pubBytes, &k.privBytes)
+	k.pubKey.rebuildHexString()
 
 	return k, nil
 }
