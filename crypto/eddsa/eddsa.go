@@ -19,8 +19,10 @@ package eddsa
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"io"
+	"strings"
 
 	"github.com/katzenpost/core/utils"
 	"golang.org/x/crypto/ed25519"
@@ -41,7 +43,8 @@ var errInvalidKey = errors.New("eddsa: invalid key")
 
 // PublicKey is a EdDSA public key.
 type PublicKey struct {
-	pubKey ed25519.PublicKey
+	pubKey    ed25519.PublicKey
+	hexString string
 }
 
 // Bytes returns the raw public key.
@@ -57,6 +60,7 @@ func (k *PublicKey) FromBytes(b []byte) error {
 
 	k.pubKey = make([]byte, PublicKeySize)
 	copy(k.pubKey, b)
+	k.rebuildHexString()
 	return nil
 }
 
@@ -93,11 +97,21 @@ func (k *PublicKey) UnmarshalText(data []byte) error {
 // certain contexts (eg: if used once in path selection).
 func (k *PublicKey) Reset() {
 	utils.ExplicitBzero(k.pubKey)
+	k.hexString = "[scrubbed]"
 }
 
 // Verify returns true iff the signature sig is valid for the message msg.
 func (k *PublicKey) Verify(sig, msg []byte) bool {
 	return ed25519.Verify(k.pubKey, msg, sig)
+}
+
+// String returns the public key as a hexdecimal encoded string.
+func (k *PublicKey) String() string {
+	return k.hexString
+}
+
+func (k *PublicKey) rebuildHexString() {
+	k.hexString = strings.ToUpper(hex.EncodeToString(k.pubKey[:]))
 }
 
 // PrivateKey is a EdDSA private key.
@@ -115,6 +129,7 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 	k.privKey = make([]byte, PrivateKeySize)
 	copy(k.privKey, b)
 	k.pubKey.pubKey = k.privKey.Public().(ed25519.PublicKey)
+	k.pubKey.rebuildHexString()
 	return nil
 }
 
@@ -151,5 +166,6 @@ func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	k := new(PrivateKey)
 	k.privKey = privKey
 	k.pubKey.pubKey = pubKey
+	k.pubKey.rebuildHexString()
 	return k, nil
 }
