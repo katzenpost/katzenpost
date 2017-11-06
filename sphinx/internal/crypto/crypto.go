@@ -33,7 +33,7 @@ import (
 
 const (
 	// HashLength is the output size of the unkeyed hash in bytes.
-	HashLength = sha256.Size
+	HashLength = sha512.Size256
 
 	// MACKeyLength is the key size of the MAC in bytes.
 	MACKeyLength = 32
