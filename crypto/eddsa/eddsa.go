@@ -20,8 +20,12 @@ package eddsa
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
+	"os"
 	"strings"
 
 	"github.com/katzenpost/core/utils"
@@ -168,4 +172,36 @@ func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	k.pubKey.pubKey = pubKey
 	k.pubKey.rebuildHexString()
 	return k, nil
+}
+
+// Load loads a new PrivateKey from the PEM encoded file f, optionally creating
+// and saving a PrivateKey instead if an entropy source is provided.
+func Load(f string, r io.Reader) (*PrivateKey, error) {
+	const keyType = "ED25519 PRIVATE KEY"
+
+	if buf, err := ioutil.ReadFile(f); err == nil {
+		defer utils.ExplicitBzero(buf)
+		blk, rest := pem.Decode(buf)
+		defer utils.ExplicitBzero(blk.Bytes)
+		if len(rest) != 0 {
+			return nil, fmt.Errorf("trailing garbage after PEM encoded private key")
+		}
+		if blk.Type != keyType {
+			return nil, fmt.Errorf("invalid PEM Type: '%v'", blk.Type)
+		}
+		k := new(PrivateKey)
+		return k, k.FromBytes(blk.Bytes)
+	} else if !os.IsNotExist(err) || r == nil {
+		return nil, err
+	}
+
+	k, err := NewKeypair(r)
+	if err != nil {
+		return nil, err
+	}
+	blk := &pem.Block{
+		Type:  keyType,
+		Bytes: k.Bytes(),
+	}
+	return k, ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
