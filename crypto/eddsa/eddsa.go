@@ -51,6 +51,12 @@ type PublicKey struct {
 	hexString string
 }
 
+// InternalPtr returns a pointer to the internal (`golang.org/x/crypto/ed25519`)
+// data structure.  Most people should not use this.
+func (k *PublicKey) InternalPtr() *ed25519.PublicKey {
+	return &k.pubKey
+}
+
 // Bytes returns the raw public key.
 func (k *PublicKey) Bytes() []byte {
 	return k.pubKey
