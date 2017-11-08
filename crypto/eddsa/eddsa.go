@@ -150,6 +150,12 @@ type PrivateKey struct {
 	privKey ed25519.PrivateKey
 }
 
+// InternalPtr returns a pointer to the internal (`golang.org/x/crypto/ed25519`)
+// data structure.  Most people should not use this.
+func (k *PrivateKey) InternalPtr() *ed25519.PrivateKey {
+	return &k.privKey
+}
+
 // FromBytes deserializes the byte slice b into the PrivateKey.
 func (k *PrivateKey) FromBytes(b []byte) error {
 	if len(b) != PrivateKeySize {
