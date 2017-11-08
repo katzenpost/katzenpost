@@ -188,12 +188,14 @@ func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	return k, nil
 }
 
-// Load loads a new PrivateKey from the PEM encoded file f, optionally creating
-// and saving a PrivateKey instead if an entropy source is provided.
-func Load(f string, r io.Reader) (*PrivateKey, error) {
+// Load loads a new PrivateKey from the PEM encoded file privFile, optionally
+// creating and saving a PrivateKey instead if an entropy source is provided.
+// If pubFile is specified and a key has been created, the corresponding
+// PublicKey will be written to pubFile in PEM format.
+func Load(privFile, pubFile string, r io.Reader) (*PrivateKey, error) {
 	const keyType = "ED25519 PRIVATE KEY"
 
-	if buf, err := ioutil.ReadFile(f); err == nil {
+	if buf, err := ioutil.ReadFile(privFile); err == nil {
 		defer utils.ExplicitBzero(buf)
 		blk, rest := pem.Decode(buf)
 		defer utils.ExplicitBzero(blk.Bytes)
@@ -217,5 +219,11 @@ func Load(f string, r io.Reader) (*PrivateKey, error) {
 		Type:  keyType,
 		Bytes: k.Bytes(),
 	}
-	return k, ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+	if err = ioutil.WriteFile(privFile, pem.EncodeToMemory(blk), 0600); err != nil {
+		return nil, err
+	}
+	if pubFile != "" {
+		err = k.PublicKey().ToPEMFile(pubFile)
+	}
+	return k, err
 }
