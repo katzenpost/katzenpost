@@ -96,6 +96,18 @@ func (k *PublicKey) UnmarshalText(data []byte) error {
 	return k.FromBytes(raw)
 }
 
+// FromString deserializes the string s into the PublicKey.
+func (k *PublicKey) FromString(s string) error {
+	// Try Base16 first, a correct Base64 key will never be mis-identified.
+	if raw, err := hex.DecodeString(s); err == nil {
+		return k.FromBytes(raw)
+	}
+	if raw, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return k.FromBytes(raw)
+	}
+	return fmt.Errorf("eddsa: key is neither Base16 nor Base64")
+}
+
 // ToPEMFile writes out the PublicKey to a PEM file at path f.
 func (k *PublicKey) ToPEMFile(f string) error {
 	const keyType = "ED25519 PUBLIC KEY"
