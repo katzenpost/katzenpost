@@ -96,6 +96,20 @@ func (k *PublicKey) UnmarshalText(data []byte) error {
 	return k.FromBytes(raw)
 }
 
+// ToPEMFile writes out the PublicKey to a PEM file at path f.
+func (k *PublicKey) ToPEMFile(f string) error {
+	const keyType = "ED25519 PUBLIC KEY"
+
+	if utils.CtIsZero(k.pubKey[:]) {
+		return fmt.Errorf("eddsa: attempted to serialize scrubbed key")
+	}
+	blk := &pem.Block{
+		Type:  keyType,
+		Bytes: k.Bytes(),
+	}
+	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+}
+
 // Reset clears the PublicKey structure such that no sensitive data is left in
 // memory.  PublicKeys, despite being public may be considered sensitive in
 // certain contexts (eg: if used once in path selection).
