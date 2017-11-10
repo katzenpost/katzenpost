@@ -95,11 +95,7 @@ func (k *PublicKey) MarshalText() ([]byte, error) {
 // UnmarshalText implements the TextUnmarshaler interface
 // defined in https://golang.org/pkg/encoding/
 func (k *PublicKey) UnmarshalText(data []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(data))
-	if err != nil {
-		return err
-	}
-	return k.FromBytes(raw)
+	return k.FromString(string(data))
 }
 
 // FromString deserializes the string s into the PublicKey.
