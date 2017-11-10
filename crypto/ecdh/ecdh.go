@@ -18,6 +18,7 @@
 package ecdh
 
 import (
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
@@ -115,6 +116,11 @@ func (k *PublicKey) String() string {
 
 func (k *PublicKey) rebuildHexString() {
 	k.hexString = strings.ToUpper(hex.EncodeToString(k.pubBytes[:]))
+}
+
+// Equal returns true iff the public key is byte for byte identical.
+func (k *PublicKey) Equal(cmp *PublicKey) bool {
+	return subtle.ConstantTimeCompare(k.pubBytes[:], cmp.pubBytes[:]) == 1
 }
 
 // PrivateKey is a ECDH private key.
