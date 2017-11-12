@@ -93,3 +93,17 @@ func Exp(r *rand.Rand, lambda float64) float64 {
 	}
 	return (-1.0 / lambda) * math.Log(r.Float64())
 }
+
+// ExpQuantile returns the value at which the the probability of a random value
+// is less than or equal to the given probability for an exponential
+// distribution characterized by lambda.
+func ExpQuantile(lambda, p float64) float64 {
+	if lambda < math.SmallestNonzeroFloat64 {
+		panic("crypto/rand: lambda out of range")
+	}
+	if p < math.SmallestNonzeroFloat64 || p >= 1.0 {
+		panic("crypto/rand: p out of range")
+	}
+
+	return -math.Log(1-p) / lambda
+}
