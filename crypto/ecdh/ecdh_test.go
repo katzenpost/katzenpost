@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/katzenpost/core/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/curve25519"
@@ -41,7 +42,7 @@ func TestPrivateKey(t *testing.T) {
 	assert.Equal(privKey, &privKey2, "PrivateKey.ToBytes()->FromBytes()")
 
 	privKey2.Reset()
-	assert.Zero(privKey2, "PrivateKey.Reset()")
+	assert.True(utils.CtIsZero(privKey2.Bytes()), "PrivateKey.Reset()")
 
 	var pubKey PublicKey
 	assert.Error(pubKey.FromBytes(shortBuffer), "PublicKey.FromBytes(short)")
