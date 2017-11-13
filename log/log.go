@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	goLog "log"
 	"os"
+	"strings"
 
 	"github.com/op/go-logging"
 )
@@ -37,6 +39,22 @@ func (b *Backend) GetLogger(module string) *logging.Logger {
 	l := logging.MustGetLogger(module)
 	l.SetBackend(b.backend)
 	return l
+}
+
+// GetGoLogger returns a per-module Go runtime *log.Logger that writes to
+// the backend.  Due to limitations of the Go runtime log package, only one
+// level is supported per returned Logger.
+func (b *Backend) GetGoLogger(module string, level string) *goLog.Logger {
+	lvl, err := logLevelFromString(level)
+	if err != nil {
+		panic("log: GetGoLogger(): Invalid level: " + err.Error())
+	}
+
+	w := new(logWriter)
+	w.m = b.GetLogger(module)
+	w.l = goLog.New(w, "", 0) // Owns w.
+	w.lvl = lvl
+	return w.l
 }
 
 // New initializes a logging backend.
@@ -77,7 +95,7 @@ func New(f string, level string, disable bool) (*Backend, error) {
 }
 
 func logLevelFromString(l string) (logging.Level, error) {
-	switch l {
+	switch strings.ToUpper(l) {
 	case "ERROR":
 		return logging.ERROR, nil
 	case "WARNING":
@@ -91,4 +109,38 @@ func logLevelFromString(l string) (logging.Level, error) {
 	default:
 		return logging.CRITICAL, fmt.Errorf("log: invalid level: '%v'", l)
 	}
+}
+
+type logWriter struct {
+	m   *logging.Logger
+	l   *goLog.Logger
+	lvl logging.Level
+}
+
+func (w logWriter) Write(p []byte) (n int, err error) {
+	// The `log` package will always pass a byte array with a newline at
+	// the end, so it needs to be stripped off.
+	s := strings.TrimSpace(string(p))
+	if len(s) == 0 {
+		return
+	}
+
+	switch w.lvl {
+	case logging.ERROR:
+		w.m.Error(s)
+	case logging.WARNING:
+		w.m.Warning(s)
+	case logging.NOTICE:
+		w.m.Notice(s)
+	case logging.INFO:
+		w.m.Info(s)
+	case logging.DEBUG:
+		w.m.Debug(s)
+	case logging.CRITICAL:
+		w.m.Critical(s)
+	default:
+		panic("BUG: Invalid log level in logWriter.Write()")
+	}
+
+	return len(p), nil
 }
