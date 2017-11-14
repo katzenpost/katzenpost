@@ -49,6 +49,9 @@ func TestKeypair(t *testing.T) {
 	err = pubKey.FromBytes(privKey.PublicKey().Bytes())
 	assert.NoError(err, "PrivateKey.PublicKey().Bytes->FromBytes()")
 	assert.Equal(privKey.PublicKey(), &pubKey, "PrivateKey.PublicKey().Bytes->FromBytes()")
+
+	pkArr := pubKey.ByteArray()
+	assert.Equal(privKey.PublicKey().Bytes(), pkArr[:], "PrivateKey.PublicKey().Bytes()->pubKey.ByteArray()")
 }
 
 func TestEdDSAOps(t *testing.T) {
