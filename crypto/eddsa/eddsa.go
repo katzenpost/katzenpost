@@ -63,6 +63,14 @@ func (k *PublicKey) Bytes() []byte {
 	return k.pubKey
 }
 
+// ByteArray returns the raw public key as an array suitable for use as a map
+// key.
+func (k *PublicKey) ByteArray() [PublicKeySize]byte {
+	var pk [PublicKeySize]byte
+	copy(pk[:], k.pubKey[:])
+	return pk
+}
+
 // FromBytes deserializes the byte slice b into the PublicKey.
 func (k *PublicKey) FromBytes(b []byte) error {
 	if len(b) != PublicKeySize {
