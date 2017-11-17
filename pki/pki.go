@@ -105,10 +105,10 @@ func (d *Document) GetMixByKey(key []byte) (*MixDescriptor, error) {
 // GetNode returns the specific descriptor corresponding to the specified
 // node Name.
 func (d *Document) GetNode(name string) (*MixDescriptor, error) {
-	if m, err := d.GetMix(name); err != nil {
+	if m, err := d.GetMix(name); err == nil {
 		return m, nil
 	}
-	if m, err := d.GetProvider(name); err != nil {
+	if m, err := d.GetProvider(name); err == nil {
 		return m, nil
 	}
 	return nil, fmt.Errorf("pki: node not found")
@@ -117,10 +117,10 @@ func (d *Document) GetNode(name string) (*MixDescriptor, error) {
 // GetNodeByKey returns the specific descriptor corresponding to the
 // specified IdentityKey.
 func (d *Document) GetNodeByKey(key []byte) (*MixDescriptor, error) {
-	if m, err := d.GetMixByKey(key); err != nil {
+	if m, err := d.GetMixByKey(key); err == nil {
 		return m, nil
 	}
-	if m, err := d.GetProviderByKey(key); err != nil {
+	if m, err := d.GetProviderByKey(key); err == nil {
 		return m, nil
 	}
 	return nil, fmt.Errorf("pki: node not found")
