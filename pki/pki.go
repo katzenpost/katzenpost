@@ -42,6 +42,34 @@ type Document struct {
 	Providers []*MixDescriptor
 }
 
+// String returns a string representation of a Document.
+func (d *Document) String() string {
+	stringifyDescSlice := func(nodes []*MixDescriptor) string {
+		s := ""
+		for idx, v := range nodes {
+			s += fmt.Sprintf("%+v", v)
+			if idx != len(nodes)-1 {
+				s += ","
+			}
+		}
+		return s
+	}
+
+	s := fmt.Sprintf("&{Epoch:%v Topology:", d.Epoch)
+	for l, nodes := range d.Topology {
+		s += fmt.Sprintf("[%v]{", l)
+		s += stringifyDescSlice(nodes)
+		if l != len(nodes)-1 {
+			s += "},"
+		}
+	}
+
+	s += "} Providers:[]{"
+	s += stringifyDescSlice(d.Providers)
+	s += "}}"
+	return s
+}
+
 // GetProvider returns the MixDescriptor for the given provider Name.
 func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
 	for _, v := range d.Providers {
