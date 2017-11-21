@@ -22,7 +22,7 @@ import "time"
 // Period is the duration of a Katzenpost epoch.
 const Period = 3 * time.Hour
 
-var epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
+var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
 // Now returns the current Katzenpost epoch, time since the start of the
 // current, and time till the next epoch.
@@ -30,14 +30,14 @@ func Now() (current uint64, elapsed, till time.Duration) {
 	// Cache now for a consistent value for this query.
 	now := time.Now()
 
-	fromEpoch := time.Since(epoch)
+	fromEpoch := time.Since(Epoch)
 	if fromEpoch < 0 {
 		panic("epochtime: BUG: system time appears to predate the epoch")
 	}
 
 	current = uint64(fromEpoch / Period)
 
-	base := epoch.Add(time.Duration(current) * Period)
+	base := Epoch.Add(time.Duration(current) * Period)
 	elapsed = now.Sub(base)
 	till = base.Add(Period).Sub(now)
 	return
@@ -49,8 +49,8 @@ func IsInEpoch(e uint64, t uint64) bool {
 	deltaStart := time.Duration(e) * Period
 	deltaEnd := time.Duration(e+1) * Period
 
-	startTime := epoch.Add(deltaStart)
-	endTime := epoch.Add(deltaEnd)
+	startTime := Epoch.Add(deltaStart)
+	endTime := Epoch.Add(deltaEnd)
 
 	tt := time.Unix(int64(t), 0)
 
