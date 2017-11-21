@@ -18,17 +18,25 @@ package server
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
+	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/authority/nonvoting/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/op/go-logging"
+)
+
+const (
+	descriptorsBucket = "descriptors"
+	documentsBucket   = "documents"
 )
 
 var (
@@ -48,6 +56,8 @@ type state struct {
 	s   *Server
 	log *logging.Logger
 
+	db *bolt.DB
+
 	authorizedMixes     map[[eddsa.PublicKeySize]byte]bool
 	authorizedProviders map[[eddsa.PublicKeySize]byte]string
 
@@ -64,7 +74,9 @@ func (s *state) halt() {
 	close(s.haltCh)
 	s.Wait()
 
-	// XXX: Gracefully close the persistence store.
+	// Gracefully close the persistence store.
+	s.db.Sync()
+	s.db.Close()
 }
 
 func (s *state) onUpdate() {
@@ -202,7 +214,15 @@ func (s *state) generateDocument(epoch uint64) {
 		s.s.fatalErrCh <- err
 	}
 
-	// XXX: Persist the document to disk.
+	// Persist the document to disk.
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(documentsBucket))
+		bkt.Put(epochToBytes(epoch), []byte(signed))
+		return nil
+	}); err != nil {
+		// Persistence failures are FATAL.
+		s.s.fatalErrCh <- err
+	}
 
 	s.documents[epoch] = []byte(signed)
 }
@@ -257,11 +277,25 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
 	}
 
+	// Persist the raw descriptor to disk.
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(descriptorsBucket))
+		eBkt, err := bkt.CreateBucketIfNotExists(epochToBytes(epoch))
+		if err != nil {
+			return err
+		}
+		eBkt.Put(pk[:], rawDesc)
+		return nil
+	}); err != nil {
+		// Persistence failures are FATAL.
+		s.s.fatalErrCh <- err
+	}
+
 	// Store the raw descriptor and the parsed struct.
 	d := new(descriptor)
 	d.desc = desc
 	d.raw = rawDesc
-	m[pk] = d // XXX: Persist d.raw to disk (Raw to allow re-verifying signatures).
+	m[pk] = d
 
 	s.log.Debugf("Node %v: Sucessfully submitted descriptor for epoch %v.", desc.IdentityKey, epoch)
 	s.onUpdate()
@@ -312,7 +346,100 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	// NOTREACHED
 }
 
-func newState(s *Server) *state {
+func (s *state) restorePersistence() error {
+	const (
+		metadataBucket = "metadata"
+		versionKey     = "version"
+	)
+
+	return s.db.Update(func(tx *bolt.Tx) error {
+		// Ensure that all the buckets exist.
+		bkt, err := tx.CreateBucketIfNotExists([]byte(metadataBucket))
+		if err != nil {
+			return err
+		}
+		descsBkt, err := tx.CreateBucketIfNotExists([]byte(descriptorsBucket))
+		if err != nil {
+			return err
+		}
+		docsBkt, err := tx.CreateBucketIfNotExists([]byte(documentsBucket))
+		if err != nil {
+			return err
+		}
+
+		if b := bkt.Get([]byte(versionKey)); b != nil {
+			// Well it looks like we loaded as opposed to created.
+			if len(b) != 1 || b[0] != 0 {
+				return fmt.Errorf("state: incompatible version: %d", uint(b[0]))
+			}
+
+			// Figure out which epochs to restore for.
+			now, _, _ := epochtime.Now()
+			epochs := []uint64{now - 1, now, now + 1}
+
+			// Restore the documents and descriptors.
+			for _, epoch := range epochs {
+				k := epochToBytes(epoch)
+				if doc := docsBkt.Get(k); doc != nil {
+					if _, err = s11n.VerifyAndParseDocument(doc, s.s.identityKey.PublicKey(), epoch); err != nil {
+						s.log.Errorf("Failed to validate persisted document: %v", err)
+					} else {
+						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
+						s.documents[epoch] = doc
+					}
+				}
+
+				eDescsBkt := descsBkt.Bucket(k)
+				if eDescsBkt == nil {
+					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
+					continue
+				}
+
+				c := eDescsBkt.Cursor()
+				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
+					desc, err := s11n.VerifyAndParseDescriptor(rawDesc, epoch)
+					if err != nil {
+						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
+						continue
+					}
+					if !bytes.Equal(pk, desc.IdentityKey.Bytes()) {
+						s.log.Errorf("Discarding persisted descriptor: key mismatch")
+						continue
+					}
+
+					if !s.isDescriptorAuthorized(desc) {
+						s.log.Warningf("Discarding persisted descriptor: %v", desc)
+						continue
+					}
+
+					m, ok := s.descriptors[epoch]
+					if !ok {
+						m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+						s.descriptors[epoch] = m
+					}
+
+					d := new(descriptor)
+					d.desc = desc
+					d.raw = rawDesc
+					m[desc.IdentityKey.ByteArray()] = d
+
+					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
+				}
+			}
+
+			return nil
+		}
+
+		// We created a new database, so populate the new `metadata` bucket.
+		bkt.Put([]byte(versionKey), []byte{0})
+
+		return nil
+	})
+}
+
+func newState(s *Server) (*state, error) {
+	const dbFile = "persistence.db"
+
 	st := new(state)
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
@@ -331,9 +458,19 @@ func newState(s *Server) *state {
 		st.authorizedProviders[pk] = v.Identifier
 	}
 
-	// XXX: Initialize the persistence store and restore state.
 	st.documents = make(map[uint64][]byte)
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
+
+	// Initialize the persistence store and restore state.
+	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
+	var err error
+	if st.db, err = bolt.Open(dbPath, 0600, nil); err != nil {
+		return nil, err
+	}
+	if err = st.restorePersistence(); err != nil {
+		st.db.Close()
+		return nil, err
+	}
 
 	// Do a "rapid" bootstrap where we will generate and publish a Document
 	// for the current epoch regardless of time iff:
@@ -349,5 +486,11 @@ func newState(s *Server) *state {
 
 	st.Add(1)
 	go st.worker()
-	return st
+	return st, nil
+}
+
+func epochToBytes(e uint64) []byte {
+	ret := make([]byte, 8)
+	binary.BigEndian.PutUint64(ret, e)
+	return ret
 }

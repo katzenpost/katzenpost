@@ -240,7 +240,9 @@ func New(cfg *config.Config) (*Server, error) {
 	}()
 
 	// Start up the state worker.
-	s.state = newState(s)
+	if s.state, err = newState(s); err != nil {
+		return nil, err
+	}
 
 	// Start up the listeners.
 	for _, v := range s.cfg.Authority.Addresses {
