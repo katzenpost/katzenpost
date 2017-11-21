@@ -186,6 +186,8 @@ func (s *state) generateDocument(epoch uint64) {
 	// Build the Document.
 	doc := &pki.Document{
 		Epoch:     epoch,
+		Lambda:    s.s.cfg.Parameters.Lambda,
+		MaxDelay:  s.s.cfg.Parameters.MaxDelay,
 		Topology:  topology,
 		Providers: providers,
 	}
