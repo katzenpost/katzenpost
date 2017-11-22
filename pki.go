@@ -29,6 +29,7 @@ import (
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
+	"github.com/katzenpost/server/internal/pkicache"
 	"github.com/op/go-logging"
 )
 
@@ -36,93 +37,6 @@ const (
 	pkiEarlyConnectSlack = 30 * time.Minute
 	pkiLateConnectSlack  = 3 * time.Minute
 )
-
-type pkiCacheEntry struct {
-	doc      *cpki.Document
-	self     *cpki.MixDescriptor
-	incoming map[[constants.NodeIDLength]byte]*cpki.MixDescriptor
-	outgoing map[[constants.NodeIDLength]byte]*cpki.MixDescriptor
-}
-
-func (e *pkiCacheEntry) isOurLayerSane(isProvider bool) bool {
-	if isProvider && e.self.Layer != cpki.LayerProvider {
-		return false
-	}
-	if !isProvider {
-		if e.self.Layer == cpki.LayerProvider {
-			return false
-		}
-		if int(e.self.Layer) >= len(e.doc.Topology) {
-			return false
-		}
-	}
-	return true
-}
-
-func (e *pkiCacheEntry) incomingLayer() uint8 {
-	switch e.self.Layer {
-	case cpki.LayerProvider:
-		return uint8(len(e.doc.Topology)) - 1
-	case 0:
-		return cpki.LayerProvider
-	}
-	return e.self.Layer - 1
-}
-
-func (e *pkiCacheEntry) outgoingLayer() uint8 {
-	switch int(e.self.Layer) {
-	case len(e.doc.Topology) - 1:
-		return cpki.LayerProvider
-	case cpki.LayerProvider:
-		return 0
-	}
-	return e.self.Layer + 1
-}
-
-func newPKICacheEntry(s *Server, d *cpki.Document) (*pkiCacheEntry, error) {
-	e := new(pkiCacheEntry)
-	e.doc = d
-	e.incoming = make(map[[constants.NodeIDLength]byte]*cpki.MixDescriptor)
-	e.outgoing = make(map[[constants.NodeIDLength]byte]*cpki.MixDescriptor)
-
-	// Find our descriptor.
-	var err error
-	e.self, err = d.GetNodeByKey(s.identityKey.PublicKey().Bytes())
-	if err != nil {
-		return nil, err
-	}
-
-	// And sanity check our descriptor.
-	if len(d.Topology) == 0 {
-		return nil, fmt.Errorf("pki: document is missing Topology")
-	}
-	if s.cfg.Server.Identifier != e.self.Name {
-		return nil, fmt.Errorf("pki: name mismatch in self descriptor: '%v'", e.self.Name)
-	}
-	if !e.isOurLayerSane(s.cfg.Server.IsProvider) {
-		return nil, fmt.Errorf("pki: self layer is invalid: %d", e.self.Layer)
-	}
-
-	// Build the maps of peers that will connect to us, and that we will
-	// connect to.
-	buildMap := func(layer uint8, m map[[constants.NodeIDLength]byte]*cpki.MixDescriptor) {
-		var nodes []*cpki.MixDescriptor
-		switch layer {
-		case cpki.LayerProvider:
-			nodes = e.doc.Providers
-		default:
-			nodes = e.doc.Topology[layer]
-		}
-		for _, v := range nodes {
-			nodeID := v.IdentityKey.ByteArray()
-			m[nodeID] = v
-		}
-	}
-	buildMap(e.incomingLayer(), e.incoming)
-	buildMap(e.outgoingLayer(), e.outgoing)
-
-	return e, nil
-}
 
 type pki struct {
 	sync.RWMutex
@@ -132,7 +46,7 @@ type pki struct {
 	log  *logging.Logger
 	impl cpki.Client
 
-	docs               map[uint64]*pkiCacheEntry
+	docs               map[uint64]*pkicache.Entry
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
 
@@ -214,10 +128,14 @@ func (p *pki) worker() {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				continue
 			}
-			ent, err := newPKICacheEntry(p.s, d)
+
+			ent, err := pkicache.New(d, p.s.identityKey.PublicKey(), p.s.cfg.Server.IsProvider)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				continue
+			}
+			if err = p.validateCacheEntry(ent); err != nil {
+				p.log.Warningf("Generated PKI cache is invalid: %v", err)
 			}
 			p.Lock()
 			p.docs[epoch] = ent
@@ -245,6 +163,24 @@ func (p *pki) worker() {
 
 		timer.Reset(recheckInterval)
 	}
+}
+
+func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
+	// This just does light-weight validation on self, primarily to catch
+	// dumb bugs.  Anything more is somewhat silly because authorities are
+	// a trust root, and no amount of checking here will save us if the
+	// authorities are malicious.
+	desc := ent.Self()
+	if desc.Name != p.s.cfg.Server.Identifier {
+		return fmt.Errorf("self Name field does not match Identifier")
+	}
+	if !desc.IdentityKey.Equal(p.s.identityKey.PublicKey()) {
+		return fmt.Errorf("self identity key mismatch")
+	}
+	if !desc.LinkKey.Equal(p.s.linkKey.PublicKey()) {
+		return fmt.Errorf("self link key mismatch")
+	}
+	return nil
 }
 
 func (p *pki) pruneDocuments() {
@@ -395,11 +331,11 @@ func (p *pki) documentsToFetch() []uint64 {
 	return ret
 }
 
-func (p *pki) docsForEpochs(epochs []uint64) []*pkiCacheEntry {
+func (p *pki) docsForEpochs(epochs []uint64) []*pkicache.Entry {
 	p.RLock()
 	defer p.RUnlock()
 
-	s := make([]*pkiCacheEntry, 0, len(epochs))
+	s := make([]*pkicache.Entry, 0, len(epochs))
 	for _, epoch := range epochs {
 		if e, ok := p.docs[epoch]; ok {
 			s = append(s, e)
@@ -408,7 +344,7 @@ func (p *pki) docsForEpochs(epochs []uint64) []*pkiCacheEntry {
 	return s
 }
 
-func (p *pki) docsForOutgoing() ([]*pkiCacheEntry, uint64) {
+func (p *pki) docsForOutgoing() ([]*pkicache.Entry, uint64) {
 	// We sometimes but not always allow connections from nodes listed in
 	// future PKI documents.
 	now, elapsed, till := epochtime.Now()
@@ -463,11 +399,11 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 
 	docs := p.docsForEpochs(epochs)
 	for _, d := range docs {
-		m, ok := d.incoming[nodeID]
-		if !ok {
+		desc := d.GetIncomingByID(nodeID)
+		if desc == nil {
 			continue
 		}
-		if !m.LinkKey.Equal(c.PublicKey) {
+		if !desc.LinkKey.Equal(c.PublicKey) {
 			// The LinkKey that is being used for authentication should
 			// match what is listed in the descriptor.
 			p.log.Warningf("Incoming: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), c.PublicKey)
@@ -478,7 +414,7 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 		isValid = true
 
 		// Figure out if the node is allowed to send packets.
-		switch d.doc.Epoch {
+		switch d.Epoch() {
 		case now:
 			// The node is listed in the document for the current epoch.
 			return true, true
@@ -519,8 +455,8 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 
 	docs, now := p.docsForOutgoing()
 	for _, d := range docs {
-		m, ok := d.outgoing[nodeID]
-		if !ok {
+		m := d.GetOutgoingByID(nodeID)
+		if m == nil {
 			continue
 		}
 		if !m.LinkKey.Equal(c.PublicKey) {
@@ -540,7 +476,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 		// Note: This is more strict than the incoming case since the main
 		// reason the slack time exists is to account for clock skew, and it's
 		// all handled there.
-		if d.doc.Epoch == now {
+		if d.Epoch() == now {
 			return m, true, true
 		}
 
@@ -555,7 +491,7 @@ func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixD
 	descMap := make(map[[constants.NodeIDLength]byte]*cpki.MixDescriptor)
 
 	for _, d := range docs {
-		for _, v := range d.outgoing {
+		for _, v := range d.Outgoing() {
 			nodeID := v.IdentityKey.ByteArray()
 
 			// De-duplicate.
@@ -585,14 +521,14 @@ func (p *pki) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
 	if !ok {
 		return false
 	}
-	return doc.outgoing[*id] != nil
+	return doc.GetOutgoingByID(*id) != nil
 }
 
 func newPKI(s *Server) (*pki, error) {
 	p := new(pki)
 	p.s = s
 	p.log = s.logBackend.GetLogger("pki")
-	p.docs = make(map[uint64]*pkiCacheEntry)
+	p.docs = make(map[uint64]*pkicache.Entry)
 	p.haltCh = make(chan interface{})
 
 	if s.cfg.PKI.Nonvoting != nil {
