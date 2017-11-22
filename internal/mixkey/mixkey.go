@@ -44,6 +44,14 @@ const (
 
 	// TagLength is the replay tag length in bytes.
 	TagLength = sha512.Size256
+
+	// KeyGlob is the pattern that matches the filenames for keys that have
+	// been persisted to disk.
+	KeyGlob = "mixkey-*.db"
+
+	// KeyFmt is the format string corresponding to filenames for keys that
+	// have been persisted to disk.
+	KeyFmt = "mixkey-%d.db"
 )
 
 // MixKey is a Katzenpost server mix key.
@@ -288,7 +296,7 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 	var err error
 
 	// Initialize the structure and create or open the database.
-	f := filepath.Join(dataDir, fmt.Sprintf("mixkey-%d.db", epoch))
+	f := filepath.Join(dataDir, fmt.Sprintf(KeyFmt, epoch))
 	k := new(MixKey)
 	k.epoch = epoch
 	k.refCount = 1

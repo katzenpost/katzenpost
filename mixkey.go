@@ -17,6 +17,9 @@
 package server
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/katzenpost/core/epochtime"
@@ -64,7 +67,23 @@ func (m *mixKeys) init() error {
 		return err
 	}
 
-	// TODO: Clean up stale mix keys hanging around the data directory.
+	// Clean up stale mix keys hanging around the data directory.
+	files, err := filepath.Glob(filepath.Join(m.s.cfg.Server.DataDir, mixkey.KeyGlob))
+	if err != nil {
+		m.log.Warningf("Failed to find persisted keys: %v", err)
+	}
+	keyFmt := filepath.Join(m.s.cfg.Server.DataDir, mixkey.KeyFmt)
+	for _, f := range files {
+		e := uint64(0)
+		if _, err := fmt.Sscanf(f, keyFmt, &e); err != nil {
+			m.log.Debugf("Failed to extract epoch from '%v': %v", f, err)
+			continue
+		}
+		if _, ok := m.keys[e]; !ok && e < epoch {
+			m.log.Debugf("Purging stale key: %v", f)
+			os.Remove(f)
+		}
+	}
 
 	return nil
 }
