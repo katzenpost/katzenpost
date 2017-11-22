@@ -40,7 +40,7 @@ const (
 )
 
 var (
-	errGone   = errors.New("authority: Request is too far in the past")
+	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
 )
 

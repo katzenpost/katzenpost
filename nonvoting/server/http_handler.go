@@ -77,7 +77,7 @@ func (s *Server) onV0Get(w http.ResponseWriter, req *http.Request) {
 		s.logInvalidRequest(req, err)
 		switch err {
 		case errGone:
-			http.Error(w, "requested epoch too far in the past", http.StatusGone)
+			http.Error(w, "requested epoch will never get a document", http.StatusGone)
 		case errNotYet:
 			http.Error(w, "document not ready yet", http.StatusInternalServerError)
 		default:
