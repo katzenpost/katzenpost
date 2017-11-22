@@ -114,6 +114,18 @@ func (k *PublicKey) String() string {
 	return k.hexString
 }
 
+// FromString deserializes the string s into the PublicKey.
+func (k *PublicKey) FromString(s string) error {
+	// Try Base16 first, a correct Base64 key will never be mis-identified.
+	if raw, err := hex.DecodeString(s); err == nil {
+		return k.FromBytes(raw)
+	}
+	if raw, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return k.FromBytes(raw)
+	}
+	return fmt.Errorf("ecdh: key is neither Base16 nor Base64")
+}
+
 func (k *PublicKey) rebuildHexString() {
 	k.hexString = strings.ToUpper(hex.EncodeToString(k.pubBytes[:]))
 }
