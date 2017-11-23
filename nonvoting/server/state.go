@@ -140,6 +140,9 @@ func (s *state) onWakeup() {
 			s.generateDocument(epoch + 1)
 		}
 	}
+
+	// Purge overly stale documents.
+	s.pruneDocuments()
 }
 
 func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor) bool {
@@ -162,6 +165,8 @@ func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor
 }
 
 func (s *state) generateDocument(epoch uint64) {
+	// Lock is held (called from the onWakeup hook).
+
 	s.log.Noticef("Generating Document for epoch %v.", epoch)
 
 	// Carve out the descriptors between providers and nodes.
@@ -225,6 +230,29 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	s.documents[epoch] = []byte(signed)
+}
+
+func (s *state) pruneDocuments() {
+	// Lock is held (called from the onWakeup hook).
+
+	// Looking a bit into the past is probably ok, if more past documents
+	// need to be accessible, then methods that query the DB could always
+	// be added.
+	const preserveForPastEpochs = 3
+
+	now, _, _ := epochtime.Now()
+	cmpEpoch := now - preserveForPastEpochs
+
+	for e := range s.documents {
+		if e < cmpEpoch {
+			delete(s.documents, e)
+		}
+	}
+	for e := range s.descriptors {
+		if e < cmpEpoch {
+			delete(s.descriptors, e)
+		}
+	}
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
