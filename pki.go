@@ -331,22 +331,8 @@ func (p *pki) documentsToFetch() []uint64 {
 	return ret
 }
 
-func (p *pki) docsForEpochs(epochs []uint64) []*pkicache.Entry {
-	p.RLock()
-	defer p.RUnlock()
-
-	s := make([]*pkicache.Entry, 0, len(epochs))
-	for _, epoch := range epochs {
-		if e, ok := p.docs[epoch]; ok {
-			s = append(s, e)
-		}
-	}
-	return s
-}
-
-func (p *pki) docsForOutgoing() ([]*pkicache.Entry, uint64) {
-	// We sometimes but not always allow connections from nodes listed in
-	// future PKI documents.
+func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, uint64) {
+	// Figure out the list of epochs to consider valid.
 	now, elapsed, till := epochtime.Now()
 	epochs := []uint64{now}
 	if till < pkiEarlyConnectSlack {
@@ -359,7 +345,17 @@ func (p *pki) docsForOutgoing() ([]*pkicache.Entry, uint64) {
 		epochs = append(epochs, now-1)
 	}
 
-	return p.docsForEpochs(epochs), now
+	// Return the list of cache entries.
+	p.RLock()
+	defer p.RUnlock()
+
+	s := make([]*pkicache.Entry, 0, len(epochs))
+	for _, epoch := range epochs {
+		if e, ok := p.docs[epoch]; ok {
+			s = append(s, e)
+		}
+	}
+	return s, now
 }
 
 func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
@@ -376,20 +372,6 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 		return true, true
 	}
 
-	// We sometimes but not always allow connections from nodes listed in
-	// future PKI documents.
-	now, elapsed, till := epochtime.Now()
-	epochs := []uint64{now}
-	if till < pkiEarlyConnectSlack {
-		// Allow connections from new nodes 30 mins in advance of an epoch
-		// transition.
-		epochs = append(epochs, now+1)
-	} else if elapsed < pkiLateConnectSlack {
-		// Allow connections from old notes to linger for 3 mins past the epoch
-		// transition.
-		epochs = append(epochs, now-1)
-	}
-
 	if len(c.AdditionalData) != constants.NodeIDLength {
 		p.log.Debugf("Incoming: '%v' AD not an IdentityKey?.", bytesToPrintString(c.AdditionalData))
 		return false, false
@@ -397,7 +379,8 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 	var nodeID [constants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	docs := p.docsForEpochs(epochs)
+	docs, _ := p.documentsForAuthentication()
+	now, elapsed, till := epochtime.Now()
 	for _, d := range docs {
 		desc := d.GetIncomingByID(nodeID)
 		if desc == nil {
@@ -453,7 +436,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 	var nodeID [constants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	docs, now := p.docsForOutgoing()
+	docs, now := p.documentsForAuthentication()
 	for _, d := range docs {
 		m := d.GetOutgoingByID(nodeID)
 		if m == nil {
@@ -487,7 +470,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 }
 
 func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixDescriptor {
-	docs, _ := p.docsForOutgoing()
+	docs, _ := p.documentsForAuthentication()
 	descMap := make(map[[constants.NodeIDLength]byte]*cpki.MixDescriptor)
 
 	for _, d := range docs {
