@@ -189,7 +189,7 @@ func (c *outgoingConn) worker() {
 
 			// That's odd, the connection died, reconnect.
 			c.log.Debugf("Connection terminated, will reconnect.")
-			if time.Now().Sub(start) < retryIncrement {
+			if time.Since(start) < retryIncrement {
 				// If the connection was not alive for a sensible amount of
 				// time, re-impose a reconnect delay.
 				c.retryDelay = retryIncrement

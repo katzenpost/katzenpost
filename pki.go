@@ -33,11 +33,6 @@ import (
 	"github.com/op/go-logging"
 )
 
-const (
-	pkiEarlyConnectSlack = 30 * time.Minute
-	pkiLateConnectSlack  = 3 * time.Minute
-)
-
 type pki struct {
 	sync.RWMutex
 	sync.WaitGroup
@@ -187,7 +182,7 @@ func (p *pki) pruneDocuments() {
 	now, _, _ := epochtime.Now()
 
 	p.Lock()
-	p.Unlock()
+	defer p.Unlock()
 	for epoch := range p.docs {
 		if epoch < now {
 			p.log.Debugf("Discarding PKI for epoch: %v", epoch)
@@ -332,6 +327,11 @@ func (p *pki) documentsToFetch() []uint64 {
 }
 
 func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, uint64) {
+	const (
+		pkiEarlyConnectSlack = 30 * time.Minute
+		pkiLateConnectSlack  = 3 * time.Minute
+	)
+
 	// Figure out the list of epochs to consider valid.
 	now, elapsed, till := epochtime.Now()
 	epochs := []uint64{now}
@@ -360,7 +360,6 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, uint64) {
 
 func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
 	const (
-		earlyAcceptSlack = 30 * time.Minute
 		earlySendSlack   = 2 * time.Minute
 		lateSendSlack    = 2 * time.Minute
 	)
