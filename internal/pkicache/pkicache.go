@@ -32,6 +32,7 @@ type Entry struct {
 	self     *pki.MixDescriptor
 	incoming map[[constants.NodeIDLength]byte]*pki.MixDescriptor
 	outgoing map[[constants.NodeIDLength]byte]*pki.MixDescriptor
+	all      map[[constants.NodeIDLength]byte]*pki.MixDescriptor
 }
 
 // Epoch returns the epoch that the cached PKI document is valid for.
@@ -59,6 +60,16 @@ func (e *Entry) GetIncomingByID(id [constants.NodeIDLength]byte) *pki.MixDescrip
 // destination.
 func (e *Entry) GetOutgoingByID(id [constants.NodeIDLength]byte) *pki.MixDescriptor {
 	desc, ok := e.outgoing[id]
+	if !ok {
+		return nil
+	}
+	return desc
+}
+
+// GetByID returns the MixDescriptor by node ID, or nil iff the node ID is not
+// listed in the document.
+func (e *Entry) GetByID(id [constants.NodeIDLength]byte) *pki.MixDescriptor {
+	desc, ok := e.all[id]
 	if !ok {
 		return nil
 	}
@@ -116,6 +127,7 @@ func New(d *pki.Document, identityKey *eddsa.PublicKey, isProvider bool) (*Entry
 	e.doc = d
 	e.incoming = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
 	e.outgoing = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	e.all = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
 
 	// Find our descriptor.
 	var err error
@@ -131,7 +143,7 @@ func New(d *pki.Document, identityKey *eddsa.PublicKey, isProvider bool) (*Entry
 
 	// Build the maps of peers that will connect to us, and that we will
 	// connect to.
-	buildMap := func(layer uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
+	appendMap := func(layer uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
 		var nodes []*pki.MixDescriptor
 		switch layer {
 		case pki.LayerProvider:
@@ -140,12 +152,20 @@ func New(d *pki.Document, identityKey *eddsa.PublicKey, isProvider bool) (*Entry
 			nodes = e.doc.Topology[layer]
 		}
 		for _, v := range nodes {
+			// The concrete PKI implementation is responsible for ensuring
+			// that documents only contain one descriptor per identity key.
 			nodeID := v.IdentityKey.ByteArray()
 			m[nodeID] = v
 		}
 	}
-	buildMap(e.incomingLayer(), e.incoming)
-	buildMap(e.outgoingLayer(), e.outgoing)
+	appendMap(e.incomingLayer(), e.incoming)
+	appendMap(e.outgoingLayer(), e.outgoing)
+
+	// Build the list of all nodes.
+	for i := 0; i < len(e.doc.Topology); i++ {
+		appendMap(uint8(i), e.all)
+	}
+	appendMap(pki.LayerProvider, e.all)
 
 	return e, nil
 }
