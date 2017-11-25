@@ -115,7 +115,7 @@ func (s *state) worker() {
 }
 
 func (s *state) onWakeup() {
-	const publishDeadline = epochtime.Period - (3600 * time.Second)
+	const publishDeadline = 3600 * time.Second
 	epoch, _, till := epochtime.Now()
 
 	s.Lock()
