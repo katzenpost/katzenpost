@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/op/go-logging"
 )
 
@@ -49,6 +50,11 @@ type descriptor struct {
 	raw  []byte
 }
 
+type document struct {
+	doc *pki.Document
+	raw []byte
+}
+
 type state struct {
 	sync.WaitGroup
 	sync.RWMutex
@@ -61,7 +67,7 @@ type state struct {
 	authorizedMixes     map[[eddsa.PublicKeySize]byte]bool
 	authorizedProviders map[[eddsa.PublicKeySize]byte]string
 
-	documents   map[uint64][]byte
+	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
 
 	updateCh chan interface{}
@@ -181,23 +187,11 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Assign nodes to layers.
-	//
-	// TODO: It would be better if the authority remembered the previous
-	// layers that all nodes were in and minimized movement.  A real
-	// authority will probably also want to load balance, enforce families,
-	// etc here.
-	//
-	// For now, just randomly assign all non-provider nodes to the layers,
-	// trying to keep the same amount of nodes per layer.
-	rng := rand.NewMath()
-	nodeIndexes := rng.Perm(len(nodes))
-	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
-	for i, l := 0, 0; i < len(nodes); i++ {
-		idx := nodeIndexes[i]
-		n := nodes[idx]
-		topology[l] = append(topology[l], n)
-		l++
-		l = l % len(topology)
+	var topology [][]*pki.MixDescriptor
+	if d, ok := s.documents[epoch-1]; ok {
+		topology = s.generateTopology(nodes, d.doc)
+	} else {
+		topology = s.generateRandomTopology(nodes)
 	}
 
 	// Build the Document.
@@ -229,7 +223,98 @@ func (s *state) generateDocument(epoch uint64) {
 		s.s.fatalErrCh <- err
 	}
 
-	s.documents[epoch] = []byte(signed)
+	d := new(document)
+	d.doc = doc
+	d.raw = []byte(signed)
+	s.documents[epoch] = d
+}
+
+func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Document) [][]*pki.MixDescriptor {
+	s.log.Debugf("Generating mix topology.")
+
+	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	for _, v := range nodeList {
+		id := v.IdentityKey.ByteArray()
+		nodeMap[id] = v
+	}
+
+	// Since there is an existing network topology, use that as the basis for
+	// generating the mix topology such that the number of nodes per layer is
+	// approximately equal, and as many nodes as possible retain their existing
+	// layer assignment to minimise network churn.
+
+	rng := rand.NewMath()
+	targetNodesPerLayer := len(nodeList) / s.s.cfg.Debug.Layers
+	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
+
+	// Assign nodes that still exist up to the target size.
+	for layer, nodes := range doc.Topology {
+		// The existing nodes are examined in random order to make it hard
+		// to predict which nodes will be shifted around.
+		nodeIndexes := rng.Perm(len(nodes))
+		for _, idx := range nodeIndexes {
+			if len(topology[layer]) >= targetNodesPerLayer {
+				break
+			}
+
+			id := nodes[idx].IdentityKey.ByteArray()
+			if n, ok := nodeMap[id]; ok {
+				// There is a new descriptor with the same identity key,
+				// as an existing descriptor in the previous document,
+				// so preserve the layering.
+				topology[layer] = append(topology[layer], n)
+				delete(nodeMap, id)
+			}
+		}
+	}
+
+	// Flatten the map containing the nodes pending assignment.
+	toAssign := make([]*pki.MixDescriptor, 0, len(nodeMap))
+	for _, n := range nodeMap {
+		toAssign = append(toAssign, n)
+	}
+	assignIndexes := rng.Perm(len(toAssign))
+
+	// Fill out any layers that are under the target size, by
+	// randomly assigning from the pending list.
+	idx := 0
+	for layer := range doc.Topology {
+		for len(topology[layer]) < targetNodesPerLayer {
+			n := toAssign[assignIndexes[idx]]
+			topology[layer] = append(topology[layer], n)
+			idx++
+		}
+	}
+
+	// Assign the remaining nodes.
+	for layer := 0; idx < len(assignIndexes); idx++ {
+		n := toAssign[assignIndexes[idx]]
+		topology[layer] = append(topology[layer], n)
+		layer++
+		layer = layer % len(topology)
+	}
+
+	return topology
+}
+
+func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor) [][]*pki.MixDescriptor {
+	s.log.Debugf("Generating random mix topology.")
+
+	// If there is no node history in the form of a previous consensus,
+	// then the simplest thing to do is to randomly assign nodes to the
+	// various layers.
+
+	rng := rand.NewMath()
+	nodeIndexes := rng.Perm(len(nodes))
+	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
+	for idx, layer := 0, 0; idx < len(nodes); idx++ {
+		n := nodes[nodeIndexes[idx]]
+		topology[layer] = append(topology[layer], n)
+		layer++
+		layer = layer % len(topology)
+	}
+
+	return topology
 }
 
 func (s *state) pruneDocuments() {
@@ -338,7 +423,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 
 	// If we have a serialized document, return it.
 	if d, ok := s.documents[epoch]; ok {
-		return d, nil
+		return d.raw, nil
 	}
 
 	// Otherwise, return an error based on the time.
@@ -408,12 +493,15 @@ func (s *state) restorePersistence() error {
 			// Restore the documents and descriptors.
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
-				if doc := docsBkt.Get(k); doc != nil {
-					if _, err = s11n.VerifyAndParseDocument(doc, s.s.identityKey.PublicKey(), epoch); err != nil {
+				if rawDoc := docsBkt.Get(k); rawDoc != nil {
+					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey(), epoch); err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else {
 						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
-						s.documents[epoch] = doc
+						d := new(document)
+						d.doc = doc
+						d.raw = rawDoc
+						s.documents[epoch] = d
 					}
 				}
 
@@ -486,7 +574,7 @@ func newState(s *Server) (*state, error) {
 		st.authorizedProviders[pk] = v.Identifier
 	}
 
-	st.documents = make(map[uint64][]byte)
+	st.documents = make(map[uint64]*document)
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
 
 	// Initialize the persistence store and restore state.
