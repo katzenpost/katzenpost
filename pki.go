@@ -196,7 +196,7 @@ func (p *pki) pruneDocuments() {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-	publishDeadline := epochtime.Period - (3600 * time.Second)
+	const publishDeadline = 3600 * time.Second
 
 	epoch, _, till := epochtime.Now()
 	doPublishEpoch := uint64(0)
@@ -360,8 +360,8 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, uint64) {
 
 func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
 	const (
-		earlySendSlack   = 2 * time.Minute
-		lateSendSlack    = 2 * time.Minute
+		earlySendSlack = 2 * time.Minute
+		lateSendSlack  = 2 * time.Minute
 	)
 
 	// If mix authentication is disabled, then we just allow everyone to
