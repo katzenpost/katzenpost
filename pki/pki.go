@@ -71,7 +71,7 @@ func (d *Document) String() string {
 		}
 	}
 
-	s += "} Providers:[]{"
+	s += "}, Providers:[]{"
 	s += stringifyDescSlice(d.Providers)
 	s += "}}"
 	return s
