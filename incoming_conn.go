@@ -120,7 +120,7 @@ func (c *incomingConn) worker() {
 	if c.fromMix {
 		c.log.Debugf("Peer: '%v' (%v)", bytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	} else {
-		c.log.Debugf("User: '%v', Key: '%v': %v", asciiBytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("User: '%v', Key: '%v'", asciiBytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
