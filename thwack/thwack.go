@@ -147,7 +147,7 @@ func (s *Server) RegisterCommand(cmd string, fn CommandHandlerFn) {
 func (s *Server) onCommand(c *Conn, l string) error {
 	// Clean up the line, and extract the command.
 	l = textproto.TrimString(l)
-	sp := strings.SplitN(l, " ", 1)
+	sp := strings.SplitN(l, " ", 2)
 	cmd := strings.ToUpper(sp[0])
 
 	c.Log().Debugf("Received command: %v", cmd)
