@@ -246,7 +246,7 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 
 	// Deserialize the public key.
 	var pubKey ecdh.PublicKey
-	if err := pubKey.UnmarshalText([]byte(sp[2])); err != nil {
+	if err := pubKey.FromString(sp[2]); err != nil {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
