@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/commands"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/server/spool"
@@ -65,7 +66,13 @@ func (p *provider) halt() {
 
 func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
-	p.log.Debugf("Auth: User: '%v', Key: '%v': %v", asciiBytesToPrintString(c.AdditionalData), c.PublicKey, isValid)
+	if !isValid {
+		if len(c.AdditionalData) == sConstants.NodeIDLength {
+			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v' (Probably a peer)", bytesToPrintString(c.AdditionalData), c.PublicKey)
+		} else {
+			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v'", asciiBytesToPrintString(c.AdditionalData), c.PublicKey)
+		}
+	}
 	return isValid
 }
 

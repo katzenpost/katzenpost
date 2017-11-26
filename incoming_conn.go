@@ -76,7 +76,9 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	}
-	c.log.Debugf("Authenticate Peer: '%v' (%v): %v", bytesToPrintString(creds.AdditionalData), creds.PublicKey, isValid)
+	if !isValid {
+		c.log.Debugf("Authenticate failed: '%v' (%v)", bytesToPrintString(creds.AdditionalData), creds.PublicKey)
+	}
 	return isValid
 }
 
@@ -112,6 +114,14 @@ func (c *incomingConn) worker() {
 	c.log.Debugf("Handshake completed.")
 	c.c.SetDeadline(time.Time{})
 	c.l.onInitializedConn(c)
+
+	// Log the connection source.
+	creds := c.w.PeerCredentials()
+	if c.fromMix {
+		c.log.Debugf("Peer: '%v' (%v)", bytesToPrintString(creds.AdditionalData), creds.PublicKey)
+	} else {
+		c.log.Debugf("User: '%v', Key: '%v': %v", asciiBytesToPrintString(creds.AdditionalData), creds.PublicKey)
+	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
 	// this only really matters for user sessions.  The easiest thing to do
@@ -170,7 +180,7 @@ func (c *incomingConn) worker() {
 			//
 			// Doing it this way avoids a good amount of complexity at the
 			// the cost of extra authenticates (which should be fairly fast).
-			if !c.IsPeerValid(c.w.PeerCredentials()) {
+			if !c.IsPeerValid(creds) {
 				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
 				return
 			}
