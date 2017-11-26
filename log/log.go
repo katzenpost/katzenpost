@@ -57,6 +57,18 @@ func (b *Backend) GetGoLogger(module string, level string) *goLog.Logger {
 	return w.l
 }
 
+func (b *Backend) GetLogWriter(module string, level string) io.Writer {
+	lvl, err := logLevelFromString(level)
+	if err != nil {
+		panic("log: GetGoLogger(): Invalid level: " + err.Error())
+	}
+
+	w := new(logWriter)
+	w.m = b.GetLogger(module)
+	w.lvl = lvl
+	return w
+}
+
 // New initializes a logging backend.
 func New(f string, level string, disable bool) (*Backend, error) {
 	b := new(Backend)
