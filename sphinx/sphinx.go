@@ -36,11 +36,13 @@ const (
 	perHopRoutingInfoLength = commands.RecipientLength + commands.SURBReplyLength
 
 	routingInfoLength = perHopRoutingInfoLength * constants.NrHops
-	payloadTagLength  = 16
 	adLength          = 2
 
 	// HeaderLength is the length of a Sphinx packet header in bytes.
-	HeaderLength      = adLength + crypto.GroupElementLength + routingInfoLength + crypto.MACLength // 460 bytes.
+	HeaderLength = adLength + crypto.GroupElementLength + routingInfoLength + crypto.MACLength // 460 bytes.
+
+	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
+	PayloadTagLength = 16
 )
 
 var (
@@ -213,9 +215,9 @@ func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 	}
 
 	// Assemble the packet.
-	pkt := make([]byte, 0, len(hdr)+payloadTagLength+len(payload))
+	pkt := make([]byte, 0, len(hdr)+PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
-	pkt = append(pkt, zeroBytes[:payloadTagLength]...)
+	pkt = append(pkt, zeroBytes[:PayloadTagLength]...)
 	pkt = append(pkt, payload...)
 
 	// Encrypt the payload.
@@ -333,15 +335,15 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 		}
 		payload = nil
 	} else {
-		if len(payload) < payloadTagLength {
+		if len(payload) < PayloadTagLength {
 			return nil, replayTag[:], nil, errTruncatedPayload
 		}
 		// Validate the payload tag, iff this is not a SURB reply.
 		if surbReply == nil {
-			if !utils.CtIsZero(payload[:payloadTagLength]) {
+			if !utils.CtIsZero(payload[:PayloadTagLength]) {
 				return nil, replayTag[:], nil, errInvalidTag
 			}
-			payload = payload[payloadTagLength:]
+			payload = payload[PayloadTagLength:]
 		}
 	}
 
