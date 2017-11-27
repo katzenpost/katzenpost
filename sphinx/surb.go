@@ -93,9 +93,9 @@ func NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]b
 	defer utils.ExplicitBzero(sprpIV[:])
 
 	// Assemble the packet.
-	pkt := make([]byte, 0, len(hdr)+payloadTagLength+len(payload))
+	pkt := make([]byte, 0, len(hdr)+PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
-	pkt = append(pkt, zeroBytes[:payloadTagLength]...)
+	pkt = append(pkt, zeroBytes[:PayloadTagLength]...)
 	pkt = append(pkt, payload...)
 
 	// Encrypt the payload.
@@ -114,7 +114,7 @@ func DecryptSURBPayload(payload, keys []byte) ([]byte, error) {
 	if len(keys)%sprpKeyMaterialLength != 0 || nrHops < 1 {
 		return nil, errors.New("sphinx: invalid SURB decryption keys")
 	}
-	if len(payload) < payloadTagLength {
+	if len(payload) < PayloadTagLength {
 		return nil, errTruncatedPayload
 	}
 
@@ -138,9 +138,9 @@ func DecryptSURBPayload(payload, keys []byte) ([]byte, error) {
 	}
 
 	// Authenticate the payload.
-	if !utils.CtIsZero(b[:payloadTagLength]) {
+	if !utils.CtIsZero(b[:PayloadTagLength]) {
 		return nil, errInvalidTag
 	}
 
-	return b[payloadTagLength:], nil
+	return b[PayloadTagLength:], nil
 }

@@ -21,7 +21,7 @@ import "github.com/katzenpost/core/sphinx"
 
 const (
 	// PacketLength is the length of a Sphinx Packet in bytes.
-	PacketLength = sphinx.HeaderLength + ForwardPayloadLength
+	PacketLength = sphinx.HeaderLength + sphinx.PayloadTagLength + ForwardPayloadLength
 
 	// SphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
 	// in bytes.
