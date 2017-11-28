@@ -35,7 +35,8 @@ var (
 	}
 	rawPacketPool = sync.Pool{
 		New: func() interface{} {
-			return make([]byte, constants.PacketLength)
+			b := make([]byte, constants.PacketLength)
+			return &b
 		},
 	}
 	pktID uint64
@@ -125,7 +126,7 @@ func (pkt *packet) copyToRaw(b []byte) error {
 
 	// The common case of standard packet sizes uses a pool allocator
 	// to store the raw packets.
-	pkt.raw = rawPacketPool.Get().([]byte)
+	pkt.raw = *rawPacketPool.Get().(*[]byte)
 
 	// Sanity check, just in case the pool allocator is doing something dumb.
 	if len(pkt.raw) != len(b) {
