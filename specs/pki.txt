@@ -5,13 +5,14 @@ David Stainton
 
 Version 0
 
-// XXX david: note that we need to fix the schema
-// to match what we are actually using here:
+// XXX david: note that we need to make sure
+// the schema in our implemention matches this spec.
 // https://github.com/Katzenpost/authority
 
 // XXX david: should we make this a threshold vote
 // instead of total consensus?
 
+// XXX david: are there other failure cases that we should list here?
 
 Abstract
 
@@ -183,15 +184,15 @@ Table of Contents
    epochs to schedule downtime. The mix descriptor fields that MUST
    be populated are:
 
-   * version
-   * nickname
-   * family
-   * email
-   * layer
-   * identity_key
-   * mix_keys
+   * Version
+   * Name
+   * Family
+   * Email
+   * Layer
+   * IdentityKey
+   * MixKeys
 
-   The map in the field called "mix_keys" should reflect the scheduled
+   The map in the field called "MixKeys" should reflect the scheduled
    downtown for one or more epochs by not have those epochs as keys in
    the map.
 
