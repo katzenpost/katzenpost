@@ -4,9 +4,14 @@ Ania Piotrowska
 David Stainton
 
 Version 0
+
 // XXX david: note that we need to fix the schema
 // to match what we are actually using here:
 // https://github.com/Katzenpost/authority
+
+// XXX david: should we make this a threshold vote
+// instead of total consensus?
+
 
 Abstract
 
@@ -214,7 +219,8 @@ Table of Contents
 3.1.1 Self-signing Mix Descriptors
 
    Mixes MUST compose mix descriptors which are signed using their
-   private identity key.
+   private identity key, an ed25519 key. Signing is done using JWT
+   (JSON Web Token).
 
 3.1.2 Directory Signing
 
@@ -297,43 +303,43 @@ Table of Contents
 
 4.1 Mix Descriptor Format
 
-   // XXX David: note that the signature field
-   // may be omitted if we decide to use JWT/JOSE
-   // or some other serialization that has signatures
+    Note that there is no signature field. This is because mix
+    descriptors are serialized and signed using JWT. The
+    `identity_key` field is a public ed25519 key.  The mix_keys field
+    is a map from epoch to public X25519 keys which is what the Sphinx
+    packet format uses.
 
    {
-       "signature": "",
-       "version": 0,
-       "nickname": "",
-       "family": "",
-       "email": "",
-       "alt_contact_info":"",
-       "identity_key": "",
-       "link_key":"",
-       "mix_keys": { // map epoch -> pub X25519 Sphinx routing key
-          epoch: epoch_pub_key,
+       "Version": 0,
+       "Name": "",
+       "Family": "",
+       "Email": "",
+       "AltContactInfo":"",
+       "IdentityKey": "",
+       "LinkKey":"",
+       "MixKeys": {
+          "Epoch": "EpochPubKey",
        },
-       "addresses": [""],
-       "layer": 0,
-       "load_weight":0
+       "Addresses": ["IP:Port"],
+       "Layer": 0,
+       "LoadWeight":0
    }
 
 4.2 Directory Format
 
    {
-       "signatures": [],
-       "version": 0,
-       "status": "vote",
-       "hops_per_route": 5,
-       "poisson_mix_lambda": .274,
-       "descriptors": []
+       "Signatures": [],
+       "Version": 0,
+       "Status": "vote",
+       "Lambda" : 0.274,
+       "MaxDelay" : 30,
+       "Topology" : [],
+       "Providers" : [],
    }
 
 5. PKI Wire Protocol
 
-   The wire protocol is built using HTTP and some serialization format
-   such as: CBOR
-   or perhaps a format with cryptographic signatures such as: JWT/JOSE
+   The wire protocol is built using HTTP and JWT.
 
 5.1. Retrieving a directory
 
