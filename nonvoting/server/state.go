@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
 
@@ -56,8 +57,8 @@ type document struct {
 }
 
 type state struct {
-	sync.WaitGroup
 	sync.RWMutex
+	worker.Worker
 
 	s   *Server
 	log *logging.Logger
@@ -70,15 +71,12 @@ type state struct {
 	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
 
-	updateCh chan interface{}
-	haltCh   chan interface{}
-
+	updateCh       chan interface{}
 	bootstrapEpoch uint64
 }
 
-func (s *state) halt() {
-	close(s.haltCh)
-	s.Wait()
+func (s *state) Halt() {
+	s.Worker.Halt()
 
 	// Gracefully close the persistence store.
 	s.db.Sync()
@@ -101,12 +99,11 @@ func (s *state) worker() {
 	defer func() {
 		t.Stop()
 		s.log.Debugf("Halting worker.")
-		s.Done()
 	}()
 
 	for {
 		select {
-		case <-s.haltCh:
+		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")
 			return
 		case <-s.updateCh:
@@ -560,7 +557,6 @@ func newState(s *Server) (*state, error) {
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
 	st.updateCh = make(chan interface{}, 1) // Buffered!
-	st.haltCh = make(chan interface{})
 
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
@@ -600,8 +596,7 @@ func newState(s *Server) (*state, error) {
 		st.bootstrapEpoch = epoch
 	}
 
-	st.Add(1)
-	go st.worker()
+	st.Go(st.worker)
 	return st, nil
 }
 

@@ -151,7 +151,7 @@ func (s *Server) halt() {
 
 	// Halt the state worker.
 	if s.state != nil {
-		s.state.halt()
+		s.state.Halt()
 		s.state = nil
 	}
 
