@@ -29,6 +29,7 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/wire"
+	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/server/userdb"
@@ -38,20 +39,17 @@ import (
 
 type provider struct {
 	sync.Mutex
-	sync.WaitGroup
+	worker.Worker
 
 	s      *Server
 	ch     *channels.InfiniteChannel
 	userDB userdb.UserDB
 	spool  spool.Spool
 	log    *logging.Logger
-
-	haltCh chan interface{}
 }
 
-func (p *provider) halt() {
-	close(p.haltCh)
-	p.Wait()
+func (p *provider) Halt() {
+	p.Worker.Halt()
 
 	p.ch.Close()
 	if p.userDB != nil {
@@ -82,17 +80,14 @@ func (p *provider) onPacket(pkt *packet) {
 }
 
 func (p *provider) worker() {
-	defer func() {
-		p.log.Debugf("Halting Provider worker.")
-		p.Done()
-	}()
+	defer p.log.Debugf("Halting Provider worker.")
 
 	ch := p.ch.Out()
 
 	for {
 		var pkt *packet
 		select {
-		case <-p.haltCh:
+		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
 			return
 		case e := <-ch:
@@ -291,7 +286,6 @@ func newProvider(s *Server) (*provider, error) {
 	p.s = s
 	p.ch = channels.NewInfiniteChannel()
 	p.log = s.logBackend.GetLogger("provider")
-	p.haltCh = make(chan interface{})
 
 	var err error
 	p.userDB, err = boltuserdb.New(p.s.cfg.Provider.UserDB)
@@ -325,7 +319,6 @@ func newProvider(s *Server) (*provider, error) {
 		s.management.RegisterCommand(cmdRemoveUser, p.onRemoveUser)
 	}
 
-	p.Add(1)
-	go p.worker()
+	p.Go(p.worker)
 	return p, nil
 }

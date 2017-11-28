@@ -21,28 +21,26 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
 
 type connector struct {
 	sync.RWMutex
-	sync.WaitGroup
+	worker.Worker
 
 	s   *Server
 	log *logging.Logger
 
-	conns map[[constants.NodeIDLength]byte]*outgoingConn
-
-	haltCh        chan interface{}
+	conns         map[[constants.NodeIDLength]byte]*outgoingConn
 	forceUpdateCh chan interface{}
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 }
 
-func (co *connector) halt() {
-	close(co.haltCh)
-	co.Wait()
+func (co *connector) Halt() {
+	co.Worker.Halt()
 
 	// Close all outgoing connections.
 	close(co.closeAllCh)
@@ -81,14 +79,12 @@ func (co *connector) worker() {
 	)
 
 	timer := time.NewTimer(initialSpawnDelay)
-	defer func() {
-		timer.Stop()
-		co.Done()
-	}()
+	defer timer.Stop()
+
 	for {
 		timerFired := false
 		select {
-		case <-co.haltCh:
+		case <-co.HaltCh():
 			co.log.Debugf("Terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
@@ -167,11 +163,9 @@ func newConnector(s *Server) *connector {
 	co.s = s
 	co.log = s.logBackend.GetLogger("connector")
 	co.conns = make(map[[constants.NodeIDLength]byte]*outgoingConn)
-	co.haltCh = make(chan interface{})
 	co.forceUpdateCh = make(chan interface{}, 1) // See forceUpdate().
 	co.closeAllCh = make(chan interface{})
-	co.Add(1)
 
-	go co.worker()
+	co.Go(co.worker)
 	return co
 }

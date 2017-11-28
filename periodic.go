@@ -17,35 +17,25 @@
 package server
 
 import (
-	"sync"
 	"time"
+
+	"github.com/katzenpost/core/worker"
 )
 
 type periodicTimer struct {
-	sync.WaitGroup
+	worker.Worker
 
 	s *Server
-
-	haltCh chan interface{}
-}
-
-func (t *periodicTimer) halt() {
-	close(t.haltCh)
-	t.Wait()
 }
 
 func (t *periodicTimer) worker() {
 	ticker := time.NewTicker(time.Second)
-	defer func() {
-		ticker.Stop()
-		t.Done()
-	}()
+	defer ticker.Stop()
 
 	lastCallbackTime := time.Now()
-
 	for {
 		select {
-		case <-t.haltCh:
+		case <-t.HaltCh():
 			return
 		case <-ticker.C:
 		}
@@ -83,9 +73,7 @@ func (t *periodicTimer) worker() {
 func newPeriodicTimer(s *Server) *periodicTimer {
 	t := new(periodicTimer)
 	t.s = s
-	t.haltCh = make(chan interface{})
-	t.Add(1)
 
-	go t.worker()
+	t.Go(t.worker)
 	return t
 }

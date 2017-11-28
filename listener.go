@@ -23,12 +23,13 @@ import (
 	"net"
 	"sync"
 
+	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
 
 type listener struct {
-	sync.WaitGroup
 	sync.Mutex
+	worker.Worker
 
 	s   *Server
 	l   net.Listener
@@ -40,10 +41,10 @@ type listener struct {
 	closeAllWg sync.WaitGroup
 }
 
-func (l *listener) halt() {
+func (l *listener) Halt() {
 	// Close the listener, wait for worker() to return.
 	l.l.Close()
-	l.Wait()
+	l.Worker.Halt()
 
 	// Close all connections belonging to the listener.
 	//
@@ -59,7 +60,6 @@ func (l *listener) worker() {
 	defer func() {
 		l.log.Noticef("Stopping listening on: %v", addr)
 		l.l.Close() // Usually redundant, but harmless.
-		l.Done()
 	}()
 	for {
 		conn, err := l.l.Accept()
@@ -146,13 +146,12 @@ func newListener(s *Server, id int, addr string) (*listener, error) {
 	l.log = s.logBackend.GetLogger(fmt.Sprintf("listener:%d", id))
 	l.conns = list.New()
 	l.closeAllCh = make(chan interface{})
-	l.Add(1)
 
 	l.l, err = net.Listen("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 
-	go l.worker()
+	l.Go(l.worker)
 	return l, nil
 }

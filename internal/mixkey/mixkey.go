@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/worker"
 )
 
 const (
@@ -57,7 +58,7 @@ const (
 // MixKey is a Katzenpost server mix key.
 type MixKey struct {
 	sync.Mutex
-	sync.WaitGroup
+	worker.Worker
 
 	db      *bolt.DB
 	keypair *ecdh.PrivateKey
@@ -66,7 +67,6 @@ type MixKey struct {
 	f         *bloom.Filter
 	writeBack map[[TagLength]byte]bool
 	flushCh   chan interface{}
-	haltCh    chan interface{}
 
 	refCount        int32
 	unlinkIfExpired bool
@@ -192,10 +192,7 @@ func (k *MixKey) testAndSetTagMemory(tag *[TagLength]byte) (bool, bool) {
 }
 
 func (k *MixKey) worker() {
-	defer func() {
-		k.doFlush(true)
-		k.Done()
-	}()
+	defer k.doFlush(true)
 
 	ticker := time.NewTicker(writeBackInterval)
 	defer ticker.Stop()
@@ -203,7 +200,7 @@ func (k *MixKey) worker() {
 	for {
 		forceFlush := false
 		select {
-		case <-k.haltCh:
+		case <-k.HaltCh():
 			return
 		case <-k.flushCh:
 		case <-ticker.C:
@@ -259,8 +256,7 @@ func (k *MixKey) forceClose() {
 		f := k.db.Path() // Cache so we can unlink after Close().
 
 		// Gracefully terminate the worker.
-		close(k.haltCh)
-		k.Wait()
+		k.Halt()
 
 		// Force the DB to disk, and close.
 		k.db.Sync()
@@ -310,7 +306,6 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 	}
 	k.writeBack = make(map[[TagLength]byte]bool)
 	k.flushCh = make(chan interface{}, 1)
-	k.haltCh = make(chan interface{})
 
 	didCreate := false
 	if err := k.db.Update(func(tx *bolt.Tx) error {
@@ -392,8 +387,7 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 		k.db.Sync()
 	}
 
-	k.Add(1)
-	go k.worker()
+	k.Go(k.worker)
 
 	return k, nil
 }

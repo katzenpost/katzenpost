@@ -18,29 +18,26 @@ package server
 
 import (
 	"math"
-	"sync"
 	"time"
 
 	"github.com/eapache/channels"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/queue"
+	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
 
 type scheduler struct {
-	sync.WaitGroup
+	worker.Worker
 
 	s   *Server
 	ch  *channels.InfiniteChannel
 	log *logging.Logger
-
-	haltCh chan interface{}
 }
 
-func (sch *scheduler) halt() {
-	close(sch.haltCh)
-	sch.Wait()
+func (sch *scheduler) Halt() {
+	sch.Worker.Halt()
 	sch.ch.Close()
 }
 
@@ -55,10 +52,8 @@ func (sch *scheduler) worker() {
 	ch := sch.ch.Out()
 	timerSlack := time.Duration(sch.s.cfg.Debug.SchedulerSlack) * time.Millisecond
 	timer := time.NewTimer(math.MaxInt64)
-	defer func() {
-		timer.Stop()
-		sch.Done()
-	}()
+	defer timer.Stop()
+
 	for {
 		timerFired := false
 		// The vast majority of the time the scheduler will be idle waiting on
@@ -71,7 +66,7 @@ func (sch *scheduler) worker() {
 		// and that the main performance gains come from parallelizing the
 		// crypto, and being clever about congestion management.
 		select {
-		case <-sch.haltCh:
+		case <-sch.HaltCh():
 			// Th-th-th-that's all folks.
 			sch.log.Debugf("Terminating gracefully.")
 			return
@@ -165,9 +160,7 @@ func newScheduler(s *Server) *scheduler {
 	sch.s = s
 	sch.log = s.logBackend.GetLogger("scheduler")
 	sch.ch = channels.NewInfiniteChannel()
-	sch.haltCh = make(chan interface{})
-	sch.Add(1)
 
-	go sch.worker()
+	sch.Go(sch.worker)
 	return sch
 }

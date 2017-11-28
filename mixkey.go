@@ -158,7 +158,7 @@ func (m *mixKeys) shadow(dst map[uint64]*mixkey.MixKey) {
 	}
 }
 
-func (m *mixKeys) halt() {
+func (m *mixKeys) Halt() {
 	m.Lock()
 	defer m.Unlock()
 

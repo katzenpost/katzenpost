@@ -141,7 +141,7 @@ func (s *Server) halt() {
 
 	// Stop the 1 Hz periodic utility timer.
 	if s.periodic != nil {
-		s.periodic.halt()
+		s.periodic.Halt()
 		s.periodic = nil
 	}
 
@@ -154,47 +154,47 @@ func (s *Server) halt() {
 	// Stop the listener(s), close all incoming connections.
 	for i, l := range s.listeners {
 		if l != nil {
-			l.halt() // Closes all connections.
+			l.Halt() // Closes all connections.
 			s.listeners[i] = nil
 		}
 	}
 
 	// Close all outgoing connections.
 	if s.connector != nil {
-		s.connector.halt()
+		s.connector.Halt()
 		// Don't nil this out till after the PKI has been torn down.
 	}
 
 	// Stop the Sphinx workers.
 	for i, w := range s.cryptoWorkers {
 		if w != nil {
-			w.halt()
+			w.Halt()
 			s.cryptoWorkers[i] = nil
 		}
 	}
 
 	// Provider specific cleanup.
 	if s.provider != nil {
-		s.provider.halt()
+		s.provider.Halt()
 		s.provider = nil
 	}
 
 	// Stop the scheduler.
 	if s.scheduler != nil {
-		s.scheduler.halt()
+		s.scheduler.Halt()
 		s.scheduler = nil
 	}
 
 	// Stop the PKI interface.
 	if s.pki != nil {
-		s.pki.halt()
+		s.pki.Halt()
 		s.pki = nil
 		s.connector = nil // PKI calls into the connector.
 	}
 
 	// Flush and close the mix keys.
 	if s.mixKeys != nil {
-		s.mixKeys.halt()
+		s.mixKeys.Halt()
 		s.mixKeys = nil
 	}
 

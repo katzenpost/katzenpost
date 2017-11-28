@@ -19,18 +19,18 @@ package server
 import (
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
+	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/mixkey"
 	"github.com/op/go-logging"
 )
 
 type cryptoWorker struct {
-	sync.WaitGroup
+	worker.Worker
 
 	s   *Server
 	log *logging.Logger
@@ -38,18 +38,12 @@ type cryptoWorker struct {
 	mixKeys map[uint64]*mixkey.MixKey
 
 	updateCh chan bool
-	haltCh   chan interface{}
 }
 
 func (w *cryptoWorker) updateMixKeys() {
 	// This is a blocking call, because bad things will happen if the keys
 	// happen to get out of sync.
 	w.updateCh <- true
-}
-
-func (w *cryptoWorker) halt() {
-	close(w.haltCh)
-	w.Wait()
 }
 
 func (w *cryptoWorker) doUnwrap(pkt *packet) error {
@@ -132,17 +126,15 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 
 func (w *cryptoWorker) worker() {
 	inCh := w.s.inboundPackets.Out()
-	defer func() {
-		w.derefKeys()
-		w.Done()
-	}()
+	defer w.derefKeys()
+
 	for {
 		// This is where the bulk of the inbound packet processing happens,
 		// and the only significant source of parallelism.
 		var pkt *packet
 
 		select {
-		case <-w.haltCh:
+		case <-w.HaltCh():
 			w.log.Debugf("Terminating gracefully.")
 			return
 		case <-w.updateCh:
@@ -264,11 +256,9 @@ func newCryptoWorker(s *Server, id int) *cryptoWorker {
 	w.log = s.logBackend.GetLogger(fmt.Sprintf("crypto:%d", id))
 	w.mixKeys = make(map[uint64]*mixkey.MixKey)
 	w.updateCh = make(chan bool)
-	w.haltCh = make(chan interface{})
-	w.Add(1)
 
 	w.s.mixKeys.shadow(w.mixKeys)
 
-	go w.worker()
+	w.Go(w.worker)
 	return w
 }

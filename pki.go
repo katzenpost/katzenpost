@@ -29,13 +29,14 @@ import (
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
+	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/pkicache"
 	"github.com/op/go-logging"
 )
 
 type pki struct {
 	sync.RWMutex
-	sync.WaitGroup
+	worker.Worker
 
 	s    *Server
 	log  *logging.Logger
@@ -44,19 +45,10 @@ type pki struct {
 	docs               map[uint64]*pkicache.Entry
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
-
-	haltCh chan interface{}
 }
 
 func (p *pki) startWorker() {
-
-	p.Add(1)
-	go p.worker()
-}
-
-func (p *pki) halt() {
-	close(p.haltCh)
-	p.Wait()
+	p.Go(p.worker)
 }
 
 func (p *pki) worker() {
@@ -66,7 +58,6 @@ func (p *pki) worker() {
 	defer func() {
 		p.log.Debugf("Halting PKI worker.")
 		timer.Stop()
-		p.Done()
 	}()
 
 	if p.impl == nil {
@@ -76,7 +67,7 @@ func (p *pki) worker() {
 	pkiCtx, cancelFn := context.WithCancel(context.Background())
 	go func() {
 		select {
-		case <-p.haltCh:
+		case <-p.HaltCh():
 			cancelFn()
 		case <-pkiCtx.Done():
 		}
@@ -99,7 +90,7 @@ func (p *pki) worker() {
 
 		timerFired := false
 		select {
-		case <-p.haltCh:
+		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
 			return
 		case <-pkiCtx.Done():
@@ -511,7 +502,6 @@ func newPKI(s *Server) (*pki, error) {
 	p.s = s
 	p.log = s.logBackend.GetLogger("pki")
 	p.docs = make(map[uint64]*pkicache.Entry)
-	p.haltCh = make(chan interface{})
 
 	if s.cfg.PKI.Nonvoting != nil {
 		authPk := new(eddsa.PublicKey)
