@@ -8,11 +8,13 @@ Version 0
 // XXX david: note that we need to make sure
 // the schema in our implemention matches this spec.
 // https://github.com/Katzenpost/authority
+// (for the time being our authority is a nonvoting
+//  single point of failure)
 
 // XXX david: should we make this a threshold vote
 // instead of total consensus?
 
-// XXX david: are there other failure cases that we should list here?
+// XXX david: are there other failure cases that we should mention?
 
 Abstract
 
@@ -222,7 +224,7 @@ Table of Contents
    Mixes MUST compose mix descriptors which are signed using their
    private identity key, an ed25519 key. Directories are signed by one
    or more Directory Authority servers using their authority key, also
-   an ed25519 key. In all cases signing is done using JWT [RFC7515].
+   an ed25519 key. In all cases, signing is done using JWT [RFC7515].
 
 3.2 Vote Exchange
 
