@@ -31,8 +31,7 @@ Table of Contents
       2.2 Scheduling Mix Downtime
    3. Voting for Consensus Protocol
       3.1 Protocol Messages
-         3.1.1 Self-signing Mix Descriptors
-         3.1.2 Directory Signing
+         3.1.1 Mix Descriptor and Directory Signing
       3.2 Voting
       3.3 Vote Tabulation and Production of Network Consensus Documents
       3.4 Consensus Success or Failure
@@ -105,7 +104,8 @@ Table of Contents
               document; see "Panoramix Mix Network Specification"
               section "2.2. Network Topology".
 
-   layer - The layer indicates which network topology layer a particular mix resides in.
+   layer - The layer indicates which network topology layer a
+           particular mix resides in.
 
    Provider - A service operated by a third party that Clients
               communicate directly with to communicate with the Mixnet.
@@ -212,32 +212,30 @@ Table of Contents
 
    * mix_descriptor: A mix descriptor describes a mix.
 
-   * directory: A directory contains a list of
-     descriptors and other information.
+   * directory: A directory contains a list of descriptors and other
+     information that describe the mix network.
 
    Mix descriptor and directory documents MUST be properly signed.
 
-3.1.1 Self-signing Mix Descriptors
+3.1.1 Mix Descriptor and Directory Signing
 
    Mixes MUST compose mix descriptors which are signed using their
-   private identity key, an ed25519 key. Signing is done using JWT
-   (JSON Web Token).
-
-3.1.2 Directory Signing
-
-   Directory Authority servers can append their signature to a list of
-   signatures in the "signatures" field of the directory struct.
+   private identity key, an ed25519 key. Directories are signed by one
+   or more Directory Authority servers using their authority key, also
+   an ed25519 key. In all cases signing is done using JWT [RFC7515].
 
 3.2 Vote Exchange
 
-    As described in section "2.1 PKI Protocol Schedule", the Directory
-    Authority servers begin the voting process 2 hours after epoch beginning.
-    Each Authority exchanges vote directory messages with each other.
+   As described in section "2.1 PKI Protocol Schedule", the Directory
+   Authority servers begin the voting process 2 hours after epoch
+   beginning.  Each Authority exchanges vote directory messages with
+   each other.
 
-    Authorities archive votes from other authorities and make them available
-    for retreival. Upon receiving a new vote, the authority examines it for
-    new descriptors and fetches them from that authority. It includes the
-    new descriptors in the next epoch's voting round.
+   Authorities archive votes from other authorities and make them
+   available for retreival. Upon receiving a new vote, the authority
+   examines it for new descriptors and fetches them from that
+   authority. It includes the new descriptors in the next epoch's
+   voting round.
 
 3.3 Vote Tabulation for Consensus Computation
 
@@ -304,11 +302,11 @@ Table of Contents
 
 4.1 Mix Descriptor Format
 
-    Note that there is no signature field. This is because mix
-    descriptors are serialized and signed using JWT. The
-    `identity_key` field is a public ed25519 key.  The mix_keys field
-    is a map from epoch to public X25519 keys which is what the Sphinx
-    packet format uses.
+   Note that there is no signature field. This is because mix
+   descriptors are serialized and signed using JWT. The
+   `IdentityKey` field is a public ed25519 key.  The `MixKeys` field
+   is a map from epoch to public X25519 keys which is what the Sphinx
+   packet format uses.
 
    {
        "Version": 0,
@@ -411,10 +409,7 @@ Table of Contents
 
 9. Acknowledgements
 
-   Thankfully I had several conversations about mix network PKI design
-   with the following people:
-
-      Nick Mathewson
+   I would like to thank Nick Mathewson for answering design questions.
 
 Appendix A. References
 
@@ -424,6 +419,10 @@ Appendix A.1 Normative References
               Requirement Levels", BCP 14, RFC 2119,
               DOI 10.17487/RFC2119, March 1997,
               <https://www.rfc-editor.org/info/rfc2119>.
+
+   [RFC7515]  Jones, M., Bradley, J., Sakimura, N.,
+              "JSON Web Signature (JWS)", May 2015,
+              <https://tools.ietf.org/html/rfc7515>.
 
 Appendix A.2 Informative References
 
