@@ -40,7 +40,7 @@ Table of Contents
       4.2 Directory Format
    5. PKI Wire Protocol
       5.1. Retrieving a directory
-      5.2. Publishing a server descriptor
+      5.2. Publishing a mix descriptor
    6. Future Work
    7. Anonymity Considerations
    8. Security Considerations
@@ -338,11 +338,25 @@ Table of Contents
 
 5. PKI Wire Protocol
 
-   The wire protocol is built using HTTP and JWT.
+   The wire protocol is built using HTTP. The following URLs for
+   publishing and retrieving are constructed using SERVER and EPOCH
+   where SERVER is the address of the Directory Authority server and
+   EPOCH is the integery indicating the epoch as described in section
+   "2. Overview of Mix PKI Interaction".
 
 5.1. Retrieving a directory
 
-5.2. Publishing a server descriptor
+   A directory may be retreived from a Directory Authority server with
+   a URL of the form:
+
+      http://SERVER/v0/get/EPOCH
+
+5.2. Publishing a mix descriptor
+
+   A mix descriptor may be uploaded to a Directory Authority server with
+   a URL of the form:
+
+      http://SERVER/v0/post/EPOCH
 
 6. Future Work
 
