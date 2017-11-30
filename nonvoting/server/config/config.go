@@ -27,7 +27,6 @@ import (
 
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
 	"github.com/pelletier/go-toml"
 )
@@ -192,9 +191,6 @@ func (n *Node) validate(isProvider bool) error {
 		section = "Providers"
 		if n.Identifier == "" {
 			return fmt.Errorf("config: %v: Node is missing Identifier", section)
-		}
-		if len(n.Identifier) > constants.NodeIDLength {
-			return fmt.Errorf("config: %v: Identifier '%v' exceeds max length", section, n.Identifier)
 		}
 	} else if n.Identifier != "" {
 		return fmt.Errorf("config: %v: Node has Identifier set", section)
