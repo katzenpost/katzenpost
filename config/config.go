@@ -26,7 +26,6 @@ import (
 	"strings"
 
 	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
 	"github.com/pelletier/go-toml"
 )
@@ -69,8 +68,6 @@ type Server struct {
 func (sCfg *Server) validate() error {
 	if sCfg.Identifier == "" {
 		return fmt.Errorf("config: Server: Identifier is not set")
-	} else if len(sCfg.Identifier) > constants.NodeIDLength {
-		return fmt.Errorf("config: Server: Identifier '%v' exceeds max length", sCfg.Identifier)
 	}
 
 	if sCfg.Addresses != nil {
