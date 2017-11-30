@@ -22,25 +22,13 @@ import "time"
 // Period is the duration of a Katzenpost epoch.
 const Period = 3 * time.Hour
 
+// Epoch is the Katzenpost epoch expressed in UTC.
 var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 
 // Now returns the current Katzenpost epoch, time since the start of the
-// current, and time till the next epoch.
+// current epoch, and time till the next epoch.
 func Now() (current uint64, elapsed, till time.Duration) {
-	// Cache now for a consistent value for this query.
-	now := time.Now()
-
-	fromEpoch := time.Since(Epoch)
-	if fromEpoch < 0 {
-		panic("epochtime: BUG: system time appears to predate the epoch")
-	}
-
-	current = uint64(fromEpoch / Period)
-
-	base := Epoch.Add(time.Duration(current) * Period)
-	elapsed = now.Sub(base)
-	till = base.Add(Period).Sub(now)
-	return
+	return getEpoch(time.Now())
 }
 
 // IsInEpoch returns true iff the epoch e contains the time t, measured in the
@@ -58,4 +46,24 @@ func IsInEpoch(e uint64, t uint64) bool {
 		return true
 	}
 	return tt.After(startTime) && tt.Before(endTime)
+}
+
+// FromUnix returns the Katzenpost epoch, time since the start of the current
+// epoch, and time till the next epoch relative to a Unix time in seconds.
+func FromUnix(t int64) (current uint64, elapsed, till time.Duration) {
+	return getEpoch(time.Unix(t, 0))
+}
+
+func getEpoch(t time.Time) (current uint64, elapsed, till time.Duration) {
+	fromEpoch := t.Sub(Epoch)
+	if fromEpoch < 0 {
+		panic("epochtime: BUG: time appears to predate the epoch")
+	}
+
+	current = uint64(fromEpoch / Period)
+
+	base := Epoch.Add(time.Duration(current) * Period)
+	elapsed = t.Sub(base)
+	till = base.Add(Period).Sub(t)
+	return
 }
