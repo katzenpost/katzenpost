@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/monotime"
+	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/op/go-logging"
@@ -120,7 +121,7 @@ func (c *incomingConn) worker() {
 	if c.fromMix {
 		c.log.Debugf("Peer: '%v' (%v)", bytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	} else {
-		c.log.Debugf("User: '%v', Key: '%v'", asciiBytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though

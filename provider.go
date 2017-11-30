@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
+	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/spool"
@@ -68,7 +69,7 @@ func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
 			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v' (Probably a peer)", bytesToPrintString(c.AdditionalData), c.PublicKey)
 		} else {
-			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v'", asciiBytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
 		}
 	}
 	return isValid
@@ -106,7 +107,7 @@ func (p *provider) worker() {
 
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.id, asciiBytesToPrintString(recipient))
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.id, utils.ASCIIBytesToPrintString(recipient))
 			pkt.dispose()
 			continue
 		}
