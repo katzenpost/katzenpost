@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 )
@@ -130,6 +131,9 @@ func TestMessage(t *testing.T) {
 	require.Equal(msgPayload, cmdMessage.Payload, "Message: FromBytes() Payload")
 
 	// MessageACK
+	ackPayload := make([]byte, sphinx.PayloadTagLength+constants.ForwardPayloadLength)
+	_, err = rand.Read(ackPayload)
+	require.NoError(err, "Message: failed to generate ACK payload")
 	id := make([]byte, sphinxConstants.SURBIDLength)
 	_, err = rand.Read(id[:])
 	require.NoError(err, "MessageACK: Failed to generate ID")
@@ -137,7 +141,7 @@ func TestMessage(t *testing.T) {
 	cmdMessageACK := &MessageACK{
 		QueueSizeHint: hint,
 		Sequence:      seq,
-		Payload:       payload,
+		Payload:       ackPayload,
 	}
 	copy(cmdMessageACK.ID[:], id[:])
 	b = cmdMessageACK.ToBytes()
@@ -151,5 +155,5 @@ func TestMessage(t *testing.T) {
 	require.Equal(uint8(hint), cmdMessageACK.QueueSizeHint, "MessageACK: FromBytes() QueueSizeHint")
 	require.Equal(uint32(seq), cmdMessageACK.Sequence, "MessageACK: FromBytes() Sequence")
 	require.Equal(id[:], cmdMessageACK.ID[:], "MessageACK: FromBytes() ID")
-	require.Equal(payload, cmdMessageACK.Payload, "MessageACK: FromBytes() Payload")
+	require.Equal(ackPayload, cmdMessageACK.Payload, "MessageACK: FromBytes() Payload")
 }

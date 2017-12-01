@@ -33,8 +33,8 @@ const (
 	messageBaseLength       = 1 + 1 + 4
 	messageACKLength        = messageBaseLength + sphinxConstants.SURBIDLength
 	messageMsgLength        = messageBaseLength + messageMsgPaddingLength
-	messageMsgPaddingLength = sphinxConstants.SURBIDLength + constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
-	messageEmptyLength      = messageACKLength + constants.ForwardPayloadLength
+	messageMsgPaddingLength = sphinxConstants.SURBIDLength + constants.SphinxPlaintextHeaderLength + sphinx.SURBLength + sphinx.PayloadTagLength
+	messageEmptyLength      = messageACKLength + sphinx.PayloadTagLength + constants.ForwardPayloadLength
 
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
@@ -138,11 +138,11 @@ type MessageACK struct {
 
 // ToBytes serializes the MessageACK and returns the resulting slice.
 func (c MessageACK) ToBytes() []byte {
-	if len(c.Payload) != constants.ForwardPayloadLength {
+	if len(c.Payload) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
 		panic("wire: invalid MessageACK payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+messageACKLength, cmdOverhead+messageACKLength+constants.ForwardPayloadLength)
+	out := make([]byte, cmdOverhead+messageACKLength, cmdOverhead+messageACKLength+sphinx.PayloadTagLength+constants.ForwardPayloadLength)
 
 	out[0] = byte(message)
 	binary.BigEndian.PutUint32(out[2:6], messageACKLength+uint32(len(c.Payload)))
@@ -206,7 +206,7 @@ func messageFromBytes(b []byte) (Command, error) {
 
 	switch t {
 	case messageTypeACK:
-		if len(b) != sphinxConstants.SURBIDLength+constants.ForwardPayloadLength {
+		if len(b) != sphinxConstants.SURBIDLength+sphinx.PayloadTagLength+constants.ForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
