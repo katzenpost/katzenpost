@@ -24,6 +24,7 @@ import (
 
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/userdb"
@@ -52,7 +53,7 @@ func (s *boltSpool) StoreMessage(u, msg []byte) error {
 }
 
 func (s *boltSpool) StoreSURBReply(u []byte, id *[sConstants.SURBIDLength]byte, msg []byte) error {
-	if len(msg) != constants.ForwardPayloadLength {
+	if len(msg) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
 		return fmt.Errorf("spool: invalid SURBReply message size: %d", len(msg))
 	}
 	if id == nil {

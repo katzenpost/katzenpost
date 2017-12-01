@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,7 +57,7 @@ func TestBoltSpool(t *testing.T) {
 	// Built a test SURBReply.
 	_, err = rand.Read(testSurbID[:])
 	require.NoError(err, "rand.Read(testSurbID)")
-	testSurbMsg = make([]byte, constants.ForwardPayloadLength)
+	testSurbMsg = make([]byte, sphinx.PayloadTagLength+constants.ForwardPayloadLength)
 	_, err = rand.Read(testSurbMsg)
 	require.NoError(err, "rand.Read(testSurbMsg)")
 

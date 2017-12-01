@@ -95,13 +95,6 @@ func (p *provider) worker() {
 			pkt = e.(*packet)
 		}
 
-		// Sanity check the packet payload length.
-		if len(pkt.payload) != constants.ForwardPayloadLength {
-			p.log.Debugf("Dropping packet: %v (Invalid payload length: '%v')", pkt.id, len(pkt.payload))
-			pkt.dispose()
-			continue
-		}
-
 		// Fix the recipient by trimming off the trailing NUL bytes.
 		recipient := bytes.TrimRight(pkt.recipient.ID[:], "\x00")
 
@@ -127,8 +120,8 @@ func (p *provider) worker() {
 }
 
 func (p *provider) onSURBReply(pkt *packet, recipient []byte) {
-	if len(pkt.payload) != constants.ForwardPayloadLength {
-		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v", len(pkt.payload))
+	if len(pkt.payload) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
+		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.id, len(pkt.payload))
 		return
 	}
 
@@ -147,6 +140,12 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 		flagsSURB    = 1
 		reserved     = 0
 	)
+
+	// Sanity check the forward packet payload length.
+	if len(pkt.payload) != constants.ForwardPayloadLength {
+		p.log.Debugf("Dropping packet: %v (Invalid payload length: '%v')", pkt.id, len(pkt.payload))
+		return
+	}
 
 	// Parse the payload, which should be a valid BlockSphinxPlaintext.
 	b := pkt.payload
