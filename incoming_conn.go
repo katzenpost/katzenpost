@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/monotime"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
@@ -278,7 +279,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		copy(surbCmd.ID[:], surbID)
 		respCmd = surbCmd
 
-		if len(msg) != constants.ForwardPayloadLength {
+		if len(msg) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
 			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
 		}
 	} else if msg != nil {
