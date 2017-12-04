@@ -232,7 +232,7 @@ func (w *cryptoWorker) worker() {
 
 		// Toss the packets over to the provider backend.
 		// Note: Callee takes ownership of pkt.
-		if pkt.isToUser() || pkt.isSURBReply() {
+		if pkt.isToUser() || pkt.isUnreliableToUser() || pkt.isSURBReply() {
 			w.log.Debugf("Handing off user destined packet: %v", pkt.id)
 			w.s.provider.onPacket(pkt)
 		} else {

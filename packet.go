@@ -114,6 +114,10 @@ func (pkt *packet) isToUser() bool {
 	return pkt.nextNodeHop == nil && pkt.nodeDelay != nil && pkt.recipient != nil && pkt.surbReply == nil
 }
 
+func (pkt *packet) isUnreliableToUser() bool {
+	return pkt.nextNodeHop == nil && pkt.nodeDelay == nil && pkt.recipient != nil && pkt.surbReply == nil
+}
+
 func (pkt *packet) isSURBReply() bool {
 	return pkt.nextNodeHop == nil && pkt.nodeDelay == nil && pkt.recipient != nil && pkt.surbReply != nil
 }

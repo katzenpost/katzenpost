@@ -180,6 +180,11 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK, and schedule.
 	if surb != nil {
+		if !pkt.isToUser() {
+			p.log.Debugf("Packet has invalid commands for the SURB-ACK: %v", pkt.id)
+			return
+		}
+
 		// Build the SURB-ACK from the SURB.
 		//
 		// TODO/perf: This is a crypto operation and can be made concurrent,
