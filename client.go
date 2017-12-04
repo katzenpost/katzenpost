@@ -19,9 +19,11 @@ package minclient
 
 import (
 	"fmt"
+	mRand "math/rand"
 	"sync"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
@@ -97,6 +99,7 @@ type Client struct {
 	cfg *ClientConfig
 	log *logging.Logger
 
+	rng  *mRand.Rand
 	pki  *pki
 	conn *connection
 
@@ -150,6 +153,7 @@ func New(cfg *ClientConfig) (*Client, error) {
 	c.log.Debugf("User/Provider is: %v", c.displayName)
 	c.log.Debugf("User Link Key is: %v", c.cfg.LinkKey.PublicKey())
 
+	c.rng = rand.NewMath()
 	c.pki = newPKI(c)
 	c.conn = newConnection(c)
 
