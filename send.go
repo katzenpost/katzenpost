@@ -55,6 +55,7 @@ func (c *Client) SendUnreliableCiphertext(user, provider string, b []byte) error
 	}
 
 	var path []*sphinx.PathHop
+selectLoop:
 	for {
 		now := time.Unix(c.pki.skewedUnixTime(), 0)
 		then := now
@@ -64,8 +65,8 @@ func (c *Client) SendUnreliableCiphertext(user, provider string, b []byte) error
 			copy(h.ID[:], desc.IdentityKey.Bytes())
 			epoch, _, _ := epochtime.FromUnix(then.Unix())
 			if k, ok := desc.MixKeys[epoch]; !ok {
-				// Should never happen, but check anyway.
-				return fmt.Errorf("minclient: node %v missing mixkey for epoch %v", desc.IdentityKey, epoch)
+				c.log.Debugf("Hop[%v]: Node %v missing mixkey for epoch %v", idx, desc.IdentityKey, epoch)
+				continue selectLoop
 			} else {
 				h.PublicKey = k
 			}
