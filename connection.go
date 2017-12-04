@@ -19,6 +19,7 @@ package minclient
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"time"
@@ -32,6 +33,10 @@ import (
 	"github.com/op/go-logging"
 )
 
+// ErrNotConnected is the error returned when an operation fails due to the
+// client not currently being connected to the Provider.
+var ErrNotConnected = errors.New("minclient/conn: not connected to the Provider")
+
 type connection struct {
 	sync.Mutex
 	worker.Worker
@@ -43,9 +48,15 @@ type connection struct {
 	descriptor *cpki.MixDescriptor
 	pkiFetchCh chan interface{}
 
+	sendCh      chan *connSendCtx
 	retryDelay  time.Duration
 	lastEmptyAt time.Time
 	isConnected bool
+}
+
+type connSendCtx struct {
+	pkt    []byte
+	doneFn func(error)
 }
 
 func (c *connection) onPKIFetch() {
@@ -289,6 +300,18 @@ func (c *connection) onWireConn(w *wire.Session) {
 				fetchDelay = fetchRespInterval
 			}
 			continue
+		case ctx := <-c.sendCh:
+			cmd := &commands.SendPacket{
+				SphinxPacket: ctx.pkt,
+			}
+			err := w.SendCommand(cmd)
+			ctx.doneFn(err)
+			if err != nil {
+				c.log.Debugf("Failed to send SendPacket: %v", err)
+				return
+			}
+			c.log.Debugf("Send SendPacket.")
+			continue
 		case rawCmd, ok = <-cmdCh:
 			if !ok {
 				return
@@ -334,12 +357,12 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Caller failed to handle Message: %v", err)
 				return
 			}
-			seq++ // Will have the server discard the message on next fetch.
+			seq++
 
 			// We could use cmd.QueueSizeHint to delay the next fetch, but
 			// sending the next fetch immediately helps keep the server's
 			// state in sync and makes it less likely that a duplicate
-			// will be received.
+			// will be received if we happen to disconnect.
 			fetchDelay = fetchMoreInterval
 		case *commands.MessageACK:
 			c.log.Debugf("Received MessageACK: %v", cmd.Sequence)
@@ -385,8 +408,32 @@ func (c *connection) onConnStatusChange(isConnected bool) {
 
 	c.c.cfg.OnConnFn(c.isConnected)
 	if !isConnected {
-		// XXX: Force drain the send queue.
+		// Force drain the send queue.
+		select {
+		case ctx := <-c.sendCh:
+			ctx.doneFn(ErrNotConnected)
+		default:
+		}
 	}
+}
+
+func (c *connection) sendPacket(pkt []byte) error {
+	c.Lock()
+	defer c.Unlock()
+	if !c.isConnected {
+		return ErrNotConnected
+	}
+
+	errCh := make(chan error)
+	ctx := &connSendCtx{
+		pkt: pkt,
+		doneFn: func(err error) {
+			errCh <- err
+		},
+	}
+
+	c.sendCh <- ctx
+	return <-errCh
 }
 
 func newConnection(c *Client) *connection {
@@ -394,6 +441,7 @@ func newConnection(c *Client) *connection {
 	k.c = c
 	k.log = c.cfg.LogBackend.GetLogger("minclient/conn:" + c.displayName)
 	k.pkiFetchCh = make(chan interface{}, 1)
+	k.sendCh = make(chan *connSendCtx)
 
 	k.Go(k.connectWorker)
 	return k
