@@ -31,15 +31,36 @@ import (
 
 // ClientConfig is a client configuration.
 type ClientConfig struct {
-	User, Provider string
-	IdentityKey    *ecdh.PrivateKey
+	// User is the user identifier used to connect to the Provider.
+	User string
 
+	// Provider is the provider identifier to connect to.
+	Provider string
+
+	// LinkKey is the user's ECDH link authentication private key.
+	LinkKey *ecdh.PrivateKey
+
+	// LogBackend is the logging backend to use for client logging.
 	LogBackend *log.Backend
-	PKIClient  cpki.Client
 
-	OnConnFn    func(bool)
+	// PKIClient is the PKI Document data source.
+	PKIClient cpki.Client
+
+	// OnConnFn is the callback function that will be called when the
+	// connection status changes.
+	OnConnFn func(bool)
+
+	// OnMessageFn is the callback function that will be called when
+	// a message is retrived from the user's server side spool.  Callers
+	// MUST be prepared to receive multiple callbacks with the same
+	// message body.
 	OnMessageFn func([]byte) error
-	OnACKFn     func(*[constants.SURBIDLength]byte, []byte) error
+
+	// OnACKFn is the callback function that will be called when a
+	// message CK is retreived from the user's server side spool.  Callers
+	// MUST be prepared to receive multiple callbacks with the same
+	// SURB ID and SURB ciphertext.
+	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
 }
 
 func (cfg *ClientConfig) validate() error {
@@ -49,8 +70,8 @@ func (cfg *ClientConfig) validate() error {
 	if cfg.Provider == "" {
 		return fmt.Errorf("minclient: invalid Provider: '%v'", cfg.Provider)
 	}
-	if cfg.IdentityKey == nil {
-		return fmt.Errorf("minclient: no IdentityKey provided")
+	if cfg.LinkKey == nil {
+		return fmt.Errorf("minclient: no LinkKey provided")
 	}
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("minclient: no LogBackend provided")
@@ -127,7 +148,7 @@ func New(cfg *ClientConfig) (*Client, error) {
 
 	c.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	c.log.Debugf("User/Provider is: %v", c.displayName)
-	c.log.Debugf("User Identity Key is: %v", c.cfg.IdentityKey.PublicKey())
+	c.log.Debugf("User Link Key is: %v", c.cfg.LinkKey.PublicKey())
 
 	c.pki = newPKI(c)
 	c.conn = newConnection(c)

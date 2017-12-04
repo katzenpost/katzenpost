@@ -210,7 +210,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	cfg := &wire.SessionConfig{
 		Authenticator:     c,
 		AdditionalData:    []byte(c.c.cfg.User),
-		AuthenticationKey: c.c.cfg.IdentityKey,
+		AuthenticationKey: c.c.cfg.LinkKey,
 		RandomReader:      rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)
