@@ -71,11 +71,6 @@ func (c *Client) SendUnreliableCiphertext(user, provider string, b []byte) error
 			}
 
 			if idx != len(descs)-1 {
-				// Next.
-				nextCmd := &commands.NextNodeHop{}
-				copy(nextCmd.ID[:], descs[idx+1].IdentityKey.Bytes())
-				h.Commands = append(h.Commands, nextCmd)
-
 				// Delay.
 				delay := uint64(rand.Exp(c.rng, doc.Lambda))
 				if delay > doc.MaxDelay {
@@ -86,11 +81,15 @@ func (c *Client) SendUnreliableCiphertext(user, provider string, b []byte) error
 					Delay: uint32(delay),
 				}
 				h.Commands = append(h.Commands, delayCmd)
+
+				c.log.Debugf("Hop[%v]: '%v' - %d ms.", idx, desc.Name, delay)
 			} else {
 				// Recipient.
 				recipCmd := &commands.Recipient{}
 				copy(recipCmd.ID[:], []byte(user))
 				h.Commands = append(h.Commands, recipCmd)
+
+				c.log.Debugf("Hop[%v]: '%v'", idx, desc.Name)
 			}
 			path = append(path, h)
 		}

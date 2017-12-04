@@ -301,6 +301,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			continue
 		case ctx := <-c.sendCh:
+			c.log.Debugf("Dequeued packet for send.")
 			cmd := &commands.SendPacket{
 				SphinxPacket: ctx.pkt,
 			}
@@ -433,6 +434,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 	}
 
 	c.sendCh <- ctx
+	c.log.Debugf("Enqueued packet for send.")
 	return <-errCh
 }
 
