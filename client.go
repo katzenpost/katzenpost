@@ -24,6 +24,8 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/log"
 	cpki "github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/wire"
 	"github.com/op/go-logging"
 )
 
@@ -34,6 +36,39 @@ type ClientConfig struct {
 
 	LogBackend *log.Backend
 	PKIClient  cpki.Client
+
+	OnConnFn    func(bool)
+	OnMessageFn func([]byte) error
+	OnACKFn     func(*[constants.SURBIDLength]byte, []byte) error
+}
+
+func (cfg *ClientConfig) validate() error {
+	if cfg.User == "" || len(cfg.User) > wire.MaxAdditionalDataLength {
+		return fmt.Errorf("minclient: invalid User: '%v'", cfg.User)
+	}
+	if cfg.Provider == "" {
+		return fmt.Errorf("minclient: invalid Provider: '%v'", cfg.Provider)
+	}
+	if cfg.IdentityKey == nil {
+		return fmt.Errorf("minclient: no IdentityKey provided")
+	}
+	if cfg.LogBackend == nil {
+		return fmt.Errorf("minclient: no LogBackend provided")
+	}
+	if cfg.PKIClient == nil {
+		return fmt.Errorf("minclient: no PKIClient provided")
+	}
+	if cfg.OnConnFn == nil {
+		return fmt.Errorf("minclient: no OnConnFn provided")
+	}
+	if cfg.OnMessageFn == nil {
+		return fmt.Errorf("minclient: no OnMessageFn provided")
+	}
+	if cfg.OnACKFn == nil {
+		return fmt.Errorf("minclient: no OnACKFn provided")
+	}
+
+	return nil
 }
 
 // Client is a client instance.
@@ -74,14 +109,16 @@ func (c *Client) halt() {
 	}
 	c.conn = nil
 
-	// XXX: Close the persistence.
-
 	c.log.Notice("Shutdown complete.")
 	close(c.haltedCh)
 }
 
 // New creates a new Client with the provided configuration.
 func New(cfg *ClientConfig) (*Client, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
 	c := new(Client)
 	c.cfg = cfg
 	c.displayName = fmt.Sprintf("%v@%v", c.cfg.User, c.cfg.Provider)
@@ -91,8 +128,6 @@ func New(cfg *ClientConfig) (*Client, error) {
 	c.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	c.log.Debugf("User/Provider is: %v", c.displayName)
 	c.log.Debugf("User Identity Key is: %v", c.cfg.IdentityKey.PublicKey())
-
-	// XXX: Initialize the persistence.
 
 	c.pki = newPKI(c)
 	c.conn = newConnection(c)

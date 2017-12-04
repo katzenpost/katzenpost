@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/katzenpost/core/crypto/rand"
@@ -32,6 +33,7 @@ import (
 )
 
 type connection struct {
+	sync.Mutex
 	worker.Worker
 
 	c   *Client
@@ -41,13 +43,9 @@ type connection struct {
 	descriptor *cpki.MixDescriptor
 	pkiFetchCh chan interface{}
 
-	retryDelay time.Duration
-}
-
-func (c *connection) Halt() {
-	c.Worker.Halt()
-
-	// XXX: Cleanup.
+	retryDelay  time.Duration
+	lastEmptyAt time.Time
+	isConnected bool
 }
 
 func (c *connection) onPKIFetch() {
@@ -242,8 +240,13 @@ func (c *connection) onWireConn(w *wire.Session) {
 		fetchMoreInterval  = 0 * time.Second
 	)
 
+	c.onConnStatusChange(true)
+
 	closeCh := make(chan interface{})
-	defer close(closeCh)
+	defer func() {
+		c.onConnStatusChange(false)
+		close(closeCh)
+	}()
 
 	// Start the peer reader.
 	cmdCh := make(chan commands.Command)
@@ -315,6 +318,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			nrResps++
 			fetchDelay = fetchEmptyInterval
+
+			// XXX: Signal caller (-> queue empty).
+			c.Lock()
+			c.lastEmptyAt = time.Now()
+			c.Unlock()
 		case *commands.Message:
 			c.log.Debugf("Received Message: %v", cmd.Sequence)
 			if seq != cmd.Sequence {
@@ -322,7 +330,10 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			// XXX: Do something with cmd.Payload.
+			if err := c.c.cfg.OnMessageFn(cmd.Payload); err != nil {
+				c.log.Debugf("Caller failed to handle Message: %v", err)
+				return
+			}
 			seq++ // Will have the server discard the message on next fetch.
 
 			// We could use cmd.QueueSizeHint to delay the next fetch, but
@@ -337,7 +348,10 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			// XXX: Do something with cmd.ID and cmd.Payload.
+			if err := c.c.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
+				c.log.Debugf("Caller failed to handle MessageACK: %v", err)
+				return
+			}
 			seq++
 
 			fetchDelay = fetchMoreInterval // Likewise as with Message...
@@ -362,6 +376,17 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 	return true
+}
+
+func (c *connection) onConnStatusChange(isConnected bool) {
+	c.Lock()
+	defer c.Unlock()
+	c.isConnected = isConnected
+
+	c.c.cfg.OnConnFn(c.isConnected)
+	if !isConnected {
+		// XXX: Force drain the send queue.
+	}
 }
 
 func newConnection(c *Client) *connection {
