@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
+	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
 	"github.com/op/go-logging"
 )
@@ -39,6 +40,8 @@ type connection struct {
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
 	pkiFetchCh chan interface{}
+
+	retryDelay time.Duration
 }
 
 func (c *connection) Halt() {
@@ -151,7 +154,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		Timeout:   connectTimeout,
 	}
 
-	retryDelay := 0 * time.Second
 	for {
 		c.getDescriptor()
 		if c.descriptor == nil {
@@ -161,11 +163,11 @@ func (c *connection) doConnect(dialCtx context.Context) {
 
 		for _, addrPort := range c.descriptor.Addresses {
 			select {
-			case <-time.After(retryDelay):
+			case <-time.After(c.retryDelay):
 				// Back off the reconnect delay.
-				retryDelay += retryIncrement
-				if retryDelay > maxRetryDelay {
-					retryDelay = maxRetryDelay
+				c.retryDelay += retryIncrement
+				if c.retryDelay > maxRetryDelay {
+					c.retryDelay = maxRetryDelay
 				}
 			case <-c.HaltCh():
 				c.log.Debugf("(Re)connection attempts canceled.")
@@ -185,27 +187,20 @@ func (c *connection) doConnect(dialCtx context.Context) {
 					c.log.Warningf("Failed to connect to %v: %v", addrPort, err)
 					continue
 				}
-				retryDelay = 0
 			}
 			c.log.Debugf("TCP connection established.")
-			start := time.Now()
 
 			// Do something with the connection.
-			c.onConnection(conn)
-
-			c.log.Debugf("Connection terminated, will reconnect.")
-			if time.Since(start) < retryIncrement {
-				// Don't reconnect in a tight loop if the handshake fails.
-				retryDelay = retryIncrement
-			}
+			c.onTCPConn(conn)
 
 			// Re-iterate through the address/ports on a sucessful connect.
+			c.log.Debugf("Connection terminated, will reconnect.")
 			break
 		}
 	}
 }
 
-func (c *connection) onConnection(conn net.Conn) {
+func (c *connection) onTCPConn(conn net.Conn) {
 	const handshakeTimeout = 1 * time.Minute
 
 	defer func() {
@@ -237,12 +232,124 @@ func (c *connection) onConnection(conn net.Conn) {
 	conn.SetDeadline(time.Time{})
 	c.c.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
-	// XXX: Do something
-	<-c.HaltCh()
+	c.onWireConn(w)
+}
+
+func (c *connection) onWireConn(w *wire.Session) {
+	const (
+		fetchRespInterval  = 1 * time.Second
+		fetchEmptyInterval = 1 * time.Minute
+		fetchMoreInterval  = 0 * time.Second
+	)
+
+	closeCh := make(chan interface{})
+	defer close(closeCh)
+
+	// Start the peer reader.
+	cmdCh := make(chan commands.Command)
+	go func() {
+		defer close(cmdCh)
+		for {
+			rawCmd, err := w.RecvCommand()
+			if err != nil {
+				c.log.Debugf("Failed to receive command: %v", err)
+				return
+			}
+			c.retryDelay = 0
+			select {
+			case cmdCh <- rawCmd:
+			case <-closeCh:
+				return
+			}
+		}
+	}()
+
+	fetchDelay := 0 * time.Second
+	nrReqs, nrResps := 0, 0
+	seq := uint32(0)
+	for {
+		var rawCmd commands.Command
+		ok := false
+		select {
+		case <-time.After(fetchDelay):
+			// Send a fetch if there is not one outstanding.
+			if nrReqs == nrResps {
+				cmd := &commands.RetrieveMessage{
+					Sequence: seq,
+				}
+				if err := w.SendCommand(cmd); err != nil {
+					c.log.Debugf("Failed to send RetrieveMessage: %v", err)
+					return
+				}
+				c.log.Debugf("Sent RetrieveMessage: %d", seq)
+				nrReqs++
+				fetchDelay = fetchRespInterval
+			}
+			continue
+		case rawCmd, ok = <-cmdCh:
+			if !ok {
+				return
+			}
+		case <-c.HaltCh():
+			return
+		}
+
+		// Update the cached descriptor, and re-validate the connection.
+		if !c.IsPeerValid(w.PeerCredentials()) {
+			c.log.Warningf("No longer have a descriptor for current peer.")
+			return
+		}
+
+		// Handle the response.
+		switch cmd := rawCmd.(type) {
+		case *commands.NoOp:
+			c.log.Debugf("Received NoOp.")
+		case *commands.Disconnect:
+			c.log.Debugf("Received Disconnect.")
+			return
+		case *commands.MessageEmpty:
+			c.log.Debugf("Received MessageEmpty: %v", cmd.Sequence)
+			if seq != cmd.Sequence {
+				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
+				return
+			}
+			nrResps++
+			fetchDelay = fetchEmptyInterval
+		case *commands.Message:
+			c.log.Debugf("Received Message: %v", cmd.Sequence)
+			if seq != cmd.Sequence {
+				c.log.Errorf("Message sequence unexpected: %v", cmd.Sequence)
+				return
+			}
+			nrResps++
+			// XXX: Do something with cmd.Payload.
+			seq++ // Will have the server discard the message on next fetch.
+
+			// We could use cmd.QueueSizeHint to delay the next fetch, but
+			// sending the next fetch immediately helps keep the server's
+			// state in sync and makes it less likely that a duplicate
+			// will be received.
+			fetchDelay = fetchMoreInterval
+		case *commands.MessageACK:
+			c.log.Debugf("Received MessageACK: %v", cmd.Sequence)
+			if seq != cmd.Sequence {
+				c.log.Errorf("MessageACK sequence unexpected: %v", cmd.Sequence)
+				return
+			}
+			nrResps++
+			// XXX: Do something with cmd.ID and cmd.Payload.
+			seq++
+
+			fetchDelay = fetchMoreInterval // Likewise as with Message...
+		default:
+			c.log.Errorf("Received unexpected command: %t", cmd)
+			return
+		}
+	}
 }
 
 func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
-	// Refresh the peer's descriptor from the PKI fetcher.
+	// Refresh the cached Provider descriptor.
 	c.getDescriptor()
 	if c.descriptor == nil {
 		return false
