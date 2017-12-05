@@ -49,17 +49,18 @@ func (c *Client) SendUnreliableCiphertext(user, provider string, b []byte) error
 	if doc == nil {
 		return fmt.Errorf("minclient: no PKI document for current epoch")
 	}
-	descs, err := path.New(c.rng, doc, c.cfg.Provider, provider)
-	if err != nil {
-		return err
-	}
 
-	var path []*sphinx.PathHop
+	var pktPath []*sphinx.PathHop
 selectLoop:
 	for {
+		descs, err := path.New(c.rng, doc, c.cfg.Provider, provider)
+		if err != nil {
+			return err
+		}
+
 		now := time.Unix(c.pki.skewedUnixTime(), 0)
 		then := now
-		path = make([]*sphinx.PathHop, 0, len(descs))
+		pktPath = make([]*sphinx.PathHop, 0, len(descs))
 		for idx, desc := range descs {
 			h := &sphinx.PathHop{}
 			copy(h.ID[:], desc.IdentityKey.Bytes())
@@ -92,7 +93,7 @@ selectLoop:
 
 				c.log.Debugf("Hop[%v]: '%v'", idx, desc.Name)
 			}
-			path = append(path, h)
+			pktPath = append(pktPath, h)
 		}
 
 		// It is possible, but unlikely that a series of delays exceeding
@@ -105,7 +106,7 @@ selectLoop:
 		// XXX: This should probably give up after a while.
 	}
 
-	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+	pkt, err := sphinx.NewPacket(rand.Reader, pktPath, payload)
 	if err != nil {
 		return err
 	}
