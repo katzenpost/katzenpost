@@ -51,7 +51,6 @@ type connection struct {
 	fetchCh     chan interface{}
 	sendCh      chan *connSendCtx
 	retryDelay  time.Duration
-	lastEmptyAt time.Time
 	isConnected bool
 }
 
@@ -362,10 +361,12 @@ func (c *connection) onWireConn(w *wire.Session) {
 			nrResps++
 			fetchDelay = fetchEmptyInterval
 
-			// XXX: Signal caller (-> queue empty).
-			c.Lock()
-			c.lastEmptyAt = time.Now()
-			c.Unlock()
+			if c.c.cfg.OnEmptyFn != nil {
+				if err := c.c.cfg.OnEmptyFn(); err != nil {
+					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
+					return
+				}
+			}
 		case *commands.Message:
 			c.log.Debugf("Received Message: %v", cmd.Sequence)
 			if seq != cmd.Sequence {
