@@ -354,9 +354,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			if err := c.c.cfg.OnMessageFn(cmd.Payload); err != nil {
-				c.log.Debugf("Caller failed to handle Message: %v", err)
-				return
+			if c.c.cfg.OnMessageFn != nil {
+				if err := c.c.cfg.OnMessageFn(cmd.Payload); err != nil {
+					c.log.Debugf("Caller failed to handle Message: %v", err)
+					return
+				}
 			}
 			seq++
 
@@ -372,9 +374,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			if err := c.c.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
-				c.log.Debugf("Caller failed to handle MessageACK: %v", err)
-				return
+			if c.c.cfg.OnACKFn != nil {
+				if err := c.c.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
+					c.log.Debugf("Caller failed to handle MessageACK: %v", err)
+					return
+				}
 			}
 			seq++
 
@@ -407,7 +411,9 @@ func (c *connection) onConnStatusChange(isConnected bool) {
 	defer c.Unlock()
 	c.isConnected = isConnected
 
-	c.c.cfg.OnConnFn(c.isConnected)
+	if c.c.cfg.OnConnFn != nil {
+		c.c.cfg.OnConnFn(c.isConnected)
+	}
 	if !isConnected {
 		// Force drain the send queue.
 		select {

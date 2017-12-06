@@ -83,16 +83,6 @@ func (cfg *ClientConfig) validate() error {
 	if cfg.PKIClient == nil {
 		return fmt.Errorf("minclient: no PKIClient provided")
 	}
-	if cfg.OnConnFn == nil {
-		return fmt.Errorf("minclient: no OnConnFn provided")
-	}
-	if cfg.OnMessageFn == nil {
-		return fmt.Errorf("minclient: no OnMessageFn provided")
-	}
-	if cfg.OnACKFn == nil {
-		return fmt.Errorf("minclient: no OnACKFn provided")
-	}
-
 	return nil
 }
 
