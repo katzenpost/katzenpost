@@ -48,6 +48,7 @@ type connection struct {
 	descriptor *cpki.MixDescriptor
 	pkiFetchCh chan interface{}
 
+	fetchCh     chan interface{}
 	sendCh      chan *connSendCtx
 	retryDelay  time.Duration
 	lastEmptyAt time.Time
@@ -57,6 +58,17 @@ type connection struct {
 type connSendCtx struct {
 	pkt    []byte
 	doneFn func(error)
+}
+
+// ForceFetch attempts to force an otherwise idle client to attempt to fetch
+// the contents of the user's spool.  This call has no effect if a connection
+// is not established or if the connection is already in the middle of a
+// fetch cycle, and should be considered a best effort operation.
+func (c *Client) ForceFetch() {
+	select {
+	case c.conn.fetchCh <- true:
+	default:
+	}
 }
 
 func (c *connection) onPKIFetch() {
@@ -283,23 +295,13 @@ func (c *connection) onWireConn(w *wire.Session) {
 	seq := uint32(0)
 	for {
 		var rawCmd commands.Command
+		doFetch := false
 		ok := false
 		select {
 		case <-time.After(fetchDelay):
-			// Send a fetch if there is not one outstanding.
-			if nrReqs == nrResps {
-				cmd := &commands.RetrieveMessage{
-					Sequence: seq,
-				}
-				if err := w.SendCommand(cmd); err != nil {
-					c.log.Debugf("Failed to send RetrieveMessage: %v", err)
-					return
-				}
-				c.log.Debugf("Sent RetrieveMessage: %d", seq)
-				nrReqs++
-				fetchDelay = fetchRespInterval
-			}
-			continue
+			doFetch = true
+		case <-c.fetchCh:
+			doFetch = true
 		case ctx := <-c.sendCh:
 			c.log.Debugf("Dequeued packet for send.")
 			cmd := &commands.SendPacket{
@@ -319,6 +321,23 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 		case <-c.HaltCh():
 			return
+		}
+
+		// Send a fetch if there is not one outstanding.
+		if doFetch {
+			if nrReqs == nrResps {
+				cmd := &commands.RetrieveMessage{
+					Sequence: seq,
+				}
+				if err := w.SendCommand(cmd); err != nil {
+					c.log.Debugf("Failed to send RetrieveMessage: %v", err)
+					return
+				}
+				c.log.Debugf("Sent RetrieveMessage: %d", seq)
+				nrReqs++
+				fetchDelay = fetchRespInterval
+			}
+			continue
 		}
 
 		// Update the cached descriptor, and re-validate the connection.
@@ -408,39 +427,45 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 func (c *connection) onConnStatusChange(isConnected bool) {
 	c.Lock()
-	defer c.Unlock()
 	c.isConnected = isConnected
-
-	if c.c.cfg.OnConnFn != nil {
-		c.c.cfg.OnConnFn(c.isConnected)
-	}
 	if !isConnected {
-		// Force drain the send queue.
+		// Force drain the channels used to poke the loop.
 		select {
 		case ctx := <-c.sendCh:
 			ctx.doneFn(ErrNotConnected)
 		default:
 		}
+		select {
+		case <-c.fetchCh:
+		default:
+		}
+	}
+	c.Unlock()
+
+	if c.c.cfg.OnConnFn != nil {
+		c.c.cfg.OnConnFn(c.isConnected)
 	}
 }
 
 func (c *connection) sendPacket(pkt []byte) error {
 	c.Lock()
-	defer c.Unlock()
 	if !c.isConnected {
+		c.Unlock()
 		return ErrNotConnected
 	}
 
 	errCh := make(chan error)
-	ctx := &connSendCtx{
+	c.sendCh <- &connSendCtx{
 		pkt: pkt,
 		doneFn: func(err error) {
 			errCh <- err
 		},
 	}
-
-	c.sendCh <- ctx
 	c.log.Debugf("Enqueued packet for send.")
+
+	// Release the lock so this won't deadlock in onConnStatusChange.
+	c.Unlock()
+
 	return <-errCh
 }
 
@@ -449,6 +474,7 @@ func newConnection(c *Client) *connection {
 	k.c = c
 	k.log = c.cfg.LogBackend.GetLogger("minclient/conn:" + c.displayName)
 	k.pkiFetchCh = make(chan interface{}, 1)
+	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 
 	k.Go(k.connectWorker)
