@@ -310,7 +310,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	}
 	if debugTree, ok := tree.Get("Debug").(*toml.Tree); ok {
 		cfg.Debug = new(Debug)
-		if err := debugTree.Unmarshal(cfg.Parameters); err != nil {
+		if err := debugTree.Unmarshal(cfg.Debug); err != nil {
 			return nil, err
 		}
 	}
