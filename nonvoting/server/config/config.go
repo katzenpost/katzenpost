@@ -279,7 +279,7 @@ func (cfg *Config) FixupAndValidate() error {
 
 // Load parses and validates the provided buffer b as a config file body and
 // returns the Config.
-func Load(b []byte) (*Config, error) {
+func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	// The TOML library that's being used is too dumb to unmarshal sub-structs,
 	// so, do this the hard way.
 	tree, err := toml.LoadBytes(b)
@@ -351,15 +351,21 @@ func Load(b []byte) (*Config, error) {
 	}
 
 	// Unmarshal the Mixes and Provider arrays by hand.
-	if cfg.Mixes, err = unmarshalNodeArray("Mixes"); err != nil {
-		return nil, err
-	}
-	if cfg.Providers, err = unmarshalNodeArray("Providers"); err != nil {
-		return nil, err
+	if !forceGenOnly {
+		if cfg.Mixes, err = unmarshalNodeArray("Mixes"); err != nil {
+			return nil, err
+		}
+		if cfg.Providers, err = unmarshalNodeArray("Providers"); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
+	}
+
+	if forceGenOnly {
+		cfg.Debug.GenerateOnly = true
 	}
 
 	return cfg, nil
@@ -367,10 +373,10 @@ func Load(b []byte) (*Config, error) {
 
 // LoadFile loads, parses and validates the provided file and returns the
 // Config.
-func LoadFile(f string) (*Config, error) {
+func LoadFile(f string, forceGenOnly bool) (*Config, error) {
 	b, err := ioutil.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}
-	return Load(b)
+	return Load(b, forceGenOnly)
 }
