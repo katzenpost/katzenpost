@@ -15,9 +15,6 @@ This document describes the high level architecture and detailed
 protocols and behavior required of mix nodes participating in the
 Panoramix Mix Network.
 
-Table of Contents
-~~~~~~~~~~~~~~~~~
-
 .. contents:: :local:
 
 1. Introduction
@@ -585,9 +582,9 @@ Appendix A.1 Normative References
 .. [RFC7748]   Langley, A., Hamburg, M., and S. Turner, "Elliptic Curves
                for Security", RFC 7748, January 2016.
 
-   (XXX/david: fix this reference, add author names and url)
-
 .. [PANMIXWIRE] "Panoramix Mix Network Wire Protocol Specification", June 2017.
+
+    (XXX/david: fix this reference, add author names and url)
 
 Appendix A.2 Informative References
 -----------------------------------

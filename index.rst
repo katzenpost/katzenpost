@@ -15,6 +15,6 @@ Specifications
 
 .. toctree::
    :glob:
-   :maxdepth: 3
+   :maxdepth: 2
 
    docs/specs/*
