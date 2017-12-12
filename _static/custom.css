@@ -3,3 +3,7 @@ pre {
     background: #ffffff;
     overflow: visible;
 }
+
+.small {
+    font-size: 80%;
+}
