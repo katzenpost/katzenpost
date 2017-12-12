@@ -1,41 +1,27 @@
 Panoramix Mix Network Specification
-Yawning Angel
-George Danezis
-Claudia Diaz
-Ania Piotrowska
-David Stainton
+***********************************
+
+| Yawning Angel
+| George Danezis
+| Claudia Diaz
+| Ania Piotrowska
+| David Stainton
 
 Version 0
 
-Abstract
+.. rubric:: Abstract
 
    This document describes the high level architecture and detailed
    protocols and behavior required of mix nodes participating in the
    Panoramix Mix Network.
 
 Table of Contents
+~~~~~~~~~~~~~~~~~
 
-   1. Introduction
-      1.1 Terminology
-      1.2 Conventions Used in This Document
-   2. System Overview
-      2.1 Threat Model
-      2.2. Network Topology
-   3. Packet Format
-      3.1 Sphinx Cryptographic Primitives
-      3.2 Sphinx Packet Parameters
-      3.3 Sphinx Per-hop Routing Information Extensions
-   4. Mix Node Operation
-      4.1 Link Layer Connection Management
-      4.2 Sphinx Mix and Provider Key Rotation
-      4.3 Sphinx Packet Processing
-   5. Anonymity Considerations
-   6. Security Considerations
-   Appendix A. References
-      Appendix A.1 Normative References
-      Appendix A.2 Informative References
+.. contents:: :local:
 
 1. Introduction
+===============
 
    This specification provides the design of a mix network meant
    to provide an anonymous messaging service.
@@ -43,33 +29,34 @@ Table of Contents
    reliability protocol, Sphinx cryptographic packet format and wire
    protocol are described in their own specification documents.
 
-1.1. Terminology
+1.1 Terminology
+----------------
 
-   A KiB is defined as 1024 8 bit octets.
+   A ``KiB`` is defined as 1024 8 bit octets.
 
-   Mix - A server that provides anonymity to clients. This is
+   ``Mix`` - A server that provides anonymity to clients. This is
          accomplished by accepting layer-encrypted packets from a
          Provider or another Mix, decrypting a layer of the
          encryption, delaying the packet, and transmitting
          the packet to another Mix or Provider.
 
-   Mixnet - A network of mixes.
+   ``Mixnet`` - A network of mixes.
 
-   Provider - A service operated by a third party that Clients
+   ``Provider`` - A service operated by a third party that Clients
               communicate directly with to communicate with the Mixnet.
               It is responsible for Client authentication,
               forwarding outgoing messages to the Mixnet, and storing incoming
               messages for the Client. The Provider MUST have the ability to
               perform cryptographic operations on the relayed packets.
 
-   Node - A Mix or Provider instance.
+   ``Node`` - A Mix or Provider instance.
 
-   User - An agent using the Panoramix system.
+   ``User`` - An agent using the Panoramix system.
 
-   Client - Software run by the User on its local device to
+   ``Client`` - Software run by the User on its local device to
             participate in the Mixnet.
 
-   Panoramix - A project to design an improved mix service as described
+   ``Panoramix`` - A project to design an improved mix service as described
                in this specification. Also, the name of the reference
                software to implement this service, currently under
                development.
@@ -80,14 +67,14 @@ Table of Contents
                         * Large messages (big attachments)
                         /* This may be changed after we do our analysis on the stats */
 
-   Packet - A string transmitted anonymously thought the Panoramix network.
+   ``Packet`` - A string transmitted anonymously thought the Panoramix network.
              The length of the packet is fixed for every class of traffic.
 
-   Payload - The [xxx] KiB portion of a Packet containing a message,
+   ``Payload`` - The [xxx] KiB portion of a Packet containing a message,
              or part of a message, to be delivered anonymously. */<- This has to be rephrased after
              The analysis of the stats. / *
 
-   Message - A variable-length sequence of octets sent anonymously
+   ``Message`` - A variable-length sequence of octets sent anonymously
              through the network. Short messages are sent in a single
              packet; long messages are fragmented across multiple
              packets (see the Panoramix Mix Network End-to-end
@@ -95,15 +82,17 @@ Table of Contents
              encoding messages into payloads). /*<- This has to be rephrased after
              The analysis of the stats; if we have multiple classes of traffic */
 
-   MSL - Maximum Segment Lifetime, 120 seconds.
+   ``MSL`` - Maximum Segment Lifetime, 120 seconds.
 
 1.2 Conventions Used in This Document
+-------------------------------------
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
    document are to be interpreted as described in [RFC2119].
 
 2. System Overview
+==================
 
    The presented system design is based on [LOOPIX]. The detailed
    End-to-end specification, describing the operations performed
@@ -118,6 +107,7 @@ Table of Contents
    is responsible for signaling that the packet was received by sending
    an acknowledgment, as well as storing the packet until it is retrieved
    by the recipient.
+   ::
 
       +--------+     +----------+     +-------------+
       | Client | <-> |          |     |             |
@@ -147,6 +137,7 @@ Table of Contents
    desired.
 
 2.1 Threat Model
+-----------------
 
     We assume that the sender and recipient do know each other's
     addresses. This system guarantees third-party anonymity, meaning
@@ -174,7 +165,8 @@ Table of Contents
     malicious. Moreover, the malicious mixes can drop, inject, modify
     or delay the packets for more or less time than specified.
 
-2.2. Network Topology
+2.2 Network Topology
+---------------------
 
    The Panoramix Mix Network uses a layered topology consisting of a
    fixed number of layers, each containing a set of mixes. At any
@@ -182,6 +174,7 @@ Table of Contents
    Each Mix in a given layer N is connected to every other Mix in
    the previous and next layer, and or every participating Provider
    in the case of the mixes in layer 0 or layer N (first and last layer).
+   ::
 
                              Layer 0        Layer 1        Layer 2
           +----------+      +-------+      +-------+      +-------+
@@ -216,6 +209,7 @@ Table of Contents
         the cost of compulsion attacks.
 
 3. Packet Format Overview
+=========================
 
    For the packet format of the transported messages we use the Sphinx
    cryptographic packet format. The detailed description of the
@@ -228,6 +222,7 @@ Table of Contents
    additional Sphinx per-hop routing information commands.
 
 3.1 Sphinx Cryptographic Primitives
+-----------------------------------
 
    For the current version of the Panoramix Mix Network, let the
    following cryptographic primitives be used as described in the
@@ -259,6 +254,7 @@ Table of Contents
                   of 32 bytes (256 bits), G is the X25519 base point.
 
 3.2 Sphinx Packet Parameters
+----------------------------
 
    The following parameters are used as for the Panoramix Mix Network
    instantiation of the Sphinx Packet Format:
@@ -310,6 +306,7 @@ Table of Contents
       )
 
 3.3 Sphinx Per-hop Routing Information Extensions
+-------------------------------------------------
 
    The following extensions are added to the Sphinx Per-Hop Routing
    Information commands.
@@ -328,6 +325,7 @@ Table of Contents
       } NodeDelayCommand;
 
 4. Mix Node Operation
+=====================
 
    All Mixes behave in the following manner:
 
@@ -350,6 +348,7 @@ Table of Contents
    view of time, via NTP or similar time synchronization mechanism.
 
 4.1 Link Layer Connection Management
+------------------------------------
 
    All communication to and from participants in the Panoramix Mix
    Network is done via the Panoramix Mix Network Wire Protocol [PANMIXWIRE].
@@ -387,6 +386,7 @@ Table of Contents
 )
 
 4.2 Sphinx Mix and Provider Key Rotation
+----------------------------------------
 
    Each Node MUST rotate the key pair used for Sphinx packet processing
    periodically for forward secrecy reasons and to keep the list of seen
@@ -441,6 +441,7 @@ Table of Contents
 )
 
 4.3 Sphinx Packet Processing
+----------------------------
 
    The detailed processing of the Sphinx packet is described in the
    Sphinx specification: "The Sphinx Mix Network Cryptographic Packet
@@ -494,8 +495,10 @@ Table of Contents
    for more time than specified by the NodeDelayCommand.
 
 5. Anonymity Considerations
+===========================
 
 5.1 Topology
+------------
 
    Layered topology is used because it offers the best level of
    anonymity and ease of analysis, while being flexible enough to
@@ -521,6 +524,7 @@ Table of Contents
        agreements such as MLATs).
 
 5.2 Mixing strategy
+-------------------
 
    As a mixing technique is used the Poisson mix strategy [LOOPIX]
    [KESDOGAN98], which Requires that a packet at each hop in the route
@@ -533,6 +537,7 @@ Table of Contents
    the system is deployed.
 
 6. Security Considerations
+==========================
 
    The source of all authority in the mixnet system comes from the
    Directory Authority system which is also known as the mixnet PKI.
@@ -542,8 +547,10 @@ Table of Contents
    by this Directory Authority system.
 
 Appendix A. References
+======================
 
 Appendix A.1 Normative References
+---------------------------------
 
    [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
                Requirement Levels", BCP 14, RFC 2119,
@@ -575,7 +582,8 @@ Appendix A.1 Normative References
    (XXX/david: fix this reference, add author names and url)
    [PANMIXWIRE] "Panoramix Mix Network Wire Protocol Specification", June 2017.
 
-A.2 Informative References
+Appendix A.2 Informative References
+-----------------------------------
 
    [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
                and Danezis, G., “The Loopix Anonymity System”,
