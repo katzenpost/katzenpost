@@ -1,6 +1,15 @@
 Katzenpost
 **********
 
+Documentation
+=============
+
+..  toctree::
+    :glob:
+    :maxdepth: 1
+
+    docs/setup
+
 Specifications
 ==============
 
