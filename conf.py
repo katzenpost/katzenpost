@@ -36,11 +36,8 @@ templates_path = ['_templates']
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 # source_suffix = ['.rst', '.md']
-source_suffix = ['.rst', '.txt']
+source_suffix = ['.rst']
 
-source_parsers = {
-   '.txt': 'recommonmark.parser.CommonMarkParser',
-}
 # The encoding of source files.
 #source_encoding = 'utf-8-sig'
 
@@ -49,8 +46,8 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'Katzenpost'
-copyright = u'2017, .'
-author = u'.'
+author = u'Katzenpost Team'
+copyright = u'2017, ' + author
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -306,4 +303,5 @@ html_context = {
     'css_files': ['_static/custom.css'],
 }
 
+# in text builder, do not (visibly) underline sections
 text_sectionchars = '        '
