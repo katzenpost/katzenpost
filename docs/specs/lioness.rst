@@ -16,7 +16,7 @@ serve as a stable reference and implementation guide.
 ===============
 
    LIONESS is a provably secure wide-block-cipher proposed by Anderson
-   and Biham in [AB97]_.  Internally it is a four round unbalanced
+   and Biham in [AB96]_.  Internally it is a four round unbalanced
    Feistel cipher comprised of a keyed hash function and a stream
    cipher.  It supports processing large abitrary sized blocks, with
    a minimum block size imposed by the choice of primitives, and has
