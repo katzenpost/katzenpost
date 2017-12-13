@@ -175,7 +175,7 @@ func (p *pki) pruneDocuments() {
 	p.Lock()
 	defer p.Unlock()
 	for epoch := range p.docs {
-		if epoch < now {
+		if epoch < now-(numMixKeys-1) {
 			p.log.Debugf("Discarding PKI for epoch: %v", epoch)
 			delete(p.docs, epoch)
 		}
@@ -317,43 +317,41 @@ func (p *pki) documentsToFetch() []uint64 {
 	return ret
 }
 
-func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, uint64) {
-	const (
-		pkiEarlyConnectSlack = 30 * time.Minute
-		pkiLateConnectSlack  = 3 * time.Minute
-	)
+func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, uint64) {
+	const pkiEarlyConnectSlack = 30 * time.Minute
 
 	// Figure out the list of epochs to consider valid.
-	now, elapsed, till := epochtime.Now()
-	epochs := []uint64{now}
+	now, _, till := epochtime.Now()
+	epochs := make([]uint64, 0, numMixKeys+1)
+	epochs = append(epochs, now)
 	if till < pkiEarlyConnectSlack {
 		// Allow connections to new nodes 30 mins in advance of an epoch
 		// transition.
 		epochs = append(epochs, now+1)
-	} else if elapsed < pkiLateConnectSlack {
-		// Allow connections to old notes to linger for 3 mins past the epoch
-		// transition.
-		epochs = append(epochs, now-1)
+	}
+	for epoch := now - (numMixKeys - 1); epoch < now; epoch++ {
+		epochs = append(epochs, epoch)
 	}
 
 	// Return the list of cache entries.
 	p.RLock()
 	defer p.RUnlock()
 
+	var nowDoc *pkicache.Entry
 	s := make([]*pkicache.Entry, 0, len(epochs))
 	for _, epoch := range epochs {
 		if e, ok := p.docs[epoch]; ok {
 			s = append(s, e)
+			if epoch == now {
+				nowDoc = e
+			}
 		}
 	}
-	return s, now
+	return s, nowDoc, now
 }
 
 func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
-	const (
-		earlySendSlack = 2 * time.Minute
-		lateSendSlack  = 2 * time.Minute
-	)
+	const earlySendSlack = 2 * time.Minute
 
 	// If mix authentication is disabled, then we just allow everyone to
 	// connect as a mix.
@@ -369,8 +367,8 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 	var nodeID [constants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	docs, _ := p.documentsForAuthentication()
-	now, elapsed, till := epochtime.Now()
+	docs, nowDoc, _ := p.documentsForAuthentication()
+	now, _, till := epochtime.Now()
 	for _, d := range docs {
 		desc := d.GetIncomingByID(nodeID)
 		if desc == nil {
@@ -383,10 +381,6 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 			continue
 		}
 
-		// The node is listed in a consensus that's reasonably current.
-		isValid = true
-
-		// Figure out if the node is allowed to send packets.
 		switch d.Epoch() {
 		case now:
 			// The node is listed in the document for the current epoch.
@@ -397,17 +391,27 @@ func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bo
 				// and it is less than slack till the transition.
 				return true, true
 			}
-		case now - 1:
-			if elapsed < lateSendSlack {
-				// The node is listed in the document for the previous epoch,
-				// and less than slack has past since the transition.
+			isValid = true
+		default:
+			// The node is listed in the document for one of the previous
+			// epochs for which there are still valid mix keys...
+			if nowDoc == nil {
+				// If we do not have a document for the current epoch,
+				// we can't check to see if the node has been de-listed
+				// or not.
+				continue
+			}
+			if currDesc := nowDoc.GetByID(nodeID); currDesc != nil {
+				// The node listed in the old document exists in the
+				// document for the new epoch, so continue to accept
+				// packets from it, until the mix keys in the old
+				// descriptor expire.
 				return true, true
 			}
-		default:
 		}
 
 		// Well, this document doesn't seem to think that the node should
-		// be able to send packets at us, maybe the other document if any
+		// be able to send packets at us, maybe the other documents if any
 		// will be more forgiving.
 	}
 
@@ -426,7 +430,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 	var nodeID [constants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	docs, now := p.documentsForAuthentication()
+	docs, nowDoc, now := p.documentsForAuthentication()
 	for _, d := range docs {
 		m := d.GetOutgoingByID(nodeID)
 		if m == nil {
@@ -439,33 +443,60 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 			continue
 		}
 
-		// The node is listed in a consensus that's reasonably current.
-		isValid = true
-		desc = m
-
-		// If this is the document for the current epoch, the node is listed in
-		// it, and we can send packets.
-		//
-		// Note: This is more strict than the incoming case since the main
-		// reason the slack time exists is to account for clock skew, and it's
-		// all handled there.
-		if d.Epoch() == now {
+		switch d.Epoch() {
+		case now:
+			// The node is listed in the document for the current epoch.
 			return m, true, true
+		case now + 1:
+			// Note: This is more strict than the incoming case since the main
+			// reason the slack time exists is to account for clock skew, and
+			// it's all handled there.
+			isValid = true
+			desc = m
+		default:
+			// The node is listed in the document for one of the previous
+			// epochs for which there are still valid mix keys...
+			if nowDoc == nil {
+				// If we do not have a document for the current epoch,
+				// we can't check to see if the node has been de-listed
+				// or not.
+				continue
+			}
+			if currDesc := nowDoc.GetByID(nodeID); currDesc != nil {
+				// The node listed in the old document exists in the
+				// document for the new epoch, so continue to send
+				// to it, until the mix keys in the old descriptor
+				// expire.
+				return m, true, true
+			}
 		}
-
-		// But we're not sure if we can send packets to it yet.
 	}
 
 	return
 }
 
 func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixDescriptor {
-	docs, _ := p.documentsForAuthentication()
+	docs, nowDoc, now := p.documentsForAuthentication()
 	descMap := make(map[[constants.NodeIDLength]byte]*cpki.MixDescriptor)
 
 	for _, d := range docs {
+		docEpoch := d.Epoch()
+
+		// If we are attempting to add nodes from the past document, and
+		// we do not have the current document, then we can't validate that
+		// the node should continue to be honored.
+		if docEpoch < now && nowDoc == nil {
+			continue
+		}
+
 		for _, v := range d.Outgoing() {
 			nodeID := v.IdentityKey.ByteArray()
+
+			// Ignore nodes from past epochs that are not listed in the
+			// current document.
+			if docEpoch < now && nowDoc.GetByID(nodeID) == nil {
+				continue
+			}
 
 			// De-duplicate.
 			if _, ok := descMap[nodeID]; !ok {
@@ -474,27 +505,6 @@ func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixD
 		}
 	}
 	return descMap
-}
-
-func (p *pki) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
-	// If mix authentication is disabled, then we just queue all the packets.
-	if p.s.cfg.Debug.DisableMixAuthentication {
-		return true
-	}
-
-	// This doesn't need to be super accurate, just enough to prevent packets
-	// destined to la-la land from being scheduled.  As a mix we should
-	// basically never see packets destined for nodes not listed in the
-	// current consensus unless a node gets delisted.
-	p.RLock()
-	defer p.RUnlock()
-
-	now, _, _ := epochtime.Now()
-	doc, ok := p.docs[now]
-	if !ok {
-		return false
-	}
-	return doc.GetOutgoingByID(*id) != nil
 }
 
 func newPKI(s *Server) (*pki, error) {

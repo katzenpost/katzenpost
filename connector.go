@@ -158,6 +158,16 @@ func (co *connector) onClosedConn(c *outgoingConn) {
 	delete(co.conns, nodeID)
 }
 
+func (co *connector) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
+	// This doesn't need to be super accurate, just enough to prevent packets
+	// destined to la-la land from being scheduled.
+	co.RLock()
+	defer co.RUnlock()
+
+	_, ok := co.conns[*id]
+	return ok
+}
+
 func newConnector(s *Server) *connector {
 	co := new(connector)
 	co.s = s

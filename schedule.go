@@ -78,9 +78,9 @@ func (sch *scheduler) worker() {
 			// the packet was enqueued.
 			pkt := e.(*packet)
 
-			// Ensure the peer is valid, by querying the PKI, and NOT the
-			// outgoing connection table.
-			if sch.s.pki.isValidForwardDest(&pkt.nextNodeHop.ID) {
+			// Ensure the peer is valid by querying the outgoing connection
+			// table.
+			if sch.s.connector.isValidForwardDest(&pkt.nextNodeHop.ID) {
 				// If queue limitations are enabled, check to see if there
 				// is a slot for this packet.
 				if max := sch.s.cfg.Debug.SchedulerQueueSize; max > 0 {
