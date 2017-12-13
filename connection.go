@@ -99,6 +99,10 @@ func (c *connection) getDescriptor() {
 		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
 		return
 	}
+	if c.c.cfg.ProviderKeyPin != nil && !c.c.cfg.ProviderKeyPin.Equal(desc.IdentityKey) {
+		c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
+		return
+	}
 	if desc != c.descriptor {
 		c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
 	}
