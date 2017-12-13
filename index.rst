@@ -22,6 +22,7 @@ Documentation
     :glob:
     :maxdepth: 1
 
+    faq
     docs/*
 
 .. rubric:: Supported by
