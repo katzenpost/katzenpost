@@ -12,6 +12,8 @@ algorithm and ChaCha20 stream cipher.
 This document does not introduce any new crypto, but is meant to
 serve as a stable reference and implementation guide.
 
+.. contents:: :local:
+
 1. Introduction
 ===============
 
