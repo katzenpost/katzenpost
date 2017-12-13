@@ -6,7 +6,7 @@
 .. image:: https://godoc.org/github.com/katzenpost/minclient?status.svg
   :target: https://godoc.org/github.com/katzenpost/minclient
 
-Mininmal Client Library
+Minimal Client Library
 ========================
 
 
