@@ -383,9 +383,9 @@ func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		var m *cpki.MixDescriptor
 		switch isOutgoing {
 		case true:
-			m = d.GetOutgoingByID(nodeID)
+			m = d.GetOutgoingByID(&nodeID)
 		case false:
-			m = d.GetIncomingByID(nodeID)
+			m = d.GetIncomingByID(&nodeID)
 		}
 		if m == nil {
 			continue
@@ -429,7 +429,7 @@ func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 				// or not.
 				continue
 			}
-			if currDesc := nowDoc.GetByID(nodeID); currDesc != nil {
+			if currDesc := nowDoc.GetByID(&nodeID); currDesc != nil {
 				// The node listed in the old document exists in the
 				// document for the new epoch, so continue to send
 				// to it, until the mix keys in the old descriptor
@@ -461,7 +461,7 @@ func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixD
 
 			// Ignore nodes from past epochs that are not listed in the
 			// current document.
-			if docEpoch < now && nowDoc.GetByID(nodeID) == nil {
+			if docEpoch < now && nowDoc.GetByID(&nodeID) == nil {
 				continue
 			}
 

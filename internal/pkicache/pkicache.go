@@ -47,8 +47,8 @@ func (e *Entry) Self() *pki.MixDescriptor {
 
 // GetIncomingByID returns the MixDescriptor for a incoming connection source
 // queried by node ID, or nil iff the node ID is not a valid source.
-func (e *Entry) GetIncomingByID(id [constants.NodeIDLength]byte) *pki.MixDescriptor {
-	desc, ok := e.incoming[id]
+func (e *Entry) GetIncomingByID(id *[constants.NodeIDLength]byte) *pki.MixDescriptor {
+	desc, ok := e.incoming[*id]
 	if !ok {
 		return nil
 	}
@@ -58,8 +58,8 @@ func (e *Entry) GetIncomingByID(id [constants.NodeIDLength]byte) *pki.MixDescrip
 // GetOutgoingByID returns the MixDescriptor for an outgoing connection
 // destination queried by node ID, or nil iff the node ID is not a valid
 // destination.
-func (e *Entry) GetOutgoingByID(id [constants.NodeIDLength]byte) *pki.MixDescriptor {
-	desc, ok := e.outgoing[id]
+func (e *Entry) GetOutgoingByID(id *[constants.NodeIDLength]byte) *pki.MixDescriptor {
+	desc, ok := e.outgoing[*id]
 	if !ok {
 		return nil
 	}
@@ -68,8 +68,8 @@ func (e *Entry) GetOutgoingByID(id [constants.NodeIDLength]byte) *pki.MixDescrip
 
 // GetByID returns the MixDescriptor by node ID, or nil iff the node ID is not
 // listed in the document.
-func (e *Entry) GetByID(id [constants.NodeIDLength]byte) *pki.MixDescriptor {
-	desc, ok := e.all[id]
+func (e *Entry) GetByID(id *[constants.NodeIDLength]byte) *pki.MixDescriptor {
+	desc, ok := e.all[*id]
 	if !ok {
 		return nil
 	}
