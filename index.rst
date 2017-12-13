@@ -1,5 +1,19 @@
-Katzenpost
-**********
+Katzenpost 😼 
+*************
+
+Goals
+=====
+
+* to *prevent* a sufficiently global passive adversary to learn who is communitating with whom
+* to *detect* active attacks against the network infrastructure
+* hide message content from participating providers, hide recipient identity from the sender's provider, and the sender identity from the recipient's provider
+* support for both "instant messaging" and "email" use cases
+* reliable delivery
+
+Non-Goals
+=========
+
+* to hide the sender identity from the recipient
 
 Documentation
 =============
@@ -8,16 +22,7 @@ Documentation
     :glob:
     :maxdepth: 1
 
-    docs/setup
-
-Specifications
-==============
-
-.. toctree::
-   :glob:
-   :maxdepth: 2
-
-   docs/specs/*
+    docs/*
 
 .. rubric:: Supported by
 
