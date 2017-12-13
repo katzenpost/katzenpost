@@ -27,19 +27,23 @@ import (
 
 const documentVersion = "nonvoting-document-v0"
 
-type document struct {
+// Document is the on-the-wire representation of a PKI Document.
+type Document struct {
 	// Version uniquely identifies the document format as being for the
 	// non-voting authority so that it can be rejected when unexpectedly
 	// received or if the version changes.
 	Version string
 
-	pki.Document
+	Epoch    uint64
+	Lambda   float64
+	MaxDelay uint64
+
+	Topology  [][][]byte
+	Providers [][]byte
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signingKey *eddsa.PrivateKey, base *pki.Document) (string, error) {
-	d := new(document)
-	d.Document = *base
+func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 	d.Version = documentVersion
 
 	// Serialize the document.
@@ -88,7 +92,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey, epoch uint64) 
 	}
 
 	// Parse the payload.
-	d := new(document)
+	d := new(Document)
 	if err = json.Unmarshal(payload, d); err != nil {
 		return nil, err
 	}
@@ -97,18 +101,46 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey, epoch uint64) 
 	if d.Version != documentVersion {
 		return nil, fmt.Errorf("nonvoting: Invalid Document Version: '%v'", d.Version)
 	}
-	if err = IsDocumentWellFormed(&d.Document, epoch); err != nil {
+
+	// Convert from the wire representation to a Document, and validate
+	// everything.
+	doc := new(pki.Document)
+	doc.Epoch = d.Epoch
+	doc.Lambda = d.Lambda
+	doc.MaxDelay = d.MaxDelay
+	doc.Topology = make([][]*pki.MixDescriptor, len(d.Topology))
+	doc.Providers = make([]*pki.MixDescriptor, 0, len(d.Providers))
+
+	for layer, nodes := range d.Topology {
+		for _, rawDesc := range nodes {
+			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+			if err != nil {
+				return nil, err
+			}
+			doc.Topology[layer] = append(doc.Topology[layer], desc)
+		}
+	}
+
+	for _, rawDesc := range d.Providers {
+		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		doc.Providers = append(doc.Providers, desc)
+	}
+
+	if err = IsDocumentWellFormed(doc, epoch); err != nil {
 		return nil, err
 	}
 
 	// Fixup the Layer field in all the Topology MixDescriptors.
-	for layer, nodes := range d.Topology {
+	for layer, nodes := range doc.Topology {
 		for _, desc := range nodes {
 			desc.Layer = uint8(layer)
 		}
 	}
 
-	return &d.Document, nil
+	return doc, nil
 }
 
 // IsDocumentWellFormed validates the document and returns a descriptive error

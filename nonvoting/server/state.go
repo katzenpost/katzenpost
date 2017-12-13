@@ -173,18 +173,18 @@ func (s *state) generateDocument(epoch uint64) {
 	s.log.Noticef("Generating Document for epoch %v.", epoch)
 
 	// Carve out the descriptors between providers and nodes.
-	var providers []*pki.MixDescriptor
-	var nodes []*pki.MixDescriptor
+	var providers [][]byte
+	var nodes []*descriptor
 	for _, v := range s.descriptors[epoch] {
 		if v.desc.Layer == pki.LayerProvider {
-			providers = append(providers, v.desc)
+			providers = append(providers, v.raw)
 		} else {
-			nodes = append(nodes, v.desc)
+			nodes = append(nodes, v)
 		}
 	}
 
 	// Assign nodes to layers.
-	var topology [][]*pki.MixDescriptor
+	var topology [][][]byte
 	if d, ok := s.documents[epoch-1]; ok {
 		topology = s.generateTopology(nodes, d.doc)
 	} else {
@@ -192,15 +192,13 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Build the Document.
-	doc := &pki.Document{
+	doc := &s11n.Document{
 		Epoch:     epoch,
 		Lambda:    s.s.cfg.Parameters.Lambda,
 		MaxDelay:  s.s.cfg.Parameters.MaxDelay,
 		Topology:  topology,
 		Providers: providers,
 	}
-
-	s.log.Debugf("Document: %v", doc)
 
 	// Serialize and sign the Document.
 	signed, err := s11n.SignDocument(s.s.identityKey, doc)
@@ -209,6 +207,16 @@ func (s *state) generateDocument(epoch uint64) {
 		s.log.Errorf("Failed to sign document: %v", err)
 		s.s.fatalErrCh <- err
 	}
+
+	// Ensure the document is sane.
+	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey(), epoch)
+	if err != nil {
+		// This should basically always succeed.
+		s.log.Errorf("Signed document failed validation: %v", err)
+		s.s.fatalErrCh <- err
+	}
+
+	s.log.Debugf("Document (Parsed): %v", pDoc)
 
 	// Persist the document to disk.
 	if err := s.db.Update(func(tx *bolt.Tx) error {
@@ -221,17 +229,17 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	d := new(document)
-	d.doc = doc
+	d.doc = pDoc
 	d.raw = []byte(signed)
 	s.documents[epoch] = d
 }
 
-func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Document) [][]*pki.MixDescriptor {
+func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
 	s.log.Debugf("Generating mix topology.")
 
-	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
-		id := v.IdentityKey.ByteArray()
+		id := v.desc.IdentityKey.ByteArray()
 		nodeMap[id] = v
 	}
 
@@ -242,7 +250,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 
 	rng := rand.NewMath()
 	targetNodesPerLayer := len(nodeList) / s.s.cfg.Debug.Layers
-	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
+	topology := make([][][]byte, s.s.cfg.Debug.Layers)
 
 	// Assign nodes that still exist up to the target size.
 	for layer, nodes := range doc.Topology {
@@ -259,14 +267,14 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,
 				// so preserve the layering.
-				topology[layer] = append(topology[layer], n)
+				topology[layer] = append(topology[layer], n.raw)
 				delete(nodeMap, id)
 			}
 		}
 	}
 
 	// Flatten the map containing the nodes pending assignment.
-	toAssign := make([]*pki.MixDescriptor, 0, len(nodeMap))
+	toAssign := make([]*descriptor, 0, len(nodeMap))
 	for _, n := range nodeMap {
 		toAssign = append(toAssign, n)
 	}
@@ -278,7 +286,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	for layer := range doc.Topology {
 		for len(topology[layer]) < targetNodesPerLayer {
 			n := toAssign[assignIndexes[idx]]
-			topology[layer] = append(topology[layer], n)
+			topology[layer] = append(topology[layer], n.raw)
 			idx++
 		}
 	}
@@ -286,7 +294,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	// Assign the remaining nodes.
 	for layer := 0; idx < len(assignIndexes); idx++ {
 		n := toAssign[assignIndexes[idx]]
-		topology[layer] = append(topology[layer], n)
+		topology[layer] = append(topology[layer], n.raw)
 		layer++
 		layer = layer % len(topology)
 	}
@@ -294,7 +302,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	return topology
 }
 
-func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor) [][]*pki.MixDescriptor {
+func (s *state) generateRandomTopology(nodes []*descriptor) [][][]byte {
 	s.log.Debugf("Generating random mix topology.")
 
 	// If there is no node history in the form of a previous consensus,
@@ -303,10 +311,10 @@ func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor) [][]*pki.MixD
 
 	rng := rand.NewMath()
 	nodeIndexes := rng.Perm(len(nodes))
-	topology := make([][]*pki.MixDescriptor, s.s.cfg.Debug.Layers)
+	topology := make([][][]byte, s.s.cfg.Debug.Layers)
 	for idx, layer := 0, 0; idx < len(nodes); idx++ {
 		n := nodes[nodeIndexes[idx]]
-		topology[layer] = append(topology[layer], n)
+		topology[layer] = append(topology[layer], n.raw)
 		layer++
 		layer = layer % len(topology)
 	}
@@ -492,6 +500,9 @@ func (s *state) restorePersistence() error {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
 					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey(), epoch); err != nil {
+						// This continues because there's no reason not to load
+						// the descriptors as long as they validate, even if
+						// the document fails to load.
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else {
 						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)

@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func genDescriptor(require *require.Assertions, idx int, layer int) *pki.MixDescriptor {
+func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDescriptor, []byte) {
 	d := new(pki.MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
 	d.Addresses = []string{fmt.Sprintf("192.0.2.%d:4242", idx)}
@@ -49,7 +49,10 @@ func genDescriptor(require *require.Assertions, idx int, layer int) *pki.MixDesc
 	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
-	return d
+	signed, err := SignDescriptor(identityPriv, d)
+	require.NoError(err, "SignDescriptor()")
+
+	return d, []byte(signed)
 }
 
 func TestDocument(t *testing.T) {
@@ -61,21 +64,23 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "eddsa.NewKeypair()")
 
 	// Generate a Document.
-	doc := &pki.Document{
+	doc := &Document{
 		Epoch:    debugTestEpoch,
-		Topology: make([][]*pki.MixDescriptor, 3),
+		Topology: make([][][]byte, 3),
+		Lambda:   0.42,
+		MaxDelay: 23,
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
-			d := genDescriptor(require, idx, 0)
-			doc.Topology[l] = append(doc.Topology[l], d)
+			_, rawDesc := genDescriptor(require, idx, 0)
+			doc.Topology[l] = append(doc.Topology[l], rawDesc)
 			idx++
 		}
 	}
 	for i := 0; i < 3; i++ {
-		d := genDescriptor(require, idx, pki.LayerProvider)
-		doc.Providers = append(doc.Providers, d)
+		_, rawDesc := genDescriptor(require, idx, pki.LayerProvider)
+		doc.Providers = append(doc.Providers, rawDesc)
 		idx++
 	}
 
