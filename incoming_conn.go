@@ -74,7 +74,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// is unknown.
 	c.fromClient = false
 	isValid := false
-	c.canSend, isValid = c.s.pki.authenticateIncoming(creds)
+	_, c.canSend, isValid = c.s.pki.authenticateConnection(creds, false)
 	if isValid {
 		c.fromMix = true
 	}

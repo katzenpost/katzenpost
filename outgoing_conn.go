@@ -61,7 +61,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Query the PKI to figure out if we can send or not, and to ensure that
 	// the peer is listed in a PKI document that's valid.
 	isValid := false
-	_, c.canSend, isValid = c.s.pki.authenticateOutgoing(creds)
+	_, c.canSend, isValid = c.s.pki.authenticateConnection(creds, true)
 
 	return isValid
 }
@@ -130,10 +130,10 @@ func (c *outgoingConn) worker() {
 		// something like this, stale connections can get stuck in the
 		// dialing state since the connector relies on outgoingConnection
 		// objects to remove themselves from the connection table.
-		if desc, _, isValid := c.s.pki.authenticateOutgoing(&dialCheckCreds); isValid {
-			// The list of addresses could have changed, authenticateOutgoing
-			// will return the most "current" descriptor in most cases, so
-			// update the cached pointer.
+		if desc, _, isValid := c.s.pki.authenticateConnection(&dialCheckCreds, true); isValid {
+			// The list of addresses could have changed, authenticateConnection
+			// will return the most "current" descriptor on success, so update
+			// the cached pointer.
 			if desc != nil {
 				c.dst = desc
 				dialCheckCreds.PublicKey = c.dst.LinkKey

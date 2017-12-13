@@ -317,19 +317,22 @@ func (p *pki) documentsToFetch() []uint64 {
 	return ret
 }
 
-func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, uint64) {
+func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, uint64, time.Duration) {
 	const pkiEarlyConnectSlack = 30 * time.Minute
 
 	// Figure out the list of epochs to consider valid.
+	//
+	// Note: The ordering is important and should not be changed without
+	// changes to pki.authenticateConnection().
 	now, _, till := epochtime.Now()
 	epochs := make([]uint64, 0, numMixKeys+1)
-	epochs = append(epochs, now)
+	start := now
 	if till < pkiEarlyConnectSlack {
 		// Allow connections to new nodes 30 mins in advance of an epoch
 		// transition.
-		epochs = append(epochs, now+1)
+		start = now + 1
 	}
-	for epoch := now - (numMixKeys - 1); epoch < now; epoch++ {
+	for epoch := start; epoch > now-numMixKeys; epoch-- {
 		epochs = append(epochs, epoch)
 	}
 
@@ -347,112 +350,76 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 			}
 		}
 	}
-	return s, nowDoc, now
+	return s, nowDoc, now, till
 }
 
-func (p *pki) authenticateIncoming(c *wire.PeerCredentials) (canSend, isValid bool) {
+func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	const earlySendSlack = 2 * time.Minute
 
-	// If mix authentication is disabled, then we just allow everyone to
-	// connect as a mix.
+	dirStr := "Incoming"
+	if isOutgoing {
+		dirStr = "Outgoing"
+	}
+
+	// If mix authentication is disabled, then we just blindly blast away
+	// or allow anyone to connect to us.
 	if p.s.cfg.Debug.DisableMixAuthentication {
-		p.log.Debugf("Incoming: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), c.PublicKey)
-		return true, true
-	}
-
-	if len(c.AdditionalData) != constants.NodeIDLength {
-		p.log.Debugf("Incoming: '%v' AD not an IdentityKey?.", bytesToPrintString(c.AdditionalData))
-		return false, false
-	}
-	var nodeID [constants.NodeIDLength]byte
-	copy(nodeID[:], c.AdditionalData)
-
-	docs, nowDoc, _ := p.documentsForAuthentication()
-	now, _, till := epochtime.Now()
-	for _, d := range docs {
-		desc := d.GetIncomingByID(nodeID)
-		if desc == nil {
-			continue
-		}
-		if !desc.LinkKey.Equal(c.PublicKey) {
-			// The LinkKey that is being used for authentication should
-			// match what is listed in the descriptor.
-			p.log.Warningf("Incoming: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), c.PublicKey)
-			continue
-		}
-
-		switch d.Epoch() {
-		case now:
-			// The node is listed in the document for the current epoch.
-			return true, true
-		case now + 1:
-			if till < earlySendSlack {
-				// The node is listed in the document from the next epoch,
-				// and it is less than slack till the transition.
-				return true, true
-			}
-			isValid = true
-		default:
-			// The node is listed in the document for one of the previous
-			// epochs for which there are still valid mix keys...
-			if nowDoc == nil {
-				// If we do not have a document for the current epoch,
-				// we can't check to see if the node has been de-listed
-				// or not.
-				continue
-			}
-			if currDesc := nowDoc.GetByID(nodeID); currDesc != nil {
-				// The node listed in the old document exists in the
-				// document for the new epoch, so continue to accept
-				// packets from it, until the mix keys in the old
-				// descriptor expire.
-				return true, true
-			}
-		}
-
-		// Well, this document doesn't seem to think that the node should
-		// be able to send packets at us, maybe the other documents if any
-		// will be more forgiving.
-	}
-
-	return
-}
-
-func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescriptor, canSend, isValid bool) {
-	// If mix authentication is disabled, then we just blindly blast away.
-	if p.s.cfg.Debug.DisableMixAuthentication {
-		p.log.Debugf("Outgoing: Blindly authenticating peer: '%v'(%v).", bytesToPrintString(c.AdditionalData), c.PublicKey)
+		p.log.Debugf("%v: Blindly authenticating peer: '%v'(%v).", dirStr, bytesToPrintString(c.AdditionalData), c.PublicKey)
 		return nil, true, true
 	}
 
-	// Don't need to check length here because all callers either explicitly
-	// set this, or validate it (assuming it's coming from a peer).
+	// Ensure the additional data is valid.
+	if len(c.AdditionalData) != constants.NodeIDLength {
+		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, bytesToPrintString(c.AdditionalData))
+		return nil, false, false
+	}
 	var nodeID [constants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
-	docs, nowDoc, now := p.documentsForAuthentication()
+	// Iterate over whatever documents we happen to have for the epochs
+	// [now+1, now, now-1, now-2].
+	docs, nowDoc, now, till := p.documentsForAuthentication()
 	for _, d := range docs {
-		m := d.GetOutgoingByID(nodeID)
+		var m *cpki.MixDescriptor
+		switch isOutgoing {
+		case true:
+			m = d.GetOutgoingByID(nodeID)
+		case false:
+			m = d.GetIncomingByID(nodeID)
+		}
 		if m == nil {
 			continue
 		}
+		if desc == nil { // This is the most recent descriptor we have.
+			desc = m
+		}
+
+		// The LinkKey that is being used for authentication should
+		// match what is listed in the descriptor in the document, or
+		// the most recent descriptor we have for the node.
 		if !m.LinkKey.Equal(c.PublicKey) {
-			// The LinkKey that is being used for authentication should
-			// match what is listed in the descriptor.
-			p.log.Warningf("Outgoing: '%v' Public Key mismatch: '%v'", bytesToPrintString(c.AdditionalData), c.PublicKey)
-			continue
+			if desc == m || !desc.LinkKey.Equal(c.PublicKey) {
+				p.log.Warningf("%v: '%v' Public Key mismatch: '%v'", dirStr, bytesToPrintString(c.AdditionalData), c.PublicKey)
+				continue
+			}
 		}
 
 		switch d.Epoch() {
 		case now:
 			// The node is listed in the document for the current epoch.
-			return m, true, true
+			return desc, true, true
 		case now + 1:
-			// Note: This is more strict than the incoming case since the main
-			// reason the slack time exists is to account for clock skew, and
-			// it's all handled there.
+			// The node is listed in the document from the next epoch..
+			if !isOutgoing && till < earlySendSlack {
+				// And this is an incoming connection, and it is less than
+				// the slack till the transition.
+				//
+				// Outgoing connections do not apply the early send slack
+				// as only one side needs to apply it to be somewhat clock
+				// skew tollerant.
+				return desc, true, true
+			}
 			isValid = true
-			desc = m
 		default:
 			// The node is listed in the document for one of the previous
 			// epochs for which there are still valid mix keys...
@@ -467,7 +434,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 				// document for the new epoch, so continue to send
 				// to it, until the mix keys in the old descriptor
 				// expire.
-				return m, true, true
+				return desc, true, true
 			}
 		}
 	}
@@ -476,7 +443,7 @@ func (p *pki) authenticateOutgoing(c *wire.PeerCredentials) (desc *cpki.MixDescr
 }
 
 func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixDescriptor {
-	docs, nowDoc, now := p.documentsForAuthentication()
+	docs, nowDoc, now, _ := p.documentsForAuthentication()
 	descMap := make(map[[constants.NodeIDLength]byte]*cpki.MixDescriptor)
 
 	for _, d := range docs {
