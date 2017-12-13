@@ -1,53 +1,26 @@
 Panoramix Mix Network End-to-end Protocol Specification
-Yawning Angel
-George Danezis
-Claudia Diaz
-Ania Piotrowska
-David Stainton
+*******************************************************
+
+| Yawning Angel
+| George Danezis
+| Claudia Diaz
+| Ania Piotrowska
+| David Stainton
 
 Version 0
 
-Abstract
+.. rubric:: Abstract
 
-   This is a specification for the Panoramix/LEAP mix network client
-   end to end protocol and egress mix behavior. The mix network
-   specification is described in Panoramix Mix Network Specification.
-   The protocols used by the entities to publish their identities is
-   described in the Panoramix Mix Network PKI Specification.
+This is a specification for the Panoramix/LEAP mix network client
+end to end protocol and egress mix behavior. The mix network
+specification is described in Panoramix Mix Network Specification.
+The protocols used by the entities to publish their identities is
+described in the Panoramix Mix Network PKI Specification.
 
-Table of Contents
-
-   1. Introduction
-      1.1 Terminology
-      1.2 Conventions Used in This Document
-   2. Mix Network Packet Format Considerations
-   3. Client and Provider Core Protocol
-      3.1 Handshake and Authentication Phase
-      3.2 Client Retrieval of Queued Messages
-      3.2.1 The retrieve_message and message Commands
-   4. Client and Provider processing of received packets
-      4.1 Provider Behavior for Receiving Messages from the Mix Network
-      4.2 Client Receive Message Behavior
-      4.2.1 Client Message Processing
-      4.2.2 Client Protocol Acknowledgment Processing
-   5. Sphinx Packet Composition Considerations
-      5.1 Choosing Delays: for single Block messages and for multi Block messages
-      5.2 Path selection algorithm
-      5.2.1 Other Path Selection Considerations
-   6. E-mail Client Integration Considerations
-      6.1 Message Retrieval
-      6.2 Message Sending
-   7. Client Integration Considerations
-      7.1 Message Retrieval
-      7.2 Information available to clients
-   8. Anonymity Considerations
-   9. Security Considerations
-   10. Future Work and Research
-   Appendix A. References
-      Appendix A.1 Normative References
-      Appendix A.2 Informative References
+.. contents:: :local:
 
 1. Introduction
+===============
 
    Fundamentally a mix network is a lossy packet switching network on
    which we can build reliable protocols. We therefore utilize a
@@ -56,10 +29,11 @@ Table of Contents
    that utilizes the mix network.
 
 1.1. Terminology
+----------------
 
-   * ACK - A protocol acknowledgment of a previously sent Block.
+   * ``ACK`` - A protocol acknowledgment of a previously sent Block.
 
-   * ARQ - Automatic Repeat reQuest is an error correction method
+   * ``ARQ`` - Automatic Repeat reQuest is an error correction method
      which requires two-way communication and incurs a delay penalty
      when used.
 
@@ -67,68 +41,73 @@ Table of Contents
 			  * ACKs
 			  * Small messages
 			  * Large messages (big attachments)
-	/* This may be changed after we do our analysis on the stats */
 
-   * Block - A fragment of a message that fits into a single packet
+	[ This may be changed after we do our analysis on the stats ]
+
+   * ``Block`` - A fragment of a message that fits into a single packet
      of a specified class of traffic.
 
-   * Block ID - A unique identifier for a Block.
+   * ``Block ID`` - A unique identifier for a Block.
 
-   * Client - Software run by the human being on its local device.
+   * ``Client`` - Software run by the human being on its local device.
 
-   * E2E Encrypted message - An encrypted message.
+   * ``E2E Encrypted message`` - An encrypted message.
 
-   * Message - A variable size end-to-end message, transmitted from
+   * ``Message`` - A variable size end-to-end message, transmitted from
      one location to another. The message can be classified into one
      of the classes of traffic, depending on the message size, and transported
      as a single packet or divided into several packets.
 
-   * Message ID - A unique identifier for a message.
+   * ``Message ID`` - A unique identifier for a message.
 
-   * Mix - A server that provides anonymity to clients by accepting
+   * ``Mix`` - A server that provides anonymity to clients by accepting
      messages encrypted to its public key, which it then decrypts,
      delays for a given amount of time, and transmits either to
      another mix or to a provider (as specified in the messages). Those
      operations provide bitwise unlinkability between input and output
      messages as well as long term correlation resistance.
 
-   * Provider - The provider is a client's single point of failure for
+   * ``Provider`` - The provider is a client's single point of failure for
      participating in the mix network because it is responsible for
      authorising sent messages as well as storing received messages on
      behalf of the user. Provider MUST perform the same cryptographic
      operations as the Mix.
 
-   * Packet - A Sphinx packet.The Panoramix system supports multiple
+   * ``Packet`` - A Sphinx packet.The Panoramix system supports multiple
               packet sizes for different classes of traffic. In particular:
-	      * XKB-block: XX KB (to-do: specify the number of KB)
-	      * YKB-block: YY KB (to-do: specify the number of KB/MB)
+	      * ``XKB-block: XX KB`` (to-do: specify the number of KB)
+	      * ``YKB-block: YY KB`` (to-do: specify the number of KB/MB)
 
-   * SURB-ACK - A short message notifying that a packet was delivered;
-     transmitted via a Single Use Reply Block [DANEZISG09].
+   * ``SURB-ACK`` - A short message notifying that a packet was delivered;
+     transmitted via a Single Use Reply Block [DANEZISG09]_.
 
-   * SURB_SIZE = sizeof(SphinxSURB) where SphinxSURB is a Single Use
+   * ``SURB_SIZE = sizeof(SphinxSURB)`` where ``SphinxSURB`` is a Single Use
      Reply Block defined in the “Sphinx Mix Network Cryptographic
      Packet Format Specification”.
 
 1.2 Conventions Used in This Document
+-------------------------------------
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
-   document are to be interpreted as described in [RFC2119].
+   document are to be interpreted as described in [RFC2119]_.
 
-   The "C" style Presentation Language as described in [RFC5246]
+   The "C" style Presentation Language as described in [RFC5246]_
    Section 4 is used to represent data structures, except for
    cryptographic attributes, which are specified as opaque byte
    vectors.
 
-   "byte" is an 8-bit octet.
+   "``byte``" is an 8-bit octet.
 
 1.3 Constants
+-------------
 
-   BLOCK_LENGTH - The maximum payload size of a block (message fragment).
-                  The value of BLOCK-LENGTH depends on the class of traffic.
+   ``BLOCK_LENGTH``
+        The maximum payload size of a block (message fragment).
+        The value of ``BLOCK-LENGTH`` depends on the class of traffic.
 
 2. Mix Network Packet Format Considerations
+===========================================
 
    As the mix network message packet format we use Sphinx.
    The detailed Sphinx specification is described in:
@@ -138,6 +117,7 @@ Table of Contents
    Section 3 of: "The Panoramix Mix Network Specification"
 
 3. Client and Provider Core Protocol
+====================================
 
    All client mixnet interaction happens through their Provider,
    reusing the existing trust relationship any given user may have
@@ -146,23 +126,25 @@ Table of Contents
    described in “Panoramix Mix Network Wire Protocol Specification”.
 
 3.1 Handshake and Authentication
+--------------------------------
 
    Let the contents of the wire protocol AuthenticateMessage's
-   additional_data field consist of the local-part component of a
+   ``additional_data`` field consist of the local-part component of a
    client's e-mail address if the client is authenticating, padded
    with NUL bytes to exactly 64 bytes in length.
 
    In the case that the authenticating party is a Provider instance,
-   let the additional_data field contain the domain name that the
+   let the ``additional_data`` field contain the domain name that the
    Provider is responsible for mail for.
 
 3.2 Client Retrieval of Queued Messages
+---------------------------------------
 
    Clients periodically poll their Provider for messages that may have
    been enqueued in that user's mailbox. All wire protocol commands
    including these defined commands MUST come after the above
    described handshake and authentication. We define two additional
-   wire protocol commands:
+   wire protocol commands::
 
       enum {
           /* Extending the wire protocol Commands. */
@@ -170,7 +152,7 @@ Table of Contents
           message(17),
       } Command;
 
-   The structures of these commands are defined as follows:
+   The structures of these commands are defined as follows::
 
       struct {
           uint32_t sequence_number;
@@ -203,17 +185,18 @@ Table of Contents
       } Message;
 
 3.2.1 The retrieve_message and message Commands
+-----------------------------------------------
 
    Once a client is connected to the Provider and has entered the data
    transfer phase after completing the handshake and authentication, the
    client may start to retrieve messages from the provider via issuing
-   the retrieve_message command.
+   the ``retrieve_message`` command.
 
-   The retrieve_message command contains a sequence number which the
-   client initially sets to 0 at the beginning of each session. This
+   The ``retrieve_message`` command contains a sequence number which the
+   client initially sets to ``0`` at the beginning of each session. This
    sequence number is incremented each time the client receives a message
-   from the provider (as a message command), except if the message_type
-   is `empty` indicating that the client's inbound message queue is
+   from the provider (as a message command), except if the ``message_type``
+   is ``empty`` indicating that the client's inbound message queue is
    empty, as no message has been received.
 
    Clients MUST NOT have more than one outstanding retrieve_message
@@ -222,46 +205,47 @@ Table of Contents
    The Provider MUST respond to retrieve_message commands, in the
    following manner:
 
-    1. Validate that the sequence_number is in the expected range, and
-       that there are no other retrieve_message commands originating
-       from a particular session being serviced. If the sequence_number
+    1. Validate that the ``sequence_number`` is in the expected range, and
+       that there are no other ``retrieve_message`` commands originating
+       from a particular session being serviced. If the ``sequence_number``
        is unexpected, or the client is issuing multiple
-       retrieve_message commands, the session MUST be terminated.
+       ``retrieve_message`` commands, the session MUST be terminated.
 
     2. If the sequence_number has been incremented, indicating that
-       the client has received the last `message` reply, remove the 0th
+       the client has received the last ``message`` reply, remove the 0th
        message from the client's message queue and delete it securely.
 
     3. Send a message command as a response, with the following values
-       for the `Message` fields (as the command's payload).
+       for the ``Message`` fields (as the command's payload).
 
-          type - The type of the message that is being transported.
+          ``type`` - The type of the message that is being transported.
 
-          queue_size_hint - The size of the client's inbound message
+          ``queue_size_hint`` - The size of the client's inbound message
                  queue, excluding the message currently being sent,
                  clamped to 255.
 
-          sequence_number - The sequence number of the retrieve_message.
+          ``sequence_number`` - The sequence number of the retrieve_message.
 
           If the 0th message is a SURB-ACK:
 
-             surb_id - The SURB's identifier taken from the
+             ``surb_id`` - The SURB's identifier taken from the
                        SURBReplyCommand in the Sphinx packet header
                        that delivered the SURB.
 
-          If the message type empty, a MessageCiphertext is still
+          If the message type empty, a ``MessageCiphertext`` is still
           embedded in the Message structure, however the contents MUST
-          be zero filled (filled with 0x00 bytes).
+          be zero filled (filled with ``0x00`` bytes).
 
-   Clients MAY use the queue_size_hint to determine if additional
+   Clients MAY use the ``queue_size_hint`` to determine if additional
    retreive_message commands should be issued soon, or if they can
    delay the next retreive_message under the assumption that the queue
    is empty.
 
-   Providers SHOULD attempt to service retrieve_message commands in a
+   Providers SHOULD attempt to service ``retrieve_message`` commands in a
    timely manner.
 
 4. Client and Provider processing of received packets
+=====================================================
 
    This section describes the protocol that reliably transmits
    messages across the mix network to the destination Provider.
@@ -272,7 +256,7 @@ Table of Contents
    information is beyond the scope of this document.
 
    Messages begin at the sender as byte strings containing an e-mail
-   in the Internet Message Format (IMF) [RFC5322].
+   in the Internet Message Format (IMF) [RFC5322]_.
 
    (XXX/ya: Should we make clients set any header fields, or reserve
     header fields for use by the recipient?)
@@ -281,7 +265,7 @@ Table of Contents
 
     1. The message is fragmented into block(s).
 
-       The block structure is as follows:
+       The block structure is as follows::
 
           struct {
               opaque message_id[16];
@@ -294,41 +278,41 @@ Table of Contents
 
        Where:
 
-          message_id - A unique identifier, consistent across all
+          ``message_id`` - A unique identifier, consistent across all
                        Block(s) belonging to a given message.
 
-          total_blocks - The number of Block(s) that make up the fully
+          ``total_blocks`` - The number of Block(s) that make up the fully
                          reassembled message.
 
-          block_id     - The sequence number of the Block as a
+          ``block_id``     - The sequence number of the Block as a
                          component of a stream of Block(s) making up
-                         a message, starting at 0.
+                         a message, starting at ``0``.
 
-          block_length - The length of the Block's message fragment.
+          ``block_length`` - The length of the Block's message fragment.
 
-          block        - The Block's message fragment.
+          ``block``        - The Block's message fragment.
 
-          padding      - Padding, applied to the terminal Block.
+          ``padding``      - Padding, applied to the terminal Block.
 
-      The padding if any MUST contain 0x00s (ie: be zero padded).
+      The padding if any MUST contain ``0x00s`` (ie: be zero padded).
 
-      The message_id SHOULD be trivially collision resistant, and
+      The ``message_id`` SHOULD be trivially collision resistant, and
       SHOULD NOT be reused while there is a possibility that the
       recipient can end up Block(s) belonging to multiple messages
-      with a colliding message_id.
+      with a colliding ``message_id``.
 
     2. Encrypt and authenticate each block.
 
        Each Block is encrypted and authenticated as a Noise protocol
-       [NOISE] handshake plus transport message, using the recipient's
+       [NOISE]_ handshake plus transport message, using the recipient's
        long term X25519 public key, the sender's long term X25519
        keypair, and a freshly generated ephemeral X25519 keypair.
 
-       `Noise_X_25519_ChaChaPoly_Blake2b` is used as the Noise protocol
+       ``Noise_X_25519_ChaChaPoly_Blake2b`` is used as the Noise protocol
        name and parameterization for the purpose of Block encryption.
 
        Let the encrypted and authenticated Block be refered to as the
-       following:
+       following::
 
           struct {
               /* Noise protocol fields. */
@@ -353,7 +337,7 @@ Table of Contents
 
        The recipient's provider MUST NOT have a delay.
 
-       See Section 5.1 and Section 5.2 for details.
+       See :ref:`Section 5.1 <5.1>` and :ref:`Section 5.2 <5.2>` for details.
 
     4. (Optional) Create the SURB-ACK's Single Use Reply Block for each block.
        
@@ -375,7 +359,7 @@ Table of Contents
     5. Assemble each BlockCiphertext and (Optional) SURBs into Sphinx
        packet payload.
 
-       Let the Sphinx packet payload consist of the following:
+       Let the Sphinx packet payload consist of the following::
 
           struct {
              uint8_t flags;
@@ -389,7 +373,7 @@ Table of Contents
              BlockCiphertext ciphertext[];
           } BlockSphinxPlaintext;
 
-       All non-terminal hops MUST have a NodeDelayCommand and NextNodeHopCommand
+       All non-terminal hops MUST have a ``NodeDelayCommand`` and ``NextNodeHopCommand``
        command in the per-hop routing command vector.
 
        The terminal hop for all forward Sphinx packets MUST have a
@@ -402,10 +386,10 @@ Table of Contents
        identifier, and additionally have a surb_reply command containing
        the ID of the SURB.
 
-    6. Send each Sphinx packet via the `send_packet` command.
+    6. Send each Sphinx packet via the ``send_packet`` command.
 
        Each Sphinx packet is then send out via the sender's Provider
-       into the mixnet, using the send_packet wire protocol command.
+       into the mixnet, using the ``send_packet`` wire protocol command.
 
        The sender SHOULD impose a random delay between each packet,
        and if the sender chooses to implement this functionality such
@@ -444,6 +428,7 @@ Table of Contents
           arrive after a certain number of retransmissions.
 
 4.1 Provider Behavior for Receiving Messages from the Mix Network
+-----------------------------------------------------------------
 
    All Providers MUST accept inbound connections from the final layer
    of the mix network, and receive Sphinx packets.  Upon receiving a
@@ -461,9 +446,9 @@ Table of Contents
 
     2. Handle the unwrapped packet.
 
-       Iff the Sphinx packet did not have a surb_reply command in the
+       Iff the Sphinx packet did not have a ``surb_reply`` command in the
        per-hop command vector, then the payload MUST be interpreted as
-       a BlockSphinxPlaintext as follows:
+       a ``BlockSphinxPlaintext`` as follows:
 
         1. The Provider queues the packet's ciphertext field for
            later delivery to the client (via the retrieval mechanism
@@ -472,28 +457,30 @@ Table of Contents
         2. After the ciphertext has been queued into persistent
            storage, the Provider MUST generate the ack’s payload,
 	   concatenate with the received SURB-ACK header and
-	   transmit a SURB-ACK, iff the BlockSphinxPlaintext's
-           flags is equal to 1, and a valid SURB is present in
+	   transmit a SURB-ACK, iff the ``BlockSphinxPlaintext``'s
+           flags is equal to ``1``, and a valid SURB is present in
            the payload.
 
            The SURB-ACK payload MUST be completely zero filled (contain
-           only 0x00 bytes).
+           only ``0x00`` bytes).
 
         Providers MUST NOT generate and transmit a SURB-ACK unless
         the ciphertext has been successfully queued for delivery.
 
-      Iff the Sphinx packet has a surb_reply command in the per-hop
+      Iff the Sphinx packet has a ``surb_reply`` command in the per-hop
       command vector, then the entire Sphinx packet payload, along
-      with the surb_id value from the surb_reply command is queued
+      with the ``surb_id`` value from the ``surb_reply`` command is queued
       for later delivery to the client.
 
 4.2 Client Receive Message Behavior
+-----------------------------------
 
    Clients periodically poll their Provider with a retreive_message
    command. This section describes the client behavior upon receiving
    messages from their Provider, based on type. /*Ania: type of what? */
 
 4.2.1 Client Message Processing
+-------------------------------
 
    When a client receives an inbound message from their provider,
    denoted as such by virtue of not being a SURB payload, the
@@ -505,11 +492,11 @@ Table of Contents
 
     * Queue, and reassemble multi-block messages as necessary based on
       the BlockCiphertext `s` field (sender's long term public key),
-      and the message_id, total_blocks, and block_id fields in the Block
+      and the ``message_id``, ``total_blocks``, and ``block_id`` fields in the Block
       structure.
 
-      When reassembling messages, the values of `s`, message_id, and
-      total_blocks are fixed for any given distinct message. All
+      When reassembling messages, the values of ``s``, ``message_id``, and
+      ``total_blocks`` are fixed for any given distinct message. All
       differences in those fields across Blocks MUST be interpreted as
       the Blocks belonging to different messages.
 
@@ -517,7 +504,7 @@ Table of Contents
       delivery mechanisms are fundamentally unreliable, and that it is
       possible to receive blocks containing identical payload in the
       event of a spurious transmission. Clients MUST validate that such
-      Blocks (overlapping block_id) are in fact spurious retransmissions
+      Blocks (overlapping ``block_id``) are in fact spurious retransmissions
       by doing a bitwise compare of the block payloads, and take
       appropriate action such as warning the user if an anomaly is
       detected.
@@ -538,6 +525,7 @@ Table of Contents
    )
 
 4.2.2 Client Protocol Acknowledgment Processing (SURB-ACKs).
+------------------------------------------------------------
 
    When a client receives a message from their provider carrying a SURB
    payload, the message is a SURB-ACK for a Block that the client
@@ -556,29 +544,33 @@ Table of Contents
  need to be here?
 
    Ordinarily, reliable protocols MUST use exponential backoff for
-   retransmissions [CONGAVOID] [SMODELS] [RFC896], however if and only
+   retransmissions [CONGAVOID]_ [SMODELS]_ [RFC896]_, however if and only
    if the round trip time is greater than X seconds then exponential
    backoff is not needed. [XXX CITATION NEEDED!]
 )
 
 5. Sphinx Packet Composition Considerations
+===========================================
 
    Here we describe important facets of how clients construct Sphinx
    packets. This section assumes the client interacts with the mix
    network PKI as well as a universal time facility (rough time).
 
+.. _5.1:
+
 5.1 Choosing Delays: for single Block messages and for multi Block messages
+---------------------------------------------------------------------------
 
    The Client generates a delay for the ingress provider and for each
    of the mixes in the route,  though not for the egress provider.
    The delays are drawn from the exponential distribution
-   independently for each node. For a class of traffic TRAFFIC_X,
-   the parameter LAMBDA_X, which is the inverse of the mean of the exponential
+   independently for each node. For a class of traffic ``TRAFFIC_X``,
+   the parameter ``LAMBDA_X``, which is the inverse of the mean of the exponential
    distribution in milliseconds, is public by the mix network PKI
-   and the same for all clients. Given LAMBDA_X, the sender just draws
-   a random value from Exp(LAMBDA_X).
+   and the same for all clients. Given ``LAMBDA_X``, the sender just draws
+   a random value from ``Exp(LAMBDA_X)``.
 
-(XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
+XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
  the way this is speced out now... Design required here I think.
 
    For multi-Block messages, the client trickles the Blocks rather
@@ -586,16 +578,18 @@ Table of Contents
    attacks that look at bursts of multiple sent/received packets, and
    use that information to link the sender and receiver of a
    multi-Block message.
-)
+
+.. _5.2:
 
 5.2 Path selection algorithm
+----------------------------
 
    The path selection algorithm is composed of four steps:
 
     1. Sample all forward and SURB delays.
 
-    2. Ensure total delays doesn't exceed (time_till next_epoch) +
-       2 * epoch_duration, as keys are only published 3 epochs in
+    2. Ensure total delays doesn't exceed ``(time_till next_epoch) +
+       2 * epoch_duration``, as keys are only published 3 epochs in
        advance.
 
     3. Pick forward and SURB mixes (Section 5.2.1).
@@ -608,6 +602,7 @@ Table of Contents
    the entire path selection process MUST be restarted from the beginning.
 
 5.2.1 Other Path Selection Considerations
+-----------------------------------------
 
    The route contains the ingress and egress providers and a sequence
    of randomly selected mixes. The sequence of mixes is chosen independently
@@ -616,10 +611,11 @@ Table of Contents
    Panoramix uses the Layered topology, thus the selected path MUST
    contain one and only one mix per layer, and MUST traverse all layers.
    Within a layer, the mix is selected with probability proportional to
-   its bandwidth/capacity. Thus, if a mix has a fraction f of the total
-   capacity of its layer, it will be selected with probability f.
+   its bandwidth/capacity. Thus, if a mix has a fraction ``f`` of the total
+   capacity of its layer, it will be selected with probability ``f``.
 
 6. E-mail Client Integration Considerations
+===========================================
 
    The e-mail client is a distinct component from the mix network
    client because we want to avoid having to heavily modify an e-mail
@@ -639,6 +635,7 @@ Table of Contents
       4. reassemble multi-Block messages.
 
 6.1 Message Retrieval
+---------------------
 
    A local POP service can act as the mix network client, and decrypt
    the final layer of Sphinx packet encryption.  The K9-Mail and other
@@ -647,6 +644,7 @@ Table of Contents
    e-mail clients.
 
 6.2 Message Sending
+-------------------
 
    A local SMTP proxy will perform the Sphinx encryption; the user's
    e-mail client will send messages to this local proxy. This avoids
@@ -654,11 +652,13 @@ Table of Contents
    client.
 
 7. Client Integration Considerations
+====================================
 
    This section specifies additional design considerations other than
    the core reliability protocol design.
 
 7.1 Message Retrieval
+---------------------
 
    The mix network client component can utilize any of the above
    mentioned reliability protocol and therefore can receive:
@@ -667,6 +667,7 @@ Table of Contents
       * a multi-Block message
 
 7.2 Information available to clients
+------------------------------------
 
    Clients download Mix Descriptors from the PKI, also known as the
    Mix Directory Authority service.  More details about the PKI system
@@ -679,7 +680,7 @@ Table of Contents
          * topology information,
          * packet sizes for different classes of traffic,
          * parameter of the exponential delay (lambda) for Poisson mix
-           strategy [KESDOGAN98], [LOOPIX17]
+           strategy [KESDOGAN98]_, [LOOPIX17]_
          * the list of public keys and addresses of the providers,
 	 * the list of public keys and addresses of the active mixes,
 
@@ -689,10 +690,11 @@ Table of Contents
       * Current mix network time via Rough Time protocol with mixes
 
 8. Anonymity Considerations
+===========================
 
    * The reliability protocol will allow for active confirmation
      attacks, especially if using ARQ schemes which are more efficient
-     than Stop and Wait ARQ. [CYA2013]
+     than Stop and Wait ARQ. [CYA2013]_
 
    * Between two communicating parties at least one Provider must be
      honest to maintain send/receiver anonymity with respect to third
@@ -700,91 +702,96 @@ Table of Contents
 
    * Usage of SURBs for message ACKs present deanonymization
      vulnerability via compulsion attacks. We can later build defences
-     against these attacks. [COMPULS05]
+     against these attacks. [COMPULS05]_
 
-   * There is no specified defence against n-1 attacks [TRICKLE02] at
+   * There is no specified defence against n-1 attacks [TRICKLE02]_ at
      this time. In future versions we may utilize decoy traffic or
-     heartbeat traffic to detect such attacks. [HEARTBEAT03]
+     heartbeat traffic to detect such attacks. [HEARTBEAT03]_
 
 9. Security Considerations
+==========================
 
    * Client endpoint public keys must be distributed in order to
      maintain confidentiality and integrity.
 
 10. Future Work and Research
+============================
 
    * change the path selection algorithm to use legal jurisdictional
      region awareness for increasing the cost of compulsion attacks.
    * Mitigate known active confirmation attacks?
-   * End to End Forward Secrecy [PETMAIL15]
+   * End to End Forward Secrecy [PETMAIL15]_
    * make bulk transfers go faster using Selective Repeat ARQ and
      Go-Back-N ARQ
    * make bulk transfers go faster using forward error correction
 
 Appendix A. References
+======================
 
 Appendix A.1 Normative References
+---------------------------------
 
-   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+.. [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
               DOI 10.17487/RFC2119, March 1997,
               <http://www.rfc-editor.org/info/rfc2119>.
 
-   [RFC5246]  Dierks, T. and E. Rescorla, "The Transport Layer Security
+.. [RFC5246]  Dierks, T. and E. Rescorla, "The Transport Layer Security
               (TLS) Protocol Version 1.2", RFC 5246,
               DOI 10.17487/RFC5246, August 2008,
               <http://www.rfc-editor.org/info/rfc5246>.
 
-   [RFC5322]  Resnick, P., Ed., "Internet Message Format", RFC 5322,
+.. [RFC5322]  Resnick, P., Ed., "Internet Message Format", RFC 5322,
               DOI 10.17487/RFC5322, October 2008,
               <https://www.rfc-editor.org/info/rfc5322>.
 
-   [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
+.. [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
 
 Appendix A.2 Informative References
+-----------------------------------
 
-   [DANEZISG09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+.. [DANEZISG09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
                  Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
                  May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
 
-   [CYA2013]  Geddes, J., Schuchard, M., Hopper, N., "Cover Your ACKs:
+.. [CYA2013]  Geddes, J., Schuchard, M., Hopper, N., "Cover Your ACKs:
               Pitfalls of CovertChannel Censorship Circumvention",
               <https://www-users.cs.umn.edu/~hopper/ccs13-cya.pdf>.
 
-   [COMPULS05]  Danezis, G., Clulow, J., "Compulsion Resistant Anonymous Communications",
+.. [COMPULS05]  Danezis, G., Clulow, J., "Compulsion Resistant Anonymous Communications",
                 Proceedings of Information Hiding Workshop, June 2005,
                 <https://www.freehaven.net/anonbib/cache/ih05-danezisclulow.pdf>.
 
-   [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
+.. [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
                   Proceedings of the Workshop on Privacy in the Electronic Society, October 2003,
                   <https://www.freehaven.net/anonbib/cache/danezis:wpes2003.pdf>.
 
-   [TRICKLE02]  Serjantov, A., Dingledine, R., Syverson, P., "From a Trickle to
+.. [TRICKLE02]  Serjantov, A., Dingledine, R., Syverson, P., "From a Trickle to
                 a Flood: Active Attacks on Several Mix Types", Proceedings of
                 Information Hiding Workshop, October 2002,
                 <https://www.freehaven.net/anonbib/cache/trickle02.pdf>.
 
-   [PETMAIL15]  Warner, B., "Petmail mailbox-server delivery protocol",
+.. [PETMAIL15]  Warner, B., "Petmail mailbox-server delivery protocol",
                 Proceedings of Brian Warner's blog, July 2015,
                 <http://www.lothar.com/blog/53-petmail-delivery/>.
 
-   [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
+.. [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
                Symposium proceedings on Communications architectures and protocols,
                November 1988, <http://ee.lbl.gov/papers/congavoid.pdf>.
 
-   [SMODELS]  Kelly, F., "Stochastic Models of Computer Communication Systems",
+.. [SMODELS]  Kelly, F., "Stochastic Models of Computer Communication Systems",
               Journal of the Royal Statistical Society, 1985,
               <http://www.yaroslavvb.com/papers/notes/kelly-stochastic.pdf?
 origin=publication_detail>.
 
-   [RFC896]  Nagle, J., "Congestion Control in IP/TCP Internetworks",
+.. [RFC896]  Nagle, J., "Congestion Control in IP/TCP Internetworks",
              January 1984, <https://tools.ietf.org/html/rfc896>.
 
-   [KESDOGAN98]   Kesdogan, D., Egner, J., and Büschkes, R.,
+.. [KESDOGAN98]   Kesdogan, D., Egner, J., and Büschkes, R.,
                   "Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System."
                   Information Hiding, 1998.
 
-   [LOOPIX17]   Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
+.. [LOOPIX17]   Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
                 and Danezis, G., “The Loopix Anonymity System”,USENIX, August, 2017
                 <https://arxiv.org/pdf/1703.00536.pdf>
