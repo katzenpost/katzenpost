@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/server/userdb"
 	"github.com/katzenpost/server/userdb/boltuserdb"
+	"github.com/katzenpost/server/userdb/externuserdb"
 	"github.com/op/go-logging"
 )
 
@@ -293,9 +294,16 @@ func newProvider(s *Server) (*provider, error) {
 	p.log = s.logBackend.GetLogger("provider")
 
 	var err error
-	p.userDB, err = boltuserdb.New(p.s.cfg.Provider.UserDB)
-	if err != nil {
-		return nil, err
+	if p.s.cfg.Provider.UserDBBackend == "extern" {
+		p.userDB, err = externuserdb.New(p.s.cfg.Provider.Extern.ProviderURL)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		p.userDB, err = boltuserdb.New(p.s.cfg.Provider.Bolt.UserDB)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	p.spool, err = boltspool.New(p.s.cfg.Provider.SpoolDB)
