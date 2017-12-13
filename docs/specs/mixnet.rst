@@ -575,7 +575,7 @@ Appendix A.1 Normative References
                10.6028/NIST.SP.800, December 2001,
                <https://http://dx.doi.org/10.6028/NIST.SP.800-38A>
 
-.. [AEZv5]     Hoang, V., Krovetz, T., Rogaway, P., "AEZ v5:
+.. [AEZV5]     Hoang, V., Krovetz, T., Rogaway, P., "AEZ v5:
                Authenticated Encryption by Enciphering", March 2017,
                <http://web.cs.ucdavis.edu/~rogaway/aez/aez.pdf>
 
