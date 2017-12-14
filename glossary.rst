@@ -3,31 +3,50 @@ Glossary
 
 .. glossary::
 
+    Traffic Analysis Resistance
+        Traffic analysis resistance means hiding traffic metadata from
+        passive network observers. Such metadata includes:
+
+           * message sender
+           * message receiver
+           * size of the message
+           * time of message transmission
+
     Mix
-        A server that provides anonymity to clients. This is accomplished 
-        by accepting layer-encrypted packets from a Provider or another
-        Mix, decrypting a layer of the encryption, delaying the packet,
-        and transmitting the packet to another Mix or Provider.
+        A mix is the primary component used to compose a mix network.
+        Mixes receive incoming messages, mix them via some specific
+        mix strategy which incurs a delay and then output the messages
+        after removing one layer of encryption. Bitwise unlinkability
+        between input and output messages is achieved using the mix
+        network cryptographic packet format. Mixes can also output
+        their own decoy traffic which adds further entropy to the
+        network as detailed in the Loopix paper.
+
+    Sphinx
+        The Sphinx cryptographic packet format is now the defacto
+        standard for mix networks. The Mixminion mix network
+        used SURBs to achieve sender anonymity. Mixminion inspired the
+        design of the Sphinx packet format.
 
     Mixnet
-        A network of :term:`mix`\ es. Fundamentally a mix network is a
-        lossy packet switching network on which we can build reliable
-        protocols. We therefore utilize a variety of designs from both
-        the mix network and classical internet protocol literature to
-        design an end to end reliability protocol that utilizes a mix
-        network.
+        Mixnet is short for mix network which is a network of
+        :term:`mix`\ es.  Fundamentally a mix network is a lossy
+        packet switching network whose primary purpose is to achieve
+        traffic analysis resistant properties such as location hiding,
+        sender anonymity etc. See our FAQ for more information.
 
     Provider
-        A service operated by a third party that :term:`Client`\s communicate
-        directly with to communicate with the Mixnet. It is responsible
-        for :term:`Client` authentication, forwarding outgoing messages to the
-        Mixnet, and storing incoming messages for the :term:`Client`\.
+        In the context of Loopix/Katzenpost, a Provider is a node in
+        the mix network which is responsible for authenticating
+        :term:`Client`\s, forwarding messages to the rest of the mix
+        network on behalf of :term:`Client`\s and queueing messages
+        that can later be retrieved by :term:`Client`\s.
 
     Node
         A :term:`Mix` or :term:`Provider` instance.
 
     User
-        An agent using the :term:`Katzenpost` system.
+        An agent controlling a :term:`Client` of the :term:`Katzenpost` system.
 
     Client
         Software run by the :term:`User` on its local device to participate
@@ -39,16 +58,63 @@ Glossary
         and messaging, running from 2015 to 2019. See `panoramix-project.eu <https://panoramix-project.eu/>`_.
     
     Katzenpost
-        A mixnet design and reference implementation based on the :term:`Loopix`
-        research with added message transport reliability using :term:`ARQ`\s.
+        A mixnet design based on the :term:`Loopix` research with
+        added message transport reliability using an :term:`ARQ`
+        protocol scheme.
 
     Loopix
         The Loopix mixnet design is described in the paper `"The Loopix Anonymity
         System" published at USENIX 2017 <https://arxiv.org/pdf/1703.00536.pdf>`_.
-        Loopix uses a collection of proven mix network designs to create a
-        messaging system that has the property of  sender and receiver anonymity
+        Loopix uses a collection of the best mix network designs to create a
+        messaging system that has the property of sender and receiver anonymity
         with respect to third party observers. Loopix uses the :term:`Sphinx`
         cryptographic packet format, various kinds of :term:`decoy traffic` and
         a :term:`stratified mix topology`.
 
+    ARQ
+        ARQ means Automatic Repeat reQuest which is a protocol scheme
+        that achieves reliability by means for ACKnowledgement
+        protocol control messages and retransmissions. This concept
+        comes from the packet switching network literature and is not
+        generally associated with mix networks. There is no other way
+        to acheive network reliability other than an ARQ scheme
+        although there are many hybrid ARQ schemes for radio
+        communication that use forward error correction for the
+        purpose of performing retransmissions less frequently.
 
+    Stop and Wait ARQ
+        Stop and Wait ARQ is the simplest of all the ARQ protocol
+        schemes. In the context of mix networks it also leaks the
+        least amount of information. When comparing it to TCP, Stop
+        and Wait ARQ has a congestion window of size one. This means
+        that after a message is transmitted, a second message cannot
+        be sent until the ACK for the first message is received. If
+        the ACK message is not received within a particular time
+        duration then the message is retransmitted.
+
+     SURB
+        SURB means Single Use Reply Block. SURBs are essentially a
+        cryptographic delivery token with a short lifetime. In the
+        Sphinx packet format SURBs have two categories of components,
+        those used by the creator and those used by the sender. When
+        Alice creates a SURB, she retains a decryption token and a
+        SURB ID. Alice gives Bob a Sphinx header and a payload
+        encryption token. Bob can use the payload encryption token to
+        encrypt his message. Bob then attaches the Sphinx header to
+        his ciphertext payload, thus forming a Sphinx packet which he
+        sends through the network. Bob cannot know the destination or
+        route of this Sphinx packet. Alice will receive the ciphertext
+        payload and the SURB ID. She uses the SURB ID to identify
+        which SURB decryption token to use for the ciphertext payload
+        decryption.
+
+        SURBs have a short lifetime because mixes MUST rotate Sphinx
+        routing keys frequently as the primary method of achieving
+        forward secrecy. The other reason routing keys must be rotated
+        is because each mix retains a replay cache which stores a
+        unique tag for each Sphinx packet that traverses it.  This
+        replay cache can only be flushed after a key rotation.
+
+     Mixminion
+        A mix network software project whose design has been inspirational to
+        the Katzenpost design. For more information see https://www.mixminion.net/
