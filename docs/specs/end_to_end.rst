@@ -1,4 +1,4 @@
-Panoramix Mix Network End-to-end Protocol Specification
+Katzenpost Mix Network End-to-end Protocol Specification
 *******************************************************
 
 | Yawning Angel
@@ -11,11 +11,11 @@ Version 0
 
 .. rubric:: Abstract
 
-This is a specification for the Panoramix/LEAP mix network client
+This is a specification for the Katzenpost mix network client
 end to end protocol and egress mix behavior. The mix network
-specification is described in Panoramix Mix Network Specification.
+specification is described in Katzenpost Mix Network Specification.
 The protocols used by the entities to publish their identities is
-described in the Panoramix Mix Network PKI Specification.
+described in the Katzenpost Mix Network PKI Specification.
 
 .. contents:: :local:
 
@@ -73,7 +73,7 @@ described in the Panoramix Mix Network PKI Specification.
      behalf of the user. Provider MUST perform the same cryptographic
      operations as the Mix.
 
-   * ``Packet`` - A Sphinx packet.The Panoramix system supports multiple
+   * ``Packet`` - A Sphinx packet.The Katzenpost system supports multiple
               packet sizes for different classes of traffic. In particular:
 	      * ``XKB-block: XX KB`` (to-do: specify the number of KB)
 	      * ``YKB-block: YY KB`` (to-do: specify the number of KB/MB)
@@ -114,7 +114,7 @@ described in the Panoramix Mix Network PKI Specification.
    "Sphinx Mix Network Cryptographic Packet Format Specification"
 
    The Sphinx cryptographic primitives and parameters are specified in
-   Section 3 of: "The Panoramix Mix Network Specification"
+   Section 3 of: "The Katzenpost Mix Network Specification"
 
 3. Client and Provider Core Protocol
 ====================================
@@ -122,8 +122,8 @@ described in the Panoramix Mix Network PKI Specification.
    All client mixnet interaction happens through their Provider,
    reusing the existing trust relationship any given user may have
    with an e-mail service provider, and all client to Provider
-   interaction will use the Panoramix Mix Network Wire Protocol,
-   described in “Panoramix Mix Network Wire Protocol Specification”.
+   interaction will use the Katzenpost Mix Network Wire Protocol,
+   described in “Katzenpost Mix Network Wire Protocol Specification”.
 
 3.1 Handshake and Authentication
 --------------------------------
@@ -521,7 +521,7 @@ described in the Panoramix Mix Network PKI Specification.
 
    (XXX/ya: Should we mandate that clients insert something like:
 
-    `X-Panoramix-Sender: <Base64(s)>` as a header?
+    `X-Katzenpost-Sender: <Base64(s)>` as a header?
    )
 
 4.2.2 Client Protocol Acknowledgment Processing (SURB-ACKs).
@@ -608,7 +608,7 @@ XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
    of randomly selected mixes. The sequence of mixes is chosen independently
    for each Block.
 
-   Panoramix uses the Layered topology, thus the selected path MUST
+   Katzenpost uses the Layered topology, thus the selected path MUST
    contain one and only one mix per layer, and MUST traverse all layers.
    Within a layer, the mix is selected with probability proportional to
    its bandwidth/capacity. Thus, if a mix has a fraction ``f`` of the total
@@ -671,12 +671,12 @@ XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
 
    Clients download Mix Descriptors from the PKI, also known as the
    Mix Directory Authority service.  More details about the PKI system
-   and the Mix Descriptors can be found in the Panoramix Mix Network
+   and the Mix Descriptors can be found in the Katzenpost Mix Network
    PKI Specification.
 
    Clients will have the following information available to them:
 
-      * Panoramix Mix Network Parameters via the PKI:
+      * Katzenpost Mix Network Parameters via the PKI:
          * topology information,
          * packet sizes for different classes of traffic,
          * parameter of the exponential delay (lambda) for Poisson mix
@@ -685,7 +685,7 @@ XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
 	 * the list of public keys and addresses of the active mixes,
 
       * Mix Network Consensus Document containing Mix Descriptors as
-        described in the Panoramix Mix Network PKI Specification
+        described in the Katzenpost Mix Network PKI Specification
 
       * Current mix network time via Rough Time protocol with mixes
 

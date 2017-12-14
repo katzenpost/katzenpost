@@ -1,4 +1,4 @@
-Panoramix Mix Network Specification
+Katzenpost Mix Network Specification
 ***********************************
 
 | Yawning Angel
@@ -13,7 +13,7 @@ Version 0
 
 This document describes the high level architecture and detailed
 protocols and behavior required of mix nodes participating in the
-Panoramix Mix Network.
+Katzenpost Mix Network.
 
 .. contents:: :local:
 
@@ -48,12 +48,12 @@ Panoramix Mix Network.
 
    ``Node`` - A Mix or Provider instance.
 
-   ``User`` - An agent using the Panoramix system.
+   ``User`` - An agent using the Katzenpost system.
 
    ``Client`` - Software run by the User on its local device to
             participate in the Mixnet.
 
-   ``Panoramix`` - A project to design an improved mix service as described
+   ``Katzenpost`` - A project to design an improved mix service as described
                in this specification. Also, the name of the reference
                software to implement this service, currently under
                development.
@@ -64,7 +64,7 @@ Panoramix Mix Network.
                         * Large messages (big attachments)
                         /* This may be changed after we do our analysis on the stats */
 
-   ``Packet`` - A string transmitted anonymously thought the Panoramix network.
+   ``Packet`` - A string transmitted anonymously thought the Katzenpost network.
              The length of the packet is fixed for every class of traffic.
 
    ``Payload`` - The [xxx] KiB portion of a Packet containing a message,
@@ -74,7 +74,7 @@ Panoramix Mix Network.
    ``Message`` - A variable-length sequence of octets sent anonymously
              through the network. Short messages are sent in a single
              packet; long messages are fragmented across multiple
-             packets (see the Panoramix Mix Network End-to-end
+             packets (see the Katzenpost Mix Network End-to-end
              Protocol Specification for more information about
              encoding messages into payloads). /* <- This has to be rephrased after
              The analysis of the stats; if we have multiple classes of traffic */
@@ -94,7 +94,7 @@ Panoramix Mix Network.
    The presented system design is based on [LOOPIX]_. The detailed
    End-to-end specification, describing the operations performed
    By the sender and recipient, as well sender’s provider and
-   Recipient’s provider, are presented in “Panoramix Mix Network
+   Recipient’s provider, are presented in “Katzenpost Mix Network
    End-to-end Protocol Specification”. Below, we present the system overview.
 
    The Provider ran by each service provider is responsible for
@@ -165,7 +165,7 @@ Panoramix Mix Network.
 2.2 Network Topology
 ---------------------
 
-   The Panoramix Mix Network uses a layered topology consisting of a
+   The Katzenpost Mix Network uses a layered topology consisting of a
    fixed number of layers, each containing a set of mixes. At any
    given time each Mix MUST only be assigned to one specific layer.
    Each Mix in a given layer N is connected to every other Mix in
@@ -214,14 +214,14 @@ Panoramix Mix Network.
 
    "The Sphinx Mix Network Cryptographic Packet Format Specification"
 
-   As the Sphinx packet format is generic, the Panoramix Mix Network
+   As the Sphinx packet format is generic, the Katzenpost Mix Network
    must provide a concrete instantiation of the format, as well as
    additional Sphinx per-hop routing information commands.
 
 3.1 Sphinx Cryptographic Primitives
 -----------------------------------
 
-   For the current version of the Panoramix Mix Network, let the
+   For the current version of the Katzenpost Mix Network, let the
    following cryptographic primitives be used as described in the
    Sphinx specification.
 
@@ -253,7 +253,7 @@ Panoramix Mix Network.
 3.2 Sphinx Packet Parameters
 ----------------------------
 
-   The following parameters are used as for the Panoramix Mix Network
+   The following parameters are used as for the Katzenpost Mix Network
    instantiation of the Sphinx Packet Format:
 
     * ``AD_SIZE``            - 2 bytes.
@@ -276,14 +276,14 @@ Panoramix Mix Network.
 
     * ``PAYLOAD_SIZE``       - (XXX/ya: Subtraction is hard, let's go shopping.)
 
-    * ``KDF_INFO``           - The byte string 'panoramix-kdf-v0-hkdf-sha256'.
+    * ``KDF_INFO``           - The byte string 'Katzenpost-kdf-v0-hkdf-sha256'.
 
    The Sphinx Packet Header ``additional_data`` field is specified as follows::
 
       struct {
           uint8_t version;  /* 0x00 */
           uint8_t reserved; /* 0x00 */
-      } PanoramixAdditionalData;
+      } KatzenpostAdditionalData;
 
       (XXX/ya: Double check to ensure that this causes the rest of the packet
        header to be 4 byte aligned, when wrapped in the wire protocol command
@@ -313,7 +313,7 @@ Panoramix Mix Network.
 
       enum {
           mix_delay(0x80),
-      } PanoramixCommandType;
+      } KatzenpostCommandType;
 
    The mix_delay command structure is as follows::
 
@@ -349,8 +349,8 @@ Panoramix Mix Network.
 4.1 Link Layer Connection Management
 ------------------------------------
 
-   All communication to and from participants in the Panoramix Mix
-   Network is done via the Panoramix Mix Network Wire Protocol [PANMIXWIRE]_.
+   All communication to and from participants in the Katzenpost Mix
+   Network is done via the Katzenpost Mix Network Wire Protocol [KATZMIXWIRE]_.
 
    Nodes are responsible for establishing the connection to the next
    hop, for example, a mix in layer 0 will accept inbound connections
@@ -391,7 +391,7 @@ Panoramix Mix Network.
 
    Each Node MUST rotate the key pair used for Sphinx packet processing
    periodically for forward secrecy reasons and to keep the list of seen
-   packet tags short. The Panoramix Mix Network uses a fixed interval
+   packet tags short. The Katzenpost Mix Network uses a fixed interval
    (``epoch``), so that key rotations happen simultaneously throughout
    the network, at predictable times.
 
@@ -582,7 +582,7 @@ Appendix A.1 Normative References
 .. [RFC7748]   Langley, A., Hamburg, M., and S. Turner, "Elliptic Curves
                for Security", RFC 7748, January 2016.
 
-.. [PANMIXWIRE] "Panoramix Mix Network Wire Protocol Specification", June 2017.
+.. [KATZMIXWIRE] "Katzenpost Mix Network Wire Protocol Specification", June 2017.
 
     (XXX/david: fix this reference, add author names and url)
 
