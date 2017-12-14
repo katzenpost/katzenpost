@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -198,18 +199,44 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
-	// UserDB is the path to the user database.  If left empty it will use
-	// `users.db` under the DataDir.
-	UserDB string
+	// UserDBBackend selects the userdb backend to be used. If left empty
+	// the boltuserdb implementation will be used.
+	UserDBBackend string
+
+	// Bolt DB Backed katzenpost user db
+	Bolt *BoltUserDB
+
+	// Externally defined katzenpost user db
+	Extern *ExternUserDB
 
 	// SpoolDB is the path to the user message spool.  If left empty, it will
 	// use `spool.db` under the DataDir.
 	SpoolDB string
 }
 
+// BoltUserDB is the bolt implementation of userdb
+type BoltUserDB struct {
+	// UserDB is the path to the user database.  If left empty it will use
+	// `users.db` under the DataDir.
+	UserDB string
+}
+
+// ExternUserDB is the external http user authentication
+type ExternUserDB struct {
+	// ProviderURL is the base url used for the external provider authentication API.
+	// It should be in the form of http://localhost:8080/
+	ProviderURL string
+}
+
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
-	if pCfg.UserDB == "" {
-		pCfg.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
+	if pCfg.UserDBBackend == "" {
+		pCfg.UserDBBackend = "bolt"
+		pCfg.Bolt = &BoltUserDB{}
+	}
+	if pCfg.UserDBBackend == "bolt" {
+		if pCfg.Bolt.UserDB == "" {
+			pCfg.Bolt.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
+		}
 	}
 	if pCfg.SpoolDB == "" {
 		pCfg.SpoolDB = filepath.Join(sCfg.DataDir, defaultSpoolDB)
@@ -217,11 +244,29 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
-	if !filepath.IsAbs(pCfg.UserDB) {
-		return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.UserDB)
+	if pCfg.UserDBBackend == "bolt" {
+		if !filepath.IsAbs(pCfg.Bolt.UserDB) {
+			return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.Bolt.UserDB)
+		}
 	}
 	if !filepath.IsAbs(pCfg.SpoolDB) {
 		return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB)
+	}
+	if pCfg.UserDBBackend == "extern" {
+		if pCfg.Extern == nil {
+			return fmt.Errorf("config: Provider: Extern section should be defined")
+		}
+
+		if pCfg.Extern.ProviderURL == "" {
+			return fmt.Errorf("config: Provider: ProviderURL should be defined for externuserdb")
+		}
+		providerURL, err := url.Parse(pCfg.Extern.ProviderURL)
+		if err == nil {
+			return fmt.Errorf("config: Provider: ProviderURL should be a valid url")
+		}
+		if providerURL.Scheme != "http" && providerURL.Scheme != "https" {
+			return fmt.Errorf("config: Provider: ProviderURL should be of http schema")
+		}
 	}
 	return nil
 }
