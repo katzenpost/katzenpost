@@ -13,7 +13,7 @@ Goals
 Non-Goals
 =========
 
-* to hide the sender identity from the recipient
+* to hide the sender identity from the final recipient
 
 Documentation
 =============
@@ -23,6 +23,7 @@ Documentation
     :maxdepth: 1
 
     faq
+    glossary
     docs/*
 
 .. rubric:: Supported by
