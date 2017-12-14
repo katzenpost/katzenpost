@@ -20,6 +20,7 @@ package pki
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -28,6 +29,12 @@ import (
 
 // LayerProvider is the Layer that providers list in their MixDescriptors.
 const LayerProvider = 255
+
+var (
+	// ErrNoDocument is the error returned when there never will be a document
+	// for a given epoch.
+	ErrNoDocument = errors.New("pki: requested epoch will never get a document")
+)
 
 // Document is a PKI document.
 type Document struct {
