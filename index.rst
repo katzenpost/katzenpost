@@ -22,8 +22,6 @@ Documentation
     :glob:
     :maxdepth: 1
 
-    faq
-    glossary
     docs/*
 
 .. rubric:: Supported by
