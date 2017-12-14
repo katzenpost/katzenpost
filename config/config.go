@@ -261,7 +261,7 @@ func (pCfg *Provider) validate() error {
 			return fmt.Errorf("config: Provider: ProviderURL should be defined for externuserdb")
 		}
 		providerURL, err := url.Parse(pCfg.Extern.ProviderURL)
-		if err == nil {
+		if err != nil {
 			return fmt.Errorf("config: Provider: ProviderURL should be a valid url")
 		}
 		if providerURL.Scheme != "http" && providerURL.Scheme != "https" {
