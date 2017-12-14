@@ -1,59 +1,78 @@
 How to Set Up Your Own Katzenpost Mixnet
 ****************************************
 
-For now, this is a lazy copy of https://pad.riseup.net/p/katzenpost-deploy and totally WIP...
+introduction
+============
+
+Mix networks are meant to be decentralized and therefore should
+be operated by multiple entities. You can of course be the only
+operator of a mix network for testing purposes.
 
 build software
 ==============
-You can build the software in your computer and copy the binaries to the server from $GOPATH/bin::
+
+A Katzenpost mix network has two binary programs, a PKI and a
+mix/provider. You can build this software on your computer and copy
+the binaries to the server from $GOPATH/bin::
 
     go get github.com/katzenpost/daemons/authority/nonvoting
     go get github.com/katzenpost/daemons/server
 
-generate the PKI key
-====================
-
-Configure the PKI: https://github.com/Katzenpost/daemons/blob/master/authority/nonvoting/authority.toml.sample
-
-.. code:: console
-
-    ./nonvoting -f authority.toml -g
-
-This causes the authority server to generate an authority identity key
-which will get written to the specified data directory and printed in the log.
-This Authority Identity key is used in the mix configuration file.
-
-Without the `-g` option for running the Authority::
-
-    ./nonvoting -f authority.toml
-
-
-set up the provider
-===================
-
-set up the mix
-==============
-
-Configure the mix node: https://raw.githubusercontent.com/Katzenpost/daemons/master/server/katzenpost.toml.sample
-
-Generate the key::
-    ./server -f katzenpost.toml -g
-
-Copy the key into the P
-
 
 get clock on sync
 =================
+
+Each network component, the PKI and mixes/providers
+MUST have the correct time. We recommend installing
+chrony for the purpose of time synchronization.
 
 .. code:: console
 
     apt install chrony
 
 
+generate the PKI key
+====================
+
+Configure the PKI, an example configuration can be found here:
+
+https://github.com/Katzenpost/daemons/blob/master/authority/nonvoting/authority.toml.sample
+
+
+.. code:: console
+
+    ./nonvoting -f authority.toml -g
+
+This `-g` option causes the authority server to generate an authority identity key
+which will get written to the specified data directory and printed in the log.
+This Authority Identity key is used in the mix configuration file and allows
+mixes interact with the PKI.
+
+Without the `-g` option for running the Authority
+.. code:: console
+
+    ./nonvoting -f authority.toml
+
 add users to the provider
 =========================
 
-Let's connect to the managment interface of the PKI::
+Add users to the Provider using the management interface:
 
-    $ socat unix:/home/pano/node/data/management_sock STDOUT
-    ADD_USER alice keymaterial
+.. code:: console
+
+    socat unix:/home/pano/node/data/management_sock STDOUT
+    ADD_USER alice X25519_public_key_in_hex_or_base64
+
+set up the mix
+==============
+
+Configure the mix node: https://raw.githubusercontent.com/Katzenpost/daemons/master/server/katzenpost.toml.sample
+
+Generate the key
+.. code:: console
+
+    ./server -f katzenpost.toml -g
+
+The generated mix identity key MUST be entered into the PKI configuration file.
+Once the PKI is configured with all of the mix identity keys you can start the
+PKI server and then start all the mixes.
