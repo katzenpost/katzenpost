@@ -57,58 +57,59 @@ Table of Contents
 
 1.1. Terminology
 
-   * ACK - A protocol acknowledgment of a previously sent Block.
+   ACK - A protocol acknowledgment of a previously sent Block.
 
-   * ARQ - Automatic Repeat reQuest is an error correction method
-     which requires two-way communication and incurs a delay penalty
-     when used.
+   ARQ - Automatic Repeat reQuest is an error correction method
+         which requires two-way communication and incurs a delay penalty
+         when used.
 
-   * Classes of traffic - We distinguish the following classes of traffic:
-			  * ACKs
-			  * Small messages
-			  * Large messages (big attachments)
+   Classes of traffic - We distinguish the following classes of traffic:
+                          * ACKs
+                          * Small messages
+                          * Large messages (big attachments)
 	/* This may be changed after we do our analysis on the stats */
 
-   * Block - A fragment of a message that fits into a single packet
-     of a specified class of traffic.
+   Block - A fragment of a message that fits into a single packet
+           of a specified class of traffic.
 
-   * Block ID - A unique identifier for a Block.
+   Block ID - A unique identifier for a Block.
 
-   * Client - Software run by the human being on its local device.
+   Client - Software run by the human being on its local device.
 
-   * E2E Encrypted message - An encrypted message.
+   E2E Encrypted message - An encrypted message.
 
-   * Message - A variable size end-to-end message, transmitted from
-     one location to another. The message can be classified into one
-     of the classes of traffic, depending on the message size, and transported
-     as a single packet or divided into several packets.
+   Message - A variable size end-to-end message, transmitted from
+             one location to another. The message can be classified into one
+             of the classes of traffic, depending on the message size, and transported
+             as a single packet or divided into several packets.
 
-   * Message ID - A unique identifier for a message.
+   Message ID - A unique identifier for a message.
 
-   * Mix - A server that provides anonymity to clients by accepting
-     messages encrypted to its public key, which it then decrypts,
-     delays for a given amount of time, and transmits either to
-     another mix or to a provider (as specified in the messages). Those
-     operations provide bitwise unlinkability between input and output
-     messages as well as long term correlation resistance.
+   Mix - A server that provides anonymity to clients by accepting
+         messages encrypted to its public key, which it then decrypts,
+         delays for a given amount of time, and transmits either to
+         another mix or to a provider (as specified in the messages). Those
+         operations provide bitwise unlinkability between input and output
+         messages as well as long term correlation resistance.
 
-   * Provider - The provider is a client's single point of failure for
-     participating in the mix network because it is responsible for
-     authorising sent messages as well as storing received messages on
-     behalf of the user. Provider MUST perform the same cryptographic
-     operations as the Mix.
+   Provider - The provider is a client's single point of failure for
+              participating in the mix network because it is responsible for
+              authorising sent messages as well as storing received messages on
+              behalf of the user. Provider MUST perform the same cryptographic
+              operations as the Mix.
 
-   * Packet - A Sphinx packet.The Panoramix system supports multiple
-              packet sizes for different classes of traffic. In particular:
+   Packet - A Sphinx packet. [SPHINXSPEC] The Panoramix system supports multiple
+            packet sizes for different classes of traffic. In particular:
 	      * XKB-block: XX KB (to-do: specify the number of KB)
 	      * YKB-block: YY KB (to-do: specify the number of KB/MB)
 
-   * SURB-ACK - A short message notifying that a packet was delivered;
-     transmitted via a Single Use Reply Block [DANEZISG09].
+   SURB-ACK - A short message notifying that a packet was delivered;
+              transmitted via a Single Use Reply Block [SPHINXSPEC].
 
-   * SURB_SIZE = sizeof(SphinxSURB) where SphinxSURB is a Single Use
-     Reply Block defined in the “Sphinx Mix Network Cryptographic
-     Packet Format Specification”.
+   SURB_SIZE - The SURB_SIZE is equal to sizeof(SphinxSURB) where
+               SphinxSURB is a Single Use Reply Block defined in the
+               [SPHINXSPEC], the “Sphinx Mix Network Cryptographic
+               Packet Format Specification”.
 
 1.2 Conventions Used in This Document
 
@@ -337,7 +338,7 @@ Table of Contents
               opaque noise_s[32];     /* The Noise handshake `s`. */
               opaque noise_mac[16];   /* The Noise ciphertext MAC. */
 
-              opaque ciphertext[BLOCK_LENGTH];
+              opaque ciphertext[BLOCK_LENGTH+24]; /* 24 byte Block header. */
           } BlockCiphertext;
 
     3. Derive the path(s) and delays for each block.
@@ -679,7 +680,7 @@ Table of Contents
          * topology information,
          * packet sizes for different classes of traffic,
          * parameter of the exponential delay (lambda) for Poisson mix
-           strategy [KESDOGAN98], [LOOPIX17]
+           strategy [KESDOGAN98], [LOOPIX]
          * the list of public keys and addresses of the providers,
 	 * the list of public keys and addresses of the active mixes,
 
@@ -775,8 +776,7 @@ Appendix A.2 Informative References
 
    [SMODELS]  Kelly, F., "Stochastic Models of Computer Communication Systems",
               Journal of the Royal Statistical Society, 1985,
-              <http://www.yaroslavvb.com/papers/notes/kelly-stochastic.pdf?
-origin=publication_detail>.
+              <http://www.yaroslavvb.com/papers/notes/kelly-stochastic.pdf>.
 
    [RFC896]  Nagle, J., "Congestion Control in IP/TCP Internetworks",
              January 1984, <https://tools.ietf.org/html/rfc896>.
@@ -785,6 +785,7 @@ origin=publication_detail>.
                   "Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System."
                   Information Hiding, 1998.
 
-   [LOOPIX17]   Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
-                and Danezis, G., “The Loopix Anonymity System”,USENIX, August, 2017
-                <https://arxiv.org/pdf/1703.00536.pdf>
+   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
+               “The Loopix Anonymity System”,
+               USENIX, August, 2017
+               <https://arxiv.org/pdf/1703.00536.pdf>

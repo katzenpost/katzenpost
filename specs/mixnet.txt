@@ -136,11 +136,13 @@ Table of Contents
    required for each participant to participate in the network such as
    IP address/port combinations that each node can be reached at, and
    cryptographic public keys. The specification for the PKI is beyond
-   the scope of this document and is instead covered in <PKI Spec here>.
+   the scope of this document and is instead covered in [PANMIXPKI].
 
-   The Provider and Client behavior is specified in <E2E Spec here>,
-   though certain aspects of the Provider behavior are also specified
-   here, as Providers are Nodes.
+   The Provider and Client behavior is specified in [PANEND2END] the
+   "Panoramix Mix Network End-to-end Protocol Specification", though
+   certain aspects of the Provider behavior are also specified here,
+   as Providers are Nodes.
+
    The mix network provides neither reliable nor in-order delivery
    semantics. It is up to the applications that make use of the mix
    network to implement additional mechanism if either property is
@@ -219,9 +221,9 @@ Table of Contents
 
    For the packet format of the transported messages we use the Sphinx
    cryptographic packet format. The detailed description of the
-   packet format, construction and processing is presented in:
-
-   "The Sphinx Mix Network Cryptographic Packet Format Specification"
+   packet format, construction, processing and security/anonymity
+   considerations see [SPHINXSPEC], "The Sphinx Mix Network
+   Cryptographic Packet Format Specification".
 
    As the Sphinx packet format is generic, the Panoramix Mix Network
    must provide a concrete instantiation of the format, as well as
@@ -522,15 +524,14 @@ Table of Contents
 
 5.2 Mixing strategy
 
-   As a mixing technique is used the Poisson mix strategy [LOOPIX]
-   [KESDOGAN98], which Requires that a packet at each hop in the route
-   is delayed be some amount of time, randomly selected by the sender
-   from an exponential distribution.  This strategy allows to prevent
-   the timing correlation if the incoming and outgoing traffic from
-   each node. Additionally, the parameters of the distribution used
-   for generating the delay can be tuned up and down depending on the
-   amount Of the traffic in the network and the application for which
-   the system is deployed.
+   The Poisson mix strategy is used [LOOPIX] [KESDOGAN98], which
+   Requires that a packet at each hop in the route is delayed be some
+   amount of time, randomly selected by the sender from an exponential
+   distribution. This strategy prevents timing correlation of the
+   incoming and outgoing traffic for each mix. Additionally, the
+   parameters of the distribution used for generating the delay can be
+   tuned up and down depending on the amount of the traffic in the
+   network and the application for which the system is deployed.
 
 6. Security Considerations
 
@@ -572,13 +573,24 @@ Appendix A.1 Normative References
    [RFC7748]   Langley, A., Hamburg, M., and S. Turner, "Elliptic Curves
                for Security", RFC 7748, January 2016.
 
-   (XXX/david: fix this reference, add author names and url)
-   [PANMIXWIRE] "Panoramix Mix Network Wire Protocol Specification", June 2017.
+
+   [PANMIXWIRE] Angel, Y., "Panoramix Mix Network Wire Protocol Specification", June 2017.
+                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
+
+   [PANEND2END]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Panoramix Mix Network End-to-end Protocol Specification", July 2017,
+                 <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
+
+   [PANMIXPKI]  <XXX david: insert reference to PKI spec here>
+
+   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Sphinx Mix Network Cryptographic Packet Format Specification"
+                July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.txt>.
 
 A.2 Informative References
 
-   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
-               and Danezis, G., “The Loopix Anonymity System”,
+   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
+               “The Loopix Anonymity System”,
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>
 

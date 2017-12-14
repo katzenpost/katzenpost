@@ -52,7 +52,7 @@ Table of Contents
 1. Introduction
 
    The Sphinx cryptographic packet format is a compact and provably
-   secure design introduced by George Danezis and Ian Goldberg [SPHINX09].
+   secure design introduced by George Danezis and Ian Goldberg [SPHINX].
    It supports a full set of security features: indistinguishable
    replies, hiding the path length and relay position, detection of
    tagging attacks and replay attacks, as well as providing
@@ -1111,9 +1111,9 @@ Appendix A.1 Normative References
 
 Appendix A.2 Informative References
 
-   [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
-               Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
-               May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+             Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+             May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
 
    [COMPULS05] Danezis, G., Clulow, J., "Compulsion Resistant Anonymous Communications",
                Proceedings of Information Hiding Workshop, June 2005,
