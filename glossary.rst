@@ -92,18 +92,19 @@ Glossary
         the ACK message is not received within a particular time
         duration then the message is retransmitted.
 
-     SURB
+    SURB
+
         SURB means Single Use Reply Block. SURBs are essentially a
         cryptographic delivery token with a short lifetime. In the
-        Sphinx packet format SURBs have two categories of components,
+        :term:`Sphinx` packet format SURBs have two categories of components,
         those used by the creator and those used by the sender. When
         Alice creates a SURB, she retains a decryption token and a
         SURB ID. Alice gives Bob a Sphinx header and a payload
         encryption token. Bob can use the payload encryption token to
-        encrypt his message. Bob then attaches the Sphinx header to
-        his ciphertext payload, thus forming a Sphinx packet which he
+        encrypt his message. Bob then attaches the :term:`Sphinx` header to
+        his ciphertext payload, thus forming a :term:`Sphinx` packet which he
         sends through the network. Bob cannot know the destination or
-        route of this Sphinx packet. Alice will receive the ciphertext
+        route of this :term:`Sphinx` packet. Alice will receive the ciphertext
         payload and the SURB ID. She uses the SURB ID to identify
         which SURB decryption token to use for the ciphertext payload
         decryption.
@@ -112,9 +113,9 @@ Glossary
         routing keys frequently as the primary method of achieving
         forward secrecy. The other reason routing keys must be rotated
         is because each mix retains a replay cache which stores a
-        unique tag for each Sphinx packet that traverses it.  This
+        unique tag for each Sphinx packet that traverses it. This
         replay cache can only be flushed after a key rotation.
 
-     Mixminion
+    Mixminion
         A mix network software project whose design has been inspirational to
-        the Katzenpost design. For more information see https://www.mixminion.net/
+        the Katzenpost design. For more information see <https://www.mixminion.net/>.
