@@ -18,18 +18,16 @@ Glossary
         network.
 
     Provider
-        A service operated by a third party that :term:`Client`s communicate
+        A service operated by a third party that :term:`Client`\s communicate
         directly with to communicate with the Mixnet. It is responsible
         for :term:`Client` authentication, forwarding outgoing messages to the
-        Mixnet, and storing incoming messages for the :term:`Client`. The
-        :term:`Provider` MUST have the ability to perform cryptographic
-        operations on the relayed packets.
+        Mixnet, and storing incoming messages for the :term:`Client`\.
 
     Node
         A :term:`Mix` or :term:`Provider` instance.
 
     User
-        An agent using the term:`Katzenpost` system.
+        An agent using the :term:`Katzenpost` system.
 
     Client
         Software run by the :term:`User` on its local device to participate
