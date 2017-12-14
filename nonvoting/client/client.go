@@ -125,13 +125,11 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		// TODO: Likewise with Post() this should probably return an
-		// error indicating that the client should not retry fetching
-		// this document, based on the status code.
-		//
-		// Anything other than a 500 (Internal Server Error) probably should
-		// indicate failure...
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusGone:
+		return nil, pki.ErrNoDocument
+	default:
 		return nil, fmt.Errorf("nonvoting/Client: Get() rejected by authority: %v", resp.StatusCode)
 	}
 
