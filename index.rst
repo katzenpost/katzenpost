@@ -1,5 +1,5 @@
-Katzenpost 😼 
-*************
+Katzenpost
+**********
 
 Goals
 =====
