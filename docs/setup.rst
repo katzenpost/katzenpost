@@ -1,12 +1,11 @@
 How to Set Up Your Own Katzenpost Mixnet
 ****************************************
 
-introduction
-============
+.. caution::
 
-Mix networks are meant to be decentralized and therefore should
-be operated by multiple entities. You can of course be the only
-operator of a mix network for testing purposes.
+    Mix networks are meant to be decentralized and therefore should
+    be operated by multiple entities. You can of course be the only
+    operator of a mix network for testing purposes.
 
 build software
 ==============
@@ -18,6 +17,9 @@ the binaries to the server from ``$GOPATH/bin``::
     go get -u -v github.com/katzenpost/daemons/authority/nonvoting
     go get -u -v github.com/katzenpost/daemons/server
 
+The produced binaries are statically linked, so you can build the 
+authority and the server code on one machine, and then distribute 
+them to any Linux based machines to run.
 
 get clock on sync
 =================
