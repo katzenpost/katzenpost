@@ -4,11 +4,11 @@ Katzenpost 😼
 Goals
 =====
 
-* to *prevent* a sufficiently global passive adversary to learn who is communitating with whom
+* to *prevent* a sufficiently global passive adversary from learning who is communitating with whom
 * to *detect* active attacks against the network infrastructure
 * hide message content from participating providers, hide recipient identity from the sender's provider, and the sender identity from the recipient's provider
 * support for both "instant messaging" and "email" use cases
-* reliable delivery
+* reliable out of order delivery
 
 Non-Goals
 =========
