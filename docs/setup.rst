@@ -3,6 +3,11 @@ How to Set Up Your Own Katzenpost Mixnet
 
 .. caution::
 
+    Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.
+
+
+.. caution::
+
     Mix networks are meant to be decentralized and therefore should
     be operated by multiple entities. You can of course be the only
     operator of a mix network for testing purposes.
