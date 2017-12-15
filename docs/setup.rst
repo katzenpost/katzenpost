@@ -15,6 +15,12 @@ How to Set Up Your Own Katzenpost Mixnet
 build software
 ==============
 
+Katzenpost server side requires golang 1.8 or later.
+See golang install instructions:
+https://golang.org/doc/install
+
+The Katzenpost minclient library requires golang 1.9 or later.
+
 A Katzenpost mix network has two binary programs, a PKI and a
 mix/provider. You can build this software on your computer and copy
 the binaries to the server from ``$GOPATH/bin``::
