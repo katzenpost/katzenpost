@@ -19,10 +19,13 @@ Documentation
 =============
 
 ..  toctree::
-    :glob:
     :maxdepth: 1
 
-    docs/*
+    docs/glossary
+    docs/faq
+    docs/specs
+    docs/setup
+    godocs: Go package documentation <https://godoc.org/?q=katzenpost>
 
 .. rubric:: Supported by
 
