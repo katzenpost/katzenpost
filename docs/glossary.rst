@@ -22,18 +22,22 @@ Glossary
         their own decoy traffic which adds further entropy to the
         network as detailed in the Loopix paper.
 
-    Sphinx
-        The Sphinx cryptographic packet format is now the defacto
-        standard for mix networks. The Mixminion mix network
-        used SURBs to achieve sender anonymity. Mixminion inspired the
-        design of the Sphinx packet format.
-
     Mixnet
         Mixnet is short for mix network which is a network of
         :term:`mix`\ es.  Fundamentally a mix network is a lossy
         packet switching network whose primary purpose is to achieve
         traffic analysis resistant properties such as location hiding,
         sender anonymity etc. See our FAQ for more information.
+
+    Node
+        A :term:`Mix` or :term:`Provider` instance.
+
+    User
+        An agent controlling a :term:`Client` of the :term:`Katzenpost` system.
+
+    Client
+        Software run by the :term:`User` on its local device to participate
+        in the :term:`Mixnet`.
 
     Provider
         In the context of Loopix/Katzenpost, a Provider is a node in
@@ -48,31 +52,27 @@ Glossary
        In :term:`Katzenpost`, :term:`Network Authority` or in short
        :term:`Authority` is the server responsible to provide the
        :term:`Mix Directory Authority service`.
-       
+
        It is explained in more detail in :ref:`pki`
 
        .. note::
           Define PKI
 
-    Node
-        A :term:`Mix` or :term:`Provider` instance.
+    Sphinx
+      The Sphinx cryptographic packet format is now the defacto
+      standard for mix networks. The Mixminion mix network
+      used SURBs to achieve sender anonymity. Mixminion inspired the
+      design of the Sphinx packet format.
 
-    User
-        An agent controlling a :term:`Client` of the :term:`Katzenpost` system.
-
-    Client
-        Software run by the :term:`User` on its local device to participate
-        in the :term:`Mixnet`.
+    Katzenpost
+      A mixnet design based on the :term:`Loopix` research with
+      added message transport reliability using an :term:`ARQ`
+      protocol scheme.
 
     Panoramix
         A project funded by the European Union's Horizon 2020 research and
         innovation programme to research :term:`mixnet`\s for voting, statistics,
         and messaging, running from 2015 to 2019. See `panoramix-project.eu <https://panoramix-project.eu/>`_.
-
-    Katzenpost
-        A mixnet design based on the :term:`Loopix` research with
-        added message transport reliability using an :term:`ARQ`
-        protocol scheme.
 
     Loopix
         The Loopix mixnet design is described in the paper `"The Loopix Anonymity
