@@ -1,3 +1,5 @@
+.. _pki:
+
 Katzenpost Mix Network Public Key Infrastructure Specification
 *************************************************************
 
