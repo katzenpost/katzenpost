@@ -1,7 +1,7 @@
 .. _pki:
 
 Katzenpost Mix Network Public Key Infrastructure Specification
-*************************************************************
+**************************************************************
 
 | Yawning Angel
 | Ania Piotrowska
