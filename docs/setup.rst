@@ -17,8 +17,8 @@ the binaries to the server from ``$GOPATH/bin``::
     go get -u -v github.com/katzenpost/daemons/authority/nonvoting
     go get -u -v github.com/katzenpost/daemons/server
 
-The produced binaries are statically linked, so you can build the 
-authority and the server code on one machine, and then distribute 
+The produced binaries are statically linked, so you can build the
+authority and the server code on one machine, and then distribute
 them to any Linux based machines to run.
 
 get clock on sync
@@ -46,7 +46,7 @@ You need to edit at least the `[Authority]` section, and configure the address(e
 
 Now, you can generate the authority identity key::
 
-    ./nonvoting -f authority.toml -g
+    $GOPATH/bin/nonvoting -f authority.toml -g
 
 This `-g` option causes the authority server to generate an authority identity key
 which will get written to the specified data directory and printed in the log.
@@ -62,7 +62,7 @@ Configure the mix node: https://raw.githubusercontent.com/Katzenpost/daemons/mas
 
 Generate the key::
 
-    ./server -f katzenpost.toml -g
+    $GOPATH/bin/server -f katzenpost.toml -g
 
 The generated mix identity key MUST be entered into the PKI configuration file.
 Once the PKI is configured with all of the mix identity keys you can start the
@@ -70,9 +70,9 @@ PKI server and then start all the mixes.
 
 add users to the provider
 =========================
- 
+
 Add users to the Provider using the management interface:
- 
+
 .. code:: console
 
     socat unix:/home/pano/node/data/management_sock STDOUT
@@ -83,4 +83,4 @@ run the authority
 
 .. code:: console
 
-    ./nonvoting -f authority.toml
+    $GOPATH/bin/nonvoting -f authority.toml
