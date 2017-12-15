@@ -168,7 +168,13 @@ func (s *Server) onV0Post(w http.ResponseWriter, req *http.Request) {
 }
 
 func extractEpoch(s, prefix string) (uint64, error) {
+	const currentEpoch = "current"
+
 	es := strings.TrimPrefix(s, prefix)
+	if es == currentEpoch {
+		now, _, _ := epochtime.Now()
+		return now, nil
+	}
 	return strconv.ParseUint(es, 10, 64)
 }
 
