@@ -1,4 +1,4 @@
-Panoramix Mix Network Wire Protocol Specification
+Katzenpost Mix Network Wire Protocol Specification
 *************************************************
 
 | Yawning Angel
@@ -7,8 +7,8 @@ Version 0
 
 .. rubric:: Abstract
 
-This document defines the Panoramix Mix Network Wire Protocol for
-use in all network communications to, from, and within the Panoramix
+This document defines the Katzenpost Mix Network Wire Protocol for
+use in all network communications to, from, and within the Katzenpost
 Mix Network.
 
 .. contents:: :local:
@@ -16,9 +16,9 @@ Mix Network.
 1. Introduction
 ===============
 
-   The Panoramix Mix Network Wire Protocol (PMNWP) is the custom wire
+   The Katzenpost Mix Network Wire Protocol (KMNWP) is the custom wire
    protocol for all network communications to, from, and within the
-   Panoramix Mix Network. This protocol provides mutual authentication,
+   Katzenpost Mix Network. This protocol provides mutual authentication,
    and an additional layer of cryptographic security and forward
    secrecy.
 
@@ -76,7 +76,7 @@ Mix Network.
 
      ``FFLEN = 32``
 
-   It is assumed that all parties using the PMNWP protocol have a fixed
+   It is assumed that all parties using the KMNWP protocol have a fixed
    long lived X25519 keypair [RFC7748]_, the public component of which
    is known to the other party in advance.  How such keys are distributed
    is beyond the scope of this document.
@@ -169,9 +169,9 @@ Mix Network.
 
    Upon successfully concluding the handshake the session enters the
    Data Transfer Phase, where the initiator and responder can exchange
-   PMNWP messages.
+   KMNWP messages.
 
-   A PMNWP message is defined to be the following structure::
+   A KMNWP message is defined to be the following structure::
 
       enum {
           no_op(0),
@@ -282,8 +282,8 @@ Mix Network.
 ===========================
 
    Adversaries being able to determine that two parties are
-   communicating via PMNWP is beyond the threat model of this protocol.
-   At a minimum, it is trivial to determine that a PMNWP handshake is
+   communicating via KMNWP is beyond the threat model of this protocol.
+   At a minimum, it is trivial to determine that a KMNWP handshake is
    being performed, due to the length of each handshake message, and
    the fixed positions of the various public keys.
 
