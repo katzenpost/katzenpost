@@ -43,6 +43,7 @@ type pki struct {
 	impl cpki.Client
 
 	docs               map[uint64]*pkicache.Entry
+	failedFetches      map[uint64]error
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
 }
@@ -105,6 +106,14 @@ func (p *pki) worker() {
 		// Fetch the PKI documents as required.
 		didUpdate := false
 		for _, epoch := range p.documentsToFetch() {
+			// Certain errors in fetching documents are treated as hard
+			// failures that suppress further attempts to fetch the document
+			// for the epoch.
+			if err, ok := p.failedFetches[epoch]; ok {
+				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
+				continue
+			}
+
 			d, err := p.impl.Get(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
@@ -112,22 +121,30 @@ func (p *pki) worker() {
 			}
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+				if err == cpki.ErrNoDocument {
+					p.failedFetches[epoch] = err
+				}
 				continue
 			}
 
 			ent, err := pkicache.New(d, p.s.identityKey.PublicKey(), p.s.cfg.Server.IsProvider)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
+				p.failedFetches[epoch] = err
 				continue
 			}
 			if err = p.validateCacheEntry(ent); err != nil {
 				p.log.Warningf("Generated PKI cache is invalid: %v", err)
+				p.failedFetches[epoch] = err
+				continue
 			}
+
 			p.Lock()
 			p.docs[epoch] = ent
 			p.Unlock()
 			didUpdate = true
 		}
+		p.pruneFailures()
 		if didUpdate {
 			// Dispose of the old PKI documents.
 			p.pruneDocuments()
@@ -167,6 +184,18 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 		return fmt.Errorf("self link key mismatch")
 	}
 	return nil
+}
+
+func (p *pki) pruneFailures() {
+	now, _, _ := epochtime.Now()
+
+	for epoch := range p.failedFetches {
+		// Be more aggressive about pruning failures than pruning documents,
+		// the worst that can happen is that we query the PKI unneccecarily.
+		if epoch < now-(numMixKeys-1) || epoch > now+1 {
+			delete(p.failedFetches, epoch)
+		}
+	}
 }
 
 func (p *pki) pruneDocuments() {
@@ -479,6 +508,7 @@ func newPKI(s *Server) (*pki, error) {
 	p.s = s
 	p.log = s.logBackend.GetLogger("pki")
 	p.docs = make(map[uint64]*pkicache.Entry)
+	p.failedFetches = make(map[uint64]error)
 
 	if s.cfg.PKI.Nonvoting != nil {
 		authPk := new(eddsa.PublicKey)
