@@ -59,7 +59,7 @@ You need to edit at least the `[Authority]` section, and configure the address(e
 
 Now, you can generate the authority identity key::
 
-    ./nonvoting -f authority.toml -g
+    $GOPATH/bin/nonvoting -f authority.toml -g
 
 This `-g` option causes the :term:`Authority` server to generate an authority identity key
 which will get written to the specified data directory and printed in the log.
@@ -76,7 +76,7 @@ Configure the mix node: https://raw.githubusercontent.com/Katzenpost/daemons/mas
 
 Generate the key::
 
-    ./server -f katzenpost.toml -g
+    $GOPATH/bin/server -f katzenpost.toml -g
 
 The generated :term:`Mix Identity key` MUST be entered into the PKI configuration file.
 Once the PKI is configured with all of the mix identity keys you can start the
@@ -97,4 +97,4 @@ Run the Authority
 
 .. code:: console
 
-    ./nonvoting -f authority.toml
+    $GOPATH/bin/nonvoting -f authority.toml
