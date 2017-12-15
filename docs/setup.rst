@@ -89,7 +89,7 @@ Add :term:`User`\s to the :term:`Provider` using the management interface:
 
 .. code:: console
 
-    socat unix:/home/pano/node/data/management_sock STDOUT
+    socat unix:/<path-to-data-dir>/management_sock STDOUT
     ADD_USER alice X25519_public_key_in_hex_or_base64
 
 Run the Authority
