@@ -324,22 +324,19 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 func (p *pki) documentsToFetch() []uint64 {
 	const nextFetchTill = 45 * time.Minute
 
-	ret := make([]uint64, 0, 2)
+	ret := make([]uint64, 0, numMixKeys+1)
 	now, _, till := epochtime.Now()
+	start := now
+	if till < nextFetchTill {
+		start = now + 1
+	}
 
 	p.RLock()
 	defer p.RUnlock()
 
-	// Fetch the document for the current epoch if it is missing.
-	if _, ok := p.docs[now]; !ok {
-		ret = append(ret, now)
-	}
-
-	// If it is after the time that the next PKI has been generated, fetch
-	// that as well, assuming it is missing.
-	if till < nextFetchTill {
-		if _, ok := p.docs[now+1]; !ok {
-			ret = append(ret, now+1)
+	for epoch := start; epoch > now-numMixKeys; epoch-- {
+		if _, ok := p.docs[epoch]; !ok {
+			ret = append(ret, epoch)
 		}
 	}
 
