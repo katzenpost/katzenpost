@@ -42,6 +42,18 @@ Glossary
         network on behalf of :term:`Client`\s and queueing messages
         that can later be retrieved by :term:`Client`\s.
 
+    PKI
+       Stands for Public Key Infrastructure. In the context of :term:`Panoramix`
+       is also known as the :term:`Mix Directory Authority service`.
+       In :term:`Katzenpost`, :term:`Network Authority` or in short
+       :term:`Authority` is the server responsible to provide the
+       :term:`Mix Directory Authority service`.
+       
+       It is explained in more detail in :ref:`pki`
+
+       .. note::
+          Define PKI
+
     Node
         A :term:`Mix` or :term:`Provider` instance.
 
@@ -56,7 +68,7 @@ Glossary
         A project funded by the European Union's Horizon 2020 research and
         innovation programme to research :term:`mixnet`\s for voting, statistics,
         and messaging, running from 2015 to 2019. See `panoramix-project.eu <https://panoramix-project.eu/>`_.
-    
+
     Katzenpost
         A mixnet design based on the :term:`Loopix` research with
         added message transport reliability using an :term:`ARQ`
