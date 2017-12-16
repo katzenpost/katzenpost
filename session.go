@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/minclient"
@@ -29,45 +30,51 @@ import (
 	"github.com/op/go-logging"
 )
 
-// MessageIDLength is the length of a message ID
-const MessageIDLength = 24
-
 // MessageConsumer is an interface used for
 // processing received messages
 type MessageConsumer interface {
-	ReceivedMessage(message []byte)
-	ReceivedACK(messageID *[MessageIDLength]byte, message []byte)
+	ReceivedMessage(senderPubKey *ecdh.PublicKey, message []byte)
+	ReceivedACK(messageID *[block.MessageIDLength]byte, message []byte)
 }
 
 // Session holds the client session
 type Session struct {
-	client          *minclient.Client
-	queue           chan string
-	log             *logging.Logger
-	logBackend      *log.Backend
-	messageConsumer MessageConsumer
-	connected       chan bool
+	client           *minclient.Client
+	queue            chan string
+	log              *logging.Logger
+	logBackend       *log.Backend
+	messageConsumer  MessageConsumer
+	connected        chan bool
+	userKeyDiscovery UserKeyDiscovery
+	identityPrivKey  *ecdh.PrivateKey
 }
 
 // NewSession stablishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-func (client *Client) NewSession(user, provider string, linkKeyPriv *ecdh.PrivateKey, consumer MessageConsumer) (*Session, error) {
+// This method takes the following arguments:
+// user: the username of the account
+// provider: the Provider name indicates which Provider the user account is on
+// identityKeyPriv: the private messaging key for end to end message exchanges with other users
+// linkKeyPriv: the private link layer key for our noise wire protocol
+// consumer: the message consumer consumes received messages
+func (c *Client) NewSession(user, provider string, identityPrivKey *ecdh.PrivateKey, linkPrivKey *ecdh.PrivateKey, consumer MessageConsumer) (*Session, error) {
 	var err error
 	session := new(Session)
 	clientCfg := &minclient.ClientConfig{
-		User:       user,
-		Provider:   provider,
-		LinkKey:    linkKeyPriv,
-		LogBackend: client.logBackend,
-		PKIClient:  client.cfg.PKIClient,
-		OnConnFn:   session.onConnection,
-		//OnEmptyFn:   session.onEmpty,
+		User:        user,
+		Provider:    provider,
+		LinkKey:     linkPrivKey,
+		LogBackend:  c.logBackend,
+		PKIClient:   c.cfg.PKIClient,
+		OnConnFn:    session.onConnection,
 		OnMessageFn: session.onMessage,
 		OnACKFn:     session.onACK,
 	}
+	session.identityPrivKey = identityPrivKey
+	session.userKeyDiscovery = c.cfg.UserKeyDiscovery
 	session.connected = make(chan bool, 0)
 	session.messageConsumer = consumer
-	session.log = client.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", user, provider))
+	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", user, provider))
 	session.client, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
@@ -96,7 +103,7 @@ func (s *Session) waitForConnection() error {
 
 // Send reliably delivers the message to the recipient's queue
 // on the destination provider or returns an error
-func (s *Session) Send(recipient, provider string, message []byte) (*[MessageIDLength]byte, error) {
+func (s *Session) Send(recipient, provider string, message []byte) (*[block.MessageIDLength]byte, error) {
 	s.log.Debugf("Send")
 	return nil, errors.New("failure: Send is not yet implemented")
 }
@@ -105,13 +112,26 @@ func (s *Session) Send(recipient, provider string, message []byte) (*[MessageIDL
 // on the destination provider or returns an error
 func (s *Session) SendUnreliable(recipient, provider string, message []byte) error {
 	s.log.Debugf("SendUnreliable")
-	fragment := [block.BlockCiphertextLength]byte{}
-	if len(message) < block.BlockCiphertextLength {
-		copy(fragment[:], message)
-	} else {
-		return errors.New("failure: fragmentation not yet implemented")
+	messageID := [block.MessageIDLength]byte{}
+	_, err := rand.Reader.Read(messageID[:])
+	if err != nil {
+		return err
 	}
-	return s.client.SendUnreliableCiphertext(recipient, provider, fragment[:])
+	recipientPubKey, err := s.userKeyDiscovery.Get(recipient)
+	if err != nil {
+		return err
+	}
+	blocks, err := block.EncryptMessage(&messageID, message, s.identityPrivKey, recipientPubKey)
+	if err != nil {
+		return err
+	}
+	for _, block := range blocks {
+		err = s.client.SendUnreliableCiphertext(recipient, provider, block)
+		if err != nil {
+			break
+		}
+	}
+	return err
 }
 
 // OnConnection will be called by the minclient api
@@ -125,7 +145,15 @@ func (s *Session) onConnection(isConnected bool) {
 // upon receiving a message
 func (s *Session) onMessage(message []byte) error {
 	s.log.Debugf("OnMessage")
-	s.messageConsumer.ReceivedMessage(message)
+	rBlock, senderPubKey, err := block.DecryptBlock(message, s.identityPrivKey)
+	if err != nil {
+		return nil
+	}
+	if rBlock.TotalBlocks == 1 {
+		s.messageConsumer.ReceivedMessage(senderPubKey, rBlock.Payload)
+	} else {
+		return errors.New("failure: message reassembly not yet implemented")
+	}
 	return nil
 }
 

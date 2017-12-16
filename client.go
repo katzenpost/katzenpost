@@ -27,6 +27,11 @@ import (
 	"github.com/op/go-logging"
 )
 
+// UserKeyDiscovery interface for user key discovery
+type UserKeyDiscovery interface {
+	Get(identity string) (*ecdh.PublicKey, error)
+}
+
 // Config is a client configuration.
 type Config struct {
 	// User is the user identifier used to connect to the Provider.
@@ -43,6 +48,8 @@ type Config struct {
 
 	// PKIClient is the PKI Document data source.
 	PKIClient cpki.Client
+
+	UserKeyDiscovery UserKeyDiscovery
 }
 
 func (cfg *Config) validate() error {
