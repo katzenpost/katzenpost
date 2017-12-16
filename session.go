@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/minclient"
@@ -29,48 +30,123 @@ import (
 	"github.com/op/go-logging"
 )
 
-// MessageIDLength is the length of a message ID
-const MessageIDLength = 24
+const IngressBlockVersion = 0
+
+// UserKeyDiscovery interface for user key discovery
+type UserKeyDiscovery interface {
+	Get(identity string) (*ecdh.PublicKey, error)
+}
+
+// IngressBlock is used for storing decrypted
+// blocked received from remote clients
+type IngressBlock struct {
+	Version      byte
+	SenderPubKey *ecdh.PublicKey
+	Block        *block.Block
+}
+
+// ToBytes serializes an IngressBlock into bytes
+func (i *IngressBlock) ToBytes() ([]byte, error) {
+	raw := []byte{}
+	raw = append(raw, IngressBlockVersion)
+	rawSenderPubKey, err := i.SenderPubKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	raw = append(raw, rawSenderPubKey...)
+	rawBlock, err := i.Block.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+	raw = append(raw, rawBlock...)
+	return raw, nil
+}
+
+func (i *IngressBlock) FromBytes(raw []byte) error {
+	if raw[0] != IngressBlockVersion {
+		errors.New("failure of FromBytes: IngressBlock vesion mismatch")
+	}
+	i.Version = raw[0]
+	pubKey := new(ecdh.PublicKey)
+	err := pubKey.FromBytes(raw[1 : ecdh.PublicKeySize+1])
+	if err != nil {
+		return err
+	}
+	i.SenderPubKey = pubKey
+	i.Block = new(block.Block)
+	return i.Block.FromBytes(raw[ecdh.PublicKeySize+1:])
+}
+
+// Storage is an interface user for persisting
+// ARQ and fragmentation/reassembly state
+type Storage interface {
+	GetBlocks(*[block.MessageIDLength]byte) ([][]byte, error)
+	PutBlock(*[block.MessageIDLength]byte, []byte) error
+}
 
 // MessageConsumer is an interface used for
 // processing received messages
 type MessageConsumer interface {
-	ReceivedMessage(message []byte)
-	ReceivedACK(messageID *[MessageIDLength]byte, message []byte)
+	ReceivedMessage(senderPubKey *ecdh.PublicKey, message []byte)
+	ReceivedACK(messageID *[block.MessageIDLength]byte, message []byte)
+}
+
+// SessionConfig is specifies the configuration for a new session
+type SessionConfig struct {
+	User             string
+	Provider         string
+	IdentityPrivKey  *ecdh.PrivateKey
+	LinkPrivKey      *ecdh.PrivateKey
+	MessageConsumer  MessageConsumer
+	Storage          Storage
+	UserKeyDiscovery UserKeyDiscovery
 }
 
 // Session holds the client session
 type Session struct {
+	cfg             *SessionConfig
 	client          *minclient.Client
 	queue           chan string
 	log             *logging.Logger
 	logBackend      *log.Backend
 	messageConsumer MessageConsumer
 	connected       chan bool
+	identityPrivKey *ecdh.PrivateKey
 }
 
-// NewSession stablishes a session with provider using key
-func (client *Client) NewSession(user, provider string, linkKeyPriv *ecdh.PrivateKey, consumer MessageConsumer) (*Session, error) {
+// NewSession stablishes a session with provider using key.
+// This method will block until session is connected to the Provider.
+// This method takes the following arguments:
+// user: the username of the account
+// provider: the Provider name indicates which Provider the user account is on
+// identityKeyPriv: the private messaging key for end to end message exchanges with other users
+// linkKeyPriv: the private link layer key for our noise wire protocol
+// consumer: the message consumer consumes received messages
+func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 	var err error
 	session := new(Session)
 	clientCfg := &minclient.ClientConfig{
-		User:       user,
-		Provider:   provider,
-		LinkKey:    linkKeyPriv,
-		LogBackend: client.logBackend,
-		PKIClient:  client.cfg.PKIClient,
-		OnConnFn:   session.onConnection,
-		//OnEmptyFn:   session.onEmpty,
+		User:        cfg.User,
+		Provider:    cfg.Provider,
+		LinkKey:     cfg.LinkPrivKey,
+		LogBackend:  c.logBackend,
+		PKIClient:   c.cfg.PKIClient,
+		OnConnFn:    session.onConnection,
 		OnMessageFn: session.onMessage,
 		OnACKFn:     session.onACK,
 	}
-	session.connected = make(chan bool, 1)
-	session.messageConsumer = consumer
+	session.identityPrivKey = cfg.IdentityPrivKey
+	session.connected = make(chan bool, 0)
+	session.messageConsumer = cfg.MessageConsumer
+	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
 	session.client, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
 	}
-	session.log = client.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", user, provider))
+	err = session.waitForConnection()
+	if err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -79,7 +155,9 @@ func (s *Session) Shutdown() {
 	s.client.Shutdown()
 }
 
-func (s *Session) WaitForConnection() error {
+// waitForConnection blocks until the client is
+// connected to the Provider
+func (s *Session) waitForConnection() error {
 	isConnected := <-s.connected
 	if !isConnected {
 		return errors.New("status is not connected even with status change")
@@ -89,22 +167,35 @@ func (s *Session) WaitForConnection() error {
 
 // Send reliably delivers the message to the recipient's queue
 // on the destination provider or returns an error
-func (s *Session) Send(recipient, provider string, message []byte) (*[MessageIDLength]byte, error) {
+func (s *Session) Send(recipient, provider string, message []byte) (*[block.MessageIDLength]byte, error) {
 	s.log.Debugf("Send")
-	return nil, errors.New("Failure: Send is not yet implemented.")
+	return nil, errors.New("failure: Send is not yet implemented")
 }
 
 // SendUnreliable unreliably sends a message to the recipient's queue
 // on the destination provider or returns an error
-func (c *Session) SendUnreliable(recipient, provider string, message []byte) error {
-	c.log.Debugf("SendUnreliable")
-	fragment := [block.BlockCiphertextLength]byte{}
-	if len(message) < block.BlockCiphertextLength {
-		copy(fragment[:], message)
-	} else {
-		return errors.New("Failure: fragmentation not yet implemented.")
+func (s *Session) SendUnreliable(recipient, provider string, message []byte) error {
+	s.log.Debugf("SendUnreliable")
+	messageID := [block.MessageIDLength]byte{}
+	_, err := rand.Reader.Read(messageID[:])
+	if err != nil {
+		return err
 	}
-	return c.client.SendUnreliableCiphertext(recipient, provider, fragment[:])
+	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(recipient)
+	if err != nil {
+		return err
+	}
+	blocks, err := block.EncryptMessage(&messageID, message, s.identityPrivKey, recipientPubKey)
+	if err != nil {
+		return err
+	}
+	for _, block := range blocks {
+		err = s.client.SendUnreliableCiphertext(recipient, provider, block)
+		if err != nil {
+			break
+		}
+	}
+	return err
 }
 
 // OnConnection will be called by the minclient api
@@ -116,9 +207,46 @@ func (s *Session) onConnection(isConnected bool) {
 
 // OnMessage will be called by the minclient api
 // upon receiving a message
-func (s *Session) onMessage(message []byte) error {
+func (s *Session) onMessage(ciphertextBlock []byte) error {
 	s.log.Debugf("OnMessage")
-	s.messageConsumer.ReceivedMessage(message)
+	rBlock, senderPubKey, err := block.DecryptBlock(ciphertextBlock, s.identityPrivKey)
+	if err != nil {
+		return err
+	}
+	if rBlock.TotalBlocks == 1 {
+		s.messageConsumer.ReceivedMessage(senderPubKey, rBlock.Payload)
+		return nil
+	}
+	ingressBlock := IngressBlock{
+		SenderPubKey: senderPubKey,
+		Block:        rBlock,
+	}
+	rawStoredBlocks, err := s.cfg.Storage.GetBlocks(&rBlock.MessageID)
+	if err != nil {
+		return err
+	}
+	rawBlock, err := ingressBlock.ToBytes()
+	if err != nil {
+		return err
+	}
+	rawBlocks := append(rawStoredBlocks, rawBlock)
+	ingressBlocks := make([]*IngressBlock, len(rawBlocks))
+	for i, b := range rawBlocks {
+		ingressBlock := &IngressBlock{}
+		err := ingressBlock.FromBytes(b)
+		if err != nil {
+			return err
+		}
+		ingressBlocks[i] = ingressBlock
+	}
+	message, err := reassemble(ingressBlocks)
+	if err != nil {
+		err = s.cfg.Storage.PutBlock(&ingressBlock.Block.MessageID, rawBlock)
+		if err != nil {
+			return err
+		}
+	}
+	s.messageConsumer.ReceivedMessage(senderPubKey, message)
 	return nil
 }
 
