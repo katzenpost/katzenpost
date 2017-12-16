@@ -47,7 +47,7 @@ func TestBlockPlaintext(t *testing.T) {
 			require.Len(b, blockLength, "vec[%v] (%v)", i, sz)
 
 			var blk Block
-			err = blk.fromBytes(b)
+			err = blk.FromBytes(b)
 			require.NoError(err, "blk.FromBytes(vec[%v]) (%v)", i, sz)
 			require.Equal(msgID, blk.MessageID, "vec[%v] (%v)", i, sz)
 			require.Equal(uint16(len(vec)), blk.TotalBlocks, "vec[%v] (%v)", i, sz)
@@ -80,8 +80,8 @@ O' tidings of madness and woe! (and great woe)`)
 		Payload:     blkPayload,
 	}
 	rand.Read(blk.MessageID[:])
-	blkPlaintext, err := blk.toBytes()
-	require.NoError(err, "blk.toBytes()")
+	blkPlaintext, err := blk.ToBytes()
+	require.NoError(err, "blk.ToBytes()")
 
 	sender, err := ecdh.NewKeypair(rand.Reader)
 	require.NoError(err, "ecdh.NewKeypair(sender)")
