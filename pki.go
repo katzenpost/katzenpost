@@ -511,7 +511,7 @@ func newPKI(s *Server) (*pki, error) {
 		authPk := new(eddsa.PublicKey)
 		err := authPk.FromString(s.cfg.PKI.Nonvoting.PublicKey)
 		if err != nil {
-			panic("BUG: Failed to deserialize validated public key: " + err.Error())
+			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
 		}
 		pkiCfg := &nClient.Config{
 			LogBackend: s.logBackend,

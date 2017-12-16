@@ -119,7 +119,7 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 
 	// Return the last error to signal Unwrap() failure.
 	if lastErr == nil {
-		panic("BUG: Out of candidate keys for Unwrap(), no saved error")
+		lastErr = errors.New("BUG: crypto: Out of candidate keys for Unwrap(), no saved error")
 	}
 	return lastErr
 }
@@ -139,7 +139,8 @@ func (w *cryptoWorker) worker() {
 			return
 		case <-w.updateCh:
 			if w.s.cfg.Debug.DisableKeyRotation {
-				panic("BUG: Key update requested with disabled key rotation")
+				w.s.fatalErrCh <- errors.New("BUG: crypto: Key update requested with disabled key rotation")
+				continue
 			}
 			w.log.Debugf("Updating mix keys.")
 			w.s.mixKeys.shadow(w.mixKeys)
