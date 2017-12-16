@@ -98,20 +98,20 @@ func (s *Session) waitForConnection() error {
 // on the destination provider or returns an error
 func (s *Session) Send(recipient, provider string, message []byte) (*[MessageIDLength]byte, error) {
 	s.log.Debugf("Send")
-	return nil, errors.New("Failure: Send is not yet implemented.")
+	return nil, errors.New("failure: Send is not yet implemented")
 }
 
 // SendUnreliable unreliably sends a message to the recipient's queue
 // on the destination provider or returns an error
-func (c *Session) SendUnreliable(recipient, provider string, message []byte) error {
-	c.log.Debugf("SendUnreliable")
+func (s *Session) SendUnreliable(recipient, provider string, message []byte) error {
+	s.log.Debugf("SendUnreliable")
 	fragment := [block.BlockCiphertextLength]byte{}
 	if len(message) < block.BlockCiphertextLength {
 		copy(fragment[:], message)
 	} else {
-		return errors.New("Failure: fragmentation not yet implemented.")
+		return errors.New("failure: fragmentation not yet implemented")
 	}
-	return c.client.SendUnreliableCiphertext(recipient, provider, fragment[:])
+	return s.client.SendUnreliableCiphertext(recipient, provider, fragment[:])
 }
 
 // OnConnection will be called by the minclient api
