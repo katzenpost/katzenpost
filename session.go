@@ -30,6 +30,8 @@ import (
 	"github.com/op/go-logging"
 )
 
+// IngressBlockVersion is the current version of
+// the IngressBlock serialization format
 const IngressBlockVersion = 0
 
 // UserKeyDiscovery interface for user key discovery
@@ -62,6 +64,7 @@ func (i *IngressBlock) ToBytes() ([]byte, error) {
 	return raw, nil
 }
 
+// FromBytes deserializes bytes into an IngressBlock
 func (i *IngressBlock) FromBytes(raw []byte) error {
 	if raw[0] != IngressBlockVersion {
 		errors.New("failure of FromBytes: IngressBlock vesion mismatch")
