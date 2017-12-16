@@ -100,13 +100,9 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	switch resp.StatusCode {
 	case http.StatusAccepted:
 		return nil
+	case http.StatusConflict:
+		return pki.ErrInvalidPostEpoch
 	default:
-		// TODO: The authority rejected the POST for some reason, the
-		// right thing to do is to probably return an error indicating
-		// that the server should give up trying to upload a descriptor
-		// for this epoch.
-		//
-		// See: https://github.com/Katzenpost/server/issues/11
 		return fmt.Errorf("nonvoting/client: Post() rejected by authority: %v", resp.StatusCode)
 	}
 
