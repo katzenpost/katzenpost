@@ -313,9 +313,16 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 	// Post the descriptor to all the authorities.
 	err := p.impl.Post(pkiCtx, doPublishEpoch, p.s.identityKey, desc)
-	if err == nil {
+	switch err {
+	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
 		p.lastPublishedEpoch = doPublishEpoch
+	case cpki.ErrInvalidPostEpoch:
+		// Treat this class (conflict/late descriptor) as a permanent rejection
+		// and suppress further uploads.
+		p.log.Warningf("Authority rejected upload for epoch: %v (Conflict/Late)", doPublishEpoch)
+		p.lastPublishedEpoch = doPublishEpoch
+	default:
 	}
 
 	return err
