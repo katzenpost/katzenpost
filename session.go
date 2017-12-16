@@ -30,14 +30,17 @@ import (
 	"github.com/op/go-logging"
 )
 
+const IngressBlockVersion = 0
+
 // UserKeyDiscovery interface for user key discovery
 type UserKeyDiscovery interface {
 	Get(identity string) (*ecdh.PublicKey, error)
 }
 
 // IngressBlock is used for storing decrypted
-// blocked received from remote clients.
+// blocked received from remote clients
 type IngressBlock struct {
+	Version      byte
 	SenderPubKey *ecdh.PublicKey
 	Block        *block.Block
 }
@@ -45,6 +48,7 @@ type IngressBlock struct {
 // ToBytes serializes an IngressBlock into bytes
 func (i *IngressBlock) ToBytes() ([]byte, error) {
 	raw := []byte{}
+	raw = append(raw, IngressBlockVersion)
 	rawSenderPubKey, err := i.SenderPubKey.MarshalBinary()
 	if err != nil {
 		return nil, err
@@ -59,14 +63,18 @@ func (i *IngressBlock) ToBytes() ([]byte, error) {
 }
 
 func (i *IngressBlock) FromBytes(raw []byte) error {
+	if raw[0] != IngressBlockVersion {
+		errors.New("failure of FromBytes: IngressBlock vesion mismatch")
+	}
+	i.Version = raw[0]
 	pubKey := new(ecdh.PublicKey)
-	err := pubKey.FromBytes(raw[:ecdh.PublicKeySize])
+	err := pubKey.FromBytes(raw[1 : ecdh.PublicKeySize+1])
 	if err != nil {
 		return err
 	}
 	i.SenderPubKey = pubKey
 	i.Block = new(block.Block)
-	return i.Block.FromBytes(raw[ecdh.PublicKeySize:])
+	return i.Block.FromBytes(raw[ecdh.PublicKeySize+1:])
 }
 
 // Storage is an interface user for persisting
