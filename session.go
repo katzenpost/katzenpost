@@ -49,7 +49,8 @@ type Session struct {
 	connected       chan bool
 }
 
-// NewSession stablishes a session with provider using key
+// NewSession stablishes a session with provider using key.
+// This method will block until session is connected to the Provider.
 func (client *Client) NewSession(user, provider string, linkKeyPriv *ecdh.PrivateKey, consumer MessageConsumer) (*Session, error) {
 	var err error
 	session := new(Session)
@@ -64,13 +65,17 @@ func (client *Client) NewSession(user, provider string, linkKeyPriv *ecdh.Privat
 		OnMessageFn: session.onMessage,
 		OnACKFn:     session.onACK,
 	}
-	session.connected = make(chan bool, 1)
+	session.connected = make(chan bool, 0)
 	session.messageConsumer = consumer
+	session.log = client.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", user, provider))
 	session.client, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
 	}
-	session.log = client.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", user, provider))
+	err = session.waitForConnection()
+	if err != nil {
+		return nil, err
+	}
 	return session, nil
 }
 
@@ -79,7 +84,9 @@ func (s *Session) Shutdown() {
 	s.client.Shutdown()
 }
 
-func (s *Session) WaitForConnection() error {
+// waitForConnection blocks until the client is
+// connected to the Provider
+func (s *Session) waitForConnection() error {
 	isConnected := <-s.connected
 	if !isConnected {
 		return errors.New("status is not connected even with status change")
