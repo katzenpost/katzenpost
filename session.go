@@ -38,15 +38,42 @@ type UserKeyDiscovery interface {
 // IngressBlock is used for storing decrypted
 // blocked received from remote clients.
 type IngressBlock struct {
-	Block        *block.Block
 	SenderPubKey *ecdh.PublicKey
+	Block        *block.Block
+}
+
+// ToBytes serializes an IngressBlock into bytes
+func (i *IngressBlock) ToBytes() ([]byte, error) {
+	raw := []byte{}
+	rawSenderPubKey, err := i.SenderPubKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	raw = append(raw, rawSenderPubKey...)
+	rawBlock, err := i.Block.ToBytes()
+	if err != nil {
+		return nil, err
+	}
+	raw = append(raw, rawBlock...)
+	return raw, nil
+}
+
+func (i *IngressBlock) FromBytes(raw []byte) error {
+	pubKey := new(ecdh.PublicKey)
+	err := pubKey.FromBytes(raw[:ecdh.PublicKeySize])
+	if err != nil {
+		return err
+	}
+	i.SenderPubKey = pubKey
+	i.Block = new(block.Block)
+	return i.Block.FromBytes(raw[ecdh.PublicKeySize:])
 }
 
 // Storage is an interface user for persisting
 // ARQ and fragmentation/reassembly state
 type Storage interface {
-	GetBlocks(*[block.MessageIDLength]byte) ([]*IngressBlock, error)
-	PutBlock(*[block.MessageIDLength]byte, *IngressBlock) error
+	GetBlocks(*[block.MessageIDLength]byte) ([][]byte, error)
+	PutBlock(*[block.MessageIDLength]byte, []byte) error
 }
 
 // MessageConsumer is an interface used for
@@ -186,13 +213,27 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 		SenderPubKey: senderPubKey,
 		Block:        rBlock,
 	}
-	sBlocks, err := s.cfg.Storage.GetBlocks(&rBlock.MessageID)
+	rawStoredBlocks, err := s.cfg.Storage.GetBlocks(&rBlock.MessageID)
 	if err != nil {
 		return err
 	}
-	message, err := reassemble(append(sBlocks, &ingressBlock))
+	rawBlock, err := ingressBlock.ToBytes()
 	if err != nil {
-		err = s.cfg.Storage.PutBlock(&ingressBlock.Block.MessageID, &ingressBlock)
+		return err
+	}
+	rawBlocks := append(rawStoredBlocks, rawBlock)
+	ingressBlocks := make([]*IngressBlock, len(rawBlocks))
+	for i, b := range rawBlocks {
+		ingressBlock := &IngressBlock{}
+		err := ingressBlock.FromBytes(b)
+		if err != nil {
+			return err
+		}
+		ingressBlocks[i] = ingressBlock
+	}
+	message, err := reassemble(ingressBlocks)
+	if err != nil {
+		err = s.cfg.Storage.PutBlock(&ingressBlock.Block.MessageID, rawBlock)
 		if err != nil {
 			return err
 		}
