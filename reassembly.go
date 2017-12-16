@@ -21,18 +21,16 @@ import (
 	"bytes"
 	"errors"
 	"sort"
-
-	"github.com/katzenpost/minclient/block"
 )
 
 // deduplicateBlocks deduplicates the given blocks according to the BlockIDs
-func deduplicateBlocks(blocks []*block.Block) []*block.Block {
+func deduplicateBlocks(blocks []*IngressBlock) []*IngressBlock {
 	blockIDMap := make(map[uint16]bool)
-	deduped := []*block.Block{}
+	deduped := []*IngressBlock{}
 	for _, b := range blocks {
-		_, ok := blockIDMap[b.BlockID]
+		_, ok := blockIDMap[b.Block.BlockID]
 		if !ok {
-			blockIDMap[b.BlockID] = true
+			blockIDMap[b.Block.BlockID] = true
 			deduped = append(deduped, b)
 		}
 	}
@@ -41,31 +39,35 @@ func deduplicateBlocks(blocks []*block.Block) []*block.Block {
 
 // validateBlocks returns an error if the set
 // of blocks isn't suitable for message reassembly
-func validateBlocks(blocks []*block.Block) error {
-	messageID := blocks[0].MessageID
-	totalBlocks := blocks[0].TotalBlocks
+func validateBlocks(blocks []*IngressBlock) error {
+	messageID := blocks[0].Block.MessageID
+	totalBlocks := blocks[0].Block.TotalBlocks
+	senderPubKey := blocks[0].SenderPubKey
 	if totalBlocks != uint16(len(blocks)) {
 		return errors.New("validateBlocks failure: not enough blocks")
 	}
 	for _, b := range blocks {
-		if !bytes.Equal(messageID[:], b.MessageID[:]) {
+		if !bytes.Equal(messageID[:], b.Block.MessageID[:]) {
 			return errors.New("validateBlocks failure: messageID mismatch")
 		}
-		if totalBlocks != b.TotalBlocks {
+		if totalBlocks != b.Block.TotalBlocks {
 			return errors.New("validateBlocks failure: TotalBlocks field mismatch")
+		}
+		if !senderPubKey.Equal(b.SenderPubKey) {
+			return errors.New("validateBlocks failure: sender public key mismatch")
 		}
 	}
 	return nil
 }
 
 // ByBlockID implements sort.Interface for []*block.Block
-type ByBlockID []*block.Block
+type ByBlockID []*IngressBlock
 
 func (a ByBlockID) Len() int           { return len(a) }
 func (a ByBlockID) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByBlockID) Less(i, j int) bool { return a[i].BlockID < a[j].BlockID }
+func (a ByBlockID) Less(i, j int) bool { return a[i].Block.BlockID < a[j].Block.BlockID }
 
-func reassemble(blocks []*block.Block) ([]byte, error) {
+func reassemble(blocks []*IngressBlock) ([]byte, error) {
 	deduped := deduplicateBlocks(blocks)
 	err := validateBlocks(deduped)
 	if err != nil {
@@ -74,10 +76,10 @@ func reassemble(blocks []*block.Block) ([]byte, error) {
 	sort.Sort(ByBlockID(blocks))
 	message := []byte{}
 	for i, b := range blocks {
-		if blocks[i].BlockID != uint16(i) {
+		if blocks[i].Block.BlockID != uint16(i) {
 			return nil, errors.New("message reassembler failed: missing message block")
 		}
-		message = append(message, b.Payload...)
+		message = append(message, b.Block.Payload...)
 	}
 	return message, nil
 }

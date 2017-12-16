@@ -30,11 +30,18 @@ import (
 	"github.com/op/go-logging"
 )
 
+// IngressBlock is used for storing decrypted
+// blocked received from remote clients.
+type IngressBlock struct {
+	Block        *block.Block
+	SenderPubKey *ecdh.PublicKey
+}
+
 // Storage is an interface user for persisting
 // ARQ and fragmentation/reassembly state
 type Storage interface {
-	GetBlocks(*[block.MessageIDLength]byte) ([]*block.Block, error)
-	PutBlock(*[block.MessageIDLength]byte, *block.Block) error
+	GetBlocks(*[block.MessageIDLength]byte) ([]*IngressBlock, error)
+	PutBlock(*[block.MessageIDLength]byte, *IngressBlock) error
 }
 
 // MessageConsumer is an interface used for
@@ -171,13 +178,17 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 		s.messageConsumer.ReceivedMessage(senderPubKey, rBlock.Payload)
 		return nil
 	}
+	ingressBlock := IngressBlock{
+		SenderPubKey: senderPubKey,
+		Block:        rBlock,
+	}
 	sBlocks, err := s.cfg.Storage.GetBlocks(&rBlock.MessageID)
 	if err != nil {
 		return err
 	}
-	message, err := reassemble(append(sBlocks, rBlock))
+	message, err := reassemble(append(sBlocks, &ingressBlock))
 	if err != nil {
-		err = s.cfg.Storage.PutBlock(&rBlock.MessageID, rBlock)
+		err = s.cfg.Storage.PutBlock(&ingressBlock.Block.MessageID, &ingressBlock)
 		if err != nil {
 			return err
 		}

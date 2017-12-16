@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/minclient/block"
 	"github.com/stretchr/testify/require"
@@ -29,48 +30,69 @@ import (
 func TestBlockValidation(t *testing.T) {
 	require := require.New(t)
 	messageID := [block.MessageIDLength]byte{}
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+	senderPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	senderPubKey := senderPrivKey.PublicKey()
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     1,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     1,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     2,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
 	}
-	err := validateBlocks(blocks)
+	err = validateBlocks(blocks)
 	require.NoError(err, "wtf")
 }
 
 func TestBlockValidationFail1(t *testing.T) {
 	require := require.New(t)
 	messageID := [block.MessageIDLength]byte{}
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+	senderPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	senderPubKey := senderPrivKey.PublicKey()
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     2,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
 	}
-	err := validateBlocks(blocks)
+	err = validateBlocks(blocks)
 	require.Error(err, "wtf")
 }
 
@@ -80,26 +102,40 @@ func TestBlockValidationFail2(t *testing.T) {
 	messageID2 := [block.MessageIDLength]byte{}
 	_, err := rand.Reader.Read(messageID2[:])
 	require.NoError(err, "wtf")
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID1,
-			TotalBlocks: 3,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+	senderPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	senderPubKey := senderPrivKey.PublicKey()
+
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID2,
-			TotalBlocks: 3,
-			BlockID:     1,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID2,
+				TotalBlocks: 3,
+				BlockID:     1,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID1,
-			TotalBlocks: 3,
-			BlockID:     2,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
 	}
+
 	err = validateBlocks(blocks)
 	require.Error(err, "wtf")
 }
@@ -107,27 +143,85 @@ func TestBlockValidationFail2(t *testing.T) {
 func TestBlockValidationFail3(t *testing.T) {
 	require := require.New(t)
 	messageID1 := [block.MessageIDLength]byte{}
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID1,
-			TotalBlocks: 3,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+	senderPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	senderPubKey := senderPrivKey.PublicKey()
+
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID1,
-			TotalBlocks: 3,
-			BlockID:     1,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 1,
+				BlockID:     1,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID1,
-			TotalBlocks: 1,
-			BlockID:     2,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
 	}
-	err := validateBlocks(blocks)
+
+	err = validateBlocks(blocks)
+	require.Error(err, "wtf")
+}
+
+func TestBlockValidationFail4(t *testing.T) {
+	require := require.New(t)
+	messageID1 := [block.MessageIDLength]byte{}
+	senderPrivKey1, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	senderPubKey1 := senderPrivKey1.PublicKey()
+	senderPrivKey2, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	senderPubKey2 := senderPrivKey2.PublicKey()
+
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			SenderPubKey: senderPubKey1,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
+		},
+		&IngressBlock{
+			SenderPubKey: senderPubKey1,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 3,
+				BlockID:     1,
+				Payload:     []byte{1, 2, 3},
+			},
+		},
+		&IngressBlock{
+			SenderPubKey: senderPubKey2,
+			Block: &block.Block{
+				MessageID:   messageID1,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
+		},
+	}
+
+	err = validateBlocks(blocks)
 	require.Error(err, "wtf")
 }
 
@@ -135,26 +229,34 @@ func TestDeduplication1(t *testing.T) {
 	require := require.New(t)
 
 	messageID := [block.MessageIDLength]byte{}
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 2,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 2,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 2,
-			BlockID:     1,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
 	}
+
 	deduped := deduplicateBlocks(blocks)
 	require.NotEqual(len(deduped), len(blocks), "deduplicateBlocks failed")
 }
@@ -163,64 +265,86 @@ func TestDeduplication2(t *testing.T) {
 	require := require.New(t)
 
 	messageID := [block.MessageIDLength]byte{}
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     1,
-			Payload:     []byte{1, 2, 3},
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 2,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 2,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 2,
-			BlockID:     2,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     1,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 2,
-			BlockID:     1,
-			Payload:     []byte{1, 2, 3},
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     1,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
 	}
+
 	deduped := deduplicateBlocks(blocks)
 	require.Equal(len(deduped), 3, "deduplicateBlocks failed")
 }
 
 func TestReassembly(t *testing.T) {
 	require := require.New(t)
-
 	messageID := [block.MessageIDLength]byte{}
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+	senderPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	senderPubKey := senderPrivKey.PublicKey()
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     1,
-			Payload:     []byte{4, 5, 6},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     1,
+				Payload:     []byte{4, 5, 6},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     2,
-			Payload:     []byte{7, 8, 9},
+		&IngressBlock{
+			SenderPubKey: senderPubKey,
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{7, 8, 9},
+			},
 		},
 	}
 	message, err := reassemble(blocks)
@@ -230,20 +354,23 @@ func TestReassembly(t *testing.T) {
 
 func TestReassemblyMissingBlock(t *testing.T) {
 	require := require.New(t)
-
 	messageID := [block.MessageIDLength]byte{}
-	blocks := []*block.Block{
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     0,
-			Payload:     []byte{1, 2, 3},
+	blocks := []*IngressBlock{
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     0,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
-		&block.Block{
-			MessageID:   messageID,
-			TotalBlocks: 3,
-			BlockID:     2,
-			Payload:     []byte{7, 8, 9},
+		&IngressBlock{
+			Block: &block.Block{
+				MessageID:   messageID,
+				TotalBlocks: 3,
+				BlockID:     2,
+				Payload:     []byte{1, 2, 3},
+			},
 		},
 	}
 	_, err := reassemble(blocks)
