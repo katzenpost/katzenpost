@@ -30,6 +30,11 @@ import (
 	"github.com/op/go-logging"
 )
 
+// UserKeyDiscovery interface for user key discovery
+type UserKeyDiscovery interface {
+	Get(identity string) (*ecdh.PublicKey, error)
+}
+
 // IngressBlock is used for storing decrypted
 // blocked received from remote clients.
 type IngressBlock struct {
@@ -53,25 +58,25 @@ type MessageConsumer interface {
 
 // SessionConfig is specifies the configuration for a new session
 type SessionConfig struct {
-	User            string
-	Provider        string
-	IdentityPrivKey *ecdh.PrivateKey
-	LinkPrivKey     *ecdh.PrivateKey
-	MessageConsumer MessageConsumer
-	Storage         Storage
+	User             string
+	Provider         string
+	IdentityPrivKey  *ecdh.PrivateKey
+	LinkPrivKey      *ecdh.PrivateKey
+	MessageConsumer  MessageConsumer
+	Storage          Storage
+	UserKeyDiscovery UserKeyDiscovery
 }
 
 // Session holds the client session
 type Session struct {
-	cfg              *SessionConfig
-	client           *minclient.Client
-	queue            chan string
-	log              *logging.Logger
-	logBackend       *log.Backend
-	messageConsumer  MessageConsumer
-	connected        chan bool
-	userKeyDiscovery UserKeyDiscovery
-	identityPrivKey  *ecdh.PrivateKey
+	cfg             *SessionConfig
+	client          *minclient.Client
+	queue           chan string
+	log             *logging.Logger
+	logBackend      *log.Backend
+	messageConsumer MessageConsumer
+	connected       chan bool
+	identityPrivKey *ecdh.PrivateKey
 }
 
 // NewSession stablishes a session with provider using key.
@@ -96,7 +101,6 @@ func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 		OnACKFn:     session.onACK,
 	}
 	session.identityPrivKey = cfg.IdentityPrivKey
-	session.userKeyDiscovery = c.cfg.UserKeyDiscovery
 	session.connected = make(chan bool, 0)
 	session.messageConsumer = cfg.MessageConsumer
 	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
@@ -142,7 +146,7 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) err
 	if err != nil {
 		return err
 	}
-	recipientPubKey, err := s.userKeyDiscovery.Get(recipient)
+	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(recipient)
 	if err != nil {
 		return err
 	}
