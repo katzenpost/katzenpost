@@ -34,8 +34,9 @@ type pki struct {
 	c   *Client
 	log *logging.Logger
 
-	docs      sync.Map
-	clockSkew int64
+	docs          sync.Map
+	failedFetches map[uint64]error
+	clockSkew     int64
 
 	forceUpdateCh chan interface{}
 }
@@ -119,6 +120,15 @@ func (p *pki) worker() {
 			if _, ok := p.docs.Load(epoch); ok {
 				continue
 			}
+
+			// Certain errors in fetching documents are treated as hard
+			// failures that suppress further attempts to fetch the document
+			// for the epoch.
+			if err, ok := p.failedFetches[epoch]; ok {
+				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
+				continue
+			}
+
 			d, err := p.c.cfg.PKIClient.Get(pkiCtx, epoch)
 			select {
 			case <-pkiCtx.Done():
@@ -128,11 +138,15 @@ func (p *pki) worker() {
 			}
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+				if err == cpki.ErrNoDocument {
+					p.failedFetches[epoch] = err
+				}
 				continue
 			}
 			p.docs.Store(epoch, d)
 			didUpdate = true
 		}
+		p.pruneFailures(now)
 		if didUpdate {
 			// Prune documents.
 			p.pruneDocuments(now)
@@ -163,10 +177,19 @@ func (p *pki) pruneDocuments(now uint64) {
 	})
 }
 
+func (p *pki) pruneFailures(now uint64) {
+	for epoch := range p.failedFetches {
+		if epoch < now || epoch > now+1 {
+			delete(p.failedFetches, epoch)
+		}
+	}
+}
+
 func newPKI(c *Client) *pki {
 	p := new(pki)
 	p.c = c
 	p.log = c.cfg.LogBackend.GetLogger("minclient/pki:" + c.displayName)
+	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
 
 	p.Go(p.worker)
