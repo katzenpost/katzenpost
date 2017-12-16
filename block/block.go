@@ -60,7 +60,7 @@ type Block struct {
 	Payload     []byte
 }
 
-// ToBytes serializes Block into bytes
+// ToBytes serializes a Block into bytes.
 func (b *Block) ToBytes() ([]byte, error) {
 	if b.BlockID >= b.TotalBlocks {
 		return nil, fmt.Errorf("block: BlockID (%v) >= TotalBlocks (%v)", b.BlockID, b.TotalBlocks)
@@ -82,7 +82,7 @@ func (b *Block) ToBytes() ([]byte, error) {
 	return buf, nil
 }
 
-// FromBytes deserialized bytes into the Block
+// FromBytes deserializes bytes into the Block.
 func (b *Block) FromBytes(buf []byte) error {
 	if len(buf) != blockLength {
 		return fmt.Errorf("block: invalid byte serialized length: %v (Expecting %v)", len(buf), blockLength)
