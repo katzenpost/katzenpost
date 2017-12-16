@@ -60,7 +60,8 @@ type Block struct {
 	Payload     []byte
 }
 
-func (b *Block) toBytes() ([]byte, error) {
+// ToBytes serializes Block into bytes
+func (b *Block) ToBytes() ([]byte, error) {
 	if b.BlockID >= b.TotalBlocks {
 		return nil, fmt.Errorf("block: BlockID (%v) >= TotalBlocks (%v)", b.BlockID, b.TotalBlocks)
 	}
@@ -81,7 +82,8 @@ func (b *Block) toBytes() ([]byte, error) {
 	return buf, nil
 }
 
-func (b *Block) fromBytes(buf []byte) error {
+// FromBytes deserialized bytes into the Block
+func (b *Block) FromBytes(buf []byte) error {
 	if len(buf) != blockLength {
 		return fmt.Errorf("block: invalid byte serialized length: %v (Expecting %v)", len(buf), blockLength)
 	}
@@ -127,7 +129,7 @@ func bytesVectorFromMessage(msgID *[MessageIDLength]byte, msg []byte) ([][]byte,
 			BlockLength: 0,
 		}
 		copy(blk.MessageID[:], msgID[:])
-		b, _ := blk.toBytes()
+		b, _ := blk.ToBytes()
 		return [][]byte{b}, nil
 	}
 
@@ -148,7 +150,7 @@ func bytesVectorFromMessage(msgID *[MessageIDLength]byte, msg []byte) ([][]byte,
 		copy(blk.MessageID[:], msgID[:])
 		copy(blk.Payload, msg[off:])
 
-		b, err := blk.toBytes()
+		b, err := blk.ToBytes()
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +241,7 @@ func DecryptBlock(b []byte, recipient *ecdh.PrivateKey) (*Block, *ecdh.PublicKey
 
 	// Parse the plaintext into a Block.
 	blk := new(Block)
-	err = blk.fromBytes(plaintext)
+	err = blk.FromBytes(plaintext)
 
 	return blk, senderPk, err
 }
