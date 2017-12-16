@@ -88,9 +88,7 @@ func (co *connector) worker() {
 			co.log.Debugf("Terminating gracefully.")
 			return
 		case <-co.forceUpdateCh:
-			co.log.Debugf("Starting forced sweep.")
 		case <-timer.C:
-			co.log.Debugf("Starting periodic sweep.")
 			timerFired = true
 		}
 		if !timerFired && !timer.Stop() {
@@ -101,7 +99,6 @@ func (co *connector) worker() {
 		// and current time.
 		co.spawnNewConns()
 
-		co.log.Debugf("Done with sweep.")
 		timer.Reset(resweepInterval)
 	}
 
