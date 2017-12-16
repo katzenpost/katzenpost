@@ -295,7 +295,9 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	} else {
 		// Queue must be empty.
 		if hint != 0 {
-			panic("BUG: Get() failed to return a message, and the queue is not empty.")
+			// This should NEVER happen, but it's probably not worth crashing
+			// the server over if it does.
+			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
 		}
 		respCmd = &commands.MessageEmpty{
 			Sequence: cmd.Sequence,
