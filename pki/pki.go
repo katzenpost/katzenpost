@@ -34,6 +34,10 @@ var (
 	// ErrNoDocument is the error returned when there never will be a document
 	// for a given epoch.
 	ErrNoDocument = errors.New("pki: requested epoch will never get a document")
+
+	// ErrInvalidPostEpoch is the error returned when the server rejects a
+	// descriptor upload for a given epoch due to time reasons.
+	ErrInvalidPostEpoch = errors.New("pki: post for epoch will never succeeed")
 )
 
 // Document is a PKI document.
