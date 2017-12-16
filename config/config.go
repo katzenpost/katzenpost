@@ -34,6 +34,7 @@ import (
 const (
 	defaultAddress          = ":3219"
 	defaultLogLevel         = "NOTICE"
+	defaultUnwrapDelay      = 250       // 250 ms.
 	defaultSchedulerSlack   = 10        // 10 ms.
 	defaultSendSlack        = 50        // 50 ms.
 	defaultConnectTimeout   = 60 * 1000 // 60 sec.
@@ -108,6 +109,10 @@ type Debug struct {
 	// as unlimited.
 	SchedulerQueueSize int
 
+	// UnwrapDelay is the maximum allowed unwrap delay due to queueing in
+	// milliseconds.
+	UnwrapDelay int
+
 	// SchedulerSlack is the maximum allowed scheduler slack due to queueing
 	// and or processing in milliseconds.
 	SchedulerSlack int
@@ -152,12 +157,15 @@ func (dCfg *Debug) applyDefaults() {
 		// the AES-NI unit is a per-core resource.
 		dCfg.NumSphinxWorkers = runtime.NumCPU()
 	}
+	if dCfg.UnwrapDelay <= 0 {
+		dCfg.UnwrapDelay = defaultUnwrapDelay
+	}
 	if dCfg.SchedulerSlack < defaultSchedulerSlack {
 		// TODO/perf: Tune this.
 		dCfg.SchedulerSlack = defaultSchedulerSlack
 	}
 	if dCfg.SendSlack < defaultSendSlack {
-		// TODO/perf: Tune this, probably upwards to be more tollerant of poor
+		// TODO/perf: Tune this, probably upwards to be more tolerant of poor
 		// networking conditions.
 		dCfg.SendSlack = defaultSendSlack
 	}
