@@ -89,9 +89,14 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 
 	var lastErr error
 	for _, k := range keys {
+		startAt := monotime.Now()
+
 		// TODO/perf: payload is a new heap allocation if it's returned,
 		// though that should only happen if this is a provider.
 		payload, tag, cmds, err := sphinx.Unwrap(k.PrivateKey(), pkt.raw)
+		unwrapAt := monotime.Now()
+
+		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.id, unwrapAt - startAt)
 
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
@@ -114,6 +119,8 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 			break
 		}
 
+		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.id, monotime.Now() - unwrapAt)
+
 		return nil
 	}
 
@@ -125,6 +132,7 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 }
 
 func (w *cryptoWorker) worker() {
+	unwrapSlack := time.Duration(w.s.cfg.Debug.UnwrapDelay)*time.Millisecond
 	inCh := w.s.inboundPackets.Out()
 	defer w.derefKeys()
 
@@ -155,9 +163,15 @@ func (w *cryptoWorker) worker() {
 		// requested.
 		now := monotime.Now()
 
-		// TODO/perf: This would be the logical place to drop packets if
-		// there's noticable overload, probably by measuring queue
-		// dwell time from when the packet was received.
+		// Drop the packet if it has been sitting in the queue waiting to
+		// be unwrapped for way too long.
+		if unwrapDelay := now - pkt.recvAt; unwrapDelay > unwrapSlack {
+			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.id, unwrapDelay)
+			pkt.dispose()
+			continue
+		} else {
+			w.log.Debugf("Packet: %v (Unwrap queue delay: %v)", pkt.id, unwrapDelay)
+		}
 
 		// Attempt to unwrap the packet.
 		w.log.Debugf("Attempting to unwrap packet: %v", pkt.id)
@@ -166,6 +180,7 @@ func (w *cryptoWorker) worker() {
 			pkt.dispose()
 			continue
 		}
+		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.id, monotime.Now()-now)
 
 		// At this point, we have a packet that's been unwrapped, with
 		// the modified packet, paylod (if any), and the vector of Sphinx
