@@ -30,6 +30,13 @@ import (
 	"github.com/op/go-logging"
 )
 
+// Storage is an interface user for persisting
+// ARQ and fragmentation/reassembly state
+type Storage interface {
+	GetBlocks(*[block.MessageIDLength]byte) ([]*block.Block, error)
+	PutBlock(*[block.MessageIDLength]byte, *block.Block) error
+}
+
 // MessageConsumer is an interface used for
 // processing received messages
 type MessageConsumer interface {
@@ -37,8 +44,19 @@ type MessageConsumer interface {
 	ReceivedACK(messageID *[block.MessageIDLength]byte, message []byte)
 }
 
+// SessionConfig is specifies the configuration for a new session
+type SessionConfig struct {
+	User            string
+	Provider        string
+	IdentityPrivKey *ecdh.PrivateKey
+	LinkPrivKey     *ecdh.PrivateKey
+	MessageConsumer MessageConsumer
+	Storage         Storage
+}
+
 // Session holds the client session
 type Session struct {
+	cfg              *SessionConfig
 	client           *minclient.Client
 	queue            chan string
 	log              *logging.Logger
@@ -57,24 +75,24 @@ type Session struct {
 // identityKeyPriv: the private messaging key for end to end message exchanges with other users
 // linkKeyPriv: the private link layer key for our noise wire protocol
 // consumer: the message consumer consumes received messages
-func (c *Client) NewSession(user, provider string, identityPrivKey *ecdh.PrivateKey, linkPrivKey *ecdh.PrivateKey, consumer MessageConsumer) (*Session, error) {
+func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 	var err error
 	session := new(Session)
 	clientCfg := &minclient.ClientConfig{
-		User:        user,
-		Provider:    provider,
-		LinkKey:     linkPrivKey,
+		User:        cfg.User,
+		Provider:    cfg.Provider,
+		LinkKey:     cfg.LinkPrivKey,
 		LogBackend:  c.logBackend,
 		PKIClient:   c.cfg.PKIClient,
 		OnConnFn:    session.onConnection,
 		OnMessageFn: session.onMessage,
 		OnACKFn:     session.onACK,
 	}
-	session.identityPrivKey = identityPrivKey
+	session.identityPrivKey = cfg.IdentityPrivKey
 	session.userKeyDiscovery = c.cfg.UserKeyDiscovery
 	session.connected = make(chan bool, 0)
-	session.messageConsumer = consumer
-	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", user, provider))
+	session.messageConsumer = cfg.MessageConsumer
+	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
 	session.client, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
@@ -143,17 +161,28 @@ func (s *Session) onConnection(isConnected bool) {
 
 // OnMessage will be called by the minclient api
 // upon receiving a message
-func (s *Session) onMessage(message []byte) error {
+func (s *Session) onMessage(ciphertextBlock []byte) error {
 	s.log.Debugf("OnMessage")
-	rBlock, senderPubKey, err := block.DecryptBlock(message, s.identityPrivKey)
+	rBlock, senderPubKey, err := block.DecryptBlock(ciphertextBlock, s.identityPrivKey)
 	if err != nil {
-		return nil
+		return err
 	}
 	if rBlock.TotalBlocks == 1 {
 		s.messageConsumer.ReceivedMessage(senderPubKey, rBlock.Payload)
-	} else {
-		return errors.New("failure: message reassembly not yet implemented")
+		return nil
 	}
+	sBlocks, err := s.cfg.Storage.GetBlocks(&rBlock.MessageID)
+	if err != nil {
+		return err
+	}
+	message, err := s.reassemble(append(sBlocks, rBlock))
+	if err != nil {
+		err = s.cfg.Storage.PutBlock(&rBlock.MessageID, rBlock)
+		if err != nil {
+			return err
+		}
+	}
+	s.messageConsumer.ReceivedMessage(senderPubKey, message)
 	return nil
 }
 
@@ -162,4 +191,8 @@ func (s *Session) onMessage(message []byte) error {
 func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
 	s.log.Debugf("OnACK")
 	return nil
+}
+
+func (s *Session) reassemble(blocks []*block.Block) ([]byte, error) {
+	return nil, nil
 }
