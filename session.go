@@ -175,7 +175,7 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 	if err != nil {
 		return err
 	}
-	message, err := s.reassemble(append(sBlocks, rBlock))
+	message, err := reassemble(append(sBlocks, rBlock))
 	if err != nil {
 		err = s.cfg.Storage.PutBlock(&rBlock.MessageID, rBlock)
 		if err != nil {
@@ -191,8 +191,4 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
 	s.log.Debugf("OnACK")
 	return nil
-}
-
-func (s *Session) reassemble(blocks []*block.Block) ([]byte, error) {
-	return nil, nil
 }
