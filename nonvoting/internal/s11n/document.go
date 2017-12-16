@@ -88,6 +88,9 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey, epoch uint64) 
 	}
 	payload, err := signed.Verify(*publicKey.InternalPtr())
 	if err != nil {
+		if err == jose.ErrCryptoFailure {
+			err = fmt.Errorf("nonvoting: Invalid document signature")
+		}
 		return nil, err
 	}
 

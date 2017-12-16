@@ -110,6 +110,9 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 	// Verify that the descriptor is signed by the key in the header.
 	payload, err := signed.Verify(*candidatePk.InternalPtr())
 	if err != nil {
+		if err == jose.ErrCryptoFailure {
+			err = fmt.Errorf("nonvoting: Invalid descriptor signature")
+		}
 		return nil, err
 	}
 
