@@ -133,9 +133,6 @@ type Debug struct {
 	// reauthenticated in milliseconds.
 	ReauthInterval int
 
-	// DisableKeyRotation disables the mix key rotation.
-	DisableKeyRotation bool
-
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -143,7 +140,7 @@ type Debug struct {
 
 // IsUnsafe returns true iff any debug options that destroy security are set.
 func (dCfg *Debug) IsUnsafe() bool {
-	return dCfg.ForceIdentityKey != "" || dCfg.DisableKeyRotation
+	return dCfg.ForceIdentityKey != ""
 }
 
 func (dCfg *Debug) applyDefaults() {

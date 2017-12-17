@@ -47,48 +47,43 @@ func (w *cryptoWorker) updateMixKeys() {
 }
 
 func (w *cryptoWorker) doUnwrap(pkt *packet) error {
+	const gracePeriod = 2 * time.Minute
+
 	// Figure out the candidate mix private keys for this packet.
 	keys := make([]*mixkey.MixKey, 0, 2)
-	if w.s.cfg.Debug.DisableKeyRotation {
-		keys = append(keys, w.mixKeys[debugStaticEpoch])
+	epoch, elapsed, till := epochtime.Now()
+	k, ok := w.mixKeys[epoch]
+	if !ok || k == nil {
+		// There always will be a key for the current epoch, since
+		// key generation happens multiple epochs in advance.
+		return fmt.Errorf("crypto: No key for epoch %v", epoch)
+	}
+	keys = append(keys, k)
+
+	// At certain times, this needs to also look at the previous
+	// or next epoch(s) keys, if they exist.
+	if elapsed < gracePeriod {
+		// Less than gracePeriod into the current epoch, the previous
+		// epoch's key should also be accepted.
+		k, ok = w.mixKeys[epoch-1]
+	} else if till < gracePeriod {
+		// Less than gracePeriod to the next epoch, the next epoch's
+		// key should also be accepted.
+		k, ok = w.mixKeys[epoch+1]
 	} else {
-		const gracePeriod = 2 * time.Minute
-
-		epoch, elapsed, till := epochtime.Now()
-		k, ok := w.mixKeys[epoch]
-		if !ok || k == nil {
-			// There always will be a key for the current epoch, since
-			// key generation happens multiple epochs in advance.
-			return fmt.Errorf("crypto: No key for epoch %v", epoch)
-		}
+		// Only one key to use.
+		k = nil
+		ok = false
+	}
+	if ok && k != nil {
+		// Not having other keys is fine, regardless of if we are
+		// in the grace period, if a packet happens to get dropped,
+		// oh well.
 		keys = append(keys, k)
-
-		// At certain times, this needs to also look at the previous
-		// or next epoch(s) keys, if they exist.
-		if elapsed < gracePeriod {
-			// Less than gracePeriod into the current epoch, the previous
-			// epoch's key should also be accepted.
-			k, ok = w.mixKeys[epoch-1]
-		} else if till < gracePeriod {
-			// Less than gracePeriod to the next epoch, the next epoch's
-			// key should also be accepted.
-			k, ok = w.mixKeys[epoch+1]
-		} else {
-			// Only one key to use.
-			k = nil
-			ok = false
-		}
-		if ok && k != nil {
-			// Not having other keys is fine, regardless of if we are
-			// in the grace period, if a packet happens to get dropped,
-			// oh well.
-			keys = append(keys, k)
-		}
-
 	}
 
 	var lastErr error
-	for _, k := range keys {
+	for _, k = range keys {
 		startAt := monotime.Now()
 
 		// TODO/perf: payload is a new heap allocation if it's returned,
@@ -96,7 +91,7 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 		payload, tag, cmds, err := sphinx.Unwrap(k.PrivateKey(), pkt.raw)
 		unwrapAt := monotime.Now()
 
-		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.id, unwrapAt - startAt)
+		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.id, unwrapAt-startAt)
 
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
@@ -119,7 +114,7 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 			break
 		}
 
-		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.id, monotime.Now() - unwrapAt)
+		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.id, monotime.Now()-unwrapAt)
 
 		return nil
 	}
@@ -132,7 +127,7 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 }
 
 func (w *cryptoWorker) worker() {
-	unwrapSlack := time.Duration(w.s.cfg.Debug.UnwrapDelay)*time.Millisecond
+	unwrapSlack := time.Duration(w.s.cfg.Debug.UnwrapDelay) * time.Millisecond
 	inCh := w.s.inboundPackets.Out()
 	defer w.derefKeys()
 
@@ -146,10 +141,6 @@ func (w *cryptoWorker) worker() {
 			w.log.Debugf("Terminating gracefully.")
 			return
 		case <-w.updateCh:
-			if w.s.cfg.Debug.DisableKeyRotation {
-				w.s.fatalErrCh <- errors.New("BUG: crypto: Key update requested with disabled key rotation")
-				continue
-			}
 			w.log.Debugf("Updating mix keys.")
 			w.s.mixKeys.shadow(w.mixKeys)
 			continue
