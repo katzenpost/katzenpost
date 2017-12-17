@@ -91,7 +91,8 @@ func Exp(r *rand.Rand, lambda float64) float64 {
 	if lambda < math.SmallestNonzeroFloat64 {
 		panic("crypto/rand: lambda out of range")
 	}
-	return (-1.0 / lambda) * math.Log(r.Float64())
+
+	return r.ExpFloat64() / lambda
 }
 
 // ExpQuantile returns the value at which the the probability of a random value
