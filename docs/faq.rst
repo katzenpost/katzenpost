@@ -26,16 +26,16 @@ What is Loopix?
    particular meaning of "anonymity" is remarkably different than what
    Tor provides. Loopix does not have strong location hiding
    properties nor does it provide sender anonymity or receiver
-   anonymity. That having been said it should be trivial to create
+   anonymity. That having been said it should be possible to create
    such systems based on the Loopix design.
 
-   The Loopix design sits in the greater context of over 15 years of
-   mixnet literature and strives to reduce many kinds of metadata
-   leakages that historically have made mix networks vulnerable to
-   long term statistical disclosure attacks. Loopix has a defense
-   against blending/n-1 attacks. Loopix explores the tradeoff between
-   decoy traffic and latency, thus revitalizing mix networks with much
-   lower latency for message transportation.
+   The Loopix design is informed by over 15 years of mixnet literature
+   and strives to reduce many kinds of metadata leakages that
+   historically have made mix networks vulnerable to long term
+   statistical disclosure attacks. Loopix has a defense against
+   blending/n-1 attacks. Loopix explores the tradeoff between decoy
+   traffic and latency, thus revitalizing mix networks with much lower
+   latency for message transportation.
 
    Loopix uses the Sphinx cryptographic packet format, the Poisson mix
    strategy, three kinds of decoy traffic and the stratified mix
@@ -79,7 +79,7 @@ How are mix networks different from Tor?
    whereas mixnets are not immediately vulnerable to these kinds of
    attacks if they correctly use mix strategies and decoy traffic.
 
-   Both Tor and mix networks can scale really well with respect to
+   Both Tor and mix networks can scale well with respect to
    increasing user traffic, however Tor requires route
    unpredictability to achieve it's anonymity properties. Mix networks
    on the other hand do not require route unpredictability and
@@ -105,11 +105,8 @@ How do mix networks compare to Pond?
     networks where additional mixes can be added to the network in
     order to efficiently process increases in user traffic.
 
-How do mix networks compare to Vuvuzela?
-----------------------------------------
-
-   Vuvuzela is a mix network design. Let's rephrase the question:
-   How does Vuvuzela differ from Loopix/Katzenpost?
+How does Vuvuzela differ from Loopix/Katzenpost?
+------------------------------------------------
 
    Vuvuzela uses the cascade mix topology which does not scale
    well with respect to an increase in user traffic. Loopix uses
@@ -119,11 +116,8 @@ How do mix networks compare to Vuvuzela?
    in rounds whereas Loopix does not. Vuvuzela does not provide reliable
    message transportation whereas Katzenpost does.
 
-How do mix networks compare to AnonPOP?
----------------------------------------
-
-   AnonPOP is a mix network design. Let's rephrase the question:
-   How does AnonPOP differ from Loopix/Katzenpost?
+How does AnonPOP differ from Loopix/Katzenpost?
+-----------------------------------------------
 
    AnonPOP operates in rounds and provides offline storage of messages.
    Loopix uses a continuous time mix strategy so that it avoids
