@@ -27,10 +27,7 @@ import (
 	"github.com/op/go-logging"
 )
 
-const (
-	debugStaticEpoch = 0
-	numMixKeys       = 3
-)
+const numMixKeys = 3
 
 type mixKeys struct {
 	sync.Mutex
@@ -42,21 +39,6 @@ type mixKeys struct {
 }
 
 func (m *mixKeys) init() error {
-	if m.s.cfg.Debug.DisableKeyRotation {
-		// If key rotation is disabled via the debug parameter, then
-		// use a static epoch for the purpose of identifying the internal
-		// key.
-		k, err := mixkey.New(m.s.cfg.Server.DataDir, debugStaticEpoch)
-		if err != nil {
-			return err
-		}
-		m.keys[debugStaticEpoch] = k
-
-		m.log.Warning("Static mix key is used, there will be no forward secrecy.")
-
-		return nil
-	}
-
 	// Generate/load the initial set of keys.
 	//
 	// TODO: In theory this should also try to load the previous epoch's key

@@ -276,14 +276,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// Ensure that there are mix keys for the epochs [e, ..., e+2],
 	// assuming that key rotation isn't disabled, and fill them into
 	// the descriptor.
-	if p.s.cfg.Debug.DisableKeyRotation {
-		// In the static mix key case, just publish the static keys for
-		// all the epochs.
-		staticKey := p.s.mixKeys.keys[debugStaticEpoch]
-		for e := doPublishEpoch; e < doPublishEpoch+numMixKeys; e++ {
-			desc.MixKeys[e] = staticKey.PublicKey()
-		}
-	} else if didGen, err := p.s.mixKeys.generateMixKeys(doPublishEpoch); err == nil {
+	if didGen, err := p.s.mixKeys.generateMixKeys(doPublishEpoch); err == nil {
 		// Prune off the old mix keys.  Bad things happen if the epoch ever
 		// goes backwards, but everyone uses NTP right?
 		didPrune := p.s.mixKeys.pruneMixKeys()
