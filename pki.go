@@ -394,13 +394,6 @@ func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		dirStr = "Outgoing"
 	}
 
-	// If mix authentication is disabled, then we just blindly blast away
-	// or allow anyone to connect to us.
-	if p.s.cfg.Debug.DisableMixAuthentication {
-		p.log.Debugf("%v: Blindly authenticating peer: '%v'(%v).", dirStr, bytesToPrintString(c.AdditionalData), c.PublicKey)
-		return nil, true, true
-	}
-
 	// Ensure the additional data is valid.
 	if len(c.AdditionalData) != constants.NodeIDLength {
 		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, bytesToPrintString(c.AdditionalData))

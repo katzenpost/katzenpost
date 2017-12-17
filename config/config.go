@@ -136,9 +136,6 @@ type Debug struct {
 	// DisableKeyRotation disables the mix key rotation.
 	DisableKeyRotation bool
 
-	// DisableMixAuthentication disables the mix incoming peer authentication.
-	DisableMixAuthentication bool
-
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -146,7 +143,7 @@ type Debug struct {
 
 // IsUnsafe returns true iff any debug options that destroy security are set.
 func (dCfg *Debug) IsUnsafe() bool {
-	return dCfg.ForceIdentityKey != "" || dCfg.DisableKeyRotation || dCfg.DisableMixAuthentication
+	return dCfg.ForceIdentityKey != "" || dCfg.DisableKeyRotation
 }
 
 func (dCfg *Debug) applyDefaults() {
@@ -387,10 +384,6 @@ func (cfg *Config) FixupAndValidate() error {
 		return err
 	}
 	if cfg.Server.IsProvider {
-		if cfg.Debug.DisableMixAuthentication {
-			return errors.New("config: DisableMixAuthentication set when not a Mix")
-		}
-
 		if cfg.Provider == nil {
 			cfg.Provider = &Provider{}
 		}
