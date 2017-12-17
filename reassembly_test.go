@@ -66,7 +66,7 @@ func TestBlockValidation(t *testing.T) {
 	require.NoError(err, "wtf")
 }
 
-func TestBlockValidationFail1(t *testing.T) {
+func TestReassemblyMissingBlockID(t *testing.T) {
 	require := require.New(t)
 	messageID := [block.MessageIDLength]byte{}
 	senderPrivKey, err := ecdh.NewKeypair(rand.Reader)
@@ -96,7 +96,7 @@ func TestBlockValidationFail1(t *testing.T) {
 	require.Error(err, "wtf")
 }
 
-func TestBlockValidationFail2(t *testing.T) {
+func TestReassemblyMismatchMessageID(t *testing.T) {
 	require := require.New(t)
 	messageID1 := [block.MessageIDLength]byte{}
 	messageID2 := [block.MessageIDLength]byte{}
@@ -140,7 +140,7 @@ func TestBlockValidationFail2(t *testing.T) {
 	require.Error(err, "wtf")
 }
 
-func TestBlockValidationFail3(t *testing.T) {
+func TestReassemblyMismatchTotalBlocks(t *testing.T) {
 	require := require.New(t)
 	messageID1 := [block.MessageIDLength]byte{}
 	senderPrivKey, err := ecdh.NewKeypair(rand.Reader)
@@ -181,7 +181,7 @@ func TestBlockValidationFail3(t *testing.T) {
 	require.Error(err, "wtf")
 }
 
-func TestBlockValidationFail4(t *testing.T) {
+func TestReassemblyMismatchSender(t *testing.T) {
 	require := require.New(t)
 	messageID1 := [block.MessageIDLength]byte{}
 	senderPrivKey1, err := ecdh.NewKeypair(rand.Reader)
