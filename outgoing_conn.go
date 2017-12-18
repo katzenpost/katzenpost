@@ -143,7 +143,21 @@ func (c *outgoingConn) worker() {
 			return
 		}
 
-		for _, addrPort := range c.dst.Addresses {
+		// Flatten the lists of addresses to Dial to.
+		var dstAddrs []string
+		for _, t := range cpki.InternalTransports {
+			if v, ok := c.dst.Addresses[t]; ok {
+				dstAddrs = append(dstAddrs, v...)
+			}
+		}
+		if len(dstAddrs) == 0 {
+			// Should *NEVER* happen because descriptors currently MUST have
+			// at least once `tcp4` address to be considered valid.
+			c.log.Warningf("Bailing out of Dial loop, no suitable addresses found.")
+			return
+		}
+
+		for _, addrPort := range dstAddrs {
 			select {
 			case <-time.After(c.retryDelay):
 				// Back off incrementally on reconnects.
