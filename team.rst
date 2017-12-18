@@ -35,7 +35,7 @@ Research
 
 * George Danezis
 * Claudia Diaz
-* Ania Piotrwoska
+* Ania Piotrowska
 
 Advice
 ******
