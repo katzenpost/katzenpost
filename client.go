@@ -78,6 +78,10 @@ type ClientConfig struct {
 	// SURB ID and SURB ciphertext.  Calls to the callback that return
 	// an error will be treated as a signal to tear down the connection.
 	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
+
+	// DisableTimeSync forces the use of system time instead of skewed
+	// provider time.
+	DisableTimeSync bool
 }
 
 func (cfg *ClientConfig) validate() error {
