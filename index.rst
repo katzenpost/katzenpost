@@ -32,6 +32,8 @@ Development
     :maxdepth: 1
 
     github.com/katzenpost <https://github.com/katzenpost/>
+    katzenpost Mailing List <https://lists.mixnetworks.org/listinfo/katzenpost>
+    irc.oftc.net #katzenpost <irc://irc.oftc.net/#katzenpost>
     godocs: Go package documentation <https://godoc.org/?q=katzenpost>
     docs/setup
 
