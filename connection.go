@@ -185,7 +185,21 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			return
 		}
 
-		for _, addrPort := range c.descriptor.Addresses {
+		// TODO: Allow the caller to specify transport preference and
+		// additional transports.
+		var dstAddrs []string
+		for _, t := range cpki.InternalTransports {
+			if v, ok := c.descriptor.Addresses[t]; ok {
+				dstAddrs = append(dstAddrs, v...)
+			}
+		}
+		if len(dstAddrs) == 0 {
+			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
+			c.pkiEpoch = 0 // Give up till the next PKI fetch.
+			return
+		}
+
+		for _, addrPort := range dstAddrs {
 			select {
 			case <-time.After(c.retryDelay):
 				// Back off the reconnect delay.
