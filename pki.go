@@ -19,6 +19,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -260,11 +262,15 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// probably not worth it.
 
 	// Generate the non-key parts of the descriptor.
+	addrMap, err := makeDescAddrMap(p.s.cfg.Server.Addresses)
+	if err != nil {
+		return err
+	}
 	desc := &cpki.MixDescriptor{
 		Name:        p.s.cfg.Server.Identifier,
 		IdentityKey: p.s.identityKey.PublicKey(),
 		LinkKey:     p.s.linkKey.PublicKey(),
-		Addresses:   p.s.cfg.Server.Addresses,
+		Addresses:   addrMap,
 	}
 	if p.s.cfg.Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
@@ -305,7 +311,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err := p.impl.Post(pkiCtx, doPublishEpoch, p.s.identityKey, desc)
+	err = p.impl.Post(pkiCtx, doPublishEpoch, p.s.identityKey, desc)
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
@@ -523,4 +529,34 @@ func newPKI(s *Server) (*pki, error) {
 	// which are initialized after the pki object.
 
 	return p, nil
+}
+
+func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
+	m := make(map[cpki.Transport][]string)
+	for _, addr := range addrs {
+		h, p, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = strconv.ParseUint(p, 10, 16); err != nil {
+			return nil, err
+		}
+
+		t := cpki.TransportInvalid
+		ip := net.ParseIP(h)
+		if ip == nil {
+			return nil, fmt.Errorf("address '%v' is not an IP", h)
+		}
+		switch {
+		case ip.To4() != nil:
+			t = cpki.TransportTCPv4
+		case ip.To16() != nil:
+			t = cpki.TransportTCPv6
+		default:
+			return nil, fmt.Errorf("address '%v' is neither IPv4 nor IPv6", h)
+		}
+
+		m[t] = append(m[t], addr)
+	}
+	return m, nil
 }
