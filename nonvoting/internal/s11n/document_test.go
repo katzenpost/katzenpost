@@ -31,7 +31,9 @@ import (
 func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDescriptor, []byte) {
 	d := new(pki.MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = []string{fmt.Sprintf("192.0.2.%d:4242", idx)}
+	d.Addresses = map[pki.Transport][]string{
+		pki.TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
+	}
 	d.Layer = uint8(layer)
 	d.LoadWeight = 23
 	identityPriv, err := eddsa.NewKeypair(rand.Reader)

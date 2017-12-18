@@ -23,11 +23,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
+	"strconv"
 
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/utils"
 	"gopkg.in/square/go-jose.v2"
 )
 
@@ -200,13 +201,62 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 	if len(d.Addresses) == 0 {
 		return fmt.Errorf("nonvoting: Descriptor missing Addresses")
 	}
-	for _, v := range d.Addresses {
-		if err := utils.EnsureAddrIPPort(v); err != nil {
-			return fmt.Errorf("nonvoting: Descriptor containx invalid Address '%v': %v", v, err)
+	for transport, addrs := range d.Addresses {
+		if len(addrs) == 0 {
+			return fmt.Errorf("nonvoting: Descriptor contains empty Address list for transport '%v'", transport)
 		}
+
+		expectedIPVer := 0
+		switch transport {
+		case pki.TransportInvalid:
+			return fmt.Errorf("nonvoting: Descriptor contains invalid Transport")
+		case pki.TransportTCPv4:
+			expectedIPVer = 4
+		case pki.TransportTCPv6:
+			expectedIPVer = 6
+		default:
+			// Ignore unknown transports.
+			continue
+		}
+
+		// Validate all addresses belonging to the TCP variants.
+		for _, v := range addrs {
+			h, p, err := net.SplitHostPort(v)
+			if err != nil {
+				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+			}
+			if len(h) == 0 {
+				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v'", transport, v)
+			}
+			if _, err := strconv.ParseUint(p, 10, 16); err != nil {
+				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+			}
+			if ver, err := getIPVer(h); err != nil {
+				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+			} else if ver != expectedIPVer {
+				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
+			}
+		}
+	}
+	if len(d.Addresses[pki.TransportTCPv4]) == 0 {
+		return fmt.Errorf("nonvoting: Descriptor contains no TCPv4 addresses")
 	}
 	if d.Layer != pki.LayerProvider && d.Layer != 0 {
 		return fmt.Errorf("nonvoting: Descriptor self-assigned Layer: '%v'", d.Layer)
 	}
 	return nil
+}
+
+func getIPVer(h string) (int, error) {
+	ip := net.ParseIP(h)
+	if ip != nil {
+		switch {
+		case ip.To4() != nil:
+			return 4, nil
+		case ip.To16() != nil:
+			return 6, nil
+		default:
+		}
+	}
+	return 0, fmt.Errorf("address is not an IP")
 }
