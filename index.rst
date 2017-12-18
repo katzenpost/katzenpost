@@ -24,8 +24,25 @@ Documentation
     docs/glossary
     docs/faq
     docs/specs
+
+Development
+===========
+
+.. toctree::
+    :maxdepth: 1
+
     docs/setup
     godocs: Go package documentation <https://godoc.org/?q=katzenpost>
+
+Mixnets?!
+=========
+
+* Video: `Claudia Diaz: Lecture on Anonymity Systems (2014) <https://www.youtube.com/watch?v=fhqabqmzpqE>`_
+* Video: `Panoramix: What is a mixnet? A Short Introduction <https://www.youtube.com/watch?v=dQtk0NcTseg>`_
+* `Mixnet Bibliography <https://bib.mixnetworks.org>`_
+
+`Team <team.html>`_
+===================
 
 .. rubric:: Supported by
 
