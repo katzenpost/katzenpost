@@ -172,6 +172,24 @@ func (d *Document) GetNodeByKey(key []byte) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
+// Transport is a link transport protocol.
+type Transport string
+
+var (
+	// TransportInvalid is the invalid transport.
+	TransportInvalid Transport
+
+	// TransportTCPv4 is TCP over IPv4.
+	TransportTCPv4 Transport = "tcp4"
+
+	// TransportTCPv6 is TCP over IPv6.
+	TransportTCPv6 Transport = "tcp6"
+
+	// InternalTransports is the list of transports used for non-client related
+	// communications.
+	InternalTransports = []Transport{TransportTCPv4, TransportTCPv6}
+)
+
 // MixDescriptor is a description of a given Mix or Provider (node).
 type MixDescriptor struct {
 	// Name is the human readable (descriptive) node identifier.
@@ -186,9 +204,9 @@ type MixDescriptor struct {
 	// MixKeys is a map of epochs to Sphinx keys.
 	MixKeys map[uint64]*ecdh.PublicKey
 
-	// Addresses is a list of address/port combinations that can be used to
-	// reach the node.
-	Addresses []string
+	// Addresses is a map transport to address combinations that can
+	// be used to reach the node.
+	Addresses map[Transport][]string
 
 	// Layer is the topology layer.
 	Layer uint8
