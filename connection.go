@@ -275,9 +275,9 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 func (c *connection) onWireConn(w *wire.Session) {
 	const (
-		fetchRespInterval  = 1 * time.Second
-		fetchEmptyInterval = 1 * time.Minute
-		fetchMoreInterval  = 0 * time.Second
+		fetchRespInterval         = 1 * time.Second
+		fetchMoreInterval         = 0 * time.Second
+		defaultFetchEmptyInterval = 1 * time.Minute
 	)
 
 	c.onConnStatusChange(true)
@@ -306,6 +306,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 		}
 	}()
+
+	fetchEmptyInterval := defaultFetchEmptyInterval
+	if c.c.cfg.MessagePollInterval > time.Duration(0) {
+		fetchEmptyInterval = c.c.cfg.MessagePollInterval
+	}
 
 	fetchDelay := 0 * time.Second
 	nrReqs, nrResps := 0, 0

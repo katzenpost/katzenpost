@@ -21,6 +21,7 @@ import (
 	"fmt"
 	mRand "math/rand"
 	"sync"
+	"time"
 
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -78,6 +79,11 @@ type ClientConfig struct {
 	// SURB ID and SURB ciphertext.  Calls to the callback that return
 	// an error will be treated as a signal to tear down the connection.
 	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
+
+	// MessagePollInterval is the interval at which the server will be
+	// polled for new messages if the queue is belived to be empty.
+	// If left unset, an interval of 1 minute will be used.
+	MessagePollInterval time.Duration
 
 	// DisableTimeSync forces the use of system time instead of skewed
 	// provider time.
