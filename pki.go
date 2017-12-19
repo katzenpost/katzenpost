@@ -41,6 +41,18 @@ type pki struct {
 	forceUpdateCh chan interface{}
 }
 
+// ClockSkew returns the current best guess difference between the client's
+// system clock and the network's global clock, rounded to the nearest second,
+// as measured against the provider during the handshake process.  Calls to
+// this routine should not be made until the first `ClientConfig.OnConnFn(true)`
+// callback.
+func (c *Client) ClockSkew() time.Duration {
+	c.pki.Lock()
+	defer c.pki.Unlock()
+
+	return time.Duration(c.pki.clockSkew) * time.Second
+}
+
 func (p *pki) setClockSkew(skew int64) {
 	p.log.Debugf("New clock skew: %v sec", skew)
 	p.Lock()
