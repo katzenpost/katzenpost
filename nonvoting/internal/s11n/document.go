@@ -17,15 +17,17 @@
 package s11n
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
+	"github.com/ugorji/go/codec"
 	"gopkg.in/square/go-jose.v2"
 )
 
 const documentVersion = "nonvoting-document-v0"
+
+var jsonHandle *codec.JsonHandle
 
 // Document is the on-the-wire representation of a PKI Document.
 type Document struct {
@@ -47,12 +49,13 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 	d.Version = documentVersion
 
 	// Serialize the document.
-	payload, err := json.Marshal(d)
-	if err != nil {
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
 		return "", err
 	}
 
-	// Sign the descriptor.
+	// Sign the document.
 	k := jose.SigningKey{
 		Algorithm: jose.EdDSA,
 		Key:       *signingKey.InternalPtr(),
@@ -96,7 +99,8 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey, epoch uint64) 
 
 	// Parse the payload.
 	d := new(Document)
-	if err = json.Unmarshal(payload, d); err != nil {
+	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
 
@@ -190,4 +194,11 @@ func IsDocumentWellFormed(d *pki.Document, epoch uint64) error {
 	}
 
 	return nil
+}
+
+func init() {
+	jsonHandle = new(codec.JsonHandle)
+	jsonHandle.Canonical = true
+	jsonHandle.IntegerAsString = 'A'
+	jsonHandle.MapKeyAsString = true
 }

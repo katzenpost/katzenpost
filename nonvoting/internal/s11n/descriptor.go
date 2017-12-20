@@ -21,7 +21,6 @@ package s11n
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -29,6 +28,7 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/ugorji/go/codec"
 	"gopkg.in/square/go-jose.v2"
 )
 
@@ -51,8 +51,9 @@ func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) (stri
 	d.Version = nodeDescriptorVersion
 
 	// Serialize the descriptor.
-	payload, err := json.Marshal(d)
-	if err != nil {
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
 		return "", err
 	}
 
@@ -119,7 +120,8 @@ func VerifyAndParseDescriptor(b []byte, epoch uint64) (*pki.MixDescriptor, error
 
 	// Parse the payload.
 	d := new(nodeDescriptor)
-	if err = json.Unmarshal(payload, d); err != nil {
+	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
 
@@ -153,6 +155,10 @@ func extractSignedDescriptorPublicKey(b []byte) (*eddsa.PublicKey, error) {
 	// The JOSE library used doesn't support embedding EdDSA JWK Public Keys
 	// so this reaches into the (unverified) payload, to pull out the
 	// descriptor's PublicKey.
+	//
+	// XXX: Doing things this way, decodes the same object twice, once
+	// prior to validating the signature, and once after, which is
+	// inefficient, but this shouldn't be a critical path operation.
 
 	spl := bytes.Split(b, []byte{'.'})
 	if len(spl) != 3 {
@@ -163,7 +169,8 @@ func extractSignedDescriptorPublicKey(b []byte) (*eddsa.PublicKey, error) {
 		return nil, fmt.Errorf("nonvoting: (Early) Failed to decode: %v", err)
 	}
 	d := new(nodeDescriptor)
-	if err = json.Unmarshal(payload, d); err != nil {
+	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	if err = dec.Decode(d); err != nil {
 		return nil, fmt.Errorf("nonvoting: (Early) Failed to deserialize: %v", err)
 	}
 	candidatePk := d.IdentityKey
