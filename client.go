@@ -20,41 +20,24 @@ package client
 import (
 	"fmt"
 
-	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/log"
 	cpki "github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/wire"
 	"github.com/op/go-logging"
 )
 
 // Config is a client configuration.
 type Config struct {
-	// User is the user identifier used to connect to the Provider.
-	User string
-
-	// Provider is the provider identifier to connect to.
-	Provider string
-
-	// LinkKey is the user's ECDH link authentication private key.
-	LinkKey *ecdh.PrivateKey
-
 	// LogBackend is the logging backend to use for client logging.
 	LogBackend *log.Backend
 
 	// PKIClient is the PKI Document data source.
 	PKIClient cpki.Client
+
+	// Name to show logs
+	Name string
 }
 
 func (cfg *Config) validate() error {
-	if cfg.User == "" || len(cfg.User) > wire.MaxAdditionalDataLength {
-		return fmt.Errorf("minclient: invalid User: '%v'", cfg.User)
-	}
-	if cfg.Provider == "" {
-		return fmt.Errorf("minclient: invalid Provider: '%v'", cfg.Provider)
-	}
-	if cfg.LinkKey == nil {
-		return fmt.Errorf("minclient: no LinkKey provided")
-	}
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("minclient: no LogBackend provided")
 	}
@@ -66,10 +49,8 @@ func (cfg *Config) validate() error {
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
-	cfg         *Config
-	log         *logging.Logger
-	logBackend  *log.Backend
-	displayName string
+	cfg *Config
+	log *logging.Logger
 }
 
 // New creates a new Client with the provided configuration.
@@ -80,5 +61,7 @@ func New(cfg *Config) (*Client, error) {
 	}
 	c := new(Client)
 	c.cfg = cfg
+	c.log = c.cfg.LogBackend.GetLogger(fmt.Sprintf("Client_%s", c.cfg.Name))
+
 	return c, nil
 }

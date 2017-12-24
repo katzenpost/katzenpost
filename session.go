@@ -20,6 +20,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
@@ -80,35 +81,54 @@ func (i *IngressBlock) FromBytes(raw []byte) error {
 	return i.Block.FromBytes(raw[ecdh.PublicKeySize+1:])
 }
 
+// EgressBlock is all the information needed
+// to send the given payload
+//
+type EgressBlock struct {
+	ReliableSend bool
+	Recipient    string
+	Provider     string
+	BlockID      uint16
+	MessageID    *[block.MessageIDLength]byte
+	Payload      []byte
+	Expiration   time.Time
+	SURBID       *[constants.SURBIDLength]byte
+	SURBKeys     []byte
+}
+
 // Storage is an interface user for persisting
 // ARQ and fragmentation/reassembly state
 type Storage interface {
-	GetBlocks(*[block.MessageIDLength]byte) ([][]byte, error)
-	PutBlock(*[block.MessageIDLength]byte, []byte) error
+	GetIngressBlocks(*[block.MessageIDLength]byte) ([][]byte, error)
+	PutIngressBlock(*[block.MessageIDLength]byte, []byte) error
+	PutEgressBlock(*[block.MessageIDLength]byte, *EgressBlock) error // XXX fix me
+	AddSURBKeys(*[constants.SURBIDLength]byte, *EgressBlock) error   // XXX fix me
+	RemoveSURBKey(*[constants.SURBIDLength]byte) error
 }
 
 // MessageConsumer is an interface used for
 // processing received messages
 type MessageConsumer interface {
 	ReceivedMessage(senderPubKey *ecdh.PublicKey, message []byte)
-	ReceivedACK(messageID *[block.MessageIDLength]byte, message []byte)
+	ReceivedACK(messageID *[block.MessageIDLength]byte)
 }
 
 // SessionConfig is specifies the configuration for a new session
 type SessionConfig struct {
-	User             string
-	Provider         string
-	IdentityPrivKey  *ecdh.PrivateKey
-	LinkPrivKey      *ecdh.PrivateKey
-	MessageConsumer  MessageConsumer
-	Storage          Storage
-	UserKeyDiscovery UserKeyDiscovery
+	User              string
+	Provider          string
+	IdentityPrivKey   *ecdh.PrivateKey
+	LinkPrivKey       *ecdh.PrivateKey
+	MessageConsumer   MessageConsumer
+	Storage           Storage
+	UserKeyDiscovery  UserKeyDiscovery
+	PeriodicSendDelay time.Duration
 }
 
 // Session holds the client session
 type Session struct {
 	cfg             *SessionConfig
-	client          *minclient.Client
+	minclient       *minclient.Client
 	queue           chan string
 	log             *logging.Logger
 	logBackend      *log.Backend
@@ -132,17 +152,18 @@ func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 		User:        cfg.User,
 		Provider:    cfg.Provider,
 		LinkKey:     cfg.LinkPrivKey,
-		LogBackend:  c.logBackend,
+		LogBackend:  c.cfg.LogBackend,
 		PKIClient:   c.cfg.PKIClient,
 		OnConnFn:    session.onConnection,
 		OnMessageFn: session.onMessage,
 		OnACKFn:     session.onACK,
 	}
+	session.cfg = cfg
 	session.identityPrivKey = cfg.IdentityPrivKey
 	session.connected = make(chan bool, 0)
 	session.messageConsumer = cfg.MessageConsumer
-	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
-	session.client, err = minclient.New(clientCfg)
+	session.log = c.cfg.LogBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
+	session.minclient, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +176,7 @@ func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
 
 // Shutdown the session
 func (s *Session) Shutdown() {
-	s.client.Shutdown()
+	s.minclient.Shutdown()
 }
 
 // waitForConnection blocks until the client is
@@ -184,7 +205,7 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) err
 	if err != nil {
 		return err
 	}
-	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(recipient)
+	recipientPubKey, err := s.cfg.UserKeyDiscovery.Get(fmt.Sprintf("%s@%s", recipient, provider))
 	if err != nil {
 		return err
 	}
@@ -193,7 +214,7 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) err
 		return err
 	}
 	for _, block := range blocks {
-		err = s.client.SendUnreliableCiphertext(recipient, provider, block)
+		err = s.minclient.SendUnreliableCiphertext(recipient, provider, block)
 		if err != nil {
 			break
 		}
@@ -224,7 +245,7 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 		SenderPubKey: senderPubKey,
 		Block:        rBlock,
 	}
-	rawStoredBlocks, err := s.cfg.Storage.GetBlocks(&rBlock.MessageID)
+	rawStoredBlocks, err := s.cfg.Storage.GetIngressBlocks(&rBlock.MessageID)
 	if err != nil {
 		return err
 	}
@@ -244,7 +265,7 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 	}
 	message, err := reassemble(ingressBlocks)
 	if err != nil {
-		err = s.cfg.Storage.PutBlock(&ingressBlock.Block.MessageID, rawBlock)
+		err = s.cfg.Storage.PutIngressBlock(&ingressBlock.Block.MessageID, rawBlock)
 		if err != nil {
 			return err
 		}
