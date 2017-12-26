@@ -214,6 +214,19 @@ type Provider struct {
 	// SpoolDB is the path to the user message spool.  If left empty, it will
 	// use `spool.db` under the DataDir.
 	SpoolDB string
+
+	// BinaryRecipients disables all Provider side recipient pre-processing,
+	// including removing trailing `NUL` bytes, case normalization, and
+	// delimiter support.
+	BinaryRecipients bool
+
+	// CaseSensitiveRecipients disables recipient case normalization.  If left
+	// unset, all user names will be converted to lower case.
+	CaseSensitiveRecipients bool
+
+	// RecipientDelimiter is the set of characters that separates a user name
+	// from it's extension (eg: `alice+foo`).
+	RecipientDelimiter string
 }
 
 // BoltUserDB is the bolt implementation of userdb
