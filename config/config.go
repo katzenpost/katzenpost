@@ -43,6 +43,9 @@ const (
 	defaultUserDB           = "users.db"
 	defaultSpoolDB          = "spool.db"
 	defaultManagementSocket = "management_sock"
+
+	backendBolt   = "bolt"
+	backendExtern = "extern"
 )
 
 var defaultLogging = Logging{
@@ -245,10 +248,10 @@ type ExternUserDB struct {
 
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	if pCfg.UserDBBackend == "" {
-		pCfg.UserDBBackend = "bolt"
+		pCfg.UserDBBackend = backendBolt
 		pCfg.Bolt = &BoltUserDB{}
 	}
-	if pCfg.UserDBBackend == "bolt" {
+	if pCfg.UserDBBackend == backendBolt {
 		if pCfg.Bolt.UserDB == "" {
 			pCfg.Bolt.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
 		}
@@ -259,15 +262,12 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
-	if pCfg.UserDBBackend == "bolt" {
+	switch pCfg.UserDBBackend {
+	case backendBolt:
 		if !filepath.IsAbs(pCfg.Bolt.UserDB) {
 			return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.Bolt.UserDB)
 		}
-	}
-	if !filepath.IsAbs(pCfg.SpoolDB) {
-		return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB)
-	}
-	if pCfg.UserDBBackend == "extern" {
+	case backendExtern:
 		if pCfg.Extern == nil {
 			return fmt.Errorf("config: Provider: Extern section should be defined")
 		}
@@ -282,6 +282,12 @@ func (pCfg *Provider) validate() error {
 		if providerURL.Scheme != "http" && providerURL.Scheme != "https" {
 			return fmt.Errorf("config: Provider: ProviderURL should be of http schema")
 		}
+	default:
+		return fmt.Errorf("config: Provider: Invalid UserDBBackend: '%v'", pCfg.UserDBBackend)
+	}
+
+	if !filepath.IsAbs(pCfg.SpoolDB) {
+		return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB)
 	}
 	return nil
 }
