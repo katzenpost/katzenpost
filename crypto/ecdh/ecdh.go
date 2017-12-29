@@ -126,6 +126,20 @@ func (k *PublicKey) FromString(s string) error {
 	return fmt.Errorf("ecdh: key is neither Base16 nor Base64")
 }
 
+// ToPEMFile writes out the PublicKey to a PEM file at path f.
+func (k *PublicKey) ToPEMFile(f string) error {
+	const keyType = "X25519 PUBLIC KEY"
+
+	if utils.CtIsZero(k.pubBytes[:]) {
+		return fmt.Errorf("ecdh: attemted to serialize scrubbed key")
+	}
+	blk := &pem.Block{
+		Type:  keyType,
+		Bytes: k.Bytes(),
+	}
+	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+}
+
 func (k *PublicKey) rebuildHexString() {
 	k.hexString = strings.ToUpper(hex.EncodeToString(k.pubBytes[:]))
 }
@@ -190,12 +204,14 @@ func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	return k, nil
 }
 
-// Load loads a new PrivateKey from the PEM encoded file f, optionally creating
-// and saving a PrivateKey instead if an entropy source is provided.
-func Load(f string, r io.Reader) (*PrivateKey, error) {
+// Load loads a new PrivateKey from the PEM encoded file privFile, optionally
+// creating and saving a PrivateKey instead if an entropy source is provided.
+// If pubFile is specified and a key has been created, the corresponding
+// PublicKey will be wrtten to pubFile in PEM format.
+func Load(privFile, pubFile string, r io.Reader) (*PrivateKey, error) {
 	const keyType = "X25519 PRIVATE KEY"
 
-	if buf, err := ioutil.ReadFile(f); err == nil {
+	if buf, err := ioutil.ReadFile(privFile); err == nil {
 		defer utils.ExplicitBzero(buf)
 		blk, rest := pem.Decode(buf)
 		defer utils.ExplicitBzero(blk.Bytes)
@@ -219,7 +235,13 @@ func Load(f string, r io.Reader) (*PrivateKey, error) {
 		Type:  keyType,
 		Bytes: k.Bytes(),
 	}
-	return k, ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+	if err = ioutil.WriteFile(privFile, pem.EncodeToMemory(blk), 0600); err != nil {
+		return nil, err
+	}
+	if pubFile != "" {
+		err = k.PublicKey().ToPEMFile(pubFile)
+	}
+	return k, err
 }
 
 // Exp sets the group element dst to be the result of x^y, over the ECDH
