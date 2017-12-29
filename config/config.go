@@ -26,9 +26,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/utils"
-	"github.com/pelletier/go-toml"
 )
 
 const (
