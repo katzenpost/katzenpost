@@ -265,7 +265,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
 	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
-	if s.linkKey, err = ecdh.Load(linkKeyFile, rand.Reader); err != nil {
+	if s.linkKey, err = ecdh.Load(linkKeyFile, "", rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
 		return nil, err
 	}
