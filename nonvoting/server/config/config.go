@@ -25,10 +25,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/utils"
-	"github.com/pelletier/go-toml"
 )
 
 const (
@@ -280,86 +280,10 @@ func (cfg *Config) FixupAndValidate() error {
 // Load parses and validates the provided buffer b as a config file body and
 // returns the Config.
 func Load(b []byte, forceGenOnly bool) (*Config, error) {
-	// The TOML library that's being used is too dumb to unmarshal sub-structs,
-	// so, do this the hard way.
-	tree, err := toml.LoadBytes(b)
-	if err != nil {
+	cfg := new(Config)
+	if err := toml.Unmarshal(b, cfg); err != nil {
 		return nil, err
 	}
-
-	cfg := new(Config)
-
-	// Handle all the sections that *can* be Unmarshaled.
-	if authTree, ok := tree.Get("Authority").(*toml.Tree); ok {
-		cfg.Authority = new(Authority)
-		if err := authTree.Unmarshal(cfg.Authority); err != nil {
-			return nil, err
-		}
-	}
-	if logTree, ok := tree.Get("Logging").(*toml.Tree); ok {
-		cfg.Logging = new(Logging)
-		if err := logTree.Unmarshal(cfg.Logging); err != nil {
-			return nil, err
-		}
-	}
-	if paramTree, ok := tree.Get("Parameters").(*toml.Tree); ok {
-		cfg.Parameters = new(Parameters)
-		if err := paramTree.Unmarshal(cfg.Parameters); err != nil {
-			return nil, err
-		}
-	}
-	if debugTree, ok := tree.Get("Debug").(*toml.Tree); ok {
-		cfg.Debug = new(Debug)
-		if err := debugTree.Unmarshal(cfg.Debug); err != nil {
-			return nil, err
-		}
-	}
-
-	unmarshalNodeArray := func(key string) ([]*Node, error) {
-		const (
-			tomlID  = "Identifier"
-			tomlKey = "IdentityKey"
-		)
-
-		trees, ok := tree.Get(key).([]*toml.Tree)
-		if !ok {
-			return nil, fmt.Errorf("missing Node array %v", key)
-		}
-		ret := make([]*Node, 0, len(trees))
-		for _, tree := range trees {
-			n := new(Node)
-			if rawID := tree.Get(tomlID); rawID != nil {
-				s, ok := rawID.(string)
-				if !ok {
-					pos := tree.GetPosition(tomlID)
-					return nil, fmt.Errorf("%v: failed to parse Identifier", pos)
-				}
-				n.Identifier = s
-			}
-
-			if rawKey := tree.Get(tomlKey); rawKey != nil {
-				n.IdentityKey = new(eddsa.PublicKey)
-				s := rawKey.(string)
-				if err := n.IdentityKey.UnmarshalText([]byte(s)); err != nil {
-					pos := tree.GetPosition(tomlKey)
-					return nil, fmt.Errorf("%v: failed to parse IdentityKey: %v", pos, err)
-				}
-			}
-			ret = append(ret, n)
-		}
-		return ret, nil
-	}
-
-	// Unmarshal the Mixes and Provider arrays by hand.
-	if !forceGenOnly {
-		if cfg.Mixes, err = unmarshalNodeArray("Mixes"); err != nil {
-			return nil, err
-		}
-		if cfg.Providers, err = unmarshalNodeArray("Providers"); err != nil {
-			return nil, err
-		}
-	}
-
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}

@@ -215,7 +215,7 @@ func New(cfg *config.Config) (*Server, error) {
 	// Ensure that there are enough mixes and providers whitelisted to form
 	// a topology, assuming all of them post a descriptor.
 	if len(cfg.Providers) < 1 {
-		return nil, fmt.Errorf("server: No Provdiders specified in the config")
+		return nil, fmt.Errorf("server: No Providers specified in the config")
 	}
 	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
