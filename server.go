@@ -21,7 +21,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -33,6 +32,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/thwack"
+	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/server/config"
 	"github.com/op/go-logging"
 )
@@ -66,32 +66,6 @@ type Server struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
-}
-
-func (s *Server) initDataDir() error {
-	const dirMode = os.ModeDir | 0700
-	d := s.cfg.Server.DataDir
-
-	// Initialize the data directory, by ensuring that it exists (or can be
-	// created), and that it has the appropriate permissions.
-	if fi, err := os.Lstat(d); err != nil {
-		// Directory doesn't exist, create one.
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("server: failed to stat() DataDir: %v", err)
-		}
-		if err = os.Mkdir(d, dirMode); err != nil {
-			return fmt.Errorf("server: failed to create DataDir: %v", err)
-		}
-	} else {
-		if !fi.IsDir() {
-			return fmt.Errorf("server: DataDir '%v' is not a directory", d)
-		}
-		if fi.Mode() != dirMode {
-			return fmt.Errorf("server: DataDir '%v' has invalid permissions '%v'", d, fi.Mode())
-		}
-	}
-
-	return nil
 }
 
 func (s *Server) initLogging() error {
@@ -219,7 +193,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.haltedCh = make(chan interface{})
 
 	// Do the early initialization and bring up logging.
-	if err := s.initDataDir(); err != nil {
+	if err := utils.MkDataDir(s.cfg.Server.DataDir); err != nil {
 		return nil, err
 	}
 	if err := s.initLogging(); err != nil {
