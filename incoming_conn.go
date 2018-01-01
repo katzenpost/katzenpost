@@ -239,7 +239,7 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 	case *commands.Disconnect:
 		c.log.Debugf("Received disconnect from peer.")
 	default:
-		c.log.Debugf("Received unexpected command: %t", cmd)
+		c.log.Debugf("Received unexpected command: %T", cmd)
 	}
 	return false
 }
