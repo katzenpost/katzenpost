@@ -427,7 +427,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 			fetchDelay = fetchMoreInterval // Likewise as with Message...
 		default:
-			c.log.Errorf("Received unexpected command: %t", cmd)
+			c.log.Errorf("Received unexpected command: %T", cmd)
 			return
 		}
 	}
