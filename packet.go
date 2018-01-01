@@ -66,7 +66,7 @@ func (pkt *packet) splitCommands() error {
 	newRedundantError := func(cmd commands.RoutingCommand) error {
 		// The packet may be more screwed up, but the splitting returns on
 		// first error.
-		return fmt.Errorf("redundant command: %t", cmd)
+		return fmt.Errorf("redundant command: %T", cmd)
 	}
 
 	for _, v := range pkt.cmds {
@@ -92,7 +92,7 @@ func (pkt *packet) splitCommands() error {
 			}
 			pkt.surbReply = cmd
 		default:
-			return fmt.Errorf("unknown command type: %t", v)
+			return fmt.Errorf("unknown command type: %T", v)
 		}
 	}
 	return nil
