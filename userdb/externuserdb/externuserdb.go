@@ -19,20 +19,25 @@
 package externuserdb
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
 
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/server/userdb"
+	"github.com/ugorji/go/codec"
 )
 
-type ExternAuth struct {
+var (
+	errCantModify = errors.New("Not implemented: External authentication is enabled, you can not modify users")
+	jsonHandle    = &codec.JsonHandle{}
+)
+
+type externAuth struct {
 	provider string
 }
 
-func (e ExternAuth) doPost(endpoint string, data url.Values) bool {
+func (e *externAuth) doPost(endpoint string, data url.Values) bool {
 	uri := e.provider + "/" + endpoint
 	rsp, err := http.PostForm(uri, data)
 	if err != nil {
@@ -41,34 +46,36 @@ func (e ExternAuth) doPost(endpoint string, data url.Values) bool {
 	defer rsp.Body.Close()
 
 	response := map[string]bool{}
-	d := json.NewDecoder(rsp.Body)
-	d.Decode(&response)
+	d := codec.NewDecoder(rsp.Body, jsonHandle)
+	if err = d.Decode(&response); err != nil {
+		return false
+	}
 
 	return rsp.StatusCode == 200 && response[endpoint]
 }
 
-func (e ExternAuth) IsValid(u []byte, k *ecdh.PublicKey) bool {
+func (e *externAuth) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	form := url.Values{"user": {string(u)}, "key": {k.String()}}
 	return e.doPost("isvalid", form)
 }
 
-func (e ExternAuth) Exists(u []byte) bool {
+func (e *externAuth) Exists(u []byte) bool {
 	form := url.Values{"user": {string(u)}}
 	return e.doPost("exists", form)
 }
 
-func (e ExternAuth) Add(u []byte, k *ecdh.PublicKey, update bool) error {
-	return errors.New("Not implemented: External authentication is enabled, you can not modify users")
+func (e *externAuth) Add(u []byte, k *ecdh.PublicKey, update bool) error {
+	return errCantModify
 }
 
-func (e ExternAuth) Remove(u []byte) error {
-	return errors.New("Not implemented: External authentication is enabled, you can not modify users")
+func (e *externAuth) Remove(u []byte) error {
+	return errCantModify
 }
 
-func (e ExternAuth) Close() {
+func (e *externAuth) Close() {
 }
 
 // New creates an external user database with the given provider
 func New(provider string) (userdb.UserDB, error) {
-	return ExternAuth{provider}, nil
+	return &externAuth{provider}, nil
 }
