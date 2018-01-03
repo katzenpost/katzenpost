@@ -136,6 +136,10 @@ type Debug struct {
 	// reauthenticated in milliseconds.
 	ReauthInterval int
 
+	// CaseSensitiveIdentifier disables identifier case normalization.  If left
+	// unset, the Server Identifier will be converted to lower case.
+	CaseSensitiveIdentifier bool
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -418,6 +422,10 @@ func (cfg *Config) FixupAndValidate() error {
 		return err
 	}
 	cfg.Debug.applyDefaults()
+
+	if !cfg.Debug.CaseSensitiveIdentifier {
+		cfg.Server.Identifier = strings.ToLower(cfg.Server.Identifier)
+	}
 
 	return nil
 }
