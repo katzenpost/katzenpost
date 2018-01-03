@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/server/userdb/boltuserdb"
 	"github.com/katzenpost/server/userdb/externuserdb"
 	"github.com/op/go-logging"
+	"golang.org/x/text/secure/precis"
 )
 
 type provider struct {
@@ -65,7 +66,10 @@ func (p *provider) Halt() {
 }
 
 func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
-	ad := p.fixupUserNameCase(c.AdditionalData)
+	ad, err := p.fixupUserNameCase(c.AdditionalData)
+	if err != nil {
+		return false
+	}
 	isValid := p.userDB.IsValid(ad, c.PublicKey)
 	if !isValid {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
@@ -82,30 +86,34 @@ func (p *provider) onPacket(pkt *packet) {
 	ch <- pkt
 }
 
-func (p *provider) fixupUserNameCase(user []byte) []byte {
+func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
 	// Unless explicitly specified otherwise, force usernames to lower case.
 	if p.s.cfg.Provider.BinaryRecipients {
-		return user
+		return user, nil
 	}
 
 	if p.s.cfg.Provider.CaseSensitiveRecipients {
-		return user
+		return precis.UsernameCasePreserved.Bytes(user)
 	}
-	return bytes.ToLower(user)
+	return precis.UsernameCaseMapped.Bytes(user)
 }
 
-func (p *provider) fixupRecipient(recipient []byte) []byte {
+func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 	// If the provider is configured for binary recipients, do no post
 	// processing.
 	if p.s.cfg.Provider.BinaryRecipients {
-		return recipient
+		return recipient, nil
 	}
 
 	// Fix the recipient by trimming off the trailing NUL bytes.
 	b := bytes.TrimRight(recipient, "\x00")
 
 	// (Optional, Default) Force recipients to lower case.
-	b = p.fixupUserNameCase(b)
+	var err error
+	b, err = p.fixupUserNameCase(b)
+	if err != nil {
+		return nil, err
+	}
 
 	// (Optional) Discard everything after the first recipient delimiter...
 	if p.s.cfg.Provider.RecipientDelimiter != "" {
@@ -117,7 +125,7 @@ func (p *provider) fixupRecipient(recipient []byte) []byte {
 		}
 	}
 
-	return b
+	return b, nil
 }
 
 func (p *provider) worker() {
@@ -136,7 +144,12 @@ func (p *provider) worker() {
 		}
 
 		// Post-process the recipient.
-		recipient := p.fixupRecipient(pkt.recipient.ID[:])
+		recipient, err := p.fixupRecipient(pkt.recipient.ID[:])
+		if err != nil {
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.id, utils.ASCIIBytesToPrintString(recipient))
+			pkt.dispose()
+			continue
+		}
 
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
@@ -292,8 +305,12 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	}
 
 	// Attempt to add or update the user.
-	u := p.fixupUserNameCase([]byte(sp[1]))
-	if err := p.userDB.Add(u, &pubKey, isUpdate); err != nil {
+	u, err := p.fixupUserNameCase([]byte(sp[1]))
+	if err != nil {
+		c.Log().Errorf("[ADD/UPDATE]_USER invalid user: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+	if err = p.userDB.Add(u, &pubKey, isUpdate); err != nil {
 		c.Log().Errorf("Failed to add/update user: %v", err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
@@ -311,16 +328,20 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u := p.fixupUserNameCase([]byte(sp[1]))
+	u, err := p.fixupUserNameCase([]byte(sp[1]))
+	if err != nil {
+		c.Log().Errorf("REMOVE_USER invalid user: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
 
 	// Remove the user from the UserDB.
-	if err := p.userDB.Remove(u); err != nil {
+	if err = p.userDB.Remove(u); err != nil {
 		c.Log().Errorf("Failed to remove user '%v': %v", u, err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
 
 	// Remove the user's spool.
-	if err := p.spool.Remove(u); err != nil {
+	if err = p.spool.Remove(u); err != nil {
 		// Log an error, but don't return a failed status, because the
 		// user has been obliterated from the UserDB at this point.
 		c.Log().Errorf("Failed to remove spool '%v': %v", u, err)
