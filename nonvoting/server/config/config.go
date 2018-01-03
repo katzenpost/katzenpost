@@ -153,6 +153,10 @@ type Debug struct {
 	// form a valid Document.
 	MinNodesPerLayer int
 
+	// MixedCaseIdentifiers disables the forced lower casing of Provider
+	// Identifiers.
+	MixedCaseIdentifiers bool
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -185,12 +189,15 @@ type Node struct {
 	IdentityKey *eddsa.PublicKey
 }
 
-func (n *Node) validate(isProvider bool) error {
+func (n *Node) validate(isProvider bool, mixedCaseIdentifiers bool) error {
 	section := "Mixes"
 	if isProvider {
 		section = "Providers"
 		if n.Identifier == "" {
 			return fmt.Errorf("config: %v: Node is missing Identifier", section)
+		}
+		if !mixedCaseIdentifiers {
+			n.Identifier = strings.ToLower(n.Identifier)
 		}
 	} else if n.Identifier != "" {
 		return fmt.Errorf("config: %v: Node has Identifier set", section)
@@ -248,14 +255,14 @@ func (cfg *Config) FixupAndValidate() error {
 
 	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
 	for _, v := range cfg.Mixes {
-		if err := v.validate(false); err != nil {
+		if err := v.validate(false, cfg.Debug.MixedCaseIdentifiers); err != nil {
 			return err
 		}
 		allNodes = append(allNodes, v)
 	}
 	idMap := make(map[string]*Node)
 	for _, v := range cfg.Providers {
-		if err := v.validate(true); err != nil {
+		if err := v.validate(true, cfg.Debug.MixedCaseIdentifiers); err != nil {
 			return err
 		}
 		if _, ok := idMap[v.Identifier]; ok {
