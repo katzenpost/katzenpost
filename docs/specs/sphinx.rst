@@ -200,7 +200,7 @@ guide.
 
    * ``RECIPIENT_ID_LENGTH`` - The recipient identifier length in bytes.
 
-   * ``SURB_ID_LENGTH`` - The Single Use Reply Block (:ref:`Section 7 <7>`)
+   * ``SURB_ID_LENGTH`` - The Single Use Reply Block (:ref:`Section 7 <7.0>`)
      identifier length in bytes.
 
    * ``MAX_HOPS`` - The maximum number of hops a packet can traverse.
@@ -377,7 +377,7 @@ guide.
    treated as a single contiguous byte vector of opaque data.
 
    Upon packet creation, the payload is repeatedly encrypted (unless it
-   is a SURB Reply, see :ref:`Section 7 <7>`) via keys derived from the
+   is a SURB Reply, see :ref:`Section 7 <7.0>`) via keys derived from the
    Diffie-Hellman key exchange between the packet's ``group_element``
    and the public key of each node in the path.
 
@@ -853,7 +853,7 @@ guide.
              payload to the application. */
           sphinx_packet.payload = sphinx_packet.payload[PAYLOAD_TAG_LENGTH:]
 
-.. _7:
+.. _7.0:
 
 7. Single Use Reply Block (SURB) Creation
 =========================================
