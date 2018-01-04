@@ -204,7 +204,11 @@ This document is meant to serve as an implementation guide.
 
    Thus, at any time, keys for all Mixes for the Nth through N + 2nd
    epoch will be available, allowing for a maximum round trip (forward
-   message + SURB) delay + transit time of 6 hours.
+   message + SURB) delay + transit time of 6 hours. SURB lifetime is
+   limited to a few hours because of the key rotation epoch, however
+   this shouldn't present any useability problems since SURBs are only
+   used for sending ACK messages from the destination Provider to the
+   sender as described in [KATZEND2END]_.
 
 2.1 PKI Protocol Schedule
 -------------------------
@@ -238,7 +242,9 @@ This document is meant to serve as an implementation guide.
     ``T + 2 hours``              - Deadline for publication of all mixes documents
                                for the next epoch.
 
-    ``T + 2 hours + 15 min``     - Start attempting to fetch PKI documents.
+    ``T + 2 hours + 15 min``     - This marks the beginning of the period
+                               where mixes perform staggered fetches
+                               of the PKI consensus document.
 
     ``T + 2 hours + 30 min``     - Start establishing connections to the new set of
                                relevant mixes in advance of the next epoch.
@@ -303,7 +309,7 @@ This document is meant to serve as an implementation guide.
    Mixes MUST compose mix descriptors which are signed using their
    private identity key, an ed25519 key. Directories are signed by one
    or more Directory Authority servers using their authority key, also
-   an ed25519 key. In all cases, signing is done using JWT [RFC7515]_.
+   an ed25519 key. In all cases, signing is done using JWS [RFC7515]_.
 
 3.2 Vote Exchange
 -----------------
@@ -440,10 +446,10 @@ This document is meant to serve as an implementation guide.
 ====================
 
    The wire protocol is built using HTTP. The following URLs for
-   publishing and retrieving are constructed using SERVER and EPOCH
+   publishing and retrieving are constructed using ``SERVER`` and ``EPOCH``
    where SERVER is the address of the Directory Authority server and
-   EPOCH is the integery indicating the epoch as described in section
-   "2. Overview of Mix PKI Interaction".
+   EPOCH is the monotonically increasing integer indicating the epoch 
+   as described in section "2. Overview of Mix PKI Interaction".
 
 5.1. Retrieving a directory
 ---------------------------
@@ -451,7 +457,7 @@ This document is meant to serve as an implementation guide.
    A directory may be retreived from a Directory Authority server with
    a URL of the form:
 
-      http://SERVER/v0/get/EPOCH
+      http://SERVER/katzenpost-v0/get/EPOCH
 
    If the request is made with an old epoch or one too far in the
    future, then authority will return ``Gone``, ``Internal Server Error``, ``Not
@@ -464,7 +470,7 @@ This document is meant to serve as an implementation guide.
    A mix descriptor may be uploaded to a Directory Authority server with
    a URL of the form:
 
-      http://SERVER/v0/post/EPOCH
+      http://SERVER/katzenpost-v0/post/EPOCH
 
    The Authority replies with either ``Accepted`` and ``Forbidden`` http error codes.
 
@@ -513,6 +519,10 @@ Appendix A.1 Normative References
 .. [RFC7515]  Jones, M., Bradley, J., Sakimura, N.,
               "JSON Web Signature (JWS)", May 2015,
               <https://tools.ietf.org/html/rfc7515>.
+
+.. [KATZEND2END]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Panoramix Mix Network End-to-end Protocol Specification", July 2017,
+                 <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
 
 Appendix A.2 Informative References
 -----------------------------------
