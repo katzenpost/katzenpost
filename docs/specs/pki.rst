@@ -65,7 +65,7 @@ This document is meant to serve as an implementation guide.
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
-   document are to be interpreted as described in [RFC2119].
+   document are to be interpreted as described in [RFC2119]_.
 
 1.2 Terminology
 ---------------
@@ -97,6 +97,89 @@ This document is meant to serve as an implementation guide.
               messages for the Client. The Provider MUST have the ability to
               perform cryptographic operations on the relayed messages.
 
+1.3 Security Properties Overview
+--------------------------------
+
+   This Directory Authority system has the following feature goals and
+   security properties:
+
+      * All Directory Authority servers must agree with each other on
+        the set of Directory Authorities.
+
+      * This system is intentionally designed to provide identical
+        network consensus documents to each mix client. This mitigates
+        epistemic attacks against the client path selection algorithm
+        such as fingerprinting and bridge attacks [FINGERPRINTING]_
+        [BRIDGING]_.
+
+      * This system is NOT byzantine-fault-tolerant, it instead allows
+        for manual intervention upon consensus fault by the Directory
+        Authority operators. Further, these operators are responsible
+        for expelling bad acting operators from the system.
+
+      * enforces the network policies such as mix join policy: (closed
+        mixnets will want to prevent arbitrary hosts from joining the
+        network)
+
+      * The Directory Authority/PKI system for a given mix network is
+        essentially the root of all authority in the system. This
+        implies that if the PKI as a whole becomes compromised then so
+        will the rest of the system (the component mixes) in terms of
+        providing the main security properties described as traffic
+        analysis resistance. Therefore a decentralized systems
+        architecture is used so that the system is more resiliant when
+        attacked, in accordance with the principle of least authority
+        which gives us security by design not policy. [SECNOTSEP]_
+        Otherwise, reducing the operation of the PKI system to a
+        single host creates a terrible single point of failure where
+        attackers can simply compromise this single host to control
+        the network consensus documents that mix clients download and
+        use to inform their path selection.
+
+      * We do not require cryptographic authenticity properties from
+        the network transport because all our messages already have a
+        cryptographic signature field that MUST be checked by the
+        receiving peer. Confidentiality is not required because
+        clients should all receive the exact same consensus file with
+        all the signatures to prove it's origins.
+
+        If a passive network adversary can watch the Directory
+        Authority servers vote, that's OK. However, very paranoid
+        implementers could disagree and use our Noise based PQ crypto
+        wire protocol [KATZMIXWIRE]_ for Directory Authority system
+        message exchange as was suggested in section "6. Future Work".
+
+      * Constructing this consensus protocol using a cryptographically
+        malleable transport could expose at least one protocol parser
+        to the network, this represents a small fraction of the attack
+        surface area.
+
+1.4 Differences from Tor's and Mixminion's Directory Authority systems
+----------------------------------------------------------------------
+
+   In this document we specify a Directory Authority system
+   which is different from that of Tor's and Mixminion's in a number
+   of ways:
+
+      * The schema of the mix descriptors is different from that used
+        in Mixminion and Tor, including a change which allows our mix
+        descriptor to express n Sphinx mix routing public keys in a
+        single mix descriptor whereas in the Tor and Mixminion Directory
+        Authority systems, n descriptors are used.
+
+      * The serialization format of mix descriptors is different from
+        that used in Mixminion and Tor.
+
+      * There's no non-directory channel to inform clients that a node
+        is down, so it will end up being a lot of packet loss, since
+        clients will continue to include the missing node in their
+        path selection till keys published by the node expire and it
+        falls out of the consensus.
+
+.. note::
+
+   David: add more differences to this list
+
 2. Overview of Mix PKI Interaction
 ==================================
 
@@ -106,8 +189,10 @@ This document is meant to serve as an implementation guide.
    Network uses a fixed interval (``epoch``), so that key rotations happen
    simultaneously throughout the network, at predictable times.
 
-   Each Directory Authority server and Client MUST use NTP or other time
-   synchronization protocol in order to correctly use this protocol.
+   Each Directory Authority server MUST use some time synchronization
+   protocol in order to correctly use this protocol. This Directory
+   Authority system requires time synchronization to within a few
+   minutes.
 
    Let each epoch be exactly ``10800 seconds (3 hours)`` in duration, and
    the 0th Epoch begin at ``2017-06-01 00:00 UTC``.
@@ -123,6 +208,11 @@ This document is meant to serve as an implementation guide.
 
 2.1 PKI Protocol Schedule
 -------------------------
+
+.. note::
+
+   It would be good to have some analysis of why we chose 3-hour
+   epochs, and 3 epochs worth of publiction.  What are the tradeoffs?
 
 2.1.1 Directory Authority Server Schedule
 -----------------------------------------
@@ -198,7 +288,7 @@ This document is meant to serve as an implementation guide.
 3.1 Protocol Messages
 ---------------------
 
-   There are only two message types in this protocol:
+   There are only two document types in this protocol:
 
    * ``mix_descriptor``: A mix descriptor describes a mix.
 
@@ -236,14 +326,14 @@ This document is meant to serve as an implementation guide.
    it MUST be a deterministic process that produces that same result
    for each directory authority server. This result is known as a
    network consensus file. Such a document is a well formed directory
-   struct where the "status" field is set to "consensus" and contains
+   struct where the "``status``" field is set to "``consensus``" and contains
    0 or more descriptors, the mix directory is signed by 0 or more
    directory authority servers. If signed by the full voting group
    then this is called a fully signed consensus.
 
    1. Validate each vote directory:
       - that the liveness fields correspond to the following epoch
-      - status is "vote"
+      - status is "``vote``"
       - version number matches ours
 
    2. Compute a consensus directory:
@@ -268,7 +358,7 @@ This document is meant to serve as an implementation guide.
 
       - Sort the list of descriptors by the signature field so that
         creation of the consensus is reproducible.
-      - Set directory "status" field to "consensus".
+      - Set directory "``status``" field to "``consensus``".
 
 3.4 Signature Collection
 ------------------------
@@ -300,12 +390,16 @@ This document is meant to serve as an implementation guide.
 -------------------------
 
    Note that there is no signature field. This is because mix
-   descriptors are serialized and signed using JWT. The
+   descriptors are serialized and signed using JWS. The
    ``IdentityKey`` field is a public ed25519 key.  The ``MixKeys`` field
    is a map from epoch to public X25519 keys which is what the Sphinx
    packet format uses.
 
-   .. code::
+.. note::
+
+   replace the following example with a JWS example
+
+.. code::
 
     {
         "Version": 0,
@@ -326,7 +420,11 @@ This document is meant to serve as an implementation guide.
 4.2 Directory Format
 --------------------
 
-   .. code::
+.. note::
+
+    replace the following JSON example with a JWS example
+
+.. code::
 
     {
         "Signatures": [],
@@ -355,6 +453,11 @@ This document is meant to serve as an implementation guide.
 
       http://SERVER/v0/get/EPOCH
 
+   If the request is made with an old epoch or one too far in the
+   future, then authority will return ``Gone``, ``Internal Server Error``, ``Not
+   Found``, with "Internal Sever Error" being extremely unlikely past
+   the initial bootstrapping.
+
 5.2. Publishing a mix descriptor
 --------------------------------
 
@@ -363,7 +466,16 @@ This document is meant to serve as an implementation guide.
 
       http://SERVER/v0/post/EPOCH
 
-6. Future Work
+   The Authority replies with either ``Accepted`` and ``Forbidden`` http error codes.
+
+6. Scalability Considerations
+=============================
+
+.. note::
+
+    TODO: notes on scalling, bandwidth usage etc.
+
+7. Future Work
 ==============
 
    * PQ crypto signatures for all PKI documents: mix descriptors and
@@ -381,57 +493,11 @@ This document is meant to serve as an implementation guide.
 
    * choose a better schema language
 
-7. Anonymity Considerations
-
-   * This system is intentionally designed to provide identical
-     network consensus documents to each mix client. This mitigates
-     epistemic attacks against the client path selection algorithm
-     such as fingerprinting and bridge attacks [FINGERPRINTING]_
-     [BRIDGING]_.
-
-   * If consensus has failed and thus there is more than one consensus
-     file, clients MUST NOT use this compromised consensus and instead
-     fallback to the previous consensus or refuse to run.
-
-8. Security Considerations
-==========================
-
-   * The Directory Authority/PKI system for a given mix network is
-     essentially the root of all authority in the system. This implies
-     that if the PKI as a whole becomes compromised then so will the
-     rest of the system (the component mixes) in terms of providing
-     the main security properties described as traffic analysis
-     resistance. Therefore a decentralized systems architecture is
-     used so that the system is more resiliant when attacked, in
-     accordance with the principle of least authority which gives us
-     security by design not policy. [SECNOTSEP]_ Otherwise, reducing the
-     operation of the PKI system to a single host creates a terrible
-     single point of failure where attackers can simply compromise
-     this single host to control the network consensus documents that
-     mix clients download and use to inform their path selection.
-
-   * We do not require cryptographic authenticity properties from the
-     network transport because all our messages already have a
-     cryptographic signature field that MUST be checked by the
-     receiving peer. Confidentiality is not required because clients
-     should all receive the exact same consensus file with all the
-     signatures to prove it's origins.
-
-     If a passive network adversary can watch the Directory Authority
-     servers vote, that's OK. However, very paranoid implementers
-     could disagree and use our Noise based PQ crypto wire protocol
-     [KATZMIXWIRE]_ for Directory Authority system message exchange as
-     was suggested in section "6. Future Work".
-
-   * Constructing this consensus protocol using a cryptographically
-     malleable transport could expose at least one protocol parser to
-     the network, this represents a small fraction of the attack
-     surface area.
-
 9. Acknowledgements
 ===================
 
-   I would like to thank Nick Mathewson for answering design questions.
+   I would like to thank Nick Mathewson for answering design questions
+   and thorough design review.
 
 Appendix A. References
 ======================
@@ -439,12 +505,12 @@ Appendix A. References
 Appendix A.1 Normative References
 ---------------------------------
 
-   [RFC2119]_  Bradner, S., "Key words for use in RFCs to Indicate
+.. [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
               DOI 10.17487/RFC2119, March 1997,
               <https://www.rfc-editor.org/info/rfc2119>.
 
-   [RFC7515]_  Jones, M., Bradley, J., Sakimura, N.,
+.. [RFC7515]  Jones, M., Bradley, J., Sakimura, N.,
               "JSON Web Signature (JWS)", May 2015,
               <https://tools.ietf.org/html/rfc7515>.
 
