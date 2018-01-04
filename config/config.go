@@ -29,6 +29,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/utils"
+	"golang.org/x/net/idna"
 )
 
 const (
@@ -135,10 +136,6 @@ type Debug struct {
 	// ReauthInterval specifies the interval at which a connection will be
 	// reauthenticated in milliseconds.
 	ReauthInterval int
-
-	// CaseSensitiveIdentifier disables identifier case normalization.  If left
-	// unset, the Server Identifier will be converted to lower case.
-	CaseSensitiveIdentifier bool
 
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
@@ -423,8 +420,10 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	cfg.Debug.applyDefaults()
 
-	if !cfg.Debug.CaseSensitiveIdentifier {
-		cfg.Server.Identifier = strings.ToLower(cfg.Server.Identifier)
+	var err error
+	cfg.Server.Identifier, err = idna.Lookup.ToASCII(cfg.Server.Identifier)
+	if err != nil {
+		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
 	}
 
 	return nil
