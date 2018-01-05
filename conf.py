@@ -119,6 +119,8 @@ html_theme = 'alabaster'
 # Add any paths that contain custom themes here, relative to this directory.
 #html_theme_path = []
 
+html_sourcelink_suffix=''
+
 # The name for this set of Sphinx documents.
 # "<project> v<release> documentation" by default.
 #html_title = u'Katzenpost v0.0.0'
