@@ -409,9 +409,9 @@ Table of Contents
 5.1. Retrieving a directory
 
    A directory may be retreived from a Directory Authority server with
-   a URL of the form:
+   a URL of the form BASEURL/v0/get/EPOCH, for example:
 
-      http://SERVER/katzenpost-v0/get/EPOCH
+      http://192.168.1.11/katzenpost/v0/get/1234
 
    If the request is made with an old epoch or one too far in the
    future, then authority will return Gone, Internal Server Error, Not
@@ -421,15 +421,32 @@ Table of Contents
 5.2. Publishing a mix descriptor
 
    A mix descriptor may be uploaded to a Directory Authority server with
-   a URL of the form:
+   a URL of the form BASEURL/v0/post/EPOCH, for example:
 
-      http://SERVER/katzenpost-v0/post/EPOCH
+      http://192.168.1.11/katzenpost/v0/post/133
 
    The Authority replies with either Accepted and Forbidden http error codes.
 
 6. Scalability Considerations
 
-   // XXX David: TODO: notes on scalling, bandwidth usage etc.
+// XXX David: TODO: notes on scalling, bandwidth usage etc.
+
+6.1 Consensus Cacheing
+
+   Provider can cache validated network consensus files and
+   serve them to client over the authenticated wire protocol.
+   We define one additional wire protocol command:
+
+      enum {
+         /* Extending the wire protocol Commands. */
+         get_consensus(18),
+      } Command;
+
+   The structures of this command is defined as follows:
+
+      struct {
+          uint32 epoch_number;
+      } GetConsensusCommand;
 
 7. Future Work
 
@@ -444,7 +461,9 @@ Table of Contents
      where mix link performance proofs are recorded and voted on by
      Directory Authorities using a threshold signature scheme.
 
-   * choose a better wire protocol
+   * choose a better wire protocol?
+
+   * use the Katzenpost Noise based wire protocol?
 
    * choose a better schema language
 
