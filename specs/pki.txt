@@ -35,6 +35,9 @@ Table of Contents
       5.1. Retrieving a directory
       5.2. Publishing a mix descriptor
    6. Scalability Considerations
+      6.1 Consensus Cacheing
+         6.1.1 The get_consensus Command
+         6.1.2 The consensus Command
    7. Future Work
    8. Anonymity Considerations
    9. Security Considerations
@@ -434,7 +437,7 @@ Table of Contents
 6.1 Consensus Cacheing
 
    Provider can cache validated network consensus files and
-   serve them to client over the authenticated wire protocol.
+   serve them to clients over the authenticated wire protocol.
    We define one additional wire protocol command:
 
       enum {
