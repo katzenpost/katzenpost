@@ -455,6 +455,23 @@ Table of Contents
          opaque padding[];   /* length is implicit */
       } ConsensusCommand;
 
+6.1.1 The get_consensus Command
+
+   The get_consensus command is a command that is used to retrieve a
+   recent consensus document. If a given get_consensus command
+   contains an Epoch value that is either too big or too small then a
+   reply consensus command is sent with an empty payload. Otherwise if
+   the consensus request is valid then a consensus command containing
+   a recent consensus document is sent in reply.
+
+   Initiators MUST terminate the session immediately upon reception of
+   a get_consensus command.
+
+6.1.2 The consensus Command
+
+   The consensus command is a command that is used to send a
+   recent consensus document.
+
 7. Future Work
 
    * PQ crypto signatures for all PKI documents: mix descriptors and
