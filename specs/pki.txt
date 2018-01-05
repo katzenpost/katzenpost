@@ -47,7 +47,9 @@ Table of Contents
       5.2. Publishing a mix descriptor
    6. Scalability Considerations
    7. Future Work
-   8. Acknowledgments
+   8. Anonymity Considerations
+   9. Security Considerations
+   10. Acknowledgments
    Appendix A. References
       Appendix A.1 Normative References
       Appendix A.2 Informative References
@@ -125,53 +127,24 @@ Table of Contents
       * All Directory Authority servers must agree with each other on
         the set of Directory Authorities.
 
-      * This system is intentionally designed to provide identical
+      * is intentionally designed to provide identical
         network consensus documents to each mix client. This mitigates
         epistemic attacks against the client path selection algorithm
         such as fingerprinting and bridge attacks [FINGERPRINTING]
         [BRIDGING].
 
-      * This system is NOT byzantine-fault-tolerant, it instead allows
+      * is NOT byzantine-fault-tolerant, it instead allows
         for manual intervention upon consensus fault by the Directory
         Authority operators. Further, these operators are responsible
         for expelling bad acting operators from the system.
 
-      * enforces the network policies such as mix join policy: (closed
-        mixnets will want to prevent arbitrary hosts from joining the
-        network)
+      * enforces the network policies such as mix join policy wherein
+        intentionally closed mixnets will prevent arbitrary hosts from
+        joining the network by authenticating all descriptor signatures
+        with a list of allowed public keys.
 
       * The Directory Authority/PKI system for a given mix network is
-        essentially the root of all authority in the system. This
-        implies that if the PKI as a whole becomes compromised then so
-        will the rest of the system (the component mixes) in terms of
-        providing the main security properties described as traffic
-        analysis resistance. Therefore a decentralized systems
-        architecture is used so that the system is more resiliant when
-        attacked, in accordance with the principle of least authority
-        which gives us security by design not policy. [SECNOTSEP]
-        Otherwise, reducing the operation of the PKI system to a
-        single host creates a terrible single point of failure where
-        attackers can simply compromise this single host to control
-        the network consensus documents that mix clients download and
-        use to inform their path selection.
-
-      * We do not require cryptographic authenticity properties from
-        the network transport because all our messages already have a
-        cryptographic signature field that MUST be checked by the
-        receiving peer. Confidentiality is not required because
-        clients should all receive the exact same consensus file with
-        all the signatures to prove it's origins.
-
-        If a passive network adversary can watch the Directory
-        Authority servers vote, that's OK. However, very paranoid
-        implementers could disagree and use our Noise based PQ crypto
-        wire protocol [PANMIXWIRE] for Directory Authority system
-        message exchange as was suggested in section "6. Future Work".
-
-      * Constructing this consensus protocol using a cryptographically
-        malleable transport could expose at least one protocol parser
-        to the network, this represents a small fraction of the attack
-        surface area.
+        essentially the root of all authority.
 
 1.4 Differences from Tor's and Mixminion's Directory Authority systems
 
@@ -195,7 +168,6 @@ Table of Contents
         falls out of the consensus.
 
    // XXX David: add more differences to this list
-
 
 2. Overview of Mix PKI Interaction
 
@@ -486,7 +458,53 @@ Table of Contents
 
    * choose a better schema language
 
-8. Acknowledgements
+8. Anonymity Considerations
+
+   * This system is intentionally designed to provide identical
+     network consensus documents to each mix client. This mitigates
+     epistemic attacks against the client path selection algorithm
+     such as fingerprinting and bridge attacks [FINGERPRINTING]
+     [BRIDGING].
+
+   * If consensus has failed and thus there is more than one consensus
+     file, clients MUST NOT use this compromised consensus and refuse
+     to run.
+
+9. Security Considerations
+
+   * The Directory Authority/PKI system for a given mix network is
+     essentially the root of all authority in the system. This implies
+     that if the PKI as a whole becomes compromised then so will the
+     rest of the system (the component mixes) in terms of providing
+     the main security properties described as traffic analysis
+     resistance. Therefore a decentralized systems architecture is
+     used so that the system is more resiliant when attacked, in
+     accordance with the principle of least authority which gives us
+     security by design not policy. [SECNOTSEP] Otherwise, reducing the
+     operation of the PKI system to a single host creates a terrible
+     single point of failure where attackers can simply compromise
+     this single host to control the network consensus documents that
+     mix clients download and use to inform their path selection.
+
+   * We do not require cryptographic authenticity properties from the
+     network transport because all our messages already have a
+     cryptographic signature field that MUST be checked by the
+     receiving peer. Confidentiality is not required because clients
+     should all receive the exact same consensus file with all the
+     signatures to prove it's origins.
+
+     If a passive network adversary can watch the Directory Authority
+     servers vote, that's OK. However, very paranoid implementers
+     could disagree and use our Noise based PQ crypto wire protocol
+     [PANMIXWIRE] for Directory Authority system message exchange as
+     was suggested in section "6. Future Work".
+
+   * Constructing this consensus protocol using a cryptographically
+     malleable transport could expose at least one protocol parser to
+     the network, this represents a small fraction of the attack
+     surface area.
+
+10. Acknowledgements
 
    I would like to thank Nick Mathewson for answering design questions
    and thorough design review.
