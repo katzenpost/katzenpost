@@ -440,13 +440,20 @@ Table of Contents
       enum {
          /* Extending the wire protocol Commands. */
          get_consensus(18),
+         consensus(19),
       } Command;
 
-   The structures of this command is defined as follows:
+   The structures of these command are defined as follows:
 
       struct {
-          uint32 epoch_number;
+          uint32_t epoch_number;
       } GetConsensusCommand;
+
+      struct {
+         uint32_t payload_length;
+         opaque payload[];
+         opaque padding[];   /* length is implicit */
+      } ConsensusCommand;
 
 7. Future Work
 
