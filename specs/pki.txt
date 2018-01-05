@@ -233,24 +233,6 @@ Table of Contents
    to vote, and the mixes have 28 mins to establish connections before
    there is network connectivity failure.
 
-2.2 Scheduling Mix Downtime
-
-   Mix operators can publish a half empty mix descriptor for future
-   epochs to schedule downtime. The mix descriptor fields that MUST
-   be populated are:
-
-   * Version
-   * Name
-   * Family
-   * Email
-   * Layer
-   * IdentityKey
-   * MixKeys
-
-   The map in the field called "MixKeys" should reflect the scheduled
-   downtown for one or more epochs by not have those epochs as keys in
-   the map.
-
 3. Voting for Consensus Protocol
 
    In our Directory Authority protocol, all the actors conduct their
@@ -381,6 +363,25 @@ Table of Contents
        "Layer": 0,
        "LoadWeight":0
    }
+
+4.1.1 Scheduling Mix Downtime
+
+   Mix operators can publish a half empty mix descriptor for future
+   epochs to schedule downtime. The mix descriptor fields that MUST
+   be populated are:
+
+   * Version
+   * Name
+   * Family
+   * Email
+   * Layer
+   * IdentityKey
+   * MixKeys
+
+   The map in the field called "MixKeys" should reflect the scheduled
+   downtown for one or more epochs by not have those epochs as keys in
+   the map.
+
 
 4.2 Directory Format
 
