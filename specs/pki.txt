@@ -5,17 +5,6 @@ David Stainton
 
 Version 0
 
-// XXX david: note that we need to make sure
-// the schema in our implemention matches this spec.
-// https://github.com/Katzenpost/authority
-// (for the time being our authority is a nonvoting
-//  single point of failure)
-
-// XXX david: should we make this a threshold vote
-// instead of total consensus?
-
-// XXX david: are there other failure cases that we should mention?
-
 Abstract
 
    This document describes the message formats and protocols of a
