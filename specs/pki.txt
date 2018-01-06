@@ -440,13 +440,15 @@ Table of Contents
 
 6. Scalability Considerations
 
-// XXX David: TODO: notes on scalling, bandwidth usage etc.
+// XXX David: TODO: notes on scaling, bandwidth usage etc.
 
 6.1 Consensus Cacheing
 
-   Provider can cache validated network consensus files and
-   serve them to clients over the authenticated wire protocol.
-   We define one additional wire protocol command:
+   Providers in the Katzenpost mix network system [PANMIXNET] can cache
+   validated network consensus files and serve them to clients over
+   the mix network's link layer wire protocol [PANMIXWIRE]. We define
+   additional wire protocol commands for requesting and sending PKI
+   consensus documents:
 
       enum {
          /* Extending the wire protocol Commands. */
