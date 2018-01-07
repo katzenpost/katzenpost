@@ -136,7 +136,7 @@ func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBID
 	}
 
 	// Get the current PKI document.
-	doc := c.pki.currentDocument()
+	doc := c.CurrentDocument()
 	if doc == nil {
 		return nil, time.Time{}, fmt.Errorf("minclient: no PKI document for current epoch")
 	}

@@ -89,7 +89,7 @@ func (c *connection) getDescriptor() {
 		}
 	}()
 
-	doc := c.c.pki.currentDocument()
+	doc := c.c.CurrentDocument()
 	if doc == nil {
 		c.log.Debugf("No PKI document for current epoch.")
 		return
