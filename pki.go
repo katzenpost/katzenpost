@@ -53,6 +53,12 @@ func (c *Client) ClockSkew() time.Duration {
 	return time.Duration(c.pki.clockSkew) * time.Second
 }
 
+// CurrentDocument returns the current pki.Document, or nil iff one does not
+// exist.  The caller MUST NOT modify the returned object in any way.
+func (c *Client) CurrentDocument() *cpki.Document {
+	return c.pki.currentDocument()
+}
+
 func (p *pki) setClockSkew(skew int64) {
 	p.log.Debugf("New clock skew: %v sec", skew)
 	p.Lock()
