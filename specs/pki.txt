@@ -491,18 +491,18 @@ Table of Contents
      directories. [SPHINCS256] could be used, we already have a golang
      implementation: https://github.com/Yawning/sphincs256/
 
-   * load balancing: Make a Bandwidth Authority system to measure mix
-     capacity as describe in [PEERFLOW].
+   * Make a Bandwidth Authority system to measure health of the network.
+     Also perform load balancing as described in [PEERFLOW]?
 
-   * implement byzantine attack defenses as described in [MIRANDA]
-     where mix link performance proofs are recorded and voted on by
-     Directory Authorities using a threshold signature scheme.
+   * Implement byzantine attack defenses as described in [MIRANDA] and
+     [MIXRELIABLE] where mix link performance proofs are recorded and
+     used in a reputation system.
 
-   * choose a better wire protocol?
+   * Choose a better wire protocol?
 
-   * use the Katzenpost Noise based wire protocol?
+   * Use the Katzenpost Noise based wire protocol?
 
-   * choose a better schema language
+   * Choose a better schema language?
 
 8. Anonymity Considerations
 
@@ -618,6 +618,11 @@ Appendix A.2 Informative References
    [MIRANDA] Leibowitz, H., Piotrowska, A., Danezis, G., Herzberg, A., 2017,
              "No right to ramain silent: Isolating Malicious Mixes"
              <https://eprint.iacr.org/2017/1000.pdf>.
+
+   [MIXRELIABLE] Dingledine, R., Freedman, M., Hopwood, D., Molnar, D., 2001
+                 "A Reputation System to Increase MIX-Net Reliability"
+                 In Information Hiding, 4th International Workshop
+                 <https://www.freehaven.net/anonbib/cache/mix-acc.pdf>.
 
    [SECNOTSEP] Miller, M., Tulloh, B., Shapiro, J.,
                "The Structure of Authority: Why Security Is not a Separable Concern",
