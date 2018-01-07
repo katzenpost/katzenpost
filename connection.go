@@ -312,13 +312,13 @@ func (c *connection) onWireConn(w *wire.Session) {
 		fetchEmptyInterval = c.c.cfg.MessagePollInterval
 	}
 
-	fetchDelay := 0 * time.Second
+	var fetchDelay time.Duration
+	var seq uint32
 	nrReqs, nrResps := 0, 0
-	seq := uint32(0)
 	for {
 		var rawCmd commands.Command
-		doFetch := false
-		ok := false
+		var doFetch, ok bool
+		selectAt := time.Now()
 		select {
 		case <-time.After(fetchDelay):
 			doFetch = true
@@ -336,6 +336,13 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			c.log.Debugf("Send SendPacket.")
+
+			sendAt := time.Now()
+			if deltaT := sendAt.Sub(selectAt); deltaT < fetchDelay {
+				fetchDelay = fetchDelay - deltaT
+			} else {
+				fetchDelay = 0
+			}
 			continue
 		case rawCmd, ok = <-cmdCh:
 			if !ok {
