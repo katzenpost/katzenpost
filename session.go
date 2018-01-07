@@ -115,14 +115,13 @@ type MessageConsumer interface {
 
 // SessionConfig is specifies the configuration for a new session
 type SessionConfig struct {
-	User              string
-	Provider          string
-	IdentityPrivKey   *ecdh.PrivateKey
-	LinkPrivKey       *ecdh.PrivateKey
-	MessageConsumer   MessageConsumer
-	Storage           Storage
-	UserKeyDiscovery  UserKeyDiscovery
-	PeriodicSendDelay time.Duration
+	User             string
+	Provider         string
+	IdentityPrivKey  *ecdh.PrivateKey
+	LinkPrivKey      *ecdh.PrivateKey
+	MessageConsumer  MessageConsumer
+	Storage          Storage
+	UserKeyDiscovery UserKeyDiscovery
 }
 
 // Session holds the client session
