@@ -42,3 +42,9 @@ Advice
 
 * Trevor Perrin
 * Nick Mathewson
+
+In memory of
+************
+
+* Andreas Pfitzmann
+* Len Sassaman
