@@ -72,8 +72,8 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 	// Well, the peer has to be a mix since we're not a provider, or the user
 	// is unknown.
+	var isValid bool
 	c.fromClient = false
-	isValid := false
 	_, c.canSend, isValid = c.s.pki.authenticateConnection(creds, false)
 	if isValid {
 		c.fromMix = true
@@ -169,7 +169,7 @@ func (c *incomingConn) worker() {
 	// Process incoming packets.
 	for {
 		var rawCmd commands.Command
-		ok := false
+		var ok bool
 
 		select {
 		case <-c.l.closeAllCh:
