@@ -60,7 +60,7 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 	// Query the PKI to figure out if we can send or not, and to ensure that
 	// the peer is listed in a PKI document that's valid.
-	isValid := false
+	var isValid bool
 	_, c.canSend, isValid = c.s.pki.authenticateConnection(creds, true)
 
 	return isValid

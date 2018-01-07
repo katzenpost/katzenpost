@@ -542,7 +542,7 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 			return nil, err
 		}
 
-		t := cpki.TransportInvalid
+		var t cpki.Transport
 		ip := net.ParseIP(h)
 		if ip == nil {
 			return nil, fmt.Errorf("address '%v' is not an IP", h)

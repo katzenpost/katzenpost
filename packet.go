@@ -146,7 +146,7 @@ func (pkt *packet) copyToRaw(b []byte) error {
 func (pkt *packet) disposeRaw() {
 	if len(pkt.raw) == constants.PacketLength {
 		utils.ExplicitBzero(pkt.raw)
-		rawPacketPool.Put(pkt.raw)
+		rawPacketPool.Put(pkt.raw) // nolint: megacheck
 	}
 	pkt.raw = nil
 }
