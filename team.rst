@@ -40,8 +40,8 @@ Research
 Advice
 ******
 
-* Trevor Perrin
 * Nick Mathewson
+* Trevor Perrin
 
 In memory of
 ************
