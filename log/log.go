@@ -57,6 +57,8 @@ func (b *Backend) GetGoLogger(module string, level string) *goLog.Logger {
 	return w.l
 }
 
+// GetLogWriter returns a per-module io.Writer that writes to the backend at
+// the provided level.
 func (b *Backend) GetLogWriter(module string, level string) io.Writer {
 	lvl, err := logLevelFromString(level)
 	if err != nil {

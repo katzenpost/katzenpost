@@ -44,7 +44,7 @@ func getentropy(b []byte) error {
 		flags = 0
 
 		r1, _, err := syscall.Syscall(getrandomTrap, buf, buflen, flags)
-		if err < 0 {
+		if err != 0 {
 			return err
 		}
 		if r1 == buflen {
