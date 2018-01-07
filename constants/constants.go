@@ -35,8 +35,9 @@ const (
 	// transported.
 	ForwardPayloadLength = 50 * 1024
 
-	// UserPaylaodLength is the length of user portion of the forward payload.
-	// The End to End spec calls this `PAYLOAD_LENGTH` but this is somewhat
-	// shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx spec.
+	// UserForwardPayloadLength is the length of user portion of the forward
+	// payload.  The End to End spec calls this `PAYLOAD_LENGTH` but this is
+	// somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
+	// spec.
 	UserForwardPayloadLength = ForwardPayloadLength - (SphinxPlaintextHeaderLength + sphinx.SURBLength)
 )

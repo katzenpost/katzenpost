@@ -29,7 +29,7 @@ func nowImpl() time.Duration {
 	//
 	// This routine when built against the appropriate runtime is a thin stub
 	// that just returns the delta-T from when the package was initialized.
-	return time.Now().Sub(monoBase)
+	return time.Since(monoBase)
 }
 
 func init() {
