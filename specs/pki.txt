@@ -442,9 +442,9 @@ Table of Contents
 
 // XXX David: TODO: notes on scaling, bandwidth usage etc.
 
-6.1 Consensus Cacheing
+6.1 Consensus Caching
 
-   Providers in the Katzenpost mix network system [PANMIXNET] can cache
+   Providers in the Katzenpost mix network system [PANMIXNET] may cache
    validated network consensus files and serve them to clients over
    the mix network's link layer wire protocol [PANMIXWIRE]. We define
    additional wire protocol commands for requesting and sending PKI
@@ -581,7 +581,8 @@ Appendix A.2 Informative References
    [TORDIRAUTH]  "Tor directory protocol, version 3",
                  <https://gitweb.torproject.org/torspec.git/tree/dir-spec.txt>.
 
-   [FINGERPRINTING] "Route Finger printing in Anonymous Communications",
+   [FINGERPRINTING] Danezis, G., Clayton, R.,
+                    "Route Finger printing in Anonymous Communications",
                     <https://www.cl.cam.ac.uk/~rnc1/anonroute.pdf>.
 
    [BRIDGING] Danezis, G., Syverson, P.,
