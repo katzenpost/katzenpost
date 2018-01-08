@@ -57,9 +57,9 @@ func (t *periodicTimer) worker() {
 		now := time.Now()
 		deltaT := now.Sub(lastCallbackTime)
 		if deltaT < 0 {
-			t.s.log.Warning("Civil time jumped backwards: %v", deltaT)
+			t.s.log.Warningf("Civil time jumped backwards: %v", deltaT)
 		} else if deltaT > 2*time.Second {
-			t.s.log.Warning("Civil time jumped forward: %v", deltaT)
+			t.s.log.Warningf("Civil time jumped forward: %v", deltaT)
 		}
 
 		// TODO: Figure out what needs to be triggered from the top level
