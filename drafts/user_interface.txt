@@ -82,7 +82,7 @@ Abstract
    key-pairs. The sender identity is specified in the mail header
    field like so:
 
-      X-Panoramix-Sender-Identity-Key: <base64 X25519 key>
+      X-Katzenpost-Sender: <base64 X25519 key>
 
 Appendix A. References
 
