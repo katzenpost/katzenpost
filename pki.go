@@ -73,7 +73,7 @@ func (p *pki) setClockSkew(skew int64) {
 }
 
 func (p *pki) skewedUnixTime() int64 {
-	if p.c.cfg.DisableTimeSync {
+	if !p.c.cfg.EnableTimeSync {
 		return time.Now().Unix()
 	}
 
