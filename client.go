@@ -85,9 +85,9 @@ type ClientConfig struct {
 	// If left unset, an interval of 1 minute will be used.
 	MessagePollInterval time.Duration
 
-	// DisableTimeSync forces the use of system time instead of skewed
-	// provider time.
-	DisableTimeSync bool
+	// EnableTimeSync enables the use of skewed remote provider time
+	// instead of system time when available.
+	EnableTimeSync bool
 }
 
 func (cfg *ClientConfig) validate() error {
