@@ -312,6 +312,16 @@ func (c *connection) onWireConn(w *wire.Session) {
 		fetchEmptyInterval = c.c.cfg.MessagePollInterval
 	}
 
+	dispatchOnEmpty := func() error {
+		if c.c.cfg.OnEmptyFn != nil {
+			if err := c.c.cfg.OnEmptyFn(); err != nil {
+				c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
+				return err
+			}
+		}
+		return nil
+	}
+
 	var fetchDelay time.Duration
 	var seq uint32
 	nrReqs, nrResps := 0, 0
@@ -391,11 +401,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 			nrResps++
 			fetchDelay = fetchEmptyInterval
 
-			if c.c.cfg.OnEmptyFn != nil {
-				if err := c.c.cfg.OnEmptyFn(); err != nil {
-					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
-					return
-				}
+			if err := dispatchOnEmpty(); err != nil {
+				return
 			}
 		case *commands.Message:
 			c.log.Debugf("Received Message: %v", cmd.Sequence)
@@ -412,11 +419,22 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 
-			// We could use cmd.QueueSizeHint to delay the next fetch, but
-			// sending the next fetch immediately helps keep the server's
-			// state in sync and makes it less likely that a duplicate
-			// will be received if we happen to disconnect.
-			fetchDelay = fetchMoreInterval
+			// This behavior is only valid assuming the consumers of
+			// this library correctly implement persistent de-duplication
+			// properly, as is documented in the `OnMessageFn` callback
+			// doc string, but the behavior is better on the network.
+			if cmd.QueueSizeHint != 0 {
+				c.log.Debugf("QueueSizeHint indicates non-empty queue, accelerating next fetch.")
+				fetchDelay = fetchMoreInterval
+			} else {
+				// If the QueueSizeHint is 0, then treat the remote queue as
+				// empty, including dispatching the callback if set.
+				c.log.Debugf("QueueSizeHint indicates empty queue, delaying next fetch.")
+				fetchDelay = fetchEmptyInterval
+				if err := dispatchOnEmpty(); err != nil {
+					return
+				}
+			}
 		case *commands.MessageACK:
 			c.log.Debugf("Received MessageACK: %v", cmd.Sequence)
 			if seq != cmd.Sequence {
