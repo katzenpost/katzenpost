@@ -144,8 +144,8 @@ func (pCfg *Parameters) applyDefaults() {
 
 // Debug is the authority debug configuration.
 type Debug struct {
-	// ForceIdentityKey specifies a hex encoded identity private key.
-	ForceIdentityKey string
+	// IdentityKey specifies the identity private key.
+	IdentityKey *eddsa.PrivateKey `toml:"-"`
 
 	// Layers is the number of non-provider layers in the network topology.
 	Layers int
