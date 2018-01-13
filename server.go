@@ -18,11 +18,9 @@
 package server
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"git.schwanenlied.me/yawning/aez.git"
@@ -216,19 +214,10 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Initialize the server identity and link keys.
 	var err error
-	if s.cfg.Debug.ForceIdentityKey != "" {
-		s.log.Warning("ForceIdentityKey should NOT be used for production deployments.")
-		keyStr := strings.TrimSpace(s.cfg.Debug.ForceIdentityKey)
-		raw, err := hex.DecodeString(keyStr)
-		if err != nil {
-			s.log.Errorf("Failed to parse forced identity: %v", err)
-			return nil, err
-		}
+	if s.cfg.Debug.IdentityKey != nil {
+		s.log.Warning("IdentityKey should NOT be used for production deployments.")
 		s.identityKey = new(eddsa.PrivateKey)
-		if err = s.identityKey.FromBytes(raw); err != nil {
-			s.log.Errorf("Failed to initialize identity: %v", err)
-			return nil, err
-		}
+		s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
 	} else {
 		identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 		identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
