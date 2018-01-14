@@ -151,7 +151,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			d, err := p.c.cfg.PKIClient.Get(pkiCtx, epoch)
+			d, _, err := p.c.cfg.PKIClient.Get(pkiCtx, epoch)
 			select {
 			case <-pkiCtx.Done():
 				// Canceled mid-fetch.
