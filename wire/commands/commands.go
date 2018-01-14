@@ -107,7 +107,7 @@ type Command interface {
 type NoOp struct{}
 
 // ToBytes serializes the NoOp and returns the resulting slice.
-func (c NoOp) ToBytes() []byte {
+func (c *NoOp) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(noOp)
 	return out
@@ -119,7 +119,7 @@ type GetConsensus struct {
 }
 
 // ToBytes serializes the GetConsensus and returns the resulting byte slice.
-func (c GetConsensus) ToBytes() []byte {
+func (c *GetConsensus) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+getConsensusLength)
 	out[0] = byte(getConsensus)
 	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
@@ -144,7 +144,7 @@ type Consensus struct {
 }
 
 // ToBytes serializes the Consensus and returns the resulting byte slice.
-func (c Consensus) ToBytes() []byte {
+func (c *Consensus) ToBytes() []byte {
 	consensusLength := uint32(consensusBaseLength + len(c.Payload))
 	out := make([]byte, cmdOverhead+consensusBaseLength, cmdOverhead+consensusLength)
 	out[0] = byte(consensus) // out[1] is reserved
@@ -174,7 +174,7 @@ type PostDescriptor struct {
 }
 
 // ToBytes serializes the PostDescriptor and returns the resulting byte slice.
-func (c PostDescriptor) ToBytes() []byte {
+func (c *PostDescriptor) ToBytes() []byte {
 	out := make([]byte, cmdOverhead, cmdOverhead+len(c.Payload))
 	out[0] = byte(postDescriptor)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.Payload)))
@@ -206,7 +206,7 @@ func postDescriptorStatusFromBytes(b []byte) (Command, error) {
 
 // ToBytes serializes the PostDescriptorStatus and returns the resulting byte
 // slice.
-func (c PostDescriptorStatus) ToBytes() []byte {
+func (c *PostDescriptorStatus) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+postDescriptorStatusLength)
 	out[0] = byte(postDescriptorStatus)
 	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
@@ -218,7 +218,7 @@ func (c PostDescriptorStatus) ToBytes() []byte {
 type Disconnect struct{}
 
 // ToBytes serializes the Disconnect and returns the resulting slice.
-func (c Disconnect) ToBytes() []byte {
+func (c *Disconnect) ToBytes() []byte {
 	out := make([]byte, cmdOverhead)
 	out[0] = byte(disconnect)
 	return out
@@ -230,7 +230,7 @@ type SendPacket struct {
 }
 
 // ToBytes serializes the SendPacket and returns the resulting slice.
-func (c SendPacket) ToBytes() []byte {
+func (c *SendPacket) ToBytes() []byte {
 	out := make([]byte, cmdOverhead, cmdOverhead+len(c.SphinxPacket))
 	out[0] = byte(sendPacket)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.SphinxPacket)))
@@ -251,7 +251,7 @@ type RetrieveMessage struct {
 }
 
 // ToBytes serializes the RetrieveMessage and returns the resulting slice.
-func (c RetrieveMessage) ToBytes() []byte {
+func (c *RetrieveMessage) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+retreiveMessageLength)
 	out[0] = byte(retreiveMessage)
 	binary.BigEndian.PutUint32(out[2:6], retreiveMessageLength)
@@ -278,7 +278,7 @@ type MessageACK struct {
 }
 
 // ToBytes serializes the MessageACK and returns the resulting slice.
-func (c MessageACK) ToBytes() []byte {
+func (c *MessageACK) ToBytes() []byte {
 	if len(c.Payload) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
 		panic("wire: invalid MessageACK payload when serializing")
 	}
@@ -303,7 +303,7 @@ type Message struct {
 }
 
 // ToBytes serializes the Message and returns the resulting slice.
-func (c Message) ToBytes() []byte {
+func (c *Message) ToBytes() []byte {
 	if len(c.Payload) != constants.UserForwardPayloadLength {
 		panic("wire: invalid Message payload when serializing")
 	}
@@ -324,7 +324,7 @@ type MessageEmpty struct {
 }
 
 // ToBytes serializes the MessageEmpty and returns the resulting slice.
-func (c MessageEmpty) ToBytes() []byte {
+func (c *MessageEmpty) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+messageEmptyLength)
 
 	out[0] = byte(message)
