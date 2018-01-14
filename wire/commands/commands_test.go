@@ -175,7 +175,7 @@ func TestConsensus(t *testing.T) {
 	require := require.New(t)
 
 	cmd := &Consensus{
-		Payload: []byte("TANSTAFL: There's ain't no such thing as a free lunch."),
+		Payload:   []byte("TANSTAFL: There's ain't no such thing as a free lunch."),
 		ErrorCode: ConsensusOk,
 	}
 	b := cmd.ToBytes()
@@ -196,5 +196,37 @@ func TestConsensus(t *testing.T) {
 	require.IsType(cmd, c, "Consensus: FromBytes() invalid type")
 	d = c.(*Consensus)
 	require.Equal(d.Payload, cmd.Payload)
+	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
+
+func TestPostDescriptor(t *testing.T) {
+	require := require.New(t)
+
+	cmd := &PostDescriptor{
+		Payload: []byte("This is my descriptor."),
+	}
+	b := cmd.ToBytes()
+	require.Equal(len(cmd.Payload)+cmdOverhead, len(b), "PostDescriptor: ToBytes() length")
+
+	c, err := FromBytes(b)
+	require.NoError(err, "PostDescriptor: FromBytes() failed")
+	require.IsType(cmd, c, "PostDescriptor: FromBytes() invalid type")
+	d := c.(*PostDescriptor)
+	require.Equal(d.Payload, cmd.Payload)
+}
+
+func TestPostDescriptorStatus(t *testing.T) {
+	require := require.New(t)
+
+	cmd := &PostDescriptorStatus{
+		ErrorCode: 23,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, postDescriptorStatusLength+cmdOverhead, "PostDescriptorStatus: ToBytes() length")
+
+	c, err := FromBytes(b)
+	require.NoError(err, "PostDescriptorStatus: FromBytes() failed")
+	require.IsType(cmd, c, "PostDescriptorStatus: FromBytes() invalid type")
+	d := c.(*PostDescriptorStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
