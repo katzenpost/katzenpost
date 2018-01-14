@@ -25,7 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const (
