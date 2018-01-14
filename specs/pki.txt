@@ -31,9 +31,13 @@ Table of Contents
    4. PKI Protocol Data Structures
       4.1 Mix Descriptor Format
       4.2 Directory Format
-   5. PKI Wire Protocol
-      5.1. Retrieving a directory
-      5.2. Publishing a mix descriptor
+   5. PKI Wire Protocols
+      5.1 The HTTP based protocol
+         5.1.1 Retrieving a directory
+         5.1.2. Publishing a mix descriptor
+      5.2 Katzenpost noise based protocol extensions for mix descriptor publication
+         5.2.1 The post_descriptor Command
+         5.2.2 The post_descriptor_status Command
    6. Scalability Considerations
       6.1 Consensus Cacheing
          6.1.1 The get_consensus Command
@@ -409,15 +413,21 @@ Table of Contents
        "Providers" : [],
    }
 
-5. PKI Wire Protocol
+5. PKI Wire Protocols
 
-   The wire protocol is built using HTTP. The following URLs for
+   Two wire protocols are supported, the Katzenpost noise-based
+   cryptographic wire protocol and the HTTP based protocol can be used
+   by mixes to publish mix descriptors and to retreive status.
+
+5.1 The HTTP based protocol
+
+   The HTTP based protocol uses the following URLs for
    publishing and retrieving are constructed using SERVER and EPOCH
    where SERVER is the address of the Directory Authority server and
    EPOCH is the monotonically increasing integer indicating the epoch
    as described in section "2. Overview of Mix PKI Interaction".
 
-5.1. Retrieving a directory
+5.1.1 Retrieving a directory
 
    A directory may be retreived from a Directory Authority server with
    a URL of the form BASEURL/v0/get/EPOCH, for example:
@@ -429,7 +439,7 @@ Table of Contents
    Found, with "Internal Sever Error" being extremely unlikely past
    the initial bootstrapping.
 
-5.2. Publishing a mix descriptor
+5.1.2. Publishing a mix descriptor
 
    A mix descriptor may be uploaded to a Directory Authority server with
    a URL of the form BASEURL/v0/post/EPOCH, for example:
@@ -437,6 +447,45 @@ Table of Contents
       http://192.168.1.11/katzenpost/v0/post/133
 
    The Authority replies with either Accepted and Forbidden http error codes.
+
+5.2 Katzenpost noise based protocol extensions for mix descriptor publication
+
+   We define additional wire protocol [PANMIXWIRE] commands for
+   publishing mix descriptors and setting mix descriptor status:
+
+   enum {
+         /* Extending the wire protocol Commands. */
+         post_descriptor(20),
+         post_descriptor_status(21),
+   }
+
+   The structures of these command are defined as follows:
+
+      struct {
+         opaque payload[];
+      } PostDescriptor;
+
+      struct {
+         uint8 error_code;
+      } PostDescriptorStatus;
+
+5.2.1 The post_descriptor Command
+
+   The post_descriptor command allows mixes to publish their
+   descriptors.
+
+5.2.2 The post_descriptor_status Command
+
+   The post_descriptor_status command is sent in response to a post_descriptor
+   command, and uses the following error codes:
+
+   enum {
+      descriptor_ok(0),
+      descriptor_invalid(1),
+      descriptor_conflict(2),
+      descriptor_forbidden(3),
+   } ErrorCodes;
+
 
 6. Scalability Considerations
 
@@ -463,7 +512,7 @@ Table of Contents
       } GetConsensusCommand;
 
       struct {
-         uint32_t payload_length;
+         uint8 error_code;
          opaque payload[];
          opaque padding[];   /* length is implicit */
       } ConsensusCommand;
@@ -483,7 +532,15 @@ Table of Contents
 6.1.2 The consensus Command
 
    The consensus command is a command that is used to send a
-   recent consensus document.
+   recent consensus document. The error code field indicates if there
+   was a failure in retrieval of the PKI consensus document.
+
+   enum {
+      consensus_ok(0),        /* None error condition and SHOULD be accompanied with
+                                 a valid consensus payload. */
+      consensus_not_found(1), /* The client should try again later. */
+      consensus_gone(2),      /* The consensus will not be available in the future. */
+   } ErrorCodes;
 
 7. Future Work
 
@@ -500,9 +557,9 @@ Table of Contents
 
    * Choose a better wire protocol?
 
-   * Use the Katzenpost Noise based wire protocol?
+   * Use the Katzenpost Noise based wire protocol instead of http?
 
-   * Choose a better schema language?
+   * Choose a different serialization/schema language?
 
 8. Anonymity Considerations
 
