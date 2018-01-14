@@ -25,7 +25,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // Backend is a log backend.
