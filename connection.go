@@ -30,7 +30,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // ErrNotConnected is the error returned when an operation fails due to the
