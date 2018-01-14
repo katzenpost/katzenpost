@@ -20,6 +20,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -38,7 +39,10 @@ import (
 
 const clientTimeout = 30 * time.Second
 
-var httpClient = &http.Client{Timeout: clientTimeout}
+var (
+	httpClient      = &http.Client{Timeout: clientTimeout}
+	errNotSupported = errors.New("nonvoting/client: operation not supported")
+)
 
 // Config is a nonvoting authority pki.Client instance.
 type Config struct {
@@ -109,7 +113,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	// NOTREACHED
 }
 
-func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, error) {
+func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
 	// Download the document.
@@ -118,31 +122,35 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, error) {
 
 	resp, err := ctxhttp.Get(ctx, httpClient, u)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusGone:
-		return nil, pki.ErrNoDocument
+		return nil, nil, pki.ErrNoDocument
 	default:
-		return nil, fmt.Errorf("nonvoting/Client: Get() rejected by authority: %v", resp.StatusCode)
+		return nil, nil, fmt.Errorf("nonvoting/Client: Get() rejected by authority: %v", resp.StatusCode)
 	}
 
 	// Read in the body.
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Validate the document.
 	doc, err := s11n.VerifyAndParseDocument(b, c.cfg.PublicKey, epoch)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	c.log.Debugf("Document: %v", doc)
 
-	return doc, nil
+	return doc, b, nil
+}
+
+func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
+	return nil, errNotSupported
 }
 
 // New constructs a new pki.Client instance.
