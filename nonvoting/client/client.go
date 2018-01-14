@@ -32,8 +32,8 @@ import (
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
-	"github.com/op/go-logging"
 	"golang.org/x/net/context/ctxhttp"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const clientTimeout = 30 * time.Second

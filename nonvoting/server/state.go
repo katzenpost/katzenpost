@@ -33,7 +33,7 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const (

@@ -34,7 +34,7 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
