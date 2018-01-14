@@ -24,7 +24,7 @@ import (
 	"sync"
 
 	"github.com/katzenpost/core/worker"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type listener struct {

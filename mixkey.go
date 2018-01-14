@@ -24,7 +24,7 @@ import (
 
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/server/internal/mixkey"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const numMixKeys = 3

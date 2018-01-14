@@ -29,7 +29,7 @@ import (
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const keepAliveInterval = 3 * time.Minute
