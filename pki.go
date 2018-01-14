@@ -116,7 +116,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			d, err := p.impl.Get(pkiCtx, epoch)
+			d, _, err := p.impl.Get(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
 				return
