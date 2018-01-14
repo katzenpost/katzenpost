@@ -1,0 +1,88 @@
+Katzenpost Provider-side Autoresponder Extension
+Yawning Angel
+
+Abstract
+
+   This document describes extensions to the core Katzenpost protocol
+   to support Provider-side autoresponders.
+
+1. Introduction
+
+   This interface is meant to provide support for various autoresponder
+   agents ("Kaetzchen") that run on Katzenpost provider instances
+   bypassing the need to run a discrete client instance to provide
+   functionality.  The use-cases for such agents includes but is not
+   limited to user identity key lookup, a discard address, and a
+   loop-back responder for the purpose of cover traffic.
+
+2. Extension Overview
+
+   Each Kaetzchen agent will register as a potential recipient on it's
+   Provider.  When the Provider receives a forward packet destined for
+   a Kaetzchen instance, it will hand off the fully unwrapped packet
+   along with it's corresponding SURB to the agent, which will then
+   act on the packet and optionally reply utilizing the SURB.
+
+3. Agent Requirements
+
+   [ XXX: TODO
+
+     * Each agent operation MUST be idempotent.
+
+     * Each agent operation request and response MUST fit within one
+       Sphinx packet.
+
+     * Each agent SHOULD register a recipient address that is prefixed
+       with `+` (Or another standardized delimiter, agreed to by all
+       participating providers in a given mixnet.).
+
+     * The first byte of the agent's response payload MUST be 0x01 to
+       allow clients to easily differentiate between SURB-ACKs and
+       agent responses.
+   ]
+
+4. PKI Extensions
+
+   [ XXX: TODO
+
+      * Each provider SHOULD publish the list of publicly accessible
+        Kaetzchen agent endpoints in it's MixDescriptor, along with
+        any other information required to utilize the agent.
+
+          Describe the format.  For the non-voting authority I envision
+          something like:
+
+          "Kaetzchen": [
+             [ "+keyserver": { "version": 1 }, ],
+             [ "+discard": {}, ],
+             [ "+loop": { "restrictedToUsers": true }, ]
+           ],
+   ]
+
+5. Anonymity Considerations
+
+   In the event that the mix keys for the entire return path are
+   compromised, it is possible for adversaries to unwrap the SURB
+   and determine the final recipient of the reply.
+
+   Depending on what sort of operations a given agent implements,
+   there may be additional anonymity impact that requires separate
+   consideration.
+
+6. Security Considerations
+
+   It is possible to use this mechanism to flood a victim with unwanted
+   traffic by constructing a request with a SURB destined for the target.
+
+   Depending on the operations implemented by each agent, the added
+   functionality may end up being a vector for Denial of Service attacks
+   in the form of CPU or network overload.
+
+   Unless the agent implements additional encryption, message integrity
+   and privacy is limited to that which is provided by the base Sphinx
+   packet format and parameterization.
+
+Appendix A. Acknowledgments
+
+   The inspiration for this extension comes primarily from a design
+   by Vincent Breitmoser.
