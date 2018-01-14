@@ -39,6 +39,8 @@ const (
 	getConsensusLength  = 8
 	consensusBaseLength = 1
 
+	postDescriptorStatusLength = 1
+
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
 	messageTypeEmpty   messageType = 2
@@ -49,10 +51,12 @@ const (
 	sendPacket commandID = 2
 
 	// Implementation defined commands.
-	retreiveMessage commandID = 16
-	message         commandID = 17
-	getConsensus    commandID = 18
-	consensus       commandID = 19
+	retreiveMessage      commandID = 16
+	message              commandID = 17
+	getConsensus         commandID = 18
+	consensus            commandID = 19
+	postDescriptor       commandID = 20
+	postDescriptorStatus commandID = 21
 
 	// ConsensusOk signifies that the GetConsensus request has completed
 	// successfully.
@@ -67,6 +71,23 @@ const (
 	// in the GetConsensus was not found, and that retrying later will
 	// not be successful.
 	ConsensusGone = 2
+
+	// DescriptorOk signifies that the PostDescriptor request has completed
+	// succcessfully.
+	DescriptorOk = 0
+
+	// DescriptorInvalid signifies that the PostDescriptor request has failed
+	// due to an unspecified error.
+	DescriptorInvalid = 1
+
+	// DescriptorConflict signifies that the PostDescriptor request has
+	// failed due to the uploaded descriptor conflicting with a previously
+	// uploaded descriptor.
+	DescriptorConflict = 2
+
+	// DescriptorForbidden signifies that the PostDescriptor request has
+	// failed due to an authentication error.
+	DescriptorForbidden = 3
 )
 
 var errInvalidCommand = errors.New("wire: invalid wire protocol command")
@@ -97,7 +118,7 @@ type GetConsensus struct {
 	Epoch uint64
 }
 
-// ToBytes serializes the GetConsensus, returns the resulting byte slice.
+// ToBytes serializes the GetConsensus and returns the resulting byte slice.
 func (c GetConsensus) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+getConsensusLength)
 	out[0] = byte(getConsensus)
@@ -122,7 +143,7 @@ type Consensus struct {
 	Payload   []byte
 }
 
-// ToBytes serializes the Consensus, returns the resulting byte slice.
+// ToBytes serializes the Consensus and returns the resulting byte slice.
 func (c Consensus) ToBytes() []byte {
 	consensusLength := uint32(consensusBaseLength + len(c.Payload))
 	out := make([]byte, cmdOverhead+consensusBaseLength, cmdOverhead+consensusLength)
@@ -145,6 +166,52 @@ func consensusFromBytes(b []byte) (Command, error) {
 		r.Payload = append(r.Payload, b[consensusBaseLength:]...)
 	}
 	return r, nil
+}
+
+// PostDescriptor is a de-serialized post_descriptor command.
+type PostDescriptor struct {
+	Payload []byte
+}
+
+// ToBytes serializes the PostDescriptor and returns the resulting byte slice.
+func (c PostDescriptor) ToBytes() []byte {
+	out := make([]byte, cmdOverhead, cmdOverhead+len(c.Payload))
+	out[0] = byte(postDescriptor)
+	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.Payload)))
+	out = append(out, c.Payload...)
+	return out
+}
+
+func postDescriptorFromBytes(b []byte) (Command, error) {
+	r := new(PostDescriptor)
+	r.Payload = make([]byte, 0, len(b))
+	r.Payload = append(r.Payload, b...)
+	return r, nil
+}
+
+// PostDescriptorStatus is a de-serialized post_descriptor_status command.
+type PostDescriptorStatus struct {
+	ErrorCode uint8
+}
+
+func postDescriptorStatusFromBytes(b []byte) (Command, error) {
+	if len(b) != postDescriptorStatusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(PostDescriptorStatus)
+	r.ErrorCode = b[0]
+	return r, nil
+}
+
+// ToBytes serializes the PostDescriptorStatus and returns the resulting byte
+// slice.
+func (c PostDescriptorStatus) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+postDescriptorStatusLength)
+	out[0] = byte(postDescriptorStatus)
+	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
+	out[6] = c.ErrorCode
+	return out
 }
 
 // Disconnect is a de-serialized disconnect command.
@@ -357,7 +424,7 @@ func FromBytes(b []byte) (Command, error) {
 			return &NoOp{}, nil
 		case disconnect:
 			return &Disconnect{}, nil
-		case sendPacket:
+		case sendPacket, postDescriptor:
 			// Shouldn't happen, but the caller should reject this, not the
 			// de-serialization.
 		default:
@@ -378,6 +445,10 @@ func FromBytes(b []byte) (Command, error) {
 		return getConsensusFromBytes(b)
 	case consensus:
 		return consensusFromBytes(b)
+	case postDescriptor:
+		return postDescriptorFromBytes(b)
+	case postDescriptorStatus:
+		return postDescriptorStatusFromBytes(b)
 	default:
 		return nil, errInvalidCommand
 	}
