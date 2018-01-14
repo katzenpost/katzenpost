@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"git.schwanenlied.me/yawning/aez.git"
-	"github.com/eapache/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -33,6 +32,7 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/server/config"
 	"github.com/op/go-logging"
+	"gopkg.in/eapache/channels.v1"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization

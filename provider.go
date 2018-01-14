@@ -21,7 +21,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/eapache/channels"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx"
@@ -38,6 +37,7 @@ import (
 	"github.com/katzenpost/server/userdb/externuserdb"
 	"github.com/op/go-logging"
 	"golang.org/x/text/secure/precis"
+	"gopkg.in/eapache/channels.v1"
 )
 
 type provider struct {
