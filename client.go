@@ -30,7 +30,7 @@ import (
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // ClientConfig is a client configuration.
