@@ -26,7 +26,7 @@ import (
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/mixkey"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type cryptoWorker struct {

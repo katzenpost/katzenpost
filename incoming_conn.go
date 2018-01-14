@@ -31,7 +31,7 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 var incomingConnID uint64

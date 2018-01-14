@@ -24,8 +24,8 @@ import (
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/queue"
 	"github.com/katzenpost/core/worker"
-	"github.com/op/go-logging"
 	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type scheduler struct {

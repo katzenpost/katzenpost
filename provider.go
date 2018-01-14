@@ -35,9 +35,9 @@ import (
 	"github.com/katzenpost/server/userdb"
 	"github.com/katzenpost/server/userdb/boltuserdb"
 	"github.com/katzenpost/server/userdb/externuserdb"
-	"github.com/op/go-logging"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type provider struct {

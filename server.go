@@ -31,8 +31,8 @@ import (
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/server/config"
-	"github.com/op/go-logging"
 	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization

@@ -33,7 +33,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/pkicache"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type pki struct {
