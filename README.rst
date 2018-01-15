@@ -1,6 +1,6 @@
 
-The Panoramix Decryption Mix Network Design and Specification Documents
-=======================================================================
+The Katzenpost Decryption Mix Network Design and Specification Documents
+========================================================================
 
 license
 =======

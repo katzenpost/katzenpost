@@ -1,4 +1,4 @@
-Panoramix Mix Network End-to-end Protocol Specification
+Katzenpost Mix Network End-to-end Protocol Specification
 Yawning Angel
 George Danezis
 Claudia Diaz
@@ -9,11 +9,11 @@ Version 0
 
 Abstract
 
-   This is a specification for the Panoramix/LEAP mix network client
+   This is a specification for the Katzenpost/LEAP mix network client
    end to end protocol and egress mix behavior. The mix network
-   specification is described in Panoramix Mix Network Specification.
+   specification is described in Katzenpost Mix Network Specification.
    The protocols used by the entities to publish their identities is
-   described in the Panoramix Mix Network PKI Specification.
+   described in the Katzenpost Mix Network PKI Specification.
 
 Table of Contents
 
@@ -98,18 +98,20 @@ Table of Contents
               behalf of the user. Provider MUST perform the same cryptographic
               operations as the Mix.
 
-   Packet - A Sphinx packet. [SPHINXSPEC] The Panoramix system supports multiple
-            packet sizes for different classes of traffic. In particular:
+   * Packet - A Sphinx packet. [SPHINX] [SPHINXSPEC] The Katzenpost
+              system supports multiple packet sizes for different
+              classes of traffic. In particular:
+
 	      * XKB-block: XX KB (to-do: specify the number of KB)
 	      * YKB-block: YY KB (to-do: specify the number of KB/MB)
 
    SURB-ACK - A short message notifying that a packet was delivered;
-              transmitted via a Single Use Reply Block [SPHINXSPEC].
+              transmitted via a Single Use Reply Block [SPHINX]
+              [SPHINXSPEC].
 
    SURB_SIZE - The SURB_SIZE is equal to sizeof(SphinxSURB) where
-               SphinxSURB is a Single Use Reply Block defined in the
-               [SPHINXSPEC], the “Sphinx Mix Network Cryptographic
-               Packet Format Specification”.
+               SphinxSURB is a Single Use Reply Block defined in
+               [SPHINXSPEC].
 
 1.2 Conventions Used in This Document
 
@@ -136,15 +138,15 @@ Table of Contents
    "Sphinx Mix Network Cryptographic Packet Format Specification"
 
    The Sphinx cryptographic primitives and parameters are specified in
-   Section 3 of: "The Panoramix Mix Network Specification"
+   Section 3 of: "The Katzenpost Mix Network Specification"
 
 3. Client and Provider Core Protocol
 
    All client mixnet interaction happens through their Provider,
    reusing the existing trust relationship any given user may have
    with an e-mail service provider, and all client to Provider
-   interaction will use the Panoramix Mix Network Wire Protocol,
-   described in “Panoramix Mix Network Wire Protocol Specification”.
+   interaction will use the Katzenpost Mix Network Wire Protocol,
+   described in “Katzenpost Mix Network Wire Protocol Specification”.
 
 3.1 Handshake and Authentication
 
@@ -535,7 +537,7 @@ Table of Contents
 
    (XXX/ya: Should we mandate that clients insert something like:
 
-    `X-Panoramix-Sender: <Base64(s)>` as a header?
+    `X-Katzenpost-Sender: <Base64(s)>` as a header?
    )
 
 4.2.2 Client Protocol Acknowledgment Processing (SURB-ACKs).
@@ -614,7 +616,7 @@ Table of Contents
    of randomly selected mixes. The sequence of mixes is chosen independently
    for each Block.
 
-   Panoramix uses the Layered topology, thus the selected path MUST
+   Katzenpost uses the Layered topology, thus the selected path MUST
    contain one and only one mix per layer, and MUST traverse all layers.
    Within a layer, the mix is selected with probability proportional to
    its bandwidth/capacity. Thus, if a mix has a fraction f of the total
@@ -671,12 +673,12 @@ Table of Contents
 
    Clients download Mix Descriptors from the PKI, also known as the
    Mix Directory Authority service.  More details about the PKI system
-   and the Mix Descriptors can be found in the Panoramix Mix Network
+   and the Mix Descriptors can be found in the Katzenpost Mix Network
    PKI Specification.
 
    Clients will have the following information available to them:
 
-      * Panoramix Mix Network Parameters via the PKI:
+      * Katzenpost Mix Network Parameters via the PKI:
          * topology information,
          * packet sizes for different classes of traffic,
          * parameter of the exponential delay (lambda) for Poisson mix
@@ -685,7 +687,7 @@ Table of Contents
 	 * the list of public keys and addresses of the active mixes,
 
       * Mix Network Consensus Document containing Mix Descriptors as
-        described in the Panoramix Mix Network PKI Specification
+        described in the Katzenpost Mix Network PKI Specification
 
       * Current mix network time via Rough Time protocol with mixes
 
@@ -745,9 +747,13 @@ Appendix A.1 Normative References
 
 Appendix A.2 Informative References
 
-   [DANEZISG09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
-                 Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
-                 May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Sphinx Mix Network Cryptographic Packet Format Specification"
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
+
+   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+             Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+             May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
 
    [CYA2013]  Geddes, J., Schuchard, M., Hopper, N., "Cover Your ACKs:
               Pitfalls of CovertChannel Censorship Circumvention",

@@ -1,4 +1,4 @@
-The Panoramix Decryption Mix Network Anonymity System:
+The Katzenpost Decryption Mix Network Anonymity System:
 fast, safe and correct mixnet protocol design
 
 Yawning Angel
@@ -13,7 +13,7 @@ Version 0
 Abstract
 
 This document describes the high level architecture and design of the
-Panoramix Decryption Mix Network. Here we also present a novel
+Katzenpost Decryption Mix Network. Here we also present a novel
 multidisciplinary approach to mix network protocol design which
 introduces design ideas from the packet switching network literature
 used in concert with the latest innovations in mix network design from
@@ -113,7 +113,7 @@ receive POP3 proxy designs, however we've also specified the design
 of an existing e-mail software with user interaction design modifications
 suited for our end to end mixnet messaging protocol:
 
-"Panoramix Decryption Mix Network User Interface Design"
+"Katzenpost Decryption Mix Network User Interface Design"
 
 
 Layers of Mix Network Encryption
@@ -126,7 +126,7 @@ Layers of Mix Network Encryption
   crypto is post-quantum and uses
   Noise_NNhfs_25519+NewHope-Simple_ChaChaPoly_Blake2b, described in:
 
-     "Panoramix Mix Network Wire Protocol Specification".
+     "Katzenpost Mix Network Wire Protocol Specification".
 
 * mix packets - The Sphinx mix cryptographic packet format is used to
   send mix network messages. Our implementation uses X25519,
@@ -138,7 +138,7 @@ Layers of Mix Network Encryption
   by mix network Clients using Noise_X_25519_ChaChaPoly_Blake2b,
   a one-way Noise framework pattern. [NOISE17] Details can be found in:
 
-     "Panoramix Mix Network End-to-end Protocol Specification".
+     "Katzenpost Mix Network End-to-end Protocol Specification".
 
 
 The Poisson Stop and Wait Automatic Repeat Request Protocol

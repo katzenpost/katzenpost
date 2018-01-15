@@ -1,4 +1,4 @@
-Katzenpost PKI: A Panoramix Mix Network Public Key Infrastructure Specification
+Katzenpost Mix Network Public Key Infrastructure Specification
 Yawning Angel
 Ania Piotrowska
 David Stainton
@@ -72,8 +72,8 @@ Table of Contents
    and bridging attacks [FINGERPRINTING] [BRIDGING] [LOCALVIEW].
 
    The PKI is also used by Authority operators to specify network-wide
-   parameters, for example in the Panoramix Decryption Mix Network
-   [PANMIXNET] the Poisson mix strategy is used and therefore all the
+   parameters, for example in the Katzenpost Decryption Mix Network
+   [KATZMIXNET] the Poisson mix strategy is used and therefore all the
    clients must use the same lambda parameter for their exponential
    distribution function when choosing hop delays in the path
    selection. The Mix Network Directory Authority system aka PKI
@@ -102,7 +102,7 @@ Table of Contents
             path selection algorithm.
 
    nickname - simply a nickname string that is unique in the consensus
-              document; see "Panoramix Mix Network Specification"
+              document; see "Katzenpost Mix Network Specification"
               section "2.2. Network Topology".
 
    layer - The layer indicates which network topology layer a
@@ -177,7 +177,7 @@ Table of Contents
 
    Each Mix MUST rotate the key pair used for Sphinx packet processing
    periodically for forward secrecy reasons and to keep the list of
-   seen packet tags short. [SPHINX09] [SPHINXSPEC] The Panoramix Mix
+   seen packet tags short. [SPHINX09] [SPHINXSPEC] The Katzenpost Mix
    Network uses a fixed interval (epoch), so that key rotations happen
    simultaneously throughout the network, at predictable times.
 
@@ -600,7 +600,7 @@ Table of Contents
      If a passive network adversary can watch the Directory Authority
      servers vote, that's OK. However, very paranoid implementers
      could disagree and use our Noise based PQ crypto wire protocol
-     [PANMIXWIRE] for Directory Authority system message exchange as
+     [KATZMIXWIRE] for Directory Authority system message exchange as
      was suggested in section "6. Future Work".
 
    * Constructing this consensus protocol using a cryptographically
@@ -652,8 +652,8 @@ Appendix A.2 Informative References
                "Local View Attack on Anonymous Communication",
                <https://www.freehaven.net/anonbib/cache/esorics05-Klonowski.pdf>.
 
-   [PANMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
-                "Panoramix Mix Network Specification", June 2017,
+   [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Katzenpost Mix Network Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
 
    [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
@@ -687,5 +687,5 @@ Appendix A.2 Informative References
                "The Structure of Authority: Why Security Is not a Separable Concern",
                <http://www.erights.org/talks/no-sep/secnotsep.pdf>.
 
-   [PANMIXWIRE] Angel, Y. "Panoramix Mix Network Wire Protocol Specification", June 2017,
+   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
