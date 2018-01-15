@@ -200,7 +200,7 @@ Table of Contents
    limited to a few hours because of the key rotation epoch, however
    this shouldn't present any useability problems since SURBs are only
    used for sending ACK messages from the destination Provider to the
-   sender as described in [PANEND2END].
+   sender as described in [KATZMIXE2E].
 
 2.1 PKI Protocol Schedule
 
@@ -450,7 +450,7 @@ Table of Contents
 
 5.2 Katzenpost noise based protocol extensions for mix descriptor publication
 
-   We define additional wire protocol [PANMIXWIRE] commands for
+   We define additional wire protocol [KATZMIXWIRE] commands for
    publishing mix descriptors and setting mix descriptor status:
 
    enum {
@@ -494,9 +494,9 @@ Table of Contents
 
 6.1 Consensus Caching
 
-   Providers in the Katzenpost mix network system [PANMIXNET] may cache
+   Providers in the Katzenpost mix network system [KATZMIXNET] may cache
    validated network consensus files and serve them to clients over
-   the mix network's link layer wire protocol [PANMIXWIRE]. We define
+   the mix network's link layer wire protocol [KATZMIXWIRE]. We define
    additional wire protocol commands for requesting and sending PKI
    consensus documents:
 
@@ -555,10 +555,6 @@ Table of Contents
    * Implement byzantine attack defenses as described in [MIRANDA] and
      [MIXRELIABLE] where mix link performance proofs are recorded and
      used in a reputation system.
-
-   * Choose a better wire protocol?
-
-   * Use the Katzenpost Noise based wire protocol instead of http?
 
    * Choose a different serialization/schema language?
 
@@ -626,8 +622,8 @@ Appendix A.1 Normative References
               "JSON Web Signature (JWS)", May 2015,
               <https://tools.ietf.org/html/rfc7515>.
 
-   [PANEND2END]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
-                 "Panoramix Mix Network End-to-end Protocol Specification", July 2017,
+   [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
 
 Appendix A.2 Informative References
