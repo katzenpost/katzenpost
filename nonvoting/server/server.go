@@ -24,13 +24,13 @@ package server
 import (
 	"errors"
 	"fmt"
-	"net/http"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/katzenpost/authority/nonvoting/server/config"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
@@ -48,12 +48,13 @@ type Server struct {
 	cfg *config.Config
 
 	identityKey *eddsa.PrivateKey
+	linkKey     *ecdh.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
 
 	state     *state
-	listeners []*http.Server
+	listeners []net.Listener
 
 	fatalErrCh chan error
 	haltedCh   chan interface{}
@@ -102,22 +103,6 @@ func (s *Server) initLogging() error {
 	return err
 }
 
-func (s *Server) initListener(addr string) (*http.Server, error) {
-	const (
-		readTimeout  = 30 * time.Second
-		writeTimeout = 30 * time.Second
-	)
-
-	l := new(http.Server)
-	l.Addr = addr
-	l.Handler = s
-	l.ReadTimeout = readTimeout
-	l.WriteTimeout = writeTimeout
-	l.ErrorLog = s.logBackend.GetGoLogger("httpd", "ERROR")
-	go l.ListenAndServe()
-	return l, nil
-}
-
 // IdentityKey returns the running Server's identity public key.
 func (s *Server) IdentityKey() *eddsa.PublicKey {
 	return s.identityKey.PublicKey()
@@ -131,6 +116,31 @@ func (s *Server) Wait() {
 // Shutdown cleanly shuts down a given Server instance.
 func (s *Server) Shutdown() {
 	s.haltOnce.Do(func() { s.halt() })
+}
+
+func (s *Server) listenWorker(l net.Listener) {
+	addr := l.Addr()
+	s.log.Noticef("Listening on: %v", addr)
+	defer func() {
+		s.log.Noticef("Stopping listening on: %v", addr)
+		l.Close()
+		s.Done()
+	}()
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			if e, ok := err.(net.Error); ok && !e.Temporary() {
+				s.log.Errorf("Critical accept failure: %v", err)
+				return
+			}
+			continue
+		}
+
+		s.Add(1)
+		s.onConn(conn)
+	}
+
+	// NOTREACHED
 }
 
 func (s *Server) halt() {
@@ -154,6 +164,7 @@ func (s *Server) halt() {
 	}
 
 	s.identityKey.Reset()
+	s.linkKey.Reset()
 	close(s.fatalErrCh)
 
 	s.log.Notice("Shutdown complete.")
@@ -195,6 +206,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	s.linkKey = s.identityKey.ToECDH()
 	s.log.Noticef("Authority identity public key is: %s", s.identityKey.PublicKey())
 
 	if s.cfg.Debug.GenerateOnly {
@@ -235,12 +247,14 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start up the listeners.
 	for _, v := range s.cfg.Authority.Addresses {
-		l, err := s.initListener(v)
+		l, err := net.Listen("tcp", v)
 		if err != nil {
 			s.log.Errorf("Failed to start listener '%v': %v", v, err)
 			continue
 		}
 		s.listeners = append(s.listeners, l)
+		s.Add(1)
+		go s.listenWorker(l)
 	}
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")
