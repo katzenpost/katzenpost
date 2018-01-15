@@ -40,6 +40,7 @@ const (
 	consensusBaseLength = 1
 
 	postDescriptorStatusLength = 1
+	postDescriptorLength       = 8
 
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
@@ -170,22 +171,29 @@ func consensusFromBytes(b []byte) (Command, error) {
 
 // PostDescriptor is a de-serialized post_descriptor command.
 type PostDescriptor struct {
+	Epoch   uint64
 	Payload []byte
 }
 
 // ToBytes serializes the PostDescriptor and returns the resulting byte slice.
 func (c *PostDescriptor) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+len(c.Payload))
+	out := make([]byte, cmdOverhead+postDescriptorLength, cmdOverhead+postDescriptorLength+len(c.Payload))
 	out[0] = byte(postDescriptor)
-	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], postDescriptorLength+uint32(len(c.Payload)))
+	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	out = append(out, c.Payload...)
 	return out
 }
 
 func postDescriptorFromBytes(b []byte) (Command, error) {
+	if len(b) < postDescriptorLength {
+		return nil, errInvalidCommand
+	}
+
 	r := new(PostDescriptor)
-	r.Payload = make([]byte, 0, len(b))
-	r.Payload = append(r.Payload, b...)
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	r.Payload = make([]byte, 0, len(b)-postDescriptorLength)
+	r.Payload = append(r.Payload, b[postDescriptorLength:]...)
 	return r, nil
 }
 

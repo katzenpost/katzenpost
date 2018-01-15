@@ -203,15 +203,17 @@ func TestPostDescriptor(t *testing.T) {
 	require := require.New(t)
 
 	cmd := &PostDescriptor{
+		Epoch:   0xdeadbabecafebeef,
 		Payload: []byte("This is my descriptor."),
 	}
 	b := cmd.ToBytes()
-	require.Equal(len(cmd.Payload)+cmdOverhead, len(b), "PostDescriptor: ToBytes() length")
+	require.Equal(postDescriptorLength+len(cmd.Payload)+cmdOverhead, len(b), "PostDescriptor: ToBytes() length")
 
 	c, err := FromBytes(b)
 	require.NoError(err, "PostDescriptor: FromBytes() failed")
 	require.IsType(cmd, c, "PostDescriptor: FromBytes() invalid type")
 	d := c.(*PostDescriptor)
+	require.Equal(d.Epoch, cmd.Epoch)
 	require.Equal(d.Payload, cmd.Payload)
 }
 
