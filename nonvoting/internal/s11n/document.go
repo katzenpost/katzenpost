@@ -17,6 +17,7 @@
 package s11n
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -27,7 +28,13 @@ import (
 
 const documentVersion = "nonvoting-document-v0"
 
-var jsonHandle *codec.JsonHandle
+var (
+	// ErrInvalidEpoch is the error to return when the document epoch is
+	// invalid.
+	ErrInvalidEpoch = errors.New("nonvoting: invalid document epoch")
+
+	jsonHandle *codec.JsonHandle
+)
 
 // Document is the on-the-wire representation of a PKI Document.
 type Document struct {
@@ -74,7 +81,7 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
-func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey, epoch uint64) (*pki.Document, error) {
+func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, error) {
 	signed, err := jose.ParseSigned(string(b))
 	if err != nil {
 		return nil, err
@@ -136,7 +143,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey, epoch uint64) 
 		doc.Providers = append(doc.Providers, desc)
 	}
 
-	if err = IsDocumentWellFormed(doc, epoch); err != nil {
+	if err = IsDocumentWellFormed(doc); err != nil {
 		return nil, err
 	}
 
@@ -152,11 +159,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey, epoch uint64) 
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
-func IsDocumentWellFormed(d *pki.Document, epoch uint64) error {
-	if d.Epoch != epoch {
-		return fmt.Errorf("nonvoting: Invalid Document Epoch: '%v'", d.Epoch)
-	}
-
+func IsDocumentWellFormed(d *pki.Document) error {
 	pks := make(map[[eddsa.PublicKeySize]byte]bool)
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("nonvoting: Document contains no Topology")
@@ -166,7 +169,7 @@ func IsDocumentWellFormed(d *pki.Document, epoch uint64) error {
 			return fmt.Errorf("nonvoting: Document Topology layer %d contains no nodes", layer)
 		}
 		for _, desc := range nodes {
-			if err := IsDescriptorWellFormed(desc, epoch); err != nil {
+			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
 			}
 			pk := desc.IdentityKey.ByteArray()
@@ -180,7 +183,7 @@ func IsDocumentWellFormed(d *pki.Document, epoch uint64) error {
 		return fmt.Errorf("nonvoting: Document contains no Providers")
 	}
 	for _, desc := range d.Providers {
-		if err := IsDescriptorWellFormed(desc, epoch); err != nil {
+		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
 		if desc.Layer != pki.LayerProvider {

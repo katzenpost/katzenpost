@@ -206,14 +206,22 @@ func (s *state) generateDocument(epoch uint64) {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
 		s.s.fatalErrCh <- err
+		return
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey(), epoch)
+	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
 		s.s.fatalErrCh <- err
+		return
+	}
+	if pDoc.Epoch != epoch {
+		// This should never happen either.
+		s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
+		s.s.fatalErrCh <- s11n.ErrInvalidEpoch
+		return
 	}
 
 	s.log.Debugf("Document (Parsed): %v", pDoc)
@@ -499,11 +507,14 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
-					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey(), epoch); err != nil {
+					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey()); err != nil {
 						// This continues because there's no reason not to load
 						// the descriptors as long as they validate, even if
 						// the document fails to load.
 						s.log.Errorf("Failed to validate persisted document: %v", err)
+					} else if doc.Epoch != epoch {
+						// The document for the wrong epoch was persisted?
+						s.log.Errorf("Persisted document has unexpected epoch: %v", doc.Epoch)
 					} else {
 						s.log.Debugf("Restored Document for epoch %v: %v.", epoch, doc)
 						d := new(document)

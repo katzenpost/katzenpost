@@ -95,8 +95,9 @@ func TestDocument(t *testing.T) {
 	t.Logf("signed document: '%v':", signed)
 
 	// Validate and deserialize.
-	ddoc, err := VerifyAndParseDocument([]byte(signed), k.PublicKey(), debugTestEpoch)
+	ddoc, err := VerifyAndParseDocument([]byte(signed), k.PublicKey())
 	require.NoError(err, "VerifyAndParseDocument()")
+	require.Equal(doc.Epoch, ddoc.Epoch, "VerifyAndParseDocument(): Epoch")
 
 	t.Logf("Deserialized document: '%v'", ddoc)
 

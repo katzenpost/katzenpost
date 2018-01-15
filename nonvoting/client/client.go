@@ -20,7 +20,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -39,10 +38,7 @@ import (
 
 const clientTimeout = 30 * time.Second
 
-var (
-	httpClient      = &http.Client{Timeout: clientTimeout}
-	errNotSupported = errors.New("nonvoting/client: operation not supported")
-)
+var httpClient = &http.Client{Timeout: clientTimeout}
 
 // Config is a nonvoting authority pki.Client instance.
 type Config struct {
@@ -140,9 +136,12 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 
 	// Validate the document.
-	doc, err := s11n.VerifyAndParseDocument(b, c.cfg.PublicKey, epoch)
+	doc, err := s11n.VerifyAndParseDocument(b, c.cfg.PublicKey)
 	if err != nil {
 		return nil, nil, err
+	} else if doc.Epoch != epoch {
+		c.log.Warningf("nonvoting/Client: Get() authority returned document for wrong epoch: %v", doc.Epoch)
+		return nil, nil, s11n.ErrInvalidEpoch
 	}
 	c.log.Debugf("Document: %v", doc)
 
@@ -150,7 +149,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 }
 
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
-	return nil, errNotSupported
+	return s11n.VerifyAndParseDocument(raw, c.cfg.PublicKey)
 }
 
 // New constructs a new pki.Client instance.
