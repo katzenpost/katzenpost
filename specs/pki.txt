@@ -462,6 +462,7 @@ Table of Contents
    The structures of these command are defined as follows:
 
       struct {
+         uint64_t epoch_number;
          opaque payload[];
       } PostDescriptor;
 
@@ -508,7 +509,7 @@ Table of Contents
    The structures of these command are defined as follows:
 
       struct {
-          uint32_t epoch_number;
+          uint64_t epoch_number;
       } GetConsensusCommand;
 
       struct {
