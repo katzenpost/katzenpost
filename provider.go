@@ -20,9 +20,11 @@ import (
 	"bytes"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
@@ -129,6 +131,8 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 }
 
 func (p *provider) worker() {
+	maxDwell := time.Duration(p.s.cfg.Debug.ProviderDelay) * time.Millisecond
+
 	defer p.log.Debugf("Halting Provider worker.")
 
 	ch := p.ch.Out()
@@ -141,6 +145,11 @@ func (p *provider) worker() {
 			return
 		case e := <-ch:
 			pkt = e.(*packet)
+			if dwellTime := monotime.Now() - pkt.dispatchAt; dwellTime > maxDwell {
+				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.id, dwellTime)
+				pkt.dispose()
+				continue
+			}
 		}
 
 		// Post-process the recipient.

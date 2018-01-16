@@ -241,6 +241,7 @@ func (w *cryptoWorker) worker() {
 		// Note: Callee takes ownership of pkt.
 		if pkt.isToUser() || pkt.isUnreliableToUser() || pkt.isSURBReply() {
 			w.log.Debugf("Handing off user destined packet: %v", pkt.id)
+			pkt.dispatchAt = now
 			w.s.provider.onPacket(pkt)
 		} else {
 			w.log.Debugf("Dropping user packet: %v (%v)", pkt.id, pkt.cmdsToString())
