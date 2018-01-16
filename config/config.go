@@ -41,6 +41,7 @@ const (
 	defaultConnectTimeout   = 60 * 1000 // 60 sec.
 	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
 	defaultReauthInterval   = 30 * 1000 // 30 sec.
+	defaultProviderDelay    = 500       // 250 ms.
 	defaultUserDB           = "users.db"
 	defaultSpoolDB          = "spool.db"
 	defaultManagementSocket = "management_sock"
@@ -117,6 +118,10 @@ type Debug struct {
 	// milliseconds.
 	UnwrapDelay int
 
+	// ProviderDelay is the maximum allowed provider delay due to queueing
+	// in milliseconds.
+	ProviderDelay int
+
 	// SchedulerSlack is the maximum allowed scheduler slack due to queueing
 	// and or processing in milliseconds.
 	SchedulerSlack int
@@ -157,6 +162,9 @@ func (dCfg *Debug) applyDefaults() {
 	}
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
+	}
+	if dCfg.ProviderDelay <= 0 {
+		dCfg.ProviderDelay = defaultProviderDelay
 	}
 	if dCfg.SchedulerSlack < defaultSchedulerSlack {
 		// TODO/perf: Tune this.
