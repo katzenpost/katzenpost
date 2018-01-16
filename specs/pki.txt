@@ -252,6 +252,13 @@ Table of Contents
    to vote, and the mixes have 28 mins to establish connections before
    there is network connectivity failure.
 
+   Mix layer changes are controlled by the Directory Authorities and
+   therefore a mix can be reassigned to a different layer in our
+   stratified topology at any new epoch. Mixes will maintain incoming
+   and outgoing connections to the various nodes until all mix keys
+   have expired, iff the node is still listed anywhere in the current
+   document.
+
 3. Voting for Consensus Protocol
 
    In our Directory Authority protocol, all the actors conduct their
