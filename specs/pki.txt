@@ -86,6 +86,10 @@ Table of Contents
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
    document are to be interpreted as described in [RFC2119].
 
+   The "C" style Presentation Language as described in [RFC5246]
+   Section 4 is used to represent data structures for additional
+   cryptographic wire protocol commands. [KATZMIXWIRE]
+
 1.2 Terminology
 
    PKI - public key infrastructure
@@ -506,7 +510,7 @@ Table of Contents
          consensus(19),
       } Command;
 
-   The structures of these command are defined as follows:
+   The structures of these commands are defined as follows:
 
       struct {
           uint64_t epoch_number;
@@ -515,7 +519,6 @@ Table of Contents
       struct {
          uint8 error_code;
          opaque payload[];
-         opaque padding[];   /* length is implicit */
       } ConsensusCommand;
 
 6.1.1 The get_consensus Command
@@ -533,7 +536,7 @@ Table of Contents
 6.1.2 The consensus Command
 
    The consensus command is a command that is used to send a
-   recent consensus document. The error code field indicates if there
+   recent consensus document. The error_code field indicates if there
    was a failure in retrieval of the PKI consensus document.
 
    enum {
@@ -622,6 +625,11 @@ Appendix A.1 Normative References
               "JSON Web Signature (JWS)", May 2015,
               <https://tools.ietf.org/html/rfc7515>.
 
+   [RFC5246]  Dierks, T. and E. Rescorla, "The Transport Layer Security
+              (TLS) Protocol Version 1.2", RFC 5246,
+              DOI 10.17487/RFC5246, August 2008,
+              <http://www.rfc-editor.org/info/rfc5246>.
+
    [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
@@ -651,6 +659,9 @@ Appendix A.2 Informative References
    [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+
+   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
 
    [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
                Provably Secure Mix Format", DOI 10.1109/SP.2009.15, May 2009,
@@ -683,5 +694,3 @@ Appendix A.2 Informative References
                "The Structure of Authority: Why Security Is not a Separable Concern",
                <http://www.erights.org/talks/no-sep/secnotsep.pdf>.
 
-   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
