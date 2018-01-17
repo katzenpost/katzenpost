@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/monotime"
+	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
@@ -205,13 +206,24 @@ func (c *incomingConn) worker() {
 		}
 
 		if c.fromClient {
-			// The only command specific to a client is RetreiveMessage.
-			if retrCmd, ok := rawCmd.(*commands.RetrieveMessage); ok {
-				if err := c.onRetrieveMessage(retrCmd); err != nil {
+			switch cmd := rawCmd.(type) {
+			case *commands.RetrieveMessage:
+				c.log.Debugf("Received RetrieveMessage from peer.")
+				if err := c.onRetrieveMessage(cmd); err != nil {
 					c.log.Debugf("Failed to handle RetreiveMessage: %v", err)
 					return
 				}
 				continue
+			case *commands.GetConsensus:
+				c.log.Debugf("Received GetConsensus from peer.")
+				if err := c.onGetConsensus(cmd); err != nil {
+					c.log.Debugf("Failed to handle GetConsensus: %v", err)
+					return
+				}
+				continue
+			default:
+				c.log.Debugf("Received unexpected command: %T", cmd)
+				return
 			}
 		}
 
@@ -242,6 +254,21 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 		c.log.Debugf("Received unexpected command: %T", cmd)
 	}
 	return false
+}
+
+func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
+	respCmd := &commands.Consensus{}
+	rawDoc, err := c.s.pki.getConsensus(cmd.Epoch)
+	switch err {
+	case nil:
+		respCmd.ErrorCode = commands.ConsensusOk
+		respCmd.Payload = rawDoc
+	case cpki.ErrNoDocument:
+		respCmd.ErrorCode = commands.ConsensusGone
+	default: // Covers errNotCached
+		respCmd.ErrorCode = commands.ConsensusNotFound
+	}
+	return c.w.SendCommand(respCmd)
 }
 
 func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {

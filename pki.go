@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -36,6 +37,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+var errNotCached = errors.New("pki: requested epoch document not in cache")
+
 type pki struct {
 	sync.RWMutex
 	worker.Worker
@@ -45,6 +48,7 @@ type pki struct {
 	impl cpki.Client
 
 	docs               map[uint64]*pkicache.Entry
+	rawDocs            map[uint64][]byte
 	failedFetches      map[uint64]error
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
@@ -111,12 +115,12 @@ func (p *pki) worker() {
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
-			if err, ok := p.failedFetches[epoch]; ok {
+			if err, ok := p.getFailedFetch(epoch); ok {
 				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
 				continue
 			}
 
-			d, _, err := p.impl.Get(pkiCtx, epoch)
+			d, rawDoc, err := p.impl.Get(pkiCtx, epoch)
 			if isCanceled() {
 				// Canceled mid-fetch.
 				return
@@ -124,7 +128,7 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				if err == cpki.ErrNoDocument {
-					p.failedFetches[epoch] = err
+					p.setFailedFetch(epoch, err)
 				}
 				continue
 			}
@@ -132,16 +136,17 @@ func (p *pki) worker() {
 			ent, err := pkicache.New(d, p.s.identityKey.PublicKey(), p.s.cfg.Server.IsProvider)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
-				p.failedFetches[epoch] = err
+				p.setFailedFetch(epoch, err)
 				continue
 			}
 			if err = p.validateCacheEntry(ent); err != nil {
 				p.log.Warningf("Generated PKI cache is invalid: %v", err)
-				p.failedFetches[epoch] = err
+				p.setFailedFetch(epoch, err)
 				continue
 			}
 
 			p.Lock()
+			p.rawDocs[epoch] = rawDoc
 			p.docs[epoch] = ent
 			p.Unlock()
 			didUpdate = true
@@ -188,7 +193,23 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	return nil
 }
 
+func (p *pki) getFailedFetch(epoch uint64) (error, bool) {
+	p.RLock()
+	defer p.RUnlock()
+	err, ok := p.failedFetches[epoch]
+	return err, ok
+}
+
+func (p *pki) setFailedFetch(epoch uint64, err error) {
+	p.Lock()
+	defer p.Unlock()
+	p.failedFetches[epoch] = err
+}
+
 func (p *pki) pruneFailures() {
+	p.Lock()
+	defer p.Unlock()
+
 	now, _, _ := epochtime.Now()
 
 	for epoch := range p.failedFetches {
@@ -209,6 +230,7 @@ func (p *pki) pruneDocuments() {
 		if epoch < now-(numMixKeys-1) {
 			p.log.Debugf("Discarding PKI for epoch: %v", epoch)
 			delete(p.docs, epoch)
+			delete(p.rawDocs, epoch)
 		}
 		if epoch > now+1 {
 			// This should NEVER happen.
@@ -499,11 +521,34 @@ func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixD
 	return descMap
 }
 
+// getConsensus returns a raw byte sliced of the cached consensus document
+// specified by epoch. Returns cpki.ErrNoDocument if the epoch is in our
+// list of rejected epochs. Returns errNotCached if document not in PKI cache.
+func (p *pki) getConsensus(epoch uint64) ([]byte, error) {
+	if err, ok := p.getFailedFetch(epoch); ok {
+		p.log.Debugf("getConsensus failure: no cached PKI document for epoch %v: %v", epoch, err)
+		return nil, cpki.ErrNoDocument
+	}
+	p.RLock()
+	defer p.RUnlock()
+	val, ok := p.rawDocs[epoch]
+	if !ok {
+		now, _, _ := epochtime.Now()
+		// Return cpki.ErrNoDocument if documents will never exist.
+		if epoch < now-1 {
+			return nil, cpki.ErrNoDocument
+		}
+		return nil, errNotCached
+	}
+	return val, nil
+}
+
 func newPKI(s *Server) (*pki, error) {
 	p := new(pki)
 	p.s = s
 	p.log = s.logBackend.GetLogger("pki")
 	p.docs = make(map[uint64]*pkicache.Entry)
+	p.rawDocs = make(map[uint64][]byte)
 	p.failedFetches = make(map[uint64]error)
 
 	if s.cfg.PKI.Nonvoting != nil {
