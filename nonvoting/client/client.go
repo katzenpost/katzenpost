@@ -36,6 +36,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+var defaultDialer = &net.Dialer{}
+
 // Config is a nonvoting authority pki.Client instance.
 type Config struct {
 	// LogBackend is the `core/log` Backend instance to use for logging.
@@ -47,6 +49,10 @@ type Config struct {
 
 	// PublicKey is the authority's public key to use when validating documents.
 	PublicKey *eddsa.PublicKey
+
+	// DialContextFn is the optional alternative Dialer.DialContext function
+	// to be used when creating outgoing network connections.
+	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
 }
 
 func (cfg *Config) validate() error {
@@ -188,8 +194,11 @@ func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
 
 func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey *eddsa.PublicKey, linkKey *ecdh.PrivateKey) (net.Conn, *wire.Session, error) {
 	// Connect to the peer.
-	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", c.cfg.Address)
+	dialFn := c.cfg.DialContextFn
+	if dialFn == nil {
+		dialFn = defaultDialer.DialContext
+	}
+	conn, err := dialFn(ctx, "tcp", c.cfg.Address)
 	if err != nil {
 		return nil, nil, err
 	}
