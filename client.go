@@ -18,8 +18,10 @@
 package minclient
 
 import (
+	"context"
 	"fmt"
 	mRand "math/rand"
+	"net"
 	"sync"
 	"time"
 
@@ -79,6 +81,14 @@ type ClientConfig struct {
 	// SURB ID and SURB ciphertext.  Calls to the callback that return
 	// an error will be treated as a signal to tear down the connection.
 	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
+
+	// DialContextFn is the optional alternative Dialer.DialContext function
+	// to be used when creating outgoing network connections.
+	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
+
+	// PreferedTransports is a list of the transports will be used to make
+	// outgoing network connections, with the most prefered first.
+	PreferedTransports []cpki.Transport
 
 	// MessagePollInterval is the interval at which the server will be
 	// polled for new messages if the queue is belived to be empty.

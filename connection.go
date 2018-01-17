@@ -33,9 +33,21 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-// ErrNotConnected is the error returned when an operation fails due to the
-// client not currently being connected to the Provider.
-var ErrNotConnected = errors.New("minclient/conn: not connected to the Provider")
+const (
+	keepAliveInterval = 3 * time.Minute
+	connectTimeout    = 1 * time.Minute
+)
+
+var (
+	// ErrNotConnected is the error returned when an operation fails due to the
+	// client not currently being connected to the Provider.
+	ErrNotConnected = errors.New("minclient/conn: not connected to the Provider")
+
+	defaultDialer = net.Dialer{
+		KeepAlive: keepAliveInterval,
+		Timeout:   connectTimeout,
+	}
+)
 
 type connection struct {
 	sync.Mutex
@@ -167,15 +179,13 @@ func (c *connection) connectWorker() {
 
 func (c *connection) doConnect(dialCtx context.Context) {
 	const (
-		keepAliveInterval = 3 * time.Minute
-		connectTimeout    = 1 * time.Minute
-		retryIncrement    = 15 * time.Second
-		maxRetryDelay     = 2 * time.Minute
+		retryIncrement = 15 * time.Second
+		maxRetryDelay  = 2 * time.Minute
 	)
 
-	dialer := net.Dialer{
-		KeepAlive: keepAliveInterval,
-		Timeout:   connectTimeout,
+	dialFn := c.c.cfg.DialContextFn
+	if dialFn == nil {
+		dialFn = defaultDialer.DialContext
 	}
 
 	for {
@@ -185,10 +195,14 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			return
 		}
 
-		// TODO: Allow the caller to specify transport preference and
-		// additional transports.
+		// Build the list of candidate addresses, in decreasing order of
+		// preference, by transport.
 		var dstAddrs []string
-		for _, t := range cpki.InternalTransports {
+		transports := c.c.cfg.PreferedTransports
+		if transports == nil {
+			transports = cpki.InternalTransports
+		}
+		for _, t := range transports {
 			if v, ok := c.descriptor.Addresses[t]; ok {
 				dstAddrs = append(dstAddrs, v...)
 			}
@@ -213,7 +227,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 
 			c.log.Debugf("Dialing: %v", addrPort)
-			conn, err := dialer.DialContext(dialCtx, "tcp", addrPort)
+			conn, err := dialFn(dialCtx, "tcp", addrPort)
 			select {
 			case <-c.HaltCh():
 				if conn != nil {
