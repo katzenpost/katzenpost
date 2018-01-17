@@ -167,8 +167,7 @@ func (p *provider) worker() {
 			continue
 		}
 
-		// All of the store operations involve writing to the database which
-		// won't really benefit from concurrency.
+		// Process the packet based on type.
 		if pkt.isSURBReply() {
 			p.onSURBReply(pkt, recipient)
 		} else {
@@ -249,8 +248,11 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 
 		// Build the SURB-ACK from the SURB.
 		//
-		// TODO/perf: This is a crypto operation and can be made concurrent,
-		// the logical place for this is probably the crypto workers.
+		// TODO/perf: This is a crypto operation that is paralleizable, and
+		// could be handled by the crypto worker(s), since those are allocated
+		// based on hardware acceleration considerations.  However the forward
+		// packet processing doesn't constantly utilize the AES-NI units due
+		// to the non-AEZ components of a Sphinx Unwrap operation.
 		var ackPayload [constants.ForwardPayloadLength]byte
 		rawAckPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, ackPayload[:])
 		if err != nil {
@@ -404,6 +406,8 @@ func newProvider(s *Server) (*provider, error) {
 		s.management.RegisterCommand(cmdRemoveUser, p.onRemoveUser)
 	}
 
-	p.Go(p.worker)
+	for i := 0; i < p.s.cfg.Debug.NumProviderWorkers; i++ {
+		p.Go(p.worker)
+	}
 	return p, nil
 }

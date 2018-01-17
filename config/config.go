@@ -33,18 +33,19 @@ import (
 )
 
 const (
-	defaultAddress          = ":3219"
-	defaultLogLevel         = "NOTICE"
-	defaultUnwrapDelay      = 250       // 250 ms.
-	defaultSchedulerSlack   = 10        // 10 ms.
-	defaultSendSlack        = 50        // 50 ms.
-	defaultConnectTimeout   = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout = 30 * 1000 // 30 sec.
-	defaultReauthInterval   = 30 * 1000 // 30 sec.
-	defaultProviderDelay    = 500       // 250 ms.
-	defaultUserDB           = "users.db"
-	defaultSpoolDB          = "spool.db"
-	defaultManagementSocket = "management_sock"
+	defaultAddress            = ":3219"
+	defaultLogLevel           = "NOTICE"
+	defaultNumProviderWorkers = 1
+	defaultUnwrapDelay        = 250       // 250 ms.
+	defaultSchedulerSlack     = 10        // 10 ms.
+	defaultSendSlack          = 50        // 50 ms.
+	defaultConnectTimeout     = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout   = 30 * 1000 // 30 sec.
+	defaultReauthInterval     = 30 * 1000 // 30 sec.
+	defaultProviderDelay      = 500       // 250 ms.
+	defaultUserDB             = "users.db"
+	defaultSpoolDB            = "spool.db"
+	defaultManagementSocket   = "management_sock"
 
 	backendBolt   = "bolt"
 	backendExtern = "extern"
@@ -109,6 +110,10 @@ type Debug struct {
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
 
+	// NumProviderWorkers specifies the number pf worker instances to use for
+	// provider specific packet processing.
+	NumProviderWorkers int
+
 	// SchedulerQueueSize is the maximum allowed scheduler queue size before
 	// random entries will start getting dropped.  A value <= 0 is treated
 	// as unlimited.
@@ -159,6 +164,12 @@ func (dCfg *Debug) applyDefaults() {
 		// TODO/perf: This should detect the number of physical cores, since
 		// the AES-NI unit is a per-core resource.
 		dCfg.NumSphinxWorkers = runtime.NumCPU()
+	}
+	if dCfg.NumProviderWorkers <= 0 {
+		// TODO/perf: This should do something clever as well, though 1 is
+		// the right number for something that uses the boltspool due to all
+		// write spool operations being serialized.
+		dCfg.NumProviderWorkers = defaultNumProviderWorkers
 	}
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
