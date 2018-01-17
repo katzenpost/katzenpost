@@ -81,17 +81,19 @@ func (sch *scheduler) worker() {
 			// Ensure the peer is valid by querying the outgoing connection
 			// table.
 			if sch.s.connector.isValidForwardDest(&pkt.nextNodeHop.ID) {
-				// If queue limitations are enabled, check to see if there
-				// is a slot for this packet.
-				if max := sch.s.cfg.Debug.SchedulerQueueSize; max > 0 {
-					if q.Len()+1 > max {
-						drop := q.DequeueRandom(mRand).Value.(*packet)
-						sch.log.Debugf("Queue size limit reached, discarding: %v", drop.id)
-						drop.dispose()
-					}
-				}
-				sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.id, pkt.delay)
+				// Enqueue the packet unconditionally so that it is a
+				// candidate to be dropped.
 				q.Enqueue(uint64(monotime.Now()+pkt.delay), pkt)
+
+				sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.id, pkt.delay)
+
+				// If queue limitations are enabled, check to see if the queue
+				// is over capacity after the new packet was inserted.
+				if max := sch.s.cfg.Debug.SchedulerQueueSize; max > 0 && q.Len() > max {
+					drop := q.DequeueRandom(mRand).Value.(*packet)
+					sch.log.Debugf("Queue size limit reached, discarding: %v", drop.id)
+					drop.dispose()
+				}
 			} else {
 				sID := nodeIDToPrintString(&pkt.nextNodeHop.ID)
 				sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.id, sID)
