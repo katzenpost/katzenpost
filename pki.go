@@ -92,6 +92,8 @@ func (p *pki) worker() {
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
 
+	var lastMaxDelayEpoch, lastMaxDelay uint64
+
 	for {
 		const recheckInterval = 1 * time.Minute
 
@@ -169,6 +171,18 @@ func (p *pki) worker() {
 		}
 		if err != nil {
 			p.log.Warningf("Failed to post to PKI: %v", err)
+		}
+
+		// Update the scheduler's idea of MaxDelay if needed.
+		if now, _, _ := epochtime.Now(); now != lastMaxDelayEpoch {
+			if ent := p.entryForEpoch(now); ent != nil {
+				if newMaxDelay := ent.MaxDelay(); newMaxDelay != lastMaxDelay {
+					p.log.Debugf("Updating scheduler MaxDelay for epoch %v: %v", now, newMaxDelay)
+					p.s.scheduler.maxDelayCh <- newMaxDelay
+					lastMaxDelay = newMaxDelay
+				}
+				lastMaxDelayEpoch = now
+			}
 		}
 
 		timer.Reset(recheckInterval)
@@ -347,6 +361,16 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	return err
+}
+
+func (p *pki) entryForEpoch(epoch uint64) *pkicache.Entry {
+	p.RLock()
+	defer p.RUnlock()
+
+	if d, ok := p.docs[epoch]; ok {
+		return d
+	}
+	return nil
 }
 
 func (p *pki) documentsToFetch() []uint64 {
