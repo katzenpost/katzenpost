@@ -179,6 +179,10 @@ var (
 	// TransportInvalid is the invalid transport.
 	TransportInvalid Transport
 
+	// TransportTCP is TCP, with the IP version determined by the results of
+	// a name server lookup.
+	TransportTCP Transport = "tcp"
+
 	// TransportTCPv4 is TCP over IPv4.
 	TransportTCPv4 Transport = "tcp4"
 
@@ -188,6 +192,10 @@ var (
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
 	InternalTransports = []Transport{TransportTCPv4, TransportTCPv6}
+
+	// ClientTransports is the list of transports used by default for client
+	// to provider communication.
+	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
 // MixDescriptor is a description of a given Mix or Provider (node).
