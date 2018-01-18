@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
+	"golang.org/x/net/idna"
 	"gopkg.in/square/go-jose.v2"
 )
 
@@ -213,7 +214,7 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 			return fmt.Errorf("nonvoting: Descriptor contains empty Address list for transport '%v'", transport)
 		}
 
-		expectedIPVer := 0
+		var expectedIPVer int
 		switch transport {
 		case pki.TransportInvalid:
 			return fmt.Errorf("nonvoting: Descriptor contains invalid Transport")
@@ -222,8 +223,15 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 		case pki.TransportTCPv6:
 			expectedIPVer = 6
 		default:
-			// Ignore unknown transports.
-			continue
+			// Unknown transports are only supported between the client and
+			// provider.
+			if d.Layer != pki.LayerProvider {
+				return fmt.Errorf("nonvoting: Non-provider published Transport '%v'", transport)
+			}
+			if transport != pki.TransportTCP {
+				// Ignore transports that don't have validation logic.
+				continue
+			}
 		}
 
 		// Validate all addresses belonging to the TCP variants.
@@ -238,10 +246,20 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 			if _, err := strconv.ParseUint(p, 10, 16); err != nil {
 				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 			}
-			if ver, err := getIPVer(h); err != nil {
-				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
-			} else if ver != expectedIPVer {
-				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
+			switch expectedIPVer {
+			case 4, 6:
+				if ver, err := getIPVer(h); err != nil {
+					return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+				} else if ver != expectedIPVer {
+					return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
+				}
+			default:
+				// This must be TransportTCP or something else that supports
+				// "sensible" DNS style hostnames.  Validate that they are
+				// at least somewhat well formed.
+				if _, err := idna.Lookup.ToASCII(h); err != nil {
+					return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+				}
 			}
 		}
 	}

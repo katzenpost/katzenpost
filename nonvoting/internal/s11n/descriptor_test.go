@@ -43,8 +43,9 @@ func TestDescriptor(t *testing.T) {
 		pki.TransportTCPv4:     []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
 		pki.TransportTCPv6:     []string{"[2001:DB8::1]:8901"},
 		pki.Transport("torv2"): []string{"thisisanoldonion.onion:2323"},
+		pki.TransportTCP:       []string{"example.com:4242"},
 	}
-	d.Layer = 0
+	d.Layer = pki.LayerProvider
 	d.LoadWeight = 23
 	identityPriv, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err, "eddsa.NewKeypair()")
