@@ -200,7 +200,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		var dstAddrs []string
 		transports := c.c.cfg.PreferedTransports
 		if transports == nil {
-			transports = cpki.InternalTransports
+			transports = cpki.ClientTransports
 		}
 		for _, t := range transports {
 			if v, ok := c.descriptor.Addresses[t]; ok {
