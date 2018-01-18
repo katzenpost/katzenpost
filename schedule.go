@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/queue"
 	"github.com/katzenpost/core/worker"
@@ -31,9 +32,10 @@ import (
 type scheduler struct {
 	worker.Worker
 
-	s   *Server
-	ch  *channels.InfiniteChannel
-	log *logging.Logger
+	s          *Server
+	ch         *channels.InfiniteChannel
+	maxDelayCh chan uint64
+	log        *logging.Logger
 }
 
 func (sch *scheduler) Halt() {
@@ -47,6 +49,8 @@ func (sch *scheduler) onPacket(pkt *packet) {
 }
 
 func (sch *scheduler) worker() {
+	const absoluteMaxDelay = epochtime.Period * numMixKeys
+
 	mRand := rand.NewMath()
 	q := queue.New()
 	ch := sch.ch.Out()
@@ -54,6 +58,7 @@ func (sch *scheduler) worker() {
 	timer := time.NewTimer(math.MaxInt64)
 	defer timer.Stop()
 
+	maxDelay := absoluteMaxDelay
 	for {
 		timerFired := false
 		// The vast majority of the time the scheduler will be idle waiting on
@@ -78,6 +83,13 @@ func (sch *scheduler) worker() {
 			// the packet was enqueued.
 			pkt := e.(*packet)
 
+			// Ensure that the packet's delay is not pathologically malformed.
+			if pkt.delay > maxDelay {
+				sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.id, pkt.delay)
+				pkt.dispose()
+				break
+			}
+
 			// Ensure the peer is valid by querying the outgoing connection
 			// table.
 			if sch.s.connector.isValidForwardDest(&pkt.nextNodeHop.ID) {
@@ -99,6 +111,16 @@ func (sch *scheduler) worker() {
 				sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.id, sID)
 				pkt.dispose()
 			}
+		case newMaxDelay := <-sch.maxDelayCh:
+			pkiMaxDelay := time.Duration(newMaxDelay) * time.Millisecond
+			if pkiMaxDelay > absoluteMaxDelay || pkiMaxDelay == 0 {
+				// There is a maximum sensible delay, regardless of what the
+				// document happens to specify.
+				maxDelay = absoluteMaxDelay
+			} else {
+				maxDelay = pkiMaxDelay
+			}
+			sch.log.Debugf("New PKI MaxDelay %v, using %v.", pkiMaxDelay, maxDelay)
 		case <-timer.C:
 			// Packet delay probably passed, packet dispatch handled as
 			// part of rescheduling the timer.
@@ -162,6 +184,7 @@ func newScheduler(s *Server) *scheduler {
 	sch.s = s
 	sch.log = s.logBackend.GetLogger("scheduler")
 	sch.ch = channels.NewInfiniteChannel()
+	sch.maxDelayCh = make(chan uint64)
 
 	sch.Go(sch.worker)
 	return sch

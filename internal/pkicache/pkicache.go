@@ -40,6 +40,11 @@ func (e *Entry) Epoch() uint64 {
 	return e.doc.Epoch
 }
 
+// MaxDelay returns the MaxDelay for cached PKI document.
+func (e *Entry) MaxDelay() uint64 {
+	return e.doc.MaxDelay
+}
+
 // Self returns the descriptor for the current node.
 func (e *Entry) Self() *pki.MixDescriptor {
 	return e.self
