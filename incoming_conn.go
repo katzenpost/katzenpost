@@ -222,8 +222,7 @@ func (c *incomingConn) worker() {
 				}
 				continue
 			default:
-				c.log.Debugf("Received unexpected command: %T", cmd)
-				return
+				// Probably a common command, like SendPacket.
 			}
 		}
 
