@@ -18,6 +18,7 @@ package server
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,7 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/server/userdb"
@@ -368,19 +370,24 @@ func newProvider(s *Server) (*provider, error) {
 	p.log = s.logBackend.GetLogger("provider")
 
 	var err error
-	if p.s.cfg.Provider.UserDBBackend == "extern" {
-		p.userDB, err = externuserdb.New(p.s.cfg.Provider.Extern.ProviderURL)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		p.userDB, err = boltuserdb.New(p.s.cfg.Provider.Bolt.UserDB)
-		if err != nil {
-			return nil, err
-		}
+	switch p.s.cfg.Provider.UserDB.Backend {
+	case config.BackendBolt:
+		p.userDB, err = boltuserdb.New(p.s.cfg.Provider.UserDB.Bolt.UserDB)
+	case config.BackendExtern:
+		p.userDB, err = externuserdb.New(p.s.cfg.Provider.UserDB.Extern.ProviderURL)
+	default:
+		return nil, fmt.Errorf("provider: unknown UserDB backend: %v", p.s.cfg.Provider.UserDB.Backend)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	p.spool, err = boltspool.New(p.s.cfg.Provider.SpoolDB)
+	switch p.s.cfg.Provider.SpoolDB.Backend {
+	case config.BackendBolt:
+		p.spool, err = boltspool.New(p.s.cfg.Provider.SpoolDB.Bolt.SpoolDB)
+	default:
+		err = fmt.Errorf("provider: unknown SpoolDB backend: %v", p.s.cfg.Provider.SpoolDB.Backend)
+	}
 	if err != nil {
 		p.userDB.Close()
 		return nil, err
