@@ -208,8 +208,21 @@ Table of Contents
 
 2.1 PKI Protocol Schedule
 
-   // XXX: It would be good to have some analysis of why you chose 3-hour
-   // epochs, and 3 epochs worth of publiction.  What are the tradeoffs?
+   There are two main constraints to Authority schedule:
+
+   1. There MUST be enough key material extending into the
+   future so that clients are able to construct Sphinx packets with a
+   forward and reply paths.
+
+   2. All participants should have enough time to participate in the
+   protocol; upload descriptors, vote, generate documents, download
+   documents, establish connections for user traffic.
+
+   The epoch duration of 3 hours is more than adequate for these two
+   constraints.
+
+   // XXX david: perhaps we should make it shorter? but first let's do
+   // some scaling and bandwidth calculations to see how bad it gets...
 
 2.1.1 Directory Authority Server Schedule
 
@@ -596,23 +609,8 @@ Table of Contents
      this single host to control the network consensus documents that
      mix clients download and use to inform their path selection.
 
-   * We do not require cryptographic authenticity properties from the
-     network transport because all our messages already have a
-     cryptographic signature field that MUST be checked by the
-     receiving peer. Confidentiality is not required because clients
-     should all receive the exact same consensus file with all the
-     signatures to prove it's origins.
-
-     If a passive network adversary can watch the Directory Authority
-     servers vote, that's OK. However, very paranoid implementers
-     could disagree and use our Noise based PQ crypto wire protocol
-     [KATZMIXWIRE] for Directory Authority system message exchange as
-     was suggested in section "6. Future Work".
-
-   * Constructing this consensus protocol using a cryptographically
-     malleable transport could expose at least one protocol parser to
-     the network, this represents a small fraction of the attack
-     surface area.
+   * Short epoch durations and fewer epoch keys published in advance
+     is better forward secrecy.
 
 10. Acknowledgements
 
