@@ -47,8 +47,11 @@ const (
 	defaultSpoolDB            = "spool.db"
 	defaultManagementSocket   = "management_sock"
 
-	backendBolt   = "bolt"
-	backendExtern = "extern"
+	// BackendBolt is a BoltDB based backend.
+	BackendBolt = "bolt"
+
+	// BackendExtern is a External (RESTful http) backend.
+	BackendExtern = "extern"
 )
 
 var defaultLogging = Logging{
@@ -224,19 +227,11 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
-	// UserDBBackend selects the userdb backend to be used. If left empty
-	// the boltuserdb implementation will be used.
-	UserDBBackend string
+	// UserDB is the userdb backend configuration.
+	UserDB *UserDB
 
-	// Bolt DB Backed katzenpost user db
-	Bolt *BoltUserDB
-
-	// Externally defined katzenpost user db
-	Extern *ExternUserDB
-
-	// SpoolDB is the path to the user message spool.  If left empty, it will
-	// use `spool.db` under the DataDir.
-	SpoolDB string
+	// SpoolDB is the user message spool configuration.
+	SpoolDB *SpoolDB
 
 	// BinaryRecipients disables all Provider side recipient pre-processing,
 	// including removing trailing `NUL` bytes, case normalization, and
@@ -252,63 +247,117 @@ type Provider struct {
 	RecipientDelimiter string
 }
 
-// BoltUserDB is the bolt implementation of userdb
+// UserDB is the userdb backend configuration.
+type UserDB struct {
+	// Backend is the active userdb backend.  If left empty, the BoltUserDB
+	// backend will be used (`bolt`).
+	Backend string
+
+	// BoltDB backed userdb (`bolt`).
+	Bolt *BoltUserDB
+
+	// Externally defined (RESTful http) userdb (`extern`).
+	Extern *ExternUserDB
+}
+
+// BoltUserDB is the BoltDB implementation of userdb.
 type BoltUserDB struct {
 	// UserDB is the path to the user database.  If left empty it will use
 	// `users.db` under the DataDir.
 	UserDB string
 }
 
-// ExternUserDB is the external http user authentication
+// ExternUserDB is the external http user authentication.
 type ExternUserDB struct {
 	// ProviderURL is the base url used for the external provider authentication API.
-	// It should be in the form of http://localhost:8080/
+	// It should be in the form `http://localhost:8080/`
 	ProviderURL string
 }
 
+// SpoolDB is the user message spool configuration.
+type SpoolDB struct {
+	// Backend is the active spool backend.  If left empty, the BoltSpoolDB
+	// backend will be used (`bolt`).
+	Backend string
+
+	// BoltDB backed spool (`bolt`).
+	Bolt *BoltSpoolDB
+}
+
+// BoltSpoolDB is the BolTDB implementation of the spool.
+type BoltSpoolDB struct {
+	// SpoolDB is the path to the user message spool.  If left empty, it will
+	// use `spool.db` under the DataDir.
+	SpoolDB string
+}
+
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
-	if pCfg.UserDBBackend == "" {
-		pCfg.UserDBBackend = backendBolt
-		pCfg.Bolt = &BoltUserDB{}
-	}
-	if pCfg.UserDBBackend == backendBolt {
-		if pCfg.Bolt.UserDB == "" {
-			pCfg.Bolt.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
+	if pCfg.UserDB == nil {
+		pCfg.UserDB = &UserDB{
+			Backend: BackendBolt,
 		}
 	}
-	if pCfg.SpoolDB == "" {
-		pCfg.SpoolDB = filepath.Join(sCfg.DataDir, defaultSpoolDB)
+	switch pCfg.UserDB.Backend {
+	case BackendBolt:
+		if pCfg.UserDB.Bolt == nil {
+			pCfg.UserDB.Bolt = &BoltUserDB{
+				UserDB: filepath.Join(sCfg.DataDir, defaultUserDB),
+			}
+		}
+	default:
+	}
+
+	if pCfg.SpoolDB == nil {
+		pCfg.SpoolDB = &SpoolDB{
+			Backend: BackendBolt,
+		}
+	}
+	switch pCfg.SpoolDB.Backend {
+	case BackendBolt:
+		if pCfg.SpoolDB.Bolt == nil {
+			pCfg.SpoolDB.Bolt = &BoltSpoolDB{
+				SpoolDB: filepath.Join(sCfg.DataDir, defaultSpoolDB),
+			}
+		}
+	default:
 	}
 }
 
 func (pCfg *Provider) validate() error {
-	switch pCfg.UserDBBackend {
-	case backendBolt:
-		if !filepath.IsAbs(pCfg.Bolt.UserDB) {
-			return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.Bolt.UserDB)
+	switch pCfg.UserDB.Backend {
+	case BackendBolt:
+		if !filepath.IsAbs(pCfg.UserDB.Bolt.UserDB) {
+			return fmt.Errorf("config: Provider: UserDB '%v' is not an absolute path", pCfg.UserDB.Bolt.UserDB)
 		}
-	case backendExtern:
-		if pCfg.Extern == nil {
+	case BackendExtern:
+		if pCfg.UserDB.Extern == nil {
 			return fmt.Errorf("config: Provider: Extern section should be defined")
 		}
-
-		if pCfg.Extern.ProviderURL == "" {
-			return fmt.Errorf("config: Provider: ProviderURL should be defined for externuserdb")
+		if pCfg.UserDB.Extern.ProviderURL == "" {
+			return fmt.Errorf("config: Provider: ProviderURL should be defined for Extern")
 		}
-		providerURL, err := url.Parse(pCfg.Extern.ProviderURL)
+		providerURL, err := url.Parse(pCfg.UserDB.Extern.ProviderURL)
 		if err != nil {
-			return fmt.Errorf("config: Provider: ProviderURL should be a valid url")
+			return fmt.Errorf("config: Provider: ProviderURL should be a valid url: %v", err)
 		}
-		if providerURL.Scheme != "http" && providerURL.Scheme != "https" {
+		switch providerURL.Scheme {
+		case "http", "https":
+		default:
 			return fmt.Errorf("config: Provider: ProviderURL should be of http schema")
 		}
 	default:
-		return fmt.Errorf("config: Provider: Invalid UserDBBackend: '%v'", pCfg.UserDBBackend)
+		return fmt.Errorf("config: Provider: Invalid UserDB Backend: '%v'", pCfg.UserDB.Backend)
 	}
 
-	if !filepath.IsAbs(pCfg.SpoolDB) {
-		return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB)
+	switch pCfg.SpoolDB.Backend {
+	case BackendBolt:
+		if !filepath.IsAbs(pCfg.SpoolDB.Bolt.SpoolDB) {
+			return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB.Bolt.SpoolDB)
+		}
+	default:
+		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)
 	}
+
 	return nil
 }
 
