@@ -293,9 +293,10 @@ type BoltSpoolDB struct {
 
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	if pCfg.UserDB == nil {
-		pCfg.UserDB = &UserDB{
-			Backend: BackendBolt,
-		}
+		pCfg.UserDB = &UserDB{}
+	}
+	if pCfg.UserDB.Backend == "" {
+		pCfg.UserDB.Backend = BackendBolt
 	}
 	switch pCfg.UserDB.Backend {
 	case BackendBolt:
@@ -309,9 +310,10 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	}
 
 	if pCfg.SpoolDB == nil {
-		pCfg.SpoolDB = &SpoolDB{
-			Backend: BackendBolt,
-		}
+		pCfg.SpoolDB = &SpoolDB{}
+	}
+	if pCfg.SpoolDB.Backend == "" {
+		pCfg.SpoolDB.Backend = BackendBolt
 	}
 	switch pCfg.SpoolDB.Backend {
 	case BackendBolt:
