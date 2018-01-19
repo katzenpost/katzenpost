@@ -300,9 +300,10 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	switch pCfg.UserDB.Backend {
 	case BackendBolt:
 		if pCfg.UserDB.Bolt == nil {
-			pCfg.UserDB.Bolt = &BoltUserDB{
-				UserDB: filepath.Join(sCfg.DataDir, defaultUserDB),
-			}
+			pCfg.UserDB.Bolt = &BoltUserDB{}
+		}
+		if pCfg.UserDB.Bolt.UserDB == "" {
+			pCfg.UserDB.Bolt.UserDB = filepath.Join(sCfg.DataDir, defaultUserDB)
 		}
 	default:
 	}
@@ -315,9 +316,10 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	switch pCfg.SpoolDB.Backend {
 	case BackendBolt:
 		if pCfg.SpoolDB.Bolt == nil {
-			pCfg.SpoolDB.Bolt = &BoltSpoolDB{
-				SpoolDB: filepath.Join(sCfg.DataDir, defaultSpoolDB),
-			}
+			pCfg.SpoolDB.Bolt = &BoltSpoolDB{}
+		}
+		if pCfg.SpoolDB.Bolt.SpoolDB == "" {
+			pCfg.SpoolDB.Bolt.SpoolDB = filepath.Join(sCfg.DataDir, defaultSpoolDB)
 		}
 	default:
 	}
