@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,6 +48,7 @@ type pki struct {
 	log  *logging.Logger
 	impl cpki.Client
 
+	descAddrMap        map[cpki.Transport][]string
 	docs               map[uint64]*pkicache.Entry
 	rawDocs            map[uint64][]byte
 	failedFetches      map[uint64]error
@@ -298,15 +300,11 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// probably not worth it.
 
 	// Generate the non-key parts of the descriptor.
-	addrMap, err := makeDescAddrMap(p.s.cfg.Server.Addresses)
-	if err != nil {
-		return err
-	}
 	desc := &cpki.MixDescriptor{
 		Name:        p.s.cfg.Server.Identifier,
 		IdentityKey: p.s.identityKey.PublicKey(),
 		LinkKey:     p.s.linkKey.PublicKey(),
-		Addresses:   addrMap,
+		Addresses:   p.descAddrMap,
 	}
 	if p.s.cfg.Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
@@ -347,7 +345,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err = p.impl.Post(pkiCtx, doPublishEpoch, p.s.identityKey, desc)
+	err := p.impl.Post(pkiCtx, doPublishEpoch, p.s.identityKey, desc)
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
@@ -575,10 +573,26 @@ func newPKI(s *Server) (*pki, error) {
 	p.rawDocs = make(map[uint64][]byte)
 	p.failedFetches = make(map[uint64]error)
 
+	var err error
+	if p.descAddrMap, err = makeDescAddrMap(p.s.cfg.Server.Addresses); err != nil {
+		return nil, err
+	}
+	if p.s.cfg.Server.IsProvider {
+		for k, v := range p.s.cfg.Provider.AltAddresses {
+			if len(v) == 0 {
+				continue
+			}
+			kTransport := cpki.Transport(strings.ToLower(k))
+			if _, ok := p.descAddrMap[kTransport]; ok {
+				return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
+			}
+			p.descAddrMap[kTransport] = v
+		}
+	}
+
 	if s.cfg.PKI.Nonvoting != nil {
 		authPk := new(eddsa.PublicKey)
-		err := authPk.FromString(s.cfg.PKI.Nonvoting.PublicKey)
-		if err != nil {
+		if err = authPk.FromString(s.cfg.PKI.Nonvoting.PublicKey); err != nil {
 			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
 		}
 		pkiCfg := &nClient.Config{

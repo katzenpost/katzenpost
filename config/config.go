@@ -21,13 +21,16 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
 	"golang.org/x/net/idna"
 )
@@ -227,6 +230,11 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
+	// AltAddresses is the map of extra transports and addresses at which
+	// the Provider is reachable by clients.  The most useful alternative
+	// transport is likely ("tcp") (`core/pki.TransportTCP`).
+	AltAddresses map[string][]string
+
 	// UserDB is the userdb backend configuration.
 	UserDB *UserDB
 
@@ -292,6 +300,9 @@ type BoltSpoolDB struct {
 }
 
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
+	if pCfg.AltAddresses == nil {
+		pCfg.AltAddresses = make(map[string][]string)
+	}
 	if pCfg.UserDB == nil {
 		pCfg.UserDB = &UserDB{}
 	}
@@ -328,6 +339,36 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
+	internalTransports := make(map[string]bool)
+	for _, v := range pki.InternalTransports {
+		internalTransports[strings.ToLower(string(v))] = true
+	}
+
+	for k, v := range pCfg.AltAddresses {
+		kLower := strings.ToLower(k)
+		if internalTransports[kLower] {
+			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
+		}
+		switch pki.Transport(kLower) {
+		case pki.TransportTCP:
+			for _, a := range v {
+				h, p, err := net.SplitHostPort(a)
+				if err != nil {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
+				}
+				if len(h) == 0 {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", a)
+				}
+				if port, err := strconv.ParseUint(p, 10, 16); err != nil {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
+				} else if port == 0 {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", a)
+				}
+			}
+		default:
+		}
+	}
+
 	switch pCfg.UserDB.Backend {
 	case BackendBolt:
 		if !filepath.IsAbs(pCfg.UserDB.Bolt.UserDB) {
