@@ -243,8 +243,10 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 			if len(h) == 0 {
 				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v'", transport, v)
 			}
-			if _, err := strconv.ParseUint(p, 10, 16); err != nil {
+			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
 				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+			} else if port == 0 {
+				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': port is 0", transport, v)
 			}
 			switch expectedIPVer {
 			case 4, 6:
