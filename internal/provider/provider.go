@@ -1,4 +1,4 @@
-// scheduler.go - Katzenpost server provider backend.
+// provider.go - Katzenpost server provider backend.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+// Package provider implements the Katzenpost sever provider.
+package provider
 
 import (
 	"bytes"
@@ -34,6 +35,9 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
+	"github.com/katzenpost/server/internal/debug"
+	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/server/userdb"
@@ -48,11 +52,12 @@ type provider struct {
 	sync.Mutex
 	worker.Worker
 
-	s      *Server
+	glue glue.Glue
+	log  *logging.Logger
+
 	ch     *channels.InfiniteChannel
 	userDB userdb.UserDB
 	spool  spool.Spool
-	log    *logging.Logger
 }
 
 func (p *provider) Halt() {
@@ -69,7 +74,11 @@ func (p *provider) Halt() {
 	}
 }
 
-func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
+func (p *provider) Spool() spool.Spool {
+	return p.spool
+}
+
+func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	ad, err := p.fixupUserNameCase(c.AdditionalData)
 	if err != nil {
 		return false
@@ -77,7 +86,7 @@ func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(ad, c.PublicKey)
 	if !isValid {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v' (Probably a peer)", bytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v' (Probably a peer)", debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
 		} else {
 			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
 		}
@@ -85,18 +94,17 @@ func (p *provider) authenticateClient(c *wire.PeerCredentials) bool {
 	return isValid
 }
 
-func (p *provider) onPacket(pkt *packet) {
-	ch := p.ch.In()
-	ch <- pkt
+func (p *provider) OnPacket(pkt *packet.Packet) {
+	p.ch.In() <- pkt
 }
 
 func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
 	// Unless explicitly specified otherwise, force usernames to lower case.
-	if p.s.cfg.Provider.BinaryRecipients {
+	if p.glue.Config().Provider.BinaryRecipients {
 		return user, nil
 	}
 
-	if p.s.cfg.Provider.CaseSensitiveRecipients {
+	if p.glue.Config().Provider.CaseSensitiveRecipients {
 		return precis.UsernameCasePreserved.Bytes(user)
 	}
 	return precis.UsernameCaseMapped.Bytes(user)
@@ -105,7 +113,7 @@ func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
 func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 	// If the provider is configured for binary recipients, do no post
 	// processing.
-	if p.s.cfg.Provider.BinaryRecipients {
+	if p.glue.Config().Provider.BinaryRecipients {
 		return recipient, nil
 	}
 
@@ -120,8 +128,8 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 	}
 
 	// (Optional) Discard everything after the first recipient delimiter...
-	if p.s.cfg.Provider.RecipientDelimiter != "" {
-		if sp := bytes.SplitN(b, []byte(p.s.cfg.Provider.RecipientDelimiter), 2); sp != nil {
+	if delimiter := p.glue.Config().Provider.RecipientDelimiter; delimiter != "" {
+		if sp := bytes.SplitN(b, []byte(delimiter), 2); sp != nil {
 			// ... As long as the recipient doesn't start with a delimiter.
 			if len(sp[0]) > 0 {
 				b = sp[0]
@@ -133,44 +141,44 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 }
 
 func (p *provider) worker() {
-	maxDwell := time.Duration(p.s.cfg.Debug.ProviderDelay) * time.Millisecond
+	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
 
 	defer p.log.Debugf("Halting Provider worker.")
 
 	ch := p.ch.Out()
 
 	for {
-		var pkt *packet
+		var pkt *packet.Packet
 		select {
 		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
 			return
 		case e := <-ch:
-			pkt = e.(*packet)
-			if dwellTime := monotime.Now() - pkt.dispatchAt; dwellTime > maxDwell {
-				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.id, dwellTime)
-				pkt.dispose()
+			pkt = e.(*packet.Packet)
+			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
+				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
+				pkt.Dispose()
 				continue
 			}
 		}
 
 		// Post-process the recipient.
-		recipient, err := p.fixupRecipient(pkt.recipient.ID[:])
+		recipient, err := p.fixupRecipient(pkt.Recipient.ID[:])
 		if err != nil {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.id, utils.ASCIIBytesToPrintString(recipient))
-			pkt.dispose()
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+			pkt.Dispose()
 			continue
 		}
 
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.id, utils.ASCIIBytesToPrintString(recipient))
-			pkt.dispose()
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+			pkt.Dispose()
 			continue
 		}
 
 		// Process the packet based on type.
-		if pkt.isSURBReply() {
+		if pkt.IsSURBReply() {
 			p.onSURBReply(pkt, recipient)
 		} else {
 			// Caller checks that the packet is either a SURBReply or a user
@@ -178,25 +186,25 @@ func (p *provider) worker() {
 			p.onToUser(pkt, recipient)
 		}
 
-		pkt.dispose()
+		pkt.Dispose()
 	}
 }
 
-func (p *provider) onSURBReply(pkt *packet, recipient []byte) {
-	if len(pkt.payload) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
-		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.id, len(pkt.payload))
+func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
+	if len(pkt.Payload) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
+		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.ID, len(pkt.Payload))
 		return
 	}
 
 	// Store the payload in the spool.
-	if err := p.spool.StoreSURBReply(recipient, &pkt.surbReply.ID, pkt.payload); err != nil {
-		p.log.Debugf("Failed to store SURBReply: %v (%v)", pkt.id, err)
+	if err := p.spool.StoreSURBReply(recipient, &pkt.SurbReply.ID, pkt.Payload); err != nil {
+		p.log.Debugf("Failed to store SURBReply: %v (%v)", pkt.ID, err)
 	} else {
-		p.log.Debugf("Stored SURBReply: %v", pkt.id)
+		p.log.Debugf("Stored SURBReply: %v", pkt.ID)
 	}
 }
 
-func (p *provider) onToUser(pkt *packet, recipient []byte) {
+func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 	const (
 		hdrLength    = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
 		flagsPadding = 0
@@ -205,19 +213,19 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 	)
 
 	// Sanity check the forward packet payload length.
-	if len(pkt.payload) != constants.ForwardPayloadLength {
-		p.log.Debugf("Dropping packet: %v (Invalid payload length: '%v')", pkt.id, len(pkt.payload))
+	if len(pkt.Payload) != constants.ForwardPayloadLength {
+		p.log.Debugf("Dropping packet: %v (Invalid payload length: '%v')", pkt.ID, len(pkt.Payload))
 		return
 	}
 
 	// Parse the payload, which should be a valid BlockSphinxPlaintext.
-	b := pkt.payload
+	b := pkt.Payload
 	if len(b) < hdrLength {
-		p.log.Debugf("Dropping packet: %v (Truncated message block)", pkt.id)
+		p.log.Debugf("Dropping packet: %v (Truncated message block)", pkt.ID)
 		return
 	}
 	if b[1] != reserved {
-		p.log.Debugf("Dropping packet: %v (Invalid message reserved: 0x%02x)", pkt.id, b[1])
+		p.log.Debugf("Dropping packet: %v (Invalid message reserved: 0x%02x)", pkt.ID, b[1])
 		return
 	}
 	ct := b[hdrLength:]
@@ -227,7 +235,7 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 	case flagsSURB:
 		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
 	default:
-		p.log.Debugf("Dropping packet: %v (Invalid message flags: 0x%02x)", pkt.id, b[0])
+		p.log.Debugf("Dropping packet: %v (Invalid message flags: 0x%02x)", pkt.ID, b[0])
 		return
 	}
 	if len(ct) != constants.UserForwardPayloadLength {
@@ -237,14 +245,14 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 
 	// Store the ciphertext in the spool.
 	if err := p.spool.StoreMessage(recipient, ct); err != nil {
-		p.log.Debugf("Failed to store message payload: %v (%v)", pkt.id, err)
+		p.log.Debugf("Failed to store message payload: %v (%v)", pkt.ID, err)
 		return
 	}
 
 	// Iff there is a SURB, generate a SURB-ACK, and schedule.
 	if surb != nil {
-		if !pkt.isToUser() {
-			p.log.Debugf("Packet has invalid commands for the SURB-ACK: %v", pkt.id)
+		if !pkt.IsToUser() {
+			p.log.Debugf("Packet has invalid commands for the SURB-ACK: %v", pkt.ID)
 			return
 		}
 
@@ -258,37 +266,37 @@ func (p *provider) onToUser(pkt *packet, recipient []byte) {
 		var ackPayload [constants.ForwardPayloadLength]byte
 		rawAckPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, ackPayload[:])
 		if err != nil {
-			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.id, err)
+			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
 		}
 
-		// Build the packet structure for the SURB-ACK.
-		ackPkt := newPacket()
-		ackPkt.copyToRaw(rawAckPkt)
-		ackPkt.cmds = make([]commands.RoutingCommand, 0, 2)
+		// Build the command vector for the SURB-ACK
+		cmds := make([]commands.RoutingCommand, 0, 2)
 
 		nextHopCmd := new(commands.NextNodeHop)
 		copy(nextHopCmd.ID[:], firstHop[:])
-		ackPkt.cmds = append(ackPkt.cmds, nextHopCmd)
-		ackPkt.nextNodeHop = nextHopCmd
+		cmds = append(cmds, nextHopCmd)
 
 		nodeDelayCmd := new(commands.NodeDelay)
-		nodeDelayCmd.Delay = pkt.nodeDelay.Delay
-		ackPkt.cmds = append(ackPkt.cmds, nodeDelayCmd)
-		ackPkt.nodeDelay = nodeDelayCmd
+		nodeDelayCmd.Delay = pkt.NodeDelay.Delay
+		cmds = append(cmds, nodeDelayCmd)
 
-		ackPkt.recvAt = pkt.recvAt
-		ackPkt.delay = pkt.delay
-		ackPkt.mustForward = true
+		// Assemble the SURB-ACK Packet.
+		ackPkt, _ := packet.New(rawAckPkt)
+		ackPkt.Set(nil, cmds)
+
+		ackPkt.RecvAt = pkt.RecvAt
+		ackPkt.Delay = pkt.Delay
+		ackPkt.MustForward = true
 
 		// XXX: This should probably fudge the delay to account for processing
 		// time.
 
 		// Send the SURB-ACK off to the scheduler.
-		p.log.Debugf("Handing off user destined SURB-ACK: %v (Src:%v)", ackPkt.id, pkt.id)
-		p.s.scheduler.onPacket(ackPkt)
+		p.log.Debugf("Handing off user destined SURB-ACK: %v (Src:%v)", ackPkt.ID, pkt.ID)
+		p.glue.Scheduler().OnPacket(ackPkt)
 	} else {
-		p.log.Debugf("Stored Message: %v (No SURB)", pkt.id)
+		p.log.Debugf("Stored Message: %v (No SURB)", pkt.ID)
 	}
 }
 
@@ -363,30 +371,34 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 	return c.WriteReply(thwack.StatusOk)
 }
 
-func newProvider(s *Server) (*provider, error) {
-	p := new(provider)
-	p.s = s
-	p.ch = channels.NewInfiniteChannel()
-	p.log = s.logBackend.GetLogger("provider")
+// New constructs a new provider instance.
+func New(glue glue.Glue) (glue.Provider, error) {
+	p := &provider{
+		glue: glue,
+		log:  glue.LogBackend().GetLogger("provider"),
+		ch:   channels.NewInfiniteChannel(),
+	}
+
+	cfg := glue.Config()
 
 	var err error
-	switch p.s.cfg.Provider.UserDB.Backend {
+	switch cfg.Provider.UserDB.Backend {
 	case config.BackendBolt:
-		p.userDB, err = boltuserdb.New(p.s.cfg.Provider.UserDB.Bolt.UserDB)
+		p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
 	case config.BackendExtern:
-		p.userDB, err = externuserdb.New(p.s.cfg.Provider.UserDB.Extern.ProviderURL)
+		p.userDB, err = externuserdb.New(cfg.Provider.UserDB.Extern.ProviderURL)
 	default:
-		return nil, fmt.Errorf("provider: unknown UserDB backend: %v", p.s.cfg.Provider.UserDB.Backend)
+		return nil, fmt.Errorf("provider: unknown UserDB backend: %v", cfg.Provider.UserDB.Backend)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	switch p.s.cfg.Provider.SpoolDB.Backend {
+	switch cfg.Provider.SpoolDB.Backend {
 	case config.BackendBolt:
-		p.spool, err = boltspool.New(p.s.cfg.Provider.SpoolDB.Bolt.SpoolDB)
+		p.spool, err = boltspool.New(cfg.Provider.SpoolDB.Bolt.SpoolDB)
 	default:
-		err = fmt.Errorf("provider: unknown SpoolDB backend: %v", p.s.cfg.Provider.SpoolDB.Backend)
+		err = fmt.Errorf("provider: unknown SpoolDB backend: %v", cfg.Provider.SpoolDB.Backend)
 	}
 	if err != nil {
 		p.userDB.Close()
@@ -401,19 +413,19 @@ func newProvider(s *Server) (*provider, error) {
 	}
 
 	// Wire in the managment related commands.
-	if s.cfg.Management.Enable {
+	if cfg.Management.Enable {
 		const (
 			cmdAddUser    = "ADD_USER"
 			cmdUpdateUser = "UPDATE_USER"
 			cmdRemoveUser = "REMOVE_USER"
 		)
 
-		s.management.RegisterCommand(cmdAddUser, p.onAddUser)
-		s.management.RegisterCommand(cmdUpdateUser, p.onUpdateUser)
-		s.management.RegisterCommand(cmdRemoveUser, p.onRemoveUser)
+		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
+		glue.Management().RegisterCommand(cmdUpdateUser, p.onUpdateUser)
+		glue.Management().RegisterCommand(cmdRemoveUser, p.onRemoveUser)
 	}
 
-	for i := 0; i < p.s.cfg.Debug.NumProviderWorkers; i++ {
+	for i := 0; i < cfg.Debug.NumProviderWorkers; i++ {
 		p.Go(p.worker)
 	}
 	return p, nil

@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+// Package scheduler implements the Katzenpost server scheduler.
+package scheduler
 
 import (
 	"math"
@@ -25,6 +26,10 @@ import (
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/queue"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/internal/constants"
+	"github.com/katzenpost/server/internal/debug"
+	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -32,10 +37,11 @@ import (
 type scheduler struct {
 	worker.Worker
 
-	s          *Server
+	glue glue.Glue
+	log  *logging.Logger
+
 	ch         *channels.InfiniteChannel
 	maxDelayCh chan uint64
-	log        *logging.Logger
 }
 
 func (sch *scheduler) Halt() {
@@ -43,21 +49,25 @@ func (sch *scheduler) Halt() {
 	sch.ch.Close()
 }
 
-func (sch *scheduler) onPacket(pkt *packet) {
-	ch := sch.ch.In()
-	ch <- pkt
+func (sch *scheduler) OnNewMaxDelay(newMaxDelay uint64) {
+	sch.maxDelayCh <- newMaxDelay
+}
+
+func (sch *scheduler) OnPacket(pkt *packet.Packet) {
+	sch.ch.In() <- pkt
 }
 
 func (sch *scheduler) worker() {
-	const absoluteMaxDelay = epochtime.Period * numMixKeys
+	const absoluteMaxDelay = epochtime.Period * constants.NumMixKeys
 
 	mRand := rand.NewMath()
 	q := queue.New()
 	ch := sch.ch.Out()
-	timerSlack := time.Duration(sch.s.cfg.Debug.SchedulerSlack) * time.Millisecond
+	timerSlack := time.Duration(sch.glue.Config().Debug.SchedulerSlack) * time.Millisecond
 	timer := time.NewTimer(math.MaxInt64)
 	defer timer.Stop()
 
+	maxCapacity := sch.glue.Config().Debug.SchedulerQueueSize
 	maxDelay := absoluteMaxDelay
 	for {
 		timerFired := false
@@ -81,35 +91,35 @@ func (sch *scheduler) worker() {
 			// Note: This assumes that pkt.delay has already been adjusted to
 			// account for the packet processing time up to the point where
 			// the packet was enqueued.
-			pkt := e.(*packet)
+			pkt := e.(*packet.Packet)
 
 			// Ensure that the packet's delay is not pathologically malformed.
-			if pkt.delay > maxDelay {
-				sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.id, pkt.delay)
-				pkt.dispose()
+			if pkt.Delay > maxDelay {
+				sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
+				pkt.Dispose()
 				break
 			}
 
 			// Ensure the peer is valid by querying the outgoing connection
 			// table.
-			if sch.s.connector.isValidForwardDest(&pkt.nextNodeHop.ID) {
+			if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
 				// Enqueue the packet unconditionally so that it is a
 				// candidate to be dropped.
-				q.Enqueue(uint64(monotime.Now()+pkt.delay), pkt)
+				q.Enqueue(uint64(monotime.Now()+pkt.Delay), pkt)
 
-				sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.id, pkt.delay)
+				sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
 
 				// If queue limitations are enabled, check to see if the queue
 				// is over capacity after the new packet was inserted.
-				if max := sch.s.cfg.Debug.SchedulerQueueSize; max > 0 && q.Len() > max {
-					drop := q.DequeueRandom(mRand).Value.(*packet)
-					sch.log.Debugf("Queue size limit reached, discarding: %v", drop.id)
-					drop.dispose()
+				if maxCapacity > 0 && q.Len() > maxCapacity {
+					drop := q.DequeueRandom(mRand).Value.(*packet.Packet)
+					sch.log.Debugf("Queue size limit reached, discarding: %v", drop.ID)
+					drop.Dispose()
 				}
 			} else {
-				sID := nodeIDToPrintString(&pkt.nextNodeHop.ID)
-				sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.id, sID)
-				pkt.dispose()
+				sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
+				sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
+				pkt.Dispose()
 			}
 		case newMaxDelay := <-sch.maxDelayCh:
 			pkiMaxDelay := time.Duration(newMaxDelay) * time.Millisecond
@@ -155,23 +165,23 @@ func (sch *scheduler) worker() {
 			// The packet will be dispatched somehow, so remove it from the
 			// queue, and do the type assertion.
 			q.Pop()
-			pkt := (e.Value).(*packet)
+			pkt := (e.Value).(*packet.Packet)
 
 			// Packet dispatch time is now or in the past, so it needs to be
 			// forwarded to the appropriate hop.
 			if now-dispatchAt > timerSlack {
 				// ... unless the deadline has been blown by more than the
 				// configured slack time.
-				sch.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.id, now-dispatchAt)
-				pkt.dispose()
+				sch.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-dispatchAt)
+				pkt.Dispose()
 			} else {
 				// Dispatch the packet to the next hop.  Note that the callee
 				// may still drop the packet, for example if there isn't a
 				// link establised to the peer, or if the link is overloaded.
 				//
 				// Note: Callee takes ownership.
-				pkt.dispatchAt = now
-				sch.s.connector.dispatchPacket(pkt)
+				pkt.DispatchAt = now
+				sch.glue.Connector().DispatchPacket(pkt)
 			}
 		}
 	}
@@ -179,12 +189,14 @@ func (sch *scheduler) worker() {
 	// NOTREACHED
 }
 
-func newScheduler(s *Server) *scheduler {
-	sch := new(scheduler)
-	sch.s = s
-	sch.log = s.logBackend.GetLogger("scheduler")
-	sch.ch = channels.NewInfiniteChannel()
-	sch.maxDelayCh = make(chan uint64)
+// New constructs a new scheduler instance.
+func New(glue glue.Glue) glue.Scheduler {
+	sch := &scheduler{
+		glue:       glue,
+		log:        glue.LogBackend().GetLogger("scheduler"),
+		ch:         channels.NewInfiniteChannel(),
+		maxDelayCh: make(chan uint64),
+	}
 
 	sch.Go(sch.worker)
 	return sch

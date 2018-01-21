@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+// Package outgoing implements the outgoing connection support.
+package outgoing
 
 import (
 	"sync"
@@ -22,6 +23,9 @@ import (
 
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/internal/debug"
+	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -29,8 +33,8 @@ type connector struct {
 	sync.RWMutex
 	worker.Worker
 
-	s   *Server
-	log *logging.Logger
+	glue glue.Glue
+	log  *logging.Logger
 
 	conns         map[[constants.NodeIDLength]byte]*outgoingConn
 	forceUpdateCh chan interface{}
@@ -47,7 +51,7 @@ func (co *connector) Halt() {
 	co.closeAllWg.Wait()
 }
 
-func (co *connector) forceUpdate() {
+func (co *connector) ForceUpdate() {
 	// This deliberately uses a non-blocking write to a buffered channel so
 	// that the resweeps happen reliably.  Since the resweep is comprehensive,
 	// there's no benefit to queueing more than one resweep request, and the
@@ -58,14 +62,14 @@ func (co *connector) forceUpdate() {
 	}
 }
 
-func (co *connector) dispatchPacket(pkt *packet) {
+func (co *connector) DispatchPacket(pkt *packet.Packet) {
 	co.RLock()
 	defer co.RUnlock()
 
-	c, ok := co.conns[pkt.nextNodeHop.ID]
+	c, ok := co.conns[pkt.NextNodeHop.ID]
 	if !ok {
-		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.id)
-		pkt.dispose()
+		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
+		pkt.Dispose()
 		return
 	}
 
@@ -106,7 +110,7 @@ func (co *connector) worker() {
 }
 
 func (co *connector) spawnNewConns() {
-	newPeerMap := co.s.pki.outgoingDestinations()
+	newPeerMap := co.glue.PKI().OutgoingDestinations()
 
 	// Traverse the connection table, to figure out which peers are actually
 	// new.  Each outgoingConn object is responsible for determining when
@@ -122,7 +126,7 @@ func (co *connector) spawnNewConns() {
 
 	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
-		co.log.Debugf("Spawning connection to: '%v'.", nodeIDToPrintString(&id))
+		co.log.Debugf("Spawning connection to: '%v'.", debug.NodeIDToPrintString(&id))
 		c := newOutgoingConn(co, v)
 		co.onNewConn(c)
 	}
@@ -139,7 +143,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 	}()
 	if _, ok := co.conns[nodeID]; ok {
 		// This should NEVER happen.  Not sure what the sensible thing to do is.
-		co.log.Warningf("Connection to peer: '%v' already exists.", nodeIDToPrintString(&nodeID))
+		co.log.Warningf("Connection to peer: '%v' already exists.", debug.NodeIDToPrintString(&nodeID))
 	}
 	co.conns[nodeID] = c
 }
@@ -155,7 +159,7 @@ func (co *connector) onClosedConn(c *outgoingConn) {
 	delete(co.conns, nodeID)
 }
 
-func (co *connector) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
+func (co *connector) IsValidForwardDest(id *[constants.NodeIDLength]byte) bool {
 	// This doesn't need to be super accurate, just enough to prevent packets
 	// destined to la-la land from being scheduled.
 	co.RLock()
@@ -165,13 +169,15 @@ func (co *connector) isValidForwardDest(id *[constants.NodeIDLength]byte) bool {
 	return ok
 }
 
-func newConnector(s *Server) *connector {
-	co := new(connector)
-	co.s = s
-	co.log = s.logBackend.GetLogger("connector")
-	co.conns = make(map[[constants.NodeIDLength]byte]*outgoingConn)
-	co.forceUpdateCh = make(chan interface{}, 1) // See forceUpdate().
-	co.closeAllCh = make(chan interface{})
+// New creates a new connector.
+func New(glue glue.Glue) glue.Connector {
+	co := &connector{
+		glue:          glue,
+		log:           glue.LogBackend().GetLogger("connector"),
+		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
+		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
+		closeAllCh:    make(chan interface{}),
+	}
 
 	co.Go(co.worker)
 	return co

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+package outgoing
 
 import (
 	"bytes"
@@ -29,19 +29,19 @@ import (
 	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
+	"github.com/katzenpost/server/internal/constants"
+	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
-
-const keepAliveInterval = 3 * time.Minute
 
 var outgoingConnID uint64
 
 type outgoingConn struct {
-	s   *Server
 	co  *connector
-	dst *cpki.MixDescriptor
-	ch  chan *packet
 	log *logging.Logger
+
+	dst *cpki.MixDescriptor
+	ch  chan *packet.Packet
 
 	id         uint64
 	retryDelay time.Duration
@@ -61,12 +61,12 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Query the PKI to figure out if we can send or not, and to ensure that
 	// the peer is listed in a PKI document that's valid.
 	var isValid bool
-	_, c.canSend, isValid = c.s.pki.authenticateConnection(creds, true)
+	_, c.canSend, isValid = c.co.glue.PKI().AuthenticateConnection(creds, true)
 
 	return isValid
 }
 
-func (c *outgoingConn) dispatchPacket(pkt *packet) {
+func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 	select {
 	case c.ch <- pkt:
 	default:
@@ -80,7 +80,7 @@ func (c *outgoingConn) dispatchPacket(pkt *packet) {
 		//
 		// Note: Not logging here because this would get spammy, and we may be
 		// under catastrophic load, in which case we can't afford to log.
-		pkt.dispose()
+		pkt.Dispose()
 	}
 }
 
@@ -105,8 +105,8 @@ func (c *outgoingConn) worker() {
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 	defer cancelFn()
 	dialer := net.Dialer{
-		KeepAlive: keepAliveInterval,
-		Timeout:   time.Duration(c.s.cfg.Debug.ConnectTimeout) * time.Millisecond,
+		KeepAlive: constants.KeepAliveInterval,
+		Timeout:   time.Duration(c.co.glue.Config().Debug.ConnectTimeout) * time.Millisecond,
 	}
 	go func() {
 		// Bolt a bunch of channels to the dial canceler, such that closing
@@ -130,7 +130,7 @@ func (c *outgoingConn) worker() {
 		// something like this, stale connections can get stuck in the
 		// dialing state since the connector relies on outgoingConnection
 		// objects to remove themselves from the connection table.
-		if desc, _, isValid := c.s.pki.authenticateConnection(&dialCheckCreds, true); isValid {
+		if desc, _, isValid := c.co.glue.PKI().AuthenticateConnection(&dialCheckCreds, true); isValid {
 			// The list of addresses could have changed, authenticateConnection
 			// will return the most "current" descriptor on success, so update
 			// the cached pointer.
@@ -222,8 +222,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
 		Authenticator:     c,
-		AdditionalData:    c.s.identityKey.PublicKey().Bytes(),
-		AuthenticationKey: c.s.linkKey,
+		AdditionalData:    c.co.glue.IdentityKey().PublicKey().Bytes(),
+		AuthenticationKey: c.co.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)
@@ -234,7 +234,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	timeoutMs := time.Duration(c.s.cfg.Debug.HandshakeTimeout) * time.Millisecond
+	timeoutMs := time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
 	conn.SetDeadline(time.Now().Add(timeoutMs))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
@@ -261,7 +261,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		close(peerClosedCh)
 	}()
 
-	pktCh := make(chan *packet)
+	pktCh := make(chan *packet.Packet)
 	pktCloseCh := make(chan error)
 	defer close(pktCh)
 	go func() {
@@ -272,26 +272,26 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 				return
 			}
 			cmd := commands.SendPacket{
-				SphinxPacket: pkt.raw,
+				SphinxPacket: pkt.Raw,
 			}
 			if err := w.SendCommand(&cmd); err != nil {
-				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.id, err)
-				pkt.dispose()
+				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
+				pkt.Dispose()
 				return
 			}
-			c.log.Debugf("Sent packet: %v", pkt.id)
-			pkt.dispose()
+			c.log.Debugf("Sent packet: %v", pkt.ID)
+			pkt.Dispose()
 		}
 	}()
 
 	// Start the reauthenticate ticker.
-	reauthMs := time.Duration(c.s.cfg.Debug.ReauthInterval) * time.Millisecond
+	reauthMs := time.Duration(c.co.glue.Config().Debug.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
 	// Shuffle packets from the send queue out to the peer.
 	for {
-		var pkt *packet
+		var pkt *packet.Packet
 		select {
 		case <-peerClosedCh:
 			c.log.Debugf("Connection closed by peer.")
@@ -310,9 +310,9 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		case pkt = <-c.ch:
 			// Check the packet queue dwell time and drop it if it is excessive.
 			now := monotime.Now()
-			if now-pkt.dispatchAt > time.Duration(c.s.cfg.Debug.SendSlack)*time.Millisecond {
-				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.id, now-pkt.dispatchAt)
-				pkt.dispose()
+			if now-pkt.DispatchAt > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
+				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-pkt.DispatchAt)
+				pkt.Dispose()
 				continue
 			}
 		}
@@ -320,8 +320,8 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		if !c.canSend {
 			// This is presumably a early connect, and we aren't allowed to
 			// actually send packets to the peer yet.
-			c.log.Debugf("Dropping packet: %v (Out of epoch)", pkt.id)
-			pkt.dispose()
+			c.log.Debugf("Dropping packet: %v (Out of epoch)", pkt.ID)
+			pkt.Dispose()
 			continue
 		}
 
@@ -344,13 +344,13 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 func newOutgoingConn(co *connector, dst *cpki.MixDescriptor) *outgoingConn {
 	const maxQueueSize = 64 // TODO/perf: Tune this.
 
-	c := new(outgoingConn)
-	c.s = co.s
-	c.co = co
-	c.dst = dst
-	c.ch = make(chan *packet, maxQueueSize)
-	c.id = atomic.AddUint64(&outgoingConnID, 1) // Diagnostic only, wrapping is fine.
-	c.log = co.s.logBackend.GetLogger(fmt.Sprintf("outgoing:%d", c.id))
+	c := &outgoingConn{
+		co:  co,
+		dst: dst,
+		ch:  make(chan *packet.Packet, maxQueueSize),
+		id:  atomic.AddUint64(&outgoingConnID, 1), // Diagnostic only, wrapping is fine.
+	}
+	c.log = co.glue.LogBackend().GetLogger(fmt.Sprintf("outgoing:%d", c.id))
 
 	c.log.Debugf("New outgoing connection: %+v", dst)
 

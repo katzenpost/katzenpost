@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+// Package debug implements useful helper routines to aid debugging.
+package debug
 
 import (
 	"encoding/hex"
@@ -23,10 +24,12 @@ import (
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
-func nodeIDToPrintString(id *[constants.NodeIDLength]byte) string {
+// NodeIDToPrintString pretty-prints a node identifier.
+func NodeIDToPrintString(id *[constants.NodeIDLength]byte) string {
 	return strings.ToUpper(hex.EncodeToString(id[:]))
 }
 
-func bytesToPrintString(b []byte) string {
+// BytesToPrintString pretty-prints a byte slice.
+func BytesToPrintString(b []byte) string {
 	return strings.ToUpper(hex.EncodeToString(b))
 }

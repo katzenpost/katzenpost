@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+package incoming
 
 import (
 	"container/list"
@@ -32,18 +32,20 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
+	"github.com/katzenpost/server/internal/debug"
+	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
 
 var incomingConnID uint64
 
 type incomingConn struct {
-	s   *Server
 	l   *listener
-	c   net.Conn
-	e   *list.Element
-	w   *wire.Session
 	log *logging.Logger
+
+	c net.Conn
+	e *list.Element
+	w *wire.Session
 
 	id            uint64
 	retrSeq       uint32
@@ -54,8 +56,8 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if c.s.provider != nil && !c.fromMix {
-		isClient := c.s.provider.authenticateClient(creds)
+	if provider := c.l.glue.Provider(); provider != nil && !c.fromMix {
+		isClient := provider.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
 			// the user db.  Reject.
@@ -75,12 +77,12 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// is unknown.
 	var isValid bool
 	c.fromClient = false
-	_, c.canSend, isValid = c.s.pki.authenticateConnection(creds, false)
+	_, c.canSend, isValid = c.l.glue.PKI().AuthenticateConnection(creds, false)
 	if isValid {
 		c.fromMix = true
 	}
 	if !isValid {
-		c.log.Debugf("Authenticate failed: '%v' (%v)", bytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Authenticate failed: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	}
 	return isValid
 }
@@ -95,8 +97,8 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
 		Authenticator:     c,
-		AdditionalData:    c.s.identityKey.PublicKey().Bytes(),
-		AuthenticationKey: c.s.linkKey,
+		AdditionalData:    c.l.glue.IdentityKey().PublicKey().Bytes(),
+		AuthenticationKey: c.l.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}
 	var err error
@@ -108,7 +110,7 @@ func (c *incomingConn) worker() {
 	defer c.w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	timeoutMs := time.Duration(c.s.cfg.Debug.HandshakeTimeout) * time.Millisecond
+	timeoutMs := time.Duration(c.l.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
 	c.c.SetDeadline(time.Now().Add(timeoutMs))
 	if err = c.w.Initialize(c.c); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
@@ -121,7 +123,7 @@ func (c *incomingConn) worker() {
 	// Log the connection source.
 	creds := c.w.PeerCredentials()
 	if c.fromMix {
-		c.log.Debugf("Peer: '%v' (%v)", bytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Peer: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	} else {
 		c.log.Debugf("User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	}
@@ -133,15 +135,15 @@ func (c *incomingConn) worker() {
 	//
 	// TODO: Newest connection wins is more annoying to implement, but better
 	// behavior.
-	for _, s := range c.s.listeners {
-		if !s.isConnUnique(c) {
+	for _, s := range c.l.glue.Listeners() {
+		if !s.IsConnUnique(c) {
 			c.log.Errorf("Connection with credentials already exists.")
 			return
 		}
 	}
 
 	// Start the reauthenticate ticker.
-	reauthMs := time.Duration(c.s.cfg.Debug.ReauthInterval) * time.Millisecond
+	reauthMs := time.Duration(c.l.glue.Config().Debug.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
 
@@ -257,7 +259,7 @@ func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
 
 func (c *incomingConn) onGetConsensus(cmd *commands.GetConsensus) error {
 	respCmd := &commands.Consensus{}
-	rawDoc, err := c.s.pki.getConsensus(cmd.Epoch)
+	rawDoc, err := c.l.glue.PKI().GetRawConsensus(cmd.Epoch)
 	switch err {
 	case nil:
 		respCmd.ErrorCode = commands.ConsensusOk
@@ -284,7 +286,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	}
 
 	// Get the message from the user's spool, advancing as appropriate.
-	msg, surbID, remaining, err := c.s.provider.spool.Get(c.w.PeerCredentials().AdditionalData, advance)
+	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(c.w.PeerCredentials().AdditionalData, advance)
 	if err != nil {
 		return err
 	}
@@ -334,8 +336,8 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
-	pkt := newPacket()
-	if err := pkt.copyToRaw(cmd.SphinxPacket); err != nil {
+	pkt, err := packet.New(cmd.SphinxPacket)
+	if err != nil {
 		return err
 	}
 
@@ -343,30 +345,30 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	// packets received from clients, avoid attempts by the final layer
 	// to try to loop traffic back into the mix net, and sending packets
 	// that bypass the mix net.
-	pkt.mustForward = c.fromClient
-	pkt.mustTerminate = c.s.cfg.Server.IsProvider && !c.fromClient
+	pkt.MustForward = c.fromClient
+	pkt.MustTerminate = c.l.glue.Config().Server.IsProvider && !c.fromClient
 
 	// TODO: If clients should be rate-limited in how fast they can send
 	// packets, this is probably the natural place to do so.
 
-	c.log.Debugf("Handing off packet: %v", pkt.id)
+	c.log.Debugf("Handing off packet: %v", pkt.ID)
 
 	// For purposes of fudging the scheduling delay based on queue dwell
 	// time, we treat the moment the packet is inserted into the crypto
 	// worker queue as the time the packet was received.
-	pkt.recvAt = monotime.Now()
-	c.s.inboundPackets.In() <- pkt
+	pkt.RecvAt = monotime.Now()
+	c.l.incomingCh <- pkt
 
 	return nil
 }
 
 func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
-	c := new(incomingConn)
-	c.s = l.s
-	c.l = l
-	c.c = conn
-	c.id = atomic.AddUint64(&incomingConnID, 1) // Diagnostic only, wrapping is fine.
-	c.log = l.s.logBackend.GetLogger(fmt.Sprintf("incoming:%d", c.id))
+	c := &incomingConn{
+		l:  l,
+		c:  conn,
+		id: atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
+	}
+	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 
 	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
 
