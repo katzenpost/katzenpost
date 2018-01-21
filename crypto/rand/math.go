@@ -108,3 +108,73 @@ func ExpQuantile(lambda, p float64) float64 {
 
 	return -math.Log(1-p) / lambda
 }
+
+// Poisson returns a random sample from the poisson distribution characterized
+// by lambda (mean).
+func Poisson(r *rand.Rand, lambda float64) int {
+	if lambda < 30.0 {
+		return poissonSmall(r, lambda)
+	}
+	return poissonLarge(r, lambda)
+}
+
+func poissonSmall(r *rand.Rand, lambda float64) int {
+	// Algorithm due to Donald Knuth, 1969.
+	p, l := float64(1.0), math.Exp(-lambda)
+	k := 0
+	for {
+		if s := r.Float64(); s > 0.0 {
+			k++
+			p = p * s
+		}
+		if p <= l {
+			break
+		}
+	}
+	return k - 1
+}
+
+func poissonLarge(r *rand.Rand, lambda float64) int {
+	// "Rejection method PA" from "The Computer Generation of
+	// Poisson Random Variables" by A. C. Atkinson,
+	// Journal of the Royal Statistical Society Series C
+	// (Applied Statistics) Vol. 28, No. 1. (1979)
+	// The article is on pages 29-35.
+	// The algorithm given here is on page 32.
+
+	c := 0.767 - 3.36/lambda
+	beta := math.Pi / math.Sqrt(3.0*lambda)
+	alpha := beta * lambda
+	k := math.Log(c) - lambda - math.Log(beta)
+
+	for {
+		u := r.Float64()
+		if u == 0.0 {
+			continue
+		}
+		x := (alpha - math.Log((1.0-u)/u)) / beta
+		n := math.Floor(x + 0.5)
+		if n < 0 {
+			continue
+		}
+		v := r.Float64()
+		if v == 0.0 {
+			continue
+		}
+		y := alpha - beta*x
+		temp := 1.0 + math.Exp(y)
+		lhs := y + math.Log(v/(temp*temp))
+		rhs := k + n*math.Log(lambda) - logFactorial(n)
+		if lhs <= rhs {
+			return int(n)
+		}
+	}
+}
+
+func logFactorial(n float64) float64 {
+	// Use Stirling's approximation, since the runtime library has
+	// the gamma function math.
+	n = math.Floor(n)
+	ret, _ := math.Lgamma(n + 1)
+	return ret
+}
