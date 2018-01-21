@@ -35,11 +35,11 @@ Table of Contents
       5.1 The HTTP based protocol
          5.1.1 Retrieving a directory
          5.1.2. Publishing a mix descriptor
-      5.2 Katzenpost noise based protocol extensions for mix descriptor publication
+      5.2 Katzenpost wire protocol extensions for mix descriptor publication
          5.2.1 The post_descriptor Command
          5.2.2 The post_descriptor_status Command
    6. Scalability Considerations
-      6.1 Consensus Cacheing
+      6.1 Katzenpost wire protocol retreival of Consensus Cache
          6.1.1 The get_consensus Command
          6.1.2 The consensus Command
    7. Future Work
@@ -130,23 +130,23 @@ Table of Contents
       * All Directory Authority servers must agree with each other on
         the set of mixes.
 
-      * is intentionally designed to provide identical
+      * This system is intentionally designed to provide identical
         network consensus documents to each mix client. This mitigates
         epistemic attacks against the client path selection algorithm
         such as fingerprinting and bridge attacks [FINGERPRINTING]
         [BRIDGING].
 
-      * is NOT byzantine-fault-tolerant, it instead allows
+      * This system is NOT byzantine-fault-tolerant, it instead allows
         for manual intervention upon consensus fault by the Directory
         Authority operators. Further, these operators are responsible
         for expelling bad acting operators from the system.
 
-      * enforces the network policies such as mix join policy wherein
-        intentionally closed mixnets will prevent arbitrary hosts from
-        joining the network by authenticating all descriptor signatures
-        with a list of allowed public keys.
+      * This system enforces the network policies such as mix join
+        policy wherein intentionally closed mixnets will prevent
+        arbitrary hosts from joining the network by authenticating all
+        descriptor signatures with a list of allowed public keys.
 
-      * The Directory Authority/PKI system for a given mix network is
+      * The Directory Authority system for a given mix network is
         essentially the root of all authority.
 
 1.4 Differences from Tor and Mixminion Directory Authority systems
@@ -472,7 +472,7 @@ Table of Contents
 
    The Authority replies with either Accepted and Forbidden http error codes.
 
-5.2 Katzenpost noise based protocol extensions for mix descriptor publication
+5.2 Katzenpost wire protocol extensions for mix descriptor publication
 
    We define additional wire protocol [KATZMIXWIRE] commands for
    publishing mix descriptors and setting mix descriptor status:
@@ -516,7 +516,7 @@ Table of Contents
 
 // XXX David: TODO: notes on scaling, bandwidth usage etc.
 
-6.1 Consensus Caching
+6.1 Katzenpost wire protocol retreival of Consensus Cache
 
    Providers in the Katzenpost mix network system [KATZMIXNET] may cache
    validated network consensus files and serve them to clients over
@@ -614,7 +614,7 @@ Table of Contents
 
 10. Acknowledgements
 
-   I would like to thank Nick Mathewson for answering design questions
+   We would like to thank Nick Mathewson for answering design questions
    and thorough design review.
 
 Appendix A. References
@@ -635,9 +635,16 @@ Appendix A.1 Normative References
               DOI 10.17487/RFC5246, August 2008,
               <http://www.rfc-editor.org/info/rfc5246>.
 
+   [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Katzenpost Mix Network Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+
    [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
+
+   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
 
 Appendix A.2 Informative References
 
@@ -660,13 +667,6 @@ Appendix A.2 Informative References
    [LOCALVIEW] Gogolewski, M., Klonowski, M., Kutylowsky, M.,
                "Local View Attack on Anonymous Communication",
                <https://www.freehaven.net/anonbib/cache/esorics05-Klonowski.pdf>.
-
-   [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
-                "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
-
-   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
 
    [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
                Provably Secure Mix Format", DOI 10.1109/SP.2009.15, May 2009,
