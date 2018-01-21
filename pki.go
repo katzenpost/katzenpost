@@ -114,6 +114,7 @@ func (p *pki) worker() {
 		}
 	}()
 
+	var lastCallbackEpoch uint64
 	for {
 		const (
 			nextFetchTill   = 45 * time.Minute
@@ -179,6 +180,12 @@ func (p *pki) worker() {
 			// Kick the connector iff it is waiting on a PKI document.
 			if p.c.conn != nil {
 				p.c.conn.onPKIFetch()
+			}
+		}
+		if now != lastCallbackEpoch && p.c.cfg.OnDocumentFn != nil {
+			if d, ok := p.docs.Load(now); ok {
+				lastCallbackEpoch = now
+				p.c.cfg.OnDocumentFn(d.(*cpki.Document))
 			}
 		}
 

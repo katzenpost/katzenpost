@@ -82,6 +82,10 @@ type ClientConfig struct {
 	// an error will be treated as a signal to tear down the connection.
 	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
 
+	// OnDocumentFn is the callback function taht will be called when a
+	// new directory document is retreived for the current epoch.
+	OnDocumentFn func(*cpki.Document)
+
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
