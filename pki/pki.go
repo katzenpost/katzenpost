@@ -52,16 +52,9 @@ type Document struct {
 	// MaxDelay is the maximum per-hop delay in milliseconds.
 	MaxDelay uint64
 
-	// LambdaP is the unshifted mean of the poisson distribution that
-	// clients will use to sample the send scheduling interval.
+	// LambdaP is the mean of the poisson distribution that clients will
+	// use to determine the send scheduling interval.
 	LambdaP float64
-
-	// SendShift is the shift applied to the sampled send scheduling
-	// interval in milliseconds.
-	SendShift uint64
-
-	// MaxSendDelay is the maximim send interval in milliseconds.
-	MaxSendDelay uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
@@ -84,7 +77,7 @@ func (d *Document) String() string {
 		return s
 	}
 
-s := fmt.Sprintf("&{Epoch:%v Lambda:%v MaxDelay:%v LambdaP:%v SendShift: %v, MaxSendDelay: %v Topology:", d.Epoch, d.Lambda, d.MaxDelay, d.LambdaP, d.SendShift, d.MaxSendDelay)
+	s := fmt.Sprintf("&{Epoch:%v Lambda:%v MaxDelay:%v LambdaP:%v Topology:", d.Epoch, d.Lambda, d.MaxDelay, d.LambdaP)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("[%v]{", l)
 		s += stringifyDescSlice(nodes)
