@@ -316,13 +316,15 @@ Table of Contents
 3.3 Vote Tabulation for Consensus Computation
 
    The main design constraint of the vote tabulation algorithm is that
-   it MUST be a deterministic process that produces that same result
+   it MUST be a deterministic process that produces the same result
    for each directory authority server. This result is known as a
-   network consensus file. Such a document is a well formed directory
-   struct where the "status" field is set to "consensus" and contains
-   0 or more descriptors, the mix directory is signed by 0 or more
-   directory authority servers. If signed by the full voting group
-   then this is called a fully signed consensus.
+   network consensus file.
+
+   A network consensus file is a well formed directory struct where
+   the "status" field is set to "consensus" and contains 0 or more
+   descriptors, the mix directory is signed by 0 or more directory
+   authority servers. If signed by the full voting group then this is
+   called a fully signed consensus.
 
    1. Validate each vote directory:
       - that the liveness fields correspond to the following epoch
@@ -330,6 +332,7 @@ Table of Contents
       - version number matches ours
 
    2. Compute a consensus directory:
+
       Here we include a modified section from the Mixminion PKI spec
       [MIXMINIONDIRAUTH]:
 
@@ -356,23 +359,19 @@ Table of Contents
 3.4 Signature Collection
 
    Each Authority exchanges their newly generated consensus files with
-   each other.  Upon receiving signed consensus documents from the
+   each other. Upon receiving signed consensus documents from the
    other Authorities, peer signatures are appended to the current
    local consensus file if the signed contents match. The Authority
    SHOULD warn the administrator if network partition is detected.
 
+   If there is disagreement about the consensus directory, each
+   authority collects signatures from only the servers which it agrees
+   with about the final consensus.
+
 3.5 Publication
 
-   If the consensus is signed by all members of the voting group then
-   it's a valid consensus and it is published. Otherwise if there is
-   disagreement about the consensus directory, each authority collects
-   signatures from only the servers which it agrees with about the
-   final consensus.
-
-   Upon consensus failure detection, the Directory Authority SHOULD
-   report to its administrator that the consensus has failed, and
-   explain how. Passive consumer clients downloading the network
-   consensus documents SHOULD also receive a warning or error message.
+   If the consensus is signed by a majority of members of the voting
+   group then it's a valid consensus and it is published.
 
 4. PKI Protocol Data Structures
 
