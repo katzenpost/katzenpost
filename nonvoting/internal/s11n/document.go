@@ -43,9 +43,14 @@ type Document struct {
 	// received or if the version changes.
 	Version string
 
-	Epoch    uint64
+	Epoch uint64
+
 	Lambda   float64
 	MaxDelay uint64
+
+	LambdaP      float64
+	SendShift    uint64
+	MaxSendDelay uint64
 
 	Topology  [][][]byte
 	Providers [][]byte
@@ -122,6 +127,9 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	doc.Epoch = d.Epoch
 	doc.Lambda = d.Lambda
 	doc.MaxDelay = d.MaxDelay
+	doc.LambdaP = d.LambdaP
+	doc.SendShift = d.SendShift
+	doc.MaxSendDelay = d.MaxSendDelay
 	doc.Topology = make([][]*pki.MixDescriptor, len(d.Topology))
 	doc.Providers = make([]*pki.MixDescriptor, 0, len(d.Providers))
 

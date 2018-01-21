@@ -193,11 +193,14 @@ func (s *state) generateDocument(epoch uint64) {
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:     epoch,
-		Lambda:    s.s.cfg.Parameters.Lambda,
-		MaxDelay:  s.s.cfg.Parameters.MaxDelay,
-		Topology:  topology,
-		Providers: providers,
+		Epoch:        epoch,
+		Lambda:       s.s.cfg.Parameters.Lambda,
+		MaxDelay:     s.s.cfg.Parameters.MaxDelay,
+		LambdaP:      s.s.cfg.Parameters.LambdaP,
+		SendShift:    s.s.cfg.Parameters.SendShift,
+		MaxSendDelay: s.s.cfg.Parameters.MaxSendDelay,
+		Topology:     topology,
+		Providers:    providers,
 	}
 
 	// Serialize and sign the Document.

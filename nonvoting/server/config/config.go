@@ -44,6 +44,9 @@ const (
 	// at some point.
 	defaultLambda        = 0.00025
 	defaultMaxPercentile = 0.99999
+
+	defaultLambdaP   = 10.0
+	defaultSendShift = 5000
 )
 
 var defaultLogging = Logging{
@@ -118,6 +121,17 @@ type Parameters struct {
 
 	// MaxDelay is the maximum per-hop delay in milliseconds.
 	MaxDelay uint64
+
+	// LambdaP is the unshifted mean of the poission distribution that
+	// clients will use to sample the send scheduling interval.
+	LambdaP float64
+
+	// SendShift is the shift applied to the exponentially sampled send
+	// scheduling interval in milliseconds.
+	SendShift uint64
+
+	// MaxSendDelay is the maximim send interval in milliseconds.
+	MaxSendDelay uint64
 }
 
 func (pCfg *Parameters) validate() error {
@@ -126,6 +140,9 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.MaxDelay > absoluteMaxDelay {
 		return fmt.Errorf("config: Parameters: MaxDelay %v is out of range", pCfg.MaxDelay)
+	}
+	if pCfg.LambdaP < 0 {
+		return fmt.Errorf("config: Parameters: LambdaP %v is invalid", pCfg.LambdaP)
 	}
 	return nil
 }
@@ -139,6 +156,15 @@ func (pCfg *Parameters) applyDefaults() {
 		if pCfg.MaxDelay > absoluteMaxDelay {
 			pCfg.MaxDelay = absoluteMaxDelay
 		}
+	}
+	if pCfg.LambdaP == 0 {
+		pCfg.LambdaP = defaultLambdaP
+	}
+	if pCfg.SendShift == 0 {
+		pCfg.SendShift = defaultSendShift
+	}
+	if pCfg.MaxSendDelay < pCfg.SendShift {
+		pCfg.MaxSendDelay = pCfg.SendShift
 	}
 }
 

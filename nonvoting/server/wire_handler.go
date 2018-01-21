@@ -30,7 +30,7 @@ import (
 
 func (s *Server) onConn(conn net.Conn) {
 	const (
-		initialDeadline = 30 * time.Second
+		initialDeadline  = 30 * time.Second
 		responseDeadline = 60 * time.Second
 	)
 
