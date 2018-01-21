@@ -120,7 +120,7 @@ type Parameters struct {
 	// MaxDelay is the maximum per-hop delay in milliseconds.
 	MaxDelay uint64
 
-	// LambdaP is the mean of the poission distribution that clients will
+	// LambdaP is the mean of the poisson distribution that clients will
 	// use to sample the send scheduling interval.
 	LambdaP float64
 }
