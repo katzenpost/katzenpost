@@ -31,6 +31,13 @@ import (
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/server/config"
+	"github.com/katzenpost/server/internal/cryptoworker"
+	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/incoming"
+	"github.com/katzenpost/server/internal/outgoing"
+	"github.com/katzenpost/server/internal/pki"
+	"github.com/katzenpost/server/internal/provider"
+	"github.com/katzenpost/server/internal/scheduler"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -51,14 +58,14 @@ type Server struct {
 
 	inboundPackets *channels.InfiniteChannel
 
-	scheduler     *scheduler
-	cryptoWorkers []*cryptoWorker
+	scheduler     glue.Scheduler
+	cryptoWorkers []*cryptoworker.Worker
 	periodic      *periodicTimer
-	mixKeys       *mixKeys
-	pki           *pki
-	listeners     []*listener
-	connector     *connector
-	provider      *provider
+	mixKeys       glue.MixKeys
+	pki           glue.PKI
+	listeners     []glue.Listener
+	connector     glue.Connector
+	provider      glue.Provider
 	management    *thwack.Server
 
 	fatalErrCh chan error
@@ -85,7 +92,7 @@ func (s *Server) initLogging() error {
 func (s *Server) reshadowCryptoWorkers() {
 	s.log.Debugf("Calling all crypto workers to re-shadow the mix keys.")
 	for _, w := range s.cryptoWorkers {
-		w.updateMixKeys()
+		w.UpdateMixKeys()
 	}
 }
 
@@ -185,10 +192,12 @@ func (s *Server) halt() {
 // New returns a new Server instance parameterized with the specified
 // configuration.
 func New(cfg *config.Config) (*Server, error) {
-	s := new(Server)
-	s.cfg = cfg
-	s.fatalErrCh = make(chan error)
-	s.haltedCh = make(chan interface{})
+	s := &Server{
+		cfg:        cfg,
+		fatalErrCh: make(chan error),
+		haltedCh:   make(chan interface{}),
+	}
+	goo := &serverGlue{s}
 
 	// Do the early initialization and bring up logging.
 	if err := utils.MkDataDir(s.cfg.Server.DataDir); err != nil {
@@ -239,7 +248,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(s); err != nil {
+	if s.mixKeys, err = newMixKeys(goo); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
@@ -289,39 +298,39 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the PKI interface.
-	if s.pki, err = newPKI(s); err != nil {
+	if s.pki, err = pki.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
 		return nil, err
 	}
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
-		if s.provider, err = newProvider(s); err != nil {
+		if s.provider, err = provider.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil, err
 		}
 	}
 
 	// Initialize and start the the scheduler.
-	s.scheduler = newScheduler(s)
+	s.scheduler = scheduler.New(goo)
 
 	// Initialize and start the Sphinx workers.
 	s.inboundPackets = channels.NewInfiniteChannel()
-	s.cryptoWorkers = make([]*cryptoWorker, 0, s.cfg.Debug.NumSphinxWorkers)
+	s.cryptoWorkers = make([]*cryptoworker.Worker, 0, s.cfg.Debug.NumSphinxWorkers)
 	for i := 0; i < s.cfg.Debug.NumSphinxWorkers; i++ {
-		w := newCryptoWorker(s, i)
+		w := cryptoworker.New(goo, s.inboundPackets.Out(), i)
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
 
 	// Initialize the outgoing connection manager, and then start the PKI
 	// worker.
-	s.connector = newConnector(s)
-	s.pki.startWorker()
+	s.connector = outgoing.New(goo)
+	s.pki.StartWorker()
 
 	// Bring the listener(s) online.
-	s.listeners = make([]*listener, 0, len(s.cfg.Server.Addresses))
+	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
 	for i, addr := range s.cfg.Server.Addresses {
-		l, err := newListener(s, i, addr)
+		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
 			return nil, err
@@ -341,4 +350,56 @@ func New(cfg *config.Config) (*Server, error) {
 
 	isOk = true
 	return s, nil
+}
+
+type serverGlue struct {
+	s *Server
+}
+
+func (g *serverGlue) Config() *config.Config {
+	return g.s.cfg
+}
+
+func (g *serverGlue) LogBackend() *log.Backend {
+	return g.s.logBackend
+}
+
+func (g *serverGlue) IdentityKey() *eddsa.PrivateKey {
+	return g.s.identityKey
+}
+
+func (g *serverGlue) LinkKey() *ecdh.PrivateKey {
+	return g.s.linkKey
+}
+
+func (g *serverGlue) Management() *thwack.Server {
+	return g.s.management
+}
+
+func (g *serverGlue) MixKeys() glue.MixKeys {
+	return g.s.mixKeys
+}
+
+func (g *serverGlue) PKI() glue.PKI {
+	return g.s.pki
+}
+
+func (g *serverGlue) Provider() glue.Provider {
+	return g.s.provider
+}
+
+func (g *serverGlue) Scheduler() glue.Scheduler {
+	return g.s.scheduler
+}
+
+func (g *serverGlue) Connector() glue.Connector {
+	return g.s.connector
+}
+
+func (g *serverGlue) Listeners() []glue.Listener {
+	return g.s.listeners
+}
+
+func (g *serverGlue) ReshadowCryptoWorkers() {
+	g.s.reshadowCryptoWorkers()
 }

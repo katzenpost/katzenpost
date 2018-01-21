@@ -22,18 +22,19 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/server/internal/constants"
+	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/mixkey"
 	"gopkg.in/op/go-logging.v1"
 )
 
-const numMixKeys = 3
-
 type mixKeys struct {
 	sync.Mutex
 
-	s   *Server
-	log *logging.Logger
+	glue glue.Glue
+	log  *logging.Logger
 
 	keys map[uint64]*mixkey.MixKey
 }
@@ -45,16 +46,16 @@ func (m *mixKeys) init() error {
 	// if the current time is in the clock skew grace period.  But it may not
 	// matter much in practice.
 	epoch, _, _ := epochtime.Now()
-	if _, err := m.generateMixKeys(epoch); err != nil {
+	if _, err := m.Generate(epoch); err != nil {
 		return err
 	}
 
 	// Clean up stale mix keys hanging around the data directory.
-	files, err := filepath.Glob(filepath.Join(m.s.cfg.Server.DataDir, mixkey.KeyGlob))
+	files, err := filepath.Glob(filepath.Join(m.glue.Config().Server.DataDir, mixkey.KeyGlob))
 	if err != nil {
 		m.log.Warningf("Failed to find persisted keys: %v", err)
 	}
-	keyFmt := filepath.Join(m.s.cfg.Server.DataDir, mixkey.KeyFmt)
+	keyFmt := filepath.Join(m.glue.Config().Server.DataDir, mixkey.KeyFmt)
 	for _, f := range files {
 		e := uint64(0)
 		if _, err := fmt.Sscanf(f, keyFmt, &e); err != nil {
@@ -70,22 +71,22 @@ func (m *mixKeys) init() error {
 	return nil
 }
 
-func (m *mixKeys) generateMixKeys(baseEpoch uint64) (bool, error) {
+func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 	didGenerate := false
 
 	m.Lock()
 	defer m.Unlock()
-	for e := baseEpoch; e < baseEpoch+numMixKeys; e++ {
+	for e := baseEpoch; e < baseEpoch+constants.NumMixKeys; e++ {
 		// Skip keys that we already have.
 		if _, ok := m.keys[e]; ok {
 			continue
 		}
 
 		didGenerate = true
-		k, err := mixkey.New(m.s.cfg.Server.DataDir, e)
+		k, err := mixkey.New(m.glue.Config().Server.DataDir, e)
 		if err != nil {
 			// Clean up whatever keys that may have succeded.
-			for ee := baseEpoch; ee < baseEpoch+numMixKeys; ee++ {
+			for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {
 				if kk, ok := m.keys[ee]; ok {
 					kk.Deref()
 					delete(m.keys, ee)
@@ -100,7 +101,7 @@ func (m *mixKeys) generateMixKeys(baseEpoch uint64) (bool, error) {
 	return didGenerate, nil
 }
 
-func (m *mixKeys) pruneMixKeys() bool {
+func (m *mixKeys) Prune() bool {
 	epoch, _, _ := epochtime.Now()
 	didPrune := false
 
@@ -119,7 +120,17 @@ func (m *mixKeys) pruneMixKeys() bool {
 	return didPrune
 }
 
-func (m *mixKeys) shadow(dst map[uint64]*mixkey.MixKey) {
+func (m *mixKeys) Get(epoch uint64) (*ecdh.PublicKey, bool) {
+	m.Lock()
+	defer m.Unlock()
+
+	if k, ok := m.keys[epoch]; ok {
+		return k.PublicKey(), true
+	}
+	return nil, false
+}
+
+func (m *mixKeys) Shadow(dst map[uint64]*mixkey.MixKey) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -150,11 +161,13 @@ func (m *mixKeys) Halt() {
 	}
 }
 
-func newMixKeys(s *Server) (*mixKeys, error) {
-	m := new(mixKeys)
-	m.s = s
-	m.log = s.logBackend.GetLogger("mixkeys")
-	m.keys = make(map[uint64]*mixkey.MixKey)
+func newMixKeys(glue glue.Glue) (glue.MixKeys, error) {
+	m := &mixKeys{
+		glue: glue,
+		log:  glue.LogBackend().GetLogger("mixkeys"),
+		keys: make(map[uint64]*mixkey.MixKey),
+	}
+
 	if err := m.init(); err != nil {
 		return nil, err
 	}

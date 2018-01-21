@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+// Package incoming implements the incoming connection support.
+package incoming
 
 import (
 	"bytes"
@@ -24,6 +25,8 @@ import (
 	"sync"
 
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/internal/constants"
+	"github.com/katzenpost/server/internal/glue"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -31,12 +34,13 @@ type listener struct {
 	sync.Mutex
 	worker.Worker
 
-	s   *Server
-	l   net.Listener
-	log *logging.Logger
+	glue glue.Glue
+	log  *logging.Logger
 
+	l     net.Listener
 	conns *list.List
 
+	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 }
@@ -73,7 +77,7 @@ func (l *listener) worker() {
 
 		tcpConn := conn.(*net.TCPConn)
 		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(keepAliveInterval)
+		tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
@@ -111,7 +115,9 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	l.conns.Remove(c.e)
 }
 
-func (l *listener) isConnUnique(c *incomingConn) bool {
+func (l *listener) IsConnUnique(ptr interface{}) bool {
+	c := ptr.(*incomingConn)
+
 	l.Lock()
 	defer l.Unlock()
 
@@ -138,14 +144,17 @@ func (l *listener) isConnUnique(c *incomingConn) bool {
 	return true
 }
 
-func newListener(s *Server, id int, addr string) (*listener, error) {
+// New creates a new listener.
+func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (glue.Listener, error) {
 	var err error
 
-	l := new(listener)
-	l.s = s
-	l.log = s.logBackend.GetLogger(fmt.Sprintf("listener:%d", id))
-	l.conns = list.New()
-	l.closeAllCh = make(chan interface{})
+	l := &listener{
+		glue:       glue,
+		log:        glue.LogBackend().GetLogger(fmt.Sprintf("listener:%d", id)),
+		conns:      list.New(),
+		incomingCh: incomingCh,
+		closeAllCh: make(chan interface{}),
+	}
 
 	l.l, err = net.Listen("tcp", addr)
 	if err != nil {

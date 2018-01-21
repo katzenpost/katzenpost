@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+// Package cryptoworker implements the Katzenpost Sphinx crypto worker.
+package cryptoworker
 
 import (
 	"errors"
@@ -25,28 +26,34 @@ import (
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/internal/constants"
+	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/mixkey"
+	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
 
-type cryptoWorker struct {
+// Worker is a Sphinx crypto worker instance.
+type Worker struct {
 	worker.Worker
 
-	s   *Server
-	log *logging.Logger
+	glue glue.Glue
+	log  *logging.Logger
 
 	mixKeys map[uint64]*mixkey.MixKey
 
-	updateCh chan bool
+	incomingCh <-chan interface{}
+	updateCh   chan bool
 }
 
-func (w *cryptoWorker) updateMixKeys() {
+// UpdateMixKeys forces the Worker to re-shadow it's copy of the mix key(s).
+func (w *Worker) UpdateMixKeys() {
 	// This is a blocking call, because bad things will happen if the keys
 	// happen to get out of sync.
 	w.updateCh <- true
 }
 
-func (w *cryptoWorker) doUnwrap(pkt *packet) error {
+func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 	const gracePeriod = 2 * time.Minute
 
 	// Figure out the candidate mix private keys for this packet.
@@ -88,10 +95,10 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 
 		// TODO/perf: payload is a new heap allocation if it's returned,
 		// though that should only happen if this is a provider.
-		payload, tag, cmds, err := sphinx.Unwrap(k.PrivateKey(), pkt.raw)
+		payload, tag, cmds, err := sphinx.Unwrap(k.PrivateKey(), pkt.Raw)
 		unwrapAt := monotime.Now()
 
-		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.id, unwrapAt-startAt)
+		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt-startAt)
 
 		// Decryption failures can result from picking the wrong key.
 		if err != nil {
@@ -103,8 +110,10 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 		// Stash the payload commands.  Even if we end up rejecting the
 		// packet, pkt.dispose() has to get a chance to deallocate them
 		// nicely.
-		pkt.payload = payload
-		pkt.cmds = cmds
+		if err = pkt.Set(payload, cmds); err != nil {
+			lastErr = err
+			break
+		}
 
 		// Check for replayed packets.
 		if k.IsReplay(tag) {
@@ -114,7 +123,7 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 			break
 		}
 
-		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.id, monotime.Now()-unwrapAt)
+		w.log.Debugf("Packet: %v (IsReplay took: %v)", pkt.ID, monotime.Now()-unwrapAt)
 
 		return nil
 	}
@@ -126,15 +135,15 @@ func (w *cryptoWorker) doUnwrap(pkt *packet) error {
 	return lastErr
 }
 
-func (w *cryptoWorker) worker() {
-	unwrapSlack := time.Duration(w.s.cfg.Debug.UnwrapDelay) * time.Millisecond
-	inCh := w.s.inboundPackets.Out()
+func (w *Worker) worker() {
+	isProvider := w.glue.Config().Server.IsProvider
+	unwrapSlack := time.Duration(w.glue.Config().Debug.UnwrapDelay) * time.Millisecond
 	defer w.derefKeys()
 
 	for {
 		// This is where the bulk of the inbound packet processing happens,
 		// and the only significant source of parallelism.
-		var pkt *packet
+		var pkt *packet.Packet
 
 		select {
 		case <-w.HaltCh():
@@ -142,10 +151,10 @@ func (w *cryptoWorker) worker() {
 			return
 		case <-w.updateCh:
 			w.log.Debugf("Updating mix keys.")
-			w.s.mixKeys.shadow(w.mixKeys)
+			w.glue.MixKeys().Shadow(w.mixKeys)
 			continue
-		case e := <-inCh:
-			pkt = e.(*packet)
+		case e := <-w.incomingCh:
+			pkt = e.(*packet.Packet)
 		}
 
 		// This deliberately ignores the cryptographic processing time, since
@@ -156,73 +165,63 @@ func (w *cryptoWorker) worker() {
 
 		// Drop the packet if it has been sitting in the queue waiting to
 		// be unwrapped for way too long.
-		if unwrapDelay := now - pkt.recvAt; unwrapDelay > unwrapSlack {
-			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.id, unwrapDelay)
-			pkt.dispose()
+		if unwrapDelay := now - pkt.RecvAt; unwrapDelay > unwrapSlack {
+			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, unwrapDelay)
+			pkt.Dispose()
 			continue
 		} else {
-			w.log.Debugf("Packet: %v (Unwrap queue delay: %v)", pkt.id, unwrapDelay)
+			w.log.Debugf("Packet: %v (Unwrap queue delay: %v)", pkt.ID, unwrapDelay)
 		}
 
 		// Attempt to unwrap the packet.
-		w.log.Debugf("Attempting to unwrap packet: %v", pkt.id)
+		w.log.Debugf("Attempting to unwrap packet: %v", pkt.ID)
 		if err := w.doUnwrap(pkt); err != nil {
-			w.log.Debugf("Dropping packet: %v (%v)", pkt.id, err)
-			pkt.dispose()
+			w.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
+			pkt.Dispose()
 			continue
 		}
-		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.id, monotime.Now()-now)
-
-		// At this point, we have a packet that's been unwrapped, with
-		// the modified packet, paylod (if any), and the vector of Sphinx
-		// commands, that is not a replay.  Examine the list of commands to
-		// see what kind of packet it is, and then handle it as appropriate.
-		if err := pkt.splitCommands(); err != nil {
-			w.log.Debugf("Dropping packet: %v (%v)", pkt.id, err)
-			pkt.dispose()
-			continue
-		}
+		w.log.Debugf("Packet: %v (doUnwrap took: %v)", pkt.ID, monotime.Now()-now)
 
 		// The common (in the both most likely, and done by all modes) case
 		// is that the packet is destined for another node.
-		if pkt.isForward() {
-			if pkt.payload != nil {
-				w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.id)
-				pkt.dispose()
+		if pkt.IsForward() {
+			if pkt.Payload != nil {
+				w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.ID)
+				pkt.Dispose()
 				continue
 			}
-			if pkt.mustTerminate {
-				w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.id)
-				pkt.dispose()
+			if pkt.MustTerminate {
+				w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.ID)
+				pkt.Dispose()
 				continue
 			}
 
 			// Check and adjust the delay for queue dwell time.
-			pkt.delay = time.Duration(pkt.nodeDelay.Delay) * time.Millisecond
-			if pkt.delay > numMixKeys*epochtime.Period {
-				w.log.Debugf("Dropping packet: %v (Delay %v is past what is possible)", pkt.id, pkt.delay)
-				pkt.dispose()
+			pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
+			if pkt.Delay > constants.NumMixKeys*epochtime.Period {
+				w.log.Debugf("Dropping packet: %v (Delay %v is past what is possible)", pkt.ID, pkt.Delay)
+				pkt.Dispose()
 				continue
 			}
-			dwellTime := now - pkt.recvAt
-			if pkt.delay > dwellTime {
-				pkt.delay -= dwellTime
+			dwellTime := now - pkt.RecvAt
+			if pkt.Delay > dwellTime {
+				pkt.Delay -= dwellTime
 			} else {
 				// Eeep, the dwell time has exceeded the user requested delay.
 				//
 				// TODO: Either can drop or dispatch the packet immediately,
 				// I'm not sure which is better behavior.
-				pkt.delay = 0
+				pkt.Delay = 0
 			}
 
 			// Hand off to the scheduler.
-			w.log.Debugf("Dispatching packet: %v", pkt.id)
-			w.s.scheduler.onPacket(pkt)
+			w.log.Debugf("Dispatching packet: %v", pkt.ID)
+			w.glue.Scheduler().OnPacket(pkt)
 			continue
-		} else if !w.s.cfg.Server.IsProvider {
+		} else if !isProvider {
 			// Mixes will only ever see forward commands.
-			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.id, pkt.cmdsToString())
-			pkt.dispose()
+			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+			pkt.Dispose()
 			continue
 		}
 
@@ -231,42 +230,44 @@ func (w *cryptoWorker) worker() {
 		// other things, so are just shunted off to a separate worker so that
 		// packet processing does not get blocked.
 
-		if pkt.mustForward {
-			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.id)
-			pkt.dispose()
+		if pkt.MustForward {
+			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.ID)
+			pkt.Dispose()
 			continue
 		}
 
 		// Toss the packets over to the provider backend.
 		// Note: Callee takes ownership of pkt.
-		if pkt.isToUser() || pkt.isUnreliableToUser() || pkt.isSURBReply() {
-			w.log.Debugf("Handing off user destined packet: %v", pkt.id)
-			pkt.dispatchAt = now
-			w.s.provider.onPacket(pkt)
+		if pkt.IsToUser() || pkt.IsUnreliableToUser() || pkt.IsSURBReply() {
+			w.log.Debugf("Handing off user destined packet: %v", pkt.ID)
+			pkt.DispatchAt = now
+			w.glue.Provider().OnPacket(pkt)
 		} else {
-			w.log.Debugf("Dropping user packet: %v (%v)", pkt.id, pkt.cmdsToString())
-			pkt.dispose()
+			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+			pkt.Dispose()
 		}
 	}
 
 	// NOTREACHED
 }
 
-func (w *cryptoWorker) derefKeys() {
+func (w *Worker) derefKeys() {
 	for _, v := range w.mixKeys {
 		v.Deref()
 	}
 }
 
-func newCryptoWorker(s *Server, id int) *cryptoWorker {
-	w := new(cryptoWorker)
-	w.s = s
-	w.log = s.logBackend.GetLogger(fmt.Sprintf("crypto:%d", id))
-	w.mixKeys = make(map[uint64]*mixkey.MixKey)
-	w.updateCh = make(chan bool)
+// New constructs a new Worker instance.
+func New(glue glue.Glue, incomingCh <-chan interface{}, id int) *Worker {
+	w := &Worker{
+		glue:       glue,
+		log:        glue.LogBackend().GetLogger(fmt.Sprintf("crypto:%d", id)),
+		mixKeys:    make(map[uint64]*mixkey.MixKey),
+		incomingCh: incomingCh,
+		updateCh:   make(chan bool),
+	}
 
-	w.s.mixKeys.shadow(w.mixKeys)
-
+	w.glue.MixKeys().Shadow(w.mixKeys)
 	w.Go(w.worker)
 	return w
 }

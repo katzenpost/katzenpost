@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package server
+// Package pki implements the server PKI handler.
+package pki
 
 import (
 	"context"
@@ -31,9 +32,12 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/sphinx/constants"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/internal/constants"
+	"github.com/katzenpost/server/internal/debug"
+	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/pkicache"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -44,10 +48,10 @@ type pki struct {
 	sync.RWMutex
 	worker.Worker
 
-	s    *Server
+	glue glue.Glue
 	log  *logging.Logger
-	impl cpki.Client
 
+	impl               cpki.Client
 	descAddrMap        map[cpki.Transport][]string
 	docs               map[uint64]*pkicache.Entry
 	rawDocs            map[uint64][]byte
@@ -56,7 +60,7 @@ type pki struct {
 	lastWarnedEpoch    uint64
 }
 
-func (p *pki) startWorker() {
+func (p *pki) StartWorker() {
 	p.Go(p.worker)
 }
 
@@ -137,7 +141,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			ent, err := pkicache.New(d, p.s.identityKey.PublicKey(), p.s.cfg.Server.IsProvider)
+			ent, err := pkicache.New(d, p.glue.IdentityKey().PublicKey(), p.glue.Config().Server.IsProvider)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
@@ -161,7 +165,7 @@ func (p *pki) worker() {
 			p.pruneDocuments()
 
 			// If the PKI document map changed, kick the connector worker.
-			p.s.connector.forceUpdate()
+			p.glue.Connector().ForceUpdate()
 		}
 
 		// Check to see if we need to publish the descriptor, and do so, along
@@ -180,7 +184,7 @@ func (p *pki) worker() {
 			if ent := p.entryForEpoch(now); ent != nil {
 				if newMaxDelay := ent.MaxDelay(); newMaxDelay != lastMaxDelay {
 					p.log.Debugf("Updating scheduler MaxDelay for epoch %v: %v", now, newMaxDelay)
-					p.s.scheduler.maxDelayCh <- newMaxDelay
+					p.glue.Scheduler().OnNewMaxDelay(newMaxDelay)
 					lastMaxDelay = newMaxDelay
 				}
 				lastMaxDelayEpoch = now
@@ -197,13 +201,13 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	// a trust root, and no amount of checking here will save us if the
 	// authorities are malicious.
 	desc := ent.Self()
-	if desc.Name != p.s.cfg.Server.Identifier {
+	if desc.Name != p.glue.Config().Server.Identifier {
 		return fmt.Errorf("self Name field does not match Identifier")
 	}
-	if !desc.IdentityKey.Equal(p.s.identityKey.PublicKey()) {
+	if !desc.IdentityKey.Equal(p.glue.IdentityKey().PublicKey()) {
 		return fmt.Errorf("self identity key mismatch")
 	}
-	if !desc.LinkKey.Equal(p.s.linkKey.PublicKey()) {
+	if !desc.LinkKey.Equal(p.glue.LinkKey().PublicKey()) {
 		return fmt.Errorf("self link key mismatch")
 	}
 	return nil
@@ -231,7 +235,7 @@ func (p *pki) pruneFailures() {
 	for epoch := range p.failedFetches {
 		// Be more aggressive about pruning failures than pruning documents,
 		// the worst that can happen is that we query the PKI unneccecarily.
-		if epoch < now-(numMixKeys-1) || epoch > now+1 {
+		if epoch < now-(constants.NumMixKeys-1) || epoch > now+1 {
 			delete(p.failedFetches, epoch)
 		}
 	}
@@ -243,7 +247,7 @@ func (p *pki) pruneDocuments() {
 	p.Lock()
 	defer p.Unlock()
 	for epoch := range p.docs {
-		if epoch < now-(numMixKeys-1) {
+		if epoch < now-(constants.NumMixKeys-1) {
 			p.log.Debugf("Discarding PKI for epoch: %v", epoch)
 			delete(p.docs, epoch)
 			delete(p.rawDocs, epoch)
@@ -301,12 +305,12 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 	// Generate the non-key parts of the descriptor.
 	desc := &cpki.MixDescriptor{
-		Name:        p.s.cfg.Server.Identifier,
-		IdentityKey: p.s.identityKey.PublicKey(),
-		LinkKey:     p.s.linkKey.PublicKey(),
+		Name:        p.glue.Config().Server.Identifier,
+		IdentityKey: p.glue.IdentityKey().PublicKey(),
+		LinkKey:     p.glue.LinkKey().PublicKey(),
 		Addresses:   p.descAddrMap,
 	}
-	if p.s.cfg.Server.IsProvider {
+	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
 		// shouldn't be self assigning this.
 		desc.Layer = cpki.LayerProvider
@@ -316,28 +320,28 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// Ensure that there are mix keys for the epochs [e, ..., e+2],
 	// assuming that key rotation isn't disabled, and fill them into
 	// the descriptor.
-	if didGen, err := p.s.mixKeys.generateMixKeys(doPublishEpoch); err == nil {
+	if didGen, err := p.glue.MixKeys().Generate(doPublishEpoch); err == nil {
 		// Prune off the old mix keys.  Bad things happen if the epoch ever
 		// goes backwards, but everyone uses NTP right?
-		didPrune := p.s.mixKeys.pruneMixKeys()
+		didPrune := p.glue.MixKeys().Prune()
 
 		// Add the keys to the descriptor.
-		for e := doPublishEpoch; e < doPublishEpoch+numMixKeys; e++ {
+		for e := doPublishEpoch; e < doPublishEpoch+constants.NumMixKeys; e++ {
 			// Why, yes, this doesn't hold the lock.  The only time the map is
 			// altered is in mixkeys.generateMixKeys(), and mixkeys.pruneMixKeys(),
 			// both of which are only called from this code path serially.
-			k, ok := p.s.mixKeys.keys[e]
+			k, ok := p.glue.MixKeys().Get(e)
 			if !ok {
 				// The prune pass must have purged a key we intended to publish,
 				// so bail out and try again in a little while.
 				return fmt.Errorf("key that was scheduled for publication got pruned")
 			}
-			desc.MixKeys[e] = k.PublicKey()
+			desc.MixKeys[e] = k
 		}
 		if didGen || didPrune {
 			// Kick the crypto workers into reshadowing the mix keys,
 			// since there are either new keys, or less old keys.
-			p.s.reshadowCryptoWorkers()
+			p.glue.ReshadowCryptoWorkers()
 		}
 	} else {
 		// Sad panda, failed to generate the keys.
@@ -345,7 +349,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err := p.impl.Post(pkiCtx, doPublishEpoch, p.s.identityKey, desc)
+	err := p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), desc)
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
@@ -374,7 +378,7 @@ func (p *pki) entryForEpoch(epoch uint64) *pkicache.Entry {
 func (p *pki) documentsToFetch() []uint64 {
 	const nextFetchTill = 45 * time.Minute
 
-	ret := make([]uint64, 0, numMixKeys+1)
+	ret := make([]uint64, 0, constants.NumMixKeys+1)
 	now, _, till := epochtime.Now()
 	start := now
 	if till < nextFetchTill {
@@ -384,7 +388,7 @@ func (p *pki) documentsToFetch() []uint64 {
 	p.RLock()
 	defer p.RUnlock()
 
-	for epoch := start; epoch > now-numMixKeys; epoch-- {
+	for epoch := start; epoch > now-constants.NumMixKeys; epoch-- {
 		if _, ok := p.docs[epoch]; !ok {
 			ret = append(ret, epoch)
 		}
@@ -399,16 +403,16 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	// Figure out the list of epochs to consider valid.
 	//
 	// Note: The ordering is important and should not be changed without
-	// changes to pki.authenticateConnection().
+	// changes to pki.AuthenticateConnection().
 	now, _, till := epochtime.Now()
-	epochs := make([]uint64, 0, numMixKeys+1)
+	epochs := make([]uint64, 0, constants.NumMixKeys+1)
 	start := now
 	if till < pkiEarlyConnectSlack {
 		// Allow connections to new nodes 30 mins in advance of an epoch
 		// transition.
 		start = now + 1
 	}
-	for epoch := start; epoch > now-numMixKeys; epoch-- {
+	for epoch := start; epoch > now-constants.NumMixKeys; epoch-- {
 		epochs = append(epochs, epoch)
 	}
 
@@ -429,7 +433,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 	return s, nowDoc, now, till
 }
 
-func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
+func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
 	const earlySendSlack = 2 * time.Minute
 
 	dirStr := "Incoming"
@@ -438,11 +442,11 @@ func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 	}
 
 	// Ensure the additional data is valid.
-	if len(c.AdditionalData) != constants.NodeIDLength {
-		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, bytesToPrintString(c.AdditionalData))
+	if len(c.AdditionalData) != sConstants.NodeIDLength {
+		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, debug.BytesToPrintString(c.AdditionalData))
 		return nil, false, false
 	}
-	var nodeID [constants.NodeIDLength]byte
+	var nodeID [sConstants.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
 	// Iterate over whatever documents we happen to have for the epochs
@@ -468,7 +472,7 @@ func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		// the most recent descriptor we have for the node.
 		if !m.LinkKey.Equal(c.PublicKey) {
 			if desc == m || !desc.LinkKey.Equal(c.PublicKey) {
-				p.log.Warningf("%v: '%v' Public Key mismatch: '%v'", dirStr, bytesToPrintString(c.AdditionalData), c.PublicKey)
+				p.log.Warningf("%v: '%v' Public Key mismatch: '%v'", dirStr, debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
 				continue
 			}
 		}
@@ -511,9 +515,9 @@ func (p *pki) authenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 	return
 }
 
-func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixDescriptor {
+func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.MixDescriptor {
 	docs, nowDoc, now, _ := p.documentsForAuthentication()
-	descMap := make(map[[constants.NodeIDLength]byte]*cpki.MixDescriptor)
+	descMap := make(map[[sConstants.NodeIDLength]byte]*cpki.MixDescriptor)
 
 	for _, d := range docs {
 		docEpoch := d.Epoch()
@@ -543,12 +547,9 @@ func (p *pki) outgoingDestinations() map[[constants.NodeIDLength]byte]*cpki.MixD
 	return descMap
 }
 
-// getConsensus returns a raw byte sliced of the cached consensus document
-// specified by epoch. Returns cpki.ErrNoDocument if the epoch is in our
-// list of rejected epochs. Returns errNotCached if document not in PKI cache.
-func (p *pki) getConsensus(epoch uint64) ([]byte, error) {
+func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 	if err, ok := p.getFailedFetch(epoch); ok {
-		p.log.Debugf("getConsensus failure: no cached PKI document for epoch %v: %v", epoch, err)
+		p.log.Debugf("GetRawConsensus failure: no cached PKI document for epoch %v: %v", epoch, err)
 		return nil, cpki.ErrNoDocument
 	}
 	p.RLock()
@@ -565,20 +566,22 @@ func (p *pki) getConsensus(epoch uint64) ([]byte, error) {
 	return val, nil
 }
 
-func newPKI(s *Server) (*pki, error) {
-	p := new(pki)
-	p.s = s
-	p.log = s.logBackend.GetLogger("pki")
-	p.docs = make(map[uint64]*pkicache.Entry)
-	p.rawDocs = make(map[uint64][]byte)
-	p.failedFetches = make(map[uint64]error)
+// New reuturns a new pki.
+func New(glue glue.Glue) (glue.PKI, error) {
+	p := &pki{
+		glue:          glue,
+		log:           glue.LogBackend().GetLogger("pki"),
+		docs:          make(map[uint64]*pkicache.Entry),
+		rawDocs:       make(map[uint64][]byte),
+		failedFetches: make(map[uint64]error),
+	}
 
 	var err error
-	if p.descAddrMap, err = makeDescAddrMap(p.s.cfg.Server.Addresses); err != nil {
+	if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
 		return nil, err
 	}
-	if p.s.cfg.Server.IsProvider {
-		for k, v := range p.s.cfg.Provider.AltAddresses {
+	if glue.Config().Server.IsProvider {
+		for k, v := range glue.Config().Provider.AltAddresses {
 			if len(v) == 0 {
 				continue
 			}
@@ -590,14 +593,14 @@ func newPKI(s *Server) (*pki, error) {
 		}
 	}
 
-	if s.cfg.PKI.Nonvoting != nil {
+	if glue.Config().PKI.Nonvoting != nil {
 		authPk := new(eddsa.PublicKey)
-		if err = authPk.FromString(s.cfg.PKI.Nonvoting.PublicKey); err != nil {
+		if err = authPk.FromString(glue.Config().PKI.Nonvoting.PublicKey); err != nil {
 			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
 		}
 		pkiCfg := &nClient.Config{
-			LogBackend: s.logBackend,
-			Address:    s.cfg.PKI.Nonvoting.Address,
+			LogBackend: glue.LogBackend(),
+			Address:    glue.Config().PKI.Nonvoting.Address,
 			PublicKey:  authPk,
 		}
 		p.impl, err = nClient.New(pkiCfg)
