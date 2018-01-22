@@ -104,10 +104,10 @@ Table of Contents
    key-pairs. The sender identity is signaled to a recipient via a
    header that is added by the recipient's mixnet client like thus:
 
-      X-Panoramix-Sender: <base64 X25519 identity-key>
+      X-Katzenpost-Sender: <base64 X25519 identity-key>
 
    Clients MUST NOT generate outbound mail with the
-   `X-Panoramix-Sender-Identity-Key` header set, and MUST examine
+   `X-Katzenpost-Sender` header set, and MUST examine
    inbound mail for the presence of such a header, and treat all mails
    received that have the header as potentially mallicious.
 
