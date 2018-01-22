@@ -12,6 +12,19 @@ Abstract
    This document describes the user interface design of the Katzenpost
    mix network.
 
+Table of Contents
+
+   1. Introduction
+      1.1 Terminology
+   2. System Overview
+   3. Behavior of the SMTP submission proxy
+   4. Behavior of the POP3 retrieval proxy
+   5. Behavior of the e-mail client / K9mail
+   6. Recommendations for UX in the client implementations
+   Appendix A. References
+      Appendix A.1 Normative References
+      Appendix A.1 Informative References
+
 1. Introduction
 
    This user interface is meant to mimic the e-mail experience in
