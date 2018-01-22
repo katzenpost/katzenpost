@@ -1,9 +1,8 @@
 Katzenpost Decryption Mix Network User Interface Design
 Yawning Angel
 Claudia Diaz
-David Stainton
 Kali Kaneko
-
+David Stainton
 
 Version 0
 
