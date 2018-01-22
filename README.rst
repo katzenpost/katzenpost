@@ -3,7 +3,8 @@ Katzenpost Website
 
 This repository contains the sources of the Katzenpost website.
 
-To build locally, install `sphinx<http://www.sphinx-doc.org/en/stable/install.html>`, then run `make html` (or `make text` for plaintext output).
+To build locally, install `sphinx
+<http://www.sphinx-doc.org/en/stable/install.html>`_, then run `make html` (or `make text` for plaintext output).
 
 License
 =======
