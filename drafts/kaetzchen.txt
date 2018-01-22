@@ -9,18 +9,18 @@ Abstract
 1. Introduction
 
    This interface is meant to provide support for various autoresponder
-   agents ("Kaetzchen") that run on Katzenpost provider instances
+   agents ("Kaetzchen") that run on Katzenpost provider instances, thus
    bypassing the need to run a discrete client instance to provide
-   functionality.  The use-cases for such agents includes but is not
-   limited to user identity key lookup, a discard address, and a
+   functionality.  The use-cases for such agents include, but are not
+   limited to, user identity key lookup, a discard address, and a
    loop-back responder for the purpose of cover traffic.
 
 2. Extension Overview
 
-   Each Kaetzchen agent will register as a potential recipient on it's
+   Each Kaetzchen agent will register as a potential recipient on its
    Provider.  When the Provider receives a forward packet destined for
    a Kaetzchen instance, it will hand off the fully unwrapped packet
-   along with it's corresponding SURB to the agent, which will then
+   along with its corresponding SURB to the agent, which will then
    act on the packet and optionally reply utilizing the SURB.
 
 3. Agent Requirements
@@ -46,7 +46,7 @@ Abstract
    [ XXX: TODO
 
       * Each provider SHOULD publish the list of publicly accessible
-        Kaetzchen agent endpoints in it's MixDescriptor, along with
+        Kaetzchen agent endpoints in its MixDescriptor, along with
         any other information required to utilize the agent.
 
           Describe the format.  For the non-voting authority I envision
