@@ -596,7 +596,8 @@ A.2 Informative References
 
    [KESDOGAN98]   Kesdogan, D., Egner, J., and Büschkes, R.,
                   "Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System."
-                  Information Hiding, 1998.
+                  Information Hiding, 1998,
+                  <https://www.freehaven.net/anonbib/cache/stop-and-go.pdf>.
 
    [MIXTOPO10]  Diaz, C., Murdoch, S., Troncoso, C., "Impact of Network Topology on Anonymity
                 and Overhead in Low-Latency Anonymity Networks", PETS, July 2010,
