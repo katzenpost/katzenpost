@@ -99,12 +99,12 @@ Table of Contents
               behalf of the user. Provider MUST perform the same cryptographic
               operations as the Mix.
 
-   * Packet - A Sphinx packet. [SPHINX] [SPHINXSPEC] The Katzenpost
-              system supports multiple packet sizes for different
-              classes of traffic. In particular:
+   Packet - A Sphinx packet. [SPHINX] [SPHINXSPEC] The Katzenpost
+            system supports multiple packet sizes for different
+            classes of traffic. In particular:
 
-	      * XKB-block: XX KB (to-do: specify the number of KB)
-	      * YKB-block: YY KB (to-do: specify the number of KB/MB)
+	       * XKB-block: XX KB (to-do: specify the number of KB)
+	       * YKB-block: YY KB (to-do: specify the number of KB/MB)
 
    SURB-ACK - A short message notifying that a packet was delivered;
               transmitted via a Single Use Reply Block [SPHINX]
@@ -571,7 +571,9 @@ Table of Contents
 
    Here we describe important facets of how clients construct Sphinx
    packets. This section assumes the client interacts with the mix
-   network PKI as well as a universal time facility (rough time).
+   network PKI as well as a universal time facility, the constraints
+   of which have been specified in detail in our PKI specification
+   [KATZMIXPKI].
 
 5.1 Choosing Delays: for single Block messages and for multi Block messages
 
