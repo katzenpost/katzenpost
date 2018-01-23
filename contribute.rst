@@ -4,7 +4,8 @@ Contribute to Katzenpost
 Communication
 =============
 
-Find us on IRC.
+ * IRC: irc.oftc.net #katzenpost <irc://irc.oftc.net/#katzenpost>
+ * Mailing List <https://lists.mixnetworks.org/listinfo/katzenpost>
 
 Project Ideas
 =============
