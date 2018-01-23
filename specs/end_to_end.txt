@@ -721,13 +721,21 @@ Table of Contents
 
 10. Future Work and Research
 
+   * specify special features and design related to near real-time chat
+     applications using a mix network transport protocol
    * change the path selection algorithm to use legal jurisdictional
      region awareness for increasing the cost of compulsion attacks.
+   * change path selection to use a reputation system to defend
+     against n-1 attacks and to increate network reliability;
+     [MIRANDA] and [MIXRELIABLE]
    * Mitigate known active confirmation attacks?
    * End to End Forward Secrecy [PETMAIL15]
    * make bulk transfers go faster using Selective Repeat ARQ and
      Go-Back-N ARQ
    * make bulk transfers go faster using forward error correction
+   * make bulk transfers go faster using an alternate communications
+     channel such as Tor-loops or similar decoy traffic protocol that
+     uses Tor.
 
 Appendix A. References
 
@@ -811,3 +819,12 @@ Appendix A.2 Informative References
                “The Loopix Anonymity System”,
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>
+
+   [MIRANDA] Leibowitz, H., Piotrowska, A., Danezis, G., Herzberg, A., 2017,
+             "No right to ramain silent: Isolating Malicious Mixes"
+             <https://eprint.iacr.org/2017/1000.pdf>.
+
+   [MIXRELIABLE] Dingledine, R., Freedman, M., Hopwood, D., Molnar, D., 2001
+                 "A Reputation System to Increase MIX-Net Reliability"
+                 In Information Hiding, 4th International Workshop
+                 <https://www.freehaven.net/anonbib/cache/mix-acc.pdf>.
