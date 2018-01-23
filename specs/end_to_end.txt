@@ -11,9 +11,10 @@ Abstract
 
    This is a specification for the Katzenpost/LEAP mix network client
    end to end protocol and egress mix behavior. The mix network
-   specification is described in Katzenpost Mix Network Specification.
-   The protocols used by the entities to publish their identities is
-   described in the Katzenpost Mix Network PKI Specification.
+   specification is described in Katzenpost Mix Network Specification
+   [KATZMIXNET]. The protocols used by mixes to publish their
+   identities is described in the Katzenpost Mix Network PKI
+   Specification [KATZMIXPKI].
 
 Table of Contents
 
@@ -133,12 +134,13 @@ Table of Contents
 
 2. Mix Network Packet Format Considerations
 
-   As the mix network message packet format we use Sphinx.
-   The detailed Sphinx specification is described in:
-   "Sphinx Mix Network Cryptographic Packet Format Specification"
+   As the mix network message packet format we use Sphinx.  The
+   detailed Sphinx specification is described in: "Sphinx Mix Network
+   Cryptographic Packet Format Specification", [SPHINXSPEC].
 
    The Sphinx cryptographic primitives and parameters are specified in
-   Section 3 of: "The Katzenpost Mix Network Specification"
+   Section 3 of: "The Katzenpost Mix Network Specification",
+   [KATZMIXNET].
 
 3. Client and Provider Core Protocol
 
@@ -146,7 +148,8 @@ Table of Contents
    reusing the existing trust relationship any given user may have
    with an e-mail service provider, and all client to Provider
    interaction will use the Katzenpost Mix Network Wire Protocol,
-   described in “Katzenpost Mix Network Wire Protocol Specification”.
+   described in “Katzenpost Mix Network Wire Protocol Specification”,
+   [KATZMIXWIRE].
 
 3.1 Handshake and Authentication
 
@@ -744,6 +747,17 @@ Appendix A.1 Normative References
 
    [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
+
+   [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Katzenpost Mix Network Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+
+   [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
+
+   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
 
 Appendix A.2 Informative References
 
