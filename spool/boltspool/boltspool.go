@@ -165,8 +165,14 @@ func (s *boltSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 	// Retreive the stored message and (optional) SURB ID.
 	mBkt := sBkt.Bucket(mKey)
-	msg = mBkt.Get([]byte(msgKey))
-	surbID = mBkt.Get([]byte(surbIDKey))
+	if m := mBkt.Get([]byte(msgKey)); m != nil {
+		msg = make([]byte, 0, len(m))
+		msg = append(msg, m...)
+	}
+	if id := mBkt.Get([]byte(surbIDKey)); id != nil {
+		surbID = make([]byte, 0, len(id))
+		surbID = append(surbID, id...)
+	}
 
 	// If we modified the database, commit the transaction.
 	if advance {
