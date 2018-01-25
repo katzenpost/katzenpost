@@ -1,0 +1,209 @@
+Katzenpost Mix Network Decoy Traffic Specification
+Yawning Angel
+George Danezis
+Claudia Diaz
+Ania Piotrowska
+David Stainton
+
+Version 0
+
+Abstract
+
+   This document describes the various types of decoy traffic designs
+   based on the [LOOPIX] paper. Decoy traffic can serve multiple
+   purposes such as detecting n-1 attacks, adding entropy to mixes and
+   preventing short term statistical disclosure attacks.
+
+1. Introduction
+
+   To a passive network observer or a component mix, decoy traffic is
+   indistinguishable from normal traffic. The [LOOPIX] paper describes
+   a trade off between latency and decoy traffic. That is to say,
+   decoy traffic adds entropy to component mixes which means that
+   clients can select a lower per hop delay while still maintaining
+   desired anonymity. In the sections that follow we detail precisely
+   how to tune decoy traffic.
+
+   Decoy traffic loops are used by mixes to detect n-1 attacks
+   [HEARTBEAT03]. In this case it serves dual purposes because it is
+   also contributing entropy to the mixes that the loop decoy traffic
+   messages are routed through.
+
+   Decoy traffic can perhaps prevent some short term statistical
+   disclosure attacks. However, for certain uses cases like long term
+   identities exchanging asynchronous messages where users go off and
+   online, there is no chance for a full defense. The Anonymity
+   Considerations section below includes a larger discussion of all
+   the attacks we cannot completely prevent due to user and
+   application behavior.
+
+1.1 Conventions Used in This Document
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [RFC2119].
+
+1.2 Terminology
+
+   decoy traffic - Mix network messages that add entropy and help
+                   defend against attacks. Also referred to as traffic
+                   padding and dummy traffic.
+
+   Message - A variable-length sequence of octets sent anonymously
+             through the network. Short messages are sent in a single
+             packet; long messages are fragmented across multiple
+             packets (see [PANEND2END]).
+
+   packet - A Sphinx packet is a nested cryptographic packet
+            which is described in [SPHINX] and [SPHINXSPEC].
+
+2. Detecting n-1 Attacks
+
+   Mixes construct and send Sphinx packets destined to
+   themselves. These mix messages will appear to other mixes and
+   passive network observers to be indistinguishable from normal mix
+   network traffic. These self destined Sphinx packets function as
+   heartbeat messages that the mix uses to determine if there is an
+   active network attack that is delaying or dropping outgoing
+   messages such as would be the case with an n-1 attack. [TRICKLE02]
+
+   Detection of n-1 attacks does not necessarily imply using the
+   mitigation strategy as discussed in [HEARTBEAT03]. For merely
+   detection of n-1 attacks it should be sufficient to repeatedly send
+   heartbeat messages at a constant rate. For each sent heartbeat
+   message, the client sets a timer for it's expected return. If the
+   heartbeat does not return in time then the heartbeat failure code
+   path is used. It seems for failures we have three behaviors to
+   choose from:
+
+      a. cease all mix operations
+      b. warn the mix operator
+      c. execute n-1 attack mitigation strategy
+
+   In the context of using the Poisson mix strategy the timeout
+   duration for each heartbeat message is very close to the round trip
+   time of the message. This is because our mixnet client selects the
+   delays for each hop as is specified by the Poisson mix strategy
+   [KESDOGAN98] [LOOPIX17], therefore the client knows the RTT of the
+   mix queue delays. Additional delay other than the Poisson mix delay
+   can be caused by mix performance and link layer congestion.  Under
+   normal conditions these delays are likely to be fairly low and it
+   should be sufficient to add a "slop" value to the Piosson RTT for
+   setting the hearbeat timer.
+
+3. Preventing Short Term Intersection Attacks with Decoy Traffic
+4. Tuning Mix Decoy Traffic
+5. Tuning Client Decoy Traffic
+6. Calculating Latency Versus Decoy Traffic Costs
+W. Future Work
+X. Anonymity Considerations
+
+   A global adversary will be able to determine which users are on or
+   offline.  Decoy traffic cannot prevent long term intersection
+   attacks if some users go offline. [RESISTDISCLOSURE] We therefore
+   only expect to prevent short term intersection attacks.
+
+Y. Security Considerations
+Z. Acknowledgments
+
+Appendix A. References
+
+Appendix A.1 Normative References
+
+   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
+               and Danezis, G., “The Loopix Anonymity System”,
+               USENIX, August, 2017
+               <https://arxiv.org/pdf/1703.00536.pdf>
+
+Appendix A.2 Informative References
+
+   [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
+
+   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Sphinx Mix Network Cryptographic Packet Format Specification"
+                July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.txt>.
+
+   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+               Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+               May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+
+   [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
+                  Proceedings of the Workshop on Privacy in the Electronic Society, October 2003,
+                  <https://www.freehaven.net/anonbib/cache/danezis:wpes2003.pdf>.
+
+   [TRICKLE02]  Serjantov, A., Dingledine, R., Syverson, P., "From a Trickle to
+                a Flood: Active Attacks on Several Mix Types", Proceedings of
+                Information Hiding Workshop, October 2002,
+                <https://www.freehaven.net/anonbib/cache/trickle02.pdf>.
+
+   [KESDOGAN98]   Kesdogan, D., Egner, J., and Büschkes, R.,
+                  "Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System."
+                  Information Hiding, 1998.
+
+     [POOLDUMMY]  Diaz, C., Preneel, B.,
+                  "Reasoning about the Anonymity Provided by Pool Mixes that Generate Dummy Traffic",
+                  <https://www.freehaven.net/anonbib/cache/pool-dummy04.pdf>.
+
+      [MIXDUMMY]  Diaz, C., Preneel, B.,
+                  "Taxonomy of Mixes and Dummy Traffic",
+                  <https://www.freehaven.net/anonbib/cache/taxonomy-dummy.pdf>.
+
+   [DUMMYLIMITS]  Oya, S., Troncoso, C., Pérez-González, F.
+                  "Do dummies pay off? Limits of dummy traffic protection in anonymous communications",
+                  <https://www.freehaven.net/anonbib/cache/pets14-dummy-traffic.pdf>.
+
+ [DUMMYINTERSECTION] Berthold, O., Langos, H.,
+                     "Dummy Traffic Against Long Term Intersection Attacks",
+                     In the Proceedings of the PETS 2002,
+                     <https://www.freehaven.net/anonbib/cache/langos02.pdf>.
+
+ [HANGBUDDIES]  Wolinksy, D., Syta, E., Ford, B.,
+                "Hang with Your Buddies to Resist Intersection Attacks",
+                In the Proceedings of the 20th ACM conference on CCS November 2013,
+                <https://www.freehaven.net/anonbib/cache/ccs2013-buddies.pdf>.
+
+    [STATSDISCO]  Danezis, G., Serjantov, A.,
+                  "Statistical Disclosure or Intersection Attacks on Anonymity Systems",
+                  In the Proceedings of 6th Information Hiding Workshop (IH 2004), Toronto, May 2004.
+                  <https://www.freehaven.net/anonbib/cache/DanSer04.ps>.
+
+ [RESISTDISCLOSURE]  Mathewson, N., Dingledine, R.,
+                     "Practical Traffic Analysis: Extending and Resisting Statistical Disclosure",
+                     <https://www.freehaven.net/anonbib/cache/e2e-traffic.pdf>.
+
+   [2SIDEDSDA]    Danezis, G., Diaz, C., Troncoso, C.,
+                  "Two-sided Statistical Disclosure Attack",
+                  In the Proceedings of the PETS 2007,
+                  <https://www.freehaven.net/anonbib/cache/danezis-pet2007.pdf>.
+
+ [PERFECTMATCHING]  Troncoso, C., Gierlichs, B., Preneel, B., Verbauwhede, I.,
+                    "Perfect Matching Disclosure Attacks",
+                    In the Proceedings of the PETS 2008,
+                    <https://www.freehaven.net/anonbib/cache/troncoso-pet2008.pdf>.
+
+ [LEASTSQUARESSDA] Perez-Gonzalez, F., Troncoso, C.,
+                   "Understanding Statistical Disclosure: A Least Squares approach",
+                   In the Proceedings of the PETS 2012,
+                   <https://www.freehaven.net/anonbib/cache/leastsquares-pets12.pdf>.
+
+[LEASTSQUARESSDA2] Perez-Gonzalez, F., Troncoso, C.,
+                   "A Least Squares Approach to the Static Traffic Analysis of High-Latency
+                   Anonymous Communication Systems",
+                   <https://software.imdea.org/~carmela.troncoso/papers/PerezGonzalezTIFS14.pdf>.
+
+     [HITTINGSET] Kesdogan, D., Pimenidis, L.,
+                  "The Hitting Set Attack on Anonymity Protocols",
+                  In the Proceedings of 6th Information Hiding Workshop (IH 2004), Toronto, May 2004,
+                  <https://www.freehaven.net/anonbib/cache/hitting-set04.pdf>.
+
+           [SDA]  Danezis, G.,
+                  "Statistical Disclosure Attacks: Traffic Confirmation in Open Environments",
+                  In the Proceedings of Security and Privacy in the Age of Uncertainty, May 2003,
+                  <https://www.freehaven.net/anonbib/cache/statistical-disclosure.pdf>.
+
+   [ANONLIMITS]   Kedogan, D., Agrawal, D., Penz, S.,
+                  "Limits of Anonymity in Open Environments",
+                  In the Proceedings of Information Hiding Workshop, October 2002,
+                  <https://www.freehaven.net/anonbib/cache/limits-open.pdf>.
