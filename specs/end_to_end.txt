@@ -584,7 +584,11 @@ Table of Contents
    parameter μ, which is the inverse of the mean of the exponential
    distribution in milliseconds, is published by the mix network PKI
    and the same for all clients. Given μ, the sender just draws a
-   random value from Exp(μ).
+   random value from Exp(μ). The frequency of sending messages weather
+   they be forward messages or decoy drops, is controlled by the
+   parameter known as LAMBDA_P (aka λ_P) in the [LOOPIX] paper, which
+   is the inverse of the mean of the exponential distribution in
+   milliseconds.
 
 (XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
  the way this is speced out now... Design required here I think.
