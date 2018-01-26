@@ -578,13 +578,13 @@ Table of Contents
 5.1 Choosing Delays: for single Block messages and for multi Block messages
 
    The Client generates a delay for the ingress provider and for each
-   of the mixes in the route,  though not for the egress provider.
-   The delays are drawn from the exponential distribution
-   independently for each node. For a class of traffic TRAFFIC_X,
-   the parameter LAMBDA_X, which is the inverse of the mean of the exponential
-   distribution in milliseconds, is public by the mix network PKI
-   and the same for all clients. Given LAMBDA_X, the sender just draws
-   a random value from Exp(LAMBDA_X).
+   of the mixes in the route, though not for the egress provider.  The
+   delays for each mix hop are drawn from the exponential distribution
+   independently for each node. For each class of traffic, the
+   parameter μ, which is the inverse of the mean of the exponential
+   distribution in milliseconds, is published by the mix network PKI
+   and the same for all clients. Given μ, the sender just draws a
+   random value from Exp(μ).
 
 (XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
  the way this is speced out now... Design required here I think.
