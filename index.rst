@@ -31,10 +31,10 @@ Development
 ..  toctree::
     :maxdepth: 1
 
+    contribute
     → github.com/katzenpost <https://github.com/katzenpost/>
     → godocs: Go package documentation <https://godoc.org/?q=katzenpost>
     docs/setup
-    contribute
 
 Mixnets?!
 =========
