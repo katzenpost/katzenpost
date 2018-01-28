@@ -28,11 +28,11 @@ Documentation
 Development
 ===========
 
-.. toctree::
+..  toctree::
     :maxdepth: 1
 
-    github.com/katzenpost <https://github.com/katzenpost/>
-    godocs: Go package documentation <https://godoc.org/?q=katzenpost>
+    → github.com/katzenpost <https://github.com/katzenpost/>
+    → godocs: Go package documentation <https://godoc.org/?q=katzenpost>
     docs/setup
     contribute
 
