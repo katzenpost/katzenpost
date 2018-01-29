@@ -1,11 +1,27 @@
 Katzenpost Provider-side Autoresponder Extension
 Yawning Angel
 Kali Kaneko
+David Stainton
 
 Abstract
 
    This document describes extensions to the core Katzenpost protocol
    to support Provider-side autoresponders.
+
+Table of Contents
+
+   1. Introduction
+      1.1 Terminology
+   2. Extension Overview
+   3. Agent Requirements
+      3.1 Client to Agent message format
+   4. PKI Extensions
+   5. Anonymity Considerations
+   6. Security Considerations
+   7. Acknowledgments
+   Appendix A. References
+      Appendix A.1 Normative References
+      Appendix A.2 Informative References
 
 1. Introduction
 
