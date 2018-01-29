@@ -1,5 +1,6 @@
 Katzenpost Provider-side Autoresponder Extension
 Yawning Angel
+Kali Kaneko
 
 Abstract
 
@@ -43,21 +44,38 @@ Abstract
 
 4. PKI Extensions
 
-   [ XXX: TODO
+   Each provider SHOULD publish the list of publicly accessible
+   Kaetzchen agent endpoints in its MixDescriptor, along with
+   any other information required to utilize the agent.
 
-      * Each provider SHOULD publish the list of publicly accessible
-        Kaetzchen agent endpoints in its MixDescriptor, along with
-        any other information required to utilize the agent.
+   Provider should make this information available in the form of a map
+   in which the keys are the label used to identify a given capability, and the
+   value is a map with arbitrary keys.
 
-          Describe the format.  For the non-voting authority I envision
-          something like:
+   Valid capability names refer to the capabilities defined in extensions to this
+   specification. Every capability MUST be implemented by one and only one
+   Kaetzchen agent.
 
-          "Kaetzchen": [
-             [ "+keyserver": { "version": 1 }, ],
-             [ "+discard": {}, ],
-             [ "+loop": { "restrictedToUsers": true }, ]
-           ],
-   ]
+   For each capability, the provider MUST advertise a field for the endpoint at
+   which the Kaetzchen agent can be reached, and the identity key for such agent.
+
+
+   { "kaetzchen":
+       { "keyserver" : {
+             "endpoint": "+keyserver",
+             "id-key": "4d488962dd5a7c2d2d2360a6bbe258bf75022eb39a05b8c877f3f92e99fd298c",
+             "version" : 1 } },
+       { "discard" : {
+             "endpoint": "+discard",
+             "id-key": "4d488962dd5a7c2d2d2360a6bbe258bf75022eb39a05b8c877f3f92e99fd298c" } },
+       { "loop" : {
+             "endpoint": "+loopback",
+             "id-key": "4d488962dd5a7c2d2d2360a6bbe258bf75022eb39a05b8c877f3f92e99fd298c",
+             "restrictedToUsers": true } },
+   }
+   
+
+
 
 5. Anonymity Considerations
 
