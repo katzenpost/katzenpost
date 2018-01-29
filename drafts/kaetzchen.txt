@@ -91,14 +91,14 @@ Table of Contents
    any other information required to utilize the agent.
 
    Provider should make this information available in the form of a map
-   in which the keys are the label used to identify a given capability, and the
+   in which the keys are the label used to identify a given service, and the
    value is a map with arbitrary keys.
 
-   Valid capability names refer to the capabilities defined in extensions to this
-   specification. Every capability MUST be implemented by one and only one
+   Valid service names refer to the services defined in extensions to this
+   specification. Every service MUST be implemented by one and only one
    Kaetzchen agent.
 
-   For each capability, the provider MUST advertise a field for the endpoint at
+   For each service, the provider MUST advertise a field for the endpoint at
    which the Kaetzchen agent can be reached, and the identity key for such agent.
 
 
