@@ -75,7 +75,14 @@ Table of Contents
       uint16_t surb_len;
       opaque surb[];
       opaque payload[];
-   }
+   } KaetzchenMessage;
+
+   KaetzchenMessage message is encapsulated in an end to end encrypted
+   BlockCiphertext as described in [KATZMIXE2E]. That is, the normal
+   katzenpost protocol is used when sending messages to a Kaetzchen
+   service, although the implementation must encrypt the
+   BlockCiphertext using the service's identity key as published in
+   the PKI consensus document. [KATZMIXPKI]
 
 4. PKI Extensions
 
@@ -150,3 +157,7 @@ Appendix A.2 Informative References
    [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
              Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
              May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+
+   [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
