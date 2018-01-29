@@ -16,6 +16,15 @@ Abstract
    limited to, user identity key lookup, a discard address, and a
    loop-back responder for the purpose of cover traffic.
 
+1.1. Terminology
+
+   SURB - "single use reply block"; SURBs are used to achieve
+          recipient anonymity, that is to say, SURBs function as a
+          cryptographic delivery token that you can give to another
+          client entity so that they can send you a message without
+          them knowing your identity or location on the network. See
+          [SPHINXSPEC] and [SPHINX].
+
 2. Extension Overview
 
    Each Kaetzchen agent will register as a potential recipient on its
@@ -41,6 +50,16 @@ Abstract
        allow clients to easily differentiate between SURB-ACKs and
        agent responses.
    ]
+
+3.1 Client to Agent message format
+
+   We define the message format as:
+
+   struct {
+      uint16_t surb_len;
+      opaque surb[];
+      opaque payload[];
+   }
 
 4. PKI Extensions
 
@@ -73,9 +92,6 @@ Abstract
              "id-key": "4d488962dd5a7c2d2d2360a6bbe258bf75022eb39a05b8c877f3f92e99fd298c",
              "restrictedToUsers": true } },
    }
-   
-
-
 
 5. Anonymity Considerations
 
@@ -100,7 +116,21 @@ Abstract
    and privacy is limited to that which is provided by the base Sphinx
    packet format and parameterization.
 
-Appendix A. Acknowledgments
+7. Acknowledgments
 
    The inspiration for this extension comes primarily from a design
    by Vincent Breitmoser.
+
+Appendix A. References
+
+Appendix A.1 Normative References
+
+   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Sphinx Mix Network Cryptographic Packet Format Specification"
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
+
+Appendix A.2 Informative References
+
+   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+             Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+             May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
