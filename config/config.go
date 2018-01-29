@@ -50,6 +50,11 @@ const (
 	defaultSpoolDB            = "spool.db"
 	defaultManagementSocket   = "management_sock"
 
+	backendPgx = "pgx"
+
+	// BackendSQL is a SQL based backend.
+	BackendSQL = "sql"
+
 	// BackendBolt is a BoltDB based backend.
 	BackendBolt = "bolt"
 
@@ -235,6 +240,9 @@ type Provider struct {
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
 	AltAddresses map[string][]string
 
+	// SQLDB is the SQL database backend configuration.
+	SQLDB *SQLDB
+
 	// UserDB is the userdb backend configuration.
 	UserDB *UserDB
 
@@ -253,6 +261,32 @@ type Provider struct {
 	// RecipientDelimiter is the set of characters that separates a user name
 	// from it's extension (eg: `alice+foo`).
 	RecipientDelimiter string
+}
+
+// SQLDB is the SQL database backend configuration.
+type SQLDB struct {
+	// Backend is the active database backend (driver).
+	//
+	//  - pgx: Postgresql.
+	Backend string
+
+	// DataSourceName is the SQL data source name or URI.  The format
+	// of this parameter is dependent on the database driver being used.
+	//
+	//  - pgx: https://godoc.org/github.com/jackc/pgx#ParseConnectionString
+	DataSourceName string
+}
+
+func (sCfg *SQLDB) validate() error {
+	switch sCfg.Backend {
+	case backendPgx:
+	default:
+		return fmt.Errorf("config: SQLDB: Backend '%v' is invalid", sCfg.Backend)
+	}
+	if sCfg.DataSourceName == "" {
+		return fmt.Errorf("config: SQLDB: DataSourceName '%v' is invalid", sCfg.DataSourceName)
+	}
+	return nil
 }
 
 // UserDB is the userdb backend configuration.
@@ -369,6 +403,12 @@ func (pCfg *Provider) validate() error {
 		}
 	}
 
+	if pCfg.SQLDB != nil {
+		if err := pCfg.SQLDB.validate(); err != nil {
+			return err
+		}
+	}
+
 	switch pCfg.UserDB.Backend {
 	case BackendBolt:
 		if !filepath.IsAbs(pCfg.UserDB.Bolt.UserDB) {
@@ -390,6 +430,10 @@ func (pCfg *Provider) validate() error {
 		default:
 			return fmt.Errorf("config: Provider: ProviderURL should be of http schema")
 		}
+	case BackendSQL:
+		if pCfg.SQLDB == nil {
+			return fmt.Errorf("config: Provider: UserDB configured for an SQL backend without a SQLDB block")
+		}
 	default:
 		return fmt.Errorf("config: Provider: Invalid UserDB Backend: '%v'", pCfg.UserDB.Backend)
 	}
@@ -398,6 +442,10 @@ func (pCfg *Provider) validate() error {
 	case BackendBolt:
 		if !filepath.IsAbs(pCfg.SpoolDB.Bolt.SpoolDB) {
 			return fmt.Errorf("config: Provider: SpoolDB '%v' is not an absolute path", pCfg.SpoolDB.Bolt.SpoolDB)
+		}
+	case BackendSQL:
+		if pCfg.SQLDB == nil {
+			return fmt.Errorf("config: Provider: SpoolDB configured for an SQL backend without a SQLDB block")
 		}
 	default:
 		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)

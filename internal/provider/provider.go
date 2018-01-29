@@ -19,6 +19,7 @@ package provider
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -38,6 +39,7 @@ import (
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
+	"github.com/katzenpost/server/internal/sqldb"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/server/userdb"
@@ -56,6 +58,7 @@ type provider struct {
 	log  *logging.Logger
 
 	ch     *channels.InfiniteChannel
+	sqlDB  *sqldb.SQLDB
 	userDB userdb.UserDB
 	spool  spool.Spool
 }
@@ -71,6 +74,9 @@ func (p *provider) Halt() {
 	if p.spool != nil {
 		p.spool.Close()
 		p.spool = nil
+	}
+	if p.sqlDB != nil {
+		p.sqlDB.Close()
 	}
 }
 
@@ -382,26 +388,55 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	cfg := glue.Config()
 
 	var err error
+	if cfg.Provider.SQLDB != nil {
+		if cfg.Provider.UserDB.Backend == config.BackendSQL || cfg.Provider.SpoolDB.Backend == config.BackendSQL {
+			p.sqlDB, err = sqldb.New(glue)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			p.log.Warningf("SQL database configured but not used for the User or Spool databases.")
+		}
+	}
+
 	switch cfg.Provider.UserDB.Backend {
 	case config.BackendBolt:
 		p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
 	case config.BackendExtern:
 		p.userDB, err = externuserdb.New(cfg.Provider.UserDB.Extern.ProviderURL)
+	case config.BackendSQL:
+		if p.sqlDB != nil {
+			p.userDB, err = p.sqlDB.UserDB()
+		} else {
+			err = errors.New("provider: SQL UserDB backend with no SQL database")
+		}
 	default:
 		return nil, fmt.Errorf("provider: unknown UserDB backend: %v", cfg.Provider.UserDB.Backend)
 	}
 	if err != nil {
+		if p.sqlDB != nil {
+			p.sqlDB.Close()
+		}
 		return nil, err
 	}
 
 	switch cfg.Provider.SpoolDB.Backend {
 	case config.BackendBolt:
 		p.spool, err = boltspool.New(cfg.Provider.SpoolDB.Bolt.SpoolDB)
+	case config.BackendSQL:
+		if p.sqlDB != nil {
+			p.spool = p.sqlDB.Spool()
+		} else {
+			err = errors.New("provider: SQL SpoolDB backend with no SQL database")
+		}
 	default:
 		err = fmt.Errorf("provider: unknown SpoolDB backend: %v", cfg.Provider.SpoolDB.Backend)
 	}
 	if err != nil {
 		p.userDB.Close()
+		if p.sqlDB != nil {
+			p.sqlDB.Close()
+		}
 		return nil, err
 	}
 
@@ -409,6 +444,9 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err = p.spool.Vaccum(p.userDB); err != nil {
 		p.spool.Close()
 		p.userDB.Close()
+		if p.sqlDB != nil {
+			p.sqlDB.Close()
+		}
 		return nil, err
 	}
 
