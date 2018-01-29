@@ -55,7 +55,7 @@ Configure the PKI (or :term:`Network Authority`) based on an `example configurat
 
     wget -O authority.toml https://raw.githubusercontent.com/katzenpost/daemons/master/authority/nonvoting/authority.toml.sample
 
-You need to edit at least the `[Authority]` section, and configure the address(es) the authority should bind to (`Addresses`) as well as its data directory (`DataDir`)..
+You need to edit at least the `[Authority]` section, and configure the address(es) the authority should bind to (`Addresses`) as well as its data directory (`DataDir`).
 
 Now, you can generate the authority identity key::
 
