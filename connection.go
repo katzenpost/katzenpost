@@ -306,10 +306,20 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	c.onConnStatusChange(true)
 
+	var cbWg sync.WaitGroup
+	closeConnCh := make(chan error, 1)
+	forceCloseConn := func(err error) {
+		// We only care about the first error from a callback.
+		select {
+		case closeConnCh <- err:
+		default:
+		}
+	}
 	closeCh := make(chan interface{})
 	defer func() {
 		c.onConnStatusChange(false)
 		close(closeCh)
+		cbWg.Wait()
 	}()
 
 	// Start the peer reader.
@@ -338,10 +348,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 	dispatchOnEmpty := func() error {
 		if c.c.cfg.OnEmptyFn != nil {
-			if err := c.c.cfg.OnEmptyFn(); err != nil {
-				c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
-				return err
-			}
+			cbWg.Add(1)
+			go func() {
+				defer cbWg.Done()
+				if err := c.c.cfg.OnEmptyFn(); err != nil {
+					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
+					forceCloseConn(err)
+				}
+			}()
 		}
 		return nil
 	}
@@ -415,6 +429,9 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 		case <-c.HaltCh():
 			return
+		case err := <-closeConnCh:
+			c.log.Debugf("Closing connection due to callback error: %v", err)
+			return
 		}
 
 		// Send a fetch if there is not one outstanding.
@@ -467,10 +484,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			nrResps++
 			if c.c.cfg.OnMessageFn != nil {
-				if err := c.c.cfg.OnMessageFn(cmd.Payload); err != nil {
-					c.log.Debugf("Caller failed to handle Message: %v", err)
-					return
-				}
+				cbWg.Add(1)
+				go func() {
+					defer cbWg.Done()
+					if err := c.c.cfg.OnMessageFn(cmd.Payload); err != nil {
+						c.log.Debugf("Caller failed to handle Message: %v", err)
+						forceCloseConn(err)
+					}
+				}()
 			}
 			seq++
 
@@ -498,10 +519,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			nrResps++
 			if c.c.cfg.OnACKFn != nil {
-				if err := c.c.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
-					c.log.Debugf("Caller failed to handle MessageACK: %v", err)
-					return
-				}
+				cbWg.Add(1)
+				go func() {
+					defer cbWg.Done()
+					if err := c.c.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
+						c.log.Debugf("Caller failed to handle MessageACK: %v", err)
+						forceCloseConn(err)
+					}
+				}()
 			}
 			seq++
 
