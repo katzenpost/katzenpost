@@ -257,49 +257,14 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK, and schedule.
 	if surb != nil {
-		if !pkt.IsToUser() {
-			p.log.Debugf("Packet has invalid commands for the SURB-ACK: %v", pkt.ID)
-			return
-		}
-
-		// Build the SURB-ACK from the SURB.
-		//
-		// TODO/perf: This is a crypto operation that is paralleizable, and
-		// could be handled by the crypto worker(s), since those are allocated
-		// based on hardware acceleration considerations.  However the forward
-		// packet processing doesn't constantly utilize the AES-NI units due
-		// to the non-AEZ components of a Sphinx Unwrap operation.
-		var ackPayload [constants.ForwardPayloadLength]byte
-		rawAckPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, ackPayload[:])
+		ackPkt, err := newPacketFromSURB(pkt, surb, nil)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
 		}
 
-		// Build the command vector for the SURB-ACK
-		cmds := make([]commands.RoutingCommand, 0, 2)
-
-		nextHopCmd := new(commands.NextNodeHop)
-		copy(nextHopCmd.ID[:], firstHop[:])
-		cmds = append(cmds, nextHopCmd)
-
-		nodeDelayCmd := new(commands.NodeDelay)
-		nodeDelayCmd.Delay = pkt.NodeDelay.Delay
-		cmds = append(cmds, nodeDelayCmd)
-
-		// Assemble the SURB-ACK Packet.
-		ackPkt, _ := packet.New(rawAckPkt)
-		ackPkt.Set(nil, cmds)
-
-		ackPkt.RecvAt = pkt.RecvAt
-		ackPkt.Delay = pkt.Delay
-		ackPkt.MustForward = true
-
-		// XXX: This should probably fudge the delay to account for processing
-		// time.
-
 		// Send the SURB-ACK off to the scheduler.
-		p.log.Debugf("Handing off user destined SURB-ACK: %v (Src:%v)", ackPkt.ID, pkt.ID)
+		p.log.Debugf("Handing off newly generated SURB-ACK: %v (Src:%v)", ackPkt.ID, pkt.ID)
 		p.glue.Scheduler().OnPacket(ackPkt)
 	} else {
 		p.log.Debugf("Stored Message: %v (No SURB)", pkt.ID)
@@ -375,6 +340,58 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 	}
 
 	return c.WriteReply(thwack.StatusOk)
+}
+
+func newPacketFromSURB(pkt *packet.Packet, surb, payload []byte) (*packet.Packet, error) {
+	if !pkt.IsToUser() {
+		return nil, fmt.Errorf("invalid commands to generate a SURB reply")
+	}
+
+	// Pad out payloads to the full packet size.
+	var respPayload [constants.ForwardPayloadLength]byte
+	switch {
+	case len(payload) == 0:
+	case len(payload) > constants.ForwardPayloadLength:
+		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
+	default:
+		copy(respPayload[:], payload)
+	}
+
+	// Build a response packet using a SURB.
+	//
+	// TODO/perf: This is a crypto operation that is paralleizable, and
+	// could be handled by the crypto worker(s), since those are allocated
+	// based on hardware acceleration considerations.  However the forward
+	// packet processing doesn't constantly utilize the AES-NI units due
+	// to the non-AEZ components of a Sphinx Unwrap operation.
+	rawRespPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, respPayload[:])
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the command vector for the SURB-ACK
+	cmds := make([]commands.RoutingCommand, 0, 2)
+
+	nextHopCmd := new(commands.NextNodeHop)
+	copy(nextHopCmd.ID[:], firstHop[:])
+	cmds = append(cmds, nextHopCmd)
+
+	nodeDelayCmd := new(commands.NodeDelay)
+	nodeDelayCmd.Delay = pkt.NodeDelay.Delay
+	cmds = append(cmds, nodeDelayCmd)
+
+	// Assemble the response packet.
+	respPkt, _ := packet.New(rawRespPkt)
+	respPkt.Set(nil, cmds)
+
+	respPkt.RecvAt = pkt.RecvAt
+	respPkt.Delay = pkt.Delay
+	respPkt.MustForward = true
+
+	// XXX: This should probably fudge the delay to account for processing
+	// time.
+
+	return respPkt, nil
 }
 
 // New constructs a new provider instance.
