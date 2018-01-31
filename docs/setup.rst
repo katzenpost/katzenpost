@@ -82,6 +82,36 @@ The generated :term:`Mix Identity key` MUST be entered into the PKI configuratio
 Once the PKI is configured with all of the mix identity keys you can start the
 PKI server and then start all the mixes.
 
+Setting up a Provider
+=====================
+
+.. code:: console
+
+          # requires postgres 9.6 or later
+          # if you are still using Debian jessie you
+          # can get postgres 9.6 from backports
+          # e.g. apt install -t jessie-backports postgresql
+          apt install postgresql
+
+          sudo -u postgres
+          # as the postgres user run these commands
+
+          # Add the database user "provider"
+          psql <<EOF
+          alter user provider with encrypted password 'secretpostgressy';
+          GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO provider;
+          GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO provider; 
+          EOF
+
+          # XXX createdb katzenpost
+          createdb -O provider katzenpost
+
+          # XXX psql -d katzenpost -a -f create_database-postgresql.sql
+          psql --username=provider --password -d katzenpost -f create_database-postgresql.sql
+
+          # start katzenpost server...
+
+
 Add Users to the Provider
 =========================
 
