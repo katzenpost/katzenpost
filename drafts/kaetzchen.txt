@@ -34,12 +34,16 @@ Table of Contents
 
 1.1. Terminology
 
-   SURB - "single use reply block"; SURBs are used to achieve
-          recipient anonymity, that is to say, SURBs function as a
-          cryptographic delivery token that you can give to another
-          client entity so that they can send you a message without
-          them knowing your identity or location on the network. See
-          [SPHINXSPEC] and [SPHINX].
+   * SURB - "single use reply block"; SURBs are used to achieve
+     recipient anonymity, that is to say, SURBs function as a
+     cryptographic delivery token that you can give to another
+     client entity so that they can send you a message without
+     them knowing your identity or location on the network. See
+     [SPHINXSPEC] and [SPHINX].
+
+   * BlockSphinxPlaintext - The payload structure which is
+     encapsulated by the Sphinx body. It is described in [KATZMIXE2E],
+     section "4. Client and Provider processing of received packets".
 
 2. Extension Overview
 
@@ -169,6 +173,10 @@ Appendix A.1 Normative References
    [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
+
+   [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.txt>.
 
 Appendix A.2 Informative References
 
