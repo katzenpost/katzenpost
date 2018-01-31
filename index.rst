@@ -4,7 +4,7 @@ Katzenpost
 Goals
 =====
 
-* to *prevent* a sufficiently global passive adversary from learning who is communitating with whom
+* to *prevent* a sufficiently global passive adversary from learning who is communicating with whom
 * to *detect* active attacks against the network infrastructure
 * hide message content from participating providers, hide recipient identity from the sender's provider, and the sender identity from the recipient's provider
 * support for both "instant messaging" and "email" use cases
@@ -28,13 +28,12 @@ Documentation
 Development
 ===========
 
-.. toctree::
+..  toctree::
     :maxdepth: 1
 
-    github.com/katzenpost <https://github.com/katzenpost/>
-    katzenpost Mailing List <https://lists.mixnetworks.org/listinfo/katzenpost>
-    irc.oftc.net #katzenpost <irc://irc.oftc.net/#katzenpost>
-    godocs: Go package documentation <https://godoc.org/?q=katzenpost>
+    contribute
+    → github.com/katzenpost <https://github.com/katzenpost/>
+    → godocs: Go package documentation <https://godoc.org/?q=katzenpost>
     docs/setup
 
 Mixnets?!
@@ -46,6 +45,9 @@ Mixnets?!
 
 `Team <team.html>`_
 ===================
+
+`Contact <contribute.html>`_
+============================
 
 .. rubric:: Supported by
 
