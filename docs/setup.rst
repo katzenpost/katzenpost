@@ -87,30 +87,40 @@ Setting up a Provider
 
 .. code:: console
 
-          # requires postgres 9.6 or later
+          # requires postgres 9.5 or later
           # if you are still using Debian jessie you
           # can get postgres 9.6 from backports
           # e.g. apt install -t jessie-backports postgresql
           apt install postgresql
 
-          sudo -u postgres
+          # pg_hba.conf
+          # The pg_hba.conf file is the place to configure access to the
+          # databases. It's parsed from top to bottom, first matching rule is
+          # applied. You probably need to add a rule for your 'provider' user
+          # fairly early.
+
           # as the postgres user run these commands
+          # or su - postgres if without sudo
+          sudo -u postgres
 
           # Add the database user "provider"
-          psql <<EOF
-          alter user provider with encrypted password 'secretpostgressy';
-          GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO provider;
-          GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO provider; 
-          EOF
+          createuser -U postgres provider
 
-          # XXX createdb katzenpost
-          createdb -O provider katzenpost
+          # and a database
+          createdb -U postgres -O provider katzenpost
 
-          # XXX psql -d katzenpost -a -f create_database-postgresql.sql
-          psql --username=provider --password -d katzenpost -f create_database-postgresql.sql
+          # set some passwords for your new user
+          psql
+          postgres=# ALTER USER provider WITH PASSWORD 'secrətp0stgre5sy';
+
+          # test if you can connect
+          psql -U provider -h 127.0.0.1 katzenpost
+
+          # If all goes fine, it's time to load the SQL, that script lives in
+          # internal/sqldb/create_database-postgresql.sql
+          psql -U provider --password -d katzenpost -h 127.0.0.1 -f create_database-postgresql.sql
 
           # start katzenpost server...
-
 
 Add Users to the Provider
 =========================
