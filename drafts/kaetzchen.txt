@@ -62,27 +62,48 @@ Table of Contents
        with `+` (Or another standardized delimiter, agreed to by all
        participating providers in a given mixnet.).
 
+     * Each agent SHOULD register a recipient address that consists
+       of a RFC 5322 dot-atom value, and MUST register recipient
+       addresses that are at most 64 octets in length.
+
      * The first byte of the agent's response payload MUST be 0x01 to
        allow clients to easily differentiate between SURB-ACKs and
        agent responses.
    ]
 
-3.1 Client to Agent message format
+3.1 Mix Message Formats
 
-   We define the message format as:
+   Messages from clients to Kaetzchen use the following payload
+   format in the forward Sphinx packet:
 
-   struct {
-      uint16_t surb_len;
-      opaque surb[];
-      opaque payload[];
-   } KaetzchenMessage;
+     struct {
+       uint8_t flags;
+       uint8_t reserved; /* Set to 0x00. */
+       select (flags) {
+       case 0:
+         opaque padding[sizeof(SphinxSURB)];
+       case 1:
+         SphinxSURB surb;
+       }
+       opaque plaintext[];
+     } KaetzchenMessage;
 
-   KaetzchenMessage message is encapsulated in an end to end encrypted
-   BlockCiphertext as described in [KATZMIXE2E]. That is, the normal
-   katzenpost protocol is used when sending messages to a Kaetzchen
-   service, although the implementation must encrypt the
-   BlockCiphertext using the service's identity key as published in
-   the PKI consensus document. [KATZMIXPKI]
+   The plaintext component of a KaetzchenMessage MUST be padded by
+   appending '0x00' bytes to make the final total size of a
+   KaetzchenMessage equal to that of a BlockSphinxPlaintext.
+
+   Messages (replies) from the  Kaetzchen to client use the following
+   payload format in the SURB generated packet:
+
+     struct {
+       uint8_t payload_type; /* Set to 0x01 */
+       uint8_t reserved; /* Set to 0x00 */
+       opaque plaintext[];
+     } KaetzchenReply;
+
+   The plaintext component of a KaetzchenReply MUST be padded by
+   appending '0x00' bytes to make the final total size of a
+   KaetzchenReply equal to that of a BlockSphinxPlaintext.
 
 4. PKI Extensions
 
@@ -99,20 +120,17 @@ Table of Contents
    Kaetzchen agent.
 
    For each service, the provider MUST advertise a field for the endpoint at
-   which the Kaetzchen agent can be reached, and the identity key for such agent.
-
+   which the Kaetzchen agent can be reached, as a key value pair where the
+   key is `endpoint`, and the value is the provider side endpoint identifier.
 
    { "kaetzchen":
        { "keyserver" : {
              "endpoint": "+keyserver",
-             "id-key": "4d488962dd5a7c2d2d2360a6bbe258bf75022eb39a05b8c877f3f92e99fd298c",
              "version" : 1 } },
        { "discard" : {
-             "endpoint": "+discard",
-             "id-key": "4d488962dd5a7c2d2d2360a6bbe258bf75022eb39a05b8c877f3f92e99fd298c" } },
+             "endpoint": "+discard", } },
        { "loop" : {
              "endpoint": "+loopback",
-             "id-key": "4d488962dd5a7c2d2d2360a6bbe258bf75022eb39a05b8c877f3f92e99fd298c",
              "restrictedToUsers": true } },
    }
 
