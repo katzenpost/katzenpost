@@ -93,8 +93,8 @@ Katzenpost Mix Network.
 
    The presented system design is based on [LOOPIX]_. The detailed
    End-to-end specification, describing the operations performed
-   By the sender and recipient, as well sender’s provider and
-   Recipient’s provider, are presented in “Katzenpost Mix Network
+   by the sender and recipient, as well as the sender’s and
+   Recipient’s provider, are described in “Katzenpost Mix Network
    End-to-end Protocol Specification”. Below, we present the system overview.
 
    The Provider ran by each service provider is responsible for

@@ -12,7 +12,7 @@ How to Set Up Your Own Katzenpost Mixnet
     be operated by multiple entities. You can of course be the only
     operator of a mix network for testing purposes.
 
-build software
+Build Software
 ==============
 
 A Katzenpost mix network has two binary programs, a :term:`PKI` and a
@@ -34,12 +34,12 @@ The produced binaries are statically linked, so you can build the
 authority and the server code on one machine, and then distribute
 them to any Linux based machines to run.
 
-get clock on sync
+Synchronize Clock
 =================
 
-Each network component, the PKI and mixes/providers
-MUST have the correct time. We recommend installing
-chrony for the purpose of time synchronization.
+Each network component, the PKI and mixes/providers,
+MUST have the correct time. We recommend
+`chrony <https://chrony.tuxfamily.org/>`_ for the purpose of time synchronization.
 
 .. code:: console
 
@@ -55,7 +55,7 @@ Configure the PKI (or :term:`Network Authority`) based on an `example configurat
 
     wget -O authority.toml https://raw.githubusercontent.com/katzenpost/daemons/master/authority/nonvoting/authority.toml.sample
 
-You need to edit at least the `[Authority]` section, and configure the address(es) the authority should bind to (`Addresses`) as well as its data directory (`DataDir`)..
+You need to edit at least the `[Authority]` section, and configure the address(es) the authority should bind to (`Addresses`) as well as its data directory (`DataDir`).
 
 Now, you can generate the authority identity key::
 
@@ -69,18 +69,18 @@ mixes interact with the PKI.
 In the next step, we will set up at least one :term:`Provider` and some
 :term:`Mix` nodes, and add their public identity keys to the authority before we run it.
 
-Set up the Mix
-==============
+Set up the Mixes
+================
 
-Configure the mix node: https://raw.githubusercontent.com/Katzenpost/daemons/master/server/katzenpost.toml.sample
+Configure the mix nodes. A sample configuration can be found here: https://raw.githubusercontent.com/Katzenpost/daemons/master/server/katzenpost.toml.sample
 
 Generate the key::
 
     $GOPATH/bin/server -f katzenpost.toml -g
 
-The generated :term:`Mix Identity key` MUST be entered into the PKI configuration file.
-Once the PKI is configured with all of the mix identity keys you can start the
-PKI server and then start all the mixes.
+The generated :term:`Mix Identity key` must be added into the Autority configuration file.
+Once the Authority is configured with all of the mix identity keys you can start the
+Autority server and then start all the mixes.
 
 Setting up a Provider
 =====================
