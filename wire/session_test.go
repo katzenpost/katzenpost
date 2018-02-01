@@ -114,7 +114,7 @@ func TestSessionIntegration(t *testing.T) {
 		t.Logf("ClockSkew: %v", s.ClockSkew())
 		assert.Equal(credsBob, s.PeerCredentials(), "Integration: Alice PeerCredentials")
 
-		cmd := commands.SendPacket{
+		cmd := &commands.SendPacket{
 			SphinxPacket: []byte(testPayload1),
 		}
 		err = s.SendCommand(cmd)
