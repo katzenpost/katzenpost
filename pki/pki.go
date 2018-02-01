@@ -216,9 +216,13 @@ type MixDescriptor struct {
 	// MixKeys is a map of epochs to Sphinx keys.
 	MixKeys map[uint64]*ecdh.PublicKey
 
-	// Addresses is a map transport to address combinations that can
+	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
 	Addresses map[Transport][]string
+
+	// Kaetzchen is the map of provider autoresponder agents by capability
+	// to parameters.
+	Kaetzchen map[string]map[string]interface{} `json:",omitempty"`
 
 	// Layer is the topology layer.
 	Layer uint8
