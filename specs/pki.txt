@@ -328,8 +328,7 @@ Table of Contents
 
       struct {
           uint64_t epoch_number;
-          opaque public_key[32];
-          opaque additional_data[];
+          opaque public_key[ED25519_KEY_LENGTH];
           opaque payload[];
       } VoteCommand;
 
@@ -342,16 +341,29 @@ Table of Contents
    The get_consensus command is used to send a PKI document to a peer
    Authority during the voting period of the PKI schedule.
 
+   The payload field contains the signed and serialized PKI document
+   representing the sending Authority's vote. The public_key field
+   contains the public identity key of the sending Authority which the
+   receiving Authority can use to verify the signature of the payload.
+   The epoch_number field is used by the receiving party to quickly
+   check the epoch for the vote before deserializing the payload.
+
 3.2.3 The vote_status Command
 
-   The vote_status command is used to reply to a vote command. The error_code field indicates if there
-   was a failure in the receiving of the PKI document.
+   The vote_status command is used to reply to a vote command. The
+   error_code field indicates if there was a failure in the receiving
+   of the PKI document.
 
       enum {
          vote_ok(0),          /* None error condition. */
          vote_too_early(1),   /* The Authority should try again later. */
          vote_too_late(2),    /* This round of voting was missed. */
       }
+
+   The epoch_number field of the vote struct is compared with the
+   epoch that is currently being voted on. vote_too_early and
+   vote_too_late are replied back to the voter to report that their
+   vote was not accepted.
 
 3.3 Vote Tabulation for Consensus Computation
 
@@ -549,7 +561,6 @@ Table of Contents
       descriptor_conflict(2),
       descriptor_forbidden(3),
    } ErrorCodes;
-
 
 6. Scalability Considerations
 
