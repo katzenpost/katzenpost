@@ -59,6 +59,11 @@ func TestDescriptor(t *testing.T) {
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
 		d.MixKeys[uint64(e)] = mPriv.PublicKey()
 	}
+	d.Kaetzchen = make(map[string]map[string]interface{})
+	d.Kaetzchen["miau"] = map[string]interface{}{
+		"endpoint":  "+miau",
+		"miauCount": 23,
+	}
 	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 

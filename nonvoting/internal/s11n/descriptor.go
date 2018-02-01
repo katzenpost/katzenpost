@@ -268,9 +268,53 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 	if len(d.Addresses[pki.TransportTCPv4]) == 0 {
 		return fmt.Errorf("nonvoting: Descriptor contains no TCPv4 addresses")
 	}
-	if d.Layer != pki.LayerProvider && d.Layer != 0 {
+	switch d.Layer {
+	case 0:
+		if d.Kaetzchen != nil {
+			return fmt.Errorf("nonvoting: Descriptor contains Kaetzchen when a mix")
+		}
+	case pki.LayerProvider:
+		if err := validateKaetzchen(d.Kaetzchen); err != nil {
+			return fmt.Errorf("nonvoting: Descriptor contains invalid Kaetzchen block: %v", err)
+		}
+	default:
 		return fmt.Errorf("nonvoting: Descriptor self-assigned Layer: '%v'", d.Layer)
 	}
+	return nil
+}
+
+func validateKaetzchen(m map[string]map[string]interface{}) error {
+	const keyEndpoint = "endpoint"
+
+	if m == nil {
+		return nil
+	}
+
+	for capa, params := range m {
+		if len(capa) == 0 {
+			return fmt.Errorf("capability lenght out of bounds")
+		}
+		if params == nil {
+			return fmt.Errorf("capability '%v' has no parameters", capa)
+		}
+
+		// Ensure that an endpoint is specified.
+		var ep string
+		if v, ok := params[keyEndpoint]; !ok {
+			return fmt.Errorf("capaiblity '%v' provided no endpoint", capa)
+		} else if ep, ok = v.(string); !ok {
+			return fmt.Errorf("capability '%v' invalid endpoint type: %T", capa, v)
+		}
+		// XXX: Should this enforce formating?
+		if len(ep) == 0 || len(ep) > constants.RecipientIDLength {
+			return fmt.Errorf("capability '%v' invalid endpoint, length out of bounds", capa)
+		}
+
+		// Note: This explicitly does not enforce endpoint uniqueness, because
+		// it is conceivable that a single endpoint can service multiple
+		// request types.
+	}
+
 	return nil
 }
 

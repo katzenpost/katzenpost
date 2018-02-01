@@ -48,6 +48,13 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDes
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
 		d.MixKeys[uint64(e)] = mPriv.PublicKey()
 	}
+	if layer == pki.LayerProvider {
+		d.Kaetzchen = make(map[string]map[string]interface{})
+		d.Kaetzchen["miau"] = map[string]interface{}{
+			"endpoint":  "+miau",
+			"miauCount": idx,
+		}
+	}
 	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
