@@ -71,6 +71,7 @@ type Provider interface {
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
+	KaetzchenForPKI() map[string]map[string]interface{}
 }
 
 type Scheduler interface {

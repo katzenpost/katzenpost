@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/mail"
 	"net/url"
 	"path/filepath"
 	"runtime"
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
 	"golang.org/x/net/idna"
+	"golang.org/x/text/secure/precis"
 )
 
 const (
@@ -261,6 +263,10 @@ type Provider struct {
 	// RecipientDelimiter is the set of characters that separates a user name
 	// from it's extension (eg: `alice+foo`).
 	RecipientDelimiter string
+
+	// Kaetzchen is the list of configured Kaetzchen (auto-responder agents)
+	// for this provider.
+	Kaetzchen []*Kaetzchen
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -331,6 +337,41 @@ type BoltSpoolDB struct {
 	// SpoolDB is the path to the user message spool.  If left empty, it will
 	// use `spool.db` under the DataDir.
 	SpoolDB string
+}
+
+// Kaetzchen is a Provider auto-responder agent.
+type Kaetzchen struct {
+	// Capability is the capability exposed by the agent.
+	Capability string
+
+	// Endpoint is the provider side endpoint that the agent will accept
+	// requests at.  While not required by the spec, this server only
+	// supports Endpoints that are lower-case local-parts of an e-mail
+	// address.
+	Endpoint string
+
+	// Disable disabled a configured agent.
+	Disable bool
+}
+
+func (kCfg *Kaetzchen) validate() error {
+	if kCfg.Capability == "" {
+		return fmt.Errorf("config: Kaetzchen: Capability is invalid.")
+	}
+
+	// Ensure the endpoint is normalized.
+	epNorm, err := precis.UsernameCaseMapped.String(kCfg.Endpoint)
+	if err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has invalid endpoint: %v", kCfg.Capability, err)
+	}
+	if epNorm != kCfg.Endpoint {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
+	}
+	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
+	}
+
+	return nil
 }
 
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
@@ -449,6 +490,17 @@ func (pCfg *Provider) validate() error {
 		}
 	default:
 		return fmt.Errorf("config: Provider: Invalid SpoolDB Backend: '%v'", pCfg.SpoolDB.Backend)
+	}
+
+	capaMap := make(map[string]bool)
+	for _, v := range pCfg.Kaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
 	}
 
 	return nil

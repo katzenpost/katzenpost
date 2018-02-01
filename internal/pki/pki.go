@@ -314,6 +314,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
 		// shouldn't be self assigning this.
 		desc.Layer = cpki.LayerProvider
+
+		// Publish currently running Kaetzchen.
+		desc.Kaetzchen = p.glue.Provider().KaetzchenForPKI()
 	}
 	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
 
