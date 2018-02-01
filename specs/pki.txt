@@ -313,6 +313,46 @@ Table of Contents
    authority. It includes the new descriptors in the next epoch's
    voting round.
 
+3.2.1 Voting Wire Protocol Commands
+
+   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used
+   by Authorities to exchange votes. We define additional wire
+   protocol commands for sending votes:
+
+      enum {
+         vote(22),
+         vote_status(23),
+      } Command;
+
+   The structures of these commands are defined as follows:
+
+      struct {
+          uint64_t epoch_number;
+          opaque public_key[32];
+          opaque additional_data[];
+          opaque payload[];
+      } VoteCommand;
+
+      struct {
+         uint8 error_code;
+      } VoteStatusCommand;
+
+3.2.2 The vote Command
+
+   The get_consensus command is used to send a PKI document to a peer
+   Authority during the voting period of the PKI schedule.
+
+3.2.3 The vote_status Command
+
+   The vote_status command is used to reply to a vote command. The error_code field indicates if there
+   was a failure in the receiving of the PKI document.
+
+      enum {
+         vote_ok(0),          /* None error condition. */
+         vote_too_early(1),   /* The Authority should try again later. */
+         vote_too_late(2),    /* This round of voting was missed. */
+      }
+
 3.3 Vote Tabulation for Consensus Computation
 
    The main design constraint of the vote tabulation algorithm is that
@@ -558,12 +598,12 @@ Table of Contents
    recent consensus document. The error_code field indicates if there
    was a failure in retrieval of the PKI consensus document.
 
-   enum {
-      consensus_ok(0),        /* None error condition and SHOULD be accompanied with
-                                 a valid consensus payload. */
-      consensus_not_found(1), /* The client should try again later. */
-      consensus_gone(2),      /* The consensus will not be available in the future. */
-   } ErrorCodes;
+      enum {
+         consensus_ok(0),        /* None error condition and SHOULD be accompanied with
+                                    a valid consensus payload. */
+         consensus_not_found(1), /* The client should try again later. */
+         consensus_gone(2),      /* The consensus will not be available in the future. */
+      } ErrorCodes;
 
 7. Future Work
 
