@@ -35,6 +35,12 @@ Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
 DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
+[Provider]
+  BinaryRecipients = true
+  [[Provider.Kaetzchen]]
+    Capability = "loop"
+    Endpoint = "+loop"
+
 [Logging]
 Level = "DEBUG"
 
@@ -46,5 +52,6 @@ PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 
 	cfg, err := Load([]byte(basicConfig))
 	require.NoError(err, "Load() with basic config")
+
 	_ = cfg
 }
