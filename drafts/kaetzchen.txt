@@ -11,7 +11,8 @@ Abstract
 Table of Contents
 
    1. Introduction
-      1.1 Terminology
+      1.1 Conventions Used in This Document
+      1.2 Terminology
    2. Extension Overview
    3. Agent Requirements
       3.1 Client to Agent message format
@@ -32,7 +33,13 @@ Table of Contents
    limited to, user identity key lookup, a discard address, and a
    loop-back responder for the purpose of cover traffic.
 
-1.1. Terminology
+1.1 Conventions Used in This Document
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [RFC2119].
+
+1.2. Terminology
 
    * SURB - "single use reply block"; SURBs are used to achieve
      recipient anonymity, that is to say, SURBs function as a
@@ -67,7 +74,7 @@ Table of Contents
        participating providers in a given mixnet.).
 
      * Each agent SHOULD register a recipient address that consists
-       of a RFC 5322 dot-atom value, and MUST register recipient
+       of a [RFC5322] dot-atom value, and MUST register recipient
        addresses that are at most 64 octets in length.
 
      * The first byte of the agent's response payload MUST be 0x01 to
@@ -170,6 +177,11 @@ Appendix A. References
 
 Appendix A.1 Normative References
 
+   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119,
+               DOI 10.17487/RFC2119, March 1997,
+               <http://www.rfc-editor.org/info/rfc2119>.
+
    [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
@@ -177,6 +189,10 @@ Appendix A.1 Normative References
    [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.txt>.
+
+   [RFC5322]  Resnick, P., Ed., "Internet Message Format", RFC 5322,
+              DOI 10.17487/RFC5322, October 2008,
+              <https://www.rfc-editor.org/info/rfc5322>.
 
 Appendix A.2 Informative References
 
