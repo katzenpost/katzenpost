@@ -20,7 +20,8 @@ Table of Contents
    1. Introduction
       1.1 Conventions Used in This Document
       1.2 Terminology
-   2. Detecting and Mitigating n-1 Attacks
+   2. Katzenpost Loops
+      2.1 Detecting and Mitigating n-1 Attacks
    3. Mitigating Intersection Attacks with Decoy Traffic
       3.1 Decoy Loops
       3.2 Decoy Drops
@@ -126,10 +127,15 @@ X. Anonymity Considerations
    A global adversary will be able to determine which users are online
    or offline. Decoy traffic cannot guarantee prevention of long term
    intersection attacks if some users go offline. [RESISTDISCLOSURE]
-   We therefore only expect to prevent short term intersection
-   attacks. Preventing long term statistical disclosure attacks
-   depends on many factors including mix network information leakage
-   and how predictable and repetitive user behavior is.
+   Preventing long term statistical disclosure attacks depends on many
+   factors including mix network information leakage and how
+   predictable and repetitive user behavior is.
+
+   Katzenpost decoy loops implemented using the Kaetzchen
+   auto-responder provides an additional measure of
+   indistinguishability from the perspective of the Provider in the
+   loop route. Client and Mix loops will be indistinguishable from
+   each other.
 
 Y. Security Considerations
 Z. Acknowledgments
@@ -137,6 +143,11 @@ Z. Acknowledgments
 Appendix A. References
 
 Appendix A.1 Normative References
+
+   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119,
+               DOI 10.17487/RFC2119, March 1997,
+               <http://www.rfc-editor.org/info/rfc2119>.
 
    [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
                and Danezis, G., “The Loopix Anonymity System”,
