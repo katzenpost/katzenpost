@@ -17,6 +17,7 @@
 package config
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -40,6 +41,10 @@ IsProvider = true
   [[Provider.Kaetzchen]]
     Capability = "loop"
     Endpoint = "+loop"
+  [[Provider.Kaetzchen]]
+    Capability = "meow"
+	Endpoint = "+meow"
+	Config = { Locale = "ja_JP", Meow = "Nyan", NumMeows = 3 }
 
 [Logging]
 Level = "DEBUG"
@@ -53,5 +58,6 @@ PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 	cfg, err := Load([]byte(basicConfig))
 	require.NoError(err, "Load() with basic config")
 
-	_ = cfg
+	jCfg, _ := json.Marshal(cfg)
+	t.Logf("cfg: %v", string(jCfg))
 }
