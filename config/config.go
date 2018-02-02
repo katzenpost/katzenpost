@@ -350,6 +350,10 @@ type Kaetzchen struct {
 	// address.
 	Endpoint string
 
+	// Config is the extra per agent arguments to be passed to the agent's
+	// initialization routine.
+	Config map[string]interface{}
+
 	// Disable disabled a configured agent.
 	Disable bool
 }
