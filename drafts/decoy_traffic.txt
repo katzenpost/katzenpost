@@ -79,7 +79,19 @@ Table of Contents
    packet - A Sphinx packet is a nested cryptographic packet
             which is described in [SPHINX] and [SPHINXSPEC].
 
-2. Detecting and Mitigating n-1 Attacks
+2. Katzenpost Loops
+
+   In the [LOOPIX] paper mix loops are achieved using a routing loop
+   in the Sphinx header where one hop in the route is a Provider who
+   routes the message to the next specified mix in the route. In this
+   case the Provider distinguishes this message from the other
+   messages it receives. In our Katzenpost design, Clients send mix
+   loops using a Katzenpost Provider-side Autoresponder [KAETZCHEN]
+   loop service.  From the Provider's perspective these mix loops are
+   indistinguishable from client originated loops which also use the
+   Autoresponder.
+
+2.1 Detecting and Mitigating n-1 Attacks
 
    Blending attacks, also known as n-1 attacks can be detected using a
    heartbeat protocol [HEARTBEAT03] where mixes send themselves decoy
@@ -137,13 +149,17 @@ Appendix A.2 Informative References
                 "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
 
+   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+               Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+               May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+
    [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.txt>.
 
-   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
-               Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
-               May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+   [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
+                "Katzenpost Provider-side Autoresponder Extension", January 2018,
+                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.txt>.
 
    [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
                   Proceedings of the Workshop on Privacy in the Electronic Society, October 2003,
