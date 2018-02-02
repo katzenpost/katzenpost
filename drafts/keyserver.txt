@@ -1,0 +1,130 @@
+Katzenpost Key Discovery Extension
+Ruben Pollan
+kwadronaut
+mo
+Kali Kaneko
+
+Abstract
+
+   This document describes a mechanism for user identity key discovery based
+   on provider-side Autoresponder Extensions to the core Katzenpost
+   protocol.
+
+1. Introduction
+
+2. Extension Overview
+
+3. Kaetzchen Extension
+
+4. Client-side behavior
+
+   Client must keep state for the SURB ids sent and check for
+   responses to them User keeps an internal state flag for a given
+   recipient's user identity.  Possible states include RECEIVED-ONLY,
+   UNVERIFIED and VERIFIED.  On receiving a message from an unknown
+   identity key included with the signed message MUST be marked as
+   "received only" (XXX terminology: this has to be clarified. it's
+   also unverified, but shittier than unverified). XXX what if the
+   user already has a different unverified or verified key?  This key
+   CAN be stored (flagged with the status and sender-id) for the
+   purpose of being compared with a key that is later retrieved via a
+   kaetzchen agent, or to be used in the absence of a better source
+   for the key material.
+
+   In the case of a sender for whom the user only has a
+   "received-only" type of key, and before the moment of establishing
+   communication with such sender, users' client SHOULD trigger a key
+   lookup against the Kaetzchen agent specified by the sender's
+   provider, if any.
+
+   Otherwise, an identity key verified by means of an out-of-band
+   mechanism, or in its absence a key marked as received-only will be
+   used for end to end encryption with this identity.
+
+  [ XXX what to do if lookup key mismatches the sender's? goto failure
+  ]
+
+  A given identity received via the key discovery defined in this
+  specification MUST be marked as unverified until user marks it as
+  verified by means of an out-of-band mechanism. Defining the means of
+  verification is out of scope of this document.
+
+  User SHOULD periodically send requests to its own key, and the UI
+  MUST display some kind of warning in case of a mismatch or
+  failure. User MAY also send warnings to already verified recipients
+  about this failure in the lookup. THIS DOES NOT ADD ANYTHING, SOME
+  ACTION MIGHT BE TAKEN BLAHBLAH.
+
+  NO TOFU! We trust any new key on refresh actions, except if the
+  stored key is VERIFIED. We may want to inform the user on key
+  changes (problem with POP/SMTP interface?)
+
+  XXX: We rely on visual confirmation of the user ID on both ends, so
+  we want to exclude homoglyphs in user IDs ]
+   
+5. Anonymity Considerations
+
+   This mechanism allows for a malicious provider to learn about the online activity
+   of a given user by creating dummy identities that produce a key lookup that the
+   malicious provider can observe.
+
+   Countermeasure would include applying a random delay on the send queue for the first hop
+   ("offline send helper"), and leaving the account in an "unusable" state. This effectively
+   limits the information leakage after the first hop.
+   This countermeasure is also helpful to paliate the time window in which ... DISCUSS
+   
+   In order to avoid user enumeration attacks, every request to the Kaetzchen
+   MUST include the lookup of one and only one key.
+   
+   [ The sender provider SHOULDMAY also implement traffic rate limitations to the
+   amount of request per unit of time that a given client can emit. This is a generic
+   defense against spam that is also effective against user enumeration
+   XXXTODO: CROSS-REF to some other proper spec ]
+
+   (How can a provider tell if a given message is a key lookup? The side servicing a request can, but they don't know who's sending the request.  The side that's sending the request can't tell :P)
+   kali: meskio's proposal considers that this probably doesn't belong here, but the rationale is to defend against aspam
+
+   It's a good idea, but it falls more under, "providers should limit how much traffic any given client can dump into the mixnet at once".
+   yep. what do you think is the right spec to drop this consideration in?
+
+   Not sure.  There's a comment in the server code that says "Add rate limiting here.", past that I didn't give this much thought. (
+       
+       // TODO: If clients should be rate-limited in how fast they can send
+       // packets, this is probably the natural place to do so.
+   )
+   
+   Right now everything assumes clients are moderately well behaved.
+
+
+6. Security Considerations
+
+   This mechanism does not protect user from man in the middle attacks in the case of a malicious recipient's provider.
+
+  (No?  The client->remote provider link is fully encrypted/authenticated, the only way for evil to
+   happen is with malicious authorities in the picture.)
+kali: yes, we're discussing here a mailicious provider on the recipient's provider.
+
+Oh.  You just flat out lose then.  But, that's "any and all key distribution systems, unless you web of trust or whatever)
+
+Not totally lose because you can use the reception of a message from that identity to verify the identity key that
+was received by the peer provider.
+
+No, a malicious provider presumably has the private component of the fake identity key they sent you, so they can spoof messages...  You just lose really bad
+
+Yes but when Alice sends Bob a message Alice's malicious provider doesn't know when she is sending a message to Bob.
+Once Bob receives a legit message from Alice he can compare that identity key with the previous one that was retreived.
+
+If I were feeding Bob fake keys, the first thing I do would be to send a spoofed mail, to trick the client into trusting my key over whatever follows. :P
+
+This is a really really hard problem that I think is largely unsolved.  "Don't allow evil providers onto the network, and if you're really paranoid, exchange keys out of band".
+[
+Other open questions:
+ - Key rotation implies key refreshes. How is this to be made in a way that doens't leak info? 
+]
+
+Appendix A. References
+
+
+  [KAETZCHEN] Katzenpost Provider-side Autoresponder Extension
+
+
