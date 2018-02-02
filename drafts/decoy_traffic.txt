@@ -23,9 +23,8 @@ Table of Contents
    2. Katzenpost Loops
       2.1 Detecting and Mitigating n-1 Attacks
    3. Mitigating Intersection Attacks with Decoy Traffic
-      3.1 Decoy Loops
-      3.2 Decoy Drops
-   4. Tuning Client Decoy Traffic
+      3.1 Client Decoy Loops
+      3.2 Client Decoy Drops
    W. Future Work
    X. Anonymity Considerations
    Y. Security Considerations
@@ -121,6 +120,10 @@ Table of Contents
 
       a. cease all mix operations
       b. send decoy traffic
+
+3. Mitigating Intersection Attacks with Decoy Traffic
+3.1 Client Decoy Loops
+3.2 Client Decoy Drops
 
 X. Anonymity Considerations
 
