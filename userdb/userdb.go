@@ -19,12 +19,24 @@
 package userdb
 
 import (
+	"errors"
+
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
 // MaxUsernameSize is the maximum username length in bytes.
 const MaxUsernameSize = constants.RecipientIDLength
+
+var (
+	// ErrNoSuchUser is the error returned when an operation fails due to
+	// a non-existent user.
+	ErrNoSuchUser = errors.New("userdb: no such user")
+
+	// ErrNoIdentity is the error returned when the specified user has no
+	// identity key set.
+	ErrNoIdentity = errors.New("userdb: no identity key set")
+)
 
 // UserDB is the interface provided by all user database implementations.
 type UserDB interface {
@@ -39,6 +51,15 @@ type UserDB interface {
 	// to the database.  Existing users will have their public keys
 	// updated if specified, otherwise an error will be returned.
 	Add([]byte, *ecdh.PublicKey, bool) error
+
+	// SetIdentity sets the optional identity key for the user identified
+	// by the user name to the provided public key.  Providing a nil key
+	// will remove the user's identity key iff it exists.
+	SetIdentity([]byte, *ecdh.PublicKey) error
+
+	// Identity returns the optional identity key for the user identified
+	// by the user name.
+	Identity([]byte) (*ecdh.PublicKey, error)
 
 	// Remove removes the user identified by the username from the database.
 	Remove([]byte) error

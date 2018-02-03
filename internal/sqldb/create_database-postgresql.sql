@@ -62,8 +62,9 @@ BEGIN;
     );
     IF spool_only = false THEN
       -- If the user table is an actual user database, then it needs a
-      -- column for the user's public key.
-      ALTER TABLE users ADD COLUMN public_key bytea NOT NULL;
+      -- column for the user's authentication key and identity key.
+      ALTER TABLE users ADD COLUMN authentication_key bytea NOT NULL;
+      ALTER TABLE users ADD COLUMN identity_key bytea;
     END IF;
 
     -- Create the spool table.
@@ -95,26 +96,41 @@ BEGIN;
 
     IF spool_only = false THEN
 
-      CREATE FUNCTION user_get_public_key(user_name bytea) RETURNS bytea AS $USER_GET_PUBLIC$
+      CREATE FUNCTION user_get_authentication_key(user_name bytea) RETURNS bytea AS $USER_GET_AUTH$
       DECLARE
         ret bytea;
       BEGIN
-        SELECT public_key INTO STRICT ret FROM users WHERE users.user_name = $1;
+        SELECT authentication_key INTO STRICT ret FROM users WHERE users.user_name = $1;
         RETURN ret;
-      END $USER_GET_PUBLIC$ LANGUAGE plpgsql STABLE;
+      END $USER_GET_AUTH$ LANGUAGE plpgsql STABLE;
 
-      CREATE FUNCTION user_set_public_key(user_name bytea, public_key bytea, is_update boolean) RETURNS void AS $USER_SET_PUBLIC$
-      DECLARE
+      CREATE FUNCTION user_set_authentication_key(user_name bytea, authentication_key bytea, is_update boolean) RETURNS void AS $USER_SET_AUTH$
       BEGIN
         IF $3 = true THEN
-          UPDATE users SET public_key = $2 WHERE user_name = $1;
+          UPDATE users SET authentication_key = $2 WHERE user_name = $1;
           IF NOT FOUND THEN
             RAISE SQLSTATE 'P0002'; -- `no_data_found`
           END IF;
         ELSE
-          INSERT INTO users(user_id, user_name, public_key) VALUES (DEFAULT, $1, $2);
+          INSERT INTO users(user_id, user_name, authentication_key) VALUES (DEFAULT, $1, $2);
         END IF;
-      END $USER_SET_PUBLIC$ LANGUAGE plpgsql;
+      END $USER_SET_AUTH$ LANGUAGE plpgsql;
+
+      CREATE FUNCTION user_get_identity_key(user_name bytea) RETURNS bytea AS $USER_GET_IDENT$
+      DECLARE
+        ret bytea;
+      BEGIN
+        SELECT identity_key INTO STRICT ret FROM users WHERE users.user_name = $1;
+        RETURN ret;
+      END $USER_GET_IDENT$ LANGUAGE plpgsql STABLE;
+
+      CREATE FUNCTION user_set_identity_key(user_name bytea, identity_key bytea) RETURNS void AS $USER_SET_IDENT$
+      BEGIN
+        UPDATE users SET identity_key = $2 WHERE users.user_name = $1;
+        IF NOT FOUND THEN
+          RAISE SQLSTATE 'P0002'; -- `no_data_found`
+        END IF;
+      END $USER_SET_IDENT$ LANGUAGE plpgsql;
 
       -- user_delete() is defined as a spool database routine, because it is
       -- what is used to remove the user's spool entries.
