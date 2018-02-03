@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/spool"
+	"github.com/katzenpost/server/userdb"
 )
 
 // Glue is the structure that binds the internal components together.
@@ -68,6 +69,7 @@ type PKI interface {
 
 type Provider interface {
 	Halt()
+	UserDB() userdb.UserDB
 	Spool() spool.Spool
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
