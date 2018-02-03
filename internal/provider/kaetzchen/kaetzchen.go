@@ -77,5 +77,6 @@ type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
 
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
-	loopCapability: NewLoop,
+	loopCapability:      NewLoop,
+	keyserverCapability: NewKeyserver,
 }
