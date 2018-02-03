@@ -424,6 +424,65 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 	return c.WriteReply(thwack.StatusOk)
 }
 
+func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	var pubKey *ecdh.PublicKey
+
+	sp := strings.Split(l, " ")
+	switch len(sp) {
+	case 2:
+	case 3:
+		pubKey = new(ecdh.PublicKey)
+		if err := pubKey.FromString(sp[2]); err != nil {
+			c.Log().Errorf("SET_USER_IDENTITY invalid public key: %v", err)
+			return c.WriteReply(thwack.StatusSyntaxError)
+		}
+	default:
+		c.Log().Debugf("SET_USER_IDENTITY invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	u, err := p.fixupUserNameCase([]byte(sp[1]))
+	if err != nil {
+		c.Log().Errorf("SET_USER_IDENTITY invalid user: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	if err = p.userDB.SetIdentity(u, pubKey); err != nil {
+		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+
+	return c.WriteReply(thwack.StatusOk)
+}
+
+func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+	if len(sp) != 2 {
+		c.Log().Debugf("USER_IDENTITY invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	u, err := p.fixupUserNameCase([]byte(sp[1]))
+	if err != nil {
+		c.Log().Errorf("USER_IDENTITY invalid user: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	pubKey, err := p.userDB.Identity(u)
+	if err != nil {
+		c.Log().Errorf("Failed to query identity for user '%v': %v", u, err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, pubKey)
+}
+
 func parseForwardPacket(pkt *packet.Packet) ([]byte, []byte, error) {
 	const (
 		hdrLength    = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
@@ -585,14 +644,18 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	// Wire in the managment related commands.
 	if cfg.Management.Enable {
 		const (
-			cmdAddUser    = "ADD_USER"
-			cmdUpdateUser = "UPDATE_USER"
-			cmdRemoveUser = "REMOVE_USER"
+			cmdAddUser         = "ADD_USER"
+			cmdUpdateUser      = "UPDATE_USER"
+			cmdRemoveUser      = "REMOVE_USER"
+			cmdSetUserIdentity = "SET_USER_IDENTITY"
+			cmdUserIdentity    = "USER_IDENTITY"
 		)
 
 		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
 		glue.Management().RegisterCommand(cmdUpdateUser, p.onUpdateUser)
 		glue.Management().RegisterCommand(cmdRemoveUser, p.onRemoveUser)
+		glue.Management().RegisterCommand(cmdSetUserIdentity, p.onSetUserIdentity)
+		glue.Management().RegisterCommand(cmdUserIdentity, p.onUserIdentity)
 	}
 
 	// Initialize the Kaetzchen.

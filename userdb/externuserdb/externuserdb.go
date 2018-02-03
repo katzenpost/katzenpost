@@ -29,8 +29,9 @@ import (
 )
 
 var (
-	errCantModify = errors.New("Not implemented: External authentication is enabled, you can not modify users")
-	jsonHandle    = &codec.JsonHandle{}
+	errCantModify   = errors.New("Not implemented: External authentication is enabled, you can not modify users")
+	errNotSupported = errors.New("Not implemented: Support not implemented yet")
+	jsonHandle      = &codec.JsonHandle{}
 )
 
 type externAuth struct {
@@ -66,6 +67,14 @@ func (e *externAuth) Exists(u []byte) bool {
 
 func (e *externAuth) Add(u []byte, k *ecdh.PublicKey, update bool) error {
 	return errCantModify
+}
+
+func (e *externAuth) SetIdentity(u []byte, k *ecdh.PublicKey) error {
+	return errNotSupported
+}
+
+func (e *externAuth) Identity(u []byte) (*ecdh.PublicKey, error) {
+	return nil, errNotSupported
 }
 
 func (e *externAuth) Remove(u []byte) error {

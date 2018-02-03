@@ -28,7 +28,10 @@ import (
 	"github.com/katzenpost/server/userdb"
 )
 
-const usersBucket = "users"
+const (
+	usersBucket      = "users"
+	identitiesBucket = "identities"
+)
 
 type boltUserDB struct {
 	sync.RWMutex
@@ -38,8 +41,7 @@ type boltUserDB struct {
 }
 
 func (d *boltUserDB) Exists(u []byte) bool {
-	// Reject pathologically malformed usernames.
-	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
+	if !userOk(u) {
 		return false
 	}
 
@@ -52,8 +54,7 @@ func (d *boltUserDB) Exists(u []byte) bool {
 }
 
 func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
-	// Reject pathologically malformed arguments.
-	if len(u) == 0 || len(u) > userdb.MaxUsernameSize || k == nil {
+	if !userOk(u) {
 		return false
 	}
 
@@ -61,7 +62,6 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	// keys match.
 	isValid := false
 	if err := d.db.View(func(tx *bolt.Tx) error {
-		// Grab the `users` bucket.
 		bkt := tx.Bucket([]byte(usersBucket))
 
 		// If the user exists in the `users` bucket, then compare public keys.
@@ -77,21 +77,25 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 }
 
 func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
-	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
+	if !userOk(u) {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
 	if k == nil {
 		return fmt.Errorf("userdb: must provide a public key")
 	}
-	if d.Exists(u) && !update {
-		return fmt.Errorf("userdb: user already exists")
+	switch d.Exists(u) {
+	case true:
+		if !update {
+			return fmt.Errorf("userdb: user already exists")
+		}
+	case false:
+		if update {
+			return userdb.ErrNoSuchUser
+		}
 	}
 
 	err := d.db.Update(func(tx *bolt.Tx) error {
-		// Grab the `users` bucket.
 		bkt := tx.Bucket([]byte(usersBucket))
-
-		// And add or update the user's entry.
 		return bkt.Put(u, k.Bytes())
 	})
 	if err == nil {
@@ -106,16 +110,62 @@ func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
 	return err
 }
 
+func (d *boltUserDB) SetIdentity(u []byte, k *ecdh.PublicKey) error {
+	if !userOk(u) {
+		return fmt.Errorf("userdb: invalid username: `%v`", u)
+	}
+
+	return d.db.Update(func(tx *bolt.Tx) error {
+		uBkt := tx.Bucket([]byte(usersBucket))
+		if uEnt := uBkt.Get(u); uEnt == nil {
+			return userdb.ErrNoSuchUser
+		}
+
+		iBkt := tx.Bucket([]byte(identitiesBucket))
+		if k == nil {
+			return iBkt.Delete(u)
+		}
+		return iBkt.Put(u, k.Bytes())
+	})
+}
+
+func (d *boltUserDB) Identity(u []byte) (*ecdh.PublicKey, error) {
+	if !userOk(u) {
+		return nil, fmt.Errorf("userdb: invalid username: `%v`", u)
+	}
+
+	var pubKey *ecdh.PublicKey
+	err := d.db.View(func(tx *bolt.Tx) error {
+		uBkt := tx.Bucket([]byte(usersBucket))
+		if uEnt := uBkt.Get(u); uEnt == nil {
+			return userdb.ErrNoSuchUser
+		}
+
+		iBkt := tx.Bucket([]byte(identitiesBucket))
+		rawPubKey := iBkt.Get(u)
+		if rawPubKey == nil {
+			return userdb.ErrNoIdentity
+		}
+
+		pubKey = new(ecdh.PublicKey)
+		return pubKey.FromBytes(rawPubKey)
+	})
+
+	return pubKey, err
+}
+
 func (d *boltUserDB) Remove(u []byte) error {
-	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
+	if !userOk(u) {
 		return fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
 
 	err := d.db.Update(func(tx *bolt.Tx) error {
-		// Grab the `users` bucket.
 		bkt := tx.Bucket([]byte(usersBucket))
 
-		// Delete the user's entry.
+		// Delete the user's entry iff it exists.
+		if ent := bkt.Get(u); ent == nil {
+			return userdb.ErrNoSuchUser
+		}
 		return bkt.Delete(u)
 	})
 	if err == nil {
@@ -156,7 +206,11 @@ func New(f string) (userdb.UserDB, error) {
 		if err != nil {
 			return err
 		}
-		if _, err = tx.CreateBucketIfNotExists([]byte(usersBucket)); err != nil {
+		uBkt, err := tx.CreateBucketIfNotExists([]byte(usersBucket))
+		if err != nil {
+			return err
+		}
+		if _, err = tx.CreateBucketIfNotExists([]byte(identitiesBucket)); err != nil {
 			return err
 		}
 
@@ -167,8 +221,7 @@ func New(f string) (userdb.UserDB, error) {
 			}
 
 			// Populate the user cache.
-			bkt = tx.Bucket([]byte(usersBucket))
-			bkt.ForEach(func(k, v []byte) error {
+			uBkt.ForEach(func(k, v []byte) error {
 				u := userToCacheKey(k)
 				d.userCache[u] = true
 				return nil
@@ -194,4 +247,8 @@ func userToCacheKey(u []byte) [userdb.MaxUsernameSize]byte {
 	var k [userdb.MaxUsernameSize]byte
 	copy(k[:], u)
 	return k
+}
+
+func userOk(u []byte) bool {
+	return len(u) > 0 || len(u) <= userdb.MaxUsernameSize
 }

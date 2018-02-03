@@ -34,11 +34,15 @@ import (
 const (
 	implPgx = "pgx"
 
-	pgxTagUserDelete       = "user_delete"
-	pgxTagUserGetPublicKey = "user_get_public_key"
-	pgxTagUserSetPublicKey = "user_set_public_key"
-	pgxTagSpoolStore       = "spool_store"
-	pgxTagSpoolGet         = "spool_get"
+	pgxTagUserDelete      = "user_delete"
+	pgxTagUserGetAuthKey  = "user_get_authentication_key"
+	pgxTagUserSetAuthKey  = "user_set_authentication_key"
+	pgxTagUserGetIdentKey = "user_get_identity_key"
+	pgxTagUserSetIdentKey = "user_set_identity_key"
+	pgxTagSpoolStore      = "spool_store"
+	pgxTagSpoolGet        = "spool_get"
+
+	pgCodeNoDataFound = "P0002" // `no_data_found`
 )
 
 type pgxImpl struct {
@@ -119,8 +123,10 @@ func (p *pgxImpl) initStatements() error {
 		tag, query string
 	}{
 		{pgxTagUserDelete, "SELECT user_delete($1);"},
-		{pgxTagUserGetPublicKey, "SELECT user_get_public_key($1);"},
-		{pgxTagUserSetPublicKey, "SELECT user_set_public_key($1, $2, $3);"},
+		{pgxTagUserGetAuthKey, "SELECT user_get_authentication_key($1);"},
+		{pgxTagUserSetAuthKey, "SELECT user_set_authentication_key($1, $2, $3);"},
+		{pgxTagUserGetIdentKey, "SELECT user_get_identity_key($1);"},
+		{pgxTagUserSetIdentKey, "SELECT user_set_identity_key($1, $2);"},
 		{pgxTagSpoolStore, "SELECT spool_store($1, $2, $3);"},
 		{pgxTagSpoolGet, "SELECT * FROM spool_get($1, $2) AS (message_body bytea, surb_id bytea, remaining integer);"},
 	}
@@ -196,27 +202,27 @@ func (d *pgxUserDB) Exists(u []byte) bool {
 	// TODO/perf: If the database is both the user db and the spool this
 	// check can be skipped, but bad things will happen if the calling code
 	// changes.
-	return d.getPublicKey(u) != nil
+	return d.getAuthKey(u) != nil
 }
 
 func (d *pgxUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
-	dbKey := d.getPublicKey(u)
+	dbKey := d.getAuthKey(u)
 	if dbKey == nil {
 		return false
 	}
 	return dbKey.Equal(k)
 }
 
-func (d *pgxUserDB) getPublicKey(u []byte) *ecdh.PublicKey {
+func (d *pgxUserDB) getAuthKey(u []byte) *ecdh.PublicKey {
 	var raw []byte
-	if err := d.pgx.pool.QueryRow(pgxTagUserGetPublicKey, u).Scan(&raw); err != nil {
-		d.pgx.d.log.Debugf("user_get_public_key() failed: %v", err)
+	if err := d.pgx.pool.QueryRow(pgxTagUserGetAuthKey, u).Scan(&raw); err != nil {
+		d.pgx.d.log.Debugf("user_get_authentication_key() failed: %v", err)
 		return nil
 	}
 
 	pk := new(ecdh.PublicKey)
 	if err := pk.FromBytes(raw); err != nil {
-		d.pgx.d.log.Warningf("Failed to deserialize public key for user '%v': %v", utils.ASCIIBytesToPrintString(u), err)
+		d.pgx.d.log.Warningf("Failed to deserialize authentication key for user '%v': %v", utils.ASCIIBytesToPrintString(u), err)
 		return nil
 	}
 
@@ -224,8 +230,46 @@ func (d *pgxUserDB) getPublicKey(u []byte) *ecdh.PublicKey {
 }
 
 func (d *pgxUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
-	_, err := d.pgx.pool.Exec(pgxTagUserSetPublicKey, u, k.Bytes(), update)
+	_, err := d.pgx.pool.Exec(pgxTagUserSetAuthKey, u, k.Bytes(), update)
+	if err != nil && isPgNoDataFound(err) {
+		return userdb.ErrNoSuchUser
+	}
 	return err
+}
+
+func (d *pgxUserDB) SetIdentity(u []byte, k *ecdh.PublicKey) error {
+	var kBytes []byte
+	if k != nil {
+		kBytes = k.Bytes()
+	}
+
+	if _, err := d.pgx.pool.Exec(pgxTagUserSetIdentKey, u, kBytes); err != nil {
+		if isPgNoDataFound(err) {
+			return userdb.ErrNoSuchUser
+		}
+		return err
+	}
+	return nil
+}
+
+func (d *pgxUserDB) Identity(u []byte) (*ecdh.PublicKey, error) {
+	var raw []byte
+	if err := d.pgx.pool.QueryRow(pgxTagUserGetIdentKey, u).Scan(&raw); err != nil {
+		if isPgNoDataFound(err) {
+			return nil, userdb.ErrNoSuchUser
+		}
+		return nil, err
+	}
+	if raw == nil {
+		return nil, userdb.ErrNoIdentity
+	}
+
+	pk := new(ecdh.PublicKey)
+	if err := pk.FromBytes(raw); err != nil {
+		return nil, err
+	}
+
+	return pk, nil
 }
 
 func (d *pgxUserDB) Remove(u []byte) error {
@@ -320,4 +364,16 @@ func toPgxLogLevel(cfgLevel string) pgx.LogLevel {
 	default:
 		panic("BUG: Invalid log level in toPgxLogLevel()")
 	}
+}
+
+func isPgNoDataFound(err error) bool {
+	if pgxErr, ok := err.(pgx.PgError); ok {
+		if pgxErr.Code == pgCodeNoDataFound {
+			return true
+		}
+	}
+	if err == pgx.ErrNoRows { // Treat ErrNoRows as `no_data_found`.
+		return true
+	}
+	return false
 }
