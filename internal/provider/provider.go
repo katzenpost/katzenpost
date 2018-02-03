@@ -70,6 +70,10 @@ func (p *provider) Halt() {
 	p.Worker.Halt()
 
 	p.ch.Close()
+	for k, v := range p.kaetzchen {
+		v.Halt()
+		delete(p.kaetzchen, k)
+	}
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -80,10 +84,6 @@ func (p *provider) Halt() {
 	}
 	if p.sqlDB != nil {
 		p.sqlDB.Close()
-	}
-	for k, v := range p.kaetzchen {
-		v.Halt()
-		delete(p.kaetzchen, k)
 	}
 }
 
