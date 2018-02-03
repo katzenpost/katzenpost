@@ -91,6 +91,10 @@ func (p *provider) Spool() spool.Spool {
 	return p.spool
 }
 
+func (p *provider) UserDB() userdb.UserDB {
+	return p.userDB
+}
+
 func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	ad, err := p.fixupUserNameCase(c.AdditionalData)
 	if err != nil {
