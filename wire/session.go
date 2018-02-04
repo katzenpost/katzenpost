@@ -153,7 +153,7 @@ func (s *Session) handshake() error {
 
 	// Initialize the Noise library.
 	cs := noise.NewCipherSuiteHFS(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b, noise.HFSNewHopeSimple)
-	hs := noise.NewHandshakeState(noise.Config{
+	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite:   cs,
 		Random:        s.randReader,
 		Pattern:       noise.HandshakeXXhfs,
@@ -162,7 +162,9 @@ func (s *Session) handshake() error {
 		Prologue:      prologue,
 		MaxMsgLen:     maxMsgLen,
 	})
-
+	if err != nil {
+		return err
+	}
 	const (
 		prologueLen = 1
 		keyLen      = 32
@@ -173,12 +175,14 @@ func (s *Session) handshake() error {
 		msg3Len     = (macLen + keyLen) + (macLen + authLen)                     // -> s, se, (auth)
 	)
 
-	var err error
 	if s.isInitiator {
 		// -> (prologue), e, f
 		msg1 := make([]byte, 0, msg1Len)
 		msg1 = append(msg1, prologue...)
-		msg1, _, _ = hs.WriteMessage(msg1, nil)
+		msg1, _, _, err = hs.WriteMessage(msg1, nil)
+		if err != nil {
+			return err
+		}
 		if _, err = s.conn.Write(msg1); err != nil {
 			return err
 		}
@@ -218,7 +222,10 @@ func (s *Session) handshake() error {
 		rawAuth = make([]byte, 0, authLen)
 		rawAuth = ourAuth.ToBytes(rawAuth)
 		msg3 := make([]byte, 0, msg3Len)
-		msg3, s.tx, s.rx = hs.WriteMessage(msg3, rawAuth)
+		msg3, s.tx, s.rx, err = hs.WriteMessage(msg3, rawAuth)
+		if err != nil {
+			return err
+		}
 		if _, err = s.conn.Write(msg3); err != nil {
 			return err
 		}
@@ -244,7 +251,10 @@ func (s *Session) handshake() error {
 		rawAuth := make([]byte, 0, authLen)
 		rawAuth = ourAuth.ToBytes(rawAuth)
 		msg2 := make([]byte, 0, msg2Len)
-		msg2, _, _ = hs.WriteMessage(msg2, rawAuth)
+		msg2, _, _, err = hs.WriteMessage(msg2, rawAuth)
+		if err != nil {
+			return err
+		}
 		if _, err = s.conn.Write(msg2); err != nil {
 			return err
 		}
