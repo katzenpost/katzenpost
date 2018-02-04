@@ -174,7 +174,7 @@ func encryptBlock(b []byte, sender *ecdh.PrivateKey, recipient *ecdh.PublicKey) 
 		Private: sender.Bytes(),
 		Public:  sender.PublicKey().Bytes(),
 	}
-	hs := noise.NewHandshakeState(noise.Config{
+	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite:   cs,
 		Random:        rand.Reader,
 		Pattern:       noise.HandshakeX,
@@ -182,9 +182,11 @@ func encryptBlock(b []byte, sender *ecdh.PrivateKey, recipient *ecdh.PublicKey) 
 		StaticKeypair: senderDH,
 		PeerStatic:    recipient.Bytes(),
 	})
-	ciphertext, _, _ := hs.WriteMessage(nil, b)
-
-	return ciphertext, nil
+	if err != nil {
+		return nil, err
+	}
+	ciphertext, _, _, err := hs.WriteMessage(nil, b)
+	return ciphertext, err
 }
 
 // EncryptMessage encrypts a message after fragmenting it into blocks, and
@@ -220,7 +222,7 @@ func DecryptBlock(b []byte, recipient *ecdh.PrivateKey) (*Block, *ecdh.PublicKey
 		Private: recipient.Bytes(),
 		Public:  recipient.PublicKey().Bytes(),
 	}
-	hs := noise.NewHandshakeState(noise.Config{
+	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite:   cs,
 		Random:        rand.Reader,
 		Pattern:       noise.HandshakeX,
@@ -228,6 +230,9 @@ func DecryptBlock(b []byte, recipient *ecdh.PrivateKey) (*Block, *ecdh.PublicKey
 		StaticKeypair: recipientDH,
 		PeerStatic:    nil,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
 	plaintext, _, _, err := hs.ReadMessage(nil, b)
 	if err != nil {
 		return nil, nil, err
