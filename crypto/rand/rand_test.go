@@ -49,6 +49,12 @@ func tryRandomRead(n int) error {
 		return fmt.Errorf("truncated read: %v", rd)
 	}
 
+	bCmp := make([]byte, n)
+	io.ReadFull(Reader, bCmp)
+	if bytes.Equal(b, bCmp) {
+		return fmt.Errorf("repeated calls produced identical output")
+	}
+
 	// Statistical test...
 	return ensureHighEntropy(b[:])
 }
