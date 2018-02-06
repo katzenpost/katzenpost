@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
@@ -230,5 +231,42 @@ func TestPostDescriptorStatus(t *testing.T) {
 	require.NoError(err, "PostDescriptorStatus: FromBytes() failed")
 	require.IsType(cmd, c, "PostDescriptorStatus: FromBytes() invalid type")
 	d := c.(*PostDescriptorStatus)
+	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
+
+func TestVote(t *testing.T) {
+	require := require.New(t)
+
+	alice, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	cmd := &Vote{
+		Epoch:     3141,
+		PublicKey: alice.PublicKey(),
+		Payload:   []byte{1, 2, 3, 4},
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmdOverhead+voteOverhead+len(cmd.Payload), "Vote: ToBytes() length")
+	c, err := FromBytes(b)
+	require.NoError(err, "Vote: FromBytes() failed")
+	require.IsType(cmd, c, "Vote: FromBytes() invalid type")
+	d := c.(*Vote)
+	require.Equal(d.Epoch, cmd.Epoch)
+	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+	require.Equal(d.Payload, cmd.Payload)
+}
+
+func TestVoteStatus(t *testing.T) {
+	require := require.New(t)
+
+	cmd := &VoteStatus{
+		ErrorCode: 23,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, voteStatusLength+cmdOverhead, "VoteStatus: ToBytes() length")
+
+	c, err := FromBytes(b)
+	require.NoError(err, "VoteStatus: FromBytes() failed")
+	require.IsType(cmd, c, "VoteStatus: FromBytes() invalid type")
+	d := c.(*VoteStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
