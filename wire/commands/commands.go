@@ -21,6 +21,7 @@ import (
 	"errors"
 
 	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
@@ -42,6 +43,9 @@ const (
 	postDescriptorStatusLength = 1
 	postDescriptorLength       = 8
 
+	voteOverhead     = 8 + eddsa.PublicKeySize
+	voteStatusLength = 1
+
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
 	messageTypeEmpty   messageType = 2
@@ -58,6 +62,8 @@ const (
 	consensus            commandID = 19
 	postDescriptor       commandID = 20
 	postDescriptorStatus commandID = 21
+	vote                 commandID = 22
+	voteStatus           commandID = 23
 
 	// ConsensusOk signifies that the GetConsensus request has completed
 	// successfully.
@@ -89,6 +95,21 @@ const (
 	// DescriptorForbidden signifies that the PostDescriptor request has
 	// failed due to an authentication error.
 	DescriptorForbidden = 3
+
+	// VoteOk signifies that the vote was accepted by the peer.
+	VoteOk = 0
+
+	// VoteTooLate signifies that the vote was too late.
+	VoteTooLate = 1
+
+	// VoteTooEarly signifies that the vote was too late.
+	VoteTooEarly = 2
+
+	// VoteNotAuthorized signifies that the voting entity's key is not white-listed.
+	VoteNotAuthorized = 3
+
+	// VoteNotSigned signifies that the vote payload failed signature verification.
+	VoteNotSigned = 4
 )
 
 var errInvalidCommand = errors.New("wire: invalid wire protocol command")
@@ -220,6 +241,62 @@ func (c *PostDescriptorStatus) ToBytes() []byte {
 	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
 	out[6] = c.ErrorCode
 	return out
+}
+
+// Vote is a vote which is exchanged by Directory Authorities.
+type Vote struct {
+	Epoch     uint64
+	PublicKey *eddsa.PublicKey
+	Payload   []byte
+}
+
+func voteFromBytes(b []byte) (Command, error) {
+	r := new(Vote)
+	if len(b) < voteOverhead {
+		return nil, errInvalidCommand
+	}
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	r.PublicKey = new(eddsa.PublicKey)
+	err := r.PublicKey.FromBytes(b[8:40])
+	if err != nil {
+		return nil, err
+	}
+	r.Payload = make([]byte, 0, len(b)-voteOverhead)
+	r.Payload = append(r.Payload, b[voteOverhead:]...)
+	return r, nil
+}
+
+func (c *Vote) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead+len(c.Payload))
+	out[0] = byte(vote)
+	binary.BigEndian.PutUint32(out[2:6], uint32(voteOverhead+len(c.Payload)))
+	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
+	out = append(out, c.PublicKey.Bytes()...)
+	out = append(out, c.Payload...)
+	return out
+}
+
+// VoteStatus is a resonse status for a Vote command.
+type VoteStatus struct {
+	ErrorCode uint8
+}
+
+func (c *VoteStatus) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+voteStatusLength)
+	out[0] = byte(voteStatus)
+	binary.BigEndian.PutUint32(out[2:6], voteStatusLength)
+	out[6] = c.ErrorCode
+	return out
+}
+
+func voteStatusFromBytes(b []byte) (Command, error) {
+	if len(b) != voteStatusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(VoteStatus)
+	r.ErrorCode = b[0]
+	return r, nil
 }
 
 // Disconnect is a de-serialized disconnect command.
@@ -457,6 +534,10 @@ func FromBytes(b []byte) (Command, error) {
 		return postDescriptorFromBytes(b)
 	case postDescriptorStatus:
 		return postDescriptorStatusFromBytes(b)
+	case vote:
+		return voteFromBytes(b)
+	case voteStatus:
+		return voteStatusFromBytes(b)
 	default:
 		return nil, errInvalidCommand
 	}
