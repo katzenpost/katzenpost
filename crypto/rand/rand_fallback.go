@@ -22,4 +22,5 @@ import "crypto/rand"
 
 func init() {
 	Reader = rand.Reader
+	initWhitening()
 }

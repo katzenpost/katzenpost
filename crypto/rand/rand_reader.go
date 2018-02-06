@@ -19,15 +19,15 @@ package rand
 import (
 	"io"
 
-	"git.schwanenlied.me/yawning/chacha20.git"
 	"github.com/katzenpost/core/utils"
+	"golang.org/x/crypto/blake2b"
 )
 
 // At least as of Go 1.6.1,  Go's crypto/rand does some horrific bullshit that
 // defeats the point of getrandom(2), namedly, it cowardly refuses to use the
 // syscall based entropy source if it would have blocked on the first call.
 //
-// This is absolutely retarded.  The correct thing to do for something named
+// This is rather suboptimal.  The correct thing to do for something named
 // "crypto/rand" is to fucking BLOCK if the entropy pool isn't there and not
 // to pull poor quality entropy by falling back to doing blocking reads on
 // "/dev/urandom".
@@ -40,11 +40,14 @@ import (
 // (See: https://github.com/golang/go/issues/19274), but that isn't guaranteed
 // to be everywhere, and there's an advantage to whitening the output anyway.
 
+const xofEntropySize = 32
+
 var (
 	// Reader is a replacement for crypto/rand.Reader.
 	Reader io.Reader
 
 	usingImprovedSyscallEntropy = false
+	xofKey                      [xofEntropySize]byte
 )
 
 type nonShitRandReader struct {
@@ -53,21 +56,30 @@ type nonShitRandReader struct {
 
 func (r *nonShitRandReader) Read(b []byte) (int, error) {
 	blen := len(b)
-	if blen == 0 {
+	switch {
+	case blen == 0:
 		return 0, nil
 	}
 
-	// Whiten the output using a random keyed ChaCha20.
-	var stream chacha20.Cipher
-	defer stream.Reset()
-
-	var seed [chacha20.KeySize + chacha20.NonceSize]byte
-	defer utils.ExplicitBzero(seed[:])
-
-	if err := r.getentropyFn(seed[:]); err != nil {
+	// Whiten the output using BLAKE2Xb.
+	var xofEntropy [xofEntropySize]byte
+	xof, err := blake2b.NewXOF(uint32(len(b)), xofKey[:])
+	if err != nil {
 		return 0, err
 	}
-	stream.ReKey(seed[:chacha20.KeySize], seed[chacha20.KeySize:])
-	stream.KeyStream(b)
-	return len(b), nil
+	defer func() {
+		xof.Reset()
+		utils.ExplicitBzero(xofEntropy[:])
+	}()
+	if err := r.getentropyFn(xofEntropy[:]); err != nil {
+		return 0, err
+	}
+	xof.Write(xofEntropy[:])
+	return xof.Read(b)
+}
+
+func initWhitening() {
+	if _, err := Reader.Read(xofKey[:]); err != nil {
+		panic("BUG: failed to initialize XOF key: " + err.Error())
+	}
 }

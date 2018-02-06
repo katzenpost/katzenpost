@@ -128,4 +128,5 @@ func init() {
 		}
 		Reader = rand.Reader
 	}
+	initWhitening()
 }
