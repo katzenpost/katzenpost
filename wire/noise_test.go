@@ -27,7 +27,7 @@ import (
 func TestNoiseParams1(t *testing.T) {
 	assert := assert.New(t)
 
-	clientStaticKeypair := noise.DH25519.GenerateKeypair(rand.Reader)
+	clientStaticKeypair, _ := noise.DH25519.GenerateKeypair(rand.Reader)
 	clientConfig := noise.Config{}
 	clientConfig.CipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
 	clientConfig.Random = rand.Reader
@@ -35,10 +35,11 @@ func TestNoiseParams1(t *testing.T) {
 	clientConfig.Initiator = true
 	clientConfig.Prologue = []byte{0}
 	clientConfig.StaticKeypair = clientStaticKeypair
-	clientConfig.EphemeralKeypair = noise.DH25519.GenerateKeypair(rand.Reader)
-	clientHs := noise.NewHandshakeState(clientConfig)
+	clientConfig.EphemeralKeypair, _ = noise.DH25519.GenerateKeypair(rand.Reader)
+	clientHs, err := noise.NewHandshakeState(clientConfig)
+	assert.NoError(err, "client NewHandshakeState")
 
-	serverStaticKeypair := noise.DH25519.GenerateKeypair(rand.Reader)
+	serverStaticKeypair, _ := noise.DH25519.GenerateKeypair(rand.Reader)
 	serverConfig := noise.Config{}
 	serverConfig.CipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
 	serverConfig.Random = rand.Reader
@@ -46,18 +47,21 @@ func TestNoiseParams1(t *testing.T) {
 	serverConfig.Initiator = false
 	serverConfig.Prologue = []byte{0}
 	serverConfig.StaticKeypair = serverStaticKeypair
-	serverConfig.EphemeralKeypair = noise.DH25519.GenerateKeypair(rand.Reader)
-	serverHs := noise.NewHandshakeState(serverConfig)
+	serverConfig.EphemeralKeypair, _ = noise.DH25519.GenerateKeypair(rand.Reader)
+	serverHs, err := noise.NewHandshakeState(serverConfig)
+	assert.NoError(err, "server NewHandshakeState")
 
 	// handshake phase
-	clientHsMsg, _, _ := clientHs.WriteMessage(nil, nil)
+	clientHsMsg, _, _, err := clientHs.WriteMessage(nil, nil)
+	assert.NoError(err, "clientHs WriteMessage")
 	assert.Equal(32, len(clientHsMsg), "client handshake message is unexpected size")
 
 	serverHsResult, _, _, err := serverHs.ReadMessage(nil, clientHsMsg)
 	assert.NoError(err, "server failed to read client handshake message")
 	assert.Equal(0, len(serverHsResult), "server result message is unexpected size")
 
-	serverHsMsg, csR0, csR1 := serverHs.WriteMessage(nil, nil)
+	serverHsMsg, csR0, csR1, err := serverHs.WriteMessage(nil, nil)
+	assert.NoError(err, "serverHs WriteMessage")
 	assert.Equal(48, len(serverHsMsg), "server handshake message is unexpected size")
 
 	clientHsResult, csI0, csI1, err := clientHs.ReadMessage(nil, serverHsMsg)
@@ -104,13 +108,13 @@ func TestNoiseParams2(t *testing.T) {
 	// Both parties generate long term ECDH keypairs, that are known to each
 	// other via some out of band mechanism.
 	csStaticAlice := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-	staticAlice := csStaticAlice.GenerateKeypair(rand.Reader)
+	staticAlice, _ := csStaticAlice.GenerateKeypair(rand.Reader)
 
 	csStaticBob := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-	staticBob := csStaticBob.GenerateKeypair(rand.Reader)
+	staticBob, _ := csStaticBob.GenerateKeypair(rand.Reader)
 
 	// Alice constructs a handshake state with both static keys.
-	hsAlice := noise.NewHandshakeState(noise.Config{
+	hsAlice, _ := noise.NewHandshakeState(noise.Config{
 		CipherSuite:   csStaticAlice,
 		Random:        rand.Reader,
 		Pattern:       noise.HandshakeX,
@@ -120,13 +124,14 @@ func TestNoiseParams2(t *testing.T) {
 	})
 
 	// Build a BlockCiphertext via noise.
-	msgAlice, _, _ := hsAlice.WriteMessage(nil, []byte(plaintext))
+	msgAlice, _, _, err := hsAlice.WriteMessage(nil, []byte(plaintext))
+	assert.NoError(err, "alice WriteMessage")
 	assert.Equal(32+16+32+16+len(plaintext), len(msgAlice))
 
 	// Alice sends msgAlice to Bob and is done.
 
 	// Bob constructs a handshake state with his static key (one use).
-	hsBob := noise.NewHandshakeState(noise.Config{
+	hsBob, _ := noise.NewHandshakeState(noise.Config{
 		CipherSuite:   csStaticBob,
 		Random:        rand.Reader,
 		Pattern:       noise.HandshakeX,
