@@ -136,6 +136,8 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 }
 
 func (w *Worker) worker() {
+	const absoluteMinimumDelay = 1 * time.Millisecond
+
 	isProvider := w.glue.Config().Server.IsProvider
 	unwrapSlack := time.Duration(w.glue.Config().Debug.UnwrapDelay) * time.Millisecond
 	defer w.derefKeys()
@@ -165,12 +167,13 @@ func (w *Worker) worker() {
 
 		// Drop the packet if it has been sitting in the queue waiting to
 		// be unwrapped for way too long.
-		if unwrapDelay := now - pkt.RecvAt; unwrapDelay > unwrapSlack {
-			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, unwrapDelay)
+		dwellTime := now - pkt.RecvAt
+		if dwellTime > unwrapSlack {
+			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
 			pkt.Dispose()
 			continue
 		} else {
-			w.log.Debugf("Packet: %v (Unwrap queue delay: %v)", pkt.ID, unwrapDelay)
+			w.log.Debugf("Packet: %v (Unwrap queue delay: %v)", pkt.ID, dwellTime)
 		}
 
 		// Attempt to unwrap the packet.
@@ -203,15 +206,48 @@ func (w *Worker) worker() {
 				pkt.Dispose()
 				continue
 			}
-			dwellTime := now - pkt.RecvAt
 			if pkt.Delay > dwellTime {
 				pkt.Delay -= dwellTime
-			} else {
-				// Eeep, the dwell time has exceeded the user requested delay.
+			} else if pkt.NodeDelay.Delay == 0 {
+				// If the packet has exactly 0 ms delay, then it is flat out
+				// impossible to adjust for the dwell because the client wants
+				// the packet dispatched immediately.
 				//
-				// TODO: Either can drop or dispatch the packet immediately,
-				// I'm not sure which is better behavior.
-				pkt.Delay = 0
+				// Note: The reference client will NEVER do this, so despite
+				// the general crypto worker load shedding not kicking in,
+				// a more stringent limit on queue dwell time is applied.
+				if dwellTime < absoluteMinimumDelay {
+					// If the dwellTime is "small" (in the non-overload case),
+					// treat the packet as if it had a 1 ms delay to force
+					// some amount of mixing.
+					pkt.Delay = absoluteMinimumDelay - dwellTime
+				} else {
+					// Although the node isn't overloaded to the point
+					// where the load shedding has kicked in, the dwell
+					// time appears to be "excessive".  Discard the packet,
+					// the client is doing something non-standard anyway.
+					w.log.Debugf("Dropping packet: %v (Delay 0 queue delay: %v)", pkt.ID, dwellTime)
+					pkt.Dispose()
+					continue
+				}
+			} else {
+				// The dwell time has exceeded the client requested delay.
+				//
+				// Under normal operation this should NEVER happen, because
+				// the dwell time should be extremely small, and the
+				// accounting here explicitly excludes the time taken for
+				// the Unwrap operation.
+				//
+				// The right thing to do here might be to dispose of the
+				// packet, but the adjustment is primarily a "best effort"
+				// attempt to honor the delay, and the queue backlog hasn't
+				// gotten to the point where the worker is aggressively
+				// shedding load.
+				//
+				// Do the closest thing to "dispatch immediately" that
+				// ensures that some mixing occurs.  The adjustment is
+				// "best effort" anyway.
+				pkt.Delay = absoluteMinimumDelay
 			}
 
 			// Hand off to the scheduler.
