@@ -41,7 +41,7 @@ const (
 	defaultAddress            = ":3219"
 	defaultLogLevel           = "NOTICE"
 	defaultNumProviderWorkers = 1
-	defaultUnwrapDelay        = 250       // 250 ms.
+	defaultUnwrapDelay        = 10        // 10 ms.
 	defaultSchedulerSlack     = 10        // 10 ms.
 	defaultSendSlack          = 50        // 50 ms.
 	defaultConnectTimeout     = 60 * 1000 // 60 sec.
