@@ -175,7 +175,9 @@ selectLoop:
 			// packet has a SURB attached have a delay.
 			delay := uint64(0)
 			if idx != len(descs)-1 || (surbID != nil && isForward) {
-				delay = uint64(rand.Exp(c.rng, doc.Lambda))
+				// Draw the delay from [1,MaxDelay] to ensure that packets
+				// always get some mixing.
+				delay = uint64(rand.Exp(c.rng, doc.Lambda)) + 1
 				if doc.MaxDelay > 0 && delay > doc.MaxDelay {
 					delay = doc.MaxDelay
 				}
