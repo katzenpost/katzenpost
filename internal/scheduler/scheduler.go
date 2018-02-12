@@ -49,8 +49,8 @@ func (sch *scheduler) Halt() {
 	sch.ch.Close()
 }
 
-func (sch *scheduler) OnNewMaxDelay(newMaxDelay uint64) {
-	sch.maxDelayCh <- newMaxDelay
+func (sch *scheduler) OnNewMixMaxDelay(newMixMaxDelay uint64) {
+	sch.maxDelayCh <- newMixMaxDelay
 }
 
 func (sch *scheduler) OnPacket(pkt *packet.Packet) {
@@ -130,7 +130,7 @@ func (sch *scheduler) worker() {
 			} else {
 				maxDelay = pkiMaxDelay
 			}
-			sch.log.Debugf("New PKI MaxDelay %v, using %v.", pkiMaxDelay, maxDelay)
+			sch.log.Debugf("New PKI MixMaxDelay %v, using %v.", pkiMaxDelay, maxDelay)
 		case <-timer.C:
 			// Packet delay probably passed, packet dispatch handled as
 			// part of rescheduling the timer.
