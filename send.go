@@ -177,9 +177,9 @@ selectLoop:
 			if idx != len(descs)-1 || (surbID != nil && isForward) {
 				// Draw the delay from [1,MaxDelay] to ensure that packets
 				// always get some mixing.
-				delay = uint64(rand.Exp(c.rng, doc.Lambda)) + 1
-				if doc.MaxDelay > 0 && delay > doc.MaxDelay {
-					delay = doc.MaxDelay
+				delay = uint64(rand.Exp(c.rng, doc.MixLambda)) + 1
+				if doc.MixMaxDelay > 0 && delay > doc.MixMaxDelay {
+					delay = doc.MixMaxDelay
 				}
 				then = then.Add(time.Duration(delay) * time.Millisecond)
 				delayCmd := &commands.NodeDelay{
