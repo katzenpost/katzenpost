@@ -42,11 +42,11 @@ const (
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
 	// at some point.
-	defaultLambda         = 0.00025
-	defaultMaxPercentile  = 0.99999
-	defaultLambdaP        = 0.00006
-	defaultLambdaPShift   = 15000 // 15 seconds.
-	defaultMaxPPercentile = 0.95
+	defaultMixLambda         = 0.00025
+	defaultMixMaxPercentile  = 0.99999
+	defaultSendLambda        = 0.00006
+	defaultSendShift         = 15000 // 15 seconds.
+	defaultSendMaxPercentile = 0.95
 )
 
 var defaultLogging = Logging{
@@ -115,59 +115,58 @@ func (lCfg *Logging) validate() error {
 
 // Parameters is the network parameters.
 type Parameters struct {
-	// Lambda is the inverse of the mean of the exponential distribution that
-	// clients will use to sample delays.
-	Lambda float64
+	// MixLambda is the inverse of the mean of the exponential distribution
+	// that the Sphinx packet per-hop mixing delay will be sampled from.
+	MixLambda float64
 
-	// MaxDelay is the maximum per-hop delay in milliseconds.
-	MaxDelay uint64
+	// MixMaxDelay is the maximum Sphinx packet per-hop mixing delay in
+	// milliseconds.
+	MixMaxDelay uint64
 
-	// LambdaP is the mean of the exponential distribution that clients will
-	// use to sample the inter-send interval.
-	LambdaP float64
+	// SendLambda is the inverse of the mean of the exponential distribution
+	// that clients will sample to determine send timing.
+	SendLambda float64
 
-	// LambdaPShift is the shift applied to Exp(LambdaP) in milliseconds.
-	LambdaPShift uint64
+	// SendShift is the shift applied to the client send timing samples in
+	// milliseconds.
+	SendShift uint64
 
-	// MaxInterval is maximum client inter-send interval in milliseconds,
-	// before adding LambdaPShift.
-	MaxInterval uint64
+	// SendMaxInterval is the maximum send interval in milliseconds, enforced
+	// prior to (excluding) SendShift.
+	SendMaxInterval uint64
 }
 
 func (pCfg *Parameters) validate() error {
-	if pCfg.Lambda < 0 {
-		return fmt.Errorf("config: Parameters: Lambda %v is invalid", pCfg.Lambda)
+	if pCfg.MixLambda < 0 {
+		return fmt.Errorf("config: Parameters: MixLambda %v is invalid", pCfg.MixLambda)
 	}
-	if pCfg.MaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: MaxDelay %v is out of range", pCfg.MaxDelay)
+	if pCfg.MixMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: MixMaxDelay %v is out of range", pCfg.MixMaxDelay)
 	}
-	if pCfg.LambdaP < 0 {
-		return fmt.Errorf("config: Parameters: LambdaP %v is invalid", pCfg.LambdaP)
-	}
-	if pCfg.LambdaPShift < 0 {
-		return fmt.Errorf("config: Parameters: LambdaPShift %v is invalid", pCfg.LambdaPShift)
+	if pCfg.SendLambda < 0 {
+		return fmt.Errorf("config: Parameters: SendLambda %v is invalid", pCfg.SendLambda)
 	}
 	return nil
 }
 
 func (pCfg *Parameters) applyDefaults() {
-	if pCfg.Lambda == 0 {
-		pCfg.Lambda = defaultLambda
+	if pCfg.MixLambda == 0 {
+		pCfg.MixLambda = defaultMixLambda
 	}
-	if pCfg.MaxDelay == 0 {
-		pCfg.MaxDelay = uint64(rand.ExpQuantile(pCfg.Lambda, defaultMaxPercentile))
-		if pCfg.MaxDelay > absoluteMaxDelay {
-			pCfg.MaxDelay = absoluteMaxDelay
+	if pCfg.MixMaxDelay == 0 {
+		pCfg.MixMaxDelay = uint64(rand.ExpQuantile(pCfg.MixLambda, defaultMixMaxPercentile))
+		if pCfg.MixMaxDelay > absoluteMaxDelay {
+			pCfg.MixMaxDelay = absoluteMaxDelay
 		}
 	}
-	if pCfg.LambdaP == 0 {
-		pCfg.LambdaP = defaultLambdaP
+	if pCfg.SendLambda == 0 {
+		pCfg.SendLambda = defaultSendLambda
 	}
-	if pCfg.LambdaPShift == 0 {
-		pCfg.LambdaPShift = defaultLambdaPShift
+	if pCfg.SendShift == 0 {
+		pCfg.SendShift = defaultSendShift
 	}
-	if pCfg.MaxInterval == 0 {
-		pCfg.MaxInterval = uint64(rand.ExpQuantile(pCfg.LambdaP, defaultMaxPPercentile))
+	if pCfg.SendMaxInterval == 0 {
+		pCfg.SendMaxInterval = uint64(rand.ExpQuantile(pCfg.SendLambda, defaultSendMaxPercentile))
 	}
 }
 

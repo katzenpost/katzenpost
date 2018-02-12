@@ -45,12 +45,12 @@ type Document struct {
 
 	Epoch uint64
 
-	Lambda   float64
-	MaxDelay uint64
+	MixLambda   float64
+	MixMaxDelay uint64
 
-	LambdaP      float64
-	LambdaPShift uint64
-	MaxInterval  uint64
+	SendLambda      float64
+	SendShift       uint64
+	SendMaxInterval uint64
 
 	Topology  [][][]byte
 	Providers [][]byte
@@ -125,11 +125,11 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	// everything.
 	doc := new(pki.Document)
 	doc.Epoch = d.Epoch
-	doc.Lambda = d.Lambda
-	doc.MaxDelay = d.MaxDelay
-	doc.LambdaP = d.LambdaP
-	doc.LambdaPShift = d.LambdaPShift
-	doc.MaxInterval = d.MaxInterval
+	doc.MixLambda = d.MixLambda
+	doc.MixMaxDelay = d.MixMaxDelay
+	doc.SendLambda = d.SendLambda
+	doc.SendShift = d.SendShift
+	doc.SendMaxInterval = d.SendMaxInterval
 	doc.Topology = make([][]*pki.MixDescriptor, len(d.Topology))
 	doc.Providers = make([]*pki.MixDescriptor, 0, len(d.Providers))
 
