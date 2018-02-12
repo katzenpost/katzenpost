@@ -98,7 +98,7 @@ func (p *pki) worker() {
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
 
-	var lastMixMaxDelayEpoch, lastMixMaxDelay uint64
+	var lastUpdateEpoch, lastMixMaxDelay, lastSendShift uint64
 
 	for {
 		const recheckInterval = 1 * time.Minute
@@ -179,15 +179,26 @@ func (p *pki) worker() {
 			p.log.Warningf("Failed to post to PKI: %v", err)
 		}
 
-		// Update the scheduler's idea of MixMaxDelay if needed.
-		if now, _, _ := epochtime.Now(); now != lastMixMaxDelayEpoch {
+		// Update the scheduler and listener's idea of MixMaxDelay/SendShift
+		// if needed.
+		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
 			if ent := p.entryForEpoch(now); ent != nil {
 				if newMixMaxDelay := ent.MixMaxDelay(); newMixMaxDelay != lastMixMaxDelay {
 					p.log.Debugf("Updating scheduler MixMaxDelay for epoch %v: %v", now, newMixMaxDelay)
 					p.glue.Scheduler().OnNewMixMaxDelay(newMixMaxDelay)
 					lastMixMaxDelay = newMixMaxDelay
 				}
-				lastMixMaxDelayEpoch = now
+
+				if newSendShift := ent.SendShift(); newSendShift != lastSendShift {
+					p.log.Debugf("Updating listener SendShift for epoch %v: %v", now, newSendShift)
+
+					for _, l := range p.glue.Listeners() {
+						l.OnNewSendShift(newSendShift)
+					}
+					lastSendShift = newSendShift
+				}
+
+				lastUpdateEpoch = now
 			}
 		}
 

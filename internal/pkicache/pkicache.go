@@ -40,9 +40,14 @@ func (e *Entry) Epoch() uint64 {
 	return e.doc.Epoch
 }
 
-// MixMaxDelay returns the MixMaxDelay for cached PKI document.
+// MixMaxDelay returns the MixMaxDelay for the cached PKI document.
 func (e *Entry) MixMaxDelay() uint64 {
 	return e.doc.MixMaxDelay
+}
+
+// SendShift returns the SendShift for the cached PKI document.
+func (e *Entry) SendShift() uint64 {
+	return e.doc.SendShift
 }
 
 // Self returns the descriptor for the current node.

@@ -92,4 +92,5 @@ type Connector interface {
 type Listener interface {
 	Halt()
 	IsConnUnique(interface{}) bool
+	OnNewSendShift(uint64)
 }
