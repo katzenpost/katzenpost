@@ -56,7 +56,11 @@ type Document struct {
 	// clients will use to sample the inter-send interval.
 	LambdaP float64
 
-	// MaxInterval is the maximum client inter-send interval in milliseconds.
+	// LambdaPShift is the shift applied to Exp(LambdaP) in milliseconds.
+	LambdaPShift uint64
+
+	// MaxInterval is the maximum client inter-send interval in milliseconds,
+	// before adding LambdaPShift.
 	MaxInterval uint64
 
 	// Topology is the mix network topology, excluding providers.
@@ -80,7 +84,7 @@ func (d *Document) String() string {
 		return s
 	}
 
-	s := fmt.Sprintf("&{Epoch:%v Lambda:%v MaxDelay:%v LambdaP:%v MaxInterval: %v Topology:", d.Epoch, d.Lambda, d.MaxDelay, d.LambdaP, d.MaxInterval)
+	s := fmt.Sprintf("&{Epoch:%v Lambda:%v MaxDelay:%v LambdaP:%v LambdaPShift: %v MaxInterval: %v Topology:", d.Epoch, d.Lambda, d.MaxDelay, d.LambdaP, d.LambdaPShift, d.MaxInterval)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("[%v]{", l)
 		s += stringifyDescSlice(nodes)
