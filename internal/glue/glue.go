@@ -78,7 +78,7 @@ type Provider interface {
 
 type Scheduler interface {
 	Halt()
-	OnNewMaxDelay(uint64)
+	OnNewMixMaxDelay(uint64)
 	OnPacket(*packet.Packet)
 }
 
