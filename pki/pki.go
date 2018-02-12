@@ -80,7 +80,7 @@ func (d *Document) String() string {
 		return s
 	}
 
-	s := fmt.Sprintf("&{Epoch:%v Lambda:%v MaxDelay:%v LambdaP:%v Topology:", d.Epoch, d.Lambda, d.MaxDelay, d.LambdaP)
+	s := fmt.Sprintf("&{Epoch:%v Lambda:%v MaxDelay:%v LambdaP:%v MaxInterval: %v Topology:", d.Epoch, d.Lambda, d.MaxDelay, d.LambdaP, d.MaxInterval)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("[%v]{", l)
 		s += stringifyDescSlice(nodes)
