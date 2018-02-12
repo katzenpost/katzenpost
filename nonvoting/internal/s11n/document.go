@@ -48,8 +48,9 @@ type Document struct {
 	Lambda   float64
 	MaxDelay uint64
 
-	LambdaP     float64
-	MaxInterval uint64
+	LambdaP      float64
+	LambdaPShift uint64
+	MaxInterval  uint64
 
 	Topology  [][][]byte
 	Providers [][]byte
@@ -127,6 +128,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	doc.Lambda = d.Lambda
 	doc.MaxDelay = d.MaxDelay
 	doc.LambdaP = d.LambdaP
+	doc.LambdaPShift = d.LambdaPShift
 	doc.MaxInterval = d.MaxInterval
 	doc.Topology = make([][]*pki.MixDescriptor, len(d.Topology))
 	doc.Providers = make([]*pki.MixDescriptor, 0, len(d.Providers))

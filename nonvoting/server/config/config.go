@@ -42,9 +42,11 @@ const (
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
 	// at some point.
-	defaultLambda        = 0.00025
-	defaultMaxPercentile = 0.99999
-	defaultLambdaP       = 0.00003
+	defaultLambda         = 0.00025
+	defaultMaxPercentile  = 0.99999
+	defaultLambdaP        = 0.00006
+	defaultLambdaPShift   = 15000 // 15 seconds.
+	defaultMaxPPercentile = 0.95
 )
 
 var defaultLogging = Logging{
@@ -124,7 +126,11 @@ type Parameters struct {
 	// use to sample the inter-send interval.
 	LambdaP float64
 
-	// MaxInterval is maximum inter-send interval in milliseconds.
+	// LambdaPShift is the shift applied to Exp(LambdaP) in milliseconds.
+	LambdaPShift uint64
+
+	// MaxInterval is maximum client inter-send interval in milliseconds,
+	// before adding LambdaPShift.
 	MaxInterval uint64
 }
 
@@ -137,6 +143,9 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.LambdaP < 0 {
 		return fmt.Errorf("config: Parameters: LambdaP %v is invalid", pCfg.LambdaP)
+	}
+	if pCfg.LambdaPShift < 0 {
+		return fmt.Errorf("config: Parameters: LambdaPShift %v is invalid", pCfg.LambdaPShift)
 	}
 	return nil
 }
@@ -154,8 +163,11 @@ func (pCfg *Parameters) applyDefaults() {
 	if pCfg.LambdaP == 0 {
 		pCfg.LambdaP = defaultLambdaP
 	}
+	if pCfg.LambdaPShift == 0 {
+		pCfg.LambdaPShift = defaultLambdaPShift
+	}
 	if pCfg.MaxInterval == 0 {
-		pCfg.MaxInterval = uint64(rand.ExpQuantile(pCfg.LambdaP, defaultMaxPercentile))
+		pCfg.MaxInterval = uint64(rand.ExpQuantile(pCfg.LambdaP, defaultMaxPPercentile))
 	}
 }
 
