@@ -49,6 +49,9 @@ type incomingConn struct {
 
 	id            uint64
 	retrSeq       uint32
+	sendTokens    uint64
+	sendTokenIncr time.Duration
+	sendTokenLast time.Duration
 	isInitialized bool // Set by listener.
 	fromClient    bool
 	fromMix       bool
@@ -67,6 +70,29 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			// Ok this is a connection from a client.
 			c.fromClient = true
 			c.canSend = true // Clients can always send for now.
+
+			// Update the rate limiter parameters.
+			sendShift := atomic.LoadUint64(&c.l.sendShift)
+			switch sendShift {
+			case uint64(c.sendTokenIncr / time.Millisecond):
+				// The send shift didn't change, don't update anything.
+				return true
+			case 0:
+				c.log.Debugf("Rate limit disabled, no SendShift.")
+				c.sendTokenIncr = 0
+				c.sendTokens = 0
+				return true
+			default:
+			}
+			// If there was no previous limit start at 1 send credit.
+			if c.sendTokenIncr == 0 {
+				c.sendTokens = 1
+				c.sendTokenLast = monotime.Now()
+			}
+
+			c.sendTokenIncr = time.Duration(sendShift) * time.Millisecond
+			c.log.Debugf("Rate limit shift: %v", c.sendTokenIncr)
+
 			return true
 		}
 
@@ -348,8 +374,33 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	pkt.MustForward = c.fromClient
 	pkt.MustTerminate = c.l.glue.Config().Server.IsProvider && !c.fromClient
 
-	// TODO: If clients should be rate-limited in how fast they can send
-	// packets, this is probably the natural place to do so.
+	// If the packet was from the client, and there is a SendShift for the
+	// current epoch, enforce SendShift based rate limits.
+	if c.fromClient && c.sendTokenIncr != 0 {
+		// Update the token bucket for the time that we were idle.
+		deltaT := monotime.Now() - c.sendTokenLast
+		c.log.Debugf("Rate limit: DeltaT: %v Tokens: %v", deltaT, c.sendTokens)
+		incrCount := uint64(deltaT / c.sendTokenIncr)
+		if incrCount > 0 {
+			const maxSendTokens = 4
+
+			c.sendTokenLast += c.sendTokenIncr * time.Duration(incrCount)
+			c.sendTokens += incrCount
+
+			// Leaky bucket.
+			if c.sendTokens > maxSendTokens {
+				c.sendTokens = maxSendTokens
+			}
+		}
+
+		if c.sendTokens == 0 {
+			c.log.Debugf("Dropping packet: %v (Rate limited)", pkt.ID)
+			pkt.Dispose()
+			return nil
+		}
+		c.sendTokens--
+		c.log.Debugf("Rate limit: Remaining tokens: %v", c.sendTokens)
+	}
 
 	c.log.Debugf("Handing off packet: %v", pkt.ID)
 
@@ -364,9 +415,10 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 
 func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 	c := &incomingConn{
-		l:  l,
-		c:  conn,
-		id: atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
+		l:             l,
+		c:             conn,
+		id:            atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
+		sendTokenLast: monotime.Now(),
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 

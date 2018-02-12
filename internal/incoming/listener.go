@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/constants"
@@ -43,6 +44,8 @@ type listener struct {
 	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
+
+	sendShift uint64
 }
 
 func (l *listener) Halt() {
@@ -56,6 +59,10 @@ func (l *listener) Halt() {
 	// actually complete, since the channel isn't checked mid-handshake.
 	close(l.closeAllCh)
 	l.closeAllWg.Wait()
+}
+
+func (l *listener) OnNewSendShift(newSendShift uint64) {
+	atomic.StoreUint64(&l.sendShift, newSendShift)
 }
 
 func (l *listener) worker() {
