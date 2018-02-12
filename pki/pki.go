@@ -52,9 +52,12 @@ type Document struct {
 	// MaxDelay is the maximum per-hop delay in milliseconds.
 	MaxDelay uint64
 
-	// LambdaP is the mean of the poisson distribution that clients will
-	// use to determine the send scheduling interval.
+	// LambdaP is the inverse of the mean of the exponential distribution that
+	// clients will use to sample the inter-send interval.
 	LambdaP float64
+
+	// MaxInterval is the maximum client inter-send interval in milliseconds.
+	MaxInterval uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
