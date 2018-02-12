@@ -45,23 +45,25 @@ type Document struct {
 	// Epoch is the epoch for which this Document instance is valid for.
 	Epoch uint64
 
-	// Lambda is the inverse of the mean of the exponential distribution that
-	// clients will use to sample mixing delays.
-	Lambda float64
+	// MixLambda is the inverse of the mean of the exponential distribution
+	// that the Sphinx packet per-hop mixing delay will be sampled from.
+	MixLambda float64
 
-	// MaxDelay is the maximum per-hop delay in milliseconds.
-	MaxDelay uint64
+	// MixMaxDelay is the maximum Sphinx packet per-hop mixing delay in
+	// milliseconds.
+	MixMaxDelay uint64
 
-	// LambdaP is the inverse of the mean of the exponential distribution that
-	// clients will use to sample the inter-send interval.
-	LambdaP float64
+	// SendLambda is the inverse of the mean of the exponential distribution
+	// that clients will sample to determine send timing.
+	SendLambda float64
 
-	// LambdaPShift is the shift applied to Exp(LambdaP) in milliseconds.
-	LambdaPShift uint64
+	// SendShift is the shift applied to the client send timing samples in
+	// milliseconds.
+	SendShift uint64
 
-	// MaxInterval is the maximum client inter-send interval in milliseconds,
-	// before adding LambdaPShift.
-	MaxInterval uint64
+	// SendMaxInterval is the maximum send interval in milliseconds, enforced
+	// prior to (excluding) SendShift.
+	SendMaxInterval uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
@@ -84,7 +86,7 @@ func (d *Document) String() string {
 		return s
 	}
 
-	s := fmt.Sprintf("&{Epoch:%v Lambda:%v MaxDelay:%v LambdaP:%v LambdaPShift: %v MaxInterval: %v Topology:", d.Epoch, d.Lambda, d.MaxDelay, d.LambdaP, d.LambdaPShift, d.MaxInterval)
+	s := fmt.Sprintf("&{Epoch:%v MixLambda:%v MixMaxDelay:%v SendLambda:%v SendShift: %v SendMaxInterval: %v Topology:", d.Epoch, d.MixLambda, d.MixMaxDelay, d.SendLambda, d.SendShift, d.SendMaxInterval)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("[%v]{", l)
 		s += stringifyDescSlice(nodes)
