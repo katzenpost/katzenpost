@@ -74,11 +74,12 @@ func TestDocument(t *testing.T) {
 
 	// Generate a Document.
 	doc := &Document{
-		Epoch:    debugTestEpoch,
-		Topology: make([][][]byte, 3),
-		Lambda:   0.42,
-		MaxDelay: 23,
-		LambdaP:  0.69,
+		Epoch:       debugTestEpoch,
+		Topology:    make([][][]byte, 3),
+		Lambda:      0.42,
+		MaxDelay:    23,
+		LambdaP:     0.69,
+		MaxInterval: 17,
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
@@ -109,6 +110,7 @@ func TestDocument(t *testing.T) {
 	require.Equal(doc.Lambda, ddoc.Lambda, "VerifyAndParseDocument(): Lambda")
 	require.Equal(doc.MaxDelay, ddoc.MaxDelay, "VerifyAndParseDocument(): MaxDelay")
 	require.Equal(doc.LambdaP, ddoc.LambdaP, "VerifyAndParseDocument(): LambdaP")
+	require.Equal(doc.MaxInterval, ddoc.MaxInterval, "VerifyAndParseDocument(): MaxInterval")
 
 	t.Logf("Deserialized document: '%v'", ddoc)
 

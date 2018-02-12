@@ -44,7 +44,7 @@ const (
 	// at some point.
 	defaultLambda        = 0.00025
 	defaultMaxPercentile = 0.99999
-	defaultLambdaP       = 15.0
+	defaultLambdaP       = 0.00003
 )
 
 var defaultLogging = Logging{
@@ -120,9 +120,12 @@ type Parameters struct {
 	// MaxDelay is the maximum per-hop delay in milliseconds.
 	MaxDelay uint64
 
-	// LambdaP is the mean of the poisson distribution that clients will
-	// use to sample the send scheduling interval.
+	// LambdaP is the mean of the exponential distribution that clients will
+	// use to sample the inter-send interval.
 	LambdaP float64
+
+	// MaxInterval is maximum inter-send interval in milliseconds.
+	MaxInterval uint64
 }
 
 func (pCfg *Parameters) validate() error {
@@ -150,6 +153,9 @@ func (pCfg *Parameters) applyDefaults() {
 	}
 	if pCfg.LambdaP == 0 {
 		pCfg.LambdaP = defaultLambdaP
+	}
+	if pCfg.MaxInterval == 0 {
+		pCfg.MaxInterval = uint64(rand.ExpQuantile(pCfg.LambdaP, defaultMaxPercentile))
 	}
 }
 
