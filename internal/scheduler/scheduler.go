@@ -40,7 +40,7 @@ type scheduler struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	ch         *channels.InfiniteChannel
+	ch         *channels.BatchingChannel
 	maxDelayCh chan uint64
 }
 
@@ -62,12 +62,10 @@ func (sch *scheduler) worker() {
 
 	mRand := rand.NewMath()
 	q := queue.New()
-	ch := sch.ch.Out()
 	timerSlack := time.Duration(sch.glue.Config().Debug.SchedulerSlack) * time.Millisecond
 	timer := time.NewTimer(math.MaxInt64)
 	defer timer.Stop()
 
-	maxCapacity := sch.glue.Config().Debug.SchedulerQueueSize
 	maxDelay := absoluteMaxDelay
 	for {
 		timerFired := false
@@ -85,41 +83,47 @@ func (sch *scheduler) worker() {
 			// Th-th-th-that's all folks.
 			sch.log.Debugf("Terminating gracefully.")
 			return
-		case e := <-ch:
-			// New packet from the crypto workers.
-			//
-			// Note: This assumes that pkt.delay has already been adjusted to
-			// account for the packet processing time up to the point where
-			// the packet was enqueued.
-			pkt := e.(*packet.Packet)
+		case iBatch := <-sch.ch.Out():
+			batch := iBatch.([]interface{})
+			sch.log.Debugf("Batch processing %v packets.", len(batch))
+			for _, e := range batch {
+				// New packet from the crypto workers.
+				//
+				// Note: This assumes that pkt.delay has already been adjusted
+				// to account for the packet processing time up to the point
+				// where the packet was enqueued.
+				pkt := e.(*packet.Packet)
 
-			// Ensure that the packet's delay is not pathologically malformed.
-			if pkt.Delay > maxDelay {
-				sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
-				pkt.Dispose()
-				break
-			}
-
-			// Ensure the peer is valid by querying the outgoing connection
-			// table.
-			if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
-				// Enqueue the packet unconditionally so that it is a
-				// candidate to be dropped.
-				q.Enqueue(uint64(monotime.Now()+pkt.Delay), pkt)
-
-				sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
-
-				// If queue limitations are enabled, check to see if the queue
-				// is over capacity after the new packet was inserted.
-				if maxCapacity > 0 && q.Len() > maxCapacity {
-					drop := q.DequeueRandom(mRand).Value.(*packet.Packet)
-					sch.log.Debugf("Queue size limit reached, discarding: %v", drop.ID)
-					drop.Dispose()
+				// Ensure that the packet's delay is not pathologically malformed.
+				if pkt.Delay > maxDelay {
+					sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
+					pkt.Dispose()
+					continue
 				}
-			} else {
-				sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
-				sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
-				pkt.Dispose()
+
+				// Ensure the peer is valid by querying the outgoing connection
+				// table.
+				if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
+					// Enqueue the packet unconditionally so that it is a
+					// candidate to be dropped.
+					q.Enqueue(uint64(monotime.Now()+pkt.Delay), pkt)
+
+					sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
+
+					// If queue limitations are enabled, check to see if the
+					// queue is over capacity after the new packet was
+					// inserted.
+					maxCapacity := sch.glue.Config().Debug.SchedulerQueueSize
+					if maxCapacity > 0 && q.Len() > maxCapacity {
+						drop := q.DequeueRandom(mRand).Value.(*packet.Packet)
+						sch.log.Debugf("Queue size limit reached, discarding: %v", drop.ID)
+						drop.Dispose()
+					}
+				} else {
+					sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
+					sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
+					pkt.Dispose()
+				}
 			}
 		case newMaxDelay := <-sch.maxDelayCh:
 			pkiMaxDelay := time.Duration(newMaxDelay) * time.Millisecond
@@ -141,6 +145,8 @@ func (sch *scheduler) worker() {
 		if !timerFired && !timer.Stop() {
 			<-timer.C
 		}
+
+		nrBurst, maxBurst := 0, sch.glue.Config().Debug.SchedulerMaxBurst
 		for {
 			// Peek at the next packet in the queue.
 			e := q.Peek()
@@ -159,6 +165,15 @@ func (sch *scheduler) worker() {
 				// the next timer tick, and go back to waiting for something
 				// interesting to happen.
 				timer.Reset(dispatchAt - now)
+				break
+			}
+			if nrBurst = nrBurst + 1; nrBurst > maxBurst {
+				// Packet dispatch is supposed to happen "now", but we've
+				// already sent up to the max burst size.
+				//
+				// Note: This is primarily to prevent the inbound scheduler
+				// queue from encountering pathological backlog.
+				timer.Reset(1 * time.Microsecond)
 				break
 			}
 
@@ -194,7 +209,7 @@ func New(glue glue.Glue) glue.Scheduler {
 	sch := &scheduler{
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger("scheduler"),
-		ch:         channels.NewInfiniteChannel(),
+		ch:         channels.NewBatchingChannel(channels.Infinity),
 		maxDelayCh: make(chan uint64),
 	}
 
