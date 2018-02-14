@@ -21,27 +21,31 @@ Table of Contents
       1.4 Differences from Tor and Mixminion Directory Authority systems
    2. Overview of Mix PKI Interaction
       2.1 PKI Protocol Schedule
+         2.1.1 Directory Authority Server Schedule
+         2.1.2 Mix Schedule
       2.2 Scheduling Mix Downtime
    3. Voting for Consensus Protocol
       3.1 Protocol Messages
          3.1.1 Mix Descriptor and Directory Signing
-      3.2 Voting
-      3.3 Vote Tabulation and Production of Network Consensus Documents
-      3.4 Consensus Success or Failure
+      3.2 Vote Exchange
+      3.3 Vote Tabulation for Consensus Computation
+      3.4 Signature Collection
+      3.5 Publication
    4. PKI Protocol Data Structures
       4.1 Mix Descriptor Format
+         4.1.1 Scheduling Mix Downtime
       4.2 Directory Format
-   5. PKI Wire Protocols
-      5.1 The HTTP based protocol
-         5.1.1 Retrieving a directory
-         5.1.2. Publishing a mix descriptor
-      5.2 Katzenpost wire protocol extensions for mix descriptor publication
-         5.2.1 The post_descriptor Command
-         5.2.2 The post_descriptor_status Command
+   5. PKI Wire Protocol
+      5.1 Mix Descriptor publication
+         5.1.1 The post_descriptor Command
+         5.1.2 The post_descriptor_status Command
+      5.2 Voting
+         5.2.1 The vote Command
+         5.2.2 The vote_status Command
+      5.3 Retreival of Consensus
+         5.3.1 The get_consensus Command
+         5.3.2 The consensus Command
    6. Scalability Considerations
-      6.1 Katzenpost wire protocol retreival of Consensus Cache
-         6.1.1 The get_consensus Command
-         6.1.2 The consensus Command
    7. Future Work
    8. Anonymity Considerations
    9. Security Considerations
@@ -309,61 +313,8 @@ Table of Contents
 
    Authorities archive votes from other authorities and make them
    available for retreival. Upon receiving a new vote, the authority
-   examines it for new descriptors and fetches them from that
-   authority. It includes the new descriptors in the next epoch's
-   voting round.
-
-3.2.1 Voting Wire Protocol Commands
-
-   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used
-   by Authorities to exchange votes. We define additional wire
-   protocol commands for sending votes:
-
-      enum {
-         vote(22),
-         vote_status(23),
-      } Command;
-
-   The structures of these commands are defined as follows:
-
-      struct {
-          uint64_t epoch_number;
-          opaque public_key[ED25519_KEY_LENGTH];
-          opaque payload[];
-      } VoteCommand;
-
-      struct {
-         uint8 error_code;
-      } VoteStatusCommand;
-
-3.2.2 The vote Command
-
-   The get_consensus command is used to send a PKI document to a peer
-   Authority during the voting period of the PKI schedule.
-
-   The payload field contains the signed and serialized PKI document
-   representing the sending Authority's vote. The public_key field
-   contains the public identity key of the sending Authority which the
-   receiving Authority can use to verify the signature of the payload.
-   The epoch_number field is used by the receiving party to quickly
-   check the epoch for the vote before deserializing the payload.
-
-3.2.3 The vote_status Command
-
-   The vote_status command is used to reply to a vote command. The
-   error_code field indicates if there was a failure in the receiving
-   of the PKI document.
-
-      enum {
-         vote_ok(0),          /* None error condition. */
-         vote_too_early(1),   /* The Authority should try again later. */
-         vote_too_late(2),    /* This round of voting was missed. */
-      }
-
-   The epoch_number field of the vote struct is compared with the
-   epoch that is currently being voted on. vote_too_early and
-   vote_too_late are replied back to the voter to report that their
-   vote was not accepted.
+   examines it for new descriptors and includes any valid descriptors
+   in its view of the network.
 
 3.3 Vote Tabulation for Consensus Computation
 
@@ -472,7 +423,6 @@ Table of Contents
    downtown for one or more epochs by not have those epochs as keys in
    the map.
 
-
 4.2 Directory Format
 
    // XXX David: replace the following JSON example
@@ -488,45 +438,17 @@ Table of Contents
        "Providers" : [],
    }
 
-5. PKI Wire Protocols
+5. PKI Wire Protocol
 
-   Two wire protocols are supported, the Katzenpost noise-based
-   cryptographic wire protocol and the HTTP based protocol can be used
-   by mixes to publish mix descriptors and to retreive status.
+   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used
+   by both clients and by Directory Authority peers. In the following
+   section we describe additional wire protocol commands for publishing
+   mix descriptors, voting and consensus retrieval.
 
-5.1 The HTTP based protocol
+5.1 Mix Descriptor publication
 
-   The HTTP based protocol uses the following URLs for
-   publishing and retrieving are constructed using SERVER and EPOCH
-   where SERVER is the address of the Directory Authority server and
-   EPOCH is the monotonically increasing integer indicating the epoch
-   as described in section "2. Overview of Mix PKI Interaction".
-
-5.1.1 Retrieving a directory
-
-   A directory may be retreived from a Directory Authority server with
-   a URL of the form BASEURL/v0/get/EPOCH, for example:
-
-      http://192.168.1.11/katzenpost/v0/get/1234
-
-   If the request is made with an old epoch or one too far in the
-   future, then authority will return Gone, Internal Server Error, Not
-   Found, with "Internal Sever Error" being extremely unlikely past
-   the initial bootstrapping.
-
-5.1.2. Publishing a mix descriptor
-
-   A mix descriptor may be uploaded to a Directory Authority server with
-   a URL of the form BASEURL/v0/post/EPOCH, for example:
-
-      http://192.168.1.11/katzenpost/v0/post/133
-
-   The Authority replies with either Accepted and Forbidden http error codes.
-
-5.2 Katzenpost wire protocol extensions for mix descriptor publication
-
-   We define additional wire protocol [KATZMIXWIRE] commands for
-   publishing mix descriptors and setting mix descriptor status:
+   The following commands are used for publishing mix descriptors and
+   setting mix descriptor status:
 
    enum {
          /* Extending the wire protocol Commands. */
@@ -545,12 +467,12 @@ Table of Contents
          uint8 error_code;
       } PostDescriptorStatus;
 
-5.2.1 The post_descriptor Command
+5.1.1 The post_descriptor Command
 
    The post_descriptor command allows mixes to publish their
    descriptors.
 
-5.2.2 The post_descriptor_status Command
+5.1.2 The post_descriptor_status Command
 
    The post_descriptor_status command is sent in response to a post_descriptor
    command, and uses the following error codes:
@@ -562,11 +484,57 @@ Table of Contents
       descriptor_forbidden(3),
    } ErrorCodes;
 
-6. Scalability Considerations
+5.2 Voting
 
-// XXX David: TODO: notes on scaling, bandwidth usage etc.
+   The following commands are used by Authorities to exchange votes:
 
-6.1 Katzenpost wire protocol retreival of Consensus Cache
+      enum {
+         vote(22),
+         vote_status(23),
+      } Command;
+
+   The structures of these commands are defined as follows:
+
+      struct {
+          uint64_t epoch_number;
+          opaque public_key[ED25519_KEY_LENGTH];
+          opaque payload[];
+      } VoteCommand;
+
+      struct {
+         uint8 error_code;
+      } VoteStatusCommand;
+
+5.2.1 The vote Command
+
+   The get_consensus command is used to send a PKI document to a peer
+   Authority during the voting period of the PKI schedule.
+
+   The payload field contains the signed and serialized PKI document
+   representing the sending Authority's vote. The public_key field
+   contains the public identity key of the sending Authority which the
+   receiving Authority can use to verify the signature of the payload.
+   The epoch_number field is used by the receiving party to quickly
+   check the epoch for the vote before deserializing the payload.
+
+5.2.2 The vote_status Command
+
+   The vote_status command is used to reply to a vote command. The
+   error_code field indicates if there was a failure in the receiving
+   of the PKI document.
+
+      enum {
+         vote_ok(0),          /* None error condition. */
+         vote_too_early(1),   /* The Authority should try again later. */
+         vote_too_late(2),    /* This round of voting was missed. */
+      }
+
+   The epoch_number field of the vote struct is compared with the
+   epoch that is currently being voted on. vote_too_early and
+   vote_too_late are replied back to the voter to report that their
+   vote was not accepted.
+
+5.3 Retreival of Consensus
 
    Providers in the Katzenpost mix network system [KATZMIXNET] may cache
    validated network consensus files and serve them to clients over
@@ -591,7 +559,7 @@ Table of Contents
          opaque payload[];
       } ConsensusCommand;
 
-6.1.1 The get_consensus Command
+5.3.1 The get_consensus Command
 
    The get_consensus command is a command that is used to retrieve a
    recent consensus document. If a given get_consensus command
@@ -603,7 +571,7 @@ Table of Contents
    Initiators MUST terminate the session immediately upon reception of
    a get_consensus command.
 
-6.1.2 The consensus Command
+5.3.2 The consensus Command
 
    The consensus command is a command that is used to send a
    recent consensus document. The error_code field indicates if there
@@ -615,6 +583,10 @@ Table of Contents
          consensus_not_found(1), /* The client should try again later. */
          consensus_gone(2),      /* The consensus will not be available in the future. */
       } ErrorCodes;
+
+6. Scalability Considerations
+
+// XXX David: TODO: notes on scaling, bandwidth usage etc.
 
 7. Future Work
 
