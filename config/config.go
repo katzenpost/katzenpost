@@ -41,8 +41,9 @@ const (
 	defaultAddress            = ":3219"
 	defaultLogLevel           = "NOTICE"
 	defaultNumProviderWorkers = 1
-	defaultUnwrapDelay        = 10        // 10 ms.
-	defaultSchedulerSlack     = 10        // 10 ms.
+	defaultUnwrapDelay        = 10 // 10 ms.
+	defaultSchedulerSlack     = 10 // 10 ms.
+	defaultSchedulerMaxBurst  = 16
 	defaultSendSlack          = 50        // 50 ms.
 	defaultConnectTimeout     = 60 * 1000 // 60 sec.
 	defaultHandshakeTimeout   = 30 * 1000 // 30 sec.
@@ -132,6 +133,10 @@ type Debug struct {
 	// as unlimited.
 	SchedulerQueueSize int
 
+	// SchedulerMaxBurst is the maximum number of packets that will be
+	// dispatched per scheduler wakeup event.
+	SchedulerMaxBurst int
+
 	// UnwrapDelay is the maximum allowed unwrap delay due to queueing in
 	// milliseconds.
 	UnwrapDelay int
@@ -193,6 +198,9 @@ func (dCfg *Debug) applyDefaults() {
 	if dCfg.SchedulerSlack < defaultSchedulerSlack {
 		// TODO/perf: Tune this.
 		dCfg.SchedulerSlack = defaultSchedulerSlack
+	}
+	if dCfg.SchedulerMaxBurst <= 0 {
+		dCfg.SchedulerMaxBurst = defaultSchedulerMaxBurst
 	}
 	if dCfg.SendSlack < defaultSendSlack {
 		// TODO/perf: Tune this, probably upwards to be more tolerant of poor
