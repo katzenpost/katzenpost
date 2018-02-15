@@ -46,13 +46,14 @@ type scheduler struct {
 	log  *logging.Logger
 
 	q          queueImpl
-	ch         *channels.BatchingChannel
+	inCh       *channels.InfiniteChannel
+	outCh      *channels.BatchingChannel
 	maxDelayCh chan uint64
 }
 
 func (sch *scheduler) Halt() {
 	sch.Worker.Halt()
-	sch.ch.Close()
+	sch.inCh.Close()
 	sch.q.Halt()
 }
 
@@ -61,7 +62,7 @@ func (sch *scheduler) OnNewMixMaxDelay(newMixMaxDelay uint64) {
 }
 
 func (sch *scheduler) OnPacket(pkt *packet.Packet) {
-	sch.ch.In() <- pkt
+	sch.inCh.In() <- pkt
 }
 
 func (sch *scheduler) worker() {
@@ -88,7 +89,7 @@ func (sch *scheduler) worker() {
 			// Th-th-th-that's all folks.
 			sch.log.Debugf("Terminating gracefully.")
 			return
-		case iBatch := <-sch.ch.Out():
+		case iBatch := <-sch.outCh.Out():
 			batch := iBatch.([]interface{})
 			sch.log.Debugf("Batch processing %v packets.", len(batch))
 			toEnqueue := make([]*packet.Packet, 0, len(batch))
@@ -198,10 +199,13 @@ func (sch *scheduler) worker() {
 
 // New constructs a new scheduler instance.
 func New(glue glue.Glue) (glue.Scheduler, error) {
+	const maxBatchSize = 64 // XXX: Tune.
+
 	sch := &scheduler{
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger("scheduler"),
-		ch:         channels.NewBatchingChannel(channels.Infinity),
+		inCh:       channels.NewInfiniteChannel(),
+		outCh:      channels.NewBatchingChannel(maxBatchSize),
 		maxDelayCh: make(chan uint64),
 	}
 
@@ -216,6 +220,7 @@ func New(glue glue.Glue) (glue.Scheduler, error) {
 		sch.log.Noticef("Initializing memory queue.")
 		sch.q = newMemoryQueue(glue, sch.log)
 	}
+	channels.Pipe(sch.inCh, sch.outCh)
 
 	sch.Go(sch.worker)
 	return sch, nil
