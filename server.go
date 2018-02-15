@@ -312,7 +312,10 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize and start the the scheduler.
-	s.scheduler = scheduler.New(goo)
+	if s.scheduler, err = scheduler.New(goo); err != nil {
+		s.log.Errorf("Failed to initialize scheduler: %v", err)
+		return nil, err
+	}
 
 	// Initialize and start the Sphinx workers.
 	s.inboundPackets = channels.NewInfiniteChannel()

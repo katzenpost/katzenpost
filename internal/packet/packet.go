@@ -46,7 +46,6 @@ var (
 type Packet struct {
 	Raw     []byte
 	Payload []byte
-	cmds    []commands.RoutingCommand
 
 	// The parsed out routing commands.
 	NextNodeHop *commands.NextNodeHop
@@ -66,12 +65,11 @@ type Packet struct {
 // Set sets the Packet's internal components.
 func (pkt *Packet) Set(payload []byte, cmds []commands.RoutingCommand) error {
 	pkt.Payload = payload
-	pkt.cmds = cmds
-	return pkt.splitCommands()
+	return pkt.splitCommands(cmds)
 }
 
-func (pkt *Packet) splitCommands() error {
-	for _, v := range pkt.cmds {
+func (pkt *Packet) splitCommands(cmds []commands.RoutingCommand) error {
+	for _, v := range cmds {
 		switch cmd := v.(type) {
 		case *commands.NextNodeHop:
 			if pkt.NextNodeHop != nil {
@@ -148,7 +146,6 @@ func (pkt *Packet) Dispose() {
 	// Clear out the struct for reuse.
 	// pkt.raw = nil // Cleared by pkt.disposeRaw()
 	pkt.Payload = nil
-	pkt.cmds = nil
 	pkt.NextNodeHop = nil
 	pkt.NodeDelay = nil
 	pkt.Recipient = nil
@@ -195,14 +192,23 @@ func (pkt *Packet) disposeRaw() {
 
 // New allocates a new Packet, with the specified raw payload.
 func New(raw []byte) (*Packet, error) {
+	id := atomic.AddUint64(&pktID, 1)
+	return NewWithID(raw, id)
+}
+
+// NewWithID allocates a new Packet, with the specified raw payload and ID.
+// Most callers should use New, this exists to support serializing packets
+// to external memory.
+func NewWithID(raw []byte, id uint64) (*Packet, error) {
 	v := pktPool.Get()
 	pkt := v.(*Packet)
-	pkt.ID = atomic.AddUint64(&pktID, 1) // Diagnostic only, wrapping is fine.
+	pkt.ID = id
 	if err := pkt.copyToRaw(raw); err != nil {
 		pkt.Dispose()
 		return nil, err
 	}
 	return pkt, nil
+
 }
 
 func newRedundantError(cmd commands.RoutingCommand) error {

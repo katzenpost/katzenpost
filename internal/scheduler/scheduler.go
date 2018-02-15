@@ -197,7 +197,7 @@ func (sch *scheduler) worker() {
 }
 
 // New constructs a new scheduler instance.
-func New(glue glue.Glue) glue.Scheduler {
+func New(glue glue.Glue) (glue.Scheduler, error) {
 	sch := &scheduler{
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger("scheduler"),
@@ -205,10 +205,18 @@ func New(glue glue.Glue) glue.Scheduler {
 		maxDelayCh: make(chan uint64),
 	}
 
-	// TODO: Initialize the appropriate queue backend when there is more
-	// than one.
-	sch.q = newMemoryQueue(glue, sch.log)
+	if glue.Config().Debug.SchedulerExternalMemoryQueue {
+		sch.log.Noticef("Initializing external memory queue.")
+		var err error
+		sch.q, err = newBoltQueue(glue)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		sch.log.Noticef("Initializing memory queue.")
+		sch.q = newMemoryQueue(glue, sch.log)
+	}
 
 	sch.Go(sch.worker)
-	return sch
+	return sch, nil
 }
