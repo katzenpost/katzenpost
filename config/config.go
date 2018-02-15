@@ -128,6 +128,10 @@ type Debug struct {
 	// provider specific packet processing.
 	NumProviderWorkers int
 
+	// SchedulerExternalMemoryQueue will enable the experimental external
+	// memory queue that is backed by disk.
+	SchedulerExternalMemoryQueue bool
+
 	// SchedulerQueueSize is the maximum allowed scheduler queue size before
 	// random entries will start getting dropped.  A value <= 0 is treated
 	// as unlimited.
