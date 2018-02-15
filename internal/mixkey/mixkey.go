@@ -55,6 +55,10 @@ const (
 	KeyFmt = "mixkey-%d.db"
 )
 
+var dbOptions = &bolt.Options{
+	NoFreelistSync: true,
+}
+
 // MixKey is a Katzenpost server mix key.
 type MixKey struct {
 	sync.Mutex
@@ -292,11 +296,15 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 	var err error
 
 	// Initialize the structure and create or open the database.
+	k := &MixKey{
+		epoch:     epoch,
+		refCount:  1,
+		writeBack: make(map[[TagLength]byte]bool),
+		flushCh:   make(chan interface{}, 1),
+	}
+
 	f := filepath.Join(dataDir, fmt.Sprintf(KeyFmt, epoch))
-	k := new(MixKey)
-	k.epoch = epoch
-	k.refCount = 1
-	k.db, err = bolt.Open(f, 0600, nil) // TODO: O_DIRECT?
+	k.db, err = bolt.Open(f, 0600, dbOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -304,8 +312,6 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	k.writeBack = make(map[[TagLength]byte]bool)
-	k.flushCh = make(chan interface{}, 1)
 
 	didCreate := false
 	if err := k.db.Update(func(tx *bolt.Tx) error {
