@@ -48,7 +48,7 @@ type keyserverResponse struct {
 }
 
 type kaetzchenKeyserver struct {
-	log *logging.Logger
+	log  *logging.Logger
 	glue glue.Glue
 
 	params     Parameters
