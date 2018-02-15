@@ -21,10 +21,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/monotime"
-	"github.com/katzenpost/core/queue"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
@@ -34,12 +32,20 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+type queueImpl interface {
+	Halt()
+	Peek() (time.Duration, *packet.Packet)
+	Pop()
+	BulkEnqueue([]*packet.Packet)
+}
+
 type scheduler struct {
 	worker.Worker
 
 	glue glue.Glue
 	log  *logging.Logger
 
+	q          queueImpl
 	ch         *channels.BatchingChannel
 	maxDelayCh chan uint64
 }
@@ -47,6 +53,7 @@ type scheduler struct {
 func (sch *scheduler) Halt() {
 	sch.Worker.Halt()
 	sch.ch.Close()
+	sch.q.Halt()
 }
 
 func (sch *scheduler) OnNewMixMaxDelay(newMixMaxDelay uint64) {
@@ -60,15 +67,13 @@ func (sch *scheduler) OnPacket(pkt *packet.Packet) {
 func (sch *scheduler) worker() {
 	const absoluteMaxDelay = epochtime.Period * constants.NumMixKeys
 
-	mRand := rand.NewMath()
-	q := queue.New()
 	timerSlack := time.Duration(sch.glue.Config().Debug.SchedulerSlack) * time.Millisecond
 	timer := time.NewTimer(math.MaxInt64)
 	defer timer.Stop()
 
 	maxDelay := absoluteMaxDelay
 	for {
-		timerFired := false
+		var timerFired bool
 		// The vast majority of the time the scheduler will be idle waiting on
 		// new packets or for a packet in the priority queue to be eligible
 		// for dispatch.  This is where the actual "mix" part of the mix
@@ -86,6 +91,7 @@ func (sch *scheduler) worker() {
 		case iBatch := <-sch.ch.Out():
 			batch := iBatch.([]interface{})
 			sch.log.Debugf("Batch processing %v packets.", len(batch))
+			toEnqueue := make([]*packet.Packet, 0, len(batch))
 			for _, e := range batch {
 				// New packet from the crypto workers.
 				//
@@ -104,27 +110,15 @@ func (sch *scheduler) worker() {
 				// Ensure the peer is valid by querying the outgoing connection
 				// table.
 				if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
-					// Enqueue the packet unconditionally so that it is a
-					// candidate to be dropped.
-					q.Enqueue(uint64(monotime.Now()+pkt.Delay), pkt)
-
 					sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
-
-					// If queue limitations are enabled, check to see if the
-					// queue is over capacity after the new packet was
-					// inserted.
-					maxCapacity := sch.glue.Config().Debug.SchedulerQueueSize
-					if maxCapacity > 0 && q.Len() > maxCapacity {
-						drop := q.DequeueRandom(mRand).Value.(*packet.Packet)
-						sch.log.Debugf("Queue size limit reached, discarding: %v", drop.ID)
-						drop.Dispose()
-					}
+					toEnqueue = append(toEnqueue, pkt)
 				} else {
 					sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
 					sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
 					pkt.Dispose()
 				}
 			}
+			sch.q.BulkEnqueue(toEnqueue)
 		case newMaxDelay := <-sch.maxDelayCh:
 			pkiMaxDelay := time.Duration(newMaxDelay) * time.Millisecond
 			if pkiMaxDelay > absoluteMaxDelay || pkiMaxDelay == 0 {
@@ -149,8 +143,8 @@ func (sch *scheduler) worker() {
 		nrBurst, maxBurst := 0, sch.glue.Config().Debug.SchedulerMaxBurst
 		for {
 			// Peek at the next packet in the queue.
-			e := q.Peek()
-			if e == nil {
+			dispatchAt, pkt := sch.q.Peek()
+			if pkt == nil {
 				// The queue is empty, just reschedule for the max duration,
 				// when there are packets to schedule, we'll get woken up.
 				timer.Reset(math.MaxInt64)
@@ -159,7 +153,6 @@ func (sch *scheduler) worker() {
 
 			// Figure out if the packet needs to be handled now.
 			now := monotime.Now()
-			dispatchAt := time.Duration(e.Priority)
 			if dispatchAt > now {
 				// Packet dispatch will happen at a later time, so schedule
 				// the next timer tick, and go back to waiting for something
@@ -179,8 +172,7 @@ func (sch *scheduler) worker() {
 
 			// The packet will be dispatched somehow, so remove it from the
 			// queue, and do the type assertion.
-			q.Pop()
-			pkt := (e.Value).(*packet.Packet)
+			sch.q.Pop()
 
 			// Packet dispatch time is now or in the past, so it needs to be
 			// forwarded to the appropriate hop.
@@ -212,6 +204,10 @@ func New(glue glue.Glue) glue.Scheduler {
 		ch:         channels.NewBatchingChannel(channels.Infinity),
 		maxDelayCh: make(chan uint64),
 	}
+
+	// TODO: Initialize the appropriate queue backend when there is more
+	// than one.
+	sch.q = newMemoryQueue(glue, sch.log)
 
 	sch.Go(sch.worker)
 	return sch
