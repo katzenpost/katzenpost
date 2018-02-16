@@ -208,7 +208,6 @@ func NewWithID(raw []byte, id uint64) (*Packet, error) {
 		return nil, err
 	}
 	return pkt, nil
-
 }
 
 func newRedundantError(cmd commands.RoutingCommand) error {
