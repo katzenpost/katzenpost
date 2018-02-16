@@ -44,6 +44,16 @@ type nodeDescriptor struct {
 	pki.MixDescriptor
 }
 
+func SerializeDescriptor(base *pki.MixDescriptor) ([]byte, error) {
+	// Serialize the descriptor.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(base); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
 func SignDescriptor(signingKey *eddsa.PrivateKey, base *pki.MixDescriptor) (string, error) {

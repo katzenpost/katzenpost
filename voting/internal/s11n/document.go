@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
@@ -85,6 +86,57 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 	return signed.CompactSerialize()
 }
 
+// SignDocument signs and serializes the document with the provided signing key.
+func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.PublicKeySize]byte]*jose.Signature, d *Document) (string, error) {
+	d.Version = documentVersion
+
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return "", err
+	}
+
+	// Sign the document.
+	k := jose.SigningKey{
+		Algorithm: jose.EdDSA,
+		Key:       *signingKey.InternalPtr(),
+	}
+	signer, err := jose.NewSigner(k, nil)
+	if err != nil {
+		return "", err
+	}
+	signed, err := signer.Sign(payload)
+	if err != nil {
+		return "", err
+	}
+
+	// attach peer signatures
+	for _, sig := range peerSignatures {
+		signed.Signatures = append(signed.Signatures, *sig)
+	}
+
+	// Serialize the key, descriptor and signature.
+	return signed.CompactSerialize()
+}
+
+// VerifyPeerMulti returns a map of keys to signatures for
+// the peer keys that produced a valid signature
+func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) map[[eddsa.PublicKeySize]byte]*jose.Signature {
+	signed, err := jose.ParseSigned(string(payload))
+	if err != nil {
+		return nil
+	}
+	sigMap := make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	for _, peer := range peers {
+		_, signature, _, err := signed.VerifyMulti(*peer.IdentityPublicKey.InternalPtr())
+		if err == nil {
+			sigMap[peer.IdentityPublicKey.ByteArray()] = &signature
+		}
+	}
+	return sigMap
+}
+
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
 func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, []byte, error) {
 	signed, err := jose.ParseSigned(string(b))
@@ -95,16 +147,16 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	// Sanity check the signing algorithm and number of signatures, and
 	// validate the signature with the provided public key.
 	if len(signed.Signatures) != 1 {
-		return nil, nil, fmt.Errorf("voting: Expected 1 signature, got: %v", len(signed.Signatures))
+		return nil, nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signed.Signatures))
 	}
 	alg := signed.Signatures[0].Header.Algorithm
 	if alg != "EdDSA" {
-		return nil, nil, fmt.Errorf("voting: Unsupported signature algorithm: '%v'", alg)
+		return nil, nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
 	}
-	payload, err := signed.Verify(*publicKey.InternalPtr())
+	_, _, payload, err := signed.VerifyMulti(*publicKey.InternalPtr())
 	if err != nil {
 		if err == jose.ErrCryptoFailure {
-			err = fmt.Errorf("voting: Invalid document signature")
+			err = fmt.Errorf("nonvoting: Invalid document signature")
 		}
 		return nil, nil, err
 	}
@@ -118,7 +170,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 
 	// Ensure the document is well formed.
 	if d.Version != documentVersion {
-		return nil, nil, fmt.Errorf("voting: Invalid Document Version: '%v'", d.Version)
+		return nil, nil, fmt.Errorf("nonvoting: Invalid Document Version: '%v'", d.Version)
 	}
 
 	// Convert from the wire representation to a Document, and validate
