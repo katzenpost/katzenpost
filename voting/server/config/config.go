@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/utils"
@@ -204,6 +205,30 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
+// AuthorityPeer is the connecting information
+// and identity key for the Authority peers
+type AuthorityPeer struct {
+	// IdentityPublicKey is the peer's identity signing key.
+	IdentityPublicKey *eddsa.PublicKey
+	// LinkPublicKey is the peer's public link layer key.
+	LinkPublicKey *ecdh.PublicKey
+	// Addresses are the IP address/port combinations that the peer authority
+	// uses for the Directory Authority service.
+	Addresses []string
+}
+
+func (a *AuthorityPeer) validate() error {
+	for _, v := range a.Addresses {
+		if err := utils.EnsureAddrIPPort(v); err != nil {
+			return fmt.Errorf("config: AuthorityPeer: Address '%v' is invalid: %v", v, err)
+		}
+	}
+	if a.IdentityPublicKey == nil {
+		return fmt.Errorf("config: %v: AuthorityPeer is missing Identifier")
+	}
+	return nil
+}
+
 // Node is an authority mix node or provider entry.
 type Node struct {
 	// Identifier is the human readable node identifier, to be set iff
@@ -237,10 +262,11 @@ func (n *Node) validate(isProvider bool) error {
 
 // Config is the top level authority configuration.
 type Config struct {
-	Authority  *Authority
-	Logging    *Logging
-	Parameters *Parameters
-	Debug      *Debug
+	Authority   *Authority
+	Authorities []*AuthorityPeer
+	Logging     *Logging
+	Parameters  *Parameters
+	Debug       *Debug
 
 	Mixes     []*Node
 	Providers []*Node
