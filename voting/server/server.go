@@ -29,7 +29,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/katzenpost/authority/nonvoting/server/config"
+	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
