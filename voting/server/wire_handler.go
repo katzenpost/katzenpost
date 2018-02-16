@@ -20,7 +20,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/authority/nonvoting/internal/s11n"
+	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -75,6 +75,11 @@ func (s *Server) onConn(conn net.Conn) {
 	// Parse the command, and craft the response.
 	var resp commands.Command
 	switch c := cmd.(type) {
+	case *commands.Vote:
+		resp = s.onVote(c)
+	case *commands.VoteStatus:
+		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
+		return
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.PostDescriptor:
@@ -98,6 +103,10 @@ func (s *Server) onConn(conn net.Conn) {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
 	}
+}
+
+func (s *Server) onVote(cmd *commands.Vote) commands.Command {
+	return s.state.onVoteUpload(cmd)
 }
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {

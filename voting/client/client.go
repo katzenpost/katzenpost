@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/katzenpost/authority/nonvoting/internal/s11n"
+	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -38,7 +38,7 @@ import (
 
 var defaultDialer = &net.Dialer{}
 
-// Config is a nonvoting authority pki.Client instance.
+// Config is a voting authority pki.Client instance.
 type Config struct {
 	// LogBackend is the `core/log` Backend instance to use for logging.
 	LogBackend *log.Backend
@@ -57,13 +57,13 @@ type Config struct {
 
 func (cfg *Config) validate() error {
 	if cfg.LogBackend == nil {
-		return fmt.Errorf("nonvoting/client: LogBackend is mandatory")
+		return fmt.Errorf("voting/client: LogBackend is mandatory")
 	}
 	if err := utils.EnsureAddrIPPort(cfg.Address); err != nil {
-		return fmt.Errorf("nonvoting/client: Invalid Address: %v", err)
+		return fmt.Errorf("voting/client: Invalid Address: %v", err)
 	}
 	if cfg.PublicKey == nil {
-		return fmt.Errorf("nonvoting/client: PublicKey is mandatory")
+		return fmt.Errorf("voting/client: PublicKey is mandatory")
 	}
 	return nil
 }
@@ -119,7 +119,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	// Parse the post_descriptor_status command.
 	r, ok := resp.(*commands.PostDescriptorStatus)
 	if !ok {
-		return fmt.Errorf("nonvoting/client: Post() unexpected reply: %T", resp)
+		return fmt.Errorf("voting/client: Post() unexpected reply: %T", resp)
 	}
 	switch r.ErrorCode {
 	case commands.DescriptorOk:
@@ -127,7 +127,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	case commands.DescriptorConflict:
 		return pki.ErrInvalidPostEpoch
 	default:
-		return fmt.Errorf("nonvoting/client: Post() rejected by authority: %v", postErrorToString(r.ErrorCode))
+		return fmt.Errorf("voting/client: Post() rejected by authority: %v", postErrorToString(r.ErrorCode))
 	}
 
 	// NOTREACHED
@@ -165,14 +165,14 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	// Parse the consensus command.
 	r, ok := resp.(*commands.Consensus)
 	if !ok {
-		return nil, nil, fmt.Errorf("nonvoting/client: Get() unexpected reply: %T", resp)
+		return nil, nil, fmt.Errorf("voting/client: Get() unexpected reply: %T", resp)
 	}
 	switch r.ErrorCode {
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
 		return nil, nil, pki.ErrNoDocument
 	default:
-		return nil, nil, fmt.Errorf("nonvoting/Client: Get() rejected by authority: %v", getErrorToString(r.ErrorCode))
+		return nil, nil, fmt.Errorf("voting/Client: Get() rejected by authority: %v", getErrorToString(r.ErrorCode))
 	}
 
 	// Validate the document.
@@ -180,7 +180,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if err != nil {
 		return nil, nil, err
 	} else if doc.Epoch != epoch {
-		c.log.Warningf("nonvoting/Client: Get() authority returned document for wrong epoch: %v", doc.Epoch)
+		c.log.Warningf("voting/Client: Get() authority returned document for wrong epoch: %v", doc.Epoch)
 		return nil, nil, s11n.ErrInvalidEpoch
 	}
 	c.log.Debugf("Document: %v", doc)
@@ -246,11 +246,11 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 
 func (c *client) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !bytes.Equal(c.cfg.PublicKey.Bytes(), creds.AdditionalData) {
-		c.log.Warningf("nonvoting/Client: IsPeerValid(): AD mismatch: %v", hex.EncodeToString(creds.AdditionalData))
+		c.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %v", hex.EncodeToString(creds.AdditionalData))
 		return false
 	}
 	if !c.serverLinkKey.Equal(creds.PublicKey) {
-		c.log.Warningf("nonvoting/Client: IsPeerValid(): Public Key mismatch: %v", creds.PublicKey)
+		c.log.Warningf("voting/Client: IsPeerValid(): Public Key mismatch: %v", creds.PublicKey)
 		return false
 	}
 	return true
@@ -266,7 +266,7 @@ func (c *client) doRoundTrip(ctx context.Context, s *wire.Session, cmd commands.
 // New constructs a new pki.Client instance.
 func New(cfg *Config) (pki.Client, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("nonvoting/client: cfg is mandatory")
+		return nil, fmt.Errorf("voting/client: cfg is mandatory")
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -274,7 +274,7 @@ func New(cfg *Config) (pki.Client, error) {
 
 	c := new(client)
 	c.cfg = cfg
-	c.log = cfg.LogBackend.GetLogger("pki/nonvoting/client")
+	c.log = cfg.LogBackend.GetLogger("pki/voting/client")
 	c.serverLinkKey = cfg.PublicKey.ToECDH()
 
 	return c, nil

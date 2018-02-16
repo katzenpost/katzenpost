@@ -26,12 +26,12 @@ import (
 	"gopkg.in/square/go-jose.v2"
 )
 
-const documentVersion = "nonvoting-document-v0"
+const documentVersion = "voting-document-v0"
 
 var (
 	// ErrInvalidEpoch is the error to return when the document epoch is
 	// invalid.
-	ErrInvalidEpoch = errors.New("nonvoting: invalid document epoch")
+	ErrInvalidEpoch = errors.New("voting: invalid document epoch")
 
 	jsonHandle *codec.JsonHandle
 )
@@ -86,39 +86,39 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
-func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, error) {
+func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, []byte, error) {
 	signed, err := jose.ParseSigned(string(b))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Sanity check the signing algorithm and number of signatures, and
 	// validate the signature with the provided public key.
 	if len(signed.Signatures) != 1 {
-		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signed.Signatures))
+		return nil, nil, fmt.Errorf("voting: Expected 1 signature, got: %v", len(signed.Signatures))
 	}
 	alg := signed.Signatures[0].Header.Algorithm
 	if alg != "EdDSA" {
-		return nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
+		return nil, nil, fmt.Errorf("voting: Unsupported signature algorithm: '%v'", alg)
 	}
 	payload, err := signed.Verify(*publicKey.InternalPtr())
 	if err != nil {
 		if err == jose.ErrCryptoFailure {
-			err = fmt.Errorf("nonvoting: Invalid document signature")
+			err = fmt.Errorf("voting: Invalid document signature")
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Parse the payload.
 	d := new(Document)
 	dec := codec.NewDecoderBytes(payload, jsonHandle)
 	if err = dec.Decode(d); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Ensure the document is well formed.
 	if d.Version != documentVersion {
-		return nil, fmt.Errorf("nonvoting: Invalid Document Version: '%v'", d.Version)
+		return nil, nil, fmt.Errorf("voting: Invalid Document Version: '%v'", d.Version)
 	}
 
 	// Convert from the wire representation to a Document, and validate
@@ -137,7 +137,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		for _, rawDesc := range nodes {
 			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			doc.Topology[layer] = append(doc.Topology[layer], desc)
 		}
@@ -146,13 +146,13 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	for _, rawDesc := range d.Providers {
 		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		doc.Providers = append(doc.Providers, desc)
 	}
 
 	if err = IsDocumentWellFormed(doc); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Fixup the Layer field in all the Topology MixDescriptors.
@@ -162,7 +162,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		}
 	}
 
-	return doc, nil
+	return doc, payload, nil
 }
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
@@ -170,11 +170,11 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 func IsDocumentWellFormed(d *pki.Document) error {
 	pks := make(map[[eddsa.PublicKeySize]byte]bool)
 	if len(d.Topology) == 0 {
-		return fmt.Errorf("nonvoting: Document contains no Topology")
+		return fmt.Errorf("voting: Document contains no Topology")
 	}
 	for layer, nodes := range d.Topology {
 		if len(nodes) == 0 {
-			return fmt.Errorf("nonvoting: Document Topology layer %d contains no nodes", layer)
+			return fmt.Errorf("voting: Document Topology layer %d contains no nodes", layer)
 		}
 		for _, desc := range nodes {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
@@ -182,24 +182,24 @@ func IsDocumentWellFormed(d *pki.Document) error {
 			}
 			pk := desc.IdentityKey.ByteArray()
 			if _, ok := pks[pk]; ok {
-				return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+				return fmt.Errorf("voting: Document contains multiple entries for %v", desc.IdentityKey)
 			}
 			pks[pk] = true
 		}
 	}
 	if len(d.Providers) == 0 {
-		return fmt.Errorf("nonvoting: Document contains no Providers")
+		return fmt.Errorf("voting: Document contains no Providers")
 	}
 	for _, desc := range d.Providers {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
 		if desc.Layer != pki.LayerProvider {
-			return fmt.Errorf("nonvoting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+			return fmt.Errorf("voting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
 		}
 		pk := desc.IdentityKey.ByteArray()
 		if _, ok := pks[pk]; ok {
-			return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+			return fmt.Errorf("voting: Document contains multiple entries for %v", desc.IdentityKey)
 		}
 		pks[pk] = true
 	}

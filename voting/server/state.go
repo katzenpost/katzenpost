@@ -26,14 +26,18 @@ import (
 	"time"
 
 	bolt "github.com/coreos/bbolt"
-	"github.com/katzenpost/authority/nonvoting/internal/s11n"
+	"github.com/katzenpost/authority/voting/internal/s11n"
+	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/wire"
+	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
+	"gopkg.in/square/go-jose.v2"
 )
 
 const (
@@ -65,14 +69,19 @@ type state struct {
 
 	db *bolt.DB
 
-	authorizedMixes     map[[eddsa.PublicKeySize]byte]bool
-	authorizedProviders map[[eddsa.PublicKeySize]byte]string
+	authorizedMixes       map[[eddsa.PublicKeySize]byte]bool
+	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
+	authorizedAuthorities map[[eddsa.PublicKeySize]byte]bool
 
 	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
+	votes       map[uint64]map[[eddsa.PublicKeySize]byte]*document
 
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
+
+	votingEpoch  uint64
+	signatureMap map[[eddsa.PublicKeySize]byte]*jose.Signature
 }
 
 func (s *state) Halt() {
@@ -119,7 +128,10 @@ func (s *state) worker() {
 
 func (s *state) onWakeup() {
 	const publishDeadline = 3600 * time.Second
-	epoch, _, till := epochtime.Now()
+	const mixPublishDeadline = 2 * time.Hour
+	const authorityVoteDeadline = 2*time.Hour + 7*time.Minute + 30*time.Second
+	const publishConsensusDeadline = 2*time.Hour + 15*time.Minute
+	epoch, elapsed, _ := epochtime.Now()
 
 	s.Lock()
 	defer s.Unlock()
@@ -132,46 +144,35 @@ func (s *state) onWakeup() {
 		// nodes it knows about (eg: Test setups).
 		nrBootstrapDescs := len(s.authorizedMixes) + len(s.authorizedProviders)
 		if m, ok := s.descriptors[epoch]; ok && len(m) == nrBootstrapDescs {
-			s.generateDocument(epoch)
+			// XXX FIX ME
+			//s.generateConsensus(epoch)
+			//s.sendVoteToAuthorities(epoch)
 		}
 	}
 
 	// If it is past the descriptor upload period and we have yet to generate a
-	// document for the *next* epoch, generate one.
-	if till < publishDeadline && s.documents[epoch+1] == nil {
-		if m, ok := s.descriptors[epoch+1]; ok && s.hasEnoughDescriptors(m) {
-			s.generateDocument(epoch + 1)
+	// document for the *next* epoch, generate a document and send it to all
+	// of the other Directory Authorities.
+	if elapsed > mixPublishDeadline && elapsed < authorityVoteDeadline {
+		if s.documents[epoch+1] == nil {
+			if m, ok := s.descriptors[epoch+1]; ok && s.hasEnoughDescriptors(m) {
+				// generate vote and send to all authority peers
+				s.vote(epoch + 1)
+			}
 		}
+	}
+
+	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
+		// XXX FIX ME
+		//s.generateConsensus(epoch + 1)
+		//s.sendConsensusToAuthorities(epoch + 1)
 	}
 
 	// Purge overly stale documents.
 	s.pruneDocuments()
 }
 
-func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor) bool {
-	// A Document will be generated iff there are at least:
-	//
-	//  * Debug.Layers * Debug.MinNodesPerLayer nodes.
-	//  * One provider.
-	//
-	// Otherwise, it's pointless to generate a unusable document.
-	nrProviders := 0
-	for _, v := range m {
-		if v.desc.Layer == pki.LayerProvider {
-			nrProviders++
-		}
-	}
-	nrNodes := len(m) - nrProviders
-
-	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
-	return nrProviders > 0 && nrNodes >= minNodes
-}
-
-func (s *state) generateDocument(epoch uint64) {
-	// Lock is held (called from the onWakeup hook).
-
-	s.log.Noticef("Generating Document for epoch %v.", epoch)
-
+func (s *state) vote(epoch uint64) {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
@@ -213,11 +214,262 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
 		s.s.fatalErrCh <- err
+		return
+	}
+
+	// save our own vote
+	if _, ok := s.votes[s.votingEpoch]; !ok {
+		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+	}
+	if _, ok := s.votes[s.votingEpoch][s.s.identityKey.PublicKey().ByteArray()]; !ok {
+		s.votes[s.votingEpoch][s.s.identityKey.PublicKey().ByteArray()] = &document{
+			raw: []byte(signed),
+			doc: pDoc,
+		}
+	} else {
+		s.log.Errorf("failure: vote already present, this should never happen.")
+		err := errors.New("failure: vote already present, this should never happen.")
+		s.s.fatalErrCh <- err
+		return
+	}
+
+	// send vote to peers
+	s.sendVoteToAuthorities([]byte(signed))
+}
+
+func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor) bool {
+	// A Document will be generated iff there are at least:
+	//
+	//  * Debug.Layers * Debug.MinNodesPerLayer nodes.
+	//  * One provider.
+	//
+	// Otherwise, it's pointless to generate a unusable document.
+	nrProviders := 0
+	for _, v := range m {
+		if v.desc.Layer == pki.LayerProvider {
+			nrProviders++
+		}
+	}
+	nrNodes := len(m) - nrProviders
+
+	minNodes := s.s.cfg.Debug.Layers * s.s.cfg.Debug.MinNodesPerLayer
+	return nrProviders > 0 && nrNodes >= minNodes
+}
+
+func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
+	cfg := &wire.SessionConfig{
+		Authenticator:     s,
+		AdditionalData:    []byte(""),
+		AuthenticationKey: s.s.cfg.Debug.LinkKey,
+		RandomReader:      rand.Reader,
+	}
+	session, err := wire.NewSession(cfg, true)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	cmd := &commands.Vote{
+		Epoch:     s.votingEpoch,
+		PublicKey: s.s.cfg.Debug.IdentityKey.PublicKey(),
+		Payload:   vote,
+	}
+	err = session.SendCommand(cmd)
+	if err != nil {
+		return err
+	}
+	resp, err := session.RecvCommand()
+	if err != nil {
+		return err
+	}
+	r, ok := resp.(*commands.VoteStatus)
+	if !ok {
+		return fmt.Errorf("Vote response resulted in unexpected reply: %T", resp)
+	}
+	switch r.ErrorCode {
+	case commands.VoteOk:
+		return nil
+	case commands.VoteTooLate:
+		return errors.New("Vote was too late.")
+	case commands.VoteTooEarly:
+		return errors.New("Vote was too early.")
+	default:
+		return fmt.Errorf("Vote rejected by authority: unknown error code received.")
+	}
+	return nil
+}
+
+// IsPeerValid authenticates the remote peer's credentials
+// for our link layer wire protocol as specified by
+// the PeerAuthenticator interface in core/wire/session.go
+func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
+	var ad [eddsa.PublicKeySize]byte
+	copy(ad[:], creds.AdditionalData)
+	_, ok := s.authorizedAuthorities[ad]
+	if ok {
+		return true
+	}
+	return false
+}
+
+// sendVoteToAuthorities sends s.descriptors[epoch] to
+// all Directory Authorities
+func (s *state) sendVoteToAuthorities(vote []byte) {
+	// Lock is held (called from the onWakeup hook).
+
+	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", s.votingEpoch)
+
+	for _, peer := range s.s.cfg.Authorities {
+		err := s.sendVoteToPeer(peer, vote)
+		if err != nil {
+			s.log.Error("failed to send vote to peer %v", peer)
+		}
+	}
+}
+
+func (s *state) generateVote(epoch uint64) {
+	// Lock is held (called from the onWakeup hook).
+
+	// Carve out the descriptors between providers and nodes.
+	var providers [][]byte
+	var nodes []*descriptor
+	for _, v := range s.descriptors[epoch] {
+		if v.desc.Layer == pki.LayerProvider {
+			providers = append(providers, v.raw)
+		} else {
+			nodes = append(nodes, v)
+		}
+	}
+
+	// Assign nodes to layers.
+	var topology [][][]byte
+	if d, ok := s.documents[epoch-1]; ok {
+		topology = s.generateTopology(nodes, d.doc)
+	} else {
+		topology = s.generateRandomTopology(nodes)
+	}
+
+	// Build the Document.
+	doc := &s11n.Document{
+		Epoch:     epoch,
+		Lambda:    s.s.cfg.Parameters.Lambda,
+		MaxDelay:  s.s.cfg.Parameters.MaxDelay,
+		LambdaP:   s.s.cfg.Parameters.LambdaP,
+		Topology:  topology,
+		Providers: providers,
+	}
+
+	// XXX wtf fix me
+}
+
+func votesAgree(mixIdentity []byte, votes []*pki.Document, threshold int) ([]*pki.Document, []*pki.Document, error) {
+	seen := make(map[string][]*pki.Document)
+	agree := make([]*pki.Document)
+	disagree := make([]*pki.Document)
+	for i, vote := range votes {
+		if voteMixDesc, err := vote.GetMixByKey(mixIdentity); err {
+			continue // not in this vote
+		}
+		if rawVoteMixDesc, err := SerializeDescriptor(voteMixDesc); err {
+			continue // ERROR
+		}
+		voteHash = string(rawVoteMixDesc) // hash it?
+		if _, ok := seen[voteHash]; !ok {
+			seen[voteHash] = make([]*pki.Document)
+		}
+		seen[voteHash] = append(seen[voteHash], vote)
+	}
+	for mixDesc, votes := range seen {
+		if len(votes) > threshold {
+			agree = votes
+		} else {
+			disagree = append(disagree, votes)
+		}
+	}
+	if len(agree) > threshold {
+		return agree, disagree, nil
+	}
+	return nil, nil, errors.New("votesAgree failure, not enough descriptors")
+}
+
+func (s *state) generateConsensus(epoch uint64) {
+	// Lock is held (called from the onWakeup hook).
+
+	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
+
+	if len(s.votes[epoch]) < (len(s.s.cfg.Authorities)/2 + 1) {
+		s.log.Notice("Did not receive threshold number of votes.")
+	}
+
+	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
+
+	for identityKey, voteDoc := range s.votes[epoch] {
+		for _, topoLayer := range voteDoc.doc.Topology {
+			for _, voteDesc := range topoLayer {
+				mixId := voteDesc.IdentityKey.ByteArray()
+				if mixDesc, ok := s.descriptors[epoch][mixId]; !ok {
+					s.log.Debugf("new descriptor from peer: %s descriptor %s", identityKey, voteDesc)
+				}
+				mixTally[mixId] = append(mixTally[mixId], voteDoc)
+			}
+		}
+		for _, provider := range voteDoc.doc.Providers {
+			//s.descriptors[epoch]
+		}
+	}
+
+	for mixIdentity, votes := range mixTally {
+		if len(votes) < len(s.threshold) {
+			// do not include this mix
+		}
+		// XXX WTF if agree, disagree, err := votesAgree(mixIdentity, votes) {
+		// do not include this mix
+		//}
+		//if mix, err := votes[0].GetMixByKey(mixIdentity) {
+		//}
+		// check that the mix is valid in the next epoch; has keys for the
+		// voting epoch (XXX: and the epoch afterwards?)
+		// check that the mix only published one descriptor for this epoch
+		mix.MixKeys[s.votingEpoch+1]
+		if mix.MixKeys[s.votingEpoch] == nil {
+			// XXX
+		}
+	}
+
+	// consensusDocument
+
+	// Serialize and sign the Document.
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensusDocument)
+	if err != nil {
+		// This should basically always succeed.
+		s.log.Errorf("Failed to sign document: %v", err)
+		s.s.fatalErrCh <- err
+		return
+	}
+
+	// Ensure the document is sane.
+	pDoc, rawDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	if err != nil {
+		// This should basically always succeed.
+		s.log.Errorf("Signed document failed validation: %v", err)
+		s.s.fatalErrCh <- err
+		return
+	}
+	sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
+	if len(sigMap) != len(s.signatureMap) {
+		// This should never happen.
+		s.log.Error("Document not really signed by all Authority peers.")
+		err := errors.New("failure: PKI Document not really signed by all Authority peers.")
+		s.s.fatalErrCh <- err
+		return
+	}
+	if len(sigMap) < len(s.s.cfg.Authorities)/2 {
+		// Require threshold votes to publish.
+		s.log.Warning("Document not signed by majority Authority peers.")
 		return
 	}
 	if pDoc.Epoch != epoch {
@@ -228,6 +480,10 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	s.log.Debugf("Document (Parsed): %v", pDoc)
+
+	// XXX Store votes to disk.
+
+	// XXX Publish votes: send votes to peers.
 
 	// Persist the document to disk.
 	if err := s.db.Update(func(tx *bolt.Tx) error {
@@ -243,6 +499,7 @@ func (s *state) generateDocument(epoch uint64) {
 	d.doc = pDoc
 	d.raw = []byte(signed)
 	s.documents[epoch] = d
+	s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
@@ -265,9 +522,9 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 
 	// Assign nodes that still exist up to the target size.
 	for layer, nodes := range doc.Topology {
-		// The existing nodes are examined in random order to make it hard
-		// to predict which nodes will be shifted around.
+		//nodeIndexes := rng.Perm(len(nodes))
 		nodeIndexes := rng.Perm(len(nodes))
+
 		for _, idx := range nodeIndexes {
 			if len(topology[layer]) >= targetNodesPerLayer {
 				break
@@ -371,6 +628,72 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	default:
 		return false
 	}
+}
+
+func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
+	s.Lock()
+	defer s.Unlock()
+
+	if vote.Epoch < s.votingEpoch {
+		s.log.Errorf("Received Vote too early: %d < %d", vote.Epoch, s.votingEpoch)
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteTooEarly,
+		}
+		return resp
+	}
+	if vote.Epoch > s.votingEpoch {
+		s.log.Errorf("Received Vote too late: %d > %d", vote.Epoch, s.votingEpoch)
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteTooLate,
+		}
+		return resp
+	}
+	_, ok := s.authorizedAuthorities[vote.PublicKey.ByteArray()]
+	if !ok {
+		s.log.Error("Voter not white-listed.")
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteNotAuthorized,
+		}
+		return resp
+	}
+	doc, rawDoc, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
+	if err != nil {
+		s.log.Error("Vote failed signature verification.")
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteNotSigned,
+		}
+		return resp
+	}
+	if doc.Epoch != s.votingEpoch {
+		s.log.Error("Vote command invalid: epoch mismatch.")
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteMalformed,
+		}
+		return resp
+	}
+
+	if _, ok := s.votes[s.votingEpoch]; !ok {
+		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+	}
+	if _, ok := s.votes[s.votingEpoch][vote.PublicKey.BytesArray()]; !ok {
+		s.votes[epoch][vote.PublicKey.BytesArray()] = &document{
+			raw: rawDoc,
+			doc: doc,
+		}
+	} else {
+		// error; two votes from same peer
+		s.log.Error("Vote command invalid: more than one vote from same peer is not allowed.")
+		resp := &commands.VoteStatus{
+			ErrorCode: commands.VoteAlreadyReceived,
+		}
+		return resp
+	}
+
+	s.log.Debug("Vote OK.")
+	resp := &commands.VoteStatus{
+		ErrorCode: commands.VoteOk,
+	}
+	return resp
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
@@ -510,7 +833,7 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
-					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey()); err != nil {
+					if doc, _, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey()); err != nil {
 						// This continues because there's no reason not to load
 						// the descriptors as long as they validate, even if
 						// the document fails to load.
@@ -582,6 +905,7 @@ func newState(s *Server) (*state, error) {
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
 	st.updateCh = make(chan interface{}, 1) // Buffered!
+	st.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
@@ -593,6 +917,11 @@ func newState(s *Server) (*state, error) {
 	for _, v := range st.s.cfg.Providers {
 		pk := v.IdentityKey.ByteArray()
 		st.authorizedProviders[pk] = v.Identifier
+	}
+	st.authorizedAuthorities = make(map[[eddsa.PublicKeySize]byte]bool)
+	for _, v := range st.s.cfg.Authorities {
+		pk := v.IdentityPublicKey.ByteArray()
+		st.authorizedMixes[pk] = true
 	}
 
 	st.documents = make(map[uint64]*document)
