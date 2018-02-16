@@ -60,6 +60,8 @@ type document struct {
 	raw []byte
 }
 
+type VoteState byte
+
 type state struct {
 	sync.RWMutex
 	worker.Worker
@@ -81,6 +83,7 @@ type state struct {
 	bootstrapEpoch uint64
 
 	votingEpoch  uint64
+	votingState  VoteState
 	signatureMap map[[eddsa.PublicKeySize]byte]*jose.Signature
 }
 
@@ -145,8 +148,6 @@ func (s *state) onWakeup() {
 		nrBootstrapDescs := len(s.authorizedMixes) + len(s.authorizedProviders)
 		if m, ok := s.descriptors[epoch]; ok && len(m) == nrBootstrapDescs {
 			// XXX FIX ME
-			//s.generateConsensus(epoch)
-			//s.sendVoteToAuthorities(epoch)
 		}
 	}
 
@@ -154,29 +155,47 @@ func (s *state) onWakeup() {
 	// document for the *next* epoch, generate a document and send it to all
 	// of the other Directory Authorities.
 	if elapsed > mixPublishDeadline && elapsed < authorityVoteDeadline {
-		if s.documents[epoch+1] == nil {
-			if m, ok := s.descriptors[epoch+1]; ok && s.hasEnoughDescriptors(m) {
-				// generate vote and send to all authority peers
-				s.vote(epoch + 1)
-			}
+		if vote := s.currentVote(); vote == nil {
+			s.vote()
+		}
+	}
+	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
+		if s.documents[epoch+1] != nil {
+			s.generateSignedDocument(epoch + 1)
+			s.sendSignedDocumentToAuthorities(epoch + 1)
 		}
 	}
 
-	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
-		// XXX FIX ME
-		//s.generateConsensus(epoch + 1)
-		//s.sendConsensusToAuthorities(epoch + 1)
+	if elapsed > publishConsensusDeadline {
+		// do stuff
 	}
 
 	// Purge overly stale documents.
 	s.pruneDocuments()
 }
 
-func (s *state) vote(epoch uint64) {
+func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
+	return s.s.identityKey.PublicKey().ByteArray()
+}
+
+func (s *state) currentVote() *pki.Document {
+	if _, ok := s.votes[s.votingEpoch]; ok {
+		return s.votes[s.votingEpoch][s.identityPubKey()]
+	}
+	return nil
+}
+
+func (s *state) vote() {
+
+	if m, ok := s.descriptors[s.votingEpoch]; ok && !s.hasEnoughDescriptors(m) {
+		s.log.Error("Vote: Failed to vote due to insufficient descriptors.")
+		return
+	}
+
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
-	for _, v := range s.descriptors[epoch] {
+	for _, v := range s.descriptors[s.votingEpoch] {
 		if v.desc.Layer == pki.LayerProvider {
 			providers = append(providers, v.raw)
 		} else {
@@ -186,7 +205,7 @@ func (s *state) vote(epoch uint64) {
 
 	// Assign nodes to layers.
 	var topology [][][]byte
-	if d, ok := s.documents[epoch-1]; ok {
+	if d, ok := s.documents[s.votingEpoch-1]; ok {
 		topology = s.generateTopology(nodes, d.doc)
 	} else {
 		topology = s.generateRandomTopology(nodes)
@@ -194,7 +213,7 @@ func (s *state) vote(epoch uint64) {
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:           epoch,
+		Epoch:           s.votingEpoch,
 		MixLambda:       s.s.cfg.Parameters.MixLambda,
 		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
 		SendLambda:      s.s.cfg.Parameters.SendLambda,
@@ -204,33 +223,14 @@ func (s *state) vote(epoch uint64) {
 		Providers:       providers,
 	}
 
-	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityKey, doc)
-	if err != nil {
-		// This should basically always succeed.
-		s.log.Errorf("Failed to sign document: %v", err)
-		s.s.fatalErrCh <- err
-		return
-	}
-
-	// Ensure the document is sane.
-	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
-	if err != nil {
-		// This should basically always succeed.
-		s.log.Errorf("Signed document failed validation: %v", err)
-		s.s.fatalErrCh <- err
-		return
-	}
+	signedDocument := s.sign(doc)
 
 	// save our own vote
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
-	if _, ok := s.votes[s.votingEpoch][s.s.identityKey.PublicKey().ByteArray()]; !ok {
-		s.votes[s.votingEpoch][s.s.identityKey.PublicKey().ByteArray()] = &document{
-			raw: []byte(signed),
-			doc: pDoc,
-		}
+	if _, ok := s.votes[s.votingEpoch][s.identityPubKey()]; !ok {
+		s.votes[s.votingEpoch][s.identityPubKey()] = signedDocument
 	} else {
 		s.log.Errorf("failure: vote already present, this should never happen.")
 		err := errors.New("failure: vote already present, this should never happen.")
@@ -240,6 +240,30 @@ func (s *state) vote(epoch uint64) {
 
 	// send vote to peers
 	s.sendVoteToAuthorities([]byte(signed))
+}
+
+func (s *state) sign(doc *s11n.Document) *document {
+	// Serialize and sign the Document.
+	signed, err := s11n.SignDocument(s.s.identityKey, doc)
+	if err != nil {
+		// This should basically always succeed.
+		s.log.Errorf("Failed to sign document: %v", err)
+		s.s.fatalErrCh <- err
+		return nil
+	}
+
+	// Ensure the document is sane.
+	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	if err != nil {
+		// This should basically always succeed.
+		s.log.Errorf("Signed document failed validation: %v", err)
+		s.s.fatalErrCh <- err
+		return nil
+	}
+	return &document{
+		doc: pDoc,
+		raw: signed,
+	}
 }
 
 func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor) bool {
@@ -369,8 +393,7 @@ func (s *state) generateVote(epoch uint64) {
 	// XXX wtf fix me
 }
 
-// XXX write unit tests for me
-func (s *state) votesAgree(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document, threshold int) ([]*pki.Document, []*pki.Document, error) {
+func (s *state) isVoteThreshold(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document, threshold int) bool {
 	seen := make(map[string][]*pki.Document)
 	agree := make([]*pki.Document, 0)
 	disagree := make([]*pki.Document, 0)
@@ -399,12 +422,25 @@ func (s *state) votesAgree(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.D
 		}
 	}
 	if len(agree) > threshold {
-		return agree, disagree, nil
+		return true
 	}
-	return nil, nil, errors.New("votesAgree failure, not enough descriptors")
+	return false
 }
 
-func (s *state) generateConsensus(epoch uint64) {
+func (s *state) sendConsensusToAuthorities(epoch uint64) {} // XXX
+
+func (s *state) sendSignedDocumentToAuthorities(epoch uint64) {} // XXX
+
+func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []byte) ([]byte, error) {
+	doc, rawDoc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey())
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil // XXX
+}
+
+func (s *state) generateSignedDocument(epoch uint64) {
 	// Lock is held (called from the onWakeup hook).
 
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
@@ -428,87 +464,111 @@ func (s *state) generateConsensus(epoch uint64) {
 		}
 	}
 
-	// for mixIdentity, votes := range mixTally {
-	// 	if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
-	// 		// do not include this mix
-	// 		continue
-	// 	}
-	// 	// XXX WTF if agree, disagree, err := votesAgree(mixIdentity, votes) {
-	// 	// do not include this mix
-	// 	//}
-	// 	//if mix, err := votes[0].GetMixByKey(mixIdentity) {
-	// 	//}
-	// 	// check that the mix is valid in the next epoch; has keys for the
-	// 	// voting epoch (XXX: and the epoch afterwards?)
-	// 	// check that the mix only published one descriptor for this epoch
-	// 	mix.MixKeys[s.votingEpoch+1]
-	// 	if mix.MixKeys[s.votingEpoch] == nil {
-	// 		// XXX
-	// 	}
-	// }
+	consensusIdentities := make(map[[32]byte]*descriptor)
+	for mixIdentity, votes := range mixTally {
+		if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
+			s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
+			continue
+		}
+		if !s.isVoteThreshold(mixIdentity, votes, len(s.s.cfg.Authorities)/2+1) {
+			s.log.Debugf("generateConsensus excluding mix identity, threshold not met")
+			continue
+		}
+		rawDesc, err := s11n.GetSignedMixDescriptor(rawDoc, s.s.cfg.pubkey, targetpubkey)
+		if err != nil {
+			s.log.Debug(err)
+		}
+		desc := &descriptor{
+			desc: d,
+			raw:  rawDesc,
+		}
+		consensusIdentities[mixIdentity] = desc
+	}
+
+	// Carve out the descriptors between providers and nodes.
+	var providers [][]byte
+	var nodes []*descriptor
+
+	// Assign nodes to layers.
+	var topology [][][]byte
+	if d, ok := s.documents[epoch-1]; ok {
+		topology = s.generateTopology(nodes, d.doc)
+	} else {
+		topology = s.generateRandomTopology(nodes)
+	}
+
+	// Build the Document.
+	consensusDocument := &s11n.Document{
+		Epoch:           epoch,
+		MixLambda:       s.s.cfg.Parameters.MixLambda,
+		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
+		SendLambda:      s.s.cfg.Parameters.SendLambda,
+		SendShift:       s.s.cfg.Parameters.SendShift,
+		SendMaxInterval: s.s.cfg.Parameters.SendMaxInterval,
+		Topology:        topology,
+		Providers:       providers,
+	}
 
 	// consensusDocument
 
-	/*
-		// Serialize and sign the Document.
-		signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensusDocument)
-		if err != nil {
-			// This should basically always succeed.
-			s.log.Errorf("Failed to sign document: %v", err)
-			s.s.fatalErrCh <- err
-			return
-		}
+	// Serialize and sign the Document.
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensusDocument)
+	if err != nil {
+		// This should basically always succeed.
+		s.log.Errorf("Failed to sign document: %v", err)
+		s.s.fatalErrCh <- err
+		return
+	}
 
-		// Ensure the document is sane.
-		pDoc, rawDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
-		if err != nil {
-			// This should basically always succeed.
-			s.log.Errorf("Signed document failed validation: %v", err)
-			s.s.fatalErrCh <- err
-			return
-		}
-		sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
-		if len(sigMap) != len(s.signatureMap) {
-			// This should never happen.
-			s.log.Error("Document not really signed by all Authority peers.")
-			err := errors.New("failure: PKI Document not really signed by all Authority peers.")
-			s.s.fatalErrCh <- err
-			return
-		}
-		if len(sigMap) < len(s.s.cfg.Authorities)/2 {
-			// Require threshold votes to publish.
-			s.log.Warning("Document not signed by majority Authority peers.")
-			return
-		}
-		if pDoc.Epoch != epoch {
-			// This should never happen either.
-			s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
-			s.s.fatalErrCh <- s11n.ErrInvalidEpoch
-			return
-		}
+	// Ensure the document is sane.
+	pDoc, rawDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	if err != nil {
+		// This should basically always succeed.
+		s.log.Errorf("Signed document failed validation: %v", err)
+		s.s.fatalErrCh <- err
+		return
+	}
+	sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
+	if len(sigMap) != len(s.signatureMap) {
+		// This should never happen.
+		s.log.Error("Document not really signed by all Authority peers.")
+		err := errors.New("failure: PKI Document not really signed by all Authority peers.")
+		s.s.fatalErrCh <- err
+		return
+	}
+	if len(sigMap) < len(s.s.cfg.Authorities)/2 {
+		// Require threshold votes to publish.
+		s.log.Warning("Document not signed by majority Authority peers.")
+		return
+	}
+	if pDoc.Epoch != epoch {
+		// This should never happen either.
+		s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
+		s.s.fatalErrCh <- s11n.ErrInvalidEpoch
+		return
+	}
 
-		s.log.Debugf("Document (Parsed): %v", pDoc)
+	s.log.Debugf("Document (Parsed): %v", pDoc)
 
-		// XXX Store votes to disk.
+	// XXX Store votes to disk.
 
-		// XXX Publish votes: send votes to peers.
+	// XXX Publish votes: send votes to peers.
 
-		// Persist the document to disk.
-		if err := s.db.Update(func(tx *bolt.Tx) error {
-			bkt := tx.Bucket([]byte(documentsBucket))
-			bkt.Put(epochToBytes(epoch), []byte(signed))
-			return nil
-		}); err != nil {
-			// Persistence failures are FATAL.
-			s.s.fatalErrCh <- err
-		}
+	// Persist the document to disk.
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(documentsBucket))
+		bkt.Put(epochToBytes(epoch), []byte(signed))
+		return nil
+	}); err != nil {
+		// Persistence failures are FATAL.
+		s.s.fatalErrCh <- err
+	}
 
-		d := new(document)
-		d.doc = pDoc
-		d.raw = []byte(signed)
-		s.documents[epoch] = d
-		s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
-	*/
+	d := new(document)
+	d.doc = pDoc
+	d.raw = []byte(signed)
+	s.documents[epoch] = d
+	s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
@@ -665,44 +725,52 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		}
 		return resp
 	}
-	doc, rawDoc, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
-	if err != nil {
-		s.log.Error("Vote failed signature verification.")
+
+	switch s.votingState {
+	case 1:
+		doc, rawDoc, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
+		if err != nil {
+			s.log.Error("Vote failed signature verification.")
+			resp := &commands.VoteStatus{
+				ErrorCode: commands.VoteNotSigned,
+			}
+			return resp
+		}
+		if _, ok := s.votes[s.votingEpoch]; !ok {
+			s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+		}
+		if _, ok := s.votes[s.votingEpoch][vote.PublicKey.ByteArray()]; !ok {
+			s.votes[s.votingEpoch][vote.PublicKey.ByteArray()] = &document{
+				raw: rawDoc,
+				doc: doc,
+			}
+		} else {
+			// error; two votes from same peer
+			s.log.Error("Vote command invalid: more than one vote from same peer is not allowed.")
+			resp := &commands.VoteStatus{
+				ErrorCode: commands.VoteAlreadyReceived,
+			}
+			return resp
+		}
+		s.log.Debug("Vote OK.")
 		resp := &commands.VoteStatus{
-			ErrorCode: commands.VoteNotSigned,
+			ErrorCode: commands.VoteOk,
 		}
 		return resp
-	}
-	if _, ok := s.votes[s.votingEpoch]; !ok {
-		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
-	}
-	if _, ok := s.votes[s.votingEpoch][vote.PublicKey.ByteArray()]; !ok {
-		s.votes[s.votingEpoch][vote.PublicKey.ByteArray()] = &document{
-			raw: rawDoc,
-			doc: doc,
-		}
-	} else {
-		// error; two votes from same peer
-		s.log.Error("Vote command invalid: more than one vote from same peer is not allowed.")
-		resp := &commands.VoteStatus{
-			ErrorCode: commands.VoteAlreadyReceived,
-		}
-		return resp
+	case 2:
+		// vote.Payload
+
+	default:
 	}
 
-	s.log.Debug("Vote OK.")
-	resp := &commands.VoteStatus{
-		ErrorCode: commands.VoteOk,
-	}
-	return resp
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
-	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := desc.IdentityKey.ByteArray()
-
 	s.Lock()
 	defer s.Unlock()
+
+	// Note: Caller ensures that the epoch is the current epoch +- 1.
+	pk := desc.IdentityKey.ByteArray()
 
 	// Get the public key -> descriptor map for the epoch.
 	m, ok := s.descriptors[epoch]

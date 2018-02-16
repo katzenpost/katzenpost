@@ -109,9 +109,13 @@ func (s *Server) onVote(cmd *commands.Vote) commands.Command {
 	return s.state.onVoteUpload(cmd)
 }
 
+func (s *Server) onGetConsensusSig(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
+
+}
+
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
 	resp := &commands.Consensus{}
-	doc, err := s.state.documentForEpoch(cmd.Epoch)
+	doc, err := s.state.GetConsensus(cmd.Epoch)
 	if err != nil {
 		s.log.Errorf("Peer %v: Failed to retreive document for epoch '%v': %v", rAddr, cmd.Epoch, err)
 		switch err {
