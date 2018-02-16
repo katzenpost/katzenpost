@@ -112,8 +112,10 @@ func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.P
 	}
 
 	// attach peer signatures
-	for _, sig := range peerSignatures {
-		signed.Signatures = append(signed.Signatures, *sig)
+	if peerSignatures != nil {
+		for _, sig := range peerSignatures {
+			signed.Signatures = append(signed.Signatures, *sig)
+		}
 	}
 
 	// Serialize the key, descriptor and signature.
@@ -122,19 +124,70 @@ func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.P
 
 // VerifyPeerMulti returns a map of keys to signatures for
 // the peer keys that produced a valid signature
-func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) map[[eddsa.PublicKeySize]byte]*jose.Signature {
+func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) (map[[eddsa.PublicKeySize]byte]*jose.Signature, error) {
 	signed, err := jose.ParseSigned(string(payload))
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("VerifyPeerMulti failure: %s", err)
 	}
 	sigMap := make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 	for _, peer := range peers {
 		_, signature, _, err := signed.VerifyMulti(*peer.IdentityPublicKey.InternalPtr())
 		if err == nil {
 			sigMap[peer.IdentityPublicKey.ByteArray()] = &signature
+		} else {
+			return nil, fmt.Errorf("VerifyPeerMulti failure: %s", err)
 		}
 	}
-	return sigMap
+	return sigMap, nil
+}
+
+func GetSignedMixDescriptor(b []byte, identityPublicKey, targetNodePublicKey *eddsa.PublicKey) ([]byte, error) {
+	signed, err := jose.ParseSigned(string(b))
+	if err != nil {
+		return nil, err
+	}
+
+	// XXX shouldn't the library do this for us?
+	for _, sig := range signed.Signatures {
+		alg := sig.Header.Algorithm
+		if alg != "EdDSA" {
+			return nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
+		}
+	}
+	_, _, payload, err := signed.VerifyMulti(*identityPublicKey.InternalPtr())
+	if err != nil {
+		if err == jose.ErrCryptoFailure {
+			err = fmt.Errorf("nonvoting: Invalid document signature")
+		}
+		return nil, err
+	}
+	// Parse the payload.
+	d := new(Document)
+	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	if err = dec.Decode(d); err != nil {
+		return nil, err
+	}
+	for layer, nodes := range d.Topology {
+		for _, rawDesc := range nodes {
+			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+			if err != nil {
+				return nil, err
+			}
+			if desc.IdentityKey.Equal(targetNodePublicKey) {
+				return rawDesc, nil
+			}
+		}
+	}
+	for _, rawDesc := range d.Providers {
+		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		if desc.IdentityKey.Equal(targetNodePublicKey) {
+			return rawDesc, nil
+		}
+	}
+	return nil, errors.New("GetSignedMixDescriptor failure: node identity not found.")
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
@@ -144,15 +197,14 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		return nil, nil, err
 	}
 
-	// Sanity check the signing algorithm and number of signatures, and
-	// validate the signature with the provided public key.
-	if len(signed.Signatures) != 1 {
-		return nil, nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signed.Signatures))
+	// XXX shouldn't the library do this for us?
+	for _, sig := range signed.Signatures {
+		alg := sig.Header.Algorithm
+		if alg != "EdDSA" {
+			return nil, nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
+		}
 	}
-	alg := signed.Signatures[0].Header.Algorithm
-	if alg != "EdDSA" {
-		return nil, nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
-	}
+
 	_, _, payload, err := signed.VerifyMulti(*publicKey.InternalPtr())
 	if err != nil {
 		if err == jose.ErrCryptoFailure {
