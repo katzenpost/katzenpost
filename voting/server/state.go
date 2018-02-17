@@ -157,13 +157,13 @@ func (s *state) onWakeup() {
 	// of the other Directory Authorities.
 	if elapsed > mixPublishDeadline && elapsed < authorityVoteDeadline {
 		if vote := s.currentVote(); vote == nil {
-			s.vote()
+			vote := s.vote(s.descriptors)
+			s.sendVoteToAuthorities(vote)
 		}
 	}
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
-		if s.documents[epoch+1] != nil {
-			s.generateSignedDocument(epoch + 1)
-			s.sendSignedDocumentToAuthorities(epoch + 1)
+		if s.documents[s.votingEpoch] == nil {
+			s.consense()
 		}
 	}
 
@@ -187,7 +187,7 @@ func (s *state) currentVote() *pki.Document {
 	return nil
 }
 
-func (s *state) vote() {
+func (s *state) vote(descriptors []*descriptor) *document {
 
 	if m, ok := s.descriptors[s.votingEpoch]; ok && !s.hasEnoughDescriptors(m) {
 		s.log.Error("Vote: Failed to vote due to insufficient descriptors.")
@@ -197,7 +197,7 @@ func (s *state) vote() {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
-	for _, v := range s.descriptors[s.votingEpoch] {
+	for _, v := range descriptors {
 		if v.desc.Layer == pki.LayerProvider {
 			providers = append(providers, v.raw)
 		} else {
@@ -214,7 +214,7 @@ func (s *state) vote() {
 	}
 
 	// Build the Document.
-	doc := &s11n.Document{
+	vote := &s11n.Document{
 		Epoch:           s.votingEpoch,
 		MixLambda:       s.s.cfg.Parameters.MixLambda,
 		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
@@ -225,23 +225,21 @@ func (s *state) vote() {
 		Providers:       providers,
 	}
 
-	signedDocument := s.sign(doc)
+	signedVote := s.sign(vote)
 
 	// save our own vote
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
 	if _, ok := s.votes[s.votingEpoch][s.identityPubKey()]; !ok {
-		s.votes[s.votingEpoch][s.identityPubKey()] = signedDocument
+		s.votes[s.votingEpoch][s.identityPubKey()] = signedVote
 	} else {
 		s.log.Errorf("failure: vote already present, this should never happen.")
 		err := errors.New("failure: vote already present, this should never happen.")
 		s.s.fatalErrCh <- err
-		return
+		return nil
 	}
-
-	// send vote to peers
-	s.sendVoteToAuthorities([]byte(signed))
+	return document{doc:vote, raw:signedVote}
 }
 
 func (s *state) sign(doc *s11n.Document) *document {
@@ -444,19 +442,15 @@ func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []b
 	return nil, nil // XXX
 }
 
-func (s *state) generateSignedDocument(epoch uint64) {
+func (s *state) tallyMixes(votes []*document) []*descriptor {
 	// Lock is held (called from the onWakeup hook).
-
-	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
-
-	votes, ok := s.votes[epoch]
 	if !(ok && len(votes) > s.threshold) {
 		s.log.Notice("Did not receive threshold number of votes.")
 		return
 	}
 
 	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
-	for _, voteDoc := range s.votes[epoch] {
+	for _, voteDoc := range votes {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
 				mixId := voteDesc.IdentityKey.ByteArray()
@@ -469,41 +463,40 @@ func (s *state) generateSignedDocument(epoch uint64) {
 		}
 	}
 
-	consensusIdentities := make(map[[32]byte]*descriptor)
+	var nodes []*descriptor
 	for mixIdentity, votes := range mixTally {
 		if desc := agreedDescriptor(mixIdentity, votes); desc != nil {
-			consensusIdentities[mixIdentity] = desc
+			nodes = append(nodes, desc)
 		}
 	}
 
-	// Carve out the descriptors between providers and nodes.
-	var providers [][]byte
-	var nodes []*descriptor
+	return nodes
+}
 
-	// Assign nodes to layers.
-	var topology [][][]byte
-	if d, ok := s.documents[epoch-1]; ok {
-		topology = s.generateTopology(nodes, d.doc)
-	} else {
-		topology = s.generateRandomTopology(nodes)
+func (s *state) consensus(epoch uint64) {
+	// Lock is held (called from the onWakeup hook).
+
+	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
+
+	votes, ok := s.votes[epoch]
+	if !(ok && len(votes) > s.threshold) {
+		s.log.Notice("Did not receive threshold number of votes.")
+		return
+	}
+	if len(s.signatureMap) < s.threshold {
+		// Require threshold votes to publish.
+		s.log.Warning("Document not signed by majority Authority peers.")
+		return
 	}
 
-	// Build the Document.
-	consensusDocument := &s11n.Document{
-		Epoch:           epoch,
-		MixLambda:       s.s.cfg.Parameters.MixLambda,
-		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
-		SendLambda:      s.s.cfg.Parameters.SendLambda,
-		SendShift:       s.s.cfg.Parameters.SendShift,
-		SendMaxInterval: s.s.cfg.Parameters.SendMaxInterval,
-		Topology:        topology,
-		Providers:       providers,
-	}
+	// tally parameters
+	// XXX: !!!
 
-	// consensusDocument
+	mixes := tallyMixes(votes)
+	consensus := s.vote(mixes)
 
 	// Serialize and sign the Document.
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensusDocument)
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensus.doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
