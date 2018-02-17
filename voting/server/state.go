@@ -186,7 +186,7 @@ func (s *state) currentVote() *pki.Document {
 	return nil
 }
 
-func (s *state) getDocument(descriptors []*descriptor *slln.Document {
+func (s *state) getDocument(descriptors []*descriptor) *slln.Document {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
@@ -435,6 +435,10 @@ func (s *state) consensus(epoch uint64) *document {
 	// Lock is held (called from the onWakeup hook).
 
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
+	if c, ok := s.documents[epoch]; ok {
+		// already have consensus
+		return s.documents[epoch]
+	}
 
 	votes, ok := s.votes[epoch]
 	if !(ok && len(votes) > s.threshold) {
@@ -489,10 +493,6 @@ func (s *state) consensus(epoch uint64) *document {
 	}
 
 	s.log.Debugf("Document (Parsed): %v", pDoc)
-
-	// XXX Store votes to disk.
-
-	// XXX Publish votes: send votes to peers.
 
 	// Persist the document to disk.
 	if err := s.db.Update(func(tx *bolt.Tx) error {
