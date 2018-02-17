@@ -85,7 +85,7 @@ type state struct {
 	votingEpoch  uint64
 	votingState  VoteState
 	signatureMap map[[eddsa.PublicKeySize]byte]*jose.Signature
-	threshold int
+	threshold    int
 }
 
 func (s *state) Halt() {
@@ -395,13 +395,13 @@ func (s *state) generateVote(epoch uint64) {
 	// XXX wtf fix me
 }
 
-func (s *state) isVoteThreshold(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document) bool {
+func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document) *descriptor {
 	if len(votes) < s.threshold {
 		s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
-		return false
+		return nil
 	}
 
-	seen := make(map[string][]*pki.Document)
+	seen := make(map[[]byte][]*pki.Document)
 	agree := make([]*pki.Document, 0)
 	disagree := make([]*pki.Document, 0)
 	for _, vote := range votes {
@@ -415,23 +415,20 @@ func (s *state) isVoteThreshold(mixIdentity [eddsa.PublicKeySize]byte, votes []*
 			s.log.Errorf("votesAgree: SerializeDescriptor failure: %s", err)
 			continue
 		}
-		voteHash := string(rawVoteMixDesc) // XXX hash it?
-		if _, ok := seen[voteHash]; !ok {
-			seen[voteHash] = make([]*pki.Document, 0)
+		if _, ok := seen[rawVoteMixDesc]; !ok {
+			seen[rawVoteMixDesc] = make([]*pki.Document, 0)
 		}
-		seen[voteHash] = append(seen[voteHash], vote)
+		seen[rawVoteMixDesc] = append(seen[rawVoteMixDesc], vote)
 	}
-	for _, votes := range seen {
-		if len(votes) > threshold {
-			agree = votes
-		} else {
-			disagree = append(disagree, votes...)
+	for rawVoteMixDesc, votes := range seen {
+		if len(votes) > s.threshold {
+			voteMixDesc, err := VerifyAndParseDescriptor(rawVoteMixDesc, s.votingEpoch)
+			if !err {
+				return &descriptor{desc: voteMixDesc, raw: rawVoteMixDesc}
+			}
 		}
 	}
-	if len(agree) > threshold {
-		return true
-	}
-	return false
+	return nil
 }
 
 func (s *state) sendConsensusToAuthorities(epoch uint64) {} // XXX
@@ -452,7 +449,6 @@ func (s *state) generateSignedDocument(epoch uint64) {
 
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 
-
 	votes, ok := s.votes[epoch]
 	if !(ok && len(votes) > s.threshold) {
 		s.log.Notice("Did not receive threshold number of votes.")
@@ -460,7 +456,6 @@ func (s *state) generateSignedDocument(epoch uint64) {
 	}
 
 	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
-
 	for _, voteDoc := range s.votes[epoch] {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
@@ -476,21 +471,9 @@ func (s *state) generateSignedDocument(epoch uint64) {
 
 	consensusIdentities := make(map[[32]byte]*descriptor)
 	for mixIdentity, votes := range mixTally {
-		if !s.isVoteThreshold(mixIdentity, votes) {
-			s.log.Debugf("generateConsensus excluding mix identity, threshold not met")
-			continue
+		if desc := agreedDescriptor(mixIdentity, votes); desc != nil {
+			consensusIdentities[mixIdentity] = desc
 		}
-		rawDoc := s.document[epoch].raw
-		targetpubkey := eddsa.PublicKey.FromBytes(mixIdentity)
-		rawDesc, err := s11n.GetSignedMixDescriptor(rawDoc, s.s.cfg.pubkey, targetpubkey)
-		if err != nil {
-			s.log.Debug(err)
-		}
-		desc := &descriptor{
-			desc: d,
-			raw:  rawDesc,
-		}
-		consensusIdentities[mixIdentity] = desc
 	}
 
 	// Carve out the descriptors between providers and nodes.
