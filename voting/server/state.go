@@ -452,8 +452,11 @@ func (s *state) generateSignedDocument(epoch uint64) {
 
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 
-	if len(s.votes[epoch]) < s.threshold {
+
+	votes, ok := s.votes[epoch]
+	if !(ok && len(votes) > s.threshold) {
 		s.log.Notice("Did not receive threshold number of votes.")
+		return
 	}
 
 	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
@@ -473,14 +476,12 @@ func (s *state) generateSignedDocument(epoch uint64) {
 
 	consensusIdentities := make(map[[32]byte]*descriptor)
 	for mixIdentity, votes := range mixTally {
-		if len(votes) < (len(s.s.cfg.Authorities)/2 + 1) {
-			s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
-			continue
-		}
-		if !s.isVoteThreshold(mixIdentity, votes, len(s.s.cfg.Authorities)/2+1) {
+		if !s.isVoteThreshold(mixIdentity, votes) {
 			s.log.Debugf("generateConsensus excluding mix identity, threshold not met")
 			continue
 		}
+		rawDoc := s.document[epoch].raw
+		targetpubkey := eddsa.PublicKey.FromBytes(mixIdentity)
 		rawDesc, err := s11n.GetSignedMixDescriptor(rawDoc, s.s.cfg.pubkey, targetpubkey)
 		if err != nil {
 			s.log.Debug(err)
@@ -543,7 +544,7 @@ func (s *state) generateSignedDocument(epoch uint64) {
 		s.s.fatalErrCh <- err
 		return
 	}
-	if len(sigMap) < len(s.s.cfg.Authorities)/2 {
+	if len(sigMap) < s.threshold {
 		// Require threshold votes to publish.
 		s.log.Warning("Document not signed by majority Authority peers.")
 		return
