@@ -85,6 +85,7 @@ type state struct {
 	votingEpoch  uint64
 	votingState  VoteState
 	signatureMap map[[eddsa.PublicKeySize]byte]*jose.Signature
+	threshold int
 }
 
 func (s *state) Halt() {
@@ -167,7 +168,8 @@ func (s *state) onWakeup() {
 	}
 
 	if elapsed > publishConsensusDeadline {
-		// do stuff
+		if len(s.signatureMap) > s.threshold {
+		}
 	}
 
 	// Purge overly stale documents.
@@ -393,7 +395,12 @@ func (s *state) generateVote(epoch uint64) {
 	// XXX wtf fix me
 }
 
-func (s *state) isVoteThreshold(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document, threshold int) bool {
+func (s *state) isVoteThreshold(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document) bool {
+	if len(votes) < s.threshold {
+		s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
+		return false
+	}
+
 	seen := make(map[string][]*pki.Document)
 	agree := make([]*pki.Document, 0)
 	disagree := make([]*pki.Document, 0)
@@ -445,7 +452,7 @@ func (s *state) generateSignedDocument(epoch uint64) {
 
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 
-	if len(s.votes[epoch]) < (len(s.s.cfg.Authorities)/2 + 1) {
+	if len(s.votes[epoch]) < s.threshold {
 		s.log.Notice("Did not receive threshold number of votes.")
 	}
 
@@ -975,6 +982,7 @@ func newState(s *Server) (*state, error) {
 	st.log = s.logBackend.GetLogger("state")
 	st.updateCh = make(chan interface{}, 1) // Buffered!
 	st.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	st.threshold = len(st.s.cfg.Authorities)/2 + 1
 
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
