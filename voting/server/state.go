@@ -189,7 +189,7 @@ func (s *state) currentVote() *pki.Document {
 
 func (s *state) vote(descriptors []*descriptor) *document {
 
-	if m, ok := s.descriptors[s.votingEpoch]; ok && !s.hasEnoughDescriptors(m) {
+	if !s.hasEnoughDescriptors(descriptors) {
 		s.log.Error("Vote: Failed to vote due to insufficient descriptors.")
 		return
 	}
@@ -355,44 +355,6 @@ func (s *state) sendVoteToAuthorities(vote []byte) {
 	}
 }
 
-func (s *state) generateVote(epoch uint64) {
-	// Lock is held (called from the onWakeup hook).
-
-	// Carve out the descriptors between providers and nodes.
-	var providers [][]byte
-	var nodes []*descriptor
-	for _, v := range s.descriptors[epoch] {
-		if v.desc.Layer == pki.LayerProvider {
-			providers = append(providers, v.raw)
-		} else {
-			nodes = append(nodes, v)
-		}
-	}
-
-	// Assign nodes to layers.
-	var topology [][][]byte
-	if d, ok := s.documents[epoch-1]; ok {
-		topology = s.generateTopology(nodes, d.doc)
-	} else {
-		topology = s.generateRandomTopology(nodes)
-	}
-
-	// Build the Document.
-	doc := &s11n.Document{
-		Epoch:           epoch,
-		MixLambda:       s.s.cfg.Parameters.MixLambda,
-		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
-		SendLambda:      s.s.cfg.Parameters.SendLambda,
-		SendShift:       s.s.cfg.Parameters.SendShift,
-		SendMaxInterval: s.s.cfg.Parameters.SendMaxInterval,
-		Topology:        topology,
-		Providers:       providers,
-	}
-
-	s.log.Noticef("notice %s", doc)
-	// XXX wtf fix me
-}
-
 func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document) *descriptor {
 	if len(votes) < s.threshold {
 		s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
@@ -473,7 +435,7 @@ func (s *state) tallyMixes(votes []*document) []*descriptor {
 	return nodes
 }
 
-func (s *state) consensus(epoch uint64) {
+func (s *state) consensus(epoch uint64) *document {
 	// Lock is held (called from the onWakeup hook).
 
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
@@ -481,17 +443,15 @@ func (s *state) consensus(epoch uint64) {
 	votes, ok := s.votes[epoch]
 	if !(ok && len(votes) > s.threshold) {
 		s.log.Notice("Did not receive threshold number of votes.")
-		return
+		return nil
 	}
 	if len(s.signatureMap) < s.threshold {
 		// Require threshold votes to publish.
 		s.log.Warning("Document not signed by majority Authority peers.")
-		return
+		return nil
 	}
 
-	// tally parameters
-	// XXX: !!!
-
+	// count the votes
 	mixes := tallyMixes(votes)
 	consensus := s.vote(mixes)
 
@@ -501,7 +461,7 @@ func (s *state) consensus(epoch uint64) {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
 		s.s.fatalErrCh <- err
-		return
+		return nil
 	}
 
 	// Ensure the document is sane.
@@ -510,7 +470,7 @@ func (s *state) consensus(epoch uint64) {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
 		s.s.fatalErrCh <- err
-		return
+		return nil
 	}
 	sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
 	if len(sigMap) != len(s.signatureMap) {
@@ -518,18 +478,18 @@ func (s *state) consensus(epoch uint64) {
 		s.log.Error("Document not really signed by all Authority peers.")
 		err := errors.New("failure: PKI Document not really signed by all Authority peers.")
 		s.s.fatalErrCh <- err
-		return
+		return nil
 	}
 	if len(sigMap) < s.threshold {
 		// Require threshold votes to publish.
 		s.log.Warning("Document not signed by majority Authority peers.")
-		return
+		return nil
 	}
 	if pDoc.Epoch != epoch {
 		// This should never happen either.
 		s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
 		s.s.fatalErrCh <- s11n.ErrInvalidEpoch
-		return
+		return nil
 	}
 
 	s.log.Debugf("Document (Parsed): %v", pDoc)
@@ -553,6 +513,7 @@ func (s *state) consensus(epoch uint64) {
 	d.raw = []byte(signed)
 	s.documents[epoch] = d
 	s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	return d
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
