@@ -162,7 +162,7 @@ func (s *state) onWakeup() {
 	}
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
 		if s.documents[s.votingEpoch] == nil {
-			s.consensus()
+			s.getConsensus()
 		}
 	}
 
@@ -431,7 +431,7 @@ func (s *state) tallyMixes(votes []*document) []*descriptor {
 	return nodes
 }
 
-func (s *state) consensus(epoch uint64) *document {
+func (s *state) getConsensus(epoch uint64) *document {
 	// Lock is held (called from the onWakeup hook).
 
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
