@@ -157,13 +157,12 @@ func (s *state) onWakeup() {
 	// of the other Directory Authorities.
 	if elapsed > mixPublishDeadline && elapsed < authorityVoteDeadline {
 		if vote := s.currentVote(); vote == nil {
-			vote := s.vote(s.descriptors)
-			s.sendVoteToAuthorities(vote)
+			s.vote()
 		}
 	}
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
 		if s.documents[s.votingEpoch] == nil {
-			s.consense()
+			s.consensus()
 		}
 	}
 
@@ -187,13 +186,7 @@ func (s *state) currentVote() *pki.Document {
 	return nil
 }
 
-func (s *state) vote(descriptors []*descriptor) *document {
-
-	if !s.hasEnoughDescriptors(descriptors) {
-		s.log.Error("Vote: Failed to vote due to insufficient descriptors.")
-		return
-	}
-
+func (s *state) getDocument(descriptors []*descriptor *slln.Document {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
@@ -214,7 +207,7 @@ func (s *state) vote(descriptors []*descriptor) *document {
 	}
 
 	// Build the Document.
-	vote := &s11n.Document{
+	doc := &s11n.Document{
 		Epoch:           s.votingEpoch,
 		MixLambda:       s.s.cfg.Parameters.MixLambda,
 		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
@@ -224,9 +217,12 @@ func (s *state) vote(descriptors []*descriptor) *document {
 		Topology:        topology,
 		Providers:       providers,
 	}
+	return doc
+}
 
+func (s *state) vote() *document {
+	vote := getDocument(s.descriptors)
 	signedVote := s.sign(vote)
-
 	// save our own vote
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
@@ -239,7 +235,7 @@ func (s *state) vote(descriptors []*descriptor) *document {
 		s.s.fatalErrCh <- err
 		return nil
 	}
-	return document{doc:vote, raw:signedVote}
+	s.sendVoteToAuthorities(signedVote)
 }
 
 func (s *state) sign(doc *s11n.Document) *document {
@@ -453,10 +449,10 @@ func (s *state) consensus(epoch uint64) *document {
 
 	// count the votes
 	mixes := tallyMixes(votes)
-	consensus := s.vote(mixes)
+	consensus := s.getDocument(mixes)
 
 	// Serialize and sign the Document.
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensus.doc)
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensus)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
