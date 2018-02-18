@@ -724,8 +724,16 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		}
 		return resp
 	case 2:
-		// vote.Payload
+		sig := vote.Payload
+		//XXX:  check that the signature is from an authorized peer
+		//XXX:  parse the signature bytes into a jose.Signature
 
+		doc, ok := s.documents[s.votingEpoch]
+		if !ok {
+			// wtf
+		}
+		// add the signature to the document
+		doc.addSig(sig)
 	default:
 	}
 
