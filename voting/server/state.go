@@ -60,9 +60,15 @@ type document struct {
 	raw []byte
 }
 
-func (d *document) getSig() error {
-	// XXX unfuck me: returns the signature by peer if any
-	return nil
+func (d *document) getSignatures() ([]jose.Signature, error) {
+	if d.raw != nil && d.doc != nil {
+		signed, err := jose.ParseSigned(string(d.raw))
+		if err != nil {
+			return nil, err
+		}
+		return signed.Signatures, nil
+	}
+	return nil, errors.New("document getSignatures failure: struct type not initialized.")
 }
 
 func (d *document) addSig(sig *jose.Signature) error {
@@ -87,20 +93,6 @@ func (d *document) addSig(sig *jose.Signature) error {
 	}
 	return err
 }
-
-func (d *document) sigs() []jose.Signature {
-	if d.raw != nil && d.doc != nil {
-		signed, err := jose.ParseSigned(string(d.raw))
-		if err != nil {
-			return nil
-		} else {
-			return signed.Signatures
-		}
-	}
-	return nil
-}
-
-type VoteState byte
 
 type state struct {
 	sync.RWMutex
@@ -202,14 +194,14 @@ func (s *state) onWakeup() {
 	// has been published, send a signature to the other authorities
 	// of the document this authority believes will be the consensus
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
-		if !s.tabulated(s.votingEpoch) {
+		if !s.isTabulated(s.votingEpoch) {
 			s.tabulate(s.votingEpoch)
 		}
 	}
 	// we should now have received enough signatures to make consensus.
 	if elapsed > publishConsensusDeadline {
 		// XXX do this once, not repeatedly until consensus is reached or next epoch
-		if !s.isConsensus(s.votingEpoch) {
+		if !s.hasConsensus(s.votingEpoch) {
 			s.combine(s.votingEpoch)
 		}
 	}
@@ -227,7 +219,7 @@ func (s *state) combine(epoch uint64) {
 	for _, sig := range s.signatures[s.votingEpoch] {
 		doc.addSig(sig)
 	}
-	if !s.isConsensus(epoch) {
+	if !s.hasConsensus(epoch) {
 		// XXX we don't have a consensus! OH NOES!
 		delete(s.documents, epoch) // XXX: really?
 	} else {
@@ -505,20 +497,20 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 func (s *state) GetConsensus(epoch uint64) (*document, error) {
 	// Lock is held (called from the onWakeup hook).
 	// already have consensus for this epoch
-	if s.isConsensus(epoch) {
+	if s.hasConsensus(epoch) {
 		return s.documents[epoch], nil
 	}
 	return nil, errNotYet
 }
 
-func (s *state) tabulated(epoch uint64) bool {
-	if _, ok := s.documents[epoch]; !ok {
-		return false
+func (s *state) isTabulated(epoch uint64) bool {
+	if _, ok := s.documents[epoch]; ok {
+		return true
 	}
-	return true
+	return false
 }
 
-func (s *state) tabulate(epoch uint64) *document {
+func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// include all the valid mixes from votes, including our own.
 	mixes := s.tallyMixes(epoch)
@@ -530,7 +522,7 @@ func (s *state) tabulate(epoch uint64) *document {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
 		s.s.fatalErrCh <- err
-		return nil
+		return
 	}
 
 	// Ensure the document is sane.
@@ -539,17 +531,16 @@ func (s *state) tabulate(epoch uint64) *document {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
 		s.s.fatalErrCh <- err
-		return nil
+		return
 	}
 	// save the document
 	d := &document{doc: pDoc, raw: rawDoc}
 	if _, ok := s.documents[epoch]; !ok {
 		s.documents[epoch] = d
 	}
-	return d
 }
 
-func (s *state) isConsensus(epoch uint64) bool {
+func (s *state) hasConsensus(epoch uint64) bool {
 	doc, ok := s.documents[epoch]
 	if !ok {
 		return false
