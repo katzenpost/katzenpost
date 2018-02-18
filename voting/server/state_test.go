@@ -88,7 +88,7 @@ func TestVoteThreshold(t *testing.T) {
 	voteThresholdTests := []struct {
 		votes  []*pki.Document
 		thresh int
-		want   bool
+		want   *pki.MixDescriptor
 	}{
 		{
 			votes: []*pki.Document{
@@ -97,7 +97,7 @@ func TestVoteThreshold(t *testing.T) {
 				docWithTarget,
 			},
 			thresh: 2,
-			want:   true,
+			want:   targetMix,
 		},
 		{
 			votes: []*pki.Document{
@@ -106,7 +106,7 @@ func TestVoteThreshold(t *testing.T) {
 				docWithTarget,
 			},
 			thresh: 2,
-			want:   false,
+			want:   targetMix,
 		},
 		{
 			votes: []*pki.Document{
@@ -115,7 +115,7 @@ func TestVoteThreshold(t *testing.T) {
 				docWithoutTarget,
 			},
 			thresh: 2,
-			want:   false,
+			want:   nil,
 		},
 		{
 			votes: []*pki.Document{
@@ -131,12 +131,15 @@ func TestVoteThreshold(t *testing.T) {
 				docWithoutTarget,
 			},
 			thresh: 5,
-			want:   true,
+			want:   targetMix,
 		},
 	}
 
-	for i, _ := range voteThresholdTests {
-		verdict := state.isVoteThreshold(mixIdentityPrivateKey.PublicKey().ByteArray(), voteThresholdTests[i].votes, voteThresholdTests[i].thresh)
-		assert.Equal(verdict, voteThresholdTests[i].want)
+	for i := range voteThresholdTests {
+		t.Logf("test case %d", i)
+		agreed := state.agreedDescriptor(mixIdentityPrivateKey.PublicKey().ByteArray(), voteThresholdTests[i].votes)
+		if voteThresholdTests[i].want == nil {
+			assert.Nil(agreed)
+		}
 	}
 }
