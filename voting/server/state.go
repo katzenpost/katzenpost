@@ -194,53 +194,62 @@ func (s *state) onWakeup() {
 	// document for the *next* epoch, generate a document and send it to all
 	// of the other Directory Authorities.
 	if elapsed > mixPublishDeadline && elapsed < authorityVoteDeadline {
-		if vote := s.currentVote(); vote == nil {
-			s.vote()
+		if !s.voted(s.votingEpoch) {
+			s.vote(s.votingEpoch)
 		}
 	}
 	// If it is now past the voting deadline, and before the consensus
 	// has been published, send a signature to the other authorities
 	// of the document this authority believes will be the consensus
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
+		if !s.tabulated(s.votingEpoch) {
+			s.tabulate(s.votingEpoch)
+		}
 		if s.documents[s.votingEpoch] == nil {
-			doc := s.tabulateVotes(s.votingEpoch)
-			if doc != nil {
-				s.documents[s.votingEpoch] = doc
-			}
+			s.tabulateVotes(s.votingEpoch)
 		}
 	}
 	// we should now have received enough signatures to make consensus.
 	if elapsed > publishConsensusDeadline {
-		// XXX do this once
-		{
-			// count up the signatures we've got
-			doc, ok := s.documents[s.votingEpoch]
-			if !ok {
-				// don't have a local view of the network?
-			}
-			for _, sig := range s.signatures[s.votingEpoch] {
-				doc.addSig()
-			}
-			if !s.isConsensus(s.votingEpoch) {
-				// XXX we don't have a consensus! OH NOES!
-			} else {
-				// save consensus to disk
-			}
+		// XXX do this once, not repeatedly until consensus is reached or next epoch
+		if !s.isConsensus(s.votingEpoch) {
+			s.combine(s.votingEpoch)
 		}
 	}
 	// Purge overly stale documents.
 	s.pruneDocuments()
 }
 
+func (s *state) combine(epoch uint64) {
+	// count up the signatures we've got
+	doc, ok := s.documents[epoch]
+	if !ok {
+		// consensus failed
+		return
+	}
+	for _, sig := range s.signatures[s.votingEpoch] {
+		doc.addSig()
+	}
+	if !s.isConsensus(epoch) {
+		// XXX we don't have a consensus! OH NOES!
+		delete(s.documents, epoch)
+	} else {
+		// save consensus to disk
+	}
+}
+
+
 func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
 	return s.s.identityKey.PublicKey().ByteArray()
 }
 
-func (s *state) currentVote() *pki.Document {
-	if _, ok := s.votes[s.votingEpoch]; ok {
-		return s.votes[s.votingEpoch][s.identityPubKey()].doc
+func (s *state) voted(epoch uint64) bool {
+	if _, ok := s.votes[epoch]; ok {
+		if _, ok := s.votes[epoch][s.identityPubKey()]; ok {
+			return true
+		}
 	}
-	return nil
+	return false
 }
 
 func (s *state) getDocument(descriptors []*descriptor) *s11n.Document {
@@ -277,19 +286,19 @@ func (s *state) getDocument(descriptors []*descriptor) *s11n.Document {
 	return doc
 }
 
-func (s *state) vote() {
+func (s *state) vote(epoch uint64) {
 	descriptors := []*descriptor{}
-	for _, desc := range s.descriptors[s.votingEpoch] {
+	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
 	}
 	vote := s.getDocument(descriptors)
 	signedVote := s.sign(vote)
 	// save our own vote
-	if _, ok := s.votes[s.votingEpoch]; !ok {
-		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+	if _, ok := s.votes[epoch]; !ok {
+		s.votes[epoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
-	if _, ok := s.votes[s.votingEpoch][s.identityPubKey()]; !ok {
-		s.votes[s.votingEpoch][s.identityPubKey()] = signedVote
+	if _, ok := s.votes[epoch][s.identityPubKey()]; !ok {
+		s.votes[epoch][s.identityPubKey()] = signedVote
 	} else {
 		s.log.Errorf("failure: vote already present, this should never happen.")
 		err := errors.New("failure: vote already present, this should never happen.")
@@ -508,7 +517,14 @@ func (s *state) getConsensus(epoch uint64) *document {
 	return nil
 }
 
-func (s *state) tabulateVotes(epoch uint64) *document {
+func (s *state) tabulated(epoch uint64) bool {
+	if _, ok := s.documents[epoch]; !ok {
+		return false
+	}
+	return true
+}
+
+func (s *state) tabulate(epoch uint64) *document {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// include all the valid mixes from votes, including our own.
 	mixes := s.tallyMixes(epoch)
@@ -531,13 +547,12 @@ func (s *state) tabulateVotes(epoch uint64) *document {
 		s.s.fatalErrCh <- err
 		return nil
 	}
-
-	// add the tabulated document to documents; awaiting peer signatures
+	// save the document
+	doc := &document{doc: pDoc, raw: rawDoc}
 	if _, ok := s.documents[epoch]; !ok {
-		doc := &document{doc: pDoc, raw: rawDoc}
-		return doc
+		s.documents[epoch] = doc
 	}
-
+	return doc
 }
 
 func (s *state) isConsensus(epoch uint64) bool {
