@@ -80,7 +80,7 @@ func (d *document) addSig(sig *jose.Signature) error {
 	}
 	// verify that the signature signs the document
 	signed.Signatures = append(signed.Signatures, *sig)
-	_, signature, _, err := signed.VerifyMulti(sig)
+	_, _, _, err = signed.VerifyMulti(sig)
 	if err == nil {
 		// update object
 		d.raw = []byte(signed.FullSerialize())
@@ -225,7 +225,7 @@ func (s *state) combine(epoch uint64) {
 		return
 	}
 	for _, sig := range s.signatures[s.votingEpoch] {
-		doc.addSig()
+		doc.addSig(sig)
 	}
 	if !s.isConsensus(epoch) {
 		// XXX we don't have a consensus! OH NOES!
@@ -424,8 +424,6 @@ func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []
 	}
 
 	seen := make(map[string][]*pki.Document)
-	agree := make([]*pki.Document, 0)
-	disagree := make([]*pki.Document, 0)
 	for _, vote := range votes {
 		voteMixDesc, err := vote.GetMixByKey(mixIdentity[:])
 		if err != nil {
@@ -460,7 +458,7 @@ func (s *state) sendConsensusToAuthorities(epoch uint64) {} // XXX
 func (s *state) sendSignedDocumentToAuthorities(epoch uint64) {} // XXX
 
 func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []byte) ([]byte, error) {
-	doc, rawDoc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey())
+	_, rawDoc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey())
 	if err != nil {
 		return nil, err
 	}
@@ -480,17 +478,17 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 		return nil
 	}
 
-	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
+	mixTally := make(map[[eddsa.PublicKeySize]byte][]*pki.Document)
 	for _, voteDoc := range s.votes[epoch] {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
 				mixId := voteDesc.IdentityKey.ByteArray()
-				mixTally[mixId] = append(mixTally[mixId], voteDoc)
+				mixTally[mixId] = append(mixTally[mixId], voteDoc.doc)
 			}
 		}
 		for _, voteDesc := range voteDoc.doc.Providers {
 			mixId := voteDesc.IdentityKey.ByteArray()
-			mixTally[mixId] = append(mixTally[mixId], voteDoc)
+			mixTally[mixId] = append(mixTally[mixId], voteDoc.doc)
 		}
 	}
 
@@ -504,13 +502,13 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 	return nodes
 }
 
-func (s *state) getConsensus(epoch uint64) *document {
+func (s *state) GetConsensus(epoch uint64) (*document, error) {
 	// Lock is held (called from the onWakeup hook).
 	// already have consensus for this epoch
 	if s.isConsensus(epoch) {
-		return s.documents[epoch]
+		return s.documents[epoch], nil
 	}
-	return nil
+	return nil, errNotYet
 }
 
 func (s *state) tabulated(epoch uint64) bool {
@@ -524,10 +522,10 @@ func (s *state) tabulate(epoch uint64) *document {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// include all the valid mixes from votes, including our own.
 	mixes := s.tallyMixes(epoch)
-	document := s.getDocument(mixes)
+	doc := s.getDocument(mixes)
 
 	// Serialize and sign the Document.
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], document)
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -544,11 +542,11 @@ func (s *state) tabulate(epoch uint64) *document {
 		return nil
 	}
 	// save the document
-	doc := &document{doc: pDoc, raw: rawDoc}
+	d := &document{doc: pDoc, raw: rawDoc}
 	if _, ok := s.documents[epoch]; !ok {
-		s.documents[epoch] = doc
+		s.documents[epoch] = d
 	}
-	return doc
+	return d
 }
 
 func (s *state) isConsensus(epoch uint64) bool {
@@ -556,8 +554,8 @@ func (s *state) isConsensus(epoch uint64) bool {
 	if !ok {
 		return false
 	}
-	sigMap := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
-	if len(sigMap) > s.threshold {
+	sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
+	if err == nil && len(sigMap) > s.threshold {
 		return true
 	}
 	return false
@@ -706,30 +704,30 @@ func (s *state) dupVote(vote commands.Vote) bool {
 func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	s.Lock()
 	defer s.Unlock()
-	resp := &commands.VoteStatus
+	resp := commands.VoteStatus{}
 
 	if vote.Epoch < s.votingEpoch {
 		s.log.Errorf("Received Vote too early: %d < %d", vote.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.VoteTooEarly
-		return resp
+		return &resp
 	}
 	if vote.Epoch > s.votingEpoch {
 		s.log.Errorf("Received Vote too late: %d > %d", vote.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.VoteTooLate
-		return resp
+		return &resp
 	}
 	_, ok := s.authorizedAuthorities[vote.PublicKey.ByteArray()]
 	if !ok {
 		s.log.Error("Voter not white-listed.")
 		resp.ErrorCode = commands.VoteNotAuthorized
-		return resp
+		return &resp
 	}
 
 	doc, rawDoc, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
-		return resp
+		return &resp
 	}
 
 	// haven't received a vote yet for this epoch
@@ -738,35 +736,40 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	}
 	// haven't received a signature yet for this epoch
 	if _, ok := s.signatures[s.votingEpoch]; !ok {
-		s.[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+		s.signatures[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 	}
 	// peer has not yet voted for this epoch
-	if !s.dupVote(vote) {
+	if !s.dupVote(*vote) {
 		s.votes[s.votingEpoch][vote.PublicKey.ByteArray()] = &document{
 			raw: rawDoc,
 			doc: doc,
 		}
 		s.log.Debug("Vote OK.")
 		resp.ErrorCode = commands.VoteOk
-		return resp
+		return &resp
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
-		if !s.dupSig(vote) {
+		if !s.dupSig(*vote) {
 			signed, err := jose.ParseSigned(string(rawDoc))
+			if err != nil {
+				s.log.Errorf("onVoteUpload signature parse failure: %s", err)
+				resp.ErrorCode = commands.VoteNotSigned
+				return &resp
+			}
 			if len(signed.Signatures) == 1 {
-				s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = signed.Signatures[0]
+				s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = &signed.Signatures[0]
 				resp.ErrorCode = commands.VoteOk
-				return resp
+				return &resp
 			} // else wrong number of signatures or no signature
 			s.log.Error("Vote command invalid: wrong number of signature")
 			resp.ErrorCode = commands.VoteNotSigned
-			return resp
+			return &resp
 		}
 		// peer is behaving strangely
 		// error; two votes from same peer
 		s.log.Error("Vote command invalid: more than one vote from same peer is not allowed.")
 		resp.ErrorCode = commands.VoteAlreadyReceived
-		return resp
+		return &resp
 	}
 }
 
