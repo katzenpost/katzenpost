@@ -60,8 +60,9 @@ type document struct {
 	raw []byte
 }
 
-func (d *document) getSig(peer xxx) error {
-	//returns the signature by peer if any
+func (d *document) getSig() error {
+	// XXX unfuck me: returns the signature by peer if any
+	return nil
 }
 
 func (d *document) addSig(sig *jose.Signature) error {
@@ -72,23 +73,23 @@ func (d *document) addSig(sig *jose.Signature) error {
 	// verify the signature hasn't already been added
 	if len(signed.Signatures) != 0 {
 		for _, v := range signed.Signatures {
-			if bytes.Equals(v.Signature, sig.Signature) {
+			if bytes.Equal(v.Signature, sig.Signature) {
 				return fmt.Errorf("Already attached signature!")
 			}
 		}
 	}
 	// verify that the signature signs the document
-	signed.Signatures = append(signed.Signatures, sig)
+	signed.Signatures = append(signed.Signatures, *sig)
 	_, signature, _, err := signed.VerifyMulti(sig)
 	if err == nil {
 		// update object
-		d.raw = signed.FullSerialize()
+		d.raw = []byte(signed.FullSerialize())
 	}
 	return err
 }
 
-func (d *document) sigs() []*jose.Signature {
-	if raw != nil && doc != nil {
+func (d *document) sigs() []jose.Signature {
+	if d.raw != nil && d.doc != nil {
 		signed, err := jose.ParseSigned(string(d.raw))
 		if err != nil {
 			return nil
@@ -96,6 +97,7 @@ func (d *document) sigs() []*jose.Signature {
 			return signed.Signatures
 		}
 	}
+	return nil
 }
 
 type VoteState byte
@@ -203,7 +205,7 @@ func (s *state) onWakeup() {
 	// of the document this authority believes will be the consensus
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
 		if s.documents[s.votingEpoch] == nil {
-			doc := s.tabulateVotes()
+			doc := s.tabulateVotes(s.votingEpoch)
 			if doc != nil {
 				s.documents[s.votingEpoch] = doc
 			} else {
@@ -230,12 +232,12 @@ func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
 
 func (s *state) currentVote() *pki.Document {
 	if _, ok := s.votes[s.votingEpoch]; ok {
-		return s.votes[s.votingEpoch][s.identityPubKey()]
+		return s.votes[s.votingEpoch][s.identityPubKey()].doc
 	}
 	return nil
 }
 
-func (s *state) getDocument(descriptors []*descriptor) *slln.Document {
+func (s *state) getDocument(descriptors []*descriptor) *s11n.Document {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
@@ -269,8 +271,12 @@ func (s *state) getDocument(descriptors []*descriptor) *slln.Document {
 	return doc
 }
 
-func (s *state) vote() *document {
-	vote := getDocument(s.descriptors)
+func (s *state) vote() {
+	descriptors := []*descriptor{}
+	for _, desc := range s.descriptors[s.votingEpoch] {
+		descriptors = append(descriptors, desc)
+	}
+	vote := s.getDocument(descriptors)
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[s.votingEpoch]; !ok {
@@ -282,9 +288,9 @@ func (s *state) vote() *document {
 		s.log.Errorf("failure: vote already present, this should never happen.")
 		err := errors.New("failure: vote already present, this should never happen.")
 		s.s.fatalErrCh <- err
-		return nil
+		return
 	}
-	s.sendVoteToAuthorities(signedVote)
+	s.sendVoteToAuthorities(signedVote.raw)
 }
 
 func (s *state) sign(doc *s11n.Document) *document {
@@ -307,7 +313,7 @@ func (s *state) sign(doc *s11n.Document) *document {
 	}
 	return &document{
 		doc: pDoc,
-		raw: signed,
+		raw: []byte(signed),
 	}
 }
 
@@ -406,7 +412,7 @@ func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []
 		return nil
 	}
 
-	seen := make(map[[]byte][]*pki.Document)
+	seen := make(map[string][]*pki.Document)
 	agree := make([]*pki.Document, 0)
 	disagree := make([]*pki.Document, 0)
 	for _, vote := range votes {
@@ -417,19 +423,25 @@ func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []
 		}
 		rawVoteMixDesc, err := s11n.SerializeDescriptor(voteMixDesc)
 		if err != nil {
+			s.log.Errorf("s11n.SerializeDescriptor failure: %s", err)
+			continue
+		}
+
+		rawVoteMixDescStr := string(rawVoteMixDesc)
+		if err != nil {
 			s.log.Errorf("votesAgree: SerializeDescriptor failure: %s", err)
 			continue
 		}
-		if _, ok := seen[rawVoteMixDesc]; !ok {
-			seen[rawVoteMixDesc] = make([]*pki.Document, 0)
+		if _, ok := seen[rawVoteMixDescStr]; !ok {
+			seen[rawVoteMixDescStr] = make([]*pki.Document, 0)
 		}
-		seen[rawVoteMixDesc] = append(seen[rawVoteMixDesc], vote)
+		seen[rawVoteMixDescStr] = append(seen[rawVoteMixDescStr], vote)
 	}
 	for rawVoteMixDesc, votes := range seen {
 		if len(votes) > s.threshold {
-			voteMixDesc, err := VerifyAndParseDescriptor(rawVoteMixDesc, s.votingEpoch)
-			if !err {
-				return &descriptor{desc: voteMixDesc, raw: rawVoteMixDesc}
+			voteMixDesc, err := s11n.VerifyAndParseDescriptor([]byte(rawVoteMixDesc), s.votingEpoch)
+			if err != nil {
+				return &descriptor{desc: voteMixDesc, raw: []byte(rawVoteMixDesc)}
 			}
 		}
 	}
@@ -451,11 +463,12 @@ func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []b
 
 func (s *state) tallyMixes(epoch uint64) []*descriptor {
 	// Lock is held (called from the onWakeup hook).
-	if _, ok := s.votes[epoch]; !ok {
+	_, ok := s.votes[epoch]
+	if !ok {
 		s.log.Notice("No votes for epoch %v", epoch)
 		return nil
 	}
-	if !(ok && len(votes) > s.threshold) {
+	if len(s.votes) <= s.threshold {
 		s.log.Notice("Did not receive threshold number of votes.")
 		return nil
 	}
@@ -476,7 +489,7 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 
 	var nodes []*descriptor
 	for mixIdentity, votes := range mixTally {
-		if desc := agreedDescriptor(mixIdentity, votes); desc != nil {
+		if desc := s.agreedDescriptor(mixIdentity, votes); desc != nil {
 			nodes = append(nodes, desc)
 		}
 	}

@@ -119,7 +119,7 @@ func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.P
 	}
 
 	// Serialize the key, descriptor and signature.
-	return signed.FullSerialize()
+	return signed.FullSerialize(), nil
 }
 
 // VerifyPeerMulti returns a map of keys to signatures for
@@ -139,55 +139,6 @@ func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) (map[[eddsa.
 		}
 	}
 	return sigMap, nil
-}
-
-func GetSignedMixDescriptor(b []byte, identityPublicKey, targetNodePublicKey *eddsa.PublicKey) ([]byte, error) {
-	signed, err := jose.ParseSigned(string(b))
-	if err != nil {
-		return nil, err
-	}
-
-	// XXX shouldn't the library do this for us?
-	for _, sig := range signed.Signatures {
-		alg := sig.Header.Algorithm
-		if alg != "EdDSA" {
-			return nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
-		}
-	}
-	_, _, payload, err := signed.VerifyMulti(*identityPublicKey.InternalPtr())
-	if err != nil {
-		if err == jose.ErrCryptoFailure {
-			err = fmt.Errorf("nonvoting: Invalid document signature")
-		}
-		return nil, err
-	}
-	// Parse the payload.
-	d := new(Document)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
-	if err = dec.Decode(d); err != nil {
-		return nil, err
-	}
-	for layer, nodes := range d.Topology {
-		for _, rawDesc := range nodes {
-			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
-			if err != nil {
-				return nil, err
-			}
-			if desc.IdentityKey.Equal(targetNodePublicKey) {
-				return rawDesc, nil
-			}
-		}
-	}
-	for _, rawDesc := range d.Providers {
-		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
-		if err != nil {
-			return nil, err
-		}
-		if desc.IdentityKey.Equal(targetNodePublicKey) {
-			return rawDesc, nil
-		}
-	}
-	return nil, errors.New("GetSignedMixDescriptor failure: node identity not found.")
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
