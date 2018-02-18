@@ -434,10 +434,6 @@ func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []
 		}
 
 		rawVoteMixDescStr := string(rawVoteMixDesc)
-		if err != nil {
-			s.log.Errorf("votesAgree: SerializeDescriptor failure: %s", err)
-			continue
-		}
 		if _, ok := seen[rawVoteMixDescStr]; !ok {
 			seen[rawVoteMixDescStr] = make([]*pki.Document, 0)
 		}
