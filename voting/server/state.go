@@ -68,7 +68,7 @@ func (d *document) getSignatures() ([]jose.Signature, error) {
 		}
 		return signed.Signatures, nil
 	}
-	return nil, errors.New("document getSignatures failure: struct type not initialized.")
+	return nil, errors.New("document getSignatures failure: struct type not initialized")
 }
 
 func (d *document) addSig(sig *jose.Signature) error {
@@ -80,7 +80,7 @@ func (d *document) addSig(sig *jose.Signature) error {
 	if len(signed.Signatures) != 0 {
 		for _, v := range signed.Signatures {
 			if bytes.Equal(v.Signature, sig.Signature) {
-				return fmt.Errorf("Already attached signature!")
+				return fmt.Errorf("already attached signature")
 			}
 		}
 	}
@@ -289,7 +289,7 @@ func (s *state) vote(epoch uint64) {
 		s.votes[epoch][s.identityPubKey()] = signedVote
 	} else {
 		s.log.Errorf("failure: vote already present, this should never happen.")
-		err := errors.New("failure: vote already present, this should never happen.")
+		err := errors.New("failure: vote already present, this should never happen")
 		s.s.fatalErrCh <- err
 		return
 	}
@@ -372,11 +372,11 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	case commands.VoteOk:
 		return nil
 	case commands.VoteTooLate:
-		return errors.New("Vote was too late.")
+		return errors.New("vote was too late")
 	case commands.VoteTooEarly:
-		return errors.New("Vote was too early.")
+		return errors.New("vote was too early")
 	default:
-		return fmt.Errorf("Vote rejected by authority: unknown error code received.")
+		return fmt.Errorf("vote rejected by authority: unknown error code received")
 	}
 	return nil
 }
@@ -474,13 +474,13 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 	for _, voteDoc := range s.votes[epoch] {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
-				mixId := voteDesc.IdentityKey.ByteArray()
-				mixTally[mixId] = append(mixTally[mixId], voteDoc.doc)
+				mixID := voteDesc.IdentityKey.ByteArray()
+				mixTally[mixID] = append(mixTally[mixID], voteDoc.doc)
 			}
 		}
 		for _, voteDesc := range voteDoc.doc.Providers {
-			mixId := voteDesc.IdentityKey.ByteArray()
-			mixTally[mixId] = append(mixTally[mixId], voteDoc.doc)
+			mixID := voteDesc.IdentityKey.ByteArray()
+			mixTally[mixID] = append(mixTally[mixID], voteDoc.doc)
 		}
 	}
 
@@ -737,7 +737,6 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		}
 		s.log.Debug("Vote OK.")
 		resp.ErrorCode = commands.VoteOk
-		return &resp
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
@@ -762,6 +761,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		resp.ErrorCode = commands.VoteAlreadyReceived
 		return &resp
 	}
+	return &resp
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {

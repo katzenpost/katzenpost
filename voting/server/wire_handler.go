@@ -88,9 +88,8 @@ func (s *Server) onConn(conn net.Conn) {
 			// it with a response.
 			s.log.Errorf("Peer %v: Not allowed to post.", rAddr)
 			return
-		} else {
-			resp = s.onPostDescriptor(rAddr, c, auth.peerIdentityKey)
 		}
+		resp = s.onPostDescriptor(rAddr, c, auth.peerIdentityKey)
 	default:
 		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
 		return
