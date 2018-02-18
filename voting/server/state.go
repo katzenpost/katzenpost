@@ -527,7 +527,7 @@ func (s *state) tabulate(epoch uint64) *document {
 	document := s.getDocument(mixes)
 
 	// Serialize and sign the Document.
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, document)
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], document)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -736,7 +736,10 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
-
+	// haven't received a signature yet for this epoch
+	if _, ok := s.signatures[s.votingEpoch]; !ok {
+		s.[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	}
 	// peer has not yet voted for this epoch
 	if !s.dupVote(vote) {
 		s.votes[s.votingEpoch][vote.PublicKey.ByteArray()] = &document{
@@ -976,7 +979,6 @@ func newState(s *Server) (*state, error) {
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
 	st.updateCh = make(chan interface{}, 1) // Buffered!
-	st.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
 	st.threshold = len(st.s.cfg.Authorities)/2 + 1
 
 	// Initialize the authorized peer tables.
@@ -998,6 +1000,7 @@ func newState(s *Server) (*state, error) {
 
 	st.documents = make(map[uint64]*document)
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
+	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
