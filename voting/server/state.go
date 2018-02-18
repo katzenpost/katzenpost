@@ -123,8 +123,8 @@ type state struct {
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
 
-	votingEpoch  uint64
-	threshold    int
+	votingEpoch uint64
+	threshold   int
 }
 
 func (s *state) Halt() {
@@ -190,7 +190,6 @@ func (s *state) onWakeup() {
 			// XXX FIX ME
 		}
 	}
-
 	// If it is past the descriptor upload period and we have yet to generate a
 	// document for the *next* epoch, generate a document and send it to all
 	// of the other Directory Authorities.
