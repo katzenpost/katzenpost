@@ -205,9 +205,6 @@ func (s *state) onWakeup() {
 		if !s.tabulated(s.votingEpoch) {
 			s.tabulate(s.votingEpoch)
 		}
-		if s.documents[s.votingEpoch] == nil {
-			s.tabulateVotes(s.votingEpoch)
-		}
 	}
 	// we should now have received enough signatures to make consensus.
 	if elapsed > publishConsensusDeadline {
@@ -232,12 +229,11 @@ func (s *state) combine(epoch uint64) {
 	}
 	if !s.isConsensus(epoch) {
 		// XXX we don't have a consensus! OH NOES!
-		delete(s.documents, epoch)
+		delete(s.documents, epoch) // XXX: really?
 	} else {
 		// save consensus to disk
 	}
 }
-
 
 func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
 	return s.s.identityKey.PublicKey().ByteArray()
