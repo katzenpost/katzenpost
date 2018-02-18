@@ -60,6 +60,44 @@ type document struct {
 	raw []byte
 }
 
+func (d *document) getSig(peer xxx) error {
+	//returns the signature by peer if any
+}
+
+func (d *document) addSig(sig *jose.Signature) error {
+	// caller MUST verify that the signer is authorized
+	// this function only verifies that the signature
+	// is valid and not duplicated.
+	signed, err := jose.ParseSigned(string(d.raw))
+	// verify the signature hasn't already been added
+	if len(signed.Signatures) != 0 {
+		for _, v := range signed.Signatures {
+			if bytes.Equals(v.Signature, sig.Signature) {
+				return fmt.Errorf("Already attached signature!")
+			}
+		}
+	}
+	// verify that the signature signs the document
+	signed.Signatures = append(signed.Signatures, sig)
+	_, signature, _, err := signed.VerifyMulti(sig)
+	if err == nil {
+		// update object
+		d.raw = signed.FullSerialize()
+	}
+	return err
+}
+
+func (d *document) sigs() []*jose.Signature {
+	if raw != nil && doc != nil {
+		signed, err := jose.ParseSigned(string(d.raw))
+		if err != nil {
+			return nil
+		} else {
+			return signed.Signatures
+		}
+	}
+}
+
 type VoteState byte
 
 type state struct {
@@ -160,14 +198,25 @@ func (s *state) onWakeup() {
 			s.vote()
 		}
 	}
+	// If it is now past the voting deadline, and before the consensus
+	// has been published, send a signature to the other authorities
+	// of the document this authority believes will be the consensus
 	if elapsed > authorityVoteDeadline && elapsed < publishConsensusDeadline {
 		if s.documents[s.votingEpoch] == nil {
-			s.getConsensus()
+			doc := s.tabulateVotes()
+			if doc != nil {
+				s.documents[s.votingEpoch] = doc
+			} else {
+				// XXX failed to tabulate votes??
+			}
 		}
 	}
-
+	// we should now have received enough signatures to make consensus.
 	if elapsed > publishConsensusDeadline {
-		if len(s.signatureMap) > s.threshold {
+		if !s.isConsensus(s.votingEpoch) {
+			// XXX we don't have a consensus! OH NOES!
+		} else {
+			// save consensus to disk
 		}
 	}
 
@@ -400,15 +449,19 @@ func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []b
 	return nil, nil // XXX
 }
 
-func (s *state) tallyMixes(votes []*document) []*descriptor {
+func (s *state) tallyMixes(epoch uint64) []*descriptor {
 	// Lock is held (called from the onWakeup hook).
+	if _, ok := s.votes[epoch]; !ok {
+		s.log.Notice("No votes for epoch %v", epoch)
+		return nil
+	}
 	if !(ok && len(votes) > s.threshold) {
 		s.log.Notice("Did not receive threshold number of votes.")
-		return
+		return nil
 	}
 
 	mixTally := make(map[[eddsa.PublicKeySize]byte][]*document)
-	for _, voteDoc := range votes {
+	for _, voteDoc := range s.votes[epoch] {
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
 				mixId := voteDesc.IdentityKey.ByteArray()
@@ -433,30 +486,21 @@ func (s *state) tallyMixes(votes []*document) []*descriptor {
 
 func (s *state) getConsensus(epoch uint64) *document {
 	// Lock is held (called from the onWakeup hook).
-
-	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
-	if c, ok := s.documents[epoch]; ok {
-		// already have consensus
+	// already have consensus for this epoch
+	if s.isConsensus(epoch) {
 		return s.documents[epoch]
 	}
+	return nil
+}
 
-	votes, ok := s.votes[epoch]
-	if !(ok && len(votes) > s.threshold) {
-		s.log.Notice("Did not receive threshold number of votes.")
-		return nil
-	}
-	if len(s.signatureMap) < s.threshold {
-		// Require threshold votes to publish.
-		s.log.Warning("Document not signed by majority Authority peers.")
-		return nil
-	}
-
-	// count the votes
-	mixes := tallyMixes(votes)
-	consensus := s.getDocument(mixes)
+func (s *state) tabulateVotes(epoch uint64) *document {
+	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
+	// include all the valid mixes from votes, including our own.
+	mixes := s.tallyMixes(epoch)
+	document := s.getDocument(mixes)
 
 	// Serialize and sign the Document.
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, consensus)
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatureMap, document)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -472,45 +516,27 @@ func (s *state) getConsensus(epoch uint64) *document {
 		s.s.fatalErrCh <- err
 		return nil
 	}
-	sigMap := s11n.VerifyPeerMulti(rawDoc, s.s.cfg.Authorities)
-	if len(sigMap) != len(s.signatureMap) {
-		// This should never happen.
-		s.log.Error("Document not really signed by all Authority peers.")
-		err := errors.New("failure: PKI Document not really signed by all Authority peers.")
-		s.s.fatalErrCh <- err
-		return nil
-	}
-	if len(sigMap) < s.threshold {
-		// Require threshold votes to publish.
-		s.log.Warning("Document not signed by majority Authority peers.")
-		return nil
-	}
-	if pDoc.Epoch != epoch {
-		// This should never happen either.
-		s.log.Errorf("Signed document has invalid epoch: %v", pDoc.Epoch)
-		s.s.fatalErrCh <- s11n.ErrInvalidEpoch
-		return nil
+
+	// add the tabulated document to documents; awaiting peer signatures
+	if _, ok := s.documents[epoch]; !ok {
+		doc := &document{doc: pDoc, raw: rawDoc}
+		return doc
 	}
 
-	s.log.Debugf("Document (Parsed): %v", pDoc)
-
-	// Persist the document to disk.
-	if err := s.db.Update(func(tx *bolt.Tx) error {
-		bkt := tx.Bucket([]byte(documentsBucket))
-		bkt.Put(epochToBytes(epoch), []byte(signed))
-		return nil
-	}); err != nil {
-		// Persistence failures are FATAL.
-		s.s.fatalErrCh <- err
-	}
-
-	d := new(document)
-	d.doc = pDoc
-	d.raw = []byte(signed)
-	s.documents[epoch] = d
-	s.signatureMap = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
-	return d
 }
+
+func (s *state) isConsensus(epoch uint64) bool {
+	doc, ok := s.documents[epoch]
+	if !ok {
+		return false
+	}
+	sigMap := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
+	if len(sigMap) > s.threshold {
+		return true
+	}
+	return false
+}
+
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
 	s.log.Debugf("Generating mix topology.")
