@@ -537,7 +537,6 @@ func (s *state) isConsensus(epoch uint64) bool {
 	return false
 }
 
-
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
 	s.log.Debugf("Generating mix topology.")
 
