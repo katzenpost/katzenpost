@@ -109,10 +109,6 @@ func (s *Server) onVote(cmd *commands.Vote) commands.Command {
 	return s.state.onVoteUpload(cmd)
 }
 
-func (s *Server) onGetConsensusSig(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
-
-}
-
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
 	resp := &commands.Consensus{}
 	doc, err := s.state.GetConsensus(cmd.Epoch)
@@ -127,7 +123,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	} else {
 		s.log.Debugf("Peer: %v: Serving document for epoch %v.", rAddr, cmd.Epoch)
 		resp.ErrorCode = commands.ConsensusOk
-		resp.Payload = doc
+		resp.Payload = doc.raw
 	}
 	return resp
 }
