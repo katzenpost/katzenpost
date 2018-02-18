@@ -119,7 +119,7 @@ func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.P
 	}
 
 	// Serialize the key, descriptor and signature.
-	return signed.CompactSerialize()
+	return signed.FullSerialize()
 }
 
 // VerifyPeerMulti returns a map of keys to signatures for
