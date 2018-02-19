@@ -102,7 +102,7 @@ func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.P
 		Algorithm: jose.EdDSA,
 		Key:       *signingKey.InternalPtr(),
 	}
-	signer, err := jose.NewSigner(k, nil)
+	signer, err := jose.NewMultiSigner([]jose.SigningKey{k}, nil) // XXX multiple signing keys
 	if err != nil {
 		return "", err
 	}
@@ -134,8 +134,6 @@ func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) (map[[eddsa.
 		_, signature, _, err := signed.VerifyMulti(*peer.IdentityPublicKey.InternalPtr())
 		if err == nil {
 			sigMap[peer.IdentityPublicKey.ByteArray()] = &signature
-		} else {
-			return nil, fmt.Errorf("VerifyPeerMulti failure: %s", err)
 		}
 	}
 	return sigMap, nil
