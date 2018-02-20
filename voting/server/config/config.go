@@ -217,7 +217,7 @@ type AuthorityPeer struct {
 	Addresses []string
 }
 
-func (a *AuthorityPeer) validate() error {
+func (a *AuthorityPeer) Validate() error {
 	for _, v := range a.Addresses {
 		if err := utils.EnsureAddrIPPort(v); err != nil {
 			return fmt.Errorf("config: AuthorityPeer: Address '%v' is invalid: %v", v, err)

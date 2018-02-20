@@ -19,6 +19,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -34,13 +35,26 @@ import (
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 )
 
 type descriptor struct {
 	desc *pki.MixDescriptor
 	raw  []byte
+}
+
+func generateRandomTopology(nodes []*descriptor, layers int) [][][]byte {
+	rng := rand.NewMath()
+	nodeIndexes := rng.Perm(len(nodes))
+	topology := make([][][]byte, layers)
+	for idx, layer := 0, 0; idx < len(nodes); idx++ {
+		n := nodes[nodeIndexes[idx]]
+		topology[layer] = append(topology[layer], n.raw)
+		layer++
+		layer = layer % len(topology)
+	}
+	return topology
 }
 
 func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][][]byte {
@@ -109,95 +123,152 @@ func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][
 	return topology
 }
 
-func generateDoc(epoch uint64) ([]byte, error) {
-	mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, err
+func generateMixKeys(epoch uint64) (map[uint64]*ecdh.PublicKey, error) {
+	m := make(map[uint64]*ecdh.PublicKey)
+	for i := epoch; i < epoch+3; i++ {
+		privatekey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		m[uint64(i)] = privatekey.PublicKey()
 	}
-	targetMix := &pki.MixDescriptor{
-		Name:        "NSA_Spy_Satelite_Mix001",
-		IdentityKey: mixIdentityPrivateKey.PublicKey(),
-		LinkKey:     nil,
-		MixKeys:     nil,
-		Addresses:   nil,
-		Kaetzchen:   nil,
-		Layer:       1,
-		LoadWeight:  0,
-	}
-	pdoc := &pki.Document{
-		Epoch:           epoch,
-		MixLambda:       3.141,
-		MixMaxDelay:     3,
-		SendLambda:      2.6,
-		SendShift:       2,
-		SendMaxInterval: 42,
-		Topology: [][]*pki.MixDescriptor{
-			[]*pki.MixDescriptor{
-				targetMix,
-			},
-		},
-		Providers: []*pki.MixDescriptor{
-			targetMix,
-		},
-	}
-	signed, err := s11n.SignDescriptor(mixIdentityPrivateKey, targetMix)
-	if err != nil {
-		return nil, err
-	}
-	nodeList := []*descriptor{
-		&descriptor{
-			raw:  []byte(signed),
-			desc: targetMix,
-		},
-	}
-	topology := generateTopology(nodeList, pdoc, 3)
-	doc := &s11n.Document{
-		Epoch:           epoch,
-		MixLambda:       3.141,
-		MixMaxDelay:     3,
-		SendLambda:      2.6,
-		SendShift:       2,
-		SendMaxInterval: 42,
-		Topology:        topology,
-		Providers:       [][]byte{[]byte{}},
-	}
+	return m, nil
+}
 
-	signed, err = s11n.MultiSignDocument(mixIdentityPrivateKey, nil, doc)
+func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error) {
+	mixes := []*descriptor{}
+	for i := 0; i < num; i++ {
+		mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
+		mixKeys, err := generateMixKeys(epoch)
+		if err != nil {
+			return nil, err
+		}
+		var layer uint8
+		var name string
+		if isProvider {
+			layer = pki.LayerProvider
+			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
+		} else {
+			layer = 0
+			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
+		}
+		mix := &pki.MixDescriptor{
+			Name:        name,
+			IdentityKey: mixIdentityPrivateKey.PublicKey(),
+			LinkKey:     mixIdentityPrivateKey.PublicKey().ToECDH(),
+			MixKeys:     mixKeys,
+			Addresses: map[pki.Transport][]string{
+				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			},
+			Kaetzchen:  nil,
+			Layer:      layer,
+			LoadWeight: 0,
+		}
+		signed, err := s11n.SignDescriptor(mixIdentityPrivateKey, mix)
+		if err != nil {
+			return nil, err
+		}
+		desc := &descriptor{
+			raw:  []byte(signed),
+			desc: mix,
+		}
+		mixes = append(mixes, desc)
+	}
+	return mixes, nil
+}
+
+func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, error) {
+	mixes, err := generateNodes(false, numMixes, epoch)
+	if err != nil {
+		return nil, err
+	}
+	providers, err := generateNodes(true, numProviders, epoch)
+	if err != nil {
+		return nil, err
+	}
+	providersRaw := [][]byte{}
+	for _, p := range providers {
+		providersRaw = append(providersRaw, p.raw)
+	}
+	topology := generateRandomTopology(mixes, 3)
+	doc := &s11n.Document{
+		Version:         "voting-document-v0",
+		Epoch:           epoch,
+		MixLambda:       0.25,
+		MixMaxDelay:     4000,
+		SendLambda:      1.2,
+		SendShift:       3,
+		SendMaxInterval: 300,
+		Topology:        topology,
+		Providers:       providersRaw,
+	}
+	return doc, nil
+}
+
+func generateDoc(epoch uint64, signingKeys []*eddsa.PrivateKey) ([]byte, error) {
+	// XXX
+	numMixes := len(signingKeys) - 2
+	numProviders := 2
+	doc, err := generateMixnet(numMixes, numProviders, epoch)
+	if err != nil {
+		return nil, err
+	}
+	signed, err := s11n.MultiSignTestDocument(signingKeys, doc)
 	if err != nil {
 		return nil, err
 	}
 	return []byte(signed), nil
 }
 
-type mockDialer struct {
+type conn struct {
 	serverConn net.Conn
 	clientConn net.Conn
 	dialCh     chan interface{}
-	log        *logging.Logger
+	signingKey *eddsa.PrivateKey
+}
+
+type mockDialer struct {
+	netMap map[string]*conn
+	log    *logging.Logger
 }
 
 func newMockDialer(logBackend *log.Backend) *mockDialer {
 	d := new(mockDialer)
-	d.serverConn, d.clientConn = net.Pipe()
-	d.dialCh = make(chan interface{}, 0)
+	d.netMap = make(map[string]*conn)
+
 	d.log = logBackend.GetLogger("mockDialer: ")
 	return d
 }
 
-func (d *mockDialer) dial(context.Context, string, string) (net.Conn, error) {
+func (d *mockDialer) dial(ctx context.Context, network string, address string) (net.Conn, error) {
 	defer func() {
-		close(d.dialCh)
+		close(d.netMap[address].dialCh)
 	}()
-	return d.clientConn, nil
+	d.log.Debug("MOCK DIAL %s", address)
+	return d.netMap[address].clientConn, nil
 }
 
-func (d *mockDialer) waitUntilDialed() {
-	<-d.dialCh
+func (d *mockDialer) waitUntilDialed(address string) {
+	if _, ok := d.netMap[address]; !ok {
+		d.log.Errorf("address %s not found in mockDialer netMap", address)
+		return
+	}
+	<-d.netMap[address].dialCh
 }
 
-func (d *mockDialer) mockServer(linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
-	d.log.Debug("starting mockServer...")
-	d.waitUntilDialed()
+func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
+	clientConn, serverConn := net.Pipe()
+	d.netMap[address] = &conn{
+		serverConn: serverConn,
+		clientConn: clientConn,
+		dialCh:     make(chan interface{}, 0),
+		signingKey: identityPrivateKey,
+	}
+
+	d.waitUntilDialed(address)
 	cfg := &wire.SessionConfig{
 		Authenticator:     d,
 		AdditionalData:    identityPrivateKey.PublicKey().Bytes(),
@@ -210,7 +281,7 @@ func (d *mockDialer) mockServer(linkPrivateKey *ecdh.PrivateKey, identityPrivate
 		return
 	}
 	defer session.Close()
-	err = session.Initialize(d.serverConn)
+	err = session.Initialize(d.netMap[address].serverConn)
 	if err != nil {
 		d.log.Errorf("mockServer session Initialize failure: %s", err)
 		return
@@ -222,7 +293,11 @@ func (d *mockDialer) mockServer(linkPrivateKey *ecdh.PrivateKey, identityPrivate
 	}
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
-		rawDoc, err := generateDoc(c.Epoch)
+		signingKeys := []*eddsa.PrivateKey{}
+		for _, v := range d.netMap {
+			signingKeys = append(signingKeys, v.signingKey)
+		}
+		rawDoc, err := generateDoc(c.Epoch, signingKeys)
 		if err != nil {
 			d.log.Errorf("mockServer session generateDoc failure: %s", err)
 			return
@@ -246,7 +321,7 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer() (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey, error) {
+func generatePeer(peerNum int) (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey, error) {
 	identityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, nil, err
@@ -255,40 +330,36 @@ func generatePeer() (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey,
 	return &config.AuthorityPeer{
 		IdentityPublicKey: identityPrivateKey.PublicKey(),
 		LinkPublicKey:     linkPrivateKey.PublicKey(),
-		Addresses:         []string{"127.0.0.1:1234"}, // not actually using this address at all ;-)
+		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}, identityPrivateKey, linkPrivateKey, nil
 }
 
 func TestClient(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 
 	logBackend, err := log.New("", "DEBUG", false)
-	assert.NoError(err, "wtf")
+	require.NoError(err, "wtf")
 	dialer := newMockDialer(logBackend)
-
 	peers := []*config.AuthorityPeer{}
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, linkPrivKey, err := generatePeer()
-		assert.NoError(err, "wtf")
+		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
+		require.NoError(err, "wtf")
 		peers = append(peers, peer)
-		go dialer.mockServer(linkPrivKey, idPrivKey)
+		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey)
 	}
-
 	cfg := &Config{
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
 	}
 	client, err := New(cfg)
-	assert.NoError(err, "wtf")
-
+	require.NoError(err, "wtf")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
-
 	epoch, _, _ := epochtime.Now()
 	doc, rawDoc, err := client.Get(ctx, epoch)
-	assert.NoError(err, "wtf")
-	assert.NotNil(doc, "wtf")
-	assert.Equal(doc.Epoch, epoch)
+	require.NoError(err, "wtf")
+	require.NotNil(doc, "wtf")
+	require.Equal(epoch, doc.Epoch)
 	t.Logf("rawDoc size is %d", len(rawDoc))
 }
