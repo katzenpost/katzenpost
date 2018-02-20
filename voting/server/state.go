@@ -661,6 +661,16 @@ func (s *state) pruneDocuments() {
 			delete(s.descriptors, e)
 		}
 	}
+	for e := range s.votes {
+		if e < cmpEpoch {
+			delete(s.votes, e)
+		}
+	}
+	for e := range s.signatures {
+		if e < cmpEpoch {
+			delete(s.descriptors, e)
+		}
+	}
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
