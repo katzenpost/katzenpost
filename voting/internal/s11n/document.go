@@ -86,6 +86,36 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 	return signed.CompactSerialize()
 }
 
+// ShinyMultiSignDocument signs and serializes the document with the provided signing key.
+func MultiSignTestDocument(signingKeys []*eddsa.PrivateKey, d *Document) (string, error) {
+	d.Version = documentVersion
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return "", err
+	}
+	keySet := []jose.SigningKey{}
+	for _, key := range signingKeys {
+		k := jose.SigningKey{
+			Algorithm: jose.EdDSA,
+			Key:       *key.InternalPtr(),
+		}
+		keySet = append(keySet, k)
+	}
+	// Sign the document.
+	signer, err := jose.NewMultiSigner(keySet, nil)
+	if err != nil {
+		return "", err
+	}
+	signed, err := signer.Sign(payload)
+	if err != nil {
+		return "", err
+	}
+	// Serialize the key, descriptor and signature.
+	return signed.FullSerialize(), nil
+}
+
 // SignDocument signs and serializes the document with the provided signing key.
 func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.PublicKeySize]byte]*jose.Signature, d *Document) (string, error) {
 	d.Version = documentVersion
@@ -143,14 +173,14 @@ func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) (map[[eddsa.
 func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, []byte, error) {
 	signed, err := jose.ParseSigned(string(b))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("wtf1 %s", err)
 	}
 
 	// XXX shouldn't the library do this for us?
 	for _, sig := range signed.Signatures {
 		alg := sig.Header.Algorithm
 		if alg != "EdDSA" {
-			return nil, nil, fmt.Errorf("nonvoting: Unsupported signature algorithm: '%v'", alg)
+			return nil, nil, fmt.Errorf("wtf2 nonvoting: Unsupported signature algorithm: '%v'", alg)
 		}
 	}
 
@@ -159,19 +189,19 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		if err == jose.ErrCryptoFailure {
 			err = fmt.Errorf("nonvoting: Invalid document signature")
 		}
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("wtf3 %s", err)
 	}
 
 	// Parse the payload.
 	d := new(Document)
 	dec := codec.NewDecoderBytes(payload, jsonHandle)
 	if err = dec.Decode(d); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("wtf4 %s", err)
 	}
 
 	// Ensure the document is well formed.
 	if d.Version != documentVersion {
-		return nil, nil, fmt.Errorf("nonvoting: Invalid Document Version: '%v'", d.Version)
+		return nil, nil, fmt.Errorf("wtf5 nonvoting: Invalid Document Version: '%v'", d.Version)
 	}
 
 	// Convert from the wire representation to a Document, and validate
@@ -190,7 +220,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		for _, rawDesc := range nodes {
 			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, fmt.Errorf("wtf6 %s", err)
 			}
 			doc.Topology[layer] = append(doc.Topology[layer], desc)
 		}
@@ -199,13 +229,13 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	for _, rawDesc := range d.Providers {
 		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("VerifyAndParseDocument fail: VerifyAndParseDescriptor failure: %s", err)
 		}
 		doc.Providers = append(doc.Providers, desc)
 	}
 
 	if err = IsDocumentWellFormed(doc); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("VerifyAndParseDocument IsDocumentWellFormed failure:  %s", err)
 	}
 
 	// Fixup the Layer field in all the Topology MixDescriptors.
