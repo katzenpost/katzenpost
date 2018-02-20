@@ -54,10 +54,11 @@ Table of Contents
    message, because observed messages may be decoy messages.
 
    The main purpose for decoy traffic is to mitigate statistical
-   disclosure attacks, however mix networks always leak
-   information. Therefore weather or not a long term statistical
-   disclosure attack converges on success is largely dependent on how
-   repetitive and predictable user behavior is.
+   disclosure attacks. However, mix networks always leak
+   information. Therefore, the outcomes of long-term statistical
+   disclosure attacks (whether successful or not) are largely
+   dependent upon the measure of repetitive and predictable user
+   behavior.
 
 1.1 Conventions Used in This Document
 
@@ -131,8 +132,8 @@ X. Anonymity Considerations
    or offline. Decoy traffic cannot guarantee prevention of long term
    intersection attacks if some users go offline. [RESISTDISCLOSURE]
    Preventing long term statistical disclosure attacks depends on many
-   factors including mix network information leakage and how
-   predictable and repetitive user behavior is.
+   factors including mix network information leakage and the measure
+   of predictable and repetitive user behavior.
 
    Katzenpost decoy loops implemented using the Kaetzchen
    auto-responder provides an additional measure of
