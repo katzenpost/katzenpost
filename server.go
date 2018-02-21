@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/cryptoworker"
+	"github.com/katzenpost/server/internal/decoy"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/incoming"
 	"github.com/katzenpost/server/internal/outgoing"
@@ -66,6 +67,7 @@ type Server struct {
 	listeners     []glue.Listener
 	connector     glue.Connector
 	provider      glue.Provider
+	decoy         glue.Decoy
 	management    *thwack.Server
 
 	fatalErrCh chan error
@@ -130,6 +132,12 @@ func (s *Server) halt() {
 		s.management = nil
 	}
 
+	// Stop the decoy source/sink.
+	if s.decoy != nil {
+		s.decoy.Halt()
+		// Don't nil this out till after the PKI has been torn down.
+	}
+
 	// Stop the listener(s), close all incoming connections.
 	for i, l := range s.listeners {
 		if l != nil {
@@ -168,7 +176,10 @@ func (s *Server) halt() {
 	if s.pki != nil {
 		s.pki.Halt()
 		s.pki = nil
-		s.connector = nil // PKI calls into the connector.
+
+		// PKI calls into the connector/decoy.
+		s.connector = nil
+		s.decoy = nil
 	}
 
 	// Flush and close the mix keys.
@@ -325,9 +336,13 @@ func New(cfg *config.Config) (*Server, error) {
 		s.cryptoWorkers = append(s.cryptoWorkers, w)
 	}
 
-	// Initialize the outgoing connection manager, and then start the PKI
-	// worker.
+	// Initialize the outgoing connection manager, decoy source/sink, and then
+	// start the PKI worker.
 	s.connector = outgoing.New(goo)
+	if s.decoy, err = decoy.New(goo); err != nil {
+		s.log.Errorf("Failed to initialize decoy source/sink: %v", err)
+		return nil, err
+	}
 	s.pki.StartWorker()
 
 	// Bring the listener(s) online.
@@ -401,6 +416,10 @@ func (g *serverGlue) Connector() glue.Connector {
 
 func (g *serverGlue) Listeners() []glue.Listener {
 	return g.s.listeners
+}
+
+func (g *serverGlue) Decoy() glue.Decoy {
+	return g.s.decoy
 }
 
 func (g *serverGlue) ReshadowCryptoWorkers() {

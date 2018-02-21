@@ -103,7 +103,7 @@ func (p *pki) worker() {
 	for {
 		const recheckInterval = 1 * time.Minute
 
-		timerFired := false
+		var timerFired bool
 		select {
 		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
@@ -118,7 +118,7 @@ func (p *pki) worker() {
 		}
 
 		// Fetch the PKI documents as required.
-		didUpdate := false
+		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
@@ -179,8 +179,9 @@ func (p *pki) worker() {
 			p.log.Warningf("Failed to post to PKI: %v", err)
 		}
 
-		// Update the scheduler and listener's idea of MixMaxDelay/SendShift
-		// if needed.
+		// Internal component depend on network wide paramemters, and or the
+		// list of nodes.  Update if there is a new document for the current
+		// epoch.
 		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
 			if ent := p.entryForEpoch(now); ent != nil {
 				if newMixMaxDelay := ent.MixMaxDelay(); newMixMaxDelay != lastMixMaxDelay {
@@ -197,6 +198,9 @@ func (p *pki) worker() {
 					}
 					lastSendShift = newSendShift
 				}
+
+				p.log.Debugf("Updating decoy document for epoch %v.", now)
+				p.glue.Decoy().OnNewDocument(ent)
 
 				lastUpdateEpoch = now
 			}

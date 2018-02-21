@@ -255,6 +255,13 @@ func (w *Worker) worker() {
 			w.glue.Scheduler().OnPacket(pkt)
 			continue
 		} else if !isProvider {
+			// This may be a decoy traffic response.
+			if pkt.IsSURBReply() {
+				w.log.Debugf("Handing off decoy response packet: %v", pkt.ID)
+				w.glue.Decoy().OnPacket(pkt)
+				continue
+			}
+
 			// Mixes will only ever see forward commands.
 			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
 			pkt.Dispose()
