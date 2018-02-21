@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/server/internal/packet"
+	"github.com/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/userdb"
 )
@@ -47,6 +48,7 @@ type Glue interface {
 	Scheduler() Scheduler
 	Connector() Connector
 	Listeners() []Listener
+	Decoy() Decoy
 
 	ReshadowCryptoWorkers()
 }
@@ -93,4 +95,10 @@ type Listener interface {
 	Halt()
 	IsConnUnique(interface{}) bool
 	OnNewSendShift(uint64)
+}
+
+type Decoy interface {
+	Halt()
+	OnNewDocument(*pkicache.Entry)
+	OnPacket(*packet.Packet)
 }
