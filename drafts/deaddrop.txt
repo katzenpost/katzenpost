@@ -1,0 +1,160 @@
+Katzenpost Dead Drop Extension
+David Stainton
+
+Version 0
+
+Abstract
+
+   This document describes a Provider-side autoresponder dead drop
+   service. This dead drop service can be used to compose messaging
+   systems with stronger location hiding properties and increased
+   resistance to longterm statistical disclosure attacks.
+
+1. Introduction
+
+   This dead drop service is implemented as a [KAETZCHEN]
+   autoresponder service and is meant to provide clients with the
+   ability to retreive messages from a remote Provider. Clients send
+   a request message and wait to receive one or more response messages.
+
+1.1 Conventions Used in This Document
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [RFC2119].
+
+1.2 Terminology
+
+   Provider - A service operated by a third party that Clients
+              communicate directly with to communicate with the Mixnet.
+              It is responsible for Client authentication,
+              forwarding outgoing messages to the Mixnet, and storing incoming
+              messages for the Client. The Provider MUST have the ability to
+              perform cryptographic operations on the relayed messages.
+
+2. Protocol Messages
+
+2.1 TetherRequest message
+
+   The TetherRequest is sent to the dead drop service with a SURB
+   that can be used to send the response message.
+
+       {
+           "Version": 0,
+           "User": "Alice",
+           "AuthToken": "base64...blah blah",
+           "Ack": 0
+       }
+
+   * The User field specifies the message spool on the remote Provider.
+
+   * The AuthToken field is a base64 encoded ciphertext blob
+   produced by encrypting 32 bytes of zeros with
+   `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key
+   used in [KATZMIXWIRE].
+
+   The encrypted and authenticated blob has the following
+   structure:
+
+       struct {
+           /* Noise protocol fields. */
+           opaque noise_e[32];     /* The Noise handshake `e`. */
+           opaque noise_s_mac[16]; /* The Noise handshake `s` MAC. */
+           opaque noise_mac[16];   /* The Noise ciphertext MAC. */
+
+           opaque ciphertext[TOKEN_LENGTH];
+       } BlockCiphertext;
+
+   where TOKEN_LENGTH is 32.
+
+   * The Ack field defaults to zero unless the user has had a previous
+   interaction where a TetherResponse was received. In that case the
+   previously received Sequence numbers are placed into this Ack field
+   which causes ther server to purge the associated messages.
+
+2.2. TetherResponse message
+
+   {
+      "Version": 0,
+      "StatusCode": 0,
+      "QueueHint": 0,
+      "Sequence": 0,
+      "Payload": ""
+   }
+
+   * The StatusCode field is used to report errors to the client if any.
+   Valid status codes are:
+
+      enum {
+         status_ok(0),           /* None error condition and SHOULD be
+                                    accompanied with a valid message payload. */
+         status_syntax_error(1), /* The request was malformed. */
+         status_no_identity(2),  /* No such identity was found. */
+         status_auth_error(3),   /* Authentication failure. */
+      } StatusCodes;
+
+   * QueueHint is used to inform the client how many more messages are
+     queued.
+
+   * Sequence is used by the server to decide when to permanently
+     delete a message.  When the next request message is received
+     containing this sequence number then the associated message is
+     purged.
+
+   * Payload is used to encapsulate one or more messages.
+
+3. Anonymity Considerations
+
+   * Sending a deaddrop request with many bundled SURBs
+   increases exposure to compulsion attack by the remote Provider.
+
+   * Sending a deaddrop request with many bundled SURBs
+   exposes the client to a potential active confirmation attack
+   where the remote Provider uses all of the SURBs to send
+   messages concurrently. The adversary then tries to determine
+   if there is an observed confirmation on the network exposing
+   the destination of these SURB reply messages. In the [LOOPIX]
+   Provider model the attacker might try to determine if any
+   of the Providers receive slightly more messages. If the
+   adversary has compromised one or more Proivders then the
+   goal would be to determine if one message spool receives
+   more messages than the rest.
+
+4. Security Considerations
+
+   * Noise handshake_K, wtf is it 48 bytes overhead instead of 64?
+   Am I doing something wrong here?
+   https://github.com/katzenpost/core/blob/rename_noise_tests.0/wire/noise_test.go#L179
+
+5. Future Work
+
+   It should be possible to increase the communication channel
+   efficiency by sending requests supplied with multiple
+   SURBs. However this must be carefully balanced with the resulting
+   exposure to statistical confirmation and compulsion attacks.
+
+Appendix A. References
+
+Appendix A.1 Normative References
+
+   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119,
+               DOI 10.17487/RFC2119, March 1997,
+               <http://www.rfc-editor.org/info/rfc2119>.
+
+   [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
+                "Katzenpost Provider-side Autoresponder", January 2018,
+                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.txt>.
+
+   [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
+              <https://noiseprotocol.org/noise.pdf>.
+
+Appendix A.2 Informative References
+
+   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
+
+   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
+               “The Loopix Anonymity System”,
+               USENIX, August, 2017
+               <https://arxiv.org/pdf/1703.00536.pdf>
