@@ -105,6 +105,11 @@ Abstract
 
 3. Anonymity Considerations
 
+   * Collusion of Providers might make it possible to link
+   an account on two different Providers. That is, a given
+   user's dead drop can be discovered if the two Providers
+   collude.
+
    * Sending a deaddrop request with many bundled SURBs
    increases exposure to compulsion attack by the remote Provider.
 
