@@ -5,23 +5,23 @@ import (
 	"crypto/rand"
 	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestSerialise(t *testing.T) {
+	require := require.New(t)
+
 	secret := SharedSecret{
 		Secret: "foo",
 	}
 	mp := NewSimpleMeetingPlace()
 	kx, err := NewKeyExchange(rand.Reader, mp, &secret, []byte{1})
-	if err != nil {
-		t.Fatalf("failed to create KeyExchange: %s", err)
-	}
+	require.NoError(err, "wtf")
 
 	serialised := kx.Marshal()
-
-	if _, err := UnmarshalKeyExchange(rand.Reader, mp, serialised); err != nil {
-		t.Fatalf("UnmarshalKeyExchange failed: %s", err)
-	}
+	_, err = UnmarshalKeyExchange(rand.Reader, mp, serialised)
+	require.NoError(err, "wtf")
 }
 
 func runKX(resultChan chan interface{}, log func(string, ...interface{}), mp MeetingPlace, secret *SharedSecret, message []byte) {
@@ -39,6 +39,8 @@ func runKX(resultChan chan interface{}, log func(string, ...interface{}), mp Mee
 }
 
 func TestKeyExchange(t *testing.T) {
+	require := require.New(t)
+
 	a, b := make(chan interface{}), make(chan interface{})
 	mp := NewSimpleMeetingPlace()
 	secret := SharedSecret{
@@ -51,13 +53,9 @@ func TestKeyExchange(t *testing.T) {
 	go runKX(b, t.Logf, mp, &secret, msg2)
 
 	result := <-a
-	if reply, ok := result.([]byte); ok {
-		if !bytes.Equal(reply, msg2) {
-			t.Errorf("Bad result from kx: got %x, want %x", reply, msg2)
-		}
-	} else {
-		t.Errorf("Error from key exchange: %v", result)
-	}
+	reply, ok := result.([]byte)
+	require.True(ok, "wtf")
+	require.Equal(reply, msg2, "wtf")
 
 	result = <-b
 	if reply, ok := result.([]byte); ok {
@@ -70,6 +68,8 @@ func TestKeyExchange(t *testing.T) {
 }
 
 func TestStartStop(t *testing.T) {
+	require := require.New(t)
+
 	mp := NewSimpleMeetingPlace()
 	secret := SharedSecret{
 		Secret: "foo",
@@ -87,9 +87,8 @@ func TestStartStop(t *testing.T) {
 	}
 
 	kx, err := NewKeyExchange(rand.Reader, mp, &secret, msg2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(err, "wtf")
+
 	serialised := kx.Marshal()
 	kx.Log = panicLog
 	kx.Testing = true
@@ -99,9 +98,8 @@ func TestStartStop(t *testing.T) {
 	done := false
 	for !done {
 		kx, err := UnmarshalKeyExchange(rand.Reader, mp, serialised)
-		if err != nil {
-			t.Fatalf("Failed to unmarshal KeyExchange: %s", err)
-		}
+		require.NoError(err, "wtf")
+
 		kx.Log = panicLog
 		kx.Testing = true
 
@@ -114,36 +112,26 @@ func TestStartStop(t *testing.T) {
 				count++
 			}()
 			result, err = kx.Run()
-			if err != nil {
-				t.Fatalf("Error from key exchange: %s", err)
-			}
+			require.NoError(err, "wtf")
 			done = true
 		}()
 	}
 
-	if !bytes.Equal(result, msg1) {
-		t.Errorf("Bad result from kx: got %x, want %x", result, msg1)
-	}
+	require.Equal(result, msg1, "wtf")
 }
 
 func TestSecretStringGeneration(t *testing.T) {
-	s := NewSecretString(rand.Reader)
-	if !isValidSecretString(s) {
-		t.Fatalf("Generated secret string isn't valid: %s", s)
-	}
-	if !IsAcceptableSecretString(s) {
-		t.Fatalf("Generated secret string isn't acceptable: %s", s)
-	}
+	require := require.New(t)
+
+	s, err := NewSecretString(rand.Reader)
+	require.NoError(err, "wtf")
+	require.True(isValidSecretString(s), fmt.Sprintf("Generated secret string isn't valid: %s", s))
+	require.True(IsAcceptableSecretString(s), fmt.Sprintf("Generated secret string isn't acceptable: %s", s))
+
 	s = s[:8] + "," + s[9:]
-	if isValidSecretString(s) {
-		t.Fatalf("Corrupt secret string is valid: %s", s)
-	}
+	require.False(isValidSecretString(s), fmt.Sprintf("Corrupt secret string is valid: %s", s))
 
 	s = "498572384"
-	if !IsAcceptableSecretString(s) {
-		t.Fatalf("Random secret string isn't acceptable: %s", s)
-	}
-	if isValidSecretString(s) {
-		t.Fatalf("Random secret string is valid: %s", s)
-	}
+	require.True(IsAcceptableSecretString(s), fmt.Sprintf("Random secret string isn't acceptable: %s", s))
+	require.False(isValidSecretString(s), fmt.Sprintf("Random secret string is valid: %s", s))
 }
