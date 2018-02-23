@@ -999,11 +999,12 @@ func newState(s *Server) (*state, error) {
 	st.authorizedAuthorities = make(map[[eddsa.PublicKeySize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
 		pk := v.IdentityPublicKey.ByteArray()
-		st.authorizedMixes[pk] = true
+		st.authorizedAuthorities[pk] = true
 	}
 
 	st.documents = make(map[uint64]*document)
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
+	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
 	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature)
 
 	// Initialize the persistence store and restore state.

@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -231,6 +232,7 @@ type conn struct {
 }
 
 type mockDialer struct {
+	sync.Mutex
 	netMap map[string]*conn
 	log    *logging.Logger
 }
@@ -244,6 +246,8 @@ func newMockDialer(logBackend *log.Backend) *mockDialer {
 }
 
 func (d *mockDialer) dial(ctx context.Context, network string, address string) (net.Conn, error) {
+	d.Lock()
+	defer d.Unlock()
 	defer func() {
 		close(d.netMap[address].dialCh)
 	}()
@@ -338,12 +342,12 @@ func TestClient(t *testing.T) {
 	require := require.New(t)
 
 	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(err, "wtf")
+	require.NoError(err)
 	dialer := newMockDialer(logBackend)
 	peers := []*config.AuthorityPeer{}
 	for i := 0; i < 10; i++ {
 		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
-		require.NoError(err, "wtf")
+		require.NoError(err)
 		peers = append(peers, peer)
 		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey)
 	}
@@ -353,13 +357,13 @@ func TestClient(t *testing.T) {
 		DialContextFn: dialer.dial,
 	}
 	client, err := New(cfg)
-	require.NoError(err, "wtf")
+	require.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	epoch, _, _ := epochtime.Now()
 	doc, rawDoc, err := client.Get(ctx, epoch)
-	require.NoError(err, "wtf")
-	require.NotNil(doc, "wtf")
+	require.NoError(err)
+	require.NotNil(doc)
 	require.Equal(epoch, doc.Epoch)
 	t.Logf("rawDoc size is %d", len(rawDoc))
 }
