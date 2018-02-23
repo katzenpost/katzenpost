@@ -98,20 +98,20 @@ type connection struct {
 	session *wire.Session
 }
 
-type connectionPool struct {
+type connector struct {
 	cfg *Config
 	log *logging.Logger
 }
 
-func NewConnectionPool(cfg *Config) *connectionPool {
-	p := &connectionPool{
+func NewConnector(cfg *Config) *connector {
+	p := &connector{
 		cfg: cfg,
-		log: cfg.LogBackend.GetLogger("pki/voting/client/connection_pool"),
+		log: cfg.LogBackend.GetLogger("pki/voting/client/connector"),
 	}
 	return p
 }
 
-func (p *connectionPool) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
 	// Connect to the peer.
 	dialFn := p.cfg.DialContextFn
 	if dialFn == nil {
@@ -132,8 +132,6 @@ func (p *connectionPool) initSession(ctx context.Context, doneCh <-chan interfac
 	var ad []byte
 	if signingKey != nil {
 		ad = signingKey.Bytes()
-	} else {
-		p.log.Debug("signingKey is nil")
 	}
 
 	peerAuthenticator := &authorityAuthenticator{
@@ -175,14 +173,14 @@ func (p *connectionPool) initSession(ctx context.Context, doneCh <-chan interfac
 	}, nil
 }
 
-func (c *connectionPool) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
+func (c *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
 	if err := s.SendCommand(cmd); err != nil {
 		return nil, err
 	}
 	return s.RecvCommand()
 }
 
-func (p *connectionPool) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
@@ -205,7 +203,7 @@ func (p *connectionPool) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.Pr
 	return responses, nil
 }
 
-func (p *connectionPool) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	//peerIndex := mrand.Intn(len(p.cfg.Authorities) - 1)
@@ -226,9 +224,10 @@ func (p *connectionPool) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.
 type client struct {
 	cfg  *Config
 	log  *logging.Logger
-	pool *connectionPool
+	pool *connector
 }
 
+// Post posts the node's descriptor to the PKI for the provided epoch.
 func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
@@ -275,6 +274,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	// NOTREACHED
 }
 
+// Get returns the PKI document along with the raw serialized form for the provided epoch.
 func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
@@ -338,6 +338,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	return doc, r.Payload, nil
 }
 
+// Deserialize returns PKI document given the raw bytes.
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
 	doc, _, err := s11n.VerifyAndParseDocument(raw, c.cfg.Authorities[0].IdentityPublicKey)
 	if err != nil {
@@ -358,7 +359,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c := new(client)
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/voting/client")
-	c.pool = NewConnectionPool(cfg)
+	c.pool = NewConnector(cfg)
 
 	return c, nil
 }
