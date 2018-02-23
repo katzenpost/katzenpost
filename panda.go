@@ -1,32 +1,27 @@
 package panda
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
-	"os"
-	"os/exec"
-	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/david415/panda/rijndael"
 	"github.com/golang/protobuf/proto"
+	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
-	"golang.org/x/crypto/scrypt"
 
 	panda_proto "github.com/david415/panda/proto"
 )
 
 const (
 	generatedSecretStringPrefix = "r!"
-	// generatedSecretStringPrefix2 is used to indicate that scrypt should
+	// generatedSecretStringPrefix2 is used to indicate that the KDF should
 	// be skipped because the generated secret is sufficiently random.
 	// These strings are not output, yet, but they are handled. In the
 	// future, the code will start outputting them - although this will
@@ -329,32 +324,7 @@ func (kx *KeyExchange) derivePassword() error {
 			return err
 		}
 	} else {
-		var data []byte
-		if runtime.GOARCH == "386" && runtime.GOOS == "linux" {
-			// We're having GC problems on 32-bit systems with the
-			// scrypt allocation. In order to help the GC out, the
-			// scrypt computation is done in a subprocess.
-			cmd := exec.Command("/proc/self/exe", "--panda-scrypt")
-			var in, out bytes.Buffer
-			binary.Write(&in, binary.LittleEndian, uint32(len(serialised)))
-			in.Write(serialised)
-
-			cmd.Stdin = &in
-			cmd.Stdout = &out
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				return err
-			}
-			data = out.Bytes()
-			if len(data) != 32*3 {
-				return errors.New("scrypt subprocess returned wrong number of bytes: " + strconv.Itoa(len(data)))
-			}
-		} else {
-			if data, err = scrypt.Key(serialised, nil, 1<<17, 16, 4, 32*3); err != nil {
-				return err
-			}
-		}
-
+		data := argon2.Key(serialised, nil, 3, 32*1024, 4, 32*3)
 		copy(kx.key[:], data)
 		copy(kx.meeting1[:], data[32:])
 		copy(kx.meeting2[:], data[64:])
