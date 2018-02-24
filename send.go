@@ -23,10 +23,10 @@ import (
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
+	cpki "github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/minclient/internal/path"
+	"github.com/katzenpost/core/sphinx/path"
 )
 
 // SendUnreliableCiphertext sends the ciphertext b to the recipient/provider,
@@ -141,71 +141,32 @@ func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBID
 		return nil, time.Time{}, fmt.Errorf("minclient: no PKI document for current epoch")
 	}
 
-	var then time.Time
-	var pktPath []*sphinx.PathHop
-selectLoop:
-	for {
-		// Generate a randomized path.
-		descs, err := path.New(c.rng, doc, srcProvider, dstProvider)
-		if err != nil {
-			return nil, time.Time{}, err
-		}
-
-		then = baseTime
-		pktPath = make([]*sphinx.PathHop, 0, len(descs))
-		for idx, desc := range descs {
-			// The reverse path needs to omit the provider that will use the
-			// SURB, since the SURB doesn't go all the way to the recipient's
-			// client.
-			if !isForward && idx == 0 {
-				continue
-			}
-
-			h := &sphinx.PathHop{}
-			copy(h.ID[:], desc.IdentityKey.Bytes())
-			epoch, _, _ := epochtime.FromUnix(then.Unix())
-			if k, ok := desc.MixKeys[epoch]; !ok {
-				c.log.Debugf("Hop[%v]: Node %v missing mixkey for epoch %v", idx, desc.IdentityKey, epoch)
-				continue selectLoop
-			} else {
-				h.PublicKey = k
-			}
-
-			// All non-terminal hops, and the terminal forward hop iff the
-			// packet has a SURB attached have a delay.
-			delay := uint64(0)
-			if idx != len(descs)-1 || (surbID != nil && isForward) {
-				// Draw the delay from [1,MaxDelay] to ensure that packets
-				// always get some mixing.
-				delay = uint64(rand.Exp(c.rng, doc.MixLambda)) + 1
-				if doc.MixMaxDelay > 0 && delay > doc.MixMaxDelay {
-					delay = doc.MixMaxDelay
-				}
-				then = then.Add(time.Duration(delay) * time.Millisecond)
-				delayCmd := &commands.NodeDelay{
-					Delay: uint32(delay),
-				}
-				h.Commands = append(h.Commands, delayCmd)
-			}
-
-			// The terminal hop wil have a Recipient, and potentially a
-			// SURBReply.
-			if idx == len(descs)-1 {
-				recipCmd := &commands.Recipient{}
-				copy(recipCmd.ID[:], []byte(recipient))
-				h.Commands = append(h.Commands, recipCmd)
-
-				if surbID != nil && !isForward {
-					surbCmd := &commands.SURBReply{}
-					copy(surbCmd.ID[:], surbID[:])
-					h.Commands = append(h.Commands, surbCmd)
-				}
-			}
-
-			c.log.Debugf("Hop[%v]: '%v' - %d ms.", idx, desc.Name, delay)
-			pktPath = append(pktPath, h)
-		}
-
-		return pktPath, then, nil
+	// Get the descriptors.
+	src, err := doc.GetProvider(srcProvider)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("minclient: failed to find source Provider: %v", err)
 	}
+	dst, err := doc.GetProvider(dstProvider)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("minclient: failed to find destination Provider: %v", err)
+	}
+
+	p, t, err := path.New(c.rng, doc, []byte(recipient), src, dst, surbID, baseTime, true, isForward)
+	if err == nil {
+		c.logPath(doc, p)
+	}
+
+	return p, t, err
+}
+
+func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
+	s, err := path.ToString(doc, p)
+	if err != nil {
+		return err
+	}
+
+	for _, v := range s {
+		c.log.Debug(v)
+	}
+	return nil
 }
