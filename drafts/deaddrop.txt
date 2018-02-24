@@ -34,10 +34,17 @@ Abstract
 
 2. Protocol Messages
 
-2.1 TetherRequest message
+   The DeadDropRequest is sent to the dead drop service with a SURB
+   that is used to send the DeadDropResponse back to the client.
 
-   The TetherRequest is sent to the dead drop service with a SURB
-   that can be used to send the response message.
+2.1 DeadDropRequest message
+
+   Dead drop requests are authenticated by the Provider's user
+   authentication database similar to how Katzenpost Providers
+   authenticate client wire protocol connections: [KATZMIXWIRE]
+   [KATZMIXE2E]. In this case we are coupling the User and AuthToken
+   fields in the DeadDropRequest to provide the needed authentication
+   information.
 
        {
            "Version": 0,
@@ -46,12 +53,12 @@ Abstract
            "Ack": 0
        }
 
-   * The User field specifies the message spool on the remote Provider.
-
-   * The AuthToken field is a base64 encoded ciphertext blob
-   produced by encrypting 32 bytes of zeros with
-   `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key
-   used in [KATZMIXWIRE].
+   * The User field is a string which the Provider associates with
+     a X25519 public key AND a message spool.
+   * The AuthToken field is a base64 encoded ciphertext blob produced
+     by encrypting a zero byte payload with
+     `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key used
+     in [KATZMIXWIRE].
 
    The encrypted and authenticated blob has the following
    structure:
@@ -68,11 +75,11 @@ Abstract
    where TOKEN_LENGTH is 32.
 
    * The Ack field defaults to zero unless the user has had a previous
-   interaction where a TetherResponse was received. In that case the
+   interaction where a DeadDropResponse was received. In that case the
    previously received Sequence numbers are placed into this Ack field
    which causes ther server to purge the associated messages.
 
-2.2. TetherResponse message
+2.2. DeadDropResponse message
 
    {
       "Version": 0,
@@ -105,10 +112,12 @@ Abstract
 
 3. Anonymity Considerations
 
-   * Collusion of Providers might make it possible to link
-   an account on two different Providers. That is, a given
-   user's dead drop can be discovered if the two Providers
-   collude.
+   * Collusion of Providers might make it possible to link an account
+   on two different Providers. That is, a given user's dead drop can
+   be discovered if the two Providers collude. However this linkage
+   may require a longterm statistical disclosure attack. In that case,
+   these longterm attacks might not converge on success if deaddrops
+   are rotated frequently enough.
 
    * Sending a deaddrop request with many bundled SURBs
    increases exposure to compulsion attack by the remote Provider.
