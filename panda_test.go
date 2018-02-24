@@ -28,12 +28,10 @@ func (smp *SimpleMeetingPlace) Padding() int {
 }
 
 func (smp *SimpleMeetingPlace) Exchange(log func(string, ...interface{}), id, message []byte, shutdown chan struct{}) ([]byte, error) {
-	i := string(id)
-
 	smp.Lock()
 
 	var p *pair
-	if p = smp.values[i]; p == nil {
+	if p = smp.values[string(id)]; p == nil {
 		p = new(pair)
 		smp.values[i] = p
 		p.messages[0] = message
@@ -82,11 +80,11 @@ func TestSerialise(t *testing.T) {
 	secret := []byte("foo")
 	mp := NewSimpleMeetingPlace()
 	kx, err := NewKeyExchange(rand.Reader, mp, secret, []byte{1})
-	require.NoError(err, "wtf")
+	require.NoError(err)
 
 	serialised := kx.Marshal()
 	_, err = UnmarshalKeyExchange(rand.Reader, mp, serialised)
-	require.NoError(err, "wtf")
+	require.NoError(err)
 }
 
 func runKX(resultChan chan interface{}, log func(string, ...interface{}), mp MeetingPlace, secret []byte, message []byte) {
@@ -116,17 +114,13 @@ func TestKeyExchange(t *testing.T) {
 
 	result := <-a
 	reply, ok := result.([]byte)
-	require.True(ok, "wtf")
-	require.Equal(reply, msg2, "wtf")
+	require.True(ok)
+	require.Equal(reply, msg2)
 
 	result = <-b
-	if reply, ok := result.([]byte); ok {
-		if !bytes.Equal(reply, msg1) {
-			t.Errorf("Bad result from kx: got %x, want %x", reply, msg1)
-		}
-	} else {
-		t.Errorf("Error from key exchange: %s", result)
-	}
+	reply, ok = result.([]byte)
+	require.True(ok)
+	require.Equal(reply, msg1)
 }
 
 func TestStartStop(t *testing.T) {
@@ -146,7 +140,7 @@ func TestStartStop(t *testing.T) {
 	}
 
 	kx, err := NewKeyExchange(rand.Reader, mp, secret, msg2)
-	require.NoError(err, "wtf")
+	require.NoError(err)
 
 	serialised := kx.Marshal()
 	kx.Log = panicLog
@@ -157,7 +151,7 @@ func TestStartStop(t *testing.T) {
 	done := false
 	for !done {
 		kx, err := UnmarshalKeyExchange(rand.Reader, mp, serialised)
-		require.NoError(err, "wtf")
+		require.NoError(err)
 
 		kx.Log = panicLog
 		kx.Testing = true
@@ -171,19 +165,19 @@ func TestStartStop(t *testing.T) {
 				count++
 			}()
 			result, err = kx.Run()
-			require.NoError(err, "wtf")
+			require.NoError(err)
 			done = true
 		}()
 	}
 
-	require.Equal(result, msg1, "wtf")
+	require.Equal(result, msg1)
 }
 
 func TestSecretStringGeneration(t *testing.T) {
 	require := require.New(t)
 
 	s, err := NewSecretString(rand.Reader)
-	require.NoError(err, "wtf")
+	require.NoError(err)
 	require.True(isValidSecretString(s), fmt.Sprintf("Generated secret string isn't valid: %s", s))
 	require.True(IsAcceptableSecretString(s), fmt.Sprintf("Generated secret string isn't acceptable: %s", s))
 
