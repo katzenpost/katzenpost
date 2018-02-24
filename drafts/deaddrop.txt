@@ -66,18 +66,15 @@ Abstract
        struct {
            /* Noise protocol fields. */
            opaque noise_e[32];     /* The Noise handshake `e`. */
-           opaque noise_s_mac[16]; /* The Noise handshake `s` MAC. */
            opaque noise_mac[16];   /* The Noise ciphertext MAC. */
 
-           opaque ciphertext[TOKEN_LENGTH];
+           opaque ciphertext[0];
        } BlockCiphertext;
-
-   where TOKEN_LENGTH is 32.
 
    * The Ack field defaults to zero unless the user has had a previous
    interaction where a DeadDropResponse was received. In that case the
    previously received Sequence numbers are placed into this Ack field
-   which causes ther server to purge the associated messages.
+   which causes the deaddrop service to purge the associated messages.
 
 2.2. DeadDropResponse message
 
@@ -135,10 +132,6 @@ Abstract
    more messages than the rest.
 
 4. Security Considerations
-
-   * Noise handshake_K, wtf is it 48 bytes overhead instead of 64?
-   Am I doing something wrong here?
-   https://github.com/katzenpost/core/blob/rename_noise_tests.0/wire/noise_test.go#L179
 
 5. Future Work
 
