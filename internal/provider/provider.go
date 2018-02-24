@@ -563,7 +563,7 @@ func newPacketFromSURB(pkt *packet.Packet, surb, payload []byte) (*packet.Packet
 	respPkt.Set(nil, cmds)
 
 	respPkt.RecvAt = pkt.RecvAt
-	respPkt.Delay = pkt.Delay
+	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
 	respPkt.MustForward = true
 
 	// XXX: This should probably fudge the delay to account for processing
