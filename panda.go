@@ -88,64 +88,6 @@ func IsAcceptableSecretString(s string) bool {
 
 var ShutdownErr = errors.New("panda: shutdown requested")
 
-type SharedSecret struct {
-	Secret           string
-	Cards            CardStack
-	Day, Month, Year int
-	Hours, Minutes   int
-}
-
-func (s *SharedSecret) isStrongRandom() bool {
-	return strings.HasPrefix(s.Secret, generatedSecretStringPrefix2) && isValidSecretString(s.Secret)
-}
-
-func (s *SharedSecret) toProto() *panda_proto.KeyExchange_SharedSecret {
-	ret := new(panda_proto.KeyExchange_SharedSecret)
-	if len(s.Secret) > 0 {
-		ret.Secret = proto.String(s.Secret)
-	}
-	if s.Cards.NumDecks > 0 {
-		ret.NumDecks = proto.Int32(int32(s.Cards.NumDecks))
-		canonical := s.Cards.Canonicalise()
-		ret.CardCount = canonical.counts[:]
-	}
-	if s.Year != 0 {
-		ret.Time = &panda_proto.KeyExchange_SharedSecret_Time{
-			Day:     proto.Int32(int32(s.Day)),
-			Month:   proto.Int32(int32(s.Month)),
-			Year:    proto.Int32(int32(s.Year)),
-			Hours:   proto.Int32(int32(s.Hours)),
-			Minutes: proto.Int32(int32(s.Minutes)),
-		}
-	}
-
-	return ret
-}
-
-func newSharedSecret(p *panda_proto.KeyExchange_SharedSecret) (*SharedSecret, bool) {
-	ret := &SharedSecret{
-		Secret:  p.GetSecret(),
-		Day:     int(p.Time.GetDay()),
-		Month:   int(p.Time.GetMonth()),
-		Year:    int(p.Time.GetYear()),
-		Hours:   int(p.Time.GetHours()),
-		Minutes: int(p.Time.GetMinutes()),
-	}
-	ret.Cards.NumDecks = int(p.GetNumDecks())
-	if ret.Cards.NumDecks > 0 {
-		if len(p.CardCount) != numCards {
-			return nil, false
-		}
-		copy(ret.Cards.counts[:], p.CardCount)
-	} else {
-		if len(ret.Secret) == 0 {
-			return nil, false
-		}
-	}
-
-	return ret, true
-}
-
 type MeetingPlace interface {
 	Padding() int
 	Exchange(log func(string, ...interface{}), id, message []byte, shutdown chan struct{}) ([]byte, error)
@@ -161,7 +103,7 @@ type KeyExchange struct {
 	rand         io.Reader
 	status       panda_proto.KeyExchange_Status
 	meetingPlace MeetingPlace
-	sharedSecret *SharedSecret
+	sharedSecret []byte
 	serialised   []byte
 	kxBytes      []byte
 
@@ -171,7 +113,7 @@ type KeyExchange struct {
 	message1, message2      []byte
 }
 
-func NewKeyExchange(rand io.Reader, meetingPlace MeetingPlace, sharedSecret *SharedSecret, kxBytes []byte) (*KeyExchange, error) {
+func NewKeyExchange(rand io.Reader, meetingPlace MeetingPlace, sharedSecret []byte, kxBytes []byte) (*KeyExchange, error) {
 	if 24 /* nonce */ +4 /* length */ +len(kxBytes)+secretbox.Overhead > meetingPlace.Padding() {
 		return nil, errors.New("panda: key exchange too large for meeting place")
 	}
@@ -203,16 +145,11 @@ func UnmarshalKeyExchange(rand io.Reader, meetingPlace MeetingPlace, serialised 
 		return nil, err
 	}
 
-	sharedSecret, ok := newSharedSecret(p.SharedSecret)
-	if !ok {
-		return nil, errors.New("panda: invalid shared secret in serialised key exchange")
-	}
-
 	kx := &KeyExchange{
 		rand:         rand,
 		meetingPlace: meetingPlace,
 		status:       p.GetStatus(),
-		sharedSecret: sharedSecret,
+		sharedSecret: p.SharedSecret,
 		serialised:   serialised,
 		kxBytes:      p.KeyExchangeBytes,
 		message1:     p.Message1,
@@ -239,7 +176,7 @@ func (kx *KeyExchange) Marshal() []byte {
 func (kx *KeyExchange) updateSerialised() error {
 	p := &panda_proto.KeyExchange{
 		Status:           kx.status.Enum(),
-		SharedSecret:     kx.sharedSecret.toProto(),
+		SharedSecret:     kx.sharedSecret,
 		KeyExchangeBytes: kx.kxBytes,
 	}
 	if kx.status != panda_proto.KeyExchange_INIT {
@@ -318,13 +255,8 @@ func (kx *KeyExchange) Run() ([]byte, error) {
 }
 
 func (kx *KeyExchange) derivePassword() error {
-	serialised, err := proto.Marshal(kx.sharedSecret.toProto())
-	if err != nil {
-		return err
-	}
-
-	if kx.Testing || kx.sharedSecret.isStrongRandom() {
-		h := hkdf.New(sha256.New, serialised, nil, []byte("PANDA strong secret expansion"))
+	if kx.Testing {
+		h := hkdf.New(sha256.New, kx.sharedSecret, nil, []byte("PANDA strong secret expansion"))
 		if _, err := h.Read(kx.key[:]); err != nil {
 			return err
 		}
@@ -335,7 +267,7 @@ func (kx *KeyExchange) derivePassword() error {
 			return err
 		}
 	} else {
-		data := argon2.Key(serialised, nil, 3, 32*1024, 4, 32*3)
+		data := argon2.Key(kx.sharedSecret, nil, 3, 32*1024, 4, 32*3)
 		copy(kx.key[:], data)
 		copy(kx.meeting1[:], data[32:])
 		copy(kx.meeting2[:], data[64:])

@@ -1,3 +1,4 @@
+syntax = "proto2";
 package panda;
 
 // These protobufs are used for serialising a pending key exchange.
@@ -10,21 +11,7 @@ message KeyExchange {
 	}
 	required Status status = 1;
 	required bytes key_exchange_bytes = 2;
-
-	message SharedSecret {
-		optional string secret = 1;
-		optional int32 num_decks = 2;
-		repeated int32 card_count = 3;
-		message Time {
-			required int32 day = 1;
-			required int32 month = 2;
-			required int32 year = 3;
-			required int32 hours = 4;
-			required int32 minutes = 5;
-		}
-		optional Time time = 4;
-	}
-	optional SharedSecret shared_secret = 3;
+	optional bytes shared_secret = 3;
 	optional bytes dh_private = 4;
 	optional bytes key = 5;
 	optional bytes meeting1 = 6;

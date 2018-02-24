@@ -79,11 +79,9 @@ func NewSimpleMeetingPlace() *SimpleMeetingPlace {
 func TestSerialise(t *testing.T) {
 	require := require.New(t)
 
-	secret := SharedSecret{
-		Secret: "foo",
-	}
+	secret := []byte("foo")
 	mp := NewSimpleMeetingPlace()
-	kx, err := NewKeyExchange(rand.Reader, mp, &secret, []byte{1})
+	kx, err := NewKeyExchange(rand.Reader, mp, secret, []byte{1})
 	require.NoError(err, "wtf")
 
 	serialised := kx.Marshal()
@@ -91,7 +89,7 @@ func TestSerialise(t *testing.T) {
 	require.NoError(err, "wtf")
 }
 
-func runKX(resultChan chan interface{}, log func(string, ...interface{}), mp MeetingPlace, secret *SharedSecret, message []byte) {
+func runKX(resultChan chan interface{}, log func(string, ...interface{}), mp MeetingPlace, secret []byte, message []byte) {
 	kx, err := NewKeyExchange(rand.Reader, mp, secret, message)
 	if err != nil {
 		resultChan <- err
@@ -110,14 +108,11 @@ func TestKeyExchange(t *testing.T) {
 
 	a, b := make(chan interface{}), make(chan interface{})
 	mp := NewSimpleMeetingPlace()
-	secret := SharedSecret{
-		Secret: "foo",
-	}
-
+	secret := []byte("foo")
 	msg1 := []byte("test1")
 	msg2 := []byte("test2")
-	go runKX(a, t.Logf, mp, &secret, msg1)
-	go runKX(b, t.Logf, mp, &secret, msg2)
+	go runKX(a, t.Logf, mp, secret, msg1)
+	go runKX(b, t.Logf, mp, secret, msg2)
 
 	result := <-a
 	reply, ok := result.([]byte)
@@ -138,14 +133,11 @@ func TestStartStop(t *testing.T) {
 	require := require.New(t)
 
 	mp := NewSimpleMeetingPlace()
-	secret := SharedSecret{
-		Secret: "foo",
-	}
-
+	secret := []byte("foo")
 	msg1 := []byte("test1")
 	msg2 := []byte("test2")
 	a := make(chan interface{})
-	go runKX(a, t.Logf, mp, &secret, msg1)
+	go runKX(a, t.Logf, mp, secret, msg1)
 
 	panicLog := func(format string, args ...interface{}) {
 		fmt.Printf(format, args...)
@@ -153,7 +145,7 @@ func TestStartStop(t *testing.T) {
 		panic("unwind")
 	}
 
-	kx, err := NewKeyExchange(rand.Reader, mp, &secret, msg2)
+	kx, err := NewKeyExchange(rand.Reader, mp, secret, msg2)
 	require.NoError(err, "wtf")
 
 	serialised := kx.Marshal()
