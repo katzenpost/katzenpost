@@ -28,6 +28,7 @@ import (
 	"time"
 
 	nClient "github.com/katzenpost/authority/nonvoting/client"
+	vClient "github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/epochtime"
@@ -618,6 +619,16 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			PublicKey:  authPk,
 		}
 		p.impl, err = nClient.New(pkiCfg)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		pkiCfg := &vClient.Config{
+			LogBackend:    glue.LogBackend(),
+			Authorities:   peers, // XXX
+			DialContextFn: dial,  // XXX
+		}
+		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}

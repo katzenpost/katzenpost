@@ -526,12 +526,18 @@ func (pCfg *Provider) validate() error {
 type PKI struct {
 	// Nonvoting is a non-voting directory authority.
 	Nonvoting *Nonvoting
+	Voting    *Voting
 }
 
 func (pCfg *PKI) validate() error {
 	nrCfg := 0
 	if pCfg.Nonvoting != nil {
 		if err := pCfg.Nonvoting.validate(); err != nil {
+			return err
+		}
+		nrCfg++
+	} else {
+		if err := pCfg.Voting.validate(); err != nil {
 			return err
 		}
 		nrCfg++
@@ -559,6 +565,31 @@ func (nCfg *Nonvoting) validate() error {
 	var pubKey eddsa.PublicKey
 	if err := pubKey.FromString(nCfg.PublicKey); err != nil {
 		return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
+	}
+
+	return nil
+}
+
+// Voting is a voting directory authority.
+type Voting struct {
+	Addresses         []string
+	IdentityPublicKey string
+	LinkPublicKey     string
+}
+
+func (vCfg *Voting) validate() error {
+	for _, address := range vCfg.Addresses {
+		if err := utils.EnsureAddrIPPort(address); err != nil {
+			return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
+		}
+	}
+
+	var pubKey eddsa.PublicKey
+	if err := pubKey.FromString(vCfg.IdentityPublicKey); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Invalid IdentityPublicKey: %v", err)
+	}
+	if err := pubKey.FromString(vCfg.LinkPublicKey); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Invalid LinkPublicKey: %v", err)
 	}
 
 	return nil
