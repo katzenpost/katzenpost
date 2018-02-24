@@ -1,0 +1,123 @@
+Katzenpost PANDA Autoresponder Extension
+David Stainton
+
+version 0
+
+Abstract
+
+   This document is meant as an implementation guide for a PANDA (see
+   [PANDA]) service for the Katzenpost mix network system. This PANDA
+   service operates as a [KAETZCHEN] Provider side autoresponder
+   service.
+
+1. Introduction
+
+   In PANDA the participating principals are two clients and a server.
+   Unlike other PAKE variations, the two particpating clients have
+   identical protocol behavior. This allows clients to perform the key
+   exchanges asynchronously even if both clients are not online at the
+   same time. The cryptographic messages are queued on a prior agreed
+   upon intermediary PANDA server for later retrieval by communication
+   partners.
+
+1.1. Terminology
+
+   * PAKE: Password Authenticated Key Exchange
+
+   * PANDA: Phrase Automated Nym Discovery Authentication
+     see [PANDA].
+
+   * autoresponder service: A service which runs on a Provider
+     and uses a request-response style protocol scheme to implement
+     arbitrary services for mix network clients. See [KAETZCHEN]
+     for details.
+
+   * Provider: A service operated by a third party that Clients
+     communicate directly with to communicate with the Mixnet.  It is
+     responsible for Client authentication, forwarding outgoing
+     messages to the Mixnet, and storing incoming messages for the
+     Client. The Provider MUST have the ability to perform
+     cryptographic operations on the relayed packets.
+
+1.2 Conventions Used in This Document
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [RFC2119].
+
+2. Cryptographic Primitives
+
+   This specification uses the following cryptographic primitives as the
+   foundational building blocks for PANDA:
+
+    * EKE2 - See the follow section "3. EKE2: Encrypted Key Exchange Two".
+
+    * KDF - key derivation function: In this case we prefer a KDF that
+      is CPU and memory intensive.
+
+2.1 EKE2 Cryptographic Primitives
+
+   The following cryptographic primitives are used
+   as the foundational building blocks for EKE2:
+
+    * Diffie-Hellman - A Diffie-Hellman key exchange.
+
+    * An Ideal Cipher - A Block Cipher which MUST use a block size
+      that matches the Diffie-Hellman key size.
+
+3. PANDA Patameters
+
+    * PANDA_TAG_LIFETIME - The time duration of a PANDA tag lifetime.
+
+4. EKE2: Encrypted Key Exchange Two
+
+   EKE2 is a variation of [SPAKE2] but uses an ideal cipher to encrypt
+   the Diffie-Hellman values. EKE2 is described in [EKE2] as:
+
+      "EKE2 is a Diffie-Hellman key exchange in which each flow is enciphered
+       by the password, the SK is sk = H( A || B || g^x || g^xy ), and the SID
+       and PID are appropriately defined. The name of the sender also accompanies
+       the first flow.
+      "
+
+
+X. System Overview
+X. Threat Model
+X. Client
+X.1 Protocol Messages
+X.2 State Machine
+X. Server
+X.1 Protocol Messages
+X.2 State Machine
+X. Anonymity Considerations
+Y. Security Considerations
+Z. Future Work
+Appendix A. References
+Appendix A.1 Normative References
+
+   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119,
+               DOI 10.17487/RFC2119, March 1997,
+               <http://www.rfc-editor.org/info/rfc2119>.
+
+   [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
+                "Katzenpost Provider-side Autoresponder", January 2018,
+                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.txt>.
+
+Appendix A.2 Informative References
+
+   [PANDA]   Appelbaum, J., "Going Dark: Phrase Automated Nym Discovery Authentication",
+             <https://github.com/agl/pond/tree/master/papers/panda>.
+
+   [SPAKE2]   Abdalla, M., Pointcheval, D.,
+              "Simple Password-Based Encrypted Key Exchange Protocols",
+              Topics in cryptology–CT-RSA 2005,
+              <http://www.di.ens.fr/users/mabdalla/papers/AbPo05a-letter.pdf>.
+
+   [EKE2]   Bellare, M., Pointcheval, D., Rogaway, P.,
+            "Authenticated Key Exchange Secure Against Dictionary Attacks",
+            EUROCRYPT, April 2000, <https://eprint.iacr.org/2000/014.pdf>.
+
+   [KATZKEYSERVER]   Angel, Y., Diaz, C., Pollan, R., kwadronaut, mo, Kaneko, K., Stainton, D.,
+                     "Katzenpost Key Discovery Extension", February 2018,
+                     <https://github.com/katzenpost/docs/blob/master/drafts/keyserver.txt>.
