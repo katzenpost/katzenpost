@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
@@ -176,8 +175,8 @@ type boltQueue struct {
 
 	db *bolt.DB
 
-	headPkt        *packet.Packet
-	headDispatchAt time.Duration
+	headPkt  *packet.Packet
+	headPrio time.Duration
 
 	dbCount uint64
 }
@@ -192,13 +191,13 @@ func (q *boltQueue) Halt() {
 }
 
 func (q *boltQueue) Peek() (time.Duration, *packet.Packet) {
-	return q.headDispatchAt, q.headPkt
+	return q.headPrio, q.headPkt
 }
 
 func (q *boltQueue) Pop() {
 	if q.headPkt != nil {
 		q.headPkt = nil
-		q.headDispatchAt = 0
+		q.headPrio = 0
 		if q.dbCount == 0 {
 			return
 		}
@@ -225,11 +224,11 @@ func (q *boltQueue) Pop() {
 			// Figure out if the packet's deadline is blown.  This replicates
 			// some code from scheduler.worker(), but dropping en-mass in a
 			// single transactions is the sensible thing to do.
-			dispatchAt := time.Duration(binary.BigEndian.Uint64(k[0:]))
+			prio := time.Duration(binary.BigEndian.Uint64(k[0:]))
 			id := binary.BigEndian.Uint64(k[8:])
 			var pkt *packet.Packet
 			var err error
-			if deltaT := now - dispatchAt; deltaT > timerSlack {
+			if deltaT := now - prio; deltaT > timerSlack {
 				q.log.Debugf("Dropping packet: %v (Deadline blown by %v)", id, deltaT)
 			} else if pkt, err = packetFromBoltBkt(packetsBkt, k); err != nil {
 				q.log.Debugf("Dropping packet: %v (s11n failure: %v)", id, err)
@@ -241,7 +240,7 @@ func (q *boltQueue) Pop() {
 
 			if pkt != nil {
 				q.headPkt = pkt
-				q.headDispatchAt = dispatchAt
+				q.headPrio = prio
 				return nil
 			}
 		}
@@ -257,57 +256,33 @@ func (q *boltQueue) Pop() {
 }
 
 func (q *boltQueue) BulkEnqueue(batch []*packet.Packet) {
-	const soonThresh = 1 * time.Second
-
-	// Split the batch by how "soon" the packet will be needed.
-	now := monotime.Now()
-	soonBatch := make([]*packet.Packet, 0, len(batch))
-	lateBatch := make([]*packet.Packet, 0, len(batch))
-	for _, pkt := range batch {
-		// Update the head if unset or if the packet from the batch is
-		// going to be the new head.
-		if q.headPkt == nil {
-			q.headPkt = pkt
-			q.headDispatchAt = now + pkt.Delay
-			continue
-		}
-		if ts := now + pkt.Delay; ts < q.headDispatchAt {
-			pkt, q.headPkt = q.headPkt, pkt
-			q.headDispatchAt = ts
-		}
-
-		if pkt.Delay < soonThresh {
-			soonBatch = append(soonBatch, pkt)
-		} else {
-			lateBatch = append(lateBatch, pkt)
-		}
-	}
-
-	start := monotime.Now()
-	if len(soonBatch) > 0 {
-		q.doBulkEnqueue(soonBatch, now, false)
-	}
-	if len(lateBatch) > 0 {
-		q.doBulkEnqueue(lateBatch, now, true)
-	}
-	if len(soonBatch) > 0 || len(lateBatch) > 0 {
-		end := monotime.Now()
-		q.log.Debugf("BulkEnqueue: Batch size %v (Elapsed: %v)", len(soonBatch)+len(lateBatch), end-start)
-	}
-}
-
-func (q *boltQueue) doBulkEnqueue(batch []*packet.Packet, now time.Duration, direct bool) {
 	var added uint64
-	err := q.db.Update(func(tx *bolt.Tx) error {
-		// Set O_DIRECT if the batch consists of packets that won't be
-		// needed "soon", to try to avoid polluting the page cache.
-		if direct {
-			tx.WriteFlag = syscall.O_DIRECT
-		}
+	now := monotime.Now()
 
+	// Special case enqueuing a single packet, with a totally empty queue.
+	if len(batch) == 1 && q.dbCount == 0 && q.headPkt == nil {
+		q.log.Debugf("BulkEnqueue(): Taking fast path.")
+		q.headPkt = batch[0]
+		q.headPrio = now + batch[0].Delay
+		return
+	}
+
+	err := q.db.Update(func(tx *bolt.Tx) error {
 		packetsBkt := tx.Bucket([]byte(boltPacketsBucket))
 		for _, pkt := range batch {
-			if err := packetToBoltBkt(packetsBkt, pkt, now+pkt.Delay); err != nil {
+			prio := now + pkt.Delay
+
+			if q.headPkt == nil {
+				q.headPkt = pkt
+				q.headPrio = prio
+				continue
+			}
+			if prio < q.headPrio {
+				pkt, q.headPkt = q.headPkt, pkt
+				prio, q.headPrio = q.headPrio, prio
+			}
+
+			if err := packetToBoltBkt(packetsBkt, pkt, prio); err != nil {
 				q.log.Warningf("Failed to enqueue packet: %v (%v)", pkt.ID, err)
 			} else {
 				added++
@@ -318,10 +293,10 @@ func (q *boltQueue) doBulkEnqueue(batch []*packet.Packet, now time.Duration, dir
 		return nil
 	})
 	if err != nil {
-		q.log.Errorf("doBulkEnqueue(): Transaction failed: %v", err)
+		q.log.Errorf("BulkEnqueue(): Transaction failed: %v", err)
 	} else {
 		q.dbCount += added
-		q.log.Debugf("doBulkEnqueue(%v): Count %v (Added %v).", direct, q.dbCount, added)
+		q.log.Debugf("BulkEnqueue(): Count %v (Added %v, Elapsed: %v).", q.dbCount, added, monotime.Now()-now)
 	}
 }
 
