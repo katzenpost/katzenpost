@@ -1,41 +1,36 @@
-Katzenpost PANDA Autoresponder Extension
+Katzenpost PANDA Autoresponder Extension Specification
 David Stainton
 
 version 0
 
 Abstract
 
-   This document is meant as an implementation guide for a Panda (see
-   [PANDA] and [PANDASPEC]) service for the Katzenpost mix network
-   system. This PANDA service operates as a [KAETZCHEN] Provider side
-   autoresponder service, allowing clients to exchange their keys
-   using password authentication. This Panda Kaetzchen service can be
-   used as an alternative to [KATZKEYSERVER].
+   This document describes the behavior of a PANDA (see [PANDA] and
+   [PANDASPEC]) server implemented as a Provider side autoresponder
+   service [KAETZCHEN]. This Panda Kaetzchen service can be used as an
+   alternative to [KATZKEYSERVER].
 
 1. Introduction
 
-   In Panda, the participating principals are two clients and a server.
-   The clients do all the crypto and the server is very dumb, it merely
-   stores and retreives ciphertext blobs.
-
-   Unlike other PAKE variations, the two particpating clients have
-   identical protocol behavior. This allows clients to perform the key
-   exchanges asynchronously even if both clients are not online at the
-   same time. The cryptographic messages are queued on a previously agreed
-   upon intermediary Panda server for later retrieval by communication
-   partners.
+   PANDA, Phrase Automated Nym Discovery Authentication is a variation
+   of [EKE2] a PAKE, Password Authenticated Key Exchange, with some
+   design variations that allows clients to perform the key exchanges
+   asynchronously. The Panda protocol has three principals, two
+   clients and one server. The clients have identical behavior and do
+   all the crypto while the server is very simple and merely
+   facilitates the exchanges of cryptographic binary blobs.
 
 1.1. Terminology
 
    * PAKE: Password Authenticated Key Exchange
 
-   * PANDA: Phrase Automated Nym Discovery Authentication:
-     see [PANDA] and [PANDASPEC].
+   * PANDA: Phrase Automated Nym Discovery Authentication: see [PANDA]
+     and [PANDASPEC].
 
-   * kaetzchen/autoresponder service: A service which runs on a Provider
-     and uses a request-response style protocol scheme to implement
-     arbitrary services for mix network clients. See [KAETZCHEN]
-     for details.
+   * kaetzchen/autoresponder service: A service which runs on a
+     Provider and uses a request-response style protocol scheme to
+     implement arbitrary services for mix network clients. See
+     [KAETZCHEN] for details.
 
    * Provider: A service operated by a third party that Clients
      communicate directly with to communicate with the Mixnet.  It is
@@ -44,8 +39,9 @@ Abstract
      Client. The Provider MUST have the ability to perform
      cryptographic operations on the relayed packets.
 
-   * Posting: A structure reference by a Tag, containing two message
-     slots.
+   * Posting: A structure reference by a unique identifier (a Tag),
+     containing two message slots for storing binary blobs on the
+     Panda server's storage subsystem.
 
    * Tag: A 32 byte value used to reference a Tag.
 
@@ -57,19 +53,24 @@ Abstract
 
 2. System Overview
 
-   The Panda protocol assumes that two Panda clients have selected
-   a Panda server which acts as a bulletin board system. The two Panda
-   clients use the Panda server to make two binary blob exchanges.
-   This is done to facilitate the EKE2 protocol which is described
-   in detail in [PANDASPEC].
+   The server side of the Panda protocol assumes that two Panda
+   clients have previously selected a Panda server to use. Panda
+   servers act like a bulletin board system, however a particular
+   Posting is only visible to clients that present the associated 32
+   byte Tag indentifier.
 
-   The Panda server stores a structure called a Posting which has two
-   message slots and is referenced by a tag. If Alice manages to
-   contact the Panda server before Bob then Alice's message will be
-   inserted into Slot 1. Alice's client will then periodically check
-   the Posting for Bob's message in Slot 2. When Bob finally contacts
-   the Panda server he inserts his message into slot2 and receives
-   Alice's message from slot1.
+   The two Panda clients use the Panda server to make two binary blob
+   exchanges. Panda clients uses their binary blobs to facilitate an
+   authenticated key exchange. The full Panda protocol details are
+   described in [PANDASPEC].
+
+   The Panda server stores a simple data structure called a Posting
+   which has two message slots and is referenced by a tag. If Alice
+   manages to contact the Panda server before Bob then Alice's message
+   will be inserted into Slot 1. Alice's client will then periodically
+   check the Posting for Bob's message in Slot 2. When Bob finally
+   contacts the Panda server he inserts his message into Slot 2 and
+   receives Alice's message from Slot 1.
 
       .--------.
       | Alice  |  -------.
@@ -103,23 +104,23 @@ Abstract
 
        {
            "Version": 0,
-           "Tag": "DEADBEEF",
-           "Message": "message1"
+           "Tag": "8151d5513e0e4c44e4fee37f07a524ce646141dd10a59718ef223c06dea41b8c",
+           "Message": "QPXc2+lEruQXNe3PNpDfM+Uh1cajoSkpS+jioWUdys2WzzBu2wBEzx6qs7TXe+5VrdyMn9dkVrFywwJr"
        }
 
    * The Tag field is hex string encoding a 32 bytes value.
-   * The Message is a base64 encoded binary blob.
+   * The Message is a variable length base64 encoded binary blob.
 
 3.2 PandaResponse message
 
        {
            "Version": 0,
            "StatusCode": "0",
-           "Message": "message2"
+           "Message": "gtjbknqV+fc9FzKlmDB8wVKZhbqWq6+nDV4S/rD/PzRjV5MMeR+cE0swfsBkxlqGlQHb5wSefNee0Wxg"
        }
 
-   * The StatusCode field is used to report errors to the client if any.
-     Valid status codes are:
+   * The StatusCode field is used to report errors to the client if
+     any. Valid status codes are:
 
         enum {
            status_received1(0),                  /* Message1 was received. */
@@ -130,7 +131,10 @@ Abstract
            status_storage_error(5),              /* Storage subsystem failure. */
         } StatusCodes;
 
-   * The Message field contains the retrieved message from the queued Posting.
+   * The Message field is variable length and base64 encoded, it
+     contains the retrieved message from a previously queued Posting.
+     This field MAY be empty such as in the case where the Panda
+     server does not find the specified tag in it's storage subsystem.
 
 4. Panda Server Storage Garbage Collection
 
@@ -138,19 +142,33 @@ Abstract
 
 5. Anonymity Considerations
 
-6. Security Considerations
+   * Mix network based transports are a good choice for implementing
+     the Panda protocol because they are message oriented and hide the
+     identity/location of clients from the Panda server.
 
-   * Posting Tag collisions are unlikely given that tags are 32 bytes.
+6. Security Considerations
 
    * After the two binary blob exchanges are performed, the Panda
      server does NOT expunge the two Postings because the Kaetzchen
-     protocol is lossy. Therefore the Panda server must not assume
-     the client will receive the PandaResponse message. The queued
-     ciphertext on the Panda server represents vulnerability to
-     a compulsion attack. That is, an adversary might break then
-     with a quantum computer or key compromise.
+     protocol is lossy. Therefore the Panda server must not assume the
+     client will receive the PandaResponse message. The queued
+     ciphertext on the Panda server represents vulnerability to a
+     compulsion attack. That is, an adversary might break the
+     confidentiality guarantee using a key compromise.
+
+   * Panda is not a post quantum cryptographic protocol and therefore
+     a sufficiently motivated adversary may be able to violate the
+     decisional Diffie-Hellman assumption using a quantum computer
+     after capturing queued ciphertext blobs.
 
 7. Future Work
+
+   * Future versions may decided to use a stricter eviction policy
+     in exchange for reduced ciphertext availability.
+
+   * It might be possible to design a decentralised variation of
+     the Panda protocol to remove the dependency on a single server
+     for ciphertext availability.
 
 Appendix A. References
 
