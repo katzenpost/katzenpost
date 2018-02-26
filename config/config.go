@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
@@ -585,11 +586,39 @@ func (nCfg *Nonvoting) validate() error {
 	return nil
 }
 
+// Peer is a voting peer.
+type Peer struct {
+	Addresses         []string
+	IdentityPublicKey string
+	LinkPublicKey     string
+}
+
+func (p *Peer) validate() error {
+	for _, address := range p.Addresses {
+		if err := utils.EnsureAddrIPPort(address); err != nil {
+			return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
+		}
+	}
+	var pubKey eddsa.PublicKey
+	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Invalid IdentityPublicKey: %v", err)
+	}
+	if err := pubKey.FromString(p.LinkPublicKey); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Invalid LinkPublicKey: %v", err)
+	}
+	return nil
+}
+
 // Voting is a voting directory authority.
 type Voting struct {
 	Addresses         []string
 	IdentityPublicKey string
 	LinkPublicKey     string
+	Peers             []*Peer
+}
+
+func AuthorityPeersFromPeers(peers []*Peer) []*config.AuthorityPeer {
+	return nil // XXX
 }
 
 func (vCfg *Voting) validate() error {
@@ -605,6 +634,13 @@ func (vCfg *Voting) validate() error {
 	}
 	if err := pubKey.FromString(vCfg.LinkPublicKey); err != nil {
 		return fmt.Errorf("config: PKI/Nonvoting: Invalid LinkPublicKey: %v", err)
+	}
+
+	for _, peer := range vCfg.Peers {
+		err := peer.validate()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
