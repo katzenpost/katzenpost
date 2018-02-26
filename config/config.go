@@ -45,6 +45,7 @@ const (
 	defaultSchedulerSlack     = 10 // 10 ms.
 	defaultSchedulerMaxBurst  = 16
 	defaultSendSlack          = 50        // 50 ms.
+	defaultDecoySlack         = 15 * 1000 // 15 sec.
 	defaultConnectTimeout     = 60 * 1000 // 60 sec.
 	defaultHandshakeTimeout   = 30 * 1000 // 30 sec.
 	defaultReauthInterval     = 30 * 1000 // 30 sec.
@@ -157,6 +158,11 @@ type Debug struct {
 	// or congestion in milliseconds.
 	SendSlack int
 
+	// DecoySlack is the maximum allowed decoy sweep slack due to various
+	// external delays such as latency before a loop decoy packet will
+	// be considered lost.
+	DecoySlack int
+
 	// ConnectTimeout specifies the maximum time a connection can take to
 	// establish a TCP/IP connection in milliseconds.
 	ConnectTimeout int
@@ -168,6 +174,12 @@ type Debug struct {
 	// ReauthInterval specifies the interval at which a connection will be
 	// reauthenticated in milliseconds.
 	ReauthInterval int
+
+	// SendDecoyTraffic enables sending decoy traffic.  This is still
+	// experimental and untuned and thus is disabled by default.
+	//
+	// WARNING: This option will go away once decoy traffic is more concrete.
+	SendDecoyTraffic bool
 
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
@@ -210,6 +222,9 @@ func (dCfg *Debug) applyDefaults() {
 		// TODO/perf: Tune this, probably upwards to be more tolerant of poor
 		// networking conditions.
 		dCfg.SendSlack = defaultSendSlack
+	}
+	if dCfg.DecoySlack <= 0 {
+		dCfg.DecoySlack = defaultDecoySlack
 	}
 	if dCfg.ConnectTimeout <= 0 {
 		dCfg.ConnectTimeout = defaultConnectTimeout

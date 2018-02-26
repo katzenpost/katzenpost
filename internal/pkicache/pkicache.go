@@ -55,6 +55,11 @@ func (e *Entry) Self() *pki.MixDescriptor {
 	return e.self
 }
 
+// Document returns the PKI document backing the Entry.
+func (e *Entry) Document() *pki.Document {
+	return e.doc
+}
+
 // GetIncomingByID returns the MixDescriptor for a incoming connection source
 // queried by node ID, or nil iff the node ID is not a valid source.
 func (e *Entry) GetIncomingByID(id *[constants.NodeIDLength]byte) *pki.MixDescriptor {
