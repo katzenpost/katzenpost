@@ -22,7 +22,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-const loopCapability = "loop"
+// LoopCapability is the standardized capability for the loop/discard service.
+const LoopCapability = "loop"
 
 type kaetzchenLoop struct {
 	log *logging.Logger
@@ -31,7 +32,7 @@ type kaetzchenLoop struct {
 }
 
 func (k *kaetzchenLoop) Capability() string {
-	return loopCapability
+	return LoopCapability
 }
 
 func (k *kaetzchenLoop) Parameters() Parameters {
