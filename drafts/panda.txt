@@ -43,7 +43,7 @@ Abstract
      containing two message slots for storing binary blobs on the
      Panda server's storage subsystem.
 
-   * Tag: A 32 byte value used to reference a Tag.
+   * Tag: A 32 byte value used to reference a Posting.
 
 1.2 Conventions Used in This Document
 
@@ -95,12 +95,31 @@ Abstract
       | Bob    |  -------'
       `--------'
 
-3. Protocol Messages
+3. Panda Server Parameters
+
+   The Panda Server is parameterized by the implementation
+   based on the application and security requirements.
+
+    * POSTING_TAG_LENGTH - It is recommended that the Tag length be 32 bytes.
+
+    * MAX_SLOT_LENGTH - As specified in [KAETZCHE], the request and response messages
+      are limited in size by the max payload size of the Sphinx packets.
+
+    * EXPIRATION_DURATION - The duration a Posting can remain on the Panda server
+      without being expunged by garbage collection.
+
+3.1 Public Panda Parameters
+
+   Panda server implementations SHOULD publish their EXPIRATON_DURATION in
+   their parameters section of their entry in the PKI document as detailed
+   in [KAETZCHEN].
+
+4. Protocol Messages
 
    The PandaRequest is sent to the Panda service with a SURB
    that is used to send the PandaResponse back to the client.
 
-3.1 PandaRequest message
+4.1 PandaRequest message
 
        {
            "Version": 0,
@@ -111,7 +130,7 @@ Abstract
    * The Tag field is hex string encoding a 32 bytes value.
    * The Message is a variable length base64 encoded binary blob.
 
-3.2 PandaResponse message
+4.2 PandaResponse message
 
        {
            "Version": 0,
@@ -136,17 +155,34 @@ Abstract
      This field MAY be empty such as in the case where the Panda
      server does not find the specified tag in it's storage subsystem.
 
-4. Panda Server Storage Garbage Collection
+5. Panda Server Storage
+
+   The Panda servers stores Postings of the following format:
+
+      struct {
+          uint64_t unix_time;
+          opaque slot1[];
+          opaque slot2[];
+      } Posting;
+
+      Notes:
+
+       * The unix_time field specifies the time when the Posting was
+         persisted to disk.
+
+       * slot1 and slot2 are the two message slots.
+
+5.1 Garbage Collection
 
    The Panda server MUST periodically garbage collect expired Postings.
 
-5. Anonymity Considerations
+6. Anonymity Considerations
 
    * Mix network based transports are a good choice for implementing
      the Panda protocol because they are message oriented and hide the
      identity/location of clients from the Panda server.
 
-6. Security Considerations
+7. Security Considerations
 
    * After the two binary blob exchanges are performed, the Panda
      server does NOT expunge the two Postings because the Kaetzchen
@@ -161,7 +197,7 @@ Abstract
      decisional Diffie-Hellman assumption using a quantum computer
      after capturing queued ciphertext blobs.
 
-7. Future Work
+8. Future Work
 
    * Future versions may decided to use a stricter eviction policy
      in exchange for reduced ciphertext availability.
