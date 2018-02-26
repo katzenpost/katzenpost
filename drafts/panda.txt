@@ -5,29 +5,34 @@ version 0
 
 Abstract
 
-   This document is meant as an implementation guide for a PANDA (see
-   [PANDA]) service for the Katzenpost mix network system. This PANDA
-   service operates as a [KAETZCHEN] Provider side autoresponder
-   service.
+   This document is meant as an implementation guide for a Panda (see
+   [PANDA] and [PANDASPEC]) service for the Katzenpost mix network
+   system. This PANDA service operates as a [KAETZCHEN] Provider side
+   autoresponder service, allowing clients to exchange their keys
+   using password authentication. This Panda Kaetzchen service can be
+   used as an alternative to [KATZKEYSERVER].
 
 1. Introduction
 
-   In PANDA the participating principals are two clients and a server.
+   In Panda, the participating principals are two clients and a server.
+   The clients do all the crypto and the server is very dumb, it merely
+   stores and retreives ciphertext blobs.
+
    Unlike other PAKE variations, the two particpating clients have
    identical protocol behavior. This allows clients to perform the key
    exchanges asynchronously even if both clients are not online at the
-   same time. The cryptographic messages are queued on a prior agreed
-   upon intermediary PANDA server for later retrieval by communication
+   same time. The cryptographic messages are queued on a previously agreed
+   upon intermediary Panda server for later retrieval by communication
    partners.
 
 1.1. Terminology
 
    * PAKE: Password Authenticated Key Exchange
 
-   * PANDA: Phrase Automated Nym Discovery Authentication
-     see [PANDA].
+   * PANDA: Phrase Automated Nym Discovery Authentication:
+     see [PANDA] and [PANDASPEC].
 
-   * autoresponder service: A service which runs on a Provider
+   * kaetzchen/autoresponder service: A service which runs on a Provider
      and uses a request-response style protocol scheme to implement
      arbitrary services for mix network clients. See [KAETZCHEN]
      for details.
@@ -39,60 +44,116 @@ Abstract
      Client. The Provider MUST have the ability to perform
      cryptographic operations on the relayed packets.
 
+   * Posting: A structure reference by a Tag, containing two message
+     slots.
+
+   * Tag: A 32 byte value used to reference a Tag.
+
 1.2 Conventions Used in This Document
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
    document are to be interpreted as described in [RFC2119].
 
-2. Cryptographic Primitives
+2. System Overview
 
-   This specification uses the following cryptographic primitives as the
-   foundational building blocks for PANDA:
+   The Panda protocol assumes that two Panda clients have selected
+   a Panda server which acts as a bulletin board system. The two Panda
+   clients use the Panda server to make two binary blob exchanges.
+   This is done to facilitate the EKE2 protocol which is described
+   in detail in [PANDASPEC].
 
-    * EKE2 - See the follow section "3. EKE2: Encrypted Key Exchange Two".
+   The Panda server stores a structure called a Posting which has two
+   message slots and is referenced by a tag. If Alice manages to
+   contact the Panda server before Bob then Alice's message will be
+   inserted into Slot 1. Alice's client will then periodically check
+   the Posting for Bob's message in Slot 2. When Bob finally contacts
+   the Panda server he inserts his message into slot2 and receives
+   Alice's message from slot1.
 
-    * KDF - key derivation function: In this case we prefer a KDF that
-      is CPU and memory intensive.
+      .--------.
+      | Alice  |  -------.
+      `--------'          `\
+                           |
+                           V
 
-2.1 EKE2 Cryptographic Primitives
+      .----- Panda Server -----.
+      |                        |
+      |            .---------. |
+      |            | Posting | |
+      |            |         | |
+      |            | Slot 1  | |
+      |            | Slot 2  | |
+      |            |         | |
+      |            `---------' |
+      `------------------------'
 
-   The following cryptographic primitives are used
-   as the foundational building blocks for EKE2:
+                           |
+                           |
+      .--------.          _'
+      | Bob    |  -------'
+      `--------'
 
-    * Diffie-Hellman - A Diffie-Hellman key exchange.
+3. Protocol Messages
 
-    * An Ideal Cipher - A Block Cipher which MUST use a block size
-      that matches the Diffie-Hellman key size.
+   The PandaRequest is sent to the Panda service with a SURB
+   that is used to send the PandaResponse back to the client.
 
-3. PANDA Patameters
+3.1 PandaRequest message
 
-    * PANDA_TAG_LIFETIME - The time duration of a PANDA tag lifetime.
+       {
+           "Version": 0,
+           "Tag": "DEADBEEF",
+           "Message": "message1"
+       }
 
-4. EKE2: Encrypted Key Exchange Two
+   * The Tag field is hex string encoding a 32 bytes value.
+   * The Message is a base64 encoded binary blob.
 
-   EKE2 is a variation of [SPAKE2] but uses an ideal cipher to encrypt
-   the Diffie-Hellman values. EKE2 is described in [EKE2] as:
+3.2 PandaResponse message
 
-      "EKE2 is a Diffie-Hellman key exchange in which each flow is enciphered
-       by the password, the SK is sk = H( A || B || g^x || g^xy ), and the SID
-       and PID are appropriately defined. The name of the sender also accompanies
-       the first flow.
-      "
+       {
+           "Version": 0,
+           "StatusCode": "0",
+           "Message": "message2"
+       }
 
+   * The StatusCode field is used to report errors to the client if any.
+     Valid status codes are:
 
-X. System Overview
-X. Threat Model
-X. Client
-X.1 Protocol Messages
-X.2 State Machine
-X. Server
-X.1 Protocol Messages
-X.2 State Machine
-X. Anonymity Considerations
-Y. Security Considerations
-Z. Future Work
+        enum {
+           status_received1(0),                  /* Message1 was received. */
+           status_received2(1),                  /* Message2 was received. */
+           status_syntax_error(2),               /* The request was malformed. */
+           status_tag_collision_error(3),        /* The request tag collision error. */
+           status_tag_request_recorded_error(4), /* The request message was already recorded. */
+           status_storage_error(5),              /* Storage subsystem failure. */
+        } StatusCodes;
+
+   * The Message field contains the retrieved message from the queued Posting.
+
+4. Panda Server Storage Garbage Collection
+
+   The Panda server MUST periodically garbage collect expired Postings.
+
+5. Anonymity Considerations
+
+6. Security Considerations
+
+   * Posting Tag collisions are unlikely given that tags are 32 bytes.
+
+   * After the two binary blob exchanges are performed, the Panda
+     server does NOT expunge the two Postings because the Kaetzchen
+     protocol is lossy. Therefore the Panda server must not assume
+     the client will receive the PandaResponse message. The queued
+     ciphertext on the Panda server represents vulnerability to
+     a compulsion attack. That is, an adversary might break then
+     with a quantum computer or key compromise.
+
+7. Future Work
+
 Appendix A. References
+
 Appendix A.1 Normative References
 
    [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
@@ -108,6 +169,8 @@ Appendix A.2 Informative References
 
    [PANDA]   Appelbaum, J., "Going Dark: Phrase Automated Nym Discovery Authentication",
              <https://github.com/agl/pond/tree/master/papers/panda>.
+
+   [PANDASPEC] ?
 
    [SPAKE2]   Abdalla, M., Pointcheval, D.,
               "Simple Password-Based Encrypted Key Exchange Protocols",
