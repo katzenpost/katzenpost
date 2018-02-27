@@ -289,6 +289,27 @@ func (s *Session) handshake() error {
 	return nil
 }
 
+func (s *Session) finalizeHandshake() error {
+	if s.isInitiator {
+		// Initiator: The peer will send a NoOp command immediately upon
+		// completing the handshake.
+		cmd, err := s.RecvCommand()
+		if err != nil {
+			return err
+		}
+		if _, ok := cmd.(*commands.NoOp); !ok {
+			// Protocol violation, the peer sent something other than a NoOp.
+			return errInvalidState
+		}
+		return nil
+	}
+
+	// Responder: The peer is authenticated at this point, so dispatch
+	// a NoOp so the peer can distinguish authentication failures.
+	noOpCmd := &commands.NoOp{}
+	return s.SendCommand(noOpCmd)
+}
+
 // Initialize takes an establised net.Conn, and binds it to a Session, and
 // conducts the wire protocol handshake.
 func (s *Session) Initialize(conn net.Conn) error {
@@ -296,7 +317,15 @@ func (s *Session) Initialize(conn net.Conn) error {
 		return errInvalidState
 	}
 	s.conn = conn
-	return s.handshake()
+
+	if err := s.handshake(); err != nil {
+		return err
+	}
+	if err := s.finalizeHandshake(); err != nil {
+		s.state = stateInvalid
+		return err
+	}
+	return nil
 }
 
 // SendCommand sends the wire protocol command cmd.
