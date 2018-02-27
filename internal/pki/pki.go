@@ -628,9 +628,13 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, err
 		}
 	} else {
+		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers)
+		if err != nil {
+			return nil, err
+		}
 		pkiCfg := &vClient.Config{
 			LogBackend:  glue.LogBackend(),
-			Authorities: config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers),
+			Authorities: authorities,
 		}
 		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
