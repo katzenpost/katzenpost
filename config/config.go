@@ -31,6 +31,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
@@ -547,6 +548,9 @@ type PKI struct {
 
 func (pCfg *PKI) validate() error {
 	nrCfg := 0
+	if pCfg.Nonvoting != nil && pCfg.Voting != nil {
+		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
+	}
 	if pCfg.Nonvoting != nil {
 		if err := pCfg.Nonvoting.validate(); err != nil {
 			return err
@@ -596,15 +600,15 @@ type Peer struct {
 func (p *Peer) validate() error {
 	for _, address := range p.Addresses {
 		if err := utils.EnsureAddrIPPort(address); err != nil {
-			return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
+			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
 		}
 	}
 	var pubKey eddsa.PublicKey
 	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Invalid IdentityPublicKey: %v", err)
+		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
 	}
 	if err := pubKey.FromString(p.LinkPublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Invalid LinkPublicKey: %v", err)
+		return fmt.Errorf("Voting Peer: Invalid LinkPublicKey: %v", err)
 	}
 	return nil
 }
@@ -617,23 +621,47 @@ type Voting struct {
 	Peers             []*Peer
 }
 
-func AuthorityPeersFromPeers(peers []*Peer) []*config.AuthorityPeer {
-	return nil // XXX
+func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
+	authPeers := []*config.AuthorityPeer{}
+	for _, peer := range peers {
+		linkKey := new(ecdh.PublicKey)
+		err := linkKey.UnmarshalText([]byte(peer.LinkPublicKey))
+		if err != nil {
+			return nil, err
+		}
+		identityKey := new(eddsa.PublicKey)
+		err = identityKey.UnmarshalText([]byte(peer.IdentityPublicKey))
+		if err != nil {
+			return nil, err
+		}
+		authPeer := &config.AuthorityPeer{
+			IdentityPublicKey: identityKey,
+			LinkPublicKey:     linkKey,
+			Addresses:         peer.Addresses,
+		}
+		authPeers = append(authPeers, authPeer)
+	}
+	return authPeers, nil
 }
 
 func (vCfg *Voting) validate() error {
 	for _, address := range vCfg.Addresses {
 		if err := utils.EnsureAddrIPPort(address); err != nil {
-			return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
+			return fmt.Errorf("config: PKI/Voting: Address is invalid: %v", err)
 		}
 	}
 
 	var pubKey eddsa.PublicKey
+
+	if len(vCfg.IdentityPublicKey) == 0 {
+		return errors.New("failure: IdentityPublicKey must not be zero length")
+
+	}
 	if err := pubKey.FromString(vCfg.IdentityPublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Invalid IdentityPublicKey: %v", err)
+		return fmt.Errorf("config: PKI/Voting: Invalid IdentityPublicKey: %v", err)
 	}
 	if err := pubKey.FromString(vCfg.LinkPublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Invalid LinkPublicKey: %v", err)
+		return fmt.Errorf("config: PKI/Voting: Invalid LinkPublicKey: %v", err)
 	}
 
 	for _, peer := range vCfg.Peers {
