@@ -615,10 +615,7 @@ func (p *Peer) validate() error {
 
 // Voting is a voting directory authority.
 type Voting struct {
-	Addresses         []string
-	IdentityPublicKey string
-	LinkPublicKey     string
-	Peers             []*Peer
+	Peers []*Peer
 }
 
 func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
@@ -645,32 +642,12 @@ func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 }
 
 func (vCfg *Voting) validate() error {
-	for _, address := range vCfg.Addresses {
-		if err := utils.EnsureAddrIPPort(address); err != nil {
-			return fmt.Errorf("config: PKI/Voting: Address is invalid: %v", err)
-		}
-	}
-
-	var pubKey eddsa.PublicKey
-
-	if len(vCfg.IdentityPublicKey) == 0 {
-		return errors.New("failure: IdentityPublicKey must not be zero length")
-
-	}
-	if err := pubKey.FromString(vCfg.IdentityPublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Voting: Invalid IdentityPublicKey: %v", err)
-	}
-	if err := pubKey.FromString(vCfg.LinkPublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Voting: Invalid LinkPublicKey: %v", err)
-	}
-
 	for _, peer := range vCfg.Peers {
 		err := peer.validate()
 		if err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
