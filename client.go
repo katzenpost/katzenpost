@@ -58,8 +58,11 @@ type ClientConfig struct {
 	PKIClient cpki.Client
 
 	// OnConnFn is the callback function that will be called when the
-	// connection status changes.
-	OnConnFn func(bool)
+	// connection status changes.  The error parameter will be nil on
+	// successful connection establishment, otherwise it will be set
+	// with the reason why a connection has been torn down (or a connect
+	// attempt has failed).
+	OnConnFn func(error)
 
 	// OnMessageEmptyFn is the callback function that will be called
 	// when the user's server side spool is empty.  This can happen
