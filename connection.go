@@ -46,13 +46,43 @@ var (
 
 	// ErrShutdown is the error returned when the connection is closed due to
 	// a call to Shutdown().
-	ErrShutdown = errors.New("minclient/conn: shutdown requested")
+	ErrShutdown = errors.New("shutdown requested")
 
 	defaultDialer = net.Dialer{
 		KeepAlive: keepAliveInterval,
 		Timeout:   connectTimeout,
 	}
 )
+
+// ConnectError is the error used to indicate that a connect attempt has failed.
+type ConnectError struct {
+	// Err is the original error that caused the connect attempt to fail.
+	Err error
+}
+
+// Error implements the error interface.
+func (e *ConnectError) Error() string {
+	return fmt.Sprintf("minclient/conn: connect error: %v", e.Err)
+}
+
+func newConnectError(f string, a ...interface{}) error {
+	return &ConnectError{Err: fmt.Errorf(f, a...)}
+}
+
+// PKIError is the error used to indicate PKI related failures.
+type PKIError struct {
+	// Err is the original PKI error.
+	Err error
+}
+
+// Error implements the error interface.
+func (e *PKIError) Error() string {
+	return fmt.Sprintf("minclient/conn: PKI error: %v", e.Err)
+}
+
+func newPKIError(f string, a ...interface{}) error {
+	return &PKIError{Err: fmt.Errorf(f, a...)}
+}
 
 // ProtocolError is the error used to indicate that the connection was closed
 // due to wire protocol related reasons.
@@ -121,7 +151,7 @@ func (c *connection) onPKIFetch() {
 	}
 }
 
-func (c *connection) getDescriptor() {
+func (c *connection) getDescriptor() error {
 	ok := false
 	defer func() {
 		if !ok {
@@ -133,16 +163,16 @@ func (c *connection) getDescriptor() {
 	doc := c.c.CurrentDocument()
 	if doc == nil {
 		c.log.Debugf("No PKI document for current epoch.")
-		return
+		return newPKIError("no PKI document for current epoch")
 	}
 	desc, err := doc.GetProvider(c.c.cfg.Provider)
 	if err != nil {
 		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
-		return
+		return newPKIError("failed to find descriptor for Provider: %v", err)
 	}
 	if c.c.cfg.ProviderKeyPin != nil && !c.c.cfg.ProviderKeyPin.Equal(desc.IdentityKey) {
 		c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
-		return
+		return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
 	}
 	if desc != c.descriptor {
 		c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
@@ -151,6 +181,8 @@ func (c *connection) getDescriptor() {
 	c.descriptor = desc
 	c.pkiEpoch = doc.Epoch
 	ok = true
+
+	return nil
 }
 
 func (c *connection) connectWorker() {
@@ -169,7 +201,7 @@ func (c *connection) connectWorker() {
 	timer := time.NewTimer(pkiFallbackInterval)
 	defer timer.Stop()
 	for {
-		timerFired := false
+		var timerFired bool
 
 		// Wait for a signal from the PKI (or a fallback timer to pass)
 		// before querying the PKI for a document iff we do not have the
@@ -190,10 +222,12 @@ func (c *connection) connectWorker() {
 		}
 
 		// Query the PKI for the current descriptor.
-		c.getDescriptor()
-		if c.descriptor != nil {
+		if err := c.getDescriptor(); err == nil {
 			// Attempt to connect.
 			c.doConnect(dialCtx)
+		} else if c.c.cfg.OnConnFn != nil {
+			// Can't connect due to lacking descriptor.
+			c.c.cfg.OnConnFn(err)
 		}
 		select {
 		case <-c.HaltCh():
@@ -217,9 +251,18 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		dialFn = defaultDialer.DialContext
 	}
 
+	var connErr error
+	defer func() {
+		if connErr == nil {
+			panic("BUG: connErr is nil on connection teardown.")
+		}
+		if c.c.cfg.OnConnFn != nil {
+			c.c.cfg.OnConnFn(connErr)
+		}
+	}()
+
 	for {
-		c.getDescriptor()
-		if c.descriptor == nil {
+		if connErr = c.getDescriptor(); connErr != nil {
 			c.log.Debugf("Aborting connect loop, descriptor no longer present.")
 			return
 		}
@@ -238,7 +281,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		}
 		if len(dstAddrs) == 0 {
 			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
-			c.pkiEpoch = 0 // Give up till the next PKI fetch.
+			c.descriptor = nil // Give up till the next PKI fetch.
+			connErr = newConnectError("no suitable addreses found")
 			return
 		}
 
@@ -251,7 +295,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 					c.retryDelay = maxRetryDelay
 				}
 			case <-c.HaltCh():
-				c.log.Debugf("(Re)connection attempts canceled.")
+				c.log.Debugf("(Re)connection attempts cancelled.")
+				connErr = ErrShutdown
 				return
 			}
 
@@ -262,10 +307,14 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				if conn != nil {
 					conn.Close()
 				}
+				connErr = ErrShutdown
 				return
 			default:
 				if err != nil {
 					c.log.Warningf("Failed to connect to %v: %v", addrPort, err)
+					if c.c.cfg.OnConnFn != nil {
+						c.c.cfg.OnConnFn(&ConnectError{Err: err})
+					}
 					continue
 				}
 			}
@@ -300,6 +349,9 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
+		if c.c.cfg.OnConnFn != nil {
+			c.c.cfg.OnConnFn(&ConnectError{Err: err})
+		}
 		return
 	}
 	defer w.Close()
@@ -308,6 +360,9 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
+		if c.c.cfg.OnConnFn != nil {
+			c.c.cfg.OnConnFn(&ConnectError{Err: err})
+		}
 		return
 	}
 	c.log.Debugf("Handshake completed.")
@@ -595,8 +650,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// Refresh the cached Provider descriptor.
-	c.getDescriptor()
-	if c.descriptor == nil {
+	if err := c.getDescriptor(); err != nil {
 		return false
 	}
 
