@@ -181,6 +181,10 @@ type Debug struct {
 	// WARNING: This option will go away once decoy traffic is more concrete.
 	SendDecoyTraffic bool
 
+	// DisableRateLimit disables the per-client rate limiter.  This option
+	// should only be used for testing.
+	DisableRateLimit bool
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
