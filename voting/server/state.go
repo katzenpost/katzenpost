@@ -162,10 +162,10 @@ func (s *state) worker() {
 }
 
 func (s *state) onWakeup() {
-	const publishDeadline = 3600 * time.Second
-	const mixPublishDeadline = 2 * time.Hour
-	const authorityVoteDeadline = 2*time.Hour + 7*time.Minute + 30*time.Second
-	const publishConsensusDeadline = 2*time.Hour + 15*time.Minute
+	publishDeadline := 3600 * time.Second
+	mixPublishDeadline := 2 * time.Hour
+	authorityVoteDeadline := 2*time.Hour + 7*time.Minute + 30*time.Second
+	publishConsensusDeadline := 2*time.Hour + 15*time.Minute
 	epoch, elapsed, _ := epochtime.Now()
 
 	s.Lock()
@@ -174,13 +174,51 @@ func (s *state) onWakeup() {
 	// If we are doing a bootstrap, and we don't have a document, attempt
 	// to generate one for the current epoch regardless of the time.
 	if epoch == s.bootstrapEpoch && s.documents[epoch] == nil {
-		// The bootstrap phase will belatedly generate a document for
-		// the current epoch iff it receives descriptor uploads for *ALL*
-		// nodes it knows about (eg: Test setups).
+		// The bootstrap phase will accelerate the voting schedule for the current
+		// epoch if there is no existing consensus for the current epoch AND it
+		// receives descriptor uploads for *ALL* nodes it knows about (eg: Test setups).
+		s.votingEpoch = epoch
 		nrBootstrapDescs := len(s.authorizedMixes) + len(s.authorizedProviders)
-		if m, ok := s.descriptors[epoch]; ok && len(m) == nrBootstrapDescs {
-			// XXX FIX ME
+		m, ok := s.descriptors[epoch]
+		if ok && len(m) == nrBootstrapDescs {
+			warp_factor := uint(5)
+			s.log.Debugf("authority: Bootstrapping... Consensus schedule advanced.")
+			s.log.Debugf("authority: voting on epoch: %v", s.votingEpoch)
+			publishDeadline = publishDeadline >> warp_factor
+			// current epoch is about to change, so abort and vote on next epoch
+			bootstrap_time := 3 * time.Hour >> warp_factor
+			if elapsed / bootstrap_time ==  3 * time.Hour / bootstrap_time {
+				s.bootstrapEpoch = epoch + 1
+				return
+			}
+			elapsed = elapsed % (3 * time.Hour >> warp_factor)
+			mixPublishDeadline = mixPublishDeadline >> warp_factor
+			authorityVoteDeadline = authorityVoteDeadline >> warp_factor
+			publishConsensusDeadline = publishConsensusDeadline >> warp_factor
+			s.log.Debugf("authority: elapsed: %v", elapsed)
+			s.log.Debugf("authority: publishDeadline: %v", publishDeadline)
+			s.log.Debugf("authority: mixPublishDeadline: %v", mixPublishDeadline)
+			s.log.Debugf("authority: authorityVoteDeadline: %v", authorityVoteDeadline)
+			s.log.Debugf("authority: publishConsensusDeadline: %v", publishConsensusDeadline)
+		} else {
+			s.log.Debugf("authority: Not enough descriptors.")
+			nrMixes := 0
+			nrProviders := 0
+			for _, d := range m {
+				id := d.desc.IdentityKey.ByteArray()
+				if _, ok := s.authorizedProviders[id]; ok {
+					nrProviders++
+				}
+				if _, ok := s.authorizedMixes[id]; ok {
+					nrMixes++
+				}
+			}
+			s.log.Debugf("authority: Received %v of %v Mixes.", nrMixes, len(s.authorizedMixes))
+			s.log.Debugf("authority: Received %v of %v Providers.", nrProviders, len(s.authorizedProviders))
+			return
 		}
+	} else if epoch == s.votingEpoch {
+		s.votingEpoch = epoch + 1
 	}
 	// If it is past the descriptor upload period and we have yet to generate a
 	// document for the *next* epoch, generate a document and send it to all
