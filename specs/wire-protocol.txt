@@ -167,7 +167,10 @@ Table of Contents
 
    Iff the validation procedure succeeds, the peer is considered
    authenticated. If the validation procedure fails for any reason,
-   the session MUST be terminated immediately.
+   the session MUST be terminated immediately.  Upon successful
+   authentication, the responder MUST immediate send a no_op command
+   to allow the initiator to distinguish between network failure and
+   authentication failure.
 
    Responders MAY add a slight amount (+- 10 seconds) of random
    noise to the unix_time value to avoid leaking precise load
