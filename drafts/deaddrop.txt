@@ -32,12 +32,35 @@ Abstract
      Client. The Provider MUST have the ability to perform
      cryptographic operations on the relayed messages.
 
-2. Protocol Messages
+2. Overview
+
+   A client possesing the dead drop address sends a message to a dead
+   drop just like a normal Katzenpost message. However the receiver of
+   the message uses the dead drop Kaetzchen service to retrieve messages
+   by sending one or more SURBs to the dead drop.
+
+     .--------.        .----------.        .-------.        .--------.
+     | Sender |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix   |  ---.
+     `--------'        `----------'        `-------'        `--------'      `\
+                                                                              |
+                                                                              |
+                                                                              |
+   .----------.        .----------.        .-------.        .-------.         V
+   | Receiver |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ---> .-----------.
+   `----------'  <---  `----------'        `-------'        `-------'       | Dead Drop |
+                                   _                                        `-----------'
+                                  |\                                          |
+                                    \                                         |
+                                     \     .-------.        .-------.        _'
+                                      '--- |  Mix  |  <---  |  Mix  |  <----'
+                                           `-------'        `-------'
+
+3. Protocol Messages
 
    The DeadDropRequest is sent to the dead drop service with a SURB
    that is used to send the DeadDropResponse back to the client.
 
-2.1 DeadDropRequest message
+3.1 DeadDropRequest message
 
    Dead drop requests are authenticated by the Provider's user
    authentication database similar to how Katzenpost Providers
@@ -76,7 +99,7 @@ Abstract
    previously received Sequence numbers are placed into this Ack field
    which causes the deaddrop service to purge the associated messages.
 
-2.2. DeadDropResponse message
+3.2. DeadDropResponse message
 
    {
       "Version": 0,
@@ -107,7 +130,7 @@ Abstract
 
    * Payload is used to encapsulate one or more messages.
 
-3. Dead Drop Descriptor
+4. Dead Drop Descriptor
 
    Dead drop descriptors can be exchanged between clients to establish
    communication channels.
@@ -124,7 +147,7 @@ Abstract
    * The DeadDropAddress field is used to specify the dead drop slot
      on the remote Provider.
 
-4. Anonymity Considerations
+5. Anonymity Considerations
 
    * Collusion of Providers might make it possible to link an account
      on two different Providers. That is, a given user's dead drop can
@@ -147,17 +170,17 @@ Abstract
      Proivders then the goal would be to determine if one message
      spool receives more messages than the rest.
 
-5. Security Considerations
+6. Security Considerations
 
    * End to end message integrity and confidentiality is ensured by
      the Sphinx cryptographic packet format.
 
-6. Future Work
+7. Future Work
 
    It should be possible to increase the communication channel
    efficiency by sending requests supplied with multiple
    SURBs. However this must be carefully balanced with the resulting
-   exposure to statistical confirmation and compulsion attacks.
+   exposure to statistical disclosure and compulsion attacks.
 
 Appendix A. References
 
