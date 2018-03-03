@@ -75,11 +75,12 @@ Appendix A.1 Normative References
 
    Mix networks are fundamentally unreliable packet switching networks
    even if underlying transport protocols are reliable and stream
-   oriented protocols. We therefore require the use of Stop and Wait
-   ARQ protocol schemes to achieve reliability. More efficient ARQ
-   schemes can be used but will leak more information.
+   oriented protocols. We therefore require the use of an ARQ protocol
+   schemes to achieve reliability.
 
 1.1. Terminology
+
+   * ARQ - automatic repeat request
 
 1.2 Conventions Used in This Document
 
@@ -102,36 +103,35 @@ Appendix A.1 Normative References
    SURBs are therefore NOT suitable for establishing a bidirectional
    communication channel for clients that frequently go offline for
    time durations greater than the mix key rotation epoch. Instead a
-   Katzenpost autoresponder [KAETZCHEN] based "dead drop"
-   [KATZDEADDROP] slot descriptor can be used as a new kind of
-   delivery token for mix networks. Unlike SURBs these tokens do not
-   have any inherent expiration. However, for the purpose of reducing
-   exposure to longterm statistical disclosure attacks, these tokens
-   shall internally specify expiration constraints. These constraints
-   specify how far into the future the receiver promises to check for
-   messages in that dead drop slot. Client communication partners MUST
-   periodically exchange new dead drop delivery tokens before the old
-   tokens expire.
+   Katzenpost autoresponder [KAETZCHEN] based dead drop [KATZDEADDROP]
+   service can be used. Unlike SURBs dead drop descriptors do not have
+   any inherent expiration. However, for the purpose of reducing
+   exposure to longterm statistical disclosure attacks, these
+   descriptors shall specify an expiration. The expiration specifies
+   how far into the future the receiver promises to check for messages
+   in the dead drop slot. Client communication partners MUST
+   periodically exchange new dead drop descriptors before the old dead
+   drop descriptors expire.
 
    Communication partnerships are established by using [PANDA] to
-   facilitate a Signal handshake and an exchange of deaddrop delivery
-   tokens. Reliability is achieved using a two differently tuned Stop
+   facilitate a Signal handshake and an exchange of dead drop delivery
+   descriptors. Reliability is achieved using a two differently tuned Stop
    and Wait ARQ protocols, providing reliability for communication
    from client to client as well as client to dead drop. Clients use a
    cryptographic storage subsystem to persist state consisting of key
-   material, cryptographic ratchet state, dead drop delivery tokens
+   material, cryptographic ratchet state, dead drop delivery descriptors
    and ARQ scheduler state. This tranport system providers sender and
    receiver anonymity with respect to third party observers.
 
    Dead drops can also be used for one-way communication providing
    sender and receiver anonymity. Consider for instance a user, Alice
    who reads a message on a anonymous bulletine board system and
-   replies using the supplied dead drop token. In this case, Alice has
+   replies using the supplied dead drop descriptor. In this case, Alice has
    no idea who will receive her message, this is the receiver
    anonymity property. Alice's identity will be hidden from the
    receiver of her message, this is the sender anonymity property.
-   Alice can optionally include a dead drop token in her message. This
-   would establish a full-duplex communications channel. Alice's dead
+   Alice can optionally include a dead drop descriptor in her message. This
+   would establish a full-duplex communication channel. Alice's dead
    drop would not be associated with Alice's home IP address because
    she only uses the mix network to communicate with her dead drop,
    sending it SURBs which are used for replies containing queued
@@ -143,10 +143,9 @@ Appendix A.1 Normative References
 
    Noname clients make use of several dead drops, one for each contact
    for the purpose of queueing received encrypted messages for later
-   retrieval.  We have several security goals for this delivery
-   protocol, we shall proceed with Brian Warner's mode of analysis, we
-   hereby quote several security properties from the [PETMAIL]
-   document :
+   retrieval. We have several security goals for this delivery
+   protocol, we shall proceed with Brian Warner's mode of analysis and
+   quote several security properties from the [PETMAIL] document :
 
       """
       * S0: Two different senders cannot tell if they're talking to the
@@ -222,11 +221,11 @@ Appendix A.1 Normative References
 5.1.1 Contact Discovery
 
    Bidirectional communication partnerships are first established
-   using [PANDA] to faciliate a [SIGNAL] handshake AND the exchange of
-   dead drop tokens. Each client uses one dead drop per contact.
-   There is no universal naming scheme hence the namesake of
-   this document. Like Petmail and Pond, clients choose the name for
-   each of their contacts.
+   using the [PANDA] protocol to faciliate a [SIGNAL] handshake AND
+   the exchange of dead drop descriptors. Each client uses one dead drop
+   per contact. There is no universal naming scheme hence the
+   namesake of this document. Like Petmail and Pond, clients choose
+   the name for each of their contacts.
 
    Upon participation in the PANDA protocol the client registers
    a new dead drop and creates a new Signal double ratchet session
@@ -251,7 +250,7 @@ Appendix A.1 Normative References
 
       * public key material
       * secret cryptographic ratchets
-      * dead drop delivery tokens
+      * dead drop descriptors
       * ARQ scheduler states
 
 6.1 Passphrase key stretching
@@ -265,28 +264,24 @@ Appendix A.1 Normative References
    * boltdb ( https://github.com/coreos/bbolt )
    * Noise one-way Handshake_N [NOISE]
 
-7. User Discovery and Key Exchange
+7. User Key Exchange
 
-   User discovery and key exchange is done using [PANDA] implemented
-   as a Katzenpost Provider side autoresponder service. [KAETZCHEN]
-   This means that bidirectional interaction with the PANDA service is
-   done using the mix network transport for two purposes:
+   User key exchange is done using [PANDA] implemented as a Katzenpost
+   Provider side autoresponder service. [KATZPANDA] [KAETZCHEN] This
+   means that bidirectional interaction with the PANDA service is done
+   using the mix network transport for two purposes:
 
       1. Prevent the PANDA server from learning the client location.
 
-      2. Prevent passive global adversaries from learning which
+      2. Prevent sufficiently global adversaries from learning which
          PANDA server a given client is interacting with.
 
 8. User Interfaces
 
-   I would stronly encourage fellow computer programmers to
-   write secure user interfaces. [YEE02]
-
-   This looks like a good GTK library for golang:
+   The user interface [YEE02] for Linux could use this GTK library for
+   golang:
    
       * https://github.com/mattn/go-gtk
-
-   I also want a console based client.
 
 9. Anonymity Considerations
 
@@ -306,7 +301,7 @@ Appendix A.1 Normative References
       * "Forward Secure Mix" implementation using post quantum
         cryptographic key exchange and ratchet
       * Post quantum signature scheme for Directory Authority documents
-      * Post quantum key exchange for use in Signal double ratchet
+      * Post quantum key exchange for use in the Signal double ratchet
 
 11.2 Improved mitigation of compulsion attacks
 
@@ -393,6 +388,9 @@ Appendix A.2 Informative References
    [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
+
+   [KATZPANDA]   Stainton, D., "Katzenpost PANDA Autoresponder Extension Specification",
+                 March 2018, <https://github.com/katzenpost/docs/blob/master/drafts/panda.txt>.
 
    [PANDA]   Appelbaum, J., "Going Dark: Phrase Automated Nym Discovery Authentication",
              <https://github.com/agl/pond/tree/master/papers/panda>.
