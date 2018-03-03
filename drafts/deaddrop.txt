@@ -25,12 +25,12 @@ Abstract
 
 1.2 Terminology
 
-   Provider - A service operated by a third party that Clients
-              communicate directly with to communicate with the Mixnet.
-              It is responsible for Client authentication,
-              forwarding outgoing messages to the Mixnet, and storing incoming
-              messages for the Client. The Provider MUST have the ability to
-              perform cryptographic operations on the relayed messages.
+   * Provider - A service operated by a third party that Clients
+     communicate directly with to communicate with the Mixnet. It is
+     responsible for Client authentication, forwarding outgoing
+     messages to the Mixnet, and storing incoming messages for the
+     Client. The Provider MUST have the ability to perform
+     cryptographic operations on the relayed messages.
 
 2. Protocol Messages
 
@@ -107,33 +107,52 @@ Abstract
 
    * Payload is used to encapsulate one or more messages.
 
-3. Anonymity Considerations
+3. Dead Drop Descriptor
+
+   Dead drop descriptors can be exchanged between clients to establish
+   communication channels.
+
+      {
+        "Version": 0,
+        "TimeoutUnixEpoch": 12345,
+        "DeadDropAddress": "fe37a524ce6410a59718@provider-0.example.org"
+      }
+
+   * The TimeoutUnixEpoch field is used to specify the timeout in Unix
+     epoch format.
+
+   * The DeadDropAddress field is used to specify the dead drop slot
+     on the remote Provider.
+
+4. Anonymity Considerations
 
    * Collusion of Providers might make it possible to link an account
-   on two different Providers. That is, a given user's dead drop can
-   be discovered if the two Providers collude. However this linkage
-   may require a longterm statistical disclosure attack. In that case,
-   these longterm attacks might not converge on success if deaddrops
-   are rotated frequently enough.
+     on two different Providers. That is, a given user's dead drop can
+     be discovered if the two Providers collude. However this linkage
+     may require a longterm statistical disclosure attack. In that case,
+     these longterm attacks might not converge on success if deaddrops
+     are rotated frequently enough.
 
    * Sending a deaddrop request with many bundled SURBs
-   increases exposure to compulsion attack by the remote Provider.
+     increases exposure to compulsion attack by the remote Provider.
 
-   * Sending a deaddrop request with many bundled SURBs
-   exposes the client to a potential active confirmation attack
-   where the remote Provider uses all of the SURBs to send
-   messages concurrently. The adversary then tries to determine
-   if there is an observed confirmation on the network exposing
-   the destination of these SURB reply messages. In the [LOOPIX]
-   Provider model the attacker might try to determine if any
-   of the Providers receive slightly more messages. If the
-   adversary has compromised one or more Proivders then the
-   goal would be to determine if one message spool receives
-   more messages than the rest.
+   * Sending a deaddrop request with many bundled SURBs exposes the
+     client to a potential active confirmation attack where the remote
+     Provider uses all of the SURBs to send messages concurrently. The
+     adversary then tries to determine if there is an observed
+     confirmation on the network exposing the destination of these
+     SURB reply messages. In the [LOOPIX] Provider model the attacker
+     might try to determine if any of the Providers receive slightly
+     more messages. If the adversary has compromised one or more
+     Proivders then the goal would be to determine if one message
+     spool receives more messages than the rest.
 
-4. Security Considerations
+5. Security Considerations
 
-5. Future Work
+   * End to end message integrity and confidentiality is ensured by
+     the Sphinx cryptographic packet format.
+
+6. Future Work
 
    It should be possible to increase the communication channel
    efficiency by sending requests supplied with multiple
@@ -164,4 +183,4 @@ Appendix A.2 Informative References
    [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
                “The Loopix Anonymity System”,
                USENIX, August, 2017
-               <https://arxiv.org/pdf/1703.00536.pdf>
+               <https://arxiv.org/pdf/1703.00536.pdf>.
