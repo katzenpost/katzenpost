@@ -6,7 +6,7 @@ Version 0
 Abstract
 
    This document describes a Provider-side autoresponder dead drop
-   service. This dead drop service can be used to compose messaging
+   service. The dead drop service can be used to compose messaging
    systems with stronger location hiding properties and increased
    resistance to longterm statistical disclosure attacks.
 
@@ -32,16 +32,19 @@ Abstract
      Client. The Provider MUST have the ability to perform
      cryptographic operations on the relayed messages.
 
+   * SURB - single use reply block; a cryptographic delivery token
+     used to compose a Sphinx packet. [SPHINX] [SPHINXSPEC]
+
 2. Overview
 
    A client possesing the dead drop address sends a message to a dead
-   drop just like a normal Katzenpost message. However the receiver of
-   the message uses the dead drop Kaetzchen service to retrieve messages
-   by sending one or more SURBs to the dead drop.
+   drop just like a normal Katzenpost message [KATZMIXE2E]. However
+   the receiver of the message uses the dead drop Kaetzchen service to
+   retrieve messages by sending one or more SURBs to the dead drop.
 
-     .--------.        .----------.        .-------.        .--------.
-     | Sender |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix   |  ---.
-     `--------'        `----------'        `-------'        `--------'      `\
+     .--------.        .----------.        .-------.        .-------.
+     | Sender |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ----.
+     `--------'        `----------'        `-------'        `-------'       `\
                                                                               |
                                                                               |
                                                                               |
@@ -64,24 +67,25 @@ Abstract
 
    Dead drop requests are authenticated by the Provider's user
    authentication database similar to how Katzenpost Providers
-   authenticate client wire protocol connections: [KATZMIXWIRE]
-   [KATZMIXE2E]. In this case we are coupling the User and AuthToken
+   authenticate client wire protocol connections. [KATZMIXWIRE]
+   [KATZMIXE2E] In this case we are coupling the User and AuthToken
    fields in the DeadDropRequest to provide the needed authentication
    information.
 
        {
            "Version": 0,
            "User": "Alice",
-           "AuthToken": "base64...blah blah",
+           "AuthToken": "yczzyO30cLKtoh/BDAOfyIDjb6nwe6l/ebuVDDhN+Q8boxB7SHG8IS4NFp62LEZg",
            "Ack": 0
        }
 
    * The User field is a string which the Provider associates with
      a X25519 public key AND a message spool.
+
    * The AuthToken field is a base64 encoded ciphertext blob produced
-     by encrypting a zero byte payload with
-     `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key used
-     in [KATZMIXWIRE].
+     by encrypting a zero length payload with
+     `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key which
+     the Katzenpost system uses for link layer authentication [KATZMIXWIRE].
 
    The encrypted and authenticated blob has the following
    structure:
@@ -95,22 +99,22 @@ Abstract
        } BlockCiphertext;
 
    * The Ack field defaults to zero unless the user has had a previous
-   interaction where a DeadDropResponse was received. In that case the
-   previously received Sequence numbers are placed into this Ack field
-   which causes the deaddrop service to purge the associated messages.
+     interaction where a DeadDropResponse was received. In that case the
+     previously received Sequence numbers are placed into this Ack field
+     which causes the deaddrop service to purge the associated messages.
 
 3.2. DeadDropResponse message
 
-   {
-      "Version": 0,
-      "StatusCode": 0,
-      "QueueHint": 0,
-      "Sequence": 0,
-      "Payload": ""
-   }
+      {
+         "Version": 0,
+         "StatusCode": 0,
+         "QueueHint": 0,
+         "Sequence": 0,
+         "Payload": ""
+      }
 
    * The StatusCode field is used to report errors to the client if any.
-   Valid status codes are:
+     Valid status codes are:
 
       enum {
          status_ok(0),           /* None error condition and SHOULD be
@@ -178,9 +182,10 @@ Abstract
 7. Future Work
 
    It should be possible to increase the communication channel
-   efficiency by sending requests supplied with multiple
-   SURBs. However this must be carefully balanced with the resulting
-   exposure to statistical disclosure and compulsion attacks.
+   efficiency by sending DeadDropRequest messages supplied with
+   multiple SURBs. However this must be carefully balanced with the
+   resulting exposure to statistical disclosure and compulsion
+   attacks.
 
 Appendix A. References
 
@@ -207,3 +212,11 @@ Appendix A.2 Informative References
                “The Loopix Anonymity System”,
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>.
+
+   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+             Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+             May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+
+   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Sphinx Mix Network Cryptographic Packet Format Specification"
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
