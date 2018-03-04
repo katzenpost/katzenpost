@@ -39,7 +39,7 @@ Abstract
      Client. The Provider MUST have the ability to perform
      cryptographic operations on the relayed packets.
 
-   * Posting: A structure reference by a unique identifier (a Tag),
+   * Posting: A structure referenced by a unique identifier (a Tag),
      containing two message slots for storing binary blobs on the
      Panda server's storage subsystem.
 
@@ -127,8 +127,11 @@ Abstract
            "Message": "QPXc2+lEruQXNe3PNpDfM+Uh1cajoSkpS+jioWUdys2WzzBu2wBEzx6qs7TXe+5VrdyMn9dkVrFywwJr"
        }
 
-   * The Tag field is hex string encoding a 32 bytes value.
-   * The Message is a variable length base64 encoded binary blob.
+       Notes:
+
+        * The Tag field is hex string encoding a 32 bytes value.
+
+        * The Message is a variable length base64 encoded binary blob.
 
 4.2 PandaResponse message
 
@@ -138,8 +141,10 @@ Abstract
            "Message": "gtjbknqV+fc9FzKlmDB8wVKZhbqWq6+nDV4S/rD/PzRjV5MMeR+cE0swfsBkxlqGlQHb5wSefNee0Wxg"
        }
 
-   * The StatusCode field is used to report errors to the client if
-     any. Valid status codes are:
+       Notes:
+
+        * The StatusCode field is used to report errors to the client if
+          any. Valid status codes are:
 
         enum {
            status_received1(0),                  /* Message1 was received. */
@@ -150,10 +155,10 @@ Abstract
            status_storage_error(5),              /* Storage subsystem failure. */
         } StatusCodes;
 
-   * The Message field is variable length and base64 encoded, it
-     contains the retrieved message from a previously queued Posting.
-     This field MAY be empty such as in the case where the Panda
-     server does not find the specified tag in it's storage subsystem.
+        * The Message field is variable length and base64 encoded, it
+          contains the retrieved message from a previously queued Posting.
+          This field MAY be empty such as in the case where the Panda
+          server does not find the specified tag in it's storage subsystem.
 
 5. Panda Server Storage
 
@@ -199,7 +204,7 @@ Abstract
 
 8. Future Work
 
-   * Future versions may decided to use a stricter eviction policy
+   * Future versions may decide to use a stricter eviction policy
      in exchange for reduced ciphertext availability.
 
    * It might be possible to design a decentralised variation of
