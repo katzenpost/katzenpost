@@ -12,12 +12,17 @@ Version 0
 Abstract
 
    This document describes a mechanism for user identity key discovery
-   based on Provider-side autoresponder [KAETZCHEN]. This key
-   discovery is to be used with the Katzenpost end to end protocol
-   as described in [KATZMIXE2E] for end to end client encryption of
+   that is to be used with the Katzenpost end to end protocol as
+   described in [KATZMIXE2E] for end to end client encryption of
    messages.
 
 1. Introduction
+
+   This key discovery service is implemented as a Provider-side
+   autoresponder [KAETZCHEN]. Clients send a request message and wait
+   to receive a response message. Keys exchanged with this service
+   are not end to end authenticated. Authentication of keys must be
+   done out of band.
 
 1.1 Conventions Used in This Document
 
@@ -39,10 +44,22 @@ Abstract
 
 2. Overview
 
+   A Client, Alice may discover Bob's key by sending a
+   KeyserverRequest to Bob's Provider and awaiting a KeyserverResponse
+   containing Bob's key.
+
+   .--------.        .----------.        .-------.        .-------.
+   | Alice  |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ----.
+   `--------'        `----------'        `-------'        `-------'       `\
+                                                                            |
+   .-----.           .----------.                                          /
+   | Bob |  ------>  | Provider |  <--------------------------------------'
+   `-----'  <------  `----------'
+
 3. Protocol Messages
 
-   The keyserverRequest is sent to the key discovery service with a
-   SURB that is used to send the keyserverResponse back to the client.
+   The KeyserverRequest is sent to the key discovery service with a
+   SURB that is used to send the KeyserverResponse back to the client.
 
 3.1 KeyserverRequest Message
 
