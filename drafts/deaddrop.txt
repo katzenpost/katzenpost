@@ -90,12 +90,12 @@ Abstract
    The encrypted and authenticated blob has the following
    structure:
 
+       // XXX Correct?
+
        struct {
            /* Noise protocol fields. */
            opaque noise_e[32];     /* The Noise handshake `e`. */
            opaque noise_mac[16];   /* The Noise ciphertext MAC. */
-
-           opaque ciphertext[0];
        } BlockCiphertext;
 
    * The Ack field defaults to zero unless the user has had a previous
