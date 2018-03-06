@@ -82,8 +82,8 @@ The generated :term:`Mix Identity key` must be added into the Autority configura
 Once the Authority is configured with all of the mix identity keys you can start the
 Autority server and then start all the mixes.
 
-Setting up a Provider
-=====================
+Optional Provider Postgres Setup
+================================
 
 .. code:: console
 
