@@ -28,6 +28,8 @@ func (smp *SimpleMeetingPlace) Padding() int {
 }
 
 func (smp *SimpleMeetingPlace) Exchange(log func(string, ...interface{}), id, message []byte, shutdown chan struct{}) ([]byte, error) {
+	i := string(id)
+
 	smp.Lock()
 
 	var p *pair
@@ -171,20 +173,4 @@ func TestStartStop(t *testing.T) {
 	}
 
 	require.Equal(result, msg1)
-}
-
-func TestSecretStringGeneration(t *testing.T) {
-	require := require.New(t)
-
-	s, err := NewSecretString(rand.Reader)
-	require.NoError(err)
-	require.True(isValidSecretString(s), fmt.Sprintf("Generated secret string isn't valid: %s", s))
-	require.True(IsAcceptableSecretString(s), fmt.Sprintf("Generated secret string isn't acceptable: %s", s))
-
-	s = s[:8] + "," + s[9:]
-	require.False(isValidSecretString(s), fmt.Sprintf("Corrupt secret string is valid: %s", s))
-
-	s = "498572384"
-	require.True(IsAcceptableSecretString(s), fmt.Sprintf("Random secret string isn't acceptable: %s", s))
-	require.False(isValidSecretString(s), fmt.Sprintf("Random secret string is valid: %s", s))
 }
