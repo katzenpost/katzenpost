@@ -40,7 +40,7 @@ var (
 // Document is the on-the-wire representation of a PKI Document.
 type Document struct {
 	// Version uniquely identifies the document format as being for the
-	// non-voting authority so that it can be rejected when unexpectedly
+	// voting authority so that it can be rejected when unexpectedly
 	// received or if the version changes.
 	Version string
 
@@ -173,35 +173,35 @@ func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) (map[[eddsa.
 func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, []byte, error) {
 	signed, err := jose.ParseSigned(string(b))
 	if err != nil {
-		return nil, nil, fmt.Errorf("wtf1 %s", err)
+		return nil, nil, fmt.Errorf("authority: jose.ParseSigned failed: %s", err)
 	}
 
 	// XXX shouldn't the library do this for us?
 	for _, sig := range signed.Signatures {
 		alg := sig.Header.Algorithm
 		if alg != "EdDSA" {
-			return nil, nil, fmt.Errorf("wtf2 nonvoting: Unsupported signature algorithm: '%v'", alg)
+			return nil, nil, fmt.Errorf("authority: Unsupported signature algorithm: '%v'", alg)
 		}
 	}
 
 	_, _, payload, err := signed.VerifyMulti(*publicKey.InternalPtr())
 	if err != nil {
 		if err == jose.ErrCryptoFailure {
-			err = fmt.Errorf("nonvoting: Invalid document signature")
+			err = fmt.Errorf("authority: Invalid document signature")
 		}
-		return nil, nil, fmt.Errorf("wtf3 %s", err)
+		return nil, nil, err
 	}
 
 	// Parse the payload.
 	d := new(Document)
 	dec := codec.NewDecoderBytes(payload, jsonHandle)
 	if err = dec.Decode(d); err != nil {
-		return nil, nil, fmt.Errorf("wtf4 %s", err)
+		return nil, nil, err
 	}
 
 	// Ensure the document is well formed.
 	if d.Version != documentVersion {
-		return nil, nil, fmt.Errorf("wtf5 nonvoting: Invalid Document Version: '%v'", d.Version)
+		return nil, nil, fmt.Errorf("authority: Invalid Document Version: '%v'", d.Version)
 	}
 
 	// Convert from the wire representation to a Document, and validate
@@ -220,7 +220,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 		for _, rawDesc := range nodes {
 			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
 			if err != nil {
-				return nil, nil, fmt.Errorf("wtf6 %s", err)
+				return nil, nil, err
 			}
 			doc.Topology[layer] = append(doc.Topology[layer], desc)
 		}
