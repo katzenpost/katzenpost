@@ -58,6 +58,9 @@ var defaultLogging = Logging{
 
 // Authority is the authority configuration.
 type Authority struct {
+	// Identifier is the human readable identifier for the node (eg: FQDN).
+	Identifier string
+
 	// Addresses are the IP address/port combinations that the authority will
 	// bind to for incoming connections.
 	Addresses []string
