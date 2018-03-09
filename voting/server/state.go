@@ -237,7 +237,7 @@ func (s *state) combine(epoch uint64) {
 		// consensus failed
 		return
 	}
-	for _, sig := range s.signatures[s.votingEpoch] {
+	for _, sig := range s.signatures[epoch] {
 		doc.addSig(sig)
 	}
 	if !s.hasConsensus(epoch) {
