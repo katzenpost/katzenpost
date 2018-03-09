@@ -795,6 +795,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 				return &resp
 			}
 			if len(signed.Signatures) == 1 {
+				s.log.Debugf("Signature OK.")
 				s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = &signed.Signatures[0]
 				resp.ErrorCode = commands.VoteOk
 				return &resp
