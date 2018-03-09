@@ -363,7 +363,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
 		AdditionalData:    []byte(""),
-		AuthenticationKey: s.s.cfg.Debug.IdentityKey.ToECDH(),
+		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
 	session, err := wire.NewSession(cfg, true)
@@ -373,7 +373,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	defer session.Close()
 	cmd := &commands.Vote{
 		Epoch:     s.votingEpoch,
-		PublicKey: s.s.cfg.Debug.IdentityKey.PublicKey(),
+		PublicKey: s.s.IdentityKey(),
 		Payload:   vote,
 	}
 	err = session.SendCommand(cmd)
