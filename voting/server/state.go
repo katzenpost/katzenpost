@@ -205,12 +205,12 @@ func (s *state) fsm() {
 		}
 	case s.state == stateAcceptSignature:
 		s.state = stateAcceptDescriptor
-		s.votingEpoch = s.votingEpoch + 1
-		s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 		if !s.hasConsensus(s.votingEpoch) {
 			s.log.Debugf("Combing signatures for epoch %v", s.votingEpoch)
 			s.combine(s.votingEpoch)
 		}
+		s.votingEpoch = s.votingEpoch + 1
+		s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 	default:
 		s.state = stateAcceptDescriptor
 	}
