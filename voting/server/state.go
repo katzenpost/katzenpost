@@ -471,7 +471,7 @@ func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []
 	for rawVoteMixDesc, votes := range seen {
 		if len(votes) > s.threshold {
 			voteMixDesc, err := s11n.VerifyAndParseDescriptor([]byte(rawVoteMixDesc), s.votingEpoch)
-			if err != nil {
+			if err == nil {
 				return &descriptor{desc: voteMixDesc, raw: []byte(rawVoteMixDesc)}
 			}
 		}
