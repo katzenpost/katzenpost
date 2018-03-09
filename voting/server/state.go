@@ -499,8 +499,8 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 		s.log.Notice("No votes for epoch %v", epoch)
 		return nil
 	}
-	if len(s.votes) <= s.threshold {
-		s.log.Notice("Did not receive threshold number of votes.")
+	if len(s.votes[epoch]) <= s.threshold {
+		s.log.Noticef("Did not receive threshold number of votes (%v/%v).", len(s.votes[epoch]), s.threshold)
 		return nil
 	}
 
