@@ -166,7 +166,7 @@ func (s *state) fsmWakeup() <-chan time.Time {
 	// if we're bootstrapping, hurry things up
 	if s.doBootstrap() {
 		s.log.Debugf("authority: Bootstrapping, hurrying things up...")
-		return time.After(30 * time.Second)
+		return time.After(10 * time.Second)
 	}
 
 	switch {
