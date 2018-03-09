@@ -548,6 +548,10 @@ func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// include all the valid mixes from votes, including our own.
 	mixes := s.tallyMixes(epoch)
+	if mixes == nil {
+		s.log.Warningf("No mixes in consensus for epoch %v, aborting!", epoch)
+		return
+	}
 	doc := s.getDocument(mixes)
 
 	// Serialize and sign the Document.
