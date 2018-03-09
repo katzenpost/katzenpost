@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"path/filepath"
 	"sync"
 	"time"
@@ -316,7 +317,8 @@ func (s *state) vote(epoch uint64) {
 		s.s.fatalErrCh <- err
 		return
 	}
-	s.sendVoteToAuthorities(signedVote.raw)
+	// we're holding a lock so better run this in another thread
+	go s.sendVoteToAuthorities(signedVote.raw)
 }
 
 func (s *state) sign(doc *s11n.Document) *document {
@@ -363,6 +365,11 @@ func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor
 }
 
 func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
+	// get a connector here
+	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
+	if err != nil {
+		return  err
+	}
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
 		AdditionalData:    []byte(""),
@@ -374,6 +381,10 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 		return err
 	}
 	defer session.Close()
+	//defer conn.Close()
+	if err = session.Initialize(conn); err != nil {
+		return err
+	}
 	cmd := &commands.Vote{
 		Epoch:     s.votingEpoch,
 		PublicKey: s.s.IdentityKey(),
