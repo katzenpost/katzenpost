@@ -507,6 +507,8 @@ func (s *state) tallyMixes(epoch uint64) []*descriptor {
 
 	mixTally := make(map[[eddsa.PublicKeySize]byte][]*pki.Document)
 	for _, voteDoc := range s.votes[epoch] {
+		// XXX: need to extract the RAW descriptors from
+		// the vote document topology!
 		for _, topoLayer := range voteDoc.doc.Topology {
 			for _, voteDesc := range topoLayer {
 				mixID := voteDesc.IdentityKey.ByteArray()
