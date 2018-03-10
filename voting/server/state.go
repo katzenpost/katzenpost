@@ -311,6 +311,7 @@ func (s *state) vote(epoch uint64) {
 	}
 	if _, ok := s.votes[epoch][s.identityPubKey()]; !ok {
 		s.votes[epoch][s.identityPubKey()] = signedVote
+		// XXX persist votes to database?
 	} else {
 		s.log.Errorf("failure: vote already present, this should never happen.")
 		err := errors.New("failure: vote already present, this should never happen")
