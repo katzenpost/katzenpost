@@ -555,9 +555,10 @@ func (s *state) tabulate(epoch uint64) {
 	// include all the valid mixes from votes, including our own.
 	mixes, params, err := s.tallyVotes(epoch)
 	if err != nil {
-		s.log.Warningf("No consensus for epoch %v, aborting!", epoch)
+		s.log.Warningf("No consensus for epoch %v, aborting!, %v", epoch, err)
 		return
 	}
+	s.log.Debug("Mixes tallied, now making a document")
 	doc := s.getDocument(mixes, params)
 
 	// Serialize and sign the Document.
@@ -570,7 +571,7 @@ func (s *state) tabulate(epoch uint64) {
 	}
 
 	// Ensure the document is sane.
-	pDoc, rawDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -578,8 +579,9 @@ func (s *state) tabulate(epoch uint64) {
 		return
 	}
 	// save the document
-	d := &document{doc: pDoc, raw: rawDoc}
+	d := &document{doc: pDoc, raw: []byte(signed)}
 	if _, ok := s.documents[epoch]; !ok {
+		s.log.Debugf("Document for epoch %v saved!", epoch)
 		s.documents[epoch] = d
 	}
 }
@@ -591,7 +593,14 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	}
 	sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
 	if err == nil && len(sigMap) > s.threshold {
+		s.log.Debugf("Yes, Consensus!")
 		return true
+	}
+	if err != nil {
+		s.log.Debugf("VerifyPeerMulti failed: %v", err)
+	}
+	if !(len(sigMap) > s.threshold) {
+		s.log.Debugf("sigmap %v", sigMap)
 	}
 	return false
 }
@@ -768,7 +777,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		return &resp
 	}
 
-	doc, rawDoc, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
+	doc, _, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -786,7 +795,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	// peer has not yet voted for this epoch
 	if !s.dupVote(*vote) {
 		s.votes[s.votingEpoch][vote.PublicKey.ByteArray()] = &document{
-			raw: rawDoc,
+			raw: vote.Payload,
 			doc: doc,
 		}
 		s.log.Debug("Vote OK.")
@@ -797,19 +806,18 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 			// this was already verified by s11n.VerifyAndParseDocument(...)
 			// but we want to extract the signature from the payload
 			signed, err := jose.ParseSigned(string(vote.Payload))
+			index, sig, _, err := signed.VerifyMulti(vote.PublicKey)
 			if err != nil {
 				s.log.Errorf("onVoteUpload signature parse failure: %s", err)
 				resp.ErrorCode = commands.VoteNotSigned
 				return &resp
 			}
-			if len(signed.Signatures) == 1 {
-				s.log.Debugf("Signature OK.")
-				s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = &signed.Signatures[0]
-				resp.ErrorCode = commands.VoteOk
-				return &resp
-			} // else wrong number of signatures or no signature
-			s.log.Error("Vote command invalid: wrong number of signature")
-			resp.ErrorCode = commands.VoteNotSigned
+			if index != 0 {
+				s.log.Errorf("onVoteUpload signature was not first")
+			}
+			s.log.Debugf("Signature OK.")
+			s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = &sig
+			resp.ErrorCode = commands.VoteOk
 			return &resp
 		}
 		// peer is behaving strangely
