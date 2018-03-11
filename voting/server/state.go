@@ -242,11 +242,21 @@ func (s *state) combine(epoch uint64) {
 		// consensus failed
 		return
 	}
-	for _, sig := range s.signatures[epoch] {
-		doc.addSig(sig)
+	sDoc, err := s11n.FromPayload(s.s.identityKey.PublicKey().InternalPtr(), doc.raw)
+	if err != nil {
+		s.log.Debugf("Failed to restore preconsensus to s11n.Document: %v", err)
+		return
 	}
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], sDoc)
+	if err != nil {
+		s.log.Debugf("Failed to MultiSignDocument: %v", err)
+		return
+	}
+
+	s.documents[epoch].raw = []byte(signed)
 	if !s.hasConsensus(epoch) {
 		// XXX we don't have a consensus! OH NOES!
+		s.log.Debugf("Fucking mess")
 		delete(s.documents, epoch) // XXX: really?
 	} else {
 		// save consensus to disk
