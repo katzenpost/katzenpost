@@ -769,7 +769,9 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
-			signed, err := jose.ParseSigned(string(rawDoc))
+			// this was already verified by s11n.VerifyAndParseDocument(...)
+			// but we want to extract the signature from the payload
+			signed, err := jose.ParseSigned(string(vote.Payload))
 			if err != nil {
 				s.log.Errorf("onVoteUpload signature parse failure: %s", err)
 				resp.ErrorCode = commands.VoteNotSigned
