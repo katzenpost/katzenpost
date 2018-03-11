@@ -21,6 +21,7 @@ package s11n
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"

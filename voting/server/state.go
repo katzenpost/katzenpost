@@ -444,91 +444,69 @@ func (s *state) sendVoteToAuthorities(vote []byte) {
 	}
 }
 
-func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document) *descriptor {
-	if len(votes) < s.threshold {
-		s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
-		return nil
-	}
-
-	seen := make(map[string][]*pki.Document)
-	for _, vote := range votes {
-		voteMixDesc, err := vote.GetMixByKey(mixIdentity[:])
-		if err != nil {
-			s.log.Errorf("votesAgree: GetMixByKey failure: %s", err)
-			continue
-		}
-		rawVoteMixDesc, err := s11n.SerializeDescriptor(voteMixDesc)
-		if err != nil {
-			s.log.Errorf("s11n.SerializeDescriptor failure: %s", err)
-			continue
-		}
-
-		rawVoteMixDescStr := string(rawVoteMixDesc)
-		if _, ok := seen[rawVoteMixDescStr]; !ok {
-			seen[rawVoteMixDescStr] = make([]*pki.Document, 0)
-		}
-		seen[rawVoteMixDescStr] = append(seen[rawVoteMixDescStr], vote)
-	}
-	for rawVoteMixDesc, votes := range seen {
-		if len(votes) > s.threshold {
-			voteMixDesc, err := s11n.VerifyAndParseDescriptor([]byte(rawVoteMixDesc), s.votingEpoch)
-			if err == nil {
-				return &descriptor{desc: voteMixDesc, raw: []byte(rawVoteMixDesc)}
-			}
-		}
-	}
-	return nil
-}
-
-func (s *state) sendConsensusToAuthorities(epoch uint64) {} // XXX
-
-func (s *state) sendSignedDocumentToAuthorities(epoch uint64) {} // XXX
-
-func (s *state) extractSignedDescriptor(id [eddsa.PublicKeySize]byte, rawDoc []byte) ([]byte, error) {
-	_, rawDoc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey())
-	if err != nil {
-		return nil, err
-	}
-
-	return nil, nil // XXX
-}
-
-func (s *state) tallyMixes(epoch uint64) []*descriptor {
+func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, error) {
 	// Lock is held (called from the onWakeup hook).
 	_, ok := s.votes[epoch]
 	if !ok {
-		s.log.Notice("No votes for epoch %v", epoch)
-		return nil
+		return nil, nil, errors.New(fmt.Sprintf("No votes for epoch %v!", epoch))
 	}
 	if len(s.votes[epoch]) <= s.threshold {
-		s.log.Noticef("Did not receive threshold number of votes (%v/%v).", len(s.votes[epoch]), s.threshold)
-		return nil
+		return nil, nil, errors.New(fmt.Sprintf("Not enough votes for epoch %v!", epoch))
 	}
 
-	mixTally := make(map[[eddsa.PublicKeySize]byte][]*pki.Document)
-	for _, voteDoc := range s.votes[epoch] {
-		// XXX: need to extract the RAW descriptors from
-		// the vote document topology!
-		for _, topoLayer := range voteDoc.doc.Topology {
-			for _, voteDesc := range topoLayer {
-				mixID := voteDesc.IdentityKey.ByteArray()
-				mixTally[mixID] = append(mixTally[mixID], voteDoc.doc)
+	nodes := make([]*descriptor, 0)
+	mixTally := make(map[string][]*s11n.Document)
+	mixParams := make(map[*config.Parameters][]*s11n.Document)
+	for pk, voteDoc := range s.votes[epoch] {
+		// Parse the payload bytes into the s11n.Document
+		// so that we can access the mix descriptors + sigs
+		// The votes have already been validated.
+		vote := new(s11n.Document)
+		if err := vote.FromPayload(voteDoc.raw); err != nil {
+			s.log.Errorf("Vote from Authority %v failed to decode?! %v", pk, err)
+			break
+		}
+		params := &config.Parameters{
+			MixLambda: vote.MixLambda, MixMaxDelay: vote.MixMaxDelay,
+			SendLambda: vote.SendLambda, SendShift: vote.SendShift,
+			SendMaxInterval: vote.SendMaxInterval,
+		}
+		if _, ok := mixParams[params]; !ok {
+			mixParams[params] = make([]*s11n.Document, 0)
+		}
+		mixParams[params] = append(mixParams[params], vote)
+
+		for _, rawDesc := range vote.Providers {
+			k := string(rawDesc) // hash me?
+			if _, ok := mixTally[k]; !ok {
+				mixTally[k] = make([]*s11n.Document, 0)
+			}
+			mixTally[k] = append(mixTally[k], vote)
+		}
+		for _, l := range vote.Topology {
+			for _, rawDesc := range l {
+				k := string(rawDesc)
+				if _, ok := mixTally[k]; !ok {
+					mixTally[k] = make([]*s11n.Document, 0)
+				}
+				mixTally[k] = append(mixTally[k], vote)
 			}
 		}
-		for _, voteDesc := range voteDoc.doc.Providers {
-			mixID := voteDesc.IdentityKey.ByteArray()
-			mixTally[mixID] = append(mixTally[mixID], voteDoc.doc)
+	}
+	for rawDesc, votes := range mixTally {
+		if len(votes) > s.threshold {
+			// this shouldn't fail as the descriptors have already been verified
+			if desc, err := s11n.VerifyAndParseDescriptor([]byte(rawDesc), epoch); err == nil {
+				nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
+			}
 		}
 	}
-
-	var nodes []*descriptor
-	for mixIdentity, votes := range mixTally {
-		if desc := s.agreedDescriptor(mixIdentity, votes); desc != nil {
-			nodes = append(nodes, desc)
+	for params, votes := range mixParams {
+		if len(votes) > s.threshold {
+			return nodes, params, nil
 		}
 	}
-
-	return nodes
+	return nil, nil, errors.New("Consensus failure!")
 }
 
 func (s *state) GetConsensus(epoch uint64) (*document, error) {
@@ -550,12 +528,12 @@ func (s *state) isTabulated(epoch uint64) bool {
 func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// include all the valid mixes from votes, including our own.
-	mixes := s.tallyMixes(epoch)
-	if mixes == nil {
-		s.log.Warningf("No mixes in consensus for epoch %v, aborting!", epoch)
+	mixes, params, err := s.tallyVotes(epoch)
+	if err != nil {
+		s.log.Warningf("No consensus for epoch %v, aborting!", epoch)
 		return
 	}
-	doc := s.getDocument(mixes)
+	doc := s.getDocument(mixes, params)
 
 	// Serialize and sign the Document.
 	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], doc)
