@@ -264,7 +264,7 @@ func (s *state) voted(epoch uint64) bool {
 	return false
 }
 
-func (s *state) getDocument(descriptors []*descriptor) *s11n.Document {
+func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters) *s11n.Document {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
@@ -287,11 +287,11 @@ func (s *state) getDocument(descriptors []*descriptor) *s11n.Document {
 	// Build the Document.
 	doc := &s11n.Document{
 		Epoch:           s.votingEpoch,
-		MixLambda:       s.s.cfg.Parameters.MixLambda,
-		MixMaxDelay:     s.s.cfg.Parameters.MixMaxDelay,
-		SendLambda:      s.s.cfg.Parameters.SendLambda,
-		SendShift:       s.s.cfg.Parameters.SendShift,
-		SendMaxInterval: s.s.cfg.Parameters.SendMaxInterval,
+		MixLambda:       params.MixLambda,
+		MixMaxDelay:     params.MixMaxDelay,
+		SendLambda:      params.SendLambda,
+		SendShift:       params.SendShift,
+		SendMaxInterval: params.SendMaxInterval,
 		Topology:        topology,
 		Providers:       providers,
 	}
@@ -303,7 +303,7 @@ func (s *state) vote(epoch uint64) {
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
 	}
-	vote := s.getDocument(descriptors)
+	vote := s.getDocument(descriptors, s.s.cfg.Parameters)
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
