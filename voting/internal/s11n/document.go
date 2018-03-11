@@ -57,27 +57,21 @@ type Document struct {
 	Providers [][]byte
 }
 
-func (d *Document) FromPayload(payload []byte) error {
-	// Parse the payload.
-	// UGH once again we have multiple types for the same thing
+func FromPayload(verificationKey interface{}, payload []byte) (*Document, error) {
 	signed, err := jose.ParseSigned(string(payload))
 	if err != nil {
-		return fmt.Errorf("authority: jose.ParseSigned failed: %s", err)
+		return nil, err
 	}
-	for _, sig := range signed.Signatures {
-		if sig.Header.JSONWebKey != nil {
-			if payl, err := signed.Verify(sig.Header.JSONWebKey); err == nil {
-				dec := codec.NewDecoderBytes(payl, jsonHandle)
-				if err := dec.Decode(d); err != nil {
-					return err
-				}
-			} else {
-				return err
-			}
-			return nil
-		}
+	_, _, verified, err := signed.VerifyMulti(verificationKey)
+	if err != nil {
+		return nil, err
 	}
-	return errors.New("Failed to build s11n.Document from payload")
+	dec := codec.NewDecoderBytes(verified, jsonHandle)
+	d := new(Document)
+	if err := dec.Decode(d); err != nil {
+		return nil, err
+	}
+	return d, nil
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
