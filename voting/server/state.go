@@ -458,14 +458,16 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 
 	nodes := make([]*descriptor, 0)
 	mixTally := make(map[string][]*s11n.Document)
-	mixParams := make(map[*config.Parameters][]*s11n.Document)
+	mixParams := make(map[string][]*s11n.Document)
 	for pk, voteDoc := range s.votes[epoch] {
 		// Parse the payload bytes into the s11n.Document
 		// so that we can access the mix descriptors + sigs
 		// The votes have already been validated.
-		vote := new(s11n.Document)
-		if err := vote.FromPayload(voteDoc.raw); err != nil {
-			s.log.Errorf("Vote from Authority %v failed to decode?! %v", pk, err)
+		ed := new(eddsa.PublicKey)
+		ed.FromBytes(pk[:])
+		vote, err := s11n.FromPayload(*ed.InternalPtr(), voteDoc.raw)
+		if err != nil {
+			s.log.Errorf("Vote from Authority failed to decode?! %v", err)
 			break
 		}
 		params := &config.Parameters{
@@ -473,13 +475,20 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			SendLambda: vote.SendLambda, SendShift: vote.SendShift,
 			SendMaxInterval: vote.SendMaxInterval,
 		}
-		if _, ok := mixParams[params]; !ok {
-			mixParams[params] = make([]*s11n.Document, 0)
+		b := bytes.Buffer{}
+		e := gob.NewEncoder(&b)
+		err = e.Encode(params)
+		if err != nil {
+			s.log.Errorf("MixParameters in Vote from Authority failed to encode?! %v", err)
 		}
-		mixParams[params] = append(mixParams[params], vote)
+		bs := b.String()
+		if _, ok := mixParams[bs]; !ok {
+			mixParams[bs] = make([]*s11n.Document, 0)
+		}
+		mixParams[bs] = append(mixParams[bs], vote)
 
 		for _, rawDesc := range vote.Providers {
-			k := string(rawDesc) // hash me?
+			k := string(rawDesc)
 			if _, ok := mixTally[k]; !ok {
 				mixTally[k] = make([]*s11n.Document, 0)
 			}
@@ -503,9 +512,13 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			}
 		}
 	}
-	for params, votes := range mixParams {
+	for bs, votes := range mixParams {
 		if len(votes) > s.threshold {
-			return nodes, params, nil
+			params := &config.Parameters{}
+			d := gob.NewDecoder(strings.NewReader(bs))
+			if err := d.Decode(params); err == nil {
+				return nodes, params, nil
+			}
 		}
 	}
 	return nil, nil, errors.New("Consensus failure!")
