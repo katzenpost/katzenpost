@@ -19,11 +19,13 @@ package server
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/gob"
 	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
 	"sync"
+	"strings"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
@@ -227,7 +229,7 @@ func (s *state) doBootstrap() bool {
 
 	// If we are doing a bootstrap, and we don't have a document, attempt
 	// to generate one for the current epoch regardless of the time.
-	if epoch == s.bootstrapEpoch && s.documents[epoch] == nil {
+	if epoch == s.bootstrapEpoch && !s.hasConsensus(epoch) {
 		return true
 	}
 	return false
