@@ -82,7 +82,7 @@ func (d *document) getSignatures() ([]jose.Signature, error) {
 	return nil, errors.New("document getSignatures failure: struct type not initialized")
 }
 
-func (d *document) addSig(sig *jose.Signature) error {
+func (d *document) addSig(publicKey *eddsa.PublicKey, sig *jose.Signature) error {
 	// caller MUST verify that the signer is authorized
 	// this function only verifies that the signature
 	// is valid and not duplicated.
@@ -97,7 +97,7 @@ func (d *document) addSig(sig *jose.Signature) error {
 	}
 	// verify that the signature signs the document
 	signed.Signatures = append(signed.Signatures, *sig)
-	_, _, _, err = signed.VerifyMulti(sig)
+	_, _, _, err = signed.VerifyMulti(*publicKey.InternalPtr())
 	if err == nil {
 		// update object
 		d.raw = []byte(signed.FullSerialize())
@@ -240,20 +240,18 @@ func (s *state) combine(epoch uint64) {
 	doc, ok := s.documents[epoch]
 	if !ok {
 		// consensus failed
+		s.log.Debugf("What, no preconsensus yet??")
 		return
 	}
-	sDoc, err := s11n.FromPayload(s.s.identityKey.PublicKey().InternalPtr(), doc.raw)
-	if err != nil {
-		s.log.Debugf("Failed to restore preconsensus to s11n.Document: %v", err)
-		return
-	}
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], sDoc)
-	if err != nil {
-		s.log.Debugf("Failed to MultiSignDocument: %v", err)
-		return
+	for pk, sig := range s.signatures[epoch] {
+		ed := new(eddsa.PublicKey)
+		ed.FromBytes(pk[:])
+		err := doc.addSig(ed, sig)
+		if err != nil {
+			s.log.Errorf("Signature failed to validate: %v", err)
+		}
 	}
 
-	s.documents[epoch].raw = []byte(signed)
 	if !s.hasConsensus(epoch) {
 		// XXX we don't have a consensus! OH NOES!
 		s.log.Debugf("Fucking mess")
