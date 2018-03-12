@@ -565,6 +565,10 @@ func (s *state) tabulate(epoch uint64) {
 	doc := s.getDocument(mixes, params)
 
 	// Serialize and sign the Document.
+	// XXX s.signatures[epoch] might already be populated
+	// which means we might be voting with a multisig document.
+	// this isn't a problem because we extract the signature from
+	// the document and should be signing the same thing
 	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], doc)
 	if err != nil {
 		// This should basically always succeed.
@@ -816,12 +820,44 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 				resp.ErrorCode = commands.VoteNotSigned
 				return &resp
 			}
-			index, sig, _, err := signed.VerifyMulti(*vote.PublicKey.InternalPtr())
+			index, sig, payload, err := signed.VerifyMulti(*vote.PublicKey.InternalPtr())
 			if err != nil {
 				s.log.Errorf("onVoteUpload signature parse failure: %s", err)
 				resp.ErrorCode = commands.VoteNotSigned
 				return &resp
 			}
+
+			// XXX: none of the authorities agree about what the consensus is... why?
+			// check our own view of the consensus and see if the damn bytes match up with what we have here
+			if _, ok := s.documents[s.votingEpoch]; ok {
+				if mysigned, err := jose.ParseSigned(string(s.documents[s.votingEpoch].raw)); err == nil {
+					if _, _, mypayload, err := mysigned.VerifyMulti(*s.s.identityKey.PublicKey().InternalPtr()); err == nil {
+						if bytes.Equal(payload, mypayload) {
+							s.log.Debugf("We might even get a consensus!")
+						} else {
+							s.log.Debugf("We probably won't get a consensus!")
+							// figure out why these documents are different...
+							s.log.Debugf("Our view is %v bytes, theirs is %v bytes", len(mypayload), len(payload))
+							// this is pretty noisy...
+							// this is the case, why aren't they the same?
+							//if len(mypayload) == len(payload) {
+							//	for i, _ := range payload {
+							//		s.log.Debugf("%v %v %v", mypayload[i], payload[i], mypayload[i] == payload[i])
+							//	}
+							//}
+
+							s.log.Debugf("Our view is %v, theirs is %v bytes", len(mypayload), len(payload))
+						}
+					} else {
+						s.log.Debugf("We failed to verify our own view of the consensu!?: %v", err)
+					}
+				} else {
+					s.log.Debugf("We failed to parse our own view of the consensus!?: %v", err)
+				}
+			} else {
+				s.log.Debugf("Received a signature before we've produced our own view of the consensus. Probably OK")
+			}
+
 			if index != 0 {
 				s.log.Errorf("onVoteUpload signature was not first")
 			}
