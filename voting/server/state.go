@@ -584,6 +584,9 @@ func (s *state) tabulate(epoch uint64) {
 		s.log.Debugf("Document for epoch %v saved!", epoch)
 		s.documents[epoch] = d
 	}
+
+	// send our vote to the other authorities!
+	go s.sendVoteToAuthorities([]byte(signed))
 }
 
 func (s *state) hasConsensus(epoch uint64) bool {
@@ -806,7 +809,12 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 			// this was already verified by s11n.VerifyAndParseDocument(...)
 			// but we want to extract the signature from the payload
 			signed, err := jose.ParseSigned(string(vote.Payload))
-			index, sig, _, err := signed.VerifyMulti(vote.PublicKey)
+			if err != nil {
+				s.log.Errorf("onVoteUpload vote parse failure: %s", err)
+				resp.ErrorCode = commands.VoteNotSigned
+				return &resp
+			}
+			index, sig, _, err := signed.VerifyMulti(*vote.PublicKey.InternalPtr())
 			if err != nil {
 				s.log.Errorf("onVoteUpload signature parse failure: %s", err)
 				resp.ErrorCode = commands.VoteNotSigned
