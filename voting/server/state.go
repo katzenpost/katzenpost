@@ -24,8 +24,8 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
-	"sync"
 	"strings"
+	"sync"
 	"time"
 
 	bolt "github.com/coreos/bbolt"
@@ -128,7 +128,7 @@ type state struct {
 
 	votingEpoch uint64
 	threshold   int
-	state string
+	state       string
 }
 
 func (s *state) Halt() {
@@ -189,17 +189,15 @@ func (s *state) fsm() {
 	defer s.Unlock()
 	switch {
 	case s.state == stateAcceptDescriptor:
-		if s.doBootstrap() && !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
-			s.log.Debugf("authority: not voting because insufficient descriptors uploaded!")
-			return
+		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
+			s.log.Debugf("Not voting because insufficient descriptors uploaded!")
 		} else {
-			s.log.Debugf("authority: voting!")
+			if !s.voted(s.votingEpoch) {
+				s.log.Debugf("Voting for epoch %v", s.votingEpoch)
+				s.vote(s.votingEpoch)
+			}
 		}
 		s.state = stateAcceptVote
-		if !s.voted(s.votingEpoch) {
-			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
-			s.vote(s.votingEpoch)
-		}
 	case s.state == stateAcceptVote:
 		s.state = stateAcceptSignature
 		if !s.isTabulated(s.votingEpoch) {
@@ -253,11 +251,18 @@ func (s *state) combine(epoch uint64) {
 	}
 
 	if !s.hasConsensus(epoch) {
-		// XXX we don't have a consensus! OH NOES!
-		s.log.Debugf("Fucking mess")
-		delete(s.documents, epoch) // XXX: really?
+		s.log.Debugf("No consensus for epoch %v", epoch)
+		// if we're bootstrapping, clear state and try try again
+		// this is helpful because authorities probably will
+		// not startup within the state-transition time
+		if epoch == s.bootstrapEpoch {
+			delete(s.documents, epoch)
+			delete(s.signatures, epoch)
+			delete(s.votes, epoch)
+		}
 	} else {
-		// save consensus to disk
+		s.log.Debugf("Consensus made for epoch %v", epoch)
+		// XXX: save consensus to disk!
 	}
 }
 
@@ -379,7 +384,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	// get a connector here
 	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
 	if err != nil {
-		return  err
+		return err
 	}
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
@@ -592,16 +597,15 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	if !ok {
 		return false
 	}
-	sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
-	if err == nil && len(sigMap) > s.threshold {
-		s.log.Debugf("Yes, Consensus!")
-		return true
-	}
-	if err != nil {
-		s.log.Debugf("VerifyPeerMulti failed: %v", err)
-	}
-	if !(len(sigMap) > s.threshold) {
-		s.log.Debugf("sigmap %v", sigMap)
+	if len(s.signatures[epoch]) > s.threshold {
+		sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
+		if err == nil && len(sigMap) > s.threshold {
+			s.log.Debugf("Yes, Consensus!")
+			return true
+		}
+		if err != nil {
+			s.log.Debugf("VerifyPeerMulti failed: %v", err)
+		}
 	}
 	return false
 }
