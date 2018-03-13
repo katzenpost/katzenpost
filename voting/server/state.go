@@ -640,7 +640,9 @@ func (s *state) hasConsensus(epoch uint64) bool {
 		return false
 	}
 	sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
-	if err == nil && len(sigMap) > s.threshold {
+	// +1 because s.s.cfg.Authorities does not include our key,
+	// though we have already verified that our signature is valid
+	if err == nil && len(sigMap) + 1 > s.threshold {
 		s.log.Debugf("Yes, Consensus!")
 		return true
 	}
