@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -566,6 +567,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			params := &config.Parameters{}
 			d := gob.NewDecoder(strings.NewReader(bs))
 			if err := d.Decode(params); err == nil {
+				sortNodesByPublicKey(nodes)
 				return nodes, params, nil
 			}
 		}
@@ -1189,4 +1191,12 @@ func epochToBytes(e uint64) []byte {
 	ret := make([]byte, 8)
 	binary.BigEndian.PutUint64(ret, e)
 	return ret
+}
+
+func sortNodesByPublicKey(nodes []*descriptor) {
+	dTos := func(d *descriptor) string {
+		pk := d.desc.IdentityKey.ByteArray()
+		return string(pk[:])
+	}
+	sort.Slice(nodes, func(i, j int) bool { return dTos(nodes[i]) < dTos(nodes[j]) })
 }

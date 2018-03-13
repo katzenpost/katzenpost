@@ -45,7 +45,7 @@ func TestPerm(t *testing.T) {
 	for i := 1; i < 42; i++ {
 		j := rand.Int63()
 		t.Logf("%v", j)
-		assert.True(j>=0)
+		assert.True(j >= 0)
 	}
 	for i := 0; i < 42; i++ {
 		p := rand.Perm(i)
