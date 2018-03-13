@@ -667,7 +667,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 	rng, err := NewDeterministicRandReader("42")
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
-		return nil
+		s.s.fatalErrCh <- err
 	}
 	targetNodesPerLayer := len(nodeList) / s.s.cfg.Debug.Layers
 	topology := make([][][]byte, s.s.cfg.Debug.Layers)
@@ -732,7 +732,7 @@ func (s *state) generateRandomTopology(nodes []*descriptor) [][][]byte {
 	rng, err := NewDeterministicRandReader("42")
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
-		return nil
+		s.s.fatalErrCh <- err
 	}
 
 	nodeIndexes := rng.Perm(len(nodes))
