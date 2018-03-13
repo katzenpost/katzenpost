@@ -664,7 +664,11 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 	// approximately equal, and as many nodes as possible retain their existing
 	// layer assignment to minimise network churn.
 
-	rng := rand.NewMath()
+	rng, err := NewDeterministicRandReader("42")
+	if err != nil {
+		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
+		return nil
+	}
 	targetNodesPerLayer := len(nodeList) / s.s.cfg.Debug.Layers
 	topology := make([][][]byte, s.s.cfg.Debug.Layers)
 
@@ -725,7 +729,12 @@ func (s *state) generateRandomTopology(nodes []*descriptor) [][][]byte {
 	// then the simplest thing to do is to randomly assign nodes to the
 	// various layers.
 
-	rng := rand.NewMath()
+	rng, err := NewDeterministicRandReader("42")
+	if err != nil {
+		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
+		return nil
+	}
+
 	nodeIndexes := rng.Perm(len(nodes))
 	topology := make([][][]byte, s.s.cfg.Debug.Layers)
 	for idx, layer := 0, 0; idx < len(nodes); idx++ {
