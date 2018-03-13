@@ -59,6 +59,8 @@ func (s *DeterministicRandReader) Int63() int64 {
 	if err != nil {
 		panic(err)
 	}
+	// gotta chop those sign bits!
+	tmp[7] = tmp[7] & 0x7F
 	return int64(binary.LittleEndian.Uint64(tmp[:]))
 }
 
