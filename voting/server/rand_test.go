@@ -33,4 +33,7 @@ func TestPerm(t *testing.T) {
 	_, err = rand.Read(tmp[:])
 	assert.NoError(err, "wtf")
 	t.Logf("rand val is %x", tmp)
+	for i := 0; i < 42; i++ {
+		t.Logf("%v", rand.Perm(i))
+	}
 }
