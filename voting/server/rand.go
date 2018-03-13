@@ -18,7 +18,6 @@ package server
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"math/rand"
 
 	"git.schwanenlied.me/yawning/chacha20"
@@ -29,13 +28,9 @@ type DeterministicRandReader struct {
 	key    []byte
 }
 
-func NewDeterministicRandReader(keyStr string) (*DeterministicRandReader, error) {
-	key, err := hex.DecodeString(keyStr)
-	if err != nil {
-		return nil, err
-	}
+func NewDeterministicRandReader(key []byte) (*DeterministicRandReader, error) {
 	var nonce [8]byte
-	cipher, err := chacha20.NewCipher(key[:], nonce[:])
+	cipher, err := chacha20.NewCipher(key, nonce[:])
 	if err != nil {
 		return nil, err
 	}
@@ -48,8 +43,7 @@ func NewDeterministicRandReader(keyStr string) (*DeterministicRandReader, error)
 
 func (r *DeterministicRandReader) Read(data []byte) (int, error) {
 	readLen := len(data)
-	buf := make([]byte, readLen)
-	r.cipher.XORKeyStream(data, buf)
+	r.cipher.KeyStream(data)
 	return readLen, nil
 }
 

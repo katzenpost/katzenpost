@@ -26,10 +26,10 @@ import (
 func TestPerm(t *testing.T) {
 	assert := assert.New(t)
 
-	skey := "47ade5905376604cde0b57e732936b4298281c8a67b6a62c6107482eb69e2941"
-	rand, err := NewDeterministicRandReader(skey)
+	skey := [32]byte{0x00}
+	rand, err := NewDeterministicRandReader(skey[:])
 	assert.NoError(err, "wtf")
-	rand2, err := NewDeterministicRandReader(skey)
+	rand2, err := NewDeterministicRandReader(skey[:])
 	assert.NoError(err, "wtf")
 
 	for i := 0; i < 42; i++ {
