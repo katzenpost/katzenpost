@@ -607,7 +607,7 @@ func (s *state) tabulate(epoch uint64) {
 	// which means we might be voting with a multisig document.
 	// this isn't a problem because we extract the signature from
 	// the document and should be signing the same thing
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, s.signatures[epoch], doc)
+	signed, err := s11n.MultiSignDocument(s.s.identityKey, nil, doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -639,15 +639,16 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	if !ok {
 		return false
 	}
-	if len(s.signatures[epoch]) > s.threshold {
-		sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
-		if err == nil && len(sigMap) > s.threshold {
-			s.log.Debugf("Yes, Consensus!")
-			return true
-		}
-		if err != nil {
-			s.log.Debugf("VerifyPeerMulti failed: %v", err)
-		}
+	sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
+	if err == nil && len(sigMap) > s.threshold {
+		s.log.Debugf("Yes, Consensus!")
+		return true
+	}
+	if err != nil {
+		s.log.Debugf("VerifyPeerMulti failed: %v", err)
+	}
+	if len(sigMap) <= s.threshold {
+		s.log.Debugf("Less signatures than needed: %v", len(sigMap))
 	}
 	return false
 }
