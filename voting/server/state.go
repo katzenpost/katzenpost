@@ -663,8 +663,9 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 	// generating the mix topology such that the number of nodes per layer is
 	// approximately equal, and as many nodes as possible retain their existing
 	// layer assignment to minimise network churn.
-
-	rng, err := NewDeterministicRandReader("42")
+	// TODO: shared random
+	key := [32]byte{0x42}
+	rng, err := NewDeterministicRandReader(key[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
 		s.s.fatalErrCh <- err
@@ -729,7 +730,9 @@ func (s *state) generateRandomTopology(nodes []*descriptor) [][][]byte {
 	// then the simplest thing to do is to randomly assign nodes to the
 	// various layers.
 
-	rng, err := NewDeterministicRandReader("42")
+	// TODO: shared random
+	key := [32]byte{0x42}
+	rng, err := NewDeterministicRandReader(key[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
 		s.s.fatalErrCh <- err
