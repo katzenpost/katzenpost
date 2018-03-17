@@ -49,16 +49,16 @@ Table of Contents
    messages are routed through.
 
    Decoy traffic also serves to provide sender and receiver
-   unobservability.  That is, a passive network observer will not be
+   unobservability. That is, a passive network observer will not be
    able to determine when a user is sending a message or receiving a
    message, because observed messages may be decoy messages.
 
    The main purpose for decoy traffic is to mitigate statistical
    disclosure attacks. However, mix networks always leak
-   information. Therefore, the outcomes of long-term statistical
-   disclosure attacks (whether successful or not) are largely
-   dependent upon the measure of repetitive and predictable user
-   behavior.
+   information. Therefore, a long-term statistical disclosure attack
+   that converges on success is largely dependent upon how well the
+   adversary can predict client behavior and how repetitive this
+   behavior is.
 
 1.1 Conventions Used in This Document
 
@@ -88,7 +88,7 @@ Table of Contents
    case the Provider distinguishes this message from the other
    messages it receives. In our Katzenpost design, Clients send mix
    loops using a Katzenpost Provider-side Autoresponder [KAETZCHEN]
-   loop service.  From the Provider's perspective these mix loops are
+   loop service. From the Provider's perspective these mix loops are
    indistinguishable from client originated loops which also use the
    Autoresponder.
 
