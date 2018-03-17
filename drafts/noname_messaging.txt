@@ -7,76 +7,21 @@ Abstract
 
    This document describes the high level architecture of the Noname
    Messaging System which is specifically designed to provide strong
-   location hiding properties and traffic analysis resistance. Behavior
-   required of clients participating in the system is also described.
-
-Table of Contents
-
-1. Introduction
-1.1. Terminology
-1.2 Conventions Used in This Document
-2. System Overview
-3. Threat Model
-3.1 Security Goals
-3.2 Categories of Attacks
-4. One Way Communication: Using a Well-Known Dead Drop
-5. Bidirectional Communication Partnerships
-5.1 Bidirectional Messaging
-5.1.1 Contact Discovery
-5.1.2 Sending Messages
-5.2 Message Retrieval
-5.3 One Way Messaging
-5.4 Bulletin Board System
-6. Client Cryptographic Storage Subsystem
-6.1 Passphrase key stretching
-6.2 Boltdb + Noise Based Storage
-7. User Discovery and Key Exchange
-8. User Interfaces
-9. Anonymity Considerations
-10. Security Considerations
-11. Future Work
-11.1 Post Quantum Crypto for all of the things
-11.2 Improved mitigation of compulsion attacks
-11.3 Improve Reliability and Increase Resistance to n-1 Attacks
-11.4 Distributed Denial of Service Attack Mitigation
-11.5 Client Support for TPM and HSM
-11.6 Mobile Clients: Android and IOS
-11.7 Use Journal Based Storage instead of ACID Transactions
-Appendix A. References
-Appendix A.1 Normative References
+   location hiding properties, tunable resistance to longterm
+   statistical disclosure attacks and resistance to some active
+   attacks.
 
 1. Introduction
 
-   This specification provides the design of a cryptographic messaging
-   system that uses the [SIGNAL] double ratchet for end to end
-   encryption and [NOISE] for the link layer encryption. However
-   unlike other messaging applications that use Signal and Noise, this
-   system provides a novel selection of technology to provide:
-
-      * end to end message confidentiality and integrity
-      * strong location hiding and traffic analysis resistance properties
-        such as:
-        
-           * online receiver unobservability
-
-           * online sender unobservability
-
-           * sender anonymity
-
-           * receiver anonymity
-
-           * sender and receiver anonymity with respect to third party
-             observers
-
-   Encryption alone is not enough to provide these properties. This
-   specification is inspired by [POND] and [PETMAIL] but uses many
-   designs from the mix network literature, especially the [LOOPIX],
-   Katzenpost [KATZMIXNET], and [MIXMINION] systems.
-
-   Mix networks are fundamentally unreliable packet switching networks
-   even if underlying transport protocols are reliable and stream
-   oriented protocols. We therefore require the use of an ARQ protocol
-   schemes to achieve reliability.
+   This specification is inspired by [POND] and [PETMAIL] but uses
+   many designs from the mix network literature, especially the
+   [LOOPIX], Katzenpost [KATZMIXNET] and [MIXMINION] systems. I
+   describes a variation of the Katzenpost decryption mix network
+   messaging system where clients use the PANDA protocol to establish
+   bidirectional communication channels. These channels are
+   constructed using ephemeral keys for the [SIGNAL] double ratchet
+   AND descriptors of unidirectional dead drops. [KATZDEADDROP]
+   [KAETZCHEN]
 
 1.1. Terminology
 
@@ -92,50 +37,41 @@ Appendix A.1 Normative References
 
    Mixminion introduced the Single Use Reply Block, also known as a
    SURB which is a cryptographic delivery token for latent message
-   delivery. These SURBs can be exchanged between communication
-   partners as a kind of anonymous addressing scheme. However SURBs
-   have a relatively short lifetime because they are essentially a
-   mixnet packet header which is encrypted with the routing keys of
-   each mix hop and therefore expire when any of the mixes rotate
-   their key. In the Katzenpost system this key rotation epoch is
-   every 3 hours. [KATZMIXPKI]
+   delivery. SURBs have a relatively short lifetime because they are
+   essentially a mixnet packet header which is encrypted with the
+   routing keys of several mixes and therefore expire when any of the
+   mixes rotate their key. In the Katzenpost system this key rotation
+   epoch is every 3 hours. [KATZMIXPKI] It is NOT desireable to have
+   long lived mix routing keys because this weakens the Forward
+   Secrecy. [SPHINX] [SPHINXSPEC] We therefore that SURBs are NOT
+   suitable for establishing a bidirectional communication channel for
+   clients that frequently go offline for time durations greater than
+   the mix key rotation epoch. Instead a Katzenpost autoresponder
+   [KAETZCHEN] based dead drop [KATZDEADDROP] service can be used.
 
-   SURBs are therefore NOT suitable for establishing a bidirectional
-   communication channel for clients that frequently go offline for
-   time durations greater than the mix key rotation epoch. Instead a
-   Katzenpost autoresponder [KAETZCHEN] based dead drop [KATZDEADDROP]
-   service can be used. Unlike SURBs dead drop descriptors do not have
-   any inherent expiration. However, for the purpose of reducing
-   exposure to longterm statistical disclosure attacks, these
-   descriptors shall specify an expiration. The expiration specifies
-   how far into the future the receiver promises to check for messages
-   in the dead drop slot. Client communication partners MUST
-   periodically exchange new dead drop descriptors before the old dead
-   drop descriptors expire.
+   Unlike SURBs dead drop descriptors do not have any inherent
+   expiration. However, for the purpose of reducing exposure to
+   longterm statistical disclosure attacks, these descriptors shall
+   specify an expiration. The expiration specifies how far into the
+   future the receiver promises to check for messages in the dead drop
+   slot. Client communication partners MUST periodically exchange new
+   dead drop descriptors before the old dead drop descriptors expire.
 
    Communication partnerships are established by using [PANDA] to
    facilitate a Signal handshake and an exchange of dead drop delivery
-   descriptors. Reliability is achieved using a two differently tuned Stop
-   and Wait ARQ protocols, providing reliability for communication
-   from client to client as well as client to dead drop. Clients use a
+   descriptors. Reliability is achieved using two differently tuned
+   ARQ protocols, providing reliability for communication from client
+   to client as well as client to dead drop. Clients use a
    cryptographic storage subsystem to persist state consisting of key
-   material, cryptographic ratchet state, dead drop delivery descriptors
-   and ARQ scheduler state. This tranport system providers sender and
-   receiver anonymity with respect to third party observers.
+   material, cryptographic ratchet state, dead drop delivery
+   descriptors and ARQ scheduler state.
 
-   Dead drops can also be used for one-way communication providing
-   sender and receiver anonymity. Consider for instance a user, Alice
-   who reads a message on a anonymous bulletine board system and
-   replies using the supplied dead drop descriptor. In this case, Alice has
-   no idea who will receive her message, this is the receiver
-   anonymity property. Alice's identity will be hidden from the
-   receiver of her message, this is the sender anonymity property.
-   Alice can optionally include a dead drop descriptor in her message. This
-   would establish a full-duplex communication channel. Alice's dead
-   drop would not be associated with Alice's home IP address because
-   she only uses the mix network to communicate with her dead drop,
-   sending it SURBs which are used for replies containing queued
-   messages.
+   Dead drops can also be used for one-way communication. Consider for
+   instance a user, Alice who reads a message on a anonymous bulletine
+   board system and replies using the supplied dead drop
+   descriptor. Alice can optionally include a dead drop descriptor in
+   her message. This would establish a full-duplex communication
+   channel.
 
 3. Threat Model
 
@@ -253,18 +189,7 @@ Appendix A.1 Normative References
       * dead drop descriptors
       * ARQ scheduler states
 
-6.1 Passphrase key stretching
-
-   Use an Argon2 variation such as:
-
-      * https://github.com/golang/crypto/blob/master/argon2/argon2.go
-
-6.2 Boltdb + Noise Based Storage
-
-   * boltdb ( https://github.com/coreos/bbolt )
-   * Noise one-way Handshake_N [NOISE]
-
-7. User Key Exchange
+7. The PANDA Exchange: Dead Drop Descriptor AND User Key Exchange
 
    User key exchange is done using [PANDA] implemented as a Katzenpost
    Provider side autoresponder service. [KATZPANDA] [KAETZCHEN] This
@@ -276,67 +201,13 @@ Appendix A.1 Normative References
       2. Prevent sufficiently global adversaries from learning which
          PANDA server a given client is interacting with.
 
+      3. Prevent sufficiently global adversaries from learning which
+         clients are interacting with the PANDA server.
+
 8. User Interfaces
-
-   The user interface [YEE02] for Linux could use this GTK library for
-   golang:
-   
-      * https://github.com/mattn/go-gtk
-
 9. Anonymity Considerations
-
 10. Security Considerations
-
 11. Future Work
-
-11.1 Post Quantum Crypto for all of the things
-
-   Currently the only portion of this system that uses
-   a post quantum cryptographic primitive is the Noise based
-   cryptographic link layer protocol [KATZMIXWIRE]. Other
-   components can and SHOULD be made to use post quantum
-   cryptographic primtives, such as:
-
-      * Post quantum Sphinx key exchange
-      * "Forward Secure Mix" implementation using post quantum
-        cryptographic key exchange and ratchet
-      * Post quantum signature scheme for Directory Authority documents
-      * Post quantum key exchange for use in the Signal double ratchet
-
-11.2 Improved mitigation of compulsion attacks
-
-   There are a variety of proposed defenses [COMPULS05], such as:
-
-      * multicast routing steps
-      * compulsion trap routing
-      * plausibly deniable routing
-      * Forward secure mixes [FORWARDMIX] destroy the ephemeral
-        key used for a Sphinx packet decryption operation.
-
-11.3 Improve Reliability and Increase Resistance to n-1 Attacks
-
-   It might be possible to utilize a Directory Authority based
-   reputation system which learns about bad mix behavior by means of
-   cryptographic delivery receipts. [MIRANDA] [MIXRELIABLE] Clients
-   could use a path selection algorithm which uses this reputation
-   information to avoid using mixes which are unreliable or under
-   attack (n-1).
-
-11.4 Distributed Denial of Service Attack Mitigation
-
-11.5 Client Support for TPM and HSM
-
-   The client's cryptographic storage subsystem could utilize a
-   TPM or HSM to protect the confidentiality and integrity of
-   the state file.
-
-11.6 Mobile Clients: Android and IOS
-
-11.7 Use Journal Based Storage instead of ACID Transactions
-
-   The client cryptographic storage subsystem could use a journal
-   based storage to persist state instead of a transactional database.
-
 
 Appendix A. References
 
