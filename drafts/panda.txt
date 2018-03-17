@@ -1,4 +1,4 @@
-Katzenpost PANDA Autoresponder Extension Specification
+Katzenpost PANDA Autoresponder Extension
 David Stainton
 
 version 0
