@@ -13,25 +13,69 @@ Abstract
 
 1. Introduction
 
-   This specification is inspired by [POND] and [PETMAIL] but uses
-   many designs from the mix network literature, especially the
-   [LOOPIX], Katzenpost [KATZMIXNET] and [MIXMINION] systems. I
-   describes a variation of the Katzenpost decryption mix network
-   messaging system where clients use the PANDA protocol to establish
-   bidirectional communication channels. These channels are
-   constructed using ephemeral keys for the [SIGNAL] double ratchet
-   AND descriptors of unidirectional dead drops. [KATZDEADDROP]
-   [KAETZCHEN]
+   This specification is inspired by Pond and Petmail [POND] [PETMAIL]
+   and also uses many designs from the mix network literature,
+   especially the [LOOPIX], Katzenpost [KATZMIXNET] and [MIXMINION]
+   systems. I describes a variation of the Katzenpost decryption mix
+   network messaging system where clients use the PANDA protocol to
+   establish bidirectional communication channels. These channels are
+   composed by the communication participants exchanging one or more
+   descriptors of unidirectional dead drops and ephemeral keys for the
+   Signal Double Ratchet. [SIGNAL]
 
-1.1. Terminology
+   This document is meant to be read with the accompanying
+   specification documents:
 
-   * ARQ - automatic repeat request
+      * [KATZMIXNET] - Katzenpost Mix Network Specification
 
-1.2 Conventions Used in This Document
+      * [KATZMIXWIRE] - Katzenpost Mix Network Wire Protocol Specification
+
+      * [SPHINXSPEC] - Sphinx Mix Network Cryptographic Packet Format Specification
+
+      * [LIONESS] - The LIONESS Wide-Block-Cipher
+
+      * [KATZMIXPKI] - Katzenpost Mix Network Public Key
+        Infrastructure Specification
+
+      * [KAETZCHEN] - Katzenpost Provider-side Autoresponder Extension
+
+      * [KATZPANDA] - Katzenpost PANDA Autoresponder Extension
+
+      * [KATZDEADDROP] - Katzenpost Dead Drop Extension
+
+1.1 Conventions Used in This Document
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
    document are to be interpreted as described in [RFC2119].
+
+1.2 Terminology
+
+   * ARQ - Automatic Repeat reQuest, a protocol scheme which
+     uses ACKnowledgement messages AND retransmissions to achieve
+     end to end reliability.
+
+   * SURB - The Single Use Reply Block is a cryptographic delivery
+     token which was first introduced by the Mixminion design
+     [MIXMINION] and revised by the Sphinx cryptographic packet format.
+     [SPHINX] [SPHINXSPEC]
+
+1.3 Differences From The Katzenpost Messaging System
+
+   * Contact discovery, key exchanges and communication channel setup
+     is done using the PANDA protocol. [PANDA] There is no universal
+     naming scheme for mailbox addresses and no spam problem either.
+
+   * End to end message encryption is done using the Signal Double
+     Ratchet instead always using static keys in a one-way Noise
+     handshake pattern. [NOISE]
+
+   * Sphinx packet cryptographic primitives have been changed to make
+     it easier to implement. See section "4.1 Sphinx Cryptographic
+     Primitives" of this document for the details.
+
+   * Sphinx packet geometry has been changed as specified in section
+     "4.2 Sphinx Packet Parameters" of this document.
 
 2. System Overview
 
@@ -43,7 +87,7 @@ Abstract
    mixes rotate their key. In the Katzenpost system this key rotation
    epoch is every 3 hours. [KATZMIXPKI] It is NOT desireable to have
    long lived mix routing keys because this weakens the Forward
-   Secrecy. [SPHINX] [SPHINXSPEC] We therefore that SURBs are NOT
+   Secrecy. [SPHINX] [SPHINXSPEC] We conclude that SURBs are NOT
    suitable for establishing a bidirectional communication channel for
    clients that frequently go offline for time durations greater than
    the mix key rotation epoch. Instead a Katzenpost autoresponder
@@ -54,17 +98,17 @@ Abstract
    longterm statistical disclosure attacks, these descriptors shall
    specify an expiration. The expiration specifies how far into the
    future the receiver promises to check for messages in the dead drop
-   slot. Client communication partners MUST periodically exchange new
+   queue. Client communication partners MUST periodically exchange new
    dead drop descriptors before the old dead drop descriptors expire.
 
-   Communication partnerships are established by using [PANDA] to
-   facilitate a Signal handshake and an exchange of dead drop delivery
-   descriptors. Reliability is achieved using two differently tuned
-   ARQ protocols, providing reliability for communication from client
-   to client as well as client to dead drop. Clients use a
-   cryptographic storage subsystem to persist state consisting of key
-   material, cryptographic ratchet state, dead drop delivery
-   descriptors and ARQ scheduler state.
+   Communication partnerships are established by using the PANDA
+   protocol [PANDA] to facilitate a Signal handshake and an exchange
+   of dead drop delivery descriptors. Reliability is achieved using
+   two differently tuned ARQ protocols, providing reliability for
+   communication from client to client as well as client to dead
+   drop. Clients use a cryptographic storage subsystem to persist
+   their state (consisting of key material, cryptographic ratchet
+   state, dead drop delivery descriptors and ARQ scheduler state).
 
    Dead drops can also be used for one-way communication. Consider for
    instance a user, Alice who reads a message on a anonymous bulletine
@@ -98,14 +142,14 @@ Abstract
       * Rev0: R can revoke one sender without involving the remaining ones.
       """
 
-   This can be concisely express in short form as: S0 M0 R0 Rev0. In the
-   case of Noname, M0's "mailbox server" means "dead drop server".
+   Our Noname messaging security goals in short form are expressed as:
+
+      S0 M0 R0 Rev0
 
 3.2 Categories of Attacks
 
-   This system uses a mix network based transport and therefore is
-   vulnerable to the four attack categories which affect all mix
-   networks:
+   This system uses a decryption mix network based transport and therefore is
+   vulnerable to several attack categories:
 
       * epistemic attacks
 
@@ -115,99 +159,155 @@ Abstract
 
       * statistical disclosure attacks
 
-   Notice that I do not mention Sybil attacks. This is because unlike
-   the Tor network we are not attempting to design a volunteer
-   operated network. Instead, the mix network AND Providers are
-   operated by a closed set of entities which are authorized by the
-   Directory Authority system's whitelist of mix operator signing
-   keys. [KATZMIXPKI] This Directory Authority system is a
-   semi-decentralized system that uses a cryptographic threshold
-   voting scheme to produce a full view of the network. Epistemic
-   attacks are avoided by providing all clients with the full view of
-   the network. A partial view would make clients vulnerable to
-   epistemic attacks such as [FINGERPRINTING] [BRIDGING] [LOCALVIEW].
+      * tagging and replay attacks
 
-   n-1 attacks are assumed to NOT be a problem since they are obvious
-   in that they require a denial of service attack.
+      * denial of service attacks
+
+   The mix network AND Providers are operated by a closed set of
+   entities which are authorized by the Directory Authority system's
+   whitelist of mix operator signing keys. [KATZMIXPKI] This Directory
+   Authority system is a semi-decentralized system that uses a
+   cryptographic threshold voting scheme to produce a full view of the
+   network. Epistemic attacks are avoided by providing all clients
+   with the full view of the network. A partial view would make
+   clients vulnerable to epistemic attacks such as [FINGERPRINTING]
+   [BRIDGING] [LOCALVIEW].
 
    Vulnerability to compulsion attacks is mainly mitigated by means of
    the epoch key rotation where each participating mix destroys it's
-   Sphinx routing key and uses a new key.
+   Sphinx routing key and uses a new key. Future implementations may
+   include additional defenses. [FORWARDMIX] [COMPULS05]
 
-   The Loopix decoy traffic, Provider model and the Provider side dead
-   drop autoresponder helps to mitigate traffic against statistcal
-   diclosure attacks.
+   Various design elements help to defend against longterm statistical
+   disclosure attacks (also known as intersection attacks) such as:
 
-4. One Way Communication: Using a Well-Known Dead Drop
+      * Loopix decoy traffic
 
-5. Bidirectional Communication Partnerships
+      * short term Provider with message queueing and
+        direction wire protocol for message retrieval [KATZMIXWIRE]
 
-   This messaging system's bidirectional messaging protocol does not
-   have any SPAM problem, however it is vulnerable to denial of
-   service attacks. Let us not conflate these two subtley related but
-   different issues. Clients can engage in several end to end
-   messaging protocols such as:
+      * medium term Provider with messaging queueing and remote
+        retrieval service via SURBs
 
-      * bidirectional messaging
-      * one way messaging
-      * bulletin board system
+3.3 Justification For a PANDA Katzenpost Service
 
-5.1 Bidirectional Messaging
+   User key exchanges are done using the PANDA protocol [PANDA]
+   implemented as a Katzenpost Provider side autoresponder
+   service. [KATZPANDA] [KAETZCHEN] This means that bidirectional
+   interaction with the PANDA service is done using the mix network
+   transport for several advantages:
 
-5.1.1 Contact Discovery
+      * client to server unlinkability: Prevent sufficiently global
+        adversaries from learning which PANDA server a given client is
+        interacting with. Prevent sufficiently global adversaries from
+        learning which clients are interacting with a given PANDA server.
+
+      * mix PANDA protocol messages with other types of traffic
+
+      * sender and receiver unobservability of server
+
+      * sender and receiver unobservability of client
+
+      * location hiding properties for clients
+
+4. Packet Format
+
+   Here we specify slightly different Sphinx packet cryptographic
+   primitives and parameterizations.
+
+4.1 Sphinx Cryptographic Primitives
+
+   For the current version of the Noname Messaging System, let the
+   following cryptographic primitives be used as described in the
+   Sphinx specification. [SPHINX] [SPHINXSPEC]
+
+   Note that we use the Lioness wide block cipher instead of AEZ
+   to make it easier to implement.
+
+    * H(M) - As the output of this primitive is only used locally to
+             a Mix, any suitable primitive may be used.
+
+    * MAC(K, M) - HMAC-SHA256-128 [RFC6234], M_KEY_LENGTH of 32 bytes
+                  (256 bits), and MAC_LENGTH of 16 bytes (128 bits).
+
+    * KDF(SALT, IKM) - HKDF-SHA256, HKDF-Expand only, with SALT used
+                 as the info parameter.
+
+    * S(K, IV)  - CTR-AES128 [SP80038A], S_KEY_LENGTH of 16 bytes
+                  (128 bits), and S_IV_LENGTH of 12 bytes (96 bits),
+                  using a 32 bit counter.
+
+    * SPRP_Encrypt(K, M)/SPRP_Decrypt(K, M) - the LIONESS
+                  Wide-Block-Cipher construct [LIONESS], with a
+                  concrete parameterization of
+                  LIONESS-BLAKE2b-ChaCha20 based around the BLAKE2b
+                  [RFC7693] hash algorithm and ChaCha20 [RFC7539]
+                  stream cipher. See section
+                  "3. LIONESS-BLAKE2b-ChaCha20" of [LIONESS]. In
+                  summary this construction of Lioness provides a
+                  security level of at least 256 bits while using a
+                  key 128 bytes in size which we refer to as
+                  SPRP_KEY_LENGTH and supports a per-call
+                  initialization vector of 48 bytes.
+
+    * EXP(X, Y) - X448 [RFC7748] scalar multiply, GROUP_ELEMENT_LENGTH
+                  of 56 bytes (448 bits), G is the X448 base point.
+
+4.2 Sphinx Packet Parameters
+
+   The following parameters are used as for the Katzenpost Mix Network
+   instantiation of the Sphinx Packet Format:
+
+    * AD_SIZE            - 2 bytes.
+
+    * SECURITY_PARAMETER - 32 bytes.
+
+    * PER_HOP_RI_SIZE    - (XXX/ya: Addition is hard, let's go shopping.)
+
+
+    * NODE_ID_SIZE       - 56 bytes, the size of the Ed448-Goldilocks public key,
+                           used as Node identifiers.
+
+    * RECIPIENT_ID_SIZE  - 32 bytes, the maximum size of local-part
+                           component in an e-mail address.
+
+    * SURB_ID_SIZE       - 32 bytes.
+
+    * MAX_HOPS           - 5, the ingress provider, a set of three mixes,
+                           and the egress provider.
+
+    * PAYLOAD_SIZE       - X kilobytes?
+
+    * KDF_INFO           - The byte string 'katzenpost-kdf-v0-hkdf-sha256'.
+
+   The Sphinx Packet Header additional_data field is specified as follows:
+
+      struct {
+          uint8_t version;  /* 0x01 */
+          uint8_t reserved; /* 0x00 */
+      } KatzenpostAdditionalData;
+
+   All nodes MUST reject Sphinx Packets that have additional_data that
+   is not as specified in the header.
+
+5. Bidirectional Communication Message Channels
 
    Bidirectional communication partnerships are first established
    using the [PANDA] protocol to faciliate a [SIGNAL] handshake AND
-   the exchange of dead drop descriptors. Each client uses one dead drop
-   per contact. There is no universal naming scheme hence the
+   the exchange of dead drop descriptors. Each client uses one dead
+   drop per contact. There is no universal naming scheme hence the
    namesake of this document. Like Petmail and Pond, clients choose
    the name for each of their contacts.
 
-   Upon participation in the PANDA protocol the client registers
-   a new dead drop and creates a new Signal double ratchet session
-   for use with the new contact.
+   Upon participation in the PANDA protocol the client registers a new
+   dead drop and creates a new Signal double ratchet session for use
+   with the new contact. Clients MUST exchange fresh dead drop
+   descriptors before old ones expire.
 
-5.1.2 Sending Messages
-
-   ( perhaps use this library: https://github.com/RadicalApp/libsignal-protocol-go )
-
-5.2 Message Retrieval
-
-   Message retrieval is done via the [KAETZCHEN] dead drop service [KATZDEADDROP].
-
-5.3 One Way Messaging
-
-5.4 Bulletin Board System
-
-6. Client Cryptographic Storage Subsystem
-
-   Ciphertext storage on disk for persisting various kinds of state
-   information such as:
-
-      * public key material
-      * secret cryptographic ratchets
-      * dead drop descriptors
-      * ARQ scheduler states
-
-7. The PANDA Exchange: Dead Drop Descriptor AND User Key Exchange
-
-   User key exchange is done using [PANDA] implemented as a Katzenpost
-   Provider side autoresponder service. [KATZPANDA] [KAETZCHEN] This
-   means that bidirectional interaction with the PANDA service is done
-   using the mix network transport for two purposes:
-
-      1. Prevent the PANDA server from learning the client location.
-
-      2. Prevent sufficiently global adversaries from learning which
-         PANDA server a given client is interacting with.
-
-      3. Prevent sufficiently global adversaries from learning which
-         clients are interacting with the PANDA server.
-
-8. User Interfaces
-9. Anonymity Considerations
-10. Security Considerations
-11. Future Work
+6. Bulletin Board System
+X. Anonymity Considerations
+Y. Security Considerations
+Z. Future Work
 
 Appendix A. References
 
@@ -218,12 +318,44 @@ Appendix A.1 Normative References
                DOI 10.17487/RFC2119, March 1997,
                <http://www.rfc-editor.org/info/rfc2119>.
 
+   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
+               “The Loopix Anonymity System”,
+               USENIX, August 2017,
+               <https://arxiv.org/pdf/1703.00536.pdf>.
+
+   [POND]   Langley, A., "Pond", November 2012,
+            <https://github.com/agl/pond/tree/master/doc>.
+
+   [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Katzenpost Mix Network Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+
+   [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
+
+   [KATZMIXWIRE] Angel, Y., "Katzenpost Mix Network Wire Protocol Specification", June 2017.
+                <https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.txt>.
+
+   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Sphinx Mix Network Cryptographic Packet Format Specification"
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
+
+   [LIONESS]  Angel, Y., 2017, "The LIONESS Wide-Block-Cipher",
+              <https://github.com/katzenpost/docs/blob/master/specs/LIONESS.TXT>.
+
+   [RFC7748]   Langley, A., Hamburg, M., and S. Turner, "Elliptic Curves
+               for Security", RFC 7748, January 2016.
+
    [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
                 <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.txt>.
 
    [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
                   <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.txt>.
+
+   [KATZPANDA]   Stainton, D., "Katzenpost PANDA Autoresponder Extension",
+                 March 2018, <https://github.com/katzenpost/docs/blob/master/drafts/panda.txt>.
 
 Appendix A.2 Informative References
 
@@ -233,35 +365,17 @@ Appendix A.2 Informative References
    [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
 
-   [KATZMIXWIRE] Angel, Y., "Katzenpost Mix Network Wire Protocol Specification", June 2017.
-                <https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.txt>.
-
-   [POND]   Langley, A., "Pond", November 2012,
-            <https://github.com/agl/pond/tree/master/doc>.
-
    [PETMAIL]  Warner, B., "Petmail mailbox-server delivery protocol",
                 Proceedings of Brian Warner's blog, July 2015,
                 <http://www.lothar.com/blog/53-petmail-delivery/>.
 
-   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
-               “The Loopix Anonymity System”,
-               USENIX, August 2017,
-               <https://arxiv.org/pdf/1703.00536.pdf>.
-
-   [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
-                "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
-
    [MIXMINION]  Danezis, G., Dingledine, R., Mathewsom, N.,
                 "Mixminion: Design of a Type III Anonymous Remailer Protocol"
-                <https://www.mixminion.net/minion-design.pdf>.
+                <https://www.mixminion.net/minion-design.
 
-   [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
-                 "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
-
-   [KATZPANDA]   Stainton, D., "Katzenpost PANDA Autoresponder Extension Specification",
-                 March 2018, <https://github.com/katzenpost/docs/blob/master/drafts/panda.txt>.
+   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+             Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+             May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
 
    [PANDA]   Appelbaum, J., "Going Dark: Phrase Automated Nym Discovery Authentication",
              <https://github.com/agl/pond/tree/master/papers/panda>.
