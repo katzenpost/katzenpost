@@ -28,14 +28,16 @@ Abstract
 
       * [KATZMIXNET] - Katzenpost Mix Network Specification
 
+      * [KATZDECOY] - Katzenpost Mix Network Decoy Traffic Specification
+
+      * [KATZMIXPKI] - Katzenpost Mix Network Public Key
+        Infrastructure Specification
+
       * [KATZMIXWIRE] - Katzenpost Mix Network Wire Protocol Specification
 
       * [SPHINXSPEC] - Sphinx Mix Network Cryptographic Packet Format Specification
 
       * [LIONESS] - The LIONESS Wide-Block-Cipher
-
-      * [KATZMIXPKI] - Katzenpost Mix Network Public Key
-        Infrastructure Specification
 
       * [KAETZCHEN] - Katzenpost Provider-side Autoresponder Extension
 
@@ -71,11 +73,10 @@ Abstract
      handshake pattern. [NOISE]
 
    * Sphinx packet cryptographic primitives have been changed to make
-     it easier to implement. See section "4.1 Sphinx Cryptographic
-     Primitives" of this document for the details.
-
-   * Sphinx packet geometry has been changed as specified in section
-     "4.2 Sphinx Packet Parameters" of this document.
+     it easier to implement and to provide slightly more conservative
+     choices in terms of cryptographic security at the expense of
+     speed and additional Sphinx packet overhead. See section
+     "4. Packet Format" of this document for the details.
 
 2. System Overview
 
@@ -215,14 +216,14 @@ Abstract
    Here we specify slightly different Sphinx packet cryptographic
    primitives and parameterizations.
 
+   I change the geometry parameterization and a few of the
+   cryptographic primitives.
+
 4.1 Sphinx Cryptographic Primitives
 
    For the current version of the Noname Messaging System, let the
    following cryptographic primitives be used as described in the
    Sphinx specification. [SPHINX] [SPHINXSPEC]
-
-   Note that we use the Lioness wide block cipher instead of AEZ
-   to make it easier to implement.
 
     * H(M) - As the output of this primitive is only used locally to
              a Mix, any suitable primitive may be used.
@@ -329,6 +330,10 @@ Appendix A.1 Normative References
    [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+
+   [KATZDECOY]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Katzenpost Mix Network Decoy Traffic Specification",
+                <https://github.com/katzenpost/docs/blob/master/drafts/decoy_traffic.txt>.
 
    [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
