@@ -703,20 +703,36 @@ Table of Contents
 8. Anonymity Considerations
 
    * The reliability protocol will allow for active confirmation
-     attacks, especially if using ARQ schemes which are more efficient
-     than Stop and Wait ARQ. [CYA2013]
+     attacks. [CYA2013] ARQ protocol schemes present predictable user
+     behavior such as message retransmissions when an ACK is not
+     received in time.
 
    * Between two communicating parties at least one Provider must be
      honest to maintain send/receiver anonymity with respect to third
      party observers.
 
    * Usage of SURBs for message ACKs present deanonymization
-     vulnerability via compulsion attacks. We can later build defences
-     against these attacks. [COMPULS05]
+     vulnerability via compulsion attacks. Each SURB contains a Sphinx
+     packet header which contains routing information which is
+     encrypted with several mix public key. An adversary could compel
+     each of these mix operators to decrypt their portion of the
+     Sphinx header until the entire route in traced to it's
+     destination. Future work may build some partial defences for these
+     attacks. [COMPULS05]
 
    * There is no specified defence against n-1 attacks [TRICKLE02] at
-     this time. In future versions we may utilize decoy traffic or
-     heartbeat traffic to detect such attacks. [HEARTBEAT03]
+     this time. In future versions we may utilize heartbeat traffic to
+     detect such attacks. [HEARTBEAT03] However these denial of
+     service attacks are not distinguishable from packet loss due to
+     other causes such as network congestion. In the case of
+     congestion it would be highly suboptimal to make the network
+     congestion worse by sending lots of decoy traffic.
+
+   * This Provider based addressing scheme as described in [LOOPIX] is
+     flexible enough to allow for alternate message system designs
+     with different anonymity and security properties. In particular
+     it should be possible to achieve strong location hiding
+     properties.
 
 9. Security Considerations
 
@@ -733,7 +749,7 @@ Table of Contents
      against n-1 attacks and to increate network reliability;
      [MIRANDA] and [MIXRELIABLE]
    * Mitigate known active confirmation attacks?
-   * End to End Forward Secrecy [PETMAIL15]
+   * End to End Forward Secrecy using the Signal Double Ratchet
    * make bulk transfers go faster using Selective Repeat ARQ and
      Go-Back-N ARQ
    * make bulk transfers go faster using forward error correction
@@ -799,10 +815,6 @@ Appendix A.2 Informative References
                 a Flood: Active Attacks on Several Mix Types", Proceedings of
                 Information Hiding Workshop, October 2002,
                 <https://www.freehaven.net/anonbib/cache/trickle02.pdf>.
-
-   [PETMAIL15]  Warner, B., "Petmail mailbox-server delivery protocol",
-                Proceedings of Brian Warner's blog, July 2015,
-                <http://www.lothar.com/blog/53-petmail-delivery/>.
 
    [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
                Symposium proceedings on Communications architectures and protocols,
