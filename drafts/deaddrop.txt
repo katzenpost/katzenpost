@@ -5,17 +5,21 @@ Version 0
 
 Abstract
 
-   This document describes a Provider-side autoresponder dead drop
-   service. The dead drop service can be used to compose messaging
-   systems with stronger location hiding properties and increased
-   resistance to longterm statistical disclosure attacks.
+   This document describes a message dead drop service. The dead drop
+   service can be used to compose messaging systems with stronger
+   location hiding properties and increased resistance to longterm
+   statistical disclosure attacks also known as intersection attacks.
 
 1. Introduction
 
-   This dead drop service is implemented as a [KAETZCHEN]
-   autoresponder service and is meant to provide clients with the
-   ability to retreive messages from a remote Provider. Clients send
-   a request message and wait to receive one or more response messages.
+   The dead drop service is implemented as a Provider side
+   autoresponder service [KAETZCHEN], it provides clients with the
+   ability to retreive messages from remote Providers. This
+   unidirectional dead drop scheme should leak less information than a
+   bidirectional dead drop. This document does not describe the full
+   design of a message system. Instead we merely specify a mixnet dead
+   drop service which can be one of many design elements used to
+   compose a messaging system.
 
 1.1 Conventions Used in This Document
 
@@ -32,8 +36,10 @@ Abstract
      Client. The Provider MUST have the ability to perform
      cryptographic operations on the relayed messages.
 
-   * SURB - single use reply block; a cryptographic delivery token
-     used to compose a Sphinx packet. [SPHINX] [SPHINXSPEC]
+   * SURB - Single Use Reply Block is a cryptographic delivery
+     token which was first introduced by the Mixminion design
+     [MIXMINION] and revised by the Sphinx cryptographic packet format.
+     [SPHINX] [SPHINXSPEC]
 
 2. Overview
 
@@ -174,10 +180,29 @@ Abstract
      Proivders then the goal would be to determine if one message
      spool receives more messages than the rest.
 
+   * Client retransmissions can be predictable behavior which allows
+     for active confirmation attacks which can discover the client's
+     Provider. Consider for instance Alice and Bob where Alice is a
+     powerful adversary that wishes to discover Bob's Provider. Alice
+     compromises the server which hosts Bob's dead drop service.
+     Alice knows when Bob sends a Message Retrieval command. In
+     response to these Message Retrieval commands Alice then blocks
+     one or more Providers and sends the response to the client using
+     the supplied SURB. If another Message Retrieval command is
+     received it is likely that this retransmission confirms that the
+     SURB Response was not received by the client because of blocking
+     messages to one or more Providers. Alice uses these active
+     confirmation attacks in a binary search to quickly discover Bob's
+     Provider.
+
 6. Security Considerations
 
-   * End to end message integrity and confidentiality is ensured by
-     the Sphinx cryptographic packet format.
+   * End to end message integrity and confidentiality from client to
+     Provider is ensured by the Sphinx cryptographic packet format.
+
+   * The dead drop service authenticates message retrieval requests
+     using a cryptographic token produced using the one-way Noise
+     pattern K, in the construction `Noise_K_25519_ChaChaPoly_Blake2b`.
 
 7. Future Work
 
