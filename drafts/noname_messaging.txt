@@ -63,7 +63,7 @@ Abstract
      asynchronously with a simple server which enforces two message
      slots per "meeting place". See [PANDA] and [PANDASPEC] for more info.
 
-   * SURB - The Single Use Reply Block is a cryptographic delivery
+   * SURB - Single Use Reply Block is a cryptographic delivery
      token which was first introduced by the Mixminion design
      [MIXMINION] and revised by the Sphinx cryptographic packet format.
      [SPHINX] [SPHINXSPEC]
