@@ -57,6 +57,12 @@ Abstract
      uses ACKnowledgement messages AND retransmissions to achieve
      end to end reliability.
 
+   * PANDA - Phrase Automated Nym Discovery Authentication; a
+     variation of a Password Authenticated Key Exchange where clients
+     have identical behavior and perform their message exchanges
+     asynchronously with a simple server which enforces two message
+     slots per "meeting place". See [PANDA] and [PANDASPEC] for more info.
+
    * SURB - The Single Use Reply Block is a cryptographic delivery
      token which was first introduced by the Mixminion design
      [MIXMINION] and revised by the Sphinx cryptographic packet format.
@@ -69,7 +75,7 @@ Abstract
      naming scheme for mailbox addresses and no spam problem either.
 
    * End to end message encryption is done using the Signal Double
-     Ratchet instead always using static keys in a one-way Noise
+     Ratchet instead always using the same static keys in a one-way Noise
      handshake pattern. [NOISE]
 
    * Sphinx packet cryptographic primitives have been changed to make
@@ -87,8 +93,8 @@ Abstract
    routing keys of several mixes and therefore expire when any of the
    mixes rotate their key. In the Katzenpost system this key rotation
    epoch is every 3 hours. [KATZMIXPKI] It is NOT desireable to have
-   long lived mix routing keys because this weakens the Forward
-   Secrecy. [SPHINX] [SPHINXSPEC] We conclude that SURBs are NOT
+   long lived mix routing keys because this increases the amount of time
+   required to perform a compulsion attack. We conclude that SURBs are NOT
    suitable for establishing a bidirectional communication channel for
    clients that frequently go offline for time durations greater than
    the mix key rotation epoch. Instead a Katzenpost autoresponder
@@ -213,11 +219,10 @@ Abstract
 
 4. Packet Format
 
-   Here we specify slightly different Sphinx packet cryptographic
-   primitives and parameterizations.
-
-   I change the geometry parameterization and a few of the
-   cryptographic primitives.
+   An alternate parameterization of Sphinx is optional
+   and was included here as an example. Note however that
+   non-golang implementations may find it easier if they
+   use Lioness rather than the AEZ wide block cipher (SPRP).
 
 4.1 Sphinx Cryptographic Primitives
 
@@ -228,28 +233,17 @@ Abstract
     * H(M) - As the output of this primitive is only used locally to
              a Mix, any suitable primitive may be used.
 
-    * MAC(K, M) - HMAC-SHA256-128 [RFC6234], M_KEY_LENGTH of 32 bytes
-                  (256 bits), and MAC_LENGTH of 16 bytes (128 bits).
+    * MAC(K, M) - Blake2b-256 [RFC7693]
 
-    * KDF(SALT, IKM) - HKDF-SHA256, HKDF-Expand only, with SALT used
-                 as the info parameter.
+    * KDF(IKM) - SHA3-SHAKE-256 [SHAKE]
 
-    * S(K, IV)  - CTR-AES128 [SP80038A], S_KEY_LENGTH of 16 bytes
-                  (128 bits), and S_IV_LENGTH of 12 bytes (96 bits),
-                  using a 32 bit counter.
+    * S(K, IV) - Chacha20 [RFC7539]
 
     * SPRP_Encrypt(K, M)/SPRP_Decrypt(K, M) - the LIONESS
-                  Wide-Block-Cipher construct [LIONESS], with a
-                  concrete parameterization of
-                  LIONESS-BLAKE2b-ChaCha20 based around the BLAKE2b
-                  [RFC7693] hash algorithm and ChaCha20 [RFC7539]
-                  stream cipher. See section
-                  "3. LIONESS-BLAKE2b-ChaCha20" of [LIONESS]. In
-                  summary this construction of Lioness provides a
-                  security level of at least 256 bits while using a
-                  key 128 bytes in size which we refer to as
-                  SPRP_KEY_LENGTH and supports a per-call
-                  initialization vector of 48 bytes.
+                  Wide-Block-Cipher constructed using , with a
+                  concrete parameterization the BLAKE2b [RFC7693] hash
+                  algorithm and ChaCha20 [RFC7539] stream cipher. See
+                  section 3 of [LIONESS].
 
     * EXP(X, Y) - X448 [RFC7748] scalar multiply, GROUP_ELEMENT_LENGTH
                   of 56 bytes (448 bits), G is the X448 base point.
@@ -300,7 +294,7 @@ Abstract
    namesake of this document. Like Petmail and Pond, clients choose
    the name for each of their contacts.
 
-   Upon participation in the PANDA protocol the client registers a new
+   Before participation in the PANDA protocol the client registers a new
    dead drop and creates a new Signal double ratchet session for use
    with the new contact. Clients MUST exchange fresh dead drop
    descriptors before old ones expire.
@@ -309,6 +303,10 @@ Abstract
 X. Anonymity Considerations
 Y. Security Considerations
 Z. Future Work
+
+   * implement forward secure mixes [FORWARDMIX]
+
+   * implement various compulsion attack defenses [COMPULS05]
 
 Appendix A. References
 
@@ -364,6 +362,18 @@ Appendix A.1 Normative References
 
 Appendix A.2 Informative References
 
+   [SHAKE]   "SHA-3 STANDARD: PERMUTATION-BASED HASH AND EXTENDABLE OUTPUT FUNCTIONS",
+              <https://csrc.nist.gov/csrc/media/publications/fips/202/final/documents/fips_202_draft.pdf>.
+
+   [RFC7539]  Nir, Y. and A. Langley, "ChaCha20 and Poly1305 for IETF
+              Protocols", RFC 7539, DOI 10.17487/RFC7539, May 2015,
+              <http://www.rfc-editor.org/info/rfc7539>.
+
+   [RFC7693]  Saarinen, M-J., Ed., and J-P. Aumasson, "The BLAKE2
+              Cryptographic Hash and Message Authentication Code
+              (MAC)", RFC 7693, DOI 10.17487/RFC7693, November 2015,
+              <http://www.rfc-editor.org/info/rfc7693>.
+
    [SIGNAL]   Perrin, T., Marlinspike, M., "The Double Ratchet Algorithm", November 2016,
               <https://signal.org/docs/specifications/doubleratchet/>.
 
@@ -384,6 +394,8 @@ Appendix A.2 Informative References
 
    [PANDA]   Appelbaum, J., "Going Dark: Phrase Automated Nym Discovery Authentication",
              <https://github.com/agl/pond/tree/master/papers/panda>.
+
+   [PANDASPEC] ?
 
    [FORWARDMIX] Danezis, G., "Forward Secure Mixes",
                 In the Proceedings of 7th Nordic Workshop on Secure IT Systems,
