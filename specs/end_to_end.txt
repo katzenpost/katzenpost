@@ -705,7 +705,15 @@ Table of Contents
    * The reliability protocol will allow for active confirmation
      attacks. [CYA2013] ARQ protocol schemes present predictable user
      behavior such as message retransmissions when an ACK is not
-     received in time.
+     received in time. A malicious Provider who can also block or
+     delay messages destined to other Providers can get confirmation
+     that a message did NOT originate from one or more Providers. That
+     is, if a retransmission is received while one of the Providers
+     was blocked, it is highly likely this is because the client who
+     is sending the message originates from that blocked Provider. If
+     the client sends enough new messages then the adversary can
+     eventually perform a binary search or tree search to determine
+     the originating Provider.
 
    * Between two communicating parties at least one Provider must be
      honest to maintain send/receiver anonymity with respect to third
