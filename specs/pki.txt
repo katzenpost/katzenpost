@@ -603,6 +603,8 @@ Table of Contents
 
    * Choose a different serialization/schema language?
 
+   * Use a append only merkle tree instead of this voting protocol.
+
 8. Anonymity Considerations
 
    * This system is intentionally designed to provide identical
@@ -618,21 +620,26 @@ Table of Contents
 9. Security Considerations
 
    * The Directory Authority/PKI system for a given mix network is
-     essentially the root of all authority in the system. This implies
-     that if the PKI as a whole becomes compromised then so will the
-     rest of the system (the component mixes) in terms of providing
-     the main security properties described as traffic analysis
-     resistance. Therefore a decentralized systems architecture is
-     used so that the system is more resiliant when attacked, in
-     accordance with the principle of least authority which gives us
-     security by design not policy. [SECNOTSEP] Otherwise, reducing the
-     operation of the PKI system to a single host creates a terrible
-     single point of failure where attackers can simply compromise
-     this single host to control the network consensus documents that
-     mix clients download and use to inform their path selection.
+     essentially the root of all authority in the system. The PKI
+     controls the contents of the network consensus documents that mix
+     clients download and use to inform their path selection.
+     Therefore if the PKI as a whole becomes compromised then so will
+     the rest of the system in terms of providing the main security
+     properties described as traffic analysis resistance. Therefore a
+     decentralized voting protocol is used so that the system is more
+     resiliant when attacked, in accordance with the principle of
+     least authority. [SECNOTSEP]
 
-   * Short epoch durations and fewer epoch keys published in advance
-     is better forward secrecy.
+   * Short epoch durations make it is more practical to make
+     corrections to network state using the PKI voting rounds.
+
+   * Fewer epoch keys published in advance is a more conservative
+     security policy because it implies reduced exposure to key
+     compromise attacks.
+
+   * A bad acting Directory Authority who lies on each vote and votes
+     inconsistently can trivially cause a denial of service for each
+     voting round.
 
 10. Acknowledgements
 
