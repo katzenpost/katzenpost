@@ -209,7 +209,10 @@ Abstract
       * medium term Provider with messaging queueing and remote
         retrieval service via SURBs
 
-3.3 Justification For a PANDA Katzenpost Service
+   Proper implementation and use of the Sphinx packet format should
+   prevent tagging and replay attacks.
+
+3.3 The PANDA Kaetzchen Service
 
    User key exchanges are done using the PANDA protocol [PANDA]
    implemented as a Katzenpost Provider side autoresponder
@@ -232,71 +235,11 @@ Abstract
 
 4. Packet Format
 
-   An alternate parameterization of Sphinx is optional
-   and was included here as an example. Note however that
-   non-golang implementations may find it easier if they
-   use Lioness rather than the AEZ wide block cipher (SPRP).
-
-4.1 Sphinx Cryptographic Primitives
-
-   For the current version of the Noname Messaging System, let the
-   following cryptographic primitives be used as described in the
-   Sphinx specification. [SPHINX] [SPHINXSPEC]
-
-    * H(M) - As the output of this primitive is only used locally to
-             a Mix, any suitable primitive may be used.
-
-    * MAC(K, M) - Blake2b-256 [RFC7693]
-
-    * KDF(IKM) - SHA3-SHAKE-256 [SHAKE]
-
-    * S(K, IV) - Chacha20 [RFC7539]
-
-    * SPRP_Encrypt(K, M)/SPRP_Decrypt(K, M) - the LIONESS
-                  Wide-Block-Cipher constructed using , with a
-                  concrete parameterization the BLAKE2b [RFC7693] hash
-                  algorithm and ChaCha20 [RFC7539] stream cipher. See
-                  section 3 of [LIONESS].
-
-    * EXP(X, Y) - X448 [RFC7748] scalar multiply, GROUP_ELEMENT_LENGTH
-                  of 56 bytes (448 bits), G is the X448 base point.
-
-4.2 Sphinx Packet Parameters
-
-   The following parameters are used as for the Katzenpost Mix Network
-   instantiation of the Sphinx Packet Format:
-
-    * AD_SIZE            - 2 bytes.
-
-    * SECURITY_PARAMETER - 32 bytes.
-
-    * PER_HOP_RI_SIZE    - (XXX/ya: Addition is hard, let's go shopping.)
-
-
-    * NODE_ID_SIZE       - 56 bytes, the size of the Ed448-Goldilocks public key,
-                           used as Node identifiers.
-
-    * RECIPIENT_ID_SIZE  - 32 bytes, the maximum size of local-part
-                           component in an e-mail address.
-
-    * SURB_ID_SIZE       - 32 bytes.
-
-    * MAX_HOPS           - 5, the ingress provider, a set of three mixes,
-                           and the egress provider.
-
-    * PAYLOAD_SIZE       - X kilobytes?
-
-    * KDF_INFO           - The byte string 'katzenpost-kdf-v0-hkdf-sha256'.
-
-   The Sphinx Packet Header additional_data field is specified as follows:
-
-      struct {
-          uint8_t version;  /* 0x01 */
-          uint8_t reserved; /* 0x00 */
-      } KatzenpostAdditionalData;
-
-   All nodes MUST reject Sphinx Packets that have additional_data that
-   is not as specified in the header.
+   An alternate parameterization of the Sphinx cryptographic packet
+   format is not specified here but could be constructed if
+   needed. One possible reason would be to avoid using AEZ as the wide
+   block cipher to make it easier to write implementation in another
+   language.
 
 5. Bidirectional Communication Message Channels
 
