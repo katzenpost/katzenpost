@@ -180,6 +180,19 @@ Abstract
    clients vulnerable to epistemic attacks such as [FINGERPRINTING]
    [BRIDGING] [LOCALVIEW].
 
+   We currently do not have any defences for n-1 attacks. If each
+   mix sends itself heartbeat messages then when the heartbeat message
+   is not received in time this either means:
+
+      * network congestion causing some packet loss
+      * temporary network outage
+      * denial of service attack
+
+   Not knowing how to distinguish between these three cases from only
+   the heartbeat protocol signal means that we SHOULD NOT send
+   increased amounts of decoy traffic in response to packet loss as
+   [HEARTBEAT03] suggests.
+
    Vulnerability to compulsion attacks is mainly mitigated by means of
    the epoch key rotation where each participating mix destroys it's
    Sphinx routing key and uses a new key. Future implementations may
@@ -417,6 +430,10 @@ Appendix A.2 Informative References
    [LOCALVIEW] Gogolewski, M., Klonowski, M., Kutylowsky, M.,
                "Local View Attack on Anonymous Communication",
                <https://www.freehaven.net/anonbib/cache/esorics05-Klonowski.pdf>.
+
+   [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
+                  Proceedings of the Workshop on Privacy in the Electronic Society, October 2003,
+                  <https://www.freehaven.net/anonbib/cache/danezis:wpes2003.pdf>.
 
    [MIRANDA] Leibowitz, H., Piotrowska, A., Danezis, G., Herzberg, A., 2017,
              "No right to ramain silent: Isolating Malicious Mixes"
