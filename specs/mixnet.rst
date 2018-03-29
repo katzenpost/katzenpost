@@ -500,6 +500,7 @@ Katzenpost Mix Network.
    for more time than specified by the ``NodeDelayCommand``.
 
 5. Anonymity Considerations
+===========================
 
 5.1 Topology
 ------------
@@ -598,7 +599,8 @@ Appendix A.1 Normative References
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
 
-A.2 Informative References
+Appendix A.2 Informative References
+-----------------------------------
 
 .. [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
                “The Loopix Anonymity System”,
