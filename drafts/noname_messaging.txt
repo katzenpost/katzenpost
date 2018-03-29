@@ -75,8 +75,8 @@ Abstract
      naming scheme for mailbox addresses and no spam problem either.
 
    * End to end message encryption is done using the Signal Double
-     Ratchet instead always using the same static keys in a one-way Noise
-     handshake pattern. [NOISE]
+     Ratchet instead of using static keys in a one-way Noise handshake
+     pattern. [NOISE]
 
    * Sphinx packet cryptographic primitives have been changed to make
      it easier to implement and to provide slightly more conservative
@@ -211,6 +211,15 @@ Abstract
 
    Proper implementation and use of the Sphinx packet format should
    prevent tagging and replay attacks.
+
+   Denial of service does not necessarily lead to compromised
+   anonymity or location hiding properties but it is broad category of
+   attack for which we have only partial defenses. For example,
+   Providers can rate limit their client's ingress traffic. Each
+   Provider can also rate limit the total traffic it sends into the
+   mixnet. On the other hand connected clients may be able to fill up
+   each other's Provider mailbox. If any kind of open registration
+   mechanism is used then this also lends itself to abuse.
 
 3.3 The PANDA Kaetzchen Service
 
