@@ -16,12 +16,22 @@ Abstract
    This specification is inspired by Pond and Petmail [POND] [PETMAIL]
    and also uses many designs from the mix network literature,
    especially the [LOOPIX], Katzenpost [KATZMIXNET] and [MIXMINION]
-   systems. I describes a variation of the Katzenpost decryption mix
-   network messaging system where clients use the PANDA protocol to
-   establish bidirectional communication channels. These channels are
-   composed by the communication participants exchanging one or more
-   descriptors of unidirectional dead drops and ephemeral keys for the
-   Signal Double Ratchet. [SIGNAL]
+   systems. Compared to Katzenpost the system I describe here has a
+   very different client but the server side is almost exactly the
+   same except for the addition of several mixnet
+   services. [KAETZCHEN]
+
+   Just like Pond, in this system clients use the PANDA protocol to
+   establish communication channels. The PANDA protocol uses a
+   passphrase authenticated key exchange through an intermediary
+   server so that the protocol is tolerant of long delays from clients
+   and is symmetrical with respect to the two communication partners
+   protocol role.
+
+   Clients use the PANDA protocol to exchange key material for the
+   Signal Double Ratchet [SIGNAL] AND descriptors of unidirectional
+   dead drops [KATZDEADDROP] which results in a bidirectional
+   communication channel.
 
    This document is meant to be read with the accompanying
    specification documents:
@@ -90,7 +100,7 @@ Abstract
    SURB which is a single-use cryptographic delivery token for latent
    message delivery. SURBs have a relatively short lifetime because
    they are essentially a mixnet packet header which is encrypted with
-   the routing keys of several mixes and therefore expire when any of
+   the routing keys of several mixes and therefore expires when any of
    the mixes rotate their key. In the Katzenpost system this key
    rotation epoch is every 3 hours. [KATZMIXPKI] It is NOT desireable
    to have long lived mix routing keys because this increases the
@@ -116,14 +126,15 @@ Abstract
    communication from client to client as well as client to dead
    drop. Clients use a cryptographic storage subsystem to persist
    their state (consisting of key material, cryptographic ratchet
-   state, dead drop delivery descriptors and ARQ scheduler state).
+   state, dead drop descriptors and ARQ scheduler state).
 
    Dead drops can also be used for one-way communication. Consider for
-   instance a user, Alice who reads a message on a anonymous bulletine
-   board system and replies using the supplied dead drop
-   descriptor. Alice can optionally include a dead drop descriptor in
-   her message. This would establish a full-duplex communication
-   channel.
+   instance a user, Alice who reads a message on an anonymous
+   bulletine board system and replies using the supplied dead drop
+   descriptor. Alice can optionally include a dead drop descriptor of
+   her own in her reply message. This would establish a full-duplex
+   communication channel from alice to the anonymous communications
+   entity.
 
 3. Threat Model
 
@@ -272,17 +283,18 @@ Abstract
    An alternate parameterization of the Sphinx cryptographic packet
    format is not specified here but could be constructed if
    needed. One possible reason would be to avoid using AEZ as the wide
-   block cipher to make it easier to write implementation in another
+   block cipher to make it easier to write an implementation in another
    language.
 
 5. Bidirectional Communication Message Channels
 
    Bidirectional communication partnerships are first established
-   using the [PANDA] protocol to faciliate a [SIGNAL] handshake AND
-   the exchange of dead drop descriptors. Each client uses one dead
-   drop per contact. There is no universal naming scheme hence the
-   namesake of this document. Like Petmail and Pond, clients choose
-   the name for each of their contacts.
+   using the PANDA [PANDA] protocol to faciliate a Signal Double
+   Ratchet [SIGNAL] handshake AND the exchange of dead drop
+   descriptors. Each client uses one dead drop per contact. There is
+   no universal naming scheme hence the namesake of this
+   document. Like Petmail and Pond, clients choose the name for each
+   of their contacts.
 
    Before participation in the PANDA protocol the client registers a new
    dead drop and creates a new Signal double ratchet session for use
