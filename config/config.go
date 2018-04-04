@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -35,6 +36,7 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
+	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -743,6 +745,22 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	return nil
+}
+
+// Store writes a config to fileName on disk
+func Store(cfg *Config, fileName string) error {
+	f, err := os.Open(fileName); if err != nil {
+		return err
+	}
+	defer f.Close()
+	// Serialize the descriptor.
+	var serialized []byte
+	enc := codec.NewEncoderBytes(&serialized, new(codec.JsonHandle))
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	_, err = f.Write(serialized)
+	return err
 }
 
 // Load parses and validates the provided buffer b as a config file body and
