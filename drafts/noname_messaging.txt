@@ -27,9 +27,8 @@ Abstract
    [KATZDEADDROP]. We use the exchange of unidirectional channels to
    form bidirectional channels. We exchange multiple dead drop
    descriptors for reliability purposes. The highest protocol
-   presentation we are responsible here is that of a reliable or
-   optionally unreliable client to client bidirection communication
-   channel.
+   presentation specified here is that of a reliable or optionally
+   unreliable client to client bidirection communication channel.
 
    This document is meant to be read with the accompanying
    specification documents:
@@ -74,19 +73,15 @@ Abstract
 
 1.3 Differences From The Katzenpost Messaging System
 
-   * Contact discovery, key exchanges and communication channel setup
-     is done using the PANDA protocol. [PANDA] There is no universal
-     naming scheme for mailbox addresses and no spam problem either.
+   * Herein I describe a protocol not a messaging system. We therefore
+   do not concern ourselves with the end to end encryption but provide
+   a cryptographic transport. Confidentiality and message integrity is
+   protected using the link layer [KATZMIXWIRE] and sphinx encryption
+   layers. [SPHINX] [SPHINXSPEC]
 
-   * End to end message encryption is done using the Signal Double
-     Ratchet instead of using static keys in a one-way Noise handshake
-     pattern. [NOISE]
-
-   * Sphinx packet cryptographic primitives have been changed to make
-     it easier to implement and to provide slightly more conservative
-     choices in terms of cryptographic security at the expense of
-     speed and additional Sphinx packet overhead. See section
-     "4. Packet Format" of this document for the details.
+   * There is no universal naming scheme or inherent SPAM problem, rather
+   clients are responsible for exchanging the channel initialization
+   information.
 
 2. System Overview
 
@@ -113,23 +108,6 @@ Abstract
    queue. Client communication partners MUST periodically exchange new
    dead drop descriptors before the old dead drop descriptors expire.
 
-   Communication partnerships are established by using the PANDA
-   protocol [PANDA] to facilitate a Signal handshake and an exchange
-   of dead drop delivery descriptors. Reliability is achieved using
-   two differently tuned ARQ protocols, providing reliability for
-   communication from client to client as well as client to dead
-   drop. Clients use a cryptographic storage subsystem to persist
-   their state (consisting of key material, cryptographic ratchet
-   state, dead drop descriptors and ARQ scheduler state).
-
-   Dead drops can also be used for one-way communication. Consider for
-   instance a user, Alice who reads a message on an anonymous
-   bulletine board system and replies using the supplied dead drop
-   descriptor. Alice can optionally include a dead drop descriptor of
-   her own in her reply message. This would establish a full-duplex
-   communication channel from alice to the anonymous communications
-   entity.
-
 3. Threat Model
 
 3.1 Security Goals
@@ -149,17 +127,12 @@ Abstract
         will NOT be able to determine that they are even communicating
         with each other.
 
-      * receiver unobservability
+      * receiver unobservability: Receivers receive decoy traffic and
+        legit traffic thereby creating uncertainty for passive network
+        observers.
 
-      * sender unobservability
-
-      * sender anonymity
-
-      * receiver anonymity
-
-      * forward secrecy of messages
-
-      * future secrecy of messages
+      * sender unobservability: Senders send decoy and legit traffic
+      thereby creating uncertainly for passive network observers.
 
    We shall now proceed with Brian Warner's mode of analysis and
    quote several security goals from the [PETMAIL] document :
@@ -200,111 +173,12 @@ Abstract
 
       * denial of service attacks
 
-   The mix network AND Providers are operated by a closed set of
-   entities which are authorized by the Directory Authority system's
-   whitelist of mix operator signing keys. [KATZMIXPKI] This Directory
-   Authority system is a semi-decentralized system that uses a
-   cryptographic threshold voting scheme to produce a full view of the
-   network. Epistemic attacks are avoided by providing all clients
-   with the full view of the network. A partial view would make
-   clients vulnerable to epistemic attacks such as [FINGERPRINTING]
-   [BRIDGING] [LOCALVIEW].
 
-   We currently do not have any defences for n-1 attacks. If each
-   mix sends itself heartbeat messages then when the heartbeat message
-   is not received in time this either means:
-
-      * network congestion causing some packet loss
-      * temporary network outage
-      * denial of service attack
-
-   Not knowing how to distinguish between these three cases from only
-   the heartbeat protocol signal means that we SHOULD NOT send
-   increased amounts of decoy traffic in response to packet loss as
-   [HEARTBEAT03] suggests.
-
-   Vulnerability to compulsion attacks is mainly mitigated by means of
-   the epoch key rotation where each participating mix destroys it's
-   Sphinx routing key and uses a new key. Future implementations may
-   include additional defenses. [FORWARDMIX] [COMPULS05]
-
-   Various design elements help to defend against longterm statistical
-   disclosure attacks (also known as intersection attacks) such as:
-
-      * Loopix decoy traffic
-
-      * short term Provider with message queueing and
-        direction wire protocol for message retrieval [KATZMIXWIRE]
-
-      * medium term Provider with messaging queueing and remote
-        retrieval service via SURBs
-
-   Proper implementation and use of the Sphinx packet format should
-   prevent tagging and replay attacks.
-
-   Denial of service does not necessarily lead to compromised
-   anonymity or location hiding properties but it is broad category of
-   attack for which we have only partial defenses. For example,
-   Providers can rate limit their client's ingress traffic. Each
-   Provider can also rate limit the total traffic it sends into the
-   mixnet. On the other hand connected clients may be able to fill up
-   each other's Provider mailbox. If any kind of open registration
-   mechanism is used then this also lends itself to abuse.
-
-3.3 The PANDA Kaetzchen Service
-
-   User key exchanges are done using the PANDA protocol [PANDA]
-   implemented as a Katzenpost Provider side autoresponder
-   service. [KATZPANDA] [KAETZCHEN] This means that bidirectional
-   interaction with the PANDA service is done using the mix network
-   transport for several advantages:
-
-      * client to server unlinkability: Prevent sufficiently global
-        adversaries from learning which PANDA server a given client is
-        interacting with. Prevent sufficiently global adversaries from
-        learning which clients are interacting with a given PANDA server.
-
-      * mix PANDA protocol messages with other types of traffic
-
-      * sender and receiver unobservability of server
-
-      * sender and receiver unobservability of client
-
-      * location hiding properties for clients
-
-4. Packet Format
-
-   An alternate parameterization of the Sphinx cryptographic packet
-   format is not specified here but could be constructed if
-   needed. One possible reason would be to avoid using AEZ as the wide
-   block cipher to make it easier to write an implementation in another
-   language.
-
-5. Bidirectional Communication Message Channels
-
-   Bidirectional communication partnerships are first established
-   using the PANDA [PANDA] protocol to faciliate a Signal Double
-   Ratchet [SIGNAL] handshake AND the exchange of dead drop
-   descriptors. Each client uses one dead drop per contact. There is
-   no universal naming scheme hence the namesake of this
-   document. Like Petmail and Pond, clients choose the name for each
-   of their contacts.
-
-   Before participation in the PANDA protocol the client registers a new
-   dead drop and creates a new Signal double ratchet session for use
-   with the new contact. Clients MUST exchange fresh dead drop
-   descriptors before old ones expire.
-
-6. Bulletin Board System
 X. Anonymity Considerations
 Y. Security Considerations
 Z. Future Work
 
-   * research defenses for n-1 attacks
-
-   * implement forward secure mixes [FORWARDMIX]
-
-   * implement various compulsion attack defenses [COMPULS05]
+   * formal security analysis
 
 Appendix A. References
 
