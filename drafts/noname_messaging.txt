@@ -44,8 +44,6 @@ Abstract
 
       * [KAETZCHEN] - Katzenpost Provider-side Autoresponder Extension
 
-      * [KATZPANDA] - Katzenpost PANDA Autoresponder Extension
-
       * [KATZDEADDROP] - Katzenpost Dead Drop Extension
 
 1.1 Conventions Used in This Document
@@ -75,7 +73,7 @@ Abstract
 
    * Herein I describe a protocol not a messaging system. We therefore
    do not concern ourselves with the end to end encryption but provide
-   a cryptographic transport. Confidentiality and message integrity is
+   a cryptographic transport. Confidentiality and message integrity are
    protected using the link layer [KATZMIXWIRE] and sphinx encryption
    layers. [SPHINX] [SPHINXSPEC]
 
@@ -152,33 +150,16 @@ Abstract
       * Rev0: R can revoke one sender without involving the remaining ones.
       """
 
-   Our Noname messaging security goals in short form are expressed as:
+   Our security goals in short form are expressed as:
 
       S0 M0 R0 Rev0
 
-3.2 Categories of Attacks
-
-   This system uses a decryption mix network based transport and therefore is
-   vulnerable to several attack categories:
-
-      * epistemic attacks
-
-      * n-1 attacks (also known as blending attacks)
-
-      * compulsion attacks
-
-      * statistical disclosure attacks
-
-      * tagging and replay attacks
-
-      * denial of service attacks
-
-
+4. Protocol Description
 X. Anonymity Considerations
 Y. Security Considerations
 Z. Future Work
 
-   * formal security analysis
+   * a more formal security analysis
 
 Appendix A. References
 
