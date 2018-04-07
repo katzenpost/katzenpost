@@ -72,9 +72,21 @@ is produced. Handling Zcash transaction failures and the like is
 out of scope.
 
 
-2.1 Security Anonymity Goals
-----------------------------
+2.1 Protocol Goals
+------------------
 
+Our goals include:
+
+* sender unobservability: We desire to prevent any network observer
+from learning when a client sends a legitimate Zcash
+transaction. Clients therefore periodically send decoy traffic AND
+legitimate traffic as described in [LOOPIX] however for this
+application we DO NOT NEED loop traffic of any kind, nor do we need
+decoy loop traffic.
+
+* client to Zcash transaction unlinkability: We desire to make it very
+difficult for active and passive network adversaries to link a specific
+transaction to a specific client.
 
 
 3. Load Balancing Considerations
@@ -111,11 +123,13 @@ Y. Security Considerations
   sufficient to protect the confidentiality and integrity of the
   payload.
 
+
 Z. Future Work and Research
 ===========================
 
  * compose a reliable Zcash submission protocol using this protocol as
    it's basis
+
 
 Appendix A. References
 ======================
@@ -145,4 +159,3 @@ Appendix A.2 Informative References
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.txt>.
-
