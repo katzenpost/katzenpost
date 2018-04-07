@@ -9,7 +9,7 @@ Version 0
 .. rubric:: Abstract
 
 This document describes the zcash transaction submission
-Kaetzchen service [KAETZCHEN] which allows clients of the
+Kaetzchen service [KAETZCHEN]_ which allows clients of the
 mix network to anonymously write transactions to the Zcash
 blockchain. This is an unreliable unidirectional protocol
 from client to Zcash blockchain.
@@ -36,7 +36,7 @@ resistance.
      cryptographic operations on the relayed packets.
 
    ``Kaetzchen`` - A Provider-side autoresponder service as defined in
-     [KAETZCHEN].
+     [KAETZCHEN]_.
 
 
 1.2 Conventions Used in This Document
@@ -52,7 +52,7 @@ resistance.
 
 The Zcash sender composes a transaction and passes it's serialized
 blob form into the protocol. A Sphinx packet is created and is sent
-over the mixnet link layer [KATZMIXWIRE] to the entry point, the client's
+over the mixnet link layer [KATZMIXWIRE]_ to the entry point, the client's
 Provider. This Sphinx packet is routed through the network and the
 Provider is the first to remove a layer of Sphinx encryption to find
 out what the next hop is. Once the packet arrives at it's destination
@@ -80,7 +80,7 @@ Our goals include:
 * sender unobservability: We desire to prevent any network observer
 from learning when a client sends a legitimate Zcash
 transaction. Clients therefore periodically send decoy traffic AND
-legitimate traffic as described in [LOOPIX] however for this
+legitimate traffic as described in [LOOPIX]_ however for this
 application we DO NOT NEED loop traffic of any kind, nor do we need
 decoy loop traffic.
 
@@ -92,7 +92,7 @@ transaction to a specific client.
 3. Load Balancing Considerations
 ================================
 
-As mentioned in [KATZMIXNET] the mix network should utilize the
+As mentioned in [KATZMIXNET]_ the mix network should utilize the
 stratified topology to spread the Sphinx packet traffic load. The
 mixes present at each strata are added or removed according to the
 PKI. Therefore the PKI is used to close the feedback loop for
@@ -101,7 +101,7 @@ dynamically adjusting the load on the network.
 The load caused by the Zcash transaction submissions can also
 similarly be loadbalanced. One or more Zcash submission services can
 be operated on the mix network. They will all be advertized in the PKI
-consensus document as mentioned in [KAETZCHEN].
+consensus document as mentioned in [KAETZCHEN]_.
 
 
 X. Anonymity Considerations
@@ -118,8 +118,8 @@ Y. Security Considerations
 ==========================
 
 * Note that unlike the Katzenpost client to client protocol as
-  described in [KATZMIXE2E], this protocol uses a Provider-side
-  service [KAETZCHEN] and therefore the Sphinx encryption is
+  described in [KATZMIXE2E]_, this protocol uses a Provider-side
+  service [KAETZCHEN]_ and therefore the Sphinx encryption is
   sufficient to protect the confidentiality and integrity of the
   payload.
 
@@ -159,3 +159,8 @@ Appendix A.2 Informative References
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.txt>.
+
+.. [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
+               “The Loopix Anonymity System”,
+               USENIX, August, 2017
+               <https://arxiv.org/pdf/1703.00536.pdf>.
