@@ -1,15 +1,16 @@
-Noname Messaging System Specification
+Noname Message Protocol Specification
 David Stainton
 
 Version 0
 
 Abstract
 
-   This document describes the high level architecture of the Noname
-   Messaging System which is specifically designed to provide strong
-   location hiding properties, tunable resistance to longterm
-   statistical disclosure attacks and resistance to some active
-   attacks.
+   This document describes the Noname message protocol which is
+   specifically designed to provide strong location hiding properties,
+   tunable resistance to longterm statistical disclosure attacks and
+   resistance to some active attacks. This mix network protocol
+   essentially provides to clients reliable bidirectional communication
+   channels. It can be used to construct messaging applications.
 
 1. Introduction
 
@@ -17,21 +18,18 @@ Abstract
    and also uses many designs from the mix network literature,
    especially the [LOOPIX], Katzenpost [KATZMIXNET] and [MIXMINION]
    systems. Compared to Katzenpost the system I describe here has a
-   very different client but the server side is almost exactly the
-   same except for the addition of several mixnet
-   services. [KAETZCHEN]
+   server side that is almost exactly the same except for the addition
+   of several Provider-side mixnet services. [KAETZCHEN]
 
-   Just like Pond, in this system clients use the PANDA protocol to
-   establish communication channels. The PANDA protocol uses a
-   passphrase authenticated key exchange through an intermediary
-   server so that the protocol is tolerant of long delays from clients
-   and is symmetrical with respect to the two communication partners
-   protocol role.
-
-   Clients use the PANDA protocol to exchange key material for the
-   Signal Double Ratchet [SIGNAL] AND descriptors of unidirectional
-   dead drops [KATZDEADDROP] which results in a bidirectional
-   communication channel.
+   This protocol assumes some method of exchanging channel setup
+   information between clients, this information includes public keys
+   for encryption AND descriptors of unidirectional dead drops
+   [KATZDEADDROP]. We use the exchange of unidirectional channels to
+   form bidirectional channels. We exchange multiple dead drop
+   descriptors for reliability purposes. The highest protocol
+   presentation we are responsible here is that of a reliable or
+   optionally unreliable client to client bidirection communication
+   channel.
 
    This document is meant to be read with the accompanying
    specification documents:
@@ -44,10 +42,6 @@ Abstract
         Infrastructure Specification
 
       * [KATZMIXWIRE] - Katzenpost Mix Network Wire Protocol Specification
-
-      * [SPHINXSPEC] - Sphinx Mix Network Cryptographic Packet Format Specification
-
-      * [LIONESS] - The LIONESS Wide-Block-Cipher
 
       * [KAETZCHEN] - Katzenpost Provider-side Autoresponder Extension
 
