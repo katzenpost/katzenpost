@@ -1,5 +1,5 @@
-Katzenpost Zcash Send Protocol Specification
-********************************************
+Katzenpost Zcash Submission Protocol Specification
+**************************************************
 
 | David Stainton
 
@@ -8,11 +8,10 @@ Version 0
 
 .. rubric:: Abstract
 
-This document describes the zcash transaction submission
-Kaetzchen service [KAETZCHEN]_ which allows clients of the
-mix network to anonymously write transactions to the Zcash
-blockchain. This is an unreliable unidirectional protocol
-from client to Zcash blockchain.
+This document describes an unreliable unidirectional protocol and the
+Zcash transaction submission mixnet service [KAETZCHEN]_ which allows
+clients of the mix network to anonymously write transactions to the
+Zcash blockchain.
 
 .. contents:: :local:
 
@@ -20,8 +19,8 @@ from client to Zcash blockchain.
 1. Introduction
 ===============
 
-The primary use case for this protocol is to facilitate Zcash wallet
-developers designing for the highest degree of traffic analysis
+The primary use case for this protocol is to facilitate the development
+of superior Zcash wallets with the highest degree of traffic analysis
 resistance.
 
 
@@ -50,14 +49,32 @@ resistance.
 2. System Overview
 ==================
 
+The Zcash sending wallet MUST be in posession of the cryptographic and
+connection information which gives us the capability to send and
+receive messages on the mix network. The Katzenpost architecture
+[KATZMIXNET]_ describes the PKI as providing a complete network view
+to clients. [KATZMIXPKI]_ This network consensus document is used by
+clients to learn about the mixes and services on the network. [KAETZCHEN]_
+
+Providers are mixes in the network that provide additional services.
+In the Loopix and Katzenpost architecture Providers form the perimeter
+of the network and therefore route all incoming connections from
+clients if they pass the access control check using cryptographic
+authentication. [KATZMIXWIRE]_  [KATZMIXE2E]_ Providers are also the
+destination of each route and queue messages until a client retrieves it.
+
+In contrast, this crypto currency submission protocol does not
+have any need to queue messages. Authenticating clients at the network
+perimeter is a policy decision and is therefore out of scope here.
+
 The Zcash sender composes a transaction and passes it's serialized
-blob form into the protocol. A Sphinx packet is created and is sent
-over the mixnet link layer [KATZMIXWIRE]_ to the entry point, the client's
-Provider. This Sphinx packet is routed through the network and the
-Provider is the first to remove a layer of Sphinx encryption to find
-out what the next hop is. Once the packet arrives at it's destination
-Provider, the Zcash transaction Kaetzchen service receives the
-transaction submission request.
+blob form into the protocol library. A Sphinx packet is created and is
+sent over the mixnet link layer [KATZMIXWIRE]_ to the entry point, the
+client's Provider. This Sphinx packet is routed through the network
+and the Provider is the first to remove a layer of Sphinx encryption.
+Once the packet arrives at it's destination Provider, the Zcash
+transaction submission service receives the transaction submission
+request.
 
 ::
 
@@ -65,11 +82,12 @@ transaction submission request.
      | Sender |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ---> | Provider |
      `--------'        `----------'        `-------'        `-------'       '----------'
 
-
-The Kaetzchen JSON request is parsed and the transaction blob is
-submitted using the zcashd client RPC. No receipt or acknowledgement
-is produced. Handling Zcash transaction failures and the like is
-out of scope.
+On the "server side", the Provider receives the Sphinx packet and
+decrypts it's payload and then passes the plaintext to the "Zcash
+Submission Provider-side Service" module which parses the JSON blob
+and submits the transaction blob to the Zcash blockchain using the
+zcashd client RPC. No receipt or acknowledgement is produced. Handling
+any kind of failure is out of scope.
 
 
 2.1 Protocol Goals
@@ -77,20 +95,59 @@ out of scope.
 
 Our goals include:
 
-* sender unobservability: We desire to prevent any network observer
-from learning when a client sends a legitimate Zcash
-transaction. Clients therefore periodically send decoy traffic AND
-legitimate traffic as described in [LOOPIX]_ however for this
-application we DO NOT NEED loop traffic of any kind, nor do we need
-decoy loop traffic.
+* Sender Unobservability:
 
-* client to Zcash transaction unlinkability: We desire to make it very
-difficult for active and passive network adversaries to link a specific
-transaction to a specific client.
+Prevention of any network observer from learning when a client sends a
+legitimate message (in this context a Zcash transaction). Clients
+therefore periodically send decoy traffic AND legitimate traffic as
+described in [LOOPIX]_ however for this application we DO NOT NEED
+loop traffic of any kind, nor do we need decoy loops since this
+protocol is unidirectional AND unreliable.
+
+* Client To Transaction Unlinkability:
+
+We desire to make it very difficult for active and passive network
+adversaries to link a specific transaction to a specific client.
 
 
-3. Load Balancing Considerations
-================================
+3. The Provider-side Zcash Transaction Submission Service
+=========================================================
+
+Kaetzchen [KAETZCHEN]_ services are a request-response protocol
+API where responses are optional. In this protocol no response is sent.
+The client puts their transaction blob inside of a ZcashRequest
+and sends it to this service.
+
+
+3.1 ZcashRequest Message Format
+-------------------------------
+::
+
+   type zcashRequest struct {
+        Version int
+	Tx      string
+   }
+
+The ``Tx`` field must be populated with the transaction blob in hex
+string format.
+
+
+3.2 Submission Service Behavior
+-------------------------------
+
+The submission service uses a HTTP JSON RPC to submit transactions to
+the blockchain using the ``sendrawtransaction`` RPC command which
+works for Bitcoin as well as Zcash. [ZCASHPAYMENTAPI]_
+[ZCASHINTEGRATION]_  [BTCRPC]_
+
+Here's an example JSON blob::
+  {"jsonrpc":"1.0","method":"sendrawtransaction","params":["030000807082c40301ee9aa1a0f1212131580f546903997eff6f2e3d3a8262b40c676dc2ba1aa7094b010000006b483045022100f3e5a20c7246545352c90971bb7e5d335d424b3ead78c1aefa95a630b0da577202203609bbadcddc7a89951636212643e57be2dbff4f718ef2b0ad9a41a9001c4b860121038d17c14225360038a5b6dfd063bfbe53a6e014c33f1f2bc6b49babe896595f7dfeffffff0200a3e111000000001976a914681a2881e0369225b353ff737d562ae5b60f6aca88acdd1b6403000000001976a91471257ac18b24ac66774f772782856fcedda5599288ac1f4d03003e4d030000",true],"id":6439}
+
+Further details about this RPC command are here: https://bitcoin.org/en/developer-reference#sendrawtransaction
+
+
+W. Performance and Scaling Considerations
+=========================================
 
 As mentioned in [KATZMIXNET]_ the mix network should utilize the
 stratified topology to spread the Sphinx packet traffic load. The
@@ -117,18 +174,25 @@ X. Anonymity Considerations
 Y. Security Considerations
 ==========================
 
-* Note that unlike the Katzenpost client to client protocol as
-  described in [KATZMIXE2E]_, this protocol uses a Provider-side
-  service [KAETZCHEN]_ and therefore the Sphinx encryption is
-  sufficient to protect the confidentiality and integrity of the
-  payload.
+* Unlike the Katzenpost client to client protocol as described in
+  [KATZMIXE2E]_, this protocol uses a Provider-side service
+  [KAETZCHEN]_ and therefore the Sphinx encryption is sufficient to
+  protect the confidentiality and integrity of the payload.
 
 
 Z. Future Work and Research
 ===========================
 
- * compose a reliable Zcash submission protocol using this protocol as
-   it's basis
+ * Compose a reliable Zcash submission protocol library where the
+   client checks the blockchain to see if the transaction was
+   successfully transmitted; using this information instead of
+   ACKnowledgment messages an Automatic Repeat reQuest protocol
+   scheme can be conceived.
+
+ * Nothing here is specific to Zcash. There could also be a Bitcoin
+   transaction submission service. These two transaction submission
+   services SHOULD be on the same mix network and thereby both benefit
+   from increasing each other's anonymity set size.
 
 
 Appendix A. References
@@ -164,3 +228,9 @@ Appendix A.2 Informative References
                “The Loopix Anonymity System”,
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>.
+
+.. [ZCASHPAYMENTAPI]  <https://github.com/zcash/zcash/blob/master/doc/payment-api.md>.
+
+.. [ZCASHINTEGRATION]  <https://z.cash/support/zig.html>.
+
+.. [BTCRPC]  <https://bitcoin.org/en/developer-reference#rpc-quick-reference>.
