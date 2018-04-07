@@ -146,7 +146,43 @@ Here's an example JSON blob::
 Further details about this RPC command are here: https://bitcoin.org/en/developer-reference#sendrawtransaction
 
 
-W. Performance and Scaling Considerations
+4. Client Behavior and Programming Interface
+============================================
+
+
+4.1 Starting and Stopping the Client
+------------------------------------
+
+Requirements:
+
+* PKI connection information
+* PKI key material for signature verification
+* optional Provider access credential
+
+Using the above information the client ensures that it always
+has a fresh PKI consensus document. The client periodically
+sends decoy drop messages to randomly selected Providers as
+described in the Loopix paper [LOOPIX]_.
+
+The optional Provider access credential is currently being
+used by the Katzenpost system, an X25519 public key and a username
+are stored on the Provider's user database. This in part is used
+to restrict access to the user's mailbox stored on the Provider
+however in our case we either wish to restrict access to the entire
+mixnet or we want an open use mix network. This policy decision
+affects which information a client will need.
+
+
+4.2 Send Raw Transaction
+------------------------
+
+1. The client checks a fresh PKI consensus document for advertized Zcash
+submission services. The client chooses one at random to use.
+
+2. Sends the raw transaction as a hex string.
+
+
+5. Performance and Scaling Considerations
 =========================================
 
 As mentioned in [KATZMIXNET]_ the mix network should utilize the
@@ -155,13 +191,13 @@ mixes present at each strata are added or removed according to the
 PKI. Therefore the PKI is used to close the feedback loop for
 dynamically adjusting the load on the network.
 
-The load caused by the Zcash transaction submissions can also
-similarly be loadbalanced. One or more Zcash submission services can
-be operated on the mix network. They will all be advertized in the PKI
-consensus document as mentioned in [KAETZCHEN]_.
+The Zcash transaction submissions can also similarly be loadbalanced.
+One or more Zcash submission services can be operated on the mix
+network. They will all be advertized in the PKI consensus document as
+mentioned in [KAETZCHEN]_.
 
 
-X. Anonymity Considerations
+6. Anonymity Considerations
 ===========================
 
 * Using an entry Provider for many uses and for long periods of time
@@ -171,7 +207,7 @@ X. Anonymity Considerations
   Sphinx packets into the network.
 
 
-Y. Security Considerations
+7. Security Considerations
 ==========================
 
 * Unlike the Katzenpost client to client protocol as described in
@@ -180,14 +216,23 @@ Y. Security Considerations
   protect the confidentiality and integrity of the payload.
 
 
-Z. Future Work and Research
+8. Future Work and Research
 ===========================
 
  * Compose a reliable Zcash submission protocol library where the
    client checks the blockchain to see if the transaction was
    successfully transmitted; using this information instead of
-   ACKnowledgment messages an Automatic Repeat reQuest protocol
-   scheme can be conceived.
+   ACKnowledgment messages an Automatic Repeat reQuest protocol scheme
+   can be conceived.
+
+ * Compose a semi-reliable Zcash submission protocol that uses client
+   decoy loops. The successful acquisition of a transaction blob by
+   the Zcash submission service triggers the response with a SURB
+   ACKnowledgement message as described in [KATZMIXE2E]_. Clients
+   periodically send decoy traffic as client loops and these are
+   indistinguishable from transaction submission messages from the
+   point of view of a passive network observers and all network
+   operators but the destination Provider.
 
  * Nothing here is specific to Zcash. There could also be a Bitcoin
    transaction submission service. These two transaction submission
@@ -217,6 +262,12 @@ Appendix A.1 Normative References
                 "Katzenpost Mix Network Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
 
+.. [ZCASHPAYMENTAPI]  <https://github.com/zcash/zcash/blob/master/doc/payment-api.md>.
+
+.. [ZCASHINTEGRATION]  <https://z.cash/support/zig.html>.
+
+.. [BTCRPC]  <https://bitcoin.org/en/developer-reference#rpc-quick-reference>.
+
 Appendix A.2 Informative References
 -----------------------------------
 
@@ -228,9 +279,3 @@ Appendix A.2 Informative References
                “The Loopix Anonymity System”,
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>.
-
-.. [ZCASHPAYMENTAPI]  <https://github.com/zcash/zcash/blob/master/doc/payment-api.md>.
-
-.. [ZCASHINTEGRATION]  <https://z.cash/support/zig.html>.
-
-.. [BTCRPC]  <https://bitcoin.org/en/developer-reference#rpc-quick-reference>.
