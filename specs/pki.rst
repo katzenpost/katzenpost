@@ -1,65 +1,30 @@
+.. _pki:
+
 Katzenpost Mix Network Public Key Infrastructure Specification
-Yawning Angel
-Ania Piotrowska
-David Stainton
+**************************************************************
+
+| Yawning Angel
+| Ania Piotrowska
+| David Stainton
 
 Version 0
 
-Abstract
+.. rubric:: Abstract
 
    This document describes the message formats and protocols of a
    decryption mix network public key infrastructure system. It has some
    specific design features which aid in traffic analysis resistance.
    This document is meant to serve as an implementation guide.
 
-Table of Contents
-
-   1. Introduction
-      1.1 Conventions Used in This Document
-      1.2 Terminology
-      1.3 Security Properties Overview
-      1.4 Differences from Tor and Mixminion Directory Authority systems
-   2. Overview of Mix PKI Interaction
-      2.1 PKI Protocol Schedule
-         2.1.1 Directory Authority Server Schedule
-         2.1.2 Mix Schedule
-      2.2 Scheduling Mix Downtime
-   3. Voting for Consensus Protocol
-      3.1 Protocol Messages
-         3.1.1 Mix Descriptor and Directory Signing
-      3.2 Vote Exchange
-      3.3 Vote Tabulation for Consensus Computation
-      3.4 Signature Collection
-      3.5 Publication
-   4. PKI Protocol Data Structures
-      4.1 Mix Descriptor Format
-         4.1.1 Scheduling Mix Downtime
-      4.2 Directory Format
-   5. PKI Wire Protocol
-      5.1 Mix Descriptor publication
-         5.1.1 The post_descriptor Command
-         5.1.2 The post_descriptor_status Command
-      5.2 Voting
-         5.2.1 The vote Command
-         5.2.2 The vote_status Command
-      5.3 Retreival of Consensus
-         5.3.1 The get_consensus Command
-         5.3.2 The consensus Command
-   6. Scalability Considerations
-   7. Future Work
-   8. Anonymity Considerations
-   9. Security Considerations
-   10. Acknowledgments
-   Appendix A. References
-      Appendix A.1 Normative References
-      Appendix A.2 Informative References
+.. contents:: :local:
 
 1. Introduction
+===============
 
    Mixnets are designed with the assumption that a PKI exists and it
    gives each client the same view of the network. This specification
    is inspired by the Tor and Mixminion Directory Authority systems
-   [MIXMINIONDIRAUTH] [TORDIRAUTH] whose main features are precisely what
+   [MIXMINIONDIRAUTH]_ [TORDIRAUTH]_ whose main features are precisely what
    we need in our PKI. These are decentralized systems meant to be
    collectively operated by multiple entities.
 
@@ -73,11 +38,11 @@ Table of Contents
 
    This design prevents mix clients from using only a partial view of
    the network for their path selection so as to avoid fingerprinting
-   and bridging attacks [FINGERPRINTING] [BRIDGING] [LOCALVIEW].
+   and bridging attacks [FINGERPRINTING]_ [BRIDGING]_ [LOCALVIEW]_.
 
    The PKI is also used by Authority operators to specify network-wide
    parameters, for example in the Katzenpost Decryption Mix Network
-   [KATZMIXNET] the Poisson mix strategy is used and therefore all the
+   [KATZMIXNET]_ the Poisson mix strategy is used and therefore all the
    clients must use the same lambda parameter for their exponential
    distribution function when choosing hop delays in the path
    selection. The Mix Network Directory Authority system aka PKI
@@ -85,38 +50,40 @@ Table of Contents
    consensus document that have an impact on security and performance.
 
 1.1 Conventions Used in This Document
+-------------------------------------
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
-   document are to be interpreted as described in [RFC2119].
+   document are to be interpreted as described in [RFC2119]_.
 
-   The "C" style Presentation Language as described in [RFC5246]
+   The "C" style Presentation Language as described in [RFC5246]_
    Section 4 is used to represent data structures for additional
-   cryptographic wire protocol commands. [KATZMIXWIRE]
+   cryptographic wire protocol commands. [KATZMIXWIRE]_
 
 1.2 Terminology
+---------------
 
-   PKI - public key infrastructure
+   ``PKI`` - public key infrastructure
 
-   Directory Authority system - refers to specific PKI schemes used by
+   ``Directory Authority system`` - refers to specific PKI schemes used by
                                 Mixminion and Tor
 
-   MSL - maximum segment lifetime
+   ``MSL`` - maximum segment lifetime
 
-   mix descriptor - A database record which describes a component mix
+   ``mix descriptor`` - A database record which describes a component mix
 
-   family - Identifier of security domains or entities operating one
+   ``family`` - Identifier of security domains or entities operating one
             or more mixes in the network. This is used to inform the
             path selection algorithm.
 
-   nickname - simply a nickname string that is unique in the consensus
+   ``nickname`` - simply a nickname string that is unique in the consensus
               document; see "Katzenpost Mix Network Specification"
               section "2.2. Network Topology".
 
-   layer - The layer indicates which network topology layer a
+   ``layer`` - The layer indicates which network topology layer a
            particular mix resides in.
 
-   Provider - A service operated by a third party that Clients
+   ``Provider`` - A service operated by a third party that Clients
               communicate directly with to communicate with the Mixnet.
               It is responsible for Client authentication,
               forwarding outgoing messages to the Mixnet, and storing incoming
@@ -124,6 +91,7 @@ Table of Contents
               perform cryptographic operations on the relayed messages.
 
 1.3 Security Properties Overview
+--------------------------------
 
    This Directory Authority system has the following feature goals and
    security properties:
@@ -137,8 +105,8 @@ Table of Contents
       * This system is intentionally designed to provide identical
         network consensus documents to each mix client. This mitigates
         epistemic attacks against the client path selection algorithm
-        such as fingerprinting and bridge attacks [FINGERPRINTING]
-        [BRIDGING].
+        such as fingerprinting and bridge attacks [FINGERPRINTING]_
+        [BRIDGING]_.
 
       * This system is NOT byzantine-fault-tolerant, it instead allows
         for manual intervention upon consensus fault by the Directory
@@ -154,6 +122,7 @@ Table of Contents
         essentially the root of all authority.
 
 1.4 Differences from Tor and Mixminion Directory Authority systems
+----------------------------------------------------------------------
 
    In this document we specify a Directory Authority system
    which is different from that of Tor's and Mixminion's in a number
@@ -179,14 +148,17 @@ Table of Contents
       * The serialization format of mix descriptors is different from
         that used in Mixminion and Tor.
 
-   // XXX David: add more differences to this list
+.. note::
+
+   David: add more differences to this list
 
 2. Overview of Mix PKI Interaction
+==================================
 
    Each Mix MUST rotate the key pair used for Sphinx packet processing
    periodically for forward secrecy reasons and to keep the list of
-   seen packet tags short. [SPHINX09] [SPHINXSPEC] The Katzenpost Mix
-   Network uses a fixed interval (epoch), so that key rotations happen
+   seen packet tags short. [SPHINX09]_ [SPHINXSPEC]_ The Katzenpost Mix
+   Network uses a fixed interval (``epoch``), so that key rotations happen
    simultaneously throughout the network, at predictable times.
 
    Each Directory Authority server MUST use some time synchronization
@@ -194,8 +166,8 @@ Table of Contents
    Authority system requires time synchronization to within a few
    minutes.
 
-   Let each epoch be exactly 10800 seconds (3 hours) in duration, and
-   the 0th Epoch begin at 2017-06-01 00:00 UTC.
+   Let each epoch be exactly ``10800 seconds (3 hours)`` in duration, and
+   the 0th Epoch begin at ``2017-06-01 00:00 UTC``.
 
    To facilitate smooth operation of the network and to allow for
    delays that span across epoch boundaries, Mixes MUST publish keys
@@ -208,9 +180,10 @@ Table of Contents
    limited to a few hours because of the key rotation epoch, however
    this shouldn't present any useability problems since SURBs are only
    used for sending ACK messages from the destination Provider to the
-   sender as described in [KATZMIXE2E].
+   sender as described in [KATZMIXE2E]_.
 
 2.1 PKI Protocol Schedule
+-------------------------
 
    There are two main constraints to Authority schedule:
 
@@ -229,38 +202,40 @@ Table of Contents
    // some scaling and bandwidth calculations to see how bad it gets...
 
 2.1.1 Directory Authority Server Schedule
+-----------------------------------------
 
    Directory Authority server interactions are conducted according to
-   the following schedule, where T is the beginning of the current epoch.
+   the following schedule, where ``T`` is the beginning of the current epoch.
 
-   T                         - Epoch begins
+   ``T``                         - Epoch begins
 
-   T + 2 hours               - Vote exchange
+   ``T + 2 hours``               - Vote exchange
 
-   T + 2 hours + 7.5 minutes - Tabulation and signature exchange
+   ``T + 2 hours + 7.5 minutes`` - Tabulation and signature exchange
 
-   T + 2 hours + 15 minutes  - Publish consensus
+   ``T + 2 hours + 15 minutes``  - Publish consensus
 
 
 2.1.2 Mix Schedule
+------------------
 
    Mix PKI interactions are conducted according to the following
    schedule, where T is the beginning of the current epoch.
 
-    T + 2 hours              - Deadline for publication of all mixes documents
+    ``T + 2 hours``              - Deadline for publication of all mixes documents
                                for the next epoch.
 
-    T + 2 hours + 15 min     - This marks the beginning of the period
+    ``T + 2 hours + 15 min``     - This marks the beginning of the period
                                where mixes perform staggered fetches
                                of the PKI consensus document.
 
-    T + 2 hours + 30 min     - Start establishing connections to the new set of
+    ``T + 2 hours + 30 min``     - Start establishing connections to the new set of
                                relevant mixes in advance of the next epoch.
 
-    T + 3 hours - 1MSL       - Start accepting new Sphinx packets encrypted to
+    ``T + 3 hours - 1MSL``       - Start accepting new Sphinx packets encrypted to
                                the next epoch's keys.
 
-    T + 3 hours + 1MSL       - Stop accepting new Sphinx packets encrypted to
+    ``T + 3 hours + 1MSL``       - Stop accepting new Sphinx packets encrypted to
                                the previous epoch's keys, close connections to
                                peers no longer listed in the PKI documents and
                                erase the list of seen packet tags.
@@ -277,6 +252,7 @@ Table of Contents
    document.
 
 3. Voting for Consensus Protocol
+================================
 
    In our Directory Authority protocol, all the actors conduct their
    behavior according to a common schedule as outlined in section "2.1
@@ -287,24 +263,27 @@ Table of Contents
    of the network consensus documents.
 
 3.1 Protocol Messages
+---------------------
 
    There are only two document types in this protocol:
 
-   * mix_descriptor: A mix descriptor describes a mix.
+   * ``mix_descriptor``: A mix descriptor describes a mix.
 
-   * directory: A directory contains a list of descriptors and other
+   * ``directory``: A directory contains a list of descriptors and other
      information that describe the mix network.
 
    Mix descriptor and directory documents MUST be properly signed.
 
 3.1.1 Mix Descriptor and Directory Signing
+------------------------------------------
 
    Mixes MUST compose mix descriptors which are signed using their
    private identity key, an ed25519 key. Directories are signed by one
    or more Directory Authority servers using their authority key, also
-   an ed25519 key. In all cases, signing is done using JWS [RFC7515].
+   an ed25519 key. In all cases, signing is done using JWS [RFC7515]_.
 
 3.2 Vote Exchange
+-----------------
 
    As described in section "2.1 PKI Protocol Schedule", the Directory
    Authority servers begin the voting process 2 hours after epoch
@@ -317,6 +296,7 @@ Table of Contents
    in its view of the network.
 
 3.3 Vote Tabulation for Consensus Computation
+---------------------------------------------
 
    The main design constraint of the vote tabulation algorithm is that
    it MUST be a deterministic process that produces the same result
@@ -324,20 +304,20 @@ Table of Contents
    network consensus file.
 
    A network consensus file is a well formed directory struct where
-   the "status" field is set to "consensus" and contains 0 or more
+   the ``status`` field is set to ``consensus`` and contains 0 or more
    descriptors, the mix directory is signed by 0 or more directory
    authority servers. If signed by the full voting group then this is
    called a fully signed consensus.
 
    1. Validate each vote directory:
       - that the liveness fields correspond to the following epoch
-      - status is "vote"
+      - status is ``vote``
       - version number matches ours
 
    2. Compute a consensus directory:
 
       Here we include a modified section from the Mixminion PKI spec
-      [MIXMINIONDIRAUTH]:
+      [MIXMINIONDIRAUTH]_:
 
       - For each distinct mix identity in any vote directory:
             - If there are multiple nicknames for a given identity, do not
@@ -357,9 +337,10 @@ Table of Contents
 
       - Sort the list of descriptors by the signature field so that
         creation of the consensus is reproducible.
-      - Set directory "status" field to "consensus".
+      - Set directory ``status`` field to ``consensus``.
 
 3.4 Signature Collection
+------------------------
 
    Each Authority exchanges their newly generated consensus files with
    each other. Upon receiving signed consensus documents from the
@@ -372,17 +353,20 @@ Table of Contents
    with about the final consensus.
 
 3.5 Publication
+---------------
 
    If the consensus is signed by a majority of members of the voting
    group then it's a valid consensus and it is published.
 
 4. PKI Protocol Data Structures
+===============================
 
 4.1 Mix Descriptor Format
+-------------------------
 
    Note that there is no signature field. This is because mix
    descriptors are serialized and signed using JWS. The
-   `IdentityKey` field is a public ed25519 key.  The `MixKeys` field
+   ``IdentityKey`` field is a public ed25519 key.  The ``MixKeys`` field
    is a map from epoch to public X25519 keys which is what the Sphinx
    packet format uses.
 
@@ -406,6 +390,7 @@ Table of Contents
    }
 
 4.1.1 Scheduling Mix Downtime
+-----------------------------
 
    Mix operators can publish a half empty mix descriptor for future
    epochs to schedule downtime. The mix descriptor fields that MUST
@@ -424,9 +409,13 @@ Table of Contents
    the map.
 
 4.2 Directory Format
+--------------------
 
-   // XXX David: replace the following JSON example
-   // with a JWS
+.. note::
+
+   replace the following example with a JWS example
+
+.. code::
 
    {
        "Signatures": [],
@@ -439,16 +428,20 @@ Table of Contents
    }
 
 5. PKI Wire Protocol
+====================
 
-   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used
+   The Katzenpost Wire Protocol as described in [KATZMIXWIRE]_ is used
    by both clients and by Directory Authority peers. In the following
    section we describe additional wire protocol commands for publishing
    mix descriptors, voting and consensus retrieval.
 
 5.1 Mix Descriptor publication
+------------------------------
 
    The following commands are used for publishing mix descriptors and
    setting mix descriptor status:
+
+.. code::
 
    enum {
          /* Extending the wire protocol Commands. */
@@ -457,6 +450,8 @@ Table of Contents
    }
 
    The structures of these command are defined as follows:
+
+.. code::
 
       struct {
          uint64_t epoch_number;
@@ -468,14 +463,18 @@ Table of Contents
       } PostDescriptorStatus;
 
 5.1.1 The post_descriptor Command
+---------------------------------
 
    The post_descriptor command allows mixes to publish their
    descriptors.
 
 5.1.2 The post_descriptor_status Command
+----------------------------------------
 
    The post_descriptor_status command is sent in response to a post_descriptor
    command, and uses the following error codes:
+
+.. code::
 
    enum {
       descriptor_ok(0),
@@ -485,8 +484,11 @@ Table of Contents
    } ErrorCodes;
 
 5.2 Voting
+----------
 
    The following commands are used by Authorities to exchange votes:
+
+.. code::
 
       enum {
          vote(22),
@@ -494,6 +496,8 @@ Table of Contents
       } Command;
 
    The structures of these commands are defined as follows:
+
+.. code::
 
       struct {
           uint64_t epoch_number;
@@ -506,6 +510,7 @@ Table of Contents
       } VoteStatusCommand;
 
 5.2.1 The vote Command
+----------------------
 
    The get_consensus command is used to send a PKI document to a peer
    Authority during the voting period of the PKI schedule.
@@ -518,10 +523,13 @@ Table of Contents
    check the epoch for the vote before deserializing the payload.
 
 5.2.2 The vote_status Command
+-----------------------------
 
    The vote_status command is used to reply to a vote command. The
    error_code field indicates if there was a failure in the receiving
    of the PKI document.
+
+.. code::
 
       enum {
          vote_ok(0),          /* None error condition. */
@@ -535,12 +543,15 @@ Table of Contents
    vote was not accepted.
 
 5.3 Retreival of Consensus
+--------------------------
 
-   Providers in the Katzenpost mix network system [KATZMIXNET] may cache
+   Providers in the Katzenpost mix network system [KATZMIXNET]_ may cache
    validated network consensus files and serve them to clients over
-   the mix network's link layer wire protocol [KATZMIXWIRE]. We define
+   the mix network's link layer wire protocol [KATZMIXWIRE]_. We define
    additional wire protocol commands for requesting and sending PKI
    consensus documents:
+
+.. code::
 
       enum {
          /* Extending the wire protocol Commands. */
@@ -549,6 +560,8 @@ Table of Contents
       } Command;
 
    The structures of these commands are defined as follows:
+
+.. code::
 
       struct {
           uint64_t epoch_number;
@@ -560,6 +573,7 @@ Table of Contents
       } ConsensusCommand;
 
 5.3.1 The get_consensus Command
+-------------------------------
 
    The get_consensus command is a command that is used to retrieve a
    recent consensus document. If a given get_consensus command
@@ -572,10 +586,13 @@ Table of Contents
    a get_consensus command.
 
 5.3.2 The consensus Command
+---------------------------
 
    The consensus command is a command that is used to send a
    recent consensus document. The error_code field indicates if there
    was a failure in retrieval of the PKI consensus document.
+
+.. code::
 
       enum {
          consensus_ok(0),        /* None error condition and SHOULD be accompanied with
@@ -585,20 +602,22 @@ Table of Contents
       } ErrorCodes;
 
 6. Scalability Considerations
+=============================
 
 // XXX David: TODO: notes on scaling, bandwidth usage etc.
 
 7. Future Work
+==============
 
    * PQ crypto signatures for all PKI documents: mix descriptors and
-     directories. [SPHINCS256] could be used, we already have a golang
+     directories. [SPHINCS256]_ could be used, we already have a golang
      implementation: https://github.com/Yawning/sphincs256/
 
    * Make a Bandwidth Authority system to measure health of the network.
-     Also perform load balancing as described in [PEERFLOW]?
+     Also perform load balancing as described in [PEERFLOW]_?
 
-   * Implement byzantine attack defenses as described in [MIRANDA] and
-     [MIXRELIABLE] where mix link performance proofs are recorded and
+   * Implement byzantine attack defenses as described in [MIRANDA]_ and
+     [MIXRELIABLE]_ where mix link performance proofs are recorded and
      used in a reputation system.
 
    * Choose a different serialization/schema language?
@@ -610,8 +629,8 @@ Table of Contents
    * This system is intentionally designed to provide identical
      network consensus documents to each mix client. This mitigates
      epistemic attacks against the client path selection algorithm
-     such as fingerprinting and bridge attacks [FINGERPRINTING]
-     [BRIDGING].
+     such as fingerprinting and bridge attacks [FINGERPRINTING]_
+     [BRIDGING]_.
 
    * If consensus has failed and thus there is more than one consensus
      file, clients MUST NOT use this compromised consensus and refuse
@@ -628,7 +647,7 @@ Table of Contents
      properties described as traffic analysis resistance. Therefore a
      decentralized voting protocol is used so that the system is more
      resiliant when attacked, in accordance with the principle of
-     least authority. [SECNOTSEP]
+     least authority. [SECNOTSEP]_
 
    * Short epoch durations make it is more practical to make
      corrections to network state using the PKI voting rounds.
