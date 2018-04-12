@@ -1,5 +1,5 @@
 Katzenpost Mix Network Specification
-***********************************
+************************************
 
 | Yawning Angel
 | George Danezis
@@ -62,22 +62,32 @@ Katzenpost Mix Network.
                         * ACKs
                         * Small messages
                         * Large messages (big attachments)
-                        /* This may be changed after we do our analysis on the stats */
+
+                        .. note::
+
+                            This may be changed after we do our analysis on the stats
 
    ``Packet`` - A string transmitted anonymously thought the Katzenpost network.
              The length of the packet is fixed for every class of traffic.
 
    ``Payload`` - The [xxx] KiB portion of a Packet containing a message,
-             or part of a message, to be delivered anonymously. /* <- This has to be rephrased after
-             The analysis of the stats. */
+             or part of a message, to be delivered anonymously.
+             
+             .. note::
+             
+                This has to be rephrased after the analysis of the stats.
 
    ``Message`` - A variable-length sequence of octets sent anonymously
              through the network. Short messages are sent in a single
              packet; long messages are fragmented across multiple
              packets (see the Katzenpost Mix Network End-to-end
              Protocol Specification for more information about
-             encoding messages into payloads). /* <- This has to be rephrased after
-             The analysis of the stats; if we have multiple classes of traffic */
+             encoding messages into payloads). 
+             
+             .. note:: 
+
+                This has to be rephrased after
+                The analysis of the stats; if we have multiple classes of traffic
 
    ``MSL`` - Maximum Segment Lifetime, 120 seconds.
 
