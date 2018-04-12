@@ -198,8 +198,10 @@ Version 0
    The epoch duration of 3 hours is more than adequate for these two
    constraints.
 
-   // XXX david: perhaps we should make it shorter? but first let's do
-   // some scaling and bandwidth calculations to see how bad it gets...
+   .. note::
+   
+        XXX david: perhaps we should make it shorter? but first let's do
+        some scaling and bandwidth calculations to see how bad it gets...
 
 2.1.1 Directory Authority Server Schedule
 -----------------------------------------
@@ -327,6 +329,7 @@ Version 0
               guarantees that there will be only one identity per nickname.]
             - If we are including the identity, then for each distinct
               descriptor that appears in any vote directory:
+
                 - Do not include the descriptor if it will have expired
                   on the date the directory will be published.
                 - Do not include the descriptor if it is superseded by
@@ -370,8 +373,12 @@ Version 0
    is a map from epoch to public X25519 keys which is what the Sphinx
    packet format uses.
 
-   // XXX David: replace the following example
-   // with a JWS example:
+.. note::
+
+    XXX David: replace the following example
+    with a JWS example:
+
+.. code::
 
    {
        "Version": 0,
@@ -438,8 +445,8 @@ Version 0
 5.1 Mix Descriptor publication
 ------------------------------
 
-   The following commands are used for publishing mix descriptors and
-   setting mix descriptor status:
+The following commands are used for publishing mix descriptors and
+setting mix descriptor status:
 
 .. code::
 
@@ -449,7 +456,7 @@ Version 0
          post_descriptor_status(21),
    }
 
-   The structures of these command are defined as follows:
+The structures of these command are defined as follows:
 
 .. code::
 
@@ -512,22 +519,22 @@ Version 0
 5.2.1 The vote Command
 ----------------------
 
-   The get_consensus command is used to send a PKI document to a peer
-   Authority during the voting period of the PKI schedule.
+The ``get_consensus`` command is used to send a PKI document to a peer
+Authority during the voting period of the PKI schedule.
 
-   The payload field contains the signed and serialized PKI document
-   representing the sending Authority's vote. The public_key field
-   contains the public identity key of the sending Authority which the
-   receiving Authority can use to verify the signature of the payload.
-   The epoch_number field is used by the receiving party to quickly
-   check the epoch for the vote before deserializing the payload.
+The payload field contains the signed and serialized PKI document
+representing the sending Authority's vote. The public_key field
+contains the public identity key of the sending Authority which the
+receiving Authority can use to verify the signature of the payload.
+The epoch_number field is used by the receiving party to quickly
+check the epoch for the vote before deserializing the payload.
 
 5.2.2 The vote_status Command
 -----------------------------
 
-   The vote_status command is used to reply to a vote command. The
-   error_code field indicates if there was a failure in the receiving
-   of the PKI document.
+The ``vote_status`` command is used to reply to a vote command. The
+error_code field indicates if there was a failure in the receiving
+of the PKI document.
 
 .. code::
 
@@ -537,10 +544,10 @@ Version 0
          vote_too_late(2),    /* This round of voting was missed. */
       }
 
-   The epoch_number field of the vote struct is compared with the
-   epoch that is currently being voted on. vote_too_early and
-   vote_too_late are replied back to the voter to report that their
-   vote was not accepted.
+The epoch_number field of the vote struct is compared with the
+epoch that is currently being voted on. vote_too_early and
+vote_too_late are replied back to the voter to report that their
+vote was not accepted.
 
 5.3 Retreival of Consensus
 --------------------------
@@ -604,7 +611,9 @@ Version 0
 6. Scalability Considerations
 =============================
 
-// XXX David: TODO: notes on scaling, bandwidth usage etc.
+.. note::
+
+    XXX David: TODO: notes on scaling, bandwidth usage etc.
 
 7. Future Work
 ==============
@@ -669,81 +678,82 @@ Appendix A. References
 
 Appendix A.1 Normative References
 
-   [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
+.. [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
               DOI 10.17487/RFC2119, March 1997,
               <https://www.rfc-editor.org/info/rfc2119>.
 
-   [RFC7515]  Jones, M., Bradley, J., Sakimura, N.,
+.. [RFC7515]  Jones, M., Bradley, J., Sakimura, N.,
               "JSON Web Signature (JWS)", May 2015,
               <https://tools.ietf.org/html/rfc7515>.
 
-   [RFC5246]  Dierks, T. and E. Rescorla, "The Transport Layer Security
+.. [RFC5246]  Dierks, T. and E. Rescorla, "The Transport Layer Security
               (TLS) Protocol Version 1.2", RFC 5246,
               DOI 10.17487/RFC5246, August 2008,
               <http://www.rfc-editor.org/info/rfc5246>.
 
-   [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+.. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
 
-   [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+.. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
 
-   [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
+.. [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
 
 Appendix A.2 Informative References
+-----------------------------------
 
-   [MIXMINIONDIRAUTH] Danezis, G., Dingledine, R., Mathewson, N.,
+.. [MIXMINIONDIRAUTH] Danezis, G., Dingledine, R., Mathewson, N.,
                       "Type III (Mixminion) Mix Directory Specification",
                       December 2005, <https://www.mixminion.net/dir-spec.txt>.
 
-   [TORDIRAUTH]  "Tor directory protocol, version 3",
+.. [TORDIRAUTH]  "Tor directory protocol, version 3",
                  <https://gitweb.torproject.org/torspec.git/tree/dir-spec.txt>.
 
-   [FINGERPRINTING] Danezis, G., Clayton, R.,
+.. [FINGERPRINTING] Danezis, G., Clayton, R.,
                     "Route Finger printing in Anonymous Communications",
                     <https://www.cl.cam.ac.uk/~rnc1/anonroute.pdf>.
 
-   [BRIDGING] Danezis, G., Syverson, P.,
+.. [BRIDGING] Danezis, G., Syverson, P.,
               "Bridging and Fingerprinting: Epistemic Attacks on Route Selection",
               In the Proceedings of PETS 2008, Leuven, Belgium, July 2008,
               <https://www.freehaven.net/anonbib/cache/danezis-pet2008.pdf>.
 
-   [LOCALVIEW] Gogolewski, M., Klonowski, M., Kutylowsky, M.,
+.. [LOCALVIEW] Gogolewski, M., Klonowski, M., Kutylowsky, M.,
                "Local View Attack on Anonymous Communication",
                <https://www.freehaven.net/anonbib/cache/esorics05-Klonowski.pdf>.
 
-   [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+.. [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
                Provably Secure Mix Format", DOI 10.1109/SP.2009.15, May 2009,
                <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
 
-   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+.. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.txt>.
 
-   [SPHINCS256] Bernstein, D., Hopwood, D., Hulsing, A., Lange, T.,
+.. [SPHINCS256] Bernstein, D., Hopwood, D., Hulsing, A., Lange, T.,
                 Niederhagen, R., Papachristodoulou, L., Schwabe, P., Wilcox
                 O'Hearn, Z., "SPHINCS: practical stateless hash-based signatures",
                 <http://sphincs.cr.yp.to/sphincs-20141001.pdf>.
 
-   [PEERFLOW] Johnson, A., Jansen, R., Segal, A., Syverson, P.,
+.. [PEERFLOW] Johnson, A., Jansen, R., Segal, A., Syverson, P.,
               "PeerFlow: Secure Load Balancing in Tor",
               Preceedings on Privacy Enhancing Technologies, July 2017,
               <https://petsymposium.org/2017/papers/issue2/paper12-2017-2-source.pdf>.
 
-   [MIRANDA] Leibowitz, H., Piotrowska, A., Danezis, G., Herzberg, A., 2017,
+.. [MIRANDA] Leibowitz, H., Piotrowska, A., Danezis, G., Herzberg, A., 2017,
              "No right to ramain silent: Isolating Malicious Mixes"
              <https://eprint.iacr.org/2017/1000.pdf>.
 
-   [MIXRELIABLE] Dingledine, R., Freedman, M., Hopwood, D., Molnar, D., 2001
+.. [MIXRELIABLE] Dingledine, R., Freedman, M., Hopwood, D., Molnar, D., 2001
                  "A Reputation System to Increase MIX-Net Reliability"
                  In Information Hiding, 4th International Workshop
                  <https://www.freehaven.net/anonbib/cache/mix-acc.pdf>.
 
-   [SECNOTSEP] Miller, M., Tulloh, B., Shapiro, J.,
+.. [SECNOTSEP] Miller, M., Tulloh, B., Shapiro, J.,
                "The Structure of Authority: Why Security Is not a Separable Concern",
                <http://www.erights.org/talks/no-sep/secnotsep.pdf>.
 

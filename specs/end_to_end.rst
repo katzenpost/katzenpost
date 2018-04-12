@@ -1,5 +1,5 @@
 Katzenpost Mix Network End-to-end Protocol Specification
-*******************************************************
+********************************************************
 
 | Yawning Angel
 | George Danezis
@@ -481,7 +481,7 @@ Specification [KATZMIXPKI]_.
 
    Clients periodically poll their Provider with a retreive_message
    command. This section describes the client behavior upon receiving
-   messages from their Provider, based on type. /*Ania: type of what? */
+   messages from their Provider, based on type. 
 
 4.2.1 Client Message Processing
 -------------------------------
@@ -523,10 +523,11 @@ Specification [KATZMIXPKI]_.
    Clients MAY impose a reasonable deadline for the reassembly process,
    after which partially received messages are discarded.
 
-   (XXX/ya: Should we mandate that clients insert something like:
+   .. note::
+   
+        XXX/ya: Should we mandate that clients insert something like:
+        `X-Katzenpost-Sender: <Base64(s)>` as a header?
 
-    `X-Katzenpost-Sender: <Base64(s)>` as a header?
-   )
 
 4.2.2 Client Protocol Acknowledgment Processing (SURB-ACKs).
 ------------------------------------------------------------
@@ -544,14 +545,15 @@ Specification [KATZMIXPKI]_.
    MUST discard SURB-ACKs with invalid (non-zero filled) payload, with
    no additional processing.
 
-(XXX/ya: This is specified in the message sending behavior, does it also 
- need to be here?
+.. note::
 
-   Ordinarily, reliable protocols MUST use exponential backoff for
-   retransmissions [CONGAVOID]_  [SMODELS]_  [RFC896]_, however if and only
-   if the round trip time is greater than X seconds then exponential
-   backoff is not needed. [XXX CITATION NEEDED!]
-)
+    XXX/ya: This is specified in the message sending behavior, does it also 
+    need to be here?
+
+    Ordinarily, reliable protocols MUST use exponential backoff for
+    retransmissions [CONGAVOID]_  [SMODELS]_  [RFC896]_, however if and only
+    if the round trip time is greater than X seconds then exponential
+    backoff is not needed. [XXX CITATION NEEDED!]
 
 5. Sphinx Packet Composition Considerations
 ===========================================
@@ -580,15 +582,16 @@ Specification [KATZMIXPKI]_.
    is the inverse of the mean of the exponential distribution in
    milliseconds.
 
-(XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
- the way this is speced out now... Design required here I think.
+.. note::
 
-   For multi-Block messages, the client trickles the Blocks rather
-   than sending them all in a burst.  This mitigates e2e correlation
-   attacks that look at bursts of multiple sent/received packets, and
-   use that information to link the sender and receiver of a
-   multi-Block message.
-)
+    XXX/ya: Shouldn't this be up to the client?  The sender's provider delays
+    the way this is speced out now... Design required here I think.
+
+    For multi-Block messages, the client trickles the Blocks rather
+    than sending them all in a burst.  This mitigates e2e correlation
+    attacks that look at bursts of multiple sent/received packets, and
+    use that information to link the sender and receiver of a
+    multi-Block message.
 
 .. _5.2:
 
