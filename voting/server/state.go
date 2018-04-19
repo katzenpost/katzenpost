@@ -211,7 +211,10 @@ func (s *state) fsm() {
 			s.log.Debugf("Combing signatures for epoch %v", s.votingEpoch)
 			s.combine(s.votingEpoch)
 		}
-		if !s.doBootstrap() { // bootstrapped
+		if !s.doBootstrap() { // bootstrapped or not bootstrapping
+			//we probably want to do this:
+			//epoch, _, _ := epochtime.Now()
+			//s.votingEpoch = epoch + 1
 			s.votingEpoch = s.votingEpoch + 1
 			s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 		}
