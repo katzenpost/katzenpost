@@ -694,14 +694,14 @@ Appendix A.1 Normative References
 
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.txt>.
+                 <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.rst>.
 
 .. [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
+                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -732,7 +732,7 @@ Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.txt>.
+                July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.rst>.
 
 .. [SPHINCS256] Bernstein, D., Hopwood, D., Hulsing, A., Lange, T.,
                 Niederhagen, R., Papachristodoulou, L., Schwabe, P., Wilcox
