@@ -22,7 +22,7 @@ import (
 
 	"github.com/katzenpost/core/log"
 	cpki "github.com/katzenpost/core/pki"
-	"github.com/op/go-logging"
+	"gopkg.in/op/go-logging.v1"
 )
 
 // Config is a client configuration.
