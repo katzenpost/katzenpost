@@ -595,19 +595,19 @@ Appendix A.1 Normative References
                for Security", RFC 7748, January 2016.
 
 .. [KATZMIXWIRE] Angel, Y., "Katzenpost Mix Network Wire Protocol Specification", June 2017.
-                 <https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.txt>.
+                 <https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst>.
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.txt>.
+                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
 
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------

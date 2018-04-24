@@ -180,38 +180,38 @@ Appendix A.1 Normative References
 
    [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
 
    [KATZDECOY]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Decoy Traffic Specification",
-                <https://github.com/katzenpost/docs/blob/master/drafts/decoy_traffic.txt>.
+                <https://github.com/katzenpost/docs/blob/master/drafts/decoy_traffic.rst>.
 
    [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
 
    [KATZMIXWIRE] Angel, Y., "Katzenpost Mix Network Wire Protocol Specification", June 2017.
-                <https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.txt>.
+                <https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst>.
 
    [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
 
    [LIONESS]  Angel, Y., 2017, "The LIONESS Wide-Block-Cipher",
-              <https://github.com/katzenpost/docs/blob/master/specs/LIONESS.TXT>.
+              <https://github.com/katzenpost/docs/blob/master/specs/lioness.rst>.
 
    [RFC7748]   Langley, A., Hamburg, M., and S. Turner, "Elliptic Curves
                for Security", RFC 7748, January 2016.
 
    [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.txt>.
+                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
 
    [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
-                  <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.txt>.
+                  <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
 
    [KATZPANDA]   Stainton, D., "Katzenpost PANDA Autoresponder Extension",
-                 March 2018, <https://github.com/katzenpost/docs/blob/master/drafts/panda.txt>.
+                 March 2018, <https://github.com/katzenpost/docs/blob/master/drafts/panda.rst>.
 
 Appendix A.2 Informative References
 

@@ -794,20 +794,20 @@ Appendix A.1 Normative References
 
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.txt>.
+                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
 
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/pki.txt>.
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
 
 .. [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.txt>.
+                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.rst>.
 
 Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.txt>.
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
 
 .. [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
              Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
