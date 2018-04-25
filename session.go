@@ -26,22 +26,18 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
 	"github.com/katzenpost/minclient/block"
 	"gopkg.in/op/go-logging.v1"
 )
 
-// SessionConfig is specifies the configuration for a new session
-type SessionConfig struct {
-	User        string
-	Provider    string
-	LinkPrivKey *ecdh.PrivateKey
-}
-
 // Session holds the client session
 type Session struct {
-	cfg             *SessionConfig
+	worker.Worker
+
 	minclient       *minclient.Client
+	authority       *authority.Authority
 	log             *logging.Logger
 	logBackend      *log.Backend
 	connected       chan bool
@@ -50,28 +46,31 @@ type Session struct {
 
 // NewSession stablishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-// This method takes the following arguments:
-// user: the username of the account
-// provider: the Provider name indicates which Provider the user account is on
-// identityKeyPriv: the private messaging key for end to end message exchanges with other users
-// linkKeyPriv: the private link layer key for our noise wire protocol
-// consumer: the message consumer consumes received messages
-func (c *Client) NewSession(cfg *SessionConfig) (*Session, error) {
+func (c *Client) NewSession() (*Session, error) {
 	var err error
 	session := new(Session)
-	clientCfg := &minclient.ClientConfig{
-		User:        cfg.User,
-		Provider:    cfg.Provider,
-		LinkKey:     cfg.LinkPrivKey,
-		LogBackend:  c.cfg.LogBackend,
-		PKIClient:   c.cfg.PKIClient,
-		OnConnFn:    session.onConnection,
-		OnMessageFn: session.onMessage,
-		OnACKFn:     session.onACK,
+
+	// Configure and bring up the minclient instance.
+	clientCfg = &minclient.ClientConfig{
+		User:                c.cfg.Account.User,
+		Provider:            c.cfg.Account.Provider,
+		ProviderKeyPin:      c.cfg.Account.ProviderKeyPin,
+		LinkKey:             c.cfg.Account.LinkKey,
+		LogBackend:          c.logBackend,
+		PKIClient:           nil, // Set later.
+		OnConnFn:            session.onConnection,
+		OnMessageFn:         session.onMessage,
+		OnACKFn:             session.onACK,
+		OnDocumentFn:        session.onDocument,
+		DialContextFn:       pCfg.ToDialContext(id),
+		MessagePollInterval: time.Duration(a.s.cfg.Debug.PollingInterval) * time.Second,
+		EnableTimeSync:      false, // Be explicit about it.
 	}
-	session.cfg = cfg
+
+	a.authority = c.cfg.Authority()
+
 	session.connected = make(chan bool, 0)
-	session.log = c.cfg.LogBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
+	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
 	session.minclient, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
