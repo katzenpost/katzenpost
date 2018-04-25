@@ -10,12 +10,6 @@
 Katzenpost Mix Network Client Library
 =====================================
 
-Messaging library with the following features:
-
- - fragmentation/reassembly
- - stop and wait ARQ scheduler
- - storage interface for state persistence
-
 
 license
 =======
