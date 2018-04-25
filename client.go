@@ -18,50 +18,118 @@
 package client
 
 import (
-	"fmt"
+	"path/filepath"
+	"sync"
 
+	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/client/internal/authority"
 	"github.com/katzenpost/core/log"
-	cpki "github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/core/worker"
+	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
-// Config is a client configuration.
-type Config struct {
-	// LogBackend is the logging backend to use for client logging.
-	LogBackend *log.Backend
-
-	// PKIClient is the PKI Document data source.
-	PKIClient cpki.Client
-
-	// Name to show logs
-	Name string
-}
-
-func (cfg *Config) validate() error {
-	if cfg.LogBackend == nil {
-		return fmt.Errorf("minclient: no LogBackend provided")
-	}
-	if cfg.PKIClient == nil {
-		return fmt.Errorf("minclient: no PKIClient provided")
-	}
-	return nil
-}
-
 // Client handles sending and receiving messages over the mix network
 type Client struct {
-	cfg *Config
-	log *logging.Logger
+	worker.Worker
+	cfg *config.Config
+
+	logBackend *log.Backend
+	log        *logging.Logger
+
+	authority *authority.Store
+
+	fatalErrCh chan error
+	eventCh    channels.Channel
+	haltedCh   chan interface{}
+	haltOnce   sync.Once
+}
+
+func (c *Client) initLogging() error {
+	f := c.cfg.Logging.File
+	if !c.cfg.Logging.Disable && c.cfg.Logging.File != "" {
+		if !filepath.IsAbs(f) {
+			f = filepath.Join(c.cfg.Proxy.DataDir, f)
+		}
+	}
+
+	var err error
+	c.logBackend, err = log.New(f, c.cfg.Logging.Level, c.cfg.Logging.Disable)
+	if err == nil {
+		c.log = c.logBackend.GetLogger("mailproxy")
+	}
+	return err
+}
+
+// Shutdown cleanly shuts down a given Client instance.
+func (c *Client) Shutdown() {
+	c.haltOnce.Do(func() { c.halt() })
+}
+
+// Wait waits till the Client is terminated for any reason.
+func (c *Client) Wait() {
+	<-c.haltedCh
+}
+
+func (c *Client) halt() {
+	c.log.Noticef("Starting graceful shutdown.")
+
+	if c.authority != nil {
+		c.authority.Reset()
+		c.authority = nil
+	}
+
+	c.Halt()
+	close(c.fatalErrCh)
+
+	c.log.Noticef("Shutdown complete.")
+	close(c.haltedCh)
 }
 
 // New creates a new Client with the provided configuration.
-func New(cfg *Config) (*Client, error) {
-	var err error
-	if err = cfg.validate(); err != nil {
-		return nil, err
-	}
+func New(cfg *config.Config) (*Client, error) {
 	c := new(Client)
 	c.cfg = cfg
-	c.log = c.cfg.LogBackend.GetLogger(fmt.Sprintf("Client_%s", c.cfg.Name))
+	c.fatalErrCh = make(chan error)
+	c.haltedCh = make(chan interface{})
+
+	// Do the early initialization and bring up logging.
+	if err := utils.MkDataDir(c.cfg.Proxy.DataDir); err != nil {
+		return nil, err
+	}
+	if err := c.initLogging(); err != nil {
+		return nil, err
+	}
+
+	c.log.Noticef("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
+
+	isOk := false
+	defer func() {
+		if !isOk {
+			c.Shutdown()
+		}
+	}()
+
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-c.fatalErrCh
+		if !ok {
+			return
+		}
+		c.log.Warningf("Shutting down due to error: %v", err)
+		c.Shutdown()
+	}()
+
+	var err error
+
+	// Bring the authority cache online.
+	c.authority = authority.NewStore(c.logBackend, c.cfg.UpstreamProxyConfig())
+	if err = c.authority.Set("authority", c.cfg.Authority()); err != nil {
+		c.log.Errorf("Failed to add authority to store: %v", err)
+		return nil, err
+	}
+	c.log.Debug("Added authority.")
 
 	return c, nil
 }
