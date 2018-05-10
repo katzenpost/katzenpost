@@ -450,7 +450,8 @@ guide.
       priv_key = EXP_KEYGEN()
 
       /* Calculate the key material for the 0th hop. */
-      route_group_elements += EXP( G, priv_key )
+      group_element = EXP( G, priv_key )
+      route_group_elements += group_element
       shared_secret = EXP( path[0].public_key, priv_key )
       route_keys += Sphinx_KDF( KDF_INFO, shared_secret )
       blinding_factor = keys[0].blinding_factor
@@ -461,7 +462,8 @@ guide.
           for j = 0; j < i; ++j:
               shared_secret = EXP( shared_secret, keys[j].blinding_factor )
           route_keys += Sphinx_KDF( KDF_INFO, shared_secret )
-          route_group_elements += EXP( group_element, keys[i-1].blinding_factor )
+          group_element = EXP( group_element, keys[i-1].blinding_factor )
+          route_group_elements += group_element
 
      At the conclusion of the derivation process:
          route_keys           - A vector of per-hop SphinxKeys.
