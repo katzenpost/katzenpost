@@ -476,42 +476,6 @@ func (s *state) sendVoteToAuthorities(vote []byte) {
 	}
 }
 
-func (s *state) agreedDescriptor(mixIdentity [eddsa.PublicKeySize]byte, votes []*pki.Document) *descriptor {
-        if len(votes) < s.threshold {
-                s.log.Debugf("generateConsensus excluding mix identity, less than threshold votes")
-                return nil
-        }
-
-        seen := make(map[string][]*pki.Document)
-        for _, vote := range votes {
-                voteMixDesc, err := vote.GetMixByKey(mixIdentity[:])
-                if err != nil {
-                        s.log.Errorf("votesAgree: GetMixByKey failure: %s", err)
-                        continue
-                }
-                rawVoteMixDesc, err := s11n.SerializeDescriptor(voteMixDesc)
-                if err != nil {
-                        s.log.Errorf("s11n.SerializeDescriptor failure: %s", err)
-                        continue
-                }
-
-                rawVoteMixDescStr := string(rawVoteMixDesc)
-                if _, ok := seen[rawVoteMixDescStr]; !ok {
-                        seen[rawVoteMixDescStr] = make([]*pki.Document, 0)
-                }
-                seen[rawVoteMixDescStr] = append(seen[rawVoteMixDescStr], vote)
-        }
-        for rawVoteMixDesc, votes := range seen {
-                if len(votes) > s.threshold {
-                        voteMixDesc, err := s11n.VerifyAndParseDescriptor([]byte(rawVoteMixDesc), s.votingEpoch)
-                        if err == nil {
-                                return &descriptor{desc: voteMixDesc, raw: []byte(rawVoteMixDesc)}
-                        }
-                }
-        }
-	return nil
-}
-
 func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, error) {
 	// Lock is held (called from the onWakeup hook).
 	_, ok := s.votes[epoch]
