@@ -55,6 +55,7 @@ const (
 	stateAcceptVote          = "accept_vote"
 	stateAcceptSignature     = "accept_signature"
 	stateConsensed           = "got_consensus"
+	stateConsensusFailed     = "failed_consensus"
 )
 
 var (
@@ -177,14 +178,17 @@ func (s *state) fsmWakeup() <-chan time.Time {
 	case s.state == stateConsensed:
 		s.log.Debugf("authority: Consensus reached, next wakeup at %s", next_epoch)
 		return time.After(next_epoch)
-	case s.state == stateAcceptDescriptor:
-		return time.After(authorityVoteDeadline - elapsed)
-	case s.state == stateAcceptVote:
-		return time.After(publishConsensusDeadline - elapsed)
-	case s.state == stateAcceptSignature:
+	case s.state == stateConsensusFailed:
+		s.log.Debugf("authority: Consensus failed, next wakeup at %s", next_epoch)
 		return time.After(next_epoch)
-	default:
+	case s.state == stateAcceptDescriptor:
 		return time.After(mixPublishDeadline - elapsed)
+	case s.state == stateAcceptVote:
+		return time.After(authorityVoteDeadline - elapsed)
+	case s.state == stateAcceptSignature:
+		return time.After(publishConsensusDeadline - elapsed)
+	default:
+		return time.After(next_epoch)
 	}
 }
 
@@ -192,8 +196,6 @@ func (s *state) fsm() {
 	s.Lock()
 	defer s.Unlock()
 	switch {
-	case s.state == stateConsensed:
-		s.state = stateAcceptDescriptor
 	case s.state == stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded!")
@@ -211,14 +213,14 @@ func (s *state) fsm() {
 			s.tabulate(s.votingEpoch)
 		}
 	case s.state == stateAcceptSignature:
-		s.state = stateAcceptDescriptor
+		s.state = stateConsensusFailed
 		if !s.hasConsensus(s.votingEpoch) {
-			s.log.Debugf("Combing signatures for epoch %v", s.votingEpoch)
+			s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
 			s.combine(s.votingEpoch)
 			if s.hasConsensus(s.votingEpoch) {
 				s.state = stateConsensed
-				s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 				s.votingEpoch = s.votingEpoch + 1
+				s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 			} else {
 				// Failed to make consensus while bootstrapping, try try again.
 				if s.doBootstrap() {
@@ -657,7 +659,6 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	// +1 because s.s.cfg.Authorities does not include our key,
 	// though we have already verified that our signature is valid
 	if err == nil && len(sigMap) + 1 > s.threshold {
-		s.log.Debugf("Yes, Consensus!")
 		return true
 	}
 	if err != nil {
