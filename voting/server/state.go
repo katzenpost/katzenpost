@@ -54,7 +54,7 @@ const (
 	stateAcceptDescriptor    = "accept_desc"
 	stateAcceptVote          = "accept_vote"
 	stateAcceptSignature     = "accept_signature"
-	stateBootstrapped        = "bootstrapped"
+	stateConsensed           = "got_consensus"
 )
 
 var (
@@ -174,7 +174,8 @@ func (s *state) fsmWakeup() <-chan time.Time {
 	}
 
 	switch {
-	case s.state == stateBootstrapped:
+	case s.state == stateConsensed:
+		s.log.Debugf("authority: Consensus reached, next wakeup at %s", next_epoch)
 		return time.After(next_epoch)
 	case s.state == stateAcceptDescriptor:
 		return time.After(authorityVoteDeadline - elapsed)
@@ -191,7 +192,7 @@ func (s *state) fsm() {
 	s.Lock()
 	defer s.Unlock()
 	switch {
-	case s.state == stateBootstrapped:
+	case s.state == stateConsensed:
 		s.state = stateAcceptDescriptor
 	case s.state == stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
@@ -215,6 +216,7 @@ func (s *state) fsm() {
 			s.log.Debugf("Combing signatures for epoch %v", s.votingEpoch)
 			s.combine(s.votingEpoch)
 			if s.hasConsensus(s.votingEpoch) {
+				s.state = stateConsensed
 				s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 				s.votingEpoch = s.votingEpoch + 1
 			} else {
