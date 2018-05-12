@@ -46,7 +46,7 @@ func TestVoteThreshold(t *testing.T) {
 		cfg: cfg,
 	}
 	server.initLogging()
-	state, err := newState(server)
+	_, err = newState(server)
 	assert.NoError(err, "wtf")
 
 	mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
@@ -136,8 +136,9 @@ func TestVoteThreshold(t *testing.T) {
 	}
 
 	// Depends on deprecated method that isn't used elsewhere
-	//for i := range voteThresholdTests {
-	//	t.Logf("test case %d", i)
+	for i := range voteThresholdTests {
+		t.Logf("test case %d skipped, fixme", i)
+	}
 	//	agreed := state.agreedDescriptor(mixIdentityPrivateKey.PublicKey().ByteArray(), voteThresholdTests[i].votes)
 	//	if voteThresholdTests[i].want == nil {
 	//		assert.Nil(agreed)
