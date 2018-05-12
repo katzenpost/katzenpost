@@ -110,6 +110,12 @@ const (
 
 	// VoteNotSigned signifies that the vote payload failed signature verification.
 	VoteNotSigned = 4
+
+	// VoteMalformed signifies that the vote payload was invalid.
+	VoteMalformed = 5
+
+	// VoteAlreadyReceived signifies that the vote from that peer was already received.
+	VoteAlreadyReceived = 6
 )
 
 var errInvalidCommand = errors.New("wire: invalid wire protocol command")
