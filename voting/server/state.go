@@ -54,7 +54,7 @@ const (
 	stateAcceptDescriptor    = "accept_desc"
 	stateAcceptVote          = "accept_vote"
 	stateAcceptSignature     = "accept_signature"
-	stateBootstrap           = "bootstrap"
+	stateBootstrapped        = "bootstrapped"
 )
 
 var (
@@ -174,6 +174,8 @@ func (s *state) fsmWakeup() <-chan time.Time {
 	}
 
 	switch {
+	case s.state == stateBootstrapped:
+		return time.After(next_epoch)
 	case s.state == stateAcceptDescriptor:
 		return time.After(authorityVoteDeadline - elapsed)
 	case s.state == stateAcceptVote:
@@ -189,6 +191,8 @@ func (s *state) fsm() {
 	s.Lock()
 	defer s.Unlock()
 	switch {
+	case s.state == stateBootstrapped:
+		s.state = stateAcceptDescriptor
 	case s.state == stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded!")
@@ -210,13 +214,18 @@ func (s *state) fsm() {
 		if !s.hasConsensus(s.votingEpoch) {
 			s.log.Debugf("Combing signatures for epoch %v", s.votingEpoch)
 			s.combine(s.votingEpoch)
-		}
-		if !s.doBootstrap() { // bootstrapped or not bootstrapping
-			//we probably want to do this:
-			//epoch, _, _ := epochtime.Now()
-			//s.votingEpoch = epoch + 1
-			s.votingEpoch = s.votingEpoch + 1
-			s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
+			if s.hasConsensus(s.votingEpoch) {
+				s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
+				s.votingEpoch = s.votingEpoch + 1
+			} else {
+				// Failed to make consensus while bootstrapping, try try again.
+				if s.doBootstrap() {
+					delete(s.documents, s.votingEpoch)
+					delete(s.descriptors, s.votingEpoch)
+					delete(s.votes, s.votingEpoch)
+					delete(s.descriptors, s.votingEpoch)
+				}
+			}
 		}
 	default:
 		s.state = stateAcceptDescriptor
@@ -1186,7 +1195,7 @@ func newState(s *Server) (*state, error) {
 	if _, ok := st.documents[epoch]; !ok {
 		st.bootstrapEpoch = epoch
 		st.votingEpoch = epoch
-		st.state = stateBootstrap
+		st.state = stateAcceptDescriptor
 	}
 
 	st.Go(st.worker)
