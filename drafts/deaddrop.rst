@@ -274,7 +274,7 @@ Appendix A.2 Informative References
 
 .. [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
              Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
-             May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+             May 2009, <https://cypherpunks.ca/~iang/pubs/Sphinx_Oakland09.pdf>.
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
