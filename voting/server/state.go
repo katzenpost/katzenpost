@@ -311,11 +311,12 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Assign nodes to layers.
 	var topology [][][]byte
-	if d, ok := s.documents[s.votingEpoch-1]; ok {
-		topology = s.generateTopology(nodes, d.doc)
-	} else {
-		topology = s.generateRandomTopology(nodes)
-	}
+	//if d, ok := s.documents[s.votingEpoch-1]; ok {
+	//	topology = s.generateTopology(nodes, d.doc)
+	//} else {
+	//	topology = s.generateRandomTopology(nodes)
+	//}
+	topology = s.generateRandomTopology(nodes)
 
 	// Build the Document.
 	doc := &s11n.Document{
