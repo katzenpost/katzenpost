@@ -1,5 +1,5 @@
 // state.go - Katzenpost non-voting authority server state.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2017, 2018  Yawning Angel, masala and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -622,7 +622,7 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
 	// +1 because s.s.cfg.Authorities does not include our key,
 	// though we have already verified that our signature is valid
-	if err == nil && len(sigMap) + 1 > s.threshold {
+	if err == nil && len(sigMap)+1 > s.threshold {
 		return true
 	}
 	if err != nil {
