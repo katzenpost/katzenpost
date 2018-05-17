@@ -1,5 +1,5 @@
 // wire_handler.go - Katzenpost non-voting authority connection handler.
-// Copyright (C) 2018  Yawning Angel.
+// Copyright (C) 2017, 2018  Yawning Angel, masala and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
