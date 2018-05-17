@@ -199,6 +199,7 @@ func (s *state) fsm() {
 	case s.state == stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded!")
+			break
 		} else {
 			if !s.voted(s.votingEpoch) {
 				s.log.Debugf("Voting for epoch %v", s.votingEpoch)
