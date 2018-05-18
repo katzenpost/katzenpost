@@ -64,6 +64,7 @@ const (
 	postDescriptorStatus commandID = 21
 	vote                 commandID = 22
 	voteStatus           commandID = 23
+	getVote              commandID = 24
 
 	// ConsensusOk signifies that the GetConsensus request has completed
 	// successfully.
@@ -116,6 +117,9 @@ const (
 
 	// VoteAlreadyReceived signifies that the vote from that peer was already received.
 	VoteAlreadyReceived = 6
+
+	// VoteNotFound signifies that the vote was not found.
+	VoteNotFound = 7
 )
 
 var errInvalidCommand = errors.New("wire: invalid wire protocol command")
@@ -162,6 +166,35 @@ func getConsensusFromBytes(b []byte) (Command, error) {
 
 	r := new(GetConsensus)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	return r, nil
+}
+
+// GetVote is a de-serialized get_vote command.
+type GetVote struct {
+	Epoch     uint64
+	PublicKey *eddsa.PublicKey
+}
+
+func (v *GetVote) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead)
+	out[0] = byte(getVote)
+	binary.BigEndian.PutUint32(out[2:6], voteOverhead)
+	binary.BigEndian.PutUint64(out[6:14], v.Epoch)
+	out = append(out, v.PublicKey.Bytes()...)
+	return out
+}
+
+func getVoteFromBytes(b []byte) (Command, error) {
+	if len(b) != voteOverhead {
+		return nil, errInvalidCommand
+	}
+	r := new(GetVote)
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	r.PublicKey = new(eddsa.PublicKey)
+	err := r.PublicKey.FromBytes(b[8:40])
+	if err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
@@ -540,6 +573,8 @@ func FromBytes(b []byte) (Command, error) {
 		return postDescriptorFromBytes(b)
 	case postDescriptorStatus:
 		return postDescriptorStatusFromBytes(b)
+	case getVote:
+		return getVoteFromBytes(b)
 	case vote:
 		return voteFromBytes(b)
 	case voteStatus:

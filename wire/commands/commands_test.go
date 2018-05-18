@@ -234,6 +234,21 @@ func TestPostDescriptorStatus(t *testing.T) {
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
 
+func TestGetVote(t *testing.T) {
+	require := require.New(t)
+	alice, err := eddsa.NewKeypair(rand.Reader)
+
+	cmd := &GetVote{
+		Epoch:     123,
+		PublicKey: alice.PublicKey(),
+	}
+	b := cmd.ToBytes()
+	require.Equal(voteOverhead+cmdOverhead, len(b), "GetVote: ToBytes() length")
+	c, err := FromBytes(b)
+	require.NoError(err, "GetVote: FromBytes() failed")
+	require.IsType(cmd, c, "GetVote: FromBytes() invalid type")
+}
+
 func TestVote(t *testing.T) {
 	require := require.New(t)
 
