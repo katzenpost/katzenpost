@@ -130,6 +130,7 @@ type state struct {
 
 	votingEpoch uint64
 	threshold   int
+	dissenters  int
 	state       string
 }
 
@@ -542,6 +543,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			if desc, err := s11n.VerifyAndParseDescriptor([]byte(rawDesc), epoch); err == nil {
 				nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
 			}
+		} else if len(votes) >= s.dissenters {
+			return nil, nil, errors.New("Consensus failure!")
 		}
 	}
 	for bs, votes := range mixParams {
@@ -552,7 +555,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 				sortNodesByPublicKey(nodes)
 				return nodes, params, nil
 			}
+		} else if len(votes) >= s.dissenters {
+			return nil, nil, errors.New("Consensus failure!")
 		}
+
 	}
 	return nil, nil, errors.New("Consensus failure!")
 }
@@ -1119,6 +1125,8 @@ func newState(s *Server) (*state, error) {
 	st.log = s.logBackend.GetLogger("state")
 	st.updateCh = make(chan interface{}, 1) // Buffered!
 	st.threshold = len(st.s.cfg.Authorities)/2 + 1
+	// how many invalid signatures from other peers before breaking consensus
+	st.dissenters = len(st.s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
