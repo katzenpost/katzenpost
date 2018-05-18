@@ -861,7 +861,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 				return &resp
 			}
 			index, sig, payload, err := signed.VerifyMulti(*vote.PublicKey.InternalPtr())
-			if err != nil {
+			if err != nil || index != 0 {
 				s.log.Errorf("onVoteUpload signature parse failure: %s", err)
 				resp.ErrorCode = commands.VoteNotSigned
 				return &resp
