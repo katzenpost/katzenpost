@@ -96,6 +96,13 @@ type Debug struct {
 	// GenerateOnly halts and cleans up right after long term
 	// key generation.
 	GenerateOnly bool
+
+	// PollingInterval is the interval in seconds that will be used to
+	// poll the receive queue.  By default this is 30 seconds.  Reducing
+	// the value too far WILL result in uneccesary Provider load, and
+	// increasing the value too far WILL adversely affect large message
+	// transmit performance.
+	PollingInterval int
 }
 
 // NonvotingAuthority is a non-voting authority configuration.
