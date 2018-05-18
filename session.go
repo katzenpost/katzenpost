@@ -18,15 +18,17 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/katzenpost/client/internal/authority"
 	"github.com/katzenpost/client/internal/pkiclient"
 	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
@@ -40,6 +42,7 @@ import (
 type Session struct {
 	worker.Worker
 
+	pkiClient       pki.Client
 	minclient       *minclient.Client
 	authority       *authority.Authority
 	log             *logging.Logger
@@ -53,7 +56,15 @@ type Session struct {
 func (c *Client) NewSession() (*Session, error) {
 	var err error
 	session := new(Session)
+
+	// create a pkiclient for our own client lookups
 	proxyCfg := c.cfg.UpstreamProxyConfig()
+	session.pkiClient, err = c.cfg.NonvotingAuthority.New(c.logBackend, proxyCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// create a pkiclient for minclient's use
 	pkiClient, err := c.cfg.NonvotingAuthority.New(c.logBackend, proxyCfg)
 	if err != nil {
 		return nil, err
@@ -117,15 +128,23 @@ func (s *Session) Send(recipient, provider string, message []byte) (*[block.Mess
 // on the destination provider or returns an error
 func (s *Session) SendUnreliable(recipient, provider string, message []byte) error {
 	s.log.Debugf("SendUnreliable")
-	messageID := [block.MessageIDLength]byte{}
-	_, err := rand.Reader.Read(messageID[:])
-	if err != nil {
-		return err
-	}
 	if len(message) > coreconstants.UserForwardPayloadLength {
 		return errors.New("failure: SendUnreliable message payload exceeds maximum.")
 	}
 	return s.minclient.SendUnreliableCiphertext(recipient, provider, message)
+}
+
+// GetService returns a randomly selected service
+// matching the specified service name
+func (s *Session) GetService(serviceName string) (*ServiceDescriptor, error) {
+	epoch, _, _ := epochtime.Now()
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second) // XXX
+	doc, _, err := s.pkiClient.Get(ctx, epoch)
+	if err != nil {
+		return nil, err
+	}
+	serviceDescriptors := FindServices(serviceName, doc)
+	return &serviceDescriptors[rand.Intn(len(serviceDescriptors))], nil
 }
 
 // OnConnection will be called by the minclient api
