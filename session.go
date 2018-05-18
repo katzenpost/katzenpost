@@ -20,11 +20,15 @@ package client
 import (
 	"errors"
 	"fmt"
+	"time"
 
+	"github.com/katzenpost/client/internal/authority"
+	"github.com/katzenpost/client/internal/pkiclient"
 	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
@@ -49,28 +53,33 @@ type Session struct {
 func (c *Client) NewSession() (*Session, error) {
 	var err error
 	session := new(Session)
+	proxyCfg := c.cfg.UpstreamProxyConfig()
+	pkiClient, err := c.cfg.NonvotingAuthority.New(c.logBackend, proxyCfg)
+	if err != nil {
+		return nil, err
+	}
+	pkiCacheClient := pkiclient.New(pkiClient)
 
 	// Configure and bring up the minclient instance.
-	clientCfg = &minclient.ClientConfig{
+	clientCfg := &minclient.ClientConfig{
 		User:                c.cfg.Account.User,
 		Provider:            c.cfg.Account.Provider,
 		ProviderKeyPin:      c.cfg.Account.ProviderKeyPin,
 		LinkKey:             c.cfg.Account.LinkKey,
 		LogBackend:          c.logBackend,
-		PKIClient:           nil, // Set later.
+		PKIClient:           pkiCacheClient,
 		OnConnFn:            session.onConnection,
 		OnMessageFn:         session.onMessage,
 		OnACKFn:             session.onACK,
 		OnDocumentFn:        session.onDocument,
-		DialContextFn:       pCfg.ToDialContext(id),
-		MessagePollInterval: time.Duration(a.s.cfg.Debug.PollingInterval) * time.Second,
+		DialContextFn:       proxyCfg.ToDialContext("nonvoting:" + c.cfg.NonvotingAuthority.PublicKey.String()),
+		MessagePollInterval: time.Duration(c.cfg.Debug.PollingInterval) * time.Second,
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
-	a.authority = c.cfg.Authority()
-
+	c.authority = authority.NewStore(c.logBackend, proxyCfg)
 	session.connected = make(chan bool, 0)
-	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", cfg.User, cfg.Provider))
+	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", c.cfg.Account.User, c.cfg.Account.Provider))
 	session.minclient, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
@@ -140,4 +149,8 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
 	s.log.Debugf("OnACK")
 	return nil
+}
+
+func (s *Session) onDocument(doc *pki.Document) {
+	s.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
 }
