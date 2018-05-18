@@ -500,6 +500,7 @@ The structures of these command are defined as follows:
       enum {
          vote(22),
          vote_status(23),
+         get_vote(24),
       } Command;
 
    The structures of these commands are defined as follows:
@@ -539,9 +540,14 @@ of the PKI document.
 .. code::
 
       enum {
-         vote_ok(0),          /* None error condition. */
-         vote_too_early(1),   /* The Authority should try again later. */
-         vote_too_late(2),    /* This round of voting was missed. */
+         vote_ok(0),               /* None error condition. */
+         vote_too_early(1),        /* The Authority should try again later. */
+         vote_too_late(2),         /* This round of voting was missed. */
+         vote_not_authorized(3),   /* The voter's key is not white-listed */
+         vote_not_signed(4),       /* The vote signature verification failed */
+         vote_malformed(5),        /* The vote payload was invalid */
+         vote_already_received(6), /* The vote was already received */
+         vote_not_found(7),        /* The vote was not found */
       }
 
 The epoch_number field of the vote struct is compared with the
@@ -549,8 +555,17 @@ epoch that is currently being voted on. vote_too_early and
 vote_too_late are replied back to the voter to report that their
 vote was not accepted.
 
-5.3 Retreival of Consensus
+5.2.3 The get_vote Command
 --------------------------
+
+   The ``get_vote`` command is used to request a PKI document (vote) from a peer
+   Authority. The epoch field contains the epoch from which to request the
+   vote, and the public_key field contains the public identity key of the
+   Authority of the requested vote. A successful query is responded to with a
+   vote command, and queries that fail are responded to with a vote_status
+   command with error_code vote_not_found(7).
+
+5.3 Retrieval of Consensus
 
    Providers in the Katzenpost mix network system [KATZMIXNET]_ may cache
    validated network consensus files and serve them to clients over
