@@ -566,6 +566,7 @@ vote was not accepted.
    command with error_code vote_not_found(7).
 
 5.3 Retrieval of Consensus
+--------------------------
 
    Providers in the Katzenpost mix network system [KATZMIXNET]_ may cache
    validated network consensus files and serve them to clients over
