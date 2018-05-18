@@ -634,6 +634,8 @@ vote was not accepted.
 7. Future Work
 ==============
 
+   * byzantine fault tolerance
+
    * PQ crypto signatures for all PKI documents: mix descriptors and
      directories. [SPHINCS256]_ could be used, we already have a golang
      implementation: https://github.com/Yawning/sphincs256/
