@@ -28,9 +28,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
-	"github.com/katzenpost/client/internal/authority"
 	"github.com/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/core/crypto/ecdh"
+	//"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
@@ -145,12 +144,6 @@ type Account struct {
 
 	// ProviderKeyPin is the optional pinned provider signing key.
 	ProviderKeyPin *eddsa.PublicKey
-
-	// Authority is the authority configuration used by this Account.
-	Authority string
-
-	// LinkKey is the Provider authentication key used by this Account.
-	LinkKey *ecdh.PrivateKey `toml:"-"`
 }
 
 func (accCfg *Account) fixup(cfg *Config) error {
@@ -186,7 +179,7 @@ func (accCfg *Account) validate(cfg *Config) error {
 	return nil
 }
 
-// UpstreamProxy is the mailproxy outgoing connection proxy configuration.
+// UpstreamProxy is the outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// Type is the proxy type (Eg: "none"," socks5").
 	Type string
@@ -222,21 +215,13 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level mail proxy configuration.
 type Config struct {
-	Proxy         *Proxy
-	Logging       *Logging
-	UpstreamProxy *UpstreamProxy
-	Debug         *Debug
-
+	Proxy              *Proxy
+	Logging            *Logging
+	UpstreamProxy      *UpstreamProxy
+	Debug              *Debug
 	NonvotingAuthority *NonvotingAuthority
 	Account            *Account
-
-	authority     authority.Factory
-	upstreamProxy *proxy.Config
-}
-
-// AuthorityMap returns the authority.Factory
-func (cfg *Config) Authority() authority.Factory {
-	return cfg.authority
+	upstreamProxy      *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for
@@ -305,11 +290,9 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
-
 	if forceGenOnly {
 		cfg.Debug.GenerateOnly = true
 	}
-
 	return cfg, nil
 }
 
