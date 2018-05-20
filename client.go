@@ -22,26 +22,31 @@ import (
 	"sync"
 
 	"github.com/katzenpost/client/config"
-	"github.com/katzenpost/client/internal/authority"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
-	"gopkg.in/eapache/channels.v1"
+	"github.com/katzenpost/minclient"
 	"gopkg.in/op/go-logging.v1"
 )
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
 	worker.Worker
+
 	cfg *config.Config
+
+	linkKey         *ecdh.PrivateKey
+	pkiClient       pki.Client
+	minclient       *minclient.Client
+	connected       chan bool
+	identityPrivKey *ecdh.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	authority *authority.Store
-
 	fatalErrCh chan error
-	eventCh    channels.Channel
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 }
@@ -57,7 +62,7 @@ func (c *Client) initLogging() error {
 	var err error
 	c.logBackend, err = log.New(f, c.cfg.Logging.Level, c.cfg.Logging.Disable)
 	if err == nil {
-		c.log = c.logBackend.GetLogger("mailproxy")
+		c.log = c.logBackend.GetLogger("katzenpost/client")
 	}
 	return err
 }
@@ -75,9 +80,8 @@ func (c *Client) Wait() {
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
 
-	if c.authority != nil {
-		c.authority.Reset()
-		c.authority = nil
+	if c.minclient != nil {
+		c.minclient.Shutdown()
 	}
 
 	c.Halt()
@@ -120,16 +124,5 @@ func New(cfg *config.Config) (*Client, error) {
 		c.log.Warningf("Shutting down due to error: %v", err)
 		c.Shutdown()
 	}()
-
-	var err error
-
-	// Bring the authority cache online.
-	c.authority = authority.NewStore(c.logBackend, c.cfg.UpstreamProxyConfig())
-	if err = c.authority.Set("authority", c.cfg.Authority()); err != nil {
-		c.log.Errorf("Failed to add authority to store: %v", err)
-		return nil, err
-	}
-	c.log.Debug("Added authority.")
-
 	return c, nil
 }

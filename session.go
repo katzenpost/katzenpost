@@ -21,96 +21,80 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
+	mrand "math/rand"
+	"path/filepath"
 	"time"
 
-	"github.com/katzenpost/client/internal/authority"
 	"github.com/katzenpost/client/internal/pkiclient"
 	coreconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
 	"github.com/katzenpost/minclient/block"
-	"gopkg.in/op/go-logging.v1"
 )
-
-// Session holds the client session
-type Session struct {
-	worker.Worker
-
-	pkiClient       pki.Client
-	minclient       *minclient.Client
-	authority       *authority.Authority
-	log             *logging.Logger
-	logBackend      *log.Backend
-	connected       chan bool
-	identityPrivKey *ecdh.PrivateKey
-}
 
 // NewSession stablishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-func (c *Client) NewSession() (*Session, error) {
+func (c *Client) NewSession() error {
 	var err error
-	session := new(Session)
 
 	// create a pkiclient for our own client lookups
 	proxyCfg := c.cfg.UpstreamProxyConfig()
-	session.pkiClient, err = c.cfg.NonvotingAuthority.New(c.logBackend, proxyCfg)
+	c.pkiClient, err = c.cfg.NonvotingAuthority.New(c.logBackend, proxyCfg)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// create a pkiclient for minclient's use
 	pkiClient, err := c.cfg.NonvotingAuthority.New(c.logBackend, proxyCfg)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	pkiCacheClient := pkiclient.New(pkiClient)
+
+	id := fmt.Sprintf("%s@%s", c.cfg.Account.User, c.cfg.Account.Provider)
+	basePath := filepath.Join(c.cfg.Proxy.DataDir, id)
+	linkPriv := filepath.Join(basePath, "link.private.pem")
+	linkPub := filepath.Join(basePath, "link.public.pem")
+	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
+		return err
+	}
 
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
 		User:                c.cfg.Account.User,
 		Provider:            c.cfg.Account.Provider,
 		ProviderKeyPin:      c.cfg.Account.ProviderKeyPin,
-		LinkKey:             c.cfg.Account.LinkKey,
+		LinkKey:             c.linkKey,
 		LogBackend:          c.logBackend,
 		PKIClient:           pkiCacheClient,
-		OnConnFn:            session.onConnection,
-		OnMessageFn:         session.onMessage,
-		OnACKFn:             session.onACK,
-		OnDocumentFn:        session.onDocument,
+		OnConnFn:            c.onConnection,
+		OnMessageFn:         c.onMessage,
+		OnACKFn:             c.onACK,
+		OnDocumentFn:        c.onDocument,
 		DialContextFn:       proxyCfg.ToDialContext("nonvoting:" + c.cfg.NonvotingAuthority.PublicKey.String()),
-		MessagePollInterval: time.Duration(c.cfg.Debug.PollingInterval) * time.Second,
-		EnableTimeSync:      false, // Be explicit about it.
+		MessagePollInterval: time.Duration(c.cfg.Debug.PollingInterval) * time.Second, // XXX
+		EnableTimeSync:      false,                                                    // Be explicit about it.
 	}
 
-	c.authority = authority.NewStore(c.logBackend, proxyCfg)
-	session.connected = make(chan bool, 0)
-	session.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_session", c.cfg.Account.User, c.cfg.Account.Provider))
-	session.minclient, err = minclient.New(clientCfg)
+	//c.authority = authority.NewStore(c.logBackend, proxyCfg)
+	c.connected = make(chan bool, 0)
+	c.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_c", c.cfg.Account.User, c.cfg.Account.Provider))
+	c.minclient, err = minclient.New(clientCfg)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	err = session.waitForConnection()
-	if err != nil {
-		return nil, err
-	}
-	return session, nil
-}
-
-// Shutdown the session
-func (s *Session) Shutdown() {
-	s.minclient.Shutdown()
+	err = c.waitForConnection()
+	return err
 }
 
 // waitForConnection blocks until the client is
 // connected to the Provider
-func (s *Session) waitForConnection() error {
-	isConnected := <-s.connected
+func (c *Client) waitForConnection() error {
+	isConnected := <-c.connected
 	if !isConnected {
 		return errors.New("status is not connected even with status change")
 	}
@@ -119,57 +103,63 @@ func (s *Session) waitForConnection() error {
 
 // Send reliably delivers the message to the recipient's queue
 // on the destination provider or returns an error
-func (s *Session) Send(recipient, provider string, message []byte) (*[block.MessageIDLength]byte, error) {
-	s.log.Debugf("Send")
+func (c *Client) Send(recipient, provider string, message []byte) (*[block.MessageIDLength]byte, error) {
+	c.log.Debugf("Send")
 	return nil, errors.New("failure: Send is not yet implemented")
 }
 
 // SendUnreliable unreliably sends a message to the recipient's queue
 // on the destination provider or returns an error
-func (s *Session) SendUnreliable(recipient, provider string, message []byte) error {
-	s.log.Debugf("SendUnreliable")
+func (c *Client) SendUnreliable(recipient, provider string, message []byte) error {
+	c.log.Debugf("SendUnreliable")
+
+	// Ensure the request message is under the maximum for a single
+	// packet, and pad out the message so that it is the correct size.
 	if len(message) > coreconstants.UserForwardPayloadLength {
 		return errors.New("failure: SendUnreliable message payload exceeds maximum.")
 	}
-	return s.minclient.SendUnreliableCiphertext(recipient, provider, message)
+	payload := make([]byte, coreconstants.UserForwardPayloadLength)
+	copy(payload, message)
+
+	return c.minclient.SendUnreliableCiphertext(recipient, provider, payload)
 }
 
 // GetService returns a randomly selected service
 // matching the specified service name
-func (s *Session) GetService(serviceName string) (*ServiceDescriptor, error) {
+func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
 	epoch, _, _ := epochtime.Now()
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second) // XXX
-	doc, _, err := s.pkiClient.Get(ctx, epoch)
+	doc, _, err := c.pkiClient.Get(ctx, epoch)
 	if err != nil {
 		return nil, err
 	}
 	serviceDescriptors := FindServices(serviceName, doc)
-	return &serviceDescriptors[rand.Intn(len(serviceDescriptors))], nil
+	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
 }
 
 // OnConnection will be called by the minclient api
 // upon connecting to the Provider
-func (s *Session) onConnection(err error) {
-	s.log.Debugf("OnConnection")
+func (c *Client) onConnection(err error) {
+	c.log.Debugf("OnConnection")
 	if err == nil {
-		s.connected <- true
+		c.connected <- true
 	}
 }
 
 // OnMessage will be called by the minclient api
 // upon receiving a message
-func (s *Session) onMessage(ciphertextBlock []byte) error {
-	s.log.Debugf("OnMessage")
+func (c *Client) onMessage(ciphertextBlock []byte) error {
+	c.log.Debugf("OnMessage")
 	return nil
 }
 
 // OnACK is called by the minclient api whe
 // we receive an ACK message
-func (s *Session) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
-	s.log.Debugf("OnACK")
+func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
+	c.log.Debugf("OnACK")
 	return nil
 }
 
-func (s *Session) onDocument(doc *pki.Document) {
-	s.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
+func (c *Client) onDocument(doc *pki.Document) {
+	c.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
 }

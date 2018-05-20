@@ -212,5 +212,5 @@ func init() {
 	binary.BigEndian.PutUint64(buf[0:], uint64(os.Getpid()))
 	binary.BigEndian.PutUint64(buf[8:], uint64(time.Now().Unix()))
 	sum := sha512.Sum512_256(buf[:])
-	torSocks5ProcessIsolation = "katzenpost/mailproxy:" + hex.EncodeToString(sum[:8]) + ":"
+	torSocks5ProcessIsolation = "katzenpost/client:" + hex.EncodeToString(sum[:8]) + ":"
 }
