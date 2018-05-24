@@ -1196,7 +1196,7 @@ Appendix A.2 Informative References
 
 .. [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
                Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
-               May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+               May 2009, <https://cypherpunks.ca/~iang/pubs/Sphinx_Oakland09.pdf>.
 
 .. [COMPULS05] Danezis, G., Clulow, J., "Compulsion Resistant Anonymous Communications",
                Proceedings of Information Hiding Workshop, June 2005,
