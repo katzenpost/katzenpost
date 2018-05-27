@@ -74,7 +74,7 @@ How are mix networks different from Tor?
    desired traffic analysis resistant properties.
 
    There are also many adversarial model differences between Tor and
-   mix networks.  For example, Tor can be easily be deanonymized by
+   mix networks.  For example, Tor can be easily deanonymized by
    statistical correlation attacks by a sufficiently global adversary
    whereas mixnets are not immediately vulnerable to these kinds of
    attacks if they correctly use mix strategies and decoy traffic.
