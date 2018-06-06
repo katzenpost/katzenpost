@@ -556,7 +556,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 				return nodes, params, nil
 			}
 		} else if len(votes) >= s.dissenters {
-			return nil, nil, errors.New("Consensus failure!")
+			return nil, nil, errors.New("Consensus partition?!")
 		}
 
 	}
