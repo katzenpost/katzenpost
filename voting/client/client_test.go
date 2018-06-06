@@ -239,6 +239,9 @@ type mockDialer struct {
 
 func newMockDialer(logBackend *log.Backend) *mockDialer {
 	d := new(mockDialer)
+	d.Lock()
+	defer d.Unlock()
+
 	d.netMap = make(map[string]*conn)
 
 	d.log = logBackend.GetLogger("mockDialer: ")
@@ -247,23 +250,30 @@ func newMockDialer(logBackend *log.Backend) *mockDialer {
 
 func (d *mockDialer) dial(ctx context.Context, network string, address string) (net.Conn, error) {
 	d.Lock()
-	defer d.Unlock()
 	defer func() {
+		d.Lock()
+		defer d.Unlock()
 		close(d.netMap[address].dialCh)
 	}()
+	defer d.Unlock()
 	d.log.Debug("MOCK DIAL %s", address)
 	return d.netMap[address].clientConn, nil
 }
 
 func (d *mockDialer) waitUntilDialed(address string) {
+	d.Lock()
 	if _, ok := d.netMap[address]; !ok {
 		d.log.Errorf("address %s not found in mockDialer netMap", address)
+		d.Unlock()
 		return
 	}
-	<-d.netMap[address].dialCh
+	dc := d.netMap[address].dialCh
+	d.Unlock()
+	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey, wg *sync.WaitGroup) {
+	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
 		serverConn: serverConn,
@@ -271,6 +281,8 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey,
 		dialCh:     make(chan interface{}, 0),
 		signingKey: identityPrivateKey,
 	}
+	d.Unlock()
+	wg.Done()
 
 	d.waitUntilDialed(address)
 	cfg := &wire.SessionConfig{
@@ -285,7 +297,9 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey,
 		return
 	}
 	defer session.Close()
+	d.Lock()
 	err = session.Initialize(d.netMap[address].serverConn)
+	d.Unlock()
 	if err != nil {
 		d.log.Errorf("mockServer session Initialize failure: %s", err)
 		return
@@ -345,12 +359,15 @@ func TestClient(t *testing.T) {
 	require.NoError(err)
 	dialer := newMockDialer(logBackend)
 	peers := []*config.AuthorityPeer{}
+	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
-		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey)
+		wg.Add(1)
+		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, &wg)
 	}
+	wg.Wait()
 	cfg := &Config{
 		LogBackend:    logBackend,
 		Authorities:   peers,
