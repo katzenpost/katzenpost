@@ -406,6 +406,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	if err != nil {
 		return err
 	}
+    defer conn.Close()
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
 		AdditionalData:    []byte(""),
@@ -417,7 +418,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 		return err
 	}
 	defer session.Close()
-	//defer conn.Close()
+
 	if err = session.Initialize(conn); err != nil {
 		return err
 	}
