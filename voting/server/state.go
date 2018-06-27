@@ -505,8 +505,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			break
 		}
 		params := &config.Parameters{
-			MixLambda: vote.MixLambda, MixMaxDelay: vote.MixMaxDelay,
-			SendLambda: vote.SendLambda, SendShift: vote.SendShift,
+			MixLambda: vote.MixLambda,
+			MixMaxDelay: vote.MixMaxDelay,
+			SendLambda: vote.SendLambda,
+			SendShift: vote.SendShift,
 			SendMaxInterval: vote.SendMaxInterval,
 		}
 		b := bytes.Buffer{}
