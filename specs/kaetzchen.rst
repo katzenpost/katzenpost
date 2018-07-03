@@ -1,30 +1,22 @@
 Katzenpost Provider-side Autoresponder Extension
-Yawning Angel
-Kali Kaneko
-David Stainton
+************************************************
 
-Abstract
+| Yawning Angel
+| Kali Kaneko
+| David Stainton
+
+Version 0
+
+.. rubric:: Abstract
 
    This document describes extensions to the core Katzenpost protocol
    to support Provider-side autoresponders.
 
-Table of Contents
 
-   1. Introduction
-      1.1 Conventions Used in This Document
-      1.2 Terminology
-   2. Extension Overview
-   3. Agent Requirements
-      3.1 Client to Agent message format
-   4. PKI Extensions
-   5. Anonymity Considerations
-   6. Security Considerations
-   7. Acknowledgments
-   Appendix A. References
-      Appendix A.1 Normative References
-      Appendix A.2 Informative References
+.. contents:: :local:
 
 1. Introduction
+===============
 
    This interface is meant to provide support for various autoresponder
    agents ("Kaetzchen") that run on Katzenpost provider instances, thus
@@ -34,25 +26,28 @@ Table of Contents
    loop-back responder for the purpose of cover traffic.
 
 1.1 Conventions Used in This Document
+-------------------------------------
 
    The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
    "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
    document are to be interpreted as described in [RFC2119].
 
 1.2. Terminology
+----------------
 
-   * SURB - "single use reply block"; SURBs are used to achieve
+   ``SURB`` - "single use reply block"; SURBs are used to achieve
      recipient anonymity, that is to say, SURBs function as a
      cryptographic delivery token that you can give to another
      client entity so that they can send you a message without
      them knowing your identity or location on the network. See
      [SPHINXSPEC] and [SPHINX].
 
-   * BlockSphinxPlaintext - The payload structure which is
+   ``BlockSphinxPlaintext`` - The payload structure which is
      encapsulated by the Sphinx body. It is described in [KATZMIXE2E],
      section "4. Client and Provider processing of received packets".
 
 2. Extension Overview
+=====================
 
    Each Kaetzchen agent will register as a potential recipient on its
    Provider.  When the Provider receives a forward packet destined for
@@ -61,8 +56,7 @@ Table of Contents
    act on the packet and optionally reply utilizing the SURB.
 
 3. Agent Requirements
-
-   [ XXX: TODO
+=====================
 
      * Each agent operation MUST be idempotent.
 
@@ -80,12 +74,12 @@ Table of Contents
      * The first byte of the agent's response payload MUST be 0x01 to
        allow clients to easily differentiate between SURB-ACKs and
        agent responses.
-   ]
 
 3.1 Mix Message Formats
+-----------------------
 
-   Messages from clients to Kaetzchen use the following payload
-   format in the forward Sphinx packet:
+Messages from clients to Kaetzchen use the following payload
+format in the forward Sphinx packet::
 
      struct {
        uint8_t flags;
@@ -99,12 +93,13 @@ Table of Contents
        opaque plaintext[];
      } KaetzchenMessage;
 
-   The plaintext component of a KaetzchenMessage MUST be padded by
+
+   The plaintext component of a ``KaetzchenMessage`` MUST be padded by
    appending '0x00' bytes to make the final total size of a
-   KaetzchenMessage equal to that of a BlockSphinxPlaintext.
+   ``KaetzchenMessage`` equal to that of a ``BlockSphinxPlaintext``.
 
    Messages (replies) from the  Kaetzchen to client use the following
-   payload format in the SURB generated packet:
+   payload format in the SURB generated packet::
 
      struct {
        uint8_t payload_type; /* Set to 0x01 */
@@ -112,11 +107,12 @@ Table of Contents
        opaque plaintext[];
      } KaetzchenReply;
 
-   The plaintext component of a KaetzchenReply MUST be padded by
+   The plaintext component of a ``KaetzchenReply`` MUST be padded by
    appending '0x00' bytes to make the final total size of a
-   KaetzchenReply equal to that of a BlockSphinxPlaintext.
+   ``KaetzchenReply`` equal to that of a ``BlockSphinxPlaintext``.
 
 4. PKI Extensions
+=================
 
    Each provider SHOULD publish the list of publicly accessible
    Kaetzchen agent endpoints in its MixDescriptor, along with
@@ -134,18 +130,22 @@ Table of Contents
    which the Kaetzchen agent can be reached, as a key value pair where the
    key is `endpoint`, and the value is the provider side endpoint identifier.
 
-   { "kaetzchen":
-       { "keyserver" : {
-             "endpoint": "+keyserver",
-             "version" : 1 } },
-       { "discard" : {
-             "endpoint": "+discard", } },
-       { "loop" : {
-             "endpoint": "+loopback",
-             "restrictedToUsers": true } },
-   }
+   ::
+   
+      { "kaetzchen":
+        { "keyserver" : {
+               "endpoint": "+keyserver",
+               "version" : 1 } },
+         { "discard" : {
+               "endpoint": "+discard", } },
+         { "loop" : {
+               "endpoint": "+loopback",
+               "restrictedToUsers": true } },
+      }
+
 
 5. Anonymity Considerations
+===========================
 
    In the event that the mix keys for the entire return path are
    compromised, it is possible for adversaries to unwrap the SURB
@@ -156,6 +156,7 @@ Table of Contents
    consideration.
 
 6. Security Considerations
+==========================
 
    It is possible to use this mechanism to flood a victim with unwanted
    traffic by constructing a request with a SURB destined for the target.
@@ -169,37 +170,41 @@ Table of Contents
    packet format and parameterization.
 
 7. Acknowledgments
+==================
 
    The inspiration for this extension comes primarily from a design
    by Vincent Breitmoser.
 
 Appendix A. References
+======================
 
 Appendix A.1 Normative References
+---------------------------------
 
-   [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+.. [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
                Requirement Levels", BCP 14, RFC 2119,
                DOI 10.17487/RFC2119, March 1997,
                <http://www.rfc-editor.org/info/rfc2119>.
 
-   [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+.. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
 
-   [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+.. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
 
-   [RFC5322]  Resnick, P., Ed., "Internet Message Format", RFC 5322,
+.. [RFC5322]  Resnick, P., Ed., "Internet Message Format", RFC 5322,
               DOI 10.17487/RFC5322, October 2008,
               <https://www.rfc-editor.org/info/rfc5322>.
 
 Appendix A.2 Informative References
+-----------------------------------
 
-   [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
+.. [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
              Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
              May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
 
-   [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
+.. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
