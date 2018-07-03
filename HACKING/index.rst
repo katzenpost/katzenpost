@@ -116,3 +116,56 @@ should become familiar with before making a contribution. Besides the
 composite Worker type mentioned above, it's important that the server
 side not have any unbounded resource consumption such as spawning new
 go routines.
+
+
+Testing Katzenpost with Kimchi
+------------------------------
+
+Our tools repository contains a Kimchi our integration test tool
+for Katzenpost mix clients, servers and PKI Directory Authority:
+
+* https://github.com/katzenpost/tools/tree/master/kimchi
+
+Currently Kimchi does not utilize a configuration file. You may need
+to make minor code changes to Kimchi in order for it to test your new
+code.  Kimchi does not test any code in the daemons repo. Instead it
+provides an alternate main function which spawns many goroutines to
+run each component of the Katzenpost system.
+
+
+Making a code contribution
+--------------------------
+
+0. Meet the Katzenpost developers
+
+   Chat with the Katzenpost developers on irc: #katzenpost on the OFTC
+   network or reach out to us on our mailing list:
+   https://lists.mixnetworks.org/listinfo/katzenpost
+
+   It is a good idea to discuss your code change with us before
+   investing your time in writing the code.
+
+1. Write a specification document
+
+   If your code change is complex or requires us to change any of our
+   protocols you will need to first propose a draft specification
+   document. You can do this by forking our docs repository, creating
+   a new git branch with your specification document and then
+   submitting a pull-request.
+
+2. Document your feature addition
+
+   Open a ticket to document your feature addition or code change using
+   the repository's issue tracker.
+
+3. Testing your code
+
+   Your code should have unit tests. However you should also test your code
+   using our kimchi tool.
+
+4. Request code review
+
+   Finally you can submit a pull-request for your code changes or
+   additions. We will review your code. There may be several rounds
+   of code reviews until the code is of sufficient quality to be
+   merged.
