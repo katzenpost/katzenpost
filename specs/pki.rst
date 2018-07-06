@@ -298,6 +298,61 @@ Version 0
    examines it for new descriptors and includes any valid descriptors
    in its view of the network.
 
+3.2.1 Voting Wire Protocol Commands
+
+   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used
+   by Authorities to exchange votes. We define additional wire
+   protocol commands for sending votes:
+
+      enum {
+         vote(22),
+         vote_status(23),
+      } Command;
+
+   The structures of these commands are defined as follows:
+
+      struct {
+          uint64_t epoch_number;
+          opaque public_key[ED25519_KEY_LENGTH];
+          opaque payload[];
+      } VoteCommand;
+
+      struct {
+         uint8 error_code;
+      } VoteStatusCommand;
+
+3.2.2 The vote Command
+
+   The get_consensus command is used to send a PKI document to a peer
+   Authority during the voting period of the PKI schedule.
+
+   The payload field contains the signed and serialized PKI document
+   representing the sending Authority's vote. The public_key field
+   contains the public identity key of the sending Authority which the
+   receiving Authority can use to verify the signature of the payload.
+   The epoch_number field is used by the receiving party to quickly
+   check the epoch for the vote before deserializing the payload.
+
+   // TODO: each authority must include its commit value for the
+   // shared random computation in this phase along with its signed vote.
+
+3.2.3 The vote_status Command
+
+   The vote_status command is used to reply to a vote command. The
+   error_code field indicates if there was a failure in the receiving
+   of the PKI document.
+
+      enum {
+         vote_ok(0),          /* None error condition. */
+         vote_too_early(1),   /* The Authority should try again later. */
+         vote_too_late(2),    /* This round of voting was missed. */
+      }
+
+   The epoch_number field of the vote struct is compared with the
+   epoch that is currently being voted on. vote_too_early and
+   vote_too_late are replied back to the voter to report that their
+   vote was not accepted.
+
 3.3 Vote Tabulation for Consensus Computation
 ---------------------------------------------
 
@@ -355,6 +410,14 @@ Version 0
    If there is disagreement about the consensus directory, each
    authority collects signatures from only the servers which it agrees
    with about the final consensus.
+
+   // TODO: in this phase, the authority must also disclose the reveal value
+   // of its portion of the shared random value computation.
+   // these values are then hashed together to produce a shared random value
+   // which is included in the consensus and then signed.
+
+   // TODO: consider exchanging peers votes amongst authorities (or hashes thereof) to
+   // ensure that an authority has distributed one and only unique vote amongst its peers.
 
 3.5 Publication
 ---------------
