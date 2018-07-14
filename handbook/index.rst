@@ -469,7 +469,7 @@ changes during run-time. An example configuration looks like this::
 Provider section
 ````````````````
 
-The Provider secton specifies the Provider configuration.
+The Provider section specifies the Provider configuration.
 This section of the configuration has sensible defaults for
 every field and can therefore be omitted unless you wish
 to deviate from the defaults.
