@@ -66,9 +66,9 @@ of this repository.
 
 3. Build the binaries::
 
-     cd authority/nonvoting; go build
-     cd server; go build
-     cd mailproxy; go build
+     (cd authority/nonvoting; go build)
+     (cd server; go build)
+     (cd mailproxy; go build)
 
 
 The Katzenpost Configuration File Format
