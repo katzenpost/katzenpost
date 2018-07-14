@@ -61,6 +61,48 @@ executable programs:
 * pykatzen-auth - Optional Katzenpost server authentication module in python.
 
 
+development workflow
+--------------------
+
+You may choose to NOT use go dependency vendoring. In that case you can
+simply manage all the dependency git repos yourself. You can check out all
+our git repos yourself and you can also use "go get" to retrieve transitive
+dependencies.
+
+Here's how to use our dependency vendoring system with a development workflow:
+
+0. Acquire a recent version of dep: https://github.com/golang/dep
+
+1. Clone the Katzenpost daemons repository::
+
+     mkdir $GOPATH/github.com/katzenpost
+     git clone https://github.com/katzenpost/daemons.git
+
+2. Checkout the latest master branch::
+
+     cd $GOPATH/github.com/katzenpost/daemons
+     git checkout master
+
+3. Edit the Gopkg.toml in the daemons repo and
+   replace version lines that look like this::
+
+     version = "v0.0.1"
+
+   with::
+
+     branch = "master"
+
+4. Fetch the Katzenpost vendored dependencies::
+
+     dep ensure
+
+5. Build the binaries::
+
+     (cd authority/nonvoting; go build)
+     (cd server; go build)
+     (cd mailproxy; go build)
+
+
 client and server internals
 ---------------------------
 
