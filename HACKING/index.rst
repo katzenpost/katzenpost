@@ -9,7 +9,7 @@ git and some kind of Unix operating system environment.
 Overview of our git repositories
 --------------------------------
 
-The following two repositories contain code that compiles to
+The first two repositories contain code that compiles to
 executable programs:
 
 * tools - Tools are programs that we use for testing and debugging.
@@ -83,7 +83,7 @@ server internals
 ----------------
 
 The Katzenpost server is essentially a software based router and as
-such it utilizes three active queue management algorithms (AQM). These
+such it utilizes three active queue management algorithms (AQMs). These
 queues are called the ingress queue, the mix strategy queue and the
 egress queue. We utilize a computational model called SEDA or Staged
 Even Driven Architecture where these three queues are pipelined together.
@@ -118,18 +118,26 @@ side not have any unbounded resource consumption such as spawning new
 go routines.
 
 
-Testing Katzenpost with Kimchi
-------------------------------
+Exercising Katzenpost with Kimchi
+---------------------------------
 
-Our tools repository contains a Kimchi our integration test tool
+Kimchi is NOT a replacement for writing unit tests!
+All new code submitions MUST have unit tests.
+
+Our tools repository contains Kimchi, our integration test tool
 for Katzenpost mix clients, servers and PKI Directory Authority:
 
 * https://github.com/katzenpost/tools/tree/master/kimchi
 
+Kimchi does not actually perform any tests per se. However it can be
+used to exercise your code in order to determine if it works
+correctly. Using Kimchi is supposed to be easier than hand configuring
+many instances of the "server".
+
 Currently Kimchi does not utilize a configuration file. You may need
 to make minor code changes to Kimchi in order for it to test your new
-code.  Kimchi does not test any code in the daemons repo. Instead it
-provides an alternate main function which spawns many goroutines to
+code. Kimchi does not run any code in the daemons repo. Instead it
+provides alternate main functions which spawns many goroutines to
 run each component of the Katzenpost system.
 
 
@@ -160,8 +168,8 @@ Making a code contribution
 
 3. Testing your code
 
-   Your code should have unit tests. However you should also test your code
-   using our kimchi tool.
+   Your code should have unit tests. However you may wish to gain
+   extra confidence in your code addition by using our kimchi tool.
 
 4. Request code review
 
