@@ -65,9 +65,8 @@ development workflow
 --------------------
 
 You may choose to NOT use go dependency vendoring. In that case you can
-simply manage all the dependency git repos yourself. You can check out all
-our git repos yourself and you can also use "go get" to retrieve transitive
-dependencies.
+simply check out all our git repos yourself and you can also use "go get"
+to retrieve transitive dependencies.
 
 Here's how to use our dependency vendoring system with a development workflow:
 
@@ -107,7 +106,7 @@ client and server internals
 ---------------------------
 
 Katzenpost is NOT crash-only software. Everything has a proper
-shutdown code path unlike many beginner golang examples on the
+shutdown code path unlike many golang examples on the
 Internet. Struct types which act as worker goroutines MUST be a
 composite struct type with the Worker type which is defined in our
 "core" repository here:
@@ -118,24 +117,24 @@ Correctly implementing a composite Worker type means that your
 code uses the Worker's Go method to spawn new goroutines and will
 halt it's runtime loop upon receiving from the channel returned
 by the Worker's HaltCh method. There are plenty of examples of this
-in our code which you can learn from.
+in our code.
 
 
 server internals
 ----------------
 
 The Katzenpost server is essentially a software based router and as
-such it utilizes three active queue management algorithms (AQMs). These
-queues are called the ingress queue, the mix strategy queue and the
-egress queue. We utilize a computational model called SEDA or Staged
-Even Driven Architecture where these three queues are pipelined together.
+such it utilizes three active queue management algorithms
+(AQMs). These queues are called the ingress queue, the mix strategy
+queue and the egress queue. We utilize a computational model called
+SEDA or Staged Even Driven Architecture where these three queues are
+pipelined together.
 
-In the SEDA computational model there are several processing stages
-which are pipelined. At each stage there is a thread pool of
-workers which perform the computation for that stage. Between each of
-these stages is an AQM which can drop work tasks and can have dynamic
-load shedding properties so that performance degrades gracefully with
-respect to increased work load.
+At each stage of the pipeline there is a thread pool of workers which
+perform the computation for that stage. Between each of these stages
+is an AQM which can drop work tasks and can have dynamic load shedding
+properties so that performance degrades gracefully with respect to
+increased work load.
 
 If you'd like to learn more about the SEDA computation model we
 recommend reading:
@@ -154,10 +153,9 @@ queue. To learn more about the Poisson mix strategy you should read:
   https://www.freehaven.net/anonbib/cache/stop-and-go.pdf
 
 The Katzenpost server repository has several coding themes which you
-should become familiar with before making a contribution. Besides the
-composite Worker type mentioned above, it's important that the server
-side not have any unbounded resource consumption such as spawning new
-go routines.
+should become familiar with before making a contribution. The server
+must not have any unbounded resource consumption such as spawning new
+go routines for example.
 
 
 Exercising Katzenpost with Kimchi
