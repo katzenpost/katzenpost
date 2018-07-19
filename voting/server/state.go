@@ -672,11 +672,11 @@ func (s *state) isTabulated(epoch uint64) bool {
 	return false
 }
 
-func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
+func (s *state) computeSRV(epoch uint64) []byte {
 
 	type Reveal struct {
 		PublicKey [eddsa.PublicKeySize]byte
-		Digest [32]byte
+		Digest []byte
 	}
 
 	reveals := make([]Reveal, 0)
@@ -701,12 +701,12 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 	}
 
 	sort.Slice(reveals, func(i, j int) bool {
-		return string(reveals[i].Value) > string(reveals[j].Value)
+		return string(reveals[i].Digest) > string(reveals[j].Digest)
 	})
 
 	for _, reveal := range reveals {
 		srv.Write(reveal.PublicKey[:])
-		srv.Write(reveal.Value)
+		srv.Write(reveal.Digest)
 	}
 	// XXX: Tor also hashes in the previous srv or 32 bytes of 0x00
 	//      How do we bootstrap a new authority?
@@ -716,8 +716,9 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 	} else {
 		srv.Write(zeros)
 	}
-	srv.Sum(digest[:0])
-	return
+	digest := make([]byte,32)
+	srv.Sum(digest)
+	return digest
 }
 
 func (s *state) tabulate(epoch uint64) {
@@ -993,7 +994,9 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
-	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = reveal.Digest
+	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = reveal.Digest[:]
+	resp.ErrorCode = commands.RevealOk
+	return &resp
 
 }
 
@@ -1308,7 +1311,7 @@ func newState(s *Server) (*state, error) {
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
 	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
 	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature)
-	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][32]byte)
+	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
