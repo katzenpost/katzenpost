@@ -352,12 +352,6 @@ type SRV struct {
 	revealValue []byte
 }
 
-func NewSRV(epoch uint64) *SRV {
-	s := new(SRV)
-	s.Commit(epoch)
-	return s
-}
-
 // TODO: update the s11n document type to contain a slice of srv values
 // compute the actual shared random number from a list of verified srv values
 // figure out how to include the server identity keys because the committed values must be sorted
@@ -369,8 +363,8 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
 	rn := make([]byte, 32)
 	io.ReadFull(rand.Reader, rn)
-	s.commitValue := make([]byte, 40) // epoch + Sum256
-	s.revealValue := make([]byte, 40)
+	s.commitValue = make([]byte, 40) // epoch + Sum256
+	s.revealValue = make([]byte, 40)
 	binary.BigEndian.PutUint64(reveal, epoch)
 	binary.BigEndian.PutUint64(commit, epoch)
 	s.revealValue[8:40] = sha3.Sum256(rn)
@@ -378,12 +372,12 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	return s.commitValue
 }
 
-func (s *SRV) GetCommit() rawCommit []byte {
+func (s *SRV) GetCommit() []byte {
 	return s.commitValue
 }
 
 func (s *SRV) SetCommit (rawCommit []byte) {
-	s.epoch := binary.BigEndian.Uint64(rawCommit)
+	s.epoch = binary.BigEndian.Uint64(rawCommit)
 	copy(s.commitValue, rawCommit, 40)
 	return nil
 }
@@ -413,8 +407,9 @@ func (s *state) vote(epoch uint64) {
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
 	}
+	srv := new(SRV)
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters)
-	s.SRVCommit(epoch, vote)
+	vote.SRVCommit[s.identityPubKey()] = srv.Commit(epoch)
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
@@ -569,6 +564,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	nodes := make([]*descriptor, 0)
 	mixTally := make(map[string][]*s11n.Document)
 	mixParams := make(map[string][]*s11n.Document)
+	srv := new(SRV)
 	for pk, voteDoc := range s.votes[epoch] {
 		// Parse the payload bytes into the s11n.Document
 		// so that we can access the mix descriptors + sigs
@@ -707,7 +703,7 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 		srv.Write(reveal.Value)
 	}
 	// XXX: Tor also hashes in the previous srv or 32 bytes of 0x00
-	if srv, ok := s.documents[s.votingEpoch-1].SRandom {
+	if srv, ok := s.documents[s.votingEpoch-1].SRandom; ok {
 		srv.Write(s.documents[s.votingEpoch-1].SRandom)
 	} else {
 		buf := make([]byte, 32)
