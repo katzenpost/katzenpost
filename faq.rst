@@ -54,7 +54,7 @@ What is Katzenpost?
    SURBs to create the reply channel for the ACKnowledgement messages.
 
    Why is this a big deal? To our knowledge, no other mix network design
-   has attempted to achieve reliability. We beleive that the lack of
+   has attempted to achieve reliability. We believe that the lack of
    reliability has been one of the major obstacles to the adoption
    of mix networks. "Would you want to use a messaging system which
    might not even transport your messages to their destination?"
