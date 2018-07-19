@@ -17,14 +17,12 @@
 package s11n
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 
-	"golang.org/x/crypto/sha3"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/square/go-jose.v2"
@@ -59,6 +57,7 @@ type Document struct {
 	Topology  [][][]byte
 	Providers [][]byte
 	SRVCommit []byte
+	SRValue   []byte
 }
 
 func FromPayload(verificationKey interface{}, payload []byte) (*Document, error) {
@@ -228,14 +227,14 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	// Convert from the wire representation to a Document, and validate
 	// everything.
 	if len(d.SRVCommit) != 40 {
-		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit"
+		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit")
 	}
 
 	// Ensure that the document contains a SRV Commit value, and that
 	// the Epoch prefix corresponds to the current Epoch.
 	srvEpoch := binary.BigEndian.Uint64(d.SRVCommit[0:8])
 	if srvEpoch != d.Epoch {
-		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit"
+		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit")
 
 	}
 	doc := new(pki.Document)

@@ -41,6 +41,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
+	"golang.org/x/crypto/sha3"
 	"gopkg.in/op/go-logging.v1"
 	"gopkg.in/square/go-jose.v2"
 )
@@ -51,6 +52,7 @@ const (
 	publishDeadline          = 3600 * time.Second
 	mixPublishDeadline       = 2 * time.Hour
 	authorityVoteDeadline    = 2*time.Hour + 7*time.Minute + 30*time.Second
+	authorityRevealDeadline  = 2*time.Hour + 10*time.Minute
 	publishConsensusDeadline = 2*time.Hour + 15*time.Minute
 	stateAcceptDescriptor    = "accept_desc"
 	stateAcceptVote          = "accept_vote"
@@ -125,6 +127,7 @@ type state struct {
 	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
 	votes       map[uint64]map[[eddsa.PublicKeySize]byte]*document
+	reveals     map[uint64]map[[eddsa.PublicKeySize]byte][]byte
 	signatures  map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature
 
 	updateCh       chan interface{}
@@ -236,7 +239,7 @@ func (s *state) fsm() {
 				// Failed to make consensus while bootstrapping, try try again.
 				if s.doBootstrap() {
 					delete(s.documents, s.votingEpoch)
-					delete(s.commits, s.votingEpoch)
+					delete(s.reveals, s.votingEpoch)
 					delete(s.descriptors, s.votingEpoch)
 					delete(s.votes, s.votingEpoch)
 					delete(s.descriptors, s.votingEpoch)
@@ -347,7 +350,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 }
 
 type SRV struct {
-	epoch uint64
+	epoch       uint64
 	commitValue []byte
 	revealValue []byte
 }
@@ -376,13 +379,16 @@ func (s *SRV) GetCommit() []byte {
 	return s.commitValue
 }
 
-func (s *SRV) SetCommit (rawCommit []byte) {
+func (s *SRV) SetCommit(rawCommit []byte) {
 	s.epoch = binary.BigEndian.Uint64(rawCommit)
 	copy(s.commitValue, rawCommit, 40)
 	return nil
 }
 
 func (s *SRV) Verify(reveal []byte) bool {
+	if len(reveal) != 40 {
+		return false
+	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
 	allegedCommit := sha3.Sum256(reveal)
 	if epoch == s.epoch && bytes.Equals(s.commitValue, allegedCommit) {
@@ -395,7 +401,7 @@ func (s *SRV) Reveal() []byte {
 	return s.revealValue
 }
 
-func (s* state) checkSRV(epoch uint64, document s11n.Document) bool {
+func (s *state) checkSRV(epoch uint64, document s11n.Document) bool {
 	reveal := document.SRVReveal[s.s.IdentityKey.ByteArray()]
 	reveal = append(reveal, sha3.Sum256(rn))
 	document.SRVCommit[s.s.IdentityKey.ByteArray()] = commit
@@ -477,7 +483,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	if err != nil {
 		return err
 	}
-    defer conn.Close()
+	defer conn.Close()
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
 		AdditionalData:    []byte(""),
@@ -590,10 +596,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			break
 		}
 		params := &config.Parameters{
-			MixLambda: vote.MixLambda,
-			MixMaxDelay: vote.MixMaxDelay,
-			SendLambda: vote.SendLambda,
-			SendShift: vote.SendShift,
+			MixLambda:       vote.MixLambda,
+			MixMaxDelay:     vote.MixMaxDelay,
+			SendLambda:      vote.SendLambda,
+			SendShift:       vote.SendShift,
 			SendMaxInterval: vote.SendMaxInterval,
 		}
 		b := bytes.Buffer{}
@@ -671,7 +677,7 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 
 	type Reveal struct {
 		PublicKey [eddsa.PublicKeySize]byte
-		Value []byte
+		Value     []byte
 	}
 
 	reveals := make([]Reveal)
@@ -698,7 +704,7 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 		return reveals[i].Value > reveals[j].Value
 	})
 
-	for reveal := range reveals{
+	for reveal := range reveals {
 		srv.Write(reveal.PublicKey)
 		srv.Write(reveal.Value)
 	}
@@ -1304,7 +1310,7 @@ func newState(s *Server) (*state, error) {
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
 	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
 	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature)
-	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]]byte][]byte
+	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
