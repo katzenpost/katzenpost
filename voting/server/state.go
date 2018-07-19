@@ -968,11 +968,13 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.log.Error("Reveal received before any votes!?.")
 		resp.ErrorCode = commands.RevealTooSoon
+		return &resp
 	}
 	// haven't received a vote from this peer yet for this epoch
 	if _, ok := s.votes[s.votingEpoch][reveal.PublicKey.ByteArray()]; !ok {
 		s.log.Error("Reveal received before peer's vote?.")
 		resp.ErrorCode = commands.RevealTooSoon
+		return &resp
 	}
 
 	// the first reveal received this round
@@ -983,7 +985,11 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	// already received a reveal for this round
 	if _, ok := s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()]; ok {
 		s.log.Error("Another Reveal received from peer's vote?.")
+		resp.ErrorCode = commands.RevealAlreadyReceived
+		return &resp
+	}
 
+	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = reveal.Value
 
 }
 
