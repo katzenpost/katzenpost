@@ -86,6 +86,8 @@ type Document struct {
 
 	Topology  [][][]byte
 	Providers [][]byte
+	SRVCommit [][]byte
+	SRVReveal [][]byte
 }
 
 func FromPayload(verificationKey interface{}, payload []byte) (*Document, error) {
