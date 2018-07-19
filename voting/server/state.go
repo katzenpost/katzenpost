@@ -22,6 +22,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"path/filepath"
 	"sort"
@@ -333,12 +334,65 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	return doc
 }
 
+type SRV struct {
+	epoch uint64
+	commitValue []byte
+	revealValue []byte
+}
+
+func NewSRV(epoch uint64) *SRV {
+	s := new(SRV)
+	s.epoch = epoch
+	s.Commit()
+	return s
+}
+
+// TODO: update the s11n document type to contain a slice of srv values
+// compute the actual shared random number from a list of verified srv values
+// figure out how to include the server identity keys because the committed values must be sorted
+// what happens if reveals are not broadcast to the rest of authorities?
+
+func (s *SRV) Commit() {
+	// pick a random number
+	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
+	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
+	rn := make([]byte, 32)
+	io.ReadFull(rand.Reader, rn)
+	s.commitValue := make([]byte, 40) // epoch + Sum256
+	s.revealValue := make([]byte, 40)
+	binary.BigEndian.PutUint64(reveal, s.epoch)
+	binary.BigEndian.PutUint64(commit, s.epoch)
+	s.revealValue[8:40] = sha3.Sum256(rn)
+	s.commitValue[8:40] = sha3.Sum256(reveal)
+}
+
+func (s *SRV) Verify(reveal []byte) bool {
+	epoch := binary.BigEndian.Uint64(reveal[0:8])
+	allegedCommit := sha3.Sum256(reveal)
+	if epoch == s.epoch && bytes.Equals(s.commitValue, allegedCommit) {
+		return true
+	}
+	return false
+}
+
+func (s *SRV) Reveal() []byte {
+	return s.revealValue
+}
+
+func (s* state) checkSRV(epoch uint64, document s11n.Document) bool {
+	reveal := document.SRVReveal[s.s.IdentityKey.ByteArray()]
+	reveal = append(reveal, sha3.Sum256(rn))
+	document.SRVCommit[s.s.IdentityKey.ByteArray()] = commit
+	return false
+}
+
 func (s *state) vote(epoch uint64) {
 	descriptors := []*descriptor{}
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
 	}
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters)
+	s.SRVCommit(epoch, vote)
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
