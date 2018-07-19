@@ -676,7 +676,7 @@ func (s *state) computeSRV(epoch uint64) []byte {
 
 	type Reveal struct {
 		PublicKey [eddsa.PublicKeySize]byte
-		Digest []byte
+		Digest    []byte
 	}
 
 	reveals := make([]Reveal, 0)
@@ -716,7 +716,7 @@ func (s *state) computeSRV(epoch uint64) []byte {
 	} else {
 		srv.Write(zeros)
 	}
-	digest := make([]byte,32)
+	digest := make([]byte, 32)
 	srv.Sum(digest)
 	return digest
 }
