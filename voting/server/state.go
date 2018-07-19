@@ -351,8 +351,8 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 type SRV struct {
 	epoch       uint64
-	commitValue []byte
-	revealValue []byte
+	commit []byte
+	reveal []byte
 }
 
 // TODO: update the s11n document type to contain a slice of srv values
@@ -366,23 +366,28 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
 	rn := make([]byte, 32)
 	io.ReadFull(rand.Reader, rn)
-	s.commitValue = make([]byte, 40) // epoch + Sum256
-	s.revealValue = make([]byte, 40)
-	binary.BigEndian.PutUint64(reveal, epoch)
-	binary.BigEndian.PutUint64(commit, epoch)
-	s.revealValue[8:40] = sha3.Sum256(rn)
-	s.commitValue[8:40] = sha3.Sum256(reveal)
-	return s.commitValue
+	s.commit = make([]byte, 8, 40)
+	s.reveal = make([]byte, 8, 40)
+	binary.BigEndian.PutUint64(s.reveal, epoch)
+	binary.BigEndian.PutUint64(s.commit, epoch)
+	reveal := sha3.Sum256(rn)
+	for i:=0; i<len(reveal);i++ {
+		s.reveal[8+i] = reveal[i]
+	}
+	commit := sha3.Sum256(s.reveal)
+	for i:=0; i<len(commit);i++ {
+		s.commit[8+i] = commit[i]
+	}
+	return s.commit
 }
 
 func (s *SRV) GetCommit() []byte {
-	return s.commitValue
+	return s.commit
 }
 
 func (s *SRV) SetCommit(rawCommit []byte) {
 	s.epoch = binary.BigEndian.Uint64(rawCommit)
-	copy(s.commitValue, rawCommit, 40)
-	return nil
+	copy(s.commit, rawCommit)
 }
 
 func (s *SRV) Verify(reveal []byte) bool {
@@ -391,21 +396,14 @@ func (s *SRV) Verify(reveal []byte) bool {
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
 	allegedCommit := sha3.Sum256(reveal)
-	if epoch == s.epoch && bytes.Equals(s.commitValue, allegedCommit) {
+	if epoch == s.epoch && bytes.Equal(s.commit, allegedCommit[:]) {
 		return true
 	}
 	return false
 }
 
 func (s *SRV) Reveal() []byte {
-	return s.revealValue
-}
-
-func (s *state) checkSRV(epoch uint64, document s11n.Document) bool {
-	reveal := document.SRVReveal[s.s.IdentityKey.ByteArray()]
-	reveal = append(reveal, sha3.Sum256(rn))
-	document.SRVCommit[s.s.IdentityKey.ByteArray()] = commit
-	return false
+	return s.reveal
 }
 
 func (s *state) vote(epoch uint64) {
@@ -415,7 +413,7 @@ func (s *state) vote(epoch uint64) {
 	}
 	srv := new(SRV)
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters)
-	vote.SRVCommit[s.identityPubKey()] = srv.Commit(epoch)
+	vote.SRVCommit = srv.Commit(epoch)
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
@@ -576,7 +574,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		// so that we can access the mix descriptors + sigs
 		// The votes have already been validated.
 
-		if _, ok := s.reveals[pk]; !ok {
+		if _, ok := s.reveals[epoch][pk]; !ok {
 			s.log.Errorf("Skipping vote from Authority %v who failed to reveal", pk)
 			continue
 		}
@@ -685,15 +683,16 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
 
-	srv := new(SRV)
+	sr := new(SRV)
 	for pk, vote := range s.votes[epoch] {
-		if _, ok := s.reveals[pk]; !ok {
+		if _, ok := s.reveals[epoch][pk]; !ok {
 			// skip this vote, authority did not reveal
 			continue
 		}
-		srv.SetCommit(vote.SRVCommit)
-		if srv.Verify(s.reveals[epoch][pk]) {
-			reveals = append(reveals, Reveal{pk, vote})
+		sr.SetCommit(vote.SRVCommit)
+		srr := s.reveals[epoch][pk]
+		if sr.Verify(srr) {
+			reveals = append(reveals, Reveal{pk, srr})
 		} else {
 			// XXX: failed to verify , log err?
 			continue
@@ -716,7 +715,6 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 		srv.Write(buf)
 	}
 	srv.Sum(digest[:0])
-	return
 }
 
 func (s *state) tabulate(epoch uint64) {
