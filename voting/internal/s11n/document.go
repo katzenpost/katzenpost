@@ -86,8 +86,7 @@ type Document struct {
 
 	Topology  [][][]byte
 	Providers [][]byte
-	SRVCommit [][]byte
-	SRVReveal [][]byte
+	SRVCommit []byte
 }
 
 func FromPayload(verificationKey interface{}, payload []byte) (*Document, error) {
@@ -256,7 +255,20 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 
 	// Convert from the wire representation to a Document, and validate
 	// everything.
+	if len(d.SRVCommit) != 40 {
+		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit"
+	}
+
+	// Ensure that the document contains a SRV Commit value, and that
+	// the Epoch prefix corresponds to the current Epoch.
+	srvEpoch := binary.BigEndian.Uint64(d.SRVCommit[0:8])
+	if srvEpoch != d.Epoch {
+		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit"
+
+	}
 	doc := new(pki.Document)
+	doc.SRVCommit = make([]byte, 40)
+	copy(d.SRVCommit, doc.SRVCommit)
 	doc.Epoch = d.Epoch
 	doc.MixLambda = d.MixLambda
 	doc.MixMaxDelay = d.MixMaxDelay
