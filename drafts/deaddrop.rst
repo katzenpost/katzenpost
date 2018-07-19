@@ -20,7 +20,7 @@ statistical disclosure attacks also known as intersection attacks.
 
 The dead drop service is implemented as a Provider side
 autoresponder service [KAETZCHEN]_, it provides clients with the
-ability to retreive messages from remote Providers. This
+ability to retrieve messages from remote Providers. This
 unidirectional dead drop scheme should leak less information than a
 bidirectional dead drop. This document does not describe the full
 design of a message system. Instead we merely specify a mixnet dead
@@ -52,7 +52,7 @@ token which was first introduced by the Mixminion design
 2. Overview
 ===========
 
-A client possesing the dead drop address sends a message to a dead
+A client possessing the dead drop address sends a message to a dead
 drop just like a normal Katzenpost message [KATZMIXE2E]_. However
 the receiver of the message uses the dead drop Kaetzchen service to
 retrieve messages by sending one or more SURBs to the dead drop.

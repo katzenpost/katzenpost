@@ -16,7 +16,7 @@ executable programs:
 
 * daemons - The Daemons repo is used to build the Katzenpost
   components such as mix client, mix server and PKI server. This
-  repository has vendored dependencies, however for developement and
+  repository has vendored dependencies, however for development and
   testing we generally do not use vendored dependencies.
 
 * mixnet_uprising - Repository for tracking open tasks for the

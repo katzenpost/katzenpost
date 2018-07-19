@@ -89,7 +89,7 @@ Abstract
    they are essentially a mixnet packet header which is encrypted with
    the routing keys of several mixes and therefore expires when any of
    the mixes rotate their key. In the Katzenpost system this key
-   rotation epoch is every 3 hours. [KATZMIXPKI] It is NOT desireable
+   rotation epoch is every 3 hours. [KATZMIXPKI] It is NOT desirable
    to have long lived mix routing keys because this increases the
    amount of time required to perform a compulsion attack. We conclude
    that SURBs are NOT suitable for establishing a bidirectional

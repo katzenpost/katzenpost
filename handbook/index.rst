@@ -174,7 +174,7 @@ The non-voting authority has the following commandline usage::
 
 The ``-g`` option is used to generate the public and private keys for
 the Directory Authority.  Clients of the PKI will use this public key
-to verify retreived network consensus documents.  However before
+to verify retrieved network consensus documents.  However before
 invoking the authority with this commandline option you MUST provide a
 valid configuration file. This file will specify a data directory
 where these keys will be written.  Normal invocation will omit this
@@ -241,7 +241,7 @@ The logging section controls the logging, for example::
 
 * ``Disable`` is used to disable logging if set to ``true``.
 
-* ``File`` specifies the file to log to. If ommited then stdout is used.
+* ``File`` specifies the file to log to. If omitted then stdout is used.
 
 * ``Debug`` may be set to one of the following:
 
@@ -434,7 +434,7 @@ The Logging section controls the logging, for example::
 
 * ``Disable`` is used to disable logging if set to ``true``.
 
-* ``File`` specifies the file to log to. If ommited then stdout is used.
+* ``File`` specifies the file to log to. If omitted then stdout is used.
 
 * ``Debug`` may be set to one of the following:
 
@@ -614,7 +614,7 @@ user and spool databases, for example::
       Backend = "sql"
 
 This configuration sample demonstrates how to use a Postgres database
-for both the user database and the spool databse. The ``Backend`` parameter
+for both the user database and the spool database. The ``Backend`` parameter
 is set to ``pgx`` which means "use a postgresql database".
 
 * ``DataSourceName`` is the SQL data source name or URI. The format
@@ -814,7 +814,7 @@ The Account section specifies account configuration(s), for example::
 
 * ``Provider`` is the provider identifier used by this account.
 
-* ``ProviderKeyPin`` is the optinal pinned provider signing key in
+* ``ProviderKeyPin`` is the optional pinned provider signing key in
   Base64 or Base16 format.
 
 * ``Authority`` is the authority configuration used by this account.
@@ -836,7 +836,7 @@ for example::
   left empty it will use `management_sock` under the DataDir.
 
 
-Using the mangement interface
+Using the management interface
 -----------------------------
 
 Several mailproxy management commands are supported:

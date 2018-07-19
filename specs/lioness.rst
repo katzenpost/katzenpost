@@ -217,7 +217,7 @@ serve as a stable reference and implementation guide.
 4. Implementation Considerations
 ================================
 
-   When chosing the underlying stream cipher or MAC, implementors
+   When choosing the underlying stream cipher or MAC, implementors
    may wish to consider the initialization overhead such as
    key scheduling, as the performance impact can be non-negligible
    depending on algorithm choice.
@@ -240,7 +240,7 @@ serve as a stable reference and implementation guide.
    same key material is used to encrypt multiple blocks, beyond
    those made in [MPRA11]_.  Conservative users may wish to avoid this
    behavior, use LIONESS as the building block for standard block
-   cipher constructs that take initialization vectors, or incoporate
+   cipher constructs that take initialization vectors, or incorporate
    initialization vectors in the ``H()`` and ``S()`` calls.
 
 6. References

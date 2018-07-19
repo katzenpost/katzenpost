@@ -49,7 +49,7 @@ resistance.
 2. System Overview
 ==================
 
-The Zcash sending wallet MUST be in posession of the cryptographic and
+The Zcash sending wallet MUST be in possession of the cryptographic and
 connection information which gives us the capability to send and
 receive messages on the mix network. The Katzenpost architecture
 [KATZMIXNET]_ describes the PKI as providing a complete network view
