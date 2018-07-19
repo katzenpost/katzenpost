@@ -1,5 +1,5 @@
 // provider.go - Katzenpost server provider backend.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2017  Yawning Angel and David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -29,7 +29,6 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
@@ -63,17 +62,14 @@ type provider struct {
 	userDB userdb.UserDB
 	spool  spool.Spool
 
-	kaetzchen map[[sConstants.RecipientIDLength]byte]kaetzchen.Kaetzchen
+	kaetzchenWorker *kaetzchen.KaetzchenWorker
 }
 
 func (p *provider) Halt() {
 	p.Worker.Halt()
 
 	p.ch.Close()
-	for k, v := range p.kaetzchen {
-		v.Halt()
-		delete(p.kaetzchen, k)
-	}
+	p.kaetzchenWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -116,15 +112,7 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 }
 
 func (p *provider) KaetzchenForPKI() map[string]map[string]interface{} {
-	if len(p.kaetzchen) == 0 {
-		return nil
-	}
-
-	m := make(map[string]map[string]interface{})
-	for _, v := range p.kaetzchen {
-		m[v.Capability()] = v.Parameters()
-	}
-	return m
+	return p.kaetzchenWorker.KaetzchenForPKI()
 }
 
 func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
@@ -195,15 +183,17 @@ func (p *provider) worker() {
 		// user-facing, so omit the recipient-post processing.  If clients
 		// are written under the assumption that Kaetzchen addresses are
 		// normalized, that's their problem.
-		if dstKaetzchen := p.kaetzchen[pkt.Recipient.ID]; dstKaetzchen != nil {
+		if p.kaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
 			// Packet is destined for a Kaetzchen auto-responder agent, and
 			// can't be a SURB-Reply.
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				pkt.Dispose()
 			} else {
-				p.onToKaetzchen(pkt, dstKaetzchen)
+				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// which will take care to dispose of it.
+				p.kaetzchenWorker.OnKaetzchen(pkt)
 			}
-			pkt.Dispose()
 			continue
 		}
 
@@ -250,7 +240,7 @@ func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
 }
 
 func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
-	ct, surb, err := parseForwardPacket(pkt)
+	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 		return
@@ -264,7 +254,7 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {
-		ackPkt, err := newPacketFromSURB(pkt, surb, nil)
+		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
@@ -275,82 +265,6 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 	} else {
 		p.log.Debugf("Stored Message: %v (No SURB)", pkt.ID)
 	}
-}
-
-func (p *provider) onToKaetzchen(pkt *packet.Packet, dst kaetzchen.Kaetzchen) {
-	ct, surb, err := parseForwardPacket(pkt)
-	if err != nil {
-		p.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
-		return
-	}
-
-	// Dispatch the packet to the agent.
-	resp, err := dst.OnRequest(pkt.ID, ct, surb != nil)
-	switch {
-	case err == nil:
-	case err == kaetzchen.ErrNoResponse:
-		p.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
-		return
-	default:
-		p.log.Debugf("Failed to handle Kaetzchen request: %v (%v)", pkt.ID, err)
-		return
-	}
-
-	// Iff there is a SURB, generate a SURB-Reply and schedule.
-	if surb != nil {
-		// Prepend the response header.
-		resp = append([]byte{0x01, 0x00}, resp...)
-
-		respPkt, err := newPacketFromSURB(pkt, surb, resp)
-		if err != nil {
-			p.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
-			return
-		}
-
-		p.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
-		p.glue.Scheduler().OnPacket(respPkt)
-	} else if resp != nil {
-		// This is silly and I'm not sure why anyone will do this, but
-		// there's nothing that can be done at this point, the Kaetzchen
-		// implementation should have caught this.
-		p.log.Debugf("Kaetzchen message: %v (Has reply but no SURB)", pkt.ID)
-	}
-}
-
-func (p *provider) registerKaetzchen(k kaetzchen.Kaetzchen) error {
-	capa := k.Capability()
-
-	params := k.Parameters()
-	if params == nil {
-		return fmt.Errorf("provider: Kaetzchen: '%v' provided no parameters", capa)
-	}
-
-	// Sanitize the endpoint.
-	var ep string
-	if v, ok := params[kaetzchen.ParameterEndpoint]; !ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' provided no endpoint", capa)
-	} else if ep, ok = v.(string); !ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint type: %T", capa, v)
-	} else if epNorm, err := precis.UsernameCaseMapped.String(ep); err != nil {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint: %v", capa, err)
-	} else if epNorm != ep {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not normalized", capa)
-	}
-	rawEp := []byte(ep)
-	if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
-	}
-
-	// Register it in the map by endpoint.
-	var epKey [sConstants.RecipientIDLength]byte
-	copy(epKey[:], rawEp)
-	if _, ok := p.kaetzchen[epKey]; ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' endpoint '%v' already registered", capa, ep)
-	}
-	p.kaetzchen[epKey] = k
-	p.log.Noticef("Registered Kaetzchen: '%v' -> '%v'.", ep, capa)
-
-	return nil
 }
 
 func (p *provider) onAddUser(c *thwack.Conn, l string) error {
@@ -483,102 +397,17 @@ func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, pubKey)
 }
 
-func parseForwardPacket(pkt *packet.Packet) ([]byte, []byte, error) {
-	const (
-		hdrLength    = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
-		flagsPadding = 0
-		flagsSURB    = 1
-		reserved     = 0
-	)
-
-	// Sanity check the forward packet payload length.
-	if len(pkt.Payload) != constants.ForwardPayloadLength {
-		return nil, nil, fmt.Errorf("invalid payload length: %v", len(pkt.Payload))
-	}
-
-	// Parse the payload, which should be a valid BlockSphinxPlaintext.
-	b := pkt.Payload
-	if len(b) < hdrLength {
-		return nil, nil, fmt.Errorf("truncated message block")
-	}
-	if b[1] != reserved {
-		return nil, nil, fmt.Errorf("invalid message reserved: 0x%02x", b[1])
-	}
-	ct := b[hdrLength:]
-	var surb []byte
-	switch b[0] {
-	case flagsPadding:
-	case flagsSURB:
-		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
-	default:
-		return nil, nil, fmt.Errorf("invalid message flags: 0x%02x", b[0])
-	}
-	if len(ct) != constants.UserForwardPayloadLength {
-		return nil, nil, fmt.Errorf("mis-sized user payload: %v", len(ct))
-	}
-
-	return ct, surb, nil
-}
-
-func newPacketFromSURB(pkt *packet.Packet, surb, payload []byte) (*packet.Packet, error) {
-	if !pkt.IsToUser() {
-		return nil, fmt.Errorf("invalid commands to generate a SURB reply")
-	}
-
-	// Pad out payloads to the full packet size.
-	var respPayload [constants.ForwardPayloadLength]byte
-	switch {
-	case len(payload) == 0:
-	case len(payload) > constants.ForwardPayloadLength:
-		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
-	default:
-		copy(respPayload[:], payload)
-	}
-
-	// Build a response packet using a SURB.
-	//
-	// TODO/perf: This is a crypto operation that is paralleizable, and
-	// could be handled by the crypto worker(s), since those are allocated
-	// based on hardware acceleration considerations.  However the forward
-	// packet processing doesn't constantly utilize the AES-NI units due
-	// to the non-AEZ components of a Sphinx Unwrap operation.
-	rawRespPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, respPayload[:])
+// New constructs a new provider instance.
+func New(glue glue.Glue) (glue.Provider, error) {
+	kaetzchenWorker, err := kaetzchen.New(glue)
 	if err != nil {
 		return nil, err
 	}
-
-	// Build the command vector for the SURB-ACK
-	cmds := make([]commands.RoutingCommand, 0, 2)
-
-	nextHopCmd := new(commands.NextNodeHop)
-	copy(nextHopCmd.ID[:], firstHop[:])
-	cmds = append(cmds, nextHopCmd)
-
-	nodeDelayCmd := new(commands.NodeDelay)
-	nodeDelayCmd.Delay = pkt.NodeDelay.Delay
-	cmds = append(cmds, nodeDelayCmd)
-
-	// Assemble the response packet.
-	respPkt, _ := packet.New(rawRespPkt)
-	respPkt.Set(nil, cmds)
-
-	respPkt.RecvAt = pkt.RecvAt
-	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
-	respPkt.MustForward = true
-
-	// XXX: This should probably fudge the delay to account for processing
-	// time.
-
-	return respPkt, nil
-}
-
-// New constructs a new provider instance.
-func New(glue glue.Glue) (glue.Provider, error) {
 	p := &provider{
-		glue:      glue,
-		log:       glue.LogBackend().GetLogger("provider"),
-		ch:        channels.NewInfiniteChannel(),
-		kaetzchen: make(map[[sConstants.RecipientIDLength]byte]kaetzchen.Kaetzchen),
+		glue:            glue,
+		log:             glue.LogBackend().GetLogger("provider"),
+		ch:              channels.NewInfiniteChannel(),
+		kaetzchenWorker: kaetzchenWorker,
 	}
 
 	cfg := glue.Config()
@@ -590,7 +419,6 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		}
 	}()
 
-	var err error
 	if cfg.Provider.SQLDB != nil {
 		if cfg.Provider.UserDB.Backend == config.BackendSQL || cfg.Provider.SpoolDB.Backend == config.BackendSQL {
 			p.sqlDB, err = sqldb.New(glue)
@@ -656,34 +484,6 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue.Management().RegisterCommand(cmdRemoveUser, p.onRemoveUser)
 		glue.Management().RegisterCommand(cmdSetUserIdentity, p.onSetUserIdentity)
 		glue.Management().RegisterCommand(cmdUserIdentity, p.onUserIdentity)
-	}
-
-	// Initialize the Kaetzchen.
-	capaMap := make(map[string]bool)
-	for _, v := range glue.Config().Provider.Kaetzchen {
-		capa := v.Capability
-		if v.Disable {
-			p.log.Noticef("Skipping disabled Kaetzchen: '%v'.", capa)
-			continue
-		}
-
-		ctor, ok := kaetzchen.BuiltInCtors[capa]
-		if !ok {
-			return nil, fmt.Errorf("provider: Kaetzchen: Unsupported capability: '%v'", capa)
-		}
-
-		k, err := ctor(v, glue)
-		if err != nil {
-			return nil, err
-		}
-		if err = p.registerKaetzchen(k); err != nil {
-			return nil, err
-		}
-
-		if capaMap[capa] {
-			return nil, fmt.Errorf("provider: Kaetzchen '%v' registered more than once", capa)
-		}
-		capaMap[capa] = true
 	}
 
 	// Start the workers.

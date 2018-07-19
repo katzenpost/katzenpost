@@ -38,21 +38,23 @@ import (
 )
 
 const (
-	defaultAddress            = ":3219"
-	defaultLogLevel           = "NOTICE"
-	defaultNumProviderWorkers = 1
-	defaultUnwrapDelay        = 10 // 10 ms.
-	defaultSchedulerSlack     = 10 // 10 ms.
-	defaultSchedulerMaxBurst  = 16
-	defaultSendSlack          = 50        // 50 ms.
-	defaultDecoySlack         = 15 * 1000 // 15 sec.
-	defaultConnectTimeout     = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout   = 30 * 1000 // 30 sec.
-	defaultReauthInterval     = 30 * 1000 // 30 sec.
-	defaultProviderDelay      = 500       // 250 ms.
-	defaultUserDB             = "users.db"
-	defaultSpoolDB            = "spool.db"
-	defaultManagementSocket   = "management_sock"
+	defaultAddress             = ":3219"
+	defaultLogLevel            = "NOTICE"
+	defaultNumProviderWorkers  = 1
+	defaultNumKaetzchenWorkers = 3
+	defaultUnwrapDelay         = 10 // 10 ms.
+	defaultSchedulerSlack      = 10 // 10 ms.
+	defaultSchedulerMaxBurst   = 16
+	defaultSendSlack           = 50        // 50 ms.
+	defaultDecoySlack          = 15 * 1000 // 15 sec.
+	defaultConnectTimeout      = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout    = 30 * 1000 // 30 sec.
+	defaultReauthInterval      = 30 * 1000 // 30 sec.
+	defaultProviderDelay       = 500       // 500 ms.
+	defaultKaetzchenDelay      = 750       // 750 ms.
+	defaultUserDB              = "users.db"
+	defaultSpoolDB             = "spool.db"
+	defaultManagementSocket    = "management_sock"
 
 	backendPgx = "pgx"
 
@@ -125,9 +127,13 @@ type Debug struct {
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
 
-	// NumProviderWorkers specifies the number pf worker instances to use for
+	// NumProviderWorkers specifies the number of worker instances to use for
 	// provider specific packet processing.
 	NumProviderWorkers int
+
+	// NumKaetzchenWorkers specifies the number of worker instances to use for
+	// Kaetzchen specific packet processing.
+	NumKaetzchenWorkers int
 
 	// SchedulerExternalMemoryQueue will enable the experimental external
 	// memory queue that is backed by disk.
@@ -149,6 +155,10 @@ type Debug struct {
 	// ProviderDelay is the maximum allowed provider delay due to queueing
 	// in milliseconds.
 	ProviderDelay int
+
+	// KaetzchenDelay is the maximum allowed kaetzchen delay due to queueing
+	// in milliseconds.
+	KaetzchenDelay int
 
 	// SchedulerSlack is the maximum allowed scheduler slack due to queueing
 	// and or processing in milliseconds.
@@ -209,11 +219,17 @@ func (dCfg *Debug) applyDefaults() {
 		// write spool operations being serialized.
 		dCfg.NumProviderWorkers = defaultNumProviderWorkers
 	}
+	if dCfg.NumKaetzchenWorkers <= 0 {
+		dCfg.NumKaetzchenWorkers = defaultNumKaetzchenWorkers
+	}
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
 	}
 	if dCfg.ProviderDelay <= 0 {
 		dCfg.ProviderDelay = defaultProviderDelay
+	}
+	if dCfg.KaetzchenDelay <= 0 {
+		dCfg.KaetzchenDelay = defaultKaetzchenDelay
 	}
 	if dCfg.SchedulerSlack < defaultSchedulerSlack {
 		// TODO/perf: Tune this.
