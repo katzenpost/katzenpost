@@ -244,7 +244,7 @@ guide.
       } SphinxPacket;
 
    * ``header`` - The packet header consists of several components,
-      which convey the information necesary to verify packet integrity
+      which convey the information necessary to verify packet integrity
       and correctly process the packet.
 
    * ``payload`` - The application message data.

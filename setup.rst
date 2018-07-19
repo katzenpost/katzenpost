@@ -78,9 +78,9 @@ Generate the key::
 
     $GOPATH/bin/server -f katzenpost.toml -g
 
-The generated :term:`Mix Identity key` must be added into the Autority configuration file.
+The generated :term:`Mix Identity key` must be added into the Authority configuration file.
 Once the Authority is configured with all of the mix identity keys you can start the
-Autority server and then start all the mixes.
+Authority server and then start all the mixes.
 
 Optional Provider Postgres Setup
 ================================

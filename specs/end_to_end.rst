@@ -315,7 +315,7 @@ Specification [KATZMIXPKI]_.
        ``Noise_X_25519_ChaChaPoly_Blake2b`` is used as the Noise protocol
        name and parameterization for the purpose of Block encryption.
 
-       Let the encrypted and authenticated Block be refered to as the
+       Let the encrypted and authenticated Block be referred to as the
        following::
 
           struct {
