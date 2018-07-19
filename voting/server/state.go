@@ -350,7 +350,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 }
 
 type SRV struct {
-	epoch       uint64
+	epoch  uint64
 	commit []byte
 	reveal []byte
 }
@@ -371,11 +371,11 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
 	reveal := sha3.Sum256(rn)
-	for i:=0; i<len(reveal);i++ {
+	for i := 0; i < len(reveal); i++ {
 		s.reveal[8+i] = reveal[i]
 	}
 	commit := sha3.Sum256(s.reveal)
-	for i:=0; i<len(commit);i++ {
+	for i := 0; i < len(commit); i++ {
 		s.commit[8+i] = commit[i]
 	}
 	return s.commit
