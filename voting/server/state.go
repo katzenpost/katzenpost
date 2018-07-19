@@ -311,7 +311,7 @@ func (s *state) voted(epoch uint64) bool {
 	return false
 }
 
-func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters) *s11n.Document {
+func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters, srv []byte) *s11n.Document {
 	// Carve out the descriptors between providers and nodes.
 	var providers [][]byte
 	var nodes []*descriptor
@@ -333,7 +333,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	//} else {
 	//	topology = s.generateRandomTopology(nodes)
 	//}
-	topology = s.generateRandomTopology(nodes)
+	topology = s.generateRandomTopology(nodes, srv)
 
 	// Build the Document.
 	doc := &s11n.Document{
@@ -412,8 +412,9 @@ func (s *state) vote(epoch uint64) {
 		descriptors = append(descriptors, desc)
 	}
 	srv := new(SRV)
-	vote := s.getDocument(descriptors, s.s.cfg.Parameters)
-	vote.SRVCommit = srv.Commit(epoch)
+	commit := srv.Commit(epoch)
+	vote := s.getDocument(descriptors, s.s.cfg.Parameters, commit)
+	vote.SRVCommit = commit
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
@@ -580,7 +581,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		}
 
 		// Epoch is already verified to maatch the SRVCommit
-		srv.SetCommit(voteDoc.SRVCommit)
+		srv.SetCommit(voteDoc.doc.SRVCommit)
 		if !srv.Verify(s.reveals[epoch][pk]) {
 			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal!", pk)
 			continue
@@ -675,10 +676,10 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 
 	type Reveal struct {
 		PublicKey [eddsa.PublicKeySize]byte
-		Value     []byte
+		Digest [32]byte
 	}
 
-	reveals := make([]Reveal)
+	reveals := make([]Reveal, 0)
 	srv := sha3.New256()
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
@@ -689,7 +690,7 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 			// skip this vote, authority did not reveal
 			continue
 		}
-		sr.SetCommit(vote.SRVCommit)
+		sr.SetCommit(vote.doc.SRVCommit)
 		srr := s.reveals[epoch][pk]
 		if sr.Verify(srr) {
 			reveals = append(reveals, Reveal{pk, srr})
@@ -700,28 +701,29 @@ func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
 	}
 
 	sort.Slice(reveals, func(i, j int) bool {
-		return reveals[i].Value > reveals[j].Value
+		return string(reveals[i].Value) > string(reveals[j].Value)
 	})
 
-	for reveal := range reveals {
-		srv.Write(reveal.PublicKey)
+	for _, reveal := range reveals {
+		srv.Write(reveal.PublicKey[:])
 		srv.Write(reveal.Value)
 	}
 	// XXX: Tor also hashes in the previous srv or 32 bytes of 0x00
-	if srv, ok := s.documents[s.votingEpoch-1].SRandom; ok {
-		srv.Write(s.documents[s.votingEpoch-1].SRandom)
+	//      How do we bootstrap a new authority?
+	zeros := make([]byte, 32)
+	if vot, ok := s.documents[s.votingEpoch-1]; ok {
+		srv.Write(vot.doc.SRValue)
 	} else {
-		buf := make([]byte, 32)
-		srv.Write(buf)
+		srv.Write(zeros)
 	}
 	srv.Sum(digest[:0])
+	return
 }
 
 func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// generate the shared random value
-	// XXX: exclude authorities that did not commit and reveal
-	doc.SRandom = s.computeSRV(epoch)
+	srv := s.computeSRV(epoch)
 
 	// include all the valid mixes from votes, including our own.
 	mixes, params, err := s.tallyVotes(epoch)
@@ -730,7 +732,7 @@ func (s *state) tabulate(epoch uint64) {
 		return
 	}
 	s.log.Debug("Mixes tallied, now making a document")
-	doc := s.getDocument(mixes, params)
+	doc := s.getDocument(mixes, params, srv[:])
 
 	// Serialize and sign the Document.
 	// XXX s.signatures[epoch] might already be populated
@@ -857,16 +859,14 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 	return topology
 }
 
-func (s *state) generateRandomTopology(nodes []*descriptor) [][][]byte {
+func (s *state) generateRandomTopology(nodes []*descriptor, srv []byte) [][][]byte {
 	s.log.Debugf("Generating random mix topology.")
 
 	// If there is no node history in the form of a previous consensus,
 	// then the simplest thing to do is to randomly assign nodes to the
 	// various layers.
 
-	// TODO: shared random
-	key := [32]byte{0x42}
-	rng, err := NewDeterministicRandReader(key[:])
+	rng, err := NewDeterministicRandReader(srv)
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
 		s.s.fatalErrCh <- err
@@ -949,19 +949,19 @@ func (s *state) dupVote(vote commands.Vote) bool {
 func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	s.Lock()
 	defer s.Unlock()
-	resp := commands.RevealStatus
+	resp := commands.RevealStatus{}
 	if reveal.Epoch < s.votingEpoch {
-		s.log.Errorf("Received Reveal too early: %d < %d", vote.Epoch, s.votingEpoch)
+		s.log.Errorf("Received Reveal too early: %d < %d", reveal.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
 	if reveal.Epoch > s.votingEpoch {
-		s.log.Errorf("Received Vote too late: %d > %d", vote.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.VoteTooLate
+		s.log.Errorf("Received Vote too late: %d > %d", reveal.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.RevealTooLate
 		return &resp
 	}
 	// if already revealed
-	_, ok := s.authorizedAuthorities[vote.PublicKey.ByteArray()]
+	_, ok := s.authorizedAuthorities[reveal.PublicKey.ByteArray()]
 	if !ok {
 		s.log.Error("Voter not white-listed.")
 		resp.ErrorCode = commands.RevealNotAuthorized
@@ -993,7 +993,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
-	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = reveal.Value
+	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = reveal.Digest
 
 }
 
@@ -1308,7 +1308,7 @@ func newState(s *Server) (*state, error) {
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
 	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
 	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature)
-	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
+	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][32]byte)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
