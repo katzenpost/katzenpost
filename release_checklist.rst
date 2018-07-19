@@ -15,7 +15,7 @@ Building Katzenpost has the following prerequisites:
 Building
 --------
 
-* ensure local copies of all respositories are on master, up-to-date
+* ensure local copies of all repositories are on master, up-to-date
 
 .. code:: bash
 
@@ -91,7 +91,7 @@ Building
    go test -v ./...
 
 
-* bumb version tags for each repository
+* bump version tags for each repository
   (replace v0.0.1 with bumped version)
 
 

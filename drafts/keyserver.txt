@@ -184,7 +184,7 @@ Abstract
 7. Future Work
 
    * Key rotation implies key refreshes. How is this to be made in a
-     way that doens't leak info?
+     way that doesn't leak info?
 
 Appendix A. References
 

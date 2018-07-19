@@ -57,7 +57,7 @@ Abstract
    clients have previously selected a Panda server to use. Panda
    servers act like a bulletin board system, however a particular
    Posting is only visible to clients that present the associated 32
-   byte Tag indentifier.
+   byte Tag identifier.
 
    The two Panda clients use the Panda server to make two binary blob
    exchanges. Panda clients uses their binary blobs to facilitate an

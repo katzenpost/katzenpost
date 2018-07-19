@@ -89,7 +89,7 @@ Glossary
         protocol control messages and retransmissions. This concept
         comes from the packet switching network literature and is not
         generally associated with mix networks. There is no other way
-        to acheive network reliability other than an ARQ scheme
+        to achieve network reliability other than an ARQ scheme
         although there are many hybrid ARQ schemes for radio
         communication that use forward error correction for the
         purpose of performing retransmissions less frequently.
