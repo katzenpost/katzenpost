@@ -19,6 +19,7 @@ package s11n
 import (
 	"errors"
 	"fmt"
+	"io"
 
 	"golang.org/x/crypto/sha3"
 	"github.com/katzenpost/authority/voting/server/config"
@@ -38,35 +39,6 @@ var (
 
 	jsonHandle *codec.JsonHandle
 )
-
-type SRV struct {
-	Epoch uint64
-	commits[][]byte
-	reveals[][]byte
-}
-
-// XXX: callable only once or raise error
-// returns the encoded commit value
-func (s* SRV) Commit(epoch uint64) ([]byte, error){
-	rn := make([]byte, 32)
-	io.ReadFull(rand.Reader, b)
-	reveal := []byte(epoch)
-	reveal = append(reveal, sha3.Sum256(rn)
-        commit := []byte(epoch)
-	commit = append(commit, sha3.Sum256(reveal))
-	hash = sha3.Sum256(rn)
-	return errors.New("Failure")
-}
-
-// Returns the reveal value or an error
-func (s* SRV) Reveal(epoch uint65) ([]byte, error){
-	return errors.New("Failure")
-}
-
-// Returns the computed group shared random value or an error.
-func (s* SRV) Value() ([]byte, error) {
-	return errors.New("Failure")
-}
 
 // Document is the on-the-wire representation of a PKI Document.
 type Document struct {
