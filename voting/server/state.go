@@ -54,6 +54,7 @@ const (
 	publishConsensusDeadline = 2*time.Hour + 15*time.Minute
 	stateAcceptDescriptor    = "accept_desc"
 	stateAcceptVote          = "accept_vote"
+	stateAcceptReveal        = "accept_reveal"
 	stateAcceptSignature     = "accept_signature"
 	stateConsensed           = "got_consensus"
 	stateConsensusFailed     = "failed_consensus"
@@ -187,6 +188,8 @@ func (s *state) fsmWakeup() <-chan time.Time {
 		return time.After(mixPublishDeadline - elapsed)
 	case s.state == stateAcceptVote:
 		return time.After(authorityVoteDeadline - elapsed)
+	case s.state == stateAcceptReveal:
+		return time.After(authorityRevealDeadline - elapsed)
 	case s.state == stateAcceptSignature:
 		return time.After(publishConsensusDeadline - elapsed)
 	default:
@@ -210,11 +213,16 @@ func (s *state) fsm() {
 		}
 		s.state = stateAcceptVote
 	case s.state == stateAcceptVote:
-		s.state = stateAcceptSignature
+		s.state = stateAcceptReveal
+	case s.state == stateAcceptReveal:
+		// we have collect all of the reveal values
+		// now we compute the shared random value
+		// and produce a consensus from votes
 		if !s.isTabulated(s.votingEpoch) {
 			s.log.Debugf("Tabulating for epoch %v", s.votingEpoch)
 			s.tabulate(s.votingEpoch)
 		}
+		s.state = stateAcceptSignature
 	case s.state == stateAcceptSignature:
 		s.state = stateConsensusFailed
 		if !s.hasConsensus(s.votingEpoch) {
@@ -228,6 +236,7 @@ func (s *state) fsm() {
 				// Failed to make consensus while bootstrapping, try try again.
 				if s.doBootstrap() {
 					delete(s.documents, s.votingEpoch)
+					delete(s.commits, s.votingEpoch)
 					delete(s.descriptors, s.votingEpoch)
 					delete(s.votes, s.votingEpoch)
 					delete(s.descriptors, s.votingEpoch)
@@ -313,6 +322,9 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Assign nodes to layers.
 	var topology [][][]byte
+	// XXX: should a bootstrapping authority fetch prior consensus' Topology from another authority?
+
+	// TODO: We could re-use a prior topology for a configurable number of epochs
 	//if d, ok := s.documents[s.votingEpoch-1]; ok {
 	//	topology = s.generateTopology(nodes, d.doc)
 	//} else {
@@ -342,8 +354,7 @@ type SRV struct {
 
 func NewSRV(epoch uint64) *SRV {
 	s := new(SRV)
-	s.epoch = epoch
-	s.Commit()
+	s.Commit(epoch)
 	return s
 }
 
@@ -352,7 +363,7 @@ func NewSRV(epoch uint64) *SRV {
 // figure out how to include the server identity keys because the committed values must be sorted
 // what happens if reveals are not broadcast to the rest of authorities?
 
-func (s *SRV) Commit() {
+func (s *SRV) Commit(epoch uint64) []byte {
 	// pick a random number
 	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
@@ -360,10 +371,21 @@ func (s *SRV) Commit() {
 	io.ReadFull(rand.Reader, rn)
 	s.commitValue := make([]byte, 40) // epoch + Sum256
 	s.revealValue := make([]byte, 40)
-	binary.BigEndian.PutUint64(reveal, s.epoch)
-	binary.BigEndian.PutUint64(commit, s.epoch)
+	binary.BigEndian.PutUint64(reveal, epoch)
+	binary.BigEndian.PutUint64(commit, epoch)
 	s.revealValue[8:40] = sha3.Sum256(rn)
 	s.commitValue[8:40] = sha3.Sum256(reveal)
+	return s.commitValue
+}
+
+func (s *SRV) GetCommit() rawCommit []byte {
+	return s.commitValue
+}
+
+func (s *SRV) SetCommit (rawCommit []byte) {
+	s.epoch := binary.BigEndian.Uint64(rawCommit)
+	copy(s.commitValue, rawCommit, 40)
+	return nil
 }
 
 func (s *SRV) Verify(reveal []byte) bool {
@@ -551,6 +573,19 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		// Parse the payload bytes into the s11n.Document
 		// so that we can access the mix descriptors + sigs
 		// The votes have already been validated.
+
+		if _, ok := s.reveals[pk]; !ok {
+			s.log.Errorf("Skipping vote from Authority %v who failed to reveal", pk)
+			continue
+		}
+
+		// Epoch is already verified to maatch the SRVCommit
+		srv.SetCommit(voteDoc.SRVCommit)
+		if !srv.Verify(s.reveals[epoch][pk]) {
+			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal!", pk)
+			continue
+		}
+
 		ed := new(eddsa.PublicKey)
 		ed.FromBytes(pk[:])
 		vote, err := s11n.FromPayload(*ed.InternalPtr(), voteDoc.raw)
@@ -636,8 +671,58 @@ func (s *state) isTabulated(epoch uint64) bool {
 	return false
 }
 
+func (s *state) computeSRV(epoch uint64) (digest [32]byte) {
+
+	type Reveal struct {
+		PublicKey [eddsa.PublicKeySize]byte
+		Value []byte
+	}
+
+	reveals := make([]Reveal)
+	srv := sha3.New256()
+	srv.Write([]byte("shared-random"))
+	srv.Write(epochToBytes(epoch))
+
+	srv := new(SRV)
+	for pk, vote := range s.votes[epoch] {
+		if _, ok := s.reveals[pk]; !ok {
+			// skip this vote, authority did not reveal
+			continue
+		}
+		srv.SetCommit(vote.SRVCommit)
+		if srv.Verify(s.reveals[epoch][pk]) {
+			reveals = append(reveals, Reveal{pk, vote})
+		} else {
+			// XXX: failed to verify , log err?
+			continue
+		}
+	}
+
+	sort.Slice(reveals, func(i, j int) bool {
+		return reveals[i].Value > reveals[j].Value
+	})
+
+	for reveal := range reveals{
+		srv.Write(reveal.PublicKey)
+		srv.Write(reveal.Value)
+	}
+	// XXX: Tor also hashes in the previous srv or 32 bytes of 0x00
+	if srv, ok := s.documents[s.votingEpoch-1].SRandom {
+		srv.Write(s.documents[s.votingEpoch-1].SRandom)
+	} else {
+		buf := make([]byte, 32)
+		srv.Write(buf)
+	}
+	srv.Sum(digest[:0])
+	return
+}
+
 func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
+	// generate the shared random value
+	// XXX: exclude authorities that did not commit and reveal
+	doc.SRandom = s.computeSRV(epoch)
+
 	// include all the valid mixes from votes, including our own.
 	mixes, params, err := s.tallyVotes(epoch)
 	if err != nil {
@@ -859,6 +944,51 @@ func (s *state) dupVote(vote commands.Vote) bool {
 		return true
 	}
 	return false
+}
+
+func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
+	s.Lock()
+	defer s.Unlock()
+	resp := commands.RevealStatus
+	if reveal.Epoch < s.votingEpoch {
+		s.log.Errorf("Received Reveal too early: %d < %d", vote.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.RevealTooEarly
+		return &resp
+	}
+	if reveal.Epoch > s.votingEpoch {
+		s.log.Errorf("Received Vote too late: %d > %d", vote.Epoch, s.votingEpoch)
+		resp.ErrorCode = commands.VoteTooLate
+		return &resp
+	}
+	// if already revealed
+	_, ok := s.authorizedAuthorities[vote.PublicKey.ByteArray()]
+	if !ok {
+		s.log.Error("Voter not white-listed.")
+		resp.ErrorCode = commands.RevealNotAuthorized
+		return &resp
+	}
+
+	// haven't received a vote yet for this epoch
+	if _, ok := s.votes[s.votingEpoch]; !ok {
+		s.log.Error("Reveal received before any votes!?.")
+		resp.ErrorCode = commands.RevealTooSoon
+	}
+	// haven't received a vote from this peer yet for this epoch
+	if _, ok := s.votes[s.votingEpoch][reveal.PublicKey.ByteArray()]; !ok {
+		s.log.Error("Reveal received before peer's vote?.")
+		resp.ErrorCode = commands.RevealTooSoon
+	}
+
+	// the first reveal received this round
+	if _, ok := s.reveals[s.votingEpoch]; !ok {
+		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+	}
+
+	// already received a reveal for this round
+	if _, ok := s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()]; ok {
+		s.log.Error("Another Reveal received from peer's vote?.")
+
+
 }
 
 func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
@@ -1172,6 +1302,7 @@ func newState(s *Server) (*state, error) {
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
 	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
 	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]]byte][]byte
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
