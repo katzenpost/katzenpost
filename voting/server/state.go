@@ -364,7 +364,7 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	// pick a random number
 	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
-	rn := make([]byte, 32)
+	rn := make([]byte, 0, 32)
 	io.ReadFull(rand.Reader, rn)
 	s.commit = make([]byte, 8, 40)
 	s.reveal = make([]byte, 8, 40)
@@ -718,7 +718,7 @@ func (s *state) computeSRV(epoch uint64) []byte {
 	} else {
 		srv.Write(zeros)
 	}
-	digest := make([]byte, 32)
+	digest := make([]byte, 0, 32)
 	srv.Sum(digest)
 	return digest
 }
