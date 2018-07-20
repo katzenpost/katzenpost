@@ -789,8 +789,8 @@ func (s *state) computeSRV(epoch uint64) []byte {
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
 
-	sr := new(SRV)
 	for pk, vote := range s.votes[epoch] {
+		sr := new(SRV)
 		if _, ok := s.reveals[epoch][pk]; !ok {
 			// skip this vote, authority did not reveal
 			continue
@@ -821,7 +821,7 @@ func (s *state) computeSRV(epoch uint64) []byte {
 	} else {
 		srv.Write(zeros)
 	}
-	digest := make([]byte, 0, 32)
+	digest := make([]byte, 32)
 	srv.Sum(digest)
 	return digest
 }
@@ -838,7 +838,7 @@ func (s *state) tabulate(epoch uint64) {
 		return
 	}
 	s.log.Debug("Mixes tallied, now making a document")
-	doc := s.getDocument(mixes, params, srv[:])
+	doc := s.getDocument(mixes, params, srv)
 
 	// Serialize and sign the Document.
 	// XXX s.signatures[epoch] might already be populated
