@@ -371,13 +371,15 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
 	reveal := sha3.Sum256(rn)
-	for i := 0; i < len(reveal); i++ {
-		s.reveal[8+i] = reveal[i]
-	}
+	copy(s.reveal[8:], reveal[:])
+	//for i := 0; i < len(reveal); i++ {
+	//	s.reveal[8+i] = reveal[i]
+	//}
 	commit := sha3.Sum256(s.reveal)
-	for i := 0; i < len(commit); i++ {
-		s.commit[8+i] = commit[i]
-	}
+	copy(s.commit[8:], commit[:])
+	//for i := 0; i < len(commit); i++ {
+	//	s.commit[8+i] = commit[i]
+	//}
 	return s.commit
 }
 
