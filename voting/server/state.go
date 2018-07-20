@@ -361,12 +361,14 @@ type SRV struct {
 // figure out how to include the server identity keys because the committed values must be sorted
 // what happens if reveals are not broadcast to the rest of authorities?
 
-func (s *SRV) Commit(epoch uint64) []byte {
+func (s *SRV) Commit(epoch uint64) ([]byte, error) {
 	// pick a random number
 	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
 	rn := make([]byte, 32)
-	if n, err := io.ReadFull(rand.Reader, rn); err != nil || n != 32 {
+	n, err := io.ReadFull(rand.Reader, rn)
+	if err == nil || n != 32 {
+		return nil, err
 	}
 	s.commit = make([]byte, 40)
 	s.reveal = make([]byte, 40)
@@ -376,7 +378,7 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	copy(s.reveal[8:], reveal[:])
 	commit := sha3.Sum256(s.reveal)
 	copy(s.commit[8:], commit[:])
-	return s.commit
+	return s.commit, nil
 }
 
 func (s *SRV) GetCommit() []byte {
@@ -394,7 +396,7 @@ func (s *SRV) Verify(reveal []byte) bool {
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
 	allegedCommit := sha3.Sum256(reveal)
-	if epoch == s.epoch && bytes.Equal(s.commit, allegedCommit[:]) {
+	if epoch == s.epoch && bytes.Equal(s.commit[8:], allegedCommit[:]) {
 		return true
 	}
 	return false
@@ -416,7 +418,10 @@ func (s *state) vote(epoch uint64) {
 		descriptors = append(descriptors, desc)
 	}
 	srv := new(SRV)
-	commit := srv.Commit(epoch)
+	commit, err := srv.Commit(epoch)
+	if err != nil {
+		s.s.fatalErrCh <- err
+	}
 	reveal := srv.Reveal()
 
 	// save our own reveal
