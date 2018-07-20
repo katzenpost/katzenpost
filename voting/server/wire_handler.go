@@ -80,6 +80,11 @@ func (s *Server) onConn(conn net.Conn) {
 	case *commands.VoteStatus:
 		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
 		return
+	case *commands.Reveal:
+		resp = s.onReveal(c)
+	case *commands.RevealStatus:
+		s.log.Error("RevealStatus command is not allowed on Authority wire service listener.")
+		return
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.PostDescriptor:
@@ -106,6 +111,10 @@ func (s *Server) onConn(conn net.Conn) {
 
 func (s *Server) onVote(cmd *commands.Vote) commands.Command {
 	return s.state.onVoteUpload(cmd)
+}
+
+func (s *Server) onReveal(cmd *commands.Reveal) commands.Command {
+	return s.state.onRevealUpload(cmd)
 }
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
