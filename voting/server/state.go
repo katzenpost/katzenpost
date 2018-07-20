@@ -367,9 +367,10 @@ func (s *SRV) Commit(epoch uint64) ([]byte, error) {
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
 	rn := make([]byte, 32)
 	n, err := io.ReadFull(rand.Reader, rn)
-	if err == nil || n != 32 {
+	if err != nil || n != 32 {
 		return nil, err
 	}
+	s.epoch = epoch
 	s.commit = make([]byte, 40)
 	s.reveal = make([]byte, 40)
 	binary.BigEndian.PutUint64(s.reveal, epoch)
@@ -396,8 +397,10 @@ func (s *SRV) Verify(reveal []byte) bool {
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
 	allegedCommit := sha3.Sum256(reveal)
-	if epoch == s.epoch && bytes.Equal(s.commit[8:], allegedCommit[:]) {
-		return true
+	if epoch == s.epoch {
+		if bytes.Equal(s.commit[8:], allegedCommit[:]) {
+			return true
+		}
 	}
 	return false
 }
