@@ -387,8 +387,8 @@ func (s *SRV) GetCommit() []byte {
 }
 
 func (s *SRV) SetCommit(rawCommit []byte) {
-	s.epoch = binary.BigEndian.Uint64(rawCommit)
-	copy(s.commit, rawCommit)
+	s.epoch = binary.BigEndian.Uint64(rawCommit[0:8])
+	s.commit = rawCommit
 }
 
 func (s *SRV) Verify(reveal []byte) bool {
@@ -425,14 +425,13 @@ func (s *state) vote(epoch uint64) {
 	if err != nil {
 		s.s.fatalErrCh <- err
 	}
-	reveal := srv.Reveal()
 
 	// save our own reveal
 	if _, ok := s.reveals[epoch]; !ok {
 		s.reveals[epoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
 	}
 	if _, ok := s.reveals[epoch][s.identityPubKey()]; !ok {
-		s.reveals[epoch][s.identityPubKey()] = reveal
+		s.reveals[epoch][s.identityPubKey()] = srv.Reveal()
 		// XXX persist reveals to database?
 	} else {
 		s.log.Errorf("failure: reveal already present, this should never happen.")
@@ -670,8 +669,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	nodes := make([]*descriptor, 0)
 	mixTally := make(map[string][]*s11n.Document)
 	mixParams := make(map[string][]*s11n.Document)
-	srv := new(SRV)
 	for pk, voteDoc := range s.votes[epoch] {
+		srv := new(SRV)
 		// Parse the payload bytes into the s11n.Document
 		// so that we can access the mix descriptors + sigs
 		// The votes have already been validated.
@@ -683,8 +682,13 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 
 		// Epoch is already verified to maatch the SRVCommit
 		srv.SetCommit(voteDoc.doc.SRVCommit)
-		if !srv.Verify(s.reveals[epoch][pk]) {
-			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal!", pk)
+		r := s.reveals[epoch][pk]
+		if len(r) != 40   {
+			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", pk, len(r), r)
+			continue
+		}
+		if !srv.Verify(r) {
+			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal! %v", pk, r)
 			continue
 		}
 
@@ -1100,7 +1104,10 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
-	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = reveal.Digest[:]
+	r := make([]byte,0)
+	r = append(r, epochToBytes(s.votingEpoch)...)
+	r = append(r, reveal.Digest[:]...)
+	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = r
 	resp.ErrorCode = commands.RevealOk
 	return &resp
 
