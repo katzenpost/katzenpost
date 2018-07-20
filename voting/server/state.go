@@ -346,6 +346,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		SendMaxInterval: params.SendMaxInterval,
 		Topology:        topology,
 		Providers:       providers,
+		SRValue:         srv,
 	}
 	return doc
 }

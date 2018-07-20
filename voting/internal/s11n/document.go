@@ -226,16 +226,18 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 
 	// Convert from the wire representation to a Document, and validate
 	// everything.
-	if len(d.SRVCommit) != 40 {
+	if len(d.SRVCommit) != 40 && len(d.SRValue) == 0 {
 		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit")
 	}
 
 	// Ensure that the document contains a SRV Commit value, and that
 	// the Epoch prefix corresponds to the current Epoch.
-	srvEpoch := binary.BigEndian.Uint64(d.SRVCommit[0:8])
-	if srvEpoch != d.Epoch {
-		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit")
+	if d.SRValue == nil && d.SRVCommit != nil {
+		srvEpoch := binary.BigEndian.Uint64(d.SRVCommit[0:8])
+		if srvEpoch != d.Epoch {
+			return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit Epoch")
 
+		}
 	}
 	doc := new(pki.Document)
 	doc.SRVCommit = d.SRVCommit
