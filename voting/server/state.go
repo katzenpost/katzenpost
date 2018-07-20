@@ -216,6 +216,7 @@ func (s *state) fsm() {
 		}
 		s.state = stateAcceptVote
 	case s.state == stateAcceptVote:
+		s.reveal(s.votingEpoch)
 		s.state = stateAcceptReveal
 	case s.state == stateAcceptReveal:
 		// we have collect all of the reveal values
@@ -364,22 +365,17 @@ func (s *SRV) Commit(epoch uint64) []byte {
 	// pick a random number
 	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
-	rn := make([]byte, 0, 32)
-	io.ReadFull(rand.Reader, rn)
-	s.commit = make([]byte, 8, 40)
-	s.reveal = make([]byte, 8, 40)
+	rn := make([]byte, 32)
+	if n, err := io.ReadFull(rand.Reader, rn); err != nil || n != 32 {
+	}
+	s.commit = make([]byte, 40)
+	s.reveal = make([]byte, 40)
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
 	reveal := sha3.Sum256(rn)
 	copy(s.reveal[8:], reveal[:])
-	//for i := 0; i < len(reveal); i++ {
-	//	s.reveal[8+i] = reveal[i]
-	//}
 	commit := sha3.Sum256(s.reveal)
 	copy(s.commit[8:], commit[:])
-	//for i := 0; i < len(commit); i++ {
-	//	s.commit[8+i] = commit[i]
-	//}
 	return s.commit
 }
 
@@ -408,6 +404,12 @@ func (s *SRV) Reveal() []byte {
 	return s.reveal
 }
 
+func (s *state) reveal(epoch uint64) {
+	if reveal, ok := s.reveals[epoch][s.identityPubKey()]; ok {
+		go s.sendRevealToAuthorities(reveal)
+	}
+}
+
 func (s *state) vote(epoch uint64) {
 	descriptors := []*descriptor{}
 	for _, desc := range s.descriptors[epoch] {
@@ -415,7 +417,25 @@ func (s *state) vote(epoch uint64) {
 	}
 	srv := new(SRV)
 	commit := srv.Commit(epoch)
-	vote := s.getDocument(descriptors, s.s.cfg.Parameters, commit)
+	reveal := srv.Reveal()
+
+	// save our own reveal
+	if _, ok := s.reveals[epoch]; !ok {
+		s.reveals[epoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
+	}
+	if _, ok := s.reveals[epoch][s.identityPubKey()]; !ok {
+		s.reveals[epoch][s.identityPubKey()] = reveal
+		// XXX persist reveals to database?
+	} else {
+		s.log.Errorf("failure: reveal already present, this should never happen.")
+		err := errors.New("failure: reveal already present, this should never happen")
+		s.s.fatalErrCh <- err
+		return
+	}
+
+	// vote topology is irrelevent.
+	var zeros [32]byte
+	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
 	vote.SRVCommit = commit
 	signedVote := s.sign(vote)
 	// save our own vote
@@ -478,6 +498,63 @@ func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor
 	return nrProviders > 0 && nrNodes >= minNodes
 }
 
+func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte) error {
+	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	cfg := &wire.SessionConfig{
+		Authenticator:     s,
+		AdditionalData:    []byte(""),
+		AuthenticationKey: s.s.linkKey,
+		RandomReader:      rand.Reader,
+	}
+	session, err := wire.NewSession(cfg, true)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+
+	if err = session.Initialize(conn); err != nil {
+		return err
+	}
+	var digest [32]byte
+	copy(digest[:], reveal[8:])
+	cmd := &commands.Reveal{
+		Epoch:     s.votingEpoch,
+		PublicKey: s.s.IdentityKey(),
+		Digest:    digest,
+	}
+	err = session.SendCommand(cmd)
+	if err != nil {
+		return err
+	}
+	resp, err := session.RecvCommand()
+	if err != nil {
+		return err
+	}
+	r, ok := resp.(*commands.RevealStatus)
+	if !ok {
+		return fmt.Errorf("Reveal response resulted in unexpected reply: %T", resp)
+	}
+	switch r.ErrorCode {
+	case commands.RevealOk:
+		return nil
+	case commands.RevealTooLate:
+		return errors.New("reveal was too late")
+	case commands.RevealTooEarly:
+		return errors.New("reveal was too early")
+	case commands.RevealAlreadyReceived:
+		return errors.New("reveal already received by authority")
+	case commands.RevealNotAuthorized:
+		return errors.New("reveal rejected by authority: Not Authorized")
+	default:
+		return fmt.Errorf("reveal rejected by authority: unknown error code received")
+	}
+	return nil
+
+}
 func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	// get a connector here
 	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
@@ -541,6 +618,20 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return true
 	}
 	return false
+}
+
+// sendRevealToAuthorities sends a Shared Random Reveal command to
+// all Directory Authorities
+func (s *state) sendRevealToAuthorities(reveal []byte) {
+	s.log.Noticef("Sending SR Reveal for epoch %v, to all Directory Authorities.", s.votingEpoch)
+
+	for _, peer := range s.s.cfg.Authorities {
+		err := s.sendRevealToPeer(peer, reveal)
+		if err != nil {
+			s.log.Error("failed to send reveal to peer %v", peer)
+		}
+	}
+
 }
 
 // sendVoteToAuthorities sends s.descriptors[epoch] to
@@ -869,7 +960,12 @@ func (s *state) generateRandomTopology(nodes []*descriptor, srv []byte) [][][]by
 	// then the simplest thing to do is to randomly assign nodes to the
 	// various layers.
 
-	rng, err := NewDeterministicRandReader(srv)
+	if len(srv) != 32 {
+		err := errors.New("srv too short!")
+		s.log.Errorf("srv: %v", srv)
+		s.s.fatalErrCh <- err
+	}
+	rng, err := NewDeterministicRandReader(srv[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
 		s.s.fatalErrCh <- err
@@ -974,13 +1070,13 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	// haven't received a vote yet for this epoch
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.log.Error("Reveal received before any votes!?.")
-		resp.ErrorCode = commands.RevealTooSoon
+		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
 	// haven't received a vote from this peer yet for this epoch
 	if _, ok := s.votes[s.votingEpoch][reveal.PublicKey.ByteArray()]; !ok {
 		s.log.Error("Reveal received before peer's vote?.")
-		resp.ErrorCode = commands.RevealTooSoon
+		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
 
