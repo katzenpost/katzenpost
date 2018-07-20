@@ -18,6 +18,7 @@ package server
 
 import (
 	"io/ioutil"
+	"bytes"
 	"testing"
 
 	"github.com/katzenpost/authority/voting/server/config"
@@ -26,6 +27,19 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestSRVVerify(t *testing.T) {
+	assert := assert.New(t)
+	srv := new(SRV)
+	commit, err := srv.Commit(1234)
+	assert.NoError(err, "wtf")
+	t.Logf("commit %v", commit)
+	assert.True(bytes.Equal(commit, srv.GetCommit()))
+	reveal := srv.Reveal()
+	t.Logf("len(reveal): %v", len(reveal))
+	assert.True(len(reveal) == 40)
+	assert.True(srv.Verify(reveal))
+}
 
 func TestVoteThreshold(t *testing.T) {
 	assert := assert.New(t)
