@@ -238,13 +238,11 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 
 	}
 	doc := new(pki.Document)
-	doc.SRVCommit = make([]byte, 40)
-	copy(d.SRVCommit, doc.SRVCommit)
+	doc.SRVCommit = d.SRVCommit
 
 	// XXX: when do we initialize this value?
 	// a consensus and votes share the same type...
-	doc.SRValue = make([]byte, 40)
-	copy(d.SRValue, doc.SRValue)
+	doc.SRValue = d.SRValue
 
 	doc.Epoch = d.Epoch
 	doc.MixLambda = d.MixLambda
