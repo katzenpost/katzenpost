@@ -25,7 +25,7 @@ Specification [KATZMIXPKI]_.
 
    Fundamentally a mix network is a lossy packet switching network on
    which we can build reliable protocols. We therefore utilize a
-   variety of designs from both the mix network and classical internet
+   variety of ideas from both the mix network and classical internet
    protocol literature to design an end to end reliability protocol
    that utilizes the mix network.
 
@@ -427,6 +427,11 @@ Specification [KATZMIXPKI]_.
         * Senders MUST NOT retransmit blocks at a rate faster than one
           block per 3 seconds.
 
+        * Retransmissions must NOT have predictable timing otherwise
+          it exposes the destination Provider to discovery by a
+          powerful adversary that can perform active confirmation
+          attacks.
+
         * Senders MUST NOT attempt to retransmit blocks indefinitely,
           and instead give up on the entire message after it fails to
           arrive after a certain number of retransmissions.
@@ -528,32 +533,6 @@ Specification [KATZMIXPKI]_.
         XXX/ya: Should we mandate that clients insert something like:
         `X-Katzenpost-Sender: <Base64(s)>` as a header?
 
-
-4.2.2 Client Protocol Acknowledgment Processing (SURB-ACKs).
-------------------------------------------------------------
-
-   When a client receives a message from their provider carrying a SURB
-   payload, the message is a SURB-ACK for a Block that the client
-   previously sent, signaling that the recipient's provider has received
-   and queued the Block successfully.
-
-   The SURB ID is used to identify which Block the SURB-ACK corresponds
-   to, along with the SURB payload decryption key (generated at the time
-   of SURB creation).
-
-   Clients MUST discard SURB-ACKs corresponding to unknown Blocks, and
-   MUST discard SURB-ACKs with invalid (non-zero filled) payload, with
-   no additional processing.
-
-.. note::
-
-    XXX/ya: This is specified in the message sending behavior, does it also 
-    need to be here?
-
-    Ordinarily, reliable protocols MUST use exponential backoff for
-    retransmissions [CONGAVOID]_  [SMODELS]_  [RFC896]_, however if and only
-    if the round trip time is greater than X seconds then exponential
-    backoff is not needed. [XXX CITATION NEEDED!]
 
 5. Sphinx Packet Composition Considerations
 ===========================================
