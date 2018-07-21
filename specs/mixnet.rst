@@ -29,31 +29,31 @@ Katzenpost Mix Network.
 1.1 Terminology
 ----------------
 
-   A ``KiB`` is defined as 1024 8 bit octets.
+   * A ``KiB`` is defined as 1024 8 bit octets.
 
-   ``Mix`` - A server that provides anonymity to clients. This is
+   * ``Mix`` - A server that provides anonymity to clients. This is
          accomplished by accepting layer-encrypted packets from a
          Provider or another Mix, decrypting a layer of the
          encryption, delaying the packet, and transmitting
          the packet to another Mix or Provider.
 
-   ``Mixnet`` - A network of mixes.
+   * ``Mixnet`` - A network of mixes.
 
-   ``Provider`` - A service operated by a third party that Clients
+   * ``Provider`` - A service operated by a third party that Clients
               communicate directly with to communicate with the Mixnet.
               It is responsible for Client authentication,
               forwarding outgoing messages to the Mixnet, and storing incoming
               messages for the Client. The Provider MUST have the ability to
               perform cryptographic operations on the relayed packets.
 
-   ``Node`` - A Mix or Provider instance.
+   * ``Node`` - A Mix or Provider instance.
 
-   ``User`` - An agent using the Katzenpost system.
+   * ``User`` - An agent using the Katzenpost system.
 
-   ``Client`` - Software run by the User on its local device to
+   * ``Client`` - Software run by the User on its local device to
             participate in the Mixnet.
 
-   ``Katzenpost`` - A project to design an improved mix service as described
+   * ``Katzenpost`` - A project to design an improved mix service as described
                in this specification. Also, the name of the reference
                software to implement this service, currently under
                development.
@@ -67,17 +67,17 @@ Katzenpost Mix Network.
 
                             This may be changed after we do our analysis on the stats
 
-   ``Packet`` - A string transmitted anonymously thought the Katzenpost network.
+   * ``Packet`` - A string transmitted anonymously thought the Katzenpost network.
              The length of the packet is fixed for every class of traffic.
 
-   ``Payload`` - The [xxx] KiB portion of a Packet containing a message,
+   * ``Payload`` - The [xxx] KiB portion of a Packet containing a message,
              or part of a message, to be delivered anonymously.
              
              .. note::
              
                 This has to be rephrased after the analysis of the stats.
 
-   ``Message`` - A variable-length sequence of octets sent anonymously
+   * ``Message`` - A variable-length sequence of octets sent anonymously
              through the network. Short messages are sent in a single
              packet; long messages are fragmented across multiple
              packets (see the Katzenpost Mix Network End-to-end
@@ -89,7 +89,7 @@ Katzenpost Mix Network.
                 This has to be rephrased after
                 The analysis of the stats; if we have multiple classes of traffic
 
-   ``MSL`` - Maximum Segment Lifetime, 120 seconds.
+   * ``MSL`` - Maximum Segment Lifetime, 120 seconds.
 
 1.2 Conventions Used in This Document
 -------------------------------------
@@ -383,19 +383,6 @@ Katzenpost Mix Network.
    handle at least one persistent long lived connection per
    potentially eligible peer at all times.
 
-
-(XXX/ya: Design decisions required.
-
- * WTF do we do when the PKI tells us that a Node's long term
-   identity key has changed?  I assume treat it as a new Mix.
-   If so, there's nothing more needed.
-
- * One TCP connection per peer, or allow multiple?  I suspect
-   allowing multiple may be useful, but I am uncertain of the
-   anonymity impact. Obviously not like "connection per packet"
-   or anything stupid like that.
-)
-
 .. _4.2:
 
 4.2 Sphinx Mix and Provider Key Rotation
@@ -408,50 +395,9 @@ Katzenpost Mix Network.
    the network, at predictable times.
 
    Let each epoch be exactly ``10800 seconds (3 hours)`` in duration, and
-   the 0th Epoch begin at ``2017-06-01 00:00 UTC``.
-
-   To facilitate smooth operation of the network and to allow for
-   delays that span across epoch boundaries, Nodes MUST publish keys
-   to the PKI for at least 3 epochs in advance, unless the node will
-   be otherwise unavailable in the near future due to planned downtime.
-
-   Thus, at any time, keys for all Nodes for the Nth through N + 2nd
-   epoch will be available, allowing for a maximum round trip (forward
-   message + :abbr:`SURB (Single Use Reply Block)`) delay + transit time of 6 hours.
-
-   Node PKI interactions are conducted according to the following
-   schedule, where ``T`` is the next epoch transition.
-
-    ``T - 3600 sec`` - Deadline for publication of all mixes documents
-                   for the next epoch.
-
-    ``T - 2700 sec`` - Start attempting to fetch PKI documents.
-
-    ``T - 1800 sec`` - Start establishing connections to the new set of
-                   relevant nodes in advance of the next epoch.
-
-    ``T - 1MSL``     - Start accepting new Sphinx packets encrypted to
-                   the next epoch's keys.
-
-    ``T + 1MSL``     - Stop accepting new Sphinx packets encrypted to
-                   the previous epoch's keys, close connections to
-                   peers no longer listed in the PKI documents and
-                   erase the list of seen packet tags.
-
-(XXX/ya: Schedule is preliminary.
-
- Someone should come up with a better/more flexible schedule.
- The various delays are probably overkill, and this should be
- covered in more depth in the PKI.
-
- As it stands, nodes have ~2 hours to publish, the PKI has 15
- mins to vote, and the nodes have 28 mins to establish
- connections before bad things happen.
-
- Design decisions required:
-
- * There should be a "nice" mechanism for scheduled downtime etc.
-)
+   the 0th Epoch begin at ``2017-06-01 00:00 UTC``. For more details see
+   our "Katzenpost Mix Network Public Key Infrastructure Specification"
+   document. [KATZMIXPKI]_
 
 .. _4.3:
 
