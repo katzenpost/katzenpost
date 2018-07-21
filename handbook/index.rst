@@ -466,6 +466,72 @@ changes during run-time. An example configuration looks like this::
   left empty then `management_sock` will be used under the DataDir.
 
 
+Debug section
+`````````````
+
+Debug is the Katzenpost server debug configuration
+for advanced tuning.
+
+* ``IdentityKey`` specifies the identity private key.
+
+* ``NumSphinxWorkers`` specifies the number of worker instances to use for
+  inbound Sphinx packet processing.
+
+* ``NumProviderWorkers`` specifies the number of worker instances to use for
+  provider specific packet processing.
+
+* ``NumKaetzchenWorkers`` specifies the number of worker instances to use for
+  Kaetzchen specific packet processing.
+
+* ``SchedulerExternalMemoryQueue`` will enable the experimental external
+  memory queue that is backed by d`isk.
+
+* ``SchedulerQueueSize`` is the maximum allowed scheduler queue size before
+  random entries will start getting dropped.  A value <= 0 is treated
+  as unlimited.
+
+* ``SchedulerMaxBurst`` is the maximum number of packets that will be
+  dispatched per scheduler wakeup event.
+
+* ``UnwrapDelay`` is the maximum allowed unwrap delay due to queueing in
+  milliseconds.
+
+* ``ProviderDelay`` is the maximum allowed provider delay due to queueing
+  in milliseconds.
+
+* ``KaetzchenDelay`` is the maximum allowed kaetzchen delay due to queueing
+  in milliseconds.
+
+* ``SchedulerSlack`` is the maximum allowed scheduler slack due to queueing
+  and or processing in milliseconds.
+
+* ``SendSlack`` is the maximum allowed send queue slack due to queueing and
+  or congestion in milliseconds.
+
+* ``DecoySlack`` is the maximum allowed decoy sweep slack due to various
+  external delays such as latency before a loop decoy packet will
+  be considered lost.
+
+* ``ConnectTimeout`` specifies the maximum time a connection can take to
+  establish a TCP/IP connection in milliseconds.
+
+* ``HandshakeTimeout`` specifies the maximum time a connection can take for a
+  link protocol handshake in milliseconds.
+
+* ``ReauthInterval`` specifies the interval at which a connection will be
+  reauthenticated in milliseconds.
+
+* ``SendDecoyTraffic`` enables sending decoy traffic.  This is still
+  experimental and untuned and thus is disabled by default.
+  WARNING: This option will go away once decoy traffic is more concrete.
+
+* ``DisableRateLimit`` disables the per-client rate limiter.  This option
+  should only be used for testing.
+
+* ``GenerateOnly`` halts and cleans up the server right after long term
+  key generation.
+
+
 Provider section
 ````````````````
 
