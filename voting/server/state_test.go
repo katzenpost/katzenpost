@@ -17,8 +17,8 @@
 package server
 
 import (
-	"io/ioutil"
 	"bytes"
+	"io/ioutil"
 	"testing"
 
 	"github.com/katzenpost/authority/voting/server/config"
