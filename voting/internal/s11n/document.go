@@ -28,7 +28,10 @@ import (
 	"gopkg.in/square/go-jose.v2"
 )
 
-const documentVersion = "voting-document-v0"
+const (
+	documentVersion = "voting-document-v0"
+	sharedRandomLength = 40
+)
 
 var (
 	// ErrInvalidEpoch is the error to return when the document epoch is
@@ -56,8 +59,9 @@ type Document struct {
 
 	Topology  [][][]byte
 	Providers [][]byte
-	SRVCommit []byte
-	SRValue   []byte
+
+	SharedRandomCommit []byte
+	SharedRandomValue  []byte
 }
 
 func FromPayload(verificationKey interface{}, payload []byte) (*Document, error) {
@@ -226,25 +230,34 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 
 	// Convert from the wire representation to a Document, and validate
 	// everything.
-	if len(d.SRVCommit) != 40 && len(d.SRValue) == 0 {
-		return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit")
-	}
 
-	// Ensure that the document contains a SRV Commit value, and that
-	// the Epoch prefix corresponds to the current Epoch.
-	if d.SRValue == nil && d.SRVCommit != nil {
-		srvEpoch := binary.BigEndian.Uint64(d.SRVCommit[0:8])
+	// Ensure that a document has one of SharedRandomCommit or SharedRandomValue, and that it is the correct length.
+	if len(d.SharedRandomCommit) == sharedRandomLength && len(d.SharedRandomValue) == sharedRandomLength {
+			return nil, nil, fmt.Errorf("authority: document has both SharedRandomValue and SharedRandomCommit")
+	// Verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
+	} else if len(d.SharedRandomCommit) == sharedRandomLength && len(d.SharedRandomValue) == 0 {
+		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomCommit[0:8])
 		if srvEpoch != d.Epoch {
-			return nil, nil, fmt.Errorf("authority: Recived a vote with invalid or missing SRV Commit Epoch")
+			return nil, nil, fmt.Errorf("voting: document with invalid Epoch in SharedRandomCommit")
 
 		}
+	// Verify the Epoch contained in SharedRandomValue matches the Epoch in the Document.
+	} else if len(d.SharedRandomValue) == sharedRandomLength && len(d.SharedRandomCommit) == 0 {
+		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomValue[0:8])
+		if srvEpoch != d.Epoch {
+			return nil, nil, fmt.Errorf("voting: document with invalid Epoch in SharedRandomCommit")
+
+		}
+	} else {
+		return nil, nil, fmt.Errorf("voting: document has invalid SharedRandomValue or SharedRandomCommit")
 	}
+
 	doc := new(pki.Document)
-	doc.SRVCommit = d.SRVCommit
+	doc.SharedRandomCommit = d.SharedRandomCommit
 
 	// XXX: when do we initialize this value?
 	// a consensus and votes share the same type...
-	doc.SRValue = d.SRValue
+	doc.SharedRandomValue = d.SharedRandomValue
 
 	doc.Epoch = d.Epoch
 	doc.MixLambda = d.MixLambda

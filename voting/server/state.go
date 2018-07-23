@@ -357,11 +357,6 @@ type SRV struct {
 	reveal []byte
 }
 
-// TODO: update the s11n document type to contain a slice of srv values
-// compute the actual shared random number from a list of verified srv values
-// figure out how to include the server identity keys because the committed values must be sorted
-// what happens if reveals are not broadcast to the rest of authorities?
-
 func (s *SRV) Commit(epoch uint64) ([]byte, error) {
 	// pick a random number
 	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
@@ -372,8 +367,8 @@ func (s *SRV) Commit(epoch uint64) ([]byte, error) {
 		return nil, err
 	}
 	s.epoch = epoch
-	s.commit = make([]byte, 40)
-	s.reveal = make([]byte, 40)
+	s.commit = make([]byte, s11n.Document.SharedRandomLength)
+	s.reveal = make([]byte, s11n.Document.SharedRandomLength)
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
 	reveal := sha3.Sum256(rn)
@@ -393,7 +388,7 @@ func (s *SRV) SetCommit(rawCommit []byte) {
 }
 
 func (s *SRV) Verify(reveal []byte) bool {
-	if len(reveal) != 40 {
+	if len(reveal) != s11n.Document.SharedRandomLength {
 		return false
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
@@ -684,7 +679,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		// Epoch is already verified to maatch the SRVCommit
 		srv.SetCommit(voteDoc.doc.SRVCommit)
 		r := s.reveals[epoch][pk]
-		if len(r) != 40   {
+		if len(r) != s11n.Document.SharedRandomLength {
 			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", pk, len(r), r)
 			continue
 		}
@@ -1105,7 +1100,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
-	r := make([]byte,0)
+	r := make([]byte, 0)
 	r = append(r, epochToBytes(s.votingEpoch)...)
 	r = append(r, reveal.Digest[:]...)
 	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = r
