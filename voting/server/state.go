@@ -346,18 +346,18 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		SendMaxInterval: params.SendMaxInterval,
 		Topology:        topology,
 		Providers:       providers,
-		SRValue:         srv,
+		SharedRandomValue:         srv,
 	}
 	return doc
 }
 
-type SRV struct {
+type SharedRandom struct {
 	epoch  uint64
 	commit []byte
 	reveal []byte
 }
 
-func (s *SRV) Commit(epoch uint64) ([]byte, error) {
+func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
 	// pick a random number
 	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
 	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
@@ -378,16 +378,16 @@ func (s *SRV) Commit(epoch uint64) ([]byte, error) {
 	return s.commit, nil
 }
 
-func (s *SRV) GetCommit() []byte {
+func (s *SharedRandom) GetCommit() []byte {
 	return s.commit
 }
 
-func (s *SRV) SetCommit(rawCommit []byte) {
+func (s *ShareRandom) SetCommit(rawCommit []byte) {
 	s.epoch = binary.BigEndian.Uint64(rawCommit[0:8])
 	s.commit = rawCommit
 }
 
-func (s *SRV) Verify(reveal []byte) bool {
+func (s *SharedRandom) Verify(reveal []byte) bool {
 	if len(reveal) != s11n.Document.SharedRandomLength {
 		return false
 	}
@@ -401,7 +401,7 @@ func (s *SRV) Verify(reveal []byte) bool {
 	return false
 }
 
-func (s *SRV) Reveal() []byte {
+func (s *SharedRandom) Reveal() []byte {
 	return s.reveal
 }
 
@@ -416,7 +416,7 @@ func (s *state) vote(epoch uint64) {
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
 	}
-	srv := new(SRV)
+	srv := new(SharedRandom)
 	commit, err := srv.Commit(epoch)
 	if err != nil {
 		s.s.fatalErrCh <- err
@@ -439,7 +439,7 @@ func (s *state) vote(epoch uint64) {
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
-	vote.SRVCommit = commit
+	vote.SharedRandomCommit = commit
 	signedVote := s.sign(vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
@@ -626,7 +626,7 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 // sendRevealToAuthorities sends a Shared Random Reveal command to
 // all Directory Authorities
 func (s *state) sendRevealToAuthorities(reveal []byte) {
-	s.log.Noticef("Sending SR Reveal for epoch %v, to all Directory Authorities.", s.votingEpoch)
+	s.log.Noticef("Sending Shared Random Reveal for epoch %v, to all Directory Authorities.", s.votingEpoch)
 
 	for _, peer := range s.s.cfg.Authorities {
 		err := s.sendRevealToPeer(peer, reveal)
@@ -666,7 +666,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	mixTally := make(map[string][]*s11n.Document)
 	mixParams := make(map[string][]*s11n.Document)
 	for pk, voteDoc := range s.votes[epoch] {
-		srv := new(SRV)
+		srv := new(SharedRandom)
 		// Parse the payload bytes into the s11n.Document
 		// so that we can access the mix descriptors + sigs
 		// The votes have already been validated.
@@ -676,8 +676,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			continue
 		}
 
-		// Epoch is already verified to maatch the SRVCommit
-		srv.SetCommit(voteDoc.doc.SRVCommit)
+		// Epoch is already verified to maatch the SharedRandomCommit
+		srv.SetCommit(voteDoc.doc.SharedRandomCommit)
 		r := s.reveals[epoch][pk]
 		if len(r) != s11n.Document.SharedRandomLength {
 			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", pk, len(r), r)
@@ -773,7 +773,7 @@ func (s *state) isTabulated(epoch uint64) bool {
 	return false
 }
 
-func (s *state) computeSRV(epoch uint64) []byte {
+func (s *state) computeSharedRandom(epoch uint64) []byte {
 
 	type Reveal struct {
 		PublicKey [eddsa.PublicKeySize]byte
@@ -786,12 +786,12 @@ func (s *state) computeSRV(epoch uint64) []byte {
 	srv.Write(epochToBytes(epoch))
 
 	for pk, vote := range s.votes[epoch] {
-		sr := new(SRV)
+		sr := new(SharedRandom)
 		if _, ok := s.reveals[epoch][pk]; !ok {
 			// skip this vote, authority did not reveal
 			continue
 		}
-		sr.SetCommit(vote.doc.SRVCommit)
+		sr.SetCommit(vote.doc.SharedRandomCommit)
 		srr := s.reveals[epoch][pk]
 		if sr.Verify(srr) {
 			reveals = append(reveals, Reveal{pk, srr})
@@ -813,7 +813,7 @@ func (s *state) computeSRV(epoch uint64) []byte {
 	//      How do we bootstrap a new authority?
 	zeros := make([]byte, 32)
 	if vot, ok := s.documents[s.votingEpoch-1]; ok {
-		srv.Write(vot.doc.SRValue)
+		srv.Write(vot.doc.SharedRandomalue)
 	} else {
 		srv.Write(zeros)
 	}
@@ -825,7 +825,7 @@ func (s *state) computeSRV(epoch uint64) []byte {
 func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// generate the shared random value
-	srv := s.computeSRV(epoch)
+	srv := s.computeSharedRandom(epoch)
 
 	// include all the valid mixes from votes, including our own.
 	mixes, params, err := s.tallyVotes(epoch)
