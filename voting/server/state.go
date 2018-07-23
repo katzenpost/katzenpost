@@ -367,8 +367,8 @@ func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
 		return nil, err
 	}
 	s.epoch = epoch
-	s.commit = make([]byte, s11n.Document.SharedRandomLength)
-	s.reveal = make([]byte, s11n.Document.SharedRandomLength)
+	s.commit = make([]byte, s11n.SharedRandomLength)
+	s.reveal = make([]byte, s11n.SharedRandomLength)
 	binary.BigEndian.PutUint64(s.reveal, epoch)
 	binary.BigEndian.PutUint64(s.commit, epoch)
 	reveal := sha3.Sum256(rn)
@@ -382,13 +382,13 @@ func (s *SharedRandom) GetCommit() []byte {
 	return s.commit
 }
 
-func (s *ShareRandom) SetCommit(rawCommit []byte) {
+func (s *SharedRandom) SetCommit(rawCommit []byte) {
 	s.epoch = binary.BigEndian.Uint64(rawCommit[0:8])
 	s.commit = rawCommit
 }
 
 func (s *SharedRandom) Verify(reveal []byte) bool {
-	if len(reveal) != s11n.Document.SharedRandomLength {
+	if len(reveal) != s11n.SharedRandomLength {
 		return false
 	}
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
@@ -679,7 +679,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		// Epoch is already verified to maatch the SharedRandomCommit
 		srv.SetCommit(voteDoc.doc.SharedRandomCommit)
 		r := s.reveals[epoch][pk]
-		if len(r) != s11n.Document.SharedRandomLength {
+		if len(r) != s11n.SharedRandomLength {
 			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", pk, len(r), r)
 			continue
 		}
@@ -813,7 +813,7 @@ func (s *state) computeSharedRandom(epoch uint64) []byte {
 	//      How do we bootstrap a new authority?
 	zeros := make([]byte, 32)
 	if vot, ok := s.documents[s.votingEpoch-1]; ok {
-		srv.Write(vot.doc.SharedRandomalue)
+		srv.Write(vot.doc.SharedRandomValue)
 	} else {
 		srv.Write(zeros)
 	}
