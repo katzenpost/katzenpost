@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"testing"
 
+	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -29,12 +30,12 @@ import (
 	"golang.org/x/crypto/sha3"
 )
 
-func TestSRVVerify(t *testing.T) {
+func TestSharedRandomVerify(t *testing.T) {
 	assert := assert.New(t)
-	srv := new(SRV)
+	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
 	assert.NoError(err, "wtf")
-	assert.True(len(commit) == 40)
+	assert.True(len(commit) == s11n.SharedRandomLength)
 	srv.SetCommit(commit)
 	assert.True(bytes.Equal(commit, srv.GetCommit()))
 	t.Logf("commit %v", commit)
@@ -43,9 +44,27 @@ func TestSRVVerify(t *testing.T) {
 	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
 	t.Logf("reveal %v", reveal)
 	t.Logf("len(reveal): %v", len(reveal))
-	assert.True(len(reveal) == 40)
+	assert.True(len(reveal) == s11n.SharedRandomLength)
 	assert.True(srv.Verify(reveal))
 }
+
+func TestSharedRandomCommit(t *testing.T) {
+	assert := assert.New(t)
+	srv := new(SharedRandom)
+	commit, err := srv.Commit(1234)
+	assert.NoError(err, "wtf")
+	assert.True(len(commit) == s11n.SharedRandomLength)
+}
+
+func TestSharedRandomSetCommit(t *testing.T) {
+	assert := assert.New(t)
+	srv := new(SharedRandom)
+	commit, err := srv.Commit(1234)
+	assert.NoError(err, "wtf")
+	srv.SetCommit(commit)
+	assert.True(bytes.Equal(commit, srv.GetCommit()))
+}
+
 
 func TestVoteThreshold(t *testing.T) {
 	assert := assert.New(t)

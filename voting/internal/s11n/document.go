@@ -30,7 +30,7 @@ import (
 
 const (
 	documentVersion = "voting-document-v0"
-	sharedRandomLength = 40
+	SharedRandomLength = 40
 )
 
 var (
@@ -232,17 +232,17 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	// everything.
 
 	// Ensure that a document has one of SharedRandomCommit or SharedRandomValue, and that it is the correct length.
-	if len(d.SharedRandomCommit) == sharedRandomLength && len(d.SharedRandomValue) == sharedRandomLength {
+	if len(d.SharedRandomCommit) == SharedRandomLength && len(d.SharedRandomValue) == SharedRandomLength {
 			return nil, nil, fmt.Errorf("authority: document has both SharedRandomValue and SharedRandomCommit")
 	// Verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
-	} else if len(d.SharedRandomCommit) == sharedRandomLength && len(d.SharedRandomValue) == 0 {
+	} else if len(d.SharedRandomCommit) == SharedRandomLength && len(d.SharedRandomValue) == 0 {
 		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomCommit[0:8])
 		if srvEpoch != d.Epoch {
 			return nil, nil, fmt.Errorf("voting: document with invalid Epoch in SharedRandomCommit")
 
 		}
 	// Verify the Epoch contained in SharedRandomValue matches the Epoch in the Document.
-	} else if len(d.SharedRandomValue) == sharedRandomLength && len(d.SharedRandomCommit) == 0 {
+	} else if len(d.SharedRandomValue) == SharedRandomLength && len(d.SharedRandomCommit) == 0 {
 		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomValue[0:8])
 		if srvEpoch != d.Epoch {
 			return nil, nil, fmt.Errorf("voting: document with invalid Epoch in SharedRandomCommit")
