@@ -338,15 +338,15 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:           s.votingEpoch,
-		MixLambda:       params.MixLambda,
-		MixMaxDelay:     params.MixMaxDelay,
-		SendLambda:      params.SendLambda,
-		SendShift:       params.SendShift,
-		SendMaxInterval: params.SendMaxInterval,
-		Topology:        topology,
-		Providers:       providers,
-		SharedRandomValue:         srv,
+		Epoch:             s.votingEpoch,
+		MixLambda:         params.MixLambda,
+		MixMaxDelay:       params.MixMaxDelay,
+		SendLambda:        params.SendLambda,
+		SendShift:         params.SendShift,
+		SendMaxInterval:   params.SendMaxInterval,
+		Topology:          topology,
+		Providers:         providers,
+		SharedRandomValue: srv,
 	}
 	return doc
 }

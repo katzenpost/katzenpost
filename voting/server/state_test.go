@@ -65,7 +65,6 @@ func TestSharedRandomSetCommit(t *testing.T) {
 	assert.True(bytes.Equal(commit, srv.GetCommit()))
 }
 
-
 func TestVoteThreshold(t *testing.T) {
 	assert := assert.New(t)
 	testDir, err := ioutil.TempDir("", "authority")
