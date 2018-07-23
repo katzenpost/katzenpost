@@ -441,6 +441,12 @@ func (s *state) vote(epoch uint64) {
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
 	vote.SharedRandomCommit = commit
 	signedVote := s.sign(vote)
+	if signedVote == nil {
+		err := errors.New("failure: signing vote failed")
+		s.s.fatalErrCh <- err
+		return
+	}
+
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
 		s.votes[epoch] = make(map[[eddsa.PublicKeySize]byte]*document)

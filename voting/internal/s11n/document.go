@@ -31,6 +31,7 @@ import (
 const (
 	documentVersion = "voting-document-v0"
 	SharedRandomLength = 40
+	SharedRandomValueLength = 32
 )
 
 var (
@@ -231,25 +232,27 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	// Convert from the wire representation to a Document, and validate
 	// everything.
 
-	// Ensure that a document has one of SharedRandomCommit or SharedRandomValue, and that it is the correct length.
-	if len(d.SharedRandomCommit) == SharedRandomLength && len(d.SharedRandomValue) == SharedRandomLength {
-			return nil, nil, fmt.Errorf("authority: document has both SharedRandomValue and SharedRandomCommit")
-	// Verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
-	} else if len(d.SharedRandomCommit) == SharedRandomLength && len(d.SharedRandomValue) == 0 {
+	// If there is a SharedRandomCommit, verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
+	if len(d.SharedRandomCommit) == SharedRandomLength {
 		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomCommit[0:8])
 		if srvEpoch != d.Epoch {
 			return nil, nil, fmt.Errorf("voting: document with invalid Epoch in SharedRandomCommit")
 
 		}
-	// Verify the Epoch contained in SharedRandomValue matches the Epoch in the Document.
-	} else if len(d.SharedRandomValue) == SharedRandomLength && len(d.SharedRandomCommit) == 0 {
-		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomValue[0:8])
-		if srvEpoch != d.Epoch {
-			return nil, nil, fmt.Errorf("voting: document with invalid Epoch in SharedRandomCommit")
-
+	}
+	if len(d.SharedRandomValue) != SharedRandomValueLength {
+		if len(d.SharedRandomValue) != 0 {
+			return nil, nil, fmt.Errorf("voting: document has invalid SharedRandomValue")
+		} else if len(d.SharedRandomCommit) != SharedRandomLength {
+			return nil, nil, fmt.Errorf("voting: document has invalid SharedRandomCommit")
 		}
-	} else {
-		return nil, nil, fmt.Errorf("voting: document has invalid SharedRandomValue or SharedRandomCommit")
+	}
+	if len(d.SharedRandomCommit) != SharedRandomLength {
+		if len(d.SharedRandomCommit) != 0 {
+			return nil, nil, fmt.Errorf("voting: document has invalid SharedRandomCommit")
+		} else if len(d.SharedRandomValue) != SharedRandomValueLength {
+			return nil, nil, fmt.Errorf("voting: document has invalid SharedRandomValue")
+		}
 	}
 
 	doc := new(pki.Document)
