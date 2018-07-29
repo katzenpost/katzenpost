@@ -916,6 +916,10 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 		nodeMap[id] = v
 	}
 
+	// TODO: consider strategies for balancing topology? Should this happen automatically?
+	//       the current strategy will rebalance by limiting the number of nodes that are
+	//       (re)inserted at each layer and placing these nodes into another layer.
+
 	// Since there is an existing network topology, use that as the basis for
 	// generating the mix topology such that the number of nodes per layer is
 	// approximately equal, and as many nodes as possible retain their existing
@@ -932,7 +936,6 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 
 	// Assign nodes that still exist up to the target size.
 	for layer, nodes := range doc.Topology {
-		//nodeIndexes := rng.Perm(len(nodes))
 		nodeIndexes := rng.Perm(len(nodes))
 
 		for _, idx := range nodeIndexes {
