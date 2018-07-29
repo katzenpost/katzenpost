@@ -365,9 +365,9 @@ type SharedRandom struct {
 }
 
 func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
-	// pick a random number
-	// COMMIT = base64-encode( TIMESTAMP || H(REVEAL) )
-	// REVEAL = base64-encode( TIMESTAMP || H(RN) )
+	// pick a random number RN
+	// COMMIT = Uint64(epoch) || H(REVEAL)
+	// REVEAL = Uint64(epoch) || H(RN)
 	rn := make([]byte, 32)
 	n, err := io.ReadFull(rand.Reader, rn)
 	if err != nil || n != 32 {
