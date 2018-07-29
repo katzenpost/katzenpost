@@ -786,7 +786,7 @@ func (s *state) isTabulated(epoch uint64) bool {
 	return false
 }
 
-func (s *state) computeSharedRandom(epoch uint64) []byte {
+func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 
 	type Reveal struct {
 		PublicKey [eddsa.PublicKeySize]byte
@@ -798,6 +798,9 @@ func (s *state) computeSharedRandom(epoch uint64) []byte {
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
 
+	if _, ok := s.votes[epoch]; !ok {
+		return nil, errors.New("authority: No votes present, cannot calculate a shared random for Epoch %d", epoch)
+	}
 	for pk, vote := range s.votes[epoch] {
 		sr := new(SharedRandom)
 		if _, ok := s.reveals[epoch][pk]; !ok {
@@ -832,13 +835,16 @@ func (s *state) computeSharedRandom(epoch uint64) []byte {
 	}
 	digest := make([]byte, 32)
 	srv.Sum(digest)
-	return digest
+	return digest, nil
 }
 
 func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
-	// generate the shared random value
-	srv := s.computeSharedRandom(epoch)
+	// generate the shared random value or fail
+	if srv, err := s.computeSharedRandom(epoch); err != nil {
+		s.log.Warningf("No shared random for epoch %v, aborting!, %v", epoch, err)
+		return
+	}
 
 	// include all the valid mixes from votes, including our own.
 	mixes, params, err := s.tallyVotes(epoch)
