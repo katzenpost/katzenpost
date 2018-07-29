@@ -329,12 +329,19 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	// XXX: should a bootstrapping authority fetch prior consensus' Topology from another authority?
 
 	// TODO: We could re-use a prior topology for a configurable number of epochs
-	//if d, ok := s.documents[s.votingEpoch-1]; ok {
-	//	topology = s.generateTopology(nodes, d.doc)
-	//} else {
-	//	topology = s.generateRandomTopology(nodes)
-	//}
-	topology = s.generateRandomTopology(nodes, srv)
+
+	// We prefer to not randomize the topology if there is an existing topology to avoid
+	// partitioning the client anonymity set when messages from an earlier epoch are
+	// differentiable as such because of topology violations in the present epoch.
+	if d, ok := s.documents[s.votingEpoch-1]; ok {
+		topology = s.generateTopology(nodes, d.doc, srv)
+	} else {
+		// XXX: ask another authority for a consensus
+		// (this might be better placed at bootstrap)
+		// Or, this authority will vote with a random
+		// topology and never reach consenus with the other authorities
+		topology = s.generateRandomTopology(nodes, srv)
+	}
 
 	// Build the Document.
 	doc := &s11n.Document{
@@ -894,7 +901,7 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	return false
 }
 
-func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][][]byte {
+func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv []byte) [][][]byte {
 	s.log.Debugf("Generating mix topology.")
 
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
@@ -907,9 +914,9 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 	// generating the mix topology such that the number of nodes per layer is
 	// approximately equal, and as many nodes as possible retain their existing
 	// layer assignment to minimise network churn.
-	// TODO: shared random
-	key := [32]byte{0x42}
-	rng, err := NewDeterministicRandReader(key[:])
+	// The srv is used, when available, to ensure the ordering of new nodes
+	// is deterministic between authorities
+	rng, err := NewDeterministicRandReader(srv[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
 		s.s.fatalErrCh <- err
