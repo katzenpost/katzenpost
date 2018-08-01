@@ -99,7 +99,6 @@ func (e *externAuth) Identity(u []byte) (*ecdh.PublicKey, error) {
 				}
 			}
 		}
-		return nil, err
 	}
 	return nil, userdb.ErrNoIdentity
 }
