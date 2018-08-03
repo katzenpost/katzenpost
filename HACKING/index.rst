@@ -158,6 +158,25 @@ must not have any unbounded resource consumption such as spawning new
 go routines for example.
 
 
+Provider and Mix Pipeline Diagram
+---------------------------------
+
+::
+
+     .-----------.        .------------.       .---------.       .----------.       .-------------.
+     | Listeners |  --->  | incoming   | --->  | crypto  | --->  | provider | --->  | user spools |
+     `-----------'        | connection |       | workers |       |  packet  |       `-------------'
+                          |  workers   |       `---------'       | workers  |
+                          `------------'            |            `----------'
+                                                    |                 |
+                                                    V                 |
+                          .------------.      .----------.            V
+                          |  connector |      |   mix    |       .-----------.
+                          |   packet   | <--- | strategy |       | kaetzchen |
+                          | dispatcher |      |   AQM    |       |  workers  |
+                          `------------'      `----------'       `-----------'
+
+
 Exercising Katzenpost with Kimchi
 ---------------------------------
 
