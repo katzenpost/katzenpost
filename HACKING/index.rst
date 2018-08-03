@@ -164,17 +164,24 @@ Provider and Mix Pipeline Diagram
 ::
 
      .-----------.        .------------.       .---------.       .----------.       .-------------.
-     | Listeners |  --->  | incoming   | --->  | crypto  | --->  | provider | --->  | user spools |
+     | Listeners |  --->  |  incoming  | --->  |  crypto | --->  | provider | --->  | user spools |
      `-----------'        | connection |       | workers |       |  packet  |       `-------------'
-                          |  workers   |       `---------'       | workers  |
-                          `------------'            |            `----------'
-                                                    |                 |
-                                                    V                 |
-                          .------------.      .----------.            V
-                          |  connector |      |   mix    |       .-----------.
-                          |   packet   | <--- | strategy |       | kaetzchen |
-                          | dispatcher |      |   AQM    |       |  workers  |
-                          `------------'      `----------'       `-----------'
+                          |  workers   |       `---------'       | workers  |                  .-----------------.
+                          `------------'            |            `----------'      .-------->  | external plugin |
+                                                    |                 |  |         |           |     workers     |
+                                                    V                 |  '_        |           `-----------------'
+                          .------------.      .----------.            V    '-------|           .-----------------.
+                          |  connector |      |   mix    |       .-----------.     |           | external plugin |
+                          |   packet   | <--- | strategy |       | kaetzchen |     |-------->  |     workers     |    ....-----.
+                          | dispatcher |      |   AQM    |       |  workers  |     |           `-----------------'              `\
+                          `------------'      `----------'       `-----------'     |           .-----------------.                |
+                                     _                                 |           |           | external plugin |                |
+                                _   |\                                 |           '-------->  |     workers     |                |
+                               |\     \                               _'                       `-----------------'                |
+                                 \     '-----------------------------'                                                            |
+                                  \                                                                                               |
+                                   \                                                                                            _'
+                                    '------------------------------------------------------------------------------------------'
 
 
 Exercising Katzenpost with Kimchi
