@@ -561,32 +561,30 @@ The top-level Provider configuration parameters include:
 Kaetzchen Configuration
 '''''''''''''''''''''''
 
-We will now consider configuring Provider-side autoresponder service
-which our specifications and documentation shall refer to as
-``Kaetzchen``. Consider the following simple configuration example::
+``Kaetzchen`` are a simple kind of Provider-side service which
+receives a request and replies with a response message. We here
+discuss built-in internal kaetzchen services. (see next section for
+external kaetzchen plugin system)
+
+Consider the following simple configuration example where we configure
+the loop and keyserver services::
 
   [Provider]
 
     [[Provider.Kaetzchen]]
-      Capability = "fancy"
-      Endpoint = "+fancy"
+      Capability = "loop"
+      Endpoint = "+loop"
       Disable = false
 
-      [Provider.Kaetzchen.Config]
-        rpcUser = "username"
-        rpcPass = "password"
-        rpcUrl = "http://127.0.0.1:11323/"
-
     [[Provider.Kaetzchen]]
-      Capability = "shiny"
-      Endpoint = "+shiny"
+      Capability = "keyserver"
+      Endpoint = "+keyserver"
       Disable = false
 
 The ``Kaetzchen`` field is the list of configured Kaetzchen
 (auto-responder agents) for this provider. In the above example we
-configured two Kaetzchen, one called ``fancy`` and the other
-``shiny``. As you can see, ``fancy`` has some configuration parameters
-that ``shiny`` does not.
+configured two Kaetzchen, keyserver and loop which are required
+by the mailproxy client.
 
 Lets review the Kaetzchen configuration parameters:
 
@@ -603,13 +601,23 @@ Lets review the Kaetzchen configuration parameters:
 * ``Disable`` disabled a configured agent.
 
 
-Next we will discuss database backends for supporting various Provider services.
+External Kaetzchen Plugin Configuration
+'''''''''''''''''''''''''''''''''''''''
 
-* ``UserDB`` is the userdb backend configuration.
+Currently the Katzenpost server external kaetzchen plugin system
+uses gRPC over UNIX domain socket to communicate with plugin programs.
+That is to say, the katzenpost server will spin up each plugin program
+one or more times as specified by it's ``MaxConcurrency`` parameter,
+connect to it as a gRPC client and pipeline Kaetzchen queries.
 
-* ``SpoolDB`` is the user message spool configuration.
-
-* ``SQLDB`` is the SQL database backend configuration.
+Here's a configuration example for the external echo service
+using a concurrency level of three::
+  [[Provider.PluginKaetzchen]]
+    Capability = "echo"
+    Endpoint = "+echo"
+    Disable = false
+    Command = "/var/lib/katzenpost/plugins/echo"
+    MaxConcurrency = 3
 
 
 Provider User Database Configuration
