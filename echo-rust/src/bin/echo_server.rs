@@ -8,8 +8,8 @@ extern crate echo_rust;
 use std::thread;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
-use echo_rust::kaetzchen::{Request, Response};
-use echo_rust::kaetzchen_grpc::{KaetzchenServer, Kaetzchen};
+use echo_rust::proto::kaetzchen::{Request, Response};
+use echo_rust::proto::kaetzchen_grpc::{KaetzchenServer, Kaetzchen};
 
 
 struct Echo;
