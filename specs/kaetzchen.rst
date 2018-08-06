@@ -155,6 +155,10 @@ format in the forward Sphinx packet::
    there may be additional anonymity impact that requires separate
    consideration.
 
+   Clients MUST NOT have predictable retranmission otherwise this
+   makes active confirmations attacks possible which could be used
+   to discover the ingress Provider of the client.
+
 6. Security Considerations
 ==========================
 
