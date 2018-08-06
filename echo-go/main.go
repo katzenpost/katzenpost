@@ -15,7 +15,7 @@ func main() {
 	plugin.Serve(&plugin.ServeConfig{
 		HandshakeConfig: common.Handshake,
 		Plugins: map[string]plugin.Plugin{
-			"echo": &common.KaetzchenPlugin{Impl: &Echo{}},
+			common.KaetzchenService: &common.KaetzchenPlugin{Impl: &Echo{}},
 		},
 
 		// A non-nil value here enables gRPC serving for this plugin...
