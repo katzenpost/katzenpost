@@ -4,6 +4,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 **************************************************************
 
 | Yawning Angel
+| Claudia Diaz
 | Ania Piotrowska
 | David Stainton
 
@@ -662,6 +663,15 @@ vote was not accepted.
    * If consensus has failed and thus there is more than one consensus
      file, clients MUST NOT use this compromised consensus and refuse
      to run.
+
+   * We try to avoid randomizing the topology because doing so splits
+     the anonymity sets on each mix into two. That is, packets belonging
+     to the previous topology versus the current topology are trivially
+     distinguishable. On the other hand if enough mixes fall out of
+     consensus eventually the mixnet will need to be rebalanced to avoid
+     an attacker compromised path selection. One example of this would
+     be the case where the adversary controls the only mix is one
+     layer of the network topology.
 
 9. Security Considerations
 
