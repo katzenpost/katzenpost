@@ -11,6 +11,11 @@ you just want to write mixnet services in rust. fine.
 to regenerate protobuf and grpc files
 -------------------------------------
 
+currently running a "cargo build" should autogenerate the
+grpc and protobuf rust code due to our build.rs file. however,
+you could also regenerate the grpc and protobuf code using
+a command like the following:
+
 ::
 
    # set this to the location of your local github.com/katzenpost/server repo
