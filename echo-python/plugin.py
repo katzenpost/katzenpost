@@ -27,7 +27,7 @@ def serve():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     kaetzchen_pb2_grpc.add_KaetzchenServicer_to_server(
         EchoServicer(), server)
-    server.add_insecure_port(socket)
+    server.add_insecure_port("unix:%s" % socket)
     server.start()
 
     # Output information
