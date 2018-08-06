@@ -1,4 +1,9 @@
 
+==================
+HACKING Katzenpost
+==================
+
+
 Getting started in Katzenpost development
 =========================================
 
@@ -105,6 +110,10 @@ Here's how to use our dependency vendoring system with a development workflow:
 client and server internals
 ---------------------------
 
+
+the Worker type
+```````````````
+
 Katzenpost is NOT crash-only software. Everything has a proper
 shutdown code path unlike many golang examples on the
 Internet. Struct types which act as worker goroutines MUST be a
@@ -120,8 +129,30 @@ by the Worker's HaltCh method. There are plenty of examples of this
 in our code.
 
 
-server internals
-----------------
+the Channels library
+````````````````````
+
+The Katzenpost mix server and mailproxy both use the EApache Channels library:
+
+* https://gopkg.in/eapache/channels.v1
+
+Channels API docs:
+
+* https://godoc.org/gopkg.in/eapache/channels.v1
+
+Channels code:
+
+* https://github.com/eapache/channels/tree/v1.1.0
+
+The extended functionality of these channels is well suited to
+building various kinds of computational pipelines. In particular
+throughout the code base you will see "infinite buffered channels"
+used as a queue connecting the schedulers of pipeline stages.
+More discussion on this pipeline model is below in the next section.
+
+
+the SEDA model
+``````````````
 
 The Katzenpost server is essentially a software based router and as
 such it utilizes three active queue management algorithms
@@ -141,6 +172,10 @@ recommend reading:
 
 * "SEDA: An Architecture for Well-Conditioned, Scalable Internet Services",
   http://www.sosp.org/2001/papers/welsh.pdf
+
+
+the mix strategy
+````````````````
 
 Currently Katzenpost only supports the Poisson mix strategy and
 therefore the mix strategy AQM is implemented using a priority
@@ -227,7 +262,7 @@ Making a code contribution
    a new git branch with your specification document and then
    submitting a pull-request.
 
-2. Document your feature addition
+2. Document the work task
 
    Open a ticket to document your feature addition or code change using
    the repository's issue tracker.
