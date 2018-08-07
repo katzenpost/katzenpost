@@ -21,9 +21,9 @@ Abstract
    server side that is almost exactly the same except for the addition
    of several Provider-side mixnet services. [KAETZCHEN]
 
-   This protocol assumes some method of exchanging channel setup
-   information between clients, this information includes public keys
-   for encryption AND descriptors of unidirectional dead drops
+   This protocol uses [PANDA] to exchange channel setup information
+   between clients, this information includes public keys for
+   encryption AND descriptors of unidirectional dead drops
    [KATZDEADDROP]. We use the exchange of unidirectional channels to
    form bidirectional channels. We exchange multiple dead drop
    descriptors for reliability purposes. The highest protocol
@@ -88,23 +88,25 @@ Abstract
    message delivery. SURBs have a relatively short lifetime because
    they are essentially a mixnet packet header which is encrypted with
    the routing keys of several mixes and therefore expires when any of
-   the mixes rotate their key. In the Katzenpost system this key
-   rotation epoch is every 3 hours. [KATZMIXPKI] It is NOT desirable
-   to have long lived mix routing keys because this increases the
-   amount of time required to perform a compulsion attack. We conclude
-   that SURBs are NOT suitable for establishing a bidirectional
-   communication channel for clients that frequently go offline for
-   time durations greater than the mix key rotation epoch. Instead a
-   Katzenpost autoresponder [KAETZCHEN] based dead drop [KATZDEADDROP]
-   service can be used.
+   the mixes rotate their key.
 
-   Unlike SURBs dead drop descriptors do not have any inherent
-   expiration. However, for the purpose of reducing exposure to
-   longterm statistical disclosure attacks, these descriptors shall
-   specify an expiration. The expiration specifies how far into the
-   future the receiver promises to check for messages in the dead drop
-   queue. Client communication partners MUST periodically exchange new
-   dead drop descriptors before the old dead drop descriptors expire.
+   In the Katzenpost system this key rotation epoch is every 3
+   hours. [KATZMIXPKI] It is NOT desirable to have long lived mix
+   routing keys because this increases the time allowance of
+   compulsion attacks. We conclude that SURBs are NOT suitable for
+   establishing a bidirectional communication channel for clients that
+   frequently go offline for time durations greater than the mix key
+   rotation epoch.
+
+   Instead a Katzenpost autoresponder [KAETZCHEN] based dead drop
+   [KATZDEADDROP] service can be used.  Unlike SURBs dead drop
+   descriptors do not have any inherent expiration. However, for the
+   purpose of reducing exposure to longterm statistical disclosure
+   attacks, these descriptors shall specify an expiration. The
+   expiration specifies how far into the future the receiver promises
+   to check for messages in the dead drop queue. Client communication
+   partners MUST periodically exchange new dead drop descriptors
+   before the old dead drop descriptors expire.
 
 3. Threat Model
 
@@ -155,11 +157,32 @@ Abstract
       S0 M0 R0 Rev0
 
 4. Protocol Description
-X. Anonymity Considerations
-Y. Security Considerations
-Z. Future Work
+
+Each client performs the [PANDA] protocol exchange using
+their shared passphrase. This allows clients to establish
+a Single Double Ratchet connection using Katzenpost dead drops.
+
+Our four point protocol plan is as follows:
+
+1. register a remote mailbox as the dead drop for the new contact
+
+2. create signal double ratchet keys and compose a dead drop descriptor
+
+3. perform the PANDA exchange
+
+4. send and receive messages
+
+
+X. Future Work
 
    * a more formal security analysis
+
+   * Post Quantum double ratchet instead of Signal Double Ratchet
+
+   * can we use Sphinc-256 signatures for anything? ;-p
+
+Y. Anonymity Considerations
+Z. Security Considerations
 
 Appendix A. References
 
