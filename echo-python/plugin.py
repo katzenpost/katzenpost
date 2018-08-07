@@ -16,15 +16,24 @@ import kaetzchen_pb2
 import kaetzchen_pb2_grpc
 
 
+class NoSURBException(Exception):
+    """
+    This exception is raised when a request
+    is received that does not contain a SURB.
+    """
+
+
 class EchoServicer(kaetzchen_pb2_grpc.KaetzchenServicer):
 
     def __init__(self, logger):
         self.logger = logger
 
     def OnRequest(self, request, context):
-        self.logger.info("received echo request")
-        return request
-
+        if not request.HasSURB:
+            self.logger.error("received request without SURB")
+            raise NoSURBException
+        self.logger.info("received request")
+        return kaetzchen_pb2.Response(Payload=request.Payload)
 
 def main():
     ap = argparse.ArgumentParser()
