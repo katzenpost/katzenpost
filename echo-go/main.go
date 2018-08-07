@@ -7,7 +7,7 @@ import (
 
 type Echo struct{}
 
-func (Echo) OnRequest(payload []byte) ([]byte, error) {
+func (Echo) OnRequest(payload []byte, hasSURB bool) ([]byte, error) {
 	return payload, nil
 }
 
