@@ -1,4 +1,4 @@
-package panda
+package client
 
 import (
 	"crypto/sha256"
@@ -7,9 +7,9 @@ import (
 	"io"
 	"sync"
 
-	panda_proto "github.com/david415/panda/proto"
-	"github.com/david415/panda/rijndael"
 	"github.com/golang/protobuf/proto"
+	panda_proto "github.com/katzenpost/panda/client/proto"
+	"github.com/katzenpost/panda/client/rijndael"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"

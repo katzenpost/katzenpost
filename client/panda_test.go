@@ -1,4 +1,4 @@
-package panda
+package client
 
 import (
 	"bytes"
