@@ -1,11 +1,32 @@
 
-hi, what's up
-=============
 
-Hello, I am an example of how to write a Katzenpost autoresponder service.
-These so called Kaetzchen services run as daemons listening to a UNIX socket.
-A gRPC protocol is used to exchange messages between the mix server and the plugin
-programs. You could write your plugin in any language but you REALLY like python. Fine.
+python echo service plugin for katzenpost server
+------------------------------------------------
+
+We hope that this sample python echo service plugin program
+for Katzenpost will serve as an inspiring example of how
+to write micro-services for the Katzenpost mix network.
+
+server configuration example
+----------------------------
+
+Note that the following paths should be replaced with the
+path to the echo service executable file and the log directory:
+
+::
+   [[Provider.PluginKaetzchen]]
+     Capability = "echo"
+     Endpoint = "+echo"
+     Disable = false
+     Command = "/home/user/gopath/src/github.com/katzenpost/server_plugins/echo-python/plugin.py"
+     MaxConcurrency = 1
+     [Provider.PluginKaetzchen.Config]
+       l = "/home/user/test_mixnet/service_logs"
+
+
+
+manually generate protobuf and grpc files
+-----------------------------------------
 
 Generate both the protobufs and grpc files::
 
