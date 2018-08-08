@@ -54,6 +54,7 @@ type Client struct {
 	haltOnce   sync.Once
 
 	onlineAt time.Time
+	opCh     chan workerOp
 }
 
 func (c *Client) initLogging() error {
@@ -102,6 +103,7 @@ func New(cfg *config.Config) (*Client, error) {
 	c.cfg = cfg
 	c.fatalErrCh = make(chan error)
 	c.haltedCh = make(chan interface{})
+	c.opCh = make(chan workerOp)
 
 	// Do the early initialization and bring up logging.
 	if err := utils.MkDataDir(c.cfg.Proxy.DataDir); err != nil {
