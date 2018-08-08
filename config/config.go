@@ -29,7 +29,6 @@ import (
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
 	"github.com/katzenpost/client/internal/proxy"
-	//"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
@@ -88,6 +87,10 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
+	// EnableLoops if set to true enables using client loop decoy
+	// traffic.
+	EnableLoops bool
+
 	// CaseSensitiveUserIdentifiers disables the forced lower casing of
 	// the Account `User` field.
 	CaseSensitiveUserIdentifiers bool

@@ -18,11 +18,14 @@
 package client
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
@@ -49,6 +52,8 @@ type Client struct {
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
+
+	onlineAt time.Time
 }
 
 func (c *Client) initLogging() error {
@@ -103,6 +108,17 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 	if err := c.initLogging(); err != nil {
+		return nil, err
+	}
+
+	// Load or generate link key.
+	id := fmt.Sprintf("%s@%s", c.cfg.Account.User, c.cfg.Account.Provider)
+	basePath := filepath.Join(c.cfg.Proxy.DataDir, id)
+	linkPriv := filepath.Join(basePath, "link.private.pem")
+	linkPub := filepath.Join(basePath, "link.public.pem")
+	var err error
+	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
+		c.log.Errorf("Failure to load link keys: %s", err)
 		return nil, err
 	}
 

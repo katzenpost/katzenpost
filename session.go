@@ -22,13 +22,10 @@ import (
 	"errors"
 	"fmt"
 	mrand "math/rand"
-	"path/filepath"
 	"time"
 
 	"github.com/katzenpost/client/internal/pkiclient"
 	coreconstants "github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
@@ -36,7 +33,7 @@ import (
 	"github.com/katzenpost/minclient/block"
 )
 
-// NewSession stablishes a session with provider using key.
+// NewSession establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
 func (c *Client) NewSession() error {
 	var err error
@@ -55,14 +52,6 @@ func (c *Client) NewSession() error {
 	}
 	pkiCacheClient := pkiclient.New(pkiClient)
 
-	id := fmt.Sprintf("%s@%s", c.cfg.Account.User, c.cfg.Account.Provider)
-	basePath := filepath.Join(c.cfg.Proxy.DataDir, id)
-	linkPriv := filepath.Join(basePath, "link.private.pem")
-	linkPub := filepath.Join(basePath, "link.public.pem")
-	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
-		return err
-	}
-
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
 		User:                c.cfg.Account.User,
@@ -80,7 +69,6 @@ func (c *Client) NewSession() error {
 		EnableTimeSync:      false,                                                    // Be explicit about it.
 	}
 
-	//c.authority = authority.NewStore(c.logBackend, proxyCfg)
 	c.connected = make(chan bool, 0)
 	c.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_c", c.cfg.Account.User, c.cfg.Account.Provider))
 	c.minclient, err = minclient.New(clientCfg)
@@ -88,6 +76,8 @@ func (c *Client) NewSession() error {
 		return err
 	}
 	err = c.waitForConnection()
+
+	c.Go(c.worker)
 	return err
 }
 
