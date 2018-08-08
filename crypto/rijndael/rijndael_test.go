@@ -43,7 +43,7 @@ func TestNewCipher(t *testing.T) {
 // vectors for 256-bit block sizes.
 var encryptionTests = []struct {
 	keyHex, outHex string
-} {
+}{
 	{
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		"c6227e7740b7e53b5cb77865278eab0726f62366d9aabad908936123a1fc8af3",
@@ -2112,7 +2112,7 @@ func TestEncrypt(t *testing.T) {
 
 		c.Decrypt(&plaintext, &encrypted)
 		if !bytes.Equal(plaintext[:], zeros[:]) {
-			t.Errorf("%d: non-zero decryption: %x", plaintext)
+			t.Errorf("%d: non-zero decryption: %x", i, plaintext)
 		}
 	}
 }

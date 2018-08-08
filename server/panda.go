@@ -38,7 +38,7 @@ import (
 
 const (
 	pandaCapability = "panda"
-	pandaVersion    = 0
+	PandaVersion    = 0
 
 	pandaStatusReceived1            = 0
 	pandaStatusReceived2            = 1
@@ -52,7 +52,7 @@ const (
 
 var ErrNoSuchPandaTag = errors.New("Error: no such PANDA tag")
 
-type pandaRequest struct {
+type PandaRequest struct {
 	Version int
 	Tag     string
 	Message string
@@ -77,7 +77,7 @@ func (p *PandaPosting) Expired(expiration time.Duration) bool {
 	return postingTime.After(postingTime.Add(expiration))
 }
 
-func postingFromRequest(req *pandaRequest) (*[PandaTagLength]byte, *PandaPosting, error) {
+func postingFromRequest(req *PandaRequest) (*[PandaTagLength]byte, *PandaPosting, error) {
 	tagRaw, err := hex.DecodeString(req.Tag)
 	if err != nil {
 		return nil, nil, err
@@ -136,18 +136,18 @@ func (k *Panda) OnRequest(payload []byte, hasSURB bool) ([]byte, error) {
 	}
 	k.log.Debug("Handling request")
 	resp := pandaResponse{
-		Version:    pandaVersion,
+		Version:    PandaVersion,
 		StatusCode: pandaStatusSyntaxError,
 	}
 
 	// Parse out the request payload.
-	var req pandaRequest
+	var req PandaRequest
 	dec := codec.NewDecoderBytes(bytes.TrimRight(payload, "\x00"), &k.jsonHandle)
 	if err := dec.Decode(&req); err != nil {
 		k.log.Debugf("failed to decode request: (%v)", err)
 		return k.encodeResp(&resp), nil
 	}
-	if req.Version != pandaVersion {
+	if req.Version != PandaVersion {
 		k.log.Debugf("failed to parse request: (invalid version: %v)", req.Version)
 		return k.encodeResp(&resp), nil
 	}

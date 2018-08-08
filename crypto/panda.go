@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	panda_proto "github.com/katzenpost/panda/client/proto"
-	"github.com/katzenpost/panda/client/rijndael"
+	panda_proto "github.com/katzenpost/panda/crypto/proto"
+	"github.com/katzenpost/panda/crypto/rijndael"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
