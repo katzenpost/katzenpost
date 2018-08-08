@@ -17,6 +17,7 @@
 package client
 
 import (
+	"errors"
 	"math"
 	"time"
 
@@ -40,7 +41,6 @@ func (c *Client) worker() {
 	const (
 		maxDuration  = math.MaxInt64
 		minSendShift = 1000 // 1 second.
-		serviceLoop  = "loop"
 	)
 
 	// Intentionally use super conservative values for the send scheduling
@@ -63,7 +63,7 @@ func (c *Client) worker() {
 			return
 		case <-timer.C:
 			timerFired = true
-			// XXX case qo = <-a.opCh:
+		case qo = <-c.opCh:
 		}
 		if timerFired {
 			// It is time to send another block if one exists.
@@ -126,7 +126,7 @@ func (c *Client) worker() {
 				}
 
 				// Determine if it is possible to send cover traffic.
-				err := c.isDocValid(op.doc, c.cfg.Debug.EnableLoops)
+				err := c.isDocValid(op.doc)
 				if err != nil {
 					c.log.Errorf("Aborting... PKI Document is not valid for our use case: %v", err)
 					return
@@ -166,6 +166,13 @@ func (c *Client) worker() {
 	} // for
 }
 
-func (c *Client) isDocValid(doc *pki.Document, sendLoops bool) error {
-	return nil // XXX fix me
+func (c *Client) isDocValid(doc *pki.Document) error {
+	const serviceLoop = "loop"
+	for _, provider := range doc.Providers {
+		_, ok := provider.Kaetzchen[serviceLoop]
+		if !ok {
+			return errors.New("Error, found a Provider which does not have the loop service.")
+		}
+	}
+	return nil
 }
