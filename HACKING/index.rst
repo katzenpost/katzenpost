@@ -110,6 +110,11 @@ Here's how to use our dependency vendoring system with a development workflow:
 client and server internals
 ---------------------------
 
+The Katzenpost server repository has several coding themes which you
+should become familiar with before making a contribution. The server
+must not have any unbounded resource consumption such as spawning new
+go routines for example.
+
 
 the Worker type
 ```````````````
@@ -187,27 +192,41 @@ queue. To learn more about the Poisson mix strategy you should read:
 * "Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System",
   https://www.freehaven.net/anonbib/cache/stop-and-go.pdf
 
-The Katzenpost server repository has several coding themes which you
-should become familiar with before making a contribution. The server
-must not have any unbounded resource consumption such as spawning new
-go routines for example.
+
+Mix Pipeline Diagram
+--------------------
+
+::
+
+     .-----------.        .------------.       .---------.
+     | Listeners |  --->  |  incoming  | --->  |  crypto |
+     `-----------'        | connection |       | workers |
+          ▲               |  workers   |       `---------'
+          |               `------------'            |
+          |                                         |
+          |                                         V
+          |               .------------.      .----------.
+                          |  connector |      |   mix    |
+       network link  <--- |   packet   | <--- | strategy |
+                          | dispatcher |      |   AQM    |
+                          `------------'      `----------'
 
 
-Provider and Mix Pipeline Diagram
----------------------------------
+Provider Pipeline Diagram
+-------------------------
 
 ::
 
      .-----------.        .------------.       .---------.       .----------.       .-------------.
      | Listeners |  --->  |  incoming  | --->  |  crypto | --->  | provider | --->  | user spools |
      `-----------'        | connection |       | workers |       |  packet  |       `-------------'
-                          |  workers   |       `---------'       | workers  |                  .-----------------.
-                          `------------'            |            `----------'      .-------->  | external plugin |
-                                                    |                 |  |         |           |     workers     |
-                                                    V                 |  '_        |           `-----------------'
-                          .------------.      .----------.            V    '-------|           .-----------------.
+          ▲               |  workers   |       `---------'       | workers  |                  .-----------------.
+          |               `------------'            |            `----------'      .-------->  | external plugin |
+          |                                         |                 |  |         |           |     workers     |
+          |                                         V                 |  '_        |           `-----------------'
+          |               .------------.      .----------.            V    '-------|           .-----------------.
                           |  connector |      |   mix    |       .-----------.     |           | external plugin |
-                          |   packet   | <--- | strategy |       | kaetzchen |     |-------->  |     workers     |    ....-----.
+       network link <---  |   packet   | <--- | strategy |       | kaetzchen |     |-------->  |     workers     |    ....-----.
                           | dispatcher |      |   AQM    |       |  workers  |     |           `-----------------'              `\
                           `------------'      `----------'       `-----------'     |           .-----------------.                |
                                      _                                 |           |           | external plugin |                |
