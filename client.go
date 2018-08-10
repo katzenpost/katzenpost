@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
@@ -57,8 +58,11 @@ type Client struct {
 	condGotPKIDoc  *sync.Cond
 	hasPKIDoc      bool
 	condGotMessage *sync.Cond
+	condGotReply   *sync.Cond
 	condGotConnect *sync.Cond
 	egressQueue    *goque.Queue
+	surbKeys       map[[sConstants.SURBIDLength]byte][]byte
+	surbEtas       map[time.Duration][sConstants.SURBIDLength]byte
 }
 
 func (c *Client) initLogging() error {
@@ -108,6 +112,8 @@ func New(cfg *config.Config) (*Client, error) {
 	c.fatalErrCh = make(chan error)
 	c.haltedCh = make(chan interface{})
 	c.opCh = make(chan workerOp)
+	c.surbKeys = make(map[[sConstants.SURBIDLength]byte][]byte)
+	c.surbEtas = make(map[time.Duration][sConstants.SURBIDLength]byte)
 
 	const egressQueueName = "egress_queue"
 	egressQueueDir := filepath.Join(c.cfg.Proxy.DataDir, egressQueueName)
@@ -120,13 +126,16 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 
-	// make some sync.Cond
+	// make some synchronised conditions
 	docLock := new(sync.Mutex)
 	docLock.Lock()
 	c.condGotPKIDoc = sync.NewCond(docLock)
 	gotMsgLock := new(sync.Mutex)
 	gotMsgLock.Lock()
 	c.condGotMessage = sync.NewCond(gotMsgLock)
+	gotReplyLock := new(sync.Mutex)
+	gotReplyLock.Lock()
+	c.condGotReply = sync.NewCond(gotReplyLock)
 	gotConnectLock := new(sync.Mutex)
 	gotConnectLock.Lock()
 	c.condGotConnect = sync.NewCond(gotConnectLock)

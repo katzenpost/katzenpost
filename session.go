@@ -33,6 +33,7 @@ type messageManifest struct {
 	Recipient string
 	Provider  string
 	Message   []byte
+	WithSURB  bool
 }
 
 // NewSession establishes a session with provider using key.
@@ -95,6 +96,18 @@ func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
 	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
 }
 
+func (c *Client) WaitForMessage() {
+	c.condGotMessage.Wait()
+}
+
+func (c *Client) WaitForReply() {
+	c.condGotReply.Wait()
+}
+
+func (c *Client) WaitForConnect() {
+	c.condGotConnect.Wait()
+}
+
 // OnConnection will be called by the minclient api
 // upon connecting to the Provider
 func (c *Client) onConnection(err error) {
@@ -115,18 +128,11 @@ func (c *Client) onMessage(ciphertextBlock []byte) error {
 	return nil
 }
 
-func (c *Client) WaitForMessage() {
-	c.condGotMessage.Wait()
-}
-
-func (c *Client) WaitForConnect() {
-	c.condGotConnect.Wait()
-}
-
 // OnACK is called by the minclient api whe
 // we receive an ACK message
 func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
 	c.log.Debugf("OnACK")
+	c.condGotReply.Broadcast()
 	return nil
 }
 

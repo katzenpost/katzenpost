@@ -17,9 +17,12 @@
 package client
 
 import (
-	"errors"
+	"fmt"
+	"io"
 
-	coreconstants "github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/constants"
+	"github.com/katzenpost/core/crypto/rand"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
 func (c *Client) sendNext() error {
@@ -32,7 +35,20 @@ func (c *Client) sendNext() error {
 	if err != nil {
 		return err
 	}
-	err = c.sendUnreliable(manifest.Recipient, manifest.Provider, manifest.Message)
+
+	if manifest.WithSURB {
+		surbID := [sConstants.SURBIDLength]byte{}
+		io.ReadFull(rand.Reader, surbID[:])
+		key, eta, err := c.minclient.SendCiphertext(manifest.Recipient, manifest.Provider, &surbID, manifest.Message)
+		if err != nil {
+			return err
+		}
+		c.surbKeys[surbID] = key
+		c.surbEtas[eta] = surbID
+
+	} else {
+		err = c.minclient.SendUnreliableCiphertext(manifest.Recipient, manifest.Provider, manifest.Message)
+	}
 	return err
 }
 
@@ -40,35 +56,34 @@ func (c *Client) sendDropDecoy() error {
 	return nil // XXX
 }
 
-// SendReliable reliably delivers the message to the recipient's queue
-// on the destination provider or returns an error
-//func (c *Client) sendReliable(recipient, provider string, message []byte) (*[block.MessageIDLength]byte, error) {
-//	c.log.Debugf("sendReliable")
-//	return nil, errors.New("failure: sendReliable is not yet implemented")
-//}
-
-// SendUnreliable unreliably sends a message to the recipient's queue
-// on the destination provider or returns an error
-func (c *Client) sendUnreliable(recipient, provider string, message []byte) error {
-	c.log.Debugf("sendUnreliable")
-
-	// Ensure the request message is under the maximum for a single
-	// packet, and pad out the message so that it is the correct size.
-	if len(message) > coreconstants.UserForwardPayloadLength {
-		return errors.New("failure: sendUnreliable message payload exceeds maximum.")
-	}
-	payload := make([]byte, coreconstants.UserForwardPayloadLength)
-	copy(payload, message)
-
-	return c.minclient.SendUnreliableCiphertext(recipient, provider, payload)
-}
-
-func (c *Client) Send(recipient, provider string, message []byte) error {
+func (c *Client) SendUnreliable(recipient, provider string, message []byte) error {
 	c.log.Debugf("Send")
 	var manifest = messageManifest{
 		Recipient: recipient,
 		Provider:  provider,
 		Message:   message,
+		WithSURB:  false,
+	}
+	_, err := c.egressQueue.EnqueueObject(manifest)
+	return err
+}
+
+func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) error {
+	c.log.Debugf("Send")
+
+	// Ensure the request message is under the maximum for a single
+	// packet, and pad out the message so that it is the correct size.
+	if len(message) > constants.UserForwardPayloadLength {
+		return fmt.Errorf("invalid message size: %v", len(message))
+	}
+	payload := make([]byte, constants.UserForwardPayloadLength)
+	copy(payload, message)
+
+	var manifest = messageManifest{
+		Recipient: recipient,
+		Provider:  provider,
+		Message:   payload,
+		WithSURB:  wantResponse,
 	}
 	_, err := c.egressQueue.EnqueueObject(manifest)
 	return err
