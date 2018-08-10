@@ -35,7 +35,11 @@ func (c *Client) sendNext() error {
 	if err != nil {
 		return err
 	}
+	return c.send(manifest)
+}
 
+func (c *Client) send(manifest *messageManifest) error {
+	var err error
 	if manifest.WithSURB {
 		surbID := [sConstants.SURBIDLength]byte{}
 		io.ReadFull(rand.Reader, surbID[:])
@@ -53,7 +57,20 @@ func (c *Client) sendNext() error {
 }
 
 func (c *Client) sendDropDecoy() error {
-	return nil // XXX
+	c.log.Debug("sending drop decoy")
+	const loopService = "loop"
+	serviceDesc, err := c.GetService(loopService)
+	if err != nil {
+		return err
+	}
+	payload := [constants.UserForwardPayloadLength]byte{}
+	manifest := &messageManifest{
+		Recipient: serviceDesc.Name,
+		Provider:  serviceDesc.Provider,
+		Message:   payload[:],
+		WithSURB:  false,
+	}
+	return c.send(manifest)
 }
 
 func (c *Client) SendUnreliable(recipient, provider string, message []byte) error {
