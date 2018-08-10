@@ -69,11 +69,9 @@ func (c *Client) worker() {
 			// It is time to send another block if one exists.
 			if isConnected { // Suppress spurious wakeups.
 				// Attempt to send user data first, if any exists.
-				didSend, err := c.sendNext()
+				err := c.sendNext()
 				if err != nil {
 					c.log.Warningf("Failed to send queued message: %v", err)
-				} else if !didSend {
-					// Send drop decoy message instead.
 					err = c.sendDropDecoy()
 					if err != nil {
 						c.log.Warningf("Failed to send drop decoy traffic: %v", err)
@@ -82,11 +80,11 @@ func (c *Client) worker() {
 			} // if isConnected
 		} else {
 			switch op := qo.(type) {
-			case *opIsEmpty:
+			case opIsEmpty:
 				// XXX do cleanup here?
 				continue
-			case *opConnStatusChanged:
-				// Note: a.isConnected isn't used in favor of passing the
+			case opConnStatusChanged:
+				// Note: c.isConnected isn't used in favor of passing the
 				// value via an op, to save on locking headaches.
 				if isConnected = op.isConnected; isConnected {
 					const skewWarnDelta = 2 * time.Minute
@@ -105,7 +103,7 @@ func (c *Client) worker() {
 						c.log.Debugf("Clock skew vs provider: %v", skew)
 					}
 				}
-			case *opNewDocument:
+			case opNewDocument:
 				// Update the Send[Lambda,Shift,MaxInterval] parameters from
 				// the PKI document.
 				if newSendLambda := op.doc.SendLambda; newSendLambda != sendLambda {
@@ -131,6 +129,7 @@ func (c *Client) worker() {
 					c.log.Errorf("Aborting... PKI Document is not valid for our use case: %v", err)
 					return
 				}
+				c.hasPKIDoc = true
 			default:
 				c.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			}

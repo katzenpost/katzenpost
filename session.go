@@ -18,20 +18,22 @@
 package client
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	mrand "math/rand"
 	"time"
 
 	"github.com/katzenpost/client/internal/pkiclient"
-	coreconstants "github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/minclient"
-	"github.com/katzenpost/minclient/block"
 )
+
+type messageManifest struct {
+	Recipient string
+	Provider  string
+	Message   []byte
+}
 
 // NewSession establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
@@ -65,63 +67,29 @@ func (c *Client) NewSession() error {
 		OnACKFn:             c.onACK,
 		OnDocumentFn:        c.onDocument,
 		DialContextFn:       proxyCfg.ToDialContext("nonvoting:" + c.cfg.NonvotingAuthority.PublicKey.String()),
-		MessagePollInterval: time.Duration(c.cfg.Debug.PollingInterval) * time.Second, // XXX
-		EnableTimeSync:      false,                                                    // Be explicit about it.
+		MessagePollInterval: time.Duration(c.cfg.Debug.PollingInterval) * time.Second,
+		EnableTimeSync:      false, // Be explicit about it.
 	}
 
-	c.connected = make(chan bool, 0)
 	c.log = c.logBackend.GetLogger(fmt.Sprintf("%s@%s_c", c.cfg.Account.User, c.cfg.Account.Provider))
 	c.minclient, err = minclient.New(clientCfg)
 	if err != nil {
 		return err
 	}
-	err = c.waitForConnection()
 
 	c.Go(c.worker)
-	return err
-}
-
-// waitForConnection blocks until the client is
-// connected to the Provider
-func (c *Client) waitForConnection() error {
-	isConnected := <-c.connected
-	if !isConnected {
-		return errors.New("status is not connected even with status change")
-	}
 	return nil
-}
-
-// Send reliably delivers the message to the recipient's queue
-// on the destination provider or returns an error
-func (c *Client) Send(recipient, provider string, message []byte) (*[block.MessageIDLength]byte, error) {
-	c.log.Debugf("Send")
-	return nil, errors.New("failure: Send is not yet implemented")
-}
-
-// SendUnreliable unreliably sends a message to the recipient's queue
-// on the destination provider or returns an error
-func (c *Client) SendUnreliable(recipient, provider string, message []byte) error {
-	c.log.Debugf("SendUnreliable")
-
-	// Ensure the request message is under the maximum for a single
-	// packet, and pad out the message so that it is the correct size.
-	if len(message) > coreconstants.UserForwardPayloadLength {
-		return errors.New("failure: SendUnreliable message payload exceeds maximum.")
-	}
-	payload := make([]byte, coreconstants.UserForwardPayloadLength)
-	copy(payload, message)
-
-	return c.minclient.SendUnreliableCiphertext(recipient, provider, payload)
 }
 
 // GetService returns a randomly selected service
 // matching the specified service name
 func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
-	epoch, _, _ := epochtime.Now()
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second) // XXX
-	doc, _, err := c.pkiClient.Get(ctx, epoch)
-	if err != nil {
-		return nil, err
+	for !c.hasPKIDoc {
+		c.condGotPKIDoc.Wait()
+	}
+	doc := c.minclient.CurrentDocument()
+	if doc == nil {
+		return nil, errors.New("pki doc is nil")
 	}
 	serviceDescriptors := FindServices(serviceName, doc)
 	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
@@ -132,7 +100,10 @@ func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
 func (c *Client) onConnection(err error) {
 	c.log.Debugf("OnConnection")
 	if err == nil {
-		c.connected <- true
+		c.opCh <- opConnStatusChanged{
+			isConnected: true,
+		}
+		c.condGotConnect.Broadcast()
 	}
 }
 
@@ -140,7 +111,16 @@ func (c *Client) onConnection(err error) {
 // upon receiving a message
 func (c *Client) onMessage(ciphertextBlock []byte) error {
 	c.log.Debugf("OnMessage")
+	c.condGotMessage.Broadcast()
 	return nil
+}
+
+func (c *Client) WaitForMessage() {
+	c.condGotMessage.Wait()
+}
+
+func (c *Client) WaitForConnect() {
+	c.condGotConnect.Wait()
 }
 
 // OnACK is called by the minclient api whe
@@ -152,4 +132,9 @@ func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) err
 
 func (c *Client) onDocument(doc *pki.Document) {
 	c.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
+	c.opCh <- opNewDocument{
+		doc: doc,
+	}
+	c.condGotPKIDoc.Broadcast()
+	c.hasPKIDoc = true
 }

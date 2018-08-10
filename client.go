@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/beeker1121/goque"
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
@@ -40,11 +41,9 @@ type Client struct {
 
 	cfg *config.Config
 
-	linkKey         *ecdh.PrivateKey
-	pkiClient       pki.Client
-	minclient       *minclient.Client
-	connected       chan bool
-	identityPrivKey *ecdh.PrivateKey
+	linkKey   *ecdh.PrivateKey
+	pkiClient pki.Client
+	minclient *minclient.Client
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -53,8 +52,13 @@ type Client struct {
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 
-	onlineAt time.Time
-	opCh     chan workerOp
+	onlineAt       time.Time
+	opCh           chan workerOp
+	condGotPKIDoc  *sync.Cond
+	hasPKIDoc      bool
+	condGotMessage *sync.Cond
+	condGotConnect *sync.Cond
+	egressQueue    *goque.Queue
 }
 
 func (c *Client) initLogging() error {
@@ -105,6 +109,28 @@ func New(cfg *config.Config) (*Client, error) {
 	c.haltedCh = make(chan interface{})
 	c.opCh = make(chan workerOp)
 
+	const egressQueueName = "egress_queue"
+	egressQueueDir := filepath.Join(c.cfg.Proxy.DataDir, egressQueueName)
+	err := utils.MkDataDir(egressQueueDir)
+	if err != nil {
+		return nil, err
+	}
+	c.egressQueue, err = goque.OpenQueue(egressQueueDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// make some sync.Cond
+	docLock := new(sync.Mutex)
+	docLock.Lock()
+	c.condGotPKIDoc = sync.NewCond(docLock)
+	gotMsgLock := new(sync.Mutex)
+	gotMsgLock.Lock()
+	c.condGotMessage = sync.NewCond(gotMsgLock)
+	gotConnectLock := new(sync.Mutex)
+	gotConnectLock.Lock()
+	c.condGotConnect = sync.NewCond(gotConnectLock)
+
 	// Do the early initialization and bring up logging.
 	if err := utils.MkDataDir(c.cfg.Proxy.DataDir); err != nil {
 		return nil, err
@@ -118,20 +144,12 @@ func New(cfg *config.Config) (*Client, error) {
 	basePath := filepath.Join(c.cfg.Proxy.DataDir, id)
 	linkPriv := filepath.Join(basePath, "link.private.pem")
 	linkPub := filepath.Join(basePath, "link.public.pem")
-	var err error
 	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
 		c.log.Errorf("Failure to load link keys: %s", err)
 		return nil, err
 	}
 
 	c.log.Noticef("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
-
-	isOk := false
-	defer func() {
-		if !isOk {
-			c.Shutdown()
-		}
-	}()
 
 	// Start the fatal error watcher.
 	go func() {
