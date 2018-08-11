@@ -42,13 +42,11 @@ type Client struct {
 
 	cfg *config.Config
 
-	linkKey   *ecdh.PrivateKey
-	pkiClient pki.Client
-	minclient *minclient.Client
-
+	linkKey    *ecdh.PrivateKey
+	pkiClient  pki.Client
+	minclient  *minclient.Client
 	logBackend *log.Backend
 	log        *logging.Logger
-
 	fatalErrCh chan error
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
@@ -57,17 +55,17 @@ type Client struct {
 	dTimer *poisson.PoissonTimer // timer for drop decoys
 	lTimer *poisson.PoissonTimer // optional timer for loop decoys
 
-	opCh chan workerOp
+	opCh        chan workerOp
+	onlineAt    time.Time
+	hasPKIDoc   bool
+	egressQueue *goque.Queue
+	surbKeys    map[[sConstants.SURBIDLength]byte][]byte
+	surbEtas    map[time.Duration][sConstants.SURBIDLength]byte
 
-	onlineAt       time.Time
 	condGotPKIDoc  *sync.Cond
-	hasPKIDoc      bool
 	condGotMessage *sync.Cond
 	condGotReply   *sync.Cond
 	condGotConnect *sync.Cond
-	egressQueue    *goque.Queue
-	surbKeys       map[[sConstants.SURBIDLength]byte][]byte
-	surbEtas       map[time.Duration][sConstants.SURBIDLength]byte
 }
 
 func (c *Client) initLogging() error {
@@ -135,12 +133,15 @@ func New(cfg *config.Config) (*Client, error) {
 	docLock := new(sync.Mutex)
 	docLock.Lock()
 	c.condGotPKIDoc = sync.NewCond(docLock)
-	gotMsgLock := new(sync.Mutex)
-	gotMsgLock.Lock()
-	c.condGotMessage = sync.NewCond(gotMsgLock)
+
+	gotMessageLock := new(sync.Mutex)
+	gotMessageLock.Lock()
+	c.condGotMessage = sync.NewCond(gotMessageLock)
+
 	gotReplyLock := new(sync.Mutex)
 	gotReplyLock.Lock()
 	c.condGotReply = sync.NewCond(gotReplyLock)
+
 	gotConnectLock := new(sync.Mutex)
 	gotConnectLock.Lock()
 	c.condGotConnect = sync.NewCond(gotConnectLock)

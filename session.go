@@ -116,9 +116,13 @@ func (c *Client) WaitForConnect() {
 func (c *Client) onConnection(err error) {
 	c.log.Debugf("OnConnection")
 	if err == nil {
-		c.opCh <- opConnStatusChanged{
-			isConnected: true,
-		}
+		go func() {
+			c.opCh <- opConnStatusChanged{
+				isConnected: true,
+			}
+		}()
+		c.condGotConnect.L.Lock()
+		defer c.condGotConnect.L.Unlock()
 		c.condGotConnect.Broadcast()
 	}
 }
@@ -127,6 +131,8 @@ func (c *Client) onConnection(err error) {
 // upon receiving a message
 func (c *Client) onMessage(ciphertextBlock []byte) error {
 	c.log.Debugf("OnMessage")
+	c.condGotMessage.L.Lock()
+	defer c.condGotMessage.L.Unlock()
 	c.condGotMessage.Broadcast()
 	return nil
 }
@@ -135,12 +141,16 @@ func (c *Client) onMessage(ciphertextBlock []byte) error {
 // we receive an ACK message
 func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
 	c.log.Debugf("OnACK")
+	c.condGotReply.L.Lock()
+	defer c.condGotReply.L.Unlock()
 	c.condGotReply.Broadcast()
 	return nil
 }
 
 func (c *Client) onDocument(doc *pki.Document) {
 	c.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
+	c.condGotPKIDoc.L.Lock()
+	defer c.condGotPKIDoc.L.Unlock()
 	c.condGotPKIDoc.Broadcast()
 	c.hasPKIDoc = true
 	c.opCh <- opNewDocument{

@@ -39,9 +39,6 @@ type opNewDocument struct {
 
 func (c *Client) initializeTimers() {
 	c.WaitForPKIDocument()
-	// drain our opCh channel
-	// so that minclient can progress
-	<-c.opCh // XXX do we need to do this? probably not.
 
 	// Lambda-P
 	doc := c.minclient.CurrentDocument()
