@@ -1,5 +1,5 @@
 // client.go - Katzenpost client library
-// Copyright (C) 2017  David Stainton, Yawning Angel
+// Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package client provides the Katzenpost midclient
+// Package client provides a Katzenpost client library.
 package client
 
 import (

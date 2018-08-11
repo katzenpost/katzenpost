@@ -1,5 +1,5 @@
 // config.go - Katzenpost client configuration.
-// Copyright (C) 2018  Yawning Angel, David Anthony Stainton.
+// Copyright (C) 2018  Yawning Angel, David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,8 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package config implements the configuration for the Katzenpost client mail
-// proxy.
+// Package config implements the configuration for the Katzenpost client.
 package config
 
 import (
@@ -47,7 +46,7 @@ var defaultLogging = Logging{
 	Level:   defaultLogLevel,
 }
 
-// Proxy is the mail proxy configuration.
+// Proxy is the proxy configuration.
 type Proxy struct {
 	// DataDir is the absolute path to the data directory.
 	DataDir string
@@ -60,7 +59,7 @@ func (pCfg *Proxy) validate() error {
 	return nil
 }
 
-// Logging is the mail proxy logging configuration.
+// Logging is the logging configuration.
 type Logging struct {
 	// Disable disables logging entirely.
 	Disable bool
@@ -242,7 +241,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
-// Config is the top level mail proxy configuration.
+// Config is the top level client configuration.
 type Config struct {
 	Proxy              *Proxy
 	Logging            *Logging
