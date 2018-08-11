@@ -91,6 +91,32 @@ type Debug struct {
 	// traffic.
 	EnableLoops bool
 
+	// LambdaL is the inverse of the mean of the exponential distribution
+	// that is used to determine time duration between sending client
+	// loop decoy traffic messages.
+	LambdaL float64
+
+	// LambdaLMaxInterval is the maximum value that can be produced using LambdaL
+	// poisson process
+	LambdaLMax uint64
+
+	// LambdaLShift is the shift applied to the Lambda-L samples in
+	// milliseconds.
+	LambdaLShift uint64
+
+	// LambdaD is the inverse of the mean of the exponential distribution
+	// that is used to determine time duration between sending client
+	// drop decoy traffic messages.
+	LambdaD float64
+
+	// LambdaDMaxInterval is the maximum value that can be produced using LambdaD
+	// poisson process
+	LambdaDMax uint64
+
+	// LambdaLShift is the shift applied to the Lambda-L samples in
+	// milliseconds.
+	LambdaDShift uint64
+
 	// CaseSensitiveUserIdentifiers disables the forced lower casing of
 	// the Account `User` field.
 	CaseSensitiveUserIdentifiers bool

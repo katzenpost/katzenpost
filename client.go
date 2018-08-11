@@ -25,8 +25,8 @@ import (
 
 	"github.com/beeker1121/goque"
 	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
@@ -53,8 +53,13 @@ type Client struct {
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 
+	pTimer *poisson.PoissonTimer // timer for legit messages and drop decoys
+	dTimer *poisson.PoissonTimer // timer for drop decoys
+	lTimer *poisson.PoissonTimer // optional timer for loop decoys
+
+	opCh chan workerOp
+
 	onlineAt       time.Time
-	opCh           chan workerOp
 	condGotPKIDoc  *sync.Cond
 	hasPKIDoc      bool
 	condGotMessage *sync.Cond
@@ -148,17 +153,17 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 
-	// Load or generate link key.
+	// Load link key.
 	id := fmt.Sprintf("%s@%s", c.cfg.Account.User, c.cfg.Account.Provider)
 	basePath := filepath.Join(c.cfg.Proxy.DataDir, id)
 	linkPriv := filepath.Join(basePath, "link.private.pem")
 	linkPub := filepath.Join(basePath, "link.public.pem")
-	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
+	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, nil); err != nil {
 		c.log.Errorf("Failure to load link keys: %s", err)
 		return nil, err
 	}
 
-	c.log.Noticef("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
+	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
 
 	// Start the fatal error watcher.
 	go func() {

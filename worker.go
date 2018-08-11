@@ -1,5 +1,5 @@
 // worker.go - mixnet client worker
-// Copyright (C) 2018  Yawning Angel, David Stainton.
+// Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -18,10 +18,10 @@ package client
 
 import (
 	"errors"
-	"math"
+	"fmt"
 	"time"
 
-	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/core/pki"
 )
 
@@ -37,48 +37,83 @@ type opNewDocument struct {
 	doc *pki.Document
 }
 
+func (c *Client) initializeTimers() {
+	c.WaitForPKIDocument()
+	// drain our opCh channel
+	// so that minclient can progress
+	<-c.opCh // XXX do we need to do this? probably not.
+
+	// Lambda-P
+	doc := c.minclient.CurrentDocument()
+	pDesc := &poisson.PoissonDescriptor{
+		Lambda: doc.SendLambda,
+		Shift:  doc.SendShift,
+		Max:    doc.SendMaxInterval,
+	}
+	c.pTimer = poisson.NewTimer(pDesc)
+
+	// Lambda-D
+	dDesc := &poisson.PoissonDescriptor{
+		Lambda: c.cfg.Debug.LambdaD,
+		Shift:  c.cfg.Debug.LambdaDShift,
+		Max:    c.cfg.Debug.LambdaDMax,
+	}
+	c.dTimer = poisson.NewTimer(dDesc)
+
+	// Lambda-L
+	if c.cfg.Debug.EnableLoops {
+		lDesc := &poisson.PoissonDescriptor{
+			Lambda: c.cfg.Debug.LambdaL,
+			Shift:  c.cfg.Debug.LambdaLShift,
+			Max:    c.cfg.Debug.LambdaLMax,
+		}
+		c.lTimer = poisson.NewTimer(lDesc)
+	}
+}
+
 func (c *Client) worker() {
-	const (
-		maxDuration  = math.MaxInt64
-		minSendShift = 1000 // 1 second.
-	)
+	c.initializeTimers()
 
-	// Intentionally use super conservative values for the send scheduling
-	// if the PKI happens to not specify any.
-	sendLambda := 0.00001
-	sendShift := uint64(60000)
-	sendMaxInterval := uint64(rand.ExpQuantile(sendLambda, 0.99999))
-
-	mRng := rand.NewMath()
-	wakeInterval := time.Duration(maxDuration)
-	timer := time.NewTimer(wakeInterval)
-	defer timer.Stop()
-
-	var isConnected bool
+	c.pTimer.Start()
+	defer c.pTimer.Stop()
+	c.dTimer.Start()
+	defer c.dTimer.Stop()
+	var lambdaLChan *<-chan time.Time = new(<-chan time.Time)
+	if c.cfg.Debug.EnableLoops {
+		c.lTimer.Start()
+		defer c.lTimer.Stop()
+		*lambdaLChan = c.lTimer.Timer.C
+	}
+	var isConnected bool = false
 	for {
-		var timerFired bool
-		var qo workerOp
+		var lambdaLFired bool = false
+		var lambdaDFired bool = false
+		var lambdaPFired bool = false
+		var qo workerOp = nil
 		select {
 		case <-c.HaltCh():
+			c.log.Debugf("Terminating gracefully.")
 			return
-		case <-timer.C:
-			timerFired = true
+		case <-c.pTimer.Timer.C:
+			lambdaPFired = true
+		case <-c.dTimer.Timer.C:
+			lambdaDFired = true
+		case <-*lambdaLChan:
+			lambdaLFired = true
 		case qo = <-c.opCh:
 		}
-		if timerFired {
-			// It is time to send another block if one exists.
-			if isConnected { // Suppress spurious wakeups.
-				// Attempt to send user data first, if any exists.
-				err := c.sendNext()
-				if err != nil {
-					c.log.Warningf("Failed to send queued message: %v", err)
-					err = c.sendDropDecoy()
-					if err != nil {
-						c.log.Warningf("Failed to send drop decoy traffic: %v", err)
-					}
-				}
-			} // if isConnected
-		} else {
+		if isConnected {
+			if lambdaPFired {
+				c.lambdaPTask()
+			}
+			if lambdaDFired {
+				c.lambdaDTask()
+			}
+			if lambdaLFired {
+				c.lambdaLTask()
+			}
+		}
+		if qo != nil {
 			switch op := qo.(type) {
 			case opIsEmpty:
 				// XXX do cleanup here?
@@ -98,71 +133,77 @@ func (c *Client) worker() {
 					if absSkew > skewWarnDelta {
 						// Should this do more than just warn?  Should this
 						// use skewed time?  I don't know.
-						c.log.Warningf("The observed time difference between the host and provider clocks is '%v'.  Correct your system time.", skew)
+						c.log.Warningf("The observed time difference between the host and provider clocks is '%v'. Correct your system time.", skew)
 					} else {
 						c.log.Debugf("Clock skew vs provider: %v", skew)
 					}
 				}
 			case opNewDocument:
-				// Update the Send[Lambda,Shift,MaxInterval] parameters from
-				// the PKI document.
-				if newSendLambda := op.doc.SendLambda; newSendLambda != sendLambda {
-					c.log.Debugf("Updated SendLambda: %v", newSendLambda)
-					sendLambda = newSendLambda
-				}
-				if newSendShift := op.doc.SendShift; newSendShift != sendShift {
-					if newSendShift < minSendShift {
-						c.log.Debugf("Ignoring pathologically small SendShift: %v", newSendShift)
-					} else {
-						c.log.Debugf("Updated SendShift: %v", newSendShift)
-						sendShift = newSendShift
-					}
-				}
-				if newSendMaxInterval := op.doc.SendMaxInterval; newSendMaxInterval != sendMaxInterval {
-					c.log.Debugf("Updated SendMaxInterval: %v", newSendMaxInterval)
-					sendMaxInterval = newSendMaxInterval
-				}
-
-				// Determine if it is possible to send cover traffic.
+				// Determine if PKI doc is valid.
+				// If not then abort.
 				err := c.isDocValid(op.doc)
 				if err != nil {
-					c.log.Errorf("Aborting... PKI Document is not valid for our use case: %v", err)
+					c.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+					c.fatalErrCh <- fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
 					return
 				}
-				c.hasPKIDoc = true
+
+				// Update our Lambda-P parameters from the PKI document
+				// if indeed they have changed.
+				desc := &poisson.PoissonDescriptor{
+					Lambda: op.doc.SendLambda,
+					Shift:  op.doc.SendShift,
+					Max:    op.doc.SendMaxInterval,
+				}
+				if !c.pTimer.DescriptorEquals(desc) {
+					c.pTimer.SetPoisson(desc)
+				}
 			default:
 				c.log.Warningf("BUG: Worker received nonsensical op: %T", op)
-			}
-		}
-		if isConnected {
-			// Per section 4.1.2 of the Loopix paper:
-			//
-			//   Users emit payload messages following a Poisson
-			//   distribution with parameter lambdaP. All messages
-			//   scheduled for sending by the user are placed within
-			//   a first-in first-out buffer. According to a Poisson
-			//   process, a single message is popped out of the buffer
-			//   and sent, or a drop cover message is sent in case the
-			//   buffer is empty. Thus, from an adversarial perspective,
-			//   there is always traffic emitted modeled by Pois(lambdaP).
-			wakeMsec := uint64(rand.Exp(mRng, sendLambda))
-			switch {
-			case wakeMsec > sendMaxInterval:
-				wakeMsec = sendMaxInterval
-			default:
-			}
-			wakeMsec += sendShift // Sample, clamp, then shift.
+			} // end of switch
+		} // if qo != nil
 
-			wakeInterval = time.Duration(wakeMsec) * time.Millisecond
-			c.log.Debugf("wakeInterval: %v", wakeInterval)
-		} else {
-			wakeInterval = maxDuration
+		if isConnected {
+			if lambdaPFired {
+				c.pTimer.Next()
+			}
+			if lambdaDFired {
+				c.dTimer.Next()
+			}
+			if lambdaLFired {
+				c.lTimer.Next()
+			}
 		}
-		if !timerFired && !timer.Stop() {
-			<-timer.C
+	}
+
+	// NOTREACHED
+}
+
+func (c *Client) lambdaPTask() {
+	// Attempt to send user data first, if any exists.
+	// Otherwise send a drop decoy message.
+	err := c.sendNext()
+	if err != nil {
+		c.log.Warningf("Failed to send queued message: %v", err)
+		err = c.sendDropDecoy()
+		if err != nil {
+			c.log.Warningf("Failed to send drop decoy traffic: %v", err)
 		}
-		timer.Reset(wakeInterval)
-	} // for
+	}
+}
+
+func (c *Client) lambdaDTask() {
+	err := c.sendDropDecoy()
+	if err != nil {
+		c.log.Warningf("Failed to send drop decoy traffic: %v", err)
+	}
+}
+
+func (c *Client) lambdaLTask() {
+	err := c.sendLoopDecoy()
+	if err != nil {
+		c.log.Warningf("Failed to send drop decoy traffic: %v", err)
+	}
 }
 
 func (c *Client) isDocValid(doc *pki.Document) error {

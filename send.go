@@ -58,6 +58,15 @@ func (c *Client) send(manifest *messageManifest) error {
 
 func (c *Client) sendDropDecoy() error {
 	c.log.Debug("sending drop decoy")
+	return c.sendLoop(false)
+}
+
+func (c *Client) sendLoopDecoy() error {
+	c.log.Debug("sending loop decoy")
+	return c.sendLoop(true)
+}
+
+func (c *Client) sendLoop(withSURB bool) error {
 	const loopService = "loop"
 	serviceDesc, err := c.GetService(loopService)
 	if err != nil {
@@ -68,7 +77,7 @@ func (c *Client) sendDropDecoy() error {
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
 		Message:   payload[:],
-		WithSURB:  false,
+		WithSURB:  withSURB,
 	}
 	return c.send(manifest)
 }
