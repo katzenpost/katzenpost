@@ -86,7 +86,7 @@ func (c *Client) NewSession() error {
 // matching the specified service name
 func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
 	for !c.hasPKIDoc {
-		c.condGotPKIDoc.Wait()
+		return nil, errors.New("GetService failure, missing PKI document.")
 	}
 	doc := c.minclient.CurrentDocument()
 	if doc == nil {
@@ -94,6 +94,10 @@ func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
 	}
 	serviceDescriptors := FindServices(serviceName, doc)
 	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
+}
+
+func (c *Client) WaitForPKIDocument() {
+	c.condGotPKIDoc.Wait()
 }
 
 func (c *Client) WaitForMessage() {
@@ -138,9 +142,9 @@ func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) err
 
 func (c *Client) onDocument(doc *pki.Document) {
 	c.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
+	c.condGotPKIDoc.Broadcast()
+	c.hasPKIDoc = true
 	c.opCh <- opNewDocument{
 		doc: doc,
 	}
-	c.condGotPKIDoc.Broadcast()
-	c.hasPKIDoc = true
 }
