@@ -28,13 +28,6 @@ import (
 	"github.com/katzenpost/minclient"
 )
 
-type messageManifest struct {
-	Recipient string
-	Provider  string
-	Message   []byte
-	WithSURB  bool
-}
-
 // NewSession establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
 func (c *Client) NewSession() error {
@@ -84,9 +77,6 @@ func (c *Client) NewSession() error {
 // GetService returns a randomly selected service
 // matching the specified service name
 func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
-	for !c.hasPKIDoc {
-		return nil, errors.New("GetService failure, missing PKI document.")
-	}
 	doc := c.minclient.CurrentDocument()
 	if doc == nil {
 		return nil, errors.New("pki doc is nil")
@@ -96,34 +86,21 @@ func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
 }
 
 func (c *Client) WaitForPKIDocument() {
+	c.condGotPKIDoc.L.Lock()
+	defer c.condGotPKIDoc.L.Unlock()
 	c.condGotPKIDoc.Wait()
-}
-
-func (c *Client) WaitForMessage() {
-	c.condGotMessage.Wait()
-}
-
-func (c *Client) WaitForReply() {
-	c.condGotReply.Wait()
-}
-
-func (c *Client) WaitForConnect() {
-	c.condGotConnect.Wait()
 }
 
 // OnConnection will be called by the minclient api
 // upon connecting to the Provider
 func (c *Client) onConnection(err error) {
-	c.log.Debugf("OnConnection")
 	if err == nil {
-		go func() {
-			c.opCh <- opConnStatusChanged{
-				isConnected: true,
-			}
-		}()
 		c.condGotConnect.L.Lock()
-		defer c.condGotConnect.L.Unlock()
+		c.opCh <- opConnStatusChanged{
+			isConnected: true,
+		}
 		c.condGotConnect.Broadcast()
+		c.condGotConnect.L.Unlock()
 	}
 }
 
@@ -131,29 +108,39 @@ func (c *Client) onConnection(err error) {
 // upon receiving a message
 func (c *Client) onMessage(ciphertextBlock []byte) error {
 	c.log.Debugf("OnMessage")
-	c.condGotMessage.L.Lock()
-	defer c.condGotMessage.L.Unlock()
-	c.condGotMessage.Broadcast()
 	return nil
 }
 
 // OnACK is called by the minclient api whe
 // we receive an ACK message
 func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
-	c.log.Debugf("OnACK")
-	c.condGotReply.L.Lock()
-	defer c.condGotReply.L.Unlock()
-	c.condGotReply.Broadcast()
+	c.log.Infof("OnACK with SURBID %x", *surbid)
+	msgRef, ok := c.surbIDMap[*surbid]
+	if !ok {
+		c.log.Debug("wtf, received reply with unexpected SURBID")
+		return nil
+	}
+	c.log.Infof("reply with message ID %x", *msgRef.ID)
+	_, ok = c.replyNotifyMap[*msgRef.ID]
+	if !ok {
+		c.log.Infof("wtf, received reply with no reply notification mutex, map len is %d", len(c.replyNotifyMap))
+		for key, _ := range c.replyNotifyMap {
+			c.log.Infof("key %x", key)
+		}
+		return nil
+	}
+	msgRef.Reply = message
+	c.replyNotifyMap[*msgRef.ID].Unlock()
 	return nil
 }
 
 func (c *Client) onDocument(doc *pki.Document) {
 	c.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
-	c.condGotPKIDoc.L.Lock()
-	defer c.condGotPKIDoc.L.Unlock()
-	c.condGotPKIDoc.Broadcast()
 	c.hasPKIDoc = true
+	c.condGotPKIDoc.L.Lock()
 	c.opCh <- opNewDocument{
 		doc: doc,
 	}
+	c.condGotPKIDoc.Broadcast()
+	c.condGotPKIDoc.L.Unlock()
 }

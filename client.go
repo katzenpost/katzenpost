@@ -18,15 +18,16 @@
 package client
 
 import (
-	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/beeker1121/goque"
 	"github.com/katzenpost/client/config"
+	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
@@ -40,8 +41,7 @@ import (
 type Client struct {
 	worker.Worker
 
-	cfg *config.Config
-
+	cfg        *config.Config
 	linkKey    *ecdh.PrivateKey
 	pkiClient  pki.Client
 	minclient  *minclient.Client
@@ -63,9 +63,11 @@ type Client struct {
 	surbEtas    map[time.Duration][sConstants.SURBIDLength]byte
 
 	condGotPKIDoc  *sync.Cond
-	condGotMessage *sync.Cond
-	condGotReply   *sync.Cond
 	condGotConnect *sync.Cond
+
+	surbIDMap      map[[sConstants.SURBIDLength]byte]*MessageRef
+	messageIDMap   map[[cConstants.MessageIDLength]byte]*MessageRef
+	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
 }
 
 func (c *Client) initLogging() error {
@@ -84,6 +86,10 @@ func (c *Client) initLogging() error {
 	return err
 }
 
+func (c *Client) GetLogger(name string) *logging.Logger {
+	return c.logBackend.GetLogger(name)
+}
+
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
 	c.haltOnce.Do(func() { c.halt() })
@@ -96,15 +102,11 @@ func (c *Client) Wait() {
 
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
-
 	if c.minclient != nil {
 		c.minclient.Shutdown()
 	}
-
 	c.Halt()
 	close(c.fatalErrCh)
-
-	c.log.Noticef("Shutdown complete.")
 	close(c.haltedCh)
 }
 
@@ -115,8 +117,9 @@ func New(cfg *config.Config) (*Client, error) {
 	c.fatalErrCh = make(chan error)
 	c.haltedCh = make(chan interface{})
 	c.opCh = make(chan workerOp)
-	c.surbKeys = make(map[[sConstants.SURBIDLength]byte][]byte)
-	c.surbEtas = make(map[time.Duration][sConstants.SURBIDLength]byte)
+	c.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*MessageRef)
+	c.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*MessageRef)
+	c.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
 
 	const egressQueueName = "egress_queue"
 	egressQueueDir := filepath.Join(c.cfg.Proxy.DataDir, egressQueueName)
@@ -130,21 +133,8 @@ func New(cfg *config.Config) (*Client, error) {
 	}
 
 	// make some synchronised conditions
-	docLock := new(sync.Mutex)
-	docLock.Lock()
-	c.condGotPKIDoc = sync.NewCond(docLock)
-
-	gotMessageLock := new(sync.Mutex)
-	gotMessageLock.Lock()
-	c.condGotMessage = sync.NewCond(gotMessageLock)
-
-	gotReplyLock := new(sync.Mutex)
-	gotReplyLock.Lock()
-	c.condGotReply = sync.NewCond(gotReplyLock)
-
-	gotConnectLock := new(sync.Mutex)
-	gotConnectLock.Lock()
-	c.condGotConnect = sync.NewCond(gotConnectLock)
+	c.condGotPKIDoc = sync.NewCond(new(sync.Mutex))
+	c.condGotConnect = sync.NewCond(new(sync.Mutex))
 
 	// Do the early initialization and bring up logging.
 	if err := utils.MkDataDir(c.cfg.Proxy.DataDir); err != nil {
@@ -155,11 +145,10 @@ func New(cfg *config.Config) (*Client, error) {
 	}
 
 	// Load link key.
-	id := fmt.Sprintf("%s@%s", c.cfg.Account.User, c.cfg.Account.Provider)
-	basePath := filepath.Join(c.cfg.Proxy.DataDir, id)
+	basePath := c.cfg.Proxy.DataDir
 	linkPriv := filepath.Join(basePath, "link.private.pem")
 	linkPub := filepath.Join(basePath, "link.public.pem")
-	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, nil); err != nil {
+	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
 		c.log.Errorf("Failure to load link keys: %s", err)
 		return nil, err
 	}
