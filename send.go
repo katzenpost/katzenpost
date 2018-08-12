@@ -1,5 +1,5 @@
 // send.go - mixnet client send
-// Copyright (C) 2018  David Stainton, Yawning Angel.
+// Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,50 +19,80 @@ package client
 import (
 	"fmt"
 	"io"
+	"sync"
+	"time"
 
+	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
-func (c *Client) sendNext() error {
-	item, err := c.egressQueue.Dequeue()
-	if err != nil {
-		return err
-	}
-	manifest := new(messageManifest)
-	err = item.ToObject(manifest)
-	if err != nil {
-		return err
-	}
-	return c.send(manifest)
+type MessageRef struct {
+	ID        *[cConstants.MessageIDLength]byte
+	Recipient string
+	Provider  string
+	Payload   []byte
+	SentAt    time.Time
+	ReplyETA  time.Duration
+	WithSURB  bool
+	SURBID    *[sConstants.SURBIDLength]byte
+	Key       []byte
+	Reply     []byte
+	ACK       bool // XXX not yet used
 }
 
-func (c *Client) send(manifest *messageManifest) error {
+// WaitForReply blocks until a reply is received.
+func (c *Client) WaitForReply(msgRef *MessageRef) {
+	c.replyNotifyMap[*msgRef.ID].Lock()
+}
+
+func (c *Client) sendNext() error {
+	item, err := c.egressQueue.Peek()
+	if err != nil {
+		return err
+	}
+	msgRef := new(MessageRef)
+	err = item.ToObject(msgRef)
+	if err != nil {
+		return err
+	}
+	err = c.send(msgRef)
+	if err != nil {
+		return err
+	}
+	_, err = c.egressQueue.Dequeue()
+	return err
+}
+
+func (c *Client) send(msgRef *MessageRef) error {
 	var err error
-	if manifest.WithSURB {
+	if msgRef.WithSURB {
 		surbID := [sConstants.SURBIDLength]byte{}
 		io.ReadFull(rand.Reader, surbID[:])
-		key, eta, err := c.minclient.SendCiphertext(manifest.Recipient, manifest.Provider, &surbID, manifest.Message)
+		key, eta, err := c.minclient.SendCiphertext(msgRef.Recipient, msgRef.Provider, &surbID, msgRef.Payload)
 		if err != nil {
 			return err
 		}
-		c.surbKeys[surbID] = key
-		c.surbEtas[eta] = surbID
-
+		msgRef.Key = key
+		msgRef.SentAt = time.Now()
+		msgRef.ReplyETA = eta
+		c.surbIDMap[surbID] = msgRef
+		c.messageIDMap[*msgRef.ID] = msgRef
+		c.log.Infof("SENT MESSAGE ID %x", *msgRef.ID)
 	} else {
-		err = c.minclient.SendUnreliableCiphertext(manifest.Recipient, manifest.Provider, manifest.Message)
+		err = c.minclient.SendUnreliableCiphertext(msgRef.Recipient, msgRef.Provider, msgRef.Payload)
 	}
 	return err
 }
 
 func (c *Client) sendDropDecoy() error {
-	c.log.Debug("sending drop decoy")
+	c.log.Info("sending drop decoy")
 	return c.sendLoop(false)
 }
 
 func (c *Client) sendLoopDecoy() error {
-	c.log.Debug("sending loop decoy")
+	c.log.Info("sending loop decoy")
 	return c.sendLoop(true)
 }
 
@@ -73,44 +103,58 @@ func (c *Client) sendLoop(withSURB bool) error {
 		return err
 	}
 	payload := [constants.UserForwardPayloadLength]byte{}
-	manifest := &messageManifest{
+	id := [cConstants.MessageIDLength]byte{}
+	io.ReadFull(rand.Reader, id[:])
+	msgRef := &MessageRef{
+		ID:        &id,
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
-		Message:   payload[:],
+		Payload:   payload[:],
 		WithSURB:  withSURB,
 	}
-	return c.send(manifest)
+	return c.send(msgRef)
 }
 
-func (c *Client) SendUnreliable(recipient, provider string, message []byte) error {
+func (c *Client) SendUnreliable(recipient, provider string, message []byte) (*MessageRef, error) {
 	c.log.Debugf("Send")
-	var manifest = messageManifest{
+	id := [cConstants.MessageIDLength]byte{}
+	io.ReadFull(rand.Reader, id[:])
+	var msgRef = MessageRef{
+		ID:        &id,
 		Recipient: recipient,
 		Provider:  provider,
-		Message:   message,
+		Payload:   message,
 		WithSURB:  false,
 	}
-	_, err := c.egressQueue.EnqueueObject(manifest)
-	return err
+	_, err := c.egressQueue.EnqueueObject(msgRef)
+	return &msgRef, err
 }
 
-func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) error {
-	c.log.Debugf("Send")
+func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*MessageRef, error) {
+	c.log.Info("SEND KAETZCHEN QUERY")
 
 	// Ensure the request message is under the maximum for a single
 	// packet, and pad out the message so that it is the correct size.
 	if len(message) > constants.UserForwardPayloadLength {
-		return fmt.Errorf("invalid message size: %v", len(message))
+		return nil, fmt.Errorf("invalid message size: %v", len(message))
 	}
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	copy(payload, message)
 
-	var manifest = messageManifest{
+	id := [cConstants.MessageIDLength]byte{}
+	io.ReadFull(rand.Reader, id[:])
+	var msgRef = MessageRef{
+		ID:        &id,
 		Recipient: recipient,
 		Provider:  provider,
-		Message:   payload,
+		Payload:   payload,
 		WithSURB:  wantResponse,
 	}
-	_, err := c.egressQueue.EnqueueObject(manifest)
-	return err
+	c.log.Info("-----------------------------------------------------------")
+	c.log.Infof("Storing reply notification mutex at message ID %x", id)
+	c.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
+	c.replyNotifyMap[*msgRef.ID].Lock()
+
+	_, err := c.egressQueue.EnqueueObject(msgRef)
+	return &msgRef, err
 }

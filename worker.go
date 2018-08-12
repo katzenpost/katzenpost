@@ -38,14 +38,13 @@ type opNewDocument struct {
 }
 
 func (c *Client) initializeTimers() {
-	c.WaitForPKIDocument()
 
-	// Lambda-P
-	doc := c.minclient.CurrentDocument()
+	// Lambda-P will use Lambda-D settings
+	// initially until we get the PKI doc.
 	pDesc := &poisson.PoissonDescriptor{
-		Lambda: doc.SendLambda,
-		Shift:  doc.SendShift,
-		Max:    doc.SendMaxInterval,
+		Lambda: c.cfg.Debug.LambdaD,
+		Shift:  c.cfg.Debug.LambdaDShift,
+		Max:    c.cfg.Debug.LambdaDMax,
 	}
 	c.pTimer = poisson.NewTimer(pDesc)
 
@@ -160,16 +159,14 @@ func (c *Client) worker() {
 			} // end of switch
 		} // if qo != nil
 
-		if isConnected {
-			if lambdaPFired {
-				c.pTimer.Next()
-			}
-			if lambdaDFired {
-				c.dTimer.Next()
-			}
-			if lambdaLFired {
-				c.lTimer.Next()
-			}
+		if lambdaPFired {
+			c.pTimer.Next()
+		}
+		if lambdaDFired {
+			c.dTimer.Next()
+		}
+		if lambdaLFired {
+			c.lTimer.Next()
 		}
 	}
 
