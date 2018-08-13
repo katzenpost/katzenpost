@@ -22,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/beeker1121/goque"
 	"github.com/katzenpost/client/config"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/poisson"
@@ -58,7 +57,7 @@ type Client struct {
 	opCh        chan workerOp
 	onlineAt    time.Time
 	hasPKIDoc   bool
-	egressQueue *goque.Queue
+	egressQueue EgressQueue
 	surbKeys    map[[sConstants.SURBIDLength]byte][]byte
 	surbEtas    map[time.Duration][sConstants.SURBIDLength]byte
 
@@ -120,17 +119,7 @@ func New(cfg *config.Config) (*Client, error) {
 	c.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*MessageRef)
 	c.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*MessageRef)
 	c.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
-
-	const egressQueueName = "egress_queue"
-	egressQueueDir := filepath.Join(c.cfg.Proxy.DataDir, egressQueueName)
-	err := utils.MkDataDir(egressQueueDir)
-	if err != nil {
-		return nil, err
-	}
-	c.egressQueue, err = goque.OpenQueue(egressQueueDir)
-	if err != nil {
-		return nil, err
-	}
+	c.egressQueue = new(Queue)
 
 	// make some synchronised conditions
 	c.condGotPKIDoc = sync.NewCond(new(sync.Mutex))
@@ -148,6 +137,7 @@ func New(cfg *config.Config) (*Client, error) {
 	basePath := c.cfg.Proxy.DataDir
 	linkPriv := filepath.Join(basePath, "link.private.pem")
 	linkPub := filepath.Join(basePath, "link.public.pem")
+	var err error
 	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
 		c.log.Errorf("Failure to load link keys: %s", err)
 		return nil, err

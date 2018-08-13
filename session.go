@@ -17,15 +17,24 @@
 package client
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	mrand "math/rand"
 	"time"
 
 	"github.com/katzenpost/client/internal/pkiclient"
+	cconstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/minclient"
+)
+
+const (
+	surbTypeACK       = 0
+	surbTypeKaetzchen = 1
+	surbTypeInternal  = 2
 )
 
 // NewSession establishes a session with provider using key.
@@ -82,6 +91,9 @@ func (c *Client) GetService(serviceName string) (*ServiceDescriptor, error) {
 		return nil, errors.New("pki doc is nil")
 	}
 	serviceDescriptors := FindServices(serviceName, doc)
+	if len(serviceDescriptors) == 0 {
+		return nil, errors.New("GetService failure, service not found in pki doc.")
+	}
 	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
 }
 
@@ -113,14 +125,15 @@ func (c *Client) onMessage(ciphertextBlock []byte) error {
 
 // OnACK is called by the minclient api whe
 // we receive an ACK message
-func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) error {
-	c.log.Infof("OnACK with SURBID %x", *surbid)
-	msgRef, ok := c.surbIDMap[*surbid]
+func (c *Client) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
+	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
+	c.log.Infof("OnACK with SURBID %x", idStr)
+
+	msgRef, ok := c.surbIDMap[*surbID]
 	if !ok {
 		c.log.Debug("wtf, received reply with unexpected SURBID")
 		return nil
 	}
-	c.log.Infof("reply with message ID %x", *msgRef.ID)
 	_, ok = c.replyNotifyMap[*msgRef.ID]
 	if !ok {
 		c.log.Infof("wtf, received reply with no reply notification mutex, map len is %d", len(c.replyNotifyMap))
@@ -129,8 +142,26 @@ func (c *Client) onACK(surbid *[constants.SURBIDLength]byte, message []byte) err
 		}
 		return nil
 	}
-	msgRef.Reply = message
-	c.replyNotifyMap[*msgRef.ID].Unlock()
+
+	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msgRef.Key)
+	if err != nil {
+		c.log.Infof("SURB Reply decryption failure: %s", err)
+		return err
+	}
+	if len(plaintext) != cconstants.ForwardPayloadLength {
+		c.log.Warningf("Discarding SURB %v: Invalid payload size: %v", idStr, len(plaintext))
+		return nil
+	}
+
+	switch msgRef.SURBType {
+	case surbTypeACK:
+		// XXX TODO fix me
+	case surbTypeKaetzchen, surbTypeInternal:
+		msgRef.Reply = plaintext[2:]
+		c.replyNotifyMap[*msgRef.ID].Unlock()
+	default:
+		c.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msgRef.SURBType)
+	}
 	return nil
 }
 

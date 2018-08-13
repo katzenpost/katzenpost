@@ -39,29 +39,28 @@ type MessageRef struct {
 	SURBID    *[sConstants.SURBIDLength]byte
 	Key       []byte
 	Reply     []byte
-	ACK       bool // XXX not yet used
+	SURBType  int
 }
 
 // WaitForReply blocks until a reply is received.
-func (c *Client) WaitForReply(msgRef *MessageRef) {
+func (c *Client) WaitForReply(msgRef *MessageRef) []byte {
 	c.replyNotifyMap[*msgRef.ID].Lock()
+	return c.messageIDMap[*msgRef.ID].Reply
 }
 
 func (c *Client) sendNext() error {
-	item, err := c.egressQueue.Peek()
+	msgRef, err := c.egressQueue.Peek()
 	if err != nil {
 		return err
 	}
-	msgRef := new(MessageRef)
-	err = item.ToObject(msgRef)
-	if err != nil {
-		return err
+	if msgRef.Provider == "" {
+		panic("wtf")
 	}
 	err = c.send(msgRef)
 	if err != nil {
 		return err
 	}
-	_, err = c.egressQueue.Dequeue()
+	_, err = c.egressQueue.Pop()
 	return err
 }
 
@@ -79,7 +78,6 @@ func (c *Client) send(msgRef *MessageRef) error {
 		msgRef.ReplyETA = eta
 		c.surbIDMap[surbID] = msgRef
 		c.messageIDMap[*msgRef.ID] = msgRef
-		c.log.Infof("SENT MESSAGE ID %x", *msgRef.ID)
 	} else {
 		err = c.minclient.SendUnreliableCiphertext(msgRef.Recipient, msgRef.Provider, msgRef.Payload)
 	}
@@ -126,13 +124,14 @@ func (c *Client) SendUnreliable(recipient, provider string, message []byte) (*Me
 		Payload:   message,
 		WithSURB:  false,
 	}
-	_, err := c.egressQueue.EnqueueObject(msgRef)
+	err := c.egressQueue.Push(&msgRef)
 	return &msgRef, err
 }
 
 func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*MessageRef, error) {
-	c.log.Info("SEND KAETZCHEN QUERY")
-
+	if provider == "" {
+		panic("wtf")
+	}
 	// Ensure the request message is under the maximum for a single
 	// packet, and pad out the message so that it is the correct size.
 	if len(message) > constants.UserForwardPayloadLength {
@@ -140,7 +139,6 @@ func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, 
 	}
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	copy(payload, message)
-
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
 	var msgRef = MessageRef{
@@ -149,12 +147,10 @@ func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, 
 		Provider:  provider,
 		Payload:   payload,
 		WithSURB:  wantResponse,
+		SURBType:  surbTypeKaetzchen,
 	}
-	c.log.Info("-----------------------------------------------------------")
-	c.log.Infof("Storing reply notification mutex at message ID %x", id)
 	c.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
 	c.replyNotifyMap[*msgRef.ID].Lock()
-
-	_, err := c.egressQueue.EnqueueObject(msgRef)
+	err := c.egressQueue.Push(&msgRef)
 	return &msgRef, err
 }
