@@ -19,24 +19,26 @@ package main
 import (
 	"errors"
 	"time"
+
+	"github.com/katzenpost/panda/common"
 )
 
 type InMemoryPandaStorage struct {
-	postMap map[[PandaTagLength]byte]*PandaPosting
+	postMap map[[common.PandaTagLength]byte]*PandaPosting
 }
 
 // NewInMemoryPandaStorage creates an in memory store
 // for Panda postings
 func NewInMemoryPandaStorage() *InMemoryPandaStorage {
 	s := &InMemoryPandaStorage{
-		postMap: make(map[[PandaTagLength]byte]*PandaPosting),
+		postMap: make(map[[common.PandaTagLength]byte]*PandaPosting),
 	}
 	return s
 }
 
 // Put stores a posting in the data store
 // such that it is referenced by the given tag.
-func (s *InMemoryPandaStorage) Put(tag *[PandaTagLength]byte, posting *PandaPosting) error {
+func (s *InMemoryPandaStorage) Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
 	_, ok := s.postMap[*tag]
 	if ok {
 		return errors.New("InMemoryPandaStorage Put failure: tag already present")
@@ -47,16 +49,16 @@ func (s *InMemoryPandaStorage) Put(tag *[PandaTagLength]byte, posting *PandaPost
 
 // Get returns a posting from the data store
 // that is referenced by the given tag.
-func (s *InMemoryPandaStorage) Get(tag *[PandaTagLength]byte) (*PandaPosting, error) {
+func (s *InMemoryPandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPosting, error) {
 	message, ok := s.postMap[*tag]
 	if !ok {
-		return nil, ErrNoSuchPandaTag
+		return nil, common.ErrNoSuchPandaTag
 	}
 	return message, nil
 }
 
 // Replace replaces the stored posting.
-func (s *InMemoryPandaStorage) Replace(tag *[PandaTagLength]byte, posting *PandaPosting) error {
+func (s *InMemoryPandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
 	s.postMap[*tag] = posting
 	return nil
 }

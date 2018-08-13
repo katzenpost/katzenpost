@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/panda/common"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -33,36 +34,7 @@ import (
 // PANDA - Phrase Automated Nym Discovery Authentication
 //
 // This Kaetzchen service was inspired by AGL's appengine Panda server:
-//
 // https://github.com/agl/pond/blob/master/panda/appengine-server/panda/main.go
-
-const (
-	pandaCapability = "panda"
-	PandaVersion    = 0
-
-	pandaStatusReceived1            = 0
-	pandaStatusReceived2            = 1
-	pandaStatusSyntaxError          = 2
-	pandaStatusTagContendedError    = 3
-	pandaStatusRequestRecordedError = 4
-	pandaStatusStorageError         = 5
-
-	PandaTagLength = 32
-)
-
-var ErrNoSuchPandaTag = errors.New("Error: no such PANDA tag")
-
-type PandaRequest struct {
-	Version int
-	Tag     string
-	Message string
-}
-
-type pandaResponse struct {
-	Version    int
-	StatusCode int
-	Message    string
-}
 
 // PandaPosting
 type PandaPosting struct {
@@ -77,12 +49,12 @@ func (p *PandaPosting) Expired(expiration time.Duration) bool {
 	return postingTime.After(postingTime.Add(expiration))
 }
 
-func postingFromRequest(req *PandaRequest) (*[PandaTagLength]byte, *PandaPosting, error) {
+func postingFromRequest(req *common.PandaRequest) (*[common.PandaTagLength]byte, *PandaPosting, error) {
 	tagRaw, err := hex.DecodeString(req.Tag)
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(tagRaw) != PandaTagLength {
+	if len(tagRaw) != common.PandaTagLength {
 		return nil, nil, errors.New("postingFromRequest failure: tag not 32 bytes in length")
 	}
 	message, err := base64.StdEncoding.DecodeString(req.Message)
@@ -94,7 +66,7 @@ func postingFromRequest(req *PandaRequest) (*[PandaTagLength]byte, *PandaPosting
 		A:        message,
 		B:        nil,
 	}
-	tag := [PandaTagLength]byte{}
+	tag := [common.PandaTagLength]byte{}
 	copy(tag[:], tagRaw)
 	return &tag, p, nil
 }
@@ -105,14 +77,14 @@ type PandaPostStorage interface {
 
 	// Put stores a posting in the data store
 	// such that it is referenced by the given tag.
-	Put(tag *[PandaTagLength]byte, posting *PandaPosting) error
+	Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error
 
 	// Get returns a posting from the data store
 	// that is referenced by the given tag.
-	Get(tag *[PandaTagLength]byte) (*PandaPosting, error)
+	Get(tag *[common.PandaTagLength]byte) (*PandaPosting, error)
 
 	// Replace replaces the stored posting.
-	Replace(tag *[PandaTagLength]byte, posting *PandaPosting) error
+	Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error
 
 	// Vacuum removes the postings that have expired.
 	Vacuum(expiration time.Duration) error
@@ -135,19 +107,19 @@ func (k *Panda) OnRequest(payload []byte, hasSURB bool) ([]byte, error) {
 		return nil, ErrNoSURBRequest
 	}
 	k.log.Debug("Handling request")
-	resp := pandaResponse{
-		Version:    PandaVersion,
-		StatusCode: pandaStatusSyntaxError,
+	resp := common.PandaResponse{
+		Version:    common.PandaVersion,
+		StatusCode: common.PandaStatusSyntaxError,
 	}
 
 	// Parse out the request payload.
-	var req PandaRequest
+	var req common.PandaRequest
 	dec := codec.NewDecoderBytes(bytes.TrimRight(payload, "\x00"), &k.jsonHandle)
 	if err := dec.Decode(&req); err != nil {
 		k.log.Debugf("failed to decode request: (%v)", err)
 		return k.encodeResp(&resp), nil
 	}
-	if req.Version != PandaVersion {
+	if req.Version != common.PandaVersion {
 		k.log.Debugf("failed to parse request: (invalid version: %v)", req.Version)
 		return k.encodeResp(&resp), nil
 	}
@@ -165,48 +137,48 @@ func (k *Panda) OnRequest(payload []byte, hasSURB bool) ([]byte, error) {
 	defer k.Unlock()
 
 	storedPosting, err := k.store.Get(tag)
-	if err == ErrNoSuchPandaTag || err == nil && storedPosting.Expired(k.expiration) {
+	if err == common.ErrNoSuchPandaTag || err == nil && storedPosting.Expired(k.expiration) {
 		k.store.Put(tag, newPosting)
-		resp.StatusCode = pandaStatusReceived1
+		resp.StatusCode = common.PandaStatusReceived1
 		k.maybeGarbageCollect()
 		return k.encodeResp(&resp), nil
 	}
 	if err != nil {
-		resp.StatusCode = pandaStatusStorageError
+		resp.StatusCode = common.PandaStatusStorageError
 		return k.encodeResp(&resp), nil
 	}
 	if len(storedPosting.B) > 0 {
 		if bytes.Equal(storedPosting.A, newPosting.A) {
 			resp.Message = base64.StdEncoding.EncodeToString(storedPosting.B)
-			resp.StatusCode = pandaStatusReceived2
+			resp.StatusCode = common.PandaStatusReceived2
 			return k.encodeResp(&resp), nil
 		} else if bytes.Equal(storedPosting.B, newPosting.A) {
 			resp.Message = base64.StdEncoding.EncodeToString(storedPosting.A)
-			resp.StatusCode = pandaStatusReceived2
+			resp.StatusCode = common.PandaStatusReceived2
 			return k.encodeResp(&resp), nil
 		} else {
-			resp.StatusCode = pandaStatusTagContendedError
+			resp.StatusCode = common.PandaStatusTagContendedError
 			return k.encodeResp(&resp), nil
 		}
 		// not reached
 	}
 	if bytes.Equal(storedPosting.A, newPosting.A) {
-		resp.StatusCode = pandaStatusRequestRecordedError
+		resp.StatusCode = common.PandaStatusRequestRecordedError
 		return k.encodeResp(&resp), nil
 	}
 	storedPosting.B = newPosting.A
 	err = k.store.Replace(tag, storedPosting)
 	if err != nil {
-		resp.StatusCode = pandaStatusStorageError
+		resp.StatusCode = common.PandaStatusStorageError
 		return k.encodeResp(&resp), nil
 	}
 
 	resp.Message = base64.StdEncoding.EncodeToString(storedPosting.A)
-	resp.StatusCode = pandaStatusReceived2
+	resp.StatusCode = common.PandaStatusReceived2
 	return k.encodeResp(&resp), nil
 }
 
-func (k *Panda) encodeResp(resp *pandaResponse) []byte {
+func (k *Panda) encodeResp(resp *common.PandaResponse) []byte {
 	var out []byte
 	enc := codec.NewEncoderBytes(&out, &k.jsonHandle)
 	enc.Encode(resp)
