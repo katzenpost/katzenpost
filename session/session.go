@@ -43,12 +43,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-const (
-	surbTypeACK       = 0
-	surbTypeKaetzchen = 1
-	surbTypeInternal  = 2
-)
-
 type Session struct {
 	worker.Worker
 
@@ -233,9 +227,9 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 	}
 
 	switch msgRef.SURBType {
-	case surbTypeACK:
+	case cConstants.SurbTypeACK:
 		// XXX TODO fix me
-	case surbTypeKaetzchen, surbTypeInternal:
+	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		msgRef.Reply = plaintext[2:]
 		s.replyNotifyMap[*msgRef.ID].Unlock()
 	default:

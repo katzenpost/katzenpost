@@ -147,7 +147,7 @@ func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte,
 		Provider:  provider,
 		Payload:   payload,
 		WithSURB:  wantResponse,
-		SURBType:  surbTypeKaetzchen,
+		SURBType:  cConstants.SurbTypeKaetzchen,
 	}
 	s.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
 	s.replyNotifyMap[*msgRef.ID].Lock()
