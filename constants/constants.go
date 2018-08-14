@@ -20,3 +20,9 @@ const (
 	// MessageIDLength is the length of a message ID in bytes.
 	MessageIDLength = 16
 )
+
+const (
+	SurbTypeACK       = 0
+	SurbTypeKaetzchen = 1
+	SurbTypeInternal  = 2
+)
