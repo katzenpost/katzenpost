@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package client
+package session
 
 import (
 	"errors"
@@ -37,48 +37,48 @@ type opNewDocument struct {
 	doc *pki.Document
 }
 
-func (c *Client) initializeTimers() {
+func (s *Session) initializeTimers() {
 
 	// Lambda-P will use Lambda-D settings
 	// initially until we get the PKI doc.
 	pDesc := &poisson.PoissonDescriptor{
-		Lambda: c.cfg.Debug.LambdaD,
-		Shift:  c.cfg.Debug.LambdaDShift,
-		Max:    c.cfg.Debug.LambdaDMax,
+		Lambda: s.cfg.Debug.LambdaD,
+		Shift:  s.cfg.Debug.LambdaDShift,
+		Max:    s.cfg.Debug.LambdaDMax,
 	}
-	c.pTimer = poisson.NewTimer(pDesc)
+	s.pTimer = poisson.NewTimer(pDesc)
 
 	// Lambda-D
 	dDesc := &poisson.PoissonDescriptor{
-		Lambda: c.cfg.Debug.LambdaD,
-		Shift:  c.cfg.Debug.LambdaDShift,
-		Max:    c.cfg.Debug.LambdaDMax,
+		Lambda: s.cfg.Debug.LambdaD,
+		Shift:  s.cfg.Debug.LambdaDShift,
+		Max:    s.cfg.Debug.LambdaDMax,
 	}
-	c.dTimer = poisson.NewTimer(dDesc)
+	s.dTimer = poisson.NewTimer(dDesc)
 
 	// Lambda-L
-	if c.cfg.Debug.EnableLoops {
+	if s.cfg.Debug.EnableLoops {
 		lDesc := &poisson.PoissonDescriptor{
-			Lambda: c.cfg.Debug.LambdaL,
-			Shift:  c.cfg.Debug.LambdaLShift,
-			Max:    c.cfg.Debug.LambdaLMax,
+			Lambda: s.cfg.Debug.LambdaL,
+			Shift:  s.cfg.Debug.LambdaLShift,
+			Max:    s.cfg.Debug.LambdaLMax,
 		}
-		c.lTimer = poisson.NewTimer(lDesc)
+		s.lTimer = poisson.NewTimer(lDesc)
 	}
 }
 
-func (c *Client) worker() {
-	c.initializeTimers()
+func (s *Session) worker() {
+	s.initializeTimers()
 
-	c.pTimer.Start()
-	defer c.pTimer.Stop()
-	c.dTimer.Start()
-	defer c.dTimer.Stop()
+	s.pTimer.Start()
+	defer s.pTimer.Stop()
+	s.dTimer.Start()
+	defer s.dTimer.Stop()
 	var lambdaLChan *<-chan time.Time = new(<-chan time.Time)
-	if c.cfg.Debug.EnableLoops {
-		c.lTimer.Start()
-		defer c.lTimer.Stop()
-		*lambdaLChan = c.lTimer.Timer.C
+	if s.cfg.Debug.EnableLoops {
+		s.lTimer.Start()
+		defer s.lTimer.Stop()
+		*lambdaLChan = s.lTimer.Timer.C
 	}
 	var isConnected bool = false
 	for {
@@ -87,26 +87,26 @@ func (c *Client) worker() {
 		var lambdaPFired bool = false
 		var qo workerOp = nil
 		select {
-		case <-c.HaltCh():
-			c.log.Debugf("Terminating gracefully.")
+		case <-s.HaltCh():
+			s.log.Debugf("Terminating gracefully.")
 			return
-		case <-c.pTimer.Timer.C:
+		case <-s.pTimer.Timer.C:
 			lambdaPFired = true
-		case <-c.dTimer.Timer.C:
+		case <-s.dTimer.Timer.C:
 			lambdaDFired = true
 		case <-*lambdaLChan:
 			lambdaLFired = true
-		case qo = <-c.opCh:
+		case qo = <-s.opCh:
 		}
 		if isConnected {
 			if lambdaPFired {
-				c.lambdaPTask()
+				s.lambdaPTask()
 			}
 			if lambdaDFired {
-				c.lambdaDTask()
+				s.lambdaDTask()
 			}
 			if lambdaLFired {
-				c.lambdaLTask()
+				s.lambdaLTask()
 			}
 		}
 		if qo != nil {
@@ -115,13 +115,13 @@ func (c *Client) worker() {
 				// XXX do cleanup here?
 				continue
 			case opConnStatusChanged:
-				// Note: c.isConnected isn't used in favor of passing the
+				// Note: s.isConnected isn't used in favor of passing the
 				// value via an op, to save on locking headaches.
 				if isConnected = op.isConnected; isConnected {
 					const skewWarnDelta = 2 * time.Minute
-					c.onlineAt = time.Now()
+					s.onlineAt = time.Now()
 
-					skew := c.minclient.ClockSkew()
+					skew := s.minclient.ClockSkew()
 					absSkew := skew
 					if absSkew < 0 {
 						absSkew = -absSkew
@@ -129,18 +129,18 @@ func (c *Client) worker() {
 					if absSkew > skewWarnDelta {
 						// Should this do more than just warn?  Should this
 						// use skewed time?  I don't know.
-						c.log.Warningf("The observed time difference between the host and provider clocks is '%v'. Correct your system time.", skew)
+						s.log.Warningf("The observed time difference between the host and provider clocks is '%v'. Correct your system time.", skew)
 					} else {
-						c.log.Debugf("Clock skew vs provider: %v", skew)
+						s.log.Debugf("Clock skew vs provider: %v", skew)
 					}
 				}
 			case opNewDocument:
 				// Determine if PKI doc is valid.
 				// If not then abort.
-				err := c.isDocValid(op.doc)
+				err := s.isDocValid(op.doc)
 				if err != nil {
-					c.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
-					c.fatalErrCh <- fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+					s.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+					s.fatalErrCh <- fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
 					return
 				}
 
@@ -151,56 +151,56 @@ func (c *Client) worker() {
 					Shift:  op.doc.SendShift,
 					Max:    op.doc.SendMaxInterval,
 				}
-				if !c.pTimer.DescriptorEquals(desc) {
-					c.pTimer.SetPoisson(desc)
+				if !s.pTimer.DescriptorEquals(desc) {
+					s.pTimer.SetPoisson(desc)
 				}
 			default:
-				c.log.Warningf("BUG: Worker received nonsensical op: %T", op)
+				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			} // end of switch
 		} // if qo != nil
 
 		if lambdaPFired {
-			c.pTimer.Next()
+			s.pTimer.Next()
 		}
 		if lambdaDFired {
-			c.dTimer.Next()
+			s.dTimer.Next()
 		}
 		if lambdaLFired {
-			c.lTimer.Next()
+			s.lTimer.Next()
 		}
 	}
 
 	// NOTREACHED
 }
 
-func (c *Client) lambdaPTask() {
+func (s *Session) lambdaPTask() {
 	// Attempt to send user data first, if any exists.
 	// Otherwise send a drop decoy message.
-	err := c.sendNext()
+	err := s.sendNext()
 	if err != nil {
-		c.log.Warningf("Failed to send queued message: %v", err)
-		err = c.sendDropDecoy()
+		s.log.Warningf("Failed to send queued message: %v", err)
+		err = s.sendDropDecoy()
 		if err != nil {
-			c.log.Warningf("Failed to send drop decoy traffic: %v", err)
+			s.log.Warningf("Failed to send drop decoy traffic: %v", err)
 		}
 	}
 }
 
-func (c *Client) lambdaDTask() {
-	err := c.sendDropDecoy()
+func (s *Session) lambdaDTask() {
+	err := s.sendDropDecoy()
 	if err != nil {
-		c.log.Warningf("Failed to send drop decoy traffic: %v", err)
+		s.log.Warningf("Failed to send drop decoy traffic: %v", err)
 	}
 }
 
-func (c *Client) lambdaLTask() {
-	err := c.sendLoopDecoy()
+func (s *Session) lambdaLTask() {
+	err := s.sendLoopDecoy()
 	if err != nil {
-		c.log.Warningf("Failed to send drop decoy traffic: %v", err)
+		s.log.Warningf("Failed to send drop decoy traffic: %v", err)
 	}
 }
 
-func (c *Client) isDocValid(doc *pki.Document) error {
+func (s *Session) isDocValid(doc *pki.Document) error {
 	const serviceLoop = "loop"
 	for _, provider := range doc.Providers {
 		_, ok := provider.Kaetzchen[serviceLoop]
