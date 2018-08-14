@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/client/config"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/internal/pkiclient"
@@ -38,6 +39,7 @@ import (
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
+	cutils "github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
 	"gopkg.in/op/go-logging.v1"
@@ -47,6 +49,7 @@ type Session struct {
 	worker.Worker
 
 	cfg       *config.Config
+	db        *bolt.DB
 	pkiClient pki.Client
 	minclient *minclient.Client
 	log       *logging.Logger
@@ -55,7 +58,7 @@ type Session struct {
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 
-	// Poisson timers for λP, λD and λL Poisson processes
+	// λP, λD and λL Poisson processes
 	// as described in "The Loopix Anonymity System".
 	pTimer *poisson.PoissonTimer
 	dTimer *poisson.PoissonTimer
@@ -113,7 +116,13 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 	s.condGotPKIDoc = sync.NewCond(new(sync.Mutex))
 	s.condGotConnect = sync.NewCond(new(sync.Mutex))
 
-	err = s.loadKeys(cfg.Proxy.DataDir)
+	id := cfg.Account.User + "@" + cfg.Account.Provider
+	basePath := filepath.Join(cfg.Proxy.DataDir, id)
+	if err := cutils.MkDataDir(basePath); err != nil {
+		return nil, err
+	}
+
+	err = s.loadKeys(basePath)
 	if err != nil {
 		return nil, err
 	}
@@ -142,6 +151,25 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 
 	s.Go(s.worker)
 	return s, nil
+}
+
+func (s *Session) initDatabase(basePath string) error {
+	var err error
+	s.db, err = bolt.Open(filepath.Join(basePath, "storage.db"), 0600, nil)
+	if err != nil {
+		return err
+	}
+
+	// Initialize (or load) all the buckets.
+	err = s.db.Update(func(tx *bolt.Tx) error {
+
+		return nil
+	})
+	if err != nil {
+		s.db.Close()
+		s.db = nil
+	}
+	return err
 }
 
 func (s *Session) loadKeys(basePath string) error {
