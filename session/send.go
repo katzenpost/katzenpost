@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package client
+package session
 
 import (
 	"fmt"
@@ -43,60 +43,60 @@ type MessageRef struct {
 }
 
 // WaitForReply blocks until a reply is received.
-func (c *Client) WaitForReply(msgRef *MessageRef) []byte {
-	c.replyNotifyMap[*msgRef.ID].Lock()
-	return c.messageIDMap[*msgRef.ID].Reply
+func (s *Session) WaitForReply(msgRef *MessageRef) []byte {
+	s.replyNotifyMap[*msgRef.ID].Lock()
+	return s.messageIDMap[*msgRef.ID].Reply
 }
 
-func (c *Client) sendNext() error {
-	msgRef, err := c.egressQueue.Peek()
+func (s *Session) sendNext() error {
+	msgRef, err := s.egressQueue.Peek()
 	if err != nil {
 		return err
 	}
 	if msgRef.Provider == "" {
 		panic("wtf")
 	}
-	err = c.send(msgRef)
+	err = s.send(msgRef)
 	if err != nil {
 		return err
 	}
-	_, err = c.egressQueue.Pop()
+	_, err = s.egressQueue.Pop()
 	return err
 }
 
-func (c *Client) send(msgRef *MessageRef) error {
+func (s *Session) send(msgRef *MessageRef) error {
 	var err error
 	if msgRef.WithSURB {
 		surbID := [sConstants.SURBIDLength]byte{}
 		io.ReadFull(rand.Reader, surbID[:])
-		key, eta, err := c.minclient.SendCiphertext(msgRef.Recipient, msgRef.Provider, &surbID, msgRef.Payload)
+		key, eta, err := s.minclient.SendCiphertext(msgRef.Recipient, msgRef.Provider, &surbID, msgRef.Payload)
 		if err != nil {
 			return err
 		}
 		msgRef.Key = key
 		msgRef.SentAt = time.Now()
 		msgRef.ReplyETA = eta
-		c.surbIDMap[surbID] = msgRef
-		c.messageIDMap[*msgRef.ID] = msgRef
+		s.surbIDMap[surbID] = msgRef
+		s.messageIDMap[*msgRef.ID] = msgRef
 	} else {
-		err = c.minclient.SendUnreliableCiphertext(msgRef.Recipient, msgRef.Provider, msgRef.Payload)
+		err = s.minclient.SendUnreliableCiphertext(msgRef.Recipient, msgRef.Provider, msgRef.Payload)
 	}
 	return err
 }
 
-func (c *Client) sendDropDecoy() error {
-	c.log.Info("sending drop decoy")
-	return c.sendLoop(false)
+func (s *Session) sendDropDecoy() error {
+	s.log.Info("sending drop decoy")
+	return s.sendLoop(false)
 }
 
-func (c *Client) sendLoopDecoy() error {
-	c.log.Info("sending loop decoy")
-	return c.sendLoop(true)
+func (s *Session) sendLoopDecoy() error {
+	s.log.Info("sending loop decoy")
+	return s.sendLoop(true)
 }
 
-func (c *Client) sendLoop(withSURB bool) error {
+func (s *Session) sendLoop(withSURB bool) error {
 	const loopService = "loop"
-	serviceDesc, err := c.GetService(loopService)
+	serviceDesc, err := s.GetService(loopService)
 	if err != nil {
 		return err
 	}
@@ -110,11 +110,11 @@ func (c *Client) sendLoop(withSURB bool) error {
 		Payload:   payload[:],
 		WithSURB:  withSURB,
 	}
-	return c.send(msgRef)
+	return s.send(msgRef)
 }
 
-func (c *Client) SendUnreliable(recipient, provider string, message []byte) (*MessageRef, error) {
-	c.log.Debugf("Send")
+func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*MessageRef, error) {
+	s.log.Debugf("Send")
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
 	var msgRef = MessageRef{
@@ -124,11 +124,11 @@ func (c *Client) SendUnreliable(recipient, provider string, message []byte) (*Me
 		Payload:   message,
 		WithSURB:  false,
 	}
-	err := c.egressQueue.Push(&msgRef)
+	err := s.egressQueue.Push(&msgRef)
 	return &msgRef, err
 }
 
-func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*MessageRef, error) {
+func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*MessageRef, error) {
 	if provider == "" {
 		panic("wtf")
 	}
@@ -149,8 +149,8 @@ func (c *Client) SendKaetzchenQuery(recipient, provider string, message []byte, 
 		WithSURB:  wantResponse,
 		SURBType:  surbTypeKaetzchen,
 	}
-	c.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
-	c.replyNotifyMap[*msgRef.ID].Lock()
-	err := c.egressQueue.Push(&msgRef)
+	s.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
+	s.replyNotifyMap[*msgRef.ID].Lock()
+	err := s.egressQueue.Push(&msgRef)
 	return &msgRef, err
 }
