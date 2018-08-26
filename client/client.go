@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/client"
+	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/panda/common"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
@@ -35,7 +35,7 @@ var ShutdownErr = errors.New("panda: shutdown requested")
 // Panda is a PANDA client that uses our mixnet client library
 // to communicate with the PANDA kaetzchen service.
 type Panda struct {
-	client     *client.Client
+	session    *session.Session
 	log        *logging.Logger
 	blobSize   int
 	jsonHandle codec.JsonHandle
@@ -63,12 +63,12 @@ func (p *Panda) Exchange(log func(string, ...interface{}), id, message []byte, s
 		enc.Encode(request)
 		wantResponse := true
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
-		msgRef, err := p.client.SendKaetzchenQuery(p.recipient, p.provider, rawRequest, wantResponse)
+		msgRef, err := p.session.SendKaetzchenQuery(p.recipient, p.provider, rawRequest, wantResponse)
 		if err != nil {
 			return nil, err
 		}
 		response := new(common.PandaResponse)
-		reply := p.client.WaitForReply(msgRef) // XXX blocking
+		reply := p.session.WaitForReply(msgRef) // XXX blocking
 		dec := codec.NewDecoderBytes(bytes.TrimRight(reply, "\x00"), &p.jsonHandle)
 		if err := dec.Decode(response); err != nil {
 			p.log.Debugf("Failed to decode PANDA response: (%v)", err)
@@ -122,9 +122,9 @@ func (p *Panda) Exchange(log func(string, ...interface{}), id, message []byte, s
 }
 
 // New creates a new Panda instance.
-func New(blobSize int, c *client.Client, log *logging.Logger, recipient, provider string) *Panda {
+func New(blobSize int, s *session.Session, log *logging.Logger, recipient, provider string) *Panda {
 	p := &Panda{
-		client:    c,
+		session:   s,
 		blobSize:  blobSize,
 		log:       log,
 		recipient: recipient,
