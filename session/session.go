@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/client/config"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/internal/pkiclient"
@@ -49,7 +48,6 @@ type Session struct {
 	worker.Worker
 
 	cfg       *config.Config
-	db        *bolt.DB
 	pkiClient pki.Client
 	minclient *minclient.Client
 	log       *logging.Logger
@@ -151,25 +149,6 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 
 	s.Go(s.worker)
 	return s, nil
-}
-
-func (s *Session) initDatabase(basePath string) error {
-	var err error
-	s.db, err = bolt.Open(filepath.Join(basePath, "storage.db"), 0600, nil)
-	if err != nil {
-		return err
-	}
-
-	// Initialize (or load) all the buckets.
-	err = s.db.Update(func(tx *bolt.Tx) error {
-
-		return nil
-	})
-	if err != nil {
-		s.db.Close()
-		s.db = nil
-	}
-	return err
 }
 
 func (s *Session) loadKeys(basePath string) error {
