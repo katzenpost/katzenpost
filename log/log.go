@@ -24,20 +24,78 @@ import (
 	goLog "log"
 	"os"
 	"strings"
+	"sync"
 
 	"gopkg.in/op/go-logging.v1"
 )
 
+type discardCloser struct {
+	io.WriteCloser
+	discard io.Writer
+}
+
+func (d *discardCloser) Close() error {
+	return nil
+}
+
+func newDiscardCloser() *discardCloser {
+	d := new(discardCloser)
+	d.discard = ioutil.Discard
+	return d
+}
+
 // Backend is a log backend.
 type Backend struct {
-	w       io.Writer
-	backend logging.LeveledBackend
+	logging.LeveledBackend
+	sync.RWMutex
+
+	_backend logging.LeveledBackend
+	w        io.WriteCloser
+
+	file    string
+	level   string
+	disable bool
+}
+
+// Log is used to log a message as per
+// the logging.Backend interface.
+func (b *Backend) Log(level logging.Level, calldepth int, record *logging.Record) error {
+	b.RLock()
+	defer b.RUnlock()
+	return b._backend.Log(level, calldepth, record)
+}
+
+// GetLevel returns the logging level for the specified module
+// as per the logging.Leveled interface.
+func (b *Backend) GetLevel(level string) logging.Level {
+	b.RLock()
+	defer b.RUnlock()
+	return b._backend.GetLevel(level)
+}
+
+// SetLevel sets the logging level for the specified module.
+// The module corresponds to the string specified in GetLogger.
+// We use this function as part of our implementation of the
+// logging.Leveled interface.
+func (b *Backend) SetLevel(level logging.Level, module string) {
+	b.RLock()
+	defer b.RUnlock()
+	b._backend.SetLevel(level, module)
+}
+
+// IsEnabledFor returns true if the logger is enabled for the given level.
+// We use this function as part of our implementation of the
+// logging.Leveled interface.
+func (b *Backend) IsEnabledFor(level logging.Level, module string) bool {
+	b.RLock()
+	defer b.RUnlock()
+	return b._backend.IsEnabledFor(level, module)
 }
 
 // GetLogger returns a per-module logger that writes to the backend.
 func (b *Backend) GetLogger(module string) *logging.Logger {
 	l := logging.MustGetLogger(module)
-	l.SetBackend(b.backend)
+	l.SetBackend(b)
 	return l
 }
 
@@ -62,7 +120,7 @@ func (b *Backend) GetGoLogger(module string, level string) *goLog.Logger {
 func (b *Backend) GetLogWriter(module string, level string) io.Writer {
 	lvl, err := logLevelFromString(level)
 	if err != nil {
-		panic("log: GetGoLogger(): Invalid level: " + err.Error())
+		panic("log: GetLogWriter(): Invalid level: " + err.Error())
 	}
 
 	w := new(logWriter)
@@ -71,40 +129,63 @@ func (b *Backend) GetLogWriter(module string, level string) io.Writer {
 	return w
 }
 
-// New initializes a logging backend.
-func New(f string, level string, disable bool) (*Backend, error) {
-	b := new(Backend)
+// Rotate simply reopens the log file for writing
+// and should be used to implement log rotation
+// where this is invoked upon HUP signal for example.
+func (b *Backend) Rotate() error {
+	b.Lock()
+	defer b.Unlock()
 
-	lvl, err := logLevelFromString(level)
+	err := b.w.Close()
 	if err != nil {
-		return nil, err
+		return err
+	}
+	b.newBackend()
+	return nil
+}
+
+func (b *Backend) newBackend() error {
+	lvl, err := logLevelFromString(b.level)
+	if err != nil {
+		return err
 	}
 
 	// Figure out where the log should go to, creating a log file as needed.
-	if disable {
-		b.w = ioutil.Discard
-	} else if f == "" {
+	if b.disable {
+		b.w = newDiscardCloser()
+	} else if b.file == "" {
 		b.w = os.Stdout
 	} else {
 		const fileMode = 0600
 
 		var err error
 		flags := os.O_CREATE | os.O_APPEND | os.O_WRONLY
-		b.w, err = os.OpenFile(f, flags, fileMode)
+		b.w, err = os.OpenFile(b.file, flags, fileMode)
 		if err != nil {
-			return nil, fmt.Errorf("server: failed to create log file: %v", err)
+			return fmt.Errorf("server: failed to create log file: %v", err)
 		}
 	}
 
 	// Create a new log backend, using the configured output, and initialize
 	// the server logger.
-	//
-	// TODO: Maybe use a custom backend to support rotating the log file.
 	logFmt := logging.MustStringFormatter("%{time:15:04:05.000} %{level:.4s} %{module}: %{message}")
 	base := logging.NewLogBackend(b.w, "", 0)
 	formatted := logging.NewBackendFormatter(base, logFmt)
-	b.backend = logging.AddModuleLevel(formatted)
-	b.backend.SetLevel(lvl, "")
+	b._backend = logging.AddModuleLevel(formatted)
+	b._backend.SetLevel(lvl, "")
+	return nil
+}
+
+// New initializes a logging backend.
+func New(f string, level string, disable bool) (*Backend, error) {
+	b := new(Backend)
+	b.file = f
+	b.level = level
+	b.disable = disable
+	err := b.newBackend()
+	if err != nil {
+		return nil, err
+	}
 	return b, nil
 }
 
