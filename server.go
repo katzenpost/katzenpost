@@ -20,6 +20,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -288,6 +289,14 @@ func New(cfg *config.Config) (*Server, error) {
 	// Initialize the management interface if enabled.
 	//
 	// Note: This is done first so that other subsystems may register commands.
+	if _, err := os.Stat(s.cfg.Management.Path); !os.IsNotExist(err) {
+		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
+		err := os.Remove(s.cfg.Management.Path)
+		if err != nil {
+			s.fatalErrCh <- fmt.Errorf("Failed to delete mgmt socket file, shutting down now.")
+			return nil, err
+		}
+	}
 	if s.cfg.Management.Enable {
 		mgmtCfg := &thwack.Config{
 			Net:         "unix",
