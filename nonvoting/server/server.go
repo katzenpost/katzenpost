@@ -80,7 +80,7 @@ func (s *Server) initDataDir() error {
 			return fmt.Errorf("authority: DataDir '%v' is not a directory", d)
 		}
 		if fi.Mode() != dirMode {
-			return fmt.Errorf("authority: DataDir '%v' has invalid permissions '%v'", d, fi.Mode())
+			return fmt.Errorf("authority: DataDir '%v' has invalid permissions '%v', should be '%v'", d, fi.Mode(), dirMode)
 		}
 	}
 
