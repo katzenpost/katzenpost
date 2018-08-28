@@ -23,9 +23,8 @@ Introduction
 Katzenpost can be used as a message oriented transport for a variety
 of applications and is in no way limited to the e-mail use case. Other
 possible applications of Katzenpost include but are not limited to:
-instant messenger applications such as Signal and Whatsapp, crypto
-currency transaction transport, bulletin board systems, file sharing
-and so forth.
+instant messenger applications, crypto currency transaction transport,
+bulletin board systems, file sharing and so forth.
 
 The Katzenpost system has four component categories:
 
@@ -58,7 +57,7 @@ of this repository.
 2. Checkout the latest stable release tag::
 
      cd $GOPATH/github.com/katzenpost/daemons
-     git checkout v0.0.1
+     git checkout v0.0.1 # replace v0.0.1 with latest version tag
 
 2. Fetch the Katzenpost vendored dependencies::
 
@@ -748,7 +747,7 @@ Setup the Postgres SQL database backend:
    That sql script is located in our ``server`` git repository, here:
    https://github.com/katzenpost/server/blob/master/internal/sqldb/create_database-postgresql.sql
 
-3. Start the Katzenpost server.
+2. Start the Katzenpost server.
 
 
 Runtime configuration changes with the management socket
