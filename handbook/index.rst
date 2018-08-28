@@ -761,6 +761,10 @@ and issue commands. Connect with a commandline like so::
 
 The following commands are possible:
 
+* ``QUIT`` - Exit this management socket session.
+
+* ``SHUTDOWN`` - Cause the server to gracefully shutdown.
+
 * ``ADD_USER`` - Add a user and associate it with the given link key in either hex or base64.
   The syntax of the command is as follows::
 
@@ -780,6 +784,12 @@ The following commands are possible:
   The syntax of the command is as follows::
 
     SET_USER_IDENTITY alice ED25519_public_key_in_hex_or_base64
+
+* ``REMOVE_USER_IDENTITY`` - Remove a given user's identity key.
+  MUST be called before removing the user with the ``REMOVE_USER`` command.
+  The synx of this command is as follows::
+
+    REMOVE_USER_IDENTITY alice
 
 * ``USER_IDENTITY`` - Retrieve the identity key of the given user.
   The syntax of the command is as follows::
