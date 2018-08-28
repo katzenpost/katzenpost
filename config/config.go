@@ -284,6 +284,16 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
+	// EnableUserRegistrationHTTP is set to true if the
+	// User Registration HTTP service listener is enabled.
+	EnableUserRegistrationHTTP bool
+
+	// UserRegistrationHTTPAddresses is quite simply
+	// the set of TCP addresses that the User
+	// Registration HTTP service should listen on
+	// (e.g. "127.0.0.1:36967").
+	UserRegistrationHTTPAddresses []string
+
 	// AltAddresses is the map of extra transports and addresses at which
 	// the Provider is reachable by clients.  The most useful alternative
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
@@ -465,6 +475,23 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
+	if pCfg.EnableUserRegistrationHTTP {
+		for _, addr := range pCfg.UserRegistrationHTTPAddresses {
+			h, p, err := net.SplitHostPort(addr)
+			if err != nil {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
+			}
+			if len(h) == 0 {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", addr)
+			}
+			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
+			} else if port == 0 {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", addr)
+			}
+		}
+	}
+
 	internalTransports := make(map[string]bool)
 	for _, v := range pki.InternalTransports {
 		internalTransports[strings.ToLower(string(v))] = true
