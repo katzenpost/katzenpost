@@ -19,25 +19,51 @@
 package mailproxy
 
 import (
-	"bytes"
+	"fmt"
 	"io/ioutil"
-	"path"
+	"path/filepath"
 
-	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/mailproxy/config"
+	"github.com/katzenpost/core/utils"
 )
 
 const (
+	// NOTICE: change me to correct playground information
+	RegistrationAddr    = "127.0.0.1:8080"
+	providerName        = "playground"
+	providerKeyPin      = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
+	authorityAddr       = "127.0.0.1:29483"
+	authorityPublicKey  = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
 	mailproxyConfigName = "mailproxy.toml"
 )
 
-type PlaygroundDescriptor struct {
-	Provider           string
-	AuthorityAddr      string
-	AuthorityPublicKey *eddsa.PublicKey
+func makeConfig(user string, dataDir string) []byte {
+	configFormatStr := `
+[Proxy]
+  POP3Address = "127.0.0.1:2524"
+  SMTPAddress = "127.0.0.1:2525"
+  DataDir = "%s"
+
+[Logging]
+  Disable = false
+  Level = "NOTICE"
+
+[NonvotingAuthority]
+  [NonvotingAuthority.PlaygroundAuthority]
+    Address = "%s"
+    PublicKey = "%s"
+
+[[Account]]
+  User = "%s"
+  Provider = "%s"
+  ProviderKeyPin = "%s"
+  Authority = "PlaygroundAuthority"
+
+[Management]
+  Enable = false
+`
+	return []byte(fmt.Sprintf(configFormatStr, dataDir, authorityAddr, authorityPublicKey, user, providerName, providerKeyPin))
 }
 
 // GenerateConfig is used to generate mailproxy configuration
@@ -46,62 +72,34 @@ type PlaygroundDescriptor struct {
 // identity public key or an error upon failure. This function returns
 // the public keys so that they may be used with the Provider
 // account registration process.
-func GenerateConfig(user string, dataDir string, playgroundDesc *PlaygroundDescriptor) (*ecdh.PublicKey, *ecdh.PublicKey, error) {
-	proxy := &config.Proxy{
-		DataDir: dataDir,
-	}
-	logging := &config.Logging{} // defaults to stdout logging
-	debug := &config.Debug{
-		SendDecoyTraffic: true,
-	}
-	nonvotingAuthority := &config.NonvotingAuthority{
-		Address:   playgroundDesc.AuthorityAddr,
-		PublicKey: playgroundDesc.AuthorityPublicKey,
-	}
-	linkPrivateKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
+func GenerateConfig(user string, dataDir string) (*ecdh.PublicKey, *ecdh.PublicKey, error) {
+	// Initialize the per-account directory.
+	id := fmt.Sprintf("%s@%s", user, providerName)
+	basePath := filepath.Join(dataDir, id)
+	if err := utils.MkDataDir(basePath); err != nil {
 		return nil, nil, err
-	}
-	identityPrivateKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	account := &config.Account{
-		User:        user,
-		Provider:    playgroundDesc.Provider,
-		Authority:   "playground_authority",
-		LinkKey:     linkPrivateKey,
-		IdentityKey: identityPrivateKey,
-	}
-	management := &config.Management{} // defaults to disabled
-	upstreamProxy := &config.UpstreamProxy{}
-	mailproxyCfg := config.Config{
-		Proxy:         proxy,
-		Logging:       logging,
-		Management:    management,
-		UpstreamProxy: upstreamProxy,
-		Debug:         debug,
-		NonvotingAuthority: map[string]*config.NonvotingAuthority{
-			account.Authority: nonvotingAuthority,
-		},
-		Account: []*config.Account{account},
 	}
 
-	err = mailproxyCfg.FixupAndValidate()
+	// generate and write keys to disk
+	linkPriv := filepath.Join(basePath, "link.private.pem")
+	linkPub := filepath.Join(basePath, "link.public.pem")
+	linkPrivateKey, err := ecdh.Load(linkPriv, linkPub, rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	idPriv := filepath.Join(basePath, "identity.private.pem")
+	idPub := filepath.Join(basePath, "identity.public.pem")
+	identityPrivateKey, err := ecdh.Load(idPriv, idPub, rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Serialize the configuration and write it to disk.
-	serialized := new(bytes.Buffer)
-	if err := toml.NewEncoder(serialized).Encode(mailproxyCfg); err != nil {
-		return nil, nil, err
-	}
-	configPath := path.Join(dataDir, mailproxyConfigName)
-	err = ioutil.WriteFile(configPath, serialized.Bytes(), 0600)
+	// write the configuration file
+	configData := makeConfig(user, dataDir)
+	configPath := filepath.Join(dataDir, mailproxyConfigName)
+	err = ioutil.WriteFile(configPath, configData, 0600)
 	if err != nil {
 		return nil, nil, err
 	}
-
 	return linkPrivateKey.PublicKey(), identityPrivateKey.PublicKey(), nil
 }
