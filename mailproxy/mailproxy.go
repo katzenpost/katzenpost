@@ -30,7 +30,7 @@ import (
 
 const (
 	// NOTICE: change me to correct playground information
-	RegistrationAddr      = "95.179.156.72:62754"
+	RegistrationAddr      = "playground.katzenpost.mixnetworks.org:61532"
 	OnionRegistrationAddr = "qv4f63cudqyhejjy.onion:62754"
 	providerName          = "playground"
 	providerKeyPin        = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="

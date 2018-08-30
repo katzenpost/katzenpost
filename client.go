@@ -50,7 +50,7 @@ type Options struct {
 }
 
 var defaultOptions = Options{
-	Scheme: "http",
+	Scheme: "https",
 }
 
 // Client handles mixnet Provider account registration.
