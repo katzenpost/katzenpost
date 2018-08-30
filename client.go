@@ -25,13 +25,28 @@ import (
 
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/server/registration"
+	"golang.org/x/net/proxy"
 )
 
 // Options are optional parameters to configure
 // the registration client. Default values are used
 // when a nil Options pointer is passed to New.
 type Options struct {
+	// Scheme selects the HTTP scheme
+	// which is either HTTP or HTTPS
 	Scheme string
+
+	// UseSocks is set to true if the specified
+	// SOCKS proxy is to be used for dialing.
+	UseSocks bool
+
+	// SocksNetwork is the network that the
+	// optional SOCKS port is listening on
+	// which is usually "unix" or "tcp".
+	SocksNetwork string
+
+	// SocksAddress is the address of the SOCKS port.
+	SocksAddress string
 }
 
 var defaultOptions = Options{
@@ -42,12 +57,24 @@ var defaultOptions = Options{
 type Client struct {
 	url     *url.URL
 	options *Options
+	client  *http.Client
 }
 
 // New creates a new Client with the provided configuration.
-func New(address string, options *Options) *Client {
+func New(address string, options *Options) (*Client, error) {
 	if options == nil {
 		options = &defaultOptions
+	}
+	client := new(http.Client)
+	if options.UseSocks {
+		dialer, err := proxy.SOCKS5(options.SocksNetwork, options.SocksAddress, nil, proxy.Direct)
+		if err != nil {
+			return nil, err
+		}
+		tr := &http.Transport{
+			Dial: dialer.Dial,
+		}
+		client = &http.Client{Transport: tr}
 	}
 	c := &Client{
 		url: &url.URL{
@@ -56,8 +83,9 @@ func New(address string, options *Options) *Client {
 			Path:   registration.URLBase,
 		},
 		options: options,
+		client:  client,
 	}
-	return c
+	return c, nil
 }
 
 func (c *Client) RegisterAccountWithIdentityAndLinkKey(user string, linkKey *ecdh.PublicKey, identityKey *ecdh.PublicKey) error {
@@ -68,7 +96,7 @@ func (c *Client) RegisterAccountWithIdentityAndLinkKey(user string, linkKey *ecd
 		registration.LinkKeyField:     {linkKey.String()},
 		registration.IdentityKeyField: {identityKey.String()},
 	}
-	response, err := http.PostForm(c.url.String(), formData)
+	response, err := c.client.PostForm(c.url.String(), formData)
 	if err != nil {
 		return err
 	}
@@ -85,7 +113,7 @@ func (c *Client) RegisterAccountWithLinkKey(user string, linkKey *ecdh.PublicKey
 		registration.UserField:    {user},
 		registration.LinkKeyField: {linkKey.String()},
 	}
-	response, err := http.PostForm(c.url.String(), formData)
+	response, err := c.client.PostForm(c.url.String(), formData)
 	if err != nil {
 		return err
 	}

@@ -30,11 +30,12 @@ import (
 
 const (
 	// NOTICE: change me to correct playground information
-	RegistrationAddr   = "95.179.156.72:62754"
-	providerName       = "playground"
-	providerKeyPin     = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
-	authorityAddr      = "95.179.156.72:29483"
-	authorityPublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+	RegistrationAddr      = "95.179.156.72:62754"
+	OnionRegistrationAddr = "qv4f63cudqyhejjy.onion:62754"
+	providerName          = "playground"
+	providerKeyPin        = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
+	authorityAddr         = "95.179.156.72:29483"
+	authorityPublicKey    = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
 
 	mailproxyConfigName = "mailproxy.toml"
 )
