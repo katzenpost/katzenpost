@@ -139,6 +139,7 @@ Katzenpost release process
     each repository
 
     * edit https://github.com/katzenpost/daemons/blob/master/Gopkg.toml
+    * git commit changes to Gopkg.toml file
 
   * update vendoring
   .. code:: bash
