@@ -40,7 +40,7 @@ const (
 	mailproxyConfigName = "mailproxy.toml"
 )
 
-func makeConfig(user string, dataDir string) []byte {
+func makeConfig(user string, dataDir string, preferOnion bool, socksNet, socksAddr string) []byte {
 	configFormatStr := `
 [Proxy]
   POP3Address = "127.0.0.1:2524"
@@ -65,7 +65,24 @@ func makeConfig(user string, dataDir string) []byte {
 [Management]
   Enable = false
 `
-	return []byte(fmt.Sprintf(configFormatStr, dataDir, authorityAddr, authorityPublicKey, user, providerName, providerKeyPin))
+
+	upstreamProxy := `
+
+[UpstreamProxy]
+  PreferedTransports = [ "onion" ]
+  Type = "tor+socks5"
+  Network = "%s"
+  Address = "%s"
+
+`
+
+	if preferOnion {
+		output := []byte(fmt.Sprintf(configFormatStr, dataDir, authorityAddr, authorityPublicKey, user, providerName, providerKeyPin))
+		output = append(output, []byte(fmt.Sprintf(upstreamProxy, socksNet, socksAddr))...)
+		return output
+	} else {
+		return []byte(fmt.Sprintf(configFormatStr, dataDir, authorityAddr, authorityPublicKey, user, providerName, providerKeyPin))
+	}
 }
 
 // GenerateConfig is used to generate mailproxy configuration
@@ -74,7 +91,7 @@ func makeConfig(user string, dataDir string) []byte {
 // identity public key or an error upon failure. This function returns
 // the public keys so that they may be used with the Provider
 // account registration process.
-func GenerateConfig(user string, dataDir string) (*ecdh.PublicKey, *ecdh.PublicKey, error) {
+func GenerateConfig(user string, dataDir string, preferOnion bool, socksNet, socksAddr string) (*ecdh.PublicKey, *ecdh.PublicKey, error) {
 	// Initialize the per-account directory.
 	id := fmt.Sprintf("%s@%s", user, providerName)
 	basePath := filepath.Join(dataDir, id)
@@ -97,7 +114,7 @@ func GenerateConfig(user string, dataDir string) (*ecdh.PublicKey, *ecdh.PublicK
 	}
 
 	// write the configuration file
-	configData := makeConfig(user, dataDir)
+	configData := makeConfig(user, dataDir, preferOnion, socksNet, socksAddr)
 	configPath := filepath.Join(dataDir, mailproxyConfigName)
 	err = ioutil.WriteFile(configPath, configData, 0600)
 	if err != nil {
