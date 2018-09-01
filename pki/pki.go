@@ -65,6 +65,30 @@ type Document struct {
 	// prior to (excluding) SendShift.
 	SendMaxInterval uint64
 
+	// DropLambda is the inverse of the mean of the exponential distribution
+	// that clients will sample to determine send timing of drop decoy messages.
+	DropLambda float64
+
+	// DropShift is the shift applied to the client send timing samples in
+	// milliseconds.
+	DropShift uint64
+
+	// DropMaxInterval is the maximum send interval in milliseconds, enforced
+	// prior to (excluding) DropShift.
+	DropMaxInterval uint64
+
+	// LoopLambda is the inverse of the mean of the exponential distribution
+	// that clients will sample to determine send timing.
+	LoopLambda float64
+
+	// LoopShift is the shift applied to the client send timing samples in
+	// milliseconds.
+	LoopShift uint64
+
+	// LoopMaxInterval is the maximum send interval in milliseconds, enforced
+	// prior to (excluding) SendShift.
+	LoopMaxInterval uint64
+
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
 
