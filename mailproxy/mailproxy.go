@@ -68,7 +68,7 @@ func makeConfig(user string, dataDir string, preferOnion bool, socksNet, socksAd
 `
 
 	if preferOnion {
-		output := []byte(fmt.Sprintf(configFormatStr, dataDir, playground.AuthorityAddr, playground.AuthorityPublicKey, user, playground.ProviderName, playground.ProviderKeyPin))
+		output := []byte(fmt.Sprintf(configFormatStr, dataDir, playground.OnionAuthorityAddr, playground.AuthorityPublicKey, user, playground.ProviderName, playground.ProviderKeyPin))
 		output = append(output, []byte(fmt.Sprintf(upstreamProxy, socksNet, socksAddr))...)
 		return output
 	} else {
