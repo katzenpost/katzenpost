@@ -26,17 +26,10 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/playground"
 )
 
 const (
-	// NOTICE: change me to correct playground information
-	RegistrationAddr      = "playground.katzenpost.mixnetworks.org:61532"
-	OnionRegistrationAddr = "qv4f63cudqyhejjy.onion:62754"
-	providerName          = "playground"
-	providerKeyPin        = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
-	authorityAddr         = "95.179.156.72:29483"
-	authorityPublicKey    = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
-
 	mailproxyConfigName = "mailproxy.toml"
 )
 
@@ -67,21 +60,19 @@ func makeConfig(user string, dataDir string, preferOnion bool, socksNet, socksAd
 `
 
 	upstreamProxy := `
-
 [UpstreamProxy]
   PreferedTransports = [ "onion" ]
   Type = "tor+socks5"
   Network = "%s"
   Address = "%s"
-
 `
 
 	if preferOnion {
-		output := []byte(fmt.Sprintf(configFormatStr, dataDir, authorityAddr, authorityPublicKey, user, providerName, providerKeyPin))
+		output := []byte(fmt.Sprintf(configFormatStr, dataDir, playground.AuthorityAddr, playground.AuthorityPublicKey, user, playground.ProviderName, playground.ProviderKeyPin))
 		output = append(output, []byte(fmt.Sprintf(upstreamProxy, socksNet, socksAddr))...)
 		return output
 	} else {
-		return []byte(fmt.Sprintf(configFormatStr, dataDir, authorityAddr, authorityPublicKey, user, providerName, providerKeyPin))
+		return []byte(fmt.Sprintf(configFormatStr, dataDir, playground.AuthorityAddr, playground.AuthorityPublicKey, user, playground.ProviderName, playground.ProviderKeyPin))
 	}
 }
 
@@ -93,7 +84,7 @@ func makeConfig(user string, dataDir string, preferOnion bool, socksNet, socksAd
 // account registration process.
 func GenerateConfig(user string, dataDir string, preferOnion bool, socksNet, socksAddr string) (*ecdh.PublicKey, *ecdh.PublicKey, error) {
 	// Initialize the per-account directory.
-	id := fmt.Sprintf("%s@%s", user, providerName)
+	id := fmt.Sprintf("%s@%s", user, playground.ProviderName)
 	basePath := filepath.Join(dataDir, id)
 	if err := utils.MkDataDir(basePath); err != nil {
 		return nil, nil, err
