@@ -155,8 +155,7 @@ func (k *PublicKey) FromPEMFile(f string) error {
 	if blk.Type != keyType {
 		return fmt.Errorf("ecdh: attempted to decode PEM file with wrong key type!")
 	}
-	err = k.FromBytes(blk.Bytes)
-	return err
+	return k.FromBytes(blk.Bytes)
 }
 
 func (k *PublicKey) rebuildHexString() {
