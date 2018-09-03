@@ -140,6 +140,25 @@ func (k *PublicKey) ToPEMFile(f string) error {
 	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
+// FromPEMFile reads the PublicKey from a PEM file at path f.
+func (k *PublicKey) FromPEMFile(f string) error {
+	const keyType = "X25519 PUBLIC KEY"
+
+	buf, err := ioutil.ReadFile(f)
+	if err != nil {
+		return err
+	}
+	blk, _ := pem.Decode(buf)
+	if blk == nil {
+		return fmt.Errorf("ecdh: failed to decode PEM file %v", f)
+	}
+	if blk.Type != keyType {
+		return fmt.Errorf("ecdh: attempted to decode PEM file with wrong key type!")
+	}
+	err = k.FromBytes(blk.Bytes)
+	return err
+}
+
 func (k *PublicKey) rebuildHexString() {
 	k.hexString = strings.ToUpper(hex.EncodeToString(k.pubBytes[:]))
 }
