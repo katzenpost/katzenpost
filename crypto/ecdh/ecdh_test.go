@@ -18,6 +18,7 @@ package ecdh
 
 import (
 	"crypto/rand"
+	"io/ioutil"
 	"testing"
 
 	"github.com/katzenpost/core/utils"
@@ -70,4 +71,17 @@ func TestECDHOps(t *testing.T) {
 	copy(tmp[:], aliceKeypair.PublicKey().Bytes())
 	curve25519.ScalarMult(&bobS, &bobSk, &tmp)
 	assert.Equal(bobS, aliceS, "Exp() mismatch against X25519 scalar mult")
+}
+
+func TestPublicKeyToFromPEMFile(t *testing.T) {
+	assert := assert.New(t)
+	aliceKeypair, err := NewKeypair(rand.Reader)
+	f, err := ioutil.TempFile("", "alice.pem")
+	assert.NoError(err)
+	err = aliceKeypair.PublicKey().ToPEMFile(f.Name())
+	assert.NoError(err)
+	pubKey := new(PublicKey)
+	err = pubKey.FromPEMFile(f.Name())
+	assert.NoError(err)
+	assert.Equal(pubKey.Bytes(), aliceKeypair.PublicKey().Bytes())
 }
