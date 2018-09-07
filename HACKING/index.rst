@@ -268,6 +268,21 @@ Provider Pipeline Diagram
                                     '------------------------------------------------------------------------------------------'
 
 
+Exercising Katzenpost with your own private mixnet
+--------------------------------------------------
+
+For many circumstances it is easier and more appropriate to perform your
+integration testing on a mixnet deployed to a single machine, a remote
+server which could be a VM instance. In that case I would compile my katzenpost
+binaries locally and upload them to my remote server and then run a bash script
+to restart the services.
+
+You will most likely want to turn on debug logging for all the mixnet services.
+Checking these debug log can help you determine if the behavior is correct.
+Certainly you could do all of this and add extra debug log statements to help
+track down a problem that would otherwise be very difficult to detect.
+
+
 Exercising Katzenpost with Kimchi
 ---------------------------------
 
