@@ -93,11 +93,17 @@ associated with them and it is likely they have bitrot:
 development workflow
 --------------------
 
-You may choose to NOT use go dependency vendoring. In that case you can
-simply check out all our git repos yourself and you can also use "go get"
-to retrieve transitive dependencies.
+You have two choices:
 
-Here's how to use our dependency vendoring system with a development workflow:
+1. You may choose to NOT use go dependency vendoring. In that case you
+can simply check out all our git repos yourself and you can also use
+"go get" to retrieve transitive dependencies. Keep in mind you'll have
+to move aside the vendoring directory in the ``daemons`` repo if you
+intend to build which your local copies of katzenpost dependencies
+instead of what is in the ``vendoring`` directory.
+
+2. Here's how to use our dependency vendoring system with a development
+workflow:
 
 0. Acquire a recent version of dep: https://github.com/golang/dep
 
