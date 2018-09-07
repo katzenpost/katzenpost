@@ -11,8 +11,8 @@ Version 0
 Thank you for interest in Katzenpost! This document describes how to
 use and configure the Katzenpost Mix Network software system. The
 target audience for this document is systems administrators and
-assumes you are familiar with using the git revision control system
-and building golang binaries.
+assumes you are familiar with using the unix systems administration,
+git revision control system and building golang binaries.
 
 .. contents:: :local:
 
@@ -21,9 +21,10 @@ Introduction
 ============
 
 Katzenpost can be used as a message oriented transport for a variety
-of applications and is in no way limited to the e-mail use case. Other
-possible applications of Katzenpost include but are not limited to:
-instant messenger applications, crypto currency transaction transport,
+of applications and is in no way limited to the e-mail use case
+demonstrated by the ``mailproxy`` client/library. Other possible
+applications of Katzenpost include but are not limited to: instant
+messenger applications, crypto currency transaction transport,
 bulletin board systems, file sharing and so forth.
 
 The Katzenpost system has four component categories:
