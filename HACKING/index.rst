@@ -24,12 +24,21 @@ executable programs:
   repository has vendored dependencies, however for development and
   testing we generally do not use vendored dependencies.
 
+We do some additional ticket tracking in:
+
 * mixnet_uprising - Repository for tracking open tasks for the
   Katzenpost mixnet framework.
+
+
+Our specs and other documents are here:
   
 * docs - All our documentation is here with the exception of our
   website. This includes our design specifications as well as this
   document you are currently reading.
+
+
+The mix server and directory authority libraries both make use
+of our core library:
 
 * core - Core library
 
@@ -37,9 +46,16 @@ executable programs:
 
 * authority - Mix PKI library
 
-* client - Experimental client library
 
-* website - The Katzenpost website
+Our core library's wire protocol depends on our fork
+of a golang noise library:
+
+* noise - The Katzenpost fork of flynn's golang Noise crypto library
+  implementation which has the ablity to use the New Hope Simple
+  post quantum hybrid key exchange for forward secrecy.
+
+
+Clients also use the core library:
 
 * minclient - Minimal client library which is the basis for all
   other mix clients.
@@ -47,15 +63,23 @@ executable programs:
 * mailproxy - High-level client library with optional reliability and
   optional SMTP and POP3 listeners.
 
-* noise - The Katzenpost fork of flynn's golang Noise crypto library
-  implementation which has the ablity to use the New Hope Simple
-  post quantum hybrid key exchange for forward secrecy.
+* client - Experimental client library implementing proper Loopix decoy
+  traffic et cetera.
+
+
+Our website:
+
+* website - The Katzenpost website
+
+
+The rest of these repositories do not currently have a maintainer
+associated with them and it is likely they have bitrot:
+
+* bindings - Language bindings for Java and Python. STATUS: NOT finished.
 
 * nixops - NixOS automated configuration for Katzenpost server components.
 
 * nixpkg - NixOS packages for Katzenpost components.
-
-* bindings - Language bindings for Java and Python. STATUS: NOT finished.
 
 * pykatzenpost - Python client library for Katzenpost.
 
