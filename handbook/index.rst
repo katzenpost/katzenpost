@@ -844,6 +844,8 @@ Mailproxy is a daemon which runs in the background and periodically
 transmits and receives messages. Once it receives a message it will be
 queued locally and encrypted onto disk for later retreival via POP3.
 
+Upon receiving the HUP signal, mailproxy will rescan it's recipients
+directory to check for new recipients. Other signals trigger a clean shutdown.
 
 Configuration
 -------------
@@ -922,7 +924,7 @@ The Account section specifies account configuration(s), for example::
     Provider = "example.com"
     ProviderKeyPin = "0AV1syaCdBbm3CLmgXLj6HdlMNiTeeIxoDc8Lgk41e0="
     Authority = "TestAuthority"
-
+    InsecureKeyDiscovery = true
 
 * ``User`` is the account user name.
 
@@ -932,6 +934,9 @@ The Account section specifies account configuration(s), for example::
   Base64 or Base16 format.
 
 * ``Authority`` is the authority configuration used by this account.
+
+* ``InsecureKeyDiscovery`` is set to true in order to allow unverified
+  user identity key lookups to be used for end-to-end encryption of messages.
 
 
 The Management section
