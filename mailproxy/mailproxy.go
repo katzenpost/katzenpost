@@ -54,6 +54,7 @@ func makeConfig(user string, dataDir string, preferOnion bool, socksNet, socksAd
   Provider = "%s"
   ProviderKeyPin = "%s"
   Authority = "PlaygroundAuthority"
+  InsecureKeyDiscovery = true
 
 [Management]
   Enable = false
