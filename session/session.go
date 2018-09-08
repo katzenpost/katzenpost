@@ -30,7 +30,7 @@ import (
 	"github.com/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/client/utils"
-	cconstants "github.com/katzenpost/core/constants"
+	coreConstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
@@ -228,7 +228,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Infof("SURB Reply decryption failure: %s", err)
 		return err
 	}
-	if len(plaintext) != cconstants.ForwardPayloadLength {
+	if len(plaintext) != coreConstants.ForwardPayloadLength {
 		s.log.Warningf("Discarding SURB %v: Invalid payload size: %v", idStr, len(plaintext))
 		return nil
 	}
