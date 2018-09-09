@@ -31,7 +31,6 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/utils"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -86,35 +85,9 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
-	// EnableLoops if set to true enables using client loop decoy
-	// traffic.
-	EnableLoops bool
-
-	// LambdaL is the inverse of the mean of the exponential distribution
-	// that is used to determine time duration between sending client
-	// loop decoy traffic messages.
-	LambdaL float64
-
-	// LambdaLMaxInterval is the maximum value that can be produced using LambdaL
-	// poisson process
-	LambdaLMax uint64
-
-	// LambdaLShift is the shift applied to the Lambda-L samples in
-	// milliseconds.
-	LambdaLShift uint64
-
-	// LambdaD is the inverse of the mean of the exponential distribution
-	// that is used to determine time duration between sending client
-	// drop decoy traffic messages.
-	LambdaD float64
-
-	// LambdaDMaxInterval is the maximum value that can be produced using LambdaD
-	// poisson process
-	LambdaDMax uint64
-
-	// LambdaLShift is the shift applied to the Lambda-L samples in
-	// milliseconds.
-	LambdaDShift uint64
+	// InitialMaxPKIRetrievalDelay is the initial maximum number of seconds
+	// we are willing to wait for the retreival of the PKI document.
+	InitialMaxPKIRetrievalDelay int
 
 	// CaseSensitiveUserIdentifiers disables the forced lower casing of
 	// the Account `User` field.
@@ -153,9 +126,6 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.C
 }
 
 func (nvACfg *NonvotingAuthority) validate() error {
-	if err := utils.EnsureAddrIPPort(nvACfg.Address); err != nil {
-		return fmt.Errorf("Address '%v' is invalid: %v", nvACfg.Address, err)
-	}
 	if nvACfg.PublicKey == nil {
 		return fmt.Errorf("PublicKey is missing")
 	}
