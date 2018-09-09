@@ -30,7 +30,6 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
@@ -58,9 +57,6 @@ type Config struct {
 func (cfg *Config) validate() error {
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("nonvoting/client: LogBackend is mandatory")
-	}
-	if err := utils.EnsureAddrIPPort(cfg.Address); err != nil {
-		return fmt.Errorf("nonvoting/client: Invalid Address: %v", err)
 	}
 	if cfg.PublicKey == nil {
 		return fmt.Errorf("nonvoting/client: PublicKey is mandatory")
