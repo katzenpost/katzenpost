@@ -61,12 +61,10 @@ type Session struct {
 	dTimer *poisson.PoissonTimer
 	lTimer *poisson.PoissonTimer
 
-	linkKey        *ecdh.PrivateKey
-	opCh           chan workerOp
-	onlineAt       time.Time
-	hasPKIDoc      bool
-	condGotPKIDoc  *sync.Cond
-	condGotConnect *sync.Cond
+	linkKey   *ecdh.PrivateKey
+	opCh      chan workerOp
+	onlineAt  time.Time
+	hasPKIDoc bool
 
 	egressQueue    EgressQueue
 	surbIDMap      map[[sConstants.SURBIDLength]byte]*MessageRef
@@ -108,10 +106,6 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*MessageRef)
 	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
 	s.egressQueue = new(Queue)
-
-	// make some synchronised conditions
-	s.condGotPKIDoc = sync.NewCond(new(sync.Mutex))
-	s.condGotConnect = sync.NewCond(new(sync.Mutex))
 
 	id := cfg.Account.User + "@" + cfg.Account.Provider
 	basePath := filepath.Join(cfg.Proxy.DataDir, id)
@@ -210,22 +204,13 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
 }
 
-func (s *Session) WaitForPKIDocument() {
-	s.condGotPKIDoc.L.Lock()
-	defer s.condGotPKIDoc.L.Unlock()
-	s.condGotPKIDoc.Wait()
-}
-
 // OnConnection will be called by the minclient api
 // upon connecting to the Provider
 func (s *Session) onConnection(err error) {
 	if err == nil {
-		s.condGotConnect.L.Lock()
 		s.opCh <- opConnStatusChanged{
 			isConnected: true,
 		}
-		s.condGotConnect.Broadcast()
-		s.condGotConnect.L.Unlock()
 	}
 }
 
@@ -281,10 +266,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
 	s.hasPKIDoc = true
-	s.condGotPKIDoc.L.Lock()
 	s.opCh <- opNewDocument{
 		doc: doc,
 	}
-	s.condGotPKIDoc.Broadcast()
-	s.condGotPKIDoc.L.Unlock()
 }
