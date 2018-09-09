@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
@@ -189,10 +188,8 @@ func (s *Session) awaitFirstPKIDoc() (*pki.Document, error) {
 
 func (s *Session) loadKeys(basePath string) error {
 	// Load link key.
-	linkPriv := filepath.Join(basePath, "link.private.pem")
-	linkPub := filepath.Join(basePath, "link.public.pem")
 	var err error
-	if s.linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
+	if s.linkKey, err = config.LoadLinkKey(basePath); err != nil {
 		s.log.Errorf("Failure to load link keys: %s", err)
 		return err
 	}

@@ -101,6 +101,12 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 
+	// Ensure we generate keys if the user requested it.
+	if c.cfg.Debug.GenerateOnly {
+		err := config.GenerateKeys(c.cfg)
+		return nil, err
+	}
+
 	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
 
 	// Start the fatal error watcher.

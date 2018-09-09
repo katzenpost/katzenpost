@@ -28,9 +28,12 @@ import (
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
 	"github.com/katzenpost/client/internal/proxy"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/utils"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -292,6 +295,30 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 		cfg.Debug.GenerateOnly = true
 	}
 	return cfg, nil
+}
+
+// GenerateKeys makes the key dir and then
+// generates the keys and saves them into pem files
+func GenerateKeys(cfg *Config) error {
+	id := cfg.Account.User + "@" + cfg.Account.Provider
+	basePath := filepath.Join(cfg.Proxy.DataDir, id)
+	if err := utils.MkDataDir(basePath); err != nil {
+		return err
+	}
+	_, err := LoadLinkKey(basePath)
+	return err
+}
+
+// LoadLinkKey can load or generate the keys
+func LoadLinkKey(basePath string) (*ecdh.PrivateKey, error) {
+	linkPriv := filepath.Join(basePath, "link.private.pem")
+	linkPub := filepath.Join(basePath, "link.public.pem")
+	var err error
+	linkKey := new(ecdh.PrivateKey)
+	if linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
+		return nil, err
+	}
+	return linkKey, nil
 }
 
 // LoadFile loads, parses, and validates the provided file and returns the
