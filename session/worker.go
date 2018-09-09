@@ -37,49 +37,90 @@ type opNewDocument struct {
 	doc *pki.Document
 }
 
-func (s *Session) initializeTimers() {
-
-	// Lambda-P will use Lambda-D settings
-	// initially until we get the PKI doc.
+func (s *Session) setTimers(doc *pki.Document) {
+	// λP
 	pDesc := &poisson.PoissonDescriptor{
-		Lambda: s.cfg.Debug.LambdaD,
-		Shift:  s.cfg.Debug.LambdaDShift,
-		Max:    s.cfg.Debug.LambdaDMax,
+		Lambda: doc.SendLambda,
+		Shift:  doc.SendShift,
+		Max:    doc.SendMaxInterval,
 	}
-	s.pTimer = poisson.NewTimer(pDesc)
+	if s.pTimer == nil {
+		s.pTimer = poisson.NewTimer(pDesc)
+	} else {
+		s.pTimer.SetPoisson(pDesc)
+	}
 
-	// Lambda-D
+	// λD
 	dDesc := &poisson.PoissonDescriptor{
-		Lambda: s.cfg.Debug.LambdaD,
-		Shift:  s.cfg.Debug.LambdaDShift,
-		Max:    s.cfg.Debug.LambdaDMax,
+		Lambda: doc.DropLambda,
+		Shift:  doc.DropShift,
+		Max:    doc.DropMaxInterval,
 	}
-	s.dTimer = poisson.NewTimer(dDesc)
+	if s.dTimer == nil {
+		s.dTimer = poisson.NewTimer(dDesc)
+	} else {
+		s.dTimer.SetPoisson(dDesc)
+	}
 
-	// Lambda-L
-	if s.cfg.Debug.EnableLoops {
-		lDesc := &poisson.PoissonDescriptor{
-			Lambda: s.cfg.Debug.LambdaL,
-			Shift:  s.cfg.Debug.LambdaLShift,
-			Max:    s.cfg.Debug.LambdaLMax,
-		}
+	// λL
+	lDesc := &poisson.PoissonDescriptor{
+		Lambda: doc.LoopLambda,
+		Shift:  doc.LoopShift,
+		Max:    doc.LoopMaxInterval,
+	}
+	if s.lTimer == nil {
 		s.lTimer = poisson.NewTimer(lDesc)
+	} else {
+		s.lTimer.SetPoisson(lDesc)
 	}
 }
 
-func (s *Session) worker() {
-	s.initializeTimers()
+func (s *Session) connStatusChange(op opConnStatusChanged) bool {
+	isConnected := false
+	if isConnected = op.isConnected; isConnected {
+		const skewWarnDelta = 2 * time.Minute
+		s.onlineAt = time.Now()
 
+		skew := s.minclient.ClockSkew()
+		absSkew := skew
+		if absSkew < 0 {
+			absSkew = -absSkew
+		}
+		if absSkew > skewWarnDelta {
+			// Should this do more than just warn?  Should this
+			// use skewed time?  I don't know.
+			s.log.Warningf("The observed time difference between the host and provider clocks is '%v'. Correct your system time.", skew)
+		} else {
+			s.log.Debugf("Clock skew vs provider: %v", skew)
+		}
+	}
+	return isConnected
+}
+
+func (s *Session) maybeUpdateTimers(doc *pki.Document) {
+	// Determine if PKI doc is valid. If not then abort.
+	err := s.isDocValid(doc)
+	if err != nil {
+		s.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+		s.fatalErrCh <- fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+		return
+	}
+	s.setTimers(doc)
+
+}
+
+// worker performs work. It runs in it's own goroutine
+// and implements a shutdown code path as well.
+// This function assumes the timers are setup but
+// not yet started.
+func (s *Session) worker() {
 	s.pTimer.Start()
 	defer s.pTimer.Stop()
 	s.dTimer.Start()
 	defer s.dTimer.Stop()
-	var lambdaLChan *<-chan time.Time = new(<-chan time.Time)
-	if s.cfg.Debug.EnableLoops {
-		s.lTimer.Start()
-		defer s.lTimer.Stop()
-		*lambdaLChan = s.lTimer.Timer.C
-	}
+	s.lTimer.Start()
+	defer s.lTimer.Stop()
+
 	var isConnected bool = false
 	for {
 		var lambdaLFired bool = false
@@ -94,7 +135,7 @@ func (s *Session) worker() {
 			lambdaPFired = true
 		case <-s.dTimer.Timer.C:
 			lambdaDFired = true
-		case <-*lambdaLChan:
+		case <-s.lTimer.Timer.C:
 			lambdaLFired = true
 		case qo = <-s.opCh:
 		}
@@ -117,43 +158,9 @@ func (s *Session) worker() {
 			case opConnStatusChanged:
 				// Note: s.isConnected isn't used in favor of passing the
 				// value via an op, to save on locking headaches.
-				if isConnected = op.isConnected; isConnected {
-					const skewWarnDelta = 2 * time.Minute
-					s.onlineAt = time.Now()
-
-					skew := s.minclient.ClockSkew()
-					absSkew := skew
-					if absSkew < 0 {
-						absSkew = -absSkew
-					}
-					if absSkew > skewWarnDelta {
-						// Should this do more than just warn?  Should this
-						// use skewed time?  I don't know.
-						s.log.Warningf("The observed time difference between the host and provider clocks is '%v'. Correct your system time.", skew)
-					} else {
-						s.log.Debugf("Clock skew vs provider: %v", skew)
-					}
-				}
+				isConnected = s.connStatusChange(op)
 			case opNewDocument:
-				// Determine if PKI doc is valid.
-				// If not then abort.
-				err := s.isDocValid(op.doc)
-				if err != nil {
-					s.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
-					s.fatalErrCh <- fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
-					return
-				}
-
-				// Update our Lambda-P parameters from the PKI document
-				// if indeed they have changed.
-				desc := &poisson.PoissonDescriptor{
-					Lambda: op.doc.SendLambda,
-					Shift:  op.doc.SendShift,
-					Max:    op.doc.SendMaxInterval,
-				}
-				if !s.pTimer.DescriptorEquals(desc) {
-					s.pTimer.SetPoisson(desc)
-				}
+				s.maybeUpdateTimers(op.doc)
 			default:
 				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			} // end of switch

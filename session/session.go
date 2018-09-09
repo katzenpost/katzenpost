@@ -147,8 +147,44 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 		return nil, err
 	}
 
+	// block until we get the first PKI document
+	// and then set our timers accordingly
+	doc, err := s.awaitFirstPKIDoc()
+	if err != nil {
+		return nil, err
+	}
+	s.setTimers(doc)
+
 	s.Go(s.worker)
 	return s, nil
+}
+
+func (s *Session) awaitFirstPKIDoc() (*pki.Document, error) {
+	for {
+		var qo workerOp = nil
+		select {
+		case <-s.HaltCh():
+			s.log.Debugf("Terminating gracefully.")
+			return nil, errors.New("Terminating gracefully.")
+		case <-time.After(time.Duration(s.cfg.Debug.InitialMaxPKIRetrievalDelay) * time.Second):
+			return nil, errors.New("Timeout failure awaiting first PKI document.")
+		case qo = <-s.opCh:
+		}
+		switch op := qo.(type) {
+		case opNewDocument:
+			// Determine if PKI doc is valid. If not then abort.
+			err := s.isDocValid(op.doc)
+			if err != nil {
+				s.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+				err := fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+				s.fatalErrCh <- err
+				return nil, err
+			}
+			return op.doc, nil
+		default:
+			continue
+		}
+	}
 }
 
 func (s *Session) loadKeys(basePath string) error {
