@@ -66,10 +66,13 @@ type Session struct {
 	onlineAt  time.Time
 	hasPKIDoc bool
 
-	egressQueue    EgressQueue
+	egressQueue     EgressQueue
+	egressQueueLock *sync.Mutex
+
 	surbIDMap      map[[sConstants.SURBIDLength]byte]*MessageRef
 	messageIDMap   map[[cConstants.MessageIDLength]byte]*MessageRef
 	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
+	mapLock        *sync.Mutex
 }
 
 // New establishes a session with provider using key.
@@ -105,7 +108,10 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*MessageRef)
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*MessageRef)
 	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
+	s.mapLock = new(sync.Mutex)
+
 	s.egressQueue = new(Queue)
+	s.egressQueueLock = new(sync.Mutex)
 
 	id := cfg.Account.User + "@" + cfg.Account.Provider
 	basePath := filepath.Join(cfg.Proxy.DataDir, id)
@@ -226,6 +232,9 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %x", idStr)
+
+	s.mapLock.Lock()
+	defer s.mapLock.Unlock()
 
 	msgRef, ok := s.surbIDMap[*surbID]
 	if !ok {

@@ -44,11 +44,17 @@ type MessageRef struct {
 
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgRef *MessageRef) []byte {
+	s.mapLock.Lock()
+	defer s.mapLock.Unlock()
+
 	s.replyNotifyMap[*msgRef.ID].Lock()
 	return s.messageIDMap[*msgRef.ID].Reply
 }
 
 func (s *Session) sendNext() error {
+	s.egressQueueLock.Lock()
+	defer s.egressQueueLock.Unlock()
+
 	msgRef, err := s.egressQueue.Peek()
 	if err != nil {
 		return err
@@ -76,6 +82,10 @@ func (s *Session) send(msgRef *MessageRef) error {
 		msgRef.Key = key
 		msgRef.SentAt = time.Now()
 		msgRef.ReplyETA = eta
+
+		s.mapLock.Lock()
+		defer s.mapLock.Unlock()
+
 		s.surbIDMap[surbID] = msgRef
 		s.messageIDMap[*msgRef.ID] = msgRef
 	} else {
@@ -124,6 +134,10 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*M
 		Payload:   message,
 		WithSURB:  false,
 	}
+
+	s.egressQueueLock.Lock()
+	defer s.egressQueueLock.Unlock()
+
 	err := s.egressQueue.Push(&msgRef)
 	return &msgRef, err
 }
@@ -149,8 +163,16 @@ func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte,
 		WithSURB:  wantResponse,
 		SURBType:  cConstants.SurbTypeKaetzchen,
 	}
+
+	s.mapLock.Lock()
+	defer s.mapLock.Unlock()
+
 	s.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
 	s.replyNotifyMap[*msgRef.ID].Lock()
+
+	s.egressQueueLock.Lock()
+	defer s.egressQueueLock.Unlock()
+
 	err := s.egressQueue.Push(&msgRef)
 	return &msgRef, err
 }
