@@ -45,9 +45,9 @@ type MessageRef struct {
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgRef *MessageRef) []byte {
 	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
-
-	s.replyNotifyMap[*msgRef.ID].Lock()
+	replyLock := s.replyNotifyMap[*msgRef.ID]
+	s.mapLock.Unlock()
+	replyLock.Lock()
 	return s.messageIDMap[*msgRef.ID].Reply
 }
 
