@@ -199,6 +199,12 @@ func (s *state) generateDocument(epoch uint64) {
 		SendLambda:      s.s.cfg.Parameters.SendLambda,
 		SendShift:       s.s.cfg.Parameters.SendShift,
 		SendMaxInterval: s.s.cfg.Parameters.SendMaxInterval,
+		DropLambda:      s.s.cfg.Parameters.DropLambda,
+		DropShift:       s.s.cfg.Parameters.DropShift,
+		DropMaxInterval: s.s.cfg.Parameters.DropMaxInterval,
+		LoopLambda:      s.s.cfg.Parameters.LoopLambda,
+		LoopShift:       s.s.cfg.Parameters.LoopShift,
+		LoopMaxInterval: s.s.cfg.Parameters.LoopMaxInterval,
 		Topology:        topology,
 		Providers:       providers,
 	}
