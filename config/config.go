@@ -39,7 +39,9 @@ import (
 )
 
 const (
-	defaultLogLevel = "NOTICE"
+	defaultLogLevel                    = "NOTICE"
+	defaultPollingInterval             = 10
+	defaultInitialMaxPKIRetrievalDelay = 10
 )
 
 var defaultLogging = Logging{
@@ -106,6 +108,15 @@ type Debug struct {
 	// increasing the value too far WILL adversely affect large message
 	// transmit performance.
 	PollingInterval int
+}
+
+func (d *Debug) fixup() {
+	if d.PollingInterval == 0 {
+		d.PollingInterval = defaultPollingInterval
+	}
+	if d.InitialMaxPKIRetrievalDelay == 0 {
+		d.InitialMaxPKIRetrievalDelay = defaultInitialMaxPKIRetrievalDelay
+	}
 }
 
 // NonvotingAuthority is a non-voting authority configuration.
@@ -243,7 +254,12 @@ func (cfg *Config) FixupAndValidate() error {
 		cfg.Logging = &defaultLogging
 	}
 	if cfg.Debug == nil {
-		cfg.Debug = &Debug{}
+		cfg.Debug = &Debug{
+			PollingInterval:             defaultPollingInterval,
+			InitialMaxPKIRetrievalDelay: defaultInitialMaxPKIRetrievalDelay,
+		}
+	} else {
+		cfg.Debug.fixup()
 	}
 
 	// Validate/fixup the various sections.
