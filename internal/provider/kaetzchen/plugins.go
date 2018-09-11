@@ -19,6 +19,7 @@
 package kaetzchen
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -170,7 +171,7 @@ func (k *PluginKaetzchenWorker) launch(command string, args []string) (kplugin.K
 			plugin.ProtocolGRPC},
 	}
 
-	var strBuilder strings.Builder
+	var strBuilder bytes.Buffer
 	strBuilder.WriteString(fmt.Sprintf("Launching command: %s ", command))
 	if args == nil {
 		clientCfg.Cmd = exec.Command(command)
