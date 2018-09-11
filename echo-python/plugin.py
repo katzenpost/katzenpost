@@ -22,6 +22,13 @@ class NoSURBException(Exception):
     is received that does not contain a SURB.
     """
 
+# CORE_PROTOCOL_VERSION is the plugin version used by
+# the Katzenpost server's go-plugin library.
+CORE_PROTOCOL_VERSION = 1
+
+# KAETZENPOST_PROTOCOL_VERSION is the protocol version
+# used by the Kaetzchen plugin system.
+KAETZENPOST_PROTOCOL_VERSION = 1
 
 class EchoServicer(kaetzchen_pb2_grpc.KaetzchenServicer):
 
@@ -30,10 +37,17 @@ class EchoServicer(kaetzchen_pb2_grpc.KaetzchenServicer):
 
     def OnRequest(self, request, context):
         if not request.HasSURB:
-            self.logger.error("received request without SURB")
+            self.logger.error("error, request %s without SURB" % request.ID)
             raise NoSURBException
-        self.logger.info("received request")
+        self.logger.info("received request ID %s" % request.ID)
         return kaetzchen_pb2.Response(Payload=request.Payload)
+
+    def Parameters(self, empty, context):
+        params = kaetzchen_pb2.Params(Map={
+            "name":"python_echo_server",
+            "version":"0.0.0",
+        })
+        return params
 
 def main():
     ap = argparse.ArgumentParser()
@@ -66,7 +80,7 @@ def main():
     server.start()
 
     # Output information
-    print("1|1|unix|%s|grpc" % socket)
+    print("%s|%s|unix|%s|grpc" % (CORE_PROTOCOL_VERSION, KAETZENPOST_PROTOCOL_VERSION, socket))
     sys.stdout.flush()
 
     try:

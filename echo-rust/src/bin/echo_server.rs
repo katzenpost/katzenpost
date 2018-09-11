@@ -21,13 +21,33 @@ use log4rs::config::{Appender, Config, Root};
 use log::LevelFilter;
 
 use std::thread;
-use echo_rust::proto::kaetzchen::{Request, Response};
+use std::collections::HashMap;
+
+use echo_rust::proto::kaetzchen::{Request, Response, Params, Empty};
 use echo_rust::proto::kaetzchen_grpc::{KaetzchenServer, Kaetzchen};
 
+/// CORE_PROTOCOL_VERSION must match the plugin protocol version
+/// that the server's go-plugin library is using.
+const CORE_PROTOCOL_VERSION: usize = 1;
 
-struct Echo;
+/// KAETZENPOST_PLUGIN_VERSION must match the
+/// Katzenpost server plugin protocol version.
+const KAETZENPOST_PLUGIN_VERSION: usize = 1;
+
+struct Echo {
+    params: HashMap<String, String>,
+}
+
+impl Echo {
+    fn new() -> Echo {
+        Echo {
+            params: HashMap::new(),
+        }
+    }
+}
 
 impl Kaetzchen for Echo {
+
     fn on_request(&self, _m: grpc::RequestOptions, req: Request) -> grpc::SingleResponse<Response> {
         if !req.HasSURB {
             return grpc::SingleResponse::err(grpc::Error::Other("failure, SURB not found with Request"))
@@ -36,6 +56,12 @@ impl Kaetzchen for Echo {
         let mut r = Response::new();
         r.set_Payload(req.Payload);
         grpc::SingleResponse::completed(r)
+    }
+
+    fn parameters(&self, _m: grpc::RequestOptions, _empty: Empty) -> grpc::SingleResponse<Params> {
+        let mut params = Params::new();
+        params.set_Map(self.params.clone());
+        grpc::SingleResponse::completed(params)
     }
 }
 
@@ -92,11 +118,11 @@ fn main() {
         .collect();
     let socket = format!("/tmp/rust_echo_{}.sock", rand_string);
     server.http.set_unix_addr(socket.to_string()).unwrap();
-    server.add_service(KaetzchenServer::new_service_def(Echo));
+    server.add_service(KaetzchenServer::new_service_def(Echo::new()));
     server.http.set_cpu_pool_threads(4);
     let _server = server.build().expect("server");
 
-    println!("1|1|unix|{}|grpc", socket);
+    println!("{}|{}|unix|{}|grpc", CORE_PROTOCOL_VERSION, KAETZENPOST_PLUGIN_VERSION, socket);
 
     loop {
         thread::park();
