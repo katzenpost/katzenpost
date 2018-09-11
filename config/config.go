@@ -1,5 +1,5 @@
 // config.go - Katzenpost server configuration.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2017  Yawning Angel and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -324,6 +324,10 @@ type Provider struct {
 	// Kaetzchen is the list of configured Kaetzchen (auto-responder agents)
 	// for this provider.
 	Kaetzchen []*Kaetzchen
+
+	// PluginKaetzchen is the list of configured Kaetzchen (auto-responder agents)
+	// for this provider that use external plugins via the go-plugin system.
+	PluginKaetzchen []*PluginKaetzchen
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -427,6 +431,56 @@ func (kCfg *Kaetzchen) validate() error {
 	}
 	if epNorm != kCfg.Endpoint {
 		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
+	}
+	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
+	}
+
+	return nil
+}
+
+// PluginKaetzchen is a Provider auto-responder agent.
+type PluginKaetzchen struct {
+	// Capability is the capability exposed by the agent.
+	Capability string
+
+	// Endpoint is the provider side endpoint that the agent will accept
+	// requests at.  While not required by the spec, this server only
+	// supports Endpoints that are lower-case local-parts of an e-mail
+	// address.
+	Endpoint string
+
+	// Config is the extra per agent arguments to be passed to the agent's
+	// initialization routine.
+	Config map[string]interface{}
+
+	// Command is the full file path to the external plugin program
+	// that implements this Kaetzchen service.
+	Command string
+
+	// MaxConcurrency is the number of worker goroutines to start
+	// for this service.
+	MaxConcurrency int
+
+	// Disable disabled a configured agent.
+	Disable bool
+}
+
+func (kCfg *PluginKaetzchen) validate() error {
+	if kCfg.Capability == "" {
+		return fmt.Errorf("config: Kaetzchen: Capability is invalid.")
+	}
+
+	// Ensure the endpoint is normalized.
+	epNorm, err := precis.UsernameCaseMapped.String(kCfg.Endpoint)
+	if err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has invalid endpoint: %v", kCfg.Capability, err)
+	}
+	if epNorm != kCfg.Endpoint {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
+	}
+	if kCfg.Command == "" {
+		return fmt.Errorf("config: Kaetzchen: Command is invalid.")
 	}
 	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
 		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
@@ -572,6 +626,15 @@ func (pCfg *Provider) validate() error {
 
 	capaMap := make(map[string]bool)
 	for _, v := range pCfg.Kaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	for _, v := range pCfg.PluginKaetzchen {
 		if err := v.validate(); err != nil {
 			return err
 		}
