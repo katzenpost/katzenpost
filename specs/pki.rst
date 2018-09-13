@@ -652,7 +652,9 @@ vote was not accepted.
 
    * Use a append only merkle tree instead of this voting protocol.
 
+
 8. Anonymity Considerations
+===========================
 
    * This system is intentionally designed to provide identical
      network consensus documents to each mix client. This mitigates
@@ -673,7 +675,9 @@ vote was not accepted.
      be the case where the adversary controls the only mix is one
      layer of the network topology.
 
+
 9. Security Considerations
+==========================
 
    * The Directory Authority/PKI system for a given mix network is
      essentially the root of all authority in the system. The PKI
@@ -697,14 +701,20 @@ vote was not accepted.
      inconsistently can trivially cause a denial of service for each
      voting round.
 
-10. Acknowledgements
 
-   We would like to thank Nick Mathewson for answering design questions
-   and thorough design review.
+10. Acknowledgements
+====================
+
+We would like to thank Nick Mathewson for answering design questions
+and thorough design review.
+
+
 
 Appendix A. References
+======================
 
 Appendix A.1 Normative References
+---------------------------------
 
 .. [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
