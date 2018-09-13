@@ -9,7 +9,7 @@ Version 0
 .. rubric:: Abstract
 
 This document proposes a certificate format that Katzenpost
-mix server and directory authority server will use.
+mix server, directory authority server and clients will use.
 
 .. contents:: :local:
 
@@ -22,6 +22,10 @@ sense of operational abilities such as key rotation and key revocation.
 That is, we wish for mixes and authorities to periodically utilize a
 long-term signing key for generating certificates for new short-term
 signing keys.
+
+Yet another use-case for these certificate is to replace the use of
+JOSE [RFC7515]_ in the voting Directory Authority system [KATZMIXPKI]_
+for the multi-signature documents exchanged for voting and consensus.
 
 
 1.1 Conventions Used in This Document
@@ -39,26 +43,46 @@ document are to be interpreted as described in [RFC2119]_.
 2. Document Format
 ==================
 
-The CBOR [RFC7049]_ serialization format is used to serialize
-certificates where each field is marked with the following keys in a map:
+The CBOR [RFC7049]_ serialization format is used to serialize certificates:
+::
 
-  * "version" - The certificate version number, starting at 0.
+  // Signature is a cryptographic signature
+  // which has an associated signer ID.
+  type Signature struct {
+          // Identity is the identity of the signer.
+          Identity []byte
+          // Signature is the actual signature value.
+          Signature []byte
+  }
 
-  * "type" - The certificate type, that is a name that designates it's
-    intended use. See discussion in the next subsection.
+  // Certificate structure for serializing certificates.
+  type Certificate struct {
+          // Version is the certificate format version.
+          Version uint32
 
-  * "expiration" - Date of expiration.
+          // Type indicates the type of certificate.
+          Type string
 
-  * "cert_key_type" - The key types used.
+          // Expiration is second since Unix epoch.
+          Expiration int64
 
-  * "certified_key" - The key which is signed.
+          // CertKeyType indicates the type of key
+          // that is certified by this certificate.
+          CertKeyType string
 
-  * "fingerprint" - The fingerprint of the identity key which signs
-    the ``certified_key``, using blake2b512. [RFC7693]_
+          // Certified is the data that is certified by
+          // this certificate.
+          Certified []byte
 
-  * "signature" - The signature is produced by concatenating the above
-    field's values and then signing that with the long-term key.
+          // Signatures are the signature of the certificate.
+          Signatures []Signature
+  }
 
+
+That is, one or more signatures sign the certificate. However the
+``Certified`` field is not the only information that is signed. The
+``Certified`` field along with the other non-signature fields are all
+concatenated together and signed.
 
 2.1 Certificate Types
 ---------------------
@@ -66,7 +90,7 @@ certificates where each field is marked with the following keys in a map:
 The certificate ``type`` field indicates the type of certificate.
 So far we have only two types:
 
-  * mix certificate
+  * identity key certificate
   * directory authority certificate
 
 Both mixes and directory authority servers have a secret, long-term
@@ -87,6 +111,15 @@ based post quantum cryptographic signature scheme such as SPHINCS-256
 or SPHINCS+. [SPHINCS256]_
 
 
+3. Acknowledgments
+==================
+
+This specification was inspired by Tor Project's certificate format
+specification document:
+
+* https://gitweb.torproject.org/torspec.git/tree/cert-spec.txt
+
+
 Appendix A. References
 ======================
 
@@ -97,6 +130,10 @@ Appendix A.1 Normative References
                Requirement Levels", BCP 14, RFC 2119,
                DOI 10.17487/RFC2119, March 1997,
                <http://www.rfc-editor.org/info/rfc2119>.
+
+.. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
 
 .. [RFC7049]   C. Bormannm, P. Hoffman, "Concise Binary Object Representation (CBOR)",
                Internet Engineering Task Force (IETF), October 2013,
@@ -112,6 +149,10 @@ Appendix A.1 Normative References
 
 Appendix A.2 Informative References
 -----------------------------------
+
+.. [RFC7515]  Jones, M., Bradley, J., Sakimura, N.,
+              "JSON Web Signature (JWS)", May 2015,
+              <https://tools.ietf.org/html/rfc7515>.
 
 .. [SPHINCS256] Bernstein, D., Hopwood, D., Hulsing, A., Lange, T.,
                 Niederhagen, R., Papachristodoulou, L., Schwabe, P., Wilcox
