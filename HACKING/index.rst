@@ -133,7 +133,7 @@ workflow:
 5. Build the binaries::
 
      (cd authority/nonvoting; go build)
-     (cd server; go build)
+     (cd server; go generate; go build)
      (cd mailproxy; go build)
 
 
