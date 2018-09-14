@@ -331,7 +331,11 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		desc.Layer = cpki.LayerProvider
 
 		// Publish currently running Kaetzchen.
-		desc.Kaetzchen = p.glue.Provider().KaetzchenForPKI()
+		var err error
+		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+		if err != nil {
+			return err
+		}
 	}
 	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
 
