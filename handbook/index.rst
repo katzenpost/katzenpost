@@ -338,22 +338,16 @@ in order to participate in the network.
 Building the ``server`` binary
 ------------------------------
 
-The easiest way to build the nonvoting Authority server is with
-this single commandline::
-
-   go get github.com/katzenpost/daemons/server
-
-However you can of course use git to clone all of our git
-repositories and dependencies. You may then build the
-nonvoing authority as follows::
+Our HACKING guide goes into more detail about
+how we perform builds however you should know that
+the mix server uses grpc+protobufs for the mix service
+plugin system and therefore requires a ``go generate``
+command before building.
+::
 
    cd $GOPATH/github.com/katzenpost/daemons/server
+   go generate
    go build
-
-Neither of these build strategies is ideal because the latest
-versions of any of our software dependencies may make breaking
-changes. We therefore recommend using our golang vendoring system
-to perform the build as described above.
 
 
 ``server`` Commandline Usage
