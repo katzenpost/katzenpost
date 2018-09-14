@@ -84,13 +84,13 @@ func (e *externAuth) Identity(u []byte) (*ecdh.PublicKey, error) {
 	}
 	defer rsp.Body.Close()
 
-	response := map[string]string{}
-	d := codec.NewDecoder(rsp.Body, jsonHandle)
-	if err = d.Decode(&response); err != nil {
-		return nil, err
-	}
-
 	if rsp.StatusCode == 200 {
+		response := map[string]string{}
+		d := codec.NewDecoder(rsp.Body, jsonHandle)
+		if err = d.Decode(&response); err != nil {
+			return nil, err
+		}
+
 		if pkhex, ok := response[endpoint]; ok {
 			if decoded, err := hex.DecodeString(pkhex); err == nil {
 				pk := new(ecdh.PublicKey)
