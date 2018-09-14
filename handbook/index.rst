@@ -206,6 +206,11 @@ A successful run will print output that looks like this::
   14:47:43.141 NOTI authority: Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.
   14:47:43.142 NOTI authority: Authority identity public key is: 375F00F6EA20ACFB3F4CDCA7FDB50AE427BF02035B6A2F5789281DAA7290B2BB
 
+Note that if you choose to configure logging to a file one disk, you
+can implement log rotation by moving the log file and then sending the
+``HUP`` to the authority server process. This will cause the daemon to
+rewrite the log file in the location specified by the config file.
+
 
 Configuring The Non-voting Directory Authority
 ----------------------------------------------
@@ -371,6 +376,12 @@ The command output when generating keys looks like this::
   22:51:55.377 NOTI server: Server identifier is: 'example.com'
   22:51:55.379 NOTI server: Server identity public key is: 2628F87F2806048C95F060DA9CD3D8F9BE7550BFB9EE85F213381BC04C047650
   22:51:55.379 NOTI server: Server link public key is: CCDC5C105E649D543DF1CF397A17638F812F95B7E572288F4602F8EC01EC4F3C
+
+
+Note that if you choose to configure logging to a file one disk, you
+can implement log rotation by moving the log file and then sending the
+``HUP`` to the authority server process. This will cause the daemon to
+rewrite the log file in the location specified by the config file.
 
 
 Configuring Mixes and Providers
