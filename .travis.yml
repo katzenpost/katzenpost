@@ -1,12 +1,22 @@
 language: go
 
 go:
-  - 1.8
-  - 1.9
-  - tip
+  - "1.10"
+  - "1.11"
+
+before_install:
+  - sudo add-apt-repository ppa:maarten-fonville/protobuf -y
+  - sudo apt update
+  - sudo apt install protobuf-compiler golang-goprotobuf-dev golang-goprotobuf-dev
+  - wget https://github.com/golang/protobuf/raw/master/protoc-gen-go/protoc-gen-go
+  - chmod a+rx protoc-gen-go
+  - sudo mv protoc-gen-go /usr/local/bin
+  - git config --global http.https://gopkg.in.followRedirects true
 
 install:
- - go get -v -t ./...
+  - go generate
+  - git config --global http.https://gopkg.in.followRedirects true
+  - go get -u -v -t ./...
 
 script:
- - go test -v ./...
+  - go test -v ./...

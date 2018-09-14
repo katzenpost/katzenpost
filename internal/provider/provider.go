@@ -70,9 +70,9 @@ type provider struct {
 	userDB userdb.UserDB
 	spool  spool.Spool
 
-	kaetzchenWorker *kaetzchen.KaetzchenWorker
-
-	httpServers []*http.Server
+	kaetzchenWorker       *kaetzchen.KaetzchenWorker
+	pluginKaetzchenWorker *kaetzchen.PluginKaetzchenWorker
+	httpServers           []*http.Server
 }
 
 func (p *provider) Halt() {
@@ -81,6 +81,7 @@ func (p *provider) Halt() {
 
 	p.ch.Close()
 	p.kaetzchenWorker.Halt()
+	p.pluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -122,8 +123,25 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 	p.ch.In() <- pkt
 }
 
-func (p *provider) KaetzchenForPKI() map[string]map[string]interface{} {
-	return p.kaetzchenWorker.KaetzchenForPKI()
+func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
+	map1 := p.kaetzchenWorker.KaetzchenForPKI()
+	map2 := p.pluginKaetzchenWorker.KaetzchenForPKI()
+	if map1 == nil && map2 != nil {
+		return map2, nil
+	}
+	if map1 != nil && map2 == nil {
+		return map1, nil
+	}
+	// merge sets, panic on duplicate
+	for k, v := range map2 {
+		_, ok := map1[k]
+		if ok {
+			p.log.Debug("WARNING: duplicate plugin entries")
+			return nil, errors.New("Error, duplicate plugin entries.")
+		}
+		map1[k] = v
+	}
+	return map1, nil
 }
 
 func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
@@ -204,6 +222,18 @@ func (p *provider) worker() {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
 				// which will take care to dispose of it.
 				p.kaetzchenWorker.OnKaetzchen(pkt)
+			}
+			continue
+		}
+
+		if p.pluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
+			if pkt.IsSURBReply() {
+				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				pkt.Dispose()
+			} else {
+				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// which will take care to dispose of it.
+				p.pluginKaetzchenWorker.OnKaetzchen(pkt)
 			}
 			continue
 		}
@@ -609,11 +639,16 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	pluginKaetzchenWorker, err := kaetzchen.NewPluginKaetzchenWorker(glue)
+	if err != nil {
+		return nil, err
+	}
 	p := &provider{
-		glue:            glue,
-		log:             glue.LogBackend().GetLogger("provider"),
-		ch:              channels.NewInfiniteChannel(),
-		kaetzchenWorker: kaetzchenWorker,
+		glue:                  glue,
+		log:                   glue.LogBackend().GetLogger("provider"),
+		ch:                    channels.NewInfiniteChannel(),
+		kaetzchenWorker:       kaetzchenWorker,
+		pluginKaetzchenWorker: pluginKaetzchenWorker,
 	}
 
 	cfg := glue.Config()

@@ -184,7 +184,7 @@ func (k *KaetzchenWorker) worker() {
 
 func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	defer pkt.Dispose()
-	dst := k.kaetzchen[pkt.Recipient.ID]
+
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
@@ -192,8 +192,11 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		return
 	}
 
-	// Dispatch the packet to the agent.
-	resp, err := dst.OnRequest(pkt.ID, ct, surb != nil)
+	var resp []byte
+	dst, ok := k.kaetzchen[pkt.Recipient.ID]
+	if ok {
+		resp, err = dst.OnRequest(pkt.ID, ct, surb != nil)
+	}
 	switch {
 	case err == nil:
 	case err == ErrNoResponse:
@@ -246,7 +249,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 		kaetzchen: make(map[[sConstants.RecipientIDLength]byte]Kaetzchen),
 	}
 
-	// Initialize the Kaetzchen.
+	// Initialize the internal Kaetzchen.
 	capaMap := make(map[string]bool)
 	for _, v := range glue.Config().Provider.Kaetzchen {
 		capa := v.Capability
