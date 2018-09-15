@@ -12,7 +12,14 @@ Katzenpost daemons releases follows `semantic versioning <https://semver.org/>`_
 unreleased
 ----------
 
-git master will likely become v0.0.4
+git master will likely become v0.0.5
+
+
+v0.0.4
+------
+
+September 14th, 2018
+* This releases fixes some race conditions in minclient.
 
 
 v0.0.3
