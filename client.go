@@ -186,8 +186,11 @@ func New(cfg *ClientConfig) (*Client, error) {
 	c.log.Debugf("User Link Key is: %v", c.cfg.LinkKey.PublicKey())
 
 	c.rng = rand.NewMath()
-	c.pki = newPKI(c)
+
 	c.conn = newConnection(c)
+	c.pki = newPKI(c)
+	c.pki.start()
+	c.conn.start()
 
 	return c, nil
 }

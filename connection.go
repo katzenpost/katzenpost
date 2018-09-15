@@ -761,6 +761,10 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 	// NOTREACHED
 }
 
+func (c *connection) start() {
+	c.Go(c.connectWorker)
+}
+
 func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.c = c
@@ -769,7 +773,5 @@ func newConnection(c *Client) *connection {
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx)
-
-	k.Go(k.connectWorker)
 	return k
 }
