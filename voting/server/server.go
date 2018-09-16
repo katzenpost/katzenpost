@@ -108,6 +108,16 @@ func (s *Server) IdentityKey() *eddsa.PublicKey {
 	return s.identityKey.PublicKey()
 }
 
+// RotateLog rotates the log file
+// if logging to a file is enabled.
+func (s *Server) RotateLog() {
+	err := s.logBackend.Rotate()
+	if err != nil {
+		s.fatalErrCh <- fmt.Errorf("Failed to rotate log file, shutting down server.")
+	}
+	s.log.Notice("Log rotated.")
+}
+
 // Wait waits till the server is terminated for any reason.
 func (s *Server) Wait() {
 	<-s.haltedCh
