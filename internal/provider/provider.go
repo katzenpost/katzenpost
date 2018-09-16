@@ -1,5 +1,5 @@
 // provider.go - Katzenpost server provider backend.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2017  Yawning Angel and David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,8 +19,10 @@ package provider
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +31,6 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
@@ -41,6 +42,7 @@ import (
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/internal/provider/kaetzchen"
 	"github.com/katzenpost/server/internal/sqldb"
+	"github.com/katzenpost/server/registration"
 	"github.com/katzenpost/server/spool"
 	"github.com/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/server/userdb"
@@ -50,6 +52,11 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
+
+type registerIdentityRequest struct {
+	User              string
+	IdentityPublicKey string
+}
 
 type provider struct {
 	sync.Mutex
@@ -63,17 +70,18 @@ type provider struct {
 	userDB userdb.UserDB
 	spool  spool.Spool
 
-	kaetzchen map[[sConstants.RecipientIDLength]byte]kaetzchen.Kaetzchen
+	kaetzchenWorker       *kaetzchen.KaetzchenWorker
+	pluginKaetzchenWorker *kaetzchen.PluginKaetzchenWorker
+	httpServers           []*http.Server
 }
 
 func (p *provider) Halt() {
+	p.stopUserRegistrationHTTP()
 	p.Worker.Halt()
 
 	p.ch.Close()
-	for k, v := range p.kaetzchen {
-		v.Halt()
-		delete(p.kaetzchen, k)
-	}
+	p.kaetzchenWorker.Halt()
+	p.pluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -115,16 +123,25 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 	p.ch.In() <- pkt
 }
 
-func (p *provider) KaetzchenForPKI() map[string]map[string]interface{} {
-	if len(p.kaetzchen) == 0 {
-		return nil
+func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
+	map1 := p.kaetzchenWorker.KaetzchenForPKI()
+	map2 := p.pluginKaetzchenWorker.KaetzchenForPKI()
+	if map1 == nil && map2 != nil {
+		return map2, nil
 	}
-
-	m := make(map[string]map[string]interface{})
-	for _, v := range p.kaetzchen {
-		m[v.Capability()] = v.Parameters()
+	if map1 != nil && map2 == nil {
+		return map1, nil
 	}
-	return m
+	// merge sets, panic on duplicate
+	for k, v := range map2 {
+		_, ok := map1[k]
+		if ok {
+			p.log.Debug("WARNING: duplicate plugin entries")
+			return nil, errors.New("Error, duplicate plugin entries.")
+		}
+		map1[k] = v
+	}
+	return map1, nil
 }
 
 func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
@@ -195,15 +212,29 @@ func (p *provider) worker() {
 		// user-facing, so omit the recipient-post processing.  If clients
 		// are written under the assumption that Kaetzchen addresses are
 		// normalized, that's their problem.
-		if dstKaetzchen := p.kaetzchen[pkt.Recipient.ID]; dstKaetzchen != nil {
+		if p.kaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
 			// Packet is destined for a Kaetzchen auto-responder agent, and
 			// can't be a SURB-Reply.
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				pkt.Dispose()
 			} else {
-				p.onToKaetzchen(pkt, dstKaetzchen)
+				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// which will take care to dispose of it.
+				p.kaetzchenWorker.OnKaetzchen(pkt)
 			}
-			pkt.Dispose()
+			continue
+		}
+
+		if p.pluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
+			if pkt.IsSURBReply() {
+				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				pkt.Dispose()
+			} else {
+				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// which will take care to dispose of it.
+				p.pluginKaetzchenWorker.OnKaetzchen(pkt)
+			}
 			continue
 		}
 
@@ -250,7 +281,7 @@ func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
 }
 
 func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
-	ct, surb, err := parseForwardPacket(pkt)
+	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
 		return
@@ -264,7 +295,7 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {
-		ackPkt, err := newPacketFromSURB(pkt, surb, nil)
+		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil)
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
@@ -275,82 +306,6 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 	} else {
 		p.log.Debugf("Stored Message: %v (No SURB)", pkt.ID)
 	}
-}
-
-func (p *provider) onToKaetzchen(pkt *packet.Packet, dst kaetzchen.Kaetzchen) {
-	ct, surb, err := parseForwardPacket(pkt)
-	if err != nil {
-		p.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
-		return
-	}
-
-	// Dispatch the packet to the agent.
-	resp, err := dst.OnRequest(pkt.ID, ct, surb != nil)
-	switch {
-	case err == nil:
-	case err == kaetzchen.ErrNoResponse:
-		p.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
-		return
-	default:
-		p.log.Debugf("Failed to handle Kaetzchen request: %v (%v)", pkt.ID, err)
-		return
-	}
-
-	// Iff there is a SURB, generate a SURB-Reply and schedule.
-	if surb != nil {
-		// Prepend the response header.
-		resp = append([]byte{0x01, 0x00}, resp...)
-
-		respPkt, err := newPacketFromSURB(pkt, surb, resp)
-		if err != nil {
-			p.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
-			return
-		}
-
-		p.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
-		p.glue.Scheduler().OnPacket(respPkt)
-	} else if resp != nil {
-		// This is silly and I'm not sure why anyone will do this, but
-		// there's nothing that can be done at this point, the Kaetzchen
-		// implementation should have caught this.
-		p.log.Debugf("Kaetzchen message: %v (Has reply but no SURB)", pkt.ID)
-	}
-}
-
-func (p *provider) registerKaetzchen(k kaetzchen.Kaetzchen) error {
-	capa := k.Capability()
-
-	params := k.Parameters()
-	if params == nil {
-		return fmt.Errorf("provider: Kaetzchen: '%v' provided no parameters", capa)
-	}
-
-	// Sanitize the endpoint.
-	var ep string
-	if v, ok := params[kaetzchen.ParameterEndpoint]; !ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' provided no endpoint", capa)
-	} else if ep, ok = v.(string); !ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint type: %T", capa, v)
-	} else if epNorm, err := precis.UsernameCaseMapped.String(ep); err != nil {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint: %v", capa, err)
-	} else if epNorm != ep {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not normalized", capa)
-	}
-	rawEp := []byte(ep)
-	if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
-		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
-	}
-
-	// Register it in the map by endpoint.
-	var epKey [sConstants.RecipientIDLength]byte
-	copy(epKey[:], rawEp)
-	if _, ok := p.kaetzchen[epKey]; ok {
-		return fmt.Errorf("provider: Kaetzchen: '%v' endpoint '%v' already registered", capa, ep)
-	}
-	p.kaetzchen[epKey] = k
-	p.log.Noticef("Registered Kaetzchen: '%v' -> '%v'.", ep, capa)
-
-	return nil
 }
 
 func (p *provider) onAddUser(c *thwack.Conn, l string) error {
@@ -424,6 +379,32 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 	return c.WriteReply(thwack.StatusOk)
 }
 
+func (p *provider) onRemoveUserIdentity(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+	switch len(sp) {
+	case 2:
+	default:
+		c.Log().Debugf("REMOVE_USER_IDENTITY invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	u, err := p.fixupUserNameCase([]byte(sp[1]))
+	if err != nil {
+		c.Log().Errorf("REMOVE_USER_IDENTITY invalid user: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	if err = p.userDB.SetIdentity(u, nil); err != nil {
+		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+
+	return c.WriteReply(thwack.StatusOk)
+}
+
 func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 	p.Lock()
 	defer p.Unlock()
@@ -483,102 +464,191 @@ func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, pubKey)
 }
 
-func parseForwardPacket(pkt *packet.Packet) ([]byte, []byte, error) {
-	const (
-		hdrLength    = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
-		flagsPadding = 0
-		flagsSURB    = 1
-		reserved     = 0
-	)
-
-	// Sanity check the forward packet payload length.
-	if len(pkt.Payload) != constants.ForwardPayloadLength {
-		return nil, nil, fmt.Errorf("invalid payload length: %v", len(pkt.Payload))
+func (p *provider) ServeHTTP(response http.ResponseWriter, request *http.Request) {
+	if !p.validateRequest(response, request) {
+		return
 	}
-
-	// Parse the payload, which should be a valid BlockSphinxPlaintext.
-	b := pkt.Payload
-	if len(b) < hdrLength {
-		return nil, nil, fmt.Errorf("truncated message block")
+	requestUser := request.FormValue(registration.UserField)
+	if len(requestUser) == 0 {
+		p.log.Error("Provider ServeHTTP register zero user error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return
 	}
-	if b[1] != reserved {
-		return nil, nil, fmt.Errorf("invalid message reserved: 0x%02x", b[1])
+	user, err := p.fixupUserNameCase([]byte(requestUser))
+	if err != nil {
+		p.log.Error("Provider ServeHTTP register fixupUserNameCase failure")
+		response.WriteHeader(http.StatusInternalServerError)
+		return
 	}
-	ct := b[hdrLength:]
-	var surb []byte
-	switch b[0] {
-	case flagsPadding:
-	case flagsSURB:
-		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
+	command := request.FormValue(registration.CommandField)
+	switch command {
+	case registration.RegisterLinkCommand:
+		p.processLinkRegistration(user, response, request)
+		return
+	case registration.RegisterLinkAndIdentityCommand:
+		p.processIdentityRegistration(user, response, request)
+		return
 	default:
-		return nil, nil, fmt.Errorf("invalid message flags: 0x%02x", b[0])
+		p.log.Error("Provider ServeHTTP invalid registration type error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return
 	}
-	if len(ct) != constants.UserForwardPayloadLength {
-		return nil, nil, fmt.Errorf("mis-sized user payload: %v", len(ct))
-	}
-
-	return ct, surb, nil
+	// NOT reached
 }
 
-func newPacketFromSURB(pkt *packet.Packet, surb, payload []byte) (*packet.Packet, error) {
-	if !pkt.IsToUser() {
-		return nil, fmt.Errorf("invalid commands to generate a SURB reply")
+func (p *provider) validateRequest(response http.ResponseWriter, request *http.Request) bool {
+	if request.URL.Path != registration.URLBase {
+		p.log.Error("Provider ServeHTTP incorrect url error")
+		response.WriteHeader(http.StatusNotFound)
+		return false
+	}
+	if request.Method != http.MethodPost {
+		p.log.Error("Provider ServeHTTP incorrect method error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+	command := request.FormValue(registration.CommandField)
+	if len(command) == 0 {
+		p.log.Error("Provider ServeHTTP zero reg type error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+	version := request.FormValue(registration.VersionField)
+	if len(version) == 0 || version != registration.Version {
+		p.log.Error("Provider ServeHTTP register version mismatch error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return false
+	}
+	return true
+}
+
+func (p *provider) processLinkRegistration(user []byte, response http.ResponseWriter, request *http.Request) {
+	requestKey := request.FormValue(registration.LinkKeyField)
+	if len(requestKey) == 0 {
+		p.log.Error("Provider ServeHTTP register zero key error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	pubKey := new(ecdh.PublicKey)
+	if err := pubKey.FromString(requestKey); err != nil {
+		p.log.Errorf("Provider ServeHTTP pub key from string error: %s", err)
+		response.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
-	// Pad out payloads to the full packet size.
-	var respPayload [constants.ForwardPayloadLength]byte
-	switch {
-	case len(payload) == 0:
-	case len(payload) > constants.ForwardPayloadLength:
-		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
-	default:
-		copy(respPayload[:], payload)
+	if err := p.userDB.Add(user, pubKey, false); err != nil {
+		p.log.Errorf("Provider ServeHTTP user Add error: %s", err)
+		response.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
-	// Build a response packet using a SURB.
-	//
-	// TODO/perf: This is a crypto operation that is paralleizable, and
-	// could be handled by the crypto worker(s), since those are allocated
-	// based on hardware acceleration considerations.  However the forward
-	// packet processing doesn't constantly utilize the AES-NI units due
-	// to the non-AEZ components of a Sphinx Unwrap operation.
-	rawRespPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, respPayload[:])
-	if err != nil {
-		return nil, err
+	p.log.Noticef("HTTP Registration created user with link key: %s", user)
+
+	// Send a response back to the client.
+	message := "OK\n"
+	response.Write([]byte(message))
+}
+
+func (p *provider) processIdentityRegistration(user []byte, response http.ResponseWriter, request *http.Request) {
+	key, err := p.userDB.Identity(user)
+	if key != nil {
+		p.log.Errorf("Provider ServeHTTP Identity error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 
-	// Build the command vector for the SURB-ACK
-	cmds := make([]commands.RoutingCommand, 0, 2)
+	// link key
+	rawLinkKey := request.FormValue(registration.LinkKeyField)
+	if len(rawLinkKey) == 0 {
+		p.log.Error("Provider ServeHTTP register zero key error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	linkKey := new(ecdh.PublicKey)
+	if err := linkKey.FromString(rawLinkKey); err != nil {
+		p.log.Errorf("Provider ServeHTTP pub key from string error: %s", err)
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if err := p.userDB.Add(user, linkKey, false); err != nil {
+		p.log.Errorf("Provider ServeHTTP user Add error: %s", err)
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
-	nextHopCmd := new(commands.NextNodeHop)
-	copy(nextHopCmd.ID[:], firstHop[:])
-	cmds = append(cmds, nextHopCmd)
+	// identity key
+	rawIdentityKey := request.FormValue(registration.IdentityKeyField)
+	if len(rawIdentityKey) == 0 {
+		p.log.Error("Provider ServeHTTP zero id key error")
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	identityKey := new(ecdh.PublicKey)
+	if err := identityKey.FromString(rawIdentityKey); err != nil {
+		p.log.Errorf("Provider ServeHTTP id key from string error: %s", err)
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if err = p.userDB.SetIdentity(user, identityKey); err != nil {
+		p.log.Errorf("Provider ServeHTTP SetIdentity error: %s", err)
+		response.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
-	nodeDelayCmd := new(commands.NodeDelay)
-	nodeDelayCmd.Delay = pkt.NodeDelay.Delay
-	cmds = append(cmds, nodeDelayCmd)
+	p.log.Noticef("HTTP Registration created user with link and identity keys: %s", user)
 
-	// Assemble the response packet.
-	respPkt, _ := packet.New(rawRespPkt)
-	respPkt.Set(nil, cmds)
+	// Send a response back to the client.
+	message := "OK\n"
+	response.Write([]byte(message))
+}
 
-	respPkt.RecvAt = pkt.RecvAt
-	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
-	respPkt.MustForward = true
+func (p *provider) stopUserRegistrationHTTP() {
+	if !p.glue.Config().Provider.EnableUserRegistrationHTTP {
+		return
+	}
+	p.log.Info("Stopping User Registration HTTP listener(s).")
+	for _, s := range p.httpServers {
+		if err := s.Shutdown(context.Background()); err != nil {
+			p.log.Errorf("HTTP server Shutdown error: %v", err)
+		}
+	}
+}
 
-	// XXX: This should probably fudge the delay to account for processing
-	// time.
-
-	return respPkt, nil
+func (p *provider) initUserRegistrationHTTP() {
+	p.log.Info("Starting User Registration HTTP listener(s).")
+	p.httpServers = make([]*http.Server, len(p.glue.Config().Provider.UserRegistrationHTTPAddresses))
+	for i, addr := range p.glue.Config().Provider.UserRegistrationHTTPAddresses {
+		s := &http.Server{
+			Addr:     addr,
+			Handler:  p,
+			ErrorLog: p.glue.LogBackend().GetGoLogger("user_registration_http", "info"),
+		}
+		p.httpServers[i] = s
+		go func() {
+			if err := s.ListenAndServe(); err != http.ErrServerClosed {
+				// Error starting or closing listener:
+				p.log.Errorf("HTTP server ListenAndServe: %v", err)
+			}
+		}()
+	}
 }
 
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.Provider, error) {
+	kaetzchenWorker, err := kaetzchen.New(glue)
+	if err != nil {
+		return nil, err
+	}
+	pluginKaetzchenWorker, err := kaetzchen.NewPluginKaetzchenWorker(glue)
+	if err != nil {
+		return nil, err
+	}
 	p := &provider{
-		glue:      glue,
-		log:       glue.LogBackend().GetLogger("provider"),
-		ch:        channels.NewInfiniteChannel(),
-		kaetzchen: make(map[[sConstants.RecipientIDLength]byte]kaetzchen.Kaetzchen),
+		glue:                  glue,
+		log:                   glue.LogBackend().GetLogger("provider"),
+		ch:                    channels.NewInfiniteChannel(),
+		kaetzchenWorker:       kaetzchenWorker,
+		pluginKaetzchenWorker: pluginKaetzchenWorker,
 	}
 
 	cfg := glue.Config()
@@ -590,7 +660,6 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		}
 	}()
 
-	var err error
 	if cfg.Provider.SQLDB != nil {
 		if cfg.Provider.UserDB.Backend == config.BackendSQL || cfg.Provider.SpoolDB.Backend == config.BackendSQL {
 			p.sqlDB, err = sqldb.New(glue)
@@ -644,46 +713,25 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	// Wire in the managment related commands.
 	if cfg.Management.Enable {
 		const (
-			cmdAddUser         = "ADD_USER"
-			cmdUpdateUser      = "UPDATE_USER"
-			cmdRemoveUser      = "REMOVE_USER"
-			cmdSetUserIdentity = "SET_USER_IDENTITY"
-			cmdUserIdentity    = "USER_IDENTITY"
+			cmdAddUser            = "ADD_USER"
+			cmdUpdateUser         = "UPDATE_USER"
+			cmdRemoveUser         = "REMOVE_USER"
+			cmdSetUserIdentity    = "SET_USER_IDENTITY"
+			cmdRemoveUserIdentity = "REMOVE_USER_IDENTITY"
+			cmdUserIdentity       = "USER_IDENTITY"
 		)
 
 		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
 		glue.Management().RegisterCommand(cmdUpdateUser, p.onUpdateUser)
 		glue.Management().RegisterCommand(cmdRemoveUser, p.onRemoveUser)
 		glue.Management().RegisterCommand(cmdSetUserIdentity, p.onSetUserIdentity)
+		glue.Management().RegisterCommand(cmdRemoveUserIdentity, p.onRemoveUserIdentity)
 		glue.Management().RegisterCommand(cmdUserIdentity, p.onUserIdentity)
 	}
 
-	// Initialize the Kaetzchen.
-	capaMap := make(map[string]bool)
-	for _, v := range glue.Config().Provider.Kaetzchen {
-		capa := v.Capability
-		if v.Disable {
-			p.log.Noticef("Skipping disabled Kaetzchen: '%v'.", capa)
-			continue
-		}
-
-		ctor, ok := kaetzchen.BuiltInCtors[capa]
-		if !ok {
-			return nil, fmt.Errorf("provider: Kaetzchen: Unsupported capability: '%v'", capa)
-		}
-
-		k, err := ctor(v, glue)
-		if err != nil {
-			return nil, err
-		}
-		if err = p.registerKaetzchen(k); err != nil {
-			return nil, err
-		}
-
-		if capaMap[capa] {
-			return nil, fmt.Errorf("provider: Kaetzchen '%v' registered more than once", capa)
-		}
-		capaMap[capa] = true
+	// Start the User Registration HTTP service listener(s).
+	if cfg.Provider.EnableUserRegistrationHTTP {
+		p.initUserRegistrationHTTP()
 	}
 
 	// Start the workers.

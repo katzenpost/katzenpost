@@ -72,6 +72,10 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			c.canSend = true // Clients can always send for now.
 
 			// Update the rate limiter parameters.
+			if c.l.glue.Config().Debug.DisableRateLimit {
+				return true
+			}
+
 			sendShift := atomic.LoadUint64(&c.l.sendShift)
 			switch sendShift {
 			case uint64(c.sendTokenIncr / time.Millisecond):

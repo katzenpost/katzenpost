@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"encoding/hex"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/server/userdb"
 	"github.com/ugorji/go/codec"
@@ -74,7 +75,32 @@ func (e *externAuth) SetIdentity(u []byte, k *ecdh.PublicKey) error {
 }
 
 func (e *externAuth) Identity(u []byte) (*ecdh.PublicKey, error) {
-	return nil, errNotSupported
+	endpoint := "getidkey"
+	uri := e.provider + "/" + endpoint
+	form := url.Values{"user": {string(u)}}
+	rsp, err := http.PostForm(uri, form)
+	if err != nil {
+		return nil, err
+	}
+	defer rsp.Body.Close()
+
+	if rsp.StatusCode == 200 {
+		response := map[string]string{}
+		d := codec.NewDecoder(rsp.Body, jsonHandle)
+		if err = d.Decode(&response); err != nil {
+			return nil, err
+		}
+
+		if pkhex, ok := response[endpoint]; ok {
+			if decoded, err := hex.DecodeString(pkhex); err == nil {
+				pk := new(ecdh.PublicKey)
+				if err := pk.FromBytes(decoded); err == nil {
+					return pk, nil
+				}
+			}
+		}
+	}
+	return nil, userdb.ErrNoIdentity
 }
 
 func (e *externAuth) Remove(u []byte) error {
