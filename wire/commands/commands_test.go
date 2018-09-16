@@ -285,3 +285,44 @@ func TestVoteStatus(t *testing.T) {
 	d := c.(*VoteStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
+
+func TestReveal(t *testing.T) {
+	require := require.New(t)
+
+	alice, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err, "wtf")
+	var digest [32]byte
+	for i := 0; i < 32; i++ {
+		digest[i] = uint8(i)
+	}
+	cmd := &Reveal{
+		Epoch:     3141,
+		PublicKey: alice.PublicKey(),
+		Digest:    digest,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmdOverhead+revealOverhead, "Reveal: ToBytes() length")
+	c, err := FromBytes(b)
+	require.NoError(err, "Reveal: FromBytes() failed")
+	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
+	d := c.(*Reveal)
+	require.Equal(d.Epoch, cmd.Epoch)
+	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+	require.Equal(d.Digest, cmd.Digest)
+}
+
+func TestRevealtatus(t *testing.T) {
+	require := require.New(t)
+
+	cmd := &RevealStatus{
+		ErrorCode: 23,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, revealStatusLength+cmdOverhead, "RevealStatus: ToBytes() length")
+
+	c, err := FromBytes(b)
+	require.NoError(err, "RevealStatus: FromBytes() failed")
+	require.IsType(cmd, c, "RevealStatus: FromBytes() invalid type")
+	d := c.(*RevealStatus)
+	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
