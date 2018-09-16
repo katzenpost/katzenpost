@@ -98,6 +98,7 @@ func (k *kaetzchenKeyserver) OnRequest(id uint64, payload []byte, hasSURB bool) 
 		// identity key to make enumeration attacks minutely harder.
 		resp.StatusCode = keyserverStatusNoIdentity
 	default:
+		resp.StatusCode = keyserverStatusSyntaxError
 	}
 	if err != nil {
 		k.log.Debugf("Failed to service request: %v (%v)", id, err)

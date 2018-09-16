@@ -1,5 +1,5 @@
 // config.go - Katzenpost server configuration.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2017  Yawning Angel and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -42,21 +42,23 @@ import (
 )
 
 const (
-	defaultAddress            = ":3219"
-	defaultLogLevel           = "NOTICE"
-	defaultNumProviderWorkers = 1
-	defaultUnwrapDelay        = 10 // 10 ms.
-	defaultSchedulerSlack     = 10 // 10 ms.
-	defaultSchedulerMaxBurst  = 16
-	defaultSendSlack          = 50        // 50 ms.
-	defaultDecoySlack         = 15 * 1000 // 15 sec.
-	defaultConnectTimeout     = 60 * 1000 // 60 sec.
-	defaultHandshakeTimeout   = 30 * 1000 // 30 sec.
-	defaultReauthInterval     = 30 * 1000 // 30 sec.
-	defaultProviderDelay      = 500       // 250 ms.
-	defaultUserDB             = "users.db"
-	defaultSpoolDB            = "spool.db"
-	defaultManagementSocket   = "management_sock"
+	defaultAddress             = ":3219"
+	defaultLogLevel            = "NOTICE"
+	defaultNumProviderWorkers  = 1
+	defaultNumKaetzchenWorkers = 3
+	defaultUnwrapDelay         = 10 // 10 ms.
+	defaultSchedulerSlack      = 10 // 10 ms.
+	defaultSchedulerMaxBurst   = 16
+	defaultSendSlack           = 50        // 50 ms.
+	defaultDecoySlack          = 15 * 1000 // 15 sec.
+	defaultConnectTimeout      = 60 * 1000 // 60 sec.
+	defaultHandshakeTimeout    = 30 * 1000 // 30 sec.
+	defaultReauthInterval      = 30 * 1000 // 30 sec.
+	defaultProviderDelay       = 500       // 500 ms.
+	defaultKaetzchenDelay      = 750       // 750 ms.
+	defaultUserDB              = "users.db"
+	defaultSpoolDB             = "spool.db"
+	defaultManagementSocket    = "management_sock"
 
 	backendPgx = "pgx"
 
@@ -129,9 +131,13 @@ type Debug struct {
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
 
-	// NumProviderWorkers specifies the number pf worker instances to use for
+	// NumProviderWorkers specifies the number of worker instances to use for
 	// provider specific packet processing.
 	NumProviderWorkers int
+
+	// NumKaetzchenWorkers specifies the number of worker instances to use for
+	// Kaetzchen specific packet processing.
+	NumKaetzchenWorkers int
 
 	// SchedulerExternalMemoryQueue will enable the experimental external
 	// memory queue that is backed by disk.
@@ -153,6 +159,10 @@ type Debug struct {
 	// ProviderDelay is the maximum allowed provider delay due to queueing
 	// in milliseconds.
 	ProviderDelay int
+
+	// KaetzchenDelay is the maximum allowed kaetzchen delay due to queueing
+	// in milliseconds.
+	KaetzchenDelay int
 
 	// SchedulerSlack is the maximum allowed scheduler slack due to queueing
 	// and or processing in milliseconds.
@@ -185,6 +195,10 @@ type Debug struct {
 	// WARNING: This option will go away once decoy traffic is more concrete.
 	SendDecoyTraffic bool
 
+	// DisableRateLimit disables the per-client rate limiter.  This option
+	// should only be used for testing.
+	DisableRateLimit bool
+
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
@@ -209,11 +223,17 @@ func (dCfg *Debug) applyDefaults() {
 		// write spool operations being serialized.
 		dCfg.NumProviderWorkers = defaultNumProviderWorkers
 	}
+	if dCfg.NumKaetzchenWorkers <= 0 {
+		dCfg.NumKaetzchenWorkers = defaultNumKaetzchenWorkers
+	}
 	if dCfg.UnwrapDelay <= 0 {
 		dCfg.UnwrapDelay = defaultUnwrapDelay
 	}
 	if dCfg.ProviderDelay <= 0 {
 		dCfg.ProviderDelay = defaultProviderDelay
+	}
+	if dCfg.KaetzchenDelay <= 0 {
+		dCfg.KaetzchenDelay = defaultKaetzchenDelay
 	}
 	if dCfg.SchedulerSlack < defaultSchedulerSlack {
 		// TODO/perf: Tune this.
@@ -268,6 +288,16 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
+	// EnableUserRegistrationHTTP is set to true if the
+	// User Registration HTTP service listener is enabled.
+	EnableUserRegistrationHTTP bool
+
+	// UserRegistrationHTTPAddresses is quite simply
+	// the set of TCP addresses that the User
+	// Registration HTTP service should listen on
+	// (e.g. "127.0.0.1:36967").
+	UserRegistrationHTTPAddresses []string
+
 	// AltAddresses is the map of extra transports and addresses at which
 	// the Provider is reachable by clients.  The most useful alternative
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
@@ -298,6 +328,10 @@ type Provider struct {
 	// Kaetzchen is the list of configured Kaetzchen (auto-responder agents)
 	// for this provider.
 	Kaetzchen []*Kaetzchen
+
+	// PluginKaetzchen is the list of configured Kaetzchen (auto-responder agents)
+	// for this provider that use external plugins via the go-plugin system.
+	PluginKaetzchen []*PluginKaetzchen
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -409,6 +443,56 @@ func (kCfg *Kaetzchen) validate() error {
 	return nil
 }
 
+// PluginKaetzchen is a Provider auto-responder agent.
+type PluginKaetzchen struct {
+	// Capability is the capability exposed by the agent.
+	Capability string
+
+	// Endpoint is the provider side endpoint that the agent will accept
+	// requests at.  While not required by the spec, this server only
+	// supports Endpoints that are lower-case local-parts of an e-mail
+	// address.
+	Endpoint string
+
+	// Config is the extra per agent arguments to be passed to the agent's
+	// initialization routine.
+	Config map[string]interface{}
+
+	// Command is the full file path to the external plugin program
+	// that implements this Kaetzchen service.
+	Command string
+
+	// MaxConcurrency is the number of worker goroutines to start
+	// for this service.
+	MaxConcurrency int
+
+	// Disable disabled a configured agent.
+	Disable bool
+}
+
+func (kCfg *PluginKaetzchen) validate() error {
+	if kCfg.Capability == "" {
+		return fmt.Errorf("config: Kaetzchen: Capability is invalid.")
+	}
+
+	// Ensure the endpoint is normalized.
+	epNorm, err := precis.UsernameCaseMapped.String(kCfg.Endpoint)
+	if err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has invalid endpoint: %v", kCfg.Capability, err)
+	}
+	if epNorm != kCfg.Endpoint {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
+	}
+	if kCfg.Command == "" {
+		return fmt.Errorf("config: Kaetzchen: Command is invalid.")
+	}
+	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
+	}
+
+	return nil
+}
+
 func (pCfg *Provider) applyDefaults(sCfg *Server) {
 	if pCfg.AltAddresses == nil {
 		pCfg.AltAddresses = make(map[string][]string)
@@ -449,6 +533,23 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
+	if pCfg.EnableUserRegistrationHTTP {
+		for _, addr := range pCfg.UserRegistrationHTTPAddresses {
+			h, p, err := net.SplitHostPort(addr)
+			if err != nil {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
+			}
+			if len(h) == 0 {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", addr)
+			}
+			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
+			} else if port == 0 {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", addr)
+			}
+		}
+	}
+
 	internalTransports := make(map[string]bool)
 	for _, v := range pki.InternalTransports {
 		internalTransports[strings.ToLower(string(v))] = true
@@ -529,6 +630,15 @@ func (pCfg *Provider) validate() error {
 
 	capaMap := make(map[string]bool)
 	for _, v := range pCfg.Kaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
+	for _, v := range pCfg.PluginKaetzchen {
 		if err := v.validate(); err != nil {
 			return err
 		}
