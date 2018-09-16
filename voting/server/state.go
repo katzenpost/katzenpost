@@ -841,7 +841,8 @@ func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 func (s *state) tabulate(epoch uint64) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// generate the shared random value or fail
-	if srv, err := s.computeSharedRandom(epoch); err != nil {
+	srv, err := s.computeSharedRandom(epoch)
+	if err != nil {
 		s.log.Warningf("No shared random for epoch %v, aborting!, %v", epoch, err)
 		return
 	}
