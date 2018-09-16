@@ -799,7 +799,7 @@ func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 	srv.Write(epochToBytes(epoch))
 
 	if _, ok := s.votes[epoch]; !ok {
-		return nil, errors.New("authority: No votes present, cannot calculate a shared random for Epoch %d", epoch)
+		return nil, errors.New(fmt.Sprintf("authority: No votes present, cannot calculate a shared random for Epoch %d", epoch))
 	}
 	for pk, vote := range s.votes[epoch] {
 		sr := new(SharedRandom)
