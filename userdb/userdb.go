@@ -47,6 +47,9 @@ type UserDB interface {
 	// public key is valid.
 	IsValid([]byte, *ecdh.PublicKey) bool
 
+	// Link returns the user's link layer authentication key.
+	Link([]byte) (*ecdh.PublicKey, error)
+
 	// Add adds the user identified by the username and public key
 	// to the database.  Existing users will have their public keys
 	// updated if specified, otherwise an error will be returned.
