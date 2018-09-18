@@ -30,7 +30,9 @@ import (
 
 const (
 	documentVersion = "voting-document-v0"
+	// SharedRandomLength is the length in bytes of a SharedRandomCommit.
 	SharedRandomLength = 40
+	// SharedRandomValueLength is the length in bytes of a SharedRandomValue.
 	SharedRandomValueLength = 32
 )
 
@@ -65,6 +67,7 @@ type Document struct {
 	SharedRandomValue  []byte
 }
 
+// FromPayload deserializes, then verifies a Document, and returns the Document or error.
 func FromPayload(verificationKey interface{}, payload []byte) (*Document, error) {
 	signed, err := jose.ParseSigned(string(payload))
 	if err != nil {
@@ -111,7 +114,7 @@ func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
 	return signed.CompactSerialize()
 }
 
-// ShinyMultiSignDocument signs and serializes the document with the provided signing key.
+// MultiSignTestDocument signs and serializes the document with the provided signing key.
 func MultiSignTestDocument(signingKeys []*eddsa.PrivateKey, d *Document) (string, error) {
 	d.Version = documentVersion
 	// Serialize the document.
@@ -141,7 +144,7 @@ func MultiSignTestDocument(signingKeys []*eddsa.PrivateKey, d *Document) (string
 	return signed.FullSerialize(), nil
 }
 
-// SignDocument signs and serializes the document with the provided signing key.
+// MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
 func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.PublicKeySize]byte]*jose.Signature, d *Document) (string, error) {
 	d.Version = documentVersion
 

@@ -44,6 +44,7 @@ type nodeDescriptor struct {
 	pki.MixDescriptor
 }
 
+// SerializeDescriptor serializes a MixDescriptor, and returns a byteslice or error.
 func SerializeDescriptor(base *pki.MixDescriptor) ([]byte, error) {
 	// Serialize the descriptor.
 	var payload []byte
