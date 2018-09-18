@@ -669,10 +669,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	// Lock is held (called from the onWakeup hook).
 	_, ok := s.votes[epoch]
 	if !ok {
-		return nil, nil, errors.New(fmt.Sprintf("No votes for epoch %v!", epoch))
+		return nil, nil, fmt.Errorf("No votes for epoch %v!", epoch)
 	}
 	if len(s.votes[epoch]) <= s.threshold {
-		return nil, nil, errors.New(fmt.Sprintf("Not enough votes for epoch %v!", epoch))
+		return nil, nil, fmt.Errorf("Not enough votes for epoch %v!", epoch)
 	}
 
 	nodes := make([]*descriptor, 0)
@@ -799,7 +799,7 @@ func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 	srv.Write(epochToBytes(epoch))
 
 	if _, ok := s.votes[epoch]; !ok {
-		return nil, errors.New(fmt.Sprintf("authority: No votes present, cannot calculate a shared random for Epoch %d", epoch))
+		return nil, fmt.Errorf("authority: No votes present, cannot calculate a shared random for Epoch %d", epoch)
 	}
 	for pk, vote := range s.votes[epoch] {
 		sr := new(SharedRandom)
@@ -992,7 +992,7 @@ func (s *state) generateRandomTopology(nodes []*descriptor, srv []byte) [][][]by
 	// various layers.
 
 	if len(srv) != 32 {
-		err := errors.New("srv too short!")
+		err := errors.New("SharedRandomValue too short")
 		s.log.Errorf("srv: %v", srv)
 		s.s.fatalErrCh <- err
 	}
