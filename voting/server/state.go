@@ -695,7 +695,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			continue
 		}
 
-		// Epoch is already verified to maatch the SharedRandomCommit
+		// Epoch is already verified to match the SharedRandomCommit
+		// Verify that the voting peer has participated in commit-and-reveal this epoch.
 		srv.SetCommit(voteDoc.doc.SharedRandomCommit)
 		r := s.reveals[epoch][pk]
 		if len(r) != s11n.SharedRandomLength {
@@ -714,6 +715,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			s.log.Errorf("Skipping vote from Authority that failed to decode?! %v", err)
 			continue
 		}
+		// serialize the vote parameters and tally these as well.
 		params := &config.Parameters{
 			MixLambda:       vote.MixLambda,
 			MixMaxDelay:     vote.MixMaxDelay,
@@ -734,6 +736,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		}
 		mixParams[bs] = append(mixParams[bs], vote)
 
+		// include providers in the tally.
 		for _, rawDesc := range vote.Providers {
 			k := string(rawDesc)
 			if _, ok := mixTally[k]; !ok {
@@ -741,6 +744,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			}
 			mixTally[k] = append(mixTally[k], vote)
 		}
+		// include the rest of the mixes in the tally.
 		for _, l := range vote.Topology {
 			for _, rawDesc := range l {
 				k := string(rawDesc)
@@ -751,6 +755,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			}
 		}
 	}
+	// include mixes that have a threshold of votes
 	for rawDesc, votes := range mixTally {
 		if len(votes) > s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
@@ -761,12 +766,14 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			return nil, nil, errors.New("Consensus failure!")
 		}
 	}
+	// include parameters that have a threshold of votes
 	for bs, votes := range mixParams {
 		if len(votes) > s.threshold {
 			params := &config.Parameters{}
 			d := gob.NewDecoder(strings.NewReader(bs))
 			if err := d.Decode(params); err == nil {
 				sortNodesByPublicKey(nodes)
+				// successful tally
 				return nodes, params, nil
 			}
 		} else if len(votes) >= s.dissenters {
