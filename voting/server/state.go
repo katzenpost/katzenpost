@@ -173,7 +173,7 @@ func (s *state) fsmWakeup() <-chan time.Time {
 	s.Lock()
 	defer s.Unlock()
 
-	_, elapsed, next_epoch := epochtime.Now()
+	_, elapsed, nextEpoch := epochtime.Now()
 	// if we're bootstrapping, hurry things up
 	if s.doBootstrap() {
 		s.log.Debugf("authority: Bootstrapping, hurrying things up...")
@@ -182,11 +182,11 @@ func (s *state) fsmWakeup() <-chan time.Time {
 
 	switch {
 	case s.state == stateConsensed:
-		s.log.Debugf("authority: Consensus reached, next wakeup at %s", next_epoch)
-		return time.After(next_epoch)
+		s.log.Debugf("authority: Consensus reached, next wakeup at %s", nextEpoch)
+		return time.After(nextEpoch)
 	case s.state == stateConsensusFailed:
-		s.log.Debugf("authority: Consensus failed, next wakeup at %s", next_epoch)
-		return time.After(next_epoch)
+		s.log.Debugf("authority: Consensus failed, next wakeup at %s", nextEpoch)
+		return time.After(nextEpoch)
 	case s.state == stateAcceptDescriptor:
 		return time.After(mixPublishDeadline - elapsed)
 	case s.state == stateAcceptVote:
@@ -196,7 +196,7 @@ func (s *state) fsmWakeup() <-chan time.Time {
 	case s.state == stateAcceptSignature:
 		return time.After(publishConsensusDeadline - elapsed)
 	default:
-		return time.After(next_epoch)
+		return time.After(nextEpoch)
 	}
 }
 
