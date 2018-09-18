@@ -69,6 +69,7 @@ type Authority struct {
 	DataDir string
 }
 
+// Validate parses and checks the Authority configuration.
 func (sCfg *Authority) validate() error {
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
