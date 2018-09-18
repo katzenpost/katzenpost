@@ -51,9 +51,9 @@ func (r *DeterministicRandReader) Read(data []byte) (int, error) {
 }
 
 // Int63 returns a random int64 with most significant bit set to 0.
-func (s *DeterministicRandReader) Int63() int64 {
+func (r *DeterministicRandReader) Int63() int64 {
 	tmp := [8]byte{}
-	_, err := s.Read(tmp[:])
+	_, err := r.Read(tmp[:])
 	if err != nil {
 		panic(err)
 	}
@@ -63,21 +63,21 @@ func (s *DeterministicRandReader) Int63() int64 {
 }
 
 // Seed initializes the DeterministicRandReader with nonce.
-func (s *DeterministicRandReader) Seed(seed int64) {
+func (r *DeterministicRandReader) Seed(seed int64) {
 	var nonce [8]byte
 	var err error
 	count := binary.PutUvarint(nonce[:], uint64(seed))
 	if int64(count) != seed {
 		panic("wtf")
 	}
-	s.cipher, err = chacha20.NewCipher(s.key, nonce[:])
+	r.cipher, err = chacha20.NewCipher(r.key, nonce[:])
 	if err != nil {
 		panic(err)
 	}
 }
 
 // Perm returns the shuffled slice of integers from 0 to n.
-func (s *DeterministicRandReader) Perm(n int) []int {
-	r := rand.New(s)
-	return r.Perm(n)
+func (r *DeterministicRandReader) Perm(n int) []int {
+	p := rand.New(r)
+	return p.Perm(n)
 }
