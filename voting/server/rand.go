@@ -23,11 +23,13 @@ import (
 	"git.schwanenlied.me/yawning/chacha20"
 )
 
+// DeterministicRandReader is a random Reader whose output is a chacha20 keystream.
 type DeterministicRandReader struct {
 	cipher *chacha20.Cipher
 	key    []byte
 }
 
+// NewDeterministicRandReader returns a DeterministicRandReader initialized with key.
 func NewDeterministicRandReader(key []byte) (*DeterministicRandReader, error) {
 	var nonce [8]byte
 	cipher, err := chacha20.NewCipher(key, nonce[:])
@@ -41,12 +43,14 @@ func NewDeterministicRandReader(key []byte) (*DeterministicRandReader, error) {
 	return &reader, err
 }
 
+// Read writes the keystream into the passed byteslice and returns the number of bytes written.
 func (r *DeterministicRandReader) Read(data []byte) (int, error) {
 	readLen := len(data)
 	r.cipher.KeyStream(data)
 	return readLen, nil
 }
 
+// Int63 returns a random int64 with most significant bit set to 0.
 func (s *DeterministicRandReader) Int63() int64 {
 	tmp := [8]byte{}
 	_, err := s.Read(tmp[:])
@@ -58,6 +62,7 @@ func (s *DeterministicRandReader) Int63() int64 {
 	return int64(binary.LittleEndian.Uint64(tmp[:]))
 }
 
+// Seed initializes the DeterministicRandReader with nonce.
 func (s *DeterministicRandReader) Seed(seed int64) {
 	var nonce [8]byte
 	var err error
@@ -71,6 +76,7 @@ func (s *DeterministicRandReader) Seed(seed int64) {
 	}
 }
 
+// Perm returns the shuffled slice of integers from 0 to n.
 func (s *DeterministicRandReader) Perm(n int) []int {
 	r := rand.New(s)
 	return r.Perm(n)
