@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/playground"
+	"golang.org/x/text/secure/precis"
 )
 
 const (
@@ -85,6 +86,10 @@ func makeConfig(user string, dataDir string, preferOnion bool, socksNet, socksAd
 // account registration process.
 func GenerateConfig(user string, dataDir string, preferOnion bool, socksNet, socksAddr string) (*ecdh.PublicKey, *ecdh.PublicKey, error) {
 	// Initialize the per-account directory.
+	user, err := precis.UsernameCaseMapped.String(user)
+	if err != nil {
+		return nil, nil, err
+	}
 	id := fmt.Sprintf("%s@%s", user, playground.ProviderName)
 	basePath := filepath.Join(dataDir, id)
 	if err := utils.MkDataDir(basePath); err != nil {
