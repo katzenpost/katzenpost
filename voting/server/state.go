@@ -725,7 +725,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		e := gob.NewEncoder(&b)
 		err = e.Encode(params)
 		if err != nil {
-			s.log.Errorf("MixParameters in Vote from Authority failed to encode?! %v", err)
+			s.log.Errorf("Skipping vote from Authority whose MixParameters failed to encode?! %v", err)
+			continue
 		}
 		bs := b.String()
 		if _, ok := mixParams[bs]; !ok {
