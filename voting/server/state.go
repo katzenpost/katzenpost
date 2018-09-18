@@ -711,8 +711,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		ed.FromBytes(pk[:])
 		vote, err := s11n.FromPayload(*ed.InternalPtr(), voteDoc.raw)
 		if err != nil {
-			s.log.Errorf("Vote from Authority failed to decode?! %v", err)
-			break
+			s.log.Errorf("Skipping vote from Authority that failed to decode?! %v", err)
+			continue
 		}
 		params := &config.Parameters{
 			MixLambda:       vote.MixLambda,
