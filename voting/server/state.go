@@ -358,12 +358,14 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	return doc
 }
 
+// SharedRandom is a container for commit-and-reveal protocol messages
 type SharedRandom struct {
 	epoch  uint64
 	commit []byte
 	reveal []byte
 }
 
+// Commit produces a SharedRandom commit value for the given epoch
 func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
 	// pick a random number RN
 	// COMMIT = Uint64(epoch) || H(REVEAL)
@@ -385,15 +387,18 @@ func (s *SharedRandom) Commit(epoch uint64) ([]byte, error) {
 	return s.commit, nil
 }
 
+// GetCommit returns the commit value
 func (s *SharedRandom) GetCommit() []byte {
 	return s.commit
 }
 
+// SetCommit sets the commit value
 func (s *SharedRandom) SetCommit(rawCommit []byte) {
 	s.epoch = binary.BigEndian.Uint64(rawCommit[0:8])
 	s.commit = rawCommit
 }
 
+// Verify checks that the reveal value verifies the commit value
 func (s *SharedRandom) Verify(reveal []byte) bool {
 	if len(reveal) != s11n.SharedRandomLength {
 		return false
@@ -408,6 +413,7 @@ func (s *SharedRandom) Verify(reveal []byte) bool {
 	return false
 }
 
+// Reveal returns the reveal value
 func (s *SharedRandom) Reveal() []byte {
 	return s.reveal
 }
