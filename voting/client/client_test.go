@@ -19,6 +19,7 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"sync"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -37,6 +39,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/require"
+	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -195,18 +198,50 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 		providersRaw = append(providersRaw, p.raw)
 	}
 	topology := generateRandomTopology(mixes, 3)
+
+	sharedRandomCommit := make([]byte, s11n.SharedRandomLength)
+	binary.BigEndian.PutUint64(sharedRandomCommit[:8], epoch)
 	doc := &s11n.Document{
-		Version:         "voting-document-v0",
-		Epoch:           epoch,
-		MixLambda:       0.25,
-		MixMaxDelay:     4000,
-		SendLambda:      1.2,
-		SendShift:       3,
-		SendMaxInterval: 300,
-		Topology:        topology,
-		Providers:       providersRaw,
+		Version:            s11n.DocumentVersion,
+		Epoch:              epoch,
+		MixLambda:          0.25,
+		MixMaxDelay:        4000,
+		SendLambda:         1.2,
+		SendShift:          3,
+		SendMaxInterval:    300,
+		Topology:           topology,
+		Providers:          providersRaw,
+		SharedRandomCommit: sharedRandomCommit,
+		SharedRandomValue:  make([]byte, s11n.SharedRandomValueLength),
 	}
 	return doc, nil
+}
+
+// multiSignTestDocument signs and serializes the document with the provided signing key.
+func multiSignTestDocument(signingKeys []*eddsa.PrivateKey, d *s11n.Document) ([]byte, error) {
+	jsonHandle := new(codec.JsonHandle)
+	jsonHandle.Canonical = true
+	jsonHandle.IntegerAsString = 'A'
+	jsonHandle.MapKeyAsString = true
+
+	d.Version = s11n.DocumentVersion
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+
+	// Sign the document.
+	expiration := time.Now().Add(s11n.CertificateExpiration).Unix()
+	signed, err := cert.Sign(signingKeys[0], payload, expiration)
+	if err != nil {
+		return nil, err
+	}
+	for i := 1; i < len(signingKeys); i++ {
+		signed, err = cert.SignMulti(signingKeys[i], signed)
+	}
+	return signed, nil
 }
 
 func generateDoc(epoch uint64, signingKeys []*eddsa.PrivateKey) ([]byte, error) {
@@ -217,7 +252,7 @@ func generateDoc(epoch uint64, signingKeys []*eddsa.PrivateKey) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	signed, err := s11n.MultiSignTestDocument(signingKeys, doc)
+	signed, err := multiSignTestDocument(signingKeys, doc)
 	if err != nil {
 		return nil, err
 	}
