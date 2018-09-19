@@ -1,5 +1,5 @@
 // document.go - Katzenpost Non-voting authority document s11n.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2017, 2018  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -17,19 +17,20 @@
 package s11n
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 
-	"github.com/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/core/crypto/eddsa"
+	// XXX "github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
-	"gopkg.in/square/go-jose.v2"
 )
 
 const (
-	documentVersion = "voting-document-v0"
+	DocumentVersion = "voting-document-v0"
 	// SharedRandomLength is the length in bytes of a SharedRandomCommit.
 	SharedRandomLength = 40
 	// SharedRandomValueLength is the length in bytes of a SharedRandomValue.
@@ -68,12 +69,8 @@ type Document struct {
 }
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
-func FromPayload(verificationKey interface{}, payload []byte) (*Document, error) {
-	signed, err := jose.ParseSigned(string(payload))
-	if err != nil {
-		return nil, err
-	}
-	_, _, verified, err := signed.VerifyMulti(verificationKey)
+func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
+	verified, err := cert.Verify(verifier, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -86,137 +83,90 @@ func FromPayload(verificationKey interface{}, payload []byte) (*Document, error)
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signingKey *eddsa.PrivateKey, d *Document) (string, error) {
-	d.Version = documentVersion
+func SignDocument(signer cert.Signer, d *Document) ([]byte, error) {
+	d.Version = DocumentVersion
 
 	// Serialize the document.
 	var payload []byte
 	enc := codec.NewEncoderBytes(&payload, jsonHandle)
 	if err := enc.Encode(d); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Sign the document.
-	k := jose.SigningKey{
-		Algorithm: jose.EdDSA,
-		Key:       *signingKey.InternalPtr(),
-	}
-	signer, err := jose.NewSigner(k, nil)
-	if err != nil {
-		return "", err
-	}
-	signed, err := signer.Sign(payload)
-	if err != nil {
-		return "", err
-	}
-
-	// Serialize the key, descriptor and signature.
-	return signed.CompactSerialize()
-}
-
-// MultiSignTestDocument signs and serializes the document with the provided signing key.
-func MultiSignTestDocument(signingKeys []*eddsa.PrivateKey, d *Document) (string, error) {
-	d.Version = documentVersion
-	// Serialize the document.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
-		return "", err
-	}
-	keySet := []jose.SigningKey{}
-	for _, key := range signingKeys {
-		k := jose.SigningKey{
-			Algorithm: jose.EdDSA,
-			Key:       *key.InternalPtr(),
-		}
-		keySet = append(keySet, k)
-	}
-	// Sign the document.
-	signer, err := jose.NewMultiSigner(keySet, nil)
-	if err != nil {
-		return "", err
-	}
-	signed, err := signer.Sign(payload)
-	if err != nil {
-		return "", err
-	}
-	// Serialize the key, descriptor and signature.
-	return signed.FullSerialize(), nil
+	expiration := time.Now().Add(CertificateExpiration).Unix()
+	return cert.Sign(signer, payload, expiration)
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
-func MultiSignDocument(signingKey *eddsa.PrivateKey, peerSignatures map[[eddsa.PublicKeySize]byte]*jose.Signature, d *Document) (string, error) {
-	d.Version = documentVersion
+func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, verifiers map[string]cert.Verifier, d *Document) ([]byte, error) {
+	d.Version = DocumentVersion
 
 	// Serialize the document.
 	var payload []byte
 	enc := codec.NewEncoderBytes(&payload, jsonHandle)
 	if err := enc.Encode(d); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Sign the document.
-	k := jose.SigningKey{
-		Algorithm: jose.EdDSA,
-		Key:       *signingKey.InternalPtr(),
-	}
-	signer, err := jose.NewMultiSigner([]jose.SigningKey{k}, nil) // XXX multiple signing keys
+	expiration := time.Now().Add(CertificateExpiration).Unix()
+	signed, err := cert.Sign(signer, payload, expiration)
 	if err != nil {
-		return "", err
-	}
-	signed, err := signer.Sign(payload)
-	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// attach peer signatures
-	if peerSignatures != nil {
-		for _, sig := range peerSignatures {
-			signed.Signatures = append(signed.Signatures, *sig)
+	for _, signature := range peerSignatures {
+		s := string(signature.Identity)
+		verifier := verifiers[s]
+		signed, err = cert.AddSignature(verifier, *signature, signed)
+		if err != nil {
+			return nil, err
 		}
 	}
 
-	// Serialize the key, descriptor and signature.
-	return signed.FullSerialize(), nil
+	return signed, nil
 }
 
-// VerifyPeerMulti returns a map of keys to signatures for
+// VerifyPeerMulti returns a slice of signatures for
 // the peer keys that produced a valid signature
-func VerifyPeerMulti(payload []byte, peers []*config.AuthorityPeer) (map[[eddsa.PublicKeySize]byte]*jose.Signature, error) {
-	signed, err := jose.ParseSigned(string(payload))
+func VerifyPeerMulti(payload []byte, verifiers []cert.Verifier) ([]cert.Signature, error) {
+	signatures := make([]cert.Signature, 0)
+	signaturesClaimed, err := cert.GetSignatures(payload)
 	if err != nil {
-		return nil, fmt.Errorf("VerifyPeerMulti failure: %s", err)
+		return nil, err
 	}
-	sigMap := make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
-	for _, peer := range peers {
-		_, signature, _, err := signed.VerifyMulti(*peer.IdentityPublicKey.InternalPtr())
+
+	good := make([][]byte, 0)
+	for _, verifier := range verifiers {
+		_, err = cert.Verify(verifier, payload)
 		if err == nil {
-			sigMap[peer.IdentityPublicKey.ByteArray()] = &signature
+			good = append(good, verifier.Identity())
 		}
 	}
-	return sigMap, nil
+
+	isGood := func(anId []byte) bool {
+		for _, id := range good {
+			if bytes.Equal(anId, id) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, claimed := range signaturesClaimed {
+		if isGood(claimed.Identity) {
+			signatures = append(signatures, claimed)
+		}
+	}
+	return signatures, nil
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
-func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document, []byte, error) {
-	signed, err := jose.ParseSigned(string(b))
+func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, []byte, error) {
+	payload, err := cert.Verify(verifier, b)
 	if err != nil {
-		return nil, nil, fmt.Errorf("authority: jose.ParseSigned failed: %s", err)
-	}
-
-	// XXX shouldn't the library do this for us?
-	for _, sig := range signed.Signatures {
-		alg := sig.Header.Algorithm
-		if alg != "EdDSA" {
-			return nil, nil, fmt.Errorf("authority: Unsupported signature algorithm: '%v'", alg)
-		}
-	}
-
-	_, _, payload, err := signed.VerifyMulti(*publicKey.InternalPtr())
-	if err != nil {
-		if err == jose.ErrCryptoFailure {
-			err = fmt.Errorf("authority: Invalid document signature")
-		}
 		return nil, nil, err
 	}
 
@@ -228,7 +178,7 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	}
 
 	// Ensure the document is well formed.
-	if d.Version != documentVersion {
+	if d.Version != DocumentVersion {
 		return nil, nil, fmt.Errorf("authority: Invalid Document Version: '%v'", d.Version)
 	}
 
@@ -276,7 +226,11 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 
 	for layer, nodes := range d.Topology {
 		for _, rawDesc := range nodes {
-			desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+			verifier, err := GetVerifierFromDescriptor(rawDesc)
+			if err != nil {
+				return nil, nil, err
+			}
+			desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -285,9 +239,13 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 	}
 
 	for _, rawDesc := range d.Providers {
-		desc, err := VerifyAndParseDescriptor(rawDesc, doc.Epoch)
+		verifier, err := GetVerifierFromDescriptor(rawDesc)
 		if err != nil {
-			return nil, nil, fmt.Errorf("VerifyAndParseDocument fail: VerifyAndParseDescriptor failure: %s", err)
+			return nil, nil, err
+		}
+		desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
+		if err != nil {
+			return nil, nil, err
 		}
 		doc.Providers = append(doc.Providers, desc)
 	}
@@ -309,38 +267,38 @@ func VerifyAndParseDocument(b []byte, publicKey *eddsa.PublicKey) (*pki.Document
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *pki.Document) error {
-	pks := make(map[[eddsa.PublicKeySize]byte]bool)
+	pks := make(map[string]bool)
 	if len(d.Topology) == 0 {
-		return fmt.Errorf("voting: Document contains no Topology")
+		return fmt.Errorf("nonvoting: Document contains no Topology")
 	}
 	for layer, nodes := range d.Topology {
 		if len(nodes) == 0 {
-			return fmt.Errorf("voting: Document Topology layer %d contains no nodes", layer)
+			return fmt.Errorf("nonvoting: Document Topology layer %d contains no nodes", layer)
 		}
 		for _, desc := range nodes {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
 			}
-			pk := desc.IdentityKey.ByteArray()
+			pk := string(desc.IdentityKey.Identity()) // XXX is this correct?
 			if _, ok := pks[pk]; ok {
-				return fmt.Errorf("voting: Document contains multiple entries for %v", desc.IdentityKey)
+				return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
 			}
 			pks[pk] = true
 		}
 	}
 	if len(d.Providers) == 0 {
-		return fmt.Errorf("voting: Document contains no Providers")
+		return fmt.Errorf("nonvoting: Document contains no Providers")
 	}
 	for _, desc := range d.Providers {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
 		if desc.Layer != pki.LayerProvider {
-			return fmt.Errorf("voting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+			return fmt.Errorf("nonvoting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
 		}
-		pk := desc.IdentityKey.ByteArray()
+		pk := string(desc.IdentityKey.Identity()) // XXX is this correct?
 		if _, ok := pks[pk]; ok {
-			return fmt.Errorf("voting: Document contains multiple entries for %v", desc.IdentityKey)
+			return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
 		}
 		pks[pk] = true
 	}

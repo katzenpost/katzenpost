@@ -27,6 +27,7 @@ import (
 
 	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -311,30 +312,22 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Verify document signatures.
 	doc := &pki.Document{}
-
-	sigMap, err := s11n.VerifyPeerMulti(r.Payload, c.cfg.Authorities)
+	verifiers := make([]cert.Verifier, len(c.cfg.Authorities))
+	for i, auth := range c.cfg.Authorities {
+		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+	}
+	sigs, err := s11n.VerifyPeerMulti(r.Payload, verifiers)
 	if err != nil {
-		c.log.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
+		c.log.Errorf("fufu123 voting/client: Get() invalid consensus document: %s", err)
 		return nil, nil, fmt.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
 	}
-	if len(sigMap) == len(c.cfg.Authorities) {
-		c.log.Notice("OK, received fully signed consensus document.")
-	}
-	if len(sigMap) <= (len(c.cfg.Authorities)/2 + 1) {
+	if len(sigs) <= (len(c.cfg.Authorities)/2 + 1) {
 		return nil, nil, fmt.Errorf("voting/client: Get() consensus document not signed by a threshold number of Authorities: %s", err)
 	}
-	id := new(eddsa.PublicKey)
-	for idRaw := range sigMap {
-		id.FromBytes(idRaw[:])
-		doc, _, err = s11n.VerifyAndParseDocument(r.Payload, id)
-		if err != nil {
-			return nil, nil, fmt.Errorf("voting/client: Get() impossible signature verification failure: %s", err)
-		}
-		if doc.Epoch != epoch {
-			return nil, nil, errors.New("voting/client: Get() consensus document epoch incorrect.")
-		}
-		break
+	if len(sigs) == len(c.cfg.Authorities) {
+		c.log.Notice("OK, received fully signed consensus document.")
 	}
+	doc, _, err = s11n.VerifyAndParseDocument(r.Payload, c.cfg.Authorities[0].IdentityPublicKey)
 	return doc, r.Payload, nil
 }
 

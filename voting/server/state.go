@@ -33,6 +33,7 @@ import (
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -43,7 +44,6 @@ import (
 	"github.com/katzenpost/core/worker"
 	"golang.org/x/crypto/sha3"
 	"gopkg.in/op/go-logging.v1"
-	"gopkg.in/square/go-jose.v2"
 )
 
 const (
@@ -77,40 +77,6 @@ type document struct {
 	raw []byte
 }
 
-func (d *document) getSignatures() ([]jose.Signature, error) {
-	if d.raw != nil && d.doc != nil {
-		signed, err := jose.ParseSigned(string(d.raw))
-		if err != nil {
-			return nil, err
-		}
-		return signed.Signatures, nil
-	}
-	return nil, errors.New("document getSignatures failure: struct type not initialized")
-}
-
-func (d *document) addSig(publicKey *eddsa.PublicKey, sig *jose.Signature) error {
-	// caller MUST verify that the signer is authorized
-	// this function only verifies that the signature
-	// is valid and not duplicated.
-	signed, err := jose.ParseSigned(string(d.raw))
-	// verify the signature hasn't already been added
-	if len(signed.Signatures) != 0 {
-		for _, v := range signed.Signatures {
-			if bytes.Equal(v.Signature, sig.Signature) {
-				return fmt.Errorf("already attached signature")
-			}
-		}
-	}
-	// verify that the signature signs the document
-	signed.Signatures = append(signed.Signatures, *sig)
-	_, _, _, err = signed.VerifyMulti(*publicKey.InternalPtr())
-	if err == nil {
-		// update object
-		d.raw = []byte(signed.FullSerialize())
-	}
-	return err
-}
-
 type state struct {
 	sync.RWMutex
 	worker.Worker
@@ -128,7 +94,7 @@ type state struct {
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
 	votes       map[uint64]map[[eddsa.PublicKeySize]byte]*document
 	reveals     map[uint64]map[[eddsa.PublicKeySize]byte][]byte
-	signatures  map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature
+	signatures  map[uint64]map[[eddsa.PublicKeySize]byte]*cert.Signature
 
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
@@ -277,7 +243,8 @@ func (s *state) combine(epoch uint64) {
 	for pk, sig := range s.signatures[epoch] {
 		ed := new(eddsa.PublicKey)
 		ed.FromBytes(pk[:])
-		err := doc.addSig(ed, sig)
+		var err error
+		doc.raw, err = cert.AddSignature(ed, *sig, doc.raw)
 		if err != nil {
 			s.log.Errorf("Signature failed to validate: %v", err)
 		}
@@ -710,7 +677,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 
 		ed := new(eddsa.PublicKey)
 		ed.FromBytes(pk[:])
-		vote, err := s11n.FromPayload(*ed.InternalPtr(), voteDoc.raw)
+		vote, err := s11n.FromPayload(ed, voteDoc.raw)
 		if err != nil {
 			s.log.Errorf("Skipping vote from Authority that failed to decode?! %v", err)
 			continue
@@ -759,9 +726,15 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	for rawDesc, votes := range mixTally {
 		if len(votes) > s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
-			if desc, err := s11n.VerifyAndParseDescriptor([]byte(rawDesc), epoch); err == nil {
-				nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
+			verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
+			if err != nil {
+				return nil, nil, err
 			}
+			desc, err := s11n.VerifyAndParseDescriptor(verifier, []byte(rawDesc), epoch)
+			if err != nil {
+				return nil, nil, err
+			}
+			nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
 		} else if len(votes) >= s.dissenters {
 			return nil, nil, errors.New("Consensus failure!")
 		}
@@ -871,17 +844,7 @@ func (s *state) tabulate(epoch uint64) {
 	doc := s.getDocument(mixes, params, srv)
 
 	// Serialize and sign the Document.
-	// XXX s.signatures[epoch] might already be populated
-	// which means we might be voting with a multisig document.
-	// this isn't a problem because we extract the signature from
-	// the document and should be signing the same thing
-	signed, err := s11n.MultiSignDocument(s.s.identityKey, nil, doc)
-	if err != nil {
-		// This should basically always succeed.
-		s.log.Errorf("Failed to sign document: %v", err)
-		s.s.fatalErrCh <- err
-		return
-	}
+	signed, err := s11n.SignDocument(s.s.identityKey, doc)
 
 	// Ensure the document is sane.
 	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
@@ -907,19 +870,16 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	if !ok {
 		return false
 	}
-	sigMap, err := s11n.VerifyPeerMulti(doc.raw, s.s.cfg.Authorities)
-	// +1 because s.s.cfg.Authorities does not include our key,
-	// though we have already verified that our signature is valid
-	if err == nil && len(sigMap)+1 > s.threshold {
-		return true
+	verifiers := make([]cert.Verifier, len(s.s.cfg.Authorities))
+	for i, auth := range s.s.cfg.Authorities {
+		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
 	}
+	rawCert, good, bad, err := cert.VerifyThreshold(verifiers, s.threshold, doc.raw)
 	if err != nil {
-		s.log.Debugf("VerifyPeerMulti failed: %v", err)
+		s.log.Debugf("VerifyThreshold failure: %v", err)
+		return false
 	}
-	if len(sigMap) <= s.threshold {
-		s.log.Debugf("Less signatures than needed: %v", len(sigMap))
-	}
-	return false
+	return true
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv []byte) [][][]byte {
@@ -1181,7 +1141,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	}
 	// haven't received a signature yet for this epoch
 	if _, ok := s.signatures[s.votingEpoch]; !ok {
-		s.signatures[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*jose.Signature)
+		s.signatures[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*cert.Signature)
 	}
 	// peer has not yet voted for this epoch
 	if !s.dupVote(*vote) {
@@ -1196,21 +1156,14 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		if !s.dupSig(*vote) {
 			// this was already verified by s11n.VerifyAndParseDocument(...)
 			// but we want to extract the signature from the payload
-			signed, err := jose.ParseSigned(string(vote.Payload))
+			sig, err := cert.GetSignature(vote.PublicKey.Identity(), vote.Payload)
 			if err != nil {
 				s.log.Errorf("onVoteUpload vote parse failure: %s", err)
 				resp.ErrorCode = commands.VoteNotSigned
 				return &resp
 			}
-			index, sig, _, err := signed.VerifyMulti(*vote.PublicKey.InternalPtr())
-			if err != nil || index != 0 {
-				s.log.Errorf("onVoteUpload signature parse failure: %s", err)
-				resp.ErrorCode = commands.VoteNotSigned
-				return &resp
-			}
-
 			s.log.Debugf("Signature OK.")
-			s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = &sig
+			s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = sig
 			resp.ErrorCode = commands.VoteOk
 			return &resp
 		}
@@ -1385,7 +1338,11 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
-					desc, err := s11n.VerifyAndParseDescriptor(rawDesc, epoch)
+					verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
+					if err != nil {
+						return err
+					}
+					desc, err := s11n.VerifyAndParseDescriptor(verifier, rawDesc, epoch)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
@@ -1456,7 +1413,7 @@ func newState(s *Server) (*state, error) {
 	st.documents = make(map[uint64]*document)
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
 	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
-	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*jose.Signature)
+	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*cert.Signature)
 	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
 
 	// Initialize the persistence store and restore state.

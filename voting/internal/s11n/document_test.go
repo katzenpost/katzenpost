@@ -1,5 +1,5 @@
 // document_test.go - Document s11n tests.
-// Copyright (C) 2017  Yawning Angel
+// Copyright (C) 2017  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -18,6 +18,7 @@ package s11n
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -72,15 +73,20 @@ func TestDocument(t *testing.T) {
 	k, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err, "eddsa.NewKeypair()")
 
+	sharedRandomCommit := make([]byte, SharedRandomLength)
+	binary.BigEndian.PutUint64(sharedRandomCommit[:8], debugTestEpoch)
+
 	// Generate a Document.
 	doc := &Document{
-		Epoch:           debugTestEpoch,
-		Topology:        make([][][]byte, 3),
-		MixLambda:       0.42,
-		MixMaxDelay:     23,
-		SendLambda:      0.69,
-		SendShift:       15000,
-		SendMaxInterval: 17,
+		Epoch:              debugTestEpoch,
+		Topology:           make([][][]byte, 3),
+		MixLambda:          0.42,
+		MixMaxDelay:        23,
+		SendLambda:         0.69,
+		SendShift:          15000,
+		SendMaxInterval:    17,
+		SharedRandomCommit: sharedRandomCommit,
+		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
@@ -96,13 +102,9 @@ func TestDocument(t *testing.T) {
 		idx++
 	}
 
-	t.Logf("Document: '%v'", doc)
-
 	// Serialize and sign.
 	signed, err := SignDocument(k, doc)
 	require.NoError(err, "SignDocument()")
-
-	t.Logf("signed document: '%v':", signed)
 
 	// Validate and deserialize.
 	ddoc, _, err := VerifyAndParseDocument([]byte(signed), k.PublicKey())
