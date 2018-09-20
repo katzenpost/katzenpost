@@ -316,18 +316,20 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	for i, auth := range c.cfg.Authorities {
 		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
 	}
-	sigs, err := s11n.VerifyPeerMulti(r.Payload, verifiers)
+	threshold := len(c.cfg.Authorities)/2 + 1
+	_, good, bad, err := cert.VerifyThreshold(verifiers, threshold, r.Payload)
 	if err != nil {
-		c.log.Errorf("fufu123 voting/client: Get() invalid consensus document: %s", err)
-		return nil, nil, fmt.Errorf("fufu voting/client: Get() invalid consensus document: %s", err)
+		c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
+		return nil, nil, fmt.Errorf("voting/client: Get() invalid consensus document: %s", err)
 	}
-	if len(sigs) <= (len(c.cfg.Authorities)/2 + 1) {
-		return nil, nil, fmt.Errorf("voting/client: Get() consensus document not signed by a threshold number of Authorities: %s", err)
-	}
-	if len(sigs) == len(c.cfg.Authorities) {
+	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
 	}
 	doc, _, err = s11n.VerifyAndParseDocument(r.Payload, c.cfg.Authorities[0].IdentityPublicKey)
+	if err != nil {
+		c.log.Errorf("voting/client: Get() invalid consensus document: %s", err)
+		return nil, nil, fmt.Errorf("voting/client: Get() invalid consensus document: %s", err)
+	}
 	return doc, r.Payload, nil
 }
 

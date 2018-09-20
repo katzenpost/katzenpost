@@ -17,7 +17,6 @@
 package s11n
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -127,40 +126,6 @@ func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, ver
 	}
 
 	return signed, nil
-}
-
-// VerifyPeerMulti returns a slice of signatures for
-// the peer keys that produced a valid signature
-func VerifyPeerMulti(payload []byte, verifiers []cert.Verifier) ([]cert.Signature, error) {
-	signatures := make([]cert.Signature, 0)
-	signaturesClaimed, err := cert.GetSignatures(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	good := make([][]byte, 0)
-	for _, verifier := range verifiers {
-		_, err = cert.Verify(verifier, payload)
-		if err == nil {
-			good = append(good, verifier.Identity())
-		}
-	}
-
-	isGood := func(anId []byte) bool {
-		for _, id := range good {
-			if bytes.Equal(anId, id) {
-				return true
-			}
-		}
-		return false
-	}
-
-	for _, claimed := range signaturesClaimed {
-		if isGood(claimed.Identity) {
-			signatures = append(signatures, claimed)
-		}
-	}
-	return signatures, nil
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.

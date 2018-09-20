@@ -874,9 +874,9 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	for i, auth := range s.s.cfg.Authorities {
 		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
 	}
-	rawCert, good, bad, err := cert.VerifyThreshold(verifiers, s.threshold, doc.raw)
+	_, good, bad, err := cert.VerifyThreshold(verifiers, s.threshold, doc.raw)
 	if err != nil {
-		s.log.Debugf("VerifyThreshold failure: %v", err)
+		s.log.Debugf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
 		return false
 	}
 	return true
