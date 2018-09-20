@@ -863,8 +863,7 @@ The Proxy section contains mandatory proxy configuration, for example::
   [Proxy]
     POP3Address = "127.0.0.1:2524"
     SMTPAddress = "127.0.0.1:2525"
-    DataDir = "/home/user/.local/share/katzenpost"
-
+    DataDir = "/home/user/.local/share/katzenpost
 
 * `POP3Address` is the IP address/port combination that the mail proxy
   will bind to for POP3 access. If omitted `127.0.0.1:2524` will be
@@ -875,6 +874,8 @@ The Proxy section contains mandatory proxy configuration, for example::
   used.
 
 * `DataDir` is the absolute path to mailproxy's state files.
+
+* `NoLaunchListeners` is set to true to disable the SMTP and POP3 listeners.
 
 
 The Logging Section
