@@ -361,7 +361,6 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("Failed to initialize decoy source/sink: %v", err)
 		return nil, err
 	}
-	s.pki.StartWorker()
 
 	// Bring the listener(s) online.
 	s.listeners = make([]glue.Listener, 0, len(s.cfg.Server.Addresses))
@@ -373,6 +372,8 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 		s.listeners = append(s.listeners, l)
 	}
+
+	s.pki.StartWorker()
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
