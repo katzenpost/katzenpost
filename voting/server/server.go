@@ -1,4 +1,4 @@
-// server.go - Katzenpost non-voting authority server.
+// server.go - Katzenpost voting authority server.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,11 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package server implements the Katzenpost non-voting authority server.
-//
-// The non-voting authority server is intended to be a stop gap for debugging
-// and testing and is likely only suitable for very small networks where the
-// lack of distributed trust and or quality of life features is a non-issue.
+// Package server implements the Katzenpost voting authority server.
 package server
 
 import (
@@ -41,7 +37,7 @@ import (
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 
-// Server is a non-voting authority server instance.
+// Server is a voting authority server instance.
 type Server struct {
 	sync.WaitGroup
 
