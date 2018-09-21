@@ -243,10 +243,11 @@ func (s *state) combine(epoch uint64) {
 	for pk, sig := range s.signatures[epoch] {
 		ed := new(eddsa.PublicKey)
 		ed.FromBytes(pk[:])
-		var err error
-		doc.raw, err = cert.AddSignature(ed, *sig, doc.raw)
+		signed, err := cert.AddSignature(ed, *sig, doc.raw)
 		if err != nil {
 			s.log.Errorf("Signature failed to validate: %v", err)
+		} else {
+			doc.raw = signed
 		}
 	}
 
