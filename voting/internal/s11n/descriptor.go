@@ -26,6 +26,7 @@ import (
 
 	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
@@ -33,7 +34,8 @@ import (
 
 const (
 	nodeDescriptorVersion = "voting-v0"
-	CertificateExpiration = time.Hour * 1
+	// XXX: How many epochs should this be?
+	CertificateExpiration = epochtime.Period * 3
 )
 
 type nodeDescriptor struct {
