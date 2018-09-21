@@ -14,6 +14,16 @@ unreleased
 
 git master will likely become v0.0.5
 
+v0.0.5
+------
+
+September 21st, 2018
+* This release:
+  * eradicates the JOSE dependency and replaces
+    the PKI client and server's use of JOSE
+    certificate with our own certificate library
+  * fixed race condition in server's startup code path
+  * Make SendMessage optionally send insecure messages
 
 v0.0.4
 ------
