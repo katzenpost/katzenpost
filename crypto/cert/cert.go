@@ -253,6 +253,8 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 	if verifier.Verify(signature.Payload, mesg) {
 		cert.Signatures = append(cert.Signatures, signature)
 		sort.Sort(byIdentity(cert.Signatures))
+	} else {
+		return nil, errors.New("signature does not sign certificate")
 	}
 	// serialize certificate
 	out := []byte{}
