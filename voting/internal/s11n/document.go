@@ -1,4 +1,4 @@
-// document.go - Katzenpost Non-voting authority document s11n.
+// document.go - Katzenpost voting authority document s11n.
 // Copyright (C) 2017, 2018  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -234,11 +234,11 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, []
 func IsDocumentWellFormed(d *pki.Document) error {
 	pks := make(map[string]bool)
 	if len(d.Topology) == 0 {
-		return fmt.Errorf("nonvoting: Document contains no Topology")
+		return fmt.Errorf("voting: Document contains no Topology")
 	}
 	for layer, nodes := range d.Topology {
 		if len(nodes) == 0 {
-			return fmt.Errorf("nonvoting: Document Topology layer %d contains no nodes", layer)
+			return fmt.Errorf("voting: Document Topology layer %d contains no nodes", layer)
 		}
 		for _, desc := range nodes {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
@@ -246,24 +246,24 @@ func IsDocumentWellFormed(d *pki.Document) error {
 			}
 			pk := string(desc.IdentityKey.Identity()) // XXX is this correct?
 			if _, ok := pks[pk]; ok {
-				return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+				return fmt.Errorf("voting: Document contains multiple entries for %v", desc.IdentityKey)
 			}
 			pks[pk] = true
 		}
 	}
 	if len(d.Providers) == 0 {
-		return fmt.Errorf("nonvoting: Document contains no Providers")
+		return fmt.Errorf("voting: Document contains no Providers")
 	}
 	for _, desc := range d.Providers {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
 		if desc.Layer != pki.LayerProvider {
-			return fmt.Errorf("nonvoting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+			return fmt.Errorf("voting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
 		}
 		pk := string(desc.IdentityKey.Identity()) // XXX is this correct?
 		if _, ok := pks[pk]; ok {
-			return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+			return fmt.Errorf("voting: Document contains multiple entries for %v", desc.IdentityKey)
 		}
 		pks[pk] = true
 	}

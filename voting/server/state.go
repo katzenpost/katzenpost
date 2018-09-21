@@ -1,4 +1,4 @@
-// state.go - Katzenpost non-voting authority server state.
+// state.go - Katzenpost voting authority server state.
 // Copyright (C) 2017, 2018  Yawning Angel, masala and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify

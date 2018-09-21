@@ -1,4 +1,4 @@
-// config.go - Katzenpost non-voting authority server configuration.
+// config.go - Katzenpost voting authority server configuration.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package config implements the Katzenpost non-voting authority server
+// Package config implements the Katzenpost voting authority server
 // configuration.
 package config
 

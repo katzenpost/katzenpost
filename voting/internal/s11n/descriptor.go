@@ -1,4 +1,4 @@
-// descriptor.go - Katzenpost Non-voting authority descriptor s11n.
+// descriptor.go - Katzenpost voting authority descriptor s11n.
 // Copyright (C) 2017, 2018  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -32,13 +32,13 @@ import (
 )
 
 const (
-	nodeDescriptorVersion = "nonvoting-v0"
+	nodeDescriptorVersion = "voting-v0"
 	CertificateExpiration = time.Hour * 1
 )
 
 type nodeDescriptor struct {
 	// Version uniquely identifies the descriptor format as being for the
-	// non-voting authority so that it can be rejected when unexpectedly
+	// voting authority so that it can be rejected when unexpectedly
 	// posted to, or received from an authority, or if the version changes.
 	Version string
 
@@ -91,7 +91,7 @@ func GetVerifierFromDescriptor(rawDesc []byte) (cert.Verifier, error) {
 func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*pki.MixDescriptor, error) {
 	signatures, err := cert.GetSignatures(b)
 	if len(signatures) != 1 {
-		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signatures))
+		return nil, fmt.Errorf("voting: Expected 1 signature, got: %v", len(signatures))
 	}
 
 	// Verify that the descriptor is signed by the verifier.
@@ -109,7 +109,7 @@ func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*
 
 	// Ensure the descriptor is well formed.
 	if d.Version != nodeDescriptorVersion {
-		return nil, fmt.Errorf("nonvoting: Invalid Descriptor Version: '%v'", d.Version)
+		return nil, fmt.Errorf("voting: Invalid Descriptor Version: '%v'", d.Version)
 	}
 	if err = IsDescriptorWellFormed(&d.MixDescriptor, epoch); err != nil {
 		return nil, err
@@ -122,38 +122,38 @@ func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*
 // a PKI Document.
 func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 	if d.Name == "" {
-		return fmt.Errorf("nonvoting: Descriptor missing Name")
+		return fmt.Errorf("voting: Descriptor missing Name")
 	}
 	if len(d.Name) > constants.NodeIDLength {
-		return fmt.Errorf("nonvoting: Descriptor Name '%v' exceeds max length", d.Name)
+		return fmt.Errorf("voting: Descriptor Name '%v' exceeds max length", d.Name)
 	}
 	if d.LinkKey == nil {
-		return fmt.Errorf("nonvoting: Descriptor missing LinkKey")
+		return fmt.Errorf("voting: Descriptor missing LinkKey")
 	}
 	if d.IdentityKey == nil {
-		return fmt.Errorf("nonvoting: Descriptor missing IdentityKey")
+		return fmt.Errorf("voting: Descriptor missing IdentityKey")
 	}
 	if d.MixKeys[epoch] == nil {
-		return fmt.Errorf("nonvoting: Descriptor missing MixKey[%v]", epoch)
+		return fmt.Errorf("voting: Descriptor missing MixKey[%v]", epoch)
 	}
 	for e := range d.MixKeys {
 		// TODO: Should this check that the epochs in MixKey are sequential?
 		if e < epoch || e >= epoch+3 {
-			return fmt.Errorf("nonvoting: Descriptor contains MixKey for invalid epoch: %v", d)
+			return fmt.Errorf("voting: Descriptor contains MixKey for invalid epoch: %v", d)
 		}
 	}
 	if len(d.Addresses) == 0 {
-		return fmt.Errorf("nonvoting: Descriptor missing Addresses")
+		return fmt.Errorf("voting: Descriptor missing Addresses")
 	}
 	for transport, addrs := range d.Addresses {
 		if len(addrs) == 0 {
-			return fmt.Errorf("nonvoting: Descriptor contains empty Address list for transport '%v'", transport)
+			return fmt.Errorf("voting: Descriptor contains empty Address list for transport '%v'", transport)
 		}
 
 		var expectedIPVer int
 		switch transport {
 		case pki.TransportInvalid:
-			return fmt.Errorf("nonvoting: Descriptor contains invalid Transport")
+			return fmt.Errorf("voting: Descriptor contains invalid Transport")
 		case pki.TransportTCPv4:
 			expectedIPVer = 4
 		case pki.TransportTCPv6:
@@ -162,7 +162,7 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 			// Unknown transports are only supported between the client and
 			// provider.
 			if d.Layer != pki.LayerProvider {
-				return fmt.Errorf("nonvoting: Non-provider published Transport '%v'", transport)
+				return fmt.Errorf("voting: Non-provider published Transport '%v'", transport)
 			}
 			if transport != pki.TransportTCP {
 				// Ignore transports that don't have validation logic.
@@ -174,47 +174,47 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 		for _, v := range addrs {
 			h, p, err := net.SplitHostPort(v)
 			if err != nil {
-				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+				return fmt.Errorf("voting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 			}
 			if len(h) == 0 {
-				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v'", transport, v)
+				return fmt.Errorf("voting: Descriptor contains invalid address ['%v']'%v'", transport, v)
 			}
 			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+				return fmt.Errorf("voting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 			} else if port == 0 {
-				return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': port is 0", transport, v)
+				return fmt.Errorf("voting: Descriptor contains invalid address ['%v']'%v': port is 0", transport, v)
 			}
 			switch expectedIPVer {
 			case 4, 6:
 				if ver, err := getIPVer(h); err != nil {
-					return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+					return fmt.Errorf("voting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 				} else if ver != expectedIPVer {
-					return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
+					return fmt.Errorf("voting: Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
 				}
 			default:
 				// This must be TransportTCP or something else that supports
 				// "sensible" DNS style hostnames.  Validate that they are
 				// at least somewhat well formed.
 				if _, err := idna.Lookup.ToASCII(h); err != nil {
-					return fmt.Errorf("nonvoting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+					return fmt.Errorf("voting: Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 				}
 			}
 		}
 	}
 	if len(d.Addresses[pki.TransportTCPv4]) == 0 {
-		return fmt.Errorf("nonvoting: Descriptor contains no TCPv4 addresses")
+		return fmt.Errorf("voting: Descriptor contains no TCPv4 addresses")
 	}
 	switch d.Layer {
 	case 0:
 		if d.Kaetzchen != nil {
-			return fmt.Errorf("nonvoting: Descriptor contains Kaetzchen when a mix")
+			return fmt.Errorf("voting: Descriptor contains Kaetzchen when a mix")
 		}
 	case pki.LayerProvider:
 		if err := validateKaetzchen(d.Kaetzchen); err != nil {
-			return fmt.Errorf("nonvoting: Descriptor contains invalid Kaetzchen block: %v", err)
+			return fmt.Errorf("voting: Descriptor contains invalid Kaetzchen block: %v", err)
 		}
 	default:
-		return fmt.Errorf("nonvoting: Descriptor self-assigned Layer: '%v'", d.Layer)
+		return fmt.Errorf("voting: Descriptor self-assigned Layer: '%v'", d.Layer)
 	}
 	return nil
 }
