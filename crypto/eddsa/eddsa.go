@@ -44,6 +44,8 @@ const (
 
 	// SignatureSize is the size of a serialized Signature in bytes (64 bytes).
 	SignatureSize = ed25519.SignatureSize
+
+	keyType = "ed25519"
 )
 
 var errInvalidKey = errors.New("eddsa: invalid key")
@@ -63,6 +65,12 @@ func (k *PublicKey) InternalPtr() *ed25519.PublicKey {
 // Bytes returns the raw public key.
 func (k *PublicKey) Bytes() []byte {
 	return k.pubKey
+}
+
+// Identity returns the key's identity, in this case it's our
+// public key in bytes.
+func (k *PublicKey) Identity() []byte {
+	return k.Bytes()
 }
 
 // ByteArray returns the raw public key as an array suitable for use as a map
@@ -202,6 +210,19 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 // Bytes returns the raw private key.
 func (k *PrivateKey) Bytes() []byte {
 	return k.privKey
+}
+
+// Identity returns the key's identity, in this case it's our
+// public key in bytes.
+func (k *PrivateKey) Identity() []byte {
+	return k.PublicKey().Bytes()
+}
+
+// KeyType returns the key type string,
+// in this case the constant variable
+// whose value is "ed25519".
+func (k *PrivateKey) KeyType() string {
+	return keyType
 }
 
 // ToECDH converts the PrivateKey to the corresponding ecdh.PrivateKey.
