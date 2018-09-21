@@ -12,7 +12,14 @@ Katzenpost daemons releases follows `semantic versioning <https://semver.org/>`_
 unreleased
 ----------
 
-git master will likely become v0.0.5
+git master will likely become v0.0.7
+
+
+v0.0.6
+------
+
+September 21st, 2018
+* Fixed PKI certificate expirations.
 
 v0.0.5
 ------
