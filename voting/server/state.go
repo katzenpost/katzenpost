@@ -735,8 +735,6 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 				return nil, nil, err
 			}
 			nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
-		} else if len(votes) >= s.dissenters {
-			return nil, nil, errors.New("Consensus failure!")
 		}
 	}
 	// include parameters that have a threshold of votes
