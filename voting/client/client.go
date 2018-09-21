@@ -1,4 +1,4 @@
-// client.go - Katzenpost non-voting authority client.
+// client.go - Katzenpost voting authority client.
 // Copyright (C) 2017, 2018  Yawning Angel, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package client implements the Katzenpost non-voting authority client.
+// Package client implements the Katzenpost voting authority client.
 package client
 
 import (
