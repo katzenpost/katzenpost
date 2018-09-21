@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
@@ -33,7 +34,7 @@ import (
 
 const (
 	nodeDescriptorVersion = "nonvoting-v0"
-	certificateExpiration = time.Hour * 1
+	certificateExpiration = (epochtime.Period * 3) + (time.Minute * 10)
 )
 
 type nodeDescriptor struct {
