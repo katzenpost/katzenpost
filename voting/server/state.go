@@ -245,7 +245,7 @@ func (s *state) combine(epoch uint64) {
 		ed.FromBytes(pk[:])
 		signed, err := cert.AddSignature(ed, *sig, doc.raw)
 		if err != nil {
-			s.log.Errorf("Signature failed to validate: %v", err)
+			s.log.Errorf("While combining signatures, AddSignature failed with: %v", err)
 		} else {
 			doc.raw = signed
 		}
