@@ -55,34 +55,33 @@ The CBOR [RFC7049]_ serialization format is used to serialize certificates:
           Signature []byte
   }
 
-  // Certificate structure for serializing certificates.
-  type Certificate struct {
-          // Version is the certificate format version.
-          Version uint32
+  // certificate structure for serializing certificates.
+  type certificate struct {
+	// Version is the certificate format version.
+	Version uint32
 
-          // Type indicates the type of certificate.
-          Type string
+	// Expiration is seconds since Unix epoch.
+	Expiration int64
 
-          // Expiration is second since Unix epoch.
-          Expiration int64
+	// KeyType indicates the type of key
+	// that is certified by this certificate.
+	KeyType string
 
-          // CertKeyType indicates the type of key
-          // that is certified by this certificate.
-          CertKeyType string
+	// Certified is the data that is certified by
+	// this certificate.
+	Certified []byte
 
-          // Certified is the data that is certified by
-          // this certificate.
-          Certified []byte
-
-          // Signatures are the signature of the certificate.
-          Signatures []Signature
+	// Signatures are the signature of the certificate.
+	Signatures []Signature
   }
 
 
 That is, one or more signatures sign the certificate. However the
 ``Certified`` field is not the only information that is signed. The
 ``Certified`` field along with the other non-signature fields are all
-concatenated together and signed.
+concatenated together and signed. Before serialization the signatures
+are sorted by their identity so that the output is binary deterministic.
+
 
 2.1 Certificate Types
 ---------------------
