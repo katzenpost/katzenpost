@@ -21,6 +21,7 @@ Documentation
 ..  toctree::
     :maxdepth: 1
 
+    docs/handbook/index
     docs/glossary
     docs/faq
     docs/specs
