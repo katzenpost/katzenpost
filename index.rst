@@ -33,9 +33,11 @@ Development
     :maxdepth: 1
 
     contribute
+    docs/HACKING/index
+    docs/setup
     → github.com/katzenpost <https://github.com/katzenpost/>
     → godocs: Go package documentation <https://godoc.org/?q=katzenpost>
-    docs/setup
+
 
 Mixnets?!
 =========
