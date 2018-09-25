@@ -15,7 +15,7 @@ The Android demo shows how to use the mailproxy API to more tightly integrate Ka
    This release of the Katzenpost mailproxy is preconfigured to use our public test mix network. Expect this to break and require frequent updates. Debug logs are publicly available and this testbed is fully controlled by us, so it **DOES NOT PROVIDE ANY ANONYMITY WHATSOEVER and is purely for testing**.
 
 * `Playground mailproxy client for Linux/Mac <https://github.com/katzenpost/playground/releases>`_
-* `Playground demo client for Android (based on K-9 Mail) <https://katzenpost.mixnetworks.org/downloads/katzenpost-v0.1.apk>`_
+* `Playground demo client for Android (based on K-9 Mail) <https://play.google.com/store/apps/details?id=horse.amazin.my.l10>`_
 * `Playground Instructions <https://github.com/katzenpost/playground/blob/master/README.rst>`_
 * `Playground Network Debug Log Viewer <http://logviewer.katzenpost.mixnetworks.org/>`_
 
