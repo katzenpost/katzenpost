@@ -109,12 +109,12 @@ workflow:
 
 1. Clone the Katzenpost daemons repository::
 
-     mkdir $GOPATH/github.com/katzenpost
+     mkdir -p $GOPATH/src/github.com/katzenpost
      git clone https://github.com/katzenpost/daemons.git
 
 2. Checkout the latest master branch::
 
-     cd $GOPATH/github.com/katzenpost/daemons
+     cd $GOPATH/src/github.com/katzenpost/daemons
      git checkout master
 
 3. Edit the Gopkg.toml in the daemons repo and
