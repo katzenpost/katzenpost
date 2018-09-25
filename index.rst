@@ -21,7 +21,8 @@ Documentation
 ..  toctree::
     :maxdepth: 1
 
-    docs/handbook/index
+    "Playground" Demo: Client Instructions <https://github.com/katzenpost/playground/blob/master/README.rst>
+    Katzenpost Network Operators Handbook <docs/handbook/index>
     docs/glossary
     docs/faq
     docs/specs
@@ -33,7 +34,7 @@ Development
     :maxdepth: 1
 
     contribute
-    docs/HACKING/index
+    Getting started in Katzenpost development <docs/HACKING/index>
     docs/setup
     → github.com/katzenpost <https://github.com/katzenpost/>
     → godocs: Go package documentation <https://godoc.org/?q=katzenpost>
