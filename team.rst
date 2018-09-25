@@ -20,6 +20,12 @@ Team
      .. image:: /_static/images/team/kali.jpg
              :width: 100px
              :target: #
+
+ * masala
+     .. image:: /_static/images/team/masala.jpg
+             :width: 100px
+             :target: #
+     
  * meskio
      .. image:: /_static/images/team/meskio.jpg
              :width: 100px
