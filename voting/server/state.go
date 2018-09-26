@@ -182,6 +182,8 @@ func (s *state) fsm() {
 				s.vote(s.votingEpoch)
 			}
 		}
+		// If there isn't a cached prior consensus, see if there is one available from other authorities.
+		s.backgroundFetchConsensus(s.votingEpoch - 1)
 		s.state = stateAcceptVote
 	case s.state == stateAcceptVote:
 		s.reveal(s.votingEpoch)
@@ -1442,23 +1444,39 @@ func newState(s *Server) (*state, error) {
 		st.state = stateAcceptDescriptor
 	}
 
-	// If there isn't a consensus for the previous epoch, ask the other
-	// authorities for a consensus.
-	if _, ok := st.documents[st.votingEpoch-1]; !ok {
-		cfg := &client.Config{st.s.logBackend, st.s.cfg.Authorities, nil}
-		c, err := client.New(cfg)
-		if err == nil {
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
-			defer cancel()
-			doc, rawDoc, err := c.Get(ctx, st.votingEpoch-1)
-			if err == nil && doc != nil {
-				st.documents[st.votingEpoch-1] = &document{doc, rawDoc}
-			}
-		}
-	}
-
 	st.Go(st.worker)
 	return st, nil
+}
+
+func (s *state) backgroundFetchConsensus(epoch uint64) {
+	// lock must already be held!
+	// If there isn't a consensus for the previous epoch, ask the other
+	// authorities for a consensus.
+	_, ok := s.documents[epoch]
+	if !ok {
+		go func() {
+			cfg := &client.Config{s.s.logBackend, s.s.cfg.Authorities, nil}
+			c, err := client.New(cfg)
+			if err != nil {
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+			defer cancel()
+			doc, rawDoc, err := c.Get(ctx, epoch)
+			if err != nil {
+				return
+			}
+			s.Lock()
+			defer s.Unlock()
+
+			// It's possible that the state has changed
+			// if backgroundFetchConsensus was called
+			// multiple times during bootstrapping
+			if _, ok := s.documents[epoch]; !ok {
+				s.documents[epoch] = &document{doc, rawDoc}
+			}
+		}()
+	}
 }
 
 func epochToBytes(e uint64) []byte {
