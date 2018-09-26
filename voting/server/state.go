@@ -18,6 +18,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/gob"
 	"errors"
@@ -31,6 +32,7 @@ import (
 	"time"
 
 	bolt "github.com/coreos/bbolt"
+	"github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/cert"
@@ -1438,6 +1440,21 @@ func newState(s *Server) (*state, error) {
 		st.bootstrapEpoch = epoch
 		st.votingEpoch = epoch
 		st.state = stateAcceptDescriptor
+	}
+
+	// If there isn't a consensus for the previous epoch, ask the other
+	// authorities for a consensus.
+	if _, ok := st.documents[st.votingEpoch-1]; !ok {
+		cfg := &client.Config{st.s.logBackend, st.s.cfg.Authorities, nil}
+		c, err := client.New(cfg)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+			defer cancel()
+			doc, rawDoc, err := c.Get(ctx, st.votingEpoch-1)
+			if err == nil && doc != nil {
+				st.documents[st.votingEpoch-1] = &document{doc, rawDoc}
+			}
+		}
 	}
 
 	st.Go(st.worker)
