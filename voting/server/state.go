@@ -323,6 +323,12 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		SendLambda:        params.SendLambda,
 		SendShift:         params.SendShift,
 		SendMaxInterval:   params.SendMaxInterval,
+		DropLambda:        params.DropLambda,
+		DropShift:         params.DropShift,
+		DropMaxInterval:   params.DropMaxInterval,
+		LoopLambda:        params.LoopLambda,
+		LoopShift:         params.LoopShift,
+		LoopMaxInterval:   params.LoopMaxInterval,
 		Topology:          topology,
 		Providers:         providers,
 		SharedRandomValue: srv,
@@ -694,6 +700,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			SendLambda:      vote.SendLambda,
 			SendShift:       vote.SendShift,
 			SendMaxInterval: vote.SendMaxInterval,
+			DropLambda:      vote.DropLambda,
+			DropShift:       vote.DropShift,
+			DropMaxInterval: vote.DropMaxInterval,
+			LoopLambda:      vote.LoopLambda,
+			LoopShift:       vote.LoopShift,
+			LoopMaxInterval: vote.LoopMaxInterval,
 		}
 		b := bytes.Buffer{}
 		e := gob.NewEncoder(&b)
