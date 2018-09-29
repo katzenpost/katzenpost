@@ -47,7 +47,11 @@ Mixnets?!
 * Animation: `Panoramix: What is a mixnet? A Short Introduction <https://www.youtube.com/watch?v=dQtk0NcTseg>`_
 * Video: `Claudia Diaz: Lecture on Anonymity Systems (2014) <https://www.youtube.com/watch?v=fhqabqmzpqE>`_
 * Video: `Ian Goldberg: Sphinx: A Compact and Provably Secure Mix Format (2009) <https://www.youtube.com/watch?v=34TKXELJa2c>`_
-
+* Video: `David Stainton: BornHack 2018 - Modern Mix Network Design <https://www.youtube.com/watch?v=DhBWKWQztdA>`_
+* Video: `Jeff Burdges and David Stainton 34C3 - Practical Mix Network Design <https://www.youtube.com/watch?v=O_mlX1rV2DQ>`_
+* Video: `David Stainton: Anonymizing Cryptocurrencies from Network Observers with Mix Networks <https://www.youtube.com/watch?v=dSydsoCe_SA>`_
+* Video: `David Stainton Shows How Mix Networks Improve Privacy <https://www.youtube.com/watch?v=7zIWrNqiTLI>`_
+  
 `Team <team.html>`_
 ===================
 
