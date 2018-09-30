@@ -1,6 +1,10 @@
 Katzenpost
 **********
 
+.. image:: /_static/images/katzenpost-overview.jpg
+    :alt: Katzenpost Overview
+    :align: center
+
 Goals
 =====
 
