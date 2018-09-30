@@ -11,8 +11,8 @@ Goals
 * to *prevent* a sufficiently global passive adversary from learning who is communicating with whom
 * to *detect* active attacks against the network infrastructure
 * hide message content from participating providers, hide recipient identity from the sender's provider, and the sender identity from the recipient's provider
-* support for both "instant messaging" and "email" use cases
 * reliable out of order delivery
+* support for various "message based" use cases like 'instant messaging', 'e-mail', and 'crypto currency' anonymization
 
 Non-Goals
 =========
