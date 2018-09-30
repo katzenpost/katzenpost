@@ -26,6 +26,7 @@ Documentation
     docs/glossary
     docs/faq
     docs/specs
+    presentations
 
 Development
 ===========
