@@ -451,8 +451,7 @@ func (s *state) vote(epoch uint64) {
 		s.s.fatalErrCh <- err
 		return
 	}
-	// we're holding a lock so better run this in another thread
-	go s.sendVoteToAuthorities(signedVote.raw)
+	s.sendVoteToAuthorities(signedVote.raw, epoch)
 }
 
 func (s *state) sign(doc *s11n.Document) *document {
@@ -555,7 +554,7 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte) erro
 	return nil
 
 }
-func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
+func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch uint64) error {
 	// get a connector here
 	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
 	if err != nil {
@@ -577,8 +576,9 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte) error {
 	if err = session.Initialize(conn); err != nil {
 		return err
 	}
+	// should not need s.votingEpoch
 	cmd := &commands.Vote{
-		Epoch:     s.votingEpoch,
+		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Payload:   vote,
 	}
@@ -636,16 +636,13 @@ func (s *state) sendRevealToAuthorities(reveal []byte) {
 
 // sendVoteToAuthorities sends s.descriptors[epoch] to
 // all Directory Authorities
-func (s *state) sendVoteToAuthorities(vote []byte) {
+func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 	// Lock is held (called from the onWakeup hook).
 
 	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", s.votingEpoch)
 
 	for _, peer := range s.s.cfg.Authorities {
-		err := s.sendVoteToPeer(peer, vote)
-		if err != nil {
-			s.log.Error("failed to send vote to peer %v", peer)
-		}
+		go s.sendVoteToPeer(peer, vote, epoch)
 	}
 }
 
@@ -877,7 +874,7 @@ func (s *state) tabulate(epoch uint64) {
 	}
 
 	// send our vote to the other authorities!
-	go s.sendVoteToAuthorities([]byte(signed))
+	s.sendVoteToAuthorities([]byte(signed), epoch)
 }
 
 func (s *state) hasConsensus(epoch uint64) bool {
