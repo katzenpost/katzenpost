@@ -7,3 +7,9 @@ pre {
 .small {
     font-size: 80%;
 }
+
+.blockquote {
+    font-size: 90%;
+    margin-left: 20px;
+    text-align: justify;
+}
