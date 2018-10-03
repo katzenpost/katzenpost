@@ -24,8 +24,7 @@ modern political parlance. The author offered mix nets for a solution."
 
 "An especially problematic excision of the political is the marginalization
 within the cryptographic community of the secure-messaging problem, an
-instance of which was the problem addressed by `Chaum in his 1981 Paper "Untraceable Electronic Mail, Return Addresses, and
-Digital Pseudonyms" <https://bib.mixnetworks.org/#chaum-mix>`_. Secure-messaging
+instance of which was the problem addressed by Chaum. Secure-messaging
 is the most fundamental privacy problem in cryptography: how can parties
 communicate in such a way that nobody knows who said what. More than a
 decade after the problem was introduced, `Rackoff and Simon <http://sci-hub.tw/10.1145/167088.167260>`_ would comment on
