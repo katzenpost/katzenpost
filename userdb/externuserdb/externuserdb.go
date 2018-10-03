@@ -70,6 +70,10 @@ func (e *externAuth) Add(u []byte, k *ecdh.PublicKey, update bool) error {
 	return errCantModify
 }
 
+func (e *externAuth) Link(u []byte) (*ecdh.PublicKey, error) {
+	return nil, errNotSupported
+}
+
 func (e *externAuth) SetIdentity(u []byte, k *ecdh.PublicKey) error {
 	return errNotSupported
 }

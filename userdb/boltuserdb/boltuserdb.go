@@ -129,6 +129,27 @@ func (d *boltUserDB) SetIdentity(u []byte, k *ecdh.PublicKey) error {
 	})
 }
 
+func (d *boltUserDB) Link(u []byte) (*ecdh.PublicKey, error) {
+	if !userOk(u) {
+		return nil, fmt.Errorf("userdb: invalid username: `%v`", u)
+	}
+	if !d.Exists(u) {
+		return nil, fmt.Errorf("userdb: user does not exist")
+	}
+
+	var pubKey *ecdh.PublicKey
+	err := d.db.View(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(usersBucket))
+		rawPubKey := bkt.Get(u)
+		if rawPubKey == nil {
+			return fmt.Errorf("userdb: user %s does not have a link key", u)
+		}
+		pubKey = new(ecdh.PublicKey)
+		return pubKey.FromBytes(rawPubKey)
+	})
+	return pubKey, err
+}
+
 func (d *boltUserDB) Identity(u []byte) (*ecdh.PublicKey, error) {
 	if !userOk(u) {
 		return nil, fmt.Errorf("userdb: invalid username: `%v`", u)

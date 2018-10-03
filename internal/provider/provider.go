@@ -439,6 +439,31 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 	return c.WriteReply(thwack.StatusOk)
 }
 
+func (p *provider) onUserLink(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+	if len(sp) != 2 {
+		c.Log().Debugf("USER_LINK invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	u, err := p.fixupUserNameCase([]byte(sp[1]))
+	if err != nil {
+		c.Log().Errorf("USER_LINK invalid user: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	pubKey, err := p.userDB.Link(u)
+	if err != nil {
+		c.Log().Errorf("Failed to query link key for user '%s': %v", string(u), err)
+		return c.WriteReply(thwack.StatusTransactionFailed)
+	}
+
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, pubKey)
+}
+
 func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
 	p.Lock()
 	defer p.Unlock()
@@ -719,6 +744,7 @@ func New(glue glue.Glue) (glue.Provider, error) {
 			cmdSetUserIdentity    = "SET_USER_IDENTITY"
 			cmdRemoveUserIdentity = "REMOVE_USER_IDENTITY"
 			cmdUserIdentity       = "USER_IDENTITY"
+			cmdUserLink           = "USER_LINK"
 		)
 
 		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
@@ -727,6 +753,7 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue.Management().RegisterCommand(cmdSetUserIdentity, p.onSetUserIdentity)
 		glue.Management().RegisterCommand(cmdRemoveUserIdentity, p.onRemoveUserIdentity)
 		glue.Management().RegisterCommand(cmdUserIdentity, p.onUserIdentity)
+		glue.Management().RegisterCommand(cmdUserLink, p.onUserLink)
 	}
 
 	// Start the User Registration HTTP service listener(s).
