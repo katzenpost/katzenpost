@@ -208,6 +208,7 @@ func (s *state) fsm() {
 				s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 			} else {
 				// Failed to make consensus while bootstrapping, try try again.
+				s.log.Debugf("Bootstrapping consensus failed for epoch %v, trying again", epoch)
 				if s.doBootstrap() {
 					delete(s.documents, s.votingEpoch)
 					delete(s.reveals, s.votingEpoch)
@@ -888,7 +889,6 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	}
 	_, good, bad, err := cert.VerifyThreshold(verifiers, s.threshold, doc.raw)
 	if err != nil {
-		s.log.Debugf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
 		return false
 	}
 	return true
