@@ -208,7 +208,7 @@ func (s *state) fsm() {
 				s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
 			} else {
 				// Failed to make consensus while bootstrapping, try try again.
-				s.log.Debugf("Bootstrapping consensus failed for epoch %v, trying again", epoch)
+				s.log.Debugf("Bootstrapping consensus failed for epoch %v, trying again", s.votingEpoch)
 				if s.doBootstrap() {
 					delete(s.documents, s.votingEpoch)
 					delete(s.reveals, s.votingEpoch)
