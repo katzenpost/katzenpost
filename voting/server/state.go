@@ -887,7 +887,7 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	for i, auth := range s.s.cfg.Authorities {
 		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
 	}
-	_, good, bad, err := cert.VerifyThreshold(verifiers, s.threshold, doc.raw)
+	_, _, _, err := cert.VerifyThreshold(verifiers, s.threshold, doc.raw)
 	if err != nil {
 		return false
 	}
