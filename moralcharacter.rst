@@ -41,6 +41,10 @@ true for almost all practical security goals that employ cryptography, I think t
 case is different for secure-messaging: here the work feels almost intentionally
 pushed aside."
 
+.. image:: _static/images/moralcharacter/framing.jpg
+    :alt: Law Enforcement Framing vs. Surveillance Framing
+    :align: center
+    :target: _static/images/moralcharacter/framing.jpg
 
 "Consider the following way to [frame mass surveillance], which follows
 often-heard thoughts from cypherpunks and surveillance studies.
@@ -71,11 +75,3 @@ challenge social norms, either. Living in fear, there is no genuine freedom.
 6. But creeping surveillance is hard to stop, because of interlocking corporate
 and governmental interests. Cryptography offers at least some hope. With
 it, one might carve out a space free of power’s reach."
-
-.. image:: /_static/images/moralcharacter/law-enforcement-framing.jpg
-    :alt: Law Enforcement Framing
-    :align: center
-
-.. image:: /_static/images/moralcharacter/surveillance-framing.jpg
-    :alt: Surveillance Framing
-    :align: center
