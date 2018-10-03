@@ -1,6 +1,16 @@
 Katzenpost
 **********
 
+.. container:: blockquote
+
+   "An especially problematic excision of the political is the marginalization
+   within the cryptographic community of the secure-messaging problem, an
+   instance of which was the problem addressed by `David Chaum <https://bib.mixnetworks.org/#chaum-mix>`_. Secure-messaging
+   is the most fundamental privacy problem in cryptography: how can parties
+   communicate in such a way that nobody knows who said what. More than a
+   decade after the problem was introduced, `Rackoff and Simon <http://sci-hub.tw/10.1145/167088.167260>`_ would comment on
+   the near-absence of attention being paid to the it." (`Phillip Rogaway, The Moral Character of Cryptographic Work <moralcharacter.html>`_) 
+
 .. image:: /_static/images/katzenpost-overview.jpg
     :alt: Katzenpost Overview
     :align: center
@@ -49,13 +59,13 @@ Mixnets?!
 =========
 
 * `Mixnet Bibliography <https://bib.mixnetworks.org>`_
+* `Phillip Rogaway, The Moral Character of Cryptographic Work (2015) <moralcharacter.html>`_
 * Animation: `Panoramix: What is a mixnet? A Short Introduction <https://www.youtube.com/watch?v=dQtk0NcTseg>`_
 * Video: `Claudia Diaz: Lecture on Anonymity Systems (2014) <https://www.youtube.com/watch?v=fhqabqmzpqE>`_
+\
+
 * Video: `Ian Goldberg: Sphinx: A Compact and Provably Secure Mix Format (2009) <https://www.youtube.com/watch?v=34TKXELJa2c>`_
-* Video: `David Stainton: BornHack 2018 - Modern Mix Network Design <https://www.youtube.com/watch?v=DhBWKWQztdA>`_
-* Video: `Jeff Burdges and David Stainton 34C3 - Practical Mix Network Design <https://www.youtube.com/watch?v=O_mlX1rV2DQ>`_
-* Video: `David Stainton: Anonymizing Cryptocurrencies from Network Observers with Mix Networks <https://www.youtube.com/watch?v=dSydsoCe_SA>`_
-* Video: `David Stainton Shows How Mix Networks Improve Privacy <https://www.youtube.com/watch?v=7zIWrNqiTLI>`_
+* `Katzenpost presentation videos <presentations.html#videos>`_
   
 `Team <team.html>`_
 ===================
