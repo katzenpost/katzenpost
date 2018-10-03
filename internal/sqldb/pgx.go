@@ -252,6 +252,14 @@ func (d *pgxUserDB) SetIdentity(u []byte, k *ecdh.PublicKey) error {
 	return nil
 }
 
+func (d *pgxUserDB) Link(u []byte) (*ecdh.PublicKey, error) {
+	key := d.getAuthKey(u)
+	if key == nil {
+		return nil, userdb.ErrNoSuchUser
+	}
+	return key, nil
+}
+
 func (d *pgxUserDB) Identity(u []byte) (*ecdh.PublicKey, error) {
 	var raw []byte
 	if err := d.pgx.pool.QueryRow(pgxTagUserGetIdentKey, u).Scan(&raw); err != nil {
