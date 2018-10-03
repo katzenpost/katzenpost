@@ -773,8 +773,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 }
 
 func (s *state) GetConsensus(epoch uint64) (*document, error) {
-	// Lock is held (called from the onWakeup hook).
-	// already have consensus for this epoch
+	s.Lock()
+	defer s.Unlock()
 	if s.hasConsensus(epoch) {
 		return s.documents[epoch], nil
 	}
