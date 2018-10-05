@@ -173,6 +173,14 @@ func (s *state) fsm() {
 	defer s.Unlock()
 	switch {
 	case s.state == stateAcceptDescriptor:
+		// If we are late to the party and consensus was made for this epoch without us
+		// skip to stateConsensed and wait for the next epoch
+		if s.hasConsensus(s.votingEpoch) {
+			s.state = stateConsensed
+			s.votingEpoch = s.votingEpoch + 1
+			break
+		}
+
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded!")
 			break
