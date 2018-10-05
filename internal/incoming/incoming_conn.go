@@ -132,7 +132,9 @@ func (c *incomingConn) worker() {
 		RandomReader:      rand.Reader,
 	}
 	var err error
+	c.l.Lock()
 	c.w, err = wire.NewSession(cfg, false)
+	c.l.Unlock()
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
