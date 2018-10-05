@@ -23,6 +23,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync/atomic"
 	"time"
 
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -41,9 +42,9 @@ const (
 )
 
 const (
-	stateInit sessionState = iota
-	stateEstablished
-	stateInvalid
+	stateInit        uint32 = 0
+	stateEstablished uint32 = 1
+	stateInvalid     uint32 = 2
 )
 
 var (
@@ -51,8 +52,6 @@ var (
 	errAuthenticationFailed = errors.New("wire/session: authentication failed")
 	errMsgSize              = errors.New("wire/session: invalid message size")
 )
-
-type sessionState int
 
 type authenticateMessage struct {
 	ad       []byte
@@ -132,16 +131,14 @@ type Session struct {
 	rx         *noise.CipherState
 
 	clockSkew   time.Duration
-	state       sessionState
+	state       uint32
 	isInitiator bool
 }
 
 func (s *Session) handshake() error {
 	defer func() {
 		s.authenticationKey.Reset() // Don't need this anymore, and s has a copy.
-		if s.state != stateEstablished {
-			s.state = stateInvalid
-		}
+		atomic.CompareAndSwapUint32(&s.state, stateInit, stateInvalid)
 	}()
 	prologue := []byte{0x00}
 
@@ -285,7 +282,7 @@ func (s *Session) handshake() error {
 		}
 	}
 
-	s.state = stateEstablished
+	atomic.StoreUint32(&s.state, stateEstablished)
 	return nil
 }
 
@@ -313,7 +310,7 @@ func (s *Session) finalizeHandshake() error {
 // Initialize takes an establised net.Conn, and binds it to a Session, and
 // conducts the wire protocol handshake.
 func (s *Session) Initialize(conn net.Conn) error {
-	if s.state != stateInit {
+	if atomic.LoadUint32(&s.state) != stateInit {
 		return errInvalidState
 	}
 	s.conn = conn
@@ -322,7 +319,7 @@ func (s *Session) Initialize(conn net.Conn) error {
 		return err
 	}
 	if err := s.finalizeHandshake(); err != nil {
-		s.state = stateInvalid
+		atomic.StoreUint32(&s.state, stateInvalid)
 		return err
 	}
 	return nil
@@ -330,7 +327,7 @@ func (s *Session) Initialize(conn net.Conn) error {
 
 // SendCommand sends the wire protocol command cmd.
 func (s *Session) SendCommand(cmd commands.Command) error {
-	if s.state != stateEstablished {
+	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return errInvalidState
 	}
 
@@ -358,7 +355,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	_, err := s.conn.Write(toSend)
 	if err != nil {
 		// All write errors are fatal.
-		s.state = stateInvalid
+		atomic.StoreUint32(&s.state, stateInvalid)
 	}
 	return err
 }
@@ -368,13 +365,13 @@ func (s *Session) RecvCommand() (commands.Command, error) {
 	cmd, err := s.recvCommandImpl()
 	if err != nil {
 		// All receive errors are fatal.
-		s.state = stateInvalid
+		atomic.StoreUint32(&s.state, stateInvalid)
 	}
 	return cmd, err
 }
 
 func (s *Session) recvCommandImpl() (commands.Command, error) {
-	if s.state != stateEstablished {
+	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return nil, errInvalidState
 	}
 
@@ -422,13 +419,13 @@ func (s *Session) Close() {
 	if s.conn != nil {
 		s.conn.Close()
 	}
-	s.state = stateInvalid
+	atomic.StoreUint32(&s.state, stateInvalid)
 }
 
 // PeerCredentials returns the peer's credentials.  This call MUST only be
 // called from a session that has succesfully completed Initialize().
 func (s *Session) PeerCredentials() *PeerCredentials {
-	if s.state < stateEstablished {
+	if atomic.LoadUint32(&s.state) != stateEstablished {
 		panic("wire/session: PeerCredentials() call in invalid state")
 	}
 	return s.peerCredentials
@@ -442,7 +439,7 @@ func (s *Session) ClockSkew() time.Duration {
 	if !s.isInitiator {
 		panic("wire/session: ClockSkew() call by responder")
 	}
-	if s.state < stateEstablished {
+	if atomic.LoadUint32(&s.state) != stateEstablished {
 		panic("wire/session: ClockSkew() call in invalid state")
 	}
 	return s.clockSkew
@@ -469,6 +466,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		authenticationKey: new(ecdh.PrivateKey),
 		randReader:        cfg.RandomReader,
 		isInitiator:       isInitiator,
+		state:             stateInit,
 	}
 	if err := s.authenticationKey.FromBytes(cfg.AuthenticationKey.Bytes()); err != nil {
 		panic("wire/session: BUG: failed to copy authentication key: " + err.Error())
