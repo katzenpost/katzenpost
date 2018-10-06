@@ -45,9 +45,9 @@ func (e *Entry) MixMaxDelay() uint64 {
 	return e.doc.MixMaxDelay
 }
 
-// SendShift returns the SendShift for the cached PKI document.
-func (e *Entry) SendShift() uint64 {
-	return e.doc.SendShift
+// SendRatePerMinute returns the SendRatePerMinute for the cached PKI document.
+func (e *Entry) SendRatePerMinute() uint64 {
+	return e.doc.SendRatePerMinute
 }
 
 // Self returns the descriptor for the current node.

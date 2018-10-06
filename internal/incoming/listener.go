@@ -45,7 +45,8 @@ type listener struct {
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 
-	sendShift uint64
+	sendRatePerMinute uint64
+	sendBurst         uint64
 }
 
 func (l *listener) Halt() {
@@ -61,8 +62,12 @@ func (l *listener) Halt() {
 	l.closeAllWg.Wait()
 }
 
-func (l *listener) OnNewSendShift(newSendShift uint64) {
-	atomic.StoreUint64(&l.sendShift, newSendShift)
+func (l *listener) OnNewSendRatePerMinute(sendRatePerMinute uint64) {
+	atomic.StoreUint64(&l.sendRatePerMinute, sendRatePerMinute)
+}
+
+func (l *listener) OnNewSendBurst(sendBurst uint64) {
+	atomic.StoreUint64(&l.sendBurst, sendBurst)
 }
 
 func (l *listener) worker() {
