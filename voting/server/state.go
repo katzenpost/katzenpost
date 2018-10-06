@@ -512,6 +512,8 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte) erro
 		return err
 	}
 	defer conn.Close()
+	s.s.Add(1)
+	defer s.s.Done()
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
 		AdditionalData:    []byte(""),
