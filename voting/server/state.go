@@ -60,6 +60,7 @@ const (
 	stateAcceptVote          = "accept_vote"
 	stateAcceptReveal        = "accept_reveal"
 	stateAcceptSignature     = "accept_signature"
+	stateBootstrap           = "bootstrap"
 	stateConsensed           = "got_consensus"
 	stateConsensusFailed     = "failed_consensus"
 )
@@ -172,6 +173,11 @@ func (s *state) fsm() {
 	s.Lock()
 	defer s.Unlock()
 	switch {
+	case s.state == stateBootstrap:
+		// Try to fetch prior consensus if there are not any locally
+		s.backgroundFetchConsensus(s.votingEpoch - 1)
+		s.backgroundFetchConsensus(s.votingEpoch)
+		s.state = stateAcceptDescriptor
 	case s.state == stateAcceptDescriptor:
 		// If we are late to the party and consensus was made for this epoch without us
 		// skip to stateConsensed and wait for the next epoch
@@ -190,8 +196,6 @@ func (s *state) fsm() {
 				s.vote(s.votingEpoch)
 			}
 		}
-		// If there isn't a cached prior consensus, see if there is one available from other authorities.
-		s.backgroundFetchConsensus(s.votingEpoch - 1)
 		s.state = stateAcceptVote
 	case s.state == stateAcceptVote:
 		s.reveal(s.votingEpoch)
@@ -1462,7 +1466,7 @@ func newState(s *Server) (*state, error) {
 	if _, ok := st.documents[epoch]; !ok {
 		st.bootstrapEpoch = epoch
 		st.votingEpoch = epoch
-		st.state = stateAcceptDescriptor
+		st.state = stateBootstrap
 	}
 
 	st.Go(st.worker)
