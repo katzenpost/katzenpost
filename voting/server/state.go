@@ -570,6 +570,8 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 		return err
 	}
 	defer conn.Close()
+	s.s.Add(1)
+	defer s.s.Done()
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
 		AdditionalData:    []byte(""),
