@@ -94,7 +94,8 @@ type Connector interface {
 type Listener interface {
 	Halt()
 	IsConnUnique(interface{}) bool
-	OnNewSendShift(uint64)
+	OnNewSendRatePerMinute(uint64)
+	OnNewSendBurst(uint64)
 }
 
 type Decoy interface {
