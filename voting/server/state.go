@@ -1111,7 +1111,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 
 	// the first reveal received this round
 	if _, ok := s.reveals[s.votingEpoch]; !ok {
-		s.reveals[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+		s.reveals[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
 	}
 
 	// already received a reveal for this round
