@@ -41,7 +41,6 @@ func (s *Session) setTimers(doc *pki.Document) {
 	// λP
 	pDesc := &poisson.PoissonDescriptor{
 		Lambda: doc.SendLambda,
-		Shift:  doc.SendShift,
 		Max:    doc.SendMaxInterval,
 	}
 	if s.pTimer == nil {
@@ -53,7 +52,6 @@ func (s *Session) setTimers(doc *pki.Document) {
 	// λD
 	dDesc := &poisson.PoissonDescriptor{
 		Lambda: doc.DropLambda,
-		Shift:  doc.DropShift,
 		Max:    doc.DropMaxInterval,
 	}
 	if s.dTimer == nil {
@@ -65,7 +63,6 @@ func (s *Session) setTimers(doc *pki.Document) {
 	// λL
 	lDesc := &poisson.PoissonDescriptor{
 		Lambda: doc.LoopLambda,
-		Shift:  doc.LoopShift,
 		Max:    doc.LoopMaxInterval,
 	}
 	if s.lTimer == nil {
