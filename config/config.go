@@ -28,7 +28,9 @@ import (
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
 	"github.com/katzenpost/client/internal/proxy"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
@@ -37,7 +39,9 @@ import (
 )
 
 const (
-	defaultLogLevel = "NOTICE"
+	defaultLogLevel                    = "NOTICE"
+	defaultPollingInterval             = 10
+	defaultInitialMaxPKIRetrievalDelay = 10
 )
 
 var defaultLogging = Logging{
@@ -86,35 +90,9 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
-	// EnableLoops if set to true enables using client loop decoy
-	// traffic.
-	EnableLoops bool
-
-	// LambdaL is the inverse of the mean of the exponential distribution
-	// that is used to determine time duration between sending client
-	// loop decoy traffic messages.
-	LambdaL float64
-
-	// LambdaLMaxInterval is the maximum value that can be produced using LambdaL
-	// poisson process
-	LambdaLMax uint64
-
-	// LambdaLShift is the shift applied to the Lambda-L samples in
-	// milliseconds.
-	LambdaLShift uint64
-
-	// LambdaD is the inverse of the mean of the exponential distribution
-	// that is used to determine time duration between sending client
-	// drop decoy traffic messages.
-	LambdaD float64
-
-	// LambdaDMaxInterval is the maximum value that can be produced using LambdaD
-	// poisson process
-	LambdaDMax uint64
-
-	// LambdaLShift is the shift applied to the Lambda-L samples in
-	// milliseconds.
-	LambdaDShift uint64
+	// InitialMaxPKIRetrievalDelay is the initial maximum number of seconds
+	// we are willing to wait for the retreival of the PKI document.
+	InitialMaxPKIRetrievalDelay int
 
 	// CaseSensitiveUserIdentifiers disables the forced lower casing of
 	// the Account `User` field.
@@ -130,6 +108,15 @@ type Debug struct {
 	// increasing the value too far WILL adversely affect large message
 	// transmit performance.
 	PollingInterval int
+}
+
+func (d *Debug) fixup() {
+	if d.PollingInterval == 0 {
+		d.PollingInterval = defaultPollingInterval
+	}
+	if d.InitialMaxPKIRetrievalDelay == 0 {
+		d.InitialMaxPKIRetrievalDelay = defaultInitialMaxPKIRetrievalDelay
+	}
 }
 
 // NonvotingAuthority is a non-voting authority configuration.
@@ -153,9 +140,6 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.C
 }
 
 func (nvACfg *NonvotingAuthority) validate() error {
-	if err := utils.EnsureAddrIPPort(nvACfg.Address); err != nil {
-		return fmt.Errorf("Address '%v' is invalid: %v", nvACfg.Address, err)
-	}
 	if nvACfg.PublicKey == nil {
 		return fmt.Errorf("PublicKey is missing")
 	}
@@ -270,7 +254,12 @@ func (cfg *Config) FixupAndValidate() error {
 		cfg.Logging = &defaultLogging
 	}
 	if cfg.Debug == nil {
-		cfg.Debug = &Debug{}
+		cfg.Debug = &Debug{
+			PollingInterval:             defaultPollingInterval,
+			InitialMaxPKIRetrievalDelay: defaultInitialMaxPKIRetrievalDelay,
+		}
+	} else {
+		cfg.Debug.fixup()
 	}
 
 	// Validate/fixup the various sections.
@@ -322,6 +311,30 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 		cfg.Debug.GenerateOnly = true
 	}
 	return cfg, nil
+}
+
+// GenerateKeys makes the key dir and then
+// generates the keys and saves them into pem files
+func GenerateKeys(cfg *Config) error {
+	id := cfg.Account.User + "@" + cfg.Account.Provider
+	basePath := filepath.Join(cfg.Proxy.DataDir, id)
+	if err := utils.MkDataDir(basePath); err != nil {
+		return err
+	}
+	_, err := LoadLinkKey(basePath)
+	return err
+}
+
+// LoadLinkKey can load or generate the keys
+func LoadLinkKey(basePath string) (*ecdh.PrivateKey, error) {
+	linkPriv := filepath.Join(basePath, "link.private.pem")
+	linkPub := filepath.Join(basePath, "link.public.pem")
+	var err error
+	linkKey := new(ecdh.PrivateKey)
+	if linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
+		return nil, err
+	}
+	return linkKey, nil
 }
 
 // LoadFile loads, parses, and validates the provided file and returns the

@@ -27,7 +27,6 @@ import (
 // PoissonDescriptor describes a Poisson process.
 type PoissonDescriptor struct {
 	Lambda float64
-	Shift  uint64
 	Max    uint64
 }
 
@@ -35,9 +34,6 @@ type PoissonDescriptor struct {
 // equal to d.
 func (d *PoissonDescriptor) Equals(s *PoissonDescriptor) bool {
 	if d.Lambda != s.Lambda {
-		return false
-	}
-	if d.Shift != s.Shift {
 		return false
 	}
 	if d.Max != s.Max {
@@ -72,7 +68,6 @@ func (t *PoissonTimer) nextInterval() time.Duration {
 		wakeMsec = t.desc.Max
 	default:
 	}
-	wakeMsec += t.desc.Shift // Sample, clamp, then shift.
 	wakeInterval := time.Duration(wakeMsec) * time.Millisecond
 	return wakeInterval
 }

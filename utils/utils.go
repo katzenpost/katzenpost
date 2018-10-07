@@ -1,4 +1,4 @@
-// utils.go
+// utils.go - Katzenpost client utilities.
 // Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package client
+package utils
 
 import (
 	"github.com/katzenpost/core/pki"
