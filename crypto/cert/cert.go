@@ -50,8 +50,17 @@ var (
 	// ErrDuplicateSignature indicates that the given signature is already present in the certificate.
 	ErrDuplicateSignature = errors.New("signature must not be duplicate")
 
+	// ErrInvalidCertified indicates that the certified field is invalid
+	ErrInvalidCertified = errors.New("invalid certified field of certificate")
+
 	// ErrKeyTypeMismatch indicates that the given signer's key type is different than the signatures present already.
 	ErrKeyTypeMismatch = errors.New("certificate key type mismatch")
+
+	// ErrInvalidKeyType indicates that the given signer's key type is different than the signatures present already.
+	ErrInvalidKeyType = errors.New("invalid certificate key type")
+
+	// ErrVersionMismatch indicates that the given certificate is the wrong format version.
+	ErrVersionMismatch = errors.New("certificate expired")
 
 	// ErrCertificateExpired indicates that the given certificate has expired.
 	ErrCertificateExpired = errors.New("certificate expired")
@@ -137,6 +146,22 @@ func (c *certificate) message() ([]byte, error) {
 	return message.Bytes(), nil
 }
 
+func (c *certificate) sanityCheck() error {
+	if c.Version != CertVersion {
+		return ErrVersionMismatch
+	}
+	if time.Unix(c.Expiration, 0).Before(time.Now()) {
+		return ErrCertificateExpired
+	}
+	if len(c.KeyType) == 0 {
+		return ErrInvalidKeyType
+	}
+	if len(c.Certified) == 0 || c.Certified == nil {
+		return ErrInvalidCertified
+	}
+	return nil
+}
+
 // Sign uses the given Signer to create a certificate which
 // certifies the given data.
 func Sign(signer Signer, data []byte, expiration int64) ([]byte, error) {
@@ -145,6 +170,10 @@ func Sign(signer Signer, data []byte, expiration int64) ([]byte, error) {
 		Expiration: expiration,
 		KeyType:    signer.KeyType(),
 		Certified:  data,
+	}
+	err := cert.sanityCheck()
+	if err != nil {
+		return nil, err
 	}
 	mesg, err := cert.message()
 	if err != nil {
@@ -173,6 +202,10 @@ func GetCertified(rawCert []byte) ([]byte, error) {
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
+	err = cert.sanityCheck()
+	if err != nil {
+		return nil, err
+	}
 	return cert.Certified, nil
 }
 
@@ -183,6 +216,10 @@ func GetSignatures(rawCert []byte) ([]Signature, error) {
 	err := dec.Decode(&cert)
 	if err != nil {
 		return nil, ErrImpossibleEncode
+	}
+	err = cert.sanityCheck()
+	if err != nil {
+		return nil, err
 	}
 	return cert.Signatures, nil
 }
@@ -195,6 +232,10 @@ func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
 	err := dec.Decode(&cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
+	}
+	err = cert.sanityCheck()
+	if err != nil {
+		return nil, err
 	}
 	for _, s := range cert.Signatures {
 		if bytes.Equal(identity, s.Identity) {
@@ -227,6 +268,10 @@ func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
 	err := dec.Decode(cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
+	}
+	err = cert.sanityCheck()
+	if err != nil {
+		return nil, err
 	}
 	if signer.KeyType() != cert.KeyType {
 		return nil, ErrKeyTypeMismatch
@@ -273,6 +318,11 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 		return nil, ErrImpossibleDecode
 	}
 
+	err = cert.sanityCheck()
+	if err != nil {
+		return nil, err
+	}
+
 	// dedup
 	for _, sig := range cert.Signatures {
 		if bytes.Equal(sig.Identity, signature.Identity) || bytes.Equal(sig.Payload, signature.Payload) {
@@ -310,9 +360,12 @@ func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if time.Unix(cert.Expiration, 0).Before(time.Now()) {
-		return nil, ErrCertificateExpired
+
+	err = cert.sanityCheck()
+	if err != nil {
+		return nil, err
 	}
+
 	for _, sig := range cert.Signatures {
 		if bytes.Equal(verifier.Identity(), sig.Identity) {
 			mesg, err := cert.message()

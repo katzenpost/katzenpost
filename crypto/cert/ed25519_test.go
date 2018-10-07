@@ -39,7 +39,7 @@ func TestEd25519ExpiredCertificate(t *testing.T) {
 	expiration := time.Now().AddDate(0, -6, 0).Unix()
 
 	certificate, err := Sign(signingPrivKey, ephemeralPrivKey.PublicKey().Bytes(), expiration)
-	assert.NoError(err)
+	assert.Error(err)
 
 	certified, err := Verify(ephemeralPrivKey.PublicKey(), certificate)
 	assert.Error(err)
