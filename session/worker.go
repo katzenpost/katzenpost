@@ -48,28 +48,6 @@ func (s *Session) setTimers(doc *pki.Document) {
 	} else {
 		s.pTimer.SetPoisson(pDesc)
 	}
-
-	// λD
-	dDesc := &poisson.PoissonDescriptor{
-		Lambda: doc.DropLambda,
-		Max:    doc.DropMaxInterval,
-	}
-	if s.dTimer == nil {
-		s.dTimer = poisson.NewTimer(dDesc)
-	} else {
-		s.dTimer.SetPoisson(dDesc)
-	}
-
-	// λL
-	lDesc := &poisson.PoissonDescriptor{
-		Lambda: doc.LoopLambda,
-		Max:    doc.LoopMaxInterval,
-	}
-	if s.lTimer == nil {
-		s.lTimer = poisson.NewTimer(lDesc)
-	} else {
-		s.lTimer.SetPoisson(lDesc)
-	}
 }
 
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
@@ -113,15 +91,9 @@ func (s *Session) maybeUpdateTimers(doc *pki.Document) {
 func (s *Session) worker() {
 	s.pTimer.Start()
 	defer s.pTimer.Stop()
-	s.dTimer.Start()
-	defer s.dTimer.Stop()
-	s.lTimer.Start()
-	defer s.lTimer.Stop()
 
 	var isConnected bool = false
 	for {
-		var lambdaLFired bool = false
-		var lambdaDFired bool = false
 		var lambdaPFired bool = false
 		var qo workerOp = nil
 		select {
@@ -130,21 +102,11 @@ func (s *Session) worker() {
 			return
 		case <-s.pTimer.Timer.C:
 			lambdaPFired = true
-		case <-s.dTimer.Timer.C:
-			lambdaDFired = true
-		case <-s.lTimer.Timer.C:
-			lambdaLFired = true
 		case qo = <-s.opCh:
 		}
 		if isConnected {
 			if lambdaPFired {
 				s.lambdaPTask()
-			}
-			if lambdaDFired {
-				s.lambdaDTask()
-			}
-			if lambdaLFired {
-				s.lambdaLTask()
 			}
 		}
 		if qo != nil {
@@ -166,12 +128,6 @@ func (s *Session) worker() {
 		if lambdaPFired {
 			s.pTimer.Next()
 		}
-		if lambdaDFired {
-			s.dTimer.Next()
-		}
-		if lambdaLFired {
-			s.lTimer.Next()
-		}
 	}
 
 	// NOTREACHED
@@ -183,24 +139,10 @@ func (s *Session) lambdaPTask() {
 	err := s.sendNext()
 	if err != nil {
 		s.log.Warningf("Failed to send queued message: %v", err)
-		err = s.sendDropDecoy()
+		err = s.sendLoopDecoy()
 		if err != nil {
-			s.log.Warningf("Failed to send drop decoy traffic: %v", err)
+			s.log.Warningf("Failed to send loop decoy traffic: %v", err)
 		}
-	}
-}
-
-func (s *Session) lambdaDTask() {
-	err := s.sendDropDecoy()
-	if err != nil {
-		s.log.Warningf("Failed to send drop decoy traffic: %v", err)
-	}
-}
-
-func (s *Session) lambdaLTask() {
-	err := s.sendLoopDecoy()
-	if err != nil {
-		s.log.Warningf("Failed to send drop decoy traffic: %v", err)
 	}
 }
 

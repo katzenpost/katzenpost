@@ -55,11 +55,13 @@ type Session struct {
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 
-	// λP, λD and λL Poisson processes
-	// as described in "The Loopix Anonymity System".
+	// XXX Our client scheduler is different than specified in
+	// "The Loopix Anonymity System".
+	//
+	// We use λP a poisson process to control the interval between
+	// popping items off our send egress FIFO queue. If the queue is ever
+	// empty we send a decoy loop message.
 	pTimer *poisson.PoissonTimer
-	dTimer *poisson.PoissonTimer
-	lTimer *poisson.PoissonTimer
 
 	linkKey   *ecdh.PrivateKey
 	opCh      chan workerOp
