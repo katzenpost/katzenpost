@@ -18,54 +18,26 @@
 package client
 
 import (
-	"fmt"
 	"path/filepath"
 	"sync"
-	"time"
 
-	"github.com/beeker1121/goque"
 	"github.com/katzenpost/client/config"
-	"github.com/katzenpost/client/poisson"
-	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/pki"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
-	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/minclient"
 	"gopkg.in/op/go-logging.v1"
 )
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
-	worker.Worker
-
-	cfg *config.Config
-
-	linkKey    *ecdh.PrivateKey
-	pkiClient  pki.Client
-	minclient  *minclient.Client
+	cfg        *config.Config
 	logBackend *log.Backend
 	log        *logging.Logger
 	fatalErrCh chan error
 	haltedCh   chan interface{}
-	haltOnce   sync.Once
+	haltOnce   *sync.Once
 
-	pTimer *poisson.PoissonTimer // timer for legit messages and drop decoys
-	dTimer *poisson.PoissonTimer // timer for drop decoys
-	lTimer *poisson.PoissonTimer // optional timer for loop decoys
-
-	opCh        chan workerOp
-	onlineAt    time.Time
-	hasPKIDoc   bool
-	egressQueue *goque.Queue
-	surbKeys    map[[sConstants.SURBIDLength]byte][]byte
-	surbEtas    map[time.Duration][sConstants.SURBIDLength]byte
-
-	condGotPKIDoc  *sync.Cond
-	condGotMessage *sync.Cond
-	condGotReply   *sync.Cond
-	condGotConnect *sync.Cond
+	session *session.Session
 }
 
 func (c *Client) initLogging() error {
@@ -84,6 +56,10 @@ func (c *Client) initLogging() error {
 	return err
 }
 
+func (c *Client) GetLogger(name string) *logging.Logger {
+	return c.logBackend.GetLogger(name)
+}
+
 // Shutdown cleanly shuts down a given Client instance.
 func (c *Client) Shutdown() {
 	c.haltOnce.Do(func() { c.halt() })
@@ -96,16 +72,17 @@ func (c *Client) Wait() {
 
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
-
-	if c.minclient != nil {
-		c.minclient.Shutdown()
+	if c.session != nil {
+		c.session.Halt()
 	}
-
-	c.Halt()
 	close(c.fatalErrCh)
-
-	c.log.Noticef("Shutdown complete.")
 	close(c.haltedCh)
+}
+
+func (c *Client) NewSession() (*session.Session, error) {
+	var err error
+	c.session, err = session.New(c.fatalErrCh, c.logBackend, c.cfg)
+	return c.session, err
 }
 
 // New creates a new Client with the provided configuration.
@@ -114,37 +91,7 @@ func New(cfg *config.Config) (*Client, error) {
 	c.cfg = cfg
 	c.fatalErrCh = make(chan error)
 	c.haltedCh = make(chan interface{})
-	c.opCh = make(chan workerOp)
-	c.surbKeys = make(map[[sConstants.SURBIDLength]byte][]byte)
-	c.surbEtas = make(map[time.Duration][sConstants.SURBIDLength]byte)
-
-	const egressQueueName = "egress_queue"
-	egressQueueDir := filepath.Join(c.cfg.Proxy.DataDir, egressQueueName)
-	err := utils.MkDataDir(egressQueueDir)
-	if err != nil {
-		return nil, err
-	}
-	c.egressQueue, err = goque.OpenQueue(egressQueueDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// make some synchronised conditions
-	docLock := new(sync.Mutex)
-	docLock.Lock()
-	c.condGotPKIDoc = sync.NewCond(docLock)
-
-	gotMessageLock := new(sync.Mutex)
-	gotMessageLock.Lock()
-	c.condGotMessage = sync.NewCond(gotMessageLock)
-
-	gotReplyLock := new(sync.Mutex)
-	gotReplyLock.Lock()
-	c.condGotReply = sync.NewCond(gotReplyLock)
-
-	gotConnectLock := new(sync.Mutex)
-	gotConnectLock.Lock()
-	c.condGotConnect = sync.NewCond(gotConnectLock)
+	c.haltOnce = new(sync.Once)
 
 	// Do the early initialization and bring up logging.
 	if err := utils.MkDataDir(c.cfg.Proxy.DataDir); err != nil {
@@ -154,13 +101,9 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 
-	// Load link key.
-	id := fmt.Sprintf("%s@%s", c.cfg.Account.User, c.cfg.Account.Provider)
-	basePath := filepath.Join(c.cfg.Proxy.DataDir, id)
-	linkPriv := filepath.Join(basePath, "link.private.pem")
-	linkPub := filepath.Join(basePath, "link.public.pem")
-	if c.linkKey, err = ecdh.Load(linkPriv, linkPub, nil); err != nil {
-		c.log.Errorf("Failure to load link keys: %s", err)
+	// Ensure we generate keys if the user requested it.
+	if c.cfg.Debug.GenerateOnly {
+		err := config.GenerateKeys(c.cfg)
 		return nil, err
 	}
 
