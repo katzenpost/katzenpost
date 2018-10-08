@@ -1,11 +1,12 @@
 language: go
 
 go:
-  - 1.9
-  - tip
+  - "1.10"
+  - "1.11"
 
 install:
- - go get -v -t ./...
+  - git config --global http.https://gopkg.in.followRedirects true
+  - go get -u -v -t ./...
 
 script:
- - go test -v ./...
+  - go test -v ./...
