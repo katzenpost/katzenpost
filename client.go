@@ -56,6 +56,7 @@ func (c *Client) initLogging() error {
 	return err
 }
 
+// GetLogger returns a new logger with the given name.
 func (c *Client) GetLogger(name string) *logging.Logger {
 	return c.logBackend.GetLogger(name)
 }
@@ -79,6 +80,7 @@ func (c *Client) halt() {
 	close(c.haltedCh)
 }
 
+// NewSession creates and returns a new session or an error.
 func (c *Client) NewSession() (*session.Session, error) {
 	var err error
 	c.session, err = session.New(c.fatalErrCh, c.logBackend, c.cfg)
