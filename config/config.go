@@ -269,10 +269,10 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.Logging.validate(); err != nil {
 		return err
 	}
-	if uCfg, err := cfg.UpstreamProxy.toProxyConfig(); err != nil {
-		return err
-	} else {
+	if uCfg, err := cfg.UpstreamProxy.toProxyConfig(); err == nil {
 		cfg.upstreamProxy = uCfg
+	} else {
+		return err
 	}
 	if err := cfg.NonvotingAuthority.validate(); err != nil {
 		return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)

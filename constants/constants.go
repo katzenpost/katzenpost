@@ -22,7 +22,12 @@ const (
 )
 
 const (
-	SurbTypeACK       = 0
+	// SurbTypeACK is used to denote an ACK in response to a forward message.
+	SurbTypeACK = 0
+
+	// SurbTypeKaetzchen is used to denote a mixnet service query response.
 	SurbTypeKaetzchen = 1
-	SurbTypeInternal  = 2
+
+	// SurbTypeInternal is used to reserve an internal SURB reply type.
+	SurbTypeInternal = 2
 )

@@ -39,7 +39,7 @@ type opNewDocument struct {
 
 func (s *Session) setTimers(doc *pki.Document) {
 	// λP
-	pDesc := &poisson.PoissonDescriptor{
+	pDesc := &poisson.Descriptor{
 		Lambda: doc.SendLambda,
 		Max:    doc.SendMaxInterval,
 	}
@@ -92,10 +92,10 @@ func (s *Session) worker() {
 	s.pTimer.Start()
 	defer s.pTimer.Stop()
 
-	var isConnected bool = false
+	var isConnected bool
 	for {
-		var lambdaPFired bool = false
-		var qo workerOp = nil
+		var lambdaPFired bool
+		var qo workerOp
 		select {
 		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")

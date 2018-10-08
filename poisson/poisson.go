@@ -24,15 +24,15 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 )
 
-// PoissonDescriptor describes a Poisson process.
-type PoissonDescriptor struct {
+// Descriptor describes a Poisson process.
+type Descriptor struct {
 	Lambda float64
 	Max    uint64
 }
 
-// Equals return true if the given PoissonDescriptor s is
+// Equals return true if the given Descriptor s is
 // equal to d.
-func (d *PoissonDescriptor) Equals(s *PoissonDescriptor) bool {
+func (d *Descriptor) Equals(s *Descriptor) bool {
 	if d.Lambda != s.Lambda {
 		return false
 	}
@@ -42,26 +42,26 @@ func (d *PoissonDescriptor) Equals(s *PoissonDescriptor) bool {
 	return true
 }
 
-// PoissonTimer is used to produce channel events after delays
+// Fount is used to produce channel events after delays
 // selected from a Poisson process.
-type PoissonTimer struct {
+type Fount struct {
 	Timer *time.Timer
 	rng   *mrand.Rand
-	desc  *PoissonDescriptor
+	desc  *Descriptor
 }
 
-// DescriptorEquals returns true if the PoissonTimer's Poisson descriptor
+// DescriptorEquals returns true if the Fount's Poisson descriptor
 // is equal to the given Poisson descriptor s.
-func (t *PoissonTimer) DescriptorEquals(s *PoissonDescriptor) bool {
+func (t *Fount) DescriptorEquals(s *Descriptor) bool {
 	return t.desc.Equals(s)
 }
 
 // SetPoisson sets a new Poisson descriptor.
-func (t *PoissonTimer) SetPoisson(desc *PoissonDescriptor) {
+func (t *Fount) SetPoisson(desc *Descriptor) {
 	t.desc = desc
 }
 
-func (t *PoissonTimer) nextInterval() time.Duration {
+func (t *Fount) nextInterval() time.Duration {
 	wakeMsec := uint64(rand.Exp(t.rng, t.desc.Lambda))
 	switch {
 	case wakeMsec > t.desc.Max:
@@ -74,33 +74,33 @@ func (t *PoissonTimer) nextInterval() time.Duration {
 
 // Next resets the timer to the next Poisson process value.
 // This MUST NOT be called unless the timer has fired.
-func (t *PoissonTimer) Next() {
+func (t *Fount) Next() {
 	wakeInterval := t.nextInterval()
 	t.Timer.Reset(wakeInterval)
 }
 
 // NextMax resets the timer to the maximum
 // possible value.
-func (t *PoissonTimer) NextMax() {
+func (t *Fount) NextMax() {
 	t.Timer.Reset(math.MaxInt64)
 }
 
 // Start is used to initialize and start the timer
 // after timer creation.
-func (t *PoissonTimer) Start() {
+func (t *Fount) Start() {
 	wakeInterval := t.nextInterval()
 	t.Timer = time.NewTimer(wakeInterval)
 }
 
 // Stop stops the timer.
-func (t *PoissonTimer) Stop() {
+func (t *Fount) Stop() {
 	t.Timer.Stop()
 }
 
-// NewTimer is used to create a new PoissonTimer. A subsequent
+// NewTimer is used to create a new Fount. A subsequent
 // call to the Start method is used to activate the timer.
-func NewTimer(desc *PoissonDescriptor) *PoissonTimer {
-	t := &PoissonTimer{
+func NewTimer(desc *Descriptor) *Fount {
+	t := &Fount{
 		rng:  rand.NewMath(),
 		desc: desc,
 	}

@@ -20,21 +20,25 @@ import (
 	"github.com/katzenpost/core/pki"
 )
 
+// ServiceDescriptor describe a mixnet Provider-side service.
 type ServiceDescriptor struct {
-	Name     string
+	// Name of the service.
+	Name string
+	// Provider name.
 	Provider string
 }
 
+// FindServices is a helper function for finding Provider-side services in the PKI document.
 func FindServices(capability string, doc *pki.Document) []ServiceDescriptor {
 	services := []ServiceDescriptor{}
 	for _, provider := range doc.Providers {
-		for cap, _ := range provider.Kaetzchen {
+		for cap := range provider.Kaetzchen {
 			if cap == capability {
-				serviceId := ServiceDescriptor{
+				serviceID := ServiceDescriptor{
 					Name:     provider.Kaetzchen[cap]["endpoint"].(string),
 					Provider: provider.Name,
 				}
-				services = append(services, serviceId)
+				services = append(services, serviceID)
 			}
 		}
 	}

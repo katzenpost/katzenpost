@@ -43,6 +43,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+// Session is the struct type that keeps state for a given session.
 type Session struct {
 	worker.Worker
 
@@ -61,7 +62,7 @@ type Session struct {
 	// We use λP a poisson process to control the interval between
 	// popping items off our send egress FIFO queue. If the queue is ever
 	// empty we send a decoy loop message.
-	pTimer *poisson.PoissonTimer
+	pTimer *poisson.Fount
 
 	linkKey   *ecdh.PrivateKey
 	opCh      chan workerOp
@@ -162,7 +163,7 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 
 func (s *Session) awaitFirstPKIDoc() (*pki.Document, error) {
 	for {
-		var qo workerOp = nil
+		var qo workerOp
 		select {
 		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")
@@ -246,7 +247,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 	_, ok = s.replyNotifyMap[*msgRef.ID]
 	if !ok {
 		s.log.Infof("wtf, received reply with no reply notification mutex, map len is %d", len(s.replyNotifyMap))
-		for key, _ := range s.replyNotifyMap {
+		for key := range s.replyNotifyMap {
 			s.log.Infof("key %x", key)
 		}
 		return nil
