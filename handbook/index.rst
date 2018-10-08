@@ -263,11 +263,15 @@ Parameters section
 The Parameters section holds the network parameters, for example::
 
   [Parameters]
+    SendRatePerMinute = 30
     MixLambda = 0.00025
     MixMaxDelay = 90000
     SendLambda = 15.0
     SendShift = 3
     SendMaxInterval = 3000
+
+* ``SendRatePerMinute`` is the rate limiter maximum allowed rate of
+  packets per client.
 
 * ``MixLambda`` is the inverse of the mean of the exponential
   distribution that the Sphinx packet per-hop mixing delay will be
@@ -831,3 +835,13 @@ The following commands are possible:
   The syntax of the command is as follows::
 
     USER_IDENTITY alice
+
+* ``SEND_RATE`` - Sets the rate limiter to the given packets per minute rate.
+  ::
+
+     SEND_RATE 30
+
+* ``SEND_BURST`` - Sets the rate limiter burst to the given maximum.
+  ::
+
+     SEND_BURST 4
