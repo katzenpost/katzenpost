@@ -190,7 +190,6 @@ func (s *state) fsm() <-chan time.Time {
 		if s.hasConsensus(s.votingEpoch) {
 			s.state = stateAcceptDescriptor
 		}
-		s.votingEpoch = epoch + 1
 		sleep = nextEpoch + mixPublishDeadline
 	default:
 	}
