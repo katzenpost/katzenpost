@@ -51,11 +51,12 @@ import (
 const (
 	descriptorsBucket        = "descriptors"
 	documentsBucket          = "documents"
-	publishDeadline          = 3600 * time.Second
-	mixPublishDeadline       = 2 * time.Hour
-	authorityVoteDeadline    = 2*time.Hour + 7*time.Minute + 30*time.Second
-	authorityRevealDeadline  = 2*time.Hour + 10*time.Minute
-	publishConsensusDeadline = 2*time.Hour + 15*time.Minute
+	//mixPublishDeadline       = 2 * time.Hour
+	//authorityVoteDeadline    = 2*time.Hour + 7*time.Minute + 30*time.Second
+	//authorityRevealDeadline  = 2*time.Hour + 10*time.Minute
+	//publishConsensusDeadline = 2*time.Hour + 15*time.Minute
+
+
 	stateAcceptDescriptor    = "accept_desc"
 	stateAcceptVote          = "accept_vote"
 	stateAcceptReveal        = "accept_reveal"
@@ -68,6 +69,7 @@ const (
 var (
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
+	mixPublishDeadline, authorityVoteDeadline, authorityRevealDeadline, publishConsensusDeadline time.Duration
 )
 
 type descriptor struct {
@@ -1263,7 +1265,8 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	const generationDeadline = 45 * time.Minute
+	//const generationDeadline = 45 * time.Minute
+	var generationDeadline = 7*epochtime.Period/8
 
 	s.RLock()
 	defer s.RUnlock()
@@ -1416,9 +1419,19 @@ func newState(s *Server) (*state, error) {
 	st := new(state)
 	st.s = s
 	st.log = s.logBackend.GetLogger("state")
-	st.updateCh = make(chan interface{}, 1) // Buffered!
+
+	// set voting schedule at runtime
+	mixPublishDeadline       = epochtime.Period / 2
+	authorityVoteDeadline    = mixPublishDeadline + epochtime.Period/8
+	authorityRevealDeadline  = authorityVoteDeadline + epochtime.Period/8
+	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
+
+	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
+	st.log.Debugf("State initialized with mixPublishDeadline: %s", mixPublishDeadline)
+	st.log.Debugf("State initialized with authorityVoteDeadline: %s", authorityVoteDeadline)
+	st.log.Debugf("State initialized with authorityRevealDeadline: %s", authorityRevealDeadline)
+	st.log.Debugf("State initialized with publishConsensusDeadline: %s", publishConsensusDeadline)
 	st.threshold = len(st.s.cfg.Authorities)/2 + 1
-	// how many invalid signatures from other peers before breaking consensus
 	st.dissenters = len(st.s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
