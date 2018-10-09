@@ -169,6 +169,7 @@ func (s *state) fsm() <-chan time.Time {
 	switch {
 	case s.state == stateBootstrap:
 		// Try to fetch prior consensus if there are not any locally
+		s.log.Debugf("Bootstrapping for %d", s.bootstrapEpoch)
 		s.backgroundFetchConsensus(s.votingEpoch - 1)
 		s.backgroundFetchConsensus(s.votingEpoch)
 		s.state = stateAcceptDescriptor
@@ -176,6 +177,7 @@ func (s *state) fsm() <-chan time.Time {
 		// If we are late to the party and consensus was made for this epoch without us
 		// skip to stateConsensed and wait for the next epoch
 		if s.hasConsensus(s.votingEpoch) {
+			s.log.Debugf("Already have a consensus for this epoch %v", s.votingEpoch)
 			s.state = stateConsensed
 			s.votingEpoch = s.votingEpoch + 1
 			break
@@ -262,6 +264,7 @@ func (s *state) combine(epoch uint64) {
 		if err != nil {
 			s.log.Errorf("While combining signatures, AddSignature failed with: %v", err)
 		} else {
+			s.log.Debugf("Document signed by %s", ed)
 			doc.raw = signed
 		}
 	}
@@ -681,7 +684,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		// The votes have already been validated.
 
 		if _, ok := s.reveals[epoch][pk]; !ok {
-			s.log.Errorf("Skipping vote from Authority %v who failed to reveal", pk)
+			s.log.Errorf("Skipping vote from Authority %s who failed to reveal", pk)
 			continue
 		}
 
@@ -870,6 +873,10 @@ func (s *state) tabulate(epoch uint64) {
 
 	// Serialize and sign the Document.
 	signed, err := s11n.SignDocument(s.s.identityKey, doc)
+	if err != nil {
+		s.log.Debugf("SignDocument failed with err: %v", err)
+		return
+	}
 
 	// Ensure the document is sane.
 	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
@@ -991,7 +998,7 @@ func (s *state) generateRandomTopology(nodes []*descriptor, srv []byte) [][][]by
 
 	if len(srv) != 32 {
 		err := errors.New("SharedRandomValue too short")
-		s.log.Errorf("srv: %v", srv)
+		s.log.Errorf("srv: %s", srv)
 		s.s.fatalErrCh <- err
 	}
 	rng, err := NewDeterministicRandReader(srv[:])
@@ -1187,6 +1194,10 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 				return &resp
 			}
 			s.log.Debugf("Signature OK.")
+			if signed, err := cert.GetCertified(vote.Payload); err == nil {
+				s.log.Debugf("Got signature for document: %s", signed)
+				s.log.Debugf("sha256(certified): %v", sha3.Sum256(signed))
+			}
 			s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = sig
 			resp.ErrorCode = commands.VoteOk
 			return &resp
