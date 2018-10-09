@@ -344,7 +344,7 @@ Appendix A.1 Normative References
 
 .. [NOISEHFS] Weatherley, R., "Noise Extension: Hybrid Forward Secrecy",
               1draft-5, June 2017,
-              <https://github.com/noiseprotocol/noise_spec/blob/master/extensions/ext_hybrid_forward_secrecy.md>
+              <https://github.com/noiseprotocol/noise_spec/blob/41d478d3dd97d77a6695f4d6cf6283e2830e9ca6/extensions/ext_hybrid_forward_secrecy.md>
 
 Appendix A.2 Informative References
 -----------------------------------
