@@ -35,7 +35,6 @@ import (
 const (
 	nodeDescriptorVersion = "voting-v0"
 	// XXX: How many epochs should this be?
-	CertificateExpiration = epochtime.Period * 3
 )
 
 type nodeDescriptor struct {
@@ -62,7 +61,7 @@ func SignDescriptor(signer cert.Signer, base *pki.MixDescriptor) ([]byte, error)
 	}
 
 	// Sign the descriptor.
-	expiration := time.Now().Add(CertificateExpiration).Unix()
+	expiration := time.Now().Add(3*epochtime.Period).Unix()
 	signed, err := cert.Sign(signer, payload, expiration)
 	if err != nil {
 		return nil, err

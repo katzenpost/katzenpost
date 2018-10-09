@@ -24,6 +24,7 @@ import (
 
 	// XXX "github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
 )
@@ -99,7 +100,7 @@ func SignDocument(signer cert.Signer, d *Document) ([]byte, error) {
 	}
 
 	// Sign the document.
-	expiration := time.Now().Add(CertificateExpiration).Unix()
+	expiration := time.Now().Add(3*epochtime.Period).Unix()
 	return cert.Sign(signer, payload, expiration)
 }
 
@@ -115,7 +116,7 @@ func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, ver
 	}
 
 	// Sign the document.
-	expiration := time.Now().Add(CertificateExpiration).Unix()
+	expiration := time.Now().Add(3*epochtime.Period).Unix()
 	signed, err := cert.Sign(signer, payload, expiration)
 	if err != nil {
 		return nil, err
