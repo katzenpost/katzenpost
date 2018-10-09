@@ -243,7 +243,7 @@ func (s *state) doBootstrap() bool {
 
 	// If we are doing a bootstrap, and we don't have a document, attempt
 	// to generate one for the current epoch regardless of the time.
-	if epoch == s.bootstrapEpoch && !s.hasConsensus(epoch) {
+	if epoch <= s.bootstrapEpoch && !s.hasConsensus(s.votingEpoch) {
 		return true
 	}
 	return false
@@ -1480,9 +1480,12 @@ func newState(s *Server) (*state, error) {
 	//  * (Checked in worker) *All* nodes publish a descriptor.
 	//
 	// This could be relaxed a bit, but it's primarily intended for debugging.
-	epoch, _, _ := epochtime.Now()
+	epoch, _, till := epochtime.Now()
+	if (till < 1 * time.Minute) {
+		epoch++
+	}
 	if _, ok := st.documents[epoch]; !ok {
-		st.bootstrapEpoch = epoch
+		st.bootstrapEpoch = epoch + 1
 		st.votingEpoch = epoch
 		st.state = stateBootstrap
 	}
