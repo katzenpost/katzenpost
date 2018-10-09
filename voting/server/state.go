@@ -102,7 +102,6 @@ type state struct {
 	signatures  map[uint64]map[[eddsa.PublicKeySize]byte]*cert.Signature
 
 	updateCh       chan interface{}
-	bootstrapEpoch uint64
 
 	votingEpoch uint64
 	threshold   int
@@ -160,7 +159,6 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			s.votingEpoch = epoch
 		}
-
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
 			return time.After(10 * time.Second)
