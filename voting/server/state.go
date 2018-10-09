@@ -202,6 +202,7 @@ func (s *state) fsm() {
 	case s.state == stateAcceptVote:
 		s.reveal(s.votingEpoch)
 		s.state = stateAcceptReveal
+		break
 	case s.state == stateAcceptReveal:
 		// we have collect all of the reveal values
 		// now we compute the shared random value
@@ -211,6 +212,7 @@ func (s *state) fsm() {
 			s.tabulate(s.votingEpoch)
 		}
 		s.state = stateAcceptSignature
+		break
 	case s.state == stateAcceptSignature:
 		s.state = stateConsensusFailed
 		if !s.hasConsensus(s.votingEpoch) {
@@ -232,6 +234,7 @@ func (s *state) fsm() {
 				}
 			}
 		}
+		break
 	default:
 		s.state = stateAcceptDescriptor
 	}
