@@ -133,47 +133,39 @@ func (s *state) worker() {
 		case <-s.HaltCh():
 			s.log.Debugf("authority: Terminating gracefully.")
 			return
-		case <-s.fsmWakeup():
+		case <-s.fsm():
 			s.log.Debugf("authority: Wakeup due to voting schedule.")
 		}
-		s.fsm()
 	}
 }
 
-func (s *state) fsmWakeup() <-chan time.Time {
-	s.Lock()
-	defer s.Unlock()
-
-	_, elapsed, nextEpoch := epochtime.Now()
-	// if we're bootstrapping, hurry things up
-	if s.doBootstrap() {
-		s.log.Debugf("authority: Bootstrapping, hurrying things up...")
-		return time.After(10 * time.Second)
-	}
-
+func (s *state) whenLater() (later time.Duration) {
+	// lock already held
+	epoch, elapsed, nextEpoch := epochtime.Now()
+	s.log.Debugf("epoch: %d, voting on: %d, elapsed: %d, nextEpoch: %d", epoch, s.votingEpoch, elapsed, nextEpoch)
 	switch {
-	case s.state == stateConsensed:
-		s.log.Debugf("authority: Consensus reached, next wakeup at %s", nextEpoch)
-		return time.After(nextEpoch)
-	case s.state == stateConsensusFailed:
-		s.log.Debugf("authority: Consensus failed, next wakeup at %s", nextEpoch)
-		return time.After(nextEpoch)
+	case s.doBootstrap():
+		later = 10 * time.Second
 	case s.state == stateAcceptDescriptor:
-		return time.After(mixPublishDeadline - elapsed)
+		later = mixPublishDeadline - elapsed
 	case s.state == stateAcceptVote:
-		return time.After(authorityVoteDeadline - elapsed)
+		later = authorityVoteDeadline - elapsed
 	case s.state == stateAcceptReveal:
-		return time.After(authorityRevealDeadline - elapsed)
+		later = authorityRevealDeadline - elapsed
 	case s.state == stateAcceptSignature:
 		return time.After(publishConsensusDeadline - elapsed)
 	default:
 		return time.After(nextEpoch)
 	}
+
+	return
 }
 
-func (s *state) fsm() {
+func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	defer s.Unlock()
+	later := s.whenLater()
+
 	switch {
 	case s.state == stateBootstrap:
 		// Try to fetch prior consensus if there are not any locally
@@ -238,8 +230,9 @@ func (s *state) fsm() {
 	default:
 		s.state = stateAcceptDescriptor
 	}
-	s.log.Debugf("authority: FSM in state %v", s.state)
+	s.log.Debugf("authority: FSM in state %v until %s", s.state, later)
 	s.pruneDocuments()
+	return time.After(later)
 }
 
 func (s *state) doBootstrap() bool {
