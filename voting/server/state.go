@@ -139,65 +139,43 @@ func (s *state) worker() {
 	}
 }
 
-func (s *state) whenLater() (later time.Duration) {
-	// lock already held
-	epoch, elapsed, nextEpoch := epochtime.Now()
-	s.log.Debugf("epoch: %d, voting on: %d, elapsed: %d, nextEpoch: %d", epoch, s.votingEpoch, elapsed, nextEpoch)
-	switch {
-	case s.doBootstrap():
-		later = 10 * time.Second
-	case s.state == stateAcceptDescriptor:
-		later = mixPublishDeadline - elapsed
-	case s.state == stateAcceptVote:
-		later = authorityVoteDeadline - elapsed
-	case s.state == stateAcceptReveal:
-		later = authorityRevealDeadline - elapsed
-	case s.state == stateAcceptSignature:
-		return time.After(publishConsensusDeadline - elapsed)
-	default:
-		return time.After(nextEpoch)
-	}
-
-	return
-}
-
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	defer s.Unlock()
-	later := s.whenLater()
+	var sleep time.Duration
+	epoch, elapsed, nextEpoch := epochtime.Now()
+	s.log.Debugf("Current epoch %d", epoch)
 
-	switch {
-	case s.state == stateBootstrap:
-		// Try to fetch prior consensus if there are not any locally
-		s.log.Debugf("Bootstrapping for %d", s.bootstrapEpoch)
-		s.backgroundFetchConsensus(s.votingEpoch - 1)
-		s.backgroundFetchConsensus(s.votingEpoch)
+	switch s.state {
+	case stateBootstrap:
+		s.log.Debugf("Bootstrapping for %d", epoch)
+		s.backgroundFetchConsensus(epoch - 1)
+		s.backgroundFetchConsensus(epoch)
 		s.state = stateAcceptDescriptor
-	case s.state == stateAcceptDescriptor:
-		// If we are late to the party and consensus was made for this epoch without us
-		// skip to stateConsensed and wait for the next epoch
-		if s.hasConsensus(s.votingEpoch) {
-			s.log.Debugf("Already have a consensus for this epoch %v", s.votingEpoch)
-			s.state = stateConsensed
-			s.votingEpoch = s.votingEpoch + 1
-			break
+		sleep = mixPublishDeadline - elapsed
+	case stateAcceptDescriptor:
+		if s.hasConsensus(epoch) {
+			// we have a current consensus, we should be voting on the next epoch
+			s.votingEpoch = epoch + 1
+		} else {
+			s.votingEpoch = epoch
 		}
 
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
-			s.log.Debugf("Not voting because insufficient descriptors uploaded!")
-			break
-		} else {
-			if !s.voted(s.votingEpoch) {
-				s.log.Debugf("Voting for epoch %v", s.votingEpoch)
-				s.vote(s.votingEpoch)
-			}
+			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
+			return time.After(10 * time.Second)
 		}
-		s.state = stateAcceptVote
-	case s.state == stateAcceptVote:
+		if !s.voted(s.votingEpoch) {
+			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
+			s.vote(s.votingEpoch)
+			s.state = stateAcceptVote
+			sleep = authorityVoteDeadline - elapsed
+		}
+	case stateAcceptVote:
 		s.reveal(s.votingEpoch)
 		s.state = stateAcceptReveal
-		break
-	case s.state == stateAcceptReveal:
+		sleep = authorityRevealDeadline - elapsed
+	case stateAcceptReveal:
 		// we have collect all of the reveal values
 		// now we compute the shared random value
 		// and produce a consensus from votes
@@ -206,47 +184,24 @@ func (s *state) fsm() <-chan time.Time {
 			s.tabulate(s.votingEpoch)
 		}
 		s.state = stateAcceptSignature
-		break
-	case s.state == stateAcceptSignature:
-		s.state = stateConsensusFailed
-		if !s.hasConsensus(s.votingEpoch) {
-			s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
-			s.combine(s.votingEpoch)
-			if s.hasConsensus(s.votingEpoch) {
-				s.state = stateConsensed
-				s.votingEpoch = s.votingEpoch + 1
-				s.log.Debugf("Updated votingEpoch to %v", s.votingEpoch)
-			} else {
-				// Failed to make consensus while bootstrapping, try try again.
-				s.log.Debugf("Bootstrapping consensus failed for epoch %v, trying again", s.votingEpoch)
-				if s.doBootstrap() {
-					delete(s.documents, s.votingEpoch)
-					delete(s.reveals, s.votingEpoch)
-					delete(s.descriptors, s.votingEpoch)
-					delete(s.votes, s.votingEpoch)
-					delete(s.descriptors, s.votingEpoch)
-				}
-			}
+		sleep = publishConsensusDeadline - elapsed
+	case stateAcceptSignature:
+		s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
+		s.combine(s.votingEpoch)
+		s.state = stateBootstrap
+		if s.hasConsensus(s.votingEpoch) {
+			s.state = stateAcceptDescriptor
 		}
-		break
+		s.votingEpoch = epoch + 1
+		sleep = nextEpoch + mixPublishDeadline
 	default:
-		s.state = stateAcceptDescriptor
 	}
-	s.log.Debugf("authority: FSM in state %v until %s", s.state, later)
 	s.pruneDocuments()
-	return time.After(later)
-}
-
-func (s *state) doBootstrap() bool {
-	// lock must already be held!
-	epoch, _, _ := epochtime.Now()
-
-	// If we are doing a bootstrap, and we don't have a document, attempt
-	// to generate one for the current epoch regardless of the time.
-	if epoch <= s.bootstrapEpoch && !s.hasConsensus(s.votingEpoch) {
-		return true
+	if s.votingEpoch == epoch {
+		sleep = 10 * time.Second
 	}
-	return false
+	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
+	return time.After(sleep)
 }
 
 func (s *state) combine(epoch uint64) {
@@ -274,21 +229,6 @@ func (s *state) combine(epoch uint64) {
 			s.log.Debugf("Document signed by %s", ed)
 			doc.raw = signed
 		}
-	}
-
-	if !s.hasConsensus(epoch) {
-		s.log.Debugf("No consensus for epoch %v", epoch)
-		// if we're bootstrapping, clear state and try try again
-		// this is helpful because authorities probably will
-		// not startup within the state-transition time
-		if epoch == s.bootstrapEpoch {
-			delete(s.documents, epoch)
-			delete(s.signatures, epoch)
-			delete(s.votes, epoch)
-		}
-	} else {
-		s.log.Debugf("Consensus made for epoch %v", epoch)
-		// XXX: save consensus to disk!
 	}
 }
 
@@ -1193,7 +1133,6 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
-			// this was already verified by s11n.VerifyAndParseDocument(...)
 			// but we want to extract the signature from the payload
 			sig, err := cert.GetSignature(vote.PublicKey.Identity(), vote.Payload)
 			if err != nil {
@@ -1296,7 +1235,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		// Check to see if we are doing a bootstrap, and it's possible that
 		// we may decide to publish a document at some point ignoring the
 		// standard schedule.
-		if now == s.bootstrapEpoch {
+		if now == s.votingEpoch {
 			return nil, errNotYet
 		}
 
@@ -1493,7 +1432,6 @@ func newState(s *Server) (*state, error) {
 		epoch++
 	}
 	if _, ok := st.documents[epoch]; !ok {
-		st.bootstrapEpoch = epoch + 1
 		st.votingEpoch = epoch
 		st.state = stateBootstrap
 	}
