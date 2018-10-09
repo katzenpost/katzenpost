@@ -419,7 +419,7 @@ func (s *SharedRandom) Reveal() []byte {
 
 func (s *state) reveal(epoch uint64) {
 	if reveal, ok := s.reveals[epoch][s.identityPubKey()]; ok {
-		go s.sendRevealToAuthorities(reveal)
+		go s.sendRevealToAuthorities(reveal, epoch)
 	}
 }
 
@@ -518,7 +518,7 @@ func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor
 	return nrProviders > 0 && nrNodes >= minNodes
 }
 
-func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte) error {
+func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoch uint64) error {
 	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
 	if err != nil {
 		return err
@@ -544,7 +544,7 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte) erro
 	var digest [32]byte
 	copy(digest[:], reveal[8:])
 	cmd := &commands.Reveal{
-		Epoch:     s.votingEpoch,
+		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
 		Digest:    digest,
 	}
@@ -601,7 +601,6 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 	if err = session.Initialize(conn); err != nil {
 		return err
 	}
-	// should not need s.votingEpoch
 	cmd := &commands.Vote{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
@@ -647,14 +646,11 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // sendRevealToAuthorities sends a Shared Random Reveal command to
 // all Directory Authorities
-func (s *state) sendRevealToAuthorities(reveal []byte) {
-	s.log.Noticef("Sending Shared Random Reveal for epoch %v, to all Directory Authorities.", s.votingEpoch)
+func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
+	s.log.Noticef("Sending Shared Random Reveal for epoch %v, to all Directory Authorities.", epoch)
 
 	for _, peer := range s.s.cfg.Authorities {
-		err := s.sendRevealToPeer(peer, reveal)
-		if err != nil {
-			s.log.Error("failed to send reveal to peer %v", peer)
-		}
+		go s.sendRevealToPeer(peer, reveal, epoch)
 	}
 
 }
