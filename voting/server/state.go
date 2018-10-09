@@ -851,9 +851,7 @@ func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 	} else {
 		srv.Write(zeros)
 	}
-	digest := make([]byte, 32)
-	srv.Sum(digest)
-	return digest, nil
+	return srv.Sum(nil), nil
 }
 
 func (s *state) tabulate(epoch uint64) {
