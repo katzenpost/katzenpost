@@ -253,16 +253,23 @@ func (s *state) combine(epoch uint64) {
 	// count up the signatures we've got
 	doc, ok := s.documents[epoch]
 	if !ok {
-		// consensus failed
-		s.log.Debugf("What, no preconsensus yet??")
+		s.log.Debugf("cannot combine signatures, we have no view of consensus")
 		return
 	}
+	certified, err := cert.GetCertified(doc.raw)
+	if err != nil {
+		s.log.Debugf("GetCertified failed to verify our own document")
+		return
+	}
+
 	for pk, sig := range s.signatures[epoch] {
 		ed := new(eddsa.PublicKey)
 		ed.FromBytes(pk[:])
 		signed, err := cert.AddSignature(ed, *sig, doc.raw)
 		if err != nil {
 			s.log.Errorf("While combining signatures, AddSignature failed with: %v", err)
+			s.log.Errorf("Document that failed to sign is: %s", certified)
+			s.log.Debugf("sha256(certified): %v", sha3.Sum256(certified))
 		} else {
 			s.log.Debugf("Document signed by %s", ed)
 			doc.raw = signed
@@ -889,7 +896,10 @@ func (s *state) tabulate(epoch uint64) {
 	// save the document
 	d := &document{doc: pDoc, raw: []byte(signed)}
 	if _, ok := s.documents[epoch]; !ok {
-		s.log.Debugf("Document for epoch %v saved!", epoch)
+		if raw, err := cert.GetCertified(d.raw); err == nil {
+			s.log.Debugf("Document for epoch %v saved: %s", epoch, raw)
+			s.log.Debugf("sha256(certified): %v", sha3.Sum256(raw))
+		}
 		s.documents[epoch] = d
 	}
 
