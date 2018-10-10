@@ -326,7 +326,10 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		c.log.Notice("OK, received fully signed consensus document.")
 	}
 	doc, _, err = s11n.VerifyAndParseDocument(r.Payload, c.cfg.Authorities[0].IdentityPublicKey)
-
+	if err != nil {
+		// XXX: somehow this returned a nil doc!
+		return nil, nil, err
+	}
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
