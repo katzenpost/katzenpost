@@ -153,19 +153,12 @@ func (s *state) fsm() <-chan time.Time {
 		s.state = stateAcceptDescriptor
 		sleep = mixPublishDeadline - elapsed
 	case stateAcceptDescriptor:
-		if s.hasConsensus(epoch) {
-			// we have a current consensus, we should be voting on the next epoch
-			s.votingEpoch = epoch + 1
-		} else {
-			s.votingEpoch = epoch
-		}
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
-			// don't get stuck waiting forever!
-			if s.votingEpoch < epoch {
-				s.votingEpoch = epoch
-			}
-			return time.After(10 * time.Second)
+			sleep = nextEpoch
+			s.votingEpoch = epoch + 2 // wait until next epoch begins and bootstrap
+			s.state = stateBootstrap
+			break
 		}
 		if !s.voted(s.votingEpoch) {
 			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
@@ -190,16 +183,28 @@ func (s *state) fsm() <-chan time.Time {
 	case stateAcceptSignature:
 		s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
 		s.combine(s.votingEpoch)
-		s.state = stateBootstrap
 		if s.hasConsensus(s.votingEpoch) {
 			s.state = stateAcceptDescriptor
+			if s.votingEpoch == epoch {
+				// either we bootstrapped before the publish deadline
+				// or we default to 30 seconds
+				sleep = mixPublishDeadline - elapsed
+			} else {
+				sleep = mixPublishDeadline + nextEpoch
+			}
+			s.votingEpoch++
+		} else {
+			// failed to make consensus. try to join next round.
+			delete(s.documents, s.votingEpoch) // failure, don't keep this!
+			s.state = stateBootstrap
+			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
+			sleep = nextEpoch
 		}
-		sleep = nextEpoch + mixPublishDeadline
 	default:
 	}
 	s.pruneDocuments()
-	if s.votingEpoch == epoch {
-		sleep = 10 * time.Second
+	if s.votingEpoch == epoch || sleep < 0{
+		sleep = 30 * time.Second
 	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	return time.After(sleep)
