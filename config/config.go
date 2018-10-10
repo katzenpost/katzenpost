@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/authority/voting/server/config"
@@ -59,6 +60,7 @@ const (
 	defaultUserDB              = "users.db"
 	defaultSpoolDB             = "spool.db"
 	defaultManagementSocket    = "management_sock"
+	defaultEpochPeriod         = 3 * time.Hour
 
 	backendPgx = "pgx"
 
@@ -656,6 +658,7 @@ type PKI struct {
 	// Nonvoting is a non-voting directory authority.
 	Nonvoting *Nonvoting
 	Voting    *Voting
+	EpochPeriod time.Duration
 }
 
 func (pCfg *PKI) validate() error {
@@ -677,7 +680,16 @@ func (pCfg *PKI) validate() error {
 	if nrCfg != 1 {
 		return fmt.Errorf("config: Only one authority backend should be configured, got: %v", nrCfg)
 	}
+	if pCfg.EpochPeriod > defaultEpochPeriod {
+		return fmt.Errorf("config: EpochPeriod %v is greater than maximum permitted", pCfg.EpochPeriod)
+	}
 	return nil
+}
+
+func (pCfg *PKI) applyDefaults() {
+	if pCfg.EpochPeriod == 0 {
+		pCfg.EpochPeriod = time.Hour * 3
+	}
 }
 
 // Nonvoting is a non-voting directory authority.
@@ -828,6 +840,7 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.PKI.validate(); err != nil {
 		return err
 	}
+	cfg.PKI.applyDefaults()
 	if cfg.Server.IsProvider {
 		if cfg.Provider == nil {
 			cfg.Provider = &Provider{}

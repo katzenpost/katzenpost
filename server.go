@@ -23,11 +23,13 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"git.schwanenlied.me/yawning/aez.git"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
@@ -273,6 +275,9 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
+
+	// Set the Epoch Period from the configuration file.
+	epochtime.Period = cfg.PKI.EpochPeriod * time.Second
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
