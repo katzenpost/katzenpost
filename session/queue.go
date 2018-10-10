@@ -67,7 +67,7 @@ func (q *Queue) Push(e *MessageRef) error {
 // upon success, otherwise an error is returned.
 func (q *Queue) Pop() (*MessageRef, error) {
 	if q.len <= 0 {
-		return nil, QueueEmptyError
+		return nil, ErrQueueEmpty
 	}
 	result := q.content[q.readHead]
 	q.content[q.readHead] = MessageRef{}
@@ -80,7 +80,7 @@ func (q *Queue) Pop() (*MessageRef, error) {
 // modifying the queue.
 func (q *Queue) Peek() (*MessageRef, error) {
 	if q.len <= 0 {
-		return nil, QueueEmptyError
+		return nil, ErrQueueEmpty
 	}
 	result := q.content[q.readHead]
 	return &result, nil
