@@ -161,6 +161,10 @@ func (s *state) fsm() <-chan time.Time {
 		}
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
+			// don't get stuck waiting forever!
+			if s.votingEpoch < epoch {
+				s.votingEpoch = epoch
+			}
 			return time.After(10 * time.Second)
 		}
 		if !s.voted(s.votingEpoch) {
