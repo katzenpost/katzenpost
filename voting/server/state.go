@@ -1001,7 +1001,7 @@ func (s *state) pruneDocuments() {
 	}
 	for e := range s.signatures {
 		if e < cmpEpoch {
-			delete(s.descriptors, e)
+			delete(s.signatures, e)
 		}
 	}
 }
