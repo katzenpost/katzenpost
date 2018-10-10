@@ -1080,7 +1080,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	r := make([]byte, 0)
 	r = append(r, epochToBytes(s.votingEpoch)...)
 	r = append(r, reveal.Digest[:]...)
-	s.log.Errorf("Received Reveal for epoch %d from: %s : %v", reveal.Epoch, reveal.PublicKey, reveal.Digest)
+	s.log.Debug("Reveal OK.")
 	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = r
 	resp.ErrorCode = commands.RevealOk
 	return &resp
