@@ -1040,7 +1040,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 	if reveal.Epoch > s.votingEpoch {
-		s.log.Errorf("Received Vote too late: %d > %d", reveal.Epoch, s.votingEpoch)
+		s.log.Errorf("Received Reveal too late: %d > %d", reveal.Epoch, s.votingEpoch)
 		resp.ErrorCode = commands.RevealTooLate
 		return &resp
 	}
