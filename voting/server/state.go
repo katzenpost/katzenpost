@@ -700,7 +700,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	}
 	// include mixes that have a threshold of votes
 	for rawDesc, votes := range mixTally {
-		if len(votes) > s.threshold {
+		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
 			verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
 			if err != nil {
@@ -715,7 +715,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	}
 	// include parameters that have a threshold of votes
 	for bs, votes := range mixParams {
-		if len(votes) > s.threshold {
+		if len(votes) >= s.threshold {
 			params := &config.Parameters{}
 			d := gob.NewDecoder(strings.NewReader(bs))
 			if err := d.Decode(params); err == nil {
@@ -1385,7 +1385,7 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with authorityVoteDeadline: %s", authorityVoteDeadline)
 	st.log.Debugf("State initialized with authorityRevealDeadline: %s", authorityRevealDeadline)
 	st.log.Debugf("State initialized with publishConsensusDeadline: %s", publishConsensusDeadline)
-	st.threshold = len(st.s.cfg.Authorities)/2 + 1
+	st.threshold = len(st.s.cfg.Authorities)/2
 	st.dissenters = len(st.s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
