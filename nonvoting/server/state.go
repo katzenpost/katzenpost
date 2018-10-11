@@ -541,7 +541,13 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
-					desc, err := s11n.VerifyAndParseDescriptor(rawDesc, epoch)
+					verifier := new(eddsa.PublicKey)
+					err := verifier.FromBytes(pk)
+					if err != nil {
+						s.log.Errorf("Failed to load verifier key: %v", err)
+						continue
+					}
+					desc, err := s11n.VerifyAndParseDescriptor(verifier, rawDesc, epoch)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
