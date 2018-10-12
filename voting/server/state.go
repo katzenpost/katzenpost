@@ -1299,10 +1299,13 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
-					if doc, _, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey()); err != nil {
-						// This continues because there's no reason not to load
-						// the descriptors as long as they validate, even if
-						// the document fails to load.
+					certified, good, bad, err := cert.VerifyThreshold(s.verifiers, s.threshold, rawDoc)
+					if err != nil {
+						s.log.Errorf("Failed to verify threshold on restored document")
+						break
+					}
+					doc, _, err := s11n.VerifyAndParseDocument(rawDoc, good[0])
+					if err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
 						// The document for the wrong epoch was persisted?
