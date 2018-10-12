@@ -104,6 +104,7 @@ type state struct {
 	updateCh       chan interface{}
 
 	votingEpoch uint64
+	verifiers   []*cert.Verifier
 	threshold   int
 	dissenters  int
 	state       string
@@ -854,12 +855,7 @@ func (s *state) hasConsensus(epoch uint64) bool {
 	if !ok {
 		return false
 	}
-	verifiers := make([]cert.Verifier, len(s.s.cfg.Authorities))
-	for i, auth := range s.s.cfg.Authorities {
-		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
-	}
-	verifiers = append(verifiers, cert.Verifier(s.s.IdentityKey()))
-	_, good, bad, err := cert.VerifyThreshold(verifiers, s.threshold, doc.raw)
+	_, good, bad, err := cert.VerifyThreshold(s.verifiers, s.threshold, doc.raw)
 	s.log.Debug("VerifyThreshold: signed by %d, and %d failures", len(good), len(bad))
 	if err != nil {
 		return false
@@ -1390,6 +1386,11 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with authorityVoteDeadline: %s", authorityVoteDeadline)
 	st.log.Debugf("State initialized with authorityRevealDeadline: %s", authorityRevealDeadline)
 	st.log.Debugf("State initialized with publishConsensusDeadline: %s", publishConsensusDeadline)
+	st.verifiers = make([]cert.Verifier, len(s.s.cfg.Authorities)+1)
+	for i, auth := range s.s.cfg.Authorities {
+		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+	}
+	st.verifiers[len(s.s.cfg.Authorities)] = cert.Verifier(s.s.IdentityKey())
 	st.threshold = len(st.s.cfg.Authorities)/2
 	st.dissenters = len(st.s.cfg.Authorities)/2 - 1
 
