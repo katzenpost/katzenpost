@@ -46,6 +46,10 @@ const (
 	voteOverhead     = 8 + eddsa.PublicKeySize
 	voteStatusLength = 1
 
+	digestLength       = 32
+	revealOverhead     = 8 + eddsa.PublicKeySize + digestLength
+	revealStatusLength = 1
+
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
 	messageTypeEmpty   messageType = 2
@@ -65,6 +69,8 @@ const (
 	vote                 commandID = 22
 	voteStatus           commandID = 23
 	getVote              commandID = 24
+	reveal               commandID = 25
+	revealStatus         commandID = 26
 
 	// ConsensusOk signifies that the GetConsensus request has completed
 	// successfully.
@@ -120,6 +126,21 @@ const (
 
 	// VoteNotFound signifies that the vote was not found.
 	VoteNotFound = 7
+
+	// RevealOk signifies that the reveal was accepted by the peer.
+	RevealOk = 8
+
+	// RevealTooEarly signifies that the peer breaking protocol. XXX: should drop?
+	RevealTooEarly = 9
+
+	// RevealNotAuthorized signifies that the revealing entity's key is not white-listed.
+	RevealNotAuthorized = 10
+
+	// RevealAlreadyReceived signifies that the reveal from that peer was already received.
+	RevealAlreadyReceived = 11
+
+	// RevealTooLate signifies that the reveal from that peer arrived too late.
+	RevealTooLate = 12
 )
 
 var errInvalidCommand = errors.New("wire: invalid wire protocol command")
@@ -279,6 +300,65 @@ func (c *PostDescriptorStatus) ToBytes() []byte {
 	out[0] = byte(postDescriptorStatus)
 	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
 	out[6] = c.ErrorCode
+	return out
+}
+
+// Reveal is a de-serialized reveal command exchanged by authorities.
+type Reveal struct {
+	Epoch     uint64
+	PublicKey *eddsa.PublicKey
+	Digest    [32]byte
+}
+
+// ToBytes serializes the Reveal and returns the resulting byte slice.
+func (r *Reveal) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+revealOverhead)
+	out[0] = byte(reveal)
+	// out[1] reserved
+	binary.BigEndian.PutUint32(out[2:6], uint32(revealOverhead))
+	binary.BigEndian.PutUint64(out[6:14], r.Epoch)
+	copy(out[14:14+eddsa.PublicKeySize], r.PublicKey.Bytes())
+	copy(out[14+eddsa.PublicKeySize:], r.Digest[:])
+	return out
+}
+
+func revealFromBytes(b []byte) (Command, error) {
+	if len(b) < revealOverhead {
+		return nil, errors.New(" wtf: errInvalidCommand")
+	}
+
+	r := new(Reveal)
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	r.PublicKey = new(eddsa.PublicKey)
+	err := r.PublicKey.FromBytes(b[8:40])
+	if err != nil {
+		return nil, err
+	}
+	copy(r.Digest[:], b[40:])
+	return r, nil
+}
+
+// RevealStatus is a de-serialized revealStatus command.
+type RevealStatus struct {
+	ErrorCode uint8
+}
+
+func revealStatusFromBytes(b []byte) (Command, error) {
+	if len(b) != revealStatusLength {
+		return nil, errors.New(" wtf: errInvalidCommand")
+	}
+
+	r := new(RevealStatus)
+	r.ErrorCode = b[0]
+	return r, nil
+}
+
+// ToBytes serializes the RevealStatus and returns the resulting byte slice.
+func (r *RevealStatus) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+revealStatusLength)
+	out[0] = byte(revealStatus)
+	binary.BigEndian.PutUint32(out[2:6], revealStatusLength)
+	out[6] = r.ErrorCode
 	return out
 }
 
@@ -579,6 +659,10 @@ func FromBytes(b []byte) (Command, error) {
 		return voteFromBytes(b)
 	case voteStatus:
 		return voteStatusFromBytes(b)
+	case reveal:
+		return revealFromBytes(b)
+	case revealStatus:
+		return revealStatusFromBytes(b)
 	default:
 		return nil, errInvalidCommand
 	}
