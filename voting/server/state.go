@@ -141,7 +141,6 @@ func (s *state) worker() {
 
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
-	defer s.Unlock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
 	s.log.Debugf("Current epoch %d", epoch)
@@ -207,6 +206,7 @@ func (s *state) fsm() <-chan time.Time {
 		sleep = 30 * time.Second
 	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
+	s.Unlock()
 	return time.After(sleep)
 }
 
