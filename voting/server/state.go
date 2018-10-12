@@ -99,12 +99,12 @@ type state struct {
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
 	votes       map[uint64]map[[eddsa.PublicKeySize]byte]*document
 	reveals     map[uint64]map[[eddsa.PublicKeySize]byte][]byte
-	signatures  map[uint64]map[[eddsa.PublicKeySize]byte]*cert.Signature
+	certificates map[uint64]map[[eddsa.PublicKeySize]byte][]byte
 
 	updateCh       chan interface{}
 
 	votingEpoch uint64
-	verifiers   []*cert.Verifier
+	verifiers   []cert.Verifier
 	threshold   int
 	dissenters  int
 	state       string
@@ -183,8 +183,8 @@ func (s *state) fsm() <-chan time.Time {
 		sleep = publishConsensusDeadline - elapsed
 	case stateAcceptSignature:
 		s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
-		s.combine(s.votingEpoch)
-		if s.hasConsensus(s.votingEpoch) {
+		s.consense(s.votingEpoch)
+		if _, ok := s.documents[s.votingEpoch]; ok {
 			s.state = stateAcceptDescriptor
 			if s.votingEpoch == epoch {
 				// either we bootstrapped before the publish deadline
@@ -196,7 +196,6 @@ func (s *state) fsm() <-chan time.Time {
 			s.votingEpoch++
 		} else {
 			// failed to make consensus. try to join next round.
-			delete(s.documents, s.votingEpoch) // failure, don't keep this!
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
@@ -211,32 +210,40 @@ func (s *state) fsm() <-chan time.Time {
 	return time.After(sleep)
 }
 
-func (s *state) combine(epoch uint64) {
-	// count up the signatures we've got
-	doc, ok := s.documents[epoch]
+func (s *state) consense(epoch uint64) {
+	// if we have a document, see if the other signatures make a consensus
+	// if we do not make a consensus with our document iterate over the
+	// other documents and see if the signatures make a consensus
+
+	certificates, ok := s.certificates[epoch]
 	if !ok {
-		s.log.Debugf("cannot combine signatures, we have no view of consensus")
-		return
-	}
-	certified, err := cert.GetCertified(doc.raw)
-	if err != nil {
-		s.log.Debugf("GetCertified failed to verify our own document")
+		s.log.Errorf("No certificates for epoch %d", epoch)
 		return
 	}
 
-	for pk, sig := range s.signatures[epoch] {
-		ed := new(eddsa.PublicKey)
-		ed.FromBytes(pk[:])
-		signed, err := cert.AddSignature(ed, *sig, doc.raw)
-		if err != nil {
-			s.log.Errorf("While combining signatures, AddSignature failed with: %v", err)
-			s.log.Errorf("Document that failed to sign is: %s", certified)
-			s.log.Debugf("sha256(certified): %v", sha3.Sum256(certified))
-		} else {
-			s.log.Debugf("Document signed by %s", ed)
-			doc.raw = signed
+	for pk, c := range certificates {
+		for jk, d:= range certificates {
+			if pk == jk {
+				continue // skip adding own signature
+			}
+			kjk := new(eddsa.PublicKey)
+			kjk.FromBytes(jk[:])
+			if ds, err := cert.GetSignature(jk[:], d); err == nil {
+				if sc, err := cert.AddSignature(kjk, *ds, c); err == nil {
+					c = sc
+				}
+			}
+		}
+		if _, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, c); err == nil {
+			if pDoc, _, err := s11n.VerifyAndParseDocument(c, good[0]); err == nil {
+				s.documents[epoch] = &document{doc: pDoc, raw: c}
+				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
+				return
+			}
 		}
 	}
+	s.log.Errorf("No consensus found for epoch %d", epoch)
+	return
 }
 
 func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
@@ -995,9 +1002,9 @@ func (s *state) pruneDocuments() {
 			delete(s.votes, e)
 		}
 	}
-	for e := range s.signatures {
+	for e := range s.certificates {
 		if e < cmpEpoch {
-			delete(s.signatures, e)
+			delete(s.certificates, e)
 		}
 	}
 }
@@ -1019,7 +1026,7 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	}
 }
 func (s *state) dupSig(vote commands.Vote) bool {
-	if _, ok := s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()]; ok {
+	if _, ok := s.certificates[s.votingEpoch][vote.PublicKey.ByteArray()]; ok {
 		return true
 	}
 	return false
@@ -1122,8 +1129,8 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
 	// haven't received a signature yet for this epoch
-	if _, ok := s.signatures[s.votingEpoch]; !ok {
-		s.signatures[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*cert.Signature)
+	if _, ok := s.certificates[s.votingEpoch]; !ok {
+		s.certificates[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
 	}
 	// peer has not yet voted for this epoch
 	if !s.dupVote(*vote) {
@@ -1136,19 +1143,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
-			// but we want to extract the signature from the payload
-			sig, err := cert.GetSignature(vote.PublicKey.Identity(), vote.Payload)
-			if err != nil {
-				s.log.Errorf("onVoteUpload vote parse failure: %s", err)
-				resp.ErrorCode = commands.VoteNotSigned
-				return &resp
-			}
-			s.log.Debugf("Signature OK.")
-			if signed, err := cert.GetCertified(vote.Payload); err == nil {
-				s.log.Debugf("Got signature for document: %s", signed)
-				s.log.Debugf("sha256(certified): %v", sha3.Sum256(signed))
-			}
-			s.signatures[s.votingEpoch][vote.PublicKey.ByteArray()] = sig
+			s.certificates[s.votingEpoch][vote.PublicKey.ByteArray()] = vote.Payload
 			resp.ErrorCode = commands.VoteOk
 			return &resp
 		}
@@ -1299,10 +1294,10 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
-					certified, good, bad, err := cert.VerifyThreshold(s.verifiers, s.threshold, rawDoc)
+					_, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, rawDoc)
 					if err != nil {
 						s.log.Errorf("Failed to verify threshold on restored document")
-						break
+						break // or continue?
 					}
 					doc, _, err := s11n.VerifyAndParseDocument(rawDoc, good[0])
 					if err != nil {
@@ -1389,13 +1384,13 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with authorityVoteDeadline: %s", authorityVoteDeadline)
 	st.log.Debugf("State initialized with authorityRevealDeadline: %s", authorityRevealDeadline)
 	st.log.Debugf("State initialized with publishConsensusDeadline: %s", publishConsensusDeadline)
-	st.verifiers = make([]cert.Verifier, len(s.s.cfg.Authorities)+1)
-	for i, auth := range s.s.cfg.Authorities {
-		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+	st.verifiers = make([]cert.Verifier, len(s.cfg.Authorities)+1)
+	for i, auth := range s.cfg.Authorities {
+		st.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
 	}
-	st.verifiers[len(s.s.cfg.Authorities)] = cert.Verifier(s.s.IdentityKey())
-	st.threshold = len(st.s.cfg.Authorities)/2
-	st.dissenters = len(st.s.cfg.Authorities)/2 - 1
+	st.verifiers[len(s.cfg.Authorities)] = cert.Verifier(s.IdentityKey())
+	st.threshold = len(s.cfg.Authorities)/2
+	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
@@ -1417,7 +1412,7 @@ func newState(s *Server) (*state, error) {
 	st.documents = make(map[uint64]*document)
 	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
 	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
-	st.signatures = make(map[uint64]map[[eddsa.PublicKeySize]byte]*cert.Signature)
+	st.certificates = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
 	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
 
 	// Initialize the persistence store and restore state.
