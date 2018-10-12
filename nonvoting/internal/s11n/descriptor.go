@@ -34,6 +34,8 @@ import (
 
 const (
 	nodeDescriptorVersion = "nonvoting-v0"
+)
+var (
 	certificateExpiration = (epochtime.Period * 3) + (time.Minute * 10)
 )
 
