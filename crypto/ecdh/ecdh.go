@@ -153,7 +153,7 @@ func (k *PublicKey) FromPEMFile(f string) error {
 		return fmt.Errorf("ecdh: failed to decode PEM file %v", f)
 	}
 	if blk.Type != keyType {
-		return fmt.Errorf("ecdh: attempted to decode PEM file with wrong key type!")
+		return fmt.Errorf("ecdh: attempted to decode PEM file with wrong key type")
 	}
 	return k.FromBytes(blk.Bytes)
 }
