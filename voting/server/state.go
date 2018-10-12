@@ -1195,7 +1195,8 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	d.raw = rawDesc
 	m[pk] = d
 
-	s.log.Debugf("Node %v: Sucessfully submitted descriptor for epoch %v.", desc.IdentityKey, epoch)
+	id := base64.StdEncoding.EncodeToString(desc.IdentityKey.Bytes())
+	s.log.Debugf("Node %s: Sucessfully submitted descriptor for epoch %v.", id, epoch)
 	s.onUpdate()
 	return nil
 }
