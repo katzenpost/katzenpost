@@ -84,10 +84,10 @@ type Document struct {
 	// network.
 	Providers []*MixDescriptor
 
-	// The Shared Random Commit used by the voting process.
+	// SharedRandomCommit used by the voting process.
 	SharedRandomCommit []byte
 
-	// The Shared Random Value produced by voting process.
+	// SharedRandomValue produced by voting process.
 	SharedRandomValue []byte
 }
 
