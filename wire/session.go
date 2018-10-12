@@ -107,6 +107,8 @@ type PeerAuthenticator interface {
 	IsPeerValid(*PeerCredentials) bool
 }
 
+// SessionInterface is the interface used to initialize or teardown a Session
+// and send and receive command.Commands.
 type SessionInterface interface {
 	Initialize(conn net.Conn) error
 	SendCommand(cmd commands.Command) error
