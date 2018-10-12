@@ -147,7 +147,7 @@ func (s *state) fsm() <-chan time.Time {
 
 	switch s.state {
 	case stateBootstrap:
-		s.log.Debugf("Bootstrapping for %d", epoch)
+		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
 		s.state = stateAcceptDescriptor
@@ -202,7 +202,7 @@ func (s *state) fsm() <-chan time.Time {
 	default:
 	}
 	s.pruneDocuments()
-	if s.votingEpoch == epoch || sleep < 0{
+	if s.votingEpoch <= epoch || sleep < 0{
 		sleep = 30 * time.Second
 	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
