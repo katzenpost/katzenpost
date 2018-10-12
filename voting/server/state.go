@@ -747,8 +747,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 func (s *state) GetConsensus(epoch uint64) (*document, error) {
 	s.Lock()
 	defer s.Unlock()
-	if s.hasConsensus(epoch) {
-		return s.documents[epoch], nil
+	if d := s.documents[epoch]; d != nil  {
+		return d, nil
 	}
 	return nil, errNotYet
 }
@@ -834,40 +834,17 @@ func (s *state) tabulate(epoch uint64) {
 		s.log.Debugf("SignDocument failed with err: %v", err)
 		return
 	}
-
-	// Ensure the document is sane.
-	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
-	if err != nil {
-		// This should basically always succeed.
-		s.log.Errorf("Signed document failed validation: %v", err)
-		s.s.fatalErrCh <- err
-		return
+	// Save our certificate
+	if _, ok := s.certificates[epoch]; !ok {
+		s.certificates[epoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
 	}
-	// save the document
-	d := &document{doc: pDoc, raw: []byte(signed)}
-	if _, ok := s.documents[epoch]; !ok {
-		if raw, err := cert.GetCertified(d.raw); err == nil {
-			s.log.Debugf("Document for epoch %v saved: %s", epoch, raw)
-			s.log.Debugf("sha256(certified): %v", sha3.Sum256(raw))
-		}
-		s.documents[epoch] = d
+	s.certificates[epoch][s.identityPubKey()] = signed
+	if raw, err := cert.GetCertified(signed); err == nil {
+		s.log.Debugf("Document for epoch %v saved: %s", epoch, raw)
+		s.log.Debugf("sha256(certified): %v", sha3.Sum256(raw))
 	}
-
 	// send our vote to the other authorities!
 	s.sendVoteToAuthorities([]byte(signed), epoch)
-}
-
-func (s *state) hasConsensus(epoch uint64) bool {
-	doc, ok := s.documents[epoch]
-	if !ok {
-		return false
-	}
-	_, good, bad, err := cert.VerifyThreshold(s.verifiers, s.threshold, doc.raw)
-	s.log.Debug("VerifyThreshold: signed by %d, and %d failures", len(good), len(bad))
-	if err != nil {
-		return false
-	}
-	return true
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv []byte) [][][]byte {
@@ -1128,7 +1105,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
 	}
-	// haven't received a signature yet for this epoch
+	// haven't received a certificate yet for this epoch
 	if _, ok := s.certificates[s.votingEpoch]; !ok {
 		s.certificates[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
 	}
