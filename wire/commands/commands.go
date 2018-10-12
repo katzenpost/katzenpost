@@ -175,6 +175,7 @@ type GetVote struct {
 	PublicKey *eddsa.PublicKey
 }
 
+// ToBytes serializes the GetVote and returns the resulting slice.
 func (v *GetVote) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead)
 	out[0] = byte(getVote)
@@ -305,6 +306,7 @@ func voteFromBytes(b []byte) (Command, error) {
 	return r, nil
 }
 
+// ToBytes serializes the Vote and returns the resulting slice.
 func (c *Vote) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead+len(c.Payload))
 	out[0] = byte(vote)
@@ -320,6 +322,7 @@ type VoteStatus struct {
 	ErrorCode uint8
 }
 
+// ToBytes serializes the VoteStatus and returns the resulting slice.
 func (c *VoteStatus) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+voteStatusLength)
 	out[0] = byte(voteStatus)
