@@ -19,9 +19,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/gob"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -50,21 +50,13 @@ import (
 )
 
 const (
-	descriptorsBucket        = "descriptors"
-	documentsBucket          = "documents"
-	//mixPublishDeadline       = 2 * time.Hour
-	//authorityVoteDeadline    = 2*time.Hour + 7*time.Minute + 30*time.Second
-	//authorityRevealDeadline  = 2*time.Hour + 10*time.Minute
-	//publishConsensusDeadline = 2*time.Hour + 15*time.Minute
-
-
-	stateAcceptDescriptor    = "accept_desc"
-	stateAcceptVote          = "accept_vote"
-	stateAcceptReveal        = "accept_reveal"
-	stateAcceptSignature     = "accept_signature"
-	stateBootstrap           = "bootstrap"
-	stateConsensed           = "got_consensus"
-	stateConsensusFailed     = "failed_consensus"
+	descriptorsBucket     = "descriptors"
+	documentsBucket       = "documents"
+	stateAcceptDescriptor = "accept_desc"
+	stateAcceptVote       = "accept_vote"
+	stateAcceptReveal     = "accept_reveal"
+	stateAcceptSignature  = "accept_signature"
+	stateBootstrap        = "bootstrap"
 )
 
 var (
@@ -96,13 +88,13 @@ type state struct {
 	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
 	authorizedAuthorities map[[eddsa.PublicKeySize]byte]bool
 
-	documents   map[uint64]*document
-	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
-	votes       map[uint64]map[[eddsa.PublicKeySize]byte]*document
-	reveals     map[uint64]map[[eddsa.PublicKeySize]byte][]byte
+	documents    map[uint64]*document
+	descriptors  map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
+	votes        map[uint64]map[[eddsa.PublicKeySize]byte]*document
+	reveals      map[uint64]map[[eddsa.PublicKeySize]byte][]byte
 	certificates map[uint64]map[[eddsa.PublicKeySize]byte][]byte
 
-	updateCh       chan interface{}
+	updateCh chan interface{}
 
 	votingEpoch uint64
 	verifiers   []cert.Verifier
@@ -203,7 +195,7 @@ func (s *state) fsm() <-chan time.Time {
 	default:
 	}
 	s.pruneDocuments()
-	if s.votingEpoch <= epoch || sleep < 0{
+	if s.votingEpoch <= epoch || sleep < 0 {
 		sleep = 30 * time.Second
 	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
@@ -223,7 +215,7 @@ func (s *state) consense(epoch uint64) {
 	}
 
 	for pk, c := range certificates {
-		for jk, d:= range certificates {
+		for jk, d := range certificates {
 			if pk == jk {
 				continue // skip adding own signature
 			}
@@ -752,7 +744,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 func (s *state) GetConsensus(epoch uint64) (*document, error) {
 	s.Lock()
 	defer s.Unlock()
-	if d := s.documents[epoch]; d != nil  {
+	if d := s.documents[epoch]; d != nil {
 		return d, nil
 	}
 	return nil, errNotYet
@@ -1203,7 +1195,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	//const generationDeadline = 45 * time.Minute
-	var generationDeadline = 7*epochtime.Period/8
+	var generationDeadline = 7 * epochtime.Period / 8
 
 	s.RLock()
 	defer s.RUnlock()
@@ -1361,9 +1353,9 @@ func newState(s *Server) (*state, error) {
 	st.log = s.logBackend.GetLogger("state")
 
 	// set voting schedule at runtime
-	mixPublishDeadline       = epochtime.Period / 2
-	authorityVoteDeadline    = mixPublishDeadline + epochtime.Period/8
-	authorityRevealDeadline  = authorityVoteDeadline + epochtime.Period/8
+	mixPublishDeadline = epochtime.Period / 2
+	authorityVoteDeadline = mixPublishDeadline + epochtime.Period/8
+	authorityRevealDeadline = authorityVoteDeadline + epochtime.Period/8
 	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
@@ -1376,7 +1368,7 @@ func newState(s *Server) (*state, error) {
 		st.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
 	}
 	st.verifiers[len(s.cfg.Authorities)] = cert.Verifier(s.IdentityKey())
-	st.threshold = len(s.cfg.Authorities)/2
+	st.threshold = len(s.cfg.Authorities) / 2
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
@@ -1421,7 +1413,7 @@ func newState(s *Server) (*state, error) {
 	//
 	// This could be relaxed a bit, but it's primarily intended for debugging.
 	epoch, _, till := epochtime.Now()
-	if (till < 1 * time.Minute) {
+	if till < 1*time.Minute {
 		epoch++
 	}
 	if _, ok := st.documents[epoch]; !ok {
