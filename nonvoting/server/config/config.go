@@ -42,16 +42,17 @@ const (
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
 	// at some point.
-	defaultMixLambda         = 0.00025
-	defaultMixMaxPercentile  = 0.99999
+	defaultMixLambda        = 0.00025
+	defaultMixMaxPercentile = 0.99999
+
+	// rate limiting of client connections
+	defaultSendRatePerMinute = 100
+
 	defaultSendLambda        = 0.00006
-	defaultSendShift         = 15000 // 15 seconds.
 	defaultSendMaxPercentile = 0.95
 	defaultDropLambda        = 0.00006
-	defaultDropShift         = 15000 // 15 seconds.
 	defaultDropMaxPercentile = 0.95
 	defaultLoopLambda        = 0.00006
-	defaultLoopShift         = 15000 // 15 seconds.
 	defaultLoopMaxPercentile = 0.95
 )
 
@@ -121,6 +122,9 @@ func (lCfg *Logging) validate() error {
 
 // Parameters is the network parameters.
 type Parameters struct {
+	// SendRatePerMinute is the rate per minute.
+	SendRatePerMinute uint64
+
 	// MixLambda is the inverse of the mean of the exponential distribution
 	// that the Sphinx packet per-hop mixing delay will be sampled from.
 	MixLambda float64
@@ -134,10 +138,6 @@ type Parameters struct {
 	// or drop decoy messages.
 	SendLambda float64
 
-	// SendShift is the shift applied to the client send timing samples in
-	// milliseconds.
-	SendShift uint64
-
 	// SendMaxInterval is the maximum send interval in milliseconds, enforced
 	// prior to (excluding) SendShift.
 	SendMaxInterval uint64
@@ -146,10 +146,6 @@ type Parameters struct {
 	// that clients will sample to determine send timing of drop decoy messages.
 	DropLambda float64
 
-	// DropShift is the shift applied to the client send timing samples in
-	// milliseconds.
-	DropShift uint64
-
 	// DropMaxInterval is the maximum send interval in milliseconds, enforced
 	// prior to (excluding) DropShift.
 	DropMaxInterval uint64
@@ -157,10 +153,6 @@ type Parameters struct {
 	// LoopLambda is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine send timing of loop decoy messages.
 	LoopLambda float64
-
-	// LoopShift is the shift applied to the client send timing samples in
-	// milliseconds.
-	LoopShift uint64
 
 	// LoopMaxInterval is the maximum send interval in milliseconds, enforced
 	// prior to (excluding) LoopShift.
@@ -193,8 +185,8 @@ func (pCfg *Parameters) applyDefaults() {
 	if pCfg.SendLambda == 0 {
 		pCfg.SendLambda = defaultSendLambda
 	}
-	if pCfg.SendShift == 0 {
-		pCfg.SendShift = defaultSendShift
+	if pCfg.SendRatePerMinute == 0 {
+		pCfg.SendRatePerMinute = defaultSendRatePerMinute
 	}
 	if pCfg.SendMaxInterval == 0 {
 		pCfg.SendMaxInterval = uint64(rand.ExpQuantile(pCfg.SendLambda, defaultSendMaxPercentile))
@@ -202,17 +194,11 @@ func (pCfg *Parameters) applyDefaults() {
 	if pCfg.DropLambda == 0 {
 		pCfg.DropLambda = defaultDropLambda
 	}
-	if pCfg.DropShift == 0 {
-		pCfg.DropShift = defaultDropShift
-	}
 	if pCfg.DropMaxInterval == 0 {
 		pCfg.DropMaxInterval = uint64(rand.ExpQuantile(pCfg.DropLambda, defaultDropMaxPercentile))
 	}
 	if pCfg.LoopLambda == 0 {
 		pCfg.LoopLambda = defaultLoopLambda
-	}
-	if pCfg.LoopShift == 0 {
-		pCfg.LoopShift = defaultLoopShift
 	}
 	if pCfg.LoopMaxInterval == 0 {
 		pCfg.LoopMaxInterval = uint64(rand.ExpQuantile(pCfg.LoopLambda, defaultLoopMaxPercentile))
