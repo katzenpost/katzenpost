@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -489,6 +490,52 @@ func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, pubKey)
 }
 
+func (p *provider) onSendRate(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+	if len(sp) != 2 {
+		c.Log().Debugf("SEND_RATE invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	rate, err := strconv.ParseUint(sp[1], 10, 64)
+	if err != nil {
+		c.Log().Errorf("SEND_RATE invalid duration: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	for _, l := range p.glue.Listeners() {
+		l.OnNewSendRatePerMinute(rate)
+	}
+
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, rate)
+}
+
+func (p *provider) onSendBurst(c *thwack.Conn, l string) error {
+	p.Lock()
+	defer p.Unlock()
+
+	sp := strings.Split(l, " ")
+	if len(sp) != 2 {
+		c.Log().Debugf("SEND_BURST invalid syntax: '%v'", l)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	burst, err := strconv.ParseUint(sp[1], 10, 64)
+	if err != nil {
+		c.Log().Errorf("SEND_BURST invalid integer: %v", err)
+		return c.WriteReply(thwack.StatusSyntaxError)
+	}
+
+	for _, l := range p.glue.Listeners() {
+		l.OnNewSendBurst(burst)
+	}
+
+	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
+}
+
 func (p *provider) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	if !p.validateRequest(response, request) {
 		return
@@ -745,6 +792,8 @@ func New(glue glue.Glue) (glue.Provider, error) {
 			cmdRemoveUserIdentity = "REMOVE_USER_IDENTITY"
 			cmdUserIdentity       = "USER_IDENTITY"
 			cmdUserLink           = "USER_LINK"
+			cmdSendRate           = "SEND_RATE"
+			cmdSendBurst          = "SEND_BURST"
 		)
 
 		glue.Management().RegisterCommand(cmdAddUser, p.onAddUser)
@@ -754,6 +803,8 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue.Management().RegisterCommand(cmdRemoveUserIdentity, p.onRemoveUserIdentity)
 		glue.Management().RegisterCommand(cmdUserIdentity, p.onUserIdentity)
 		glue.Management().RegisterCommand(cmdUserLink, p.onUserLink)
+		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
+		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
 	}
 
 	// Start the User Registration HTTP service listener(s).
