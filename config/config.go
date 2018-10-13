@@ -427,7 +427,7 @@ type Kaetzchen struct {
 
 func (kCfg *Kaetzchen) validate() error {
 	if kCfg.Capability == "" {
-		return fmt.Errorf("config: Kaetzchen: Capability is invalid.")
+		return fmt.Errorf("config: Kaetzchen: Capability is invalid")
 	}
 
 	// Ensure the endpoint is normalized.
@@ -474,7 +474,7 @@ type PluginKaetzchen struct {
 
 func (kCfg *PluginKaetzchen) validate() error {
 	if kCfg.Capability == "" {
-		return fmt.Errorf("config: Kaetzchen: Capability is invalid.")
+		return fmt.Errorf("config: Kaetzchen: Capability is invalid")
 	}
 
 	// Ensure the endpoint is normalized.
@@ -486,7 +486,7 @@ func (kCfg *PluginKaetzchen) validate() error {
 		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
 	}
 	if kCfg.Command == "" {
-		return fmt.Errorf("config: Kaetzchen: Command is invalid.")
+		return fmt.Errorf("config: Kaetzchen: Command is invalid")
 	}
 	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
 		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
@@ -558,11 +558,11 @@ func (pCfg *Provider) validate() error {
 	}
 
 	for k, v := range pCfg.AltAddresses {
-		kLower := strings.ToLower(k)
-		if internalTransports[kLower] {
-			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
+		lowkey := strings.ToLower(k)
+		if internalTransports[lowkey] {
+			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", lowkey)
 		}
-		switch pki.Transport(kLower) {
+		switch pki.Transport(lowkey) {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
@@ -742,6 +742,7 @@ type Voting struct {
 	Peers []*Peer
 }
 
+// AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
 func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
 	for _, peer := range peers {
