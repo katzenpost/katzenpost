@@ -24,7 +24,6 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/BurntSushi/toml"
 	"github.com/katzenpost/core/crypto/ecdh"
