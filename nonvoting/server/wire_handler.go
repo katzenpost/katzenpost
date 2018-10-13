@@ -20,7 +20,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/authority/nonvoting/internal/s11n"
+	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
