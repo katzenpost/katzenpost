@@ -24,13 +24,11 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -229,9 +227,6 @@ func New(cfg *config.Config) (*Server, error) {
 	if len(cfg.Mixes) < cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer {
 		return nil, fmt.Errorf("server: Insufficient nodes whitelisted, got %v , need %v", len(cfg.Mixes), cfg.Debug.Layers*cfg.Debug.MinNodesPerLayer)
 	}
-
-	// Set the Epoch Period from the configuration file.
-	epochtime.Period = cfg.Parameters.EpochPeriod * time.Second
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
 	isOk := false
