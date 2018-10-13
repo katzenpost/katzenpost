@@ -656,8 +656,8 @@ func (pCfg *Provider) validate() error {
 // PKI is the Katzenpost directory authority configuration.
 type PKI struct {
 	// Nonvoting is a non-voting directory authority.
-	Nonvoting *Nonvoting
-	Voting    *Voting
+	Nonvoting   *Nonvoting
+	Voting      *Voting
 	EpochPeriod time.Duration
 }
 
@@ -873,7 +873,8 @@ func (cfg *Config) FixupAndValidate() error {
 
 // Store writes a config to fileName on disk
 func Store(cfg *Config, fileName string) error {
-	f, err := os.Open(fileName); if err != nil {
+	f, err := os.Open(fileName)
+	if err != nil {
 		return err
 	}
 	defer f.Close()
