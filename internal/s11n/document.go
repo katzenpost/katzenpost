@@ -1,5 +1,5 @@
-// document.go - Katzenpost Non-voting authority document s11n.
-// Copyright (C) 2017  Yawning Angel.
+// document.go - Katzenpost authority document s11n.
+// Copyright (C) 2017, 2018  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -17,21 +17,30 @@
 package s11n
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
 )
 
-const documentVersion = "nonvoting-document-v0"
+const (
+	// DocumentVersion is the string identifying the format of the Document
+	DocumentVersion = "document-v0"
+	// SharedRandomLength is the length in bytes of a SharedRandomCommit.
+	SharedRandomLength = 40
+	// SharedRandomValueLength is the length in bytes of a SharedRandomValue.
+	SharedRandomValueLength = 32
+)
 
 var (
 	// ErrInvalidEpoch is the error to return when the document epoch is
 	// invalid.
-	ErrInvalidEpoch = errors.New("nonvoting: invalid document epoch")
+	ErrInvalidEpoch = errors.New("invalid document epoch")
 
 	jsonHandle *codec.JsonHandle
 )
@@ -39,8 +48,7 @@ var (
 // Document is the on-the-wire representation of a PKI Document.
 type Document struct {
 	// Version uniquely identifies the document format as being for the
-	// non-voting authority so that it can be rejected when unexpectedly
-	// received or if the version changes.
+        // specified version so that it can be rejected if the format changes.
 	Version string
 
 	Epoch uint64
@@ -59,11 +67,28 @@ type Document struct {
 
 	Topology  [][][]byte
 	Providers [][]byte
+
+	SharedRandomCommit []byte
+	SharedRandomValue  []byte
+}
+
+// FromPayload deserializes, then verifies a Document, and returns the Document or error.
+func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
+	verified, err := cert.Verify(verifier, payload)
+	if err != nil {
+		return nil, err
+	}
+	dec := codec.NewDecoderBytes(verified, jsonHandle)
+	d := new(Document)
+	if err := dec.Decode(d); err != nil {
+		return nil, err
+	}
+	return d, nil
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
 func SignDocument(signer cert.Signer, d *Document) ([]byte, error) {
-	d.Version = documentVersion
+	d.Version = DocumentVersion
 
 	// Serialize the document.
 	var payload []byte
@@ -73,18 +98,43 @@ func SignDocument(signer cert.Signer, d *Document) ([]byte, error) {
 	}
 
 	// Sign the document.
-	expiration := time.Now().Add(certificateExpiration).Unix()
+	expiration := time.Now().Add(CertificateExpiration).Unix()
 	return cert.Sign(signer, payload, expiration)
+}
+
+// MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
+func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, verifiers map[string]cert.Verifier, d *Document) ([]byte, error) {
+	d.Version = DocumentVersion
+
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+
+	// Sign the document.
+	expiration := time.Now().Add(3*epochtime.Period).Unix()
+	signed, err := cert.Sign(signer, payload, expiration)
+	if err != nil {
+		return nil, err
+	}
+
+	// attach peer signatures
+	for _, signature := range peerSignatures {
+		s := string(signature.Identity)
+		verifier := verifiers[s]
+		signed, err = cert.AddSignature(verifier, *signature, signed)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return signed, nil
 }
 
 // VerifyAndParseDocument verifies the signautre and deserializes the document.
 func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, error) {
-	// Sanity check the number of signatures, and
-	// validate the signature with the provided public key.
-	signatures, err := cert.GetSignatures(b)
-	if len(signatures) != 1 {
-		return nil, fmt.Errorf("nonvoting: Expected 1 signature, got: %v", len(signatures))
-	}
 	payload, err := cert.Verify(verifier, b)
 	if err != nil {
 		return nil, err
@@ -98,13 +148,39 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 	}
 
 	// Ensure the document is well formed.
-	if d.Version != documentVersion {
-		return nil, fmt.Errorf("nonvoting: Invalid Document Version: '%v'", d.Version)
+	if d.Version != DocumentVersion {
+		return nil, fmt.Errorf("Invalid Document Version: '%v'", d.Version)
 	}
 
 	// Convert from the wire representation to a Document, and validate
 	// everything.
+
+	// If there is a SharedRandomCommit, verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
+	if len(d.SharedRandomCommit) == SharedRandomLength {
+		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomCommit[0:8])
+		if srvEpoch != d.Epoch {
+			return nil, fmt.Errorf("Document with invalid Epoch in SharedRandomCommit")
+
+		}
+	}
+	if len(d.SharedRandomValue) != SharedRandomValueLength {
+		if len(d.SharedRandomValue) != 0 {
+			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
+		} else if len(d.SharedRandomCommit) != SharedRandomLength {
+			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
+		}
+	}
+	if len(d.SharedRandomCommit) != SharedRandomLength {
+		if len(d.SharedRandomCommit) != 0 {
+			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
+		} else if len(d.SharedRandomValue) != SharedRandomValueLength {
+			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
+		}
+	}
+
 	doc := new(pki.Document)
+	doc.SharedRandomCommit = d.SharedRandomCommit
+	doc.SharedRandomValue = d.SharedRandomValue
 	doc.Epoch = d.Epoch
 	doc.SendRatePerMinute = d.SendRatePerMinute
 	doc.MixLambda = d.MixLambda
@@ -163,11 +239,11 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 func IsDocumentWellFormed(d *pki.Document) error {
 	pks := make(map[string]bool)
 	if len(d.Topology) == 0 {
-		return fmt.Errorf("nonvoting: Document contains no Topology")
+		return fmt.Errorf("Document contains no Topology")
 	}
 	for layer, nodes := range d.Topology {
 		if len(nodes) == 0 {
-			return fmt.Errorf("nonvoting: Document Topology layer %d contains no nodes", layer)
+			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
 		}
 		for _, desc := range nodes {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
@@ -175,24 +251,24 @@ func IsDocumentWellFormed(d *pki.Document) error {
 			}
 			pk := string(desc.IdentityKey.Identity())
 			if _, ok := pks[pk]; ok {
-				return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+				return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 			}
 			pks[pk] = true
 		}
 	}
 	if len(d.Providers) == 0 {
-		return fmt.Errorf("nonvoting: Document contains no Providers")
+		return fmt.Errorf("Document contains no Providers")
 	}
 	for _, desc := range d.Providers {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
 		if desc.Layer != pki.LayerProvider {
-			return fmt.Errorf("nonvoting: Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+			return fmt.Errorf("Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
 		}
 		pk := string(desc.IdentityKey.Identity())
 		if _, ok := pks[pk]; ok {
-			return fmt.Errorf("nonvoting: Document contains multiple entries for %v", desc.IdentityKey)
+			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 		}
 		pks[pk] = true
 	}

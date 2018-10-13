@@ -187,7 +187,7 @@ func (pCfg *Parameters) validate() error {
 	if pCfg.SendLambda < 0 {
 		return fmt.Errorf("config: Parameters: SendLambda %v is invalid", pCfg.SendLambda)
 	}
-	if pCfg.EpochPeriod > time.Hour * 3 {
+	if pCfg.EpochPeriod > time.Hour*3 {
 		return fmt.Errorf("config: Parametrs: EpochPeriod %v exceeds maximum", pCfg.EpochPeriod)
 	}
 	return nil
@@ -281,6 +281,7 @@ type AuthorityPeer struct {
 	Addresses []string
 }
 
+// Validate parses and checks the AuthorityPeer configuration.
 func (a *AuthorityPeer) Validate() error {
 	for _, v := range a.Addresses {
 		if err := utils.EnsureAddrIPPort(v); err != nil {

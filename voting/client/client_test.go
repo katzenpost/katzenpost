@@ -1,4 +1,4 @@
-// client.go - Katzenpost non-voting authority client.
+// client.go - Katzenpost voting authority client.
 // Copyright (C) 2018  David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package client implements the Katzenpost non-voting authority client.
+// Package client implements the Katzenpost voting authority client.
 package client
 
 import (
@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/authority/voting/internal/s11n"
+	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -207,7 +207,6 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 		MixLambda:          0.25,
 		MixMaxDelay:        4000,
 		SendLambda:         1.2,
-		SendShift:          3,
 		SendMaxInterval:    300,
 		Topology:           topology,
 		Providers:          providersRaw,

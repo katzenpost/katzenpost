@@ -21,7 +21,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/katzenpost/authority/voting/internal/s11n"
+	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -80,19 +80,20 @@ func TestVoteThreshold(t *testing.T) {
 			DataDir: testDir,
 		},
 	}
+
+	mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
+	assert.NoError(err, "wtf")
 	server := &Server{
-		cfg: cfg,
+		cfg:         cfg,
+		identityKey: mixIdentityPrivateKey,
 	}
 	server.initLogging()
 	_, err = newState(server)
 	assert.NoError(err, "wtf")
 
-	mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err, "wtf")
-
 	targetMix := &pki.MixDescriptor{
 		Name:        "NSA_Spy_Sattelite_Mix001",
-		IdentityKey: mixIdentityPrivateKey.PublicKey(),
+		IdentityKey: server.IdentityKey(),
 		LinkKey:     nil,
 		MixKeys:     nil,
 		Addresses:   nil,
@@ -105,7 +106,6 @@ func TestVoteThreshold(t *testing.T) {
 		MixLambda:       3.141,
 		MixMaxDelay:     3,
 		SendLambda:      2.6,
-		SendShift:       2,
 		SendMaxInterval: 42,
 		Topology: [][]*pki.MixDescriptor{
 			{targetMix},
@@ -117,7 +117,6 @@ func TestVoteThreshold(t *testing.T) {
 		MixLambda:       3.141,
 		MixMaxDelay:     3,
 		SendLambda:      2.6,
-		SendShift:       2,
 		SendMaxInterval: 42,
 		Topology:        [][]*pki.MixDescriptor{[]*pki.MixDescriptor{}},
 		Providers:       []*pki.MixDescriptor{},
