@@ -50,22 +50,22 @@ import (
 )
 
 const (
-	descriptorsBucket     = "descriptors"
-	documentsBucket       = "documents"
-	stateAcceptDescriptor = "accept_desc"
-	stateAcceptVote       = "accept_vote"
-	stateAcceptReveal     = "accept_reveal"
-	stateAcceptSignature  = "accept_signature"
-	stateBootstrap        = "bootstrap"
+	descriptorsBucket        = "descriptors"
+	documentsBucket          = "documents"
+	stateAcceptDescriptor    = "accept_desc"
+	stateAcceptVote          = "accept_vote"
+	stateAcceptReveal        = "accept_reveal"
+	stateAcceptSignature     = "accept_signature"
+	stateBootstrap           = "bootstrap"
+	mixPublishDeadline       = epochtime.Period / 2
+	authorityVoteDeadline    = mixPublishDeadline + epochtime.Period/8
+	authorityRevealDeadline  = authorityVoteDeadline + epochtime.Period/8
+	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
 )
 
 var (
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
-)
-
-var (
-	mixPublishDeadline, authorityVoteDeadline, authorityRevealDeadline, publishConsensusDeadline time.Duration
 )
 
 type descriptor struct {
@@ -1191,8 +1191,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	//const generationDeadline = 45 * time.Minute
-	var generationDeadline = 7 * epochtime.Period / 8
+	const generationDeadline = 7 * epochtime.Period / 8
 
 	s.RLock()
 	defer s.RUnlock()
@@ -1350,10 +1349,6 @@ func newState(s *Server) (*state, error) {
 	st.log = s.logBackend.GetLogger("state")
 
 	// set voting schedule at runtime
-	mixPublishDeadline = epochtime.Period / 2
-	authorityVoteDeadline = mixPublishDeadline + epochtime.Period/8
-	authorityRevealDeadline = authorityVoteDeadline + epochtime.Period/8
-	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
 	st.log.Debugf("State initialized with mixPublishDeadline: %s", mixPublishDeadline)
