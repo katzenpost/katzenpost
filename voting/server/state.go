@@ -33,8 +33,8 @@ import (
 	"time"
 
 	bolt "github.com/coreos/bbolt"
+	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/authority/voting/client"
-	"github.com/katzenpost/authority/voting/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -231,7 +231,7 @@ func (s *state) consense(epoch uint64) {
 			}
 		}
 		if _, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, c); err == nil {
-			if pDoc, _, err := s11n.VerifyAndParseDocument(c, good[0]); err == nil {
+			if pDoc, err := s11n.VerifyAndParseDocument(c, good[0]); err == nil {
 				s.documents[epoch] = &document{doc: pDoc, raw: c}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
 				for _, g := range good {
@@ -296,13 +296,10 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		MixLambda:         params.MixLambda,
 		MixMaxDelay:       params.MixMaxDelay,
 		SendLambda:        params.SendLambda,
-		SendShift:         params.SendShift,
 		SendMaxInterval:   params.SendMaxInterval,
 		DropLambda:        params.DropLambda,
-		DropShift:         params.DropShift,
 		DropMaxInterval:   params.DropMaxInterval,
 		LoopLambda:        params.LoopLambda,
-		LoopShift:         params.LoopShift,
 		LoopMaxInterval:   params.LoopMaxInterval,
 		Topology:          topology,
 		Providers:         providers,
@@ -440,7 +437,7 @@ func (s *state) sign(doc *s11n.Document) *document {
 	}
 
 	// Ensure the document is sane.
-	pDoc, _, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -670,13 +667,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			MixLambda:       vote.MixLambda,
 			MixMaxDelay:     vote.MixMaxDelay,
 			SendLambda:      vote.SendLambda,
-			SendShift:       vote.SendShift,
 			SendMaxInterval: vote.SendMaxInterval,
 			DropLambda:      vote.DropLambda,
-			DropShift:       vote.DropShift,
 			DropMaxInterval: vote.DropMaxInterval,
 			LoopLambda:      vote.LoopLambda,
-			LoopShift:       vote.LoopShift,
 			LoopMaxInterval: vote.LoopMaxInterval,
 		}
 		b := bytes.Buffer{}
@@ -1094,7 +1088,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		return &resp
 	}
 
-	doc, _, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
+	doc, err := s11n.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1281,7 +1275,7 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
 					}
-					doc, _, err := s11n.VerifyAndParseDocument(rawDoc, good[0])
+					doc, err := s11n.VerifyAndParseDocument(rawDoc, good[0])
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {

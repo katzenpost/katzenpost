@@ -25,7 +25,7 @@ import (
 	//mrand "math/rand"
 	"net"
 
-	"github.com/katzenpost/authority/voting/internal/s11n"
+	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -104,6 +104,7 @@ type connector struct {
 	log *logging.Logger
 }
 
+// NewConnector returns a connector initialized from a Config.
 func NewConnector(cfg *Config) *connector {
 	p := &connector{
 		cfg: cfg,
@@ -174,7 +175,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	}, nil
 }
 
-func (c *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
+func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
 	if err := s.SendCommand(cmd); err != nil {
 		return nil, err
 	}
@@ -269,10 +270,8 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	}
 	if len(errs) == 0 {
 		return nil
-	} else {
-		return fmt.Errorf("failure to Post to %d Directory Authorities", len(errs))
 	}
-	// NOTREACHED
+	return fmt.Errorf("failure to Post to %d Directory Authorities", len(errs))
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
@@ -325,7 +324,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
 	}
-	doc, _, err = s11n.VerifyAndParseDocument(r.Payload, c.cfg.Authorities[0].IdentityPublicKey)
+	doc, err = s11n.VerifyAndParseDocument(r.Payload, c.cfg.Authorities[0].IdentityPublicKey)
 	if err != nil {
 		// XXX: somehow this returned a nil doc!
 		return nil, nil, err
@@ -342,7 +341,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 // Deserialize returns PKI document given the raw bytes.
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
-	doc, _, err := s11n.VerifyAndParseDocument(raw, c.cfg.Authorities[0].IdentityPublicKey)
+	doc, err := s11n.VerifyAndParseDocument(raw, c.cfg.Authorities[0].IdentityPublicKey)
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}

@@ -1,5 +1,5 @@
 // document_test.go - Document s11n tests.
-// Copyright (C) 2017  Yawning Angel
+// Copyright (C) 2017  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -18,6 +18,7 @@ package s11n
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"testing"
 
@@ -73,6 +74,9 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "eddsa.NewKeypair()")
 
 	testSendRate := uint64(3)
+	sharedRandomCommit := make([]byte, SharedRandomLength)
+	binary.BigEndian.PutUint64(sharedRandomCommit[:8], debugTestEpoch)
+
 
 	// Generate a Document.
 	doc := &Document{
@@ -83,6 +87,8 @@ func TestDocument(t *testing.T) {
 		MixMaxDelay:       23,
 		SendLambda:        0.69,
 		SendMaxInterval:   17,
+		SharedRandomCommit: sharedRandomCommit,
+		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
