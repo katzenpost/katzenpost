@@ -30,7 +30,6 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
-	//"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/utils"
 	"golang.org/x/net/idna"
 )
@@ -56,7 +55,6 @@ const (
 	defaultLoopLambda        = 0.00006
 	defaultLoopShift         = 15000 // 15 seconds.
 	defaultLoopMaxPercentile = 0.95
-	defaultEpochPeriod       = 3 * time.Hour
 )
 
 var defaultLogging = Logging{
@@ -172,9 +170,6 @@ type Parameters struct {
 	// LoopMaxInterval is the maximum send interval in milliseconds, enforced
 	// prior to (excluding) LoopShift.
 	LoopMaxInterval uint64
-
-	// EpochPeriod is the time the each epoch lasts
-	EpochPeriod time.Duration
 }
 
 func (pCfg *Parameters) validate() error {
@@ -186,9 +181,6 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.SendLambda < 0 {
 		return fmt.Errorf("config: Parameters: SendLambda %v is invalid", pCfg.SendLambda)
-	}
-	if pCfg.EpochPeriod > time.Hour*3 {
-		return fmt.Errorf("config: Parametrs: EpochPeriod %v exceeds maximum", pCfg.EpochPeriod)
 	}
 	return nil
 }
@@ -229,9 +221,6 @@ func (pCfg *Parameters) applyDefaults() {
 	}
 	if pCfg.LoopMaxInterval == 0 {
 		pCfg.LoopMaxInterval = uint64(rand.ExpQuantile(pCfg.LoopLambda, defaultLoopMaxPercentile))
-	}
-	if pCfg.EpochPeriod == 0 {
-		pCfg.EpochPeriod = defaultEpochPeriod
 	}
 }
 
