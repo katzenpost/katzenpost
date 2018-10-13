@@ -100,7 +100,7 @@ func (p *pki) worker() {
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
 
-	var lastUpdateEpoch, lastMixMaxDelay, lastSendShift uint64
+	var lastUpdateEpoch, lastMixMaxDelay, lastSendTokenDuration uint64
 
 	for {
 		const recheckInterval = 1 * time.Minute
@@ -192,13 +192,14 @@ func (p *pki) worker() {
 					lastMixMaxDelay = newMixMaxDelay
 				}
 
-				if newSendShift := ent.SendShift(); newSendShift != lastSendShift {
-					p.log.Debugf("Updating listener SendShift for epoch %v: %v", now, newSendShift)
+				// send token duration
+				if newSendTokenDuration := ent.SendRatePerMinute(); newSendTokenDuration != lastSendTokenDuration {
+					p.log.Debugf("Updating listener SendTokenDuration for epoch %v: %v", now, newSendTokenDuration)
 
 					for _, l := range p.glue.Listeners() {
-						l.OnNewSendShift(newSendShift)
+						l.OnNewSendRatePerMinute(newSendTokenDuration)
 					}
-					lastSendShift = newSendShift
+					lastSendTokenDuration = newSendTokenDuration
 				}
 
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
