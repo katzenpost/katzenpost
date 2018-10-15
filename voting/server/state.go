@@ -1360,7 +1360,7 @@ func newState(s *Server) (*state, error) {
 		st.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
 	}
 	st.verifiers[len(s.cfg.Authorities)] = cert.Verifier(s.IdentityKey())
-	st.threshold = len(s.cfg.Authorities) / 2
+	st.threshold = len(s.cfg.Authorities) / 2 + 1
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
