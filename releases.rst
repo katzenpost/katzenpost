@@ -12,8 +12,20 @@ Katzenpost daemons releases follows `semantic versioning <https://semver.org/>`_
 unreleased
 ----------
 
-git master will likely become v0.0.7
+git master will likely become v0.0.8
 
+v0.0.7
+------
+
+* Fixed many data races
+* Removed "Shift" parameters from PKI document
+* Added SendRatePerMinute parameter to PKI document
+  for tuning the mix server client rating limiting
+* Added the voting Directory Authority
+  and made the mix server be able to use either the nonvoting
+  or the voting directory authority
+* Removed client and mailproxy. Daemons repo now only
+  releases the mix server and directory authorities.
 
 v0.0.6
 ------
