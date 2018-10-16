@@ -1191,7 +1191,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	const generationDeadline = 7 * epochtime.Period / 8
+	const generationDeadline = 7 * (epochtime.Period / 8)
 
 	s.RLock()
 	defer s.RUnlock()
