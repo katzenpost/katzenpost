@@ -27,6 +27,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
+	vClient "github.com/katzenpost/authority/voting/client"
+	vConfig "github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/client/internal/proxy"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -119,6 +121,17 @@ func (d *Debug) fixup() {
 	}
 }
 
+
+// New constructs a pki.Client with the specified non-voting authority config.
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+	cfg := &vClient.Config{
+		LogBackend:    l,
+		Authorities:   vACfg.Peers,
+		DialContextFn: pCfg.ToDialContext("voting"),
+	}
+	return vClient.New(cfg)
+}
+
 // NonvotingAuthority is a non-voting authority configuration.
 type NonvotingAuthority struct {
 	// Address is the IP address/port combination of the authority.
@@ -144,6 +157,34 @@ func (nvACfg *NonvotingAuthority) validate() error {
 		return fmt.Errorf("PublicKey is missing")
 	}
 	return nil
+}
+
+// VotingAuthority is a voting authority configuration.
+type VotingAuthority struct {
+	Peers []*vConfig.AuthorityPeer
+}
+
+func (vACfg *VotingAuthority) validate() error {
+	if len(vACfg.Peers) == 0 {
+		return fmt.Errorf("VotingAuthority has no Peers")
+	}
+	for _, p := range vACfg.Peers {
+		if err := p.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+	switch {
+	case c.NonvotingAuthority != nil:
+		return c.NonvotingAuthority.New(l, pCfg)
+	case c.VotingAuthority != nil:
+		return c.VotingAuthority.New(l, pCfg)
+	}
+	return nil, fmt.Errorf("No Authority found")
 }
 
 // Account is a provider account configuration.
@@ -232,6 +273,7 @@ type Config struct {
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
 	NonvotingAuthority *NonvotingAuthority
+	VotingAuthority    *VotingAuthority
 	Account            *Account
 	upstreamProxy      *proxy.Config
 }
@@ -274,8 +316,17 @@ func (cfg *Config) FixupAndValidate() error {
 	} else {
 		return err
 	}
-	if err := cfg.NonvotingAuthority.validate(); err != nil {
-		return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+	switch {
+	case cfg.NonvotingAuthority == nil && cfg.VotingAuthority != nil:
+		if err := cfg.VotingAuthority.validate(); err != nil {
+			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+		}
+	case cfg.NonvotingAuthority != nil && cfg.VotingAuthority == nil:
+		if err := cfg.NonvotingAuthority.validate(); err != nil {
+			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+		}
+	default:
+		return fmt.Errorf("config: Authority configuration is invalid")
 	}
 
 	// account

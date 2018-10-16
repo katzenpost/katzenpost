@@ -85,13 +85,13 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 
 	// create a pkiclient for our own client lookups
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NonvotingAuthority.New(logBackend, proxyCfg)
+	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg)
 	if err != nil {
 		return nil, err
 	}
 
 	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NonvotingAuthority.New(logBackend, proxyCfg)
+	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
-		DialContextFn:       proxyCfg.ToDialContext("nonvoting:" + cfg.NonvotingAuthority.PublicKey.String()),
+		DialContextFn:       proxyCfg.ToDialContext("authority"),
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Second,
 		EnableTimeSync:      false, // Be explicit about it.
 	}
