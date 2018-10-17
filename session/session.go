@@ -84,18 +84,35 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 	var err error
 
 	// create a pkiclient for our own client lookups
+	// AND create a pkiclient for minclient's use
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NonvotingAuthority.New(logBackend, proxyCfg)
-	if err != nil {
-		return nil, err
+	var pkiClient pki.Client = nil
+	var pkiCacheClient *pkiclient.Client = nil
+	if cfg.NonvotingAuthority != nil {
+		pkiClient, err = cfg.NonvotingAuthority.New(logBackend, proxyCfg)
+		if err != nil {
+			return nil, err
+		}
+		pkiClient2, err := cfg.NonvotingAuthority.New(logBackend, proxyCfg)
+		if err != nil {
+			return nil, err
+		}
+		pkiCacheClient = pkiclient.New(pkiClient2)
+	} else {
+		pkiClient, err = cfg.VotingAuthority.New(logBackend, proxyCfg)
+		if err != nil {
+			return nil, err
+		}
+		pkiClient2, err := cfg.VotingAuthority.New(logBackend, proxyCfg)
+		if err != nil {
+			return nil, err
+		}
+		pkiCacheClient = pkiclient.New(pkiClient2)
 	}
 
-	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NonvotingAuthority.New(logBackend, proxyCfg)
 	if err != nil {
 		return nil, err
 	}
-	pkiCacheClient := pkiclient.New(pkiClient2)
 
 	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_c", cfg.Account.User, cfg.Account.Provider))
 
