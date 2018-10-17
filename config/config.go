@@ -305,8 +305,23 @@ func (cfg *Config) FixupAndValidate() error {
 	} else {
 		return err
 	}
-	if err := cfg.NonvotingAuthority.validate(); err != nil {
-		return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+
+	// Validate directory authority configuration.
+	if cfg.NonvotingAuthority == nil && cfg.VotingAuthority == nil {
+		return errors.New("Must have configured either NonvotingAuthority or VotingAuthority")
+	}
+	if cfg.NonvotingAuthority != nil && cfg.VotingAuthority != nil {
+		return errors.New("Must have configured either NonvotingAuthority or VotingAuthority")
+	}
+
+	if cfg.NonvotingAuthority != nil {
+		if err := cfg.NonvotingAuthority.validate(); err != nil {
+			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+		}
+	} else {
+		if err := cfg.VotingAuthority.validate(); err != nil {
+			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+		}
 	}
 
 	// account
