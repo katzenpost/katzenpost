@@ -287,42 +287,42 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
-func (cfg *Config) FixupAndValidate() error {
+func (c *Config) FixupAndValidate() error {
 	// Handle missing sections if possible.
-	if cfg.Proxy == nil {
+	if c.Proxy == nil {
 		return errors.New("config: No Proxy block was present")
 	}
-	if cfg.Logging == nil {
-		cfg.Logging = &defaultLogging
+	if c.Logging == nil {
+		c.Logging = &defaultLogging
 	}
-	if cfg.Debug == nil {
-		cfg.Debug = &Debug{
+	if c.Debug == nil {
+		c.Debug = &Debug{
 			PollingInterval:             defaultPollingInterval,
 			InitialMaxPKIRetrievalDelay: defaultInitialMaxPKIRetrievalDelay,
 		}
 	} else {
-		cfg.Debug.fixup()
+		c.Debug.fixup()
 	}
 
 	// Validate/fixup the various sections.
-	if err := cfg.Proxy.validate(); err != nil {
+	if err := c.Proxy.validate(); err != nil {
 		return err
 	}
-	if err := cfg.Logging.validate(); err != nil {
+	if err := c.Logging.validate(); err != nil {
 		return err
 	}
-	if uCfg, err := cfg.UpstreamProxy.toProxyConfig(); err == nil {
-		cfg.upstreamProxy = uCfg
+	if uCfg, err := c.UpstreamProxy.toProxyConfig(); err == nil {
+		c.upstreamProxy = uCfg
 	} else {
 		return err
 	}
 	switch {
-	case cfg.NonvotingAuthority == nil && cfg.VotingAuthority != nil:
-		if err := cfg.VotingAuthority.validate(); err != nil {
+	case c.NonvotingAuthority == nil && c.VotingAuthority != nil:
+		if err := c.VotingAuthority.validate(); err != nil {
 			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
 		}
-	case cfg.NonvotingAuthority != nil && cfg.VotingAuthority == nil:
-		if err := cfg.NonvotingAuthority.validate(); err != nil {
+	case c.NonvotingAuthority != nil && c.VotingAuthority == nil:
+		if err := c.NonvotingAuthority.validate(); err != nil {
 			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
 		}
 	default:
@@ -330,14 +330,14 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	// account
-	if err := cfg.Account.fixup(cfg); err != nil {
+	if err := c.Account.fixup(c); err != nil {
 		return fmt.Errorf("config: Account is invalid (User): %v", err)
 	}
-	addr, err := cfg.Account.toEmailAddr()
+	addr, err := c.Account.toEmailAddr()
 	if err != nil {
 		return fmt.Errorf("config: Account is invalid (Identifier): %v", err)
 	}
-	if err := cfg.Account.validate(cfg); err != nil {
+	if err := c.Account.validate(c); err != nil {
 		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
 	}
 
