@@ -84,6 +84,7 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 	var err error
 
 	// create a pkiclient for our own client lookups
+	// AND create a pkiclient for minclient's use
 	proxyCfg := cfg.UpstreamProxyConfig()
 	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg)
 	if err != nil {

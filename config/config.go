@@ -28,7 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/authority/voting/client"
-	vConfig "github.com/katzenpost/authority/voting/server/config"
+	vServerConfig "github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/client/internal/proxy"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -121,17 +121,6 @@ func (d *Debug) fixup() {
 	}
 }
 
-
-// New constructs a pki.Client with the specified non-voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
-	cfg := &vClient.Config{
-		LogBackend:    l,
-		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext("voting"),
-	}
-	return vClient.New(cfg)
-}
-
 // NonvotingAuthority is a non-voting authority configuration.
 type NonvotingAuthority struct {
 	// Address is the IP address/port combination of the authority.
@@ -161,15 +150,26 @@ func (nvACfg *NonvotingAuthority) validate() error {
 
 // VotingAuthority is a voting authority configuration.
 type VotingAuthority struct {
-	Peers []*vConfig.AuthorityPeer
+	Peers []*vServerConfig.AuthorityPeer
+}
+
+// New constructs a pki.Client with the specified non-voting authority config.
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+	cfg := &vClient.Config{
+		LogBackend:    l,
+		Authorities:   vACfg.Peers,
+		DialContextFn: pCfg.ToDialContext("voting"),
+	}
+	return vClient.New(cfg)
 }
 
 func (vACfg *VotingAuthority) validate() error {
-	if len(vACfg.Peers) == 0 {
-		return fmt.Errorf("VotingAuthority has no Peers")
+	if vACfg.Peers == nil || len(vACfg.Peers) == 0 {
+		return errors.New("VotingAuthority failure, must specify at least one peer.")
 	}
-	for _, p := range vACfg.Peers {
-		if err := p.Validate(); err != nil {
+	for _, peer := range vACfg.Peers {
+		err := peer.Validate()
+		if err != nil {
 			return err
 		}
 	}
@@ -280,8 +280,8 @@ type Config struct {
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for
 // internal use.  Most people should not use this.
-func (cfg *Config) UpstreamProxyConfig() *proxy.Config {
-	return cfg.upstreamProxy
+func (c *Config) UpstreamProxyConfig() *proxy.Config {
+	return c.upstreamProxy
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
