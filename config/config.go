@@ -27,6 +27,8 @@ import (
 
 	"github.com/BurntSushi/toml"
 	nvClient "github.com/katzenpost/authority/nonvoting/client"
+	vClient "github.com/katzenpost/authority/voting/client"
+	vServerConfig "github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/client/internal/proxy"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -146,6 +148,34 @@ func (nvACfg *NonvotingAuthority) validate() error {
 	return nil
 }
 
+// VotingAuthority is a voting authority configuration.
+type VotingAuthority struct {
+	Peers []*vServerConfig.AuthorityPeer
+}
+
+// New constructs a pki.Client with the specified non-voting authority config.
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+	cfg := &vClient.Config{
+		LogBackend:    l,
+		Authorities:   vACfg.Peers,
+		DialContextFn: pCfg.ToDialContext("voting"),
+	}
+	return vClient.New(cfg)
+}
+
+func (vACfg *VotingAuthority) validate() error {
+	if vACfg.Peers == nil || len(vACfg.Peers) == 0 {
+		return errors.New("VotingAuthority failure, must specify at least one peer.")
+	}
+	for _, peer := range vACfg.Peers {
+		err := peer.Validate()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Account is a provider account configuration.
 type Account struct {
 	// User is the account user name.
@@ -232,6 +262,7 @@ type Config struct {
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
 	NonvotingAuthority *NonvotingAuthority
+	VotingAuthority    *VotingAuthority
 	Account            *Account
 	upstreamProxy      *proxy.Config
 }
