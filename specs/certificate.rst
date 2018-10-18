@@ -110,7 +110,18 @@ based post quantum cryptographic signature scheme such as SPHINCS-256
 or SPHINCS+. [SPHINCS256]_
 
 
-3. Acknowledgments
+3. Golang API
+=============
+
+* https://godoc.org/github.com/katzenpost/core/crypto/cert
+
+Our golang implementation is agnostic to the specific cryptographic
+signature scheme which is used. Cert can handle single and multiple
+signatures per document and has a variety of helper functions that
+ease use for multi signature use cases.
+
+
+4. Acknowledgments
 ==================
 
 This specification was inspired by Tor Project's certificate format
