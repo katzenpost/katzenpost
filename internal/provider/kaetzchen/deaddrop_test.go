@@ -136,4 +136,25 @@ func TestDeaddrop(t *testing.T) {
 	require.Equal(resp.Sequence, req.Sequence+1)
 
 	t.Logf("response payload len is %d", len(resp.Payload))
+
+	// test authToken failure
+	badAuthToken := make([]byte, len(authToken))
+	copy(badAuthToken, authToken)
+	badAuthToken[len(badAuthToken)-1] ^= 0x4 // flip a bit
+	req.AuthToken = string(badAuthToken)
+	enc = codec.NewEncoderBytes(&out, &jsonHandle)
+	err = enc.Encode(req)
+	require.NoError(err, "wtf")
+
+	response, err = deaddrop.OnRequest(id, out, true)
+	require.NoError(err)
+
+	dec = codec.NewDecoderBytes(bytes.TrimRight(response, "\x00"), &jsonHandle)
+	err = dec.Decode(&resp)
+	require.NoError(err, "wtf")
+
+	require.Equal(resp.StatusCode, deaddropStatusAuthError)
+	require.Equal(resp.Version, deaddropVersion)
+	require.Equal(resp.QueueHint, 0)
+	require.Equal(resp.Sequence, 0)
 }
