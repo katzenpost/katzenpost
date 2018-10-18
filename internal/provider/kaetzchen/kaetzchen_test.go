@@ -54,6 +54,10 @@ func (u *mockUserDB) Add([]byte, *ecdh.PublicKey, bool) error { return nil }
 
 func (u *mockUserDB) SetIdentity([]byte, *ecdh.PublicKey) error { return nil }
 
+func (u *mockUserDB) Link([]byte) (*ecdh.PublicKey, error) {
+	return nil, nil
+}
+
 func (u *mockUserDB) Identity([]byte) (*ecdh.PublicKey, error) {
 	return u.provider.userKey, nil
 }
@@ -103,8 +107,8 @@ func (p *mockProvider) AuthenticateClient(*wire.PeerCredentials) bool {
 
 func (p *mockProvider) OnPacket(*packet.Packet) {}
 
-func (p *mockProvider) KaetzchenForPKI() map[string]map[string]interface{} {
-	return nil
+func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
+	return nil, nil
 }
 
 type mockDecoy struct{}

@@ -47,11 +47,15 @@ type incomingConn struct {
 	e *list.Element
 	w *wire.Session
 
-	id            uint64
-	retrSeq       uint32
+	id      uint64
+	retrSeq uint32
+
 	sendTokens    uint64
+	maxSendTokens uint64
+
 	sendTokenIncr time.Duration
 	sendTokenLast time.Duration
+
 	isInitialized bool // Set by listener.
 	fromClient    bool
 	fromMix       bool
@@ -76,26 +80,42 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 				return true
 			}
 
-			sendShift := atomic.LoadUint64(&c.l.sendShift)
-			switch sendShift {
+			// send token duration
+			sendRatePerMinute := atomic.LoadUint64(&c.l.sendRatePerMinute)
+			ratePerMin := float64(sendRatePerMinute)
+			sendTokenDuration := uint64((1 / ratePerMin) * 60 * 1000)
+
+			switch sendTokenDuration {
 			case uint64(c.sendTokenIncr / time.Millisecond):
-				// The send shift didn't change, don't update anything.
-				return true
+			// The send shift didn't change, don't update anything.
 			case 0:
-				c.log.Debugf("Rate limit disabled, no SendShift.")
+				c.log.Debugf("Rate limit disabled, no SendRatePerMinute.")
 				c.sendTokenIncr = 0
 				c.sendTokens = 0
-				return true
+				c.maxSendTokens = 0
 			default:
+				c.log.Debugf("Rate limit SendRatePerMinute updated: %v", c.sendTokenIncr)
 			}
 			// If there was no previous limit start at 1 send credit.
 			if c.sendTokenIncr == 0 {
 				c.sendTokens = 1
 				c.sendTokenLast = monotime.Now()
 			}
+			c.sendTokenIncr = time.Duration(sendTokenDuration) * time.Millisecond
 
-			c.sendTokenIncr = time.Duration(sendShift) * time.Millisecond
-			c.log.Debugf("Rate limit shift: %v", c.sendTokenIncr)
+			// max send tokens
+			c.maxSendTokens = atomic.LoadUint64(&c.l.sendBurst)
+			switch c.maxSendTokens {
+			case c.maxSendTokens:
+				return true
+			case 0:
+				c.log.Debugf("Rate limit disabled, no MaxSendTokens.")
+				c.sendTokenIncr = 0
+				c.sendTokens = 0
+				c.maxSendTokens = 0
+			default:
+				c.log.Debugf("Rate limit MaxSendTokens updated: %v", c.sendTokenIncr)
+			}
 
 			return true
 		}
@@ -132,7 +152,9 @@ func (c *incomingConn) worker() {
 		RandomReader:      rand.Reader,
 	}
 	var err error
+	c.l.Lock()
 	c.w, err = wire.NewSession(cfg, false)
+	c.l.Unlock()
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
 		return
@@ -386,14 +408,12 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 		c.log.Debugf("Rate limit: DeltaT: %v Tokens: %v", deltaT, c.sendTokens)
 		incrCount := uint64(deltaT / c.sendTokenIncr)
 		if incrCount > 0 {
-			const maxSendTokens = 4
-
 			c.sendTokenLast += c.sendTokenIncr * time.Duration(incrCount)
 			c.sendTokens += incrCount
 
 			// Leaky bucket.
-			if c.sendTokens > maxSendTokens {
-				c.sendTokens = maxSendTokens
+			if c.sendTokens > c.maxSendTokens {
+				c.sendTokens = c.maxSendTokens
 			}
 		}
 
@@ -423,6 +443,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 		c:             conn,
 		id:            atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		sendTokenLast: monotime.Now(),
+		maxSendTokens: 4, // Reasonable burst to avoid some unnecessary rate limiting.
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 
