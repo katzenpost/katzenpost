@@ -99,21 +99,22 @@ type connection struct {
 	session *wire.Session
 }
 
-type connector struct {
+// Connector is used to make connections.
+type Connector struct {
 	cfg *Config
 	log *logging.Logger
 }
 
-// NewConnector returns a connector initialized from a Config.
-func NewConnector(cfg *Config) *connector {
-	p := &connector{
+// NewConnector returns a Connector initialized from a Config.
+func NewConnector(cfg *Config) *Connector {
+	p := &Connector{
 		cfg: cfg,
-		log: cfg.LogBackend.GetLogger("pki/voting/client/connector"),
+		log: cfg.LogBackend.GetLogger("pki/voting/client/Connector"),
 	}
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *Connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
 	// Connect to the peer.
 	dialFn := p.cfg.DialContextFn
 	if dialFn == nil {
@@ -175,14 +176,14 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	}, nil
 }
 
-func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
+func (p *Connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.Command, error) {
 	if err := s.SendCommand(cmd); err != nil {
 		return nil, err
 	}
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *Connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
@@ -205,7 +206,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.Private
 	return responses, nil
 }
 
-func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *Connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	//peerIndex := mrand.Intn(len(p.cfg.Authorities) - 1)
@@ -223,14 +224,15 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.Priva
 	return resp, err
 }
 
-type client struct {
+// Client is a PKI client.
+type Client struct {
 	cfg  *Config
 	log  *logging.Logger
-	pool *connector
+	pool *Connector
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
+func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
@@ -257,7 +259,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	for _, resp := range responses {
 		r, ok := resp.(*commands.PostDescriptorStatus)
 		if !ok {
-			errs = append(errs, fmt.Errorf("voting/client: Post() unexpected reply: %T", resp))
+			errs = append(errs, fmt.Errorf("voting/Client: Post() unexpected reply: %T", resp))
 			continue
 		}
 		switch r.ErrorCode {
@@ -265,7 +267,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 		case commands.DescriptorConflict:
 			errs = append(errs, pki.ErrInvalidPostEpoch)
 		default:
-			errs = append(errs, fmt.Errorf("voting/client: Post() rejected by authority: %v", postErrorToString(r.ErrorCode)))
+			errs = append(errs, fmt.Errorf("voting/Client: Post() rejected by authority: %v", postErrorToString(r.ErrorCode)))
 		}
 	}
 	if len(errs) == 0 {
@@ -275,7 +277,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
-func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
+func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
 	// Generate a random ecdh keypair to use for the link authentication.
@@ -299,7 +301,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	// Parse the consensus command.
 	r, ok := resp.(*commands.Consensus)
 	if !ok {
-		return nil, nil, fmt.Errorf("voting/client: Get() unexpected reply: %T", resp)
+		return nil, nil, fmt.Errorf("voting/Client: Get() unexpected reply: %T", resp)
 	}
 	switch r.ErrorCode {
 	case commands.ConsensusOk:
@@ -319,7 +321,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	_, good, bad, err := cert.VerifyThreshold(verifiers, threshold, r.Payload)
 	if err != nil {
 		c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
-		return nil, nil, fmt.Errorf("voting/client: Get() invalid consensus document: %s", err)
+		return nil, nil, fmt.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 	}
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
@@ -330,17 +332,17 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		return nil, nil, err
 	}
 	if doc.Epoch != epoch {
-		return nil, nil, fmt.Errorf("voting/client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
+		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
 	if err != nil {
-		c.log.Errorf("voting/client: Get() invalid consensus document: %s", err)
-		return nil, nil, fmt.Errorf("voting/client: Get() invalid consensus document: %s", err)
+		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
+		return nil, nil, fmt.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 	}
 	return doc, r.Payload, nil
 }
 
 // Deserialize returns PKI document given the raw bytes.
-func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
+func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 	doc, err := s11n.VerifyAndParseDocument(raw, c.cfg.Authorities[0].IdentityPublicKey)
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
@@ -351,15 +353,15 @@ func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
 // New constructs a new pki.Client instance.
 func New(cfg *Config) (pki.Client, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("voting/client: cfg is mandatory")
+		return nil, fmt.Errorf("voting/Client: cfg is mandatory")
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
 
-	c := new(client)
+	c := new(Client)
 	c.cfg = cfg
-	c.log = cfg.LogBackend.GetLogger("pki/voting/client")
+	c.log = cfg.LogBackend.GetLogger("pki/voting/Client")
 	c.pool = NewConnector(cfg)
 
 	return c, nil
