@@ -1,0 +1,25 @@
+
+syntax = "proto3";
+package proto;
+
+
+message Request {
+    uint64 ID     = 1;
+    bytes Payload = 2;
+    bool  HasSURB = 3;
+}
+
+message Response {
+    bytes Payload = 1;
+}
+
+message Params {
+    map<string, string> Map = 1;
+}
+
+message Empty {}
+
+service Kaetzchen {
+    rpc OnRequest(Request) returns (Response);
+    rpc Parameters(Empty) returns (Params);
+}

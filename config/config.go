@@ -1,5 +1,5 @@
 // config.go - Katzenpost server configuration.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2017  Yawning Angel and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -24,15 +24,19 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
+	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -284,6 +288,16 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
+	// EnableUserRegistrationHTTP is set to true if the
+	// User Registration HTTP service listener is enabled.
+	EnableUserRegistrationHTTP bool
+
+	// UserRegistrationHTTPAddresses is quite simply
+	// the set of TCP addresses that the User
+	// Registration HTTP service should listen on
+	// (e.g. "127.0.0.1:36967").
+	UserRegistrationHTTPAddresses []string
+
 	// AltAddresses is the map of extra transports and addresses at which
 	// the Provider is reachable by clients.  The most useful alternative
 	// transport is likely ("tcp") (`core/pki.TransportTCP`).
@@ -314,6 +328,10 @@ type Provider struct {
 	// Kaetzchen is the list of configured Kaetzchen (auto-responder agents)
 	// for this provider.
 	Kaetzchen []*Kaetzchen
+
+	// PluginKaetzchen is the list of configured Kaetzchen (auto-responder agents)
+	// for this provider that use external plugins via the go-plugin system.
+	PluginKaetzchen []*PluginKaetzchen
 }
 
 // SQLDB is the SQL database backend configuration.
@@ -407,7 +425,7 @@ type Kaetzchen struct {
 
 func (kCfg *Kaetzchen) validate() error {
 	if kCfg.Capability == "" {
-		return fmt.Errorf("config: Kaetzchen: Capability is invalid.")
+		return fmt.Errorf("config: Kaetzchen: Capability is invalid")
 	}
 
 	// Ensure the endpoint is normalized.
@@ -417,6 +435,56 @@ func (kCfg *Kaetzchen) validate() error {
 	}
 	if epNorm != kCfg.Endpoint {
 		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
+	}
+	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
+	}
+
+	return nil
+}
+
+// PluginKaetzchen is a Provider auto-responder agent.
+type PluginKaetzchen struct {
+	// Capability is the capability exposed by the agent.
+	Capability string
+
+	// Endpoint is the provider side endpoint that the agent will accept
+	// requests at.  While not required by the spec, this server only
+	// supports Endpoints that are lower-case local-parts of an e-mail
+	// address.
+	Endpoint string
+
+	// Config is the extra per agent arguments to be passed to the agent's
+	// initialization routine.
+	Config map[string]interface{}
+
+	// Command is the full file path to the external plugin program
+	// that implements this Kaetzchen service.
+	Command string
+
+	// MaxConcurrency is the number of worker goroutines to start
+	// for this service.
+	MaxConcurrency int
+
+	// Disable disabled a configured agent.
+	Disable bool
+}
+
+func (kCfg *PluginKaetzchen) validate() error {
+	if kCfg.Capability == "" {
+		return fmt.Errorf("config: Kaetzchen: Capability is invalid")
+	}
+
+	// Ensure the endpoint is normalized.
+	epNorm, err := precis.UsernameCaseMapped.String(kCfg.Endpoint)
+	if err != nil {
+		return fmt.Errorf("config: Kaetzchen: '%v' has invalid endpoint: %v", kCfg.Capability, err)
+	}
+	if epNorm != kCfg.Endpoint {
+		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
+	}
+	if kCfg.Command == "" {
+		return fmt.Errorf("config: Kaetzchen: Command is invalid")
 	}
 	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
 		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
@@ -465,17 +533,34 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
+	if pCfg.EnableUserRegistrationHTTP {
+		for _, addr := range pCfg.UserRegistrationHTTPAddresses {
+			h, p, err := net.SplitHostPort(addr)
+			if err != nil {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
+			}
+			if len(h) == 0 {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", addr)
+			}
+			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
+			} else if port == 0 {
+				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", addr)
+			}
+		}
+	}
+
 	internalTransports := make(map[string]bool)
 	for _, v := range pki.InternalTransports {
 		internalTransports[strings.ToLower(string(v))] = true
 	}
 
 	for k, v := range pCfg.AltAddresses {
-		kLower := strings.ToLower(k)
-		if internalTransports[kLower] {
-			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
+		lowkey := strings.ToLower(k)
+		if internalTransports[lowkey] {
+			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", lowkey)
 		}
-		switch pki.Transport(kLower) {
+		switch pki.Transport(lowkey) {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
@@ -553,6 +638,15 @@ func (pCfg *Provider) validate() error {
 		}
 		capaMap[v.Capability] = true
 	}
+	for _, v := range pCfg.PluginKaetzchen {
+		if err := v.validate(); err != nil {
+			return err
+		}
+		if capaMap[v.Capability] {
+			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
+		}
+		capaMap[v.Capability] = true
+	}
 
 	return nil
 }
@@ -560,13 +654,22 @@ func (pCfg *Provider) validate() error {
 // PKI is the Katzenpost directory authority configuration.
 type PKI struct {
 	// Nonvoting is a non-voting directory authority.
-	Nonvoting *Nonvoting
+	Nonvoting   *Nonvoting
+	Voting      *Voting
 }
 
 func (pCfg *PKI) validate() error {
 	nrCfg := 0
+	if pCfg.Nonvoting != nil && pCfg.Voting != nil {
+		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
+	}
 	if pCfg.Nonvoting != nil {
 		if err := pCfg.Nonvoting.validate(); err != nil {
+			return err
+		}
+		nrCfg++
+	} else {
+		if err := pCfg.Voting.validate(); err != nil {
 			return err
 		}
 		nrCfg++
@@ -596,6 +699,68 @@ func (nCfg *Nonvoting) validate() error {
 		return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
 	}
 
+	return nil
+}
+
+// Peer is a voting peer.
+type Peer struct {
+	Addresses         []string
+	IdentityPublicKey string
+	LinkPublicKey     string
+}
+
+func (p *Peer) validate() error {
+	for _, address := range p.Addresses {
+		if err := utils.EnsureAddrIPPort(address); err != nil {
+			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
+		}
+	}
+	var pubKey eddsa.PublicKey
+	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
+		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
+	}
+	if err := pubKey.FromString(p.LinkPublicKey); err != nil {
+		return fmt.Errorf("Voting Peer: Invalid LinkPublicKey: %v", err)
+	}
+	return nil
+}
+
+// Voting is a voting directory authority.
+type Voting struct {
+	Peers []*Peer
+}
+
+// AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
+func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
+	authPeers := []*config.AuthorityPeer{}
+	for _, peer := range peers {
+		linkKey := new(ecdh.PublicKey)
+		err := linkKey.UnmarshalText([]byte(peer.LinkPublicKey))
+		if err != nil {
+			return nil, err
+		}
+		identityKey := new(eddsa.PublicKey)
+		err = identityKey.UnmarshalText([]byte(peer.IdentityPublicKey))
+		if err != nil {
+			return nil, err
+		}
+		authPeer := &config.AuthorityPeer{
+			IdentityPublicKey: identityKey,
+			LinkPublicKey:     linkKey,
+			Addresses:         peer.Addresses,
+		}
+		authPeers = append(authPeers, authPeer)
+	}
+	return authPeers, nil
+}
+
+func (vCfg *Voting) validate() error {
+	for _, peer := range vCfg.Peers {
+		err := peer.validate()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -691,6 +856,23 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	return nil
+}
+
+// Store writes a config to fileName on disk
+func Store(cfg *Config, fileName string) error {
+	f, err := os.Open(fileName)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	// Serialize the descriptor.
+	var serialized []byte
+	enc := codec.NewEncoderBytes(&serialized, new(codec.JsonHandle))
+	if err := enc.Encode(cfg); err != nil {
+		return err
+	}
+	_, err = f.Write(serialized)
+	return err
 }
 
 // Load parses and validates the provided buffer b as a config file body and

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	nClient "github.com/katzenpost/authority/nonvoting/client"
+	vClient "github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/epochtime"
@@ -35,6 +36,7 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
@@ -98,7 +100,7 @@ func (p *pki) worker() {
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
 
-	var lastUpdateEpoch, lastMixMaxDelay, lastSendShift uint64
+	var lastUpdateEpoch, lastMixMaxDelay, lastSendTokenDuration uint64
 
 	for {
 		const recheckInterval = 1 * time.Minute
@@ -190,13 +192,14 @@ func (p *pki) worker() {
 					lastMixMaxDelay = newMixMaxDelay
 				}
 
-				if newSendShift := ent.SendShift(); newSendShift != lastSendShift {
-					p.log.Debugf("Updating listener SendShift for epoch %v: %v", now, newSendShift)
+				// send token duration
+				if newSendTokenDuration := ent.SendRatePerMinute(); newSendTokenDuration != lastSendTokenDuration {
+					p.log.Debugf("Updating listener SendTokenDuration for epoch %v: %v", now, newSendTokenDuration)
 
 					for _, l := range p.glue.Listeners() {
-						l.OnNewSendShift(newSendShift)
+						l.OnNewSendRatePerMinute(newSendTokenDuration)
 					}
-					lastSendShift = newSendShift
+					lastSendTokenDuration = newSendTokenDuration
 				}
 
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
@@ -275,7 +278,7 @@ func (p *pki) pruneDocuments() {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-	const publishDeadline = 3600 * time.Second
+	publishDeadline := epochtime.Period / 3
 
 	epoch, _, till := epochtime.Now()
 	doPublishEpoch := uint64(0)
@@ -331,7 +334,11 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		desc.Layer = cpki.LayerProvider
 
 		// Publish currently running Kaetzchen.
-		desc.Kaetzchen = p.glue.Provider().KaetzchenForPKI()
+		var err error
+		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+		if err != nil {
+			return err
+		}
 	}
 	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
 
@@ -622,6 +629,19 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			PublicKey:  authPk,
 		}
 		p.impl, err = nClient.New(pkiCfg)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers)
+		if err != nil {
+			return nil, err
+		}
+		pkiCfg := &vClient.Config{
+			LogBackend:  glue.LogBackend(),
+			Authorities: authorities,
+		}
+		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}
