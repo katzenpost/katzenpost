@@ -18,8 +18,10 @@
 package client
 
 import (
+	"context"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/session"
@@ -83,7 +85,10 @@ func (c *Client) halt() {
 // NewSession creates and returns a new session or an error.
 func (c *Client) NewSession() (*session.Session, error) {
 	var err error
-	c.session, err = session.New(c.fatalErrCh, c.logBackend, c.cfg)
+	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	c.session, err = session.New(ctx, c.fatalErrCh, c.logBackend, c.cfg)
 	return c.session, err
 }
 

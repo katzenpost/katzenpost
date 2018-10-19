@@ -92,6 +92,10 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
+	// SessionDialTimeout is the number of seconds that a session dial
+	// is allowed to take until it is cancelled.
+	SessionDialTimeout int
+
 	// InitialMaxPKIRetrievalDelay is the initial maximum number of seconds
 	// we are willing to wait for the retreival of the PKI document.
 	InitialMaxPKIRetrievalDelay int

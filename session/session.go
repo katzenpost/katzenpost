@@ -17,6 +17,7 @@
 package session
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -80,7 +81,7 @@ type Session struct {
 
 // New establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*Session, error) {
+func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups
@@ -152,7 +153,7 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 
 	// block until we get the first PKI document
 	// and then set our timers accordingly
-	doc, err := s.awaitFirstPKIDoc()
+	doc, err := s.awaitFirstPKIDoc(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -162,10 +163,12 @@ func New(fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*S
 	return s, nil
 }
 
-func (s *Session) awaitFirstPKIDoc() (*pki.Document, error) {
+func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 	for {
 		var qo workerOp
 		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")
 			return nil, errors.New("Terminating gracefully.")
