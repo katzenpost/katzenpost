@@ -228,6 +228,9 @@ type Debug struct {
 	// IdentityKey specifies the identity private key.
 	IdentityKey *eddsa.PrivateKey `toml:"-"`
 
+	// LinkKey specifies the link layer private key.
+	LinkKey *ecdh.PrivateKey `toml:"-"`
+
 	// Layers is the number of non-provider layers in the network topology.
 	Layers int
 
