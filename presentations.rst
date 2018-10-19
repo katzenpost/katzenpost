@@ -13,7 +13,7 @@ Slides
 Videos
 ======
 
-* `David Stainton: BornHack 2018 - Modern Mix Network Design <https://www.youtube.com/watch?              2v=DhBWKWQztdA>`_
-* `Jeff Burdges and David Stainton 34C3 - Practical Mix Network Design <https://www.youtube.com/watch?    2v=O_mlX1rV2DQ>`_
-* `David Stainton: Anonymizing Cryptocurrencies from Network Observers with Mix Networks <https://www.    2youtube.com/watch?v=dSydsoCe_SA>`_
+* `David Stainton: BornHack 2018 - Modern Mix Network Design <https://www.youtube.com/watch?v=DhBWKWQztdA>`_
+* `Jeff Burdges and David Stainton 34C3 - Practical Mix Network Design <https://www.youtube.com/watch?v=O_mlX1rV2DQ>`_
+* `David Stainton: Anonymizing Cryptocurrencies from Network Observers with Mix Networks <https://www.youtube.com/watch?v=dSydsoCe_SA>`_
 * `David Stainton Shows How Mix Networks Improve Privacy <https://www.youtube.com/watch?v=7zIWrNqiTLI>`_
