@@ -201,19 +201,33 @@ func New(cfg *config.Config) (*Server, error) {
 	// Initialize the authority identity key.
 	var err error
 	if s.cfg.Debug.IdentityKey != nil {
-		s.log.Warning("IdentityKey should NOT be used for production deployments.")
+		s.log.Warning("Debug.IdentityKey MUST NOT be used for production deployments.")
 		s.identityKey = new(eddsa.PrivateKey)
 		s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
 	} else {
 		identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
 		identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
 		if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-			s.log.Errorf("Failed to initialize identity: %v", err)
+			s.log.Errorf("Failed to initialize identity key: %v", err)
 			return nil, err
 		}
 	}
-	s.linkKey = s.identityKey.ToECDH()
+
+	if s.cfg.Debug.LinkKey != nil {
+		s.log.Warning("Debug.LinkKey MUST NOT be used for production deployments.")
+		s.linkKey = new(ecdh.PrivateKey)
+		s.linkKey.FromBytes(s.cfg.Debug.LinkKey.Bytes())
+	} else {
+		linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
+		linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
+		if s.linkKey, err = ecdh.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
+			s.log.Errorf("Failed to initialize link key: %v", err)
+			return nil, err
+		}
+	}
+
 	s.log.Noticef("Authority identity public key is: %s", s.identityKey.PublicKey())
+	s.log.Noticef("Authority link public key is: %s", s.linkKey.PublicKey())
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
