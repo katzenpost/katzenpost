@@ -35,7 +35,7 @@ Documentation
 ..  toctree::
     :maxdepth: 1
 
-    "Playground" Demo: Client Instructions <https://github.com/katzenpost/playground/blob/master/README.rst>
+    "Playground" Demo: Client Instructions <downloads>
     Katzenpost Network Operators Handbook <docs/handbook/index>
     docs/glossary
     docs/faq
