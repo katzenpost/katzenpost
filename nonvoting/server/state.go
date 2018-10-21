@@ -443,7 +443,10 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 
 	// If we have a serialized document, return it.
 	if d, ok := s.documents[epoch]; ok {
-		return d.raw, nil
+		if d.raw != nil {
+			return d.raw, nil
+		}
+		return nil, fmt.Errorf("nil document for epoch %d", epoch)
 	}
 
 	// Otherwise, return an error based on the time.
