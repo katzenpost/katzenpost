@@ -109,7 +109,7 @@ func (m *mixKeys) Prune() bool {
 	defer m.Unlock()
 
 	for idx, v := range m.keys {
-		if idx < epoch {
+		if idx < epoch-1 {
 			m.log.Debugf("Purging expired key for epoch: %v", idx)
 			v.Deref()
 			delete(m.keys, idx)
