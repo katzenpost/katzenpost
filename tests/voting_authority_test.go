@@ -1,5 +1,5 @@
 // voting_authority_tests.go - Katzenpost voting authority tests
-// Copyright (C) 2018  David Stainton.
+// Copyright (C) 2018  Yawning Angel, David Stainton, Masala.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
