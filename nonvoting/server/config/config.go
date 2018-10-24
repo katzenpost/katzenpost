@@ -138,24 +138,21 @@ type Parameters struct {
 	// or drop decoy messages.
 	SendLambda float64
 
-	// SendMaxInterval is the maximum send interval in milliseconds, enforced
-	// prior to (excluding) SendShift.
+	// SendMaxInterval is the maximum send interval in milliseconds.
 	SendMaxInterval uint64
 
 	// DropLambda is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine send timing of drop decoy messages.
 	DropLambda float64
 
-	// DropMaxInterval is the maximum send interval in milliseconds, enforced
-	// prior to (excluding) DropShift.
+	// DropMaxInterval is the maximum send interval in milliseconds.
 	DropMaxInterval uint64
 
 	// LoopLambda is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine send timing of loop decoy messages.
 	LoopLambda float64
 
-	// LoopMaxInterval is the maximum send interval in milliseconds, enforced
-	// prior to (excluding) LoopShift.
+	// LoopMaxInterval is the maximum send interval in milliseconds.
 	LoopMaxInterval uint64
 }
 
