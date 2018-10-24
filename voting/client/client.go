@@ -229,6 +229,8 @@ type Client struct {
 	cfg  *Config
 	log  *logging.Logger
 	pool *connector
+	verifiers []cert.Verifier
+	threshold int
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
@@ -313,12 +315,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Verify document signatures.
 	doc := &pki.Document{}
-	verifiers := make([]cert.Verifier, len(c.cfg.Authorities))
-	for i, auth := range c.cfg.Authorities {
-		verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
-	}
-	threshold := len(c.cfg.Authorities)/2 + 1
-	_, good, bad, err := cert.VerifyThreshold(verifiers, threshold, r.Payload)
+	_, good, bad, err := cert.VerifyThreshold(c.verifiers, c.threshold, r.Payload)
 	if err != nil {
 		c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
 		return nil, nil, fmt.Errorf("voting/Client: Get() invalid consensus document: %s", err)
@@ -326,7 +323,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
 	}
-	doc, err = s11n.VerifyAndParseDocument(r.Payload, c.cfg.Authorities[0].IdentityPublicKey)
+	doc, err = s11n.VerifyAndParseDocument(r.Payload, good[0])
 	if err != nil {
 		// XXX: somehow this returned a nil doc!
 		return nil, nil, err
@@ -343,7 +340,11 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 // Deserialize returns PKI document given the raw bytes.
 func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
-	doc, err := s11n.VerifyAndParseDocument(raw, c.cfg.Authorities[0].IdentityPublicKey)
+	_, good, _, err := cert.VerifyThreshold(c.verifiers, c.threshold, raw)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := s11n.VerifyAndParseDocument(raw, good[0])
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}
@@ -363,7 +364,11 @@ func New(cfg *Config) (pki.Client, error) {
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/voting/Client")
 	c.pool = newConnector(cfg)
-
+	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
+	for i, auth := range c.cfg.Authorities {
+		c.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+	}
+	c.threshold = len(c.verifiers)/2 + 1
 	return c, nil
 }
 
