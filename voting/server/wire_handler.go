@@ -74,30 +74,14 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Parse the command, and craft the response.
 	var resp commands.Command
-	switch c := cmd.(type) {
-	case *commands.Vote:
-		resp = s.onVote(c)
-	case *commands.VoteStatus:
-		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
-		return
-	case *commands.Reveal:
-		resp = s.onReveal(c)
-	case *commands.RevealStatus:
-		s.log.Error("RevealStatus command is not allowed on Authority wire service listener.")
-		return
-	case *commands.GetConsensus:
-		resp = s.onGetConsensus(rAddr, c)
-	case *commands.PostDescriptor:
-		if auth.peerIdentityKey == nil {
-			// A client trying to post is actively evil, don't even dignify
-			// it with a response.
-			s.log.Errorf("Peer %v: Not allowed to post.", rAddr)
-			return
-		}
-		resp = s.onPostDescriptor(rAddr, c, auth.peerIdentityKey)
-	default:
-		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
-		return
+	if auth.isClient {
+		resp = s.onClient(rAddr, cmd)
+	} else if auth.isMix {
+		resp = s.onMix(rAddr, cmd, auth.peerIdentityKey)
+	} else if auth.isAuthority {
+		resp = s.onAuthority(rAddr, cmd)
+	} else {
+		panic("wtf") // should only happen if there is a bug in wireAuthenticator
 	}
 
 	// Send the response, if any.
@@ -107,6 +91,57 @@ func (s *Server) onConn(conn net.Conn) {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
 	}
+}
+
+func (s *Server) onClient(rAddr net.Addr, cmd commands.Command) commands.Command {
+	s.log.Debug("onClient")
+	var resp commands.Command
+	switch c := cmd.(type) {
+	case *commands.GetConsensus:
+		resp = s.onGetConsensus(rAddr, c)
+	default:
+		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
+		return nil
+	}
+	return resp
+}
+
+func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKey *eddsa.PublicKey) commands.Command {
+	s.log.Debug("onMix")
+	var resp commands.Command
+	switch c := cmd.(type) {
+	case *commands.GetConsensus:
+		resp = s.onGetConsensus(rAddr, c)
+	case *commands.PostDescriptor:
+		resp = s.onPostDescriptor(rAddr, c, peerIdentityKey)
+	default:
+		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
+		return nil
+	}
+	return resp
+}
+
+func (s *Server) onAuthority(rAddr net.Addr, cmd commands.Command) commands.Command {
+	s.log.Debug("onAuthority")
+	var resp commands.Command
+	switch c := cmd.(type) {
+	case *commands.GetConsensus:
+		resp = s.onGetConsensus(rAddr, c)
+	case *commands.Vote:
+		resp = s.onVote(c)
+	case *commands.VoteStatus:
+		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
+		return nil
+	case *commands.Reveal:
+		resp = s.onReveal(c)
+	case *commands.RevealStatus:
+		s.log.Error("RevealStatus command is not allowed on Authority wire service listener.")
+		return nil
+	default:
+		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
+		return nil
+	}
+	return resp
 }
 
 func (s *Server) onVote(cmd *commands.Vote) commands.Command {
@@ -201,36 +236,57 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 type wireAuthenticator struct {
 	s               *Server
 	peerIdentityKey *eddsa.PublicKey
+	isClient        bool
+	isMix           bool
+	isAuthority     bool
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
-	// Just allow clients to connect with fetch access.
 	switch len(creds.AdditionalData) {
 	case 0:
+		a.isClient = true
 		return true
 	case eddsa.PublicKeySize:
 	default:
-		a.s.log.Debugf("Rejecting authentication, invalid AD size.")
+		a.s.log.Warning("Rejecting authentication, invalid AD size.")
 		return false
 	}
 
 	a.peerIdentityKey = new(eddsa.PublicKey)
 	if err := a.peerIdentityKey.FromBytes(creds.AdditionalData); err != nil {
-		a.s.log.Debugf("Rejecting authentication, invalid AD: %v", err)
+		a.s.log.Warningf("Rejecting authentication, invalid AD: %v", err)
 		return false
 	}
 
 	pk := a.peerIdentityKey.ByteArray()
-	if !(a.s.state.authorizedMixes[pk] || a.s.state.authorizedProviders[pk] != "") {
-		a.s.log.Debugf("Rejecting authentication, not a valid mix/provider.")
+	_, isMix := a.s.state.authorizedMixes[pk]
+	_, isProvider := a.s.state.authorizedProviders[pk]
+	_, isAuthority := a.s.state.authorizedAuthorities[pk]
+
+	if isMix || isProvider {
+		linkPk := a.peerIdentityKey.ToECDH()
+		if !linkPk.Equal(creds.PublicKey) {
+			a.s.log.Warning("Rejecting mix authentication, public key mismatch.")
+			return false
+		}
+		a.isMix = true // Providers and mixes are both mixes. :)
+		return true
+	} else if isAuthority {
+		linkKey, ok := a.s.state.authorityLinkKeys[pk]
+		if !ok {
+			a.s.log.Warning("Rejecting authority authentication, no link key entry.")
+			return false
+		}
+		if !linkKey.Equal(creds.PublicKey) {
+			a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
+			return false
+		}
+		a.isAuthority = true
+		return true
+	} else {
+		a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
 		return false
 	}
 
-	linkPk := a.peerIdentityKey.ToECDH()
-	if !linkPk.Equal(creds.PublicKey) {
-		a.s.log.Debugf("Rejecting authentication, public key mismatch.")
-		return false
-	}
-
-	return true
+	return false // Not reached.
 }

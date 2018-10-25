@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -90,6 +91,7 @@ type state struct {
 	authorizedMixes       map[[eddsa.PublicKeySize]byte]bool
 	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
 	authorizedAuthorities map[[eddsa.PublicKeySize]byte]bool
+	authorityLinkKeys     map[[eddsa.PublicKeySize]byte]*ecdh.PublicKey
 
 	documents    map[uint64]*document
 	descriptors  map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
@@ -479,7 +481,7 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 	defer s.s.Done()
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
-		AdditionalData:    []byte(""),
+		AdditionalData:    s.s.identityKey.PublicKey().Bytes(),
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
@@ -539,7 +541,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 	defer s.s.Done()
 	cfg := &wire.SessionConfig{
 		Authenticator:     s,
-		AdditionalData:    []byte(""),
+		AdditionalData:    s.s.identityKey.PublicKey().Bytes(),
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
@@ -1378,6 +1380,11 @@ func newState(s *Server) (*state, error) {
 	for _, v := range st.s.cfg.Authorities {
 		pk := v.IdentityPublicKey.ByteArray()
 		st.authorizedAuthorities[pk] = true
+	}
+	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]*ecdh.PublicKey)
+	for _, v := range st.s.cfg.Authorities {
+		pk := v.IdentityPublicKey.ByteArray()
+		st.authorityLinkKeys[pk] = v.LinkPublicKey
 	}
 
 	st.documents = make(map[uint64]*document)
