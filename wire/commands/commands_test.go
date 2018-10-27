@@ -291,24 +291,24 @@ func TestReveal(t *testing.T) {
 
 	alice, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err, "wtf")
-	var digest [32]byte
+	digest := make([]byte, 32)
 	for i := 0; i < 32; i++ {
 		digest[i] = uint8(i)
 	}
 	cmd := &Reveal{
 		Epoch:     3141,
 		PublicKey: alice.PublicKey(),
-		Digest:    digest,
+		Payload:   digest,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+revealOverhead, "Reveal: ToBytes() length")
+	require.Len(b, cmdOverhead+revealOverhead+32, "Reveal: ToBytes() length")
 	c, err := FromBytes(b)
 	require.NoError(err, "Reveal: FromBytes() failed")
 	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
 	d := c.(*Reveal)
 	require.Equal(d.Epoch, cmd.Epoch)
 	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
-	require.Equal(d.Digest, cmd.Digest)
+	require.Equal(d.Payload, cmd.Payload)
 }
 
 func TestRevealtatus(t *testing.T) {
