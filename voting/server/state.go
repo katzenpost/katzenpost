@@ -375,7 +375,7 @@ func (s *state) reveal(epoch uint64) {
 		// Reveals are only valid until the end of voting round
 		_, _, till := epochtime.Now()
 		revealExpiration := time.Now().Add(till).Unix()
-		signed, err := cert.Sign(s.s.identityKey, reveal[8:], revealExpiration)
+		signed, err := cert.Sign(s.s.identityKey, reveal, revealExpiration)
 		if err != nil {
 			s.s.fatalErrCh <- err
 		}
