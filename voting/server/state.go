@@ -1020,17 +1020,8 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	s.Lock()
 	defer s.Unlock()
 	resp := commands.RevealStatus{}
-	if reveal.Epoch < s.votingEpoch {
-		s.log.Errorf("Received Reveal too early: %d < %d", reveal.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.RevealTooEarly
-		return &resp
-	}
-	if reveal.Epoch > s.votingEpoch {
-		s.log.Errorf("Received Reveal too late: %d > %d", reveal.Epoch, s.votingEpoch)
-		resp.ErrorCode = commands.RevealTooLate
-		return &resp
-	}
-	// if already revealed
+
+	// if not authorized
 	_, ok := s.authorizedAuthorities[reveal.PublicKey.ByteArray()]
 	if !ok {
 		s.log.Error("Voter not white-listed.")
@@ -1045,12 +1036,29 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		resp.ErrorCode = commands.RevealNotAuthorized
 		return &resp
 	}
+
+	e := epochFromBytes(certified[:8])
+	// received too late
+	if e < s.votingEpoch {
+		s.log.Errorf("Received Reveal too late: %d < %d", e, s.votingEpoch)
+		resp.ErrorCode = commands.RevealTooLate
+		return &resp
+	}
+
+	// received too early
+	if e > s.votingEpoch {
+		s.log.Errorf("Received Reveal too early: %d > %d", e, s.votingEpoch)
+		resp.ErrorCode = commands.RevealTooEarly
+		return &resp
+	}
+
 	// haven't received a vote yet for this epoch
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.log.Error("Reveal received before any votes!?.")
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
 	}
+
 	// haven't received a vote from this peer yet for this epoch
 	if _, ok := s.votes[s.votingEpoch][reveal.PublicKey.ByteArray()]; !ok {
 		s.log.Error("Reveal received before peer's vote?.")
@@ -1070,11 +1078,8 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
-	r := make([]byte, 0)
-	r = append(r, epochToBytes(s.votingEpoch)...)
-	r = append(r, certified...)
 	s.log.Debug("Reveal OK.")
-	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = r
+	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = certified
 	resp.ErrorCode = commands.RevealOk
 	return &resp
 }
@@ -1470,6 +1475,10 @@ func epochToBytes(e uint64) []byte {
 	ret := make([]byte, 8)
 	binary.BigEndian.PutUint64(ret, e)
 	return ret
+}
+
+func epochFromBytes(b []byte) uint64 {
+	return binary.BigEndian.Uint64(b[0:8])
 }
 
 func sortNodesByPublicKey(nodes []*descriptor) {
