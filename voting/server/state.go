@@ -372,7 +372,14 @@ func (s *SharedRandom) Reveal() []byte {
 
 func (s *state) reveal(epoch uint64) {
 	if reveal, ok := s.reveals[epoch][s.identityPubKey()]; ok {
-		go s.sendRevealToAuthorities(reveal, epoch)
+		// Reveals are only valid until the end of voting round
+		_, _, till := epochtime.Now()
+		revealExpiration := time.Now().Add(till).Unix()
+		signed, err := cert.Sign(s.s.identityKey, reveal[8:], revealExpiration)
+		if err != nil {
+			s.s.fatalErrCh <- err
+		}
+		go s.sendRevealToAuthorities(signed, epoch)
 	}
 }
 
@@ -494,12 +501,10 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 	if err = session.Initialize(conn); err != nil {
 		return err
 	}
-	var digest [32]byte
-	copy(digest[:], reveal[8:])
 	cmd := &commands.Reveal{
 		Epoch:     epoch,
 		PublicKey: s.s.IdentityKey(),
-		Digest:    digest,
+		Payload:   reveal,
 	}
 	err = session.SendCommand(cmd)
 	if err != nil {
@@ -1033,6 +1038,13 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		return &resp
 	}
 
+	// verify the signature on the payload
+	certified, err := cert.Verify(reveal.PublicKey, reveal.Payload)
+	if err != nil {
+		s.log.Error("Reveal from %s failed to verify.", reveal.PublicKey)
+		resp.ErrorCode = commands.RevealNotAuthorized
+		return &resp
+	}
 	// haven't received a vote yet for this epoch
 	if _, ok := s.votes[s.votingEpoch]; !ok {
 		s.log.Error("Reveal received before any votes!?.")
@@ -1060,12 +1072,11 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 
 	r := make([]byte, 0)
 	r = append(r, epochToBytes(s.votingEpoch)...)
-	r = append(r, reveal.Digest[:]...)
+	r = append(r, certified...)
 	s.log.Debug("Reveal OK.")
 	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = r
 	resp.ErrorCode = commands.RevealOk
 	return &resp
-
 }
 
 func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
