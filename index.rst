@@ -62,6 +62,7 @@ Mixnets?!
 * `Phillip Rogaway, The Moral Character of Cryptographic Work (2015) <moralcharacter.html>`_
 * Animation: `Panoramix: What is a mixnet? A Short Introduction <https://www.youtube.com/watch?v=dQtk0NcTseg>`_
 * Video: `Claudia Diaz: Lecture on Anonymity Systems (2014) <https://www.youtube.com/watch?v=fhqabqmzpqE>`_
+* Video: `Ania Piotrowska presents the Loopix Anonymity System at USENIX Security 2017 <https://www.youtube.com/watch?v=R-yEqLX_UvI>`_
 \
 
 * Video: `Ian Goldberg: Sphinx: A Compact and Provably Secure Mix Format (2009) <https://www.youtube.com/watch?v=34TKXELJa2c>`_
