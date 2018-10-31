@@ -47,7 +47,7 @@ const (
 	voteStatusLength = 1
 
 	digestLength       = 32
-	revealOverhead     = 8 + eddsa.PublicKeySize + digestLength
+	revealOverhead     = 8 + eddsa.PublicKeySize
 	revealStatusLength = 1
 
 	messageTypeMessage messageType = 0
@@ -308,7 +308,7 @@ func (c *PostDescriptorStatus) ToBytes() []byte {
 type Reveal struct {
 	Epoch     uint64
 	PublicKey *eddsa.PublicKey
-	Digest    [32]byte
+	Payload   []byte
 }
 
 // ToBytes serializes the Reveal and returns the resulting byte slice.
@@ -316,10 +316,10 @@ func (r *Reveal) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+revealOverhead)
 	out[0] = byte(reveal)
 	// out[1] reserved
-	binary.BigEndian.PutUint32(out[2:6], uint32(revealOverhead))
+	binary.BigEndian.PutUint32(out[2:6], uint32(revealOverhead+len(r.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], r.Epoch)
 	copy(out[14:14+eddsa.PublicKeySize], r.PublicKey.Bytes())
-	copy(out[14+eddsa.PublicKeySize:], r.Digest[:])
+	out = append(out, r.Payload...)
 	return out
 }
 
@@ -335,7 +335,8 @@ func revealFromBytes(b []byte) (Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	copy(r.Digest[:], b[40:])
+	r.Payload = make([]byte, 0, len(b)-revealOverhead)
+	r.Payload = append(r.Payload, b[revealOverhead:]...)
 	return r, nil
 }
 
