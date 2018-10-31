@@ -27,7 +27,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"strings"
 
 	"github.com/agl/ed25519/extra25519"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -53,7 +52,7 @@ var errInvalidKey = errors.New("eddsa: invalid key")
 // PublicKey is a EdDSA public key.
 type PublicKey struct {
 	pubKey    ed25519.PublicKey
-	hexString string
+	b64String string
 }
 
 // InternalPtr returns a pointer to the internal (`golang.org/x/crypto/ed25519`)
@@ -89,7 +88,7 @@ func (k *PublicKey) FromBytes(b []byte) error {
 
 	k.pubKey = make([]byte, PublicKeySize)
 	copy(k.pubKey, b)
-	k.rebuildHexString()
+	k.rebuildB64String()
 	return nil
 }
 
@@ -160,7 +159,7 @@ func (k *PublicKey) ToECDH() *ecdh.PublicKey {
 // certain contexts (eg: if used once in path selection).
 func (k *PublicKey) Reset() {
 	utils.ExplicitBzero(k.pubKey)
-	k.hexString = "[scrubbed]"
+	k.b64String = "[scrubbed]"
 }
 
 // Verify returns true iff the signature sig is valid for the message msg.
@@ -168,13 +167,13 @@ func (k *PublicKey) Verify(sig, msg []byte) bool {
 	return ed25519.Verify(k.pubKey, msg, sig)
 }
 
-// String returns the public key as a hexdecimal encoded string.
+// String returns the public key as a base64 encoded string.
 func (k *PublicKey) String() string {
-	return k.hexString
+	return k.b64String
 }
 
-func (k *PublicKey) rebuildHexString() {
-	k.hexString = strings.ToUpper(hex.EncodeToString(k.pubKey[:]))
+func (k *PublicKey) rebuildB64String() {
+	k.b64String = base64.StdEncoding.EncodeToString(k.Bytes())
 }
 
 // Equal returns true iff the public key is byte for byte identical.
@@ -203,7 +202,7 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 	k.privKey = make([]byte, PrivateKeySize)
 	copy(k.privKey, b)
 	k.pubKey.pubKey = k.privKey.Public().(ed25519.PublicKey)
-	k.pubKey.rebuildHexString()
+	k.pubKey.rebuildB64String()
 	return nil
 }
 
@@ -268,7 +267,7 @@ func NewKeypair(r io.Reader) (*PrivateKey, error) {
 	k := new(PrivateKey)
 	k.privKey = privKey
 	k.pubKey.pubKey = pubKey
-	k.pubKey.rebuildHexString()
+	k.pubKey.rebuildB64String()
 	return k, nil
 }
 
