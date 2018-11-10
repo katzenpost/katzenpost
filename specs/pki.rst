@@ -341,8 +341,10 @@ Version 0
    The epoch_number field is used by the receiving party to quickly
    check the epoch for the vote before deserializing the payload.
 
-   // TODO: each authority must include its commit value for the
-   // shared random computation in this phase along with its signed vote.
+   Each authority MUST include its commit value for the
+   shared random computation in this phase along with its signed vote.
+   This computation is derived from the Tor Shared Random Subsystem,
+   [TORSRV].
 
 3.2.3 The vote_status Command
 
