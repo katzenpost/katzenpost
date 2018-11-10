@@ -306,6 +306,9 @@ Version 0
    examines it for new descriptors and includes any valid descriptors
    in its view of the network.
 
+   Each Authority includes in its vote a hashed value committing to a choice of
+   a random number for the vote. See section 4.3 for more details.
+
 3.2.1 Voting Wire Protocol Commands
 
    The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used
@@ -571,6 +574,29 @@ Version 0
        "Topology" : [],
        "Providers" : [],
    }
+
+4.3 Shared Random Value structure
+---------------------------------
+
+Katzenpost's Shared Random Value computation is inspired by Tor's Shared Random Subsystem [TORSRV].
+
+Each voting round a commit value is included in the votes sent to other authorities. These are produced as follows:
+   H = SHA3-256
+
+   COMMIT = Uint64(epoch) | H(REVEAL)
+   REVEAL = Uint64(epoch) | H(RN)
+
+After the votes are collected from the voting round, and before signature exchange, the Shared Random Value field of the consensus document is the output of H over the input string calculated as follows:
+
+  1. Validated Reveal commands received including the authorities own reveal
+       are sorted by reveal value in ascending order and appended to the input
+       in format IdentityPublicKeyBytes_n | RevealValue_n
+
+  2. If a SharedRandomValue for the previous epoch exists, it is appended to
+       the input string, otherwise 32 NUL (\x00) bytes are used.
+
+  REVEALS = ID_a | R_a | ID_b | R_b | ...
+  SharedRandomValue = H("shared-random" | Uint64(epoch) | REVEALS | PREVIOUS_SRV)
 
 5. PKI Wire Protocol
 ====================
