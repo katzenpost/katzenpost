@@ -208,15 +208,18 @@ Version 0
 -----------------------------------------
 
    Directory Authority server interactions are conducted according to
-   the following schedule, where ``T`` is the beginning of the current epoch.
+   the following schedule, where ``T`` is the beginning of the current epoch,
+   and ``P`` is the length of the epoch period.
 
    ``T``                         - Epoch begins
 
-   ``T + 2 hours``               - Vote exchange
+   ``T + P/2``                   - Vote exchange
 
-   ``T + 2 hours + 7.5 minutes`` - Tabulation and signature exchange
+   ``T + (5/8)*P``               - Reveal exchange
 
-   ``T + 2 hours + 15 minutes``  - Publish consensus
+   ``T + (6/8)*P``               - Tabulation and signature exchange
+
+   ``T + (7/8)*P``               - Publish consensus
 
 
 2.1.2 Mix Schedule
@@ -225,26 +228,26 @@ Version 0
    Mix PKI interactions are conducted according to the following
    schedule, where T is the beginning of the current epoch.
 
-    ``T + 2 hours``              - Deadline for publication of all mixes documents
+    ``T + P/2``            - Deadline for publication of all mixes documents
                                for the next epoch.
 
-    ``T + 2 hours + 15 min``     - This marks the beginning of the period
+    ``T + (7/8)*P``        - This marks the beginning of the period
                                where mixes perform staggered fetches
                                of the PKI consensus document.
 
-    ``T + 2 hours + 30 min``     - Start establishing connections to the new set of
+    ``T + (8/9)*P``        - Start establishing connections to the new set of
                                relevant mixes in advance of the next epoch.
 
-    ``T + 3 hours - 1MSL``       - Start accepting new Sphinx packets encrypted to
+    ``T + P - 1MSL``       - Start accepting new Sphinx packets encrypted to
                                the next epoch's keys.
 
-    ``T + 3 hours + 1MSL``       - Stop accepting new Sphinx packets encrypted to
+    ``T + P + 1MSL``       - Stop accepting new Sphinx packets encrypted to
                                the previous epoch's keys, close connections to
                                peers no longer listed in the PKI documents and
                                erase the list of seen packet tags.
 
-   As it stands, mixes have ~2 hours to publish, the PKI has 15 mins
-   to vote, and the mixes have 28 mins to establish connections before
+   As it stands, mixes have ~1.5 hours to publish, the PKI has ~1 hour 
+   to vote, and the mixes have 20 mins to establish connections before
    there is network connectivity failure.
 
    Mix layer changes are controlled by the Directory Authorities and
