@@ -149,6 +149,11 @@ Version 0
       * The serialization format of mix descriptors is different from
         that used in Mixminion and Tor.
 
+      * The shared random number computation is performed every voting round,
+        and is required for a vote to be accepted by each authority. The shared
+        random number is used to deterministically generate the network
+        topology.
+
 .. note::
 
    David: add more differences to this list
@@ -265,8 +270,8 @@ Version 0
    PKI Protocol Schedule". The Directory Authority servers exchange
    messages to reach consensus about the network. Other tasks they
    perform include collecting mix descriptor uploads from each mix for
-   each key rotation epoch, voting, signature exchange and publishing
-   of the network consensus documents.
+   each key rotation epoch, voting, shared random number generation,
+   signature exchange and publishing of the network consensus documents.
 
 3.1 Protocol Messages
 ---------------------
@@ -356,7 +361,68 @@ Version 0
    vote_too_late are replied back to the voter to report that their
    vote was not accepted.
 
-3.3 Vote Tabulation for Consensus Computation
+3.3 Reveal Exchange
+-------------------
+   As described in section "2.1 PKI Protocol Schedule", the Directory
+   Authority servers exchange the reveal values after they have exchanged
+   votes which contain a commit value. Each Authority exchanges reveal
+   messages with each other.
+
+3.3.1 Reveal Wire Protocol Commands
+
+   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used by Authorities to exchange reveal values previously commited to in their votes. We define additional wire protocol commands for exchanging reveals:
+
+   enum {
+      reveal(25),
+      reveal_status(26),
+   } Command;
+
+   The structures of these commands are defined as follows:
+
+      struct {
+          uint64_t epoch_number;
+          opaque public_key[ED25519_KEY_LENGTH];
+          opaque payload[];
+      } RevealCommand;
+
+      struct {
+         uint8 error_code;
+      } RevealStatusCommand;
+
+3.3.2 The reveal Command
+
+   The reveal command is used to send a reveal value to a peer authority during
+   the reveal period of the PKI schedule.
+
+   The payload field contains the signed and serialized reveal value.  The
+   public_key field contains the public identity key o fthe sending Authority
+   which the receiving Authority can use to verify the signature of the
+   payload. The epoch_number field is used by the receiving party to quickly
+   check the epoch for the reveal before deserializing the payload.
+
+3.3.3 The reveal_status Command
+
+   The reveal_status command is used to reply to a reveal command. The
+   error_code field indicates if there was a failure in the receiving of
+   the shared random reveal value.
+
+   enum {
+      reveal_ok(8),                /* None error condition. */
+      reveal_too_early(9),         /* The Authority should try again later. */
+      reveal_not_authorized(10),   /* The Authority was rejected. */
+      reveal_already_received(11), /* The Authority has already revealed this round. */
+      reveal_too_late(12)          /* This round of revealing was missed. */
+   } Errorcodes;
+
+   The epoch_number field of the reveal struct is compared with the epoch
+   that is currently being voted on. reveal_too_early and reveal_too_late
+   are replied back to the autohrity to report their reveal was not
+   accepted. The status code reveal_not_authorized is used if the
+   Authority is rejected. The reveal_already_received is used to
+   report that a valid reveal command was already received for this
+   round.
+
+3.4 Vote Tabulation for Consensus Computation
 ---------------------------------------------
 
    The main design constraint of the vote tabulation algorithm is that
@@ -401,6 +467,14 @@ Version 0
         creation of the consensus is reproducible.
       - Set directory ``status`` field to ``consensus``.
 
+   3. Compute a shared random number from the values revealed in the "Reveal"
+         step. Authorities whose reveal value does not verify their commit
+         value MUST be excluded from the consensus round.
+
+   4. Generate or update the network topology using the shared random number as
+         a seed to a deterministic random number generator that determines the
+         order that new mixes are placed into the topology.
+
 3.4 Signature Collection
 ------------------------
 
@@ -413,11 +487,6 @@ Version 0
    If there is disagreement about the consensus directory, each
    authority collects signatures from only the servers which it agrees
    with about the final consensus.
-
-   // TODO: in this phase, the authority must also disclose the reveal value
-   // of its portion of the shared random value computation.
-   // these values are then hashed together to produce a shared random value
-   // which is included in the consensus and then signed.
 
    // TODO: consider exchanging peers votes amongst authorities (or hashes thereof) to
    // ensure that an authority has distributed one and only unique vote amongst its peers.
@@ -816,6 +885,9 @@ Appendix A.2 Informative References
 
 .. [TORDIRAUTH]  "Tor directory protocol, version 3",
                  <https://gitweb.torproject.org/torspec.git/tree/dir-spec.txt>.
+
+.. [TORSRV] "Tor Shared Random Subsystem Specification",
+                 <https://gitweb.torproject.org/torspec.git/tree/srv-spec.txt>.
 
 .. [FINGERPRINTING] Danezis, G., Clayton, R.,
                     "Route Finger printing in Anonymous Communications",
