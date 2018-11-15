@@ -14,6 +14,56 @@ What is a mix network?
       * receiver anonymity
       * sender and receiver anonymity with respect to third party observers
 
+
+Can Katzenpost act as a drop-in TCP replacement?
+------------------------------------------------
+
+No and furthermore you should not want a stream oriented interface
+for interacting with a message oriented protocol. If your application
+is message oriented then integration as a Katzenpost client is possible.
+Client protocol libraries are currently being developed!
+
+Although decryption mixnets are inherently unreliable and offer unordered
+delivery, reliability and ordered delivery can be achieved by the protocol
+library and NOT by the mix network itself. That is to say, the mixnet client
+library should abstract away all the details of retransmissions and book keeping
+related to ordered delivery.
+
+
+What kinds of applications can use Katzenpost?
+----------------------------------------------
+
+Katzenpost can be used by various kinds of message oriented applications.
+Generally these fall into two categories:
+
+  1. peer to peer:
+     Alice can chat with Bob over the mixnet. In this case there's a
+     protocol library that let's them send and receive messages with a
+     Katzenpost specific addressing sytem. In this case the mixnet acts
+     as a transport for Alice and Bob's interactions.
+
+  2. client to server:
+     Alice can interact with a service that listens on the mixnet for
+     mixnet messages. This means there is a client and a server
+     component and they use the mixnet as a transport for their
+     interaction.
+
+What's are some examples of "client to server" mixnet applications?
+
+* Clients send URLs to a "retrieval service" on the mixnet. This service
+  retrieves the URLs and sends the content back to the client.
+
+* Privacy preserving crypto currency wallet sends crypto currency transactions
+  to the mixnet service. This service then submits the transaction to the blockchain.
+
+
+What are some examples of "peer to peer" mixnet applications?
+
+* Encrypted chat applications can use the mixnet as the transport.
+
+* File exchange: Alice can send Bob a file using the mixnet as the transport.
+
+
 What is Loopix?
 ---------------
 
