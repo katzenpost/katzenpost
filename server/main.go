@@ -9,7 +9,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 	"github.com/katzenpost/core/log"
-	common "github.com/katzenpost/server/common-plugin"
+	common "github.com/katzenpost/server/plugin"
 )
 
 func main() {
