@@ -206,6 +206,9 @@ func (s *state) generateDocument(epoch uint64) {
 		Topology:          topology,
 		Providers:         providers,
 	}
+	// For compatibliity with shared s11n implementation between voting
+	// and non-voting authority, add SharedRandomValue.
+	doc.SharedRandomValue = make([]byte, s11n.SharedRandomValueLength)
 
 	// Serialize and sign the Document.
 	signed, err := s11n.SignDocument(s.s.identityKey, doc)
