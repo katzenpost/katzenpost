@@ -12,7 +12,22 @@ Katzenpost daemons releases follows `semantic versioning <https://semver.org/>`_
 unreleased
 ----------
 
-git master will likely become v0.0.8
+git master will likely become v0.0.10
+
+v0.0.9
+------
+* Add signature checks to authority server commands.
+* Wire protocol related security fix for voting authority server.
+
+v0.0.8
+------
+
+* Fixed mix key erasure bug in mix server.
+* Added a deaddrop service test.
+* Sphinx packet decryption benchmark test.
+* Make Reveal command Payload variable length.
+* Stringify keys as base64 instead of hex.
+* Add SendSphinxPacket and ComposeSphinxPacket to minclient.
 
 v0.0.7
 ------
