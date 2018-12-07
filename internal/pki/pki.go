@@ -602,20 +602,23 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	var err error
-	if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
-		return nil, err
-	}
-	if glue.Config().Server.IsProvider {
-		for k, v := range glue.Config().Provider.AltAddresses {
-			if len(v) == 0 {
-				continue
-			}
-			kTransport := cpki.Transport(strings.ToLower(k))
-			if _, ok := p.descAddrMap[kTransport]; ok {
-				return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
-			}
-			p.descAddrMap[kTransport] = v
+	if !glue.Config().Server.OnlyAdvertiseAltAddresses {
+		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
+			return nil, err
 		}
+	} else {
+		p.descAddrMap = make(map[cpki.Transport][]string)
+	}
+
+	for k, v := range glue.Config().Server.AltAddresses {
+		if len(v) == 0 {
+			continue
+		}
+		kTransport := cpki.Transport(strings.ToLower(k))
+		if _, ok := p.descAddrMap[kTransport]; ok {
+			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
+		}
+		p.descAddrMap[kTransport] = v
 	}
 
 	if glue.Config().PKI.Nonvoting != nil {
