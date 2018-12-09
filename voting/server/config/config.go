@@ -46,13 +46,10 @@ const (
 	defaultMixLambda         = 0.00025
 	defaultMixMaxPercentile  = 0.99999
 	defaultSendLambda        = 0.00006
-	defaultSendShift         = 15000 // 15 seconds.
 	defaultSendMaxPercentile = 0.95
 	defaultDropLambda        = 0.00006
-	defaultDropShift         = 15000 // 15 seconds.
 	defaultDropMaxPercentile = 0.95
 	defaultLoopLambda        = 0.00006
-	defaultLoopShift         = 15000 // 15 seconds.
 	defaultLoopMaxPercentile = 0.95
 )
 
@@ -138,36 +135,21 @@ type Parameters struct {
 	// that clients will sample to determine send timing.
 	SendLambda float64
 
-	// SendShift is the shift applied to the client send timing samples in
-	// milliseconds.
-	SendShift uint64
-
-	// SendMaxInterval is the maximum send interval in milliseconds, enforced
-	// prior to (excluding) SendShift.
+	// SendMaxInterval is the maximum send interval in milliseconds.
 	SendMaxInterval uint64
 
 	// DropLambda is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine send timing of drop decoy messages.
 	DropLambda float64
 
-	// DropShift is the shift applied to the client send timing samples in
-	// milliseconds.
-	DropShift uint64
-
-	// DropMaxInterval is the maximum send interval in milliseconds, enforced
-	// prior to (excluding) DropShift.
+	// DropMaxInterval is the maximum send interval in milliseconds.
 	DropMaxInterval uint64
 
 	// LoopLambda is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine send timing of loop decoy messages.
 	LoopLambda float64
 
-	// LoopShift is the shift applied to the client send timing samples in
-	// milliseconds.
-	LoopShift uint64
-
-	// LoopMaxInterval is the maximum send interval in milliseconds, enforced
-	// prior to (excluding) LoopShift.
+	// LoopMaxInterval is the maximum send interval in milliseconds.
 	LoopMaxInterval uint64
 }
 
@@ -197,26 +179,17 @@ func (pCfg *Parameters) applyDefaults() {
 	if pCfg.SendLambda == 0 {
 		pCfg.SendLambda = defaultSendLambda
 	}
-	if pCfg.SendShift == 0 {
-		pCfg.SendShift = defaultSendShift
-	}
 	if pCfg.SendMaxInterval == 0 {
 		pCfg.SendMaxInterval = uint64(rand.ExpQuantile(pCfg.SendLambda, defaultSendMaxPercentile))
 	}
 	if pCfg.DropLambda == 0 {
 		pCfg.DropLambda = defaultDropLambda
 	}
-	if pCfg.DropShift == 0 {
-		pCfg.DropShift = defaultDropShift
-	}
 	if pCfg.DropMaxInterval == 0 {
 		pCfg.DropMaxInterval = uint64(rand.ExpQuantile(pCfg.DropLambda, defaultDropMaxPercentile))
 	}
 	if pCfg.LoopLambda == 0 {
 		pCfg.LoopLambda = defaultLoopLambda
-	}
-	if pCfg.LoopShift == 0 {
-		pCfg.LoopShift = defaultLoopShift
 	}
 	if pCfg.LoopMaxInterval == 0 {
 		pCfg.LoopMaxInterval = uint64(rand.ExpQuantile(pCfg.LoopLambda, defaultLoopMaxPercentile))
