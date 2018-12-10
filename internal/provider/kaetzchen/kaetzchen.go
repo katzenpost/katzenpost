@@ -159,7 +159,7 @@ func (k *KaetzchenWorker) worker() {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
-	defer k.log.Debugf("Halting Kaetzchen worker.")
+	defer k.log.Debugf("Halting Kaetzchen internal worker.")
 
 	ch := k.ch.Out()
 

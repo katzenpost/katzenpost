@@ -69,7 +69,7 @@ func (k *PluginKaetzchenWorker) worker(recipient [sConstants.RecipientIDLength]b
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
-	defer k.log.Debugf("Halting Kaetzchen worker.")
+	defer k.log.Debugf("Halting Kaetzchen external worker.")
 
 	handlerCh, ok := k.pluginChan[recipient]
 	if !ok {
