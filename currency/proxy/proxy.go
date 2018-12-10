@@ -19,7 +19,11 @@ package proxy
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path"
 
 	"github.com/btcsuite/btcd/btcjson"
 	"github.com/katzenpost/server_plugins/currency/common"
@@ -28,7 +32,36 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-var errInvalidCurrencyRequest = errors.New("kaetzchen/currency: invalid request")
+var logFormat = logging.MustStringFormatter(
+	"%{level:.4s} %{id:03x} %{message}",
+)
+
+func stringToLogLevel(level string) (logging.Level, error) {
+	switch level {
+	case "DEBUG":
+		return logging.DEBUG, nil
+	case "INFO":
+		return logging.INFO, nil
+	case "NOTICE":
+		return logging.NOTICE, nil
+	case "WARNING":
+		return logging.WARNING, nil
+	case "ERROR":
+		return logging.ERROR, nil
+	case "CRITICAL":
+		return logging.CRITICAL, nil
+	}
+	return -1, fmt.Errorf("invalid logging level %s", level)
+}
+
+func setupLoggerBackend(level logging.Level, writer io.Writer) logging.LeveledBackend {
+	format := logFormat
+	backend := logging.NewLogBackend(writer, "", 0)
+	formatter := logging.NewBackendFormatter(backend, format)
+	leveler := logging.AddModuleLevel(formatter)
+	leveler.SetLevel(level, "echo-go")
+	return leveler
+}
 
 type Currency struct {
 	log        *logging.Logger
@@ -47,37 +80,21 @@ func (k *Currency) Parameters() (map[string]string, error) {
 }
 
 func (k *Currency) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
-	if hasSURB {
-		k.log.Debugf("Ignoring request %d: erroneously contains a SURB.", id)
-		return nil, errInvalidCurrencyRequest
-	}
-
 	k.log.Debugf("Handling request %d", id)
 
-	// Parse out the request payload.
-	var req common.CurrencyRequest
-	dec := codec.NewDecoderBytes(bytes.TrimRight(payload, "\x00"), &k.jsonHandle)
-	if err := dec.Decode(&req); err != nil {
-		k.log.Debugf("Failed to decode request: (%v)", err)
-		return nil, errInvalidCurrencyRequest
-	}
-
-	// Sanity check the request.
-	if req.Version != common.CurrencyVersion {
-		k.log.Debugf("Failed to parse request: (invalid version: %v)", req.Version)
-		return nil, errInvalidCurrencyRequest
-	}
-	if req.Ticker != k.ticker {
-		k.log.Debugf("Failed to parse request: (currency ticker mismatch: %v)", req.Ticker)
-		return nil, errInvalidCurrencyRequest
-	}
-
 	// Send request to HTTP RPC.
-	err := k.sendTransaction(req.Tx)
+	req, err := common.RequestFromJson(k.ticker, payload)
 	if err != nil {
 		k.log.Debug("Failed to send currency transaction request: (%v)", err)
+		return common.NewResponse(1, err.Error()).ToJson(), nil // XXX
 	}
-	return nil, errInvalidCurrencyRequest
+
+	err = k.sendTransaction(req.Tx)
+	if err != nil {
+		k.log.Debug("Failed to send currency transaction request: (%v)", err)
+		return common.NewResponse(1, err.Error()).ToJson(), nil // XXX
+	}
+	return payload, nil
 }
 
 func (k *Currency) sendTransaction(txHex string) error {
@@ -102,17 +119,20 @@ func (k *Currency) sendTransaction(txHex string) error {
 	// send http request
 	client := http.Client{}
 	httpResponse, err := client.Do(httpReq)
+	if err != nil {
+		return err
+	}
 	k.log.Debugf("currency RPC response status: %s", httpResponse.Status)
 
-	return err
+	return nil
 }
 
-func New(config *config.Config) *Currency {
+func New(cfg *config.Config) (*Currency, error) {
 	currency := &Currency{
-		ticker:  config.Ticker,
-		rpcUser: config.RPCUser,
-		rpcPass: config.RPCPass,
-		rpcUrl:  config.RPCURL,
+		ticker:  cfg.Ticker,
+		rpcUser: cfg.RPCUser,
+		rpcPass: cfg.RPCPass,
+		rpcUrl:  cfg.RPCURL,
 		params:  make(map[string]string),
 	}
 	currency.jsonHandle.Canonical = true
@@ -121,5 +141,26 @@ func New(config *config.Config) *Currency {
 		"name":    "currency_trickle",
 		"version": "0.0.0",
 	}
-	return currency
+
+	// Ensure that the log directory exists.
+	s, err := os.Stat(cfg.LogDir)
+	if err != nil {
+		return nil, err
+	}
+	if !s.IsDir() {
+		return nil, errors.New("must be a directory")
+	}
+
+	// Log to a file.
+	level, err := stringToLogLevel(cfg.LogLevel)
+	logFile := path.Join(cfg.LogDir, fmt.Sprintf("currency-go.%d.log", os.Getpid()))
+	f, err := os.Create(logFile)
+	if err != nil {
+		return nil, err
+	}
+	logBackend := setupLoggerBackend(level, f)
+	currency.log = logging.MustGetLogger("currency-go")
+	currency.log.SetBackend(logBackend)
+
+	return currency, nil
 }

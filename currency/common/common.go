@@ -16,7 +16,12 @@
 
 package common
 
-import "errors"
+import (
+	"bytes"
+	"errors"
+
+	"github.com/ugorji/go/codec"
+)
 
 const (
 	CurrencyVersion    = 0
@@ -24,10 +29,70 @@ const (
 	CurrencyTicker     = "ticker"
 )
 
-var ErrInvalidCurrencyRequest = errors.New("kaetzchen/currency: invalid request")
+var (
+	jsonHandle                codec.JsonHandle
+	ErrInvalidCurrencyRequest = errors.New("kaetzchen/currency: invalid request")
+	errInvalidJson            = errors.New("currency: bad json")
+	errWrongVersion           = errors.New("currency: request version mismatch")
+	errWrongTicker            = errors.New("currency: request ticker mismatch")
+)
 
 type CurrencyRequest struct {
 	Version int
 	Tx      string
 	Ticker  string
+}
+
+func NewRequest(ticker string, hexBlob string) *CurrencyRequest {
+	return &CurrencyRequest{
+		Version: CurrencyVersion,
+		Ticker:  ticker,
+		Tx:      hexBlob,
+	}
+}
+
+func RequestFromJson(expectedTicker string, rawRequest []byte) (*CurrencyRequest, error) {
+	// Parse out the request payload.
+	req := CurrencyRequest{}
+	dec := codec.NewDecoderBytes(bytes.TrimRight(rawRequest, "\x00"), &jsonHandle)
+	if err := dec.Decode(&req); err != nil {
+		return nil, errInvalidJson
+	}
+
+	// Sanity check the request.
+	if req.Version != CurrencyVersion {
+		return nil, errWrongVersion
+	}
+	if req.Ticker != expectedTicker {
+		return nil, errWrongTicker
+	}
+	return &req, nil
+}
+
+func (c *CurrencyRequest) ToJson() []byte {
+	var request []byte
+	enc := codec.NewEncoderBytes(&request, &jsonHandle)
+	enc.Encode(c)
+	return request
+}
+
+type CurrencyResponse struct {
+	Version    int
+	StatusCode int
+	Message    string
+}
+
+func NewResponse(status int, message string) *CurrencyResponse {
+	return &CurrencyResponse{
+		Version:    CurrencyVersion,
+		StatusCode: status,
+		Message:    message,
+	}
+}
+
+func (c *CurrencyResponse) ToJson() []byte {
+	var response []byte
+	enc := codec.NewEncoderBytes(&response, &jsonHandle)
+	enc.Encode(c)
+	return response
 }

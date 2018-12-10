@@ -51,14 +51,13 @@ a configuration section that looks like this:
 
 
 Here's a sample configuration file for currency-go to learn it's
-Ticker and RPC connection information, currency_go.toml:
+Ticker and RPC connection information, currency.toml:
 
 ::
-  [Config]
-    Ticker = "ZEC"
-    RPCUser = "rpcuser"
-    RPCPass = "rpcpassword"
-    RPCURL = "http://127.0.0.1:18232/"
+  Ticker = "ZEC"
+  RPCUser = "rpcuser"
+  RPCPass = "rpcpassword"
+  RPCURL = "http://127.0.0.1:18232/"
 
 
 license

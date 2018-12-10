@@ -26,10 +26,12 @@ import (
 
 // Config is the configuration for this currency transaction proxy service.
 type Config struct {
-	Ticker  string
-	RPCUser string
-	RPCPass string
-	RPCURL  string
+	Ticker   string
+	RPCUser  string
+	RPCPass  string
+	RPCURL   string
+	LogDir   string
+	LogLevel string
 }
 
 // Validate returns nil if the config is valid
