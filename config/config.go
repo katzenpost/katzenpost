@@ -92,6 +92,8 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
+	DisableDecoyLoops bool
+
 	// SessionDialTimeout is the number of seconds that a session dial
 	// is allowed to take until it is cancelled.
 	SessionDialTimeout int
