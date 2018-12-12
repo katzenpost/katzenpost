@@ -51,8 +51,8 @@ func (s *Session) setTimers(doc *pki.Document) {
 }
 
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
-	isConnected := false
-	if isConnected = op.isConnected; isConnected {
+	isConnected := op.isConnected
+	if isConnected {
 		const skewWarnDelta = 2 * time.Minute
 		s.onlineAt = time.Now()
 
@@ -104,26 +104,24 @@ func (s *Session) worker() {
 			lambdaPFired = true
 		case qo = <-s.opCh:
 		}
-		if isConnected {
-			if lambdaPFired {
+
+		if lambdaPFired {
+			if isConnected {
 				s.lambdaPTask()
 			}
-		}
-		if qo != nil {
+		} else {
 			switch op := qo.(type) {
 			case opIsEmpty:
-				// XXX do cleanup here?
+				// XXX do periodic cleanup here
 				continue
 			case opConnStatusChanged:
-				// Note: s.isConnected isn't used in favor of passing the
-				// value via an op, to save on locking headaches.
 				isConnected = s.connStatusChange(op)
 			case opNewDocument:
 				s.maybeUpdateTimers(op.doc)
 			default:
 				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			} // end of switch
-		} // if qo != nil
+		}
 
 		if lambdaPFired {
 			s.pTimer.Next()
@@ -136,12 +134,18 @@ func (s *Session) worker() {
 func (s *Session) lambdaPTask() {
 	// Attempt to send user data first, if any exists.
 	// Otherwise send a drop decoy message.
-	err := s.sendNext()
-	if err != nil {
-		s.log.Warningf("Failed to send queued message: %v", err)
-		err = s.sendLoopDecoy()
+	_, err := s.egressQueue.Peek()
+	if err == nil {
+		err := s.sendNext()
 		if err != nil {
-			s.log.Warningf("Failed to send loop decoy traffic: %v", err)
+			panic("wtf")
+		}
+	} else {
+		if !s.cfg.Debug.DisableDecoyLoops {
+			err = s.sendLoopDecoy()
+			if err != nil {
+				s.log.Warningf("Failed to send loop decoy traffic: %v", err)
+			}
 		}
 	}
 }

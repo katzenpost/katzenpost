@@ -117,18 +117,14 @@ func (s *Session) send(msgRef *MessageRef) error {
 	return err
 }
 
-func (s *Session) sendDropDecoy() error {
-	s.log.Info("sending drop decoy")
-	return s.sendLoop(false)
-}
-
 func (s *Session) sendLoopDecoy() error {
 	s.log.Info("sending loop decoy")
-	return s.sendLoop(true)
+	return s.sendLoop()
 }
 
-func (s *Session) sendLoop(withSURB bool) error {
+func (s *Session) sendLoop() error {
 	const loopService = "loop"
+	withSURB := true
 	serviceDesc, err := s.GetService(loopService)
 	if err != nil {
 		return err
