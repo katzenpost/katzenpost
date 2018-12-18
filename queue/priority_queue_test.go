@@ -1,5 +1,5 @@
 // priority_queue_test.go - Tests for priority queue.
-// Copyright (C) 2017  David Anthony Stainton, Yawning Angel
+// Copyright (C) 2017, 2018  David Anthony Stainton, Yawning Angel
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -18,6 +18,7 @@ package queue
 
 import (
 	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -90,4 +91,41 @@ func TestPriorityQueue(t *testing.T) {
 		t.Logf("random ent[%d]: %d %s", i, ent.Priority, s)
 	}
 	require.Equal(0, q.Len(), "Queue length (empty), post-rand test")
+}
+
+func TestFilterOnce(t *testing.T) {
+	require := require.New(t)
+
+	testEntries := []Entry{
+		{
+			Value:    []byte("But as academics gravitated to cryptography, they tended to sanitize it, stripping it of ostensible connectedness to power."),
+			Priority: 0,
+		},
+
+		{
+			Value:    []byte("Applied and privacy-related work drifted outside of the field’s core venues, the IACR conferences."),
+			Priority: 1,
+		},
+		{
+			Value:    []byte("It is as though a chemical synthesis would take place, transforming this powerful powder into harmless dust."),
+			Priority: 2,
+		},
+	}
+
+	q := New()
+	for _, v := range testEntries {
+		q.Enqueue(v.Priority, v.Value)
+	}
+	require.Equal(len(testEntries), q.Len(), "Queue length (full)")
+
+	filter := func(value interface{}) bool {
+		str := value.([]byte)
+		return strings.Contains(string(str), "academics")
+	}
+
+	s := string(q.Peek().Value.([]byte))
+	require.True(strings.Contains(s, "academics"))
+	q.FilterOnce(filter)
+	s = string(q.Peek().Value.([]byte))
+	require.False(strings.Contains(s, "academics"))
 }
