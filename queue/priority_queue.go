@@ -1,5 +1,5 @@
 // priority_queue.go - Min-Heap based priority queue.
-// Copyright (C) 2017  David Anthony Stainton, Yawning Angel
+// Copyright (C) 2017, 2018  David Anthony Stainton, Yawning Angel
 //
 // This was inspired by the priority queue example in the godocs:
 // https://golang.org/pkg/container/heap/
@@ -77,6 +77,33 @@ func (q *PriorityQueue) Peek() *Entry {
 		return nil
 	}
 	return q.heap[0]
+}
+
+// PeekIndex peeks at the specified index.
+func (q *PriorityQueue) PeekIndex(i int) *Entry {
+	if q.Len() <= 0 {
+		return nil
+	}
+	return q.heap[i]
+}
+
+// DequeueIndex removes the specified entry from the queue.
+func (q *PriorityQueue) DequeueIndex(index int) *Entry {
+	if q.Len() <= 0 {
+		return nil
+	}
+	return heap.Remove(&q.heap, index).(*Entry)
+}
+
+// FilterOnce removes the first item from the queue who's value
+// is passed to the filter function and returns true.
+func (q *PriorityQueue) FilterOnce(filter func(value interface{}) bool) {
+	for i := 0; i < q.Len(); i++ {
+		if filter(q.PeekIndex(i).Value) {
+			q.DequeueIndex(i)
+			break
+		}
+	}
 }
 
 // Pop removes and returns the 0th entry (lowest priority) if any.
