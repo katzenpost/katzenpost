@@ -243,12 +243,12 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
 
-	msgRef, ok := s.surbIDMap[*surbID]
+	msg, ok := s.surbIDMap[*surbID]
 	if !ok {
 		s.log.Debug("wtf, received reply with unexpected SURBID")
 		return nil
 	}
-	_, ok = s.replyNotifyMap[*msgRef.ID]
+	_, ok = s.replyNotifyMap[*msg.ID]
 	if !ok {
 		s.log.Infof("wtf, received reply with no reply notification mutex, map len is %d", len(s.replyNotifyMap))
 		for key := range s.replyNotifyMap {
@@ -257,7 +257,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		return nil
 	}
 
-	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msgRef.Key)
+	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("SURB Reply decryption failure: %s", err)
 		return err
@@ -267,14 +267,14 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		return nil
 	}
 
-	switch msgRef.SURBType {
+	switch msg.SURBType {
 	case cConstants.SurbTypeACK:
 		// XXX TODO fix me
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		msgRef.Reply = plaintext[2:]
-		s.replyNotifyMap[*msgRef.ID].Unlock()
+		msg.Reply = plaintext[2:]
+		s.replyNotifyMap[*msg.ID].Unlock()
 	default:
-		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msgRef.SURBType)
+		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
 	}
 	return nil
 }
