@@ -28,9 +28,9 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
-// MessageRef is a message reference which is used to match future
+// Message is a message reference which is used to match future
 // received SURN replies.
-type MessageRef struct {
+type Message struct {
 	// ID is the message identifier
 	ID *[cConstants.MessageIDLength]byte
 
@@ -66,7 +66,7 @@ type MessageRef struct {
 }
 
 // WaitForReply blocks until a reply is received.
-func (s *Session) WaitForReply(msgRef *MessageRef) []byte {
+func (s *Session) WaitForReply(msgRef *Message) []byte {
 	s.mapLock.Lock()
 	replyLock := s.replyNotifyMap[*msgRef.ID]
 	s.mapLock.Unlock()
@@ -93,7 +93,7 @@ func (s *Session) sendNext() error {
 	return err
 }
 
-func (s *Session) send(msgRef *MessageRef) error {
+func (s *Session) send(msgRef *Message) error {
 	var err error
 	if msgRef.WithSURB {
 		surbID := [sConstants.SURBIDLength]byte{}
@@ -132,7 +132,7 @@ func (s *Session) sendLoop() error {
 	payload := [constants.UserForwardPayloadLength]byte{}
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
-	msgRef := &MessageRef{
+	msgRef := &Message{
 		ID:        &id,
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
@@ -143,11 +143,11 @@ func (s *Session) sendLoop() error {
 }
 
 // SendUnreliable send a message without any automatic retransmission.
-func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*MessageRef, error) {
+func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*Message, error) {
 	s.log.Debugf("Send")
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
-	var msgRef = MessageRef{
+	var msgRef = Message{
 		ID:        &id,
 		Recipient: recipient,
 		Provider:  provider,
@@ -163,7 +163,7 @@ func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*M
 }
 
 // SendKaetzchenQuery sends a mixnet provider-side service query.
-func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*MessageRef, error) {
+func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*Message, error) {
 	if provider == "" {
 		panic("wtf")
 	}
@@ -176,7 +176,7 @@ func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte,
 	copy(payload, message)
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
-	var msgRef = MessageRef{
+	var msgRef = Message{
 		ID:        &id,
 		Recipient: recipient,
 		Provider:  provider,
