@@ -73,8 +73,8 @@ type Session struct {
 	egressQueue     EgressQueue
 	egressQueueLock *sync.Mutex
 
-	surbIDMap      map[[sConstants.SURBIDLength]byte]*MessageRef
-	messageIDMap   map[[cConstants.MessageIDLength]byte]*MessageRef
+	surbIDMap      map[[sConstants.SURBIDLength]byte]*Message
+	messageIDMap   map[[cConstants.MessageIDLength]byte]*Message
 	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
 	mapLock        *sync.Mutex
 }
@@ -110,8 +110,8 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	}
 
 	// XXX todo: replace all this with persistent data store
-	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*MessageRef)
-	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*MessageRef)
+	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*Message)
+	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
 	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
 	s.mapLock = new(sync.Mutex)
 
