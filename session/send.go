@@ -29,7 +29,7 @@ import (
 )
 
 // Message is a message reference which is used to match future
-// received SURN replies.
+// received SURB replies.
 type Message struct {
 	// ID is the message identifier
 	ID *[cConstants.MessageIDLength]byte
@@ -66,26 +66,26 @@ type Message struct {
 }
 
 // WaitForReply blocks until a reply is received.
-func (s *Session) WaitForReply(msgRef *Message) []byte {
+func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) []byte {
 	s.mapLock.Lock()
-	replyLock := s.replyNotifyMap[*msgRef.ID]
+	replyLock := s.replyNotifyMap[*msgId]
 	s.mapLock.Unlock()
 	replyLock.Lock()
-	return s.messageIDMap[*msgRef.ID].Reply
+	return s.messageIDMap[*msgId].Reply
 }
 
 func (s *Session) sendNext() error {
 	s.egressQueueLock.Lock()
 	defer s.egressQueueLock.Unlock()
 
-	msgRef, err := s.egressQueue.Peek()
+	msg, err := s.egressQueue.Peek()
 	if err != nil {
 		return err
 	}
-	if msgRef.Provider == "" {
+	if msg.Provider == "" {
 		panic("wtf")
 	}
-	err = s.send(msgRef)
+	err = s.doSend(msg)
 	if err != nil {
 		return err
 	}
@@ -93,36 +93,29 @@ func (s *Session) sendNext() error {
 	return err
 }
 
-func (s *Session) send(msgRef *Message) error {
+func (s *Session) doSend(msg *Message) error {
 	var err error
-	if msgRef.WithSURB {
+	if msg.WithSURB {
 		surbID := [sConstants.SURBIDLength]byte{}
 		io.ReadFull(rand.Reader, surbID[:])
-		key, eta, err := s.minclient.SendCiphertext(msgRef.Recipient, msgRef.Provider, &surbID, msgRef.Payload)
+		key, eta, err := s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
 		if err != nil {
 			return err
 		}
-		msgRef.Key = key
-		msgRef.SentAt = time.Now()
-		msgRef.ReplyETA = eta
-
+		msg.Key = key
+		msg.SentAt = time.Now()
+		msg.ReplyETA = eta
 		s.mapLock.Lock()
 		defer s.mapLock.Unlock()
-
-		s.surbIDMap[surbID] = msgRef
-		s.messageIDMap[*msgRef.ID] = msgRef
+		s.surbIDMap[surbID] = msg
 	} else {
-		err = s.minclient.SendUnreliableCiphertext(msgRef.Recipient, msgRef.Provider, msgRef.Payload)
+		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
 	}
 	return err
 }
 
 func (s *Session) sendLoopDecoy() error {
 	s.log.Info("sending loop decoy")
-	return s.sendLoop()
-}
-
-func (s *Session) sendLoop() error {
 	const loopService = "loop"
 	withSURB := true
 	serviceDesc, err := s.GetService(loopService)
@@ -132,43 +125,18 @@ func (s *Session) sendLoop() error {
 	payload := [constants.UserForwardPayloadLength]byte{}
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
-	msgRef := &Message{
+	msg := &Message{
 		ID:        &id,
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
 		Payload:   payload[:],
 		WithSURB:  withSURB,
 	}
-	return s.send(msgRef)
+	return s.doSend(msg)
 }
 
-// SendUnreliable send a message without any automatic retransmission.
-func (s *Session) SendUnreliable(recipient, provider string, message []byte) (*Message, error) {
-	s.log.Debugf("Send")
-	id := [cConstants.MessageIDLength]byte{}
-	io.ReadFull(rand.Reader, id[:])
-	var msgRef = Message{
-		ID:        &id,
-		Recipient: recipient,
-		Provider:  provider,
-		Payload:   message,
-		WithSURB:  false,
-	}
-
-	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
-
-	err := s.egressQueue.Push(&msgRef)
-	return &msgRef, err
-}
-
-// SendKaetzchenQuery sends a mixnet provider-side service query.
-func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte, wantResponse bool) (*Message, error) {
-	if provider == "" {
-		panic("wtf")
-	}
-	// Ensure the request message is under the maximum for a single
-	// packet, and pad out the message so that it is the correct size.
+func (s *Session) composeMessage(recipient, provider string, message []byte, query bool) (*Message, error) {
+	s.log.Debug("SendMessage")
 	if len(message) > constants.UserForwardPayloadLength {
 		return nil, fmt.Errorf("invalid message size: %v", len(message))
 	}
@@ -176,24 +144,38 @@ func (s *Session) SendKaetzchenQuery(recipient, provider string, message []byte,
 	copy(payload, message)
 	id := [cConstants.MessageIDLength]byte{}
 	io.ReadFull(rand.Reader, id[:])
-	var msgRef = Message{
+	var msg = Message{
 		ID:        &id,
 		Recipient: recipient,
 		Provider:  provider,
-		Payload:   payload,
-		WithSURB:  wantResponse,
-		SURBType:  cConstants.SurbTypeKaetzchen,
+		Payload:   message,
+	}
+	if query {
+		msg.SURBType = cConstants.SurbTypeKaetzchen
+	} else {
+		msg.SURBType = cConstants.SurbTypeACK
+	}
+	return &msg, nil
+}
+
+// SendQuery sends a mixnet provider-side service query.
+func (s *Session) SendUnreliableQuery(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
+	msg, err := s.composeMessage(recipient, provider, message, true)
+	if err != nil {
+		return nil, err
 	}
 
 	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
-
-	s.replyNotifyMap[*msgRef.ID] = new(sync.Mutex)
-	s.replyNotifyMap[*msgRef.ID].Lock()
+	s.replyNotifyMap[*msg.ID] = new(sync.Mutex)
+	s.replyNotifyMap[*msg.ID].Lock()
+	s.messageIDMap[*msg.ID] = msg
+	s.mapLock.Unlock()
 
 	s.egressQueueLock.Lock()
 	defer s.egressQueueLock.Unlock()
-
-	err := s.egressQueue.Push(&msgRef)
-	return &msgRef, err
+	err = s.egressQueue.Push(msg)
+	if err != nil {
+		return nil, err
+	}
+	return msg.ID, err
 }
