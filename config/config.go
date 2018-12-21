@@ -44,6 +44,7 @@ const (
 	defaultLogLevel                    = "NOTICE"
 	defaultPollingInterval             = 10
 	defaultInitialMaxPKIRetrievalDelay = 10
+	defaultSessionDialTimeout          = 10
 )
 
 var defaultLogging = Logging{
@@ -124,6 +125,9 @@ func (d *Debug) fixup() {
 	}
 	if d.InitialMaxPKIRetrievalDelay == 0 {
 		d.InitialMaxPKIRetrievalDelay = defaultInitialMaxPKIRetrievalDelay
+	}
+	if d.SessionDialTimeout == 0 {
+		d.SessionDialTimeout = defaultSessionDialTimeout
 	}
 }
 

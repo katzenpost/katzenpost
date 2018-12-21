@@ -83,7 +83,7 @@ func (s *Session) sendNext() error {
 		return err
 	}
 	if msg.Provider == "" {
-		panic("wtf")
+		panic("Provider cannot be empty string")
 	}
 	err = s.doSend(msg)
 	if err != nil {
@@ -148,7 +148,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, que
 		ID:        &id,
 		Recipient: recipient,
 		Provider:  provider,
-		Payload:   message,
+		Payload:   payload,
 	}
 	if query {
 		msg.SURBType = cConstants.SurbTypeKaetzchen
