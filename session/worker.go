@@ -138,7 +138,7 @@ func (s *Session) lambdaPTask() {
 	if err == nil {
 		err := s.sendNext()
 		if err != nil {
-			panic("wtf")
+			panic(err)
 		}
 	} else {
 		if !s.cfg.Debug.DisableDecoyLoops {
