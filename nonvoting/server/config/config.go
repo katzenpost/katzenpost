@@ -160,6 +160,9 @@ func (pCfg *Parameters) validate() error {
 }
 
 func (pCfg *Parameters) applyDefaults() {
+	if pCfg.SendRatePerMinute == 0 {
+		pCfg.SendRatePerMinute = defaultSendRatePerMinute
+	}
 	if pCfg.MixLambda == 0 {
 		pCfg.MixLambda = defaultMixLambda
 	}
@@ -171,9 +174,6 @@ func (pCfg *Parameters) applyDefaults() {
 	}
 	if pCfg.SendLambda == 0 {
 		pCfg.SendLambda = defaultSendLambda
-	}
-	if pCfg.SendRatePerMinute == 0 {
-		pCfg.SendRatePerMinute = defaultSendRatePerMinute
 	}
 	if pCfg.SendMaxInterval == 0 {
 		pCfg.SendMaxInterval = uint64(rand.ExpQuantile(pCfg.SendLambda, defaultSendMaxPercentile))
