@@ -48,22 +48,19 @@ var (
 // Document is the on-the-wire representation of a PKI Document.
 type Document struct {
 	// Version uniquely identifies the document format as being for the
-        // specified version so that it can be rejected if the format changes.
+	// specified version so that it can be rejected if the format changes.
 	Version string
 
 	Epoch uint64
 
 	SendRatePerMinute uint64
 
-	MixLambda   float64
-	MixMaxDelay uint64
-
-	SendLambda      float64
-	SendMaxInterval uint64
-	DropLambda      float64
-	DropMaxInterval uint64
-	LoopLambda      float64
-	LoopMaxInterval uint64
+	MixLambda          float64
+	MixMaxDelay        uint64
+	SendLambda         float64
+	SendMaxInterval    uint64
+	MixLoopLambda      float64
+	MixLoopMaxInterval uint64
 
 	Topology  [][][]byte
 	Providers [][]byte
@@ -114,7 +111,7 @@ func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, ver
 	}
 
 	// Sign the document.
-	expiration := time.Now().Add(3*epochtime.Period).Unix()
+	expiration := time.Now().Add(3 * epochtime.Period).Unix()
 	signed, err := cert.Sign(signer, payload, expiration)
 	if err != nil {
 		return nil, err
@@ -187,10 +184,8 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 	doc.MixMaxDelay = d.MixMaxDelay
 	doc.SendLambda = d.SendLambda
 	doc.SendMaxInterval = d.SendMaxInterval
-	doc.DropLambda = d.DropLambda
-	doc.DropMaxInterval = d.DropMaxInterval
-	doc.LoopLambda = d.LoopLambda
-	doc.LoopMaxInterval = d.LoopMaxInterval
+	doc.MixLoopLambda = d.MixLoopLambda
+	doc.MixLoopMaxInterval = d.MixLoopMaxInterval
 	doc.Topology = make([][]*pki.MixDescriptor, len(d.Topology))
 	doc.Providers = make([]*pki.MixDescriptor, 0, len(d.Providers))
 

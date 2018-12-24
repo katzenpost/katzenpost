@@ -294,18 +294,16 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:             s.votingEpoch,
-		MixLambda:         params.MixLambda,
-		MixMaxDelay:       params.MixMaxDelay,
-		SendLambda:        params.SendLambda,
-		SendMaxInterval:   params.SendMaxInterval,
-		DropLambda:        params.DropLambda,
-		DropMaxInterval:   params.DropMaxInterval,
-		LoopLambda:        params.LoopLambda,
-		LoopMaxInterval:   params.LoopMaxInterval,
-		Topology:          topology,
-		Providers:         providers,
-		SharedRandomValue: srv,
+		Epoch:              s.votingEpoch,
+		MixLambda:          params.MixLambda,
+		MixMaxDelay:        params.MixMaxDelay,
+		SendLambda:         params.SendLambda,
+		SendMaxInterval:    params.SendMaxInterval,
+		MixLoopLambda:      params.MixLoopLambda,
+		MixLoopMaxInterval: params.MixLoopMaxInterval,
+		Topology:           topology,
+		Providers:          providers,
+		SharedRandomValue:  srv,
 	}
 	return doc
 }
@@ -671,14 +669,12 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		}
 		// serialize the vote parameters and tally these as well.
 		params := &config.Parameters{
-			MixLambda:       vote.MixLambda,
-			MixMaxDelay:     vote.MixMaxDelay,
-			SendLambda:      vote.SendLambda,
-			SendMaxInterval: vote.SendMaxInterval,
-			DropLambda:      vote.DropLambda,
-			DropMaxInterval: vote.DropMaxInterval,
-			LoopLambda:      vote.LoopLambda,
-			LoopMaxInterval: vote.LoopMaxInterval,
+			MixLambda:          vote.MixLambda,
+			MixMaxDelay:        vote.MixMaxDelay,
+			SendLambda:         vote.SendLambda,
+			SendMaxInterval:    vote.SendMaxInterval,
+			MixLoopLambda:      vote.MixLoopLambda,
+			MixLoopMaxInterval: vote.MixLoopMaxInterval,
 		}
 		b := bytes.Buffer{}
 		e := gob.NewEncoder(&b)
