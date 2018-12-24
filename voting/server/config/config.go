@@ -40,17 +40,18 @@ const (
 	defaultMinNodesPerLayer = 2
 	absoluteMaxDelay        = 6 * 60 * 60 * 1000 // 6 hours.
 
+	// rate limiting of client connections
+	defaultSendRatePerMinute = 100
+
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
 	// at some point.
-	defaultMixLambda         = 0.00025
-	defaultMixMaxPercentile  = 0.99999
-	defaultSendLambda        = 0.00006
-	defaultSendMaxPercentile = 0.95
-	defaultDropLambda        = 0.00006
-	defaultDropMaxPercentile = 0.95
-	defaultLoopLambda        = 0.00006
-	defaultLoopMaxPercentile = 0.95
+	defaultMixLambda            = 0.00025
+	defaultMixMaxPercentile     = 0.99999
+	defaultSendLambda           = 0.00006
+	defaultSendMaxPercentile    = 0.95
+	defaultMixLoopLambda        = 0.00006
+	defaultMixLoopMaxPercentile = 0.95
 )
 
 var defaultLogging = Logging{
@@ -138,19 +139,12 @@ type Parameters struct {
 	// SendMaxInterval is the maximum send interval in milliseconds.
 	SendMaxInterval uint64
 
-	// DropLambda is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine send timing of drop decoy messages.
-	DropLambda float64
-
-	// DropMaxInterval is the maximum send interval in milliseconds.
-	DropMaxInterval uint64
-
-	// LoopLambda is the inverse of the mean of the exponential distribution
+	// MixLoopLambda is the inverse of the mean of the exponential distribution
 	// that clients will sample to determine send timing of loop decoy messages.
-	LoopLambda float64
+	MixLoopLambda float64
 
-	// LoopMaxInterval is the maximum send interval in milliseconds.
-	LoopMaxInterval uint64
+	// MixLoopMaxInterval is the maximum send interval in milliseconds.
+	MixLoopMaxInterval uint64
 }
 
 func (pCfg *Parameters) validate() error {
@@ -162,6 +156,9 @@ func (pCfg *Parameters) validate() error {
 	}
 	if pCfg.SendLambda < 0 {
 		return fmt.Errorf("config: Parameters: SendLambda %v is invalid", pCfg.SendLambda)
+	}
+	if pCfg.MixLoopLambda < 0 {
+		return fmt.Errorf("config: Parameters: MixLoopLambda %v is invalid", pCfg.MixLoopLambda)
 	}
 	return nil
 }
@@ -182,17 +179,11 @@ func (pCfg *Parameters) applyDefaults() {
 	if pCfg.SendMaxInterval == 0 {
 		pCfg.SendMaxInterval = uint64(rand.ExpQuantile(pCfg.SendLambda, defaultSendMaxPercentile))
 	}
-	if pCfg.DropLambda == 0 {
-		pCfg.DropLambda = defaultDropLambda
+	if pCfg.MixLoopLambda == 0 {
+		pCfg.MixLoopLambda = defaultMixLoopLambda
 	}
-	if pCfg.DropMaxInterval == 0 {
-		pCfg.DropMaxInterval = uint64(rand.ExpQuantile(pCfg.DropLambda, defaultDropMaxPercentile))
-	}
-	if pCfg.LoopLambda == 0 {
-		pCfg.LoopLambda = defaultLoopLambda
-	}
-	if pCfg.LoopMaxInterval == 0 {
-		pCfg.LoopMaxInterval = uint64(rand.ExpQuantile(pCfg.LoopLambda, defaultLoopMaxPercentile))
+	if pCfg.MixLoopMaxInterval == 0 {
+		pCfg.MixLoopMaxInterval = uint64(rand.ExpQuantile(pCfg.MixLoopLambda, defaultMixLoopMaxPercentile))
 	}
 }
 
