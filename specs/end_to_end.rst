@@ -751,8 +751,10 @@ Specification [KATZMIXPKI]_.
      uses Tor.
 
 Appendix A. References
+======================
 
 Appendix A.1 Normative References
+---------------------------------
 
 .. [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
@@ -783,6 +785,7 @@ Appendix A.1 Normative References
                 <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.rst>.
 
 Appendix A.2 Informative References
+-----------------------------------
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
