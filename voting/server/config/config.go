@@ -124,6 +124,9 @@ func (lCfg *Logging) validate() error {
 
 // Parameters is the network parameters.
 type Parameters struct {
+	// SendRatePerMinute is the rate per minute.
+	SendRatePerMinute uint64
+
 	// MixLambda is the inverse of the mean of the exponential distribution
 	// that the Sphinx packet per-hop mixing delay will be sampled from.
 	MixLambda float64
@@ -164,6 +167,9 @@ func (pCfg *Parameters) validate() error {
 }
 
 func (pCfg *Parameters) applyDefaults() {
+	if pCfg.SendRatePerMinute == 0 {
+		pCfg.SendRatePerMinute = defaultSendRatePerMinute
+	}
 	if pCfg.MixLambda == 0 {
 		pCfg.MixLambda = defaultMixLambda
 	}
