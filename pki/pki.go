@@ -63,19 +63,12 @@ type Document struct {
 	// SendMaxInterval is the maximum send interval in milliseconds.
 	SendMaxInterval uint64
 
-	// DropLambda is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine send timing of drop decoy messages.
-	DropLambda float64
+	// MixLoopLambda is the inverse of the mean of the exponential distribution
+	// that mixes will sample to determine send timing of mix loop decoy traffic.
+	MixLoopLambda float64
 
-	// DropMaxInterval is the maximum send interval in milliseconds.
-	DropMaxInterval uint64
-
-	// LoopLambda is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine send timing.
-	LoopLambda float64
-
-	// LoopMaxInterval is the maximum send interval in milliseconds.
-	LoopMaxInterval uint64
+	// MixLoopMaxInterval is the maximum send interval in milliseconds.
+	MixLoopMaxInterval uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
@@ -104,7 +97,7 @@ func (d *Document) String() string {
 		return s
 	}
 
-	s := fmt.Sprintf("&{Epoch:%v MixLambda:%v MixMaxDelay:%v SendLambda:%v SendMaxInterval: %v SharedRandomValue: %v Topology:", d.Epoch, d.MixLambda, d.MixMaxDelay, d.SendLambda, d.SendMaxInterval, d.SharedRandomValue)
+	s := fmt.Sprintf("&{Epoch:%v MixLambda:%v MixMaxDelay:%v SendLambda:%v SendMaxInterval: %v MixLoopLambda: %v MixLoopMaxInterval: %v SharedRandomValue: %v Topology:", d.Epoch, d.MixLambda, d.MixMaxDelay, d.SendLambda, d.SendMaxInterval, d.MixLoopLambda, d.MixLoopMaxInterval, d.SharedRandomValue)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("[%v]{", l)
 		s += stringifyDescSlice(nodes)
