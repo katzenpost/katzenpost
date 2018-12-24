@@ -77,3 +77,136 @@ The voting authority has the following commandline usage::
      -g    Generate the keys and exit immediately.
 
 The ``-g`` option is used to generate the public and private signing and link keys.
+
+
+Configuring The Voting Directory Authority
+----------------------------------------------
+
+A sample configuration file can be found in our daemons repository, here:
+
+* https://github.com/katzenpost/daemons/blob/master/authority/voting/authority.toml.sample
+
+
+Authority section
+`````````````````
+
+The Authority section contains information which is mandatory,
+for example::
+
+  [Authority]
+    Addresses = [ "192.0.2.1:29483", "[2001:DB8::1]:29483" ]
+    DataDir = "/var/lib/katzenpost-authority"
+
+* ``Addresses`` contains one or more IP addresses which
+  correspond to local network interfaces to listen for connections on.
+  These can be specified as IPv4 or IPv6 addresses.
+
+* ``DataDir`` specifies the absolute path to the server's
+  state files including the keypair use to sign network consensus
+  documents.
+
+
+Logging section
+```````````````
+
+The logging section controls the logging, for example::
+
+  [Logging]
+    Disable = false
+    File = "/var/log/katzenpost.log"
+    Level = "DEBUG"
+
+* ``Disable`` is used to disable logging if set to ``true``.
+
+* ``File`` specifies the file to log to. If omitted then stdout is used.
+
+* ``Debug`` may be set to one of the following:
+
+* ERROR
+* WARNING
+* NOTICE
+* INFO
+* DEBUG
+
+
+Parameters section
+``````````````````
+
+The Parameters section holds the network parameters, for example::
+
+  [Parameters]
+    SendRatePerMinute = 30
+    MixLambda = 0.00025
+    MixMaxDelay = 90000
+    SendLambda = 15.0
+    SendShift = 3
+    SendMaxInterval = 3000
+    MixLoopLambda = 0.00025
+    MixLoopMaxInterval = 90000
+
+* ``SendRatePerMinute`` is the rate limiter maximum allowed rate of
+  packets per client.
+
+* ``MixLambda`` is the inverse of the mean of the exponential
+  distribution that the Sphinx packet per-hop mixing delay will be
+  sampled from.
+
+* ``MixMaxDelay`` is the maximum Sphinx packet per-hop mixing
+  delay in milliseconds.
+
+* ``SendLambda`` is the inverse of the mean of the exponential
+  distribution that clients will sample to determine intervals
+  for sending forward and loop messages.
+
+* ``SendMaxInterval`` is the maximum send interval in milliseconds.
+
+* ``MixLoopLambda`` is the inverse of the mean of the exponential
+  distribution that mixes will sample to determine the intervals
+  for sending decoy loops.
+
+* ``MixLoopMaxInterval`` is the maximum send interval in milliseconds.
+
+
+Debug Section
+`````````````
+
+* ``IdentityKey`` is this authority's EdDSA signing key, in either Base16 OR Base64 format.
+
+* ``LinkKey`` is this authority's ECDH link layer key, in either Base16 OR Base64 format.
+
+* ``Layers`` is the number of non-provider layers in the network topology.
+
+* ``MinNoderPerLayer`` is the minimum number of nodes per layer required to form a valid Document.
+
+* ``GenerateOnly`` if set to true causes the server to halt and clean up the data dir
+  right after long term key generation.
+
+
+Mixes Section
+`````````````
+
+The Mixes configuration section looks like this
+::
+
+  [[Mixes]]
+    IdentityKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+
+  [[Mixes]]
+    IdentityKey = "900895721381C0756D28954524BB1D090F54C8DD9295F84B1D8A93F1E3C17AD8"
+
+* ``IdentityKey`` is the node's EdDSA signing key, in either Base16 OR Base64 format.
+
+
+Providers Section
+`````````````````
+
+Configure like so:
+::
+
+   [[Providers]]
+     Identifier = "example.com"
+     IdentityKey = "0AV1syaCdBbm3CLmgXLj6HdlMNiTeeIxoDc8Lgk41e0="
+
+* ``Identifier`` is the human readable provider identifier, such as a FQDN.
+
+* ``IdentityKey`` is the provider's EdDSA signing key, in either Base16 OR Base64 format.

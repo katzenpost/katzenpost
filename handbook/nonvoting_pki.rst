@@ -164,6 +164,8 @@ The Parameters section holds the network parameters, for example::
     SendLambda = 15.0
     SendShift = 3
     SendMaxInterval = 3000
+    MixLoopLambda = 0.00025
+    MixLoopMaxInterval = 90000
 
 * ``SendRatePerMinute`` is the rate limiter maximum allowed rate of
   packets per client.
@@ -176,13 +178,16 @@ The Parameters section holds the network parameters, for example::
   delay in milliseconds.
 
 * ``SendLambda`` is the inverse of the mean of the exponential
-  distribution that clients will sample to determine send timing.
+  distribution that clients will sample to determine intervals
+  for sending forward and loop messages.
 
-* ``SendShift`` is the shift applied to the client send timing samples
-  in milliseconds.
+* ``SendMaxInterval`` is the maximum send interval in milliseconds.
 
-* ``SendMaxInterval`` is the maximum send interval in milliseconds,
-  enforced prior to (excluding) SendShift.
+* ``MixLoopLambda`` is the inverse of the mean of the exponential
+  distribution that mixes will sample to determine the intervals
+  for sending decoy loops.
+
+* ``MixLoopMaxInterval`` is the maximum send interval in milliseconds.
 
 
 Mixes section
