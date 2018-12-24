@@ -168,9 +168,9 @@ func (d *decoy) worker() {
 			//
 			// TODO: Eventually this should use separate parameters.
 			doc := docCache.Document()
-			wakeMsec := uint64(rand.Exp(d.rng, doc.SendLambda))
-			if wakeMsec > doc.SendMaxInterval {
-				wakeMsec = doc.SendMaxInterval
+			wakeMsec := uint64(rand.Exp(d.rng, doc.MixLoopLambda))
+			if wakeMsec > doc.MixLoopMaxInterval {
+				wakeMsec = doc.MixLoopMaxInterval
 			}
 			wakeInterval = time.Duration(wakeMsec) * time.Millisecond
 			d.log.Debugf("Next wakeInterval: %v", wakeInterval)
