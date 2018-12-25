@@ -49,9 +49,6 @@ type Message struct {
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration
 
-	// WithSURB is set to true if a message is sent with a SURB.
-	WithSURB bool
-
 	// SURBID is the SURB identifier.
 	SURBID *[sConstants.SURBIDLength]byte
 
@@ -94,30 +91,24 @@ func (s *Session) sendNext() error {
 }
 
 func (s *Session) doSend(msg *Message) error {
-	var err error
-	if msg.WithSURB {
-		surbID := [sConstants.SURBIDLength]byte{}
-		io.ReadFull(rand.Reader, surbID[:])
-		key, eta, err := s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
-		if err != nil {
-			return err
-		}
-		msg.Key = key
-		msg.SentAt = time.Now()
-		msg.ReplyETA = eta
-		s.mapLock.Lock()
-		defer s.mapLock.Unlock()
-		s.surbIDMap[surbID] = msg
-	} else {
-		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
+	surbID := [sConstants.SURBIDLength]byte{}
+	io.ReadFull(rand.Reader, surbID[:])
+	key, eta, err := s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
+	if err != nil {
+		return err
 	}
+	msg.Key = key
+	msg.SentAt = time.Now()
+	msg.ReplyETA = eta
+	s.mapLock.Lock()
+	defer s.mapLock.Unlock()
+	s.surbIDMap[surbID] = msg
 	return err
 }
 
 func (s *Session) sendLoopDecoy() error {
 	s.log.Info("sending loop decoy")
 	const loopService = "loop"
-	withSURB := true
 	serviceDesc, err := s.GetService(loopService)
 	if err != nil {
 		return err
@@ -130,7 +121,6 @@ func (s *Session) sendLoopDecoy() error {
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
 		Payload:   payload[:],
-		WithSURB:  withSURB,
 	}
 	return s.doSend(msg)
 }
