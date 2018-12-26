@@ -1,5 +1,5 @@
-Katzenpost Low-level client design specification
-************************************************
+Katzenpost client library design specification
+**********************************************
 
 | David Stainton
 | Masala
@@ -17,33 +17,39 @@ a minimal message oriented network transport protocol library.
 1. Introduction
 ===============
 
-This client library allows developers to build any kind of message
-oriented peer to peer distributed or decentralized system where it is
-difficult for network observers to determine which clients are
-exchanging messages. However we also wish to have traffic
-indistinguishability for all the applications that use this library,
-in terms of the timing, size of messages and messages sent versus
-received. This means we can have many kinds of applications using the
-mix network and it is difficult for a passive network observer to
-determine which network application a given user is using.
+This design document illuminates many complex mixnet client design
+considerations that are not already covered by "Katzenpost Mix Network
+End-to-end Protocol Specification" [KATZMIXE2E]_.  Moreover the
+existing Katzenpost reference client, minclient can be found here:
 
-Since mix networks are fundamentally a lossy packet switching network,
-we MUST optional provide reliability. In this case and in accordance
-with the End to End Design Principle, we implement a custome Automatic
-Repeat reQuest error correction protocol scheme which provides
-reliability but not in order delivery.
+* https://github.com/katzenpost/minclient
 
-The scope of this client will not include any end to end cryptography
-with the exception of the Sphinx packet format. However, Sphinx packets
-in Katzenpost terminate at the destination Provider. Therefore the data
-being transported MUST use some form of encryption. This presents several
-challenges that are not solved in this library.
+Minclient is very low level and in most cases should not be used
+directly to compose mixnet client applications. In contrast we shall
+herein describe the design of a client library which provides two
+categories of message oriented bidirectional communication channels:
 
-This library SHOULD be used to compose more sophisticated client libraries.
-These are general purpose message oriented network transport protocol libraries
-that are intended to be used with both end to end communication clients,
-peer to peer systems and other forms of decentralized and distributed
-communication systems where traffic analysis resistance is required.
+1. client to client
+2. client to server
+
+This library could be used to compose more sophisticated communication
+channels which provide additional cryptographic security properties to
+the client application such as:
+
+* Forward secrecy
+* Post-compromise security
+
+We shall describe the design considerations for several variations of
+mixnet communication protocols:
+
+* unreliable location-hiding client to client
+* reliable location-hiding client to client
+* unreliable non-location-hiding client to client
+* reliable non-location-hiding client to client
+* unreliable client to server
+* reliable client to server
+* client to server publish-subscribe
+
 
 1.1 Conventions Used in This Document
 -------------------------------------
@@ -55,55 +61,37 @@ document are to be interpreted as described in [RFC2119]_.
 1.2 Terminology
 ---------------
 
+* ``ACK`` - A protocol acknowledgment message.
+
+* ``ARQ`` - Automatic Repeat reQuest is an error correction method
+  which requires two-way communication and incurs a delay penalty
+  when used.
+
+
 2. Protocol Overview
 ====================
 
-Unlike Loopix, this client shall use only one decoy traffic type,
-loops. As described in the paper, client loops are destined for the
-originating client. However in Katzenpost the mechanism of the loop is
-different than the Loopix paper. In Katzenpost we make use of the
-"loop" service which is running on one or more Providers. The forward
-message which is destined for the loop service contains a SURB which
-the loop service uses to send a reply that closes the loop.
+Clients send forward messages and decoy loop messages. Loop decoy
+messages are addressed to the sending client whereas forward messages
+are destined for other clients or servers. An idle client sends just
+as many messages as a busy client on average.
 
-An idle client sends just as many messages as a busy client. Client
-timing is achieved by putting outbound messages into a FIFO queue
-where the scheduler uses a Poisson process to determine time duration
-between removing messages from the queue for sending over the mixnet.
-We denote this Poisson process as λP whereas the delay choosen for
-each hop shall be known as λH. As is desbribed in the Loopix paper,
-when the egress FIFO queue is empty, decoy loop messages are sent.
+In contrast to [LOOPIX]_, clients make use of two Poisson processes:
 
-All messages sent are bundled with a SURB in the Sphinx packet payload
-so that a reply can be sent by the destination Provider. This is done
-so that reliable and unreliable messages are indistinguishable from
-our decoy loop traffic.
+* ``λP`` - Time interval between sending messages from the egress queue.
+* ``λH`` - Delay choosen for each hop.
 
-Unlike TCP, our ARQ scheme doesn't need to make round trip time
-estimates because we use the Poisson mix strategy where clients
-compose Sphinx packets with a "delay" Sphinx routing command for each
-hop. Each mix in turn delays the Sphinx packet for the specified
-duration in the delay command that it decrypted.
+Clients receive messages to send from the application via an egress
+queue. When λP triggers a send from the egress queue and it is empty
+a decoy loop message is sent.
 
-In order to avoid active confirmation attacks, the ARQ scheme MUST use
-a random delay for retransmission durations. However it should be
-noted that this retransmission duration MUST be bounded by a linear
-approximation of an exponential curve to avoid congestion collapse. I
-suggest using a descrete network event simulator for tuning to lower
-probability of congestion collapse for a given network utilization AND
-also for discovering upper bounds on reliable network utilization with
-minimal performance degradation. In other words, we need to use real
-network engineering and not assume the academic mix network
-abstraction is sufficient for understanding emergent properties.
+The use of automatic retransmissions for unacknowledged messages
+adds additional complexities to the client. However unlike the
+classical packet switching network literature we MUST NOT have
+predictable retransmission intervals. This is in order to prevent active
+confirmation attacks which can completely break the mixnet location
+hiding properties.
 
-We specify an optional ARQ scheme with a fixed window size for all
-clients, uses one ACK per message. Since this is an optional ARQ
-scheme, a higher level client would be able to possibly implement a
-more efficient ARQ scheme for use with a fragmentation scheme. Hybrid
-FEC + ARQ schemes are unlikely to yield much benefit without a context
-where tuning the FEC can be done with some accuracy. In other words,
-save the FEC usage for radio networks, whereas Internet overlay
-networks cannot predict transport dataloss like a radio network can.
 
 3. Message Retreival
 ====================
@@ -111,15 +99,16 @@ networks cannot predict transport dataloss like a radio network can.
 There are two types of message retreival that are possible and
 they are:
 
-    * retreival from local Provider, which means directly connecting
-      to the Provider with our Katzenpost link layer wire protocol
-      and sending the "retreive message" command to retreive messages
-      from the message spool on that Provider for a given user
-      identity.
+* retreival from local Provider, which means directly connecting
+  to the Provider with our Katzenpost link layer wire protocol
+  and sending the "retreive message" command to retreive messages
+  from the message spool on that Provider for a given user
+  identity.
 
-    * retreival from remote Provider: Here we shall refer to the
-      "dead drop" specification document which goes into detail how
-      the remote Provider can be queried "over the mixnet".
+* retreival from remote Provider: Here we are referring to the
+  "Katzenpost Dead Drop Extension" [KATZDEADDROP]_ specification
+  document which goes into detail how the remote Provider can be
+  queried "over the mixnet".
 
 
 4. Forward Messaging
@@ -127,28 +116,39 @@ they are:
 
 The client shall send forward messages in either of two modes:
 
-    * reliable
-    * unreliable
-
-The reliable mode means the forward message is bundled with a SURB in
-the Sphinx payload and this SURB is used by the destination Provider
-to send an ACK control message back the originating client.
+* unreliable
+* reliable
 
 
-3.1 Reliable Message delivery
------------------------------
+4.1 Reliability
+---------------
 
-Message retransmission occurs after a timeout determined by the
-estimated forward+return path delays and (exponential back off?).
-Message retransmissions occur N times before a permanent error is
-returned to the originating client (how?)
+As stated in [KATZMIXE2E]_, our ARQ protocol scheme MUST obey the
+following rules:
 
-3.2 Unreliable Message delivery
--------------------------------
+* All retransmitted blocks MUST be re-encrypted, and have a
+  entirely new set of paths and delays. In simple terms, this
+  means re-doing the packet creation/transmission from step 2
+  for each retransmitted block.
 
-Messages sent via the unreliable path are sent once with no
-guarrantees about reliability or indication if they have been
-delivered. No SURBs are exposed to the recipients provider.
+* Senders MUST NOT retransmit blocks at a rate faster than one
+  block per 3 seconds.
+
+* Retransmissions must NOT have predictable timing otherwise
+  it exposes the destination Provider to discovery by a
+  powerful adversary that can perform active confirmation
+  attacks.
+
+* Senders MUST NOT attempt to retransmit blocks indefinitely,
+  and instead give up on the entire message after it fails to
+  arrive after a certain number of retransmissions.
+
+Due to using the Poisson mix strategy the client knows the
+approximate round trip time.
+
+
+4.1.1 ARQ Implementation Considerations
+---------------------------------------
 
 
 5. Service queries
@@ -157,6 +157,57 @@ delivered. No SURBs are exposed to the recipients provider.
 
 6. Cryptographic Persistent Storage
 ===================================
+
+
+7. Anonymity Considerations
+===========================
+
+
+8. Security Considerations
+==========================
+
+
+9. Acknowledgements
+===================
+
+This client design is inspired by “The Loopix Anonymity System”
+[LOOPIX]_ and in particular the specific decoy traffic design comes
+from conversations with Claudia Diaz and Ania Piotrowska.
+
+
+Appendix A. References
+======================
+
+Appendix A.1 Normative References
+---------------------------------
+
+.. [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119,
+               DOI 10.17487/RFC2119, March 1997,
+               <http://www.rfc-editor.org/info/rfc2119>.
+
+.. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Katzenpost Mix Network Specification", June 2017,
+                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
+
+.. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+
+.. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
+                  <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
+
+Appendix A.2 Informative References
+-----------------------------------
+
+.. [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
+               “The Loopix Anonymity System”,
+               USENIX, August, 2017
+               <https://arxiv.org/pdf/1703.00536.pdf>.
+
+
+sloppy notes that masala wrote:
+-------------------------------
 
 Storage can persistence shall have multiple implementations:
     * cryptographic storage to disk
@@ -199,21 +250,3 @@ graceful shutdown, state is stored to disk by serializing the
 in-memory structure and writing it to disk. The storage API does NOT
 provide journaling or fault handling in the event of a program
 crash. (Too bad, so sad?).
-
-
-7. Anonymity Considerations
-===========================
-
-
-8. Security Considerations
-==========================
-
-
-Appendix A. References
-======================
-
-Appendix A.1 Normative References
----------------------------------
-
-Appendix A.2 Informative References
------------------------------------
