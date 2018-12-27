@@ -111,14 +111,11 @@ they are:
   queried "over the mixnet".
 
 
-4. Forward Messaging
-====================
+4. Reliability
+==============
 
-The client shall send forward messages in either of two modes:
-
-* unreliable
-* reliable
-
+Reliable messaging via our mixnet ARQ protocol scheme is used with
+messages to clients and service queries [KAETZCHEN]_ as well.
 
 4.1 Reliability
 ---------------
@@ -150,24 +147,72 @@ approximate round trip time.
 4.1.1 ARQ Implementation Considerations
 ---------------------------------------
 
+When a SURB reply is received by a client, this means the client
+receives a ciphertext payload and a SURB ID. This SURB ID tells our
+ARQ statemachine which message is being acknowledged. The client uses
+the SURB ID to determine which private key to use for decrypting the
+ciphertext.
 
-5. Service queries
-==================
+The two SURB reply cases are currently:
+
+* SURB ACKnowledgments
+* SURB replies from service queries
+
+In the case of a SURB-ACK the payload plaintext should be all zero
+bytes (0x00) whereas replies from service queries have no such
+restriction.
+
+A client's retransmission intervals MUST not be predictable or a
+powerful active confirmation attack can be performed to discovered the
+client's Provider. Furthermore, classical network literature states
+that we must have an exponential backoff for retransmissions. [CONGAVOID]_
+[SMODELS]_  [RFC896]_ Therefore clients MUST randomize retransmission
+intervals with the lower bounds being set by the exponential curve
+or a linear approximation of such.
+
+In practice these two delays can be implemented using priority queues
+where the priority is set to the future expiration time. Early
+cancellations can be marked as such using a hashmap to avoid doing a
+linear scan of the priority queue.
 
 
-6. Cryptographic Persistent Storage
+::
+
+     .-------------.        .--------------.
+     | Application |  --->  | egress queue | --->  The Mix Network
+     `-------------'      _ `--------------'
+                          /|     |
+                       __/       |
+                      /          V
+                    _/        .----------------.
+                   /          | retransmission |
+                 _/           |      queue     |
+                /            `----------------'
+               |                    |
+               \                    |
+                \                   V
+                 \            .------------.
+                  \           | exp. delay |
+                   '--------- |   queue    |
+                              `------------'
+
+* ``egress queue`` -
+* ``retransmission queue`` -
+* ``exp. delay queue`` -
+
+X. Cryptographic Persistent Storage
 ===================================
 
 
-7. Anonymity Considerations
+X. Anonymity Considerations
 ===========================
 
 
-8. Security Considerations
+X. Security Considerations
 ==========================
 
 
-9. Acknowledgements
+X. Acknowledgements
 ===================
 
 This client design is inspired by “The Loopix Anonymity System”
@@ -197,6 +242,10 @@ Appendix A.1 Normative References
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
                   <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
 
+.. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
+                "Katzenpost Provider-side Autoresponder", January 2018,
+                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
+
 Appendix A.2 Informative References
 -----------------------------------
 
@@ -204,6 +253,17 @@ Appendix A.2 Informative References
                “The Loopix Anonymity System”,
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>.
+
+.. [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
+               Symposium proceedings on Communications architectures and protocols,
+               November 1988, <http://ee.lbl.gov/papers/congavoid.pdf>.
+
+.. [SMODELS]  Kelly, F., "Stochastic Models of Computer Communication Systems",
+              Journal of the Royal Statistical Society, 1985,
+              <http://www.yaroslavvb.com/papers/notes/kelly-stochastic.pdf>.
+
+.. [RFC896]  Nagle, J., "Congestion Control in IP/TCP Internetworks",
+             January 1984, <https://tools.ietf.org/html/rfc896>.
 
 
 sloppy notes that masala wrote:
