@@ -175,34 +175,77 @@ where the priority is set to the future expiration time. Early
 cancellations can be marked as such using a hashmap to avoid doing a
 linear scan of the priority queue.
 
-
 ::
 
      .-------------.        .--------------.
      | Application |  --->  | egress queue | --->  The Mix Network
      `-------------'      _ `--------------'
-                          /|     |
-                       __/       |
-                      /          V
-                    _/        .----------------.
-                   /          | retransmission |
-                 _/           |      queue     |
-                /            `----------------'
-               |                    |
-               \                    |
-                \                   V
-                 \            .------------.
-                  \           | exp. delay |
-                   '--------- |   queue    |
+                          /|       |
+                         /         |
+                        /          V
+                       /     .----------------.
+                      /      | retransmission |
+                     /       |      queue     |
+                    |        `----------------'
+                    |               |
+                     \              |
+                      \             V
+                       \      .------------.
+                        \     | exp. delay |
+                         '--- |   queue    |
                               `------------'
 
-* ``egress queue`` -
-* ``retransmission queue`` -
-* ``exp. delay queue`` -
+
+* ``egress queue`` - The egress FIFO queue receives messages from the
+  application and retransmissions from the exp. delay queue.
+* ``retransmission queue`` - The retransmission queue is a priority
+  queue which is prioritized by the future expected round trip time
+  and supports cancellation by reply or ACK events.
+* ``exp. delay queue`` - The exponential delay queue is another
+  priority queue prioritized by a future time, however there are no
+  cancellations for this active queue management algorithm.
+
+
+Other than these queues, the client will have to do plenty of other
+state mutation and book keeping for each sent message. Before we
+discuss the metadata clients will use we first need to consider the
+various communication channel types:
+
+* ``service query channels`` - As specified in [KAETZCHEN]_ specification,
+  service queries are encrypted with the Sphinx packet format end to end
+  from client to destination Provider only. It is acceptable to let the
+  destination Provider view the payload plaintext since the service
+  being queried is also hosted on the Provider. SURB replies however are
+  end to end encrypted all the way to the client. This channel is oddly
+  similar to a half duplex network link in that the reply channel is not
+  available to the service until the query with the SURB is received.
+
+* ``client to client channels`` - This channel type requires the use
+  of an additional encryption layer encapsulated by the Sphinx packet
+  to protect some of the metadata from the destination Provider. As
+  specified in [KATZMIXE2E]_, each retransmission must be encrypted anew
+  with ``Noise_X_25519_ChaChaPoly_Blake2b`` thus resulting in differing
+  ciphertexts. To construct this channel the two clients must exchange
+  receiving usernames/Providers and public X25519 keys. This channel type
+  supports mutual location hiding when clients exchange Providers which
+  they do not directly connect to as specified in [DEADDROP]_.
+
+This ARQ scheme should work for both of these channel types.
+Each message will have the following metadata:
+
+* message ID
+* message type
+* number of retransmissions
+* SURB ID
+* SURB payload decryption key
+* recipient user
+* recipient Provider
+
 
 X. Cryptographic Persistent Storage
 ===================================
 
+* see below for Masala's notes on persistent storage
 
 X. Anonymity Considerations
 ===========================
@@ -266,8 +309,8 @@ Appendix A.2 Informative References
              January 1984, <https://tools.ietf.org/html/rfc896>.
 
 
-sloppy notes that masala wrote:
--------------------------------
+Appendix B. Notes on persistent storage
+=======================================
 
 Storage can persistence shall have multiple implementations:
     * cryptographic storage to disk
