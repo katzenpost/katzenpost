@@ -426,11 +426,11 @@ func (s *Session) Close() {
 
 // PeerCredentials returns the peer's credentials.  This call MUST only be
 // called from a session that has succesfully completed Initialize().
-func (s *Session) PeerCredentials() *PeerCredentials {
+func (s *Session) PeerCredentials() (*PeerCredentials, error) {
 	if atomic.LoadUint32(&s.state) != stateEstablished {
-		panic("wire/session: PeerCredentials() call in invalid state")
+		return nil, errors.New("wire/session: PeerCredentials() call in invalid state")
 	}
-	return s.peerCredentials
+	return s.peerCredentials, nil
 }
 
 // ClockSkew returns the approximate clock skew based on the responder's
