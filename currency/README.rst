@@ -60,6 +60,22 @@ Ticker and RPC connection information, currency.toml:
   RPCURL = "http://127.0.0.1:18232/"
 
 
+C bindings
+----------
+
+Firstly, build the client_bindings as documented here:
+* https://github.com/katzenpost/client_bindings
+
+And then build the currency common bindings:
+::
+  cd common/bindings
+  go build -o currency_bindings.so -buildmode=c-shared bindings.go
+
+Finally, we can build our example C wallet:
+::
+  gcc ./examples/wallet.c ./common/bindings/currency_bindings.so ../../client_bindings/client_bindings.so -I /home/user/gopath/src/github.com/katzenpost/server_plugins/currency/common/bindings/ -I /home/user/gopath/src/github.com/katzenpost/client_bindings/ -o wallet
+
+
 license
 =======
 

@@ -36,6 +36,11 @@ var logFormat = logging.MustStringFormatter(
 	"%{level:.4s} %{id:03x} %{message}",
 )
 
+const (
+	ResponseSuccess = 0
+	ResponseError   = 1
+)
+
 func stringToLogLevel(level string) (logging.Level, error) {
 	switch level {
 	case "DEBUG":
@@ -86,15 +91,16 @@ func (k *Currency) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, e
 	req, err := common.RequestFromJson(k.ticker, payload)
 	if err != nil {
 		k.log.Debug("Failed to send currency transaction request: (%v)", err)
-		return common.NewResponse(1, err.Error()).ToJson(), nil // XXX
+		return common.NewResponse(ResponseError, err.Error()).ToJson(), nil
 	}
 
 	err = k.sendTransaction(req.Tx)
 	if err != nil {
 		k.log.Debug("Failed to send currency transaction request: (%v)", err)
-		return common.NewResponse(1, err.Error()).ToJson(), nil // XXX
+		return common.NewResponse(ResponseError, err.Error()).ToJson(), nil
 	}
-	return payload, nil
+	message := "success"
+	return common.NewResponse(ResponseSuccess, message).ToJson(), nil
 }
 
 func (k *Currency) sendTransaction(txHex string) error {
