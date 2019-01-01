@@ -302,7 +302,12 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 		case <-reauth.C:
 			// Each outgoing connection has a periodic 1/15 Hz timer to wake up
 			// and re-authenticate to handle the PKI document(s) changing.
-			if !c.IsPeerValid(w.PeerCredentials()) {
+			creds, err := w.PeerCredentials()
+			if err != nil {
+				c.log.Debugf("Session fail: %s", err)
+				return
+			}
+			if !c.IsPeerValid(creds) {
 				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
 				return
 			}

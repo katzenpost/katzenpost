@@ -173,7 +173,10 @@ func (c *incomingConn) worker() {
 	c.l.onInitializedConn(c)
 
 	// Log the connection source.
-	creds := c.w.PeerCredentials()
+	creds, err := c.w.PeerCredentials()
+	if err != nil {
+		c.log.Debugf("Session failure: %s", err)
+	}
 	if c.fromMix {
 		c.log.Debugf("Peer: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	} else {
@@ -338,7 +341,11 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	}
 
 	// Get the message from the user's spool, advancing as appropriate.
-	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(c.w.PeerCredentials().AdditionalData, advance)
+	creds, err := c.w.PeerCredentials()
+	if err != nil {
+		return err
+	}
+	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
 	if err != nil {
 		return err
 	}
