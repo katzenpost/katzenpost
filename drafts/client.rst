@@ -67,6 +67,7 @@ document are to be interpreted as described in [RFC2119]_.
   which requires two-way communication and incurs a delay penalty
   when used.
 
+* ``AQM`` - Active Queue Management algorithm.
 
 2. Protocol Overview
 ====================
@@ -141,7 +142,8 @@ following rules:
   arrive after a certain number of retransmissions.
 
 Due to using the Poisson mix strategy the client knows the
-approximate round trip time.
+approximate round trip time. This eliminates the need to perform
+round trip time estimates as is the case with TCP.
 
 
 4.1.1 ARQ Implementation Considerations
@@ -175,8 +177,8 @@ where the priority is set to the future expiration time. Early
 cancellations can be marked as such using a hashmap to avoid doing a
 linear scan of the priority queue.
 
+Diagram of AQMs:
 ::
-
      .-------------.        .--------------.
      | Application |  --->  | egress queue | --->  The Mix Network
      `-------------'      _ `--------------'
@@ -195,12 +197,17 @@ linear scan of the priority queue.
                          '--- |   queue    |
                               `------------'
 
+Description of AQMs:
 
 * ``egress queue`` - The egress FIFO queue receives messages from the
-  application and retransmissions from the exp. delay queue.
+  application and retransmissions from the exp. delay queue. Messages
+  are popped off the queue at the timing determined by the λP Poisson
+  process.
+
 * ``retransmission queue`` - The retransmission queue is a priority
   queue which is prioritized by the future expected round trip time
   and supports cancellation by reply or ACK events.
+
 * ``exp. delay queue`` - The exponential delay queue is another
   priority queue prioritized by a future time, however there are no
   cancellations for this active queue management algorithm.
@@ -228,7 +235,7 @@ various communication channel types:
   ciphertexts. To construct this channel the two clients must exchange
   receiving usernames/Providers and public X25519 keys. This channel type
   supports mutual location hiding when clients exchange Providers which
-  they do not directly connect to as specified in [DEADDROP]_.
+  they do not directly connect to as specified in [KATZDEADDROP]_.
 
 This ARQ scheme should work for both of these channel types.
 Each message will have the following metadata:
