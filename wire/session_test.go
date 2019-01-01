@@ -112,7 +112,9 @@ func TestSessionIntegration(t *testing.T) {
 		require.NoError(err, "Integration: Alice Initialize()")
 
 		t.Logf("ClockSkew: %v", s.ClockSkew())
-		assert.Equal(credsBob, s.PeerCredentials(), "Integration: Alice PeerCredentials")
+		creds, err := s.PeerCredentials()
+		require.NoError(err)
+		assert.Equal(credsBob, creds, "Integration: Alice PeerCredentials")
 
 		cmd := &commands.SendPacket{
 			SphinxPacket: []byte(testPayload1),
@@ -135,7 +137,9 @@ func TestSessionIntegration(t *testing.T) {
 		require.NoError(err, "Integration: Bob Initialize()")
 
 		assert.Panics(func() { s.ClockSkew() }, "Integration: Bob ClockSkew()")
-		assert.Equal(credsAlice, s.PeerCredentials(), "Integration: Bob PeerCredentials")
+		creds, err := s.PeerCredentials()
+		require.NoError(err)
+		assert.Equal(credsAlice, creds, "Integration: Bob PeerCredentials")
 
 		cmd, err := s.RecvCommand()
 		require.NoError(err, "Integration: Bob RecvCommand() 1")
