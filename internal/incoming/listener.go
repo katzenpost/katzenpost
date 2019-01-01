@@ -133,7 +133,11 @@ func (l *listener) IsConnUnique(ptr interface{}) bool {
 	l.Lock()
 	defer l.Unlock()
 
-	a := c.w.PeerCredentials()
+	a, err := c.w.PeerCredentials()
+	if err != nil {
+		l.log.Errorf("Session fail: %s", err)
+		return false
+	}
 
 	for e := l.conns.Front(); e != nil; e = e.Next() {
 		cc := e.Value.(*incomingConn)
@@ -144,7 +148,12 @@ func (l *listener) IsConnUnique(ptr interface{}) bool {
 		}
 
 		// Compare both by AdditionalData and PublicKey.
-		b := cc.w.PeerCredentials()
+		b, err := cc.w.PeerCredentials()
+		if err != nil {
+			l.log.Errorf("Session fail: %s", err)
+			return false
+		}
+
 		if bytes.Equal(a.AdditionalData, b.AdditionalData) {
 			return false
 		}
