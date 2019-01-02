@@ -136,10 +136,47 @@ Bob directly connects to his Provider and retreives messages from his spool:
    :align: left
 
 
-* retreival from remote Provider: Here we are referring to the
+* Retreival from remote Provider: Here we are referring to the
   "Katzenpost Dead Drop Extension" [KATZDEADDROP]_ specification
   document which goes into detail how the remote Provider can be
   queried "over the mixnet".
+
+Consider this diagram where Alice sends a message to Bob's spool on
+his remote Provider:
+
+.. image:: diagrams/katzenpost_net1.png
+   :alt: diagram 5
+   :align: left
+
+
+At a latter time, Bob sends a SURB to his remote Provider to retreive
+a message from his spool:
+
+.. image:: diagrams/katzenpost_net2.png
+   :alt: diagram 5
+   :align: left
+
+
+The messages return trip from remote Provider to Bob's local Provider
+can look like this:
+
+.. image:: diagrams/katzenpost_net3.png
+   :alt: diagram 5
+   :align: left
+
+
+Finally, Bob retreives the message from his local Provider:
+
+.. image:: diagrams/katzenpost_net4.png
+   :alt: diagram 5
+   :align: left
+
+
+3.1 Conclusion
+--------------
+
+Mutual distrust also known as location hiding properties are not free.
+The cost is increased client complexity and latency for message retreival.
 
 
 4. Reliability
