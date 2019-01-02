@@ -115,11 +115,12 @@ the Single Use Reply Block (see [SPHINXSPEC]_ ):
    :alt: diagram 2
    :align: left
 
-One of the core features of our mix network design is that ALL applications
-and clients regardless of the communication channel type will have this same
-traffic pattern. That is to say, ALL mix network traffic sent from clients
-will result in a loop whether or not the client requires the reply message.
-Therefore ALL messages clients send are indistinguishable from client loops.
+One of the core features of our mix network design is that ALL
+applications and clients regardless of the communication channel type
+will have this same traffic pattern. That is to say, ALL mix network
+traffic sent from clients will result in a loop whether or not the
+client requires the reply message. Therefore ALL messages clients
+send are indistinguishable from client decoy loops.
 
 3. Message Retreival
 ====================
