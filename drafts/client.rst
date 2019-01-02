@@ -69,6 +69,20 @@ document are to be interpreted as described in [RFC2119]_.
 
 * ``AQM`` - Active Queue Management algorithm.
 
+* ``Provider`` - A service operated by a third party that Clients
+  communicate directly with to communicate with the Mixnet. It is
+  responsible for Client authentication, forwarding outgoing messages
+  to the Mixnet, and storing incoming messages for the Client. The
+  Provider MUST have the ability to perform cryptographic operations
+  on the relayed packets.
+
+* ``local Provider`` - A Provider which clients connect to directly
+  using our link layer protocol [KATZMIXWIRE]_.
+
+* ``remote Provider`` - A Provider which clients DO NOT connect
+  directly to and instead make use of our dead drop message retreival
+  protocol [KATZDEADDROP]_.
+
 2. Protocol Overview
 ====================
 
@@ -319,7 +333,6 @@ Each message will have the following metadata:
 X. Cryptographic Persistent Storage
 ===================================
 
-* see below for Masala's notes on persistent storage
 
 X. Anonymity Considerations
 ===========================
@@ -463,43 +476,57 @@ Appendix B. Notes on persistent storage
 =======================================
 
 Storage can persistence shall have multiple implementations:
-    * cryptographic storage to disk
-    * plaintext memory storage
+
+* cryptographic storage to disk
+
+* plaintext memory storage
 
 Storage API for communications metadata.
- * Records state of messages and SURB IDs for service replies or
-   message acknowledgements. Items persisted link a specific queries
-   with their replies. In the case of reliable messages ... In the
-   case of a service query
+
+* Records state of messages and SURB IDs for service replies or
+  message acknowledgements. Items persisted link a specific queries
+  with their replies. In the case of reliable messages ... In the case
+  of a service query
 
 Information that is contained in the metadata storage consists of:
- * Message ID, SURB ID, status triples
- * Message indices?
+
+* Message ID, SURB ID, status triples
+
+* Message indices?
 
 Information that is NOT stored in the metadata storage and is up to
 the consumer of the client API to implement:
-  * Contents of messages
-  * Contacts of clients
-  * Anything implemented by the API consumer
+
+* Contents of messages
+
+* Contacts of clients
+
+* Anything implemented by the API consumer
 
 Implementations
- * In memory implementation. Nothing is persisted to disk, and all
-   state is lost at program exit. No reliability guarrantees exist
-   after a client instance is terminated.
- * On disk implementation. Message metadata is retained to disk for
-   <duration> or until a message is acknowledged or a response is
-   received. Upon restarting a client this metadata repository is
-   loaded from disk.
+
+* In memory implementation. Nothing is persisted to disk, and all
+  state is lost at program exit. No reliability guarrantees exist
+  after a client instance is terminated.
+
+* On disk implementation. Message metadata is retained to disk for
+  <duration> or until a message is acknowledged or a response is
+  received. Upon restarting a client this metadata repository is
+  loaded from disk.
  
 API methods (subject to change)
- * Create initializes a metadata store
- * Read loads a metadata store from disk
- * Write writes a metadata store to disk
- * Destroy erases a metadata store from disk
+
+* Create initializes a metadata store
+
+* Read loads a metadata store from disk
+
+* Write writes a metadata store to disk
+
+* Destroy erases a metadata store from disk
 
 Each store item contains one CBOR serialized structure that is
 deserialized into program memory at client initialization. At client
 graceful shutdown, state is stored to disk by serializing the
 in-memory structure and writing it to disk. The storage API does NOT
 provide journaling or fault handling in the event of a program
-crash. (Too bad, so sad?).
+crash.
