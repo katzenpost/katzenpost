@@ -113,11 +113,28 @@ Therefore ALL messages clients send are indistinguishable from client loops.
 There are two types of message retreival that are possible and
 they are:
 
-* retreival from local Provider, which means directly connecting
-  to the Provider with our Katzenpost link layer wire protocol
-  and sending the "retreive message" command to retreive messages
-  from the message spool on that Provider for a given user
-  identity.
+* Retreival from local Provider as described in [LOOPIX]_. This means
+  clients do NOT retain location hiding properties or "mutual
+  distrust" because clients directly connect to the Provider with our
+  Katzenpost link layer wire protocol and sending the "retreive
+  message" command to retreive messages from the message spool on that
+  Provider for a given user identity which we have specified in detail
+  in section "3.2 Client Retrieval of Queued Messages" of the
+  [KATZMIXE2E]_ document
+
+Consider this diagram where Alice sends a message to Bob's spool on his Provider:
+
+.. image:: diagrams/katzenpost_loopix1.png
+   :alt: diagram 3
+   :align: left
+
+
+Bob directly connects to his Provider and retreives messages from his spool:
+
+.. image:: diagrams/katzenpost_loopix2.png
+   :alt: diagram 4
+   :align: left
+
 
 * retreival from remote Provider: Here we are referring to the
   "Katzenpost Dead Drop Extension" [KATZDEADDROP]_ specification
