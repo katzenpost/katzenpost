@@ -153,7 +153,7 @@ At a latter time, Bob sends a SURB to his remote Provider to retreive
 a message from his spool:
 
 .. image:: diagrams/katzenpost_net2.png
-   :alt: diagram 5
+   :alt: diagram 6
    :align: left
 
 
@@ -161,14 +161,14 @@ The messages return trip from remote Provider to Bob's local Provider
 can look like this:
 
 .. image:: diagrams/katzenpost_net3.png
-   :alt: diagram 5
+   :alt: diagram 7
    :align: left
 
 
 Finally, Bob retreives the message from his local Provider:
 
 .. image:: diagrams/katzenpost_net4.png
-   :alt: diagram 5
+   :alt: diagram 8
    :align: left
 
 
@@ -323,6 +323,78 @@ X. Cryptographic Persistent Storage
 
 X. Anonymity Considerations
 ===========================
+
+X.1 Retransmissions
+-------------------
+
+Mix network ARQ protocol error correction schemes MUST NOT have
+predictable timing between retransmissions otherwise it exposes the
+route destination to discovery by an adversary that can perform active
+confirmation attacks.
+
+Consider the following scenario where Bob retreives one message at a
+time from his remote Provider AND an adversary has compromised his
+remote Provider. This adversary also has the capability to cause
+arbitrary outages in the mix network. The goal of the adversary is
+to discover Bob's local Provider.
+
+Bob sends a SURB to his remote Provider to retreive the first message:
+
+.. image:: diagrams/katzenpost_active_correlation1.png
+   :alt: diagram 9
+   :align: left
+
+
+The adversary causes an outage for half of the Providers in the network:
+
+.. image:: diagrams/katzenpost_active_correlation2.png
+   :alt: diagram 10
+   :align: left
+
+
+During this outage the remote Provider uses the SURB to send the reply
+back to Bob's local Provider which is currently unable to receive
+messages from the mix network:
+
+.. image:: diagrams/katzenpost_active_correlation3.png
+   :alt: diagram 11
+   :align: left
+
+
+Lacking any response within his round trip timeout duration, Bob
+retransmits the same message retreival command. Since the adversary
+has compromised Bob's remote Provider, they are now aware that Bob's
+Provider must be one of the Providers among the set of Providers which
+had the outage:
+
+.. image:: diagrams/katzenpost_active_correlation4.png
+   :alt: diagram 12
+   :align: left
+
+
+The adversay then causes an outage for half of the set previously made
+to have an outage:
+
+.. image:: diagrams/katzenpost_active_correlation5.png
+   :alt: diagram 13
+   :align: left
+
+
+The remote Provider sends it's reponse to Bob's local Provider via the
+SURB Bob sent.  In this case the outage happens to not affect Bob's
+local Provider and therefore Bob increments his sequence number for
+the next message retreival:
+
+.. image:: diagrams/katzenpost_active_correlation6.png
+   :alt: diagram 14
+   :align: left
+
+At this point if Bob sends another message retreival command with
+the incremented message sequence number then it's game over for Bob
+because the adversary will known exactly which is Bob's local Provider.
+This attack is rather powerful in that the adversary is essentially
+performing a search in logarithmic time with respect to the total number
+of Providers in the network.
 
 
 X. Security Considerations
