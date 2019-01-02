@@ -86,13 +86,26 @@ Clients receive messages to send from the application via an egress
 queue. When λP triggers a send from the egress queue and it is empty
 a decoy loop message is sent.
 
-The use of automatic retransmissions for unacknowledged messages
-adds additional complexities to the client. However unlike the
-classical packet switching network literature we MUST NOT have
-predictable retransmission intervals. This is in order to prevent active
-confirmation attacks which can completely break the mixnet location
-hiding properties.
+Here's a diagram which shows a client sending a message through the mix
+network AND in this case the destination could be a Provider service or the
+spool of another user on a Provider:
 
+.. image:: diagrams/katzenpost_alice_loop1.png
+   :alt: diagram 1
+   :align: left
+
+This next diagram shows the reply being routed back to the client by means of
+the Single Use Reply Block (see [SPHINXSPEC]_ ):
+
+.. image:: diagrams/katzenpost_alice_loop2.png
+   :alt: diagram 2
+   :align: left
+
+One of the core features of our mix network design is that ALL applications
+and clients regardless of the communication channel type will have this same
+traffic pattern. That is to say, ALL mix network traffic sent from clients
+will result in a loop whether or not the client requires the reply message.
+Therefore ALL messages clients send are indistinguishable from client loops.
 
 3. Message Retreival
 ====================
@@ -303,6 +316,10 @@ Appendix A.2 Informative References
                “The Loopix Anonymity System”,
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>.
+
+.. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                "Sphinx Mix Network Cryptographic Packet Format Specification"
+                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
 
 .. [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
                Symposium proceedings on Communications architectures and protocols,
