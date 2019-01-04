@@ -547,8 +547,13 @@ func (c *connection) onWireConn(w *wire.Session) {
 			continue
 		}
 
+		creds, err := w.PeerCredentials()
+		if err != nil {
+			// do not continue processing this command
+			continue
+		}
 		// Update the cached descriptor, and re-validate the connection.
-		if !c.IsPeerValid(w.PeerCredentials()) {
+		if !c.IsPeerValid(creds) {
 			c.log.Warningf("No longer have a descriptor for current peer.")
 			wireErr = newProtocolError("current consensus no longer lists the Provider")
 			return
