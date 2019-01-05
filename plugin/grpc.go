@@ -17,6 +17,8 @@
 package plugin
 
 import (
+	"fmt"
+
 	"github.com/katzenpost/server/plugin/proto"
 	"golang.org/x/net/context"
 )
@@ -54,6 +56,12 @@ type GRPCClient struct {
 // OnRequest proxies the query over gRPC to the GRPCServer
 // and returns a response payload if any.
 func (m *GRPCClient) OnRequest(id uint64, request []byte, hasSURB bool) ([]byte, error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered OnRequest panic: ", r)
+		}
+	}()
+
 	resp, err := m.client.OnRequest(context.Background(), &proto.Request{
 		ID:      id,
 		Payload: request,
