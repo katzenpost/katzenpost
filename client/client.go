@@ -61,14 +61,12 @@ func (p *Panda) Exchange(log func(string, ...interface{}), id, message []byte, s
 		var rawRequest []byte
 		enc := codec.NewEncoderBytes(&rawRequest, &p.jsonHandle)
 		enc.Encode(request)
-		wantResponse := true
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
-		msgRef, err := p.session.SendKaetzchenQuery(p.recipient, p.provider, rawRequest, wantResponse)
+		reply, err := p.session.SendUnreliableMessage(p.recipient, p.provider, rawRequest)
 		if err != nil {
 			return nil, err
 		}
 		response := new(common.PandaResponse)
-		reply := p.session.WaitForReply(msgRef) // XXX blocking
 		dec := codec.NewDecoderBytes(bytes.TrimRight(reply, "\x00"), &p.jsonHandle)
 		if err := dec.Decode(response); err != nil {
 			p.log.Debugf("Failed to decode PANDA response: (%v)", err)
