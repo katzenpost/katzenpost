@@ -32,7 +32,7 @@ categories of message oriented bidirectional communication channels:
 1. client to client
 2. client to server
 
-This library could be used to compose more sophisticated communication
+This library SHOULD be used to compose more sophisticated communication
 channels which provide additional cryptographic security properties to
 the client application such as:
 
@@ -201,14 +201,40 @@ Finally, Bob retreives the message from his local Provider:
 Mutual distrust also known as location hiding properties are not free.
 The cost is increased client complexity and latency for message retreival.
 
+4. Message orientation considerations
+=====================================
 
-4. Reliability
+Mix networks are inherently message oriented and we do not seek to
+change this fundamental property of our mix network protocol.
+However, it is possible to create a higher level protocol which have
+different properties than presented by the Sphinx packet format and
+our low level mix network protocols.
+
+It may be useful to send arbitrarily sized messages. Stream
+orientation sends bytes of data to the application as soon as the
+ordered bytes are available whereas the ability to send arbitrarily
+sized messages is qualitatively a different protocol category. This is
+different because in our message oriented scheme, data is only
+presented to the application once reassembly of the entire message is
+complete.
+
+Certainly it is possible to construct a stream oriented protocol given
+our low level message oriented mix network protocol. However, at this
+time we do not have sufficient motivation to explore this area of
+design space. Arbitrarily sized messages achieved using padding and
+fragmentation is sufficient for all of the applications we are currently
+considering for integration with the mix network.
+
+Our message padding and fragmentation scheme is described in detail
+in [KATZMIXE2E]_.
+
+5. Reliability
 ==============
 
 Reliable messaging via our mixnet ARQ protocol scheme is used with
 messages to clients and service queries [KAETZCHEN]_ as well.
 
-4.1 Reliability
+5.1 Reliability
 ---------------
 
 As stated in [KATZMIXE2E]_, our ARQ protocol scheme MUST obey the
@@ -236,7 +262,7 @@ approximate round trip time. This eliminates the need to perform
 round trip time estimates as is the case with TCP.
 
 
-4.1.1 ARQ Implementation Considerations
+5.1.1 ARQ Implementation Considerations
 ---------------------------------------
 
 When a SURB reply is received by a client, this means the client
@@ -341,6 +367,7 @@ Each message will have the following metadata:
 
 X. Cryptographic Persistent Storage
 ===================================
+
 
 
 X. Anonymity Considerations
