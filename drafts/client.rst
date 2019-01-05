@@ -128,6 +128,12 @@ send are indistinguishable from client decoy loops.
 There are two types of message retreival that are possible and
 they are:
 
+* Retreival from local Provider
+* Retreival from remote Provider
+
+3.1 Message Retreival from local Provider
+-----------------------------------------
+
 * Retreival from local Provider as described in [LOOPIX]_. This means
   clients do NOT retain location hiding properties or "mutual
   distrust" because clients directly connect to the Provider with our
@@ -150,6 +156,8 @@ Bob directly connects to his Provider and retreives messages from his spool:
    :alt: diagram 4
    :align: left
 
+3.2 Message Retreival from remote Provider
+------------------------------------------
 
 * Retreival from remote Provider: Here we are referring to the
   "Katzenpost Dead Drop Extension" [KATZDEADDROP]_ specification
@@ -187,7 +195,7 @@ Finally, Bob retreives the message from his local Provider:
    :align: left
 
 
-3.1 Conclusion
+3.3 Conclusion
 --------------
 
 Mutual distrust also known as location hiding properties are not free.
