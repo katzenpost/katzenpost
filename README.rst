@@ -20,11 +20,7 @@ See the handbook to learn how to configure external plugins:
 Status
 ======
 
-Currently the external plugins feature branch has NOT yet been merged
-into master of the server repo:
-
-* https://github.com/katzenpost/server/pull/63
-
+The current status is that: "Everything works perfectly."
 
 So far I've implemented an "echo service" in golang, rust and
 python. Using these examples should make it clear how to write your
