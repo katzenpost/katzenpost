@@ -33,6 +33,11 @@ Katzenpost release process
    git checkout master
    git pull origin master
 
+For this ``server`` repo you should make sure that there are no
+changes to the protobuf generated golang code. That is, run ``go generate``
+in the ``server`` repo and do a ``git diff`` to make sure the generated
+code has not changed.
+
 
 .. code:: bash
 
@@ -95,41 +100,42 @@ Katzenpost release process
 
 
 * bump version tags for each repository
-  (replace v0.0.1 with bumped version)
+  (replace v0.0.1 with bumped version);
+  gpg signed tags!
 
 
 .. code:: bash
 
    cd $GOPATH/src/github.com/katzenpost/core
-   git tag v0.0.1
+   git tag -s v0.0.1
    git push origin v0.0.1
 
 
 .. code:: bash
 
    cd $GOPATH/src/github.com/katzenpost/authority
-   git tag v0.0.1
+   git tag -s v0.0.1
    git push origin v0.0.1
 
 
 .. code:: bash
 
    cd $GOPATH/src/github.com/katzenpost/minclient
-   git tag v0.0.1
+   git tag -s v0.0.1
    git push origin v0.0.1
 
 
 .. code:: bash
 
     cd $GOPATH/src/github.com/katzenpost/mailproxy
-    git tag v0.0.1
+    git tag -s v0.0.1
     git push origin v0.0.1
 
 
 .. code:: bash
 
     cd $GOPATH/src/github.com/katzenpost/server
-    git tag v0.0.1
+    git tag -s v0.0.1
     git push origin v0.0.1
 
 
@@ -151,7 +157,7 @@ Katzenpost release process
 .. code:: bash
 
    git commit -a -m "dep ensure"
-   git tag v0.0.1
+   git tag -s v0.0.1
 
 * use goreleaser to build binaries and packages
 .. code:: bash
@@ -191,7 +197,7 @@ Katzenpost client(s) using this procedure:
 2. Tag the current release with the playground version number:
 .. code:: bash
 
-   git tag v0.0.1
+   git tag -s v0.0.1
 
 3. Build the release binaries and packages:
 .. code:: bash
