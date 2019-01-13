@@ -36,8 +36,10 @@ Katzenpost release process
 For this ``server`` repo you should make sure that there are no
 changes to the protobuf generated golang code. That is, run ``go generate``
 in the ``server`` repo and do a ``git diff`` to make sure the generated
-code has not changed.
+code has not changed. See the server repo's README for further information
+on building the server and generating the protobuf code:
 
+* https://github.com/katzenpost/server
 
 .. code:: bash
 
