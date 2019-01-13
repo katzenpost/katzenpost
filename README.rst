@@ -17,16 +17,16 @@ https://github.com/Katzenpost/daemons
 Building
 ========
 
-* Note that this library requires a ``go generate`` step before running
-``go build`` in order to generate the protobuf and gRPC code for the
+Note that this library only requires a ``go generate`` when the protobuf schema
+files change in order to generate the protobuf and gRPC code for the
 Kaetzchen service plugin system. This means you must have some protobuf
 related deps installed such as:
 
- * protobuf-compiler (version 3)
- * golang-goprotobuf-dev
- * protoc-gen-go https://github.com/golang/protobuf/tree/master/protoc-gen-go
+* protobuf-compiler (version 3)
+* golang-goprotobuf-dev
+* protoc-gen-go https://github.com/golang/protobuf/tree/master/protoc-gen-go
 
-* Note that some of our dependencies use ``gopkg.in`` as their import host
+Note that some of our dependencies use ``gopkg.in`` as their import host
 and this can cause you problems if you use the ``go get`` tool to install
 dependencies. See this issue https://github.com/kataras/iris/issues/605
 for more information. tl,dr; workaround -->
