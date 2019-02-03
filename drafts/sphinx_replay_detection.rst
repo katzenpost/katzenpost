@@ -121,17 +121,48 @@ is calculated.
 
 It would be sufficient to use a key value store or hashmap to detect
 the presence of a duplicate replay tag however we additionaly employ a
-bloom filter to increase performance. We not however require any kind
-of double bloom filter system simply because Sphinx keys must
-periodically be rotated and destroyed to mitigate compulsion
-attacks. This kind of key erasure scheme limits the window of time
-that an adversary can perform a compulsion attack.
+bloom filter to increase performance. We do not require any kind of
+double bloom filter system simply because Sphinx keys must
+periodically be rotated and destroyed to mitigate compulsion attacks
+and therefore our replay caches must likewise be rotated.  This kind
+of key erasure scheme limits the window of time that an adversary can
+perform a compulsion attack. See our PKI specification [KATZMIXPKI]_
+for more details regarding epoch key rotation and the grace period before
+and after the epoch boundary.
+
+We tune our bloom filter for line-speed; that is to say the bloom filter
+is tuned for the maximum number of Sphinx packets that can be sent on the wire.
+This of course has to take into account the size of the Sphinx packets as well
+as the maximum line speed of the network interface. This is a conservative
+tuning heuristic given that there must be more than this maximum number of
+Sphinx packets in order for the
 
 Our bloomfilter with hashmap replay detection cache looks like this:
 
 .. image:: diagrams/replay1.png
    :alt: replay cache
    :align: left
+
+Note that this diagram does NOT express the full complexity of the
+replay caching system. In particular it does not describe how entries
+are entered into the bloom filter and hashmap. Upon either bloom
+filter mismatch or hashmap mismatch both data structures must be locked
+and the replay tag inserted into each.
+
+For the disk persistence mode of operation the hashmap can simply be replaced
+with an efficient key value store. Efficient persistent stores may use
+a write back cache and other techniques for efficiency.
+
+3.3 Shadow Memory In Support of SEDA
+------------------------------------
+
+The best way to implement a software based router is with a
+SEDA [SEDA]_ computational pipeline. We therefore need a mechanism
+to allow multiple threads to reference our replay caches. Here we
+shall describe a shadow memory data structure which the individual
+worker threads shall use to reference the Sphinx routing keys and
+replay caches.
+
 
 
 Appendix A. References
@@ -148,6 +179,15 @@ Appendix A.1 Normative References
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
+
+.. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
+
+.. [SEDA] Welsh, M., Culler, D., Brewer, E.,
+          "SEDA: An Architecture for Well-Conditioned, Scalable Internet Services",
+          ACM Symposium on Operating Systems Principles, 2001,
+          <http://www.sosp.org/2001/papers/welsh.pdf>.
 
 Appendix A.2 Informative References
 -----------------------------------
