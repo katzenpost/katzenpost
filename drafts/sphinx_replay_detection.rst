@@ -116,6 +116,23 @@ is calculated.
         shared_secret = EXP( hdr.group_element, private_routing_key )
         replay_tag = H( shared_secret )
 
+3.2 Sphinx Replay Tag Caching
+-----------------------------
+
+It would be sufficient to use a key value store or hashmap to detect
+the presence of a duplicate replay tag however we additionaly employ a
+bloom filter to increase performance. We not however require any kind
+of double bloom filter system simply because Sphinx keys must
+periodically be rotated and destroyed to mitigate compulsion
+attacks. This kind of key erasure scheme limits the window of time
+that an adversary can perform a compulsion attack.
+
+Our bloomfilter with hashmap replay detection cache looks like this:
+
+.. image:: diagrams/replay1.png
+   :alt: replay cache
+   :align: left
+
 
 Appendix A. References
 ======================
