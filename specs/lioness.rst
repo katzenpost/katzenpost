@@ -1,8 +1,8 @@
-The LIONESS Wide-Block-Cipher
-*****************************
-
+The LIONESS Wide-Block-Cipher Specification
+*******************************************
+|
 | Yawning Angel
-
+|
 .. rubric:: Abstract
 
 This document defines the LIONESS Wide-Block-Cipher construct, and
@@ -243,11 +243,11 @@ serve as a stable reference and implementation guide.
    cipher constructs that take initialization vectors, or incorporate
    initialization vectors in the ``H()`` and ``S()`` calls.
 
-6. References
-=============
+Appendix A. References
+======================
 
-6.1 Normative References
-------------------------
+Appendix A.1 Normative References
+---------------------------------
 
 .. [RFC2119]  Bradner, S., "Key words for use in RFCs to Indicate
               Requirement Levels", BCP 14, RFC 2119,
@@ -263,8 +263,8 @@ serve as a stable reference and implementation guide.
               (MAC)", RFC 7693, DOI 10.17487/RFC7693, November 2015,
               <http://www.rfc-editor.org/info/rfc7693>.
 
-6.2 Informative References
---------------------------
+Appendix A.2 Informative References
+-----------------------------------
 
 .. [AB96]     Anderson, R., Biham, E., "Two Practical and Provably
               Secure Block Ciphers: BEAR and LION", 1996.
@@ -274,5 +274,23 @@ serve as a stable reference and implementation guide.
               arXiv:1105.0259, May 2011,
               <https://arxiv.org/abs/1105.0259>.
 
-A. LIONESS-ChaCha20-BLAKE2b Test Vector
-=======================================
+Appendix B. LIONESS-ChaCha20-BLAKE2b Test Vector
+================================================
+
+Appendix C. Citing This Document
+================================
+
+Appendix C.1 Bibtex Entry
+-------------------------
+
+Note that the following bibtex entry is in the IEEEtran bibtex style
+as described in a document called "How to Use the IEEEtran BIBTEX Style".
+
+::
+
+   @online{LionessSpec,
+   title = {The LIONESS Wide-Block-Cipher Specification},
+   author = {Yawning Angel},
+   url = {https://github.com/Katzenpost/docs/blob/master/specs/lioness.rst},
+   year = {2017}
+   }
