@@ -58,7 +58,7 @@ efficiently detect Sphinx packet replay attacks.
    evict items from the queue based on dwell time or other criteria
    where each stage is a thread pool.
 3. The only correct way to efficiently implement a software based
-     router on general purpose computing hardware.
+   router on general purpose computing hardware.
 
 1.2 Conventions Used in This Document
 -------------------------------------
@@ -243,7 +243,33 @@ candidate mix keys and associates replay caches.
 
 The mix server periodically updates it's knowledge of the network by
 downloading a new consensus document as described in [KATZMIXPKI]_.
-When this is done the Sphinx routing key and associated replay.........
+The individual threads in the "cryptoworker" thread pool which process
+Sphinx packets make use of a ``MixKey`` data structure which consists of:
+
+1. Sphinx routing key material (public and private X25519 keys)
+2. Replay Cache
+3. Reference Counter
+
+Each of these "cryptoworker" thread pool has it's own hashmap
+associating epochs to a reference to the ``MixKey``. The mix server
+PKI threat maintains a single hashmap which associates the epochs with
+the corresponding ``MixKey``.  We shall refer to this hashmap as
+``MixKeys``. After a new ``MixKey`` is added to ``MixKeys``, a
+"reshadow" operation is performed for each "cryptoworker" thread.  The
+"reshadow" operation performs two tasks:
+
+1. Removes entries from each "cryptoworker" thread's hashmap that are
+   no longer present in ``MixKeys`` and decrements the ``MixKey``
+   reference counter.
+
+2. Adds entries present in ``MixKeys`` but are not present in the
+   thread's hashmap and increments the ``MixKey`` reference counter.
+
+Once a given ``MixKey`` reference counter is decremented to zero, the
+``MixKey`` and it's associated on disk data is purged. Note that we do
+not discuss synchronization primitives, however it should be obvious
+that updating the replay cache should likely make use of a mutex or
+similar primitive to avoid data races between "cryptoworker" threads.
 
 Appendix A. References
 ======================
