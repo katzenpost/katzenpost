@@ -52,12 +52,12 @@ efficiently detect Sphinx packet replay attacks.
   and the group operation.
 
 * ``SEDA`` - Staged Event Driven Architecture. [SEDA]_
-  1. A highly parallelizable computation model.
-  2. A computational pipeline composed of multiple stages connected by
-     queues utilizing active queue management algorithms that can
-     evict items from the queue based on dwell time or other criteria
-     where each stage is a thread pool.
-  3. The only correct way to efficiently implement a software based
+1. A highly parallelizable computation model.
+2. A computational pipeline composed of multiple stages connected by
+   queues utilizing active queue management algorithms that can
+   evict items from the queue based on dwell time or other criteria
+   where each stage is a thread pool.
+3. The only correct way to efficiently implement a software based
      router on general purpose computing hardware.
 
 1.2 Conventions Used in This Document
