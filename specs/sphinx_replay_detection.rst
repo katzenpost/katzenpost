@@ -217,10 +217,9 @@ bloom filter.
 The cost of checking a replay tag from a single replay cache is
 the sum of the following operations:
 
-1. An elliptic curve Diffie Hellman operation
-2. A cryptographic hash operation
-3. A bloom filter lookup
-4. A hashmap or cache lookup
+1. Sphinx packet unwrap operation
+2. A bloom filter lookup
+3. A hashmap or cache lookup
 
 Therefore these operations are roughly O(1) in complexity. However
 Sphinx packets processed near epoch boundaries will not be constant
