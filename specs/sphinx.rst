@@ -6,7 +6,7 @@ Sphinx Mix Network Cryptographic Packet Format Specification
 | Claudia Diaz
 | Ania Piotrowska
 | David Stainton
-
+|
 .. rubric:: Abstract
 
 This document defines the Sphinx cryptographic packet format for
@@ -1212,3 +1212,21 @@ Appendix A.2 Informative References
 
 .. [MIXMINION]  Danezis, G., Dingledine, R., Mathewson, N., "Mixminion: Design of a Type III
                 Anonymous Remailer Protocol", <https://www.mixminion.net/minion-design.pdf>.
+
+Appendix B. Citing This Document
+================================
+
+Appendix B.1 Bibtex Entry
+-------------------------
+
+Note that the following bibtex entry is in the IEEEtran bibtex style
+as described in a document called "How to Use the IEEEtran BIBTEX Style".
+
+::
+
+   @online{SphinxSpec,
+   title = {Sphinx Mix Network Cryptographic Packet Format Specification},
+   author = {Yawning Angel and George Danezis and Claudia Diaz and Ania Piotrowska and David Stainton},
+   url = {https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst},
+   year = {2017}
+   }
