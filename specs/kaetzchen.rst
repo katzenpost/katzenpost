@@ -212,3 +212,21 @@ Appendix A.2 Informative References
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
+
+Appendix B. Citing This Document
+================================
+
+Appendix B.1 Bibtex Entry
+-------------------------
+
+Note that the following bibtex entry is in the IEEEtran bibtex style
+as described in a document called "How to Use the IEEEtran BIBTEX Style".
+
+::
+
+   @online{Kaetzchen,
+   title = {Katzenpost Provider-side Autoresponder Extension},
+   author = {Yawning Angel and Kali Kaneko and David Stainton},
+   url = {https://github.com/Katzenpost/docs/blob/master/specs/kaetzchen.rst},
+   year = {2018}
+   }

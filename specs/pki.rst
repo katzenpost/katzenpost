@@ -2,14 +2,14 @@
 
 Katzenpost Mix Network Public Key Infrastructure Specification
 **************************************************************
-
+|
 | Yawning Angel
 | Claudia Diaz
 | Ania Piotrowska
 | David Stainton
-
-Version 0
-
+|
+| Version 0
+|
 .. rubric:: Abstract
 
    This document describes the message formats and protocols of a
@@ -961,3 +961,20 @@ Appendix A.2 Informative References
                "The Structure of Authority: Why Security Is not a Separable Concern",
                <http://www.erights.org/talks/no-sep/secnotsep.pdf>.
 
+Appendix B. Citing This Document
+================================
+
+Appendix B.1 Bibtex Entry
+-------------------------
+
+Note that the following bibtex entry is in the IEEEtran bibtex style
+as described in a document called "How to Use the IEEEtran BIBTEX Style".
+
+::
+
+   @online{KatzMixPKI,
+   title = {Katzenpost Mix Network Public Key Infrastructure Specification},
+   author = {Yawning Angel and Ania Piotrowska and David Stainton},
+   url= {https://github.com/katzenpost/docs/blob/master/specs/pki.rst},
+   year = {2017}
+   }
