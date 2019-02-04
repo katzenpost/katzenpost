@@ -298,15 +298,13 @@ Appendix B. Citing This Document
 Appendix B.1 Bibtex Entry
 -------------------------
 
-Note that this bibtex entry is unfinished and MUST be modified to
-include the final publication URL:
-
 ::
+
    @misc{SphinxReplay,
    title = {Sphinx Packet Replay Detection Specification},
    author = {David Stainton},
    year = {2019},
    month = {February},
    www_tags = {selected},
-   www_html_url = {XXX},
+   www_html_url = {https://github.com/katzenpost/docs/blob/master/specs/sphinx_replay_detection.rst},
    }
