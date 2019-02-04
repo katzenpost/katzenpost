@@ -6,9 +6,9 @@ Katzenpost Mix Network Specification
 | Claudia Diaz
 | Ania Piotrowska
 | David Stainton
-
-Version 0
-
+|
+| Version 0
+|
 .. rubric:: Abstract
 
 This document describes the high level architecture and detailed
@@ -571,3 +571,21 @@ Appendix A.2 Informative References
 .. [MIXTOPO10]  Diaz, C., Murdoch, S., Troncoso, C., "Impact of Network Topology on Anonymity
                 and Overhead in Low-Latency Anonymity Networks", PETS, July 2010,
                 <https://www.esat.kuleuven.be/cosic/publications/article-1230.pdf>.
+
+Appendix B. Citing This Document
+================================
+
+Appendix B.1 Bibtex Entry
+-------------------------
+
+Note that the following bibtex entry is in the IEEEtran bibtex style
+as described in a document called "How to Use the IEEEtran BIBTEX Style".
+
+::
+
+   @online{KatzMixnet,
+   title = {Katzenpost Mix Network Specification},
+   author = {Yawning Angel and George Danezis and Claudia Diaz and Ania Piotrowska and David Stainton},
+   url = {https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst},
+   year = {2017}
+   }

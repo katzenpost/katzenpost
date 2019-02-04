@@ -1,10 +1,10 @@
 Katzenpost Mix Network Wire Protocol Specification
 *************************************************
-
+|
 | Yawning Angel
-
-Version 0
-
+|
+| Version 0
+|
 .. rubric:: Abstract
 
 This document defines the Katzenpost Mix Network Wire Protocol for
@@ -348,3 +348,21 @@ Appendix A.1 Normative References
 
 Appendix A.2 Informative References
 -----------------------------------
+
+Appendix B. Citing This Document
+================================
+
+Appendix B.1 Bibtex Entry
+-------------------------
+
+Note that the following bibtex entry is in the IEEEtran bibtex style
+as described in a document called "How to Use the IEEEtran BIBTEX Style".
+
+::
+
+   @online{KatzMixWire,
+   title = {Katzenpost Mix Network Wire Protocol Specification},
+   author = {Yawning Angel},
+   url = {https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst},
+   year = {2017}
+   }
