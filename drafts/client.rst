@@ -50,6 +50,7 @@ mixnet communication protocols:
 * reliable client to server
 * client to server publish-subscribe
 
+In all these cases, message delivery will be out-of-order whether or not it is reliable.
 
 1.1 Conventions Used in This Document
 -------------------------------------
@@ -294,24 +295,10 @@ cancellations can be marked as such using a hashmap to avoid doing a
 linear scan of the priority queue.
 
 Diagram of AQMs:
-::
-     .-------------.        .--------------.
-     | Application |  --->  | egress queue | --->  The Mix Network
-     `-------------'      _ `--------------'
-                          /|       |
-                         /         |
-                        /          V
-                       /     .----------------.
-                      /      | retransmission |
-                     /       |      queue     |
-                    |        `----------------'
-                    |               |
-                     \              |
-                      \             V
-                       \      .------------.
-                        \     | exp. delay |
-                         '--- |   queue    |
-                              `------------'
+
+.. image:: diagrams/client_aqms.png
+   :alt: diagram 7
+   :align: left
 
 Description of AQMs:
 
@@ -324,7 +311,7 @@ Description of AQMs:
   queue which is prioritized by the future expected round trip time
   and supports cancellation by reply or ACK events.
 
-* ``exp. delay queue`` - The exponential delay queue is another
+* ``exponential delay queue`` - The exponential delay queue is another
   priority queue prioritized by a future time, however there are no
   cancellations for this active queue management algorithm.
 
