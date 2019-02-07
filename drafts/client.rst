@@ -355,6 +355,9 @@ Each message will have the following metadata:
 X. Cryptographic Persistent Storage
 ===================================
 
+TODO: further discuss pros and cons of NOT having any state persistence to disk.
+
+Leaning towards NOT having any state persistence to disk because it reduces implementation complexity.
 
 
 X. Anonymity Considerations
