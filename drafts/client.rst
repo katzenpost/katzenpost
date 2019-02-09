@@ -173,7 +173,7 @@ his remote Provider:
    :align: left
 
 
-At a latter time, Bob sends a SURB to his remote Provider to retreive
+At a latter time, Bob sends a SURB to his remote Provider to retrieve
 a message from his spool:
 
 .. image:: diagrams/katzenpost_net2.png
@@ -189,7 +189,7 @@ can look like this:
    :align: left
 
 
-Finally, Bob retreives the message from his local Provider:
+Finally, Bob retrieves the message from his local Provider:
 
 .. image:: diagrams/katzenpost_net4.png
    :alt: diagram 8
@@ -200,7 +200,7 @@ Finally, Bob retreives the message from his local Provider:
 --------------
 
 Mutual distrust also known as location hiding properties are not free.
-The cost is increased client complexity and latency for message retreival.
+The cost is increased client complexity and latency for message retrieval.
 
 4. Message orientation considerations
 =====================================
@@ -371,13 +371,13 @@ predictable timing between retransmissions otherwise it exposes the
 route destination to discovery by an adversary that can perform active
 confirmation attacks.
 
-Consider the following scenario where Bob retreives one message at a
+Consider the following scenario where Bob retrieves one message at a
 time from his remote Provider AND an adversary has compromised his
 remote Provider. This adversary also has the capability to cause
 arbitrary outages in the mix network. The goal of the adversary is
 to discover Bob's local Provider.
 
-Bob sends a SURB to his remote Provider to retreive the first message:
+Bob sends a SURB to his remote Provider to retrieve the first message:
 
 .. image:: diagrams/katzenpost_active_correlation1.png
    :alt: diagram 9
@@ -419,16 +419,16 @@ to have an outage:
    :align: left
 
 
-The remote Provider sends it's reponse to Bob's local Provider via the
+The remote Provider sends it's response to Bob's local Provider via the
 SURB Bob sent.  In this case the outage happens to not affect Bob's
 local Provider and therefore Bob increments his sequence number for
-the next message retreival:
+the next message retrieval:
 
 .. image:: diagrams/katzenpost_active_correlation6.png
    :alt: diagram 14
    :align: left
 
-At this point if Bob sends another message retreival command with
+At this point if Bob sends another message retrieval command with
 the incremented message sequence number then it's game over for Bob
 because the adversary will known exactly which is Bob's local Provider.
 This attack is rather powerful in that the adversary is essentially
@@ -532,7 +532,7 @@ the consumer of the client API to implement:
 Implementations
 
 * In memory implementation. Nothing is persisted to disk, and all
-  state is lost at program exit. No reliability guarrantees exist
+  state is lost at program exit. No reliability guarantees exist
   after a client instance is terminated.
 
 * On disk implementation. Message metadata is retained to disk for
