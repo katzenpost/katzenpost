@@ -57,6 +57,10 @@ In particular:
 
 * ``SDS`` - Signed discrete spool. Described below in section 4.
 
+* ``Requests`` - Requests are sent to nodes by initiators (operators). Requests may include a
+  response handle, to which one or more responses can be sent to the initiator.
+  Initiators do not need a long-term identity; they can potentially be anonymous.
+
 * ``pool`` - Note: pools aren't used in the spec below yet, you can
   ignore them for now.  A pool is a content-addressable unordered
   set. That is, a key-value store where the key is the hash of the
@@ -91,18 +95,6 @@ We are also not defining how to find out about the nodes which provide
 services; at this layer we assume that there is some external mechanism by
 which users learn about nodes' keys and addresses.
 
-2.2 Requests
-------------
-
-Requests are sent to nodes by initiators (operators). Requests may include a
-response handle, to which one or more responses can be sent to the initiator.
-Initiators do not need a long-term identity; they can potentially be anonymous.
-
-Requests can be implemented using HTTP long-polling, where multiple responses
-are included in a single HTTP response. They can also be implemented via a
-mix-network, where the request includes some number of Single-Use Reply Blocks
-for routing the responses.
-
 3. Discrete spool
 =================
 
@@ -125,13 +117,13 @@ these methods:
 
 - forget(index)
 
-Forgets everything older than index.
+  Forgets everything older than index.
 
  - index is a position in the spool.
 
-The discrete spool interface is not intended to be provided to more than one
-entity, it is a low-level local interface upon which the following interfaces
-may be implemented.
+  The discrete spool interface is not intended to be provided to more than one
+  entity, it is a low-level local interface upon which the following interfaces
+  may be implemented.
 
 4. Signed discrete spool
 ========================
@@ -288,7 +280,6 @@ Note the differences from the SDS interface:
 
 - writers do not need to know the current state of the spool. (They can't
   be expected to, because they might not be readers.)
-
 - writers receive a receipt which is a cryptographic claim that the
   PSDS operator wrote the message. the receipt contains the previous
   spool_signature, as well, so that the writer can verify this
@@ -303,10 +294,6 @@ Note the differences from the SDS interface:
 
 - Truncating the spool requires a signature from a canonical reader. (It is
   expected that there is typically only one canonical reader.)
-
-Also note that the readsignature can be reused. In the case of HTTPS or
-mix-network transports, this should but be a problem as those layers already
-prevent replays, but FIXME: think more about this.
 
 When a PSDS is created, an initial writer PK for the meta spool must be
 provided. That SK can then be used to write messages to the meta spool adding
