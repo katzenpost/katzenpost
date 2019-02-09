@@ -1,64 +1,98 @@
 DSpool: Durable ephemeral soft-queues without single points of failure
-======================================================================
+**********************************************************************
 
-This is an early draft. Everything is subject to change, especially the
-terminology.
+| Leif Ryge
+| David Stainton
 
-We present a system providing durable storage of semi-ordered data for both
-long-term and ephemeral applications, without relying on single points of
-failure, using a CRDT (conflict-free replicated data type) construction with
-cryptographic capabilities (inspired by Tahoe-LAFS) to define who can read,
-write, replicate, and delete the data, as well as who can grant and revoke the
-other capabilities.
+| Version 0
+
+.. rubric:: Abstract
+
+This is intended to be used as a store-and-forward medium for
+publish-subscribe types of applications, such as mailboxes for chat or
+email and email-like systems, and as a general-purpose inter-process
+communication mechanism for any message-oriented application where a
+strict ordering of messages is not required.
+
+.. contents:: :local:
+
+1. Introduction
+===============
+
+We present a system providing durable storage of semi-ordered data for
+both long-term and ephemeral applications, without relying on single
+points of failure, using a CRDT construction with cryptographic
+capabilities (inspired by Tahoe-LAFS) to define who can read, write,
+replicate, and delete the data, as well as who can grant and revoke
+the other capabilities.
 
 In particular:
- - writers should be able to tell how many replicas have received their write
- - if a replica is compromised/malicious, it should only be able to DoS
-   subsequent operations that it is asked to perform (which should be easily
-   detectable) and able to perform a limited amount of traffic analysis.
 
-Motivation
-----------
+- writers should be able to tell how many replicas have received their write
+- if a replica is compromised/malicious, it should only be able to DoS
+  subsequent operations that it is asked to perform (which should be easily
+  detectable) and able to perform a limited amount of traffic analysis.
 
-This is intended to be used as a store-and-forward medium for publish-subscribe
-types of applications, such as mailboxes for chat or email and email-like
-systems, and as a general-purpose inter-process communication mechanism for any
-message-oriented application where a strict ordering of messages is not
-required.
+1.1 Terminology
+----------------
 
-Ingredients
------------
+* ``CRDT`` - Conflict-free replicated data type is a data structure
+  which can be replicated across multiple computers in a network,
+  where the replicas can be updated independently and concurrently
+  without coordination between the replicas, and where it is always
+  mathematically possible to resolve inconsistencies which might
+  result.
+
+* ``node`` - A node is an operator which provides services, and has a
+  stable address where it can receive requests. In addition to the
+  various keypairs it has for performing its services, it has a single
+  long-term identity keypair.
+
+* ``operator`` - An operator is an agent that controls one or more
+  keypairs and is able to initiate requests.
+
+* ``PK`` - The public part of a keypair.
+
+* ``SK`` - The secret part of a keypair.
+
+* ``SDS`` - Signed discrete spool. Described below in section 4.
+
+* ``pool`` - Note: pools aren't used in the spec below yet, you can
+  ignore them for now.  A pool is a content-addressable unordered
+  set. That is, a key-value store where the key is the hash of the
+  value.
+
+1.2 Conventions Used in This Document
+-------------------------------------
+
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+"SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+document are to be interpreted as described in [RFC2119]_.
+
+2. System Overview
+==================
+
+XXX Write me.
+
+2.1 Ingredients
+---------------
 
 This specification does not (yet) define which primitives should be used. These
 are the types of primitives required by what has been specified so far:
 
- - A serialization format. (So far, we only need to be able to serialize tuples
-   of bytestrings, but this will probably change.)
- - A signature scheme, optionally supporting ring signatures (for multiple
-   writers where the replicas cannot tell which writer is writing)
- - A hash function.
- - An asymmetric encryption scheme.
+- A serialization format. (So far, we only need to be able to serialize tuples
+  of bytestrings, but this will probably change.)
+- A signature scheme, optionally supporting ring signatures (for multiple
+  writers where the replicas cannot tell which writer is writing)
+- A hash function.
+- An asymmetric encryption scheme.
 
 We are also not defining how to find out about the nodes which provide
 services; at this layer we assume that there is some external mechanism by
 which users learn about nodes' keys and addresses.
 
-Operators
----------
-
-An operator is an agent that controls one or more keypairs and is able to
-initiate requests. The public and secret parts of the keypair will be referred
-to as PK and SK.
-
-Nodes
------
-
-A node is an operator which provides services, and has a stable address (such
-as a URL) where it can receive requests. In addition to the various keypairs it
-has for performing its services, it has a single long-term identity keypair.
-
-Requests
---------
+2.2 Requests
+------------
 
 Requests are sent to nodes by initiators (operators). Requests may include a
 response handle, to which one or more responses can be sent to the initiator.
@@ -69,62 +103,65 @@ are included in a single HTTP response. They can also be implemented via a
 mix-network, where the request includes some number of Single-Use Reply Blocks
 for routing the responses.
 
-Pool
-----
-
-Note: pools aren't used in the spec below yet, you can ignore them for now.
-    A pool is a content-addressable unordered set. That is, a key-value store
-    where the key is the hash of the value.
-
-Discrete spool
---------------
+3. Discrete spool
+=================
 
 A discrete spool is an ordered list of items. It is an object implementing
 these methods:
 
- - append(message) -> index
-   Writes a message to the spool.
-    - message is a bytestring
-    - index is the index of the item that was just written (which is the length
-      of the spool minus 1)
+- append(message) -> index
 
- - read(index, limit=1) -> series of messages
+  Writes a message to the spool.
+
+ - message is a bytestring
+ - index is the index of the item that was just written (which is the length of the spool minus 1)
+
+- read(index, limit=1) -> series of messages
+
    Returns the item at index, and some number of items after it.
-    - index is a position in the spool.
-    - limit is a maximum number of messages to return, or 0 for all messages
 
- - forget(index)
-   Forgets everything older than index.
-    - index is a position in the spool.
+ - index is a position in the spool.
+ - limit is a maximum number of messages to return, or 0 for all messages
+
+- forget(index)
+
+Forgets everything older than index.
+
+ - index is a position in the spool.
 
 The discrete spool interface is not intended to be provided to more than one
 entity, it is a low-level local interface upon which the following interfaces
 may be implemented.
 
-Signed discrete spool (SDS)
----------------------------
+4. Signed discrete spool
+========================
 
 A signed discrete spool is like a discrete spool, but is initialized with a PK
 called the "spool key". It can be implemented on top of a discrete spool. A SDS
 has these methods:
 
- - append(message, spool_signature) -> index
-   Writes a message to the spool. Note that the message written to the
-   underlying discrete spool is actually (message, spool_signature).
-    - message is a bytestring
-    - index is the index of the item that was just written (which is the length
-      of the spool minus 1)
-    - spool_signature is a signature from the spool SK over
-      (message, spool_signature-of-previous-message)
+- append(message, spool_signature) -> index
 
- - read(index, limit=1) -> series of (message, spool_signature)
-   Returns the item at index, and some number of items after it.
-    - index is a position in the spool.
-    - limit is a maximum number of messages to return, or 0 for all messages
+  Writes a message to the spool. Note that the message written to the
+  underlying discrete spool is actually (message, spool_signature).
 
- - forget(index)
-   Forgets everything older than index.
-    - index is a position in the spool.
+ - message is a bytestring
+ - index is the index of the item that was just written (which is the length
+   of the spool minus 1)
+ - spool_signature is a signature from the spool SK over
+   (message, spool_signature-of-previous-message)
+
+- read(index, limit=1) -> series of (message, spool_signature)
+
+ Returns the item at index, and some number of items after it.
+ - index is a position in the spool.
+ - limit is a maximum number of messages to return, or 0 for all messages
+
+- forget(index)
+
+  Forgets everything older than index.
+
+ - index is a position in the spool.
 
 Note that writing to an SDS requires knowing its current state. In general, it
 is expected that only a single operator would write via this interface, and
@@ -160,8 +197,8 @@ logically equivalent to a number of "2P-Set" (two-phase set) CRDTs, which you
 can read more about in the CRDT article on wikipedia. There are two types of
 messages which can be written to this spool:
 
-    - add(setname, item)
-    - remove(setname, item)
+- add(setname, item)
+- remove(setname, item)
 
 Items and set names are bytestrings.
 
@@ -170,9 +207,10 @@ can be preemptively removed, however.
 
 In addition to the standard AOSDS interface, it has another method:
 
-    - get(setname) -> set of items
-    This returns the set of items that have been added, minus the set that have
-    been removed.
+- get(setname) -> set of items
+
+This returns the set of items that have been added, minus the set that have
+been removed.
 
 Instead of using one AOSDS, a AOROSC could potentially be implemented using an
 AOROSC for the tombstones ("remove" messages) and a normal truncatable SDS for
@@ -187,69 +225,84 @@ and an AOROSC called the meta spool. The meta spool describes membership in
 sets which define various roles, as well as a special set called "truncatable"
 which initially contains one item (the string "yes").
 
-    Roles
-    -----
-    - Meta Writer (PKs)
-    - Meta Reader (PKs)
-    - Data Writer (PKs)
-    - Data Reader (PKs)
-    - Canonical Data Reader (PKs)
-    - FIXME: define K-of-N schemes here? something with schnorr? later...
+Roles
+-----
+
+- Meta Writer (PKs)
+- Meta Reader (PKs)
+- Data Writer (PKs)
+- Data Reader (PKs)
+- Canonical Data Reader (PKs)
+- FIXME: define K-of-N schemes here? something with schnorr? later...
 
 The operator of a PSDS reads from and writes to the data and meta spools
 through the SDS and AOROSC interfaces, and provides other operators
 permissioned access to them via this interface:
 
- - {data,meta}_append(message, write_signature) -> receipt
-   Writes a message. Note that the message written to the underlying SDS is
-   actually (message, write_signature), which means that the messages in the
-   underlying Discrete Spool are ((message, write_signature), spool_signature)
-    - message is a bytestring
-    - write_signature is a signature over the message from a valid writer key
-      (or a ring signature from one, using all others' PKs)
-    - receipt is a a 3-tuple of (spool_signature, index, spool_signature-of-previous-message)
-        - index is a position in the spool
+- {data,meta}_append(message, write_signature) -> receipt
 
- - {data,meta}_read(index, readsignature, limit=1) -> series of (message, index, write_signature, spool_signature)
-   Returns the item at index, and all items after it.
-    - index is a position in the spool.
-    - readsignature is a signature (or ring signature) from a valid reader key over (index, spool_key)
-        - note: the reader signs the spool_key here so that an operator that
+Writes a message. Note that the message written to the underlying SDS is
+actually (message, write_signature), which means that the messages in the
+underlying Discrete Spool are ((message, write_signature), spool_signature)
+
+ - message is a bytestring
+ - write_signature is a signature over the message from a valid writer key
+      (or a ring signature from one, using all others' PKs)
+ - receipt is a a 3-tuple of (spool_signature, index, spool_signature-of-previous-message)
+
+  - index is a position in the spool
+
+- {data,meta}_read(index, readsignature, limit=1) -> series of (message, index, write_signature, spool_signature)
+  Returns the item at index, and all items after it.
+
+ - index is a position in the spool.
+ - readsignature is a signature (or ring signature) from a valid reader key over (index, spool_key)
+
+  - note: the reader signs the spool_key here so that an operator that
           gets removed can't reuse its signtures to read from other replicas
           later.
-    - limit is a maximum number of messages to return
-    - write_signature is the message writer's signature
-    - spool_signature is the operator's signature on the underlying SDS
 
- - forget(tombstone, signature)
-   Forgets everything in the data spool older than then tombstone specifies.
-    - tombstone is a 2-tuple of (replica, prev_spool_signature) refering to a
-      previous message (like the index in the read operation)
-    - signature is a signature over the tombstone, from a canonical reader
-        FIXME: here we have a layering violation; the PSDS needs to know about
-        replicas :(
+ - limit is a maximum number of messages to return
+ - write_signature is the message writer's signature
+ - spool_signature is the operator's signature on the underlying SDS
+
+- forget(tombstone, signature)
+
+Forgets everything in the data spool older than then tombstone specifies.
+
+ - tombstone is a 2-tuple of (replica, prev_spool_signature) refering to a
+   previous message (like the index in the read operation)
+ - signature is a signature over the tombstone, from a canonical reader
+
+ - FIXME: here we have a layering violation; the PSDS needs to know about
+   replicas :(
 
 Note the differences from the SDS interface:
 
-    - Readers need to authenticate themselves.
-        - FIXME: should they really? should knowing the spool's identity be
-          enough to read from it? think POLA; are we relying on operators to do
-          more than we need them to (or can verify they are doing correctly) by
-          asking them to provide access control for reads?
-    - writers do not need to know the current state of the spool. (They can't
-      be expected to, because they might not be readers.)
-        - writers receive a receipt which is a cryptographic claim that the
-          PSDS operator wrote the message. the receipt contains the previous
-          spool_signature, as well, so that the writer can verify this
-          signature.
-    - Readers don't refer to an absolute index, but rather a relative one. The
-      "index" in the read operation is NOT the write_signature, but rather the
-      spool_signature AND the name of the replica that made it.
-        - FIXME: should that exist at this layer? single-replica PSDS seems
-          useful, but how to make it fit under the DAS without layering
-          violations is not so clear still.
-    - Truncating the spool requires a signature from a canonical reader. (It is
-      expected that there is typically only one canonical reader.)
+- Readers need to authenticate themselves.
+
+ - FIXME: should they really? should knowing the spool's identity be
+   enough to read from it? think POLA; are we relying on operators to do
+   more than we need them to (or can verify they are doing correctly) by
+   asking them to provide access control for reads?
+
+- writers do not need to know the current state of the spool. (They can't
+  be expected to, because they might not be readers.)
+
+- writers receive a receipt which is a cryptographic claim that the
+  PSDS operator wrote the message. the receipt contains the previous
+  spool_signature, as well, so that the writer can verify this
+  signature.
+- Readers don't refer to an absolute index, but rather a relative one. The
+  "index" in the read operation is NOT the write_signature, but rather the
+  spool_signature AND the name of the replica that made it.
+
+ - FIXME: should that exist at this layer? single-replica PSDS seems
+   useful, but how to make it fit under the DAS without layering
+   violations is not so clear still.
+
+- Truncating the spool requires a signature from a canonical reader. (It is
+  expected that there is typically only one canonical reader.)
 
 Also note that the readsignature can be reused. In the case of HTTPS or
 mix-network transports, this should but be a problem as those layers already
@@ -286,65 +339,114 @@ The methods available are the same as the PSDS, except for that instead of
 "{data,meta}_append" methods there are "{data,meta}_add" methods with this
 signature:
 
- - {data,meta}_add(message, write_signature) -> series of receipts from replicas
-   Writes a message. Note that the message written to the underlying SDS is
-   actually (message, write_signature).
-    - message is a bytestring
-    - write_signature is a signature over the message from a valid writer key
-      (or a ring signature from one, using all others' PKs)
+- {data,meta}_add(message, write_signature) -> series of receipts from replicas
+  Writes a message. Note that the message written to the underlying SDS is
+  actually (message, write_signature).
 
- - {data,meta}_read(index, readsignature, limit=1) -> series of (message, index, write_signature, spool_signature)
-   Returns the item at index, and all items after it.
-    - index is NOT a position in the spool here, because there is no longer a
-      fixed ordering of messages at this layer. Instead, index is a 2-tuple of
-      (spool_key PK, spool_signature).
-    - readsignature is a signature (or ring signature) from a valid reader key over (index, spool_key)
-        - spool_key is the spool_key of the replica that the reader is performing the read from
-        - note: the reader signs the spool_key here so that an operator that
-          gets removed can't reuse its signtures to read from other replicas
-          later.
-    - limit is a maximum number of messages to return
-    - write_signature is the message writer's signature
-    - spool_signature is the operator's signature on the underlying SDS
+ - message is a bytestring
+ - write_signature is a signature over the message from a valid writer key
+   (or a ring signature from one, using all others' PKs)
 
+- {data,meta}_read(index, readsignature, limit=1) -> series of (message, index, write_signature, spool_signature)
 
-    Creation
-    --------
+Returns the item at index, and all items after it.
 
-    1. The creator generates a keypair for this DAS called the Root Key.
+ - index is NOT a position in the spool here, because there is no longer a
+   fixed ordering of messages at this layer. Instead, index is a 2-tuple of
+   (spool_key PK, spool_signature).
+ - readsignature is a signature (or ring signature) from a valid reader key over (index, spool_key)
 
-    2. It selects some nodes to act as replicas, and asks each to create a new
-    PSDS. The replica nodes are the operators of their respective PSDSes; they
-    hold the spool keys. The Root Key is placed in the writer role for the meta
-    spools of each.
+  - spool_key is the spool_key of the replica that the reader is performing the read from
+  - note: the reader signs the spool_key here so that an operator that
+    gets removed can't reuse its signtures to read from other replicas
+    later.
 
-    3. The DAS creator writes replica descriptors for each replica in to a new
-    "replica" set in each PSDS's meta spool. Each replica descriptor contains
-    the replica's PSDS's PK, and one or more addresses where that replica can
-    be reached.
-
-    4. Each replica subscribes to each other replica, using the PSDS
-    {data,meta}_read methods. It will subsequently receive any writes to that
-    replica.
-
-    5. The DAS creator adds Reader and Writer keys to any replica. Those writes
-    are subsequently replicated to the others.
-
-    Operation
-    ---------
-
-    - Writers can write to any replica. When the other replicas receive the
-    messages via their subscriptions to the replica that was written to, they
-    validate the signature to ensure it came from a key that they currently
-    consider a valid writer, and add it to their own data spool.
-
-    - When a canonical reader calls the forget method, the replica they called
-    it on writes their signed tombstone message into the data spool so that
-    other replicas will know that they can forget it.
-
-    - When a replica receives a read request with an spool_signature from another
-    replica, and that spool_signature is not in the set of spool_signatures from that
-    replica which this replica has seen before, it returns all messages which
-    are not in the local copy of the other replica's spool.
+ - limit is a maximum number of messages to return
+ - write_signature is the message writer's signature
+ - spool_signature is the operator's signature on the underlying SDS
 
 
+Creation
+--------
+
+1. The creator generates a keypair for this DAS called the Root Key.
+
+2. It selects some nodes to act as replicas, and asks each to create a new
+   PSDS. The replica nodes are the operators of their respective PSDSes; they
+   hold the spool keys. The Root Key is placed in the writer role for the meta
+   spools of each.
+
+3. The DAS creator writes replica descriptors for each replica in to a new
+   "replica" set in each PSDS's meta spool. Each replica descriptor contains
+   the replica's PSDS's PK, and one or more addresses where that replica can
+   be reached.
+
+4. Each replica subscribes to each other replica, using the PSDS
+   {data,meta}_read methods. It will subsequently receive any writes to that
+   replica.
+
+5. The DAS creator adds Reader and Writer keys to any replica. Those writes
+   are subsequently replicated to the others.
+
+Operation
+---------
+
+- Writers can write to any replica. When the other replicas receive the
+  messages via their subscriptions to the replica that was written to, they
+  validate the signature to ensure it came from a key that they currently
+  consider a valid writer, and add it to their own data spool.
+
+- When a canonical reader calls the forget method, the replica they called
+  it on writes their signed tombstone message into the data spool so that
+  other replicas will know that they can forget it.
+
+- When a replica receives a read request with an spool_signature from another
+  replica, and that spool_signature is not in the set of spool_signatures from that
+  replica which this replica has seen before, it returns all messages which
+  are not in the local copy of the other replica's spool.
+
+X. Anonymity Considerations
+===========================
+
+XXX Write me.
+
+X. Security Considerations
+==========================
+
+XXX Write me.
+
+Appendix A. References
+======================
+
+Appendix A.1 Normative References
+---------------------------------
+
+.. [RFC2119]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", BCP 14, RFC 2119,
+               DOI 10.17487/RFC2119, March 1997,
+               <http://www.rfc-editor.org/info/rfc2119>.
+
+XXX Write me.
+
+Appendix A.2 Informative References
+-----------------------------------
+
+XXX Write me.
+
+Appendix B. Citing This Document
+================================
+
+Appendix B.1 Bibtex Entry
+-------------------------
+
+Note that the following bibtex entry is in the IEEEtran bibtex style
+as described in a document called "How to Use the IEEEtran BIBTEX Style".
+
+::
+
+   @online{Dspool,
+   title = {DSpool: Durable ephemeral soft-queues without single points of failure},
+   author = {Leif Ryge and David Stainton},
+   url = {XXX},
+   year = {2019}
+   }
