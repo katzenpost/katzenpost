@@ -244,11 +244,11 @@ underlying Discrete Spool are ((message, write_signature), spool_signature)
 
   - index is a position in the spool
 
-- {data,meta}_read(index, readsignature, limit=1) -> series of (message, index, write_signature, spool_signature)
+- {data,meta}_read(index, read_signature, limit=1) -> series of (message, index, write_signature, spool_signature)
   Returns the item at index, and all items after it.
 
  - index is a position in the spool.
- - readsignature is a signature (or ring signature) from a valid reader key over (index, spool_key)
+ - read_signature is a signature (or ring signature) from a valid reader key over (index, spool_key)
 
   - note: the reader signs the spool_key here so that an operator that
           gets removed can't reuse its signtures to read from other replicas
@@ -334,14 +334,14 @@ signature:
  - write_signature is a signature over the message from a valid writer key
    (or a ring signature from one, using all others' PKs)
 
-- {data,meta}_read(index, readsignature, limit=1) -> series of (message, index, write_signature, spool_signature)
+- {data,meta}_read(index, read_signature, limit=1) -> series of (message, index, write_signature, spool_signature)
 
 Returns the item at index, and all items after it.
 
  - index is NOT a position in the spool here, because there is no longer a
    fixed ordering of messages at this layer. Instead, index is a 2-tuple of
    (spool_key PK, spool_signature).
- - readsignature is a signature (or ring signature) from a valid reader key over (index, spool_key)
+ - read_signature is a signature (or ring signature) from a valid reader key over (index, spool_key)
 
   - spool_key is the spool_key of the replica that the reader is performing the read from
   - note: the reader signs the spool_key here so that an operator that
