@@ -22,7 +22,7 @@ strict ordering of messages is not required.
 We present a system providing durable storage of semi-ordered data for
 both long-term and ephemeral applications, without relying on single
 points of failure, using a CRDT construction with cryptographic
-capabilities (inspired by [TAHOELAFS]_) to define who can read, write,
+capabilities inspired by [TAHOELAFS]_ to define who can read, write,
 replicate, and delete the data, as well as who can grant and revoke
 the other capabilities.
 
@@ -193,16 +193,19 @@ forget method.
 4.1 Append-only Signed Discrete Spool
 -------------------------------------
 
+* Also known as AOSDS.
+
 An append-only SDS is an SDS without the forget method.
 
 5. Add-Once-Remove-Once Set Collection
 ======================================
 
-* Also known asn AOSDS.
+* Also known as AOROSC.
 
 An add-once-remove-once set collection is an AOSDS which defines
 membership in various sets. It can be thought of as logically
 equivalent to a number of "2P-Set" (two-phase set) CRDTs [WIKICRDT]_.
+
 There are two types of messages which can be written to this spool:
 
 - add(setname, item)
@@ -385,14 +388,14 @@ Returns the item at index, and all items after it.
    hold the spool keys. The Root Key is placed in the writer role for the meta
    spools of each.
 
-3. The DAS creator writes replica descriptors for each replica in to a new
+3. The DAS creator writes replica descriptors for each replica into a new
    "replica" set in each PSDS's meta spool. Each replica descriptor contains
    the replica's PSDS's PK, and one or more addresses where that replica can
-   be reached.
+   be reached. XXX avoid using the term "that replica".
 
 4. Each replica subscribes to each other replica, using the PSDS
    {data,meta}_read methods. It will subsequently receive any writes to that
-   replica.
+   replica. XXX Not a complete sentence. What the does "that replica" refer to?
 
 5. The DAS creator adds Reader and Writer keys to any replica. Those writes
    are subsequently replicated to the others.
@@ -409,10 +412,14 @@ Returns the item at index, and all items after it.
   it on writes their signed tombstone message into the data spool so that
   other replicas will know that they can forget it.
 
-- When a replica receives a read request with an spool_signature from another
-  replica, and that spool_signature is not in the set of spool_signatures from that
-  replica which this replica has seen before, it returns all messages which
-  are not in the local copy of the other replica's spool.
+- When a replica receives a read request with an spool_signature from
+  another replica, and that spool_signature is not in the set of
+  spool_signatures from that replica which this replica has seen
+  before, it returns all messages which are not in the local copy of
+  the other replica's spool. XXX avoid using the term "that replica".
+  this makes no sense. please stop using the singular term
+  replica. it's too generic. try labeling them for clarity and
+  writing proper english paragraphs with multiple sentences.
 
 X. Anonymity Considerations
 ===========================
