@@ -22,7 +22,7 @@ strict ordering of messages is not required.
 We present a system providing durable storage of semi-ordered data for
 both long-term and ephemeral applications, without relying on single
 points of failure, using a CRDT construction with cryptographic
-capabilities (inspired by Tahoe-LAFS) to define who can read, write,
+capabilities (inspired by [TAHOELAFS]_) to define who can read, write,
 replicate, and delete the data, as well as who can grant and revoke
 the other capabilities.
 
@@ -51,15 +51,27 @@ In particular:
 * ``operator`` - An operator is an agent that controls one or more
   keypairs and is able to initiate requests.
 
+* ``Requests`` - Requests are sent to nodes by initiators
+  (operators). Requests may include a response handle, to which one or
+  more responses can be sent to the initiator. Initiators do not need
+  a long-term identity; they can potentially be anonymous.
+
 * ``PK`` - The public part of a keypair.
 
 * ``SK`` - The secret part of a keypair.
 
-* ``SDS`` - Signed discrete spool. Described below in section 4.
+* ``SDS`` - Signed Discrete Spool. Described below in section 4.
 
-* ``Requests`` - Requests are sent to nodes by initiators (operators). Requests may include a
-  response handle, to which one or more responses can be sent to the initiator.
-  Initiators do not need a long-term identity; they can potentially be anonymous.
+* ``AOSDS`` - Append-only Signed Discrete Spool is described in section 4.1.
+
+* ``AOROSC`` - Add-Once-Remove-Once Set Collection is described in section 5.
+
+* ``PSDS`` - Permissioned Signed Discrete Spool is described in Section 6.
+
+* ``EPSDS`` - Encrypted Permissioned Signed Discrete Spool is described
+  in section 7.
+
+* ``DAS`` - Durable Authenticated Spool is described in section 8.
 
 * ``pool`` - Note: pools aren't used in the spec below yet, you can
   ignore them for now.  A pool is a content-addressable unordered
@@ -128,14 +140,16 @@ these methods:
 4. Signed discrete spool
 ========================
 
+* Also known as SDS.
+
 A signed discrete spool is like a discrete spool, but is initialized with a PK
 called the "spool key". It can be implemented on top of a discrete spool. A SDS
 has these methods:
 
 - append(message, spool_signature) -> index
 
-  Writes a message to the spool. Note that the message written to the
-  underlying discrete spool is actually (message, spool_signature).
+ Writes a message to the spool. Note that the message written to the
+ underlying discrete spool is actually (message, spool_signature).
 
  - message is a bytestring
  - index is the index of the item that was just written (which is the length
@@ -146,6 +160,7 @@ has these methods:
 - read(index, limit=1) -> series of (message, spool_signature)
 
  Returns the item at index, and some number of items after it.
+
  - index is a position in the spool.
  - limit is a maximum number of messages to return, or 0 for all messages
 
@@ -175,19 +190,21 @@ directly available to others, as it is unauthenticated at this layer.
 Note that the SDS is roughly equivalent to Secure Scuttlebutt, but with a
 forget method.
 
-Append-only SDS (AOSDS)
------------------------
+4.1 Append-only Signed Discrete Spool
+-------------------------------------
 
 An append-only SDS is an SDS without the forget method.
 
-Add-Once-Remove-Once Set Collection (AOROSC)
---------------------------------------------
+5. Add-Once-Remove-Once Set Collection
+======================================
 
-An add-once-remove-once set collection is an AOSDS (append-only Signed Discrete
-Spool) which defines membership in various sets. It can be thought of as
-logically equivalent to a number of "2P-Set" (two-phase set) CRDTs, which you
-can read more about in the CRDT article on wikipedia. There are two types of
-messages which can be written to this spool:
+* Also known asn AOSDS.
+
+An add-once-remove-once set collection is an AOSDS which defines
+membership in various sets. It can be thought of as logically
+equivalent to a number of "2P-Set" (two-phase set) CRDTs, which you
+can read more about in the CRDT article on wikipedia. There are two
+types of messages which can be written to this spool:
 
 - add(setname, item)
 - remove(setname, item)
@@ -209,16 +226,18 @@ AOROSC for the tombstones ("remove" messages) and a normal truncatable SDS for
 the add messages, but currently it seems like this optimiziation isn't worth
 the compexity that it would add.
 
-Permissioned signed discrete spool (PSDS)
------------------------------------------
+6. Permissioned Signed Discrete Spool
+=====================================
+
+* Also known as PSDS.
 
 A permissioned signed discrete spool consists of an SDS called the data spool,
 and an AOROSC called the meta spool. The meta spool describes membership in
 sets which define various roles, as well as a special set called "truncatable"
 which initially contains one item (the string "yes").
 
-Roles
------
+6.1 Roles
+---------
 
 - Meta Writer (PKs)
 - Meta Reader (PKs)
@@ -233,9 +252,9 @@ permissioned access to them via this interface:
 
 - {data,meta}_append(message, write_signature) -> receipt
 
-Writes a message. Note that the message written to the underlying SDS is
-actually (message, write_signature), which means that the messages in the
-underlying Discrete Spool are ((message, write_signature), spool_signature)
+ Writes a message. Note that the message written to the underlying SDS is
+ actually (message, write_signature), which means that the messages in the
+ underlying Discrete Spool are ((message, write_signature), spool_signature)
 
  - message is a bytestring
  - write_signature is a signature over the message from a valid writer key
@@ -299,8 +318,10 @@ When a PSDS is created, an initial writer PK for the meta spool must be
 provided. That SK can then be used to write messages to the meta spool adding
 reader and writer PKs for the data and/or meta spools.
 
-Encrypted permissioned signed discrete spool (EPSDS)
-----------------------------------------------------
+7. Encrypted Permissioned Signed Discrete Spool
+===============================================
+
+* Also known as EPSDS.
 
 From the perspective of the spool operator, an EPSDS behaves just like a PSDS.
 The only difference is that there is an additional set in the meta spool called
@@ -314,8 +335,10 @@ Note that a malicious spool operator cannot simply insert its own encryption
 key and cause writers to write to it, because the metaspool is signed by a Meta
 Writer key which the reader already knew.
 
-Durable authenticated spool (DAS)
----------------------------------
+8. Durable Authenticated Spool
+==============================
+
+* Also known as DAS.
 
 A DAS is a semi-ordered spool that is replicated across PSDSes operated by a
 number of different nodes. Reads and writes can be performed by sending
@@ -353,8 +376,8 @@ Returns the item at index, and all items after it.
  - spool_signature is the operator's signature on the underlying SDS
 
 
-Creation
---------
+8.1 Creation
+------------
 
 1. The creator generates a keypair for this DAS called the Root Key.
 
@@ -375,8 +398,8 @@ Creation
 5. The DAS creator adds Reader and Writer keys to any replica. Those writes
    are subsequently replicated to the others.
 
-Operation
----------
+8.2 Operation
+-------------
 
 - Writers can write to any replica. When the other replicas receive the
   messages via their subscriptions to the replica that was written to, they
@@ -413,12 +436,16 @@ Appendix A.1 Normative References
                DOI 10.17487/RFC2119, March 1997,
                <http://www.rfc-editor.org/info/rfc2119>.
 
-XXX Write me.
+XXX Write more references.
 
 Appendix A.2 Informative References
 -----------------------------------
 
-XXX Write me.
+.. [TAHOELAFS]  Warner, B., Wilcox-O’Hearn, Z., 2008,
+            "Tahoe – The Least-Authority Filesystem",
+            <https://gnunet.org/sites/default/files/lafs.pdf>.
+
+XXX Write more references.
 
 Appendix B. Citing This Document
 ================================
