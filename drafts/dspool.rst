@@ -202,9 +202,8 @@ An append-only SDS is an SDS without the forget method.
 
 An add-once-remove-once set collection is an AOSDS which defines
 membership in various sets. It can be thought of as logically
-equivalent to a number of "2P-Set" (two-phase set) CRDTs, which you
-can read more about in the CRDT article on wikipedia. There are two
-types of messages which can be written to this spool:
+equivalent to a number of "2P-Set" (two-phase set) CRDTs [WIKICRDT]_.
+There are two types of messages which can be written to this spool:
 
 - add(setname, item)
 - remove(setname, item)
@@ -442,10 +441,14 @@ Appendix A.2 Informative References
 -----------------------------------
 
 .. [TAHOELAFS]  Warner, B., Wilcox-O’Hearn, Z., 2008,
-            "Tahoe – The Least-Authority Filesystem",
-            <https://gnunet.org/sites/default/files/lafs.pdf>.
+                "Tahoe – The Least-Authority Filesystem",
+                <https://gnunet.org/sites/default/files/lafs.pdf>.
 
-XXX Write more references.
+.. [WIKICRDT]  proceedings of wikipedia dot org,
+               "Conflict-free replicated data type",
+               <https://en.wikipedia.org/wiki/Conflict-free_replicated_data_type#2P-Set_(Two-Phase_Set)>.
+
+XXX Write more references. (srsly, wikipedia?)
 
 Appendix B. Citing This Document
 ================================
