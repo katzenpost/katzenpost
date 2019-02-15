@@ -66,8 +66,8 @@ decrypting this routing information should find either a
 acting as the terminating hop of a Sphinx packet are able to
 distinguish the type of message being received.
 
-2. SURB Loops
-=============
+2. Client SURB Loops
+====================
 
 SURB loops differ slightly from client and mix loops as described
 in the [LOOPIX]_ paper; the return flight is routed by means of a
@@ -115,8 +115,8 @@ However, if the client's Provider is compromised, the adversary will
 be able to distinguish between the SURB reply and a received forward
 message by means of the Sphinx routing commands.
 
-3. Routing Loops without SURBs
-==============================
+3. Client Routing Loops without SURBs
+=====================================
 
 The [LOOPIX]_ paper describes routing loops which do not use SURBs.
 At first glance this seems sufficient to provide clients with receiver
@@ -141,8 +141,28 @@ The sent message is indistinguishable from a normal sent message,
 however the response from such a loop is a normal forward message
 whereas sending a normal forward message always results in a SURB reply.
 
-2.X Detecting and Mitigating n-1 Attacks
-----------------------------------------
+4. Client Decoy Traffic Conclusions
+===================================
+
+Since it is a design goal to acheive send and receiver unobservability
+with respect to compromised client Providers as well as passive
+network observers, Clients must use a variety of decoy traffic types
+which includes:
+
+1. SURB Loops
+2. Routing Loops without SURBs
+3. Drop Decoys
+
+This is quite different from the decoy traffic profile specified in
+the [LOOPIX]_ paper because in the Katzenpost mix network we aim to
+provide reliability through the use of an automatic repeat request
+(ARQ) protocol scheme. An ARQ is a type of error correction protocol
+which makes use of acknowledgement control messages and
+retransmissions. The most notable example of a protocol making use of
+an ARQ scheme is of course TCP.
+
+5. Mix Loops For Detecting n-1 Attacks
+======================================
 
 XXX TODO: finish me.
 
