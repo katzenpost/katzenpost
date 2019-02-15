@@ -1,6 +1,7 @@
 Katzenpost Mix Network Decoy Traffic Specification
 **************************************************
 
+| Leif Ryge
 | David Stainton
 
 Version 0
@@ -33,6 +34,16 @@ unobservability. That is, a passive network observer will not be able
 to determine when a user is sending a message or receiving a message,
 because observed messages are indistinguishable from decoy messages.
 
+The [LOOPIX]_ design specifies a more simple decoy traffic profile
+than what is described here because Loopix does not attempt to achieve
+any reliability. Mix networks are fundamentally an unreliable packet
+switching network and without additional client side protocols cannot
+achieve reliability. Katzenpost on the other hand, aims to achieve
+reliability through the use of an automatic repeat request (ARQ)
+protocol scheme. An ARQ is a type of error correction protocol which
+makes use of acknowledgement control messages and retransmissions. The
+most notable example of a protocol making use of an ARQ scheme is TCP.
+
 1.1 Conventions Used in This Document
 -------------------------------------
 
@@ -54,17 +65,47 @@ document are to be interpreted as described in [RFC2119]_.
 * ``packet`` - A Sphinx packet is a nested cryptographic packet
   which is described in [SPHINX]_ and [SPHINXSPEC]_.
 
+* ``forward message`` - A message sent using a Sphinx packet with the
+  terminal hop routing slot containing only a ``recipient`` Sphinx
+  routing comment. This Sphinx packet contains a ``SURB`` in the payload
+  so that the receiving Provider may reply with a ``SURB ACK``.
+
+* ``ACK`` - Acknowledgement. A control message used in ARQ protocols.
+
+* ``ARQ`` - Automatic Repeat reQuest. A error correction protocol scheme
+  which makes use of acknowledegement control messages and retransmissions.
+
+* ``SURB`` - Single Use Reply Block is a feature of the Sphinx packet
+  format and is described in [SPHINX]_ and in section
+  ``7. Single Use Reply Block (SURB) Creation`` of [SPHINXSPEC]_.
+
+* ``SURB reply`` - A message sent using a Sphinx packet which is
+  composed using a SURB where the last hop routing information
+  contains a ``surb_reply`` routing command.
+
+* ``SURB ACK`` - An acknowledgement control message is a ``SURB reply``
+  which contains a payload of all zeros rather than useful information.
+  It acts as an important part of an ARQ protocol scheme.
+
+* ``service query`` - A forward message whose destination is a
+  Provider-side Autoresponder [KAETZCHEN]_ service.
+
+* ``query reply`` - A message sent in reponse to a ``service query``
+  which is encapsulated in a Sphinx packet composed using a SURB.
+  See [KAETZCHEN]_.
+
 1.3 Preliminary Sphinx Routing Considerations
 ---------------------------------------------
 
 Section ``4.1.1 Per-hop routing information`` of the [SPHINXSPEC]_
 states that the Sphinx packet header contains a vector of per-hop
 routing information. Each mix in turn decrypts it's portion of this
-routing information. In the case of the last hop, the Provider
-decrypting this routing information should find either a
-`recipient` command or a `surb_replay` command. Therefore Providers
-acting as the terminating hop of a Sphinx packet are able to
-distinguish the type of message being received.
+routing information. In the case of the final hop, the Provider
+decrypting this routing information should find either a `recipient`
+command or `recipient` and `surb_reply` commands [KATZMIXE2E]_.
+Therefore Providers receiving Sphinx packets are able to distinguish
+between ``forward messages`` and replies generated using SURBs such as
+a ``SURB ACK`` or a ``query reply``.
 
 2. Client SURB Loops
 ====================
@@ -77,19 +118,23 @@ a message with a SURB to a Provider-side Autoresponder [KAETZCHEN]_
 back to the source.
 
 In the Katzenpost mix network all Provider services respond using a
-SURB and forward messages are acknowledged using a SURB. Therefore all
-messages are indistinguishable from SURB loops.
+SURB and Providers also send a ``SURB ACK`` in response to receiving a
+``forward messages``. From the perspective of the Provider receiving
+these SURB replies, they are all indistinguishable. That is, ``query
+replies`` from a ``loop service`` are indistinguishable from ``query
+replies`` from any other service. They are are indistinguishable from
+``SURB ACKs``.
 
-Here's a diagram which shows a client sending a message through the mix
-network AND in this case the destination could be a Provider service or the
-spool of another user on a Provider:
+Here's a diagram which shows a client sending a message through the
+mix network, and in this case the destination could be a Provider
+service or the spool of another user on a Provider:
 
 .. image:: diagrams/katzenpost_alice_loop1.png
    :alt: diagram 1
    :align: center
 
 This next diagram shows the reply being routed back to the client by means of
-the Single Use Reply Block (see [SPHINXSPEC]_ ):
+the ``SURB``:
 
 .. image:: diagrams/katzenpost_alice_loop2.png
    :alt: diagram 2
@@ -125,8 +170,8 @@ receiving a normal forward message from a communication partner. However
 if the client's Provider is compromised it is not sufficient.
 
 An adversary compromising a client's Provider can count a given
-client's messages sent and messages received. These two counts should
-be equal if a client is themselves loops and will differ if a
+client's messages sent and messages received. These two counts will
+be equal if a client only sends themselves loops and will differ if a
 communication partner sends them a message. Therefore a client SHOULD
 also send drop decoy messages in order to defend against the adversary
 which compromises their Provider and compares sent and received
@@ -153,13 +198,6 @@ which includes:
 2. Routing Loops without SURBs
 3. Drop Decoys
 
-This is quite different from the decoy traffic profile specified in
-the [LOOPIX]_ paper because in the Katzenpost mix network we aim to
-provide reliability through the use of an automatic repeat request
-(ARQ) protocol scheme. An ARQ is a type of error correction protocol
-which makes use of acknowledgement control messages and
-retransmissions. The most notable example of a protocol making use of
-an ARQ scheme is of course TCP.
 
 5. Mix Loops For Detecting n-1 Attacks
 ======================================
@@ -198,6 +236,10 @@ Appendix A.1 Normative References
                USENIX, August, 2017
                <https://arxiv.org/pdf/1703.00536.pdf>
 
+.. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+
 Appendix A.2 Informative References
 -----------------------------------
 
@@ -205,10 +247,6 @@ Appendix A.2 Informative References
                   IEEE Symposium on Security and Privacy, 2018,
                   "Anonymity Trilemma: Strong Anonymity, Low Bandwidth Overhead, Low Latency—Choose Two",
                   <https://eprint.iacr.org/2017/954.pdf>.
-
-.. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
-                "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.rst>.
 
 .. [SPHINX]    Danezis, G., Goldberg, I., "Sphinx: A Compact and
                Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
