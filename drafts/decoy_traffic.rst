@@ -44,6 +44,12 @@ protocol scheme. An ARQ is a type of error correction protocol which
 makes use of acknowledgement control messages and retransmissions. The
 most notable example of a protocol making use of an ARQ scheme is TCP.
 
+The [LOOPIX]_ design achieves it's goals of sender and receiver
+unobservability with respect to compromised Providers and passive
+network observers. It does so with only two types of client decoy
+traffic, however in the case of Katzenpost clients must use three
+types of decoy traffic to accomplish these same security goals.
+
 1.1 Conventions Used in This Document
 -------------------------------------
 
@@ -143,10 +149,11 @@ the ``SURB``:
 2.1 Sender Unobservability
 --------------------------
 
-Client SURB loops provide sender unobservability with respect to passive
-network observers and compromised Providers. That is, if the client's Provider
-is compromised, this does not give the adversary any advantage and the client's
-SURB loops will be indistinguishable from normal forward traffic.
+Client SURB loops provide sender unobservability with respect to
+passive network observers and compromised Providers. That is, if the
+client's Provider is compromised, this does not give the adversary any
+advantage and the client's SURB loops will be indistinguishable from
+normal forward traffic.
 
 2.2 Receiver Unobservability
 ----------------------------
@@ -180,16 +187,32 @@ message counts.
 3.1 Sender Unobservability
 --------------------------
 
-Routing loops without SURBs are not sufficient to provide sender
-unobservability with respect to a compromised client Provider.
-The sent message is indistinguishable from a normal sent message,
-however the response from such a loop is a normal forward message
-whereas sending a normal forward message always results in a SURB reply.
+Routing loops without SURBs provide sender unobservability with
+respect to passive network observers only. Routing loops without
+SURBs are not sufficient to provide sender unobservability with
+respect to a compromised client Provider. The sent message is
+indistinguishable from a normal sent message, however the response
+from such a loop is a normal forward message whereas sending a normal
+forward message always results in a SURB reply.
 
-4. Client Decoy Traffic Conclusions
+4. Client Drop Decoys
+=====================
+
+Katzenpost implements client drop decoy messages by composing Sphinx
+packets destined for the ``loop service`` of a randomly selected
+Provider. The payload of this Sphinx packet does not contain a SURB
+and therefore the ``loop service`` has no choice but to drop the
+message without sending a response.
+
+As stated in section ``3. Client Routing Loops without SURBs`` clients
+must send drop messages so that the number of sent and received
+messages are not equal. This is used to thwart an adversary who has
+compromised the client's Provider.
+
+5. Client Decoy Traffic Conclusions
 ===================================
 
-Since it is a design goal to acheive send and receiver unobservability
+Since it is a design goal to acheive sender and receiver unobservability
 with respect to compromised client Providers as well as passive
 network observers, Clients must use a variety of decoy traffic types
 which includes:
@@ -197,7 +220,6 @@ which includes:
 1. SURB Loops
 2. Routing Loops without SURBs
 3. Drop Decoys
-
 
 5. Mix Loops For Detecting n-1 Attacks
 ======================================
@@ -208,11 +230,12 @@ X. Anonymity Considerations
 ===========================
 
 A global adversary will be able to determine which users are online or
-offline. Decoy traffic cannot guarantee prevention of long term
-intersection attacks if some users go offline. [RESISTDISCLOSURE]_
+offline. Decoy traffic is not guaranteed to prevent long term
+intersection attacks if users go offline. [RESISTDISCLOSURE]_
 Preventing long term statistical disclosure attacks depends on many
-factors including the rate of mix network information leakage and the
-measure of predictable and repetitive user behavior.
+factors including the type of applications using the mixnet, the rate
+of information leakage and the measure of predictable and repetitive
+behavior.
 
 Y. Security Considerations
 ==========================
