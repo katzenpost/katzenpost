@@ -162,7 +162,7 @@ the client's SURB loops are indistinguishable from normal forward traffic.
 ----------------------------
 
 Client SURB loops provides receiver unobservability with respect to
-a passive network adversarie. That is, passive network adversaries
+a passive network adversary. That is, passive network adversaries
 are not able to distinguish between SURB replies from a client
 SURB loop and normal forward received messages.
 
