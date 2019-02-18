@@ -17,38 +17,41 @@ based on the [LOOPIX]_ paper.
 1. Introduction
 ===============
 
-To a passive network observer or a component mix, decoy traffic is
-indistinguishable from normal traffic. The [LOOPIX]_ and
-[ANONTRILEMMA]_ papers describes a trade off between latency and decoy
-traffic. That is to say, decoy traffic adds entropy to component mixes
-which means that more decoy traffic can be used such that a lower per hop
-delay is used while still maintaining desired mix entropy.
+To a passive network observer or a component mix, decoy traffic (often
+referred as 'cover traffic') is indistinguishable from normal traffic.
+The [LOOPIX]_ and [ANONTRILEMMA]_ papers describe a trade off between
+latency and decoy traffic. Decoy traffic adds entropy to component mixes,
+which means that more decoy traffic can be used so lower per hop delay is
+used, while still maintaining the desired mix entropy.
 
 Decoy traffic loops are used by mixes to detect n-1 attacks
-[HEARTBEAT03]_. In this case it serves dual purposes because it is
-also contributing entropy to the mixes that the loop decoy traffic
-messages are routed through.
+[HEARTBEAT03]_. This means that decoy traffic serves a dual purpose
+as it is detecting n-1 attacks while contributing entropy to the mixes
+where the loop decoy traffic messages are routed, as well.
 
-Decoy traffic also serves to provide sender and receiver
-unobservability. That is, a passive network observer will not be able
-to determine when a user is sending a message or receiving a message,
-because observed messages are indistinguishable from decoy messages.
+Decoy traffic also contributes to sender and/or receiver
+unobservability. A global passive adversary will not be able
+to determine whether a user is communicating with another (by either sending
+or receiving messages), as observed honest messages are indistinguishable
+from decoy messages.
 
-The [LOOPIX]_ design specifies a more simple decoy traffic profile
-than what is described here because Loopix does not attempt to achieve
-any reliability. Mix networks are fundamentally an unreliable packet
-switching network and without additional client side protocols cannot
-achieve reliability. Katzenpost on the other hand, aims to achieve
-reliability through the use of an automatic repeat request (ARQ)
-protocol scheme. An ARQ is a type of error correction protocol which
-makes use of acknowledgement control messages and retransmissions. The
+The [LOOPIX]_ design specifies a simpler decoy traffic profile
+than the one described here. The Loopix design does not attempt to achieve
+any reliability, while the present document does. Fundamentally, Mix
+networks are an unreliable packet switching network: without the use of
+additional client side protocols, they cannot achieve reliability.
+The Katzenpost design, on the other hand, aims to achieve reliability
+through the use of an automatic repeat request (ARQ) protocol scheme.
+An ARQ protocol is a type of error correction protocol that makes use of
+acknowledgement control messages and retransmissions. The
 most notable example of a protocol making use of an ARQ scheme is TCP.
 
-The [LOOPIX]_ design achieves it's goals of sender and receiver
-unobservability with respect to compromised Providers and passive
-network observers. It does so with only two types of client decoy
-traffic, however in the case of Katzenpost clients must use three
-types of decoy traffic to accomplish these same security goals.
+The [LOOPIX]_ design achieves it's security goals of sender and receiver
+unobservability (although, it does no achieve perfect receiver
+unobservabilty) with respect to compromised providers and passive network
+observers. It does so by using two types of client decoy traffic. In
+Katzenpost design, on the contraty, clients must use three types of decoy
+traffic to accomplish the same security goals.
 
 1.1 Conventions Used in This Document
 -------------------------------------
@@ -61,7 +64,8 @@ document are to be interpreted as described in [RFC2119]_.
 ---------------
 
 * ``decoy traffic`` - Mix network messages that add entropy and help
-  defend against attacks. Also referred to as dummy traffic.
+  defend against certain kind of attacks. Also referred to as dummy
+  or cover traffic.
 
 * ``message`` - A variable-length sequence of bytes sent anonymously
   through the network. Short messages are sent in a single
@@ -78,10 +82,10 @@ document are to be interpreted as described in [RFC2119]_.
 
 * ``ACK`` - Acknowledgement. A control message used in ARQ protocols.
 
-* ``ARQ`` - Automatic Repeat reQuest. A error correction protocol scheme
+* ``ARQ`` - Automatic Repeat reQuest. An error correction protocol scheme
   which makes use of acknowledegement control messages and retransmissions.
 
-* ``SURB`` - Single Use Reply Block is a feature of the Sphinx packet
+* ``SURB`` - The Single Use Reply Block is a feature of the Sphinx packet
   format and is described in [SPHINX]_ and in section
   ``7. Single Use Reply Block (SURB) Creation`` of [SPHINXSPEC]_.
 
@@ -126,10 +130,10 @@ back to the source.
 In the Katzenpost mix network all Provider services respond using a
 SURB and Providers also send a ``SURB ACK`` in response to receiving a
 ``forward messages``. From the perspective of the Provider receiving
-these SURB replies, they are all indistinguishable. That is, ``query
-replies`` from a ``loop service`` are indistinguishable from ``query
-replies`` from any other service. They are are indistinguishable from
-``SURB ACKs``.
+these SURB replies, all of these messages are indistinguishable.
+That is, ``query replies`` from a ``loop service`` are
+indistinguishable from ``query replies`` from any other service.
+They are are indistinguishable from ``SURB ACKs``.
 
 Here's a diagram which shows a client sending a message through the
 mix network, and in this case the destination could be a Provider
@@ -150,17 +154,16 @@ the ``SURB``:
 --------------------------
 
 Client SURB loops provide sender unobservability with respect to
-passive network observers and compromised Providers. That is, if the
-client's Provider is compromised, this does not give the adversary any
-advantage and the client's SURB loops will be indistinguishable from
-normal forward traffic.
+passive network observers and compromised Providers. This means that, if
+the client's Provider is compromised, the adversary gains no advantage, and
+the client's SURB loops are indistinguishable from normal forward traffic.
 
 2.2 Receiver Unobservability
 ----------------------------
 
 Client SURB loops provides receiver unobservability with respect to
-passive network adversaries only. That is, passive network adversaries
-will not be able to distinguish between SURB replies from a client
+a passive network adversary. That is, passive network adversaries
+are not able to distinguish between SURB replies from a client
 SURB loop and normal forward received messages.
 
 However, if the client's Provider is compromised, the adversary will
@@ -171,40 +174,39 @@ message by means of the Sphinx routing commands.
 =====================================
 
 The [LOOPIX]_ paper describes routing loops which do not use SURBs.
-At first glance this seems sufficient to provide clients with receiver
-unobservability since the received message in indistinguishable from
-receiving a normal forward message from a communication partner. However
-if the client's Provider is compromised it is not sufficient.
+At first glance this seems sufficient for providing clients with receiver
+unobservability, since the received message in indistinguishable from
+receiving a normal forward message from a communication partner. However,
+this is not enough when the client's Provider is compromised.
 
-An adversary compromising a client's Provider can count a given
-client's messages sent and messages received. These two counts will
-be equal if a client only sends themselves loops and will differ if a
-communication partner sends them a message. Therefore a client SHOULD
-also send drop decoy messages in order to defend against the adversary
-which compromises their Provider and compares sent and received
+An adversary compromising a client's Provider can count the
+client's messages sent and received. These two counts will be equal if a
+client only sends themselves loops and will differ if a
+different communication partner sends them a message. Therefore, a client
+SHOULD send drop decoy messages in order to defend against an
+adversary that compromises their Provider, and compares sent and received
 message counts.
 
 3.1 Sender Unobservability
 --------------------------
 
 Routing loops without SURBs provide sender unobservability with
-respect to passive network observers only. Routing loops without
-SURBs are not sufficient to provide sender unobservability with
-respect to a compromised client Provider. The sent message is
-indistinguishable from a normal sent message, however the response
-from such a loop is a normal forward message whereas sending a normal
-forward message always results in a SURB reply.
+respect to a passive network observer. They are not sufficient to
+provide sender unobservability with respect to a compromised client Provider.
+The sent message is still indistinguishable from a normal sent message,
+but the response from such loop is a normal forward message whereas
+sending a normal forward message always results in a SURB reply.
 
 4. Client Drop Decoys
 =====================
 
-Katzenpost implements client drop decoy messages by composing Sphinx
+The Katzenpost design defines client drop decoy messages by composing Sphinx
 packets destined for the ``loop service`` of a randomly selected
 Provider. The payload of this Sphinx packet does not contain a SURB
-and therefore the ``loop service`` has no choice but to drop the
+and, therefore, the ``loop service`` has no choice but to drop the
 message without sending a response.
 
-As stated in section ``3. Client Routing Loops without SURBs`` clients
+As stated in section ``3. Client Routing Loops without SURBs``, clients
 must send drop messages so that the number of sent and received
 messages are not equal. This is used to thwart an adversary who has
 compromised the client's Provider.
