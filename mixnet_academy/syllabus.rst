@@ -65,6 +65,9 @@ Read Introduction blog post: "Introduction to Mix Networks and Anonymous Communi
 
 * https://www.freehaven.net/anonbib/cache/chaum-mix.pdf
 
+"Anonymity Trilemma: Strong Anonymity, Low Bandwidth Overhead, Low Latency --- Choose Two"
+
+* https://eprint.iacr.org/2017/954.pdf
 
 Mix Strategies
 --------------
