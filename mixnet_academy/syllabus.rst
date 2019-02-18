@@ -1,12 +1,56 @@
-Introduction to Mix Networks
-****************************
+Learn Mix Networks for Great Good
+*********************************
+
+(maybe the second title should be: Prevent Murder using Mathematics)
 
 
 Course Syllabus And Reading List
 ================================
 
+There are no good introductory papers on mix networks. Instead, the
+approach is to read all the really important academic papers on mix
+networks. These papers are roughly organized into several categories
+such as:
 
-Overview of Mix Networks
+.. contents:: :local:
+
+Missing from this list are ``verified shuffles``. These are
+specialized mix strategies which at times are very useful for specific
+use cases such as ``voting``.
+
+In a few of these mixnet sections I have included youtube videos I've
+made to help explain some of the fundamental mixnet concepts. As you
+read these mixnet papers keep in mind that decryption mixnets have the
+following attack categories:
+
+* tagging attacks
+* n-1 attacks
+* compulsion attacks
+* statistical disclosure attacks
+* epistemic attacks
+
+After all this mix network literature we turn to the
+``Classical Packet Switching Network Literature`` below in the next major section
+of reading. Many of these important papers happen to not be academic
+papers but rather come from industry/IETF and are RFCs. Why read these?
+Aren't mixnet papers enough? Yes if you want to only publish papers on mix
+networks then reading about only mix networks may be enough.
+
+However if you want to design real world mix network systems then
+understanding the mathematical limitations of the packet switching
+networking design space is extremely important! You must read about
+the early Internet design mistakes to understand what not to do in
+your mix network designs. In your mix network designs you must take
+care to avoid such fatal conditions such as **Congestion Collapse**.
+
+Have questions? Sit on them for a week and voraciously read papers.
+If you still have questions then do feel free to ask me. We have a mailing
+list and IRC channel for such things:
+
+* https://katzenpost.mixnetworks.org/contribute.html#communication
+
+
+Mix Network Fundamentals
 ------------------------
 
 Watch lecture "A Brief Introduction to mix networks."
@@ -104,6 +148,22 @@ Watch lecture "Introduction to Statistical Disclosure Attacks and Defenses for M
 * https://www.freehaven.net/anonbib/cache/pool-dummy04.pdf
 
 
+Epistemic Attacks
+-----------------
+
+"Route Finger printing in Anonymous Communications"
+
+* https://www.cl.cam.ac.uk/~rnc1/anonroute.pdf
+
+"Bridging and Fingerprinting: Epistemic Attacks on Route Selection"
+
+* https://www.freehaven.net/anonbib/cache/danezis-pet2008.pdf
+
+"Local View Attack on Anonymous Communication"
+
+* https://www.freehaven.net/anonbib/cache/esorics05-Klonowski.pdf
+
+
 Modern Mix Network Designs
 --------------------------
 
@@ -111,7 +171,7 @@ Modern Mix Network Designs
 
 * https://arxiv.org/pdf/1703.00536.pdf
 
-"No right to ramain silent: Isolating Malicious Mixes"
+"No right to remain silent: Isolating Malicious Mixes"
 
 * https://eprint.iacr.org/2017/1000.pdf
 
@@ -126,6 +186,12 @@ Modern Mix Network Designs
 "Vuvuzela: Scalable Private Messaging Resistant to Traffic Analysis"
 
 * https://www.freehaven.net/anonbib/cache/vuvuzela:sosp15.pdf
+
+
+Classical Packet Switching Network Literature
+=============================================
+
+.. contents:: :local:
 
 
 Congestion Control
@@ -161,8 +227,8 @@ protocols can be found here:
 * http://web.mit.edu/millitsa/www/resources/pdfs/arq.pdf
 
 
-Router Scheduling
------------------
+Router Scheduling (for general purpose computers)
+-------------------------------------------------
 
 "SEDA: An Architecture for Well-Conditioned, Scalable Internet Services"
 
@@ -184,7 +250,7 @@ Active Queue Management
 
 * https://tools.ietf.org/html/draft-ietf-aqm-codel-07
 
-"Stochastic Fair Blue: A Queue Management Alogirthm for Enforcing Fairness"
+"Stochastic Fair Blue: A Queue Management Algorithm for Enforcing Fairness"
 
 * http://www.thefengs.com/wuchang/blue/41_2.PDF
 
@@ -211,3 +277,23 @@ Attacks on Congestion Control
 "The Sniper Attack: Anonymously Deanonymizing and Disabling the Tor Network"
 
 * https://www.freehaven.net/anonbib/cache/sniper14.pdf
+
+
+Congestion Control with Explicit Signaling
+------------------------------------------
+
+NOTE: for more reading on this subject refer to Dr. Sally Floyd's ECN reading list:
+
+* http://www.icir.org/floyd/ecn.html
+
+"TCP and Explicit Congestion Notification"
+
+* http://www.icir.org/floyd/papers/tcp_ecn.4.pdf
+
+"The Benefits of Using Explicit Congestion Notification (ECN)"
+
+* https://tools.ietf.org/html/rfc8087
+
+"Performance Evaluation of Explicit Congestion Notification (ECN) in IP Networks"
+
+* https://tools.ietf.org/html/rfc2884
