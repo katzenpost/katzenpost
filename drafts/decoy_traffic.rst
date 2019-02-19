@@ -18,15 +18,15 @@ based on the [LOOPIX]_ paper.
 ===============
 
 To a passive network observer or a component mix, decoy traffic (often
-referred as 'cover traffic') is indistinguishable from normal traffic.
-The [LOOPIX]_ and [ANONTRILEMMA]_ papers describe a trade off between
+referred as 'cover traffic' or dummy messages) is indistinguishable from normal
+traffic. The [LOOPIX]_ and [ANONTRILEMMA]_ papers describe a trade off between
 latency and decoy traffic. Decoy traffic adds entropy to component mixes,
 which means that more decoy traffic can be used so lower per hop delay is
 used, while still maintaining the desired mix entropy.
 
-Decoy traffic loops are used by mixes to detect n-1 attacks
-[HEARTBEAT03]_. This means that decoy traffic serves a dual purpose
-as it is detecting n-1 attacks while contributing entropy to the mixes
+Decoy traffic loops are used by mixes to detect active attacks, such as *n-1*
+attacks [HEARTBEAT03]_. This means that decoy traffic serves a dual purpose
+as it is detecting *n-1* attacks while contributing entropy to the mixes
 where the loop decoy traffic messages are routed, as well.
 
 Decoy traffic also contributes to sender and/or receiver
@@ -112,7 +112,7 @@ states that the Sphinx packet header contains a vector of per-hop
 routing information. Each mix in turn decrypts it's portion of this
 routing information. In the case of the final hop, the Provider
 decrypting this routing information should find either a `recipient`
-command or `recipient` and `surb_reply` commands [KATZMIXE2E]_.
+command, or `recipient` and `surb_reply` commands [KATZMIXE2E]_.
 Therefore Providers receiving Sphinx packets are able to distinguish
 between ``forward messages`` and replies generated using SURBs such as
 a ``SURB ACK`` or a ``query reply``.
@@ -275,7 +275,7 @@ Appendix A.2 Informative References
 
 .. [SPHINX]    Danezis, G., Goldberg, I., "Sphinx: A Compact and
                Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
-               May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+               May 2009, <https://cypherpunks.ca/~iang/pubs/Sphinx_Oakland09.pdf>.
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
@@ -283,7 +283,7 @@ Appendix A.2 Informative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder Extension", January 2018,
-                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
+                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst>.
 
 .. [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
                   Proceedings of the Workshop on Privacy in the Electronic Society, October 2003,
