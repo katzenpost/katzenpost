@@ -24,9 +24,9 @@ latency and decoy traffic. Decoy traffic adds entropy to component mixes,
 which means that more decoy traffic can be used so lower per hop delay is
 used, while still maintaining the desired mix entropy.
 
-Decoy traffic loops are used by mixes to detect active attacks, such as *n-1*
-attacks [HEARTBEAT03]_. This means that decoy traffic serves a dual purpose
-as it is detecting *n-1* attacks while contributing entropy to the mixes
+Decoy traffic loops are used by mixes to detect *n-1* attacks
+[HEARTBEAT03]_. This means that decoy traffic serves a dual purpose as
+it is detecting *n-1* attacks while contributing entropy to the mixes
 where the loop decoy traffic messages are routed, as well.
 
 Decoy traffic also contributes to sender and/or receiver
