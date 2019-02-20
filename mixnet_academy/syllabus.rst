@@ -92,6 +92,9 @@ Mix Strategies
 
 * https://www.freehaven.net/anonbib/cache/danezis:wpes2003.pdf
 
+"Generalising Mixes"
+
+* https://www.freehaven.net/anonbib/cache/diaz:pet2003.ps.gz
 
 Mix Network Topology
 --------------------
