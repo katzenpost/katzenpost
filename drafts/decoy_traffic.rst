@@ -1,6 +1,7 @@
 Katzenpost Mix Network Decoy Traffic Specification
 **************************************************
 
+| Sofi Celi
 | Leif Ryge
 | David Stainton
 
