@@ -171,33 +171,6 @@ However, if the client's Provider is compromised, the adversary will
 be able to distinguish between the SURB reply and a received forward
 message by means of the Sphinx routing commands.
 
-3. Client Routing Loops without SURBs
-=====================================
-
-The [LOOPIX]_ paper describes routing loops which do not use SURBs.
-At first glance this seems sufficient for providing clients with receiver
-unobservability, since the received message in indistinguishable from
-receiving a normal forward message from a communication partner. However,
-this is not enough when the client's Provider is compromised.
-
-An adversary compromising a client's Provider can count the
-client's messages sent and received. These two counts will be equal if a
-client only sends themselves loops and will differ if a
-different communication partner sends them a message. Therefore, a client
-SHOULD send drop decoy messages in order to defend against an
-adversary that compromises their Provider, and compares sent and received
-message counts.
-
-3.1 Sender Unobservability
---------------------------
-
-Routing loops without SURBs provide sender unobservability with
-respect to a passive network observer. They are not sufficient to
-provide sender unobservability with respect to a compromised client Provider.
-The sent message is still indistinguishable from a normal sent message,
-but the response from such loop is a normal forward message whereas
-sending a normal forward message always results in a SURB reply.
-
 4. Client Drop Decoys
 =====================
 
@@ -218,11 +191,10 @@ compromised the client's Provider.
 Since it is a design goal to acheive sender and receiver unobservability
 with respect to compromised client Providers as well as passive
 network observers, Clients must use a variety of decoy traffic types
-which includes:
+which is:
 
 1. SURB Loops
-2. Routing Loops without SURBs
-3. Drop Decoys
+2. Drop Decoys
 
 5. Mix Loops For Detecting n-1 Attacks
 ======================================
