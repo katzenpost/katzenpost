@@ -7,9 +7,9 @@ Version 0
 
 .. rubric:: Abstract
 
-This document describes a message dead drop service. The dead drop
+This document describes the message dead drop service. The dead drop
 service can be used to compose messaging systems with stronger
-location hiding properties and increased resistance to longterm
+location hiding properties, and increased resistance to longterm
 statistical disclosure attacks also known as intersection attacks.
 
 .. contents:: :local:
@@ -147,7 +147,7 @@ The encrypted and authenticated blob has the following structure:
   ::
 
       enum {
-         status_ok(0),           /* None error condition and SHOULD be
+         status_ok(0),           /* No error condition. It SHOULD be
                                     accompanied with a valid message payload. */
          status_syntax_error(1), /* The request was malformed. */
          status_no_identity(2),  /* No such identity was found. */
@@ -206,7 +206,7 @@ communication channels.
   SURB reply messages. In the [LOOPIX]_ Provider model the attacker
   might try to determine if any of the Providers receive slightly
   more messages. If the adversary has compromised one or more
-  Proivders then the goal would be to determine if one message
+  Providers then the goal would be to determine if one message
   spool receives more messages than the rest.
 
 * Client retransmissions can be predictable behavior which allows
@@ -256,7 +256,7 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/katzenpost/docs/blob/master/drafts/kaetzchen.txt>.
+                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.txt>.
 
 .. [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.

@@ -22,12 +22,13 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 1. Introduction
 ===============
 
-   Mixnets are designed with the assumption that a PKI exists and it
-   gives each client the same view of the network. This specification
-   is inspired by the Tor and Mixminion Directory Authority systems
-   [MIXMINIONDIRAUTH]_ [TORDIRAUTH]_ whose main features are precisely what
-   we need in our PKI. These are decentralized systems meant to be
-   collectively operated by multiple entities.
+   Mixnets are designed with the assumption that a Public Key
+   Infraestructure (PKI) exists and it gives each client the same view of
+   the network. This specification is inspired by the Tor and Mixminion
+   Directory Authority systems [MIXMINIONDIRAUTH]_ [TORDIRAUTH]_, whose
+   main features are precisely what we need for our PKI. These are
+   decentralized systems meant to be collectively operated by multiple
+   entities.
 
    The mix network directory authority system (PKI) is essentially a
    cooperative decentralized database and voting system that is used
@@ -43,10 +44,10 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 
    The PKI is also used by Authority operators to specify network-wide
    parameters, for example in the Katzenpost Decryption Mix Network
-   [KATZMIXNET]_ the Poisson mix strategy is used and therefore all the
+   [KATZMIXNET]_ the Poisson mix strategy is used and, therefore, all
    clients must use the same lambda parameter for their exponential
    distribution function when choosing hop delays in the path
-   selection. The Mix Network Directory Authority system aka PKI
+   selection. The Mix Network Directory Authority system, aka PKI,
    SHALL be used to distribute such network-wide parameters in the network
    consensus document that have an impact on security and performance.
 
@@ -64,7 +65,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 1.2 Terminology
 ---------------
 
-   ``PKI`` - public key infrastructure
+   ``PKI`` - Public Key Infrastructure
 
    ``Directory Authority system`` - refers to specific PKI schemes used by
                                 Mixminion and Tor
@@ -131,20 +132,20 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 
       * The list of valid mixes is expressed in a white list. For
         the time being there is no specified "bandwidth authority"
-        system which verifies the health of mixes.
-        (Further research required.)
+        system which verifies the health of mixes
+        (Further research required in this area).
 
       * There's no non-directory channel to inform clients that a node
         is down, so it will end up being a lot of packet loss, since
         clients will continue to include the missing node in their
-        path selection till keys published by the node expire and it
+        path selection until keys published by the node expire and it
         falls out of the consensus.
 
       * The schema of the mix descriptors is different from that used
         in Mixminion and Tor, including a change which allows our mix
-        descriptor to express n Sphinx mix routing public keys in a
+        descriptor to express *n* Sphinx mix routing public keys in a
         single mix descriptor whereas in the Tor and Mixminion Directory
-        Authority systems, n descriptors are used.
+        Authority systems, *n* descriptors are used.
 
       * The serialization format of mix descriptors is different from
         that used in Mixminion and Tor.
@@ -205,7 +206,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    constraints.
 
    .. note::
-   
+
         XXX david: perhaps we should make it shorter? but first let's do
         some scaling and bandwidth calculations to see how bad it gets...
 
@@ -251,7 +252,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
                                peers no longer listed in the PKI documents and
                                erase the list of seen packet tags.
 
-   As it stands, mixes have ~1.5 hours to publish, the PKI has ~1 hour 
+   As it stands, mixes have ~1.5 hours to publish, the PKI has ~1 hour
    to vote, and the mixes have 20 mins to establish connections before
    there is network connectivity failure.
 

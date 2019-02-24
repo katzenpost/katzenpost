@@ -8,21 +8,21 @@ Getting started in Katzenpost development
 =========================================
 
 This guide assumes you are familiar with golang,
-git and some kind of Unix operating system environment.
+git and Unix like operating system environment.
 
 
 Overview of our git repositories
 --------------------------------
 
-The first two repositories contain code that compiles to
-executable programs:
+On the main organization github page, two repositories contain
+code that compiles to executable programs:
 
 * tools - Tools are programs that we use for testing and debugging.
 
 * daemons - The Daemons repo is used to build the Katzenpost
   components such as mix client, mix server and PKI server. This
-  repository has vendored dependencies, however for development and
-  testing we generally do not use vendored dependencies.
+  repository has vendored dependencies. For development and
+  testing, we generally do not use vendored dependencies.
 
 We do some additional ticket tracking in:
 
@@ -30,10 +30,10 @@ We do some additional ticket tracking in:
   Katzenpost mixnet framework.
 
 
-Our specs and other documents are here:
-  
-* docs - All our documentation is here with the exception of our
-  website. This includes our design specifications as well as this
+Our specs, drafts and other documents are in:
+
+* docs -  The documentation is here with the exception of the
+  website. This includes the design specifications as well as the
   document you are currently reading.
 
 
@@ -48,7 +48,7 @@ of our core library:
 
 
 Our core library's wire protocol depends on our fork
-of a golang noise library:
+of the golang noise library:
 
 * noise - The Katzenpost fork of flynn's golang Noise crypto library
   implementation which has the ablity to use the New Hope Simple
@@ -321,7 +321,7 @@ Making a code contribution
 1. Write a specification document
 
    If your code change is complex or requires us to change any of our
-   protocols you will need to first propose a draft specification
+   protocols, you will need to first propose a draft specification
    document. You can do this by forking our docs repository, creating
    a new git branch with your specification document and then
    submitting a pull-request.
