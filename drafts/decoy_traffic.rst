@@ -36,10 +36,10 @@ to determine whether a user is communicating with another (by either sending
 or receiving messages), as observed honest messages are indistinguishable
 from decoy messages.
 
-The [LOOPIX]_ design specifies a simpler decoy traffic profile
+The [LOOPIX]_ design specifies a slightly different decoy traffic profile
 than the one described here. The Loopix design does not attempt to achieve
-any reliability, while the present document does. Fundamentally, Mix
-networks are an unreliable packet switching network: without the use of
+any reliability, while the present document does. Fundamentally, mix
+networks are unreliable packet switching networks: without the use of
 additional client side protocols, they cannot achieve reliability.
 The Katzenpost design, on the other hand, aims to achieve reliability
 through the use of an automatic repeat request (ARQ) protocol scheme.
