@@ -86,6 +86,36 @@ A sample configuration file can be found in our daemons repository, here:
 
 * https://github.com/katzenpost/daemons/blob/master/authority/voting/authority.toml.sample
 
+Generating configuration files and keys for a set of voting authorities can be done with the genconfig tool:
+
+* https://github.com/katzenpost/tools/genconfig
+
+The ``tools`` repo uses the same dependency vendoring as the ``daemons`` repo. See instructions there for using ``go dep``.
+
+The genconfig tool has the following commandline usage::
+
+     ./genconfig -help
+     Usage of ./genconfig:
+       -b string
+         	Path to use as baseDir option
+       -n int
+         	Number of mixes. (default 6)
+       -nv int
+         	Generate voting configuration (default 3)
+       -p int
+         	Number of providers. (default 2)
+       -v	Generate voting configuration
+
+The configuration files and keys are placed in a directory structure under the baseDir::
+     user@katz:~/go/src/github.com/katzenpost/tools/genconfig$ ./genconfig -b mixnet -v
+     user@katz:~/go/src/github.com/katzenpost/tools/genconfig$ ls mixnet/
+     authority-0  authority-2  node-1  node-3  node-5      provider-1
+     authority-1  node-0       node-2  node-4  provider-0
+     user@katz:~/go/src/github.com/katzenpost/tools/genconfig$ ls mixnet/authority-0
+     authority-0.example.org.toml  identity.private.pem  identity.public.pem
+
+The configuration files are defaulted with loopback addresses so that a local testing mixnet can be run; if you want to run the mixnet on several computers you will need to edit the ``DataDir``, ``Addresses`` and likely ``Identifier`` entries in each configuration file.
+As absolute paths to the ``DataDir`` are required, the configuration structure produced by ``genconfig`` is not portable.
 
 Authority section
 `````````````````
