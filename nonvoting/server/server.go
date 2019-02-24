@@ -113,7 +113,7 @@ func (s *Server) IdentityKey() *eddsa.PublicKey {
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {
-		s.fatalErrCh <- fmt.Errorf("Failed to rotate log file, shutting down server.")
+		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
 	}
 	s.log.Notice("Log rotated.")
 }

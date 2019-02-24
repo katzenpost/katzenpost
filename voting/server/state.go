@@ -628,10 +628,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	// Lock is held (called from the onWakeup hook).
 	_, ok := s.votes[epoch]
 	if !ok {
-		return nil, nil, fmt.Errorf("No votes for epoch %v!", epoch)
+		return nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
 	}
 	if len(s.votes[epoch]) <= s.threshold {
-		return nil, nil, fmt.Errorf("Not enough votes for epoch %v!", epoch)
+		return nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
 	}
 
 	nodes := make([]*descriptor, 0)
@@ -735,11 +735,11 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 				return nodes, params, nil
 			}
 		} else if len(votes) >= s.dissenters {
-			return nil, nil, errors.New("Consensus partition?!")
+			return nil, nil, errors.New("a consensus partition")
 		}
 
 	}
-	return nil, nil, errors.New("Consensus failure!")
+	return nil, nil, errors.New("consensus failure")
 }
 
 func (s *state) GetConsensus(epoch uint64) (*document, error) {
@@ -1487,6 +1487,6 @@ func sortNodesByPublicKey(nodes []*descriptor) {
 }
 
 func sha256b64(raw []byte) string {
-	var hash [32]byte = sha3.Sum256(raw)
+	var hash = sha3.Sum256(raw)
 	return base64.StdEncoding.EncodeToString(hash[:])
 }
