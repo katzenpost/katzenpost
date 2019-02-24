@@ -135,7 +135,7 @@ func (s *kimchi) genGoodVotingAuthoritiesCfg(numAuthorities int) error {
 			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("authority%d", i)),
 		}
-		s.lastPort += 1
+		s.lastPort++
 		privateIdentityKey, err := eddsa.NewKeypair(rand.Reader)
 		if err != nil {
 			return err
@@ -188,7 +188,7 @@ func (s *kimchi) genBadVotingAuthoritiesCfg(numAuthorities int) error {
 			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("authority%d", i)),
 		}
-		s.lastPort += 1
+		s.lastPort++
 		privateIdentityKey, err := eddsa.NewKeypair(rand.Reader)
 		if err != nil {
 			return err

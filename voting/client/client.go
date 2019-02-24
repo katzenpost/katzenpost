@@ -226,9 +226,9 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.Priva
 
 // Client is a PKI client.
 type Client struct {
-	cfg  *Config
-	log  *logging.Logger
-	pool *connector
+	cfg       *Config
+	log       *logging.Logger
+	pool      *connector
 	verifiers []cert.Verifier
 	threshold int
 }

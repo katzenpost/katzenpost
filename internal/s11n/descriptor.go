@@ -25,8 +25,8 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
@@ -35,6 +35,7 @@ import (
 const (
 	nodeDescriptorVersion = "v0"
 )
+
 var (
 	// CertificateExpiration is the time a descriptor certificate will be valid for.
 	CertificateExpiration = (epochtime.Period * 3) + (time.Minute * 10)

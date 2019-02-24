@@ -77,16 +77,15 @@ func TestDocument(t *testing.T) {
 	sharedRandomCommit := make([]byte, SharedRandomLength)
 	binary.BigEndian.PutUint64(sharedRandomCommit[:8], debugTestEpoch)
 
-
 	// Generate a Document.
 	doc := &Document{
-		Epoch:             debugTestEpoch,
-		SendRatePerMinute: testSendRate,
-		Topology:          make([][][]byte, 3),
-		MixLambda:         0.42,
-		MixMaxDelay:       23,
-		SendLambda:        0.69,
-		SendMaxInterval:   17,
+		Epoch:              debugTestEpoch,
+		SendRatePerMinute:  testSendRate,
+		Topology:           make([][][]byte, 3),
+		MixLambda:          0.42,
+		MixMaxDelay:        23,
+		SendLambda:         0.69,
+		SendMaxInterval:    17,
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 	}
