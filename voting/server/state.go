@@ -141,9 +141,9 @@ func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
-	s.log.Debugf("Current epoch %d, remaining time: %d", epoch, nextEpoch)
+	s.log.Debugf("Current epoch %d, remaining time: %s", epoch, nextEpoch)
 	if nextEpoch < 3 * time.Minute { // bootstrap time
-		s.log.Debugf("Too close to epoch boundary, sleeping for %d", nextEpoch)
+		s.log.Debugf("Too close to epoch boundary, sleeping for %s", nextEpoch)
 		<-time.After(nextEpoch)
 		s.votingEpoch = epoch + 1
 	}
