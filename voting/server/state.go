@@ -140,9 +140,10 @@ func (s *state) worker() {
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
+	bootsleep := 10 * time.Second
 	epoch, elapsed, nextEpoch := epochtime.Now()
 	s.log.Debugf("Current epoch %d, remaining time: %s", epoch, nextEpoch)
-	if nextEpoch < 6 * time.Minute { // bootstrap time for current epoch and next epoch
+	if nextEpoch < 2 * 5 * bootsleep { // bootstrap time for current epoch and next epoch
 		s.log.Debugf("Too close to epoch boundary, sleeping for %s", nextEpoch)
 		<-time.After(nextEpoch)
 		s.votingEpoch = epoch + 1
@@ -206,9 +207,9 @@ func (s *state) fsm() <-chan time.Time {
 	}
 	s.pruneDocuments()
 	if s.votingEpoch <= epoch || sleep < 0 {
-		sec := time.Now().Second()
+		sec := time.Duration(time.Now().Second())
 		// sleep up to a 30 second increment
-		sleep = time.Duration(30 - (sec % 30)) * time.Second
+		sleep = bootsleep - (sec % bootsleep)
 	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	s.Unlock()
