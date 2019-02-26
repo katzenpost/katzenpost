@@ -140,22 +140,22 @@ func (s *state) worker() {
 func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
-	bootsleep := 10 * time.Second
 	epoch, elapsed, nextEpoch := epochtime.Now()
 	s.log.Debugf("Current epoch %d, remaining time: %s", epoch, nextEpoch)
-	if nextEpoch < 2 * 5 * bootsleep { // bootstrap time for current epoch and next epoch
-		s.log.Debugf("Too close to epoch boundary, sleeping for %s", nextEpoch)
-		<-time.After(nextEpoch)
-		s.votingEpoch = epoch + 1
-	}
 
 	switch s.state {
 	case stateBootstrap:
-		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
+		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
+		if elapsed > mixPublishDeadline {
+			s.log.Debugf("Too late to vote this round, sleeping until %s", nextEpoch)
+			sleep = nextEpoch + mixPublishDeadline
+			s.votingEpoch = epoch + 1
+		} else {
+			sleep = mixPublishDeadline - elapsed
+		}
 		s.state = stateAcceptDescriptor
-		sleep = mixPublishDeadline - elapsed
 	case stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
@@ -189,13 +189,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.consense(s.votingEpoch)
 		if _, ok := s.documents[s.votingEpoch]; ok {
 			s.state = stateAcceptDescriptor
-			if s.votingEpoch == epoch {
-				// either we bootstrapped before the publish deadline
-				// or we default to 30 seconds
-				sleep = mixPublishDeadline - elapsed
-			} else {
-				sleep = mixPublishDeadline + nextEpoch
-			}
+			sleep = mixPublishDeadline + nextEpoch
 			s.votingEpoch++
 		} else {
 			// failed to make consensus. try to join next round.
@@ -206,11 +200,6 @@ func (s *state) fsm() <-chan time.Time {
 	default:
 	}
 	s.pruneDocuments()
-	if s.votingEpoch <= epoch || sleep < 0 {
-		sec := time.Duration(time.Now().Second())
-		// sleep up to a 30 second increment
-		sleep = bootsleep - (sec % bootsleep)
-	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	s.Unlock()
 	return time.After(sleep)
