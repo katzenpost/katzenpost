@@ -151,8 +151,9 @@ func (s *state) fsm() <-chan time.Time {
 		if elapsed > mixPublishDeadline {
 			s.log.Debugf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch + mixPublishDeadline
-			s.votingEpoch = epoch + 1
+			s.votingEpoch = epoch + 2
 		} else {
+			s.votingEpoch = epoch + 1
 			sleep = mixPublishDeadline - elapsed
 		}
 		s.state = stateAcceptDescriptor
@@ -1414,22 +1415,8 @@ func newState(s *Server) (*state, error) {
 		return nil, err
 	}
 
-	// Do a "rapid" bootstrap where we will generate and publish a Document
-	// for the current epoch regardless of time iff:
-	//
-	//  * We do not have a persisted Document for the epoch.
-	//  * (Checked in worker) *All* nodes publish a descriptor.
-	//
-	// This could be relaxed a bit, but it's primarily intended for debugging.
-	epoch, _, till := epochtime.Now()
-	if till < 1*time.Minute {
-		epoch++
-	}
-	if _, ok := st.documents[epoch]; !ok {
-		st.votingEpoch = epoch
-		st.state = stateBootstrap
-	}
-
+	// Set the initial state to bootstrap
+	st.state = stateBootstrap
 	st.Go(st.worker)
 	return st, nil
 }
