@@ -102,13 +102,13 @@ information.
 
 
 * The User field is a string which the Provider associates with a
-X25519 public key AND a message spool.
+  X25519 public key AND a message spool.
 
 * The AuthToken field is a base64 encoded ciphertext blob produced by
-encrypting a zero length payload with
-`Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key
-which the Katzenpost system uses for link layer authentication
-[KATZMIXWIRE].
+  encrypting a zero length payload with
+  `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key
+  which the Katzenpost system uses for link layer authentication
+  [KATZMIXWIRE].
 
 The encrypted and authenticated blob has the following structure:
 
@@ -261,6 +261,10 @@ Appendix A.1 Normative References
 .. [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
 
+.. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+
 Appendix A.2 Informative References
 -----------------------------------
 
@@ -279,3 +283,7 @@ Appendix A.2 Informative References
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
+
+.. [MIXMINION]  Danezis, G., Dingledine, R., Mathewsom, N.,
+                "Mixminion: Design of a Type III Anonymous Remailer Protocol"
+                <https://www.mixminion.net/minion-design.
