@@ -147,7 +147,6 @@ func (s *state) fsm() <-chan time.Time {
 	case stateBootstrap:
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
-		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 		if elapsed > mixPublishDeadline {
 			s.log.Debugf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch + mixPublishDeadline
@@ -156,6 +155,7 @@ func (s *state) fsm() <-chan time.Time {
 			s.votingEpoch = epoch + 1
 			sleep = mixPublishDeadline - elapsed
 		}
+		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 		s.state = stateAcceptDescriptor
 	case stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
