@@ -201,7 +201,9 @@ func (s *state) fsm() <-chan time.Time {
 	}
 	s.pruneDocuments()
 	if s.votingEpoch <= epoch || sleep < 0 {
-		sleep = 30 * time.Second
+		sec := time.Now().Second()
+		// sleep up to a 30 second increment
+		sleep = time.Duration(30 - (sec % 30)) * time.Second
 	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	s.Unlock()
