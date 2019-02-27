@@ -10,7 +10,8 @@ Version 0
 .. rubric:: Abstract
 
 This document describes the various types of decoy traffic designs
-based on the [LOOPIX]_ paper.
+based on the [LOOPIX]_ paper and is meant to be read with [KATZCLIENT]_
+and [KATZDEADDROP]_.
 
 .. contents:: :local:
 
@@ -19,18 +20,19 @@ based on the [LOOPIX]_ paper.
 ===============
 
 To a passive network observer or a component mix, decoy traffic (often
-referred as 'cover traffic' or dummy messages) is indistinguishable from normal
-traffic. The [LOOPIX]_ and [ANONTRILEMMA]_ papers describe a trade off between
-latency and decoy traffic. Decoy traffic adds entropy to component mixes,
-which means that more decoy traffic can be used so lower per hop delay is
-used, while still maintaining the desired mix entropy.
+referred as 'cover traffic' or dummy messages) is indistinguishable
+from normal traffic. The [LOOPIX]_ and [ANONTRILEMMA]_ papers describe
+a trade off between latency and decoy traffic. Decoy traffic adds
+entropy to component mixes, which means that more decoy traffic can be
+used so lower per hop delay is used, while still maintaining the
+desired mix entropy.
 
 Decoy traffic loops are used by mixes to detect *n-1* attacks
-[HEARTBEAT03]_. This means that decoy traffic serves a dual purpose as
-it is detecting *n-1* attacks while contributing entropy to the mixes
-where the loop decoy traffic messages are routed, as well.
+[HEARTBEAT03]_. This means that mix decoy loop traffic serves a dual
+purpose of detecting *n-1* attacks while contributing entropy to
+various mixes.
 
-Decoy traffic also contributes to sender and/or receiver
+Decoy traffic also contributes to sender and receiver
 unobservability. A global passive adversary will not be able
 to determine whether a user is communicating with another (by either sending
 or receiving messages), as observed honest messages are indistinguishable
@@ -48,11 +50,11 @@ acknowledgement control messages and retransmissions. The
 most notable example of a protocol making use of an ARQ scheme is TCP.
 
 The [LOOPIX]_ design achieves it's security goals of sender and receiver
-unobservability (although, it does no achieve perfect receiver
-unobservabilty) with respect to compromised providers and passive network
-observers. It does so by using two types of client decoy traffic. In
-Katzenpost design, on the contraty, clients must use three types of decoy
-traffic to accomplish the same security goals.
+unobservability with respect to compromised providers and passive network
+observers. It does so by using two types of client decoy traffic. In the
+Katzenpost design, clients must use two SURB loops instead of the routing
+loops that are described in the Loopix paper. This is because client Providers
+never receive decoy traffic and instead only receive SURB replies.
 
 1.1 Conventions Used in This Document
 -------------------------------------
@@ -136,21 +138,6 @@ That is, ``query replies`` from a ``loop service`` are
 indistinguishable from ``query replies`` from any other service.
 They are are indistinguishable from ``SURB ACKs``.
 
-Here's a diagram which shows a client sending a message through the
-mix network, and in this case the destination could be a Provider
-service or the spool of another user on a Provider:
-
-.. image:: diagrams/katzenpost_alice_loop1.png
-   :alt: diagram 1
-   :align: center
-
-This next diagram shows the reply being routed back to the client by means of
-the ``SURB``:
-
-.. image:: diagrams/katzenpost_alice_loop2.png
-   :alt: diagram 2
-   :align: center
-
 2.1 Sender Unobservability
 --------------------------
 
@@ -188,15 +175,46 @@ compromised the client's Provider.
 5. Client Decoy Traffic Conclusions
 ===================================
 
-Since it is a design goal to acheive sender and receiver unobservability
-with respect to compromised client Providers as well as passive
-network observers, Clients must use a variety of decoy traffic types
-which is:
+Clients send forward messages and decoy loop messages. Loop decoy
+messages are addressed to the sending client whereas forward messages
+are destined for other clients or servers. An idle client sends just
+as many messages as a busy client on average.
 
-1. SURB Loops
-2. Drop Decoys
+Just as is described in the [LOOPIX]_ paper, Client's make use for 4
+Poisson processes, the first is used to select delay for each hop:
 
-5. Mix Loops For Detecting n-1 Attacks
+* ``μ`` - Delay for each hop.
+
+The next three Poisson processes are used by the client to select delays
+between sending various types of messages into the mixnet:
+
+* ``λP`` - Time interval between sending messages from the egress queue.
+* ``λL`` - Loop traffic rate.
+* ``λD`` - Drop traffic rate.
+
+Unlike the Loopix paper, client loops use a SURB reply for it's return
+flight back to the client. The λP Poisson process is used to set the
+time interval between sending messages from the egress FIFO queue. If
+the FIFO queue is empty then a decoy drop message is sent instead.
+
+Here's a diagram which shows a client sending a message through the mix
+network AND in this case the destination could be a Provider service or the
+spool of another user on a Provider:
+
+.. image:: diagrams/katzenpost_alice_loop1.png
+   :alt: diagram 1
+   :align: left
+
+This next diagram shows the reply being routed back to the client by means of
+the Single Use Reply Block (see [SPHINXSPEC]_ ):
+
+.. image:: diagrams/katzenpost_alice_loop2.png
+   :alt: diagram 2
+   :align: left
+
+This is indistinguishable from client decoy loop messages.
+
+6. Mix Loops For Detecting n-1 Attacks
 ======================================
 
 XXX TODO: finish me.
@@ -237,6 +255,12 @@ Appendix A.1 Normative References
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+
+.. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
+                  <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
+
+.. [KATZCLIENT] Stainton, D., "Katzenpost client library design specification", February 2019,
+                <https://github.com/Katzenpost/docs/blob/master/drafts/client.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------

@@ -9,7 +9,8 @@ Version 0
 .. rubric:: Abstract
 
 This document describes the design of a client software library,
-a minimal message oriented network transport protocol library.
+a minimal message oriented network transport protocol library and
+is meant to be read along with [KATZDECOY]_ and [KATZDEADDROP]_.
 
 .. contents:: :local:
 
@@ -20,7 +21,7 @@ a minimal message oriented network transport protocol library.
 This design document illuminates many complex mixnet client design
 considerations that are not already covered by "Katzenpost Mix Network
 End-to-end Protocol Specification" [KATZMIXE2E]_.  Moreover the
-existing Katzenpost reference client, minclient can be found here:
+existing Katzenpost minimal reference client, minclient can be found here:
 
 * https://github.com/katzenpost/minclient
 
@@ -30,7 +31,7 @@ herein describe the design of a client library which provides two
 categories of message oriented bidirectional communication channels:
 
 1. client to client
-2. client to server
+2. client to server (kaetzchen service as in [KAETZCHEN]_)
 
 This library SHOULD be used to compose more sophisticated communication
 channels which provide additional cryptographic security properties to
@@ -44,8 +45,6 @@ mixnet communication protocols:
 
 * unreliable location-hiding client to client
 * reliable location-hiding client to client
-* unreliable non-location-hiding client to client
-* reliable non-location-hiding client to client
 * unreliable client to server
 * reliable client to server
 * client to server publish-subscribe
@@ -87,41 +86,16 @@ document are to be interpreted as described in [RFC2119]_.
 2. Protocol Overview
 ====================
 
-Clients send forward messages and decoy loop messages. Loop decoy
-messages are addressed to the sending client whereas forward messages
-are destined for other clients or servers. An idle client sends just
-as many messages as a busy client on average.
+Client's make use of decoy traffic as describe in [KATZDECOY]_.
+However unlike [LOOPIX]_, client do NOT give one another their
+Provider and spool identities. Instead clients exchange
+*dead drop information* so that they retreive messages while
+hiding their Provider and location on the network as described
+in [KATZDEADDROP]_.
 
-In contrast to [LOOPIX]_, clients make use of two Poisson processes:
-
-* ``λP`` - Time interval between sending messages from the egress queue.
-* ``λH`` - Delay choosen for each hop.
-
-Clients receive messages to send from the application via an egress
-queue. When λP triggers a send from the egress queue and it is empty
-a decoy loop message is sent.
-
-Here's a diagram which shows a client sending a message through the mix
-network AND in this case the destination could be a Provider service or the
-spool of another user on a Provider:
-
-.. image:: diagrams/katzenpost_alice_loop1.png
-   :alt: diagram 1
-   :align: left
-
-This next diagram shows the reply being routed back to the client by means of
-the Single Use Reply Block (see [SPHINXSPEC]_ ):
-
-.. image:: diagrams/katzenpost_alice_loop2.png
-   :alt: diagram 2
-   :align: left
-
-One of the core features of our mix network design is that ALL
-applications and clients regardless of the communication channel type
-will have this same traffic pattern. That is to say, ALL mix network
-traffic sent from clients will result in a loop whether or not the
-client requires the reply message. Therefore ALL messages clients
-send are indistinguishable from client decoy loops.
+Not all applications will make use of this client to client communication
+pattern and instead may require clients to communicate with mixnet services
+with a SURB based query and reponse protocol as described in [KAETZCHEN]_.
 
 3. Message Retreival
 ====================
@@ -130,71 +104,24 @@ There are two types of message retreival that are possible and
 they are:
 
 * Retreival from local Provider
-* Retreival from remote Provider
+* Retreival from remote Provider (aka dead drop as described in [KATZDEADDROP]_)
 
 3.1 Message Retreival from local Provider
 -----------------------------------------
 
-* Retreival from local Provider as described in [LOOPIX]_. This means
-  clients do NOT retain location hiding properties or "mutual
-  distrust" because clients directly connect to the Provider with our
-  Katzenpost link layer wire protocol and sending the "retreive
-  message" command to retreive messages from the message spool on that
-  Provider for a given user identity which we have specified in detail
-  in section "3.2 Client Retrieval of Queued Messages" of the
-  [KATZMIXE2E]_ document
-
-Consider this diagram where Alice sends a message to Bob's spool on his Provider:
-
-.. image:: diagrams/katzenpost_loopix1.png
-   :alt: diagram 3
-   :align: left
-
-
-Bob directly connects to his Provider and retreives messages from his spool:
-
-.. image:: diagrams/katzenpost_loopix2.png
-   :alt: diagram 4
-   :align: left
+* Retreival from local Provider as described in [LOOPIX]_ and section
+  ``3. Client and Provider Core Protocol`` of the [KATZMIXE2E]_
+  document. This is relevant in so far as message retrieval from dead
+  drops causes the message to be delivered into the client's Provider
+  and must then be retrieved using the wire protocol directly.
 
 3.2 Message Retreival from remote Provider
 ------------------------------------------
 
-* Retreival from remote Provider: Here we are referring to the
-  "Katzenpost Dead Drop Extension" [KATZDEADDROP]_ specification
-  document which goes into detail how the remote Provider can be
-  queried "over the mixnet".
-
-Consider this diagram where Alice sends a message to Bob's spool on
-his remote Provider:
-
-.. image:: diagrams/katzenpost_net1.png
-   :alt: diagram 5
-   :align: left
-
-
-At a latter time, Bob sends a SURB to his remote Provider to retrieve
-a message from his spool:
-
-.. image:: diagrams/katzenpost_net2.png
-   :alt: diagram 6
-   :align: left
-
-
-The messages return trip from remote Provider to Bob's local Provider
-can look like this:
-
-.. image:: diagrams/katzenpost_net3.png
-   :alt: diagram 7
-   :align: left
-
-
-Finally, Bob retrieves the message from his local Provider:
-
-.. image:: diagrams/katzenpost_net4.png
-   :alt: diagram 8
-   :align: left
-
+Retreival from remote Provider: Here we refer to the
+``Katzenpost Dead Drop Extension`` [KATZDEADDROP]_ specification
+document which goes into detail how the remote Provider can be
+queried over the mixnet.
 
 3.3 Conclusion
 --------------
@@ -281,13 +208,13 @@ In the case of a SURB-ACK the payload plaintext should be all zero
 bytes (0x00) whereas replies from service queries have no such
 restriction.
 
-A client's retransmission intervals MUST not be predictable or a
-powerful active confirmation attack can be performed to discovered the
-client's Provider. Furthermore, classical network literature states
-that we must have an exponential backoff for retransmissions. [CONGAVOID]_
-[SMODELS]_  [RFC896]_ Therefore clients MUST randomize retransmission
-intervals with the lower bounds being set by the exponential curve
-or a linear approximation of such.
+A client's retransmission intervals MUST NOT be predictable or an
+active confirmation attack can be performed to discovered the client's
+Provider. Furthermore, classical network literature states that we
+must have an exponential backoff for retransmissions. [CONGAVOID]_
+[SMODELS]_ [RFC896]_ Therefore clients MUST randomize retransmission
+intervals with the lower bounds being set by the exponential curve or
+a linear approximation of such.
 
 In practice these two delays can be implemented using priority queues
 where the priority is set to the future expiration time. Early
@@ -298,7 +225,7 @@ Diagram of AQMs:
 
 .. image:: diagrams/client_aqms.png
    :alt: diagram 7
-   :align: left
+   :align: center
 
 Description of AQMs:
 
@@ -381,14 +308,14 @@ Bob sends a SURB to his remote Provider to retrieve the first message:
 
 .. image:: diagrams/katzenpost_active_correlation1.png
    :alt: diagram 9
-   :align: left
+   :align: center
 
 
 The adversary causes an outage for half of the Providers in the network:
 
 .. image:: diagrams/katzenpost_active_correlation2.png
    :alt: diagram 10
-   :align: left
+   :align: center
 
 
 During this outage the remote Provider uses the SURB to send the reply
@@ -397,7 +324,7 @@ messages from the mix network:
 
 .. image:: diagrams/katzenpost_active_correlation3.png
    :alt: diagram 11
-   :align: left
+   :align: center
 
 
 Lacking any response within his round trip timeout duration, Bob
@@ -408,7 +335,7 @@ had the outage:
 
 .. image:: diagrams/katzenpost_active_correlation4.png
    :alt: diagram 12
-   :align: left
+   :align: center
 
 
 The adversay then causes an outage for half of the set previously made
@@ -416,7 +343,7 @@ to have an outage:
 
 .. image:: diagrams/katzenpost_active_correlation5.png
    :alt: diagram 13
-   :align: left
+   :align: center
 
 
 The remote Provider sends it's response to Bob's local Provider via the
@@ -426,7 +353,7 @@ the next message retrieval:
 
 .. image:: diagrams/katzenpost_active_correlation6.png
    :alt: diagram 14
-   :align: left
+   :align: center
 
 At this point if Bob sends another message retrieval command with
 the incremented message sequence number then it's game over for Bob
@@ -469,6 +396,9 @@ Appendix A.1 Normative References
 
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
                   <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
+
+.. [KATZDECOY] Stainton, D., "Katzenpost Mix Network Decoy Traffic Specification", February 2019,
+                  <https://github.com/Katzenpost/docs/blob/master/drafts/decoy_traffic.rst>.
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,

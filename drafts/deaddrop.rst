@@ -57,23 +57,35 @@ drop just like a normal Katzenpost message [KATZMIXE2E]_. However
 the receiver of the message uses the dead drop Kaetzchen service to
 retrieve messages by sending one or more SURBs to the dead drop.
 
-::
+Consider this diagram where Alice sends a message to Bob's spool on
+his remote Provider:
 
-     .--------.        .----------.        .-------.        .-------.
-     | Sender |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ----.
-     `--------'        `----------'        `-------'        `-------'       `\
-                                                                              |
-                                                                              |
-                                                                              |
-   .----------.        .----------.        .-------.        .-------.         V
-   | Receiver |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ---> .-----------.
-   `----------'  <---  `----------'        `-------'        `-------'       | Dead Drop |
-                                   _                                        `-----------'
-                                  |\                                          |
-                                    \                                         |
-                                     \     .-------.        .-------.        _'
-                                      '--- |  Mix  |  <---  |  Mix  |  <----'
-                                           `-------'        `-------'
+.. image:: diagrams/katzenpost_net1.png
+   :alt: diagram 5
+   :align: center
+
+
+At a latter time, Bob sends a SURB to his remote Provider to retrieve
+a message from his spool:
+
+.. image:: diagrams/katzenpost_net2.png
+   :alt: diagram 6
+   :align: center
+
+
+The messages return trip from remote Provider to Bob's local Provider
+can look like this:
+
+.. image:: diagrams/katzenpost_net3.png
+   :alt: diagram 7
+   :align: center
+
+
+Finally, Bob retrieves the message from his local Provider:
+
+.. image:: diagrams/katzenpost_net4.png
+   :alt: diagram 8
+   :align: center
 
 3. Protocol Messages
 ====================
