@@ -58,13 +58,13 @@ const (
 	stateAcceptReveal        = "accept_reveal"
 	stateAcceptSignature     = "accept_signature"
 	stateBootstrap           = "bootstrap"
+)
+
+var (
 	mixPublishDeadline       = epochtime.Period / 2
 	authorityVoteDeadline    = mixPublishDeadline + epochtime.Period/8
 	authorityRevealDeadline  = authorityVoteDeadline + epochtime.Period/8
 	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
-)
-
-var (
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
 )
@@ -1204,7 +1204,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	const generationDeadline = 7 * (epochtime.Period / 8)
+	var generationDeadline = 7 * (epochtime.Period / 8)
 
 	s.RLock()
 	defer s.RUnlock()
