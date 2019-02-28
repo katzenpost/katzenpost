@@ -628,7 +628,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	if !ok {
 		return nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
 	}
-	if len(s.votes[epoch]) <= s.threshold {
+	if len(s.votes[epoch]) < s.threshold {
 		return nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
 	}
 
