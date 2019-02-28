@@ -44,7 +44,11 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-var errNotCached = errors.New("pki: requested epoch document not in cache")
+var (
+	errNotCached = errors.New("pki: requested epoch document not in cache")
+	recheckInterval = 1 * time.Minute
+	WarpedEpoch = "false"
+)
 
 type pki struct {
 	sync.RWMutex
@@ -103,8 +107,6 @@ func (p *pki) worker() {
 	var lastUpdateEpoch, lastMixMaxDelay, lastSendTokenDuration uint64
 
 	for {
-		const recheckInterval = 1 * time.Minute
-
 		var timerFired bool
 		select {
 		case <-p.HaltCh():
@@ -687,3 +689,11 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 	}
 	return m, nil
 }
+
+func init() {
+	if WarpedEpoch == "true" {
+			recheckInterval = 20 * time.Second
+		} else {
+			recheckInterval = 1 * time.Minute
+		}
+	}
