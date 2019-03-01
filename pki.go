@@ -30,7 +30,12 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-var errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
+var (
+	errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
+	nextFetchTill           = 7 * (epochtime.Period / 8)
+	recheckInterval         = 1 * time.Minute
+	WarpedEpoch             = "false"
+)
 
 type pki struct {
 	sync.Mutex
@@ -116,10 +121,6 @@ func (p *pki) worker() {
 
 	var lastCallbackEpoch uint64
 	for {
-		const (
-			nextFetchTill   = 7*(epochtime.Period/8)
-			recheckInterval = 1 * time.Minute
-		)
 
 		timerFired := false
 		select {
@@ -277,4 +278,10 @@ func newPKI(c *Client) *pki {
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
 	return p
+}
+
+func init() {
+	if WarpedEpoch == "true" {
+		recheckInterval = 20 * time.Second
+	}
 }
