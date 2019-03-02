@@ -92,8 +92,6 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 				if err != nil {
 					return nil, nil, 0, err
 				}
-
-				err = c.conn.sendPacket(pkt)
 				return pkt, k, then.Sub(now), err
 			} else {
 				pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
