@@ -187,9 +187,9 @@ consideration in?
 Not sure.  There's a comment in the server code that says "Add rate
 limiting here.", past that I didn't give this much thought. (
 
-    // TODO: If clients should be rate-limited in how fast they can
-    send // packets, this is probably the natural place to do so.
-    )
+// TODO: If clients should be rate-limited in how fast they can
+send // packets, this is probably the natural place to do so.
+)
 
 Right now everything assumes clients are moderately well behaved.
 
