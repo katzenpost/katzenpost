@@ -56,7 +56,8 @@ A Client, Alice, may discover Bob's key by sending a
 KeyserverRequest to Bob's Provider and waiting for a KeyserverResponse
 containing Bob's key.
 
-   .. code::
+::
+
    .--------.        .----------.        .-------.        .-------.
    | Alice  |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ----.
    `--------'        `----------'        `-------'        `-------'       `\
@@ -74,7 +75,8 @@ SURB that is used to send the KeyserverResponse back to the client.
 3.1 KeyserverRequest Message
 ----------------------------
 
-   .. code::
+::
+
       {
         "Version": 0,
         "User": "Alice"
@@ -82,12 +84,13 @@ SURB that is used to send the KeyserverResponse back to the client.
 
 Notes:
 
- * The User field specifies which identity key to retrieve.
+* The User field specifies which identity key to retrieve.
 
 3.2 KeyserverResponse Message
 -----------------------------
 
-   .. code::
+::
+
       {
         "Version": 0,
         "StatusCode": 0,
@@ -97,9 +100,10 @@ Notes:
 
 Notes:
 
- * The StatusCode field is used to report errors to the client if any. Valid status codes are:
+* The StatusCode field is used to report errors to the client if any. Valid status codes are:
 
 ::
+
        enum {
            status_ok(0),            /* No error condition. */
            status_syntax_error(1),  /* The request was malformed. */
@@ -116,9 +120,9 @@ Notes:
 Clients maintain a local database of contact keys which
 can be in one of three states:
 
-   * RECEIVED-ONLY
-   * UNVERIFIED
-   * VERIFIED
+* RECEIVED-ONLY
+* UNVERIFIED
+* VERIFIED
 
 On receiving a message from an unknown identity key included with
 the signed message, the key MUST be marked as RECEIVED-ONLY.
