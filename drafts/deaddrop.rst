@@ -37,7 +37,7 @@ document are to be interpreted as described in [RFC2119]_.
 1.2 Terminology
 ---------------
 
-``Provider`` - A service operated by a third party that Clients
+``Provider`` - A service, operated by a third party, that Clients
 communicate directly with to communicate with the Mixnet. It is
 responsible for Client authentication, forwarding outgoing
 messages to the Mixnet, and storing incoming messages for the
@@ -98,8 +98,8 @@ that is used to send the DeadDropResponse back to the client.
 
 Dead drop requests are authenticated by the Provider's user
 authentication database similar to how Katzenpost Providers
-authenticate client wire protocol connections. [KATZMIXWIRE]_
-[KATZMIXE2E]_ In this case we are coupling the User and AuthToken
+authenticate client wire protocol connections, as detailed in [KATZMIXWIRE]_
+and  [KATZMIXE2E]_. In this case, we are coupling the User and AuthToken
 fields in the DeadDropRequest to provide the needed authentication
 information.
 
@@ -118,9 +118,9 @@ information.
 
 * The AuthToken field is a base64 encoded ciphertext blob produced by
   encrypting a zero length payload with
-  `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key
+  `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key,
   which the Katzenpost system uses for link layer authentication
-  [KATZMIXWIRE].
+  [KATZMIXWIRE]_.
 
 The encrypted and authenticated blob has the following structure:
 
@@ -171,7 +171,7 @@ The encrypted and authenticated blob has the following structure:
   queued.
 
 * Sequence is used by the server to decide when to permanently
-  delete a message.  When the next request message is received
+  delete a message. When the next request message is received
   containing this sequence number then the associated message is
   purged.
 
@@ -201,8 +201,8 @@ communication channels.
 ===========================
 
 * Collusion of Providers might make it possible to link an account
-  on two different Providers. That is, a given user's dead drop can
-  be discovered if the two Providers collude. However this linkage
+  on two different Providers. That is, given user's dead drop, an attacker
+  can discover if the two Providers collude. However, this linkage
   may require a longterm statistical disclosure attack. In that case,
   these longterm attacks might not converge on success if deaddrops
   are rotated frequently enough.
@@ -218,7 +218,7 @@ communication channels.
   SURB reply messages. In the [LOOPIX]_ Provider model the attacker
   might try to determine if any of the Providers receive slightly
   more messages. If the adversary has compromised one or more
-  Providers then the goal would be to determine if one message
+  Providers, then the goal would be to determine if one message
   spool receives more messages than the rest.
 
 * Client retransmissions can be predictable behavior which allows
@@ -230,7 +230,7 @@ communication channels.
   response to these Message Retrieval commands Alice then blocks
   one or more Providers and sends the response to the client using
   the supplied SURB. If another Message Retrieval command is
-  received it is likely that this retransmission confirms that the
+  received, it is likely that this retransmission confirms that the
   SURB Response was not received by the client because of blocking
   messages to one or more Providers. Alice uses these active
   confirmation attacks in a binary search to quickly discover Bob's
@@ -244,14 +244,14 @@ communication channels.
 
 * The dead drop service authenticates message retrieval requests
   using a cryptographic token produced using the one-way Noise
-  pattern K, in the construction `Noise_K_25519_ChaChaPoly_Blake2b`.
+  pattern *K*, in the construction `Noise_K_25519_ChaChaPoly_Blake2b`.
 
 7. Future Work
 ==============
 
 It should be possible to increase the communication channel
 efficiency by sending DeadDropRequest messages supplied with
-multiple SURBs. However this must be carefully balanced with the
+multiple SURBs. However, this must be carefully balanced with the
 resulting exposure to statistical disclosure and compulsion
 attacks.
 
