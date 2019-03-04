@@ -130,10 +130,10 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, c.canSend, isValid = c.l.glue.PKI().AuthenticateConnection(creds, false)
 	if isValid {
 		c.fromMix = true
+	} else {
+		c.log.Debugf("Authentication failed: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
 	}
-	if !isValid {
-		c.log.Debugf("Authenticate failed: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
-	}
+
 	return isValid
 }
 

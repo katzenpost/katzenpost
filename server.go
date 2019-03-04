@@ -109,7 +109,7 @@ func (s *Server) IdentityKey() *eddsa.PublicKey {
 func (s *Server) RotateLog() {
 	err := s.logBackend.Rotate()
 	if err != nil {
-		s.fatalErrCh <- fmt.Errorf("Failed to rotate log file, shutting down server.")
+		s.fatalErrCh <- fmt.Errorf("failed to rotate log file, shutting down server")
 	}
 }
 
@@ -302,7 +302,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("Warning: management socket file '%s' already exists, deleting it.", s.cfg.Management.Path)
 		err := os.Remove(s.cfg.Management.Path)
 		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("Failed to delete mgmt socket file, shutting down now.")
+			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
 			return nil, err
 		}
 	}
