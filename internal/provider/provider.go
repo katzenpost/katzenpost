@@ -112,9 +112,9 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(ad, c.PublicKey)
 	if !isValid {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v' (Probably a peer)", debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authentication failed: User: '%v', Key: '%v' (Probably a peer)", debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
 		} else {
-			p.log.Errorf("Authenticate failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authentication failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
 		}
 	}
 	return isValid
@@ -138,7 +138,7 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 		_, ok := map1[k]
 		if ok {
 			p.log.Debug("WARNING: duplicate plugin entries")
-			return nil, errors.New("Error, duplicate plugin entries.")
+			return nil, errors.New("error: duplicate plugin entries")
 		}
 		map1[k] = v
 	}

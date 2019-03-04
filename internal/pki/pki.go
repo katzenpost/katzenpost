@@ -125,7 +125,7 @@ func (p *pki) worker() {
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
-			if err, ok := p.getFailedFetch(epoch); ok {
+			if ok, err := p.getFailedFetch(epoch); ok {
 				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
 				continue
 			}
@@ -231,11 +231,11 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	return nil
 }
 
-func (p *pki) getFailedFetch(epoch uint64) (error, bool) {
+func (p *pki) getFailedFetch(epoch uint64) (bool, error) {
 	p.RLock()
 	defer p.RUnlock()
 	err, ok := p.failedFetches[epoch]
-	return err, ok
+	return ok, err
 }
 
 func (p *pki) setFailedFetch(epoch uint64, err error) {
@@ -573,7 +573,7 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 }
 
 func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
-	if err, ok := p.getFailedFetch(epoch); ok {
+	if ok, err := p.getFailedFetch(epoch); ok {
 		p.log.Debugf("GetRawConsensus failure: no cached PKI document for epoch %v: %v", epoch, err)
 		return nil, cpki.ErrNoDocument
 	}
