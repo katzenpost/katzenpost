@@ -3,3 +3,13 @@ test:
 
 lint:
 	golint ./...
+
+test-internal:
+	go test -cover -v ./internal/...
+
+test-voting:
+	go test -cover -v ./voting/...
+
+# no tests here
+test-nonvoting:
+	go test -cover -v ./nonvoting/...
