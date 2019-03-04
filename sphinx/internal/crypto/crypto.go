@@ -57,7 +57,7 @@ const (
 	GroupElementLength = ecdh.GroupElementLength
 
 	okmLength = MACKeyLength + StreamKeyLength + StreamIVLength + SPRPKeyLength + GroupElementLength
-	kdfInfo   = "panoramix-kdf-v0-hkdf-sha256"
+	kdfInfo   = "katzenpost-kdf-v0-hkdf-sha256"
 )
 
 type resetable interface {
