@@ -58,13 +58,13 @@ const (
 	stateAcceptReveal        = "accept_reveal"
 	stateAcceptSignature     = "accept_signature"
 	stateBootstrap           = "bootstrap"
+)
+
+var (
 	mixPublishDeadline       = epochtime.Period / 2
 	authorityVoteDeadline    = mixPublishDeadline + epochtime.Period/8
 	authorityRevealDeadline  = authorityVoteDeadline + epochtime.Period/8
 	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
-)
-
-var (
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
 )
@@ -141,15 +141,22 @@ func (s *state) fsm() <-chan time.Time {
 	s.Lock()
 	var sleep time.Duration
 	epoch, elapsed, nextEpoch := epochtime.Now()
-	s.log.Debugf("Current epoch %d", epoch)
+	s.log.Debugf("Current epoch %d, remaining time: %s", epoch, nextEpoch)
 
 	switch s.state {
 	case stateBootstrap:
-		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
+		if elapsed > mixPublishDeadline {
+			s.log.Debugf("Too late to vote this round, sleeping until %s", nextEpoch)
+			sleep = nextEpoch + mixPublishDeadline
+			s.votingEpoch = epoch + 2
+		} else {
+			s.votingEpoch = epoch + 1
+			sleep = mixPublishDeadline - elapsed
+		}
+		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 		s.state = stateAcceptDescriptor
-		sleep = mixPublishDeadline - elapsed
 	case stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
@@ -183,13 +190,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.consense(s.votingEpoch)
 		if _, ok := s.documents[s.votingEpoch]; ok {
 			s.state = stateAcceptDescriptor
-			if s.votingEpoch == epoch {
-				// either we bootstrapped before the publish deadline
-				// or we default to 30 seconds
-				sleep = mixPublishDeadline - elapsed
-			} else {
-				sleep = mixPublishDeadline + nextEpoch
-			}
+			sleep = mixPublishDeadline + nextEpoch
 			s.votingEpoch++
 		} else {
 			// failed to make consensus. try to join next round.
@@ -200,9 +201,6 @@ func (s *state) fsm() <-chan time.Time {
 	default:
 	}
 	s.pruneDocuments()
-	if s.votingEpoch <= epoch || sleep < 0 {
-		sleep = 30 * time.Second
-	}
 	s.log.Debugf("authority: FSM in state %v until %s", s.state, sleep)
 	s.Unlock()
 	return time.After(sleep)
@@ -630,7 +628,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	if !ok {
 		return nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
 	}
-	if len(s.votes[epoch]) <= s.threshold {
+	if len(s.votes[epoch]) < s.threshold {
 		return nil, nil, fmt.Errorf("not enough votes for epoch %v", epoch)
 	}
 
@@ -1206,7 +1204,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 }
 
 func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
-	const generationDeadline = 7 * (epochtime.Period / 8)
+	var generationDeadline = 7 * (epochtime.Period / 8)
 
 	s.RLock()
 	defer s.RUnlock()
@@ -1417,22 +1415,8 @@ func newState(s *Server) (*state, error) {
 		return nil, err
 	}
 
-	// Do a "rapid" bootstrap where we will generate and publish a Document
-	// for the current epoch regardless of time iff:
-	//
-	//  * We do not have a persisted Document for the epoch.
-	//  * (Checked in worker) *All* nodes publish a descriptor.
-	//
-	// This could be relaxed a bit, but it's primarily intended for debugging.
-	epoch, _, till := epochtime.Now()
-	if till < 1*time.Minute {
-		epoch++
-	}
-	if _, ok := st.documents[epoch]; !ok {
-		st.votingEpoch = epoch
-		st.state = stateBootstrap
-	}
-
+	// Set the initial state to bootstrap
+	st.state = stateBootstrap
 	st.Go(st.worker)
 	return st, nil
 }
