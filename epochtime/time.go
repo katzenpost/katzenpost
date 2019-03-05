@@ -17,11 +17,7 @@
 // Package epochtime implements Katzenpost epoch related timekeeping functions.
 package epochtime
 
-import (
-	"time"
-
-	"github.com/jonboulle/clockwork"
-)
+import "time"
 
 // Period is the duration of a Katzenpost epoch.
 const Period = 3 * time.Hour
@@ -33,12 +29,6 @@ var Epoch = time.Date(2017, 6, 1, 0, 0, 0, 0, time.UTC)
 // current epoch, and time till the next epoch.
 func Now() (current uint64, elapsed, till time.Duration) {
 	return getEpoch(time.Now())
-}
-
-// ClockNow is the same as Now except that the time is retrieved using
-// the given clock.
-func ClockNow(clock clockwork.Clock) (current uint64, elapsed, till time.Duration) {
-	return getEpoch(clock.Now())
 }
 
 // IsInEpoch returns true iff the epoch e contains the time t, measured in the
