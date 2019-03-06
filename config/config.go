@@ -884,6 +884,10 @@ func Store(cfg *Config, fileName string) error {
 // Load parses and validates the provided buffer b as a config file body and
 // returns the Config.
 func Load(b []byte) (*Config, error) {
+	if b == nil {
+		return nil, errors.New("No nil buffer as config file")
+	}
+
 	cfg := new(Config)
 	md, err := toml.Decode(string(b), cfg)
 	if err != nil {
