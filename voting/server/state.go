@@ -476,9 +476,16 @@ func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor
 }
 
 func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoch uint64) error {
-	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
-	if err != nil {
-		return err
+	var conn net.Conn
+	var err error
+	for i, a := range peer.Addresses {
+		conn, err = net.Dial("tcp", a)
+		if err == nil {
+			break
+		}
+		if i == len(peer.Addresses) - 1 {
+			return err
+		}
 	}
 	defer conn.Close()
 	s.s.Add(1)
@@ -534,9 +541,16 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 }
 func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch uint64) error {
 	// get a connector here
-	conn, err := net.Dial("tcp", peer.Addresses[0]) // XXX
-	if err != nil {
-		return err
+	var conn net.Conn
+	var err error
+	for i, a := range peer.Addresses {
+		conn, err = net.Dial("tcp", a)
+		if err == nil {
+			break
+		}
+		if i == len(peer.Addresses) - 1 {
+			return err
+		}
 	}
 	defer conn.Close()
 	s.s.Add(1)
