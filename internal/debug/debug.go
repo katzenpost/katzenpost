@@ -18,18 +18,16 @@
 package debug
 
 import (
-	"encoding/hex"
-	"strings"
-
+	"encoding/base64"
 	"github.com/katzenpost/core/sphinx/constants"
 )
 
 // NodeIDToPrintString pretty-prints a node identifier.
 func NodeIDToPrintString(id *[constants.NodeIDLength]byte) string {
-	return strings.ToUpper(hex.EncodeToString(id[:]))
+	return base64.StdEncoding.EncodeToString(id[:])
 }
 
 // BytesToPrintString pretty-prints a byte slice.
 func BytesToPrintString(b []byte) string {
-	return strings.ToUpper(hex.EncodeToString(b))
+	return base64.StdEncoding.EncodeToString(b)
 }
