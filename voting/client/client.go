@@ -79,9 +79,10 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("voting/client: LogBackend is mandatory")
 	}
 	for _, v := range cfg.Authorities {
-		err := utils.EnsureAddrIPPort(v.Addresses[0])
-		if err != nil {
-			return fmt.Errorf("voting/client: Invalid Address: %v", err)
+		for _, a := range v.Addresses {
+			if err := utils.EnsureAddrIPPort(a); err != nil {
+				return fmt.Errorf("voting/client: Invalid Address: %v", err)
+			}
 		}
 		if v.IdentityPublicKey == nil {
 			return fmt.Errorf("voting/client: Identity PublicKey is mandatory")
@@ -114,14 +115,28 @@ func newConnector(cfg *Config) *connector {
 }
 
 func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+	var conn net.Conn
+	var err error
+
 	// Connect to the peer.
 	dialFn := p.cfg.DialContextFn
 	if dialFn == nil {
 		dialFn = defaultDialer.DialContext
 	}
-	conn, err := dialFn(ctx, "tcp", peer.Addresses[0]) // XXX
-	if err != nil {
-		return nil, err
+
+	// permute the order the client tries Addresses
+	r := rand.NewMath()
+	idxs := r.Perm(len(peer.Addresses))
+
+	// try each Address until a connection is successful or fail
+	for i, idx := range idxs {
+		conn, err = dialFn(ctx, "tcp", peer.Addresses[idx])
+		if err == nil {
+			break
+		}
+		if i == len(idxs) - 1 {
+			return nil, err
+		}
 	}
 
 	var isOk bool
