@@ -62,3 +62,63 @@ PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
 	jCfg, _ := json.Marshal(cfg)
 	t.Logf("cfg: %v", string(jCfg))
 }
+
+func TestIncompleteConfig(t *testing.T) {
+	require := require.New(t)
+
+	const incompletePKIConfig = `# A basic configuration example.
+[server]
+Identifier = "katzenpost.example.com"
+Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+DataDir = "/var/lib/katzenpost"
+IsProvider = true
+
+[Provider]
+  BinaryRecipients = true
+  [[Provider.Kaetzchen]]
+    Capability = "loop"
+    Endpoint = "+loop"
+  [[Provider.Kaetzchen]]
+    Capability = "meow"
+	Endpoint = "+meow"
+	Config = { Locale = "ja_JP", Meow = "Nyan", NumMeows = 3 }
+
+[Logging]
+Level = "DEBUG"
+`
+
+	_, err := Load([]byte(incompletePKIConfig))
+	require.Error(err, "Load() with incomplete config")
+	require.EqualError(err, "config: No PKI block was present")
+
+	const incompleteServerConfig = `# A basic configuration example.
+[server]
+Identifier = ""
+Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
+DataDir = "/var/lib/katzenpost"
+IsProvider = true
+
+[Provider]
+  BinaryRecipients = true
+  [[Provider.Kaetzchen]]
+    Capability = "loop"
+    Endpoint = "+loop"
+  [[Provider.Kaetzchen]]
+    Capability = "meow"
+	Endpoint = "+meow"
+	Config = { Locale = "ja_JP", Meow = "Nyan", NumMeows = 3 }
+
+[Logging]
+Level = "DEBUG"
+
+[PKI]
+[PKI.Nonvoting]
+Address = "127.0.0.1:6999"
+PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+`
+
+	_, err = Load([]byte(incompleteServerConfig))
+	require.Error(err, "Load() with incomplete config")
+	require.EqualError(err, "config: Server: Identifier is not set")
+
+}

@@ -871,6 +871,7 @@ func Store(cfg *Config, fileName string) error {
 		return err
 	}
 	defer f.Close()
+
 	// Serialize the descriptor.
 	var serialized []byte
 	enc := codec.NewEncoderBytes(&serialized, new(codec.JsonHandle))
