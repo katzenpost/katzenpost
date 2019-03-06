@@ -1218,13 +1218,6 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	now, _, till := epochtime.Now()
 	switch epoch {
 	case now:
-		// Check to see if we are doing a bootstrap, and it's possible that
-		// we may decide to publish a document at some point ignoring the
-		// standard schedule.
-		if now == s.votingEpoch {
-			return nil, errNotYet
-		}
-
 		// We missed the deadline to publish a descriptor for the current
 		// epoch, so we will never be able to service this request.
 		return nil, errGone
