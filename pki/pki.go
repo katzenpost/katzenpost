@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"encoding/base64"
 
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -97,7 +98,8 @@ func (d *Document) String() string {
 		return s
 	}
 
-	s := fmt.Sprintf("&{Epoch:%v MixLambda:%v MixMaxDelay:%v SendLambda:%v SendMaxInterval: %v MixLoopLambda: %v MixLoopMaxInterval: %v SharedRandomValue: %v Topology:", d.Epoch, d.MixLambda, d.MixMaxDelay, d.SendLambda, d.SendMaxInterval, d.MixLoopLambda, d.MixLoopMaxInterval, d.SharedRandomValue)
+	srv := base64.StdEncoding.EncodeToString(d.SharedRandomValue)
+	s := fmt.Sprintf("&{Epoch:%v MixLambda:%v MixMaxDelay:%v SendLambda:%v SendMaxInterval: %v MixLoopLambda: %v MixLoopMaxInterval: %v SharedRandomValue: %v Topology:", d.Epoch, d.MixLambda, d.MixMaxDelay, d.SendLambda, d.SendMaxInterval, d.MixLoopLambda, d.MixLoopMaxInterval, srv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("[%v]{", l)
 		s += stringifyDescSlice(nodes)
