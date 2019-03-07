@@ -7,9 +7,9 @@ Version 0
 
 .. rubric:: Abstract
 
-This document describes a message dead drop service. The dead drop
+This document describes the message dead drop service. The dead drop
 service can be used to compose messaging systems with stronger
-location hiding properties and increased resistance to longterm
+location hiding properties, and increased resistance to longterm
 statistical disclosure attacks also known as intersection attacks.
 
 .. contents:: :local:
@@ -37,7 +37,7 @@ document are to be interpreted as described in [RFC2119]_.
 1.2 Terminology
 ---------------
 
-``Provider`` - A service operated by a third party that Clients
+``Provider`` - A service, operated by a third party, that Clients
 communicate directly with to communicate with the Mixnet. It is
 responsible for Client authentication, forwarding outgoing
 messages to the Mixnet, and storing incoming messages for the
@@ -57,23 +57,35 @@ drop just like a normal Katzenpost message [KATZMIXE2E]_. However
 the receiver of the message uses the dead drop Kaetzchen service to
 retrieve messages by sending one or more SURBs to the dead drop.
 
-::
+Consider this diagram where Alice sends a message to Bob's spool on
+his remote Provider:
 
-     .--------.        .----------.        .-------.        .-------.
-     | Sender |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ----.
-     `--------'        `----------'        `-------'        `-------'       `\
-                                                                              |
-                                                                              |
-                                                                              |
-   .----------.        .----------.        .-------.        .-------.         V
-   | Receiver |  --->  | Provider |  --->  |  Mix  |  --->  |  Mix  |  ---> .-----------.
-   `----------'  <---  `----------'        `-------'        `-------'       | Dead Drop |
-                                   _                                        `-----------'
-                                  |\                                          |
-                                    \                                         |
-                                     \     .-------.        .-------.        _'
-                                      '--- |  Mix  |  <---  |  Mix  |  <----'
-                                           `-------'        `-------'
+.. image:: diagrams/katzenpost_net1.png
+   :alt: diagram 5
+   :align: center
+
+
+At a latter time, Bob sends a SURB to his remote Provider to retrieve
+a message from his spool:
+
+.. image:: diagrams/katzenpost_net2.png
+   :alt: diagram 6
+   :align: center
+
+
+The messages return trip from remote Provider to Bob's local Provider
+can look like this:
+
+.. image:: diagrams/katzenpost_net3.png
+   :alt: diagram 7
+   :align: center
+
+
+Finally, Bob retrieves the message from his local Provider:
+
+.. image:: diagrams/katzenpost_net4.png
+   :alt: diagram 8
+   :align: center
 
 3. Protocol Messages
 ====================
@@ -86,8 +98,8 @@ that is used to send the DeadDropResponse back to the client.
 
 Dead drop requests are authenticated by the Provider's user
 authentication database similar to how Katzenpost Providers
-authenticate client wire protocol connections. [KATZMIXWIRE]_
-[KATZMIXE2E]_ In this case we are coupling the User and AuthToken
+authenticate client wire protocol connections, as detailed in [KATZMIXWIRE]_
+and  [KATZMIXE2E]_. In this case, we are coupling the User and AuthToken
 fields in the DeadDropRequest to provide the needed authentication
 information.
 
@@ -102,13 +114,13 @@ information.
 
 
 * The User field is a string which the Provider associates with a
-X25519 public key AND a message spool.
+  X25519 public key AND a message spool.
 
 * The AuthToken field is a base64 encoded ciphertext blob produced by
-encrypting a zero length payload with
-`Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key
-which the Katzenpost system uses for link layer authentication
-[KATZMIXWIRE].
+  encrypting a zero length payload with
+  `Noise_K_25519_ChaChaPoly_Blake2b` using the user's link key,
+  which the Katzenpost system uses for link layer authentication
+  [KATZMIXWIRE]_.
 
 The encrypted and authenticated blob has the following structure:
 
@@ -147,7 +159,7 @@ The encrypted and authenticated blob has the following structure:
   ::
 
       enum {
-         status_ok(0),           /* None error condition and SHOULD be
+         status_ok(0),           /* No error condition. It SHOULD be
                                     accompanied with a valid message payload. */
          status_syntax_error(1), /* The request was malformed. */
          status_no_identity(2),  /* No such identity was found. */
@@ -159,7 +171,7 @@ The encrypted and authenticated blob has the following structure:
   queued.
 
 * Sequence is used by the server to decide when to permanently
-  delete a message.  When the next request message is received
+  delete a message. When the next request message is received
   containing this sequence number then the associated message is
   purged.
 
@@ -189,8 +201,8 @@ communication channels.
 ===========================
 
 * Collusion of Providers might make it possible to link an account
-  on two different Providers. That is, a given user's dead drop can
-  be discovered if the two Providers collude. However this linkage
+  on two different Providers. That is, given user's dead drop, an attacker
+  can discover if the two Providers collude. However, this linkage
   may require a longterm statistical disclosure attack. In that case,
   these longterm attacks might not converge on success if deaddrops
   are rotated frequently enough.
@@ -206,7 +218,7 @@ communication channels.
   SURB reply messages. In the [LOOPIX]_ Provider model the attacker
   might try to determine if any of the Providers receive slightly
   more messages. If the adversary has compromised one or more
-  Proivders then the goal would be to determine if one message
+  Providers, then the goal would be to determine if one message
   spool receives more messages than the rest.
 
 * Client retransmissions can be predictable behavior which allows
@@ -218,7 +230,7 @@ communication channels.
   response to these Message Retrieval commands Alice then blocks
   one or more Providers and sends the response to the client using
   the supplied SURB. If another Message Retrieval command is
-  received it is likely that this retransmission confirms that the
+  received, it is likely that this retransmission confirms that the
   SURB Response was not received by the client because of blocking
   messages to one or more Providers. Alice uses these active
   confirmation attacks in a binary search to quickly discover Bob's
@@ -232,14 +244,14 @@ communication channels.
 
 * The dead drop service authenticates message retrieval requests
   using a cryptographic token produced using the one-way Noise
-  pattern K, in the construction `Noise_K_25519_ChaChaPoly_Blake2b`.
+  pattern *K*, in the construction `Noise_K_25519_ChaChaPoly_Blake2b`.
 
 7. Future Work
 ==============
 
 It should be possible to increase the communication channel
 efficiency by sending DeadDropRequest messages supplied with
-multiple SURBs. However this must be carefully balanced with the
+multiple SURBs. However, this must be carefully balanced with the
 resulting exposure to statistical disclosure and compulsion
 attacks.
 
@@ -256,10 +268,14 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/katzenpost/docs/blob/master/drafts/kaetzchen.txt>.
+                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.txt>.
 
 .. [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
+
+.. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
+                 "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
+                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -279,3 +295,7 @@ Appendix A.2 Informative References
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
                 July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
+
+.. [MIXMINION]  Danezis, G., Dingledine, R., Mathewsom, N.,
+                "Mixminion: Design of a Type III Anonymous Remailer Protocol"
+                <https://www.mixminion.net/minion-design.

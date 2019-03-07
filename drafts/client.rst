@@ -9,7 +9,8 @@ Version 0
 .. rubric:: Abstract
 
 This document describes the design of a client software library,
-a minimal message oriented network transport protocol library.
+a minimal message oriented network transport protocol library. It
+is meant to be read along with [KATZDECOY]_ and [KATZDEADDROP]_.
 
 .. contents:: :local:
 
@@ -19,18 +20,18 @@ a minimal message oriented network transport protocol library.
 
 This design document illuminates many complex mixnet client design
 considerations that are not already covered by "Katzenpost Mix Network
-End-to-end Protocol Specification" [KATZMIXE2E]_.  Moreover the
-existing Katzenpost reference client, minclient can be found here:
+End-to-end Protocol Specification" [KATZMIXE2E]_.  Moreover, the
+existing Katzenpost minimal reference client, minclient, can be found here:
 
 * https://github.com/katzenpost/minclient
 
-Minclient is very low level and in most cases should not be used
+Minclient is very low level and, in most cases, should not be used
 directly to compose mixnet client applications. In contrast we shall
 herein describe the design of a client library which provides two
 categories of message oriented bidirectional communication channels:
 
 1. client to client
-2. client to server
+2. client to server (kaetzchen service as in [KAETZCHEN]_)
 
 This library SHOULD be used to compose more sophisticated communication
 channels which provide additional cryptographic security properties to
@@ -44,13 +45,12 @@ mixnet communication protocols:
 
 * unreliable location-hiding client to client
 * reliable location-hiding client to client
-* unreliable non-location-hiding client to client
-* reliable non-location-hiding client to client
 * unreliable client to server
 * reliable client to server
 * client to server publish-subscribe
 
-In all these cases, message delivery will be out-of-order whether or not it is reliable.
+In all these cases, message delivery will be out-of-order whether or not it
+is reliable.
 
 1.1 Conventions Used in This Document
 -------------------------------------
@@ -81,149 +81,78 @@ document are to be interpreted as described in [RFC2119]_.
   using our link layer protocol [KATZMIXWIRE]_.
 
 * ``remote Provider`` - A Provider which clients DO NOT connect
-  directly to and instead make use of our dead drop message retreival
+  directly to and, instead, make use of our dead drop message retreival
   protocol [KATZDEADDROP]_.
 
 2. Protocol Overview
 ====================
 
-Clients send forward messages and decoy loop messages. Loop decoy
-messages are addressed to the sending client whereas forward messages
-are destined for other clients or servers. An idle client sends just
-as many messages as a busy client on average.
+Client's make use of decoy traffic as described in [KATZDECOY]_.
+However, unlike the [LOOPIX]_ design, clients do NOT give one another
+their Provider and spool identities. Instead, clients exchange
+*dead drop information* so they can retreive messages while
+hiding their Provider information and location on the network, as
+described in [KATZDEADDROP]_.
 
-In contrast to [LOOPIX]_, clients make use of two Poisson processes:
-
-* ``λP`` - Time interval between sending messages from the egress queue.
-* ``λH`` - Delay choosen for each hop.
-
-Clients receive messages to send from the application via an egress
-queue. When λP triggers a send from the egress queue and it is empty
-a decoy loop message is sent.
-
-Here's a diagram which shows a client sending a message through the mix
-network AND in this case the destination could be a Provider service or the
-spool of another user on a Provider:
-
-.. image:: diagrams/katzenpost_alice_loop1.png
-   :alt: diagram 1
-   :align: left
-
-This next diagram shows the reply being routed back to the client by means of
-the Single Use Reply Block (see [SPHINXSPEC]_ ):
-
-.. image:: diagrams/katzenpost_alice_loop2.png
-   :alt: diagram 2
-   :align: left
-
-One of the core features of our mix network design is that ALL
-applications and clients regardless of the communication channel type
-will have this same traffic pattern. That is to say, ALL mix network
-traffic sent from clients will result in a loop whether or not the
-client requires the reply message. Therefore ALL messages clients
-send are indistinguishable from client decoy loops.
+Not all applications will make use of this 'client to client' communication
+pattern and instead may require clients to communicate with mixnet services
+with a SURB based query and reponse protocol as described in [KAETZCHEN]_.
 
 3. Message Retreival
 ====================
 
-There are two types of message retreival that are possible and
-they are:
+There are two types of message retreival that are possible. They are:
 
-* Retreival from local Provider
-* Retreival from remote Provider
+* Retreival from a local Provider
+* Retreival from a remote Provider (a.k.a. dead drop as described
+  in [KATZDEADDROP]_)
 
 3.1 Message Retreival from local Provider
 -----------------------------------------
 
-* Retreival from local Provider as described in [LOOPIX]_. This means
-  clients do NOT retain location hiding properties or "mutual
-  distrust" because clients directly connect to the Provider with our
-  Katzenpost link layer wire protocol and sending the "retreive
-  message" command to retreive messages from the message spool on that
-  Provider for a given user identity which we have specified in detail
-  in section "3.2 Client Retrieval of Queued Messages" of the
-  [KATZMIXE2E]_ document
-
-Consider this diagram where Alice sends a message to Bob's spool on his Provider:
-
-.. image:: diagrams/katzenpost_loopix1.png
-   :alt: diagram 3
-   :align: left
-
-
-Bob directly connects to his Provider and retreives messages from his spool:
-
-.. image:: diagrams/katzenpost_loopix2.png
-   :alt: diagram 4
-   :align: left
+This refers to 'Retreival from a local Provider', as described in
+the [LOOPIX]_ paper and in section ``3. Client and Provider Core Protocol``
+of the [KATZMIXE2E]_ document. It is relevant as message retrieval from dead
+drops causes messages to be delivered into the client's Provider
+and must then be retrieved using the wire protocol directly.
 
 3.2 Message Retreival from remote Provider
 ------------------------------------------
 
-* Retreival from remote Provider: Here we are referring to the
-  "Katzenpost Dead Drop Extension" [KATZDEADDROP]_ specification
-  document which goes into detail how the remote Provider can be
-  queried "over the mixnet".
-
-Consider this diagram where Alice sends a message to Bob's spool on
-his remote Provider:
-
-.. image:: diagrams/katzenpost_net1.png
-   :alt: diagram 5
-   :align: left
-
-
-At a latter time, Bob sends a SURB to his remote Provider to retrieve
-a message from his spool:
-
-.. image:: diagrams/katzenpost_net2.png
-   :alt: diagram 6
-   :align: left
-
-
-The messages return trip from remote Provider to Bob's local Provider
-can look like this:
-
-.. image:: diagrams/katzenpost_net3.png
-   :alt: diagram 7
-   :align: left
-
-
-Finally, Bob retrieves the message from his local Provider:
-
-.. image:: diagrams/katzenpost_net4.png
-   :alt: diagram 8
-   :align: left
-
+This refers to 'Retreival from remote Provider', as defined in the
+``Katzenpost Dead Drop Extension`` [KATZDEADDROP]_ specification
+document. The documents goes into detail around how the remote Provider
+can be queried over the mixnet.
 
 3.3 Conclusion
 --------------
 
-Mutual distrust also known as location hiding properties are not free.
-The cost is increased client complexity and latency for message retrieval.
+Mutual distrust also known as 'location hiding properties' are not cost-free
+properties. The cost is increased by client complexity and by the latency of
+message retrieval.
 
 4. Message orientation considerations
 =====================================
 
-Mix networks are inherently message oriented and we do not seek to
-change this fundamental property of our mix network protocol.
+Mix networks are inherently message oriented. Because of this, we do not
+seek to change this fundamental property in our mix network protocol.
 However, it is possible to create a higher level protocol which have
-different properties than presented by the Sphinx packet format and
-our low level mix network protocols.
+different properties than the ones presented by the Sphinx packet format
+and our low level mix network protocols.
 
-It may be useful to send arbitrarily sized messages. Stream
+It may be useful to send messages with an arbitrary size. Stream
 orientation sends bytes of data to the application as soon as the
-ordered bytes are available whereas the ability to send arbitrarily
-sized messages is qualitatively a different protocol category. This is
+ordered bytes are available; whereas, the ability to send arbitrarily
+sized messages is qualitatively frona different protocol category. This is
 different because in our message oriented scheme, data is only
 presented to the application once reassembly of the entire message is
-complete.
+completed.
 
 Certainly it is possible to construct a stream oriented protocol given
-our low level message oriented mix network protocol. However, at this
-time we do not have sufficient motivation to explore this area of
-design space. Arbitrarily sized messages achieved using padding and
-fragmentation is sufficient for all of the applications we are currently
+our low level message oriented mix network protocol design. However, at this
+time, we do not have sufficient motivation to explore this area of
+design space. Arbitrarily sized messages (achieved by the usage of padding
+and fragmentation) is sufficient for all of the applications we are currently
 considering for integration with the mix network.
 
 Our message padding and fragmentation scheme is described in detail
@@ -249,18 +178,18 @@ following rules:
 * Senders MUST NOT retransmit blocks at a rate faster than one
   block per 3 seconds.
 
-* Retransmissions must NOT have predictable timing otherwise
-  it exposes the destination Provider to discovery by a
+* Retransmissions must NOT have predictable timing, otherwise,
+  it will expose the destination Provider to discovery by a
   powerful adversary that can perform active confirmation
   attacks.
 
 * Senders MUST NOT attempt to retransmit blocks indefinitely,
-  and instead give up on the entire message after it fails to
+  and, instead, give up on the entire message when it fails to
   arrive after a certain number of retransmissions.
 
-Due to using the Poisson mix strategy the client knows the
+Due to the usage of the Poisson mix strategy, the client knows the
 approximate round trip time. This eliminates the need to perform
-round trip time estimates as is the case with TCP.
+round trip time estimates, as is the case with TCP.
 
 
 5.1.1 ARQ Implementation Considerations
@@ -269,10 +198,10 @@ round trip time estimates as is the case with TCP.
 When a SURB reply is received by a client, this means the client
 receives a ciphertext payload and a SURB ID. This SURB ID tells our
 ARQ statemachine which message is being acknowledged. The client uses
-the SURB ID to determine which private key to use for decrypting the
-ciphertext.
+the SURB ID to determine which private key it should use for decrypting
+the ciphertext.
 
-The two SURB reply cases are currently:
+The two SURB reply cases currently are:
 
 * SURB ACKnowledgments
 * SURB replies from service queries
@@ -281,15 +210,15 @@ In the case of a SURB-ACK the payload plaintext should be all zero
 bytes (0x00) whereas replies from service queries have no such
 restriction.
 
-A client's retransmission intervals MUST not be predictable or a
-powerful active confirmation attack can be performed to discovered the
-client's Provider. Furthermore, classical network literature states
-that we must have an exponential backoff for retransmissions. [CONGAVOID]_
-[SMODELS]_  [RFC896]_ Therefore clients MUST randomize retransmission
-intervals with the lower bounds being set by the exponential curve
-or a linear approximation of such.
+A client's retransmission intervals MUST NOT be predictable or an
+active confirmation attack can be performed to discover the client's
+Provider. Furthermore, classical network literature states that we
+must have an exponential backoff for retransmissions. [CONGAVOID]_
+[SMODELS]_ [RFC896]_ Therefore clients MUST randomize retransmission
+intervals with the lower bounds being set by the exponential curve or
+by a linear approximation of such.
 
-In practice these two delays can be implemented using priority queues
+In practice, these two delays can be implemented using priority queues
 where the priority is set to the future expiration time. Early
 cancellations can be marked as such using a hashmap to avoid doing a
 linear scan of the priority queue.
@@ -298,7 +227,7 @@ Diagram of AQMs:
 
 .. image:: diagrams/client_aqms.png
    :alt: diagram 7
-   :align: left
+   :align: center
 
 Description of AQMs:
 
@@ -315,10 +244,9 @@ Description of AQMs:
   priority queue prioritized by a future time, however there are no
   cancellations for this active queue management algorithm.
 
-
 Other than these queues, the client will have to do plenty of other
 state mutation and book keeping for each sent message. Before we
-discuss the metadata clients will use we first need to consider the
+discuss the metadata clients will use, we first need to consider the
 various communication channel types:
 
 * ``service query channels`` - As specified in [KAETZCHEN]_ specification,
@@ -333,9 +261,9 @@ various communication channel types:
 * ``client to client channels`` - This channel type requires the use
   of an additional encryption layer encapsulated by the Sphinx packet
   to protect some of the metadata from the destination Provider. As
-  specified in [KATZMIXE2E]_, each retransmission must be encrypted anew
+  specified in [KATZMIXE2E]_, each retransmission must be encrypted
   with ``Noise_X_25519_ChaChaPoly_Blake2b`` thus resulting in differing
-  ciphertexts. To construct this channel the two clients must exchange
+  ciphertexts. To construct this channel, the two clients must exchange
   receiving usernames/Providers and public X25519 keys. This channel type
   supports mutual location hiding when clients exchange Providers which
   they do not directly connect to as specified in [KATZDEADDROP]_.
@@ -371,7 +299,7 @@ predictable timing between retransmissions otherwise it exposes the
 route destination to discovery by an adversary that can perform active
 confirmation attacks.
 
-Consider the following scenario where Bob retrieves one message at a
+Consider the following scenario: Bob retrieves one message at a
 time from his remote Provider AND an adversary has compromised his
 remote Provider. This adversary also has the capability to cause
 arbitrary outages in the mix network. The goal of the adversary is
@@ -381,14 +309,14 @@ Bob sends a SURB to his remote Provider to retrieve the first message:
 
 .. image:: diagrams/katzenpost_active_correlation1.png
    :alt: diagram 9
-   :align: left
+   :align: center
 
 
 The adversary causes an outage for half of the Providers in the network:
 
 .. image:: diagrams/katzenpost_active_correlation2.png
    :alt: diagram 10
-   :align: left
+   :align: center
 
 
 During this outage the remote Provider uses the SURB to send the reply
@@ -397,7 +325,7 @@ messages from the mix network:
 
 .. image:: diagrams/katzenpost_active_correlation3.png
    :alt: diagram 11
-   :align: left
+   :align: center
 
 
 Lacking any response within his round trip timeout duration, Bob
@@ -408,7 +336,7 @@ had the outage:
 
 .. image:: diagrams/katzenpost_active_correlation4.png
    :alt: diagram 12
-   :align: left
+   :align: center
 
 
 The adversay then causes an outage for half of the set previously made
@@ -416,20 +344,20 @@ to have an outage:
 
 .. image:: diagrams/katzenpost_active_correlation5.png
    :alt: diagram 13
-   :align: left
+   :align: center
 
 
 The remote Provider sends it's response to Bob's local Provider via the
-SURB Bob sent.  In this case the outage happens to not affect Bob's
-local Provider and therefore Bob increments his sequence number for
+SURB Bob sent.  In this case, the outage happens to not affect Bob's
+local Provider and, therefore, Bob increments his sequence number for
 the next message retrieval:
 
 .. image:: diagrams/katzenpost_active_correlation6.png
    :alt: diagram 14
-   :align: left
+   :align: center
 
-At this point if Bob sends another message retrieval command with
-the incremented message sequence number then it's game over for Bob
+At this point, if Bob sends another message retrieval command with
+the incremented message sequence number, then it's game over for Bob
 because the adversary will known exactly which is Bob's local Provider.
 This attack is rather powerful in that the adversary is essentially
 performing a search in logarithmic time with respect to the total number
@@ -470,6 +398,9 @@ Appendix A.1 Normative References
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
                   <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
 
+.. [KATZDECOY] Stainton, D., "Katzenpost Mix Network Decoy Traffic Specification", February 2019,
+                  <https://github.com/Katzenpost/docs/blob/master/drafts/decoy_traffic.rst>.
+
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
                 <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
@@ -501,7 +432,7 @@ Appendix A.2 Informative References
 Appendix B. Notes on persistent storage
 =======================================
 
-Storage can persistence shall have multiple implementations:
+Storage persistence shall have multiple implementations:
 
 * cryptographic storage to disk
 
@@ -539,7 +470,7 @@ Implementations
   <duration> or until a message is acknowledged or a response is
   received. Upon restarting a client this metadata repository is
   loaded from disk.
- 
+
 API methods (subject to change)
 
 * Create initializes a metadata store
