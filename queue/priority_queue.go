@@ -132,6 +132,11 @@ func (q *PriorityQueue) DequeueRandom(r *rand.Rand) *Entry {
 	return heap.Remove(&q.heap, r.Intn(q.Len())).(*Entry)
 }
 
+// Remove removes and returns element from the heap with given priority
+func (q *PriorityQueue) Remove(priority uint64) interface{} {
+	return heap.Remove(&q.heap, int(priority))
+}
+
 // Len returns the current length of the priority queue.
 func (q *PriorityQueue) Len() int {
 	return q.heap.Len()
