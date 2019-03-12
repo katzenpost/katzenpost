@@ -1,4 +1,4 @@
-// plugins.go - plugin system for kaetzchen services
+// grpc_plugins.go - gRPC plugin system for kaetzchen services
 // Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -31,9 +31,9 @@ import (
 	"github.com/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
+	kplugin "github.com/katzenpost/server/grpcplugin"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
-	kplugin "github.com/katzenpost/server/plugin"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
