@@ -23,50 +23,38 @@ package queue
 import (
 	"container/heap"
 	"math/rand"
+	"fmt"
 )
 
 // Entry is a PriorityQueue entry.
 type Entry struct {
 	Value    interface{}
 	Priority uint64
-	idx      int
 }
 
-type priorityQueueImpl []*Entry
-
-func (pq priorityQueueImpl) Len() int {
-	return len(pq)
+func (q PriorityQueue) Less(i, j int) bool {
+	return q.heap[i].Priority < q.heap[j].Priority
 }
 
-func (pq priorityQueueImpl) Less(i, j int) bool {
-	return pq[i].Priority < pq[j].Priority
-}
-
-func (pq priorityQueueImpl) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].idx = i
-	pq[j].idx = j
-}
-
-func (pq *priorityQueueImpl) Push(x interface{}) {
-	n := len(*pq)
+func (q *PriorityQueue) Push(x interface{}) {
 	entry := x.(*Entry)
-	entry.idx = n
-	*pq = append(*pq, entry)
+	q.m[entry.Priority] = q.Len()
+	q.heap = append(q.heap, entry)
 }
 
-func (pq *priorityQueueImpl) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	entry := old[n-1]
-	entry.idx = -1
-	*pq = old[0 : n-1]
-	return entry
-}
 
 // PriorityQueue is a priority queue instance.
 type PriorityQueue struct {
-	heap priorityQueueImpl
+	heap []*Entry
+	m map[uint64]int
+}
+
+func (q PriorityQueue) Swap(i, j int) {
+	if i < 0 || j < 0 {
+		return
+	}
+	q.heap[i], q.heap[j] = q.heap[j], q.heap[i]
+	q.m[q.heap[i].Priority], q.m[q.heap[j].Priority] = q.m[q.heap[j].Priority], q.m[q.heap[i].Priority]
 }
 
 // Peek returns the 0th entry (lowest priority) if any, leaving the
@@ -92,7 +80,7 @@ func (q *PriorityQueue) DequeueIndex(index int) *Entry {
 	if q.Len() <= 0 {
 		return nil
 	}
-	return heap.Remove(&q.heap, index).(*Entry)
+	return heap.Remove(q, index).(*Entry)
 }
 
 // FilterOnce removes the first item from the queue who's value
@@ -107,11 +95,15 @@ func (q *PriorityQueue) FilterOnce(filter func(value interface{}) bool) {
 }
 
 // Pop removes and returns the 0th entry (lowest priority) if any.
-func (q *PriorityQueue) Pop() *Entry {
+func (q *PriorityQueue) Pop() interface{} {
 	if q.Len() <= 0 {
 		return nil
 	}
-	return heap.Pop(&q.heap).(*Entry)
+	n := len(q.heap)
+	e := q.heap[n-1]
+	q.heap = q.heap[:n-1]
+	delete(q.m, e.Priority)
+	return e
 }
 
 // Enqueue inserts the provided value, into the queue with the specified
@@ -121,7 +113,7 @@ func (q *PriorityQueue) Enqueue(priority uint64, value interface{}) {
 		Value:    value,
 		Priority: priority,
 	}
-	heap.Push(&q.heap, ent)
+	heap.Push(q, ent)
 }
 
 // DequeueRandom removes a random entry from the queue.
@@ -129,24 +121,36 @@ func (q *PriorityQueue) DequeueRandom(r *rand.Rand) *Entry {
 	if q.Len() <= 0 {
 		return nil
 	}
-	return heap.Remove(&q.heap, r.Intn(q.Len())).(*Entry)
+	e := heap.Remove(q, r.Intn(q.Len())).(*Entry)
+	delete(q.m, e.Priority)
+	return e
+
 }
 
-// Remove removes and returns element from the heap with given priority
-func (q *PriorityQueue) Remove(priority uint64) interface{} {
-	return heap.Remove(&q.heap, int(priority))
+// RemovePriority removes and returns element from the heap with given priority or nil
+func (q *PriorityQueue) RemovePriority(priority uint64) interface{} {
+	if idx, ok := q.m[priority]; ok {
+		return q.DequeueIndex(idx)
+	}
+	return nil
+}
+
+// Remove removes and returns element from the heap with given index
+func (q *PriorityQueue) Remove(index int) interface{} {
+	return q.DequeueIndex(index)
 }
 
 // Len returns the current length of the priority queue.
 func (q *PriorityQueue) Len() int {
-	return q.heap.Len()
+	return len(q.heap)
 }
 
 // New creates a new PriorityQueue.
 func New() *PriorityQueue {
 	q := &PriorityQueue{
-		heap: make(priorityQueueImpl, 0),
+		heap: make([]*Entry, 0),
+		m: make(map[uint64]int),
 	}
-	heap.Init(&q.heap)
+	heap.Init(q)
 	return q
 }
