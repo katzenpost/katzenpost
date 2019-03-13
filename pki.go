@@ -31,6 +31,7 @@ import (
 )
 
 var errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
+var errConsensusNotFound = errors.New("minclient/pki: consensus not ready yet")
 
 type pki struct {
 	sync.Mutex
@@ -163,6 +164,8 @@ func (p *pki) worker() {
 				switch err {
 				case cpki.ErrNoDocument:
 					p.failedFetches[epoch] = err
+				case errConsensusNotFound:
+					return
 				case errGetConsensusCanceled:
 					return
 				default:
@@ -214,6 +217,8 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
 		return nil, cpki.ErrNoDocument
+	case commands.ConsensusNotFound:
+		return nil, errConsensusNotFound
 	default:
 		return nil, fmt.Errorf("minclient/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
