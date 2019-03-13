@@ -59,7 +59,7 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh.In() <- pkt
 }
 
-func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient cborplugin.KaetzchenPluginInterface) {
+func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient cborplugin.ServicePlugin) {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -98,7 +98,7 @@ func (k *CBORPluginWorker) killAllClients() {
 	}
 }
 
-func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cborplugin.KaetzchenPluginInterface) {
+func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cborplugin.ServicePlugin) {
 	defer pkt.Dispose()
 
 	ct, surb, err := packet.ParseForwardPacket(pkt)
