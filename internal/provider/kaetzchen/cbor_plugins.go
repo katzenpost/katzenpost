@@ -1,4 +1,4 @@
-// grpc_plugins.go - gRPC plugin system for kaetzchen services
+// cbor_plugins.go - cbor plugin system for kaetzchen services
 // Copyright (C) 2018  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -19,19 +19,15 @@
 package kaetzchen
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"os/exec"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-plugin"
 	"github.com/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
-	kplugin "github.com/katzenpost/server/grpcplugin"
+	"github.com/katzenpost/server/cborplugin"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
@@ -39,11 +35,9 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-// GRPCPluginWorker is similar to Kaetzchen worker but uses
-// the go-plugin system to implement services in external programs.
-// These plugins can be written in any language as long as it speaks gRPC
-// over unix domain socket.
-type GRPCPluginWorker struct {
+// CBORPluginWorker is similar to Kaetzchen worker but uses
+// CBOR over HTTP over UNIX domain socket to talk to plugins.
+type CBORPluginWorker struct {
 	sync.Mutex
 	worker.Worker
 
@@ -51,12 +45,12 @@ type GRPCPluginWorker struct {
 	log  *logging.Logger
 
 	pluginChan map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
-	clients    []*plugin.Client
+	clients    []*cborplugin.Client
 	forPKI     map[string]map[string]interface{}
 }
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
-func (k *GRPCPluginWorker) OnKaetzchen(pkt *packet.Packet) {
+func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh, ok := k.pluginChan[pkt.Recipient.ID]
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
@@ -65,7 +59,7 @@ func (k *GRPCPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh.In() <- pkt
 }
 
-func (k *GRPCPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient kplugin.KaetzchenPluginInterface) {
+func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient cborplugin.KaetzchenPluginInterface) {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -98,13 +92,13 @@ func (k *GRPCPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 	}
 }
 
-func (k *GRPCPluginWorker) killAllClients() {
+func (k *CBORPluginWorker) killAllClients() {
 	for _, client := range k.clients {
-		go client.Kill()
+		go client.Halt()
 	}
 }
 
-func (k *GRPCPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient kplugin.KaetzchenPluginInterface) {
+func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cborplugin.KaetzchenPluginInterface) {
 	defer pkt.Dispose()
 
 	ct, surb, err := packet.ParseForwardPacket(pkt)
@@ -121,7 +115,7 @@ func (k *GRPCPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient kpl
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
 		return
 	default:
-		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v)", pkt.ID, err)
+		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, respStr)
 		return
 	}
 	resp = []byte(respStr)
@@ -148,72 +142,37 @@ func (k *GRPCPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient kpl
 }
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
-func (k *GRPCPluginWorker) KaetzchenForPKI() map[string]map[string]interface{} {
+func (k *CBORPluginWorker) KaetzchenForPKI() map[string]map[string]interface{} {
 	return k.forPKI
 }
 
 // IsKaetzchen returns true if the given recipient is one of our workers.
-func (k *GRPCPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
+func (k *CBORPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChan[recipient]
 	return ok
 }
 
-func (k *GRPCPluginWorker) launch(command string, args []string) (kplugin.KaetzchenPluginInterface, *plugin.Client, error) {
-	var clientCfg *plugin.ClientConfig
-	clientCfg = &plugin.ClientConfig{
-		HandshakeConfig: kplugin.Handshake,
-		Plugins:         kplugin.PluginMap,
-		AllowedProtocols: []plugin.Protocol{
-			plugin.ProtocolGRPC},
-	}
-
-	var strBuilder bytes.Buffer
-	strBuilder.WriteString(fmt.Sprintf("Launching command: %s ", command))
-	if args == nil {
-		clientCfg.Cmd = exec.Command(command)
-	} else {
-		clientCfg.Cmd = exec.Command(command, args...)
-		strBuilder.WriteString(strings.Join(args, " "))
-	}
-	k.log.Debug(strBuilder.String())
-
-	client := plugin.NewClient(clientCfg)
-
-	// Connect via RPC
-	rpcClient, err := client.Client()
-	if err != nil {
-		client.Kill()
-		return nil, nil, err
-	}
-
-	// Request the plugin
-	raw, err := rpcClient.Dispense(kplugin.KaetzchenService)
-	if err != nil {
-		client.Kill()
-		return nil, nil, err
-	}
-	service, ok := raw.(kplugin.KaetzchenPluginInterface)
-	if !ok {
-		client.Kill()
-		return nil, nil, errors.New("WARNING: plugin not loaded, type assertion failure for KaetzchenPluginInterface")
-	}
-	return service, client, err
+func (k *CBORPluginWorker) launch(command string, args []string) (*cborplugin.Client, error) {
+	k.log.Debugf("Launching plugin: %s", command)
+	plugin := cborplugin.New(k.log)
+	err := plugin.Start(command, args)
+	return plugin, err
 }
 
-// NewGRPCPluginWorker returns a new GRPCPluginWorker
-func NewGRPCPluginWorker(glue glue.Glue) (*GRPCPluginWorker, error) {
+// NewCBORPluginWorker returns a new CBORPluginWorker
+func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
-	kaetzchenWorker := GRPCPluginWorker{
+	kaetzchenWorker := CBORPluginWorker{
 		glue:       glue,
-		log:        glue.LogBackend().GetLogger("gRPC plugin worker"),
+		log:        glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChan: make(map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel),
-		clients:    make([]*plugin.Client, 0),
+		clients:    make([]*cborplugin.Client, 0),
 		forPKI:     make(map[string]map[string]interface{}),
 	}
 
 	capaMap := make(map[string]bool)
 
-	for _, pluginConf := range glue.Config().Provider.GRPCPluginKaetzchen {
+	for _, pluginConf := range glue.Config().Provider.CBORPluginKaetzchen {
 		kaetzchenWorker.log.Noticef("Configuring plugin handler for %s", pluginConf.Capability)
 
 		// Ensure no duplicates.
@@ -263,9 +222,9 @@ func NewGRPCPluginWorker(glue glue.Glue) (*GRPCPluginWorker, error) {
 				}
 			}
 
-			pluginClient, client, err := kaetzchenWorker.launch(pluginConf.Command, args)
+			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, args)
 			if err != nil {
-				kaetzchenWorker.log.Error("Failed to start a plugin client.")
+				kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
 				return nil, err
 			}
 
@@ -273,10 +232,7 @@ func NewGRPCPluginWorker(glue glue.Glue) (*GRPCPluginWorker, error) {
 				// just once we call the Parameters method on the plugin
 				// and use that info to populate our forPKI map which
 				// ends up populating the PKI document
-				p, err := pluginClient.Parameters()
-				if err != nil {
-					return nil, err
-				}
+				p := pluginClient.Parameters()
 				for key, value := range p {
 					params[key] = value
 				}
@@ -285,7 +241,7 @@ func NewGRPCPluginWorker(glue glue.Glue) (*GRPCPluginWorker, error) {
 			}
 
 			// Accumulate a list of all clients to facilitate clean shutdown.
-			kaetzchenWorker.clients = append(kaetzchenWorker.clients, client)
+			kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
 
 			// Start the worker.
 			worker := func() {
