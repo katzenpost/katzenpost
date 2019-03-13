@@ -11,17 +11,22 @@ import (
 )
 
 func requestHandler(response http.ResponseWriter, req *http.Request) {
-	// req.Body
-
+	resp := cborplugin.Request{
+		Payload: make([]byte, 0),
+	}
+	err := codec.NewDecoder(req.Body, new(codec.CborHandle)).Decode(&resp)
+	if err != nil {
+		panic(err)
+	}
 	reply := cborplugin.Response{
-		Payload: []byte("i am echo"),
+		Payload: resp.Payload,
 	}
 	var serialized []byte
 	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
 	if err := enc.Encode(reply); err != nil {
 		panic(err)
 	}
-	_, err := response.Write(serialized)
+	_, err = response.Write(serialized)
 	if err != nil {
 		panic(err)
 	}
