@@ -164,8 +164,6 @@ func (p *pki) worker() {
 				switch err {
 				case cpki.ErrNoDocument:
 					p.failedFetches[epoch] = err
-				case errConsensusNotFound:
-					return
 				case errGetConsensusCanceled:
 					return
 				default:
