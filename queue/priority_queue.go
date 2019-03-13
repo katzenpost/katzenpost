@@ -41,11 +41,10 @@ func (q *PriorityQueue) Push(x interface{}) {
 	q.heap = append(q.heap, entry)
 }
 
-
 // PriorityQueue is a priority queue instance.
 type PriorityQueue struct {
 	heap []*Entry
-	m map[uint64]int
+	m    map[uint64]int
 }
 
 func (q PriorityQueue) Swap(i, j int) {
@@ -148,7 +147,7 @@ func (q *PriorityQueue) Len() int {
 func New() *PriorityQueue {
 	q := &PriorityQueue{
 		heap: make([]*Entry, 0),
-		m: make(map[uint64]int),
+		m:    make(map[uint64]int),
 	}
 	heap.Init(q)
 	return q
