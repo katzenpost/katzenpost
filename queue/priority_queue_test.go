@@ -17,9 +17,9 @@
 package queue
 
 import (
+	"container/heap"
 	"math/rand"
 	"strings"
-	"container/heap"
 	"testing"
 
 	"github.com/stretchr/testify/require"
