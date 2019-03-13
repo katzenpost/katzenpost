@@ -121,7 +121,6 @@ func (p *pki) worker() {
 
 	var lastCallbackEpoch uint64
 	for {
-
 		timerFired := false
 		select {
 		case <-p.HaltCh():
