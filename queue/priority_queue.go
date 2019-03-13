@@ -23,7 +23,6 @@ package queue
 import (
 	"container/heap"
 	"math/rand"
-	"fmt"
 )
 
 // Entry is a PriorityQueue entry.
