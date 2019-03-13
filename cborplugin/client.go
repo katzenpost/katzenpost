@@ -35,11 +35,11 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-// KaetzchenPluginInterface is the interface that we expose for external
+// ServicePlugin is the interface that we expose for external
 // plugins to implement. This is similar to the internal Kaetzchen
 // interface defined in:
 // github.com/katzenpost/server/internal/provider/kaetzchen/kaetzchen.go
-type KaetzchenPluginInterface interface {
+type ServicePlugin interface {
 	// OnRequest is the method that is called when the Provider receives
 	// a request desgined for a particular agent. The caller will handle
 	// extracting the payload component of the message
@@ -52,21 +52,22 @@ type KaetzchenPluginInterface interface {
 	Halt()
 }
 
+// Request is the struct type used in service query requests to plugins.
 type Request struct {
 	ID      uint64
 	HasSURB bool
 	Payload []byte
 }
 
+// Response is the response received after sending a Request to the plugin.
 type Response struct {
 	Payload []byte
 }
 
-type RequestParams struct{}
-
-type PluginStats struct {
-	SocketPath string
-	Params     map[string]string
+// Parameters is an optional mapping that plugins can publish, these get
+// advertised to clients in the MixDescriptor.
+type Parameters struct {
+	Map map[string]string
 }
 
 // Client acts as a client interacting with one or more plugins.
@@ -81,6 +82,8 @@ type Client struct {
 	params     map[string]string
 }
 
+// New creates a new plugin client instance which represents the single execution
+// of the external plugin program.
 func New(log *logging.Logger) *Client {
 	return &Client{
 		log:        log,
@@ -88,6 +91,9 @@ func New(log *logging.Logger) *Client {
 	}
 }
 
+// Start execs the plugin and starts a worker thread to listen
+// on the halt chan sends a HUP to the plugin if the shutdown
+// even is dispatched.
 func (c *Client) Start(command string, args []string) error {
 	err := c.launch(command, args)
 	if err != nil {
@@ -102,7 +108,7 @@ func (c *Client) worker() {
 	c.cmd.Process.Signal(syscall.SIGHUP)
 	err := c.cmd.Wait()
 	if err != nil {
-		// XXX log err here?
+		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
 }
 
@@ -143,6 +149,25 @@ func (c *Client) launch(command string, args []string) error {
 	c.log.Debugf("plugin socket path:'%s'\n", socketPath)
 
 	c.dial(c.socketPath)
+	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
+	err = c.getParams()
+	if err != nil {
+		panic(err)
+	}
+	return nil
+}
+
+func (c *Client) getParams() error {
+	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", bytes.NewBuffer([]byte{}))
+	if err != nil {
+		return err
+	}
+	response := Parameters{}
+	err = codec.NewDecoder(rawResponse.Body, new(codec.CborHandle)).Decode(&response)
+	if err != nil {
+		return err
+	}
+	c.params = response.Map
 	return nil
 }
 
@@ -172,7 +197,9 @@ func (c *Client) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, err
 	return response.Payload, nil
 }
 
-// Parameters sends a query to the plugin to retrieve the plugin parameters.
+// Parameters are used in Mix Descriptor publication to give
+// service clients more information about the service. Not
+// plugins will need to use this feature.
 func (c *Client) Parameters() map[string]string {
 	return c.params
 }
