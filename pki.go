@@ -118,7 +118,7 @@ func (p *pki) worker() {
 	var lastCallbackEpoch uint64
 	for {
 		var (
-			nextFetchTill   = 7 * (epochtime.Period / 8)
+			nextFetchTill   = 1 * (epochtime.Period / 8)
 			recheckInterval = 1 * time.Minute
 		)
 
