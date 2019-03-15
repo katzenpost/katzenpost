@@ -27,9 +27,7 @@ import (
 )
 
 func parametersHandler(response http.ResponseWriter, req *http.Request) {
-	params := cborplugin.Parameters{
-		Map: make(map[string]string),
-	}
+	params := new(cborplugin.Parameters)
 	var serialized []byte
 	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
 	if err := enc.Encode(params); err != nil {
