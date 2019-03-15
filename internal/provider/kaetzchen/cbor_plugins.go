@@ -35,6 +35,21 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+// PluginChan maps from Recipient ID to channel.
+type PluginChan = map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
+
+// PluginName is the name of a plugin.
+type PluginName = string
+
+// PluginParameters maps from parameter key to value.
+type PluginParameters = map[PluginName]interface{}
+
+// ServiceMap maps from plugin name to plugin parameters
+// and is used by Mix Descriptors which describe Providers
+// with plugins. Each plugin can optionally set one or more
+// parameters.
+type ServiceMap = map[PluginName]PluginParameters
+
 // CBORPluginWorker is similar to Kaetzchen worker but uses
 // CBOR over HTTP over UNIX domain socket to talk to plugins.
 type CBORPluginWorker struct {
@@ -44,9 +59,9 @@ type CBORPluginWorker struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	pluginChan map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
+	pluginChan PluginChan
 	clients    []*cborplugin.Client
-	forPKI     map[string]map[string]interface{}
+	forPKI     ServiceMap
 }
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
@@ -108,10 +123,15 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	}
 
 	var resp []byte
-	respStr, err := pluginClient.OnRequest(pkt.ID, ct, surb != nil)
-	switch {
-	case err == nil:
-	case err == ErrNoResponse:
+	req := cborplugin.Request{
+		ID:      pkt.ID,
+		Payload: ct,
+		HasSURB: surb != nil,
+	}
+	respStr, err := pluginClient.OnRequest(&req)
+	switch err {
+	case nil:
+	case ErrNoResponse:
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
 		return
 	default:
@@ -119,6 +139,11 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		return
 	}
 	resp = []byte(respStr)
+
+	if resp == nil {
+		k.log.Debugf("No reply from Kaetzchen: %v", pkt.ID)
+		return
+	}
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
 	if surb != nil {
@@ -133,12 +158,9 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 
 		k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
 		k.glue.Scheduler().OnPacket(respPkt)
-	} else if resp != nil {
-		// This is silly and I'm not sure why anyone will do this, but
-		// there's nothing that can be done at this point, the Kaetzchen
-		// implementation should have caught this.
-		k.log.Debugf("Kaetzchen message: %v (Has reply but no SURB)", pkt.ID)
+		return
 	}
+	k.log.Debugf("No SURB provided: %v", pkt.ID)
 }
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
@@ -232,9 +254,11 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 				// just once we call the Parameters method on the plugin
 				// and use that info to populate our forPKI map which
 				// ends up populating the PKI document
-				p := pluginClient.Parameters()
-				for key, value := range p {
-					params[key] = value
+				p := pluginClient.GetParameters()
+				if p != nil {
+					for key, value := range *p {
+						params[key] = value
+					}
 				}
 				params[ParameterEndpoint] = pluginConf.Endpoint
 				gotParams = true
@@ -244,10 +268,9 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
 
 			// Start the worker.
-			worker := func() {
+			kaetzchenWorker.Go(func() {
 				kaetzchenWorker.worker(endpoint, pluginClient)
-			}
-			kaetzchenWorker.Go(worker)
+			})
 		}
 
 		kaetzchenWorker.forPKI[capa] = params
