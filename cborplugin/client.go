@@ -18,7 +18,10 @@
 // to be added in any language. It communicates queries and responses to and from
 // the mix server using CBOR over HTTP over UNIX domain socket. Beyond that,
 // a client supplied SURB is used to route the response back to the client
-// as described in our Kaetzchen specification document.
+// as described in our Kaetzchen specification document:
+//
+// https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
+
 package cborplugin
 
 import (
@@ -49,6 +52,10 @@ type Response struct {
 
 // Parameters is an optional mapping that plugins can publish, these get
 // advertised to clients in the MixDescriptor.
+// The output of GetParameters() ends up being published in a map
+// associating with the service names to service parameters map.
+// This information is part of the Mix Descriptor which is defined here:
+// https://github.com/katzenpost/core/blob/master/pki/pki.go
 type Parameters map[string]string
 
 // ServicePlugin is the interface that we expose for external
