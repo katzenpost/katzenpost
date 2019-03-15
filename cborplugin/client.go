@@ -21,16 +21,16 @@
 // as described in our Kaetzchen specification document:
 //
 // https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
-
+//
 package cborplugin
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"net"
 	"net/http"
 	"os/exec"
-	"strings"
 	"syscall"
 
 	"github.com/katzenpost/core/worker"
@@ -72,6 +72,7 @@ type ServicePlugin interface {
 	// the Provider's descriptor.
 	GetParameters() *Parameters
 
+	// Halt stops the plugin.
 	Halt()
 }
 
@@ -116,7 +117,7 @@ func (c *Client) worker() {
 	}
 }
 
-func (c *Client) setupHttpClient(socketPath string) {
+func (c *Client) setupHTTPClient(socketPath string) {
 	c.httpClient = &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(context context.Context, _, _ string) (net.Conn, error) {
@@ -145,17 +146,11 @@ func (c *Client) launch(command string, args []string) error {
 	}
 
 	// read and decode plugin stdout
-	line := make([]byte, 255)
-	n, err := stdout.Read(line)
-	if err != nil {
-		c.log.Debug("failed reading line")
-		return err
-	}
-	socketPath := strings.TrimSuffix(string(line[:n]), "\n")
-	socketPath = strings.TrimSuffix(socketPath, "\r")
-	c.socketPath = socketPath
-	c.log.Debugf("plugin socket path:'%s'\n", socketPath)
-	c.setupHttpClient(c.socketPath)
+	stdoutScanner := bufio.NewScanner(stdout)
+	stdoutScanner.Scan()
+	c.socketPath = stdoutScanner.Text()
+	c.log.Debugf("plugin socket path:'%s'\n", c.socketPath)
+	c.setupHTTPClient(c.socketPath)
 	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
 	err = c.decodeParams()
 	if err != nil {
@@ -192,9 +187,7 @@ func (c *Client) OnRequest(request *Request) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	response := Response{
-		Payload: []byte{},
-	}
+	response := new(Response)
 	err = codec.NewDecoder(rawResponse.Body, new(codec.CborHandle)).Decode(&response)
 	if err != nil {
 		return nil, err
@@ -202,7 +195,7 @@ func (c *Client) OnRequest(request *Request) ([]byte, error) {
 	return response.Payload, nil
 }
 
-// Parameters are used in Mix Descriptor publication to give
+// GetParameters are used in Mix Descriptor publication to give
 // service clients more information about the service. Not
 // plugins will need to use this feature.
 func (c *Client) GetParameters() *Parameters {
