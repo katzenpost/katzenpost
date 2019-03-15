@@ -35,28 +35,11 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-// ServicePlugin is the interface that we expose for external
-// plugins to implement. This is similar to the internal Kaetzchen
-// interface defined in:
-// github.com/katzenpost/server/internal/provider/kaetzchen/kaetzchen.go
-type ServicePlugin interface {
-	// OnRequest is the method that is called when the Provider receives
-	// a request desgined for a particular agent. The caller will handle
-	// extracting the payload component of the message
-	OnRequest(id uint64, request []byte, hasSURB bool) ([]byte, error)
-
-	// Parameters returns the agent's paramenters for publication in
-	// the Provider's descriptor.
-	Parameters() map[string]string
-
-	Halt()
-}
-
 // Request is the struct type used in service query requests to plugins.
 type Request struct {
 	ID      uint64
-	HasSURB bool
 	Payload []byte
+	HasSURB bool
 }
 
 // Response is the response received after sending a Request to the plugin.
@@ -66,20 +49,34 @@ type Response struct {
 
 // Parameters is an optional mapping that plugins can publish, these get
 // advertised to clients in the MixDescriptor.
-type Parameters struct {
-	Map map[string]string
+type Parameters map[string]string
+
+// ServicePlugin is the interface that we expose for external
+// plugins to implement. This is similar to the internal Kaetzchen
+// interface defined in:
+// github.com/katzenpost/server/internal/provider/kaetzchen/kaetzchen.go
+type ServicePlugin interface {
+	// OnRequest is the method that is called when the Provider receives
+	// a request desgined for a particular agent. The caller will handle
+	// extracting the payload component of the message
+	OnRequest(request *Request) ([]byte, error)
+
+	// Parameters returns the agent's paramenters for publication in
+	// the Provider's descriptor.
+	GetParameters() *Parameters
+
+	Halt()
 }
 
 // Client acts as a client interacting with one or more plugins.
 type Client struct {
 	worker.Worker
 
-	log *logging.Logger
-
+	log        *logging.Logger
 	httpClient *http.Client
 	cmd        *exec.Cmd
 	socketPath string
-	params     map[string]string
+	params     *Parameters
 }
 
 // New creates a new plugin client instance which represents the single execution
@@ -112,11 +109,11 @@ func (c *Client) worker() {
 	}
 }
 
-func (c *Client) dial(socketPath string) {
+func (c *Client) setupHttpClient(socketPath string) {
 	c.httpClient = &http.Client{
 		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", socketPath)
+			DialContext: func(context context.Context, _, _ string) (net.Conn, error) {
+				return new(net.Dialer).DialContext(context, "unix", socketPath)
 			},
 		},
 	}
@@ -131,10 +128,12 @@ func (c *Client) launch(command string, args []string) error {
 	}
 	stdout, err := c.cmd.StdoutPipe()
 	if err != nil {
+		c.log.Debugf("pipe failure: %s", err)
 		return err
 	}
 	err = c.cmd.Start()
 	if err != nil {
+		c.log.Debugf("failed to exec: %s", err)
 		return err
 	}
 
@@ -142,48 +141,47 @@ func (c *Client) launch(command string, args []string) error {
 	line := make([]byte, 255)
 	n, err := stdout.Read(line)
 	if err != nil {
+		c.log.Debug("failed reading line")
 		return err
 	}
 	socketPath := strings.TrimSuffix(string(line[:n]), "\n")
+	socketPath = strings.TrimSuffix(socketPath, "\r")
 	c.socketPath = socketPath
 	c.log.Debugf("plugin socket path:'%s'\n", socketPath)
-
-	c.dial(c.socketPath)
+	c.setupHttpClient(c.socketPath)
 	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
-	err = c.getParams()
+	err = c.decodeParams()
 	if err != nil {
 		panic(err)
 	}
+	c.log.Debug("finished launching plugin.")
 	return nil
 }
 
-func (c *Client) getParams() error {
-	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", bytes.NewBuffer([]byte{}))
+func (c *Client) decodeParams() error {
+	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", &http.NoBody)
 	if err != nil {
+		c.log.Debugf("post failure: %s", err)
 		return err
 	}
-	response := Parameters{}
-	err = codec.NewDecoder(rawResponse.Body, new(codec.CborHandle)).Decode(&response)
+	responseParams := new(Parameters)
+	err = codec.NewDecoder(rawResponse.Body, new(codec.CborHandle)).Decode(&responseParams)
 	if err != nil {
+		c.log.Debugf("decode failure: %s", err)
 		return err
 	}
-	c.params = response.Map
+	c.params = responseParams
 	return nil
 }
 
 // OnRequest send a query request to plugin using CBOR + HTTP over Unix domain socket.
-func (c *Client) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
-	request := Request{
-		ID:      id,
-		Payload: payload,
-		HasSURB: hasSURB,
-	}
+func (c *Client) OnRequest(request *Request) ([]byte, error) {
 	var serialized []byte
 	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
 	if err := enc.Encode(request); err != nil {
 		return nil, err
 	}
-	rawResponse, err := c.httpClient.Post("http://unix/request", "application/octet-stream", bytes.NewBuffer(serialized))
+	rawResponse, err := c.httpClient.Post("http://unix/request", "application/octet-stream", bytes.NewReader(serialized))
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +198,6 @@ func (c *Client) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, err
 // Parameters are used in Mix Descriptor publication to give
 // service clients more information about the service. Not
 // plugins will need to use this feature.
-func (c *Client) Parameters() map[string]string {
+func (c *Client) GetParameters() *Parameters {
 	return c.params
 }
