@@ -77,6 +77,10 @@ type ServicePlugin interface {
 }
 
 // Client acts as a client interacting with one or more plugins.
+// The Client type is composite with Worker and therefore
+// has a Halt method. Client implements this interface
+// and proxies data between this mix server and the
+// external plugin program.
 type Client struct {
 	worker.Worker
 
