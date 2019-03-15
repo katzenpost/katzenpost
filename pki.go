@@ -32,6 +32,7 @@ import (
 
 var (
 	errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
+	errConsensusNotFound = errors.New("minclient/pki: consensus not ready yet")
 	nextFetchTill           = 7 * (epochtime.Period / 8)
 	recheckInterval         = 1 * time.Minute
 	WarpedEpoch             = "false"
@@ -214,6 +215,8 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	case commands.ConsensusOk:
 	case commands.ConsensusGone:
 		return nil, cpki.ErrNoDocument
+	case commands.ConsensusNotFound:
+		return nil, errConsensusNotFound
 	default:
 		return nil, fmt.Errorf("minclient/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
