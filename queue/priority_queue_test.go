@@ -152,18 +152,18 @@ func TestPriorityQueueRemove(t *testing.T) {
 	for _, v := range testEntries {
 		q.Enqueue(v.Priority, v.Value)
 	}
-	for i, _ := range testEntries {
+	for i := range testEntries {
 		v := testEntries[len(testEntries)-i-1]
 		e := q.RemovePriority(v.Priority)
 		t.Logf("removing %d", v.Priority)
 		require.NotNil(e)
 		t.Logf("removed entry %s priority %d", e.(*Entry).Value.([]uint8), e.(*Entry).Priority)
 	}
-	for i, _ := range testEntries {
+	for i := range testEntries {
 		v := testEntries[len(testEntries)-i-1]
 		q.Enqueue(v.Priority, v.Value)
 	}
-	for i, _ := range testEntries {
+	for i := range testEntries {
 		v := testEntries[len(testEntries)-i-1]
 		e := q.RemovePriority(v.Priority)
 		t.Logf("removing %d", v.Priority)

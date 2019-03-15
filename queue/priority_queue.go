@@ -31,10 +31,12 @@ type Entry struct {
 	Priority uint64
 }
 
+// Less implements sort.Interface Less method
 func (q PriorityQueue) Less(i, j int) bool {
 	return q.heap[i].Priority < q.heap[j].Priority
 }
 
+// Push implements heap.Interface Push method
 func (q *PriorityQueue) Push(x interface{}) {
 	entry := x.(*Entry)
 	q.m[entry.Priority] = q.Len()
@@ -47,6 +49,7 @@ type PriorityQueue struct {
 	m    map[uint64]int
 }
 
+// Swap implements sort.Interface Swap method
 func (q PriorityQueue) Swap(i, j int) {
 	if i < 0 || j < 0 {
 		return
