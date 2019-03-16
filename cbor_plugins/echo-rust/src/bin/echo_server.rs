@@ -1,27 +1,28 @@
 
+#![feature(proc_macro_hygiene, decl_macro)]
+
+#[macro_use] extern crate rocket;
+
 extern crate rand;
-extern crate hyper;
-extern crate hyperlocal;
-extern crate futures;
 
-#[macro_use]
-extern crate serde_derive;
+#[macro_use] extern crate serde_derive;
 
-#[macro_use]
-extern crate serde;
+#[macro_use] extern crate serde;
 
-#[macro_use]
-extern crate serde_cbor;
+#[macro_use] extern crate serde_cbor;
 
 use std::{fs, io};
 use std::collections::HashMap;
-use futures::future;
 use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
-use hyper::{header, Body, Method, StatusCode, Chunk};
-use hyper::service::service_fn;
 use serde::{Deserialize, Serialize};
 use serde_cbor::from_slice;
+use rocket::{Data, Outcome, Outcome::*};
+use rocket::data::{self, FromDataSimple};
+use rocket::response::{self, Responder};
+use rocket::http::{Status, ContentType, StatusClass};
+use std::io::{Cursor, BufReader};
+
 
 #[derive(Deserialize)]
 pub struct Request {
@@ -30,37 +31,45 @@ pub struct Request {
     HasSURB: bool,
 }
 
+impl FromDataSimple for Request {
+    type Error = String;
+
+    fn from_data(req: &rocket::Request, data: Data) -> data::Outcome<Self, String> {
+        // Return successfully.
+        Success(Request {
+                    ID: 0,
+                    Payload: vec![],
+                    HasSURB: true,
+                })
+    }
+}
+
 #[derive(Serialize)]
 pub struct Response {
     Payload: Vec<u8>,
 }
 
+impl<'r> Responder<'r> for Response {
+    fn respond_to(self, _: &rocket::Request) -> response::Result<'r> {
+        rocket::Response::build()
+            .header(ContentType::Binary)
+            .sized_body(Cursor::new(self.Payload))
+            .ok()
+    }
+}
+
 type Parameters = HashMap<String, String>;
 
-fn echo(http_request: hyper::Request<Body>) -> impl futures::Future<Item = hyper::Response<Body>, Error = io::Error> + Send {
-    let mut http_response = hyper::Response::new(Body::empty());
-    let mut cbor_response: Vec<u8> = Vec::new();
-    match (http_request.method(), http_request.uri().path()) {
-        (&Method::POST, "/request") => {
-            let mut reply = Response{
-                Payload: vec![],
-            };
-        },
-        (&Method::POST, "/parameters") => {
-            let mut parameters = Parameters::new(); // send an empty map
-            cbor_response = serde_cbor::to_vec(&parameters).unwrap();
-        },
-        _ => {
-            *http_response.status_mut() = StatusCode::NOT_FOUND;
-        }
+#[post("/request", data = "<input>")]
+fn request(input: Request) -> Response {
+    Response{
+        Payload: input.Payload,
     }
-    futures::future::ok(
-        hyper::Response::builder()
-            .header(header::CONTENT_TYPE, "application/octet-stream")
-            .header(header::CONTENT_LENGTH, cbor_response.len())
-            .body(hyper::Body::from(cbor_response))
-            .expect("failed to create response")
-   ) 
+}
+
+#[post("/parameters")]
+fn parameters() -> &'static str {
+    "Hello, world!"
 }
 
 fn run() -> io::Result<()> {
@@ -69,14 +78,8 @@ fn run() -> io::Result<()> {
         .take(10)
         .collect();
     let socket_path = format!("/tmp/rust_echo_{}.sock", rand_string);
-    if let Err(err) = fs::remove_file(&socket_path) {
-        if err.kind() != io::ErrorKind::NotFound {
-            return Err(err);
-        }
-    }
-    let svr = hyperlocal::server::Server::bind(&socket_path, || service_fn(echo))?;
     println!("{}\n", socket_path);
-    svr.run()?;
+    rocket::ignite().mount("/", routes![request, parameters]).launch();
     Ok(())
 }
 
