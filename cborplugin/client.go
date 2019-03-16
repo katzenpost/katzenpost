@@ -155,17 +155,10 @@ func (c *Client) launch(command string, args []string) error {
 	c.socketPath = stdoutScanner.Text()
 	c.log.Debugf("plugin socket path:'%s'\n", c.socketPath)
 	c.setupHTTPClient(c.socketPath)
-	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
-	err = c.decodeParams()
-	if err != nil {
-		panic(err)
-	}
-	c.log.Debug("finished launching plugin.")
-	return nil
-}
 
-func (c *Client) decodeParams() error {
-	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", &http.NoBody)
+	// get plugin parameters if any
+	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
+	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", http.NoBody)
 	if err != nil {
 		c.log.Debugf("post failure: %s", err)
 		return err
@@ -177,6 +170,7 @@ func (c *Client) decodeParams() error {
 		return err
 	}
 	c.params = responseParams
+	c.log.Debug("finished launching plugin.")
 	return nil
 }
 

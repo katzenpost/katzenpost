@@ -35,8 +35,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-// PluginChan maps from Recipient ID to channel.
-type PluginChan = map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
+// PluginChans maps from Recipient ID to channel.
+type PluginChans = map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
 
 // PluginName is the name of a plugin.
 type PluginName = string
@@ -59,14 +59,14 @@ type CBORPluginWorker struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	pluginChan PluginChan
-	clients    []*cborplugin.Client
-	forPKI     ServiceMap
+	pluginChans PluginChans
+	clients     []*cborplugin.Client
+	forPKI      ServiceMap
 }
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
 func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
-	handlerCh, ok := k.pluginChan[pkt.Recipient.ID]
+	handlerCh, ok := k.pluginChans[pkt.Recipient.ID]
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
 		return
@@ -80,7 +80,7 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 
 	defer k.log.Debugf("Halting Kaetzchen external worker.")
 
-	handlerCh, ok := k.pluginChan[recipient]
+	handlerCh, ok := k.pluginChans[recipient]
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", recipient)
 		return
@@ -123,12 +123,11 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	}
 
 	var resp []byte
-	req := cborplugin.Request{
+	respStr, err := pluginClient.OnRequest(&cborplugin.Request{
 		ID:      pkt.ID,
 		Payload: ct,
 		HasSURB: surb != nil,
-	}
-	respStr, err := pluginClient.OnRequest(&req)
+	})
 	switch err {
 	case nil:
 	case ErrNoResponse:
@@ -170,7 +169,7 @@ func (k *CBORPluginWorker) KaetzchenForPKI() map[string]map[string]interface{} {
 
 // IsKaetzchen returns true if the given recipient is one of our workers.
 func (k *CBORPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
-	_, ok := k.pluginChan[recipient]
+	_, ok := k.pluginChans[recipient]
 	return ok
 }
 
@@ -185,11 +184,11 @@ func (k *CBORPluginWorker) launch(command string, args []string) (*cborplugin.Cl
 func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
 	kaetzchenWorker := CBORPluginWorker{
-		glue:       glue,
-		log:        glue.LogBackend().GetLogger("CBOR plugin worker"),
-		pluginChan: make(map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel),
-		clients:    make([]*cborplugin.Client, 0),
-		forPKI:     make(map[string]map[string]interface{}),
+		glue:        glue,
+		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
+		pluginChans: make(map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel),
+		clients:     make([]*cborplugin.Client, 0),
+		forPKI:      make(map[string]map[string]interface{}),
 	}
 
 	capaMap := make(map[string]bool)
@@ -226,7 +225,7 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		// Add an infinite channel for this plugin.
 		var endpoint [sConstants.RecipientIDLength]byte
 		copy(endpoint[:], rawEp)
-		kaetzchenWorker.pluginChan[endpoint] = channels.NewInfiniteChannel()
+		kaetzchenWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
 
 		// Add entry from this plugin for the PKI.
 		params := make(map[string]interface{})
