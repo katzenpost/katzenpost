@@ -163,13 +163,13 @@ func (c *Client) launch(command string, args []string) error {
 		c.log.Debugf("post failure: %s", err)
 		return err
 	}
-	responseParams := new(Parameters)
+	responseParams := make(Parameters)
 	err = codec.NewDecoder(rawResponse.Body, new(codec.CborHandle)).Decode(&responseParams)
 	if err != nil {
 		c.log.Debugf("decode failure: %s", err)
 		return err
 	}
-	c.params = responseParams
+	c.params = &responseParams
 	c.log.Debug("finished launching plugin.")
 	return nil
 }
