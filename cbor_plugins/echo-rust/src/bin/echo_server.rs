@@ -20,6 +20,7 @@ use rand::{thread_rng, Rng};
 use rand::distributions::Alphanumeric;
 use hyper::{header, Body, Method, StatusCode, Chunk};
 use hyper::service::service_fn;
+use hyper::body::Payload;
 use serde::{Deserialize, Serialize};
 use serde_cbor::from_slice;
 
@@ -45,9 +46,19 @@ fn echo(http_request: hyper::Request<Body>) -> impl futures::Future<Item = hyper
             let mut reply = Response{
                 Payload: vec![],
             };
+
+            let body = http_request.into_body();
+            body.fold();
+            //let req: Request = serde_cbor::from_slice().unwrap();
+            //let req: Request = serde_cbor::from_reader(body_stream).unwrap();
+            //let (parts, body) = http_request.into_parts();
+            //let fu = Box::new(body.concat2());
+
+            
         },
         (&Method::POST, "/parameters") => {
-            let mut parameters = Parameters::new(); // send an empty map
+            // send an empty map
+            let mut parameters = Parameters::new();
             cbor_response = serde_cbor::to_vec(&parameters).unwrap();
         },
         _ => {
