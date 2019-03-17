@@ -186,9 +186,9 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 	kaetzchenWorker := CBORPluginWorker{
 		glue:        glue,
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
-		pluginChans: make(map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel),
+		pluginChans: make(PluginChans),
 		clients:     make([]*cborplugin.Client, 0),
-		forPKI:      make(map[string]map[string]interface{}),
+		forPKI:      make(ServiceMap),
 	}
 
 	capaMap := make(map[string]bool)
