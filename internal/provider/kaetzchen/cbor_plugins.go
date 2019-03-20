@@ -92,7 +92,7 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 		select {
 		case <-k.HaltCh():
 			k.log.Debugf("Terminating gracefully.")
-			k.killAllClients()
+			k.haltAllClients()
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
@@ -107,7 +107,7 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 	}
 }
 
-func (k *CBORPluginWorker) killAllClients() {
+func (k *CBORPluginWorker) haltAllClients() {
 	for _, client := range k.clients {
 		go client.Halt()
 	}
@@ -138,8 +138,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		return
 	}
 	resp = []byte(respStr)
-
-	if resp == nil {
+	if len(resp) == 0 {
 		k.log.Debugf("No reply from Kaetzchen: %v", pkt.ID)
 		return
 	}
@@ -163,7 +162,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 }
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
-func (k *CBORPluginWorker) KaetzchenForPKI() map[string]map[string]interface{} {
+func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 	return k.forPKI
 }
 

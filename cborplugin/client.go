@@ -124,8 +124,8 @@ func (c *Client) worker() {
 func (c *Client) setupHTTPClient(socketPath string) {
 	c.httpClient = &http.Client{
 		Transport: &http.Transport{
-			DialContext: func(context context.Context, _, _ string) (net.Conn, error) {
-				return new(net.Dialer).DialContext(context, "unix", socketPath)
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return new(net.Dialer).DialContext(ctx, "unix", socketPath)
 			},
 		},
 	}
@@ -133,11 +133,7 @@ func (c *Client) setupHTTPClient(socketPath string) {
 
 func (c *Client) launch(command string, args []string) error {
 	// exec plugin
-	if args == nil {
-		c.cmd = exec.Command(command)
-	} else {
-		c.cmd = exec.Command(command, args...)
-	}
+	c.cmd = exec.Command(command, args...)
 	stdout, err := c.cmd.StdoutPipe()
 	if err != nil {
 		c.log.Debugf("pipe failure: %s", err)
@@ -176,7 +172,7 @@ func (c *Client) launch(command string, args []string) error {
 
 // OnRequest send a query request to plugin using CBOR + HTTP over Unix domain socket.
 func (c *Client) OnRequest(request *Request) ([]byte, error) {
-	var serialized []byte
+	serialized := []byte{}
 	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
 	if err := enc.Encode(request); err != nil {
 		return nil, err
