@@ -1,21 +1,18 @@
 
+
 #[macro_use]
 extern crate log;
 extern crate log4rs;
 extern crate clap;
 extern crate rand;
 extern crate hyper;
-extern crate hyperlocal;
 extern crate futures;
 
-#[macro_use]
-extern crate serde_derive;
+#[macro_use] extern crate serde_derive;
 
-#[macro_use]
-extern crate serde;
+#[macro_use] extern crate serde;
 
-#[macro_use]
-extern crate serde_cbor;
+#[macro_use] extern crate serde_cbor;
 
 extern crate serde_bytes;
 
@@ -29,15 +26,16 @@ use log4rs::config::{Appender, Config, Root};
 use log::LevelFilter;
 use futures::future;
 use futures::{Future, Stream};
-use rand::{thread_rng, Rng};
-use rand::distributions::Alphanumeric;
 use hyper::{header, Method, StatusCode, Chunk};
 use hyper::service::service_fn;
 use hyper::Error;
 use hyper::body::Payload;
 use hyper::Body;
+use rand::{thread_rng, Rng};
+use rand::distributions::Alphanumeric;
 use serde::{Deserialize, Serialize};
 use serde_cbor::from_slice;
+
 
 
 #[derive(Deserialize)]
@@ -49,6 +47,7 @@ pub struct Request {
     HasSURB: bool,
 }
 
+
 #[derive(Serialize)]
 #[allow(non_snake_case)]
 pub struct Response {
@@ -56,7 +55,9 @@ pub struct Response {
     Payload: Vec<u8>,
 }
 
+
 type Parameters = HashMap<String, String>;
+
 
 type BoxFut = Box<Future<Item = hyper::Response<hyper::Body>, Error = hyper::Error> + Send>;
 
@@ -159,11 +160,6 @@ fn run() -> io::Result<()> {
         .take(10)
         .collect();
     let socket_path = format!("/tmp/rust_echo_{}.sock", rand_string);
-    if let Err(err) = fs::remove_file(&socket_path) {
-        if err.kind() != io::ErrorKind::NotFound {
-            return Err(err);
-        }
-    }
     let svr = hyperlocal::server::Server::bind(&socket_path, || service_fn(echo))?;
     println!("{}\n", socket_path);
     svr.run()?;
