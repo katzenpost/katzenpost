@@ -60,6 +60,8 @@ type Message struct {
 
 	// SURBType is the SURB type.
 	SURBType int
+
+	WithSURB bool
 }
 
 // WaitForReply blocks until a reply is received.
@@ -96,10 +98,19 @@ func (s *Session) sendNext() error {
 func (s *Session) doSend(msg *Message) error {
 	surbID := [sConstants.SURBIDLength]byte{}
 	io.ReadFull(rand.Reader, surbID[:])
-	key, eta, err := s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
+	key := []byte{}
+	var err error
+	var eta time.Duration
+	if msg.WithSURB {
+		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
+	} else {
+		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
+	}
+
 	if err != nil {
 		return err
 	}
+
 	msg.Key = key
 	msg.SentAt = time.Now()
 	msg.ReplyETA = eta
@@ -111,6 +122,25 @@ func (s *Session) doSend(msg *Message) error {
 
 func (s *Session) sendLoopDecoy() error {
 	s.log.Info("sending loop decoy")
+	const loopService = "loop"
+	serviceDesc, err := s.GetService(loopService)
+	if err != nil {
+		return err
+	}
+	payload := [constants.UserForwardPayloadLength]byte{}
+	id := [cConstants.MessageIDLength]byte{}
+	io.ReadFull(rand.Reader, id[:])
+	msg := &Message{
+		ID:        &id,
+		Recipient: serviceDesc.Name,
+		Provider:  serviceDesc.Provider,
+		Payload:   payload[:],
+	}
+	return s.doSend(msg)
+}
+
+func (s *Session) sendDropDecoy() error {
+	s.log.Info("sending drop decoy")
 	const loopService = "loop"
 	serviceDesc, err := s.GetService(loopService)
 	if err != nil {
