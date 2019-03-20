@@ -49,18 +49,20 @@ var (
 type Document struct {
 	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.
-	Version string
-
-	Epoch uint64
-
+	Version           string
+	Epoch             uint64
 	SendRatePerMinute uint64
 
-	MixLambda          float64
-	MixMaxDelay        uint64
-	SendLambda         float64
-	SendMaxInterval    uint64
-	MixLoopLambda      float64
-	MixLoopMaxInterval uint64
+	Mu              float64
+	MuMaxDelay      uint64
+	LambdaP         float64
+	LambdaPMaxDelay uint64
+	LambdaL         float64
+	LambdaLMaxDelay uint64
+	LambdaD         float64
+	LambdaDMaxDelay uint64
+	LambdaM         float64
+	LambdaMMaxDelay uint64
 
 	Topology  [][][]byte
 	Providers [][]byte
@@ -180,12 +182,16 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 	doc.SharedRandomValue = d.SharedRandomValue
 	doc.Epoch = d.Epoch
 	doc.SendRatePerMinute = d.SendRatePerMinute
-	doc.MixLambda = d.MixLambda
-	doc.MixMaxDelay = d.MixMaxDelay
-	doc.SendLambda = d.SendLambda
-	doc.SendMaxInterval = d.SendMaxInterval
-	doc.MixLoopLambda = d.MixLoopLambda
-	doc.MixLoopMaxInterval = d.MixLoopMaxInterval
+	doc.Mu = d.Mu
+	doc.MuMaxDelay = d.MuMaxDelay
+	doc.LambdaP = d.LambdaP
+	doc.LambdaPMaxDelay = d.LambdaPMaxDelay
+	doc.LambdaL = d.LambdaL
+	doc.LambdaLMaxDelay = d.LambdaLMaxDelay
+	doc.LambdaD = d.LambdaD
+	doc.LambdaDMaxDelay = d.LambdaDMaxDelay
+	doc.LambdaM = d.LambdaM
+	doc.LambdaMMaxDelay = d.LambdaMMaxDelay
 	doc.Topology = make([][]*pki.MixDescriptor, len(d.Topology))
 	doc.Providers = make([]*pki.MixDescriptor, 0, len(d.Providers))
 
