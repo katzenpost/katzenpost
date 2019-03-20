@@ -40,14 +40,37 @@ type opNewDocument struct {
 func (s *Session) setTimers(doc *pki.Document) {
 	// λP
 	pDesc := &poisson.Descriptor{
-		Lambda: doc.SendLambda,
-		Max:    doc.SendMaxInterval,
+		Lambda: doc.LambdaP,
+		Max:    doc.LambdaPMaxDelay,
 	}
 	if s.pTimer == nil {
 		s.pTimer = poisson.NewTimer(pDesc)
 	} else {
 		s.pTimer.SetPoisson(pDesc)
 	}
+
+	// λL
+	pDesc = &poisson.Descriptor{
+		Lambda: doc.LambdaL,
+		Max:    doc.LambdaLMaxDelay,
+	}
+	if s.lTimer == nil {
+		s.lTimer = poisson.NewTimer(pDesc)
+	} else {
+		s.lTimer.SetPoisson(pDesc)
+	}
+
+	// λD
+	pDesc = &poisson.Descriptor{
+		Lambda: doc.LambdaD,
+		Max:    doc.LambdaDMaxDelay,
+	}
+	if s.pTimer == nil {
+		s.pTimer = poisson.NewTimer(pDesc)
+	} else {
+		s.pTimer.SetPoisson(pDesc)
+	}
+
 }
 
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
@@ -91,25 +114,46 @@ func (s *Session) maybeUpdateTimers(doc *pki.Document) {
 func (s *Session) worker() {
 	s.pTimer.Start()
 	defer s.pTimer.Stop()
+	s.dTimer.Start()
+	defer s.dTimer.Stop()
+	s.lTimer.Start()
+	defer s.lTimer.Stop()
 
 	var isConnected bool
 	for {
 		var lambdaPFired bool
-		var qo workerOp
+		var lambdaDFired bool
+		var lambdaLFired bool
+		var qo workerOp = nil
 		select {
 		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")
 			return
 		case <-s.pTimer.Timer.C:
 			lambdaPFired = true
+		case <-s.dTimer.Timer.C:
+			lambdaDFired = true
+		case <-s.lTimer.Timer.C:
+			lambdaLFired = true
 		case qo = <-s.opCh:
 		}
 
 		if lambdaPFired {
 			if isConnected {
-				s.lambdaPTask()
+				s.sendFromQueueOrDecoy()
 			}
-		} else {
+		}
+		if lambdaDFired {
+			if isConnected {
+				s.sendDropDecoy()
+			}
+		}
+		if lambdaLFired {
+			if isConnected {
+				s.sendLoopDecoy()
+			}
+		}
+		if qo != nil {
 			switch op := qo.(type) {
 			case opIsEmpty:
 				// XXX do periodic cleanup here
@@ -126,12 +170,19 @@ func (s *Session) worker() {
 		if lambdaPFired {
 			s.pTimer.Next()
 		}
+		if lambdaDFired {
+			s.dTimer.Next()
+		}
+		if lambdaLFired {
+			s.lTimer.Next()
+		}
+
 	}
 
 	// NOTREACHED
 }
 
-func (s *Session) lambdaPTask() {
+func (s *Session) sendFromQueueOrDecoy() {
 	// Attempt to send user data first, if any exists.
 	// Otherwise send a drop decoy message.
 	_, err := s.egressQueue.Peek()
@@ -142,7 +193,7 @@ func (s *Session) lambdaPTask() {
 		}
 	} else {
 		if !s.cfg.Debug.DisableDecoyLoops {
-			err = s.sendLoopDecoy()
+			err = s.sendDropDecoy()
 			if err != nil {
 				s.log.Warningf("Failed to send loop decoy traffic: %v", err)
 			}

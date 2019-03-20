@@ -64,6 +64,8 @@ type Session struct {
 	// popping items off our send egress FIFO queue. If the queue is ever
 	// empty we send a decoy loop message.
 	pTimer *poisson.Fount
+	dTimer *poisson.Fount
+	lTimer *poisson.Fount
 
 	linkKey   *ecdh.PrivateKey
 	opCh      chan workerOp
