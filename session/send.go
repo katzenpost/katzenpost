@@ -61,7 +61,11 @@ type Message struct {
 	// SURBType is the SURB type.
 	SURBType int
 
+	// WithSURB specified if a SURB should be bundled with the forward payload.
 	WithSURB bool
+
+	// Specifies if this message is a decoy.
+	IsDecoy bool
 }
 
 // WaitForReply blocks until a reply is received.
@@ -106,17 +110,18 @@ func (s *Session) doSend(msg *Message) error {
 	} else {
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
 	}
-
 	if err != nil {
 		return err
 	}
 
-	msg.Key = key
-	msg.SentAt = time.Now()
-	msg.ReplyETA = eta
-	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
-	s.surbIDMap[surbID] = msg
+	if msg.WithSURB {
+		msg.Key = key
+		msg.SentAt = time.Now()
+		msg.ReplyETA = eta
+		s.mapLock.Lock()
+		defer s.mapLock.Unlock()
+		s.surbIDMap[surbID] = msg
+	}
 	return err
 }
 
@@ -135,7 +140,10 @@ func (s *Session) sendLoopDecoy() error {
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
 		Payload:   payload[:],
+		WithSURB:  true,
+		IsDecoy:   true,
 	}
+	defer s.incrementDecoyLoopTally()
 	return s.doSend(msg)
 }
 
@@ -154,6 +162,8 @@ func (s *Session) sendDropDecoy() error {
 		Recipient: serviceDesc.Name,
 		Provider:  serviceDesc.Provider,
 		Payload:   payload[:],
+		WithSURB:  false,
+		IsDecoy:   true,
 	}
 	return s.doSend(msg)
 }
