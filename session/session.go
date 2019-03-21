@@ -24,6 +24,7 @@ import (
 	mrand "math/rand"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/katzenpost/client/config"
@@ -79,6 +80,8 @@ type Session struct {
 	messageIDMap   map[[cConstants.MessageIDLength]byte]*Message
 	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
 	mapLock        *sync.Mutex
+
+	decoyLoopTally uint64
 }
 
 // New establishes a session with provider using key.
@@ -236,6 +239,14 @@ func (s *Session) onMessage(ciphertextBlock []byte) error {
 	return nil
 }
 
+func (s *Session) incrementDecoyLoopTally() {
+	atomic.AddUint64(&s.decoyLoopTally, 1)
+}
+
+func (s *Session) decrementDecoyLoopTally() {
+	atomic.AddUint64(&s.decoyLoopTally, ^uint64(1-1))
+}
+
 // OnACK is called by the minclient api whe
 // we receive an ACK message
 func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
@@ -250,13 +261,13 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Debug("wtf, received reply with unexpected SURBID")
 		return nil
 	}
-	_, ok = s.replyNotifyMap[*msg.ID]
-	if !ok {
-		s.log.Infof("wtf, received reply with no reply notification mutex, map len is %d", len(s.replyNotifyMap))
-		for key := range s.replyNotifyMap {
-			s.log.Infof("key %x", key)
+
+	if msg.WithSURB && msg.IsDecoy {
+		_, ok := s.surbIDMap[*surbID]
+		if ok {
+			s.decrementDecoyLoopTally()
+			delete(s.surbIDMap, *surbID)
 		}
-		return nil
 	}
 
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
