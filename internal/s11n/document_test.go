@@ -82,10 +82,10 @@ func TestDocument(t *testing.T) {
 		Epoch:              debugTestEpoch,
 		SendRatePerMinute:  testSendRate,
 		Topology:           make([][][]byte, 3),
-		MixLambda:          0.42,
-		MixMaxDelay:        23,
-		SendLambda:         0.69,
-		SendMaxInterval:    17,
+		Mu:                 0.42,
+		MuMaxDelay:         23,
+		LambdaP:            0.69,
+		LambdaPMaxDelay:    17,
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 	}
@@ -116,10 +116,16 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "VerifyAndParseDocument()")
 	require.Equal(doc.Epoch, ddoc.Epoch, "VerifyAndParseDocument(): Epoch")
 	require.Equal(doc.SendRatePerMinute, testSendRate, "VerifyAndParseDocument(): SendRatePerMinute")
-	require.Equal(doc.MixLambda, ddoc.MixLambda, "VerifyAndParseDocument(): MixLambda")
-	require.Equal(doc.MixMaxDelay, ddoc.MixMaxDelay, "VerifyAndParseDocument(): MixMaxDelay")
-	require.Equal(doc.SendLambda, ddoc.SendLambda, "VerifyAndParseDocument(): SendLambda")
-	require.Equal(doc.SendMaxInterval, ddoc.SendMaxInterval, "VerifyAndParseDocument(): SendMaxInterval")
+	require.Equal(doc.Mu, ddoc.Mu, "VerifyAndParseDocument(): Mu")
+	require.Equal(doc.MuMaxDelay, ddoc.MuMaxDelay, "VerifyAndParseDocument(): MuMaxDelay")
+	require.Equal(doc.LambdaP, ddoc.LambdaP, "VerifyAndParseDocument(): LambdaP")
+	require.Equal(doc.LambdaPMaxDelay, ddoc.LambdaPMaxDelay, "VerifyAndParseDocument(): LambdaPMaxDelay")
+	require.Equal(doc.LambdaL, ddoc.LambdaL, "VerifyAndParseDocument(): LambdaL")
+	require.Equal(doc.LambdaLMaxDelay, ddoc.LambdaLMaxDelay, "VerifyAndParseDocument(): LambdaLMaxDelay")
+	require.Equal(doc.LambdaD, ddoc.LambdaD, "VerifyAndParseDocument(): LambdaD")
+	require.Equal(doc.LambdaDMaxDelay, ddoc.LambdaDMaxDelay, "VerifyAndParseDocument(): LambdaDMaxDelay")
+	require.Equal(doc.LambdaM, ddoc.LambdaM, "VerifyAndParseDocument(): LambdaM")
+	require.Equal(doc.LambdaMMaxDelay, ddoc.LambdaMMaxDelay, "VerifyAndParseDocument(): LambdaMMaxDelay")
 
 	t.Logf("Deserialized document: '%v'", ddoc)
 

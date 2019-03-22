@@ -51,13 +51,13 @@ import (
 )
 
 const (
-	descriptorsBucket        = "descriptors"
-	documentsBucket          = "documents"
-	stateAcceptDescriptor    = "accept_desc"
-	stateAcceptVote          = "accept_vote"
-	stateAcceptReveal        = "accept_reveal"
-	stateAcceptSignature     = "accept_signature"
-	stateBootstrap           = "bootstrap"
+	descriptorsBucket     = "descriptors"
+	documentsBucket       = "documents"
+	stateAcceptDescriptor = "accept_desc"
+	stateAcceptVote       = "accept_vote"
+	stateAcceptReveal     = "accept_reveal"
+	stateAcceptSignature  = "accept_signature"
+	stateBootstrap        = "bootstrap"
 )
 
 var (
@@ -65,8 +65,8 @@ var (
 	authorityVoteDeadline    = mixPublishDeadline + epochtime.Period/8
 	authorityRevealDeadline  = authorityVoteDeadline + epochtime.Period/8
 	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
-	errGone   = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet = errors.New("authority: Document is not ready yet")
+	errGone                  = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet                = errors.New("authority: Document is not ready yet")
 )
 
 type descriptor struct {
@@ -293,17 +293,21 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:              s.votingEpoch,
-		SendRatePerMinute:  params.SendRatePerMinute,
-		MixLambda:          params.MixLambda,
-		MixMaxDelay:        params.MixMaxDelay,
-		SendLambda:         params.SendLambda,
-		SendMaxInterval:    params.SendMaxInterval,
-		MixLoopLambda:      params.MixLoopLambda,
-		MixLoopMaxInterval: params.MixLoopMaxInterval,
-		Topology:           topology,
-		Providers:          providers,
-		SharedRandomValue:  srv,
+		Epoch:             s.votingEpoch,
+		SendRatePerMinute: params.SendRatePerMinute,
+		Mu:                params.Mu,
+		MuMaxDelay:        params.MuMaxDelay,
+		LambdaP:           params.LambdaP,
+		LambdaPMaxDelay:   params.LambdaPMaxDelay,
+		LambdaL:           params.LambdaL,
+		LambdaLMaxDelay:   params.LambdaLMaxDelay,
+		LambdaD:           params.LambdaD,
+		LambdaDMaxDelay:   params.LambdaDMaxDelay,
+		LambdaM:           params.LambdaM,
+		LambdaMMaxDelay:   params.LambdaMMaxDelay,
+		Topology:          topology,
+		Providers:         providers,
+		SharedRandomValue: srv,
 	}
 	return doc
 }
@@ -484,7 +488,7 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 		if err == nil {
 			break
 		}
-		if i == len(peer.Addresses) - 1 {
+		if i == len(peer.Addresses)-1 {
 			return err
 		}
 	}
@@ -549,7 +553,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 		if err == nil {
 			break
 		}
-		if i == len(peer.Addresses) - 1 {
+		if i == len(peer.Addresses)-1 {
 			return err
 		}
 	}
@@ -683,12 +687,17 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		}
 		// serialize the vote parameters and tally these as well.
 		params := &config.Parameters{
-			MixLambda:          vote.MixLambda,
-			MixMaxDelay:        vote.MixMaxDelay,
-			SendLambda:         vote.SendLambda,
-			SendMaxInterval:    vote.SendMaxInterval,
-			MixLoopLambda:      vote.MixLoopLambda,
-			MixLoopMaxInterval: vote.MixLoopMaxInterval,
+			SendRatePerMinute: vote.SendRatePerMinute,
+			Mu:                vote.Mu,
+			MuMaxDelay:        vote.MuMaxDelay,
+			LambdaP:           vote.LambdaP,
+			LambdaPMaxDelay:   vote.LambdaPMaxDelay,
+			LambdaL:           vote.LambdaL,
+			LambdaLMaxDelay:   vote.LambdaLMaxDelay,
+			LambdaD:           vote.LambdaD,
+			LambdaDMaxDelay:   vote.LambdaDMaxDelay,
+			LambdaM:           vote.LambdaM,
+			LambdaMMaxDelay:   vote.LambdaMMaxDelay,
 		}
 		b := bytes.Buffer{}
 		e := gob.NewEncoder(&b)

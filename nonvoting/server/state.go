@@ -193,16 +193,20 @@ func (s *state) generateDocument(epoch uint64) {
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:              epoch,
-		SendRatePerMinute:  s.s.cfg.Parameters.SendRatePerMinute,
-		MixLambda:          s.s.cfg.Parameters.MixLambda,
-		MixMaxDelay:        s.s.cfg.Parameters.MixMaxDelay,
-		SendLambda:         s.s.cfg.Parameters.SendLambda,
-		SendMaxInterval:    s.s.cfg.Parameters.SendMaxInterval,
-		MixLoopLambda:      s.s.cfg.Parameters.MixLoopLambda,
-		MixLoopMaxInterval: s.s.cfg.Parameters.MixLoopMaxInterval,
-		Topology:           topology,
-		Providers:          providers,
+		Epoch:             epoch,
+		SendRatePerMinute: s.s.cfg.Parameters.SendRatePerMinute,
+		Mu:                s.s.cfg.Parameters.Mu,
+		MuMaxDelay:        s.s.cfg.Parameters.MuMaxDelay,
+		LambdaP:           s.s.cfg.Parameters.LambdaP,
+		LambdaPMaxDelay:   s.s.cfg.Parameters.LambdaPMaxDelay,
+		LambdaL:           s.s.cfg.Parameters.LambdaL,
+		LambdaLMaxDelay:   s.s.cfg.Parameters.LambdaLMaxDelay,
+		LambdaD:           s.s.cfg.Parameters.LambdaD,
+		LambdaDMaxDelay:   s.s.cfg.Parameters.LambdaDMaxDelay,
+		LambdaM:           s.s.cfg.Parameters.LambdaM,
+		LambdaMMaxDelay:   s.s.cfg.Parameters.LambdaMMaxDelay,
+		Topology:          topology,
+		Providers:         providers,
 	}
 	// For compatibliity with shared s11n implementation between voting
 	// and non-voting authority, add SharedRandomValue.
