@@ -103,10 +103,10 @@ func TestVoteThreshold(t *testing.T) {
 	}
 	docWithTarget := &pki.Document{
 		Epoch:           1,
-		MixLambda:       3.141,
-		MixMaxDelay:     3,
-		SendLambda:      2.6,
-		SendMaxInterval: 42,
+		Mu:              3.141,
+		MuMaxDelay:      3,
+		LambdaP:         2.6,
+		LambdaPMaxDelay: 42,
 		Topology: [][]*pki.MixDescriptor{
 			{targetMix},
 		},
@@ -114,10 +114,10 @@ func TestVoteThreshold(t *testing.T) {
 	}
 	docWithoutTarget := &pki.Document{
 		Epoch:           1,
-		MixLambda:       3.141,
-		MixMaxDelay:     3,
-		SendLambda:      2.6,
-		SendMaxInterval: 42,
+		Mu:              3.141,
+		MuMaxDelay:      3,
+		LambdaP:         2.6,
+		LambdaPMaxDelay: 42,
 		Topology:        [][]*pki.MixDescriptor{[]*pki.MixDescriptor{}},
 		Providers:       []*pki.MixDescriptor{},
 	}

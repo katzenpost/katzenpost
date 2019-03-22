@@ -45,12 +45,16 @@ const (
 	// Note: These values are picked primarily for debugging and need to
 	// be changed to something more suitable for a production deployment
 	// at some point.
-	defaultMixLambda            = 0.00025
-	defaultMixMaxPercentile     = 0.99999
-	defaultSendLambda           = 0.00006
-	defaultSendMaxPercentile    = 0.95
-	defaultMixLoopLambda        = 0.00006
-	defaultMixLoopMaxPercentile = 0.95
+	defaultMu                   = 0.00025
+	defaultMuMaxPercentile      = 0.99999
+	defaultLambdaP              = 0.00025
+	defaultLambdaPMaxPercentile = 0.99999
+	defaultLambdaL              = 0.00025
+	defaultLambdaLMaxPercentile = 0.99999
+	defaultLambdaD              = 0.00025
+	defaultLambdaDMaxPercentile = 0.99999
+	defaultLambdaM              = 0.00025
+	defaultLambdaMMaxPercentile = 0.99999
 )
 
 var defaultLogging = Logging{
@@ -122,40 +126,78 @@ type Parameters struct {
 	// SendRatePerMinute is the rate per minute.
 	SendRatePerMinute uint64
 
-	// MixLambda is the inverse of the mean of the exponential distribution
-	// that the Sphinx packet per-hop mixing delay will be sampled from.
-	MixLambda float64
+	// Mu is the inverse of the mean of the exponential distribution
+	// that is used to select the delay for each hop.
+	Mu float64
 
-	// MixMaxDelay is the maximum Sphinx packet per-hop mixing delay in
-	// milliseconds.
-	MixMaxDelay uint64
+	// MuMaxDelay sets the maximum delay for Mu.
+	MuMaxDelay uint64
 
-	// SendLambda is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine send timing legit forward messages
-	// or drop decoy messages.
-	SendLambda float64
+	// LambdaP is the inverse of the mean of the exponential distribution
+	// that is used to select the delay between clients sending from their egress
+	// FIFO queue or drop decoy message.
+	LambdaP float64
 
-	// SendMaxInterval is the maximum send interval in milliseconds.
-	SendMaxInterval uint64
+	// LambdaPMaxDelay sets the maximum delay for LambdaP.
+	LambdaPMaxDelay uint64
 
-	// MixLoopLambda is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine send timing of loop decoy messages.
-	MixLoopLambda float64
+	// LambdaL is the inverse of the mean of the exponential distribution
+	// that is used to select the delay between clients sending from their egress
+	// FIFO queue or drop decoy message.
+	LambdaL float64
 
-	// MixLoopMaxInterval is the maximum send interval in milliseconds.
-	MixLoopMaxInterval uint64
+	// LambdaLMaxDelay sets the maximum delay for LambdaP.
+	LambdaLMaxDelay uint64
+
+	// LambdaD is the inverse of the mean of the exponential distribution
+	// that is used to select the delay between clients sending from their egress
+	// FIFO queue or drop decoy message.
+	LambdaD float64
+
+	// LambdaDMaxDelay sets the maximum delay for LambdaP.
+	LambdaDMaxDelay uint64
+
+	// LambdaM is the inverse of the mean of the exponential distribution
+	// that is used to select the delay between clients sending from their egress
+	// FIFO queue or drop decoy message.
+	LambdaM float64
+
+	// LambdaMMaxDelay sets the maximum delay for LambdaP.
+	LambdaMMaxDelay uint64
 }
 
 func (pCfg *Parameters) validate() error {
-	if pCfg.MixLambda < 0 {
-		return fmt.Errorf("config: Parameters: MixLambda %v is invalid", pCfg.MixLambda)
+	if pCfg.Mu < 0 {
+		return fmt.Errorf("config: Parameters: Mu %v is invalid", pCfg.Mu)
 	}
-	if pCfg.MixMaxDelay > absoluteMaxDelay {
-		return fmt.Errorf("config: Parameters: MixMaxDelay %v is out of range", pCfg.MixMaxDelay)
+	if pCfg.MuMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: MuMaxDelay %v is out of range", pCfg.MuMaxDelay)
 	}
-	if pCfg.SendLambda < 0 {
-		return fmt.Errorf("config: Parameters: SendLambda %v is invalid", pCfg.SendLambda)
+	if pCfg.LambdaP < 0 {
+		return fmt.Errorf("config: Parameters: LambdaP %v is invalid", pCfg.LambdaP)
 	}
+	if pCfg.LambdaPMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: LambdaPMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaL < 0 {
+		return fmt.Errorf("config: Parameters: LambdaL %v is invalid", pCfg.LambdaP)
+	}
+	if pCfg.LambdaLMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: LambdaLMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaD < 0 {
+		return fmt.Errorf("config: Parameters: LambdaD %v is invalid", pCfg.LambdaP)
+	}
+	if pCfg.LambdaDMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: LambdaDMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+	if pCfg.LambdaM < 0 {
+		return fmt.Errorf("config: Parameters: LambdaM %v is invalid", pCfg.LambdaP)
+	}
+	if pCfg.LambdaMMaxDelay > absoluteMaxDelay {
+		return fmt.Errorf("config: Parameters: LambdaMMaxDelay %v is out of range", pCfg.LambdaPMaxDelay)
+	}
+
 	return nil
 }
 
@@ -163,26 +205,38 @@ func (pCfg *Parameters) applyDefaults() {
 	if pCfg.SendRatePerMinute == 0 {
 		pCfg.SendRatePerMinute = defaultSendRatePerMinute
 	}
-	if pCfg.MixLambda == 0 {
-		pCfg.MixLambda = defaultMixLambda
+	if pCfg.Mu == 0 {
+		pCfg.Mu = defaultMu
 	}
-	if pCfg.MixMaxDelay == 0 {
-		pCfg.MixMaxDelay = uint64(rand.ExpQuantile(pCfg.MixLambda, defaultMixMaxPercentile))
-		if pCfg.MixMaxDelay > absoluteMaxDelay {
-			pCfg.MixMaxDelay = absoluteMaxDelay
+	if pCfg.MuMaxDelay == 0 {
+		pCfg.MuMaxDelay = uint64(rand.ExpQuantile(pCfg.Mu, defaultMuMaxPercentile))
+		if pCfg.MuMaxDelay > absoluteMaxDelay {
+			pCfg.MuMaxDelay = absoluteMaxDelay
 		}
 	}
-	if pCfg.SendLambda == 0 {
-		pCfg.SendLambda = defaultSendLambda
+	if pCfg.LambdaP == 0 {
+		pCfg.LambdaP = defaultLambdaP
 	}
-	if pCfg.SendMaxInterval == 0 {
-		pCfg.SendMaxInterval = uint64(rand.ExpQuantile(pCfg.SendLambda, defaultSendMaxPercentile))
+	if pCfg.LambdaPMaxDelay == 0 {
+		pCfg.LambdaPMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaP, defaultLambdaPMaxPercentile))
 	}
-	if pCfg.MixLoopLambda == 0 {
-		pCfg.MixLoopLambda = defaultMixLoopLambda
+	if pCfg.LambdaL == 0 {
+		pCfg.LambdaL = defaultLambdaL
 	}
-	if pCfg.MixLoopMaxInterval == 0 {
-		pCfg.MixLoopMaxInterval = uint64(rand.ExpQuantile(pCfg.MixLoopLambda, defaultMixLoopMaxPercentile))
+	if pCfg.LambdaLMaxDelay == 0 {
+		pCfg.LambdaLMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaL, defaultLambdaLMaxPercentile))
+	}
+	if pCfg.LambdaD == 0 {
+		pCfg.LambdaD = defaultLambdaD
+	}
+	if pCfg.LambdaDMaxDelay == 0 {
+		pCfg.LambdaDMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaD, defaultLambdaDMaxPercentile))
+	}
+	if pCfg.LambdaM == 0 {
+		pCfg.LambdaM = defaultLambdaM
+	}
+	if pCfg.LambdaMMaxDelay == 0 {
+		pCfg.LambdaMMaxDelay = uint64(rand.ExpQuantile(pCfg.LambdaM, defaultLambdaMMaxPercentile))
 	}
 }
 
