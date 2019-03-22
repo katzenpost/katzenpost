@@ -100,7 +100,7 @@ func (p *pki) worker() {
 	// is initialized, so that force updating the outgoing connection table
 	// is guaranteed to work.
 
-	var lastUpdateEpoch, lastMixMaxDelay, lastSendTokenDuration uint64
+	var lastUpdateEpoch, lastMuMaxDelay, lastSendTokenDuration uint64
 
 	for {
 		const recheckInterval = 1 * time.Minute
@@ -186,10 +186,10 @@ func (p *pki) worker() {
 		// epoch.
 		if now, _, _ := epochtime.Now(); now != lastUpdateEpoch {
 			if ent := p.entryForEpoch(now); ent != nil {
-				if newMixMaxDelay := ent.MixMaxDelay(); newMixMaxDelay != lastMixMaxDelay {
-					p.log.Debugf("Updating scheduler MixMaxDelay for epoch %v: %v", now, newMixMaxDelay)
-					p.glue.Scheduler().OnNewMixMaxDelay(newMixMaxDelay)
-					lastMixMaxDelay = newMixMaxDelay
+				if newMuMaxDelay := ent.MuMaxDelay(); newMuMaxDelay != lastMuMaxDelay {
+					p.log.Debugf("Updating scheduler MuMaxDelay for epoch %v: %v", now, newMuMaxDelay)
+					p.glue.Scheduler().OnNewMixMaxDelay(newMuMaxDelay)
+					lastMuMaxDelay = newMuMaxDelay
 				}
 
 				// send token duration
