@@ -21,12 +21,13 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 )
 
+// XXX work-in-progress
 func (s *Session) SendCreateSpool(privKey *eddsa.PrivateKey, recipient, provider string) error {
 	cmd, err := multispool.CreateSpool(privKey)
 	if err != nil {
 		return err
 	}
-	msgID, err := SendUnreliableQuery(recipient, provider, cmd)
+	_, err = s.SendUnreliableQuery(recipient, provider, cmd)
 	if err != nil {
 		return err
 	}
