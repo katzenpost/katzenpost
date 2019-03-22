@@ -14,13 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package plugin
+// Package grpcplugin is a gRPC based plugin system.
+package grpcplugin
 
 import (
 	"context"
 
 	"github.com/hashicorp/go-plugin"
-	"github.com/katzenpost/server/plugin/proto"
+	"github.com/katzenpost/server/grpcplugin/proto"
 	"google.golang.org/grpc"
 )
 
