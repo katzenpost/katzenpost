@@ -41,8 +41,8 @@ func (e *Entry) Epoch() uint64 {
 }
 
 // MixMaxDelay returns the MixMaxDelay for the cached PKI document.
-func (e *Entry) MixMaxDelay() uint64 {
-	return e.doc.MixMaxDelay
+func (e *Entry) MuMaxDelay() uint64 {
+	return e.doc.MuMaxDelay
 }
 
 // SendRatePerMinute returns the SendRatePerMinute for the cached PKI document.
