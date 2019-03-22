@@ -68,9 +68,9 @@ selectLoop:
 			// packet has a SURB attached have a delay.
 			var delay uint64
 			if idx != len(descs)-1 || (surbID != nil && isForward) {
-				delay = uint64(rand.Exp(rng, doc.MixLambda)) + 1
-				if doc.MixMaxDelay > 0 && delay > doc.MixMaxDelay {
-					delay = doc.MixMaxDelay
+				delay = uint64(rand.Exp(rng, doc.Mu)) + 1
+				if doc.MuMaxDelay > 0 && delay > doc.MuMaxDelay {
+					delay = doc.MuMaxDelay
 				}
 				then = then.Add(time.Duration(delay) * time.Millisecond)
 				delayCmd := &commands.NodeDelay{

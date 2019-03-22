@@ -20,9 +20,9 @@ package pki
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"encoding/base64"
 
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -49,27 +49,45 @@ type Document struct {
 	// SendRatePerMinute is the number of packets per minute a client can send.
 	SendRatePerMinute uint64
 
-	// MixLambda is the inverse of the mean of the exponential distribution
+	// Mu is the inverse of the mean of the exponential distribution
 	// that the Sphinx packet per-hop mixing delay will be sampled from.
-	MixLambda float64
+	Mu float64
 
-	// MixMaxDelay is the maximum Sphinx packet per-hop mixing delay in
+	// MuMaxDelay is the maximum Sphinx packet per-hop mixing delay in
 	// milliseconds.
-	MixMaxDelay uint64
+	MuMaxDelay uint64
 
-	// SendLambda is the inverse of the mean of the exponential distribution
-	// that clients will sample to determine send timing.
-	SendLambda float64
+	// LambdaP is the inverse of the mean of the exponential distribution
+	// that clients will sample to determine the time interval between sending
+	// messages from it's FIFO egress queue or drop decoy messages if the queue
+	// is empty.
+	LambdaP float64
 
-	// SendMaxInterval is the maximum send interval in milliseconds.
-	SendMaxInterval uint64
+	// LambdaPMaxDelay is the maximum time interval in milliseconds.
+	LambdaPMaxDelay uint64
 
-	// MixLoopLambda is the inverse of the mean of the exponential distribution
+	// LambdaL is the inverse of the mean of the exponential distribution
+	// that clients will sample to determine the time interval between sending
+	// decoy loop messages.
+	LambdaL float64
+
+	// LambdaLMaxDelay is the maximum time interval in milliseconds.
+	LambdaLMaxDelay uint64
+
+	// LambdaD is the inverse of the mean of the exponential distribution
+	// that clients will sample to determine the time interval between sending
+	// decoy drop messages.
+	LambdaD float64
+
+	// LambdaDMaxDelay is the maximum time interval in milliseconds.
+	LambdaDMaxDelay uint64
+
+	// LambdaM is the inverse of the mean of the exponential distribution
 	// that mixes will sample to determine send timing of mix loop decoy traffic.
-	MixLoopLambda float64
+	LambdaM float64
 
-	// MixLoopMaxInterval is the maximum send interval in milliseconds.
-	MixLoopMaxInterval uint64
+	// LambdaMMaxDelay is the maximum send interval in milliseconds.
+	LambdaMMaxDelay uint64
 
 	// Topology is the mix network topology, excluding providers.
 	Topology [][]*MixDescriptor
@@ -99,7 +117,7 @@ func (d *Document) String() string {
 	}
 
 	srv := base64.StdEncoding.EncodeToString(d.SharedRandomValue)
-	s := fmt.Sprintf("&{Epoch:%v MixLambda:%v MixMaxDelay:%v SendLambda:%v SendMaxInterval: %v MixLoopLambda: %v MixLoopMaxInterval: %v SharedRandomValue: %v Topology:", d.Epoch, d.MixLambda, d.MixMaxDelay, d.SendLambda, d.SendMaxInterval, d.MixLoopLambda, d.MixLoopMaxInterval, srv)
+	s := fmt.Sprintf("&{Epoch:%v SendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaD:%v LambdaDMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v SharedRandomValue: %v Topology:", d.Epoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaD, d.LambdaDMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("[%v]{", l)
 		s += stringifyDescSlice(nodes)
