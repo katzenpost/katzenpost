@@ -50,25 +50,25 @@ func (s *Session) setTimers(doc *pki.Document) {
 	}
 
 	// λL
-	pDesc = &poisson.Descriptor{
+	lDesc := &poisson.Descriptor{
 		Lambda: doc.LambdaL,
 		Max:    doc.LambdaLMaxDelay,
 	}
 	if s.lTimer == nil {
-		s.lTimer = poisson.NewTimer(pDesc)
+		s.lTimer = poisson.NewTimer(lDesc)
 	} else {
-		s.lTimer.SetPoisson(pDesc)
+		s.lTimer.SetPoisson(lDesc)
 	}
 
 	// λD
-	pDesc = &poisson.Descriptor{
+	dDesc := &poisson.Descriptor{
 		Lambda: doc.LambdaD,
 		Max:    doc.LambdaDMaxDelay,
 	}
-	if s.pTimer == nil {
-		s.pTimer = poisson.NewTimer(pDesc)
+	if s.dTimer == nil {
+		s.dTimer = poisson.NewTimer(dDesc)
 	} else {
-		s.pTimer.SetPoisson(pDesc)
+		s.dTimer.SetPoisson(dDesc)
 	}
 
 }
