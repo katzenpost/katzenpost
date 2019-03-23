@@ -182,6 +182,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, que
 		Recipient: recipient,
 		Provider:  provider,
 		Payload:   payload,
+		WithSURB:  true,
 	}
 	if query {
 		msg.SURBType = cConstants.SurbTypeKaetzchen
