@@ -26,8 +26,8 @@ import (
 	"path"
 
 	"github.com/btcsuite/btcd/btcjson"
-	"github.com/katzenpost/server_plugins/currency/common"
-	"github.com/katzenpost/server_plugins/currency/config"
+	"github.com/katzenpost/server_plugins/grpc_plugins/currency/common"
+	"github.com/katzenpost/server_plugins/grpc_plugins/currency/config"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )

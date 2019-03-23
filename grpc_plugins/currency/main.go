@@ -23,9 +23,9 @@ import (
 	"syscall"
 
 	"github.com/hashicorp/go-plugin"
-	common "github.com/katzenpost/server/plugin"
-	"github.com/katzenpost/server_plugins/currency/config"
-	"github.com/katzenpost/server_plugins/currency/proxy"
+	common "github.com/katzenpost/server/grpcplugin"
+	"github.com/katzenpost/server_plugins/grpc_plugins/currency/config"
+	"github.com/katzenpost/server_plugins/grpc_plugins/currency/proxy"
 )
 
 func main() {
