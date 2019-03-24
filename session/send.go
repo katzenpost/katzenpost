@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	RoundTripTimeSlop time.Duration = 30 * time.Second
+	RoundTripTimeSlop time.Duration = 88 * time.Second
 )
 
 // Message is a message reference which is used to match future
@@ -76,6 +76,7 @@ type Message struct {
 }
 
 func (s *Session) WaitForSent(msgId *[cConstants.MessageIDLength]byte) error {
+	s.log.Debug("Waiting for message to be sent.")
 	s.mapLock.Lock()
 	msg, ok := s.messageIDMap[*msgId]
 	if !ok {
@@ -90,6 +91,7 @@ func (s *Session) WaitForSent(msgId *[cConstants.MessageIDLength]byte) error {
 	}
 	s.mapLock.Unlock()
 	<-waitCh.Out()
+	s.log.Debug("Finished waiting. Message was sent.")
 	return nil
 }
 
@@ -166,11 +168,11 @@ func (s *Session) doSend(msg *Message) error {
 		msg.Sent = true
 		msg.ReplyETA = eta
 		s.mapLock.Lock()
-		defer s.mapLock.Unlock()
 		s.surbIDMap[surbID] = msg
+		s.mapLock.Unlock()
 	}
 	s.eventCh.In() <- &MessageSentEvent{
-		MessageID: msg.ID[:],
+		MessageID: msg.ID,
 		Err:       nil,
 	}
 	return err

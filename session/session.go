@@ -167,21 +167,27 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.setTimers(doc)
 
 	s.Go(s.worker)
+	s.Go(s.eventSinkWorker)
 	return s, nil
 }
 
 func (s *Session) eventSinkWorker() {
 	for {
+		s.log.Debug("*** now awaiting events on the event channel ***")
 		select {
 		case <-s.HaltCh():
 			return
 		case e := <-s.eventCh.Out():
-			replyEvent, ok := e.(MessageReplyEvent)
-			if ok {
-				ch, ok := s.waitChans[*replyEvent.MessageID]
+			switch v := e.(type) {
+			case MessageReplyEvent:
+				s.log.Debug("MESSAGE REPLY EVENT")
+				ch, ok := s.waitChans[*v.MessageID]
 				if ok {
 					ch.In() <- e
 				}
+			case MessageSentEvent:
+				s.log.Debug("MESSAGE SENT EVENT")
+				s.waitSentChans[*v.MessageID].In() <- e
 			}
 		}
 	}
