@@ -72,7 +72,7 @@ func (e *MessageReplyEvent) String() string {
 type MessageSentEvent struct {
 	// MessageID is the local unique identifier for the message, generated
 	// when the message was enqueued.
-	MessageID []byte
+	MessageID *[cConstants.MessageIDLength]byte
 
 	// Err is the error encountered when sending the message if any.
 	Err error
@@ -81,7 +81,7 @@ type MessageSentEvent struct {
 // String returns a string representation of a MessageSentEvent.
 func (e *MessageSentEvent) String() string {
 	if e.Err != nil {
-		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID), e.Err)
+		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
 	}
-	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID))
+	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))
 }
