@@ -42,6 +42,7 @@ import (
 	cutils "github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
+	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -58,9 +59,6 @@ type Session struct {
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 
-	// We use λP a poisson process to control the interval between
-	// popping items off our send egress FIFO queue. If the queue is ever
-	// empty we send a decoy loop message.
 	// λP
 	pTimer *poisson.Fount
 	// λD
@@ -76,10 +74,11 @@ type Session struct {
 	egressQueue     EgressQueue
 	egressQueueLock *sync.Mutex
 
-	surbIDMap      map[[sConstants.SURBIDLength]byte]*Message
-	messageIDMap   map[[cConstants.MessageIDLength]byte]*Message
-	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
-	mapLock        *sync.Mutex
+	eventCh      channels.Channel
+	waitChans    map[[sConstants.SURBIDLength]byte]channels.Channel
+	surbIDMap    map[[sConstants.SURBIDLength]byte]*Message
+	messageIDMap map[[cConstants.MessageIDLength]byte]*Message
+	mapLock      *sync.Mutex
 
 	decoyLoopTally uint64
 }
@@ -112,12 +111,13 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 		log:        log,
 		fatalErrCh: fatalErrCh,
 		opCh:       make(chan workerOp),
+		eventCh:    channels.NewInfiniteChannel(),
+		waitChans:  make(map[[sConstants.SURBIDLength]byte]channels.Channel),
 	}
 
 	// XXX todo: replace all this with persistent data store
 	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*Message)
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
-	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
 	s.mapLock = new(sync.Mutex)
 
 	s.egressQueue = new(Queue)
@@ -168,6 +168,23 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	return s, nil
 }
 
+func (s *Session) eventSinkWorker() {
+	for {
+		select {
+		case <-s.HaltCh():
+			return
+		case e := <-s.eventCh.Out():
+			replyEvent, ok := e.(MessageReplyEvent)
+			if ok {
+				ch, ok := s.waitChans[*replyEvent.MessageID]
+				if ok {
+					ch.In() <- e
+				}
+			}
+		}
+	}
+}
+
 func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 	for {
 		var qo workerOp
@@ -193,6 +210,7 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 			}
 			return op.doc, nil
 		default:
+
 			continue
 		}
 	}
@@ -247,8 +265,7 @@ func (s *Session) decrementDecoyLoopTally() {
 	atomic.AddUint64(&s.decoyLoopTally, ^uint64(1-1))
 }
 
-// OnACK is called by the minclient api whe
-// we receive an ACK message
+// OnACK is called by the minclient api when we receive an ACK message
 func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %x", idStr)
@@ -262,14 +279,6 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		return nil
 	}
 
-	if msg.WithSURB && msg.IsDecoy {
-		_, ok := s.surbIDMap[*surbID]
-		if ok {
-			s.decrementDecoyLoopTally()
-			delete(s.surbIDMap, *surbID)
-		}
-	}
-
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("SURB Reply decryption failure: %s", err)
@@ -280,13 +289,25 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		return nil
 	}
 
+	if msg.WithSURB && msg.IsDecoy {
+		_, ok := s.surbIDMap[*surbID]
+		if ok {
+			s.decrementDecoyLoopTally()
+			delete(s.surbIDMap, *surbID)
+		}
+		return nil
+	}
+
 	switch msg.SURBType {
 	case cConstants.SurbTypeACK:
 		// XXX TODO fix me
+		s.log.Warning("SURB ACK not handled by client.")
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		msg.Reply = plaintext[2:]
-		s.replyNotifyMap[*msg.ID].Unlock()
-		s.messageIDMap[*msg.ID] = msg
+		s.eventCh.In() <- &MessageReplyEvent{
+			MessageID: msg.ID,
+			Payload:   plaintext[2:],
+			Err:       nil,
+		}
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
 	}

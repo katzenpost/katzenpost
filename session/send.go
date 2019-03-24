@@ -19,13 +19,17 @@ package session
 import (
 	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
+	"gopkg.in/eapache/channels.v1"
+)
+
+const (
+	RoundTripTimeSlop = 3000
 )
 
 // Message is a message reference which is used to match future
@@ -69,15 +73,28 @@ type Message struct {
 }
 
 // WaitForReply blocks until a reply is received.
-func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) []byte {
+func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) ([]byte, error) {
 	s.log.Debugf("WaitForReply message ID: %x\n", *msgId)
 	s.mapLock.Lock()
-	replyLock := s.replyNotifyMap[*msgId]
-	s.mapLock.Unlock()
-	replyLock.Lock()
-	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
-	return s.messageIDMap[*msgId].Reply
+	waitCh, ok := s.waitChans[*msgId]
+	if !ok {
+		return nil, fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	}
+	msg, ok := s.messageIDMap[*msgId]
+	if !ok {
+		return nil, fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	}
+	select {
+	case event := <-waitCh.Out():
+		e, ok := event.(MessageReplyEvent)
+		if ok {
+			return e.Payload, nil
+		}
+	case <-time.After(msg.ReplyETA + RoundTripTimeSlop): // XXX
+		return nil, fmt.Errorf("[%v] Failure waiting for reply, timeout reached.", msgId)
+	}
+	return nil, nil
 }
 
 func (s *Session) sendNext() error {
@@ -113,7 +130,6 @@ func (s *Session) doSend(msg *Message) error {
 	if err != nil {
 		return err
 	}
-
 	if msg.WithSURB {
 		msg.Key = key
 		msg.SentAt = time.Now()
@@ -121,6 +137,10 @@ func (s *Session) doSend(msg *Message) error {
 		s.mapLock.Lock()
 		defer s.mapLock.Unlock()
 		s.surbIDMap[surbID] = msg
+	}
+	s.eventCh.In() <- &MessageSentEvent{
+		MessageID: msg.ID[:],
+		Err:       nil,
 	}
 	return err
 }
@@ -168,7 +188,7 @@ func (s *Session) sendDropDecoy() error {
 	return s.doSend(msg)
 }
 
-func (s *Session) composeMessage(recipient, provider string, message []byte, query bool) (*Message, error) {
+func (s *Session) composeMessage(recipient, provider string, message []byte) (*Message, error) {
 	s.log.Debug("SendMessage")
 	if len(message) > constants.UserForwardPayloadLength {
 		return nil, fmt.Errorf("invalid message size: %v", len(message))
@@ -184,25 +204,20 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, que
 		Payload:   payload,
 		WithSURB:  true,
 	}
-	if query {
-		msg.SURBType = cConstants.SurbTypeKaetzchen
-	} else {
-		msg.SURBType = cConstants.SurbTypeACK
-	}
+	msg.SURBType = cConstants.SurbTypeKaetzchen
 	return &msg, nil
 }
 
-// SendQuery sends a mixnet provider-side service query.
-func (s *Session) SendUnreliableQuery(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
-	msg, err := s.composeMessage(recipient, provider, message, true)
+// SendUnreliableMessage sends message without any automatic retransmissions.
+func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
+	msg, err := s.composeMessage(recipient, provider, message)
 	if err != nil {
 		return nil, err
 	}
 
 	s.mapLock.Lock()
-	s.replyNotifyMap[*msg.ID] = new(sync.Mutex)
-	s.replyNotifyMap[*msg.ID].Lock()
 	s.messageIDMap[*msg.ID] = msg
+	s.waitChans[*msg.ID] = channels.NewInfiniteChannel()
 	s.mapLock.Unlock()
 
 	s.egressQueueLock.Lock()
