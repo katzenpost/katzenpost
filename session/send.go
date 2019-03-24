@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	RoundTripTimeSlop = 3000
+	RoundTripTimeSlop time.Duration = 30 * time.Second
 )
 
 // Message is a message reference which is used to match future
@@ -46,6 +46,9 @@ type Message struct {
 
 	// Payload is the message payload
 	Payload []byte
+
+	// Sent is set to true if message was sent.
+	Sent bool
 
 	// SentAt contains the time the message was sent.
 	SentAt time.Time
@@ -72,11 +75,34 @@ type Message struct {
 	IsDecoy bool
 }
 
+func (s *Session) WaitForSent(msgId *[cConstants.MessageIDLength]byte) error {
+	s.mapLock.Lock()
+	msg, ok := s.messageIDMap[*msgId]
+	if !ok {
+		return fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	}
+	if msg.Sent {
+		return nil
+	}
+	waitCh, ok := s.waitSentChans[*msgId]
+	if !ok {
+		return fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	}
+	s.mapLock.Unlock()
+	<-waitCh.Out()
+	return nil
+}
+
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) ([]byte, error) {
 	s.log.Debugf("WaitForReply message ID: %x\n", *msgId)
+
+	err := s.WaitForSent(msgId)
+	if err != nil {
+		return nil, err
+	}
+
 	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
 	waitCh, ok := s.waitChans[*msgId]
 	if !ok {
 		return nil, fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
@@ -85,13 +111,16 @@ func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) ([]byte,
 	if !ok {
 		return nil, fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
 	}
+	s.log.Debug("reply eta is %v", msg.ReplyETA)
+	s.mapLock.Unlock()
+
 	select {
 	case event := <-waitCh.Out():
 		e, ok := event.(MessageReplyEvent)
 		if ok {
 			return e.Payload, nil
 		}
-	case <-time.After(msg.ReplyETA + RoundTripTimeSlop): // XXX
+	case <-time.After(msg.ReplyETA + (msg.ReplyETA / 2)): // XXX
 		return nil, fmt.Errorf("[%v] Failure waiting for reply, timeout reached.", msgId)
 	}
 	return nil, nil
@@ -131,8 +160,10 @@ func (s *Session) doSend(msg *Message) error {
 		return err
 	}
 	if msg.WithSURB {
+		s.log.Debugf("doSend setting ReplyETA to %v", eta)
 		msg.Key = key
 		msg.SentAt = time.Now()
+		msg.Sent = true
 		msg.ReplyETA = eta
 		s.mapLock.Lock()
 		defer s.mapLock.Unlock()
@@ -218,6 +249,7 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 	s.mapLock.Lock()
 	s.messageIDMap[*msg.ID] = msg
 	s.waitChans[*msg.ID] = channels.NewInfiniteChannel()
+	s.waitSentChans[*msg.ID] = channels.NewInfiniteChannel()
 	s.mapLock.Unlock()
 
 	s.egressQueueLock.Lock()

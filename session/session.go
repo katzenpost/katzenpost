@@ -74,11 +74,12 @@ type Session struct {
 	egressQueue     EgressQueue
 	egressQueueLock *sync.Mutex
 
-	eventCh      channels.Channel
-	waitChans    map[[sConstants.SURBIDLength]byte]channels.Channel
-	surbIDMap    map[[sConstants.SURBIDLength]byte]*Message
-	messageIDMap map[[cConstants.MessageIDLength]byte]*Message
-	mapLock      *sync.Mutex
+	eventCh       channels.Channel
+	waitSentChans map[[cConstants.MessageIDLength]byte]channels.Channel
+	waitChans     map[[cConstants.MessageIDLength]byte]channels.Channel
+	surbIDMap     map[[sConstants.SURBIDLength]byte]*Message
+	messageIDMap  map[[cConstants.MessageIDLength]byte]*Message
+	mapLock       *sync.Mutex
 
 	decoyLoopTally uint64
 }
@@ -106,13 +107,14 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_c", cfg.Account.User, cfg.Account.Provider))
 
 	s := &Session{
-		cfg:        cfg,
-		pkiClient:  pkiClient,
-		log:        log,
-		fatalErrCh: fatalErrCh,
-		opCh:       make(chan workerOp),
-		eventCh:    channels.NewInfiniteChannel(),
-		waitChans:  make(map[[sConstants.SURBIDLength]byte]channels.Channel),
+		cfg:           cfg,
+		pkiClient:     pkiClient,
+		log:           log,
+		fatalErrCh:    fatalErrCh,
+		opCh:          make(chan workerOp),
+		eventCh:       channels.NewInfiniteChannel(),
+		waitChans:     make(map[[sConstants.SURBIDLength]byte]channels.Channel),
+		waitSentChans: make(map[[cConstants.MessageIDLength]byte]channels.Channel),
 	}
 
 	// XXX todo: replace all this with persistent data store
