@@ -417,13 +417,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 		}
 	}()
 
-	//XXX: this parameter leaks when the users queue has been emptied
-
-	//fetchEmptyInterval := defaultFetchEmptyInterval
-	//if c.c.cfg.MessagePollInterval > time.Duration(0) {
-	//	fetchEmptyInterval = c.c.cfg.MessagePollInterval
-	//}
-
 	dispatchOnEmpty := func() error {
 		if c.c.cfg.OnEmptyFn != nil {
 			cbWg.Add(1)
@@ -539,7 +532,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
-				// XXX: this is const; we should like to be able to update/change the fetchDelay at runtime or by configuration
 				fetchDelay = pollInterval
 			}
 			continue
@@ -572,9 +564,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			// XXX: this behavior leaks information about the users queue on the provider
-			//fetchDelay = fetchEmptyInterval
-
 			if wireErr = dispatchOnEmpty(); wireErr != nil {
 				return
 			}
@@ -596,26 +585,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}()
 			}
 			seq++
-
-			//XXX: This behavior leaks the presence of messages on the provider
-			//
-			//// This behavior is only valid assuming the consumers of
-			//// this library correctly implement persistent de-duplication
-			//// properly, as is documented in the `OnMessageFn` callback
-			//// doc string, but the behavior is better on the network.
-			//if cmd.QueueSizeHint != 0 {
-			//	c.log.Debugf("QueueSizeHint indicates non-empty queue, accelerating next fetch.")
-			//	fetchDelay = fetchMoreInterval
-			//} else {
-			//	// If the QueueSizeHint is 0, then treat the remote queue as
-			//	// empty, including dispatching the callback if set.
-			//	c.log.Debugf("QueueSizeHint indicates empty queue, delaying next fetch.")
-			//	fetchDelay = fetchEmptyInterval
-			//	if wireErr = dispatchOnEmpty(); wireErr != nil {
-			//		return
-			//	}
-			//}
-
 			if cmd.QueueSizeHint == 0 {
 				c.log.Debugf("QueueSizeHint indicates empty queue, calling dispatchOnEmpty.")
 				if wireErr = dispatchOnEmpty(); wireErr != nil {
@@ -641,9 +610,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}()
 			}
 			seq++
-
-			// XXX: this behavior leaks presence of messages on the users provider
-			//fetchDelay = fetchMoreInterval // Likewise as with Message...
 		case *commands.Consensus:
 			if consensusCtx != nil {
 				c.log.Debugf("Received Consensus: ErrorCode: %v, Payload %v bytes", cmd.ErrorCode, len(cmd.Payload))
