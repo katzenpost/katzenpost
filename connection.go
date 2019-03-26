@@ -373,12 +373,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 }
 
 func (c *connection) onWireConn(w *wire.Session) {
-	const (
-		fetchRespInterval         = 1 * time.Second
-		fetchMoreInterval         = 0 * time.Second
-		defaultFetchEmptyInterval = 1 * time.Minute
-	)
-
+	pollInterval := c.c.GetPollInterval()
 	c.onConnStatusChange(nil)
 
 	var wireErr error
@@ -545,7 +540,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 				// XXX: this is const; we should like to be able to update/change the fetchDelay at runtime or by configuration
-				fetchDelay = fetchRespInterval
+				fetchDelay = pollInterval
 			}
 			continue
 		}
