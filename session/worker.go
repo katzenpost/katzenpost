@@ -37,6 +37,17 @@ type opNewDocument struct {
 	doc *pki.Document
 }
 
+func (s *Session) setPollingInterval(doc *pki.Document) {
+	// Clients have 3 poisson processes:
+	// doc.LambdaP
+	// doc.LambdaL
+	// doc.LambdaD
+	// However only LambdaP and LambdaL result in SURB replies.
+	interval := time.Duration(doc.LambdaP+doc.LambdaL) * time.Millisecond
+	// XXX Correct?
+	s.minclient.SetPollInterval(interval)
+}
+
 func (s *Session) setTimers(doc *pki.Document) {
 	// λP
 	pDesc := &poisson.Descriptor{
@@ -70,7 +81,6 @@ func (s *Session) setTimers(doc *pki.Document) {
 	} else {
 		s.dTimer.SetPoisson(dDesc)
 	}
-
 }
 
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
@@ -104,7 +114,6 @@ func (s *Session) maybeUpdateTimers(doc *pki.Document) {
 		return
 	}
 	s.setTimers(doc)
-
 }
 
 // worker performs work. It runs in it's own goroutine
@@ -161,6 +170,7 @@ func (s *Session) worker() {
 			case opConnStatusChanged:
 				isConnected = s.connStatusChange(op)
 			case opNewDocument:
+				s.setPollingInterval(op.doc)
 				s.maybeUpdateTimers(op.doc)
 			default:
 				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
