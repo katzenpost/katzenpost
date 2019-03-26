@@ -149,7 +149,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
 		DialContextFn:       proxyCfg.ToDialContext("authority"),
-		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Second,
+		MessagePollInterval: 1 * time.Second,
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
