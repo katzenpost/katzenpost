@@ -188,6 +188,8 @@ func (s *Session) eventSinkWorker() {
 			case MessageSentEvent:
 				s.log.Debug("MESSAGE SENT EVENT")
 				s.waitSentChans[*v.MessageID].In() <- e
+			default:
+				s.log.Debug("Error, event sink worker received unknown event type.")
 			}
 		}
 	}
@@ -273,20 +275,17 @@ func (s *Session) decrementDecoyLoopTally() {
 	atomic.AddUint64(&s.decoyLoopTally, ^uint64(1-1))
 }
 
-// OnACK is called by the minclient api when we receive an ACK message
+// OnACK is called by the minclient api when we receive a SURB reply message.
 func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %x", idStr)
-
 	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
-
 	msg, ok := s.surbIDMap[*surbID]
 	if !ok {
 		s.log.Debug("wtf, received reply with unexpected SURBID")
 		return nil
 	}
-
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("SURB Reply decryption failure: %s", err)
@@ -296,7 +295,6 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Warningf("Discarding SURB %v: Invalid payload size: %v", idStr, len(plaintext))
 		return nil
 	}
-
 	if msg.WithSURB && msg.IsDecoy {
 		_, ok := s.surbIDMap[*surbID]
 		if ok {
@@ -305,11 +303,7 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		}
 		return nil
 	}
-
 	switch msg.SURBType {
-	case cConstants.SurbTypeACK:
-		// XXX TODO fix me
-		s.log.Warning("SURB ACK not handled by client.")
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		s.eventCh.In() <- &MessageReplyEvent{
 			MessageID: msg.ID,
