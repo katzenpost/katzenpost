@@ -126,8 +126,21 @@ func (cfg *ClientConfig) validate() error {
 	return nil
 }
 
+func (c *Client) SetPollInterval(interval time.Duration) {
+	c.Lock()
+	c.cfg.MessagePollInterval = interval
+	c.Unlock()
+}
+
+func (c *Client) GetPollInterval() time.Duration {
+	c.RLock()
+	defer c.RUnlock()
+	return c.cfg.MessagePollInterval
+}
+
 // Client is a client instance.
 type Client struct {
+	sync.RWMutex
 	cfg *ClientConfig
 	log *logging.Logger
 
