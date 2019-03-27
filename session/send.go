@@ -32,11 +32,13 @@ const (
 	RoundTripTimeSlop time.Duration = 88 * time.Second
 )
 
+type MessageID *[cConstants.MessageIDLength]byte
+
 // Message is a message reference which is used to match future
 // received SURB replies.
 type Message struct {
 	// ID is the message identifier
-	ID *[cConstants.MessageIDLength]byte
+	ID MessageID
 
 	// Recipient is the message recipient
 	Recipient string
@@ -75,7 +77,7 @@ type Message struct {
 	IsDecoy bool
 }
 
-func (s *Session) WaitForSent(msgId *[cConstants.MessageIDLength]byte) error {
+func (s *Session) WaitForSent(msgId MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
 	s.mapLock.Lock()
 	msg, ok := s.messageIDMap[*msgId]
@@ -100,7 +102,7 @@ func (s *Session) WaitForSent(msgId *[cConstants.MessageIDLength]byte) error {
 }
 
 // WaitForReply blocks until a reply is received.
-func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) ([]byte, error) {
+func (s *Session) WaitForReply(msgId MessageID) ([]byte, error) {
 	s.log.Debugf("WaitForReply message ID: %x\n", *msgId)
 	err := s.WaitForSent(msgId)
 	if err != nil {
