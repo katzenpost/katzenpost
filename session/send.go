@@ -29,6 +29,10 @@ import (
 )
 
 const (
+	// RoundTripTimeSlop is the additional latency incurred by the round trip time
+	// because of queue scheduling, computational overhead, temporary network latency etc.
+	// Here we just set it to some value close to one minute in duration but we should later
+	// adjust this after collecting some statistics.
 	RoundTripTimeSlop time.Duration = 88 * time.Second
 )
 
@@ -79,19 +83,30 @@ type Message struct {
 
 func (s *Session) WaitForSent(msgId MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
+	var waitCh chan Event
+	var ok bool
+	var err error
+	msg := new(Message)
+
 	s.mapLock.Lock()
-	msg, ok := s.messageIDMap[*msgId]
+	msg, ok = s.messageIDMap[*msgId]
 	if !ok {
-		return fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	}
+	waitCh, ok = s.waitSentChans[*msgId]
+	if ok {
+		defer delete(s.waitSentChans, *msgId)
+	} else {
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	}
+	s.mapLock.Unlock()
+
+	if err != nil {
+		return err
 	}
 	if msg.Sent {
 		return nil
 	}
-	waitCh, ok := s.waitSentChans[*msgId]
-	if !ok {
-		return fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
-	}
-	s.mapLock.Unlock()
 	select {
 	case <-waitCh:
 	case <-time.After(1 * time.Minute):
@@ -110,15 +125,24 @@ func (s *Session) WaitForReply(msgId MessageID) ([]byte, error) {
 	}
 	s.mapLock.Lock()
 	waitCh, ok := s.waitChans[*msgId]
-	if !ok {
-		return nil, fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	if ok {
+		defer delete(s.waitChans, *msgId)
+	} else {
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
 	}
 	msg, ok := s.messageIDMap[*msgId]
-	if !ok {
-		return nil, fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+	if ok {
+		// XXX Consider what will happen because of this deletion
+		// when we implement an ARQ based reliability.
+		defer delete(s.messageIDMap, *msgId)
+	} else {
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
 	}
 	s.log.Debug("reply eta is %v", msg.ReplyETA)
 	s.mapLock.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	select {
 	case event := <-waitCh:
 		e, ok := event.(*MessageReplyEvent)
