@@ -37,12 +37,10 @@ import (
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	cutils "github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
-	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -74,9 +72,8 @@ type Session struct {
 	egressQueue     EgressQueue
 	egressQueueLock *sync.Mutex
 
-	eventCh       channels.Channel
-	waitSentChans map[[cConstants.MessageIDLength]byte]channels.Channel
-	waitChans     map[[cConstants.MessageIDLength]byte]channels.Channel
+	waitSentChans map[[cConstants.MessageIDLength]byte]chan Event
+	waitChans     map[[cConstants.MessageIDLength]byte]chan Event
 	surbIDMap     map[[sConstants.SURBIDLength]byte]*Message
 	messageIDMap  map[[cConstants.MessageIDLength]byte]*Message
 	mapLock       *sync.Mutex
@@ -112,16 +109,12 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 		log:           log,
 		fatalErrCh:    fatalErrCh,
 		opCh:          make(chan workerOp),
-		eventCh:       channels.NewInfiniteChannel(),
-		waitChans:     make(map[[sConstants.SURBIDLength]byte]channels.Channel),
-		waitSentChans: make(map[[cConstants.MessageIDLength]byte]channels.Channel),
+		waitChans:     make(map[[sConstants.SURBIDLength]byte]chan Event),
+		waitSentChans: make(map[[cConstants.MessageIDLength]byte]chan Event),
 	}
-
-	// XXX todo: replace all this with persistent data store
 	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*Message)
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
 	s.mapLock = new(sync.Mutex)
-
 	s.egressQueue = new(Queue)
 	s.egressQueueLock = new(sync.Mutex)
 
@@ -165,34 +158,8 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 		return nil, err
 	}
 	s.setTimers(doc)
-
 	s.Go(s.worker)
-	s.Go(s.eventSinkWorker)
 	return s, nil
-}
-
-func (s *Session) eventSinkWorker() {
-	for {
-		s.log.Debug("*** now awaiting events on the event channel ***")
-		select {
-		case <-s.HaltCh():
-			return
-		case e := <-s.eventCh.Out():
-			switch v := e.(type) {
-			case MessageReplyEvent:
-				s.log.Debug("MESSAGE REPLY EVENT")
-				ch, ok := s.waitChans[*v.MessageID]
-				if ok {
-					ch.In() <- e
-				}
-			case MessageSentEvent:
-				s.log.Debug("MESSAGE SENT EVENT")
-				s.waitSentChans[*v.MessageID].In() <- e
-			default:
-				s.log.Debug("Error, event sink worker received unknown event type.")
-			}
-		}
-	}
 }
 
 func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
@@ -276,14 +243,14 @@ func (s *Session) decrementDecoyLoopTally() {
 }
 
 // OnACK is called by the minclient api when we receive a SURB reply message.
-func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
+func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %x", idStr)
 	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
 	msg, ok := s.surbIDMap[*surbID]
 	if !ok {
-		s.log.Debug("wtf, received reply with unexpected SURBID")
+		s.log.Debug("Strange, received reply with unexpected SURBID")
 		return nil
 	}
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
@@ -300,15 +267,26 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		if ok {
 			s.decrementDecoyLoopTally()
 			delete(s.surbIDMap, *surbID)
+			return nil
 		}
+		s.log.Warning("Reply is from an unknown Decoy Loop Message.")
 		return nil
 	}
 	switch msg.SURBType {
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		s.eventCh.In() <- &MessageReplyEvent{
-			MessageID: msg.ID,
-			Payload:   plaintext[2:],
-			Err:       nil,
+		waitCh, ok := s.waitChans[*msg.ID]
+		if ok {
+			select {
+			case waitCh <- &MessageReplyEvent{
+				MessageID: msg.ID,
+				Payload:   plaintext[2:],
+				Err:       nil,
+			}:
+			case <-time.After(3 * time.Second):
+				s.log.Warning("Message Reply Event send timeout failure.")
+			}
+		} else {
+			s.log.Warning("Error, failure to find wait chan in waitChans map for that message ID.")
 		}
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)

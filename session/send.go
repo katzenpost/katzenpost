@@ -17,6 +17,7 @@
 package session
 
 import (
+	"encoding/hex"
 	"fmt"
 	"io"
 	"time"
@@ -25,7 +26,6 @@ import (
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
-	"gopkg.in/eapache/channels.v1"
 )
 
 const (
@@ -90,7 +90,11 @@ func (s *Session) WaitForSent(msgId *[cConstants.MessageIDLength]byte) error {
 		return fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
 	}
 	s.mapLock.Unlock()
-	<-waitCh.Out()
+	select {
+	case <-waitCh:
+	case <-time.After(1 * time.Minute):
+		return fmt.Errorf("[%v] Failure waiting for reply, timeout.", msgId)
+	}
 	s.log.Debug("Finished waiting. Message was sent.")
 	return nil
 }
@@ -98,12 +102,10 @@ func (s *Session) WaitForSent(msgId *[cConstants.MessageIDLength]byte) error {
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) ([]byte, error) {
 	s.log.Debugf("WaitForReply message ID: %x\n", *msgId)
-
 	err := s.WaitForSent(msgId)
 	if err != nil {
 		return nil, err
 	}
-
 	s.mapLock.Lock()
 	waitCh, ok := s.waitChans[*msgId]
 	if !ok {
@@ -115,14 +117,15 @@ func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) ([]byte,
 	}
 	s.log.Debug("reply eta is %v", msg.ReplyETA)
 	s.mapLock.Unlock()
-
 	select {
-	case event := <-waitCh.Out():
-		e, ok := event.(MessageReplyEvent)
+	case event := <-waitCh:
+		e, ok := event.(*MessageReplyEvent)
 		if ok {
 			return e.Payload, nil
+		} else {
+			s.log.Debug("UNKNOWN EVENT TYPE FOUND IN WAIT CHANNEL FOR THE GIVEN MESSAGE ID.")
 		}
-	case <-time.After(msg.ReplyETA + (msg.ReplyETA / 2)): // XXX
+	case <-time.After(msg.ReplyETA + RoundTripTimeSlop):
 		return nil, fmt.Errorf("[%v] Failure waiting for reply, timeout reached.", msgId)
 	}
 	return nil, nil
@@ -150,6 +153,8 @@ func (s *Session) sendNext() error {
 func (s *Session) doSend(msg *Message) error {
 	surbID := [sConstants.SURBIDLength]byte{}
 	io.ReadFull(rand.Reader, surbID[:])
+	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
+	s.log.Debugf("doSend with SURB ID %x", idStr)
 	key := []byte{}
 	var err error
 	var eta time.Duration
@@ -171,11 +176,22 @@ func (s *Session) doSend(msg *Message) error {
 		s.surbIDMap[surbID] = msg
 		s.mapLock.Unlock()
 	}
-	s.eventCh.In() <- &MessageSentEvent{
-		MessageID: msg.ID,
-		Err:       nil,
+
+	eventCh, ok := s.waitSentChans[*msg.ID]
+	if ok {
+		select {
+		case eventCh <- &MessageSentEvent{
+			MessageID: msg.ID,
+			Err:       nil,
+		}:
+		case <-time.After(3 * time.Second):
+			s.log.Debug("timeout reached when attempting to sent to waitSentChans")
+			break
+		}
+	} else {
+		s.log.Debug("no waitSentChans map entry found for that message ID")
 	}
-	return err
+	return nil
 }
 
 func (s *Session) sendLoopDecoy() error {
@@ -250,8 +266,8 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 
 	s.mapLock.Lock()
 	s.messageIDMap[*msg.ID] = msg
-	s.waitChans[*msg.ID] = channels.NewInfiniteChannel()
-	s.waitSentChans[*msg.ID] = channels.NewInfiniteChannel()
+	s.waitChans[*msg.ID] = make(chan Event)
+	s.waitSentChans[*msg.ID] = make(chan Event)
 	s.mapLock.Unlock()
 
 	s.egressQueueLock.Lock()
