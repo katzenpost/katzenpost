@@ -1,5 +1,5 @@
 // timerq.go - Time delayed queue
-// Copyright (C) 2018  Masala, David Stainton.
+// Copyright (C) 2018, 2019  Masala, David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -44,9 +44,9 @@ type TimerQ struct {
 }
 
 // NewTimerQ intantiates a new TimerQ and starts the worker routine
-func NewTimerQ(q nqueue) *TimerQ {
+func NewTimerQ(nextQueue nqueue) *TimerQ {
 	a := &TimerQ{
-		nextQ: q,
+		nextQ: nextQueue,
 		timer: time.NewTimer(0),
 		priq:  queue.New(),
 	}
@@ -58,7 +58,7 @@ func NewTimerQ(q nqueue) *TimerQ {
 // Push adds a message to the TimerQ
 func (a *TimerQ) Push(m *Message) {
 	a.Lock()
-	a.priq.Enqueue(m.expiry(), m)
+	a.priq.Enqueue(m.CurrentExpiry, m)
 	a.Unlock()
 	a.Signal()
 }
@@ -75,7 +75,7 @@ func (a *TimerQ) Remove(m *Message) error {
 				a.Signal()
 			}
 		} else {
-			mo := a.priq.RemovePriority(m.expiry())
+			mo := a.priq.RemovePriority(m.CurrentExpiry)
 			switch mo {
 			case nil:
 			case m == mo.(*Message):
@@ -150,17 +150,4 @@ func (a *TimerQ) worker() {
 		case <-a.wakeupCh():
 		}
 	}
-}
-
-// helper function to determine when to set the timeout for a Message
-// XXX: this should be evaluated for timing side-channel leakage
-func (m *Message) expiry() uint64 {
-	slop := 3 * time.Second
-	avgNextMessageFetch := 3 * time.Second // XXX: this should be determined from the client's configuration
-	return uint64(m.SentAt.Add(slop).Add(avgNextMessageFetch).UnixNano())
-}
-
-// helper function to return the amount of time left before this message expires
-func (m *Message) timeLeft() time.Duration {
-	return m.SentAt.Add(m.ReplyETA).Sub(time.Now())
 }
