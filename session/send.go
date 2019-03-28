@@ -28,46 +28,6 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
-// Message is a message reference which is used to match future
-// received SURB replies.
-type Message struct {
-	// ID is the message identifier
-	ID *[cConstants.MessageIDLength]byte
-
-	// Recipient is the message recipient
-	Recipient string
-
-	// Provider is the recipient Provider
-	Provider string
-
-	// Payload is the message payload
-	Payload []byte
-
-	// SentAt contains the time the message was sent.
-	SentAt time.Time
-
-	// ReplyETA is the expected round trip time to receive a response.
-	ReplyETA time.Duration
-
-	// SURBID is the SURB identifier.
-	SURBID *[sConstants.SURBIDLength]byte
-
-	// Key is the SURB decryption keys
-	Key []byte
-
-	// Reply is the SURB reply
-	Reply []byte
-
-	// SURBType is the SURB type.
-	SURBType int
-
-	// WithSURB specified if a SURB should be bundled with the forward payload.
-	WithSURB bool
-
-	// Specifies if this message is a decoy.
-	IsDecoy bool
-}
-
 // WaitForReply blocks until a reply is received.
 func (s *Session) WaitForReply(msgId *[cConstants.MessageIDLength]byte) []byte {
 	s.log.Debugf("WaitForReply message ID: %x\n", *msgId)
