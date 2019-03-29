@@ -150,12 +150,18 @@ func (s *Session) worker() {
 		}
 		if lambdaDFired {
 			if isConnected {
-				s.sendDropDecoy()
+				err := s.sendDropDecoy()
+				if err != nil {
+					s.log.Error(err.Error())
+				}
 			}
 		}
 		if lambdaLFired {
 			if isConnected {
-				s.sendLoopDecoy()
+				err := s.sendLoopDecoy()
+				if err != nil {
+					s.log.Error(err.Error())
+				}
 			}
 		}
 		if qo != nil {

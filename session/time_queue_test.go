@@ -48,7 +48,8 @@ func TestTimerQueuePush(t *testing.T) {
 
 		m.SentAt = time.Now()
 		m.ReplyETA = 200 * time.Millisecond
-		io.ReadFull(rand.Reader, m.ID[:])
+		_, err := io.ReadFull(rand.Reader, m.ID[:])
+		assert.NoError(err)
 
 		prio := uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
 		a.Push(prio, m)
@@ -89,7 +90,8 @@ func TestTimerQueueRemove(t *testing.T) {
 
 		m.SentAt = time.Now()
 		m.ReplyETA = 100 * time.Millisecond
-		io.ReadFull(rand.Reader, m.ID[:])
+		_, err := io.ReadFull(rand.Reader, m.ID[:])
+		assert.NoError(err)
 		prio := uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
 		a.Push(prio, m)
 		<-time.After(20 * time.Millisecond)

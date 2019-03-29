@@ -54,8 +54,6 @@ type Session struct {
 	log       *logging.Logger
 
 	fatalErrCh chan error
-	haltedCh   chan interface{}
-	haltOnce   sync.Once
 
 	// λP
 	pTimer *poisson.Fount
@@ -239,7 +237,7 @@ func (s *Session) incrementDecoyLoopTally() {
 }
 
 func (s *Session) decrementDecoyLoopTally() {
-	atomic.AddUint64(&s.decoyLoopTally, ^uint64(1-1))
+	atomic.AddUint64(&s.decoyLoopTally, ^uint64(0))
 }
 
 // OnACK is called by the minclient api when we receive a SURB reply message.

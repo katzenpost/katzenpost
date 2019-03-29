@@ -34,12 +34,10 @@ const roundTripTimeSlop = time.Duration(88 * time.Second)
 func (s *Session) WaitForSent(id MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
 	var waitCh chan Event
-	var ok bool
 	var err error
-	msg := new(Message)
 
 	s.mapLock.Lock()
-	msg, ok = s.messageIDMap[*id]
+	msg, ok := s.messageIDMap[*id]
 	if !ok {
 		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
@@ -103,7 +101,7 @@ func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
 	case <-time.After(msg.ReplyETA + roundTripTimeSlop):
 		return nil, fmt.Errorf("[%v] Failure waiting for reply, timeout reached", id)
 	}
-	return nil, nil
+	// unreachable
 }
 
 func (s *Session) sendNext() error {
@@ -127,11 +125,13 @@ func (s *Session) sendNext() error {
 
 func (s *Session) doSend(msg *Message) error {
 	surbID := [sConstants.SURBIDLength]byte{}
-	io.ReadFull(rand.Reader, surbID[:])
+	_, err := io.ReadFull(rand.Reader, surbID[:])
+	if err != nil {
+		return err
+	}
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Debugf("doSend with SURB ID %x", idStr)
 	key := []byte{}
-	var err error
 	var eta time.Duration
 	if msg.WithSURB {
 		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
@@ -178,7 +178,10 @@ func (s *Session) sendLoopDecoy() error {
 	}
 	payload := [constants.UserForwardPayloadLength]byte{}
 	id := [cConstants.MessageIDLength]byte{}
-	io.ReadFull(rand.Reader, id[:])
+	_, err = io.ReadFull(rand.Reader, id[:])
+	if err != nil {
+		return err
+	}
 	msg := &Message{
 		ID:        &id,
 		Recipient: serviceDesc.Name,
@@ -200,7 +203,10 @@ func (s *Session) sendDropDecoy() error {
 	}
 	payload := [constants.UserForwardPayloadLength]byte{}
 	id := [cConstants.MessageIDLength]byte{}
-	io.ReadFull(rand.Reader, id[:])
+	_, err = io.ReadFull(rand.Reader, id[:])
+	if err != nil {
+		return err
+	}
 	msg := &Message{
 		ID:        &id,
 		Recipient: serviceDesc.Name,
@@ -220,7 +226,10 @@ func (s *Session) composeMessage(recipient, provider string, message []byte) (*M
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	copy(payload, message)
 	id := [cConstants.MessageIDLength]byte{}
-	io.ReadFull(rand.Reader, id[:])
+	_, err := io.ReadFull(rand.Reader, id[:])
+	if err != nil {
+		return nil, err
+	}
 	var msg = Message{
 		ID:        &id,
 		Recipient: recipient,
