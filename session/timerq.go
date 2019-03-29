@@ -56,9 +56,9 @@ func NewTimerQ(nextQueue nqueue) *TimerQ {
 }
 
 // Push adds a message to the TimerQ
-func (a *TimerQ) Push(m *Message) {
+func (a *TimerQ) Push(priority uint64, m interface{}) {
 	a.Lock()
-	a.priq.Enqueue(m.CurrentExpiry, m)
+	a.priq.Enqueue(priority, m)
 	a.Unlock()
 	a.Signal()
 }
@@ -75,13 +75,13 @@ func (a *TimerQ) Remove(m *Message) error {
 				a.Signal()
 			}
 		} else {
-			mo := a.priq.RemovePriority(m.CurrentExpiry)
+			mo := a.priq.RemovePriority(mo.Priority)
 			switch mo {
 			case nil:
+				return fmt.Errorf("Failed to remove %v", m)
 			case m == mo.(*Message):
 			default:
 				return fmt.Errorf("Failed to remove %v", m)
-				defer a.Push(mo.(*Message))
 			}
 		}
 	}
@@ -131,14 +131,14 @@ func (a *TimerQ) worker() {
 		var c <-chan time.Time
 		a.Lock()
 		if m := a.priq.Peek(); m != nil {
-			msg := m.Value.(*Message)
-			tl := msg.timeLeft()
-			if tl < 0 {
+			// Figure out if the message needs to be handled now.
+			timeLeft := m.Priority - uint64(time.Now().UnixNano())
+			if timeLeft <= 0 {
 				a.Unlock()
 				a.forward()
 				continue
 			} else {
-				c = time.After(tl)
+				c = time.After(time.Duration(time.Duration(timeLeft)))
 			}
 		}
 		a.Unlock()

@@ -49,7 +49,9 @@ func TestTimerQPush(t *testing.T) {
 		m.SentAt = time.Now()
 		m.ReplyETA = 200 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
-		a.Push(m)
+
+		prio := uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
+		a.Push(prio, m)
 		<-time.After(1 * time.Millisecond)
 	}
 	t.Logf("Sent 10 messages")
@@ -88,7 +90,8 @@ func TestTimerQRemove(t *testing.T) {
 		m.SentAt = time.Now()
 		m.ReplyETA = 100 * time.Millisecond
 		io.ReadFull(rand.Reader, m.ID[:])
-		a.Push(m)
+		prio := uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
+		a.Push(prio, m)
 		<-time.After(20 * time.Millisecond)
 		if i%2 == 0 {
 			er := a.Remove(m)
@@ -97,7 +100,7 @@ func TestTimerQRemove(t *testing.T) {
 		<-time.After(80 * time.Millisecond)
 	}
 	t.Logf("Sent 10 messages")
-	<-time.After(2 * time.Second)
+	<-time.After(3 * time.Second)
 
 	j := 0
 	for {
