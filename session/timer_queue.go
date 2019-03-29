@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	"container/heap"
 	"github.com/katzenpost/core/queue"
 	"github.com/katzenpost/core/worker"
 )
@@ -69,9 +68,8 @@ func (a *TimerQueue) Remove(m *Message) error {
 	defer a.Unlock()
 	if mo := a.priq.Peek(); mo != nil {
 		if mo.Value.(*Message) == m {
-			heap.Pop(a.priq)
+			_ = a.priq.Pop()
 			if a.priq.Len() > 0 {
-				// wake up the worker to reset the timer
 				a.Signal()
 			}
 		} else {
@@ -115,7 +113,7 @@ func (a *TimerQueue) wakeupCh() chan struct{} {
 // pop top item from queue and forward to next queue
 func (a *TimerQueue) forward() {
 	a.Lock()
-	m := heap.Pop(a.priq)
+	m := a.priq.Pop()
 	a.Unlock()
 	if m == nil {
 		return
