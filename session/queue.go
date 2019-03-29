@@ -18,6 +18,7 @@ package session
 
 import (
 	"errors"
+	"sync"
 )
 
 // MaxQueueSize is the maximum queue size.
@@ -45,6 +46,7 @@ type EgressQueue interface {
 // Queue is our in-memory queue implementation used as our egress FIFO queue
 // for messages sent by the client.
 type Queue struct {
+	sync.Mutex
 	content   [MaxQueueSize]Message
 	readHead  int
 	writeHead int
@@ -54,6 +56,8 @@ type Queue struct {
 // Push pushes the given message ref onto the queue and returns nil
 // on success, otherwise an error is returned.
 func (q *Queue) Push(e *Message) error {
+	q.Lock()
+	defer q.Unlock()
 	if q.len >= MaxQueueSize {
 		return ErrQueueFull
 	}
@@ -66,6 +70,8 @@ func (q *Queue) Push(e *Message) error {
 // Pop pops the next message ref off the queue and returns nil
 // upon success, otherwise an error is returned.
 func (q *Queue) Pop() (*Message, error) {
+	q.Lock()
+	defer q.Unlock()
 	if q.len <= 0 {
 		return nil, ErrQueueEmpty
 	}
@@ -79,6 +85,8 @@ func (q *Queue) Pop() (*Message, error) {
 // Peek returns the next message ref from the queue without
 // modifying the queue.
 func (q *Queue) Peek() (*Message, error) {
+	q.Lock()
+	defer q.Unlock()
 	if q.len <= 0 {
 		return nil, ErrQueueEmpty
 	}
