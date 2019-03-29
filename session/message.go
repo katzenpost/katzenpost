@@ -1,0 +1,72 @@
+// message.go - mixnet client internal message type
+// Copyright (C) 2018, 2019  David Stainton.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+package session
+
+import (
+	"time"
+
+	cConstants "github.com/katzenpost/client/constants"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
+)
+
+type MessageID *[cConstants.MessageIDLength]byte
+
+// Message is a message reference which is used to match future
+// received SURB replies.
+type Message struct {
+	// ID is the message identifier
+	ID *[cConstants.MessageIDLength]byte
+
+	// Recipient is the message recipient
+	Recipient string
+
+	// Provider is the recipient Provider
+	Provider string
+
+	// Payload is the message payload
+	Payload []byte
+
+	// SentAt contains the time the message was sent.
+	SentAt time.Time
+
+	// Sent is set to true if the message was sent on the network.
+	Sent bool
+
+	// ReplyETA is the expected round trip time to receive a response.
+	ReplyETA time.Duration
+
+	// SURBID is the SURB identifier.
+	SURBID *[sConstants.SURBIDLength]byte
+
+	// Key is the SURB decryption keys
+	Key []byte
+
+	// Reply is the SURB reply
+	Reply []byte
+
+	// SURBType is the SURB type.
+	SURBType int
+
+	// WithSURB specified if a SURB should be bundled with the forward payload.
+	WithSURB bool
+
+	// Specifies if this message is a decoy.
+	IsDecoy bool
+
+	// CurrentExpiry is the expiration time for dwell time in the current queue.
+	CurrentExpiry uint64
+}
