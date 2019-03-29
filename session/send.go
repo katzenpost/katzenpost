@@ -28,9 +28,10 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
-const RoundTripTimeSlop = time.Duration(88 * time.Second)
+const roundTripTimeSlop = time.Duration(88 * time.Second)
 
-func (s *Session) WaitForSent(msgId MessageID) error {
+// WaitForSent blocks until the message with the corresponding message ID is sent.
+func (s *Session) WaitForSent(id MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
 	var waitCh chan Event
 	var ok bool
@@ -38,15 +39,15 @@ func (s *Session) WaitForSent(msgId MessageID) error {
 	msg := new(Message)
 
 	s.mapLock.Lock()
-	msg, ok = s.messageIDMap[*msgId]
+	msg, ok = s.messageIDMap[*id]
 	if !ok {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
-	waitCh, ok = s.waitSentChans[*msgId]
+	waitCh, ok = s.waitSentChans[*id]
 	if ok {
-		defer delete(s.waitSentChans, *msgId)
+		defer delete(s.waitSentChans, *id)
 	} else {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
 	s.mapLock.Unlock()
 
@@ -59,33 +60,33 @@ func (s *Session) WaitForSent(msgId MessageID) error {
 	select {
 	case <-waitCh:
 	case <-time.After(1 * time.Minute):
-		return fmt.Errorf("[%v] Failure waiting for reply, timeout.", msgId)
+		return fmt.Errorf("[%v] Failure waiting for reply, timeout", id)
 	}
 	s.log.Debug("Finished waiting. Message was sent.")
 	return nil
 }
 
 // WaitForReply blocks until a reply is received.
-func (s *Session) WaitForReply(msgId MessageID) ([]byte, error) {
-	s.log.Debugf("WaitForReply message ID: %x\n", *msgId)
-	err := s.WaitForSent(msgId)
+func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
+	s.log.Debugf("WaitForReply message ID: %x\n", *id)
+	err := s.WaitForSent(id)
 	if err != nil {
 		return nil, err
 	}
 	s.mapLock.Lock()
-	waitCh, ok := s.waitChans[*msgId]
+	waitCh, ok := s.waitChans[*id]
 	if ok {
-		defer delete(s.waitChans, *msgId)
+		defer delete(s.waitChans, *id)
 	} else {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
-	msg, ok := s.messageIDMap[*msgId]
+	msg, ok := s.messageIDMap[*id]
 	if ok {
 		// XXX Consider what will happen because of this deletion
 		// when we implement an ARQ based reliability.
-		defer delete(s.messageIDMap, *msgId)
+		defer delete(s.messageIDMap, *id)
 	} else {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID.", msgId)
+		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
 	s.log.Debug("reply eta is %v", msg.ReplyETA)
 	s.mapLock.Unlock()
@@ -95,13 +96,12 @@ func (s *Session) WaitForReply(msgId MessageID) ([]byte, error) {
 	select {
 	case event := <-waitCh:
 		e, ok := event.(*MessageReplyEvent)
-		if ok {
-			return e.Payload, nil
-		} else {
+		if !ok {
 			s.log.Debug("UNKNOWN EVENT TYPE FOUND IN WAIT CHANNEL FOR THE GIVEN MESSAGE ID.")
 		}
-	case <-time.After(msg.ReplyETA + RoundTripTimeSlop):
-		return nil, fmt.Errorf("[%v] Failure waiting for reply, timeout reached.", msgId)
+		return e.Payload, nil
+	case <-time.After(msg.ReplyETA + roundTripTimeSlop):
+		return nil, fmt.Errorf("[%v] Failure waiting for reply, timeout reached", id)
 	}
 	return nil, nil
 }

@@ -129,7 +129,7 @@ func (s *Session) worker() {
 		var lambdaPFired bool
 		var lambdaDFired bool
 		var lambdaLFired bool
-		var qo workerOp = nil
+		var qo workerOp
 		select {
 		case <-s.HaltCh():
 			s.log.Debugf("Terminating gracefully.")
