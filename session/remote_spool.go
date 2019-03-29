@@ -27,7 +27,7 @@ func (s *Session) SendCreateSpool(privKey *eddsa.PrivateKey, recipient, provider
 	if err != nil {
 		return err
 	}
-	_, err = s.SendUnreliableQuery(recipient, provider, cmd)
+	_, err = s.SendUnreliableMessage(recipient, provider, cmd)
 	if err != nil {
 		return err
 	}

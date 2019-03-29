@@ -37,7 +37,6 @@ import (
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	cutils "github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
@@ -58,9 +57,6 @@ type Session struct {
 	haltedCh   chan interface{}
 	haltOnce   sync.Once
 
-	// We use λP a poisson process to control the interval between
-	// popping items off our send egress FIFO queue. If the queue is ever
-	// empty we send a decoy loop message.
 	// λP
 	pTimer *poisson.Fount
 	// λD
@@ -76,10 +72,11 @@ type Session struct {
 	egressQueue     EgressQueue
 	egressQueueLock *sync.Mutex
 
-	surbIDMap      map[[sConstants.SURBIDLength]byte]*Message
-	messageIDMap   map[[cConstants.MessageIDLength]byte]*Message
-	replyNotifyMap map[[cConstants.MessageIDLength]byte]*sync.Mutex
-	mapLock        *sync.Mutex
+	waitSentChans map[[cConstants.MessageIDLength]byte]chan Event
+	waitChans     map[[cConstants.MessageIDLength]byte]chan Event
+	surbIDMap     map[[sConstants.SURBIDLength]byte]*Message
+	messageIDMap  map[[cConstants.MessageIDLength]byte]*Message
+	mapLock       *sync.Mutex
 
 	decoyLoopTally uint64
 }
@@ -107,19 +104,17 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_c", cfg.Account.User, cfg.Account.Provider))
 
 	s := &Session{
-		cfg:        cfg,
-		pkiClient:  pkiClient,
-		log:        log,
-		fatalErrCh: fatalErrCh,
-		opCh:       make(chan workerOp),
+		cfg:           cfg,
+		pkiClient:     pkiClient,
+		log:           log,
+		fatalErrCh:    fatalErrCh,
+		opCh:          make(chan workerOp),
+		waitChans:     make(map[[sConstants.SURBIDLength]byte]chan Event),
+		waitSentChans: make(map[[cConstants.MessageIDLength]byte]chan Event),
 	}
-
-	// XXX todo: replace all this with persistent data store
 	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*Message)
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
-	s.replyNotifyMap = make(map[[cConstants.MessageIDLength]byte]*sync.Mutex)
 	s.mapLock = new(sync.Mutex)
-
 	s.egressQueue = new(Queue)
 	s.egressQueueLock = new(sync.Mutex)
 
@@ -147,7 +142,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
 		DialContextFn:       proxyCfg.ToDialContext("authority"),
-		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Second,
+		MessagePollInterval: 1 * time.Second,
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
@@ -163,7 +158,6 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 		return nil, err
 	}
 	s.setTimers(doc)
-
 	s.Go(s.worker)
 	return s, nil
 }
@@ -193,6 +187,7 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 			}
 			return op.doc, nil
 		default:
+
 			continue
 		}
 	}
@@ -247,29 +242,17 @@ func (s *Session) decrementDecoyLoopTally() {
 	atomic.AddUint64(&s.decoyLoopTally, ^uint64(1-1))
 }
 
-// OnACK is called by the minclient api whe
-// we receive an ACK message
-func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {
+// OnACK is called by the minclient api when we receive a SURB reply message.
+func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %x", idStr)
-
 	s.mapLock.Lock()
 	defer s.mapLock.Unlock()
-
 	msg, ok := s.surbIDMap[*surbID]
 	if !ok {
-		s.log.Debug("wtf, received reply with unexpected SURBID")
+		s.log.Debug("Strange, received reply with unexpected SURBID")
 		return nil
 	}
-
-	if msg.WithSURB && msg.IsDecoy {
-		_, ok := s.surbIDMap[*surbID]
-		if ok {
-			s.decrementDecoyLoopTally()
-			delete(s.surbIDMap, *surbID)
-		}
-	}
-
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("SURB Reply decryption failure: %s", err)
@@ -279,14 +262,32 @@ func (s *Session) onACK(surbID *[constants.SURBIDLength]byte, ciphertext []byte)
 		s.log.Warningf("Discarding SURB %v: Invalid payload size: %v", idStr, len(plaintext))
 		return nil
 	}
-
+	if msg.WithSURB && msg.IsDecoy {
+		_, ok := s.surbIDMap[*surbID]
+		if ok {
+			s.decrementDecoyLoopTally()
+			delete(s.surbIDMap, *surbID)
+			return nil
+		}
+		s.log.Warning("Reply is from an unknown Decoy Loop Message.")
+		return nil
+	}
 	switch msg.SURBType {
-	case cConstants.SurbTypeACK:
-		// XXX TODO fix me
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		msg.Reply = plaintext[2:]
-		s.replyNotifyMap[*msg.ID].Unlock()
-		s.messageIDMap[*msg.ID] = msg
+		waitCh, ok := s.waitChans[*msg.ID]
+		if ok {
+			select {
+			case waitCh <- &MessageReplyEvent{
+				MessageID: msg.ID,
+				Payload:   plaintext[2:],
+				Err:       nil,
+			}:
+			case <-time.After(3 * time.Second):
+				s.log.Warning("Message Reply Event send timeout failure.")
+			}
+		} else {
+			s.log.Warning("Error, failure to find wait chan in waitChans map for that message ID.")
+		}
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
 	}
