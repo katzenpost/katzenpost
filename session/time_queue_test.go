@@ -25,21 +25,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNewTimerQ(t *testing.T) {
+func TestNewTimerQueue(t *testing.T) {
 	// create a Queue for rescheduled messages
 	q := new(Queue)
 
-	a := NewTimerQ(q)
+	a := NewTimerQueue(q)
 	a.Halt()
 }
 
-func TestTimerQPush(t *testing.T) {
+func TestTimerQueuePush(t *testing.T) {
 	assert := assert.New(t)
 
 	// create a queue for rescheduled messages
 	q := new(Queue)
 
-	a := NewTimerQ(q)
+	a := NewTimerQueue(q)
 
 	// enqueue 10 messages
 	for i := 0; i < 10; i++ {
@@ -74,15 +74,15 @@ func TestTimerQPush(t *testing.T) {
 	a.Halt()
 }
 
-func TestTimerQRemove(t *testing.T) {
+func TestTimerQueueRemove(t *testing.T) {
 	assert := assert.New(t)
 
 	// create a Queue for forwarded messages
 	q := new(Queue)
 
-	a := NewTimerQ(q)
+	a := NewTimerQueue(q)
 
-	// enqueue 10 messages, and call TimerQ.Remove() on half of them before their timers expire
+	// enqueue 10 messages, and call TimerQueue.Remove() on half of them before their timers expire
 	for i := 0; i < 10; i++ {
 		m := &Message{}
 		m.ID = new([16]byte)

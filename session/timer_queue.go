@@ -30,8 +30,8 @@ type nqueue interface {
 	Push(*Message) error
 }
 
-// TimerQ is a queue that delays messages before forwarding to another queue
-type TimerQ struct {
+// TimerQueue is a queue that delays messages before forwarding to another queue
+type TimerQueue struct {
 	sync.Mutex
 	sync.Cond
 	worker.Worker
@@ -43,9 +43,9 @@ type TimerQ struct {
 	wakech chan struct{}
 }
 
-// NewTimerQ intantiates a new TimerQ and starts the worker routine
-func NewTimerQ(nextQueue nqueue) *TimerQ {
-	a := &TimerQ{
+// NewTimerQueue intantiates a new TimerQueue and starts the worker routine
+func NewTimerQueue(nextQueue nqueue) *TimerQueue {
+	a := &TimerQueue{
 		nextQ: nextQueue,
 		timer: time.NewTimer(0),
 		priq:  queue.New(),
@@ -55,16 +55,16 @@ func NewTimerQ(nextQueue nqueue) *TimerQ {
 	return a
 }
 
-// Push adds a message to the TimerQ
-func (a *TimerQ) Push(priority uint64, m interface{}) {
+// Push adds a message to the TimerQueue
+func (a *TimerQueue) Push(priority uint64, m interface{}) {
 	a.Lock()
 	a.priq.Enqueue(priority, m)
 	a.Unlock()
 	a.Signal()
 }
 
-// Remove removes a Message from the TimerQ
-func (a *TimerQ) Remove(m *Message) error {
+// Remove removes a Message from the TimerQueue
+func (a *TimerQueue) Remove(m *Message) error {
 	a.Lock()
 	defer a.Unlock()
 	if mo := a.priq.Peek(); mo != nil {
@@ -88,8 +88,8 @@ func (a *TimerQ) Remove(m *Message) error {
 	return nil
 }
 
-// wakeupCh() returns the channel that fires upon Signal of the TimerQ's sync.Cond
-func (a *TimerQ) wakeupCh() chan struct{} {
+// wakeupCh() returns the channel that fires upon Signal of the TimerQueue's sync.Cond
+func (a *TimerQueue) wakeupCh() chan struct{} {
 	if a.wakech != nil {
 		return a.wakech
 	}
@@ -113,7 +113,7 @@ func (a *TimerQ) wakeupCh() chan struct{} {
 }
 
 // pop top item from queue and forward to next queue
-func (a *TimerQ) forward() {
+func (a *TimerQueue) forward() {
 	a.Lock()
 	m := heap.Pop(a.priq)
 	a.Unlock()
@@ -126,7 +126,7 @@ func (a *TimerQ) forward() {
 	}
 }
 
-func (a *TimerQ) worker() {
+func (a *TimerQueue) worker() {
 	for {
 		var c <-chan time.Time
 		a.Lock()
