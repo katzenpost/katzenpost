@@ -138,7 +138,7 @@ func (a *TimerQ) worker() {
 				a.forward()
 				continue
 			} else {
-				c = time.After(time.Duration(time.Duration(timeLeft)))
+				c = time.After(time.Duration(timeLeft))
 			}
 		}
 		a.Unlock()
