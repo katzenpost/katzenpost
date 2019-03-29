@@ -23,6 +23,7 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
+// MessageID is a message identity byte array.
 type MessageID *[cConstants.MessageIDLength]byte
 
 // Message is a message reference which is used to match future

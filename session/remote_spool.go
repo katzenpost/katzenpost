@@ -21,7 +21,7 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 )
 
-// XXX work-in-progress
+// SendCreateSpool is a work-in-progress right now.
 func (s *Session) SendCreateSpool(privKey *eddsa.PrivateKey, recipient, provider string) error {
 	cmd, err := multispool.CreateSpool(privKey)
 	if err != nil {
