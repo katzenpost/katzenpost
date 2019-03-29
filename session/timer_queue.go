@@ -133,7 +133,7 @@ func (a *TimerQueue) worker() {
 		if m := a.priq.Peek(); m != nil {
 			// Figure out if the message needs to be handled now.
 			timeLeft := m.Priority - uint64(time.Now().UnixNano())
-			if timeLeft <= 0 {
+			if timeLeft == 0 {
 				a.Unlock()
 				a.forward()
 				continue
