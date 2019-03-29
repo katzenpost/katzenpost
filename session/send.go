@@ -28,6 +28,8 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
+const RoundTripTimeSlop = time.Duration(88 * time.Second)
+
 func (s *Session) WaitForSent(msgId MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
 	var waitCh chan Event
