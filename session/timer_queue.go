@@ -17,7 +17,6 @@
 package session
 
 import (
-	"bytes"
 	"fmt"
 	"sync"
 	"time"
@@ -26,8 +25,12 @@ import (
 	"github.com/katzenpost/core/worker"
 )
 
+type Item interface {
+	Priority() uint64
+}
+
 type nqueue interface {
-	Push(*Message) error
+	Push(Item) error
 }
 
 // TimerQueue is a queue that delays messages before forwarding to another queue
@@ -41,17 +44,14 @@ type TimerQueue struct {
 
 	timer  *time.Timer
 	wakech chan struct{}
-
-	priorityMap map[MessageID]uint64
 }
 
 // NewTimerQueue intantiates a new TimerQueue and starts the worker routine
 func NewTimerQueue(nextQueue nqueue) *TimerQueue {
 	a := &TimerQueue{
-		nextQ:       nextQueue,
-		timer:       time.NewTimer(0),
-		priq:        queue.New(),
-		priorityMap: make(map[MessageID]uint64),
+		nextQ: nextQueue,
+		timer: time.NewTimer(0),
+		priq:  queue.New(),
 	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
@@ -59,33 +59,28 @@ func NewTimerQueue(nextQueue nqueue) *TimerQueue {
 }
 
 // Push adds a message to the TimerQueue
-func (a *TimerQueue) Push(priority uint64, m *Message) {
+func (a *TimerQueue) Push(i Item) {
 	a.Lock()
-	a.priq.Enqueue(priority, m)
-	a.priorityMap[m.ID] = priority
+	a.priq.Enqueue(i.Priority(), i)
 	a.Unlock()
 	a.Signal()
 }
 
 // Remove removes a Message from the TimerQueue
-func (a *TimerQueue) Remove(id MessageID) error {
+func (a *TimerQueue) Remove(i Item) error {
 	a.Lock()
 	defer a.Unlock()
 	if mo := a.priq.Peek(); mo != nil {
-		if bytes.Equal(mo.Value.(*Message).ID[:], id[:]) {
+		if mo.Value.(Item).Priority() == i.Priority() {
 			_ = a.priq.Pop()
 			if a.priq.Len() > 0 {
 				a.Signal()
 			}
 		} else {
-			prio, ok := a.priorityMap[id]
-			if !ok {
-				return fmt.Errorf("Failed to remove, message ID %v not found", id)
-			}
-			delete(a.priorityMap, id)
-			mo := a.priq.RemovePriority(prio)
+			priority := mo.Value.(Item).Priority()
+			mo := a.priq.RemovePriority(priority)
 			if mo == nil {
-				return fmt.Errorf("Failed to remove %v", id)
+				return fmt.Errorf("Failed to remove item with priority %d", priority)
 			}
 		}
 	}
@@ -125,10 +120,8 @@ func (a *TimerQueue) forward() {
 	if m == nil {
 		return
 	}
-	message := m.(*queue.Entry).Value.(*Message)
-	delete(a.priorityMap, message.ID)
-
-	if err := a.nextQ.Push(message); err != nil {
+	item := m.(*queue.Entry).Value.(Item)
+	if err := a.nextQ.Push(item); err != nil {
 		panic(err)
 	}
 }
