@@ -67,8 +67,7 @@ type Session struct {
 	onlineAt  time.Time
 	hasPKIDoc bool
 
-	egressQueue     EgressQueue
-	egressQueueLock *sync.Mutex
+	egressQueue EgressQueue
 
 	waitSentChans map[[cConstants.MessageIDLength]byte]chan Event
 	waitChans     map[[cConstants.MessageIDLength]byte]chan Event
@@ -114,7 +113,6 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
 	s.mapLock = new(sync.Mutex)
 	s.egressQueue = new(Queue)
-	s.egressQueueLock = new(sync.Mutex)
 
 	id := cfg.Account.User + "@" + cfg.Account.Provider
 	basePath := filepath.Join(cfg.Proxy.DataDir, id)

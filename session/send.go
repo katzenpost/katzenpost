@@ -105,9 +105,6 @@ func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
 }
 
 func (s *Session) sendNext() error {
-	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
-
 	msg, err := s.egressQueue.Peek()
 	if err != nil {
 		return err
@@ -254,8 +251,6 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 	s.waitSentChans[*msg.ID] = make(chan Event)
 	s.mapLock.Unlock()
 
-	s.egressQueueLock.Lock()
-	defer s.egressQueueLock.Unlock()
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
