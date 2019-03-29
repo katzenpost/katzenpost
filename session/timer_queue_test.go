@@ -96,8 +96,8 @@ func TestTimerQueueRemove(t *testing.T) {
 		a.Push(prio, m)
 		<-time.After(20 * time.Millisecond)
 		if i%2 == 0 {
-			er := a.Remove(m)
-			assert.NoError(er)
+			err := a.Remove(m.ID)
+			assert.NoError(err)
 		}
 		<-time.After(80 * time.Millisecond)
 	}
