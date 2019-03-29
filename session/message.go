@@ -68,6 +68,10 @@ type Message struct {
 	// Specifies if this message is a decoy.
 	IsDecoy bool
 
-	// CurrentExpiry is the expiration time for dwell time in the current queue.
-	CurrentExpiry uint64
+	// Priority controls the dwell time in the current AQM.
+	QueuePriority uint64
+}
+
+func (m *Message) Priority() uint64 {
+	return m.QueuePriority
 }

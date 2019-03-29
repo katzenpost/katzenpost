@@ -18,6 +18,7 @@ package session
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -109,10 +110,14 @@ func (s *Session) sendNext() error {
 	if err != nil {
 		return err
 	}
-	if msg.Provider == "" {
-		panic("Provider cannot be empty string")
+	if msg == nil {
+		return errors.New("send next failure, message is nil")
 	}
-	err = s.doSend(msg)
+	m, ok := msg.(*Message)
+	if !ok {
+		return errors.New("send next failure, unknown message type")
+	}
+	err = s.doSend(m)
 	if err != nil {
 		return err
 	}
