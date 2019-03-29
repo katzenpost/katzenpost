@@ -17,6 +17,7 @@
 package session
 
 import (
+	"bytes"
 	"fmt"
 	"sync"
 	"time"
@@ -40,14 +41,17 @@ type TimerQueue struct {
 
 	timer  *time.Timer
 	wakech chan struct{}
+
+	priorityMap map[MessageID]uint64
 }
 
 // NewTimerQueue intantiates a new TimerQueue and starts the worker routine
 func NewTimerQueue(nextQueue nqueue) *TimerQueue {
 	a := &TimerQueue{
-		nextQ: nextQueue,
-		timer: time.NewTimer(0),
-		priq:  queue.New(),
+		nextQ:       nextQueue,
+		timer:       time.NewTimer(0),
+		priq:        queue.New(),
+		priorityMap: make(map[MessageID]uint64),
 	}
 	a.L = new(sync.Mutex)
 	a.Go(a.worker)
@@ -55,31 +59,33 @@ func NewTimerQueue(nextQueue nqueue) *TimerQueue {
 }
 
 // Push adds a message to the TimerQueue
-func (a *TimerQueue) Push(priority uint64, m interface{}) {
+func (a *TimerQueue) Push(priority uint64, m *Message) {
 	a.Lock()
 	a.priq.Enqueue(priority, m)
+	a.priorityMap[m.ID] = priority
 	a.Unlock()
 	a.Signal()
 }
 
 // Remove removes a Message from the TimerQueue
-func (a *TimerQueue) Remove(m *Message) error {
+func (a *TimerQueue) Remove(id MessageID) error {
 	a.Lock()
 	defer a.Unlock()
 	if mo := a.priq.Peek(); mo != nil {
-		if mo.Value.(*Message) == m {
+		if bytes.Equal(mo.Value.(*Message).ID[:], id[:]) {
 			_ = a.priq.Pop()
 			if a.priq.Len() > 0 {
 				a.Signal()
 			}
 		} else {
-			mo := a.priq.RemovePriority(mo.Priority)
-			switch mo {
-			case nil:
-				return fmt.Errorf("Failed to remove %v", m)
-			case m == mo.(*Message):
-			default:
-				return fmt.Errorf("Failed to remove %v", m)
+			prio, ok := a.priorityMap[id]
+			if !ok {
+				return fmt.Errorf("Failed to remove, message ID %v not found", id)
+			}
+			delete(a.priorityMap, id)
+			mo := a.priq.RemovePriority(prio)
+			if mo == nil {
+				return fmt.Errorf("Failed to remove %v", id)
 			}
 		}
 	}
@@ -114,12 +120,15 @@ func (a *TimerQueue) wakeupCh() chan struct{} {
 func (a *TimerQueue) forward() {
 	a.Lock()
 	m := a.priq.Pop()
+
 	a.Unlock()
 	if m == nil {
 		return
 	}
+	message := m.(*queue.Entry).Value.(*Message)
+	delete(a.priorityMap, message.ID)
 
-	if err := a.nextQ.Push(m.(*queue.Entry).Value.(*Message)); err != nil {
+	if err := a.nextQ.Push(message); err != nil {
 		panic(err)
 	}
 }
