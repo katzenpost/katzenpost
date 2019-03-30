@@ -36,11 +36,14 @@ func (s *Session) WaitForSent(id MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
 	var waitCh chan Event
 	var err error
-
 	s.mapLock.Lock()
 	msg, ok := s.messageIDMap[*id]
 	if !ok {
 		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
+	} else {
+		if msg.Sent {
+			return nil
+		}
 	}
 	waitCh, ok = s.waitSentChans[*id]
 	if ok {
@@ -49,12 +52,8 @@ func (s *Session) WaitForSent(id MessageID) error {
 		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
 	s.mapLock.Unlock()
-
 	if err != nil {
 		return err
-	}
-	if msg.Sent {
-		return nil
 	}
 	select {
 	case <-waitCh:
