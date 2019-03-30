@@ -71,25 +71,10 @@ func TestClientConnect(t *testing.T) {
 
 		// send a message
 		t.Logf("desc.Provider: %s", desc.Provider)
-		surb, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
+		id, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
 		assert.NoError(err)
 
-		// wait until timeout or a reply is received
-		ch := make(chan []byte)
-		go func() {
-			reply, err := s.WaitForReply(surb)
-			if err != nil {
-				panic(err)
-			}
-			ch <- reply
-		}()
-		select {
-		case <-time.After(epochtime.Period):
-			assert.Fail("Timed out, no reply received")
-		case r := <-ch:
-			t.Logf("Got reply: %s", r)
-		}
-		close(ch)
+		_, err = s.WaitForReply(id)
 		c.Shutdown()
 		c.Wait()
 	}()
