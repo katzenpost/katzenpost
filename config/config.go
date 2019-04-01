@@ -391,7 +391,7 @@ func LoadLinkKey(basePath string) (*ecdh.PrivateKey, error) {
 	linkPriv := filepath.Join(basePath, "link.private.pem")
 	linkPub := filepath.Join(basePath, "link.public.pem")
 	var err error
-	linkKey := new(ecdh.PrivateKey)
+	var linkKey *ecdh.PrivateKey
 	if linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
 		return nil, err
 	}
