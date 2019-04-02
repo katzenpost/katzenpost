@@ -5,8 +5,8 @@ go:
   - "1.11"
 
 install:
-  - git config --global http.https://gopkg.in.followRedirects true
-  - go get -u -v -t ./...
+  - go get -u github.com/golang/dep/cmd/dep
+  - dep ensure -v
 
 script:
-  - go test -v -cover -race -timeout 0 -ldflags "-X github.com/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/server/internal/pki.WarpedEpoch=true" ./...
+  - go test -v -cover -race -timeout 0 -ldflags "-X github.com/katzenpost/client/vendor/github.com/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/client/vendor/github.com/katzenpost/server/internal/pki.WarpedEpoch=true" ./...
