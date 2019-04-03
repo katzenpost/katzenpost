@@ -34,16 +34,16 @@ const (
 )
 
 var (
-	cborHandle *codec.CborHandle
+	cborHandle = new(codec.CborHandle)
 )
 
 type SpoolRequest struct {
-	Command   int                 `cbor:"command"`
-	SpoolID   [SpoolIDSize]byte   `cbor:"spool_id"`
-	Signature [SignatureSize]byte `cbor:"signature"`
-	PublicKey [PublicKeySize]byte `cbor:"public_key"`
-	MessageID [MessageIDSize]byte `cbor:"message_id"`
-	Message   []byte              `cbor:"message"`
+	Command   int
+	SpoolID   [SpoolIDSize]byte
+	Signature [SignatureSize]byte
+	PublicKey [PublicKeySize]byte
+	MessageID [MessageIDSize]byte
+	Message   []byte
 }
 
 func SpoolRequestFromBytes(raw []byte) (SpoolRequest, error) {
@@ -61,9 +61,9 @@ func (s *SpoolRequest) Encode() ([]byte, error) {
 }
 
 type SpoolResponse struct {
-	SpoolID [SpoolIDSize]byte `cbor:"spool_id"`
-	Message []byte            `cbor:"message"`
-	Status  string            `cbor:"status"`
+	SpoolID [SpoolIDSize]byte
+	Message []byte
+	Status  string
 }
 
 func SpoolResponseFromBytes(raw []byte) (SpoolResponse, error) {

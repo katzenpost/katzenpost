@@ -383,7 +383,23 @@ func GenerateKeys(cfg *Config) error {
 		return err
 	}
 	_, err := LoadLinkKey(basePath)
+	if err != nil {
+		return err
+	}
+	_, err = LoadSpoolKey(basePath)
 	return err
+}
+
+// LoadSpoolKey can load or generate the keys
+func LoadSpoolKey(basePath string) (*eddsa.PrivateKey, error) {
+	spoolPriv := filepath.Join(basePath, "spool.private.pem")
+	spoolPub := filepath.Join(basePath, "spool.public.pem")
+	var err error
+	var spoolKey *eddsa.PrivateKey
+	if spoolKey, err = eddsa.Load(spoolPriv, spoolPub, rand.Reader); err != nil {
+		return nil, err
+	}
+	return spoolKey, nil
 }
 
 // LoadLinkKey can load or generate the keys
