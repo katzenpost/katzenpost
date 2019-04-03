@@ -84,12 +84,18 @@ func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
 	pubArray := [PublicKeySize]byte{}
 	sigArray := [SignatureSize]byte{}
+	emtpySpoolID := [SpoolIDSize]byte{}
+	emptyMessageID := [MessageIDSize]byte{}
+	emptyMessage := [45000]byte{}
 	copy(pubArray[:], privKey.PublicKey().Bytes())
 	copy(sigArray[:], signature)
 	s := SpoolRequest{
 		Command:   CreateSpoolCommand,
-		PublicKey: pubArray,
+		SpoolID:   emtpySpoolID,
 		Signature: sigArray,
+		PublicKey: pubArray,
+		MessageID: emptyMessageID,
+		Message:   emptyMessage[:],
 	}
 	return s.Encode()
 }
