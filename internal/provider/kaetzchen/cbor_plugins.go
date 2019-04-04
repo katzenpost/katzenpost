@@ -122,8 +122,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		return
 	}
 
-	var resp []byte
-	respStr, err := pluginClient.OnRequest(&cborplugin.Request{
+	resp, err := pluginClient.OnRequest(&cborplugin.Request{
 		ID:      pkt.ID,
 		Payload: ct,
 		HasSURB: surb != nil,
@@ -134,10 +133,9 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
 		return
 	default:
-		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, respStr)
+		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, resp)
 		return
 	}
-	resp = []byte(respStr)
 	if len(resp) == 0 {
 		k.log.Debugf("No reply from Kaetzchen: %v", pkt.ID)
 		return
