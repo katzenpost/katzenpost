@@ -26,7 +26,7 @@ import (
 
 const OKStatus = "OK"
 
-func (s *Session) submitCommand(cmd []byte, recipient, provider string) ([]byte, error) {
+func (s *Session) submitCommand(cmd []byte, recipient, provider string) (*multispool.SpoolResponse, error) {
 	id, err := s.SendUnreliableMessage(recipient, provider, cmd)
 	if err != nil {
 		return nil, err
@@ -40,19 +40,23 @@ func (s *Session) submitCommand(cmd []byte, recipient, provider string) ([]byte,
 		return nil, err
 	}
 	if strings.Compare(spoolResponse.Status, OKStatus) == 0 {
-		return spoolResponse.Message, nil
+		return &spoolResponse, nil
 	}
+
 	return nil, fmt.Errorf("spool command failure: %s", spoolResponse.Status)
 }
 
 // SendCreateSpool is a work-in-progress right now.
-func (s *Session) CreateSpool(privKey *eddsa.PrivateKey, recipient, provider string) error {
+func (s *Session) CreateSpool(privKey *eddsa.PrivateKey, recipient, provider string) (*[multispool.SpoolIDSize]byte, error) {
 	cmd, err := multispool.CreateSpool(privKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	_, err = s.submitCommand(cmd, recipient, provider)
-	return err
+	spoolResponse, err := s.submitCommand(cmd, recipient, provider)
+	if err != nil {
+		return nil, err
+	}
+	return &spoolResponse.SpoolID, nil
 }
 
 func (s *Session) PurgeSpool(spoolID [multispool.SpoolIDSize]byte, privKey *eddsa.PrivateKey, recipient, provider string) error {
@@ -76,7 +80,7 @@ func (s *Session) AppendToSpool(spoolID [multispool.SpoolIDSize]byte, message []
 func (s *Session) ReadFromSpool(spoolID [multispool.SpoolIDSize]byte, messageID [multispool.MessageIDSize]byte,
 	privKey *eddsa.PrivateKey,
 	recipient,
-	provider string) ([]byte, error) {
+	provider string) (*multispool.SpoolResponse, error) {
 
 	cmd, err := multispool.ReadFromSpool(spoolID, messageID, privKey)
 	if err != nil {

@@ -38,7 +38,7 @@ var (
 )
 
 type SpoolRequest struct {
-	Command   int
+	Command   byte
 	SpoolID   [SpoolIDSize]byte
 	Signature [SignatureSize]byte
 	PublicKey [PublicKeySize]byte
@@ -86,7 +86,7 @@ func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
 	sigArray := [SignatureSize]byte{}
 	emtpySpoolID := [SpoolIDSize]byte{}
 	emptyMessageID := [MessageIDSize]byte{}
-	emptyMessage := [45000]byte{}
+	emptyMessage := []byte{}
 	copy(pubArray[:], privKey.PublicKey().Bytes())
 	copy(sigArray[:], signature)
 	s := SpoolRequest{
@@ -119,7 +119,7 @@ func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
 	s := SpoolRequest{
 		Command: AppendMessageCommand,
 		SpoolID: spoolID,
-		Message: message,
+		Message: message[:],
 	}
 	return s.Encode()
 }
