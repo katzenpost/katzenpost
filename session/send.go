@@ -17,6 +17,7 @@
 package session
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -224,8 +225,12 @@ func (s *Session) composeMessage(recipient, provider string, message []byte) (*M
 	if len(message) > constants.UserForwardPayloadLength {
 		return nil, fmt.Errorf("invalid message size: %v", len(message))
 	}
-	payload := make([]byte, constants.UserForwardPayloadLength)
-	copy(payload, message)
+	rawLen := make([]byte, 4)
+	binary.BigEndian.PutUint32(rawLen, uint32(len(message)))
+
+	payload := [constants.UserForwardPayloadLength]byte{}
+	copy(payload[:4], rawLen)
+	copy(payload[4:], message)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {
@@ -235,7 +240,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte) (*M
 		ID:        &id,
 		Recipient: recipient,
 		Provider:  provider,
-		Payload:   payload,
+		Payload:   payload[:],
 		WithSURB:  true,
 	}
 	msg.SURBType = cConstants.SurbTypeKaetzchen
