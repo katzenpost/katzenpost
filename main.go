@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/katzenpost/client/multispool"
 	"github.com/katzenpost/server/cborplugin"
 	"github.com/ugorji/go/codec"
 )
@@ -49,7 +50,7 @@ func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request
 	if err != nil {
 		panic(err)
 	}
-	spoolRequest := SpoolRequest{}
+	spoolRequest := multispool.SpoolRequest{}
 	err = codec.NewDecoderBytes(req.Payload, cborHandle).Decode(&spoolRequest)
 	if err != nil {
 		panic(err)

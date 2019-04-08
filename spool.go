@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/katzenpost/client/multispool"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 )
@@ -36,23 +37,8 @@ const (
 	MessageIDSize = 4
 )
 
-type SpoolRequest struct {
-	Command   byte
-	SpoolID   []byte
-	Signature []byte
-	PublicKey []byte
-	MessageID []byte
-	Message   []byte
-}
-
-type SpoolResponse struct {
-	SpoolID []byte
-	Message []byte
-	Status  string
-}
-
-func handleSpoolRequest(spoolMap *MemSpoolMap, request *SpoolRequest) *SpoolResponse {
-	spoolResponse := SpoolResponse{}
+func handleSpoolRequest(spoolMap *MemSpoolMap, request *multispool.SpoolRequest) *multispool.SpoolResponse {
+	spoolResponse := multispool.SpoolResponse{}
 	switch request.Command {
 	case CreateSpoolCommand:
 		publicKey := new(eddsa.PublicKey)
