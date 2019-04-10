@@ -20,7 +20,7 @@ package main
 import "C"
 
 import (
-	"github.com/katzenpost/server_plugins/currency/common"
+	"github.com/katzenpost/server_plugins/grpc_plugins/currency/common"
 )
 
 const (
