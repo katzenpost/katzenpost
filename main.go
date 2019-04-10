@@ -17,6 +17,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -85,16 +87,33 @@ func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request
 	req := cborplugin.Request{
 		Payload: make([]byte, 0),
 	}
-	err := codec.NewDecoder(request.Body, cborHandle).Decode(&req)
+
+	buffer := new(bytes.Buffer)
+	_, err := buffer.ReadFrom(request.Body)
 	if err != nil {
+		log.Debug("failed to read request body")
+		panic(err)
+	}
+
+	requestLen := binary.BigEndian.Uint32(buffer.Bytes()[:4])
+	log.Debugf("before decode Request, len is %d, buf len is %d", requestLen, len(buffer.Bytes()[4:]))
+	err = codec.NewDecoderBytes(buffer.Bytes()[4:requestLen+4], cborHandle).Decode(&req)
+	log.Debug("after decode Request")
+	if err != nil {
+		log.Debug("failed to decode Request")
 		panic(err)
 	}
 	spoolRequest := multispool.SpoolRequest{}
-	err = codec.NewDecoderBytes(req.Payload, cborHandle).Decode(&spoolRequest)
+	spoolRequestLen := binary.BigEndian.Uint32(req.Payload[:4])
+	err = codec.NewDecoderBytes(req.Payload[4:spoolRequestLen+4], cborHandle).Decode(&spoolRequest)
 	if err != nil {
+		log.Debug("failed to decode SpoolRequest")
 		panic(err)
 	}
+	log.Debug("before calling handleSpoolRequest")
 	spoolResponse := handleSpoolRequest(spoolMap, &spoolRequest)
+	log.Debug("after calling handleSpoolRequest")
+
 	var spoolResponseSerialized []byte
 	enc := codec.NewEncoderBytes(&spoolResponseSerialized, cborHandle)
 	if err := enc.Encode(spoolResponse); err != nil {

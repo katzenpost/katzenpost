@@ -17,7 +17,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -38,38 +37,56 @@ const (
 )
 
 func handleSpoolRequest(spoolMap *MemSpoolMap, request *multispool.SpoolRequest) *multispool.SpoolResponse {
+	log.Debug("start of handle spool request")
 	spoolResponse := multispool.SpoolResponse{}
+	spoolID := [SpoolIDSize]byte{}
+	copy(spoolID[:], request.SpoolID)
 	switch request.Command {
 	case CreateSpoolCommand:
+		log.Debug("create spool")
 		publicKey := new(eddsa.PublicKey)
 		err := publicKey.FromBytes(request.PublicKey)
 		if err != nil {
 			spoolResponse.Status = err.Error()
+			log.Error(spoolResponse.Status)
 		}
 		spoolResponse.Status = "OK"
 		spoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
-		spoolResponse.SpoolID = spoolID[:]
-	case PurgeSpoolCommand:
-		err := spoolMap.PurgeSpool(request.SpoolID, request.Signature)
 		if err != nil {
 			spoolResponse.Status = err.Error()
+			log.Error(spoolResponse.Status)
+		}
+		spoolResponse.SpoolID = spoolID[:]
+	case PurgeSpoolCommand:
+		log.Debug("purge spool")
+		err := spoolMap.PurgeSpool(spoolID, request.Signature)
+		if err != nil {
+			spoolResponse.Status = err.Error()
+			log.Error(spoolResponse.Status)
 		}
 		spoolResponse.Status = "OK"
 	case AppendMessageCommand:
-		err := spoolMap.AppendToSpool(request.SpoolID, request.Message)
+		log.Debugf("append to spool, with spool ID: %d", request.SpoolID)
+		err := spoolMap.AppendToSpool(spoolID, request.Message)
+		log.Debug("after call to AppendToSpool")
 		if err != nil {
 			spoolResponse.Status = err.Error()
+			log.Error(spoolResponse.Status)
 		}
 		spoolResponse.Status = "OK"
 	case RetrieveMessageCommand:
-		messageID := binary.BigEndian.Uint32(request.MessageID)
-		message, err := spoolMap.ReadFromSpool(request.SpoolID, request.Signature, messageID)
+		log.Debug("read from spool")
+		log.Debugf("before ReadFromSpool with message ID %d", request.MessageID)
+		message, err := spoolMap.ReadFromSpool(spoolID, request.Signature, request.MessageID)
+		log.Debug("after ReadFromSpool")
 		if err != nil {
 			spoolResponse.Status = err.Error()
+			log.Error(spoolResponse.Status)
 		}
 		spoolResponse.Status = "OK"
 		spoolResponse.Message = message
 	}
+	log.Debug("end of handle spool request")
 	return &spoolResponse
 }
 
@@ -103,12 +120,12 @@ func (m *MemSpoolMap) CreateSpool(publicKey *eddsa.PublicKey, signature []byte) 
 
 // PurgeSpool delete the spool associated with the given spool ID.
 // Returns nil on success or an error.
-func (m *MemSpoolMap) PurgeSpool(spoolID []byte, signature []byte) error {
+func (m *MemSpoolMap) PurgeSpool(spoolID [SpoolIDSize]byte, signature []byte) error {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
 		return errors.New("spool ID not found in spools map")
 	}
-	spool, ok := raw_spool.(MemSpool)
+	spool, ok := raw_spool.(*MemSpool)
 	if !ok {
 		return errors.New("invalid spool found")
 	}
@@ -119,24 +136,30 @@ func (m *MemSpoolMap) PurgeSpool(spoolID []byte, signature []byte) error {
 	return nil
 }
 
-func (m *MemSpoolMap) AppendToSpool(spoolID []byte, message []byte) error {
+func (m *MemSpoolMap) AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) error {
+	log.Debug("start of AppendToSpool")
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
+		log.Debug("spool not found")
 		return errors.New("spool not found")
 	}
-	spool, ok := raw_spool.(MemSpool)
+	log.Debug("after Load spool")
+	spool, ok := raw_spool.(*MemSpool)
+	log.Debug("after type assertion")
 	if !ok {
+		log.Debug("invalid spool found")
 		return errors.New("invalid spool found")
 	}
+	log.Debug("end of AppendToSpool")
 	return spool.Append(message)
 }
 
-func (m *MemSpoolMap) ReadFromSpool(spoolID []byte, signature []byte, messageID uint32) ([]byte, error) {
+func (m *MemSpoolMap) ReadFromSpool(spoolID [SpoolIDSize]byte, signature []byte, messageID uint32) ([]byte, error) {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
 		return nil, errors.New("spool not found")
 	}
-	spool, ok := raw_spool.(MemSpool)
+	spool, ok := raw_spool.(*MemSpool)
 	if !ok {
 		return nil, errors.New("invalid spool found")
 	}
