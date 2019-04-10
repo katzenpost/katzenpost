@@ -39,10 +39,10 @@ var (
 
 type SpoolRequest struct {
 	Command   byte
-	SpoolID   [SpoolIDSize]byte
-	Signature [SignatureSize]byte
-	PublicKey [PublicKeySize]byte
-	MessageID [MessageIDSize]byte
+	SpoolID   []byte
+	Signature []byte
+	PublicKey []byte
+	MessageID uint32
 	Message   []byte
 }
 
@@ -61,7 +61,7 @@ func (s *SpoolRequest) Encode() ([]byte, error) {
 }
 
 type SpoolResponse struct {
-	SpoolID [SpoolIDSize]byte
+	SpoolID []byte
 	Message []byte
 	Status  string
 }
@@ -85,16 +85,15 @@ func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
 	pubArray := [PublicKeySize]byte{}
 	sigArray := [SignatureSize]byte{}
 	emtpySpoolID := [SpoolIDSize]byte{}
-	emptyMessageID := [MessageIDSize]byte{}
 	emptyMessage := []byte{}
 	copy(pubArray[:], privKey.PublicKey().Bytes())
 	copy(sigArray[:], signature)
 	s := SpoolRequest{
 		Command:   CreateSpoolCommand,
-		SpoolID:   emtpySpoolID,
-		Signature: sigArray,
-		PublicKey: pubArray,
-		MessageID: emptyMessageID,
+		SpoolID:   emtpySpoolID[:],
+		Signature: sigArray[:],
+		PublicKey: pubArray[:],
+		MessageID: 0,
 		Message:   emptyMessage[:],
 	}
 	return s.Encode()
@@ -108,9 +107,9 @@ func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, e
 	copy(sigArray[:], signature)
 	s := SpoolRequest{
 		Command:   PurgeSpoolCommand,
-		PublicKey: pubArray,
-		Signature: sigArray,
-		SpoolID:   spoolID,
+		PublicKey: pubArray[:],
+		Signature: sigArray[:],
+		SpoolID:   spoolID[:],
 	}
 	return s.Encode()
 }
@@ -118,13 +117,13 @@ func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, e
 func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
 	s := SpoolRequest{
 		Command: AppendMessageCommand,
-		SpoolID: spoolID,
+		SpoolID: spoolID[:],
 		Message: message[:],
 	}
 	return s.Encode()
 }
 
-func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID [MessageIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, error) {
+func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.PrivateKey) ([]byte, error) {
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
 	pubArray := [PublicKeySize]byte{}
 	sigArray := [SignatureSize]byte{}
@@ -132,9 +131,10 @@ func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID [MessageIDSize]byte, pri
 	copy(sigArray[:], signature)
 	s := SpoolRequest{
 		Command:   RetrieveMessageCommand,
-		PublicKey: pubArray,
-		Signature: sigArray,
-		SpoolID:   spoolID,
+		PublicKey: pubArray[:],
+		Signature: sigArray[:],
+		SpoolID:   spoolID[:],
+		MessageID: messageID,
 	}
 	return s.Encode()
 }

@@ -222,14 +222,11 @@ func (s *Session) sendDropDecoy() error {
 
 func (s *Session) composeMessage(recipient, provider string, message []byte) (*Message, error) {
 	s.log.Debug("SendMessage")
-	if len(message) > constants.UserForwardPayloadLength {
+	if len(message) > constants.UserForwardPayloadLength-4 {
 		return nil, fmt.Errorf("invalid message size: %v", len(message))
 	}
-	rawLen := make([]byte, 4)
-	binary.BigEndian.PutUint32(rawLen, uint32(len(message)))
-
 	payload := [constants.UserForwardPayloadLength]byte{}
-	copy(payload[:4], rawLen)
+	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])

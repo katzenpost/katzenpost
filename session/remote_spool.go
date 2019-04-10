@@ -17,6 +17,7 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -46,8 +47,7 @@ func (s *Session) submitCommand(cmd []byte, recipient, provider string) (*multis
 	return nil, fmt.Errorf("spool command failure: %s", spoolResponse.Status)
 }
 
-// SendCreateSpool is a work-in-progress right now.
-func (s *Session) CreateSpool(privKey *eddsa.PrivateKey, recipient, provider string) (*[multispool.SpoolIDSize]byte, error) {
+func (s *Session) CreateSpool(privKey *eddsa.PrivateKey, recipient, provider string) ([]byte, error) {
 	cmd, err := multispool.CreateSpool(privKey)
 	if err != nil {
 		return nil, err
@@ -56,11 +56,16 @@ func (s *Session) CreateSpool(privKey *eddsa.PrivateKey, recipient, provider str
 	if err != nil {
 		return nil, err
 	}
-	return &spoolResponse.SpoolID, nil
+	return spoolResponse.SpoolID, nil
 }
 
-func (s *Session) PurgeSpool(spoolID [multispool.SpoolIDSize]byte, privKey *eddsa.PrivateKey, recipient, provider string) error {
-	cmd, err := multispool.PurgeSpool(spoolID, privKey)
+func (s *Session) PurgeSpool(spoolID []byte, privKey *eddsa.PrivateKey, recipient, provider string) error {
+	if len(spoolID) != multispool.SpoolIDSize {
+		return errors.New("spoolID wrong size")
+	}
+	_spoolID := [multispool.SpoolIDSize]byte{}
+	copy(_spoolID[:], spoolID)
+	cmd, err := multispool.PurgeSpool(_spoolID, privKey)
 	if err != nil {
 		return err
 	}
@@ -68,8 +73,13 @@ func (s *Session) PurgeSpool(spoolID [multispool.SpoolIDSize]byte, privKey *edds
 	return err
 }
 
-func (s *Session) AppendToSpool(spoolID [multispool.SpoolIDSize]byte, message []byte, recipient, provider string) error {
-	cmd, err := multispool.AppendToSpool(spoolID, message)
+func (s *Session) AppendToSpool(spoolID []byte, message []byte, recipient, provider string) error {
+	if len(spoolID) != multispool.SpoolIDSize {
+		return errors.New("spoolID wrong size")
+	}
+	_spoolID := [multispool.SpoolIDSize]byte{}
+	copy(_spoolID[:], spoolID)
+	cmd, err := multispool.AppendToSpool(_spoolID, message)
 	if err != nil {
 		return err
 	}
@@ -77,12 +87,17 @@ func (s *Session) AppendToSpool(spoolID [multispool.SpoolIDSize]byte, message []
 	return err
 }
 
-func (s *Session) ReadFromSpool(spoolID [multispool.SpoolIDSize]byte, messageID [multispool.MessageIDSize]byte,
+func (s *Session) ReadFromSpool(spoolID []byte, messageID uint32,
 	privKey *eddsa.PrivateKey,
 	recipient,
 	provider string) (*multispool.SpoolResponse, error) {
-
-	cmd, err := multispool.ReadFromSpool(spoolID, messageID, privKey)
+	s.log.Debugf("ReadFromSpool MESSAGE ID %d", messageID)
+	if len(spoolID) != multispool.SpoolIDSize {
+		return nil, errors.New("spoolID wrong size")
+	}
+	_spoolID := [multispool.SpoolIDSize]byte{}
+	copy(_spoolID[:], spoolID)
+	cmd, err := multispool.ReadFromSpool(_spoolID, messageID, privKey)
 	if err != nil {
 		return nil, err
 	}
