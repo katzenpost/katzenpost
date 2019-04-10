@@ -58,6 +58,7 @@ Development
 Mixnets?!
 =========
 
+* :doc:`docs/mixnet_academy/syllabus`
 * `Mixnet Bibliography <https://bib.mixnetworks.org>`_
 * `Phillip Rogaway, The Moral Character of Cryptographic Work (2015) <moralcharacter.html>`_
 * Animation: `Panoramix: What is a mixnet? A Short Introduction <https://www.youtube.com/watch?v=dQtk0NcTseg>`_
@@ -77,13 +78,14 @@ Mixnets?!
 .. rubric:: Supported by
 
 .. image:: /_static/images/eu-flag.jpg
-    :width: 70px
+    :width: 80px
     :alt: European Union flag
     :align: left
-    :target: https://panoramix-project.eu/
+    :target: https://panoramix.me/
 
 .. container:: small
 
     This project has received funding from the European Union’s Horizon 2020 
     research and innovation programme under the Grant Agreement No 653497, 
-    Privacy and Accountability in Networks via Optimized Randomized Mix-nets (Panoramix)".
+    Privacy and Accountability in Networks via Optimized Randomized Mix-nets (`Panoramix <https://panoramix.me/>`_)"
+    and is part of the `PANORAMIX Framework <https://panoramix.me/>`_.
