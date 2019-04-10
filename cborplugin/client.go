@@ -28,6 +28,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/binary"
 	"net"
 	"net/http"
 	"os/exec"
@@ -177,7 +178,13 @@ func (c *Client) OnRequest(request *Request) ([]byte, error) {
 	if err := enc.Encode(request); err != nil {
 		return nil, err
 	}
-	rawResponse, err := c.httpClient.Post("http://unix/request", "application/octet-stream", bytes.NewReader(serialized))
+
+	// length prefix cbor Request
+	requestBytes := make([]byte, len(serialized)+4)
+	binary.BigEndian.PutUint32(requestBytes[:4], uint32(len(serialized)))
+	copy(requestBytes[4:], serialized)
+
+	rawResponse, err := c.httpClient.Post("http://unix/request", "application/octet-stream", bytes.NewReader(requestBytes))
 	if err != nil {
 		return nil, err
 	}
