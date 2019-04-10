@@ -59,6 +59,7 @@ type CBORPluginWorker struct {
 	glue glue.Glue
 	log  *logging.Logger
 
+	haltOnce    sync.Once
 	pluginChans PluginChans
 	clients     []*cborplugin.Client
 	forPKI      ServiceMap
@@ -78,7 +79,7 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
-	defer k.log.Debugf("Halting Kaetzchen external worker.")
+	defer k.haltOnce.Do(k.haltAllClients)
 
 	handlerCh, ok := k.pluginChans[recipient]
 	if !ok {
@@ -92,7 +93,6 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 		select {
 		case <-k.HaltCh():
 			k.log.Debugf("Terminating gracefully.")
-			k.haltAllClients()
 			return
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
@@ -108,6 +108,7 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 }
 
 func (k *CBORPluginWorker) haltAllClients() {
+	k.log.Debug("Halting plugin clients.")
 	for _, client := range k.clients {
 		go client.Halt()
 	}
