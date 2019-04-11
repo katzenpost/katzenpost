@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -91,8 +92,9 @@ func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request
 		panic(err)
 	}
 	spoolRequest := multispool.SpoolRequest{}
+	spoolRequestLen := binary.BigEndian.Uint32(req.Payload[:4])
 	log.Debugf("before decoding SpoolRequest len %d", len(req.Payload))
-	err = codec.NewDecoderBytes(req.Payload, cborHandle).Decode(&spoolRequest)
+	err = codec.NewDecoderBytes(req.Payload[4:spoolRequestLen+4], cborHandle).Decode(&spoolRequest)
 	if err != nil {
 		log.Debugf("failed to decode SpoolRequest: %s", err)
 		panic(err)
