@@ -69,11 +69,9 @@ func TestClientConnect(t *testing.T) {
 
 		// send a message
 		t.Logf("desc.Provider: %s", desc.Provider)
-		id, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
+		_, err = s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
 		assert.NoError(err)
 
-		_, err = s.WaitForReply(id)
-		assert.NoError(err)
 		c.Shutdown()
 		c.Wait()
 	}()
