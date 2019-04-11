@@ -28,11 +28,7 @@ import (
 const OKStatus = "OK"
 
 func (s *Session) submitCommand(cmd []byte, recipient, provider string) (*multispool.SpoolResponse, error) {
-	id, err := s.SendUnreliableMessage(recipient, provider, cmd)
-	if err != nil {
-		return nil, err
-	}
-	reply, err := s.WaitForReply(id)
+	reply, err := s.SendUnreliableMessage(recipient, provider, cmd)
 	if err != nil {
 		return nil, err
 	}

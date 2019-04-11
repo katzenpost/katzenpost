@@ -33,7 +33,7 @@ import (
 const roundTripTimeSlop = time.Duration(88 * time.Second)
 
 // WaitForSent blocks until the message with the corresponding message ID is sent.
-func (s *Session) WaitForSent(id MessageID) error {
+func (s *Session) waitForSent(id MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
 	var waitCh chan Event
 	var err error
@@ -66,9 +66,9 @@ func (s *Session) WaitForSent(id MessageID) error {
 }
 
 // WaitForReply blocks until a reply is received.
-func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
+func (s *Session) waitForReply(id MessageID) ([]byte, error) {
 	s.log.Debugf("WaitForReply message ID: %x\n", *id)
-	err := s.WaitForSent(id)
+	err := s.waitForSent(id)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +126,8 @@ func (s *Session) sendNext() error {
 }
 
 func (s *Session) doSend(msg *Message) error {
+	s.mapLock.Lock()
+	defer s.mapLock.Unlock()
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
@@ -149,11 +151,8 @@ func (s *Session) doSend(msg *Message) error {
 		msg.SentAt = time.Now()
 		msg.Sent = true
 		msg.ReplyETA = eta
-		s.mapLock.Lock()
 		s.surbIDMap[surbID] = msg
-		s.mapLock.Unlock()
 	}
-
 	eventCh, ok := s.waitSentChans[*msg.ID]
 	if ok {
 		select {
@@ -245,7 +244,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte) (*M
 }
 
 // SendUnreliableMessage sends message without any automatic retransmissions.
-func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
+func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) ([]byte, error) {
 	msg, err := s.composeMessage(recipient, provider, message)
 	if err != nil {
 		return nil, err
@@ -261,5 +260,5 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 	if err != nil {
 		return nil, err
 	}
-	return msg.ID, err
+	return s.waitForReply(msg.ID)
 }
