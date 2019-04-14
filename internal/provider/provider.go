@@ -72,7 +72,6 @@ type provider struct {
 	spool  spool.Spool
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
-	grpcPluginKaetzchenWorker *kaetzchen.GRPCPluginWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
 
 	httpServers []*http.Server
@@ -84,7 +83,6 @@ func (p *provider) Halt() {
 
 	p.ch.Close()
 	p.kaetzchenWorker.Halt()
-	p.grpcPluginKaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
@@ -129,8 +127,7 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 
 func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
-	map2 := p.grpcPluginKaetzchenWorker.KaetzchenForPKI()
-	map3 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
+	map2 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
 	if map1 == nil && map2 != nil {
 		return map2, nil
 	}
@@ -139,14 +136,6 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 	}
 	// merge sets, panic on duplicate
 	for k, v := range map2 {
-		_, ok := map1[k]
-		if ok {
-			p.log.Debug("WARNING: duplicate plugin entries")
-			panic("WARNING: duplicate plugin entries")
-		}
-		map1[k] = v
-	}
-	for k, v := range map3 {
 		_, ok := map1[k]
 		if ok {
 			p.log.Debug("WARNING: duplicate plugin entries")
@@ -235,18 +224,6 @@ func (p *provider) worker() {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
 				// which will take care to dispose of it.
 				p.kaetzchenWorker.OnKaetzchen(pkt)
-			}
-			continue
-		}
-
-		if p.grpcPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
-			if pkt.IsSURBReply() {
-				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				pkt.Dispose()
-			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
-				// which will take care to dispose of it.
-				p.grpcPluginKaetzchenWorker.OnKaetzchen(pkt)
 			}
 			continue
 		}
@@ -735,10 +712,6 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	grpcPluginWorker, err := kaetzchen.NewGRPCPluginWorker(glue)
-	if err != nil {
-		return nil, err
-	}
 	cborPluginWorker, err := kaetzchen.NewCBORPluginWorker(glue)
 	if err != nil {
 		return nil, err
@@ -748,7 +721,6 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		log:                       glue.LogBackend().GetLogger("provider"),
 		ch:                        channels.NewInfiniteChannel(),
 		kaetzchenWorker:           kaetzchenWorker,
-		grpcPluginKaetzchenWorker: grpcPluginWorker,
 		cborPluginKaetzchenWorker: cborPluginWorker,
 	}
 

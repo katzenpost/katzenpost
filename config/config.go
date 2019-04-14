@@ -367,11 +367,7 @@ type Provider struct {
 	// for this provider.
 	Kaetzchen []*Kaetzchen
 
-	// GRPPluginKaetzchen is the list of configured external GRPC Kaetzchen plugins
-	// for this provider.
-	GRPCPluginKaetzchen []*GRPCPluginKaetzchen
-
-	// CBORPluginKaetzchen is the list of configured external GRPC Kaetzchen plugins
+	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
 	// for this provider.
 	CBORPluginKaetzchen []*CBORPluginKaetzchen
 }
@@ -485,57 +481,7 @@ func (kCfg *Kaetzchen) validate() error {
 	return nil
 }
 
-// PluginKaetzchen is a Provider auto-responder agent.
-type GRPCPluginKaetzchen struct {
-	// Capability is the capability exposed by the agent.
-	Capability string
-
-	// Endpoint is the provider side endpoint that the agent will accept
-	// requests at.  While not required by the spec, this server only
-	// supports Endpoints that are lower-case local-parts of an e-mail
-	// address.
-	Endpoint string
-
-	// Config is the extra per agent arguments to be passed to the agent's
-	// initialization routine.
-	Config map[string]interface{}
-
-	// Command is the full file path to the external plugin program
-	// that implements this Kaetzchen service.
-	Command string
-
-	// MaxConcurrency is the number of worker goroutines to start
-	// for this service.
-	MaxConcurrency int
-
-	// Disable disabled a configured agent.
-	Disable bool
-}
-
-func (kCfg *GRPCPluginKaetzchen) validate() error {
-	if kCfg.Capability == "" {
-		return fmt.Errorf("config: Kaetzchen: Capability is invalid")
-	}
-
-	// Ensure the endpoint is normalized.
-	epNorm, err := precis.UsernameCaseMapped.String(kCfg.Endpoint)
-	if err != nil {
-		return fmt.Errorf("config: Kaetzchen: '%v' has invalid endpoint: %v", kCfg.Capability, err)
-	}
-	if epNorm != kCfg.Endpoint {
-		return fmt.Errorf("config: Kaetzchen: '%v' has non-normalized endpoint %v", kCfg.Capability, kCfg.Endpoint)
-	}
-	if kCfg.Command == "" {
-		return fmt.Errorf("config: Kaetzchen: Command is invalid")
-	}
-	if _, err = mail.ParseAddress(kCfg.Endpoint + "@test.invalid"); err != nil {
-		return fmt.Errorf("config: Kaetzchen: '%v' has non local-part endpoint '%v': %v", kCfg.Capability, kCfg.Endpoint, err)
-	}
-
-	return nil
-}
-
-// PluginKaetzchen is a Provider auto-responder agent.
+// CBORPluginKaetzchen is a Provider auto-responder agent.
 type CBORPluginKaetzchen struct {
 	// Capability is the capability exposed by the agent.
 	Capability string
@@ -689,15 +635,6 @@ func (pCfg *Provider) validate() error {
 
 	capaMap := make(map[string]bool)
 	for _, v := range pCfg.Kaetzchen {
-		if err := v.validate(); err != nil {
-			return err
-		}
-		if capaMap[v.Capability] {
-			return fmt.Errorf("config: Kaetzchen: '%v' configured multiple times", v.Capability)
-		}
-		capaMap[v.Capability] = true
-	}
-	for _, v := range pCfg.GRPCPluginKaetzchen {
 		if err := v.validate(); err != nil {
 			return err
 		}
