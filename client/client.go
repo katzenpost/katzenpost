@@ -50,7 +50,7 @@ func (p *Panda) Padding() int {
 }
 
 // Exchange performs a PANDA protocol message exchange
-func (p *Panda) Exchange(log func(string, ...interface{}), id, message []byte, shutdown chan struct{}) ([]byte, error) {
+func (p *Panda) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, error) {
 	delay := 15 * time.Second
 	for {
 		request := common.PandaRequest{

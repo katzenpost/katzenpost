@@ -20,7 +20,7 @@ var ShutdownErr = errors.New("panda: shutdown requested")
 
 type MeetingPlace interface {
 	Padding() int
-	Exchange(log func(string, ...interface{}), id, message []byte, shutdown chan struct{}) ([]byte, error)
+	Exchange(id, message []byte, shutdown chan struct{}) ([]byte, error)
 }
 
 type KeyExchange struct {
@@ -223,7 +223,7 @@ func (kx *KeyExchange) derivePassword() error {
 }
 
 func (kx *KeyExchange) exchange1() error {
-	reply, err := kx.meetingPlace.Exchange(kx.Log, kx.meeting1[:], kx.message1[:], kx.ShutdownChan)
+	reply, err := kx.meetingPlace.Exchange(kx.meeting1[:], kx.message1[:], kx.ShutdownChan)
 	if err != nil {
 		return err
 	}
@@ -259,7 +259,7 @@ func (kx *KeyExchange) exchange1() error {
 }
 
 func (kx *KeyExchange) exchange2() ([]byte, error) {
-	reply, err := kx.meetingPlace.Exchange(kx.Log, kx.meeting2[:], kx.message2[:], kx.ShutdownChan)
+	reply, err := kx.meetingPlace.Exchange(kx.meeting2[:], kx.message2[:], kx.ShutdownChan)
 	if err != nil {
 		return nil, err
 	}

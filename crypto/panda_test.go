@@ -27,7 +27,7 @@ func (smp *SimpleMeetingPlace) Padding() int {
 	return paddingSize
 }
 
-func (smp *SimpleMeetingPlace) Exchange(log func(string, ...interface{}), id, message []byte, shutdown chan struct{}) ([]byte, error) {
+func (smp *SimpleMeetingPlace) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, error) {
 	i := string(id)
 
 	smp.Lock()
