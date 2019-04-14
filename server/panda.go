@@ -95,17 +95,11 @@ var ErrNoSURBRequest = errors.New("errors, request received without SURB")
 type Panda struct {
 	sync.Mutex
 
-	log    *logging.Logger
-	params map[string]string
+	log *logging.Logger
 
 	jsonHandle codec.JsonHandle
 	store      PandaPostStorage
 	expiration time.Duration
-}
-
-// Parameters returns a map that gets published in the PKI doc.
-func (k *Panda) Parameters() (map[string]string, error) {
-	return k.params, nil
 }
 
 // OnRequest services a client request and returns the reply.
@@ -216,13 +210,8 @@ func New(dwellTime time.Duration, log *logging.Logger) *Panda {
 		log:        log,
 		store:      NewInMemoryPandaStorage(),
 		expiration: dwellTime,
-		params:     make(map[string]string),
 	}
 	k.jsonHandle.Canonical = true
 	k.jsonHandle.ErrorIfNoField = true
-	k.params = map[string]string{
-		"name":    "katzenpanda",
-		"version": "0.0.0",
-	}
 	return k
 }
