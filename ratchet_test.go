@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	pond "github.com/agl/pond/protos"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -42,17 +41,17 @@ func pairedRatchet() (a, b *Ratchet) {
 	a.TheirSigningPublic = &bSigningPublic
 	b.TheirSigningPublic = &aSigningPublic
 
-	kxA, kxB := new(pond.KeyExchange), new(pond.KeyExchange)
+	kxA, kxB := new(KeyExchange), new(KeyExchange)
 	if err := a.FillKeyExchange(kxA); err != nil {
 		panic(err)
 	}
 	if err := b.FillKeyExchange(kxB); err != nil {
 		panic(err)
 	}
-	if err := a.CompleteKeyExchange(kxB, true); err != nil {
+	if err := a.CompleteKeyExchange(kxB); err != nil {
 		panic(err)
 	}
-	if err := b.CompleteKeyExchange(kxA, true); err != nil {
+	if err := b.CompleteKeyExchange(kxA); err != nil {
 		panic(err)
 	}
 

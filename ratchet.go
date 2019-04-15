@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/agl/pond/client/disk"
-	pond "github.com/agl/pond/protos"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -34,6 +33,11 @@ const (
 	// we'll keep track of.
 	maxMissingMessages = 8
 )
+
+type KeyExchange struct {
+	Dh  []byte
+	Dh1 []byte
+}
 
 // Ratchet contains the per-contact, crypto state.
 type Ratchet struct {
@@ -104,7 +108,7 @@ func New(rand io.Reader) *Ratchet {
 
 // FillKeyExchange sets elements of kx with key exchange information from the
 // ratchet.
-func (r *Ratchet) FillKeyExchange(kx *pond.KeyExchange) error {
+func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
 		return errors.New("ratchet: handshake already complete")
 	}
@@ -151,7 +155,7 @@ func (r *Ratchet) GetKXPrivateForTransition() [32]byte {
 
 // CompleteKeyExchange takes a KeyExchange message from the other party and
 // establishes the ratchet.
-func (r *Ratchet) CompleteKeyExchange(kx *pond.KeyExchange) error {
+func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 	if r.kxPrivate0 == nil {
 		return errors.New("ratchet: handshake already complete")
 	}
