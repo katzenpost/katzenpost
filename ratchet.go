@@ -71,10 +71,6 @@ type Ratchet struct {
 	// completed.
 	kxPrivate0, kxPrivate1 *[32]byte
 
-	// v2 is true if we are using the updated ratchet with better forward
-	// security properties.
-	v2 bool
-
 	rand io.Reader
 }
 
@@ -155,7 +151,7 @@ func (r *Ratchet) GetKXPrivateForTransition() [32]byte {
 
 // CompleteKeyExchange takes a KeyExchange message from the other party and
 // establishes the ratchet.
-func (r *Ratchet) CompleteKeyExchange(kx *pond.KeyExchange, isV2 bool) error {
+func (r *Ratchet) CompleteKeyExchange(kx *pond.KeyExchange) error {
 	if r.kxPrivate0 == nil {
 		return errors.New("ratchet: handshake already complete")
 	}
@@ -193,19 +189,11 @@ func (r *Ratchet) CompleteKeyExchange(kx *pond.KeyExchange, isV2 bool) error {
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, r.TheirIdentityPublic)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		if !isV2 {
-			keyMaterial = append(keyMaterial, r.MySigningPublic[:]...)
-			keyMaterial = append(keyMaterial, r.TheirSigningPublic[:]...)
-		}
 	} else {
 		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, r.TheirIdentityPublic)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 		curve25519.ScalarMult(&sharedKey, r.MyIdentityPrivate, &theirDH)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		if !isV2 {
-			keyMaterial = append(keyMaterial, r.TheirSigningPublic[:]...)
-			keyMaterial = append(keyMaterial, r.MySigningPublic[:]...)
-		}
 	}
 
 	h := hmac.New(sha256.New, keyMaterial)
@@ -227,7 +215,6 @@ func (r *Ratchet) CompleteKeyExchange(kx *pond.KeyExchange, isV2 bool) error {
 	r.ratchet = amAlice
 	r.kxPrivate0 = nil
 	r.kxPrivate1 = nil
-	r.v2 = isV2
 
 	return nil
 }
@@ -244,19 +231,11 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		sha.Write(rootKeyUpdateLabel)
 		sha.Write(r.rootKey[:])
 		sha.Write(sharedKey[:])
-
-		if r.v2 {
-			sha.Sum(keyMaterial[:0])
-			h := hmac.New(sha256.New, keyMaterial[:])
-			deriveKey(&r.rootKey, rootKeyLabel, h)
-			deriveKey(&r.nextSendHeaderKey, sendHeaderKeyLabel, h)
-			deriveKey(&r.sendChainKey, chainKeyLabel, h)
-		} else {
-			sha.Sum(r.rootKey[:0])
-			h := hmac.New(sha256.New, r.rootKey[:])
-			deriveKey(&r.nextSendHeaderKey, sendHeaderKeyLabel, h)
-			deriveKey(&r.sendChainKey, chainKeyLabel, h)
-		}
+		sha.Sum(keyMaterial[:0])
+		h := hmac.New(sha256.New, keyMaterial[:])
+		deriveKey(&r.rootKey, rootKeyLabel, h)
+		deriveKey(&r.nextSendHeaderKey, sendHeaderKeyLabel, h)
+		deriveKey(&r.sendChainKey, chainKeyLabel, h)
 		r.prevSendCount, r.sendCount = r.sendCount, 0
 		r.ratchet = false
 	}
@@ -472,15 +451,9 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	sha.Write(sharedKey[:])
 
 	var rootKeyHMAC hash.Hash
-
-	if r.v2 {
-		sha.Sum(keyMaterial[:0])
-		rootKeyHMAC = hmac.New(sha256.New, keyMaterial[:])
-		deriveKey(&rootKey, rootKeyLabel, rootKeyHMAC)
-	} else {
-		sha.Sum(rootKey[:0])
-		rootKeyHMAC = hmac.New(sha256.New, rootKey[:])
-	}
+	sha.Sum(keyMaterial[:0])
+	rootKeyHMAC = hmac.New(sha256.New, keyMaterial[:])
+	deriveKey(&rootKey, rootKeyLabel, rootKeyHMAC)
 	deriveKey(&chainKey, chainKeyLabel, rootKeyHMAC)
 
 	provisionalChainKey, messageKey, savedKeys, err := r.saveKeys(&r.nextRecvHeaderKey, &chainKey, messageNum, 0)
@@ -538,7 +511,6 @@ func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *disk.RatchetSt
 		Ratchet:            proto.Bool(r.ratchet),
 		Private0:           dup(r.kxPrivate0),
 		Private1:           dup(r.kxPrivate1),
-		V2:                 proto.Bool(r.v2),
 	}
 
 	for headerKey, messageKeys := range r.saved {
@@ -589,7 +561,6 @@ func (r *Ratchet) Unmarshal(s *disk.RatchetState) error {
 	r.recvCount = *s.RecvCount
 	r.prevSendCount = *s.PrevSendCount
 	r.ratchet = *s.Ratchet
-	r.v2 = s.GetV2()
 
 	if len(s.Private0) > 0 {
 		if !unmarshalKey(r.kxPrivate0, s.Private0) ||
