@@ -72,6 +72,65 @@ func TestExchange(t *testing.T) {
 	}
 }
 
+func TestSerialization(t *testing.T) {
+	a, b := pairedRatchet()
+
+	// 1
+	msg1 := []byte("test message number one is a short one")
+	encrypted1 := a.Encrypt(nil, msg1)
+	result1, err := b.Decrypt(encrypted1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(msg1, result1) {
+		t.Fatalf("result doesn't match: %x vs %x", msg1, result1)
+	}
+
+	serialized, err := a.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := New(rand.Reader)
+	c.UnmarshalBinary(serialized)
+
+	// 2
+	msg2 := []byte(`The word privacy, its meaning abstract and debated, its connotations often
+negative, is not a winning word. Privacy is for medical records, toileting, and
+sex — not for democracy or freedom. The word anonymity is even worse: modern
+political parlance has painted this as nearly a flavor of terrorism. Security is
+more winning a word and, in fact, I spoke of secure messaging instead of private
+messaging or anonymous messaging because I think it better captures what I
+want conveyed: that a communication whose endpoints are manifest is not at all
+secure. A person needs to feel insecure if using such a channel.`)
+	encrypted2 := c.Encrypt(nil, msg2)
+	result2, err := b.Decrypt(encrypted2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(msg2, result2) {
+		t.Fatalf("result doesn't match: %x vs %x", msg2, result2)
+	}
+
+	// 3
+	msg3 := []byte(`But even the word security doesn’t support a good framing of our problem:
+we should try to speak of thwarting mass surveillance more than enhancing
+privacy, anonymity, or security. As discussed before, we know instinctively
+that ubiquitous surveillance is incompatible with freedom, democracy, and
+human rights. 189 This makes surveillance a thing against which one can fight.
+The surveillance camera and data center make visual our emerging dystopia,
+while privacy, anonymity, and security are so abstract as to nearly defy visual
+representation.`)
+	encrypted3 := c.Encrypt(nil, msg3)
+	result3, err := b.Decrypt(encrypted3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(msg3, result3) {
+		t.Fatalf("result doesn't match: %x vs %x", msg3, result3)
+	}
+
+}
+
 type scriptAction struct {
 	// object is one of sendA, sendB or sendDelayed. The first two options
 	// cause a message to be sent from one party to the other. The latter

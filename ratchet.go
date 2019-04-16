@@ -12,8 +12,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/agl/pond/client/disk"
-	"github.com/golang/protobuf/proto"
+	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
 )
@@ -32,11 +31,45 @@ const (
 	// maxMissingMessages is the maximum number of missing messages that
 	// we'll keep track of.
 	maxMissingMessages = 8
+
+	RatchetKeyMaxLifetime = time.Hour * 672
 )
+
+var cborHandle = new(codec.CborHandle)
 
 type KeyExchange struct {
 	Dh  []byte
 	Dh1 []byte
+}
+
+type MessageKey struct {
+	Num          uint32
+	Key          []byte
+	CreationTime int64
+}
+
+type SavedKeys struct {
+	HeaderKey   []byte
+	MessageKeys []*MessageKey
+}
+
+type RatchetState struct {
+	SavedKeys          []*SavedKeys
+	RootKey            []byte
+	SendHeaderKey      []byte
+	RecvHeaderKey      []byte
+	NextSendHeaderKey  []byte
+	NextRecvHeaderKey  []byte
+	SendChainKey       []byte
+	RecvChainKey       []byte
+	SendRatchetPrivate []byte
+	RecvRatchetPublic  []byte
+	SendCount          uint32
+	RecvCount          uint32
+	PrevSendCount      uint32
+	Private0           []byte
+	Private1           []byte
+	Ratchet            bool
 }
 
 // Ratchet contains the per-contact, crypto state.
@@ -498,8 +531,18 @@ func dup(key *[32]byte) []byte {
 	return ret
 }
 
-func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *disk.RatchetState {
-	s := &disk.RatchetState{
+func (r *Ratchet) MarshalBinary() (data []byte, err error) {
+	s := r.Marshal(time.Now(), RatchetKeyMaxLifetime)
+	var serialized []byte
+	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
+	if err := enc.Encode(s); err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *RatchetState {
+	s := &RatchetState{
 		RootKey:            dup(&r.rootKey),
 		SendHeaderKey:      dup(&r.sendHeaderKey),
 		RecvHeaderKey:      dup(&r.recvHeaderKey),
@@ -509,27 +552,27 @@ func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *disk.RatchetSt
 		RecvChainKey:       dup(&r.recvChainKey),
 		SendRatchetPrivate: dup(&r.sendRatchetPrivate),
 		RecvRatchetPublic:  dup(&r.recvRatchetPublic),
-		SendCount:          proto.Uint32(r.sendCount),
-		RecvCount:          proto.Uint32(r.recvCount),
-		PrevSendCount:      proto.Uint32(r.prevSendCount),
-		Ratchet:            proto.Bool(r.ratchet),
+		SendCount:          r.sendCount,
+		RecvCount:          r.recvCount,
+		PrevSendCount:      r.prevSendCount,
 		Private0:           dup(r.kxPrivate0),
 		Private1:           dup(r.kxPrivate1),
+		Ratchet:            r.ratchet,
 	}
 
 	for headerKey, messageKeys := range r.saved {
-		keys := make([]*disk.RatchetState_SavedKeys_MessageKey, 0, len(messageKeys))
+		keys := make([]*MessageKey, 0, len(messageKeys))
 		for messageNum, savedKey := range messageKeys {
 			if now.Sub(savedKey.timestamp) > lifetime {
 				continue
 			}
-			keys = append(keys, &disk.RatchetState_SavedKeys_MessageKey{
-				Num:          proto.Uint32(messageNum),
+			keys = append(keys, &MessageKey{
+				Num:          messageNum,
 				Key:          dup(&savedKey.key),
-				CreationTime: proto.Int64(savedKey.timestamp.Unix()),
+				CreationTime: savedKey.timestamp.Unix(),
 			})
 		}
-		s.SavedKeys = append(s.SavedKeys, &disk.RatchetState_SavedKeys{
+		s.SavedKeys = append(s.SavedKeys, &SavedKeys{
 			HeaderKey:   dup(&headerKey),
 			MessageKeys: keys,
 		})
@@ -548,7 +591,16 @@ func unmarshalKey(dst *[32]byte, src []byte) bool {
 
 var badSerialisedKeyLengthErr = errors.New("ratchet: bad serialised key length")
 
-func (r *Ratchet) Unmarshal(s *disk.RatchetState) error {
+func (r *Ratchet) UnmarshalBinary(data []byte) error {
+	state := RatchetState{}
+	err := codec.NewDecoderBytes(data, cborHandle).Decode(&state)
+	if err != nil {
+		return err
+	}
+	return r.Unmarshal(&state)
+}
+
+func (r *Ratchet) Unmarshal(s *RatchetState) error {
 	if !unmarshalKey(&r.rootKey, s.RootKey) ||
 		!unmarshalKey(&r.sendHeaderKey, s.SendHeaderKey) ||
 		!unmarshalKey(&r.recvHeaderKey, s.RecvHeaderKey) ||
@@ -561,10 +613,10 @@ func (r *Ratchet) Unmarshal(s *disk.RatchetState) error {
 		return badSerialisedKeyLengthErr
 	}
 
-	r.sendCount = *s.SendCount
-	r.recvCount = *s.RecvCount
-	r.prevSendCount = *s.PrevSendCount
-	r.ratchet = *s.Ratchet
+	r.sendCount = s.SendCount
+	r.recvCount = s.RecvCount
+	r.prevSendCount = s.PrevSendCount
+	r.ratchet = s.Ratchet
 
 	if len(s.Private0) > 0 {
 		if !unmarshalKey(r.kxPrivate0, s.Private0) ||
@@ -587,8 +639,8 @@ func (r *Ratchet) Unmarshal(s *disk.RatchetState) error {
 			if !unmarshalKey(&savedKey.key, messageKey.Key) {
 				return badSerialisedKeyLengthErr
 			}
-			savedKey.timestamp = time.Unix(messageKey.GetCreationTime(), 0)
-			messageKeys[messageKey.GetNum()] = savedKey
+			savedKey.timestamp = time.Unix(messageKey.CreationTime, 0)
+			messageKeys[messageKey.Num] = savedKey
 		}
 
 		r.saved[headerKey] = messageKeys
