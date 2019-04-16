@@ -12,6 +12,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/agl/ed25519"
+	"github.com/agl/ed25519/extra25519"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -38,8 +40,10 @@ const (
 var cborHandle = new(codec.CborHandle)
 
 type KeyExchange struct {
-	Dh  []byte
-	Dh1 []byte
+	PublicKey      []byte
+	IdentityPublic []byte
+	Dh             []byte
+	Dh1            []byte
 }
 
 type MessageKey struct {
@@ -54,34 +58,39 @@ type SavedKeys struct {
 }
 
 type RatchetState struct {
-	SavedKeys          []*SavedKeys
-	RootKey            []byte
-	SendHeaderKey      []byte
-	RecvHeaderKey      []byte
-	NextSendHeaderKey  []byte
-	NextRecvHeaderKey  []byte
-	SendChainKey       []byte
-	RecvChainKey       []byte
-	SendRatchetPrivate []byte
-	RecvRatchetPublic  []byte
-	SendCount          uint32
-	RecvCount          uint32
-	PrevSendCount      uint32
-	Private0           []byte
-	Private1           []byte
-	Ratchet            bool
+	TheirSigningPublic  []byte
+	TheirIdentityPublic []byte
+	MySigningPublic     []byte
+	MySigningPrivate    []byte
+	MyIdentityPrivate   []byte
+	MyIdentityPublic    []byte
+	SavedKeys           []*SavedKeys
+	RootKey             []byte
+	SendHeaderKey       []byte
+	RecvHeaderKey       []byte
+	NextSendHeaderKey   []byte
+	NextRecvHeaderKey   []byte
+	SendChainKey        []byte
+	RecvChainKey        []byte
+	SendRatchetPrivate  []byte
+	RecvRatchetPublic   []byte
+	SendCount           uint32
+	RecvCount           uint32
+	PrevSendCount       uint32
+	Private0            []byte
+	Private1            []byte
+	Ratchet             bool
 }
 
 // Ratchet contains the per-contact, crypto state.
 type Ratchet struct {
-	// MyIdentityPrivate and TheirIdentityPublic contain the primary,
-	// curve25519 identity keys. These are pointers because the canonical
-	// copies live in the client and Contact structs.
-	MyIdentityPrivate, TheirIdentityPublic *[32]byte
-	// MySigningPublic and TheirSigningPublic are Ed25519 keys. Again,
-	// these are pointers because the canonical versions are kept
-	// elsewhere.
-	MySigningPublic, TheirSigningPublic *[32]byte
+	TheirSigningPublic  [32]byte
+	TheirIdentityPublic [32]byte
+	MySigningPublic     [32]byte
+	MySigningPrivate    [64]byte
+	MyIdentityPrivate   [32]byte
+	MyIdentityPublic    [32]byte
+
 	// Now is an optional function that will be used to get the current
 	// time. If nil, time.Now is used.
 	Now func() time.Time
@@ -125,18 +134,46 @@ func (r *Ratchet) randBytes(buf []byte) {
 	}
 }
 
-func New(rand io.Reader) *Ratchet {
+func New(rand io.Reader) (*Ratchet, error) {
 	r := &Ratchet{
 		rand:       rand,
 		kxPrivate0: new([32]byte),
 		kxPrivate1: new([32]byte),
 		saved:      make(map[[32]byte]map[uint32]savedKey),
 	}
-
 	r.randBytes(r.kxPrivate0[:])
 	r.randBytes(r.kxPrivate1[:])
+	mySigningPublic, mySigningPrivate, err := ed25519.GenerateKey(rand)
+	if err != nil {
+		return nil, err
+	}
+	r.MySigningPublic = *mySigningPublic
+	r.MySigningPrivate = *mySigningPrivate
+	extra25519.PrivateKeyToCurve25519(&r.MyIdentityPrivate, mySigningPrivate)
+	curve25519.ScalarBaseMult(&r.MyIdentityPublic, &r.MyIdentityPrivate)
 
-	return r
+	// sanity math assertion
+	var curve25519Public [32]byte
+	extra25519.PublicKeyToCurve25519(&curve25519Public, &r.MySigningPublic)
+	if !bytes.Equal(curve25519Public[:], r.MyIdentityPublic[:]) {
+		panic("wtf")
+	}
+
+	return r, nil
+}
+
+func (r *Ratchet) CreateKeyExchange() (*KeyExchange, error) {
+	kx := &KeyExchange{
+		PublicKey:      make([]byte, len(r.MySigningPublic[:])),
+		IdentityPublic: make([]byte, len(r.TheirIdentityPublic[:])),
+	}
+	copy(kx.PublicKey, r.MySigningPublic[:])
+	copy(kx.IdentityPublic, r.MyIdentityPublic[:])
+	err := r.FillKeyExchange(kx)
+	if err != nil {
+		return nil, err
+	}
+	return kx, nil
 }
 
 // FillKeyExchange sets elements of kx with key exchange information from the
@@ -149,7 +186,6 @@ func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 	var public0, public1 [32]byte
 	curve25519.ScalarBaseMult(&public0, r.kxPrivate0)
 	curve25519.ScalarBaseMult(&public1, r.kxPrivate1)
-
 	kx.Dh = public0[:]
 	kx.Dh1 = public1[:]
 
@@ -179,11 +215,22 @@ var (
 	chainKeyStepLabel      = []byte("chain key step")
 )
 
-// GetKXPrivateForTransition returns the DH private key used in the key
-// exchange. This exists in order to support the transition to the new ratchet
-// format.
-func (r *Ratchet) GetKXPrivateForTransition() [32]byte {
-	return *r.kxPrivate0
+func (r *Ratchet) DoKeyExchange(kx *KeyExchange) error {
+	var ed25519Public, curve25519Public [32]byte
+	copy(ed25519Public[:], kx.PublicKey)
+	extra25519.PublicKeyToCurve25519(&curve25519Public, &ed25519Public)
+	if !bytes.Equal(curve25519Public[:], kx.IdentityPublic[:]) {
+		return errors.New("ratchet: key exchange public key and identity public key must be isomorphically equal")
+	}
+	if len(kx.PublicKey) != len(r.TheirSigningPublic) {
+		return errors.New("invalid public key")
+	}
+	copy(r.TheirSigningPublic[:], kx.PublicKey)
+	if len(r.TheirIdentityPublic) != len(kx.IdentityPublic) {
+		return errors.New("invalid public identity")
+	}
+	copy(r.TheirIdentityPublic[:], kx.IdentityPublic)
+	return r.CompleteKeyExchange(kx)
 }
 
 // CompleteKeyExchange takes a KeyExchange message from the other party and
@@ -222,14 +269,14 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 	keyMaterial = append(keyMaterial, sharedKey[:]...)
 
 	if amAlice {
-		curve25519.ScalarMult(&sharedKey, r.MyIdentityPrivate, &theirDH)
+		curve25519.ScalarMult(&sharedKey, &r.MyIdentityPrivate, &theirDH)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, r.TheirIdentityPublic)
+		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, &r.TheirIdentityPublic)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 	} else {
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, r.TheirIdentityPublic)
+		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, &r.TheirIdentityPublic)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		curve25519.ScalarMult(&sharedKey, r.MyIdentityPrivate, &theirDH)
+		curve25519.ScalarMult(&sharedKey, &r.MyIdentityPrivate, &theirDH)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 	}
 
@@ -543,21 +590,27 @@ func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 
 func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *RatchetState {
 	s := &RatchetState{
-		RootKey:            dup(&r.rootKey),
-		SendHeaderKey:      dup(&r.sendHeaderKey),
-		RecvHeaderKey:      dup(&r.recvHeaderKey),
-		NextSendHeaderKey:  dup(&r.nextSendHeaderKey),
-		NextRecvHeaderKey:  dup(&r.nextRecvHeaderKey),
-		SendChainKey:       dup(&r.sendChainKey),
-		RecvChainKey:       dup(&r.recvChainKey),
-		SendRatchetPrivate: dup(&r.sendRatchetPrivate),
-		RecvRatchetPublic:  dup(&r.recvRatchetPublic),
-		SendCount:          r.sendCount,
-		RecvCount:          r.recvCount,
-		PrevSendCount:      r.prevSendCount,
-		Private0:           dup(r.kxPrivate0),
-		Private1:           dup(r.kxPrivate1),
-		Ratchet:            r.ratchet,
+		TheirSigningPublic:  dup(&r.TheirSigningPublic),
+		TheirIdentityPublic: dup(&r.TheirIdentityPublic),
+		MySigningPublic:     dup(&r.MySigningPublic),
+		MySigningPrivate:    r.MySigningPrivate[:],
+		MyIdentityPrivate:   dup(&r.MyIdentityPrivate),
+		MyIdentityPublic:    dup(&r.MyIdentityPublic),
+		RootKey:             dup(&r.rootKey),
+		SendHeaderKey:       dup(&r.sendHeaderKey),
+		RecvHeaderKey:       dup(&r.recvHeaderKey),
+		NextSendHeaderKey:   dup(&r.nextSendHeaderKey),
+		NextRecvHeaderKey:   dup(&r.nextRecvHeaderKey),
+		SendChainKey:        dup(&r.sendChainKey),
+		RecvChainKey:        dup(&r.recvChainKey),
+		SendRatchetPrivate:  dup(&r.sendRatchetPrivate),
+		RecvRatchetPublic:   dup(&r.recvRatchetPublic),
+		SendCount:           r.sendCount,
+		RecvCount:           r.recvCount,
+		PrevSendCount:       r.prevSendCount,
+		Private0:            dup(r.kxPrivate0),
+		Private1:            dup(r.kxPrivate1),
+		Ratchet:             r.ratchet,
 	}
 
 	for headerKey, messageKeys := range r.saved {
@@ -601,7 +654,13 @@ func (r *Ratchet) UnmarshalBinary(data []byte) error {
 }
 
 func (r *Ratchet) Unmarshal(s *RatchetState) error {
+	copy(r.MySigningPublic[:], s.MySigningPublic)
+	copy(r.MySigningPrivate[:], s.MySigningPrivate)
 	if !unmarshalKey(&r.rootKey, s.RootKey) ||
+		!unmarshalKey(&r.TheirSigningPublic, s.TheirSigningPublic) ||
+		!unmarshalKey(&r.TheirIdentityPublic, s.TheirIdentityPublic) ||
+		!unmarshalKey(&r.MyIdentityPrivate, s.MyIdentityPrivate) ||
+		!unmarshalKey(&r.MyIdentityPublic, s.MyIdentityPublic) ||
 		!unmarshalKey(&r.sendHeaderKey, s.SendHeaderKey) ||
 		!unmarshalKey(&r.recvHeaderKey, s.RecvHeaderKey) ||
 		!unmarshalKey(&r.nextSendHeaderKey, s.NextSendHeaderKey) ||

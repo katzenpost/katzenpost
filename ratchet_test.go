@@ -29,17 +29,26 @@ func pairedRatchet() (a, b *Ratchet) {
 	io.ReadFull(rand.Reader, aSigningPublic[:])
 	io.ReadFull(rand.Reader, bSigningPublic[:])
 
-	a, b = New(rand.Reader), New(rand.Reader)
+	a, err := New(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	b, err = New(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
 	a.Now = nowFunc
 	b.Now = nowFunc
-	a.MyIdentityPrivate = &privA
-	b.MyIdentityPrivate = &privB
-	a.TheirIdentityPublic = &pubB
-	b.TheirIdentityPublic = &pubA
-	a.MySigningPublic = &aSigningPublic
-	b.MySigningPublic = &bSigningPublic
-	a.TheirSigningPublic = &bSigningPublic
-	b.TheirSigningPublic = &aSigningPublic
+
+	a.MyIdentityPrivate = privA
+	a.MySigningPublic = aSigningPublic
+	a.TheirIdentityPublic = pubB
+	a.TheirSigningPublic = bSigningPublic
+
+	b.MyIdentityPrivate = privB
+	b.MySigningPublic = bSigningPublic
+	b.TheirIdentityPublic = pubA
+	b.TheirSigningPublic = aSigningPublic
 
 	kxA, kxB := new(KeyExchange), new(KeyExchange)
 	if err := a.FillKeyExchange(kxA); err != nil {
@@ -72,6 +81,62 @@ func TestExchange(t *testing.T) {
 	}
 }
 
+func TestActualRealExchange(t *testing.T) {
+	// create two new ratchets
+	a, err := New(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	b, err := New(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+
+	// create the key exchange blobs
+	akx, err := a.CreateKeyExchange()
+	if err != nil {
+		panic(err)
+	}
+	bkx, err := b.CreateKeyExchange()
+	if err != nil {
+		panic(err)
+	}
+
+	// do the actual key exchange
+	err = a.DoKeyExchange(bkx)
+	if err != nil {
+		panic(err)
+	}
+	err = b.DoKeyExchange(akx)
+	if err != nil {
+		panic(err)
+	}
+
+	// try to encrypt and decrypt a message
+	msg := []byte("test message")
+	encrypted := a.Encrypt(nil, msg)
+	result, err := b.Decrypt(encrypted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(msg, result) {
+		t.Fatalf("result doesn't match: %x vs %x", msg, result)
+	}
+
+	msg2 := []byte(`This essay might seem to focus on the ethical weight of
+each scientist’s personal, professional choices. But I am actually more concerned
+about how we, as cryptographers and computer scientists, act in aggregate. Our
+collective behavior embodies values—and the institutions we create do, too.`)
+	encrypted2 := a.Encrypt(nil, msg2)
+	result2, err := b.Decrypt(encrypted2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(msg2, result2) {
+		t.Fatalf("result doesn't match: %x vs %x", msg2, result2)
+	}
+}
+
 func TestSerialization(t *testing.T) {
 	a, b := pairedRatchet()
 
@@ -90,7 +155,10 @@ func TestSerialization(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	c := New(rand.Reader)
+	c, err := New(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	c.UnmarshalBinary(serialized)
 
 	// 2
@@ -155,7 +223,10 @@ const (
 
 func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
 	state := r.Marshal(nowFunc(), 1*time.Hour)
-	newR := New(rand.Reader)
+	newR, err := New(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
 	newR.Now = nowFunc
 	newR.MyIdentityPrivate = r.MyIdentityPrivate
 	newR.TheirIdentityPublic = r.TheirIdentityPublic
