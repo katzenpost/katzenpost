@@ -31,15 +31,12 @@ const (
 	PurgeSpoolCommand      = 1
 	AppendMessageCommand   = 2
 	RetrieveMessageCommand = 3
-
-	SpoolIDSize   = 12
-	MessageIDSize = 4
 )
 
 func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *common.SpoolResponse {
 	log.Debug("start of handle spool request")
 	spoolResponse := common.SpoolResponse{}
-	spoolID := [SpoolIDSize]byte{}
+	spoolID := [common.SpoolIDSize]byte{}
 	copy(spoolID[:], request.SpoolID)
 	switch request.Command {
 	case CreateSpoolCommand:
@@ -101,11 +98,11 @@ func NewMemSpoolMap() *MemSpoolMap {
 }
 
 // CreateSpool creates a new spool and returns a spool ID or an error.
-func (m *MemSpoolMap) CreateSpool(publicKey *eddsa.PublicKey, signature []byte) (*[SpoolIDSize]byte, error) {
+func (m *MemSpoolMap) CreateSpool(publicKey *eddsa.PublicKey, signature []byte) (*[common.SpoolIDSize]byte, error) {
 	if !publicKey.Verify(signature, publicKey.Bytes()) {
 		return nil, errors.New("Spool creation failed, invalid signature")
 	}
-	spoolID := [SpoolIDSize]byte{}
+	spoolID := [common.SpoolIDSize]byte{}
 	_, err := rand.Reader.Read(spoolID[:])
 	if err != nil {
 		return nil, err
@@ -120,7 +117,7 @@ func (m *MemSpoolMap) CreateSpool(publicKey *eddsa.PublicKey, signature []byte) 
 
 // PurgeSpool delete the spool associated with the given spool ID.
 // Returns nil on success or an error.
-func (m *MemSpoolMap) PurgeSpool(spoolID [SpoolIDSize]byte, signature []byte) error {
+func (m *MemSpoolMap) PurgeSpool(spoolID [common.SpoolIDSize]byte, signature []byte) error {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
 		return errors.New("spool ID not found in spools map")
@@ -136,7 +133,7 @@ func (m *MemSpoolMap) PurgeSpool(spoolID [SpoolIDSize]byte, signature []byte) er
 	return nil
 }
 
-func (m *MemSpoolMap) AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) error {
+func (m *MemSpoolMap) AppendToSpool(spoolID [common.SpoolIDSize]byte, message []byte) error {
 	log.Debug("start of AppendToSpool")
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
@@ -154,7 +151,7 @@ func (m *MemSpoolMap) AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) e
 	return spool.Append(message)
 }
 
-func (m *MemSpoolMap) ReadFromSpool(spoolID [SpoolIDSize]byte, signature []byte, messageID uint32) ([]byte, error) {
+func (m *MemSpoolMap) ReadFromSpool(spoolID [common.SpoolIDSize]byte, signature []byte, messageID uint32) ([]byte, error) {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
 		return nil, errors.New("spool not found")
