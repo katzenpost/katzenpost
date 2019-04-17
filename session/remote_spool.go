@@ -25,7 +25,17 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 )
 
-const OKStatus = "OK"
+const (
+	OKStatus         = "OK"
+	SpoolServiceName = "spool"
+)
+
+type SpoolService interface {
+	CreateSpool(privateKey *eddsa.PrivateKey, spoolReceiver string, spoolProvider string) ([]byte, error)
+	ReadFromSpool(spoolID []byte, count uint32, privateKey *eddsa.PrivateKey, spoolReceiver string, spoolProvider string) (*multispool.SpoolResponse, error)
+	AppendToSpool(spoolID []byte, message []byte, spoolReceiver string, spoolProvider string) error
+	PurgeSpool(spoolID []byte, privKey *eddsa.PrivateKey, recipient, provider string) error
+}
 
 func (s *Session) submitCommand(cmd []byte, recipient, provider string) (*multispool.SpoolResponse, error) {
 	reply, err := s.SendUnreliableMessage(recipient, provider, cmd)
