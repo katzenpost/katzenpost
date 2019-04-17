@@ -26,7 +26,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/katzenpost/client/multispool"
+	"github.com/katzenpost/memspool/common"
 	"github.com/katzenpost/server/cborplugin"
 	"github.com/op/go-logging"
 	"github.com/ugorji/go/codec"
@@ -91,7 +91,7 @@ func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request
 		log.Debugf("failed to decode Request: %s", err)
 		panic(err)
 	}
-	spoolRequest := multispool.SpoolRequest{}
+	spoolRequest := common.SpoolRequest{}
 	spoolRequestLen := binary.BigEndian.Uint32(req.Payload[:4])
 	log.Debugf("before decoding SpoolRequest len %d", len(req.Payload))
 	err = codec.NewDecoderBytes(req.Payload[4:spoolRequestLen+4], cborHandle).Decode(&spoolRequest)

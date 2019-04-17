@@ -21,9 +21,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/katzenpost/client/multispool"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/memspool/common"
 )
 
 const (
@@ -36,9 +36,9 @@ const (
 	MessageIDSize = 4
 )
 
-func handleSpoolRequest(spoolMap *MemSpoolMap, request *multispool.SpoolRequest) *multispool.SpoolResponse {
+func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *common.SpoolResponse {
 	log.Debug("start of handle spool request")
-	spoolResponse := multispool.SpoolResponse{}
+	spoolResponse := common.SpoolResponse{}
 	spoolID := [SpoolIDSize]byte{}
 	copy(spoolID[:], request.SpoolID)
 	switch request.Command {
