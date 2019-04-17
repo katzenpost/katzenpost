@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	SpoolIDSize   = 12
-	SignatureSize = 64
-	PublicKeySize = 32
-	MessageIDSize = 4
+	SpoolIDSize     = 12
+	SignatureSize   = 64
+	PublicKeySize   = 32
+	MessageIDSize   = 4
+	ResponsePadding = 121
 
 	CreateSpoolCommand     = 0
 	PurgeSpoolCommand      = 1
@@ -38,7 +39,10 @@ var (
 )
 
 type SpoolRequest struct {
-	Command   byte
+	Command byte
+
+	// SpoolID identities a spool on a particular Provider host.
+	// This field must be SpoolIDSize bytes long.
 	SpoolID   []byte
 	Signature []byte
 	PublicKey []byte
@@ -64,6 +68,7 @@ type SpoolResponse struct {
 	SpoolID []byte
 	Message []byte
 	Status  string
+	Padding []byte
 }
 
 func SpoolResponseFromBytes(raw []byte) (SpoolResponse, error) {
@@ -76,6 +81,8 @@ func SpoolResponseFromBytes(raw []byte) (SpoolResponse, error) {
 func (s *SpoolResponse) Encode() ([]byte, error) {
 	out := []byte{}
 	enc := codec.NewEncoderBytes(&out, cborHandle)
+	padding := [120]byte{}
+	s.Padding = padding[:]
 	err := enc.Encode(s)
 	return out, err
 }
