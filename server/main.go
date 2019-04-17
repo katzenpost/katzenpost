@@ -103,16 +103,15 @@ func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request
 	spoolResponse := handleSpoolRequest(spoolMap, &spoolRequest)
 	log.Debug("after calling handleSpoolRequest")
 
-	var spoolResponseSerialized []byte
-	enc := codec.NewEncoderBytes(&spoolResponseSerialized, cborHandle)
-	if err := enc.Encode(spoolResponse); err != nil {
+	spoolResponseSerialized, err := spoolResponse.Encode()
+	if err != nil {
 		panic(err)
 	}
 	reply := cborplugin.Response{
 		Payload: spoolResponseSerialized,
 	}
 	var serialized []byte
-	enc = codec.NewEncoderBytes(&serialized, cborHandle)
+	enc := codec.NewEncoderBytes(&serialized, cborHandle)
 	if err := enc.Encode(reply); err != nil {
 		panic(err)
 	}
