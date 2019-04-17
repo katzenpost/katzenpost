@@ -103,11 +103,11 @@ func TestActualRealExchange(t *testing.T) {
 	}
 
 	// do the actual key exchange
-	err = a.DoKeyExchange(bkx)
+	err = a.ProcessKeyExchange(bkx)
 	if err != nil {
 		panic(err)
 	}
-	err = b.DoKeyExchange(akx)
+	err = b.ProcessKeyExchange(akx)
 	if err != nil {
 		panic(err)
 	}

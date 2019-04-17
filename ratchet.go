@@ -46,6 +46,11 @@ type KeyExchange struct {
 	Dh1            []byte
 }
 
+type SignedKeyExchange struct {
+	Signed    []byte
+	Signature []byte
+}
+
 type MessageKey struct {
 	Num          uint32
 	Key          []byte
@@ -162,7 +167,7 @@ func New(rand io.Reader) (*Ratchet, error) {
 	return r, nil
 }
 
-func (r *Ratchet) CreateKeyExchange() (*KeyExchange, error) {
+func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
 	kx := &KeyExchange{
 		PublicKey:      make([]byte, len(r.MySigningPublic[:])),
 		IdentityPublic: make([]byte, len(r.TheirIdentityPublic[:])),
@@ -173,7 +178,22 @@ func (r *Ratchet) CreateKeyExchange() (*KeyExchange, error) {
 	if err != nil {
 		return nil, err
 	}
-	return kx, nil
+	serialized := []byte{}
+	enc := codec.NewEncoderBytes(&serialized, cborHandle)
+	if err := enc.Encode(kx); err != nil {
+		return nil, err
+	}
+	sig := ed25519.Sign(&r.MySigningPrivate, serialized)
+	kxs := &SignedKeyExchange{
+		Signed:    serialized,
+		Signature: sig[:],
+	}
+	ret := []byte{}
+	enc = codec.NewEncoderBytes(&ret, cborHandle)
+	if err := enc.Encode(kxs); err != nil {
+		return nil, err
+	}
+	return ret, nil
 }
 
 // FillKeyExchange sets elements of kx with key exchange information from the
@@ -215,7 +235,32 @@ var (
 	chainKeyStepLabel      = []byte("chain key step")
 )
 
-func (r *Ratchet) DoKeyExchange(kx *KeyExchange) error {
+func (r *Ratchet) ProcessKeyExchange(kxsBytes []byte) error {
+	signedKeyExchange := new(SignedKeyExchange)
+	err := codec.NewDecoderBytes(kxsBytes, cborHandle).Decode(&signedKeyExchange)
+	if err != nil {
+		return err
+	}
+	var sig [64]byte
+	if len(signedKeyExchange.Signature) != len(sig) {
+		return errors.New("invalid signature length")
+	}
+	copy(sig[:], signedKeyExchange.Signature)
+
+	kx := new(KeyExchange)
+	err = codec.NewDecoderBytes(signedKeyExchange.Signed, cborHandle).Decode(&kx)
+	if err != nil {
+		return err
+	}
+	if len(kx.PublicKey) != len(r.TheirSigningPublic) {
+		return errors.New("invalid public key")
+	}
+	copy(r.TheirSigningPublic[:], kx.PublicKey)
+
+	if !ed25519.Verify(&r.TheirSigningPublic, signedKeyExchange.Signed, &sig) {
+		return errors.New("invalid signature")
+	}
+
 	var ed25519Public, curve25519Public [32]byte
 	copy(ed25519Public[:], kx.PublicKey)
 	extra25519.PublicKeyToCurve25519(&curve25519Public, &ed25519Public)
