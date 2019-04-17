@@ -177,6 +177,18 @@ func (k *PrivateKey) Bytes() []byte {
 	return k.privBytes[:]
 }
 
+// MarshalBinary is an implementation of a method on the
+// BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) MarshalBinary() ([]byte, error) {
+	return k.Bytes(), nil
+}
+
+// UnmarshalBinary is an implementation of a method on the
+// BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) UnmarshalBinary(data []byte) error {
+	return k.FromBytes(data)
+}
+
 // FromBytes deserializes the byte slice b into the PrivateKey.
 func (k *PrivateKey) FromBytes(b []byte) error {
 	if len(b) != PrivateKeySize {
