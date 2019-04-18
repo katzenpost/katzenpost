@@ -46,4 +46,7 @@ func TestSerializationPaddingSymmetry(t *testing.T) {
 	responseRaw, err := response.Encode()
 	assert.NoError(err)
 	assert.Equal(len(requestRaw), len(responseRaw))
+
+	t.Logf("request overhead is %d", (len(requestRaw) - len(request.Message)))
+	t.Logf("response overhead is %d", (len(responseRaw) - len(response.Message)))
 }

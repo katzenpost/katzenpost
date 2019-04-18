@@ -27,6 +27,7 @@ const (
 	PublicKeySize   = 32
 	MessageIDSize   = 4
 	ResponsePadding = 121
+	QueryOverhead   = 171
 
 	CreateSpoolCommand     = 0
 	PurgeSpoolCommand      = 1
