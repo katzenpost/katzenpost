@@ -15,19 +15,62 @@ Katzenpost
     :alt: Katzenpost Overview
     :align: center
 
-Goals
-=====
 
-* to *prevent* a sufficiently global passive adversary from learning who is communicating with whom
-* to *detect* active attacks against the network infrastructure
-* hide message content from participating providers, hide recipient identity from the sender's provider, and the sender identity from the recipient's provider
-* reliable out of order delivery
-* support for various "message based" use cases like 'instant messaging', 'e-mail', and 'crypto currency' anonymization
+The Katzenpost Free Software Project
+====================================
 
-Non-Goals
-=========
+Katzenpost is a free software project. We write mix network protocol
+libraries.  What is a mix network? It is an anonymous communications
+system... however the word anonymous is problematic because some
+government authorities equate anonymity with terrorism. We prefer to
+instead call it "network security" because you can feel more secure
+when you communicate using traffic analysis resistant communications
+protocols.
 
-* to hide the sender identity from the final recipient
+However we realize we cannot simply write a mix network and core
+protocol libraries and expect people to use them. Therefore we are
+working towards a demonstration encrypted chat client which will
+communicate over our mix network. In the spirit of pond this new chat
+client will use PANDA (Phrase Automated Nym Discovery Authentication)
+for the key exchange and the Signal Double Ratchet for the end to end
+encryption.
+
+Traffic analysis helps governments, corporations and Internet service
+providers learn more information about the communication even if it is
+encrypted. The goal of protecting the confidentiality of messages is
+in fact an orthogonal concern to that of resisting traffic
+analysis. In particular we are interested in developing mix network
+based communications systems that can be used by everyone to hide
+these kinds of communications metadata:
+
+* geographic location
+* message sender
+* message receiver
+* message sent time
+* message receive time
+* message size
+* ordering of messages
+* frequency of sent messages
+* frequency of received messages
+
+However we also consider bad actors within the mix network as well as
+active attackers. Our threat model is very clearly articulated in the
+"Loopix Anonymity System" however at the end of each of our design
+specification documents we have not only a security section but an
+anonymity considersations section as well.
+
+There are many message oriented applications and protocols that could
+benefit from using our mix network. For example our mix network is not
+only good for chat clients but also other types of applications:
+
+* transporting interactions between CRDTs
+* transporting interactions to DHTs
+* database transaction anonymization
+* 'crypto currency' anonymization, especially Zcash which has shielded transactions
+  which are particularly well suited to being used with a mix network transport protocol
+
+For further discussion regarding Zcash usage with Katzenpost please see:
+:doc:`zcash`.
 
 Documentation
 =============
