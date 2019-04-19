@@ -69,6 +69,8 @@ only good for chat clients but also other types of applications:
 * 'crypto currency' anonymization, especially Zcash which has shielded transactions
   which are particularly well suited to being used with a mix network transport protocol
 
+For further discussion regarding Zcash usage with Katzenpost please see:
+<zcash>
 
 Documentation
 =============
