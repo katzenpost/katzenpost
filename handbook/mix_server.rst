@@ -314,19 +314,26 @@ External Kaetzchen Plugin Configuration
 '''''''''''''''''''''''''''''''''''''''
 
 Currently the Katzenpost server external kaetzchen plugin system
-uses gRPC over UNIX domain socket to communicate with plugin programs.
+uses CBOR over HTTP over UNIX domain socket to communicate with plugin programs.
 That is to say, the katzenpost server will spin up each plugin program
 one or more times as specified by it's ``MaxConcurrency`` parameter,
-connect to it as a gRPC client and pipeline Kaetzchen queries.
+connect to it as a HTTP client and pipeline Kaetzchen queries.
 
-Here's a configuration example for the external echo service
-using a concurrency level of three::
-  [[Provider.PluginKaetzchen]]
-    Capability = "echo"
-    Endpoint = "+echo"
-    Disable = false
-    Command = "/var/lib/katzenpost/plugins/echo"
-    MaxConcurrency = 3
+Here's a configuration example for the external currency service
+::
+
+  [[Provider.CBORPluginKaetzchen]]
+  Capability = "zec"
+  Endpoint = "+zec"
+  Disable = false
+  Command = "/home/user/test_mixnet/bin/currency"
+  MaxConcurrency = 10
+  [Provider.PluginKaetzchen.Config]
+    log_dir = "/home/user/test_mixnet/zec_tx_logs"
+    f = "/home/user/test_mixnet/currency_zec/curreny.toml"
+
+We've written echo services in golang and rust as an example here:
+https://github.com/katzenpost/server_plugins
 
 
 Provider User Database Configuration
