@@ -533,7 +533,7 @@ Appendix A.1 Normative References
 .. [SP80038A]  Dworkin, M., "Recommendation for Block Cipher Modes
                of Operation",  SP800-38A,
                10.6028/NIST.SP.800, December 2001,
-               <https://http://dx.doi.org/10.6028/NIST.SP.800-38A>
+               <https://doi.org/10.6028/NIST.SP.800-38A>
 
 .. [AEZV5]     Hoang, V., Krovetz, T., Rogaway, P., "AEZ v5:
                Authenticated Encryption by Enciphering", March 2017,
