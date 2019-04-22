@@ -167,7 +167,7 @@ func New(rand io.Reader) (*Ratchet, error) {
 	return r, nil
 }
 
-func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
+func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 	kx := &KeyExchange{
 		PublicKey:      make([]byte, len(r.MySigningPublic[:])),
 		IdentityPublic: make([]byte, len(r.TheirIdentityPublic[:])),
@@ -184,16 +184,10 @@ func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
 		return nil, err
 	}
 	sig := ed25519.Sign(&r.MySigningPrivate, serialized)
-	kxs := &SignedKeyExchange{
+	return &SignedKeyExchange{
 		Signed:    serialized,
 		Signature: sig[:],
-	}
-	ret := []byte{}
-	enc = codec.NewEncoderBytes(&ret, cborHandle)
-	if err := enc.Encode(kxs); err != nil {
-		return nil, err
-	}
-	return ret, nil
+	}, nil
 }
 
 // FillKeyExchange sets elements of kx with key exchange information from the
@@ -235,12 +229,7 @@ var (
 	chainKeyStepLabel      = []byte("chain key step")
 )
 
-func (r *Ratchet) ProcessKeyExchange(kxsBytes []byte) error {
-	signedKeyExchange := new(SignedKeyExchange)
-	err := codec.NewDecoderBytes(kxsBytes, cborHandle).Decode(&signedKeyExchange)
-	if err != nil {
-		return err
-	}
+func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error {
 	var sig [64]byte
 	if len(signedKeyExchange.Signature) != len(sig) {
 		return errors.New("invalid signature length")
@@ -248,7 +237,7 @@ func (r *Ratchet) ProcessKeyExchange(kxsBytes []byte) error {
 	copy(sig[:], signedKeyExchange.Signature)
 
 	kx := new(KeyExchange)
-	err = codec.NewDecoderBytes(signedKeyExchange.Signed, cborHandle).Decode(&kx)
+	err := codec.NewDecoderBytes(signedKeyExchange.Signed, cborHandle).Decode(&kx)
 	if err != nil {
 		return err
 	}
