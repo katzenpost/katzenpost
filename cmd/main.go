@@ -17,21 +17,46 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"github.com/c-bata/go-prompt"
+	"os"
+	"syscall"
+
+	"github.com/katzenpost/catshadow"
+	"github.com/katzenpost/client"
+	"github.com/katzenpost/client/config"
 )
 
-func completer(d prompt.Document) []prompt.Suggest {
-	s := []prompt.Suggest{
-		{Text: "send", Description: "Send a message."},
-		{Text: "inbox", Description: "Read inbox messages."},
-		{Text: "add_contact", Description: "Add a new contact."},
-	}
-	return prompt.FilterHasPrefix(s, d.GetWordBeforeCursor(), true)
-}
-
 func main() {
-	fmt.Println("Enter a command.")
-	t := prompt.Input("> ", completer)
-	fmt.Println("You selected " + t)
+	cfgFile := flag.String("f", "katzenpost.toml", "Path to the server config file.")
+	flag.Parse()
+
+	// Set the umask to something "paranoid".
+	syscall.Umask(0077)
+
+	// Load config file.
+	cfg, err := config.LoadFile(*cfgFile, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *cfgFile, err)
+		os.Exit(-1)
+	}
+
+	// Create a client and connect to the mixnet Provider.
+	c, err := client.New(cfg)
+	if err != nil {
+		panic(err)
+	}
+	s, err := c.NewSession()
+	if err != nil {
+		panic(err)
+	}
+
+	client, err := catshadow.New(c.GetBackendLog(), c.GetLogger("catshadow"), s)
+	if err != nil {
+		panic(err)
+	}
+
+	// Start up an interactive shell.
+	shell := NewShell(client, c.GetLogger("catshadow_shell"))
+	shell.Run()
 }
