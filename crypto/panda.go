@@ -1,7 +1,6 @@
 package crypto
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -12,23 +11,32 @@ import (
 	"github.com/katzenpost/panda/crypto/rijndael"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/curve25519"
-	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
+	"gopkg.in/op/go-logging.v1"
 )
 
-var ShutdownErr = errors.New("panda: shutdown requested")
+var ShutdownErrMessage = "panda: shutdown requested"
 
 type MeetingPlace interface {
 	Padding() int
 	Exchange(id, message []byte, shutdown chan struct{}) ([]byte, error)
 }
 
+type PandaUpdate struct {
+	ID         uint64
+	Err        error
+	Serialised []byte
+	Result     []byte
+}
+
 type KeyExchange struct {
 	sync.Mutex
 
-	Log          func(string, ...interface{})
-	Testing      bool
-	ShutdownChan chan struct{}
+	log          *logging.Logger
+	shutdownChan chan struct{}
+
+	pandaChan chan PandaUpdate
+	contactID uint64
 
 	rand         io.Reader
 	status       panda_proto.KeyExchange_Status
@@ -43,18 +51,21 @@ type KeyExchange struct {
 	message1, message2      []byte
 }
 
-func NewKeyExchange(rand io.Reader, meetingPlace MeetingPlace, sharedSecret []byte, kxBytes []byte) (*KeyExchange, error) {
+func NewKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPlace, sharedSecret []byte, kxBytes []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan chan struct{}) (*KeyExchange, error) {
 	if 24 /* nonce */ +4 /* length */ +len(kxBytes)+secretbox.Overhead > meetingPlace.Padding() {
 		return nil, errors.New("panda: key exchange too large for meeting place")
 	}
 
 	kx := &KeyExchange{
-		Log:          func(format string, args ...interface{}) {},
 		rand:         rand,
+		log:          log,
 		meetingPlace: meetingPlace,
 		status:       panda_proto.KeyExchange_INIT,
 		sharedSecret: sharedSecret,
 		kxBytes:      kxBytes,
+		contactID:    contactID,
+		pandaChan:    pandaChan,
+		shutdownChan: shutdownChan,
 	}
 
 	if _, err := io.ReadFull(kx.rand, kx.dhPrivate[:]); err != nil {
@@ -132,7 +143,7 @@ func (kx *KeyExchange) updateSerialised() error {
 
 func (kx *KeyExchange) shouldStop() bool {
 	select {
-	case <-kx.ShutdownChan:
+	case <-kx.shutdownChan:
 		return true
 	default:
 		return false
@@ -141,67 +152,74 @@ func (kx *KeyExchange) shouldStop() bool {
 	// unreachable
 }
 
-func (kx *KeyExchange) Run() ([]byte, error) {
+func (kx *KeyExchange) Run() {
+	sendPandaUpdate := func() {
+		kx.pandaChan <- PandaUpdate{
+			ID:         kx.contactID,
+			Serialised: kx.Marshal(),
+		}
+	}
 	switch kx.status {
 	case panda_proto.KeyExchange_INIT:
 		if err := kx.derivePassword(); err != nil {
-			return nil, err
+			kx.log.Error(err.Error())
+			return
 		}
 		kx.status = panda_proto.KeyExchange_EXCHANGE1
 		err := kx.updateSerialised()
 		if err != nil {
-			return nil, err
+			kx.log.Error(err.Error())
+			return
 		}
-		kx.Log("password derivation complete.")
+		kx.log.Info("password derivation complete.")
+		sendPandaUpdate()
 		if kx.shouldStop() {
-			return nil, ShutdownErr
+			kx.log.Error(ShutdownErrMessage)
+			return
 		}
 		fallthrough
 	case panda_proto.KeyExchange_EXCHANGE1:
 		if err := kx.exchange1(); err != nil {
-			return nil, err
+			kx.log.Error(err.Error())
+			return
 		}
 		kx.status = panda_proto.KeyExchange_EXCHANGE2
 		err := kx.updateSerialised()
 		if err != nil {
-			return nil, err
+			kx.log.Error(err.Error())
+			return
 		}
-		kx.Log("first message exchange complete")
+		kx.log.Info("first message exchange complete")
+		sendPandaUpdate()
 		if kx.shouldStop() {
-			return nil, ShutdownErr
+			kx.log.Error(ShutdownErrMessage)
+			return
 		}
 		fallthrough
 	case panda_proto.KeyExchange_EXCHANGE2:
 		reply, err := kx.exchange2()
-		if err != nil {
-			return nil, err
+		kx.pandaChan <- PandaUpdate{
+			ID:     kx.contactID,
+			Err:    err,
+			Result: reply,
 		}
-		return reply, nil
+		return
 	default:
-		return nil, errors.New("unknown state")
+		kx.pandaChan <- PandaUpdate{
+			ID:  kx.contactID,
+			Err: errors.New("unknown state"),
+		}
+		return
 	}
 
 	// unreachable
 }
 
 func (kx *KeyExchange) derivePassword() error {
-	if kx.Testing {
-		h := hkdf.New(sha256.New, kx.sharedSecret, nil, []byte("PANDA strong secret expansion"))
-		if _, err := h.Read(kx.key[:]); err != nil {
-			return err
-		}
-		if _, err := h.Read(kx.meeting1[:]); err != nil {
-			return err
-		}
-		if _, err := h.Read(kx.meeting2[:]); err != nil {
-			return err
-		}
-	} else {
-		data := argon2.Key(kx.sharedSecret, nil, 3, 32*1024, 4, 32*3)
-		copy(kx.key[:], data)
-		copy(kx.meeting1[:], data[32:])
-		copy(kx.meeting2[:], data[64:])
-	}
+	data := argon2.Key(kx.sharedSecret, nil, 3, 32*1024, 4, 32*3)
+	copy(kx.key[:], data)
+	copy(kx.meeting1[:], data[32:])
+	copy(kx.meeting2[:], data[64:])
 
 	var encryptedDHPublic [32]byte
 	rijndael.NewCipher(&kx.key).Encrypt(&encryptedDHPublic, &kx.dhPublic)
@@ -223,7 +241,7 @@ func (kx *KeyExchange) derivePassword() error {
 }
 
 func (kx *KeyExchange) exchange1() error {
-	reply, err := kx.meetingPlace.Exchange(kx.meeting1[:], kx.message1[:], kx.ShutdownChan)
+	reply, err := kx.meetingPlace.Exchange(kx.meeting1[:], kx.message1[:], kx.shutdownChan)
 	if err != nil {
 		return err
 	}
@@ -259,7 +277,7 @@ func (kx *KeyExchange) exchange1() error {
 }
 
 func (kx *KeyExchange) exchange2() ([]byte, error) {
-	reply, err := kx.meetingPlace.Exchange(kx.meeting2[:], kx.message2[:], kx.ShutdownChan)
+	reply, err := kx.meetingPlace.Exchange(kx.meeting2[:], kx.message2[:], kx.shutdownChan)
 	if err != nil {
 		return nil, err
 	}
