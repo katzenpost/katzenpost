@@ -21,11 +21,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/katzenpost/channels"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
+	memspoolclient "github.com/katzenpost/memspool/client"
+	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
 	panda "github.com/katzenpost/panda/crypto"
 	"gopkg.in/op/go-logging.v1"
@@ -41,9 +44,14 @@ type SendMessage struct {
 	Payload []byte
 }
 
-type messageRead struct {
-	ch       chan []byte
+type message struct {
 	nickname string
+	payload  []byte
+	error    error
+}
+
+type messageRead struct {
+	ch chan message
 }
 
 type Client struct {
@@ -57,16 +65,20 @@ type Client struct {
 
 	contacts         map[uint64]*Contact
 	contactNicknames map[string]*Contact
+	spoolReaderChan  *channels.UnreliableSpoolReaderChannel
 
-	client  *client.Client
-	session *session.Session
+	client       *client.Client
+	session      *session.Session
+	spoolService memspoolclient.SpoolService
 
 	log        *logging.Logger
 	logBackend *log.Backend
 }
 
-func New(logBackend *log.Backend, log *logging.Logger, session *session.Session) (*Client, error) {
+func New(logBackend *log.Backend, log *logging.Logger, session *session.Session) *Client {
+	spoolService := memspoolclient.New(session)
 	client := &Client{
+		spoolService:      spoolService,
 		session:           session,
 		contacts:          make(map[uint64]*Contact),
 		contactNicknames:  make(map[string]*Contact),
@@ -78,8 +90,23 @@ func New(logBackend *log.Backend, log *logging.Logger, session *session.Session)
 		removeContactChan: make(chan string),
 		readInboxChan:     make(chan messageRead),
 	}
-	client.Go(client.worker)
-	return client, nil
+	return client
+}
+
+func (c *Client) Start() error {
+	desc, err := c.session.GetService(common.SpoolServiceName)
+	if err != nil {
+		return err
+	}
+	if c.spoolReaderChan == nil {
+		spoolService := memspoolclient.New(c.session)
+		c.spoolReaderChan, err = channels.NewUnreliableSpoolReaderChannel(desc.Name, desc.Provider, spoolService)
+		if err != nil {
+			return err
+		}
+	}
+	c.Go(c.worker)
+	return nil
 }
 
 func (c *Client) NewContact(nickname string, sharedSecret []byte) {
@@ -93,7 +120,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randId(), c.session)
+	contact, err := NewContact(nickname, c.randId(), c.spoolReaderChan, c.session)
 	if err != nil {
 		return err
 	}
@@ -184,7 +211,15 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		c.log.Debug("PANDA exchange completed")
 		contact.pandaKeyExchange = nil
 
-		err := contact.channel.ProcessChannelExchange(update.Result)
+		// XXX
+		exchange, err := ParseContactExchangeBytes(update.Result)
+		if err != nil {
+			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
+			c.log.Error(err.Error())
+			contact.pandaResult = err.Error()
+		}
+		contact.spoolWriterChan = exchange.SpoolWriter
+		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
 		if err != nil {
 			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
 			c.log.Error(err.Error())
@@ -213,38 +248,45 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
 		return
 	}
-	err := contact.channel.Write(message)
+
+	ciphertext := contact.ratchet.Encrypt(nil, message)
+	err := contact.spoolWriterChan.Write(c.spoolService, ciphertext)
 	if err != nil {
 		c.log.Errorf("double ratchet channel write failure: %s", err)
 	}
 	c.log.Info("Sent message to %s.", nickname)
 }
 
-func (c *Client) MessageFrom(nickname string) []byte {
-	ch := make(chan []byte)
+func (c *Client) ReadMessage() (string, []byte, error) {
+	ch := make(chan message)
 	c.readInboxChan <- messageRead{
-		ch:       ch,
-		nickname: nickname,
+		ch: ch,
 	}
 	message := <-ch
-	return message
+	return message.nickname, message.payload, message.error
 }
 
 func (c *Client) doRead(r *messageRead) {
 	var err error
-	message := []byte{}
-	contact, ok := c.contactNicknames[r.nickname]
-	if !ok {
-		c.log.Debugf("cannot read remote spool, invalid contact %s", contact.nickname)
-	} else {
-		if contact.isPending {
-			c.log.Debugf("cannot write to contact %s with pending key exchange", r.nickname)
-		}
-		message, err = contact.channel.Read()
+	ciphertext, err := c.spoolReaderChan.Read(c.spoolService)
+	if err != nil {
+		err = fmt.Errorf("failure reading remote spool: %s", err)
+		c.log.Debugf(err.Error())
+	}
+	message := message{}
+	for _, contact := range c.contacts {
+		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		if err != nil {
-			c.log.Debugf("failure reading remote spool: %s", err)
+			err = fmt.Errorf("failure to decrypt: %s", err)
+			c.log.Debugf(err.Error())
+			continue
+		} else {
+			message.nickname = contact.nickname
+			message.payload = plaintext
+			break
 		}
 	}
+	message.error = err
 	r.ch <- message
 }
 

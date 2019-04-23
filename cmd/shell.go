@@ -17,6 +17,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/fatih/color"
 	"github.com/katzenpost/catshadow"
 	"gopkg.in/abiosoft/ishell.v2"
@@ -50,13 +52,14 @@ func NewShell(client *catshadow.Client, log *logging.Logger) *Shell {
 			// disable the '>>>' for cleaner same line input.
 			c.ShowPrompt(false)
 			defer c.ShowPrompt(true) // yes, revert after login.
-			c.Print(red("Contact nickname: "))
-			nickname := c.ReadLine()
 
-			message := shell.client.MessageFrom(nickname)
-			if len(message) > 0 {
-				c.Print(string(message))
+			nickname, message, err := shell.client.ReadMessage()
+			if err != nil {
+				c.Print(red(fmt.Sprintf("read failure: %s", err.Error())))
 			}
+			c.Print(green(fmt.Sprintf("message from: %s", nickname)))
+			c.Print(string(message))
+			c.Print(string("\n"))
 		},
 	})
 	shell.ishell.AddCmd(&ishell.Cmd{

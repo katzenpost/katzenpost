@@ -28,11 +28,24 @@ import (
 )
 
 func main() {
+	genOnly := flag.Bool("g", false, "Generate the keys and exit immediately.")
 	cfgFile := flag.String("f", "katzenpost.toml", "Path to the server config file.")
 	flag.Parse()
 
 	// Set the umask to something "paranoid".
 	syscall.Umask(0077)
+
+	if *genOnly {
+		cfg, err := config.LoadFile(*cfgFile, *genOnly)
+		if err != nil {
+			panic(err)
+		}
+		_, err = client.New(cfg)
+		if err != nil {
+			panic(err)
+		}
+		return
+	}
 
 	// Load config file.
 	cfg, err := config.LoadFile(*cfgFile, false)
@@ -51,12 +64,14 @@ func main() {
 		panic(err)
 	}
 
-	client, err := catshadow.New(c.GetBackendLog(), c.GetLogger("catshadow"), s)
+	client := catshadow.New(c.GetBackendLog(), c.GetLogger("catshadow"), s)
+
+	// Start up an interactive shell.
+	shell := NewShell(client, c.GetLogger("catshadow_shell"))
+	err = client.Start()
 	if err != nil {
 		panic(err)
 	}
 
-	// Start up an interactive shell.
-	shell := NewShell(client, c.GetLogger("catshadow_shell"))
 	shell.Run()
 }

@@ -19,9 +19,39 @@ package catshadow
 import (
 	"github.com/katzenpost/channels"
 	"github.com/katzenpost/client/session"
-	"github.com/katzenpost/memspool/client"
-	"github.com/katzenpost/memspool/common"
+	"github.com/katzenpost/core/crypto/rand"
+	ratchet "github.com/katzenpost/doubleratchet"
+	"github.com/ugorji/go/codec"
 )
+
+var cborHandle = new(codec.CborHandle)
+
+type ContactExchange struct {
+	SpoolWriter       *channels.UnreliableSpoolWriterChannel
+	SignedKeyExchange *ratchet.SignedKeyExchange
+}
+
+func NewContactExchangeBytes(spoolWriter *channels.UnreliableSpoolWriterChannel, signedKeyExchange *ratchet.SignedKeyExchange) ([]byte, error) {
+	exchange := ContactExchange{
+		SpoolWriter:       spoolWriter,
+		SignedKeyExchange: signedKeyExchange,
+	}
+	var serialized []byte
+	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(exchange)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+func ParseContactExchangeBytes(contactExchangeBytes []byte) (*ContactExchange, error) {
+	exchange := new(ContactExchange)
+	err := codec.NewDecoderBytes(contactExchangeBytes, cborHandle).Decode(exchange)
+	if err != nil {
+		return nil, err
+	}
+	return exchange, nil
+}
 
 // Contact is a communications contact that we have bidirectional
 // communication with.
@@ -41,27 +71,27 @@ type Contact struct {
 	pandaShutdownChan chan struct{}
 	// pandaResult contains an error message if the PANDA exchange fails.
 	pandaResult string
-	// channel is the bidirectional remote spool based communications
-	// channel that is encrypted with the double ratchet.
-	channel *channels.UnreliableDoubleRatchetChannel
+
+	// ratchet is the client's double ratchet for end to end encryption
+	ratchet *ratchet.Ratchet
+
+	// spoolWriterChan is a spool channel we must write to in order to
+	// send this contact a message.
+	spoolWriterChan *channels.UnreliableSpoolWriterChannel
 }
 
 // NewContact creates a new Contact or returns an error.
-func NewContact(nickname string, id uint64, session *session.Session) (*Contact, error) {
-	serviceDesc, err := session.GetService(common.SpoolServiceName)
+func NewContact(nickname string, id uint64, spoolReaderChan *channels.UnreliableSpoolReaderChannel, session *session.Session) (*Contact, error) {
+	ratchet, err := ratchet.New(rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-	spoolService := client.New(session)
-	spoolChan, err := channels.NewUnreliableSpoolChannel(serviceDesc.Name, serviceDesc.Provider, spoolService)
+	signedKeyExchange, err := ratchet.CreateKeyExchange()
 	if err != nil {
 		return nil, err
 	}
-	ratchetChan, err := channels.NewUnreliableDoubleRatchetChannel(spoolChan)
-	if err != nil {
-		return nil, err
-	}
-	keyExchange, err := ratchetChan.ChannelExchange()
+	spoolWriterChan := spoolReaderChan.GetSpoolWriter()
+	exchange, err := NewContactExchangeBytes(spoolWriterChan, signedKeyExchange)
 	if err != nil {
 		return nil, err
 	}
@@ -69,14 +99,10 @@ func NewContact(nickname string, id uint64, session *session.Session) (*Contact,
 		nickname:          nickname,
 		id:                id,
 		isPending:         true,
-		channel:           ratchetChan,
-		keyExchange:       keyExchange,
+		ratchet:           ratchet,
+		keyExchange:       exchange,
 		pandaShutdownChan: make(chan struct{}),
 	}, nil
-}
-
-func (c *Contact) processKeyExchange(kxsBytes []byte) error {
-	return c.channel.ProcessChannelExchange(kxsBytes)
 }
 
 // ID returns the Contact ID.
