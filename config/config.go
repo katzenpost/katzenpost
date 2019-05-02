@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/mail"
-	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -30,12 +29,10 @@ import (
 	vClient "github.com/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/utils"
+	registration "github.com/katzenpost/registration_client"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -51,19 +48,6 @@ var defaultLogging = Logging{
 	Disable: false,
 	File:    "",
 	Level:   defaultLogLevel,
-}
-
-// Proxy is the proxy configuration.
-type Proxy struct {
-	// DataDir is the absolute path to the data directory.
-	DataDir string
-}
-
-func (pCfg *Proxy) validate() error {
-	if !filepath.IsAbs(pCfg.DataDir) {
-		return fmt.Errorf("config: Proxy: DataDir '%v' is not an absolute path", pCfg.DataDir)
-	}
-	return nil
 }
 
 // Logging is the logging configuration.
@@ -106,10 +90,6 @@ type Debug struct {
 	// CaseSensitiveUserIdentifiers disables the forced lower casing of
 	// the Account `User` field.
 	CaseSensitiveUserIdentifiers bool
-
-	// GenerateOnly halts and cleans up right after long term
-	// key generation.
-	GenerateOnly bool
 
 	// PollingInterval is the interval in seconds that will be used to
 	// poll the receive queue.  By default this is 30 seconds.  Reducing
@@ -197,6 +177,28 @@ func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, e
 	return nil, fmt.Errorf("No Authority found")
 }
 
+// Panda is the PANDA configuration needed by clients
+// in order to use the PANDA service
+type Panda struct {
+	// Receiver is the recipient ID that shall receive the Sphinx packets destined
+	// for this PANDA service.
+	Receiver string
+	// Provider is the Provider on this mix network which is hosting this PANDA service.
+	Provider string
+	// BlobSize is the size of the PANDA blobs that clients will use.
+	BlobSize int
+}
+
+func (p *Panda) validate() error {
+	if p.Receiver == "" {
+		return fmt.Errorf("Receiver is missing")
+	}
+	if p.Provider == "" {
+		return fmt.Errorf("Provider is missing")
+	}
+	return nil
+}
+
 // Account is a provider account configuration.
 type Account struct {
 	// User is the account user name.
@@ -242,6 +244,19 @@ func (accCfg *Account) validate(cfg *Config) error {
 	return nil
 }
 
+// Registration is used for the client's Provider account registration.
+type Registration struct {
+	Address string
+	Options *registration.Options
+}
+
+func (r *Registration) validate() error {
+	if r.Address == "" {
+		return errors.New("Registration Address cannot be empty.")
+	}
+	return nil
+}
+
 // UpstreamProxy is the outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// Type is the proxy type (Eg: "none"," socks5").
@@ -278,13 +293,14 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
-	Proxy              *Proxy
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
 	NonvotingAuthority *NonvotingAuthority
 	VotingAuthority    *VotingAuthority
 	Account            *Account
+	Registration       *Registration
+	Panda              *Panda
 	upstreamProxy      *proxy.Config
 }
 
@@ -299,9 +315,6 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // instead.
 func (c *Config) FixupAndValidate() error {
 	// Handle missing sections if possible.
-	if c.Proxy == nil {
-		return errors.New("config: No Proxy block was present")
-	}
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
 	}
@@ -315,9 +328,6 @@ func (c *Config) FixupAndValidate() error {
 	}
 
 	// Validate/fixup the various sections.
-	if err := c.Proxy.validate(); err != nil {
-		return err
-	}
 	if err := c.Logging.validate(); err != nil {
 		return err
 	}
@@ -339,7 +349,7 @@ func (c *Config) FixupAndValidate() error {
 		return fmt.Errorf("config: Authority configuration is invalid")
 	}
 
-	// account
+	// Account
 	if err := c.Account.fixup(c); err != nil {
 		return fmt.Errorf("config: Account is invalid (User): %v", err)
 	}
@@ -351,12 +361,29 @@ func (c *Config) FixupAndValidate() error {
 		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
 	}
 
+	// Panda is optional
+	if c.Panda != nil {
+		err = c.Panda.validate()
+		if err != nil {
+			return fmt.Errorf("config: Panda config is invalid: %v", err)
+		}
+	}
+
+	// Registration
+	if c.Registration == nil {
+		return errors.New("config: error, Registration config section is non-optional")
+	} else {
+		err = c.Registration.validate()
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 // Load parses and validates the provided buffer b as a config file body and
 // returns the Config.
-func Load(b []byte, forceGenOnly bool) (*Config, error) {
+func Load(b []byte) (*Config, error) {
 	cfg := new(Config)
 	md, err := toml.Decode(string(b), cfg)
 	if err != nil {
@@ -368,58 +395,15 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
-	if forceGenOnly {
-		cfg.Debug.GenerateOnly = true
-	}
 	return cfg, nil
-}
-
-// GenerateKeys makes the key dir and then
-// generates the keys and saves them into pem files
-func GenerateKeys(cfg *Config) error {
-	id := cfg.Account.User + "@" + cfg.Account.Provider
-	basePath := filepath.Join(cfg.Proxy.DataDir, id)
-	if err := utils.MkDataDir(basePath); err != nil {
-		return err
-	}
-	_, err := LoadLinkKey(basePath)
-	if err != nil {
-		return err
-	}
-	_, err = LoadSpoolKey(basePath)
-	return err
-}
-
-// LoadSpoolKey can load or generate the keys
-func LoadSpoolKey(basePath string) (*eddsa.PrivateKey, error) {
-	spoolPriv := filepath.Join(basePath, "spool.private.pem")
-	spoolPub := filepath.Join(basePath, "spool.public.pem")
-	var err error
-	var spoolKey *eddsa.PrivateKey
-	if spoolKey, err = eddsa.Load(spoolPriv, spoolPub, rand.Reader); err != nil {
-		return nil, err
-	}
-	return spoolKey, nil
-}
-
-// LoadLinkKey can load or generate the keys
-func LoadLinkKey(basePath string) (*ecdh.PrivateKey, error) {
-	linkPriv := filepath.Join(basePath, "link.private.pem")
-	linkPub := filepath.Join(basePath, "link.public.pem")
-	var err error
-	var linkKey *ecdh.PrivateKey
-	if linkKey, err = ecdh.Load(linkPriv, linkPub, rand.Reader); err != nil {
-		return nil, err
-	}
-	return linkKey, nil
 }
 
 // LoadFile loads, parses, and validates the provided file and returns the
 // Config.
-func LoadFile(f string, forceGenOnly bool) (*Config, error) {
+func LoadFile(f string) (*Config, error) {
 	b, err := ioutil.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}
-	return Load(b, forceGenOnly)
+	return Load(b)
 }

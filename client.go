@@ -19,16 +19,27 @@ package client
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/session"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/utils"
+	registration "github.com/katzenpost/registration_client"
 	"gopkg.in/op/go-logging.v1"
 )
+
+func RegisterClient(cfg *config.Config, linkKey *ecdh.PublicKey) error {
+	client, err := registration.New(cfg.Registration.Address, cfg.Registration.Options)
+	if err != nil {
+		return err
+	}
+	err = client.RegisterAccountWithLinkKey(cfg.Account.User, linkKey)
+	return err
+}
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
@@ -46,7 +57,7 @@ func (c *Client) initLogging() error {
 	f := c.cfg.Logging.File
 	if !c.cfg.Logging.Disable && c.cfg.Logging.File != "" {
 		if !filepath.IsAbs(f) {
-			f = filepath.Join(c.cfg.Proxy.DataDir, f)
+			return errors.New("log file path must be absolute path")
 		}
 	}
 
@@ -56,6 +67,10 @@ func (c *Client) initLogging() error {
 		c.log = c.logBackend.GetLogger("katzenpost/client")
 	}
 	return err
+}
+
+func (c *Client) GetBackendLog() *log.Backend {
+	return c.logBackend
 }
 
 // GetLogger returns a new logger with the given name.
@@ -83,12 +98,12 @@ func (c *Client) halt() {
 }
 
 // NewSession creates and returns a new session or an error.
-func (c *Client) NewSession() (*session.Session, error) {
+func (c *Client) NewSession(linkKey *ecdh.PrivateKey) (*session.Session, error) {
 	var err error
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	c.session, err = session.New(ctx, c.fatalErrCh, c.logBackend, c.cfg)
+	c.session, err = session.New(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey)
 	return c.session, err
 }
 
@@ -100,17 +115,7 @@ func New(cfg *config.Config) (*Client, error) {
 	c.haltedCh = make(chan interface{})
 	c.haltOnce = new(sync.Once)
 
-	// Do the early initialization and bring up logging.
-	if err := utils.MkDataDir(c.cfg.Proxy.DataDir); err != nil {
-		return nil, err
-	}
 	if err := c.initLogging(); err != nil {
-		return nil, err
-	}
-
-	// Ensure we generate keys if the user requested it.
-	if c.cfg.Debug.GenerateOnly {
-		err := config.GenerateKeys(c.cfg)
 		return nil, err
 	}
 
