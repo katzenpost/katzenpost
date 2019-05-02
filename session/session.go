@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	mrand "math/rand"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,7 +37,6 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
-	cutils "github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
 	"gopkg.in/op/go-logging.v1"
@@ -80,7 +78,7 @@ type Session struct {
 
 // New establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config) (*Session, error) {
+func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config, linkKey *ecdh.PrivateKey) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups
@@ -102,6 +100,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 
 	s := &Session{
 		cfg:           cfg,
+		linkKey:       linkKey,
 		pkiClient:     pkiClient,
 		log:           log,
 		fatalErrCh:    fatalErrCh,
@@ -113,17 +112,6 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
 	s.mapLock = new(sync.Mutex)
 	s.egressQueue = new(Queue)
-
-	id := cfg.Account.User + "@" + cfg.Account.Provider
-	basePath := filepath.Join(cfg.Proxy.DataDir, id)
-	if err := cutils.MkDataDir(basePath); err != nil {
-		return nil, err
-	}
-
-	err = s.loadKeys(basePath)
-	if err != nil {
-		return nil, err
-	}
 
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
@@ -187,16 +175,6 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 			continue
 		}
 	}
-}
-
-func (s *Session) loadKeys(basePath string) error {
-	// Load link key.
-	var err error
-	if s.linkKey, err = config.LoadLinkKey(basePath); err != nil {
-		s.log.Errorf("Failure to load link keys: %s", err)
-		return err
-	}
-	return nil
 }
 
 // GetService returns a randomly selected service
@@ -296,4 +274,8 @@ func (s *Session) onDocument(doc *pki.Document) {
 	s.opCh <- opNewDocument{
 		doc: doc,
 	}
+}
+
+func (s *Session) GetPandaConfig() *config.Panda {
+	return s.cfg.Panda
 }

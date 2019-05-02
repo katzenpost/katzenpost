@@ -32,6 +32,8 @@ import (
 
 const roundTripTimeSlop = time.Duration(88 * time.Second)
 
+var ReplyTimeoutError = errors.New("Failure waiting for reply, timeout reached")
+
 // WaitForSent blocks until the message with the corresponding message ID is sent.
 func (s *Session) waitForSent(id MessageID) error {
 	s.log.Debug("Waiting for message to be sent.")
@@ -100,7 +102,7 @@ func (s *Session) waitForReply(id MessageID) ([]byte, error) {
 		}
 		return e.Payload, nil
 	case <-time.After(msg.ReplyETA + roundTripTimeSlop):
-		return nil, fmt.Errorf("[%v] Failure waiting for reply, timeout reached", id)
+		return nil, ReplyTimeoutError
 	}
 	// unreachable
 }
