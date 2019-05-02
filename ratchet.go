@@ -35,6 +35,9 @@ const (
 	maxMissingMessages = 8
 
 	RatchetKeyMaxLifetime = time.Hour * 672
+
+	// DoubleRatchetOverhead is the number of bytes the ratchet adds in ciphertext overhead.
+	DoubleRatchetOverhead = 120
 )
 
 var cborHandle = new(codec.CborHandle)
