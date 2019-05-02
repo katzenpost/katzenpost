@@ -33,6 +33,8 @@ const (
 	PurgeSpoolCommand      = 1
 	AppendMessageCommand   = 2
 	RetrieveMessageCommand = 3
+
+	SpoolServiceName = "spool"
 )
 
 var (

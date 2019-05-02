@@ -46,12 +46,14 @@ func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *co
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
+			return &spoolResponse
 		}
 		spoolResponse.Status = "OK"
 		spoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
+			return &spoolResponse
 		}
 		spoolResponse.SpoolID = spoolID[:]
 	case PurgeSpoolCommand:
@@ -60,6 +62,7 @@ func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *co
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
+			return &spoolResponse
 		}
 		spoolResponse.Status = "OK"
 	case AppendMessageCommand:
@@ -69,6 +72,7 @@ func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *co
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
+			return &spoolResponse
 		}
 		spoolResponse.Status = "OK"
 	case RetrieveMessageCommand:
@@ -79,6 +83,7 @@ func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *co
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
+			return &spoolResponse
 		}
 		spoolResponse.Status = "OK"
 		spoolResponse.Message = message
