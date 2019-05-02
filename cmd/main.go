@@ -25,53 +25,83 @@ import (
 	"github.com/katzenpost/catshadow"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 func main() {
-	genOnly := flag.Bool("g", false, "Generate the keys and exit immediately.")
-	cfgFile := flag.String("f", "katzenpost.toml", "Path to the server config file.")
+	generate := flag.Bool("g", false, "Generate the state file and then run client.")
+	cfgFile := flag.String("f", "katzenpost.toml", "Path to the client config file.")
+	stateFile := flag.String("s", "catshadow_statefile", "The catshadow state file path.")
 	flag.Parse()
 
 	// Set the umask to something "paranoid".
 	syscall.Umask(0077)
 
-	if *genOnly {
-		cfg, err := config.LoadFile(*cfgFile, *genOnly)
-		if err != nil {
-			panic(err)
-		}
-		_, err = client.New(cfg)
-		if err != nil {
-			panic(err)
-		}
-		return
-	}
+	fmt.Println("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
 	// Load config file.
-	cfg, err := config.LoadFile(*cfgFile, false)
+	cfg, err := config.LoadFile(*cfgFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *cfgFile, err)
 		os.Exit(-1)
 	}
 
-	// Create a client and connect to the mixnet Provider.
+	// Decrypt and load the state file.
+	fmt.Print("Enter statefile decryption passphrase: ")
+	passphrase, err := terminal.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Print("\n")
+
+	var stateWorker *catshadow.StateWriter = nil
+	var state *catshadow.State = nil
+	var catShadowClient *catshadow.Client = nil
 	c, err := client.New(cfg)
 	if err != nil {
 		panic(err)
 	}
-	s, err := c.NewSession()
-	if err != nil {
-		panic(err)
+	if *generate {
+		if _, err := os.Stat(*stateFile); !os.IsNotExist(err) {
+			panic("cannot generate state file, already exists")
+		}
+		linkKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("registering client with mixnet Provider")
+		err = client.RegisterClient(cfg, linkKey.PublicKey())
+		if err != nil {
+			panic(err)
+		}
+		stateWorker, err = catshadow.NewStateWriter(c.GetLogger("catshadow_state"), *stateFile, passphrase)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("creating remote message receiver spool")
+		catShadowClient, err = catshadow.NewClientAndRemoteSpool(c.GetBackendLog(), c, stateWorker, linkKey)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println("catshadow client successfully created")
+	} else {
+		stateWorker, state, err = catshadow.LoadStateWriter(c.GetLogger("catshadow_state"), *stateFile, passphrase)
+		if err != nil {
+			panic(err)
+		}
+		catShadowClient, err = catshadow.New(c.GetBackendLog(), c, stateWorker, state)
+		if err != nil {
+			panic(err)
+		}
 	}
+	stateWorker.Start()
+	fmt.Println("state worker started")
+	catShadowClient.Start()
+	fmt.Println("catshadow worker started")
 
-	client := catshadow.New(c.GetBackendLog(), c.GetLogger("catshadow"), s)
-
-	// Start up an interactive shell.
-	shell := NewShell(client, c.GetLogger("catshadow_shell"))
-	err = client.Start()
-	if err != nil {
-		panic(err)
-	}
-
+	fmt.Println("starting shell")
+	shell := NewShell(catShadowClient, c.GetLogger("catshadow_shell"))
 	shell.Run()
 }

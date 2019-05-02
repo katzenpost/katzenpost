@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/channels"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/client/session"
+	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
@@ -31,6 +32,7 @@ import (
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
 	panda "github.com/katzenpost/panda/crypto"
+	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -67,6 +69,8 @@ type Client struct {
 	contactNicknames map[string]*Contact
 	spoolReaderChan  *channels.UnreliableSpoolReaderChannel
 
+	linkKey      *ecdh.PrivateKey
+	stateWorker  *StateWriter
 	client       *client.Client
 	session      *session.Session
 	spoolService memspoolclient.SpoolService
@@ -75,45 +79,83 @@ type Client struct {
 	logBackend *log.Backend
 }
 
-func New(logBackend *log.Backend, log *logging.Logger, session *session.Session) *Client {
-	spoolService := memspoolclient.New(session)
-	client := &Client{
-		spoolService:      spoolService,
-		session:           session,
-		contacts:          make(map[uint64]*Contact),
-		contactNicknames:  make(map[string]*Contact),
-		log:               log,
-		logBackend:        logBackend,
+func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, linkKey *ecdh.PrivateKey) (*Client, error) {
+	state := &State{
+		Contacts: make([]*Contact, 0),
+		LinkKey:  linkKey,
+	}
+	client, err := New(mixnetClient.GetBackendLog(), mixnetClient, stateWorker, state)
+	if err != nil {
+		return nil, err
+	}
+
+	client.save()
+	client.log.Debug("BEFORE CREATING REMOTE RECEIVER SPOOL")
+	err = client.CreateRemoteSpool()
+	if err != nil {
+		return nil, err
+	}
+	client.save()
+	return client, nil
+}
+
+func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
+	session, err := mixnetClient.NewSession(state.LinkKey)
+	if err != nil {
+		return nil, err
+	}
+	c := &Client{
 		pandaChan:         make(chan panda.PandaUpdate),
 		addContactChan:    make(chan AddContact),
 		sendMessageChan:   make(chan SendMessage),
 		removeContactChan: make(chan string),
 		readInboxChan:     make(chan messageRead),
+		contacts:          make(map[uint64]*Contact),
+		contactNicknames:  make(map[string]*Contact),
+		spoolReaderChan:   state.SpoolReaderChan,
+		linkKey:           state.LinkKey,
+		stateWorker:       stateWorker,
+		client:            mixnetClient,
+		session:           session,
+		spoolService:      memspoolclient.New(session),
+		log:               logBackend.GetLogger("catshadow"),
+		logBackend:        logBackend,
 	}
-	return client
+	for _, contact := range state.Contacts {
+		c.contacts[contact.id] = contact
+		c.contactNicknames[contact.nickname] = contact
+	}
+	return c, nil
 }
 
-func (c *Client) Start() error {
+func (c *Client) Start() {
+	c.Go(c.worker)
+}
+
+func (c *Client) CreateRemoteSpool() error {
 	desc, err := c.session.GetService(common.SpoolServiceName)
 	if err != nil {
 		return err
 	}
 	if c.spoolReaderChan == nil {
+		c.log.Debug("attempting to create remote reader spool")
 		spoolService := memspoolclient.New(c.session)
 		c.spoolReaderChan, err = channels.NewUnreliableSpoolReaderChannel(desc.Name, desc.Provider, spoolService)
 		if err != nil {
 			return err
 		}
+		c.log.Debug("remote reader spool created successfully")
 	}
-	c.Go(c.worker)
 	return nil
 }
 
 func (c *Client) NewContact(nickname string, sharedSecret []byte) {
+	c.log.Debug("before writing to addContactChan")
 	c.addContactChan <- AddContact{
 		Name:         nickname,
 		SharedSecret: sharedSecret,
 	}
+	c.log.Debug("after writing to addContactChan")
 }
 
 func (c *Client) createContact(nickname string, sharedSecret []byte) error {
@@ -143,7 +185,10 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	contact.pandaKeyExchange = kx.Marshal()
 	contact.keyExchange = nil
 	go kx.Run()
+
+	c.log.Debug("before calling save")
 	c.save()
+	c.log.Debug("after calling save")
 
 	c.log.Info("New PANDA key exchange in progress.")
 	return nil
@@ -169,8 +214,32 @@ func (c *Client) Session() *session.Session {
 
 func (c *Client) save() {
 	c.log.Debug("Saving statefile.")
-	// XXX todo: save state to disk, encrypted with a passphrase
-	// using user passphrase --> argon2, nacl secretbox, obviously.
+	serialized, err := c.marshal()
+	if err != nil {
+		panic(err)
+	}
+	err = c.stateWorker.writeState(serialized)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (c *Client) marshal() ([]byte, error) {
+	contacts := []*Contact{}
+	for _, contact := range c.contacts {
+		contacts = append(contacts, contact)
+	}
+	s := &State{
+		SpoolReaderChan: c.spoolReaderChan,
+		Contacts:        contacts,
+		LinkKey:         c.linkKey,
+	}
+	var serialized []byte
+	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
 }
 
 func (c *Client) haltKeyExchanges() {
@@ -273,6 +342,7 @@ func (c *Client) doRead(r *messageRead) {
 		err = fmt.Errorf("failure reading remote spool: %s", err)
 		c.log.Debugf(err.Error())
 	}
+	c.save()
 	message := message{}
 	for _, contact := range c.contacts {
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
@@ -299,10 +369,12 @@ func (c *Client) worker() {
 			c.haltKeyExchanges()
 			return
 		case addContact := <-c.addContactChan:
+			c.log.Debug("before calling createContact")
 			err := c.createContact(addContact.Name, addContact.SharedSecret)
 			if err != nil {
 				c.log.Errorf("create contact failure: %s", err.Error())
 			}
+			c.log.Debug("after calling createContact")
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
 			continue

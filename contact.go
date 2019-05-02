@@ -53,6 +53,17 @@ func ParseContactExchangeBytes(contactExchangeBytes []byte) (*ContactExchange, e
 	return exchange, nil
 }
 
+type SerializedContact struct {
+	ID               uint64
+	Nickname         string
+	IsPending        bool
+	KeyExchange      []byte
+	PandaKeyExchange []byte
+	PandaResult      string
+	Ratchet          []byte
+	SpoolWriterChan  *channels.UnreliableSpoolWriterChannel
+}
+
 // Contact is a communications contact that we have bidirectional
 // communication with.
 type Contact struct {
@@ -108,4 +119,56 @@ func NewContact(nickname string, id uint64, spoolReaderChan *channels.Unreliable
 // ID returns the Contact ID.
 func (c *Contact) ID() uint64 {
 	return c.id
+}
+
+func (c *Contact) MarshalBinary() ([]byte, error) {
+	ratchetBlob, err := c.ratchet.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	s := &SerializedContact{
+		ID:               c.id,
+		Nickname:         c.nickname,
+		IsPending:        c.isPending,
+		KeyExchange:      c.keyExchange,
+		PandaKeyExchange: c.pandaKeyExchange,
+		PandaResult:      c.pandaResult,
+		Ratchet:          ratchetBlob,
+		SpoolWriterChan:  c.spoolWriterChan,
+	}
+	var serialized []byte
+	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+func (c *Contact) UnmarshalBinary(data []byte) error {
+	r, err := ratchet.New(rand.Reader)
+	if err != nil {
+		return err
+	}
+
+	s := new(SerializedContact)
+	err = codec.NewDecoderBytes(data, cborHandle).Decode(s)
+	if err != nil {
+		return err
+	}
+
+	err = r.UnmarshalBinary(s.Ratchet)
+	if err != nil {
+		return err
+	}
+
+	c.id = s.ID
+	c.nickname = s.Nickname
+	c.isPending = s.IsPending
+	c.keyExchange = s.KeyExchange
+	c.pandaKeyExchange = s.PandaKeyExchange
+	c.pandaResult = s.PandaResult
+	c.ratchet = r
+	c.spoolWriterChan = s.SpoolWriterChan
+
+	return nil
 }
