@@ -18,6 +18,7 @@ package catshadow
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -318,7 +319,11 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		return
 	}
 
-	ciphertext := contact.ratchet.Encrypt(nil, message)
+	payload := [channels.DoubleRatchetPayloadLength]byte{}
+	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
+	copy(payload[4:], message)
+	ciphertext := contact.ratchet.Encrypt(nil, payload[:])
+
 	err := contact.spoolWriterChan.Write(c.spoolService, ciphertext)
 	if err != nil {
 		c.log.Errorf("double ratchet channel write failure: %s", err)
@@ -352,7 +357,8 @@ func (c *Client) doRead(r *messageRead) {
 			continue
 		} else {
 			message.nickname = contact.nickname
-			message.payload = plaintext
+			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
+			message.payload = plaintext[4 : 4+payloadLen]
 			break
 		}
 	}
