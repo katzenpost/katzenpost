@@ -211,6 +211,18 @@ func (k *PrivateKey) Bytes() []byte {
 	return k.privKey
 }
 
+// MarshalBinary implements the BinaryMarshaler interface
+// defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) MarshalBinary() ([]byte, error) {
+	return k.Bytes(), nil
+}
+
+// UnmarshalBinary implements the BinaryUnmarshaler interface
+// defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) UnmarshalBinary(data []byte) error {
+	return k.FromBytes(data)
+}
+
 // Identity returns the key's identity, in this case it's our
 // public key in bytes.
 func (k *PrivateKey) Identity() []byte {
