@@ -89,9 +89,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 	if err != nil {
 		return nil, err
 	}
-
 	client.save()
-	client.log.Debug("BEFORE CREATING REMOTE RECEIVER SPOOL")
 	err = client.CreateRemoteSpool()
 	if err != nil {
 		return nil, err
@@ -139,7 +137,6 @@ func (c *Client) CreateRemoteSpool() error {
 		return err
 	}
 	if c.spoolReaderChan == nil {
-		c.log.Debug("attempting to create remote reader spool")
 		spoolService := memspoolclient.New(c.session)
 		c.spoolReaderChan, err = channels.NewUnreliableSpoolReaderChannel(desc.Name, desc.Provider, spoolService)
 		if err != nil {
@@ -151,12 +148,10 @@ func (c *Client) CreateRemoteSpool() error {
 }
 
 func (c *Client) NewContact(nickname string, sharedSecret []byte) {
-	c.log.Debug("before writing to addContactChan")
 	c.addContactChan <- AddContact{
 		Name:         nickname,
 		SharedSecret: sharedSecret,
 	}
-	c.log.Debug("after writing to addContactChan")
 }
 
 func (c *Client) createContact(nickname string, sharedSecret []byte) error {
@@ -186,10 +181,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	contact.pandaKeyExchange = kx.Marshal()
 	contact.keyExchange = nil
 	go kx.Run()
-
-	c.log.Debug("before calling save")
 	c.save()
-	c.log.Debug("after calling save")
 
 	c.log.Info("New PANDA key exchange in progress.")
 	return nil
@@ -207,6 +199,7 @@ func (c *Client) doContactRemoval(nickname string) {
 	}
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
+	c.save()
 }
 
 func (c *Client) Session() *session.Session {
@@ -253,6 +246,7 @@ func (c *Client) haltKeyExchanges() {
 }
 
 func (c *Client) Shutdown() {
+	c.save()
 	c.Halt()
 	c.session.Halt()
 }
@@ -323,6 +317,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	ciphertext := contact.ratchet.Encrypt(nil, payload[:])
+	c.save()
 
 	err := contact.spoolWriterChan.Write(c.spoolService, ciphertext)
 	if err != nil {
@@ -351,6 +346,7 @@ func (c *Client) doRead(r *messageRead) {
 	message := message{}
 	for _, contact := range c.contacts {
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
+		c.save()
 		if err != nil {
 			err = fmt.Errorf("failure to decrypt: %s", err)
 			c.log.Debugf(err.Error())
