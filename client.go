@@ -371,12 +371,10 @@ func (c *Client) worker() {
 			c.haltKeyExchanges()
 			return
 		case addContact := <-c.addContactChan:
-			c.log.Debug("before calling createContact")
 			err := c.createContact(addContact.Name, addContact.SharedSecret)
 			if err != nil {
 				c.log.Errorf("create contact failure: %s", err.Error())
 			}
-			c.log.Debug("after calling createContact")
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
 			continue

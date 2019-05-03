@@ -100,7 +100,6 @@ func main() {
 	fmt.Println("state worker started")
 	catShadowClient.Start()
 	fmt.Println("catshadow worker started")
-
 	fmt.Println("starting shell")
 	shell := NewShell(catShadowClient, c.GetLogger("catshadow_shell"))
 	shell.Run()

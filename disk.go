@@ -23,7 +23,6 @@ import (
 
 	"github.com/katzenpost/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
-	//"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/worker"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/argon2"
@@ -116,7 +115,6 @@ func (w *StateWriter) GetState() (*State, error) {
 }
 
 func (w *StateWriter) writeState(payload []byte) error {
-	w.log.Debug("writing state")
 	ciphertext := secretbox.Seal(nil, payload, &w.nonce, &w.key)
 	out, err := os.OpenFile(w.stateFile+".tmp", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
