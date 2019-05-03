@@ -18,6 +18,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/fatih/color"
 	"github.com/katzenpost/catshadow"
@@ -46,22 +47,42 @@ func NewShell(client *catshadow.Client, log *logging.Logger) *Shell {
 	shell.ishell.SetPrompt(magenta(">>> "))
 
 	shell.ishell.AddCmd(&ishell.Cmd{
+		Name: "list_inbox",
+		Help: "List inbox.",
+		Func: func(c *ishell.Context) {
+			// disable the '>>>' for cleaner same line input.
+			c.ShowPrompt(false)
+			defer c.ShowPrompt(true) // yes, revert after login.
+			inbox := shell.client.GetInbox()
+			c.Print(fmt.Sprintf("ID\tNickname\n"))
+			for id, message := range inbox {
+				c.Print(fmt.Sprintf("%d\t%s\n", id, message.Nickname))
+			}
+			c.Print("\n")
+		},
+	})
+
+	shell.ishell.AddCmd(&ishell.Cmd{
 		Name: "read_inbox",
 		Help: "Read inbox.",
 		Func: func(c *ishell.Context) {
 			// disable the '>>>' for cleaner same line input.
 			c.ShowPrompt(false)
 			defer c.ShowPrompt(true) // yes, revert after login.
-
-			nickname, message, err := shell.client.ReadMessage()
+			c.Print(red("message ID: "))
+			rawid := c.ReadLine()
+			id, err := strconv.Atoi(rawid)
 			if err != nil {
-				c.Print(red(fmt.Sprintf("read failure: %s", err.Error())))
+				c.Print(fmt.Sprintf("ERROR, invalid message id, must be positive integer\n"))
 			}
-			c.Print(green(fmt.Sprintf("message from: %s", nickname)))
-			c.Print(string(message))
-			c.Print(string("\n"))
+
+			inbox := shell.client.GetInbox()
+			mesg := inbox[id]
+			c.Print(fmt.Sprintf("%s %s\n%s", mesg.Nickname, mesg.ReceivedTime, mesg.Plaintext))
+			c.Print("\n")
 		},
 	})
+
 	shell.ishell.AddCmd(&ishell.Cmd{
 		Name: "delete_contact",
 		Help: "Delete a new communications contact",

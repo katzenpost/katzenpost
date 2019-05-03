@@ -21,9 +21,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/katzenpost/channels"
 	"github.com/katzenpost/client"
+	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
@@ -37,6 +40,13 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+const (
+	// these two constants control the frequency of polling the remote
+	// inbox for new messages
+	readInboxPoissonLambda = 0.0001234
+	readInboxPoissonMax    = 90000
+)
+
 type AddContact struct {
 	Name         string
 	SharedSecret []byte
@@ -47,16 +57,6 @@ type SendMessage struct {
 	Payload []byte
 }
 
-type message struct {
-	nickname string
-	payload  []byte
-	error    error
-}
-
-type messageRead struct {
-	ch chan message
-}
-
 type Client struct {
 	worker.Worker
 
@@ -64,14 +64,16 @@ type Client struct {
 	addContactChan    chan AddContact
 	sendMessageChan   chan SendMessage
 	removeContactChan chan string
-	readInboxChan     chan messageRead
 
-	contacts         map[uint64]*Contact
-	contactNicknames map[string]*Contact
-	spoolReaderChan  *channels.UnreliableSpoolReaderChannel
+	stateWorker           *StateWriter
+	linkKey               *ecdh.PrivateKey
+	contacts              map[uint64]*Contact
+	contactNicknames      map[string]*Contact
+	spoolReaderChan       *channels.UnreliableSpoolReaderChannel
+	inbox                 []*Message
+	inboxMutex            *sync.Mutex
+	readInboxPoissonTimer *poisson.Fount
 
-	linkKey      *ecdh.PrivateKey
-	stateWorker  *StateWriter
 	client       *client.Client
 	session      *session.Session
 	spoolService memspoolclient.SpoolService
@@ -83,6 +85,7 @@ type Client struct {
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
 		Contacts: make([]*Contact, 0),
+		Inbox:    make([]*Message, 0),
 		LinkKey:  linkKey,
 	}
 	client, err := New(mixnetClient.GetBackendLog(), mixnetClient, stateWorker, state)
@@ -108,17 +111,22 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		addContactChan:    make(chan AddContact),
 		sendMessageChan:   make(chan SendMessage),
 		removeContactChan: make(chan string),
-		readInboxChan:     make(chan messageRead),
 		contacts:          make(map[uint64]*Contact),
 		contactNicknames:  make(map[string]*Contact),
 		spoolReaderChan:   state.SpoolReaderChan,
 		linkKey:           state.LinkKey,
+		inbox:             state.Inbox,
+		inboxMutex:        new(sync.Mutex),
 		stateWorker:       stateWorker,
-		client:            mixnetClient,
-		session:           session,
-		spoolService:      memspoolclient.New(session),
-		log:               logBackend.GetLogger("catshadow"),
-		logBackend:        logBackend,
+		readInboxPoissonTimer: poisson.NewTimer(&poisson.Descriptor{
+			Lambda: readInboxPoissonLambda,
+			Max:    readInboxPoissonMax,
+		}),
+		client:       mixnetClient,
+		session:      session,
+		spoolService: memspoolclient.New(session),
+		log:          logBackend.GetLogger("catshadow"),
+		logBackend:   logBackend,
 	}
 	for _, contact := range state.Contacts {
 		c.contacts[contact.id] = contact
@@ -129,6 +137,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 
 func (c *Client) Start() {
 	c.Go(c.worker)
+	c.Go(c.readInboxWorker)
 }
 
 func (c *Client) CreateRemoteSpool() error {
@@ -227,6 +236,7 @@ func (c *Client) marshal() ([]byte, error) {
 		SpoolReaderChan: c.spoolReaderChan,
 		Contacts:        contacts,
 		LinkKey:         c.linkKey,
+		Inbox:           c.GetInbox(),
 	}
 	var serialized []byte
 	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
@@ -326,43 +336,62 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	c.log.Info("Sent message to %s.", nickname)
 }
 
-func (c *Client) ReadMessage() (string, []byte, error) {
-	ch := make(chan message)
-	c.readInboxChan <- messageRead{
-		ch: ch,
-	}
-	message := <-ch
-	return message.nickname, message.payload, message.error
+func (c *Client) GetInbox() []*Message {
+	c.inboxMutex.Lock()
+	defer c.inboxMutex.Unlock()
+	return c.inbox
 }
 
-func (c *Client) doRead(r *messageRead) {
+func (c *Client) readInbox() bool {
 	var err error
 	ciphertext, err := c.spoolReaderChan.Read(c.spoolService)
 	if err != nil {
-		err = fmt.Errorf("failure reading remote spool: %s", err)
-		c.log.Debugf(err.Error())
+		c.log.Debugf("failure reading remote spool: %s", err)
+		return false
 	}
-	c.save()
-	message := message{}
+	message := Message{}
+	var decrypted bool
 	for _, contact := range c.contacts {
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
-		c.save()
 		if err != nil {
-			err = fmt.Errorf("failure to decrypt: %s", err)
-			c.log.Debugf(err.Error())
 			continue
 		} else {
-			message.nickname = contact.nickname
+			decrypted = true
+			message.Nickname = contact.nickname
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			message.payload = plaintext[4 : 4+payloadLen]
+			message.Plaintext = plaintext[4 : 4+payloadLen]
+			message.ReceivedTime = time.Now()
 			break
 		}
 	}
-	message.error = err
-	r.ch <- message
+	if decrypted {
+		c.inboxMutex.Lock()
+		defer c.inboxMutex.Unlock()
+		c.inbox = append(c.inbox, &message)
+		return true
+	}
+	c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
+	return false
 }
 
-// worker goroutine takes ownership of our contacts
+func (c *Client) readInboxWorker() {
+	c.readInboxPoissonTimer.Start()
+	defer c.readInboxPoissonTimer.Stop()
+	for {
+		select {
+		case <-c.HaltCh():
+			c.log.Debug("Terminating gracefully.")
+			return
+		case <-c.readInboxPoissonTimer.Channel():
+			if c.readInbox() {
+				c.save()
+			}
+			c.readInboxPoissonTimer.Next()
+		}
+	}
+}
+
+// worker goroutine takes ownership of our contacts and inbox
 func (c *Client) worker() {
 	for {
 		select {
@@ -377,13 +406,10 @@ func (c *Client) worker() {
 			}
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
-			continue
 		case sendMessage := <-c.sendMessageChan:
 			c.doSendMessage(sendMessage.Name, sendMessage.Payload)
 		case nickname := <-c.removeContactChan:
 			c.doContactRemoval(nickname)
-		case messageRead := <-c.readInboxChan:
-			c.doRead(&messageRead)
 		}
 	}
 }

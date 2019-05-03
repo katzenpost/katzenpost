@@ -20,6 +20,7 @@ import (
 	"errors"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/katzenpost/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -36,10 +37,17 @@ const (
 	nonceSize     = 24
 )
 
+type Message struct {
+	Nickname     string
+	Plaintext    []byte
+	ReceivedTime time.Time
+}
+
 type State struct {
 	SpoolReaderChan *channels.UnreliableSpoolReaderChannel
 	Contacts        []*Contact
 	LinkKey         *ecdh.PrivateKey
+	Inbox           []*Message
 }
 
 type StateWriter struct {
