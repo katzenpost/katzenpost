@@ -47,22 +47,24 @@ const (
 	readInboxPoissonMax    = 90000
 )
 
-type AddContact struct {
+type addContact struct {
 	Name         string
 	SharedSecret []byte
 }
 
-type SendMessage struct {
+type sendMessage struct {
 	Name    string
 	Payload []byte
 }
 
+// Client is the mixnet client which interacts with other clients
+// and services on the network.
 type Client struct {
 	worker.Worker
 
 	pandaChan         chan panda.PandaUpdate
-	addContactChan    chan AddContact
-	sendMessageChan   chan SendMessage
+	addContactChan    chan addContact
+	sendMessageChan   chan sendMessage
 	removeContactChan chan string
 
 	stateWorker           *StateWriter
@@ -82,6 +84,11 @@ type Client struct {
 	logBackend *log.Backend
 }
 
+// NewClientAndRemoteSpool creates a new Client and creates a new remote spool
+// for collecting messages destined to this Client. The Client is associated with
+// this remote spool and this state is preserved in the encrypted statefile, of course.
+// This constructor of Client is used when creating a new Client as opposed to loading
+// the previously saved state for an existing Client.
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
 		Contacts: make([]*Contact, 0),
@@ -101,6 +108,8 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 	return client, nil
 }
 
+// New creates a new Client instance given a mixnetClient, stateWorker and state.
+// This constructor is used to load the previously saved state of a Client.
 func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
 	session, err := mixnetClient.NewSession(state.LinkKey)
 	if err != nil {
@@ -108,8 +117,8 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	}
 	c := &Client{
 		pandaChan:         make(chan panda.PandaUpdate),
-		addContactChan:    make(chan AddContact),
-		sendMessageChan:   make(chan SendMessage),
+		addContactChan:    make(chan addContact),
+		sendMessageChan:   make(chan sendMessage),
 		removeContactChan: make(chan string),
 		contacts:          make(map[uint64]*Contact),
 		contactNicknames:  make(map[string]*Contact),
@@ -135,11 +144,15 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	return c, nil
 }
 
+// Start starts the client worker goroutine and the
+// read-inbox worker goroutine.
 func (c *Client) Start() {
 	c.Go(c.worker)
 	c.Go(c.readInboxWorker)
 }
 
+// CreateRemoteSpool creates a remote spool for collecting messages
+// destined to this Client.
 func (c *Client) CreateRemoteSpool() error {
 	desc, err := c.session.GetService(common.SpoolServiceName)
 	if err != nil {
@@ -156,18 +169,42 @@ func (c *Client) CreateRemoteSpool() error {
 	return nil
 }
 
+// NewContact adds a new contact to the Client's state. This starts
+// the PANDA protocol instance for this contact where intermediate
+// states will be preserved in the encrypted statefile such that
+// progress on the PANDA key exchange can be continued at a later
+// time after program shutdown or restart.
 func (c *Client) NewContact(nickname string, sharedSecret []byte) {
-	c.addContactChan <- AddContact{
+	c.addContactChan <- addContact{
 		Name:         nickname,
 		SharedSecret: sharedSecret,
 	}
+}
+
+func (c *Client) randID() uint64 {
+	var idBytes [8]byte
+	for {
+		_, err := rand.Reader.Read(idBytes[:])
+		if err != nil {
+			panic(err)
+		}
+		n := binary.LittleEndian.Uint64(idBytes[:])
+		if n == 0 {
+			continue
+		}
+		if _, ok := c.contacts[n]; ok {
+			continue
+		}
+		return n
+	}
+	// unreachable
 }
 
 func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randId(), c.spoolReaderChan, c.session)
+	contact, err := NewContact(nickname, c.randID(), c.spoolReaderChan, c.session)
 	if err != nil {
 		return err
 	}
@@ -196,6 +233,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	return nil
 }
 
+// RemoveContact removes a contact from the Client's state.
 func (c *Client) RemoveContact(nickname string) {
 	c.removeContactChan <- nickname
 }
@@ -209,10 +247,6 @@ func (c *Client) doContactRemoval(nickname string) {
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
 	c.save()
-}
-
-func (c *Client) Session() *session.Session {
-	return c.session
 }
 
 func (c *Client) save() {
@@ -255,6 +289,7 @@ func (c *Client) haltKeyExchanges() {
 	}
 }
 
+// Shutdown shuts down the client.
 func (c *Client) Shutdown() {
 	c.save()
 	c.Halt()
@@ -284,9 +319,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 	case update.Result != nil:
 		c.log.Debug("PANDA exchange completed")
 		contact.pandaKeyExchange = nil
-
-		// XXX
-		exchange, err := ParseContactExchangeBytes(update.Result)
+		exchange, err := parseContactExchangeBytes(update.Result)
 		if err != nil {
 			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
 			c.log.Error(err.Error())
@@ -305,8 +338,9 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 	c.save()
 }
 
+// SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) {
-	c.sendMessageChan <- SendMessage{
+	c.sendMessageChan <- sendMessage{
 		Name:    nickname,
 		Payload: message,
 	}
@@ -336,6 +370,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	c.log.Info("Sent message to %s.", nickname)
 }
 
+// GetInbox returns the Client's inbox.
 func (c *Client) GetInbox() []*Message {
 	c.inboxMutex.Lock()
 	defer c.inboxMutex.Unlock()
@@ -374,6 +409,10 @@ func (c *Client) readInbox() bool {
 	return false
 }
 
+// read-inbox-worker does not take ownership of inbox.
+// instead the inbox is guarded with the mutex "c.inboxMutex".
+// also note that the call to c.readInbox blocks until it receives
+// a reply from the remote spool service.
 func (c *Client) readInboxWorker() {
 	c.readInboxPoissonTimer.Start()
 	defer c.readInboxPoissonTimer.Stop()
@@ -391,7 +430,7 @@ func (c *Client) readInboxWorker() {
 	}
 }
 
-// worker goroutine takes ownership of our contacts and inbox
+// worker goroutine takes ownership of our contacts
 func (c *Client) worker() {
 	for {
 		select {

@@ -32,17 +32,20 @@ import (
 )
 
 const (
-	StateFileName = "catshadow_statefile"
-	keySize       = 32
-	nonceSize     = 24
+	keySize   = 32
+	nonceSize = 24
 )
 
+// Message encapsulates a decrypted message and two
+// metadata fields, sender nickname and received time.
 type Message struct {
 	Nickname     string
 	Plaintext    []byte
 	ReceivedTime time.Time
 }
 
+// State is the struct type representing the Client's state
+// which is encrypted and persisted to disk.
 type State struct {
 	SpoolReaderChan *channels.UnreliableSpoolReaderChannel
 	Contacts        []*Contact
@@ -50,6 +53,8 @@ type State struct {
 	Inbox           []*Message
 }
 
+// StateWriter takes ownership of the Client's encrypted statefile
+// and has a worker goroutine which writes updates to disk.
 type StateWriter struct {
 	worker.Worker
 
@@ -62,6 +67,8 @@ type StateWriter struct {
 	nonce [24]byte
 }
 
+// LoadStateWriter decrypts the given stateFile and returns the State
+// as well as a new StateWriter.
 func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
 	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize+nonceSize)
 	worker := &StateWriter{
@@ -88,6 +95,8 @@ func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (
 	return worker, state, nil
 }
 
+// NewStateWriter is a constructor for StateWriter which is to be used when creating
+// the statefile for the first time.
 func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, error) {
 	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize+nonceSize)
 	worker := &StateWriter{
@@ -100,26 +109,10 @@ func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*
 	return worker, nil
 }
 
+// Start starts the StateWriter's worker goroutine.
 func (w *StateWriter) Start() {
 	w.log.Debug("StateWriter starting worker")
 	w.Go(w.worker)
-}
-
-func (w *StateWriter) GetState() (*State, error) {
-	ciphertext, err := ioutil.ReadFile(w.stateFile)
-	if err != nil {
-		return nil, err
-	}
-	plaintext, ok := secretbox.Open(nil, ciphertext, &w.nonce, &w.key)
-	if !ok {
-		return nil, errors.New("failed to decrypted statefile")
-	}
-	state := new(State)
-	err = codec.NewDecoderBytes(plaintext, cborHandle).Decode(&state)
-	if err != nil {
-		return nil, err
-	}
-	return state, nil
 }
 
 func (w *StateWriter) writeState(payload []byte) error {

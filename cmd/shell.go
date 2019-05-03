@@ -26,12 +26,16 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
+// Shell is an interactive terminal shell
+// for manipulating our mixnet client.
+// It is essentially a terrible user interface. Sorry.
 type Shell struct {
 	ishell *ishell.Shell
 	client *catshadow.Client
 	log    *logging.Logger
 }
 
+// NewShell creates a new Shell instance.
 func NewShell(client *catshadow.Client, log *logging.Logger) *Shell {
 	shell := &Shell{
 		ishell: ishell.New(),
@@ -142,6 +146,7 @@ func NewShell(client *catshadow.Client, log *logging.Logger) *Shell {
 	return shell
 }
 
+// Run runs the Shell.
 func (s *Shell) Run() {
 	// Let ishell do signal handling.
 	s.ishell.Interrupt(func(c *ishell.Context, count int, input string) {
@@ -150,6 +155,7 @@ func (s *Shell) Run() {
 	s.ishell.Run()
 }
 
+// Halt halts the Shell.
 func (s *Shell) Halt() {
 	s.client.Shutdown()
 	s.ishell.Close()

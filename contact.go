@@ -26,13 +26,14 @@ import (
 
 var cborHandle = new(codec.CborHandle)
 
-type ContactExchange struct {
+type contactExchange struct {
 	SpoolWriter       *channels.UnreliableSpoolWriterChannel
 	SignedKeyExchange *ratchet.SignedKeyExchange
 }
 
+// NewContactExchangeBytes returns serialized contact exchange information.
 func NewContactExchangeBytes(spoolWriter *channels.UnreliableSpoolWriterChannel, signedKeyExchange *ratchet.SignedKeyExchange) ([]byte, error) {
-	exchange := ContactExchange{
+	exchange := contactExchange{
 		SpoolWriter:       spoolWriter,
 		SignedKeyExchange: signedKeyExchange,
 	}
@@ -44,8 +45,8 @@ func NewContactExchangeBytes(spoolWriter *channels.UnreliableSpoolWriterChannel,
 	return serialized, nil
 }
 
-func ParseContactExchangeBytes(contactExchangeBytes []byte) (*ContactExchange, error) {
-	exchange := new(ContactExchange)
+func parseContactExchangeBytes(contactExchangeBytes []byte) (*contactExchange, error) {
+	exchange := new(contactExchange)
 	err := codec.NewDecoderBytes(contactExchangeBytes, cborHandle).Decode(exchange)
 	if err != nil {
 		return nil, err
@@ -53,7 +54,7 @@ func ParseContactExchangeBytes(contactExchangeBytes []byte) (*ContactExchange, e
 	return exchange, nil
 }
 
-type SerializedContact struct {
+type serializedContact struct {
 	ID               uint64
 	Nickname         string
 	IsPending        bool
@@ -121,12 +122,14 @@ func (c *Contact) ID() uint64 {
 	return c.id
 }
 
+// MarshalBinary does what you expect and returns
+// a serialized Contact.
 func (c *Contact) MarshalBinary() ([]byte, error) {
 	ratchetBlob, err := c.ratchet.MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
-	s := &SerializedContact{
+	s := &serializedContact{
 		ID:               c.id,
 		Nickname:         c.nickname,
 		IsPending:        c.isPending,
@@ -144,13 +147,16 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 	return serialized, nil
 }
 
+// UnmarshalBinary does what you expect and initializes
+// the given Contact with deserialized Contact fields
+// from the given binary blob.
 func (c *Contact) UnmarshalBinary(data []byte) error {
 	r, err := ratchet.New(rand.Reader)
 	if err != nil {
 		return err
 	}
 
-	s := new(SerializedContact)
+	s := new(serializedContact)
 	err = codec.NewDecoderBytes(data, cborHandle).Decode(s)
 	if err != nil {
 		return err

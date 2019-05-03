@@ -56,9 +56,9 @@ func main() {
 	}
 	fmt.Print("\n")
 
-	var stateWorker *catshadow.StateWriter = nil
-	var state *catshadow.State = nil
-	var catShadowClient *catshadow.Client = nil
+	var stateWorker *catshadow.StateWriter
+	var state *catshadow.State
+	var catShadowClient *catshadow.Client
 	c, err := client.New(cfg)
 	if err != nil {
 		panic(err)
