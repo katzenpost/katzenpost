@@ -78,7 +78,7 @@ Documentation
 ..  toctree::
     :maxdepth: 1
 
-    "Playground" Demo: Client Instructions <downloads>
+    Catshadow: The New Katzenpost Client <catshadow>
     Katzenpost Network Operators Handbook <docs/handbook/index>
     docs/glossary
     docs/faq
