@@ -1,4 +1,4 @@
-.. post:: 22 November, 2018
+.. post:: Nov 22, 2018
    :tags: katzenpost, blog
    :title: Katzenpost Monthly News Update
    :author: David Stainton

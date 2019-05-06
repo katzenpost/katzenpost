@@ -1,4 +1,4 @@
-.. post:: 4 May, 2019
+.. post:: May 4, 2019
    :tags: katzenpost, blog
    :title: Katzenpost Monthly News Update
    :author: David Stainton

@@ -1,4 +1,4 @@
-.. post:: 13 January, 2019
+.. post:: Jan 13, 2019
    :tags: katzenpost, blog
    :title: Katzenpost Rustification
    :author: David Stainton
