@@ -1,5 +1,5 @@
 
-katzenpost blog posts
+Katzenpost Blog Posts
 =====================
 
 .. postlist::
