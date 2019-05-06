@@ -78,7 +78,7 @@ Blog
 ..  toctree::
     :maxdepth: 1
 
-    blog/index.rst
+    blog/index
      
 Documentation
 =============
