@@ -72,6 +72,10 @@ func (t *Fount) nextInterval() time.Duration {
 	return wakeInterval
 }
 
+func (t *Fount) Channel() <-chan time.Time {
+	return t.Timer.C
+}
+
 // Next resets the timer to the next Poisson process value.
 // This MUST NOT be called unless the timer has fired.
 func (t *Fount) Next() {
