@@ -25,8 +25,8 @@ https://signal.org/docs/specifications/doubleratchet/
 Contact
 =======
 
- * IRC: irc.oftc.net #katzenpost <irc://irc.oftc.net/#katzenpost>
- * Mailing List <https://lists.mixnetworks.org/listinfo/katzenpost>
+* IRC: irc.oftc.net #katzenpost <irc://irc.oftc.net/#katzenpost>
+* Mailing List <https://lists.mixnetworks.org/listinfo/katzenpost>
 
 Disclaimer
 ==========
