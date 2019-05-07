@@ -50,41 +50,6 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey *ecdh.Priv
 	return goo
 }
 
-func TestGRPCInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
-	require := require.New(t)
-
-	idKey, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(err)
-
-	userKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	mockProvider := &mockProvider{
-		userName: "alice",
-		userKey:  userKey.PublicKey(),
-	}
-
-	goo := getGlue(logBackend, mockProvider, linkKey, idKey)
-	goo.s.cfg.Provider.GRPCPluginKaetzchen = []*config.GRPCPluginKaetzchen{
-		&config.GRPCPluginKaetzchen{
-			Capability:     "loop",
-			Endpoint:       "loop",
-			Config:         map[string]interface{}{},
-			Disable:        false,
-			Command:        "non-existent command",
-			MaxConcurrency: 1,
-		},
-	}
-	_, err = NewGRPCPluginWorker(goo)
-	require.Error(err)
-}
-
 func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	require := require.New(t)
 
