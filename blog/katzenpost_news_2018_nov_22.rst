@@ -4,6 +4,7 @@
    :author: David Stainton
    :nocomments:
 
+Nov 22, 2018
 
 katzenpost news
 ---------------
@@ -28,9 +29,9 @@ Firstly I'd like to mention our future development plans:
 Our recent accomplishments include:
 
 * Eradication of our usage of JOSE/JWS and usage of the golang Jose library.
-We no longer use JOSE/JWS for signing mix descriptors and directory authority documents.
-Instead we use the "cert" library I wrote which gives us certificate format agility AND
-cryptographic algorithmic agility.
+  We no longer use JOSE/JWS for signing mix descriptors and directory authority documents.
+  Instead we use the "cert" library I wrote which gives us certificate format agility AND
+  cryptographic algorithmic agility.
 
 specification:
 https://github.com/katzenpost/docs/blob/master/specs/certificate.rst
@@ -40,13 +41,13 @@ https://github.com/katzenpost/core/tree/master/crypto/cert
 
 
 * Our mix server now has a language agnostic plugin system for adding
-mixnet services. We have a modular API that allows you to write new
-services in golang and staticly compile them into the binary, however
-this new plugin system allows you to add services using external
-programs as plugins. These external plugins use gRPC over Unix domain
-socket to talk to the mix server (Provider). Using these plugins we
-can make new mixnet protocols that are either one way or strict call
-and response protocols that use SURBs to send the replies.
+  mixnet services. We have a modular API that allows you to write new
+  services in golang and staticly compile them into the binary, however
+  this new plugin system allows you to add services using external
+  programs as plugins. These external plugins use gRPC over Unix domain
+  socket to talk to the mix server (Provider). Using these plugins we
+  can make new mixnet protocols that are either one way or strict call
+  and response protocols that use SURBs to send the replies.
 
 Here's the mix server documentation for this new feature:
 https://github.com/katzenpost/docs/blob/master/handbook/mix_server.rst#external-kaetzchen-plugin-configuration
@@ -96,10 +97,10 @@ https://github.com/katzenpost/daemons/releases
 
 
 * We have released the voting Directory Authority (mixnet PKI)
-implementation since it is known to work properly as far as we were
-able to test thus far. This was more work and more difficult than we
-originally anticipated for both design and programming the
-implementation.
+  implementation since it is known to work properly as far as we were
+  able to test thus far. This was more work and more difficult than we
+  originally anticipated for both design and programming the
+  implementation.
 
 The design of this PKI was not fully supported by the Panoramix grant project
 because our academic collaborators were not under official obligation to work
