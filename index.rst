@@ -72,6 +72,14 @@ only good for chat clients but also other types of applications:
 For further discussion regarding Zcash usage with Katzenpost please see:
 :doc:`zcash`.
 
+Blog
+====
+
+..  toctree::
+    :maxdepth: 1
+
+    blog/index
+     
 Documentation
 =============
 
