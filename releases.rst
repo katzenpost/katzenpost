@@ -12,7 +12,21 @@ Katzenpost daemons releases follows `semantic versioning <https://semver.org/>`_
 unreleased
 ----------
 
-git master will likely become v0.0.10
+git master will likely become v0.0.12
+
+v0.0.11
+-------
+* Fixed pki lambda parameters
+* Wire protocol PeerCredentials returns error instead of panicing
+* base64 encode sharedrandomvalue
+* Add WarpedEpoch build-time flag for shortening epoch Period
+* Changed KDF string
+* Add Makefile with bench directive
+* Add MarshalBinary and UnmarshalBinary to crypto ecdh and eddsa modules
+* Removed bootstrap from voting authority
+* Made mix server work with NATed environments
+* Fixed mix server Kaetzchen logging
+* Added CBOR plugin system to mix server and remove GRPC plugin system
 
 v0.0.9
 ------
