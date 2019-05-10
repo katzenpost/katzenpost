@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"crypto/rand"
 	"errors"
-	"fmt"
 	"sync"
 	"testing"
 
+	"github.com/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const paddingSize = 1 << 16
@@ -59,7 +60,7 @@ func (smp *SimpleMeetingPlace) Exchange(id, message []byte, shutdown chan struct
 				case <-smp.wakeChan:
 					smp.Lock()
 				case <-shutdown:
-					return nil, ShutdownErr
+					return nil, errors.New(ShutdownErrMessage)
 				}
 			}
 		}
@@ -81,7 +82,23 @@ func TestSerialise(t *testing.T) {
 
 	secret := []byte("foo")
 	mp := NewSimpleMeetingPlace()
-	kx, err := NewKeyExchange(rand.Reader, mp, secret, []byte{1})
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(err)
+
+	shutdownChan := make(chan struct{})
+	go func() {
+		<-shutdownChan
+	}()
+	pandaChan := make(chan PandaUpdate)
+	go func() {
+		for {
+			<-pandaChan
+		}
+	}()
+
+	contactID := uint64(123)
+	kx, err := NewKeyExchange(rand.Reader, logBackend.GetLogger("a_kx"), mp, secret, []byte{1}, contactID, pandaChan, shutdownChan)
 	require.NoError(err)
 
 	serialised := kx.Marshal()
@@ -89,18 +106,34 @@ func TestSerialise(t *testing.T) {
 	require.NoError(err)
 }
 
-func runKX(resultChan chan interface{}, log func(string, ...interface{}), mp MeetingPlace, secret []byte, message []byte) {
-	kx, err := NewKeyExchange(rand.Reader, mp, secret, message)
+func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, secret []byte, message []byte) {
+
+	shutdownChan := make(chan struct{})
+	go func() {
+		<-shutdownChan
+	}()
+
+	pandaChan := make(chan PandaUpdate)
+	go func() {
+		var reply []byte
+		for {
+			pandaUpdate := <-pandaChan
+			reply = pandaUpdate.Result
+			if reply != nil {
+				resultChan <- reply
+			}
+		}
+	}()
+	contactID := uint64(123)
+	kx, err := NewKeyExchange(rand.Reader, log, mp, secret, message, contactID, pandaChan, shutdownChan)
 	if err != nil {
 		resultChan <- err
 	}
-	kx.Log = log
-	kx.Testing = true
-	reply, err := kx.Run()
+	kx.log = log
+	kx.Run()
 	if err != nil {
 		resultChan <- err
 	}
-	resultChan <- reply
 }
 
 func TestKeyExchange(t *testing.T) {
@@ -111,8 +144,12 @@ func TestKeyExchange(t *testing.T) {
 	secret := []byte("foo")
 	msg1 := []byte("test1")
 	msg2 := []byte("test2")
-	go runKX(a, t.Logf, mp, secret, msg1)
-	go runKX(b, t.Logf, mp, secret, msg2)
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(err)
+
+	go runKX(a, logBackend.GetLogger("a_kx"), mp, secret, msg1)
+	go runKX(b, logBackend.GetLogger("b_kx"), mp, secret, msg2)
 
 	result := <-a
 	reply, ok := result.([]byte)
@@ -123,54 +160,4 @@ func TestKeyExchange(t *testing.T) {
 	reply, ok = result.([]byte)
 	require.True(ok)
 	require.Equal(reply, msg1)
-}
-
-func TestStartStop(t *testing.T) {
-	require := require.New(t)
-
-	mp := NewSimpleMeetingPlace()
-	secret := []byte("foo")
-	msg1 := []byte("test1")
-	msg2 := []byte("test2")
-	a := make(chan interface{})
-	go runKX(a, t.Logf, mp, secret, msg1)
-
-	panicLog := func(format string, args ...interface{}) {
-		fmt.Printf(format, args...)
-		t.Logf(format, args...)
-		panic("unwind")
-	}
-
-	kx, err := NewKeyExchange(rand.Reader, mp, secret, msg2)
-	require.NoError(err)
-
-	serialised := kx.Marshal()
-	kx.Log = panicLog
-	kx.Testing = true
-	count := 0
-
-	var result []byte
-	done := false
-	for !done {
-		kx, err := UnmarshalKeyExchange(rand.Reader, mp, serialised)
-		require.NoError(err)
-
-		kx.Log = panicLog
-		kx.Testing = true
-
-		func() {
-			defer func() {
-				if count < 2 {
-					serialised = kx.Marshal()
-					recover()
-				}
-				count++
-			}()
-			result, err = kx.Run()
-			require.NoError(err)
-			done = true
-		}()
-	}
-
-	require.Equal(result, msg1)
 }
