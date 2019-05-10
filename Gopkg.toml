@@ -1,0 +1,36 @@
+
+[[constraint]]
+  name = "github.com/golang/protobuf"
+  version = "1.3.1"
+
+[[constraint]]
+  name = "github.com/katzenpost/client"
+  version = "0.0.1"
+
+[[constraint]]
+  name = "github.com/katzenpost/core"
+  version = "0.0.7"
+
+[[constraint]]
+  name = "github.com/katzenpost/server"
+  version = "0.0.7"
+
+[[constraint]]
+  name = "github.com/stretchr/testify"
+  version = "1.3.0"
+
+[[constraint]]
+  name = "github.com/ugorji/go"
+  version = "1.1.4"
+
+[[constraint]]
+  branch = "master"
+  name = "golang.org/x/crypto"
+
+[[constraint]]
+  name = "gopkg.in/op/go-logging.v1"
+  version = "1.0.0"
+
+[prune]
+  go-tests = true
+  unused-packages = true
