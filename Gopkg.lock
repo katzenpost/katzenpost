@@ -88,7 +88,7 @@
   version = "v0.0.8"
 
 [[projects]]
-  digest = "1:7d762fbd40c736704b34637544789b290e621c3ef72e8d5f638628e160756f83"
+  digest = "1:05d5ec33c412916520922f8c337049de4f61a20fae23f4ff803169f9f97addf0"
   name = "github.com/katzenpost/client"
   packages = [
     "config",
@@ -100,8 +100,8 @@
     "utils",
   ]
   pruneopts = "UT"
-  revision = "0bc8a152e237fb3a0f6d4b1ba4e966b4a4c2736f"
-  version = "v0.0.1"
+  revision = "0a8f39482d2fd448c012738a0052fa37063a5911"
+  version = "v0.0.2"
 
 [[projects]]
   digest = "1:86af603dee9df0382e61918b62377aa76d9f51dcba9855e720244f85fc623b85"
@@ -238,13 +238,11 @@
   revision = "a5b02f93d862f065920dd6a40dddc66b60d0dec4"
 
 [[projects]]
-  digest = "1:5f1559c4cee44069f81517430ebba19589869f3d4d4648213a4d5ddd199b11d8"
+  digest = "1:8d8faad6b12a3a4c819a3f9618cb6ee1fa1cfc33253abeeea8b55336721e3405"
   name = "golang.org/x/text"
   packages = [
-    "cases",
     "collate",
     "collate/build",
-    "internal",
     "internal/colltab",
     "internal/gen",
     "internal/language",
@@ -253,15 +251,12 @@
     "internal/triegen",
     "internal/ucd",
     "language",
-    "runes",
     "secure/bidirule",
-    "secure/precis",
     "transform",
     "unicode/bidi",
     "unicode/cldr",
     "unicode/norm",
     "unicode/rangetable",
-    "width",
   ]
   pruneopts = "UT"
   revision = "342b2e1fbaa52c93f31447ad2c6abc048c63e475"
@@ -282,6 +277,7 @@
     "github.com/golang/protobuf/proto",
     "github.com/katzenpost/client/session",
     "github.com/katzenpost/core/crypto/rand",
+    "github.com/katzenpost/core/log",
     "github.com/katzenpost/server/cborplugin",
     "github.com/stretchr/testify/require",
     "github.com/ugorji/go/codec",
