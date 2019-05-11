@@ -32,12 +32,12 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-func RegisterClient(cfg *config.Config, linkKey *ecdh.PublicKey) error {
+func RegisterClient(cfg *config.Config, user string, linkKey *ecdh.PublicKey) error {
 	client, err := registration.New(cfg.Registration.Address, cfg.Registration.Options)
 	if err != nil {
 		return err
 	}
-	err = client.RegisterAccountWithLinkKey(cfg.Account.User, linkKey)
+	err = client.RegisterAccountWithLinkKey(user, linkKey)
 	return err
 }
 
@@ -98,12 +98,12 @@ func (c *Client) halt() {
 }
 
 // NewSession creates and returns a new session or an error.
-func (c *Client) NewSession(linkKey *ecdh.PrivateKey) (*session.Session, error) {
+func (c *Client) NewSession(user string, linkKey *ecdh.PrivateKey) (*session.Session, error) {
 	var err error
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	c.session, err = session.New(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey)
+	c.session, err = session.New(ctx, c.fatalErrCh, c.logBackend, user, c.cfg, linkKey)
 	return c.session, err
 }
 
