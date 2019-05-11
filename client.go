@@ -69,6 +69,7 @@ type Client struct {
 
 	stateWorker           *StateWriter
 	linkKey               *ecdh.PrivateKey
+	user                  string
 	contacts              map[uint64]*Contact
 	contactNicknames      map[string]*Contact
 	spoolReaderChan       *channels.UnreliableSpoolReaderChannel
@@ -89,10 +90,11 @@ type Client struct {
 // this remote spool and this state is preserved in the encrypted statefile, of course.
 // This constructor of Client is used when creating a new Client as opposed to loading
 // the previously saved state for an existing Client.
-func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, linkKey *ecdh.PrivateKey) (*Client, error) {
+func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
 		Contacts: make([]*Contact, 0),
 		Inbox:    make([]*Message, 0),
+		User:     user,
 		LinkKey:  linkKey,
 	}
 	client, err := New(mixnetClient.GetBackendLog(), mixnetClient, stateWorker, state)
@@ -111,7 +113,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
 func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
-	session, err := mixnetClient.NewSession(state.LinkKey)
+	session, err := mixnetClient.NewSession(state.User, state.LinkKey)
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +126,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		contactNicknames:  make(map[string]*Contact),
 		spoolReaderChan:   state.SpoolReaderChan,
 		linkKey:           state.LinkKey,
+		user:              state.User,
 		inbox:             state.Inbox,
 		inboxMutex:        new(sync.Mutex),
 		stateWorker:       stateWorker,
@@ -270,6 +273,7 @@ func (c *Client) marshal() ([]byte, error) {
 		SpoolReaderChan: c.spoolReaderChan,
 		Contacts:        contacts,
 		LinkKey:         c.linkKey,
+		User:            c.user,
 		Inbox:           c.GetInbox(),
 	}
 	var serialized []byte

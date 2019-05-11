@@ -30,6 +30,15 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
+func randUser() string {
+	user := [32]byte{}
+	_, err := rand.Reader.Read(user[:])
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%x", user[:])
+}
+
 func main() {
 	generate := flag.Bool("g", false, "Generate the state file and then run client.")
 	cfgFile := flag.String("f", "katzenpost.toml", "Path to the client config file.")
@@ -72,7 +81,8 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("registering client with mixnet Provider")
-		err = client.RegisterClient(cfg, linkKey.PublicKey())
+		user := randUser()
+		err = client.RegisterClient(cfg, user, linkKey.PublicKey())
 		if err != nil {
 			panic(err)
 		}
@@ -81,7 +91,7 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("creating remote message receiver spool")
-		catShadowClient, err = catshadow.NewClientAndRemoteSpool(c.GetBackendLog(), c, stateWorker, linkKey)
+		catShadowClient, err = catshadow.NewClientAndRemoteSpool(c.GetBackendLog(), c, stateWorker, user, linkKey)
 		if err != nil {
 			panic(err)
 		}
