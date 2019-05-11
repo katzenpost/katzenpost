@@ -109,11 +109,11 @@
   name = "github.com/katzenpost/channels"
   packages = ["."]
   pruneopts = "UT"
-  revision = "b95e8c722d31048f5a33791f1b4245e4376d196f"
-  version = "v0.0.0"
+  revision = "0195481ae0d45bf6ac4632ab1d752b6c3bfb350c"
+  version = "v0.0.1"
 
 [[projects]]
-  digest = "1:e65813e1752a77f551528063396a1f5bcece9ea0af13c590099f7dc09a50c8a3"
+  digest = "1:d73dd677d883867dfae1faebd76bb8ee7f00a138815d50ccd5fc99a14e49c8fc"
   name = "github.com/katzenpost/client"
   packages = [
     ".",
@@ -126,8 +126,8 @@
     "utils",
   ]
   pruneopts = "UT"
-  revision = "0bc8a152e237fb3a0f6d4b1ba4e966b4a4c2736f"
-  version = "v0.0.1"
+  revision = "0a8f39482d2fd448c012738a0052fa37063a5911"
+  version = "v0.0.2"
 
 [[projects]]
   digest = "1:86af603dee9df0382e61918b62377aa76d9f51dcba9855e720244f85fc623b85"
@@ -202,8 +202,8 @@
     "crypto/rijndael",
   ]
   pruneopts = "UT"
-  revision = "2aaf83a60253dc6a985ea17eda15d0a9d4886bcf"
-  version = "v0.0.0"
+  revision = "c34af5fd54cbb9fff86f299901600bc99009d08b"
+  version = "v0.0.2"
 
 [[projects]]
   digest = "1:d5b35b7aac54592ad31f08ede68c356eb96e2f59ea57b66dd13498a5e160dde5"
@@ -266,7 +266,7 @@
     "ssh/terminal",
   ]
   pruneopts = "UT"
-  revision = "e1dfcc566284e143ba8f9afbb3fa563f2a0d212b"
+  revision = "cbcb750295291b33242907a04be40e80801d0cfc"
 
 [[projects]]
   branch = "master"
@@ -278,11 +278,11 @@
     "proxy",
   ]
   pruneopts = "UT"
-  revision = "f4e77d36d62c17c2336347bb2670ddbd02d092b7"
+  revision = "a4d6f7feada510cc50e69a37b484cb0fdc6b7876"
 
 [[projects]]
   branch = "master"
-  digest = "1:7a36766813b41d353a9055448789d5776e583f92dd1f68c79818dc0494b73855"
+  digest = "1:ed3d25dee9c9d77611e5ce1bd3a5a078930e8efb31afac120ccb1fbba7ec08d1"
   name = "golang.org/x/sys"
   packages = [
     "cpu",
@@ -290,16 +290,14 @@
     "windows",
   ]
   pruneopts = "UT"
-  revision = "12bbe5a7a5209180b72cc7e3ed9da40442fe3246"
+  revision = "a5b02f93d862f065920dd6a40dddc66b60d0dec4"
 
 [[projects]]
-  digest = "1:5f1559c4cee44069f81517430ebba19589869f3d4d4648213a4d5ddd199b11d8"
+  digest = "1:8d8faad6b12a3a4c819a3f9618cb6ee1fa1cfc33253abeeea8b55336721e3405"
   name = "golang.org/x/text"
   packages = [
-    "cases",
     "collate",
     "collate/build",
-    "internal",
     "internal/colltab",
     "internal/gen",
     "internal/language",
@@ -308,15 +306,12 @@
     "internal/triegen",
     "internal/ucd",
     "language",
-    "runes",
     "secure/bidirule",
-    "secure/precis",
     "transform",
     "unicode/bidi",
     "unicode/cldr",
     "unicode/norm",
     "unicode/rangetable",
-    "width",
   ]
   pruneopts = "UT"
   revision = "342b2e1fbaa52c93f31447ad2c6abc048c63e475"
