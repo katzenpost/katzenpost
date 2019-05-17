@@ -18,6 +18,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -201,7 +202,7 @@ func (s *MemSpool) Append(message []byte) error {
 func (s *MemSpool) Read(messageID uint32) ([]byte, error) {
 	raw_message, ok := s.items.Load(messageID)
 	if !ok {
-		return nil, errors.New("message ID not found")
+		return nil, fmt.Errorf("message ID %d not found", messageID)
 	}
 	message, ok := raw_message.([]byte)
 	if !ok {
