@@ -150,6 +150,22 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 // Start starts the client worker goroutine and the
 // read-inbox worker goroutine.
 func (c *Client) Start() {
+	pandaCfg := c.session.GetPandaConfig()
+	if pandaCfg == nil {
+		panic("panda failed, must have a panda service configured")
+	}
+	for _, contact := range c.contacts {
+		if contact.isPending {
+			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.nickname))
+			meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.nickname))
+			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange)
+			if err != nil {
+				panic(err)
+			}
+			go kx.Run()
+		}
+	}
 	c.Go(c.worker)
 	c.Go(c.readInboxWorker)
 }
@@ -219,9 +235,6 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	}
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", nickname))
 	meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
-	if err != nil {
-		return err
-	}
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", nickname))
 	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
 	if err != nil {
@@ -246,6 +259,11 @@ func (c *Client) doContactRemoval(nickname string) {
 	if !ok {
 		c.log.Errorf("contact removal failed, %s not found in contacts", nickname)
 		return
+	}
+	if contact.isPending {
+		if contact.pandaShutdownChan != nil {
+			close(contact.pandaShutdownChan)
+		}
 	}
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
@@ -288,7 +306,9 @@ func (c *Client) haltKeyExchanges() {
 	for _, contact := range c.contacts {
 		c.log.Debugf("Halting pending key exchange for '%s' contact.", contact.nickname)
 		if contact.isPending {
-			close(contact.pandaShutdownChan)
+			if contact.pandaShutdownChan != nil {
+				close(contact.pandaShutdownChan)
+			}
 		}
 	}
 }
