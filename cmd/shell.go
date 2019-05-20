@@ -143,6 +143,11 @@ func NewShell(client *catshadow.Client, log *logging.Logger) *Shell {
 		},
 	})
 
+	halt := func(context *ishell.Context) {
+		shell.Halt()
+	}
+	shell.ishell.EOF(halt)
+
 	return shell
 }
 
