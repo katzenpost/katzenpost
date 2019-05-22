@@ -17,6 +17,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"testing"
 
 	"github.com/katzenpost/core/crypto/eddsa"
@@ -29,20 +30,20 @@ func TestSpool(t *testing.T) {
 
 	key := new(eddsa.PublicKey)
 	spool := NewMemSpool(key)
-	err := spool.Append([]byte("hello"))
-	assert.NoError(err)
-	err = spool.Append([]byte("goodbye"))
-	assert.NoError(err)
+	message1 := []byte("hello")
+	spool.Append(message1)
+	message2 := []byte("goodbye")
+	spool.Append(message2)
 
 	messageID := uint32(1)
-	message, err := spool.Read(messageID)
+	message, _, err := spool.Get(messageID)
 	assert.NoError(err)
-	t.Logf("message: %s", message)
+	assert.Equal(message, message1)
 
 	messageID = uint32(2)
-	message, err = spool.Read(messageID)
+	message, _, err = spool.Get(messageID)
 	assert.NoError(err)
-	t.Logf("message: %s", message)
+	assert.Equal(message, message2)
 }
 
 func TestMemSpoolMapBasics(t *testing.T) {
@@ -51,17 +52,23 @@ func TestMemSpoolMapBasics(t *testing.T) {
 	privKey, err := eddsa.NewKeypair(rand.NewMath())
 	assert.NoError(err)
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
-	spoolMap := NewMemSpoolMap()
+
+	fileStore, err := ioutil.TempFile("", "catshadow_test_filestore")
+	assert.NoError(err)
+
+	spoolMap, err := NewMemSpoolMap(fileStore.Name(), log)
+	assert.NoError(err)
 	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
 	assert.NoError(err)
 
-	err = spoolMap.AppendToSpool(*spoolID, []byte("hello"))
+	message1 := []byte("hello")
+	err = spoolMap.AppendToSpool(*spoolID, message1)
 	assert.NoError(err)
 
 	messageID := uint32(1)
 	message, err := spoolMap.ReadFromSpool(*spoolID, signature, messageID)
 	assert.NoError(err)
-	t.Logf("spooled message is %s", message)
+	assert.Equal(message, message1)
 
 	messageID = uint32(0)
 	_, err = spoolMap.ReadFromSpool(*spoolID, signature, messageID)
@@ -72,4 +79,36 @@ func TestMemSpoolMapBasics(t *testing.T) {
 
 	err = spoolMap.PurgeSpool(*spoolID, signature)
 	assert.NoError(err)
+
+	spoolMap.Shutdown()
+}
+
+func TestPersistence(t *testing.T) {
+	assert := assert.New(t)
+
+	privKey, err := eddsa.NewKeypair(rand.NewMath())
+	assert.NoError(err)
+	signature := privKey.Sign(privKey.PublicKey().Bytes())
+	fileStore, err := ioutil.TempFile("", "catshadow_test_filestore")
+	assert.NoError(err)
+
+	spoolMap, err := NewMemSpoolMap(fileStore.Name(), log)
+	assert.NoError(err)
+	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
+	assert.NoError(err)
+	message1 := []byte("hello")
+	err = spoolMap.AppendToSpool(*spoolID, message1)
+	assert.NoError(err)
+	messageID := uint32(1)
+	message, err := spoolMap.ReadFromSpool(*spoolID, signature, messageID)
+	assert.NoError(err)
+	assert.Equal(message, message1)
+	spoolMap.Shutdown()
+
+	spoolMap, err = NewMemSpoolMap(fileStore.Name(), log)
+	assert.NoError(err)
+	message, err = spoolMap.ReadFromSpool(*spoolID, signature, messageID)
+	assert.NoError(err)
+	assert.Equal(message, message1)
+	spoolMap.Shutdown()
 }

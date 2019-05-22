@@ -17,14 +17,19 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
+	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/memspool/common"
+	"gopkg.in/op/go-logging.v1"
 )
 
 const (
@@ -32,6 +37,18 @@ const (
 	PurgeSpoolCommand      = 1
 	AppendMessageCommand   = 2
 	RetrieveMessageCommand = 3
+
+	metadataBucket = "metadata"
+	versionKey     = "version"
+
+	spoolsBucketName = "spools"
+	messagesKey      = "message"
+	spoolMetadataKey = "spoolMetadata"
+	spoolPublicKey   = "spoolPublicKey"
+
+	writeBackInterval = 30 * time.Second
+
+	SpoolStorageVersion = 0
 )
 
 func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *common.SpoolResponse {
@@ -94,13 +111,135 @@ func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *co
 }
 
 type MemSpoolMap struct {
+	worker.Worker
+
 	spools *sync.Map
+	db     *bolt.DB
+	log    *logging.Logger
 }
 
-func NewMemSpoolMap() *MemSpoolMap {
-	return &MemSpoolMap{
+func NewMemSpoolMap(fileStore string, log *logging.Logger) (*MemSpoolMap, error) {
+	m := &MemSpoolMap{
 		spools: new(sync.Map),
+		log:    log,
 	}
+	var err error
+	m.db, err = bolt.Open(fileStore, 0600, nil)
+	if err != nil {
+		return nil, err
+	}
+	if err = m.db.Update(func(tx *bolt.Tx) error {
+		var metaBucket *bolt.Bucket
+		var spoolsBucket *bolt.Bucket
+		metaBucket, err = tx.CreateBucketIfNotExists([]byte(metadataBucket))
+		if err != nil {
+			return err
+		}
+		if spoolsBucket, err = tx.CreateBucketIfNotExists([]byte(spoolsBucketName)); err != nil {
+			return err
+		}
+		if b := metaBucket.Get([]byte(versionKey)); b != nil {
+			// database loaded
+			if len(b) != 1 || b[0] != SpoolStorageVersion {
+				return fmt.Errorf("spool storage: incompatible version: %d", uint(b[0]))
+			}
+			err = m.load(tx, spoolsBucket)
+			return err
+		}
+		// database created
+		metaBucket.Put([]byte(versionKey), []byte{SpoolStorageVersion})
+		return nil
+	}); err != nil {
+		m.db.Close()
+		return nil, err
+	}
+	m.Go(m.worker)
+	return m, nil
+}
+
+// load iterates over each spool in spoolsBucket
+// and populates m.spools.
+func (m *MemSpoolMap) load(tx *bolt.Tx, spoolsBucket *bolt.Bucket) error {
+	m.log.Debug("loading existing db from disk")
+	c := spoolsBucket.Cursor()
+	for key, value := c.First(); key != nil; key, value = c.Next() {
+		if value != nil {
+			return errors.New("spoolsBucket entry value should be nil")
+		}
+		spoolBucket := spoolsBucket.Bucket(key)
+		if spoolBucket == nil {
+			return errors.New("spool bucket does not exist")
+		}
+		spoolMetadataBucket := spoolBucket.Bucket([]byte(spoolMetadataKey))
+		if spoolMetadataBucket == nil {
+			return errors.New("spool metadata bucket not found")
+		}
+		rawSpoolPubKey := spoolMetadataBucket.Get([]byte(spoolPublicKey))
+		if rawSpoolPubKey == nil {
+			return errors.New("spool key not found")
+		}
+		spoolID := [common.SpoolIDSize]byte{}
+		copy(spoolID[:], key)
+		spoolPubKey := new(eddsa.PublicKey)
+		err := spoolPubKey.FromBytes(rawSpoolPubKey)
+		if err != nil {
+			return err
+		}
+		err = m.addSpoolToMap(spoolPubKey, &spoolID)
+		if err != nil {
+			return err
+		}
+		messagesBucket := spoolBucket.Bucket([]byte(messagesKey))
+		if messagesBucket == nil {
+			return errors.New("spool messages bucket not found")
+		}
+		cur := messagesBucket.Cursor()
+		for k, v := cur.First(); k != nil; k, v = cur.Next() {
+			if len(k) != common.MessageIDSize {
+				return errors.New("invalid message ID encountered")
+			}
+			messageID := [common.MessageIDSize]byte{}
+			copy(messageID[:], k)
+			err := m.appendToSpoolWithMessageID(spoolID, messageID, v)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (m *MemSpoolMap) addSpoolToMap(publicKey *eddsa.PublicKey, spoolID *[common.SpoolIDSize]byte) error {
+	spool := NewMemSpool(publicKey)
+	_, loaded := m.spools.LoadOrStore(*spoolID, spool)
+	if loaded {
+		return errors.New("Spool creation failed, spool ID collision, this should never happen")
+	}
+	return nil
+}
+
+func (m *MemSpoolMap) createSpoolBucket(publicKey *eddsa.PublicKey, spoolID *[common.SpoolIDSize]byte) error {
+	err := m.db.Update(func(tx *bolt.Tx) error {
+		spoolsBucket := tx.Bucket([]byte(spoolsBucketName))
+		spoolBucket, err := spoolsBucket.CreateBucket(spoolID[:])
+		if err != nil {
+			return err
+		}
+		spoolMetadata, err := spoolBucket.CreateBucket([]byte(spoolMetadataKey))
+		if err != nil {
+			return err
+		}
+		err = spoolMetadata.Put([]byte(spoolPublicKey), publicKey.Bytes())
+		if err != nil {
+			return err
+		}
+		_, err = spoolBucket.CreateBucket([]byte(messagesKey))
+		if err != nil {
+			return err
+		}
+		return err
+	})
+	return err
 }
 
 // CreateSpool creates a new spool and returns a spool ID or an error.
@@ -113,10 +252,13 @@ func (m *MemSpoolMap) CreateSpool(publicKey *eddsa.PublicKey, signature []byte) 
 	if err != nil {
 		return nil, err
 	}
-	spool := NewMemSpool(publicKey)
-	_, loaded := m.spools.LoadOrStore(spoolID, spool)
-	if loaded {
-		return nil, errors.New("Spool creation failed, spool ID collision, this should never happen")
+	err = m.addSpoolToMap(publicKey, &spoolID)
+	if err != nil {
+		return nil, err
+	}
+	err = m.createSpoolBucket(publicKey, &spoolID)
+	if err != nil {
+		return nil, err
 	}
 	return &spoolID, nil
 }
@@ -139,28 +281,41 @@ func (m *MemSpoolMap) PurgeSpool(spoolID [common.SpoolIDSize]byte, signature []b
 	return nil
 }
 
-func (m *MemSpoolMap) AppendToSpool(spoolID [common.SpoolIDSize]byte, message []byte) error {
-	log.Debug("start of AppendToSpool")
+func (m *MemSpoolMap) appendToSpoolWithMessageID(spoolID [common.SpoolIDSize]byte, messageID [common.MessageIDSize]byte, message []byte) error {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
-		log.Debug("spool not found")
-		return errors.New("spool not found")
+		log.Debugf("AppendToSpool: spool not found: %x", spoolID[:])
+		return errors.New("AppendToSpool: spool not found")
 	}
-	log.Debug("after Load spool")
 	spool, ok := raw_spool.(*MemSpool)
-	log.Debug("after type assertion")
 	if !ok {
 		log.Debug("invalid spool found")
 		return errors.New("invalid spool found")
 	}
-	log.Debug("end of AppendToSpool")
-	return spool.Append(message)
+	id := binary.BigEndian.Uint32(messageID[:])
+	spool.Put(id, message, false)
+	return nil
+}
+
+func (m *MemSpoolMap) AppendToSpool(spoolID [common.SpoolIDSize]byte, message []byte) error {
+	raw_spool, ok := m.spools.Load(spoolID)
+	if !ok {
+		log.Debugf("AppendToSpool: spool not found: %x", spoolID[:])
+		return errors.New("AppendToSpool: spool not found")
+	}
+	spool, ok := raw_spool.(*MemSpool)
+	if !ok {
+		log.Debug("invalid spool found")
+		return errors.New("invalid spool found")
+	}
+	spool.Append(message)
+	return nil
 }
 
 func (m *MemSpoolMap) ReadFromSpool(spoolID [common.SpoolIDSize]byte, signature []byte, messageID uint32) ([]byte, error) {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
-		return nil, errors.New("spool not found")
+		return nil, errors.New("ReadFromSpool: spool not found")
 	}
 	spool, ok := raw_spool.(*MemSpool)
 	if !ok {
@@ -169,7 +324,102 @@ func (m *MemSpoolMap) ReadFromSpool(spoolID [common.SpoolIDSize]byte, signature 
 	if !spool.PublicKey().Verify(signature, spool.PublicKey().Bytes()) {
 		return nil, errors.New("invalid signature")
 	}
-	return spool.Read(messageID)
+	payload, _, err := spool.Get(messageID)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (m *MemSpoolMap) doFlush() {
+	spoolsRange := func(rawSpoolID, rawSpool interface{}) bool {
+		spool, ok := rawSpool.(*MemSpool)
+		if !ok {
+			m.log.Error("Fatal error, doFlush encountered invalid MemSpool, wtf")
+			return false
+		}
+
+		spoolRange := func(rawMessageID, rawEntry interface{}) bool {
+			entry, ok := rawEntry.(*SpoolEntry)
+			if !ok {
+				m.log.Error("invalid SpoolEntry, wtf")
+				panic("invalid SpoolEntry, wtf")
+			}
+			if entry.Dirty {
+				var err error
+				err = m.db.Update(func(tx *bolt.Tx) error {
+					var err error
+					spools := tx.Bucket([]byte(spoolsBucketName))
+					if spools == nil {
+						return errors.New("spoolsBucket does not exist, wtf")
+					}
+					spoolID, ok := rawSpoolID.([common.SpoolIDSize]byte)
+					if !ok {
+						return errors.New("encountered invalid spool ID, wtf")
+					}
+					spoolBucket := spools.Bucket(spoolID[:])
+					if spool == nil {
+						err = m.createSpoolBucket(spool.publicKey, &spoolID)
+						if err != nil {
+							return err
+						}
+					}
+					messageID, ok := rawMessageID.(uint32)
+					if !ok {
+						return errors.New("invalid message ID, wtf")
+					}
+					var msgID [4]byte
+					binary.BigEndian.PutUint32(msgID[:], messageID)
+					messagesBucket := spoolBucket.Bucket([]byte(messagesKey))
+					if messagesBucket == nil {
+						return errors.New("impossible error, messagesBucket is nil")
+					}
+					err = messagesBucket.Put(msgID[:], entry.Payload)
+					if err != nil {
+						return err
+					}
+					spool.Put(messageID, entry.Payload, false)
+					return nil
+				})
+				if err != nil {
+					panic(err)
+				}
+			}
+			return true
+		}
+
+		spool.items.Range(spoolRange)
+		return true
+	}
+	m.spools.Range(spoolsRange)
+}
+
+func (m *MemSpoolMap) worker() {
+	defer m.doFlush()
+
+	ticker := time.NewTicker(writeBackInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-m.HaltCh():
+			return
+		case <-ticker.C:
+		}
+		m.doFlush()
+	}
+}
+
+func (m *MemSpoolMap) Shutdown() {
+	m.log.Debug("halting spool worker and persisting db to disk")
+	m.Halt()
+	m.db.Sync()
+	m.db.Close()
+}
+
+type SpoolEntry struct {
+	Payload []byte
+	Dirty   bool
 }
 
 type MemSpool struct {
@@ -190,23 +440,31 @@ func (s *MemSpool) PublicKey() *eddsa.PublicKey {
 	return s.publicKey
 }
 
-func (s *MemSpool) Append(message []byte) error {
+func (s *MemSpool) Append(message []byte) {
 	current := atomic.AddUint32(&s.current, 1)
-	_, loaded := s.items.LoadOrStore(current, message)
-	if loaded {
-		return errors.New("append failure, key already in use. wtf.")
-	}
-	return nil
+	s.Put(current, message, true)
 }
 
-func (s *MemSpool) Read(messageID uint32) ([]byte, error) {
+func (s *MemSpool) Put(messageID uint32, message []byte, dirty bool) {
+	entry := SpoolEntry{
+		Payload: message,
+		Dirty:   dirty,
+	}
+	s.items.Store(messageID, &entry)
+}
+
+// Get returns a message payload from the spool given
+// a valid message ID. Second return value is the Dirty bool
+// which is set to true if the message has not been written to disk.
+// If returning an error then the Dirty return value is false.
+func (s *MemSpool) Get(messageID uint32) ([]byte, bool, error) {
 	raw_message, ok := s.items.Load(messageID)
 	if !ok {
-		return nil, fmt.Errorf("message ID %d not found", messageID)
+		return nil, false, fmt.Errorf("message ID %d not found", messageID)
 	}
-	message, ok := raw_message.([]byte)
+	entry, ok := raw_message.(*SpoolEntry)
 	if !ok {
-		return nil, errors.New("invalid message found")
+		return nil, false, errors.New("invalid message found")
 	}
-	return message, nil
+	return entry.Payload, entry.Dirty, nil
 }

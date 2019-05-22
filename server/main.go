@@ -28,8 +28,8 @@ import (
 
 	"github.com/katzenpost/memspool/common"
 	"github.com/katzenpost/server/cborplugin"
-	"github.com/op/go-logging"
 	"github.com/ugorji/go/codec"
+	"gopkg.in/op/go-logging.v1"
 )
 
 var cborHandle = new(codec.CborHandle)
@@ -125,9 +125,16 @@ func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request
 func main() {
 	var logLevel string
 	var logDir string
+	var dataStore string
+	flag.StringVar(&dataStore, "data_store", "", "data storage file path")
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.Parse()
+
+	if dataStore == "" {
+		fmt.Println("Must specify a data storage file path.")
+		os.Exit(1)
+	}
 
 	level, err := stringToLogLevel(logLevel)
 	if err != nil {
@@ -159,7 +166,11 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	spoolMap := NewMemSpoolMap()
+	spoolMap, err := NewMemSpoolMap(dataStore, log)
+	if err != nil {
+		panic(err)
+	}
+
 	_requestHandler := func(response http.ResponseWriter, request *http.Request) {
 		requestHandler(spoolMap, response, request)
 	}
@@ -171,4 +182,5 @@ func main() {
 
 	server.Serve(unixListener)
 	os.Remove(socketFile)
+	spoolMap.Shutdown()
 }
