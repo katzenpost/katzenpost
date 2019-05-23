@@ -18,20 +18,22 @@ package main
 
 import (
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/katzenpost/panda/common"
 )
 
 type InMemoryPandaStorage struct {
-	postMap map[[common.PandaTagLength]byte]*PandaPosting
+	// *[common.PandaTagLength]byte -> *PandaPosting
+	postings *sync.Map
 }
 
 // NewInMemoryPandaStorage creates an in memory store
 // for Panda postings
 func NewInMemoryPandaStorage() *InMemoryPandaStorage {
 	s := &InMemoryPandaStorage{
-		postMap: make(map[[common.PandaTagLength]byte]*PandaPosting),
+		postings: new(sync.Map),
 	}
 	return s
 }
@@ -39,36 +41,52 @@ func NewInMemoryPandaStorage() *InMemoryPandaStorage {
 // Put stores a posting in the data store
 // such that it is referenced by the given tag.
 func (s *InMemoryPandaStorage) Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
-	_, ok := s.postMap[*tag]
-	if ok {
+	_, loaded := s.postings.LoadOrStore(tag, posting)
+	if loaded {
 		return errors.New("InMemoryPandaStorage Put failure: tag already present")
 	}
-	s.postMap[*tag] = posting
 	return nil
 }
 
 // Get returns a posting from the data store
 // that is referenced by the given tag.
 func (s *InMemoryPandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPosting, error) {
-	message, ok := s.postMap[*tag]
+	message, ok := s.postings.Load(tag)
 	if !ok {
 		return nil, common.ErrNoSuchPandaTag
 	}
-	return message, nil
+	posting, ok := message.(*PandaPosting)
+	if !ok {
+		return nil, errors.New("Get failure, invalid posting retreived from sync.Map")
+	}
+	return posting, nil
 }
 
 // Replace replaces the stored posting.
 func (s *InMemoryPandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
-	s.postMap[*tag] = posting
+	s.postings.Store(tag, posting)
 	return nil
 }
 
 // Vacuum removes the postings that have expired.
 func (s *InMemoryPandaStorage) Vacuum(expiration time.Duration) error {
-	for tag, posting := range s.postMap {
-		if posting.Expired(expiration) {
-			delete(s.postMap, tag)
+	var err error
+	postingsRange := func(rawTag, rawPosting interface{}) bool {
+		tag, ok := rawTag.(*[common.PandaTagLength]byte)
+		if !ok {
+			err = errors.New("Vacuum failure, invalid tag retreived from sync.Map")
+			return false
 		}
+		posting, ok := rawPosting.(*PandaPosting)
+		if !ok {
+			err = errors.New("Vacuum failure, invalid tag retreived from sync.Map")
+			return false
+		}
+		if posting.Expired(expiration) {
+			s.postings.Delete(tag)
+		}
+		return true
 	}
-	return nil
+	s.postings.Range(postingsRange)
+	return err
 }
