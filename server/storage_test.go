@@ -17,6 +17,7 @@
 package main
 
 import (
+	"io/ioutil"
 	"testing"
 	"time"
 
@@ -28,14 +29,16 @@ import (
 func TestStorageBasics(t *testing.T) {
 	assert := assert.New(t)
 
-	store := NewPandaStorage()
+	storeFile, err := ioutil.TempFile("", "pandaStorage")
+	store, err := NewPandaStorage(storeFile.Name())
+	assert.NoError(err)
 	tag1 := &[common.PandaTagLength]byte{}
 	posting1 := &PandaPosting{
 		UnixTime: time.Now().Unix() - 100000,
 		A:        []byte("A"),
 		B:        []byte("B"),
 	}
-	err := store.Put(tag1, posting1)
+	err = store.Put(tag1, posting1)
 	assert.NoError(err)
 
 	// test that putting tag1 again causes an error
@@ -79,4 +82,6 @@ func TestStorageBasics(t *testing.T) {
 	assert.NoError(err)
 	_, err = store.Get(tag1)
 	assert.Error(err)
+
+	store.Shutdown()
 }

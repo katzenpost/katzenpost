@@ -103,9 +103,12 @@ func main() {
 	var logLevel string
 	var logDir string
 	var dwellTime string
+	var fileStore string
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.StringVar(&dwellTime, "dwell_time", "336h", "ciphertext max dwell time before garbage collection")
+	flag.StringVar(&fileStore, "s", "fileStore", "The file path of our on disk storage.")
+
 	flag.Parse()
 
 	level, err := stringToLogLevel(logLevel)
@@ -138,7 +141,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	panda := New(duration, log)
+	store, err := NewPandaStorage(fileStore)
+	if err != nil {
+		panic(err)
+	}
+	panda := New(duration, log, store)
 	_requestHandler := func(response http.ResponseWriter, request *http.Request) {
 		requestHandler(panda, response, request)
 	}

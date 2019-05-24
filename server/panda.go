@@ -38,6 +38,7 @@ import (
 // PandaPosting is the data structure stored on Panda
 // server with each client interaction.
 type PandaPosting struct {
+	Dirty    bool
 	UnixTime int64
 	A, B     []byte
 }
@@ -201,11 +202,11 @@ func (k *Panda) maybeGarbageCollect() {
 	}
 }
 
-// New constructs a new Panda instance
-func New(dwellTime time.Duration, log *logging.Logger) *Panda {
+// New constructs a new Panda server instance
+func New(dwellTime time.Duration, log *logging.Logger, fileStore PandaPostStorage) *Panda {
 	k := &Panda{
 		log:        log,
-		store:      NewPandaStorage(),
+		store:      fileStore,
 		expiration: dwellTime,
 	}
 	k.jsonHandle.Canonical = true
