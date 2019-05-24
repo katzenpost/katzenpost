@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/panda/common"
 )
 
+// PandaStorage handles the on disk persistence for the PANDA server.
 type PandaStorage struct {
 	// *[common.PandaTagLength]byte -> *PandaPosting
 	postings *sync.Map

@@ -36,7 +36,8 @@ import (
 // This Kaetzchen service was inspired by AGL's appengine Panda server:
 // https://github.com/agl/pond/blob/master/panda/appengine-server/panda/main.go
 
-// PandaPosting
+// PandaPosting is the data structure stored on Panda
+// server with each client interaction.
 type PandaPosting struct {
 	UnixTime int64
 	A, B     []byte
@@ -90,8 +91,10 @@ type PandaPostStorage interface {
 	Vacuum(expiration time.Duration) error
 }
 
-var ErrNoSURBRequest = errors.New("errors, request received without SURB")
+// ErrNoSURBRequest is the error returned when no SURB accompanies a query.
+var ErrNoSURBRequest = errors.New("Request received without SURB")
 
+// Panda is the PANDA server type.
 type Panda struct {
 	sync.Mutex
 
@@ -105,7 +108,7 @@ type Panda struct {
 // OnRequest services a client request and returns the reply.
 func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
 	if !hasSURB {
-		k.log.Debugf("error, received request %d without a SURB", id)
+		k.log.Debugf("Received request %d without a SURB", id)
 		return nil, ErrNoSURBRequest
 	}
 	k.log.Debugf("Handling request %d", id)
@@ -126,12 +129,12 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 		return k.encodeResp(&resp), nil
 	}
 	if len(req.Message) == 0 {
-		k.log.Debugf("failure: message size is zero")
+		k.log.Debugf("message size is zero")
 		return k.encodeResp(&resp), nil
 	}
 	tag, newPosting, err := postingFromRequest(&req)
 	if err != nil {
-		k.log.Debugf("failure: cannot decode tag and message")
+		k.log.Debugf("cannot decode tag and message")
 		return k.encodeResp(&resp), nil
 	}
 
@@ -200,7 +203,7 @@ func (k *Panda) maybeGarbageCollect() {
 	// Every one in 128 insertions we'll clean out expired postings.
 	err = k.store.Vacuum(k.expiration)
 	if err != nil {
-		k.log.Error("storage Vacuum failed")
+		k.log.Errorf("storage Vacuum failed: %s", err)
 	}
 }
 
