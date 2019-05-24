@@ -46,7 +46,7 @@ type PandaPosting struct {
 // older than the specified expiration duration.
 func (p *PandaPosting) Expired(expiration time.Duration) bool {
 	postingTime := time.Unix(p.UnixTime, 0)
-	return postingTime.After(postingTime.Add(expiration))
+	return time.Now().After(postingTime.Add(expiration))
 }
 
 func postingFromRequest(req *common.PandaRequest) (*[common.PandaTagLength]byte, *PandaPosting, error) {
@@ -208,7 +208,7 @@ func (k *Panda) maybeGarbageCollect() {
 func New(dwellTime time.Duration, log *logging.Logger) *Panda {
 	k := &Panda{
 		log:        log,
-		store:      NewInMemoryPandaStorage(),
+		store:      NewPandaStorage(),
 		expiration: dwellTime,
 	}
 	k.jsonHandle.Canonical = true

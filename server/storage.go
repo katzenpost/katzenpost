@@ -1,5 +1,5 @@
 // storage.go - PANDA Kaetzchen service storage.
-// Copyright (C) 2018  David Stainton.
+// Copyright (C) 2018, 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -24,15 +24,15 @@ import (
 	"github.com/katzenpost/panda/common"
 )
 
-type InMemoryPandaStorage struct {
+type PandaStorage struct {
 	// *[common.PandaTagLength]byte -> *PandaPosting
 	postings *sync.Map
 }
 
-// NewInMemoryPandaStorage creates an in memory store
+// NewPandaStorage creates an in memory store
 // for Panda postings
-func NewInMemoryPandaStorage() *InMemoryPandaStorage {
-	s := &InMemoryPandaStorage{
+func NewPandaStorage() *PandaStorage {
+	s := &PandaStorage{
 		postings: new(sync.Map),
 	}
 	return s
@@ -40,17 +40,17 @@ func NewInMemoryPandaStorage() *InMemoryPandaStorage {
 
 // Put stores a posting in the data store
 // such that it is referenced by the given tag.
-func (s *InMemoryPandaStorage) Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
+func (s *PandaStorage) Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
 	_, loaded := s.postings.LoadOrStore(tag, posting)
 	if loaded {
-		return errors.New("InMemoryPandaStorage Put failure: tag already present")
+		return errors.New("PandaStorage Put failure: tag already present")
 	}
 	return nil
 }
 
 // Get returns a posting from the data store
 // that is referenced by the given tag.
-func (s *InMemoryPandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPosting, error) {
+func (s *PandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPosting, error) {
 	message, ok := s.postings.Load(tag)
 	if !ok {
 		return nil, common.ErrNoSuchPandaTag
@@ -63,13 +63,13 @@ func (s *InMemoryPandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPost
 }
 
 // Replace replaces the stored posting.
-func (s *InMemoryPandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
+func (s *PandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
 	s.postings.Store(tag, posting)
 	return nil
 }
 
 // Vacuum removes the postings that have expired.
-func (s *InMemoryPandaStorage) Vacuum(expiration time.Duration) error {
+func (s *PandaStorage) Vacuum(expiration time.Duration) error {
 	var err error
 	postingsRange := func(rawTag, rawPosting interface{}) bool {
 		tag, ok := rawTag.(*[common.PandaTagLength]byte)
