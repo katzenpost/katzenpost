@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/katzenpost/core/crypto/rand"
@@ -96,8 +95,6 @@ var ErrNoSURBRequest = errors.New("Request received without SURB")
 
 // Panda is the PANDA server type.
 type Panda struct {
-	sync.Mutex
-
 	log *logging.Logger
 
 	jsonHandle codec.JsonHandle
@@ -137,9 +134,6 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 		k.log.Debugf("cannot decode tag and message")
 		return k.encodeResp(&resp), nil
 	}
-
-	k.Lock()
-	defer k.Unlock()
 
 	storedPosting, err := k.store.Get(tag)
 	if err == common.ErrNoSuchPandaTag || err == nil && storedPosting.Expired(k.expiration) {
