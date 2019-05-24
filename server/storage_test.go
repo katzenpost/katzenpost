@@ -42,8 +42,9 @@ func TestStorageBasics(t *testing.T) {
 	err = store.Put(tag1, posting1)
 	assert.Error(err)
 
-	// ensure tag1 posting is equal to the posted data
-	posting2, err := store.Get(tag1)
+	// ensure tag1dup posting is equal to the posted data
+	tag1dup := &[common.PandaTagLength]byte{}
+	posting2, err := store.Get(tag1dup)
 	assert.NoError(err)
 	assert.Equal(posting1, posting2)
 

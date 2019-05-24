@@ -41,7 +41,7 @@ func NewPandaStorage() *PandaStorage {
 // Put stores a posting in the data store
 // such that it is referenced by the given tag.
 func (s *PandaStorage) Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
-	_, loaded := s.postings.LoadOrStore(tag, posting)
+	_, loaded := s.postings.LoadOrStore(*tag, posting)
 	if loaded {
 		return errors.New("PandaStorage Put failure: tag already present")
 	}
@@ -51,7 +51,7 @@ func (s *PandaStorage) Put(tag *[common.PandaTagLength]byte, posting *PandaPosti
 // Get returns a posting from the data store
 // that is referenced by the given tag.
 func (s *PandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPosting, error) {
-	message, ok := s.postings.Load(tag)
+	message, ok := s.postings.Load(*tag)
 	if !ok {
 		return nil, common.ErrNoSuchPandaTag
 	}
@@ -64,7 +64,7 @@ func (s *PandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPosting, err
 
 // Replace replaces the stored posting.
 func (s *PandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
-	s.postings.Store(tag, posting)
+	s.postings.Store(*tag, posting)
 	return nil
 }
 
@@ -72,7 +72,7 @@ func (s *PandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaP
 func (s *PandaStorage) Vacuum(expiration time.Duration) error {
 	var err error
 	postingsRange := func(rawTag, rawPosting interface{}) bool {
-		tag, ok := rawTag.(*[common.PandaTagLength]byte)
+		tag, ok := rawTag.([common.PandaTagLength]byte)
 		if !ok {
 			err = errors.New("Vacuum failure, invalid tag retreived from sync.Map")
 			return false
