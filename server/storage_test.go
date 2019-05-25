@@ -85,3 +85,58 @@ func TestStorageBasics(t *testing.T) {
 
 	store.Shutdown()
 }
+
+func TestStorageLoadTags(t *testing.T) {
+	assert := assert.New(t)
+
+	storeFile, err := ioutil.TempFile("", "pandaStorage")
+	store, err := NewPandaStorage(storeFile.Name())
+	assert.NoError(err)
+	tag1 := &[common.PandaTagLength]byte{}
+	_, err = rand.Reader.Read(tag1[:])
+	assert.NoError(err)
+	posting1 := &PandaPosting{
+		UnixTime: time.Now().Unix() - 100000,
+		A:        []byte("A"),
+		B:        []byte("B"),
+	}
+	err = store.Put(tag1, posting1)
+	assert.NoError(err)
+	store.Shutdown()
+
+	store, err = NewPandaStorage(storeFile.Name())
+	assert.NoError(err)
+	err = store.Put(tag1, posting1)
+	assert.Error(err)
+}
+
+func TestStoragePurgeTags(t *testing.T) {
+	assert := assert.New(t)
+
+	storeFile, err := ioutil.TempFile("", "pandaStorage")
+	store, err := NewPandaStorage(storeFile.Name())
+	assert.NoError(err)
+	tag1 := &[common.PandaTagLength]byte{}
+	_, err = rand.Reader.Read(tag1[:])
+	assert.NoError(err)
+	posting1 := &PandaPosting{
+		UnixTime: time.Now().Unix() - 100000,
+		A:        []byte("A"),
+		B:        []byte("B"),
+	}
+	err = store.Put(tag1, posting1)
+	assert.NoError(err)
+	store.Shutdown()
+
+	store, err = NewPandaStorage(storeFile.Name())
+	assert.NoError(err)
+	err = store.Put(tag1, posting1)
+	assert.Error(err)
+	store.postings.Delete(*tag1)
+	store.Shutdown()
+
+	store, err = NewPandaStorage(storeFile.Name())
+	assert.NoError(err)
+	err = store.Put(tag1, posting1)
+	assert.NoError(err)
+}

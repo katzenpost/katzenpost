@@ -118,17 +118,22 @@ func (s *PandaStorage) load(tx *bolt.Tx, postsBucket *bolt.Bucket) error {
 			A:        a,
 			B:        b,
 		}
-		s.postings.Store(tag, posting)
+		tagArray := [common.PandaTagLength]byte{}
+		copy(tagArray[:], tag)
+		s.postings.Store(tagArray, posting)
 	}
 	return nil
 }
 
 func (s *PandaStorage) worker() {
-	defer s.doFlush()
-
+	defer func() {
+		err := s.doFlush()
+		if err != nil {
+			panic(err)
+		}
+	}()
 	ticker := time.NewTicker(writeBackInterval)
 	defer ticker.Stop()
-
 	for {
 		select {
 		case <-s.HaltCh():
@@ -160,7 +165,7 @@ func (s *PandaStorage) doFlush() error {
 		}
 		if err = s.db.Update(func(tx *bolt.Tx) error {
 			postsBucket := tx.Bucket([]byte(postsBucketName))
-			if postsBucket != nil {
+			if postsBucket == nil {
 				return errors.New("posts bucket does not exist")
 			}
 			postingBucket, err := postsBucket.CreateBucketIfNotExists(tag[:])
@@ -202,11 +207,45 @@ func (s *PandaStorage) doFlush() error {
 		}); err != nil {
 			return false
 		}
-
 		return true
 	}
 	s.postings.Range(postingsRange)
+	err = s.doPurge()
 	return err
+}
+
+func (s *PandaStorage) doPurge() error {
+	var err error
+	if err = s.db.Update(func(tx *bolt.Tx) error {
+		postsBucket := tx.Bucket([]byte(postsBucketName))
+		if postsBucket == nil {
+			return errors.New("posts bucket does not exist")
+		}
+		c := postsBucket.Cursor()
+		for tag, value := c.First(); tag != nil; tag, value = c.Next() {
+			if value != nil {
+				return errors.New("posting entry value should be nil")
+			}
+			postingBucket := postsBucket.Bucket(tag)
+			if postingBucket == nil {
+				return errors.New("posting bucket does not exist")
+			}
+			tagArray := [common.PandaTagLength]byte{}
+			copy(tagArray[:], tag)
+			_, ok := s.postings.Load(tagArray)
+			if !ok {
+				err = postsBucket.DeleteBucket(tag)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		s.db.Close()
+		return err
+	}
+	return nil
 }
 
 // Shutdown stops the worker thread and sync the db.
@@ -225,6 +264,7 @@ func (s *PandaStorage) Shutdown() {
 // Put stores a posting in the data store
 // such that it is referenced by the given tag.
 func (s *PandaStorage) Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
+	posting.Dirty = true
 	_, loaded := s.postings.LoadOrStore(*tag, posting)
 	if loaded {
 		return errors.New("PandaStorage Put failure: tag already present")
@@ -248,6 +288,7 @@ func (s *PandaStorage) Get(tag *[common.PandaTagLength]byte) (*PandaPosting, err
 
 // Replace replaces the stored posting.
 func (s *PandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error {
+	posting.Dirty = true
 	s.postings.Store(*tag, posting)
 	return nil
 }
