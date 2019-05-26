@@ -15,6 +15,83 @@ Katzenpost mix network. It not only uses strong modern end to end
 encryption (PANDA + Signal Double Ratchet), but it is also designed
 to reduce the amount of metadata leaked onto the network.
 
+usage
+-----
+
+::
+
+  Usage of ../bin/catshadow:
+    -f string
+        Path to the client config file. (default "katzenpost.toml")
+    -g	Generate the state file and then run client.
+    -s string
+        The catshadow state file path. (default "catshadow_statefile")
+
+Firstly, generate your account and remote spool by running catshadow
+with the `-g` option, like so::
+
+   catshadow -f alice.toml -s alice.statefile -g
+
+All subsequent runs must not include the **-g** option.
+
+The following configuration file can be used with our current
+test mix network, however it assumes that you have
+tor configured with the socks port listening on 127.0.0.1 port 9050.
+::
+
+  [UpstreamProxy]
+  Type = "socks5"
+  Network = "tcp"
+  Address = "127.0.0.1:9050"
+
+  [Logging]
+  Disable = false
+  Level = "DEBUG"
+  File = "/home/user/catshadow.log"
+
+  [NonvotingAuthority]
+  Address = "37.218.242.147:29485"
+  PublicKey = "DFD5E1A26E9B3EF7B3DA0102002B93C66FC36B12D14C608C3FBFCA03BF3EBCDC"
+
+  [Account]
+  Provider = "idefix"
+  ProviderKeyPin = "PZWT07fWnLsZr8OGibNlvK34Cr/m98T+awhZrr53IJI="
+
+  [Registration]
+  Address = "6cwob5th2li7zxqp.onion:29484"
+  [Registration.Options]
+    Scheme = "http"
+    UseSocks = true
+    SocksNetwork = "tcp"
+    SocksAddress = "127.0.0.1:9050"
+
+  [Debug]
+  DisableDecoyLoops = true
+  CaseSensitiveUserIdentifiers = false
+  PollingInterval = 1
+
+  [Panda]
+  Receiver = "+panda"
+  Provider = "ramix"
+  BlobSize = 2000
+
+
+Once you receive the catshadow command prompt **>>>**
+you can add a contact with the **add_contact** command.
+Your contact and you must enter the exact same passphrase.
+Doing so facilitates the exchange of cryptographic key material
+and message spool identities.
+
+The PANDA exchange is complete once the catshadow instance prints
+a log message like this:
+::
+  PANDA exchange completed
+
+After the exchange is complete a message can be sent to the contact
+using the **send_message** command. The **list_inbox** lists received
+messages and their message ID. The **read_inbox** command is used
+to read messages specified by message ID.
+
 
 design
 ------
