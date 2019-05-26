@@ -31,13 +31,13 @@ import (
 const (
 	// PandaStorageVersion is the version of our on disk format.
 	PandaStorageVersion = 0
-	writeBackInterval   = 2 * time.Minute
-	metadataBucket      = "metadata"
-	versionKey          = "version"
-	postsBucketName     = "posts"
-	postTimeKey         = "time"
-	postAKey            = "A"
-	postBKey            = "B"
+
+	metadataBucket  = "metadata"
+	versionKey      = "version"
+	postsBucketName = "posts"
+	postTimeKey     = "time"
+	postAKey        = "A"
+	postBKey        = "B"
 )
 
 // PandaStorage handles the on disk persistence for the PANDA server.
@@ -45,15 +45,19 @@ type PandaStorage struct {
 	worker.Worker
 
 	// [common.PandaTagLength]byte -> *PandaPosting
-	postings *sync.Map
-	db       *bolt.DB
+	postings          *sync.Map
+	db                *bolt.DB
+	dwellDuration     time.Duration
+	writeBackInterval time.Duration
 }
 
 // NewPandaStorage creates an in memory store
 // for Panda postings
-func NewPandaStorage(fileStore string) (*PandaStorage, error) {
+func NewPandaStorage(fileStore string, dwellDuration time.Duration, writeBackInterval time.Duration) (*PandaStorage, error) {
 	s := &PandaStorage{
-		postings: new(sync.Map),
+		dwellDuration:     dwellDuration,
+		writeBackInterval: writeBackInterval,
+		postings:          new(sync.Map),
 	}
 	var err error
 	s.db, err = bolt.Open(fileStore, 0600, nil)
@@ -127,12 +131,12 @@ func (s *PandaStorage) load(tx *bolt.Tx, postsBucket *bolt.Bucket) error {
 
 func (s *PandaStorage) worker() {
 	defer func() {
-		err := s.doFlush()
+		err := s.Vacuum()
 		if err != nil {
 			panic(err)
 		}
 	}()
-	ticker := time.NewTicker(writeBackInterval)
+	ticker := time.NewTicker(s.writeBackInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -140,7 +144,7 @@ func (s *PandaStorage) worker() {
 			return
 		case <-ticker.C:
 		}
-		err := s.doFlush()
+		err := s.Vacuum()
 		if err != nil {
 			panic(err)
 		}
@@ -294,7 +298,7 @@ func (s *PandaStorage) Replace(tag *[common.PandaTagLength]byte, posting *PandaP
 }
 
 // Vacuum removes the postings that have expired.
-func (s *PandaStorage) Vacuum(expiration time.Duration) error {
+func (s *PandaStorage) Vacuum() error {
 	var err error
 	postingsRange := func(rawTag, rawPosting interface{}) bool {
 		tag, ok := rawTag.([common.PandaTagLength]byte)
@@ -307,11 +311,14 @@ func (s *PandaStorage) Vacuum(expiration time.Duration) error {
 			err = errors.New("Vacuum failure, invalid tag retreived from sync.Map")
 			return false
 		}
-		if posting.Expired(expiration) {
+		if posting.Expired(s.dwellDuration) {
 			s.postings.Delete(tag)
 		}
 		return true
 	}
 	s.postings.Range(postingsRange)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.doFlush()
 }

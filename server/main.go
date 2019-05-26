@@ -103,17 +103,24 @@ func main() {
 	var logLevel string
 	var logDir string
 	var dwellTime string
+	var writeBackInterval string
 	var fileStore string
+
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.StringVar(&dwellTime, "dwell_time", "336h", "ciphertext max dwell time before garbage collection")
-	flag.StringVar(&fileStore, "s", "fileStore", "The file path of our on disk storage.")
+	flag.StringVar(&writeBackInterval, "writeBackInterval", "1h", "GC and write-back cache interval")
+	flag.StringVar(&fileStore, "fileStore", "", "The file path of our on disk storage.")
 
 	flag.Parse()
 
 	level, err := stringToLogLevel(logLevel)
 	if err != nil {
 		fmt.Println("Invalid logging-level specified.")
+		os.Exit(1)
+	}
+	if fileStore == "" {
+		fmt.Println("Invalid fileStore specified.")
 		os.Exit(1)
 	}
 
@@ -135,17 +142,21 @@ func main() {
 	log.SetBackend(logBackend)
 	log.Info("panda server started")
 
-	duration, err := time.ParseDuration(dwellTime)
+	dwellDuration, err := time.ParseDuration(dwellTime)
+	if err != nil {
+		fmt.Println("failure to parse duration string")
+		os.Exit(1)
+	}
+	writeBackDuration, err := time.ParseDuration(writeBackInterval)
 	if err != nil {
 		fmt.Println("failure to parse duration string")
 		os.Exit(1)
 	}
 
-	store, err := NewPandaStorage(fileStore)
+	panda, err := New(log, fileStore, dwellDuration, writeBackDuration)
 	if err != nil {
 		panic(err)
 	}
-	panda := New(duration, log, store)
 	_requestHandler := func(response http.ResponseWriter, request *http.Request) {
 		requestHandler(panda, response, request)
 	}

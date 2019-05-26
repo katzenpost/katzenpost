@@ -21,10 +21,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"io"
 	"time"
 
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/panda/common"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
@@ -34,6 +32,9 @@ import (
 //
 // This Kaetzchen service was inspired by AGL's appengine Panda server:
 // https://github.com/agl/pond/blob/master/panda/appengine-server/panda/main.go
+
+// ErrNoSURBRequest is the error returned when no SURB accompanies a query.
+var ErrNoSURBRequest = errors.New("Request received without SURB")
 
 // PandaPosting is the data structure stored on Panda
 // server with each client interaction.
@@ -72,34 +73,12 @@ func postingFromRequest(req *common.PandaRequest) (*[common.PandaTagLength]byte,
 	return &tag, p, nil
 }
 
-// PandaPostStorage is the interface provided by all PANDA server
-// storage implementations.
-type PandaPostStorage interface {
-
-	// Put stores a posting in the data store
-	// such that it is referenced by the given tag.
-	Put(tag *[common.PandaTagLength]byte, posting *PandaPosting) error
-
-	// Get returns a posting from the data store
-	// that is referenced by the given tag.
-	Get(tag *[common.PandaTagLength]byte) (*PandaPosting, error)
-
-	// Replace replaces the stored posting.
-	Replace(tag *[common.PandaTagLength]byte, posting *PandaPosting) error
-
-	// Vacuum removes the postings that have expired.
-	Vacuum(expiration time.Duration) error
-}
-
-// ErrNoSURBRequest is the error returned when no SURB accompanies a query.
-var ErrNoSURBRequest = errors.New("Request received without SURB")
-
 // Panda is the PANDA server type.
 type Panda struct {
 	log *logging.Logger
 
 	jsonHandle codec.JsonHandle
-	store      PandaPostStorage
+	store      *PandaStorage
 	expiration time.Duration
 }
 
@@ -140,7 +119,6 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 	if err == common.ErrNoSuchPandaTag || err == nil && storedPosting.Expired(k.expiration) {
 		k.store.Put(tag, newPosting)
 		resp.StatusCode = common.PandaStatusReceived1
-		k.maybeGarbageCollect()
 		return k.encodeResp(&resp), nil
 	}
 	if err != nil {
@@ -185,31 +163,18 @@ func (k *Panda) encodeResp(resp *common.PandaResponse) []byte {
 	return out
 }
 
-func (k *Panda) maybeGarbageCollect() {
-	var randByte [1]byte
-	_, err := io.ReadFull(rand.Reader, randByte[:])
-	if err != nil {
-		k.log.Error("wtf, cannot read from rand.Reader")
-		return
-	}
-	if randByte[0] >= 2 {
-		return
-	}
-	// Every one in 128 insertions we'll clean out expired postings.
-	err = k.store.Vacuum(k.expiration)
-	if err != nil {
-		k.log.Errorf("storage Vacuum failed: %s", err)
-	}
-}
-
 // New constructs a new Panda server instance
-func New(dwellTime time.Duration, log *logging.Logger, fileStore PandaPostStorage) *Panda {
+func New(log *logging.Logger, fileStore string, dwellDuration time.Duration, writeBackInterval time.Duration) (*Panda, error) {
+	store, err := NewPandaStorage(fileStore, dwellDuration, writeBackInterval)
+	if err != nil {
+		return nil, err
+	}
 	k := &Panda{
 		log:        log,
-		store:      fileStore,
-		expiration: dwellTime,
+		store:      store,
+		expiration: dwellDuration,
 	}
 	k.jsonHandle.Canonical = true
 	k.jsonHandle.ErrorIfNoField = true
-	return k
+	return k, nil
 }
