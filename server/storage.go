@@ -17,7 +17,9 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
@@ -39,6 +41,45 @@ const (
 	postAKey        = "A"
 	postBKey        = "B"
 )
+
+// PandaPosting is the data structure stored on Panda
+// server with each client interaction.
+type PandaPosting struct {
+	sync.Mutex
+
+	Dirty    bool
+	UnixTime int64
+	A, B     []byte
+}
+
+// Expired returns true if the posting is
+// older than the specified expiration duration.
+func (p *PandaPosting) Expired(expiration time.Duration) bool {
+	postingTime := time.Unix(p.UnixTime, 0)
+	return time.Now().After(postingTime.Add(expiration))
+}
+
+func postingFromRequest(req *common.PandaRequest) (*[common.PandaTagLength]byte, *PandaPosting, error) {
+	tagRaw, err := hex.DecodeString(req.Tag)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(tagRaw) != common.PandaTagLength {
+		return nil, nil, errors.New("postingFromRequest failure: tag not 32 bytes in length")
+	}
+	message, err := base64.StdEncoding.DecodeString(req.Message)
+	if err != nil {
+		return nil, nil, err
+	}
+	p := &PandaPosting{
+		UnixTime: time.Now().Unix(),
+		A:        message,
+		B:        nil,
+	}
+	tag := [common.PandaTagLength]byte{}
+	copy(tag[:], tagRaw)
+	return &tag, p, nil
+}
 
 // PandaStorage handles the on disk persistence for the PANDA server.
 type PandaStorage struct {
@@ -159,6 +200,8 @@ func (s *PandaStorage) doFlush() error {
 			err = errors.New("malformed posting")
 			return false
 		}
+		posting.Lock()
+		defer posting.Unlock()
 		if !posting.Dirty {
 			return true
 		}
@@ -190,23 +233,8 @@ func (s *PandaStorage) doFlush() error {
 			if err != nil {
 				return err
 			}
-			rawPosting, ok := s.postings.Load(tag)
-			if !ok {
-				return errors.New("failed to load posting")
-			}
-			postingCopy, ok := rawPosting.(*PandaPosting)
-			if !ok {
-				return errors.New("malformed posting")
-			}
-			if postingCopy.UnixTime != posting.UnixTime {
-				// This early return essentially eliminates a subtle and nasty race condition.
-				// The posting was updated since we last read it from the Map,
-				// therefore we leave it in the Map marked as Dirty so that
-				// the next time doFlush is called it will get written to disk.
-				return nil
-			}
-			postingCopy.Dirty = false
-			s.postings.Store(tag, postingCopy)
+			posting.Dirty = false
+			s.postings.Store(tag, posting)
 			return nil
 		}); err != nil {
 			return false
@@ -311,6 +339,8 @@ func (s *PandaStorage) Vacuum() error {
 			err = errors.New("Vacuum failure, invalid tag retreived from sync.Map")
 			return false
 		}
+		posting.Lock()
+		defer posting.Unlock()
 		if posting.Expired(s.dwellDuration) {
 			s.postings.Delete(tag)
 		}

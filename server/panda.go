@@ -19,7 +19,6 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"time"
 
@@ -35,43 +34,6 @@ import (
 
 // ErrNoSURBRequest is the error returned when no SURB accompanies a query.
 var ErrNoSURBRequest = errors.New("Request received without SURB")
-
-// PandaPosting is the data structure stored on Panda
-// server with each client interaction.
-type PandaPosting struct {
-	Dirty    bool
-	UnixTime int64
-	A, B     []byte
-}
-
-// Expired returns true if the posting is
-// older than the specified expiration duration.
-func (p *PandaPosting) Expired(expiration time.Duration) bool {
-	postingTime := time.Unix(p.UnixTime, 0)
-	return time.Now().After(postingTime.Add(expiration))
-}
-
-func postingFromRequest(req *common.PandaRequest) (*[common.PandaTagLength]byte, *PandaPosting, error) {
-	tagRaw, err := hex.DecodeString(req.Tag)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(tagRaw) != common.PandaTagLength {
-		return nil, nil, errors.New("postingFromRequest failure: tag not 32 bytes in length")
-	}
-	message, err := base64.StdEncoding.DecodeString(req.Message)
-	if err != nil {
-		return nil, nil, err
-	}
-	p := &PandaPosting{
-		UnixTime: time.Now().Unix(),
-		A:        message,
-		B:        nil,
-	}
-	tag := [common.PandaTagLength]byte{}
-	copy(tag[:], tagRaw)
-	return &tag, p, nil
-}
 
 // Panda is the PANDA server type.
 type Panda struct {
@@ -116,6 +78,10 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 	}
 
 	storedPosting, err := k.store.Get(tag)
+	if storedPosting != nil {
+		storedPosting.Lock()
+		defer storedPosting.Unlock()
+	}
 	if err == common.ErrNoSuchPandaTag || err == nil && storedPosting.Expired(k.expiration) {
 		k.store.Put(tag, newPosting)
 		resp.StatusCode = common.PandaStatusReceived1
