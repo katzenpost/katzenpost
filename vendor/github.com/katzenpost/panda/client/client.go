@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"time"
 
@@ -30,7 +29,16 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-var ShutdownErr = errors.New("panda: shutdown requested")
+type Error string
+
+func (e Error) Error() string { return string(e) }
+
+const (
+	ShutdownError     = Error("panda: shutdown requested")
+	SyntaxError       = Error("panda failure, syntax error")
+	TagContendedError = Error("panda failure, tag contended error")
+	StorageError      = Error("panda failure, storage error")
+)
 
 // Panda is a PANDA client that uses our mixnet client library
 // to communicate with the PANDA kaetzchen service.
@@ -95,19 +103,18 @@ func (p *Panda) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, er
 			}
 			return decoded, nil
 		case common.PandaStatusSyntaxError:
-			return nil, errors.New("panda failure, syntax error")
+			return nil, SyntaxError
 		case common.PandaStatusTagContendedError:
-			return nil, errors.New("panda failure, tag contended error")
+			return nil, TagContendedError
 		case common.PandaStatusRequestRecordedError:
-			//return nil, errors.New("panda failure, request recorded error")
 			goto Sleep
 		case common.PandaStatusStorageError:
-			return nil, errors.New("panda failure, storage error")
+			return nil, StorageError
 		}
 	Sleep:
 		select {
 		case <-shutdown:
-			return nil, ShutdownErr
+			return nil, ShutdownError
 		case <-time.After(delay):
 			delay *= 2
 			if delay > time.Hour {

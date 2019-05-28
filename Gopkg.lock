@@ -172,8 +172,8 @@
     "common",
   ]
   pruneopts = "UT"
-  revision = "8378477fe573efde70442575ee8dab58e285de18"
-  version = "v0.0.0"
+  revision = "310388d6cfa37ca92d3214c5fed7df90f3c5bff7"
+  version = "v0.0.1"
 
 [[projects]]
   digest = "1:379bf98f5a843a938f87b39be11cfe32847504fbf6fb5b151b434794b9d4970e"
@@ -192,7 +192,7 @@
   revision = "a6bec72d870aedede0aac380c6c55af0866fad74"
 
 [[projects]]
-  digest = "1:650b4c155223e0ccb62d724b91c42c5d4707bcefcc6ca2eb5e46793c39575b83"
+  digest = "1:ca08022dbe3259045bb20290dfb2ea7ec8d0598b8e45eeca7eb8f3c9c4da3405"
   name = "github.com/katzenpost/panda"
   packages = [
     "client",
@@ -202,8 +202,8 @@
     "crypto/rijndael",
   ]
   pruneopts = "UT"
-  revision = "c34af5fd54cbb9fff86f299901600bc99009d08b"
-  version = "v0.0.2"
+  revision = "dffbce765e00fea3bb87dfba3e89df037402fdd2"
+  version = "v0.0.3"
 
 [[projects]]
   digest = "1:d5b35b7aac54592ad31f08ede68c356eb96e2f59ea57b66dd13498a5e160dde5"
@@ -230,12 +230,12 @@
   version = "v0.0.9"
 
 [[projects]]
-  digest = "1:e150b5fafbd7607e2d638e4e5cf43aa4100124e5593385147b0a74e2733d8b0d"
+  digest = "1:9b90c7639a41697f3d4ad12d7d67dfacc9a7a4a6e0bbfae4fc72d0da57c28871"
   name = "github.com/mattn/go-isatty"
   packages = ["."]
   pruneopts = "UT"
-  revision = "c2a7a6ca930a4cd0bc33a3f298eb71960732a3a7"
-  version = "v0.0.7"
+  revision = "1311e847b0cb909da63b5fecfb5370aa66236465"
+  version = "v0.0.8"
 
 [[projects]]
   digest = "1:d0072748c62defde1ad99dde77f6ffce492a0e5aea9204077e497c7edfb86653"
@@ -247,7 +247,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:eb7f1216343d992a4927a061797e742342c1b90b5224fe7a2f913c5ae23beaa2"
+  digest = "1:556a9e4f8e8724a2080da44b52980b11c17abbb5841b1963a37ac54ac98de180"
   name = "golang.org/x/crypto"
   packages = [
     "argon2",
@@ -266,7 +266,7 @@
     "ssh/terminal",
   ]
   pruneopts = "UT"
-  revision = "cbcb750295291b33242907a04be40e80801d0cfc"
+  revision = "22d7a77e9e5f409e934ed268692e56707cd169e5"
 
 [[projects]]
   branch = "master"
@@ -278,11 +278,11 @@
     "proxy",
   ]
   pruneopts = "UT"
-  revision = "a4d6f7feada510cc50e69a37b484cb0fdc6b7876"
+  revision = "f3200d17e092c607f615320ecaad13d87ad9a2b3"
 
 [[projects]]
   branch = "master"
-  digest = "1:ed3d25dee9c9d77611e5ce1bd3a5a078930e8efb31afac120ccb1fbba7ec08d1"
+  digest = "1:26f657d5013d13137b239dbb71fd77a52afbf7b92671385ab9a3967ce6694bb4"
   name = "golang.org/x/sys"
   packages = [
     "cpu",
@@ -290,7 +290,7 @@
     "windows",
   ]
   pruneopts = "UT"
-  revision = "a5b02f93d862f065920dd6a40dddc66b60d0dec4"
+  revision = "adf421d2caf4ffcf74142ff5fb9ee323b21a819e"
 
 [[projects]]
   digest = "1:8d8faad6b12a3a4c819a3f9618cb6ee1fa1cfc33253abeeea8b55336721e3405"
