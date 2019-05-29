@@ -167,7 +167,6 @@ func (c *Client) Start() {
 		}
 	}
 	c.Go(c.worker)
-	c.Go(c.readInboxWorker)
 }
 
 // CreateRemoteSpool creates a remote spool for collecting messages
@@ -433,35 +432,21 @@ func (c *Client) readInbox() bool {
 	return false
 }
 
-// read-inbox-worker does not take ownership of inbox.
-// instead the inbox is guarded with the mutex "c.inboxMutex".
-// also note that the call to c.readInbox blocks until it receives
-// a reply from the remote spool service.
-func (c *Client) readInboxWorker() {
+// worker goroutine takes ownership of our contacts
+func (c *Client) worker() {
 	c.readInboxPoissonTimer.Start()
 	defer c.readInboxPoissonTimer.Stop()
 	for {
 		select {
 		case <-c.HaltCh():
 			c.log.Debug("Terminating gracefully.")
+			c.haltKeyExchanges()
 			return
 		case <-c.readInboxPoissonTimer.Channel():
 			if c.readInbox() {
 				c.save()
 			}
 			c.readInboxPoissonTimer.Next()
-		}
-	}
-}
-
-// worker goroutine takes ownership of our contacts
-func (c *Client) worker() {
-	for {
-		select {
-		case <-c.HaltCh():
-			c.log.Debug("Terminating gracefully.")
-			c.haltKeyExchanges()
-			return
 		case addContact := <-c.addContactChan:
 			err := c.createContact(addContact.Name, addContact.SharedSecret)
 			if err != nil {
