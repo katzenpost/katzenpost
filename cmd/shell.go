@@ -76,17 +76,20 @@ func NewShell(client *catshadow.Client, log *logging.Logger) *Shell {
 			c.Print(red("message ID: "))
 			rawid := c.ReadLine()
 			id, err := strconv.Atoi(rawid)
-			if err != nil {
+			if err != nil || id < 0 {
 				c.Print(fmt.Sprintf("ERROR, invalid message id, must be positive integer\n"))
+			} else {
+				inbox := shell.client.GetInbox()
+				if id > len(inbox) {
+					c.Print(fmt.Sprintf("ERROR, requested message id doesn't exist\n"))
+				} else {
+					mesg := inbox[id]
+					c.Print(fmt.Sprintf("%s %s\n%s", mesg.Nickname, mesg.ReceivedTime, mesg.Plaintext))
+					c.Print("\n")
+				}
 			}
-
-			inbox := shell.client.GetInbox()
-			mesg := inbox[id]
-			c.Print(fmt.Sprintf("%s %s\n%s", mesg.Nickname, mesg.ReceivedTime, mesg.Plaintext))
-			c.Print("\n")
 		},
 	})
-
 	shell.ishell.AddCmd(&ishell.Cmd{
 		Name: "delete_contact",
 		Help: "Delete a new communications contact",
