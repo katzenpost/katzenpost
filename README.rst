@@ -116,8 +116,8 @@ without revealing which sender they are. Finally, the revocation
 behavior is such that the recipient can revoke one or more senders
 without involving the remaining senders.
 
-Clients make use of a Sphinx SURB based protocol to retreive messages
-from their remote spool service. The mix network has several Providers
+Clients make use of a Sphinx SURB based protocol to retrieve messages
+from their remote spool service. The mix network has several providers
 which operate spool services which clients can interact with. The
 spool service is in fact a seperate process which uses our CBOR/HTTP
 over unix domain socket plugin system to communicate with the mix server.
@@ -136,8 +136,8 @@ remote message spool.
 
 Katzenpost is a variant of the Loopix design and as such makes use of
 the Poisson mix strategy and therefore must be properly tuned. Tuning
-of the Poisson mix strategy as not been publicly solved yet but I
-suspect the solution has something to do with a descrete network event
+of the Poisson mix strategy has not been publicly solved yet but I
+suspect the solution has something to do with a discrete network event
 simulator and possibly some machine learning algorithms as
 well. Perhaps we all should consider the tuning of this mixnet
 messaging system as half of it's design.
