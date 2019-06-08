@@ -119,6 +119,21 @@ func NewShell(client *catshadow.Client, log *logging.Logger) *Shell {
 		},
 	})
 	shell.ishell.AddCmd(&ishell.Cmd{
+		Name: "list_contacts",
+		Help: "List contacts.",
+		Func: func(c *ishell.Context) {
+			// disable the '>>>' for cleaner same line input.
+			c.ShowPrompt(false)
+			defer c.ShowPrompt(true) // yes, revert after login.
+			nicknames := shell.client.GetNicknames()
+			c.Print(fmt.Sprintf("Nickname\n"))
+			for _, name := range nicknames {
+				c.Print(fmt.Sprintf("%s\n", name))
+			}
+			c.Print("\n")
+		},
+	})
+	shell.ishell.AddCmd(&ishell.Cmd{
 		Name: "send_message",
 		Help: "Send a message.",
 		Func: func(c *ishell.Context) {
