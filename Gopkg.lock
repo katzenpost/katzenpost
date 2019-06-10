@@ -252,6 +252,14 @@
   revision = "a6bec72d870aedede0aac380c6c55af0866fad74"
 
 [[projects]]
+  digest = "1:d5b35b7aac54592ad31f08ede68c356eb96e2f59ea57b66dd13498a5e160dde5"
+  name = "github.com/katzenpost/registration_client"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "dc8326f6b77432ad054557e429ad1338e0331b9f"
+  version = "v0.0.1"
+
+[[projects]]
   branch = "master"
   digest = "1:859002b35f25d69854a9916e3162b41f2c6e0a28178687ece5c7ae7df5141135"
   name = "github.com/katzenpost/server"
@@ -513,11 +521,10 @@
     "github.com/katzenpost/core/worker",
     "github.com/katzenpost/kimchi",
     "github.com/katzenpost/minclient",
+    "github.com/katzenpost/registration_client",
     "github.com/stretchr/testify/assert",
-    "github.com/ugorji/go/codec",
     "golang.org/x/net/idna",
     "golang.org/x/net/proxy",
-    "golang.org/x/text/secure/precis",
     "gopkg.in/op/go-logging.v1",
   ]
   solver-name = "gps-cdcl"
