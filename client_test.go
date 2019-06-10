@@ -18,12 +18,9 @@
 package client
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/kimchi"
 	"github.com/stretchr/testify/assert"
@@ -51,7 +48,7 @@ func TestClientConnect(t *testing.T) {
 		t.Logf("Time is up!")
 
 		// create a client configuration
-		cfg, err := k.GetClientConfig()
+		cfg, username, linkKey, err := k.GetClientConfig()
 		assert.NoError(err)
 
 		// instantiate a client instance
@@ -59,13 +56,10 @@ func TestClientConnect(t *testing.T) {
 		assert.NoError(err)
 
 		// add client log output
-		go k.LogTailer(cfg.Account.User, filepath.Join(cfg.Proxy.DataDir, cfg.Logging.File))
-
-		linkKey, err := ecdh.NewKeypair(rand.Reader)
-		assert.NoError(err)
+		go k.LogTailer(username, cfg.Logging.File)
 
 		// instantiate a session
-		s, err := c.NewSession(linkKey)
+		s, err := c.NewSession(username, linkKey)
 		assert.NoError(err)
 
 		// get a PKI document? needs client method...
