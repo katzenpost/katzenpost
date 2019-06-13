@@ -141,6 +141,10 @@ Watch lecture "Introduction to Statistical Disclosure Attacks and Defenses for M
 
 * https://www.youtube.com/watch?v=pHLbe1JKrAQ&t=229s
 
+"Statistical Disclosure or Intersection Attacks on Anonymity Systems"
+
+* https://www.freehaven.net/anonbib/cache/DanSer04.ps
+
 "Taxonomy of Mixes and Dummy Traffic"
 
 * https://www.freehaven.net/anonbib/cache/taxonomy-dummy.pdf
