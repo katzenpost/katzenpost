@@ -159,35 +159,35 @@ The Parameters section holds the network parameters, for example::
 
   [Parameters]
     SendRatePerMinute = 30
-    MixLambda = 0.00025
-    MixMaxDelay = 90000
-    SendLambda = 15.0
+    Mu = 0.00025
+    MuMaxDelay = 90000
+    LambdaP = 15.0
     SendShift = 3
-    SendMaxInterval = 3000
-    MixLoopLambda = 0.00025
-    MixLoopMaxInterval = 90000
+    LambdaPMaxDelay = 3000
+    LambdaL = 0.00025
+    LambdaLMaxDelay = 90000
 
 * ``SendRatePerMinute`` is the rate limiter maximum allowed rate of
   packets per client.
 
-* ``MixLambda`` is the inverse of the mean of the exponential
+* ``Mu`` is the inverse of the mean of the exponential
   distribution that the Sphinx packet per-hop mixing delay will be
   sampled from.
 
-* ``MixMaxDelay`` is the maximum Sphinx packet per-hop mixing
+* ``MuMaxDelay`` is the maximum Sphinx packet per-hop mixing
   delay in milliseconds.
 
-* ``SendLambda`` is the inverse of the mean of the exponential
+* ``LambdaP`` is the inverse of the mean of the exponential
   distribution that clients will sample to determine intervals
   for sending forward and loop messages.
 
-* ``SendMaxInterval`` is the maximum send interval in milliseconds.
+* ``LambdaPMaxDelay`` is the maximum send interval in milliseconds.
 
-* ``MixLoopLambda`` is the inverse of the mean of the exponential
+* ``LambdaL`` is the inverse of the mean of the exponential
   distribution that mixes will sample to determine the intervals
   for sending decoy loops.
 
-* ``MixLoopMaxInterval`` is the maximum send interval in milliseconds.
+* ``LambdaLMaxDelay`` is the maximum send interval in milliseconds.
 
 
 Mixes section
