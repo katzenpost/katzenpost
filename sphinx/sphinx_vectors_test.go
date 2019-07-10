@@ -189,8 +189,6 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 			require.NoError(err, "NewSURB failed")
 			require.Equal(SURBLength, len(surb), "SURB length")
 
-			t.Logf("SURB KEYS %x", surbKeys)
-
 			// Create a reply packet using the SURB.
 			pkt, firstHop, err = NewPacketFromSURB(surb, payload)
 			require.NoError(err, "NewPacketFromSURB failed")
@@ -214,7 +212,6 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 		for i := range nodes {
 
 			// There's no sensible way to validate that `tag` is correct.
-			t.Logf("Unwrap %d\n", i)
 			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 			tests[nrHops].Packets[i+1] = hex.EncodeToString(pkt)
