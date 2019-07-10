@@ -29,6 +29,8 @@ import (
 	"github.com/ugorji/go/codec"
 )
 
+const sphinxVectorsFile = "testdata/sphinx_vectors.json"
+
 type hexNodeParams struct {
 	ID         string
 	PrivateKey string
@@ -40,17 +42,23 @@ type hexPathHop struct {
 	Commands  []string
 }
 
-type hexSphinxForwardTest struct {
-	Nodes   []hexNodeParams
-	Path    []hexPathHop
-	Packets []string
-	Payload string
+type hexSphinxTest struct {
+	Nodes    []hexNodeParams
+	Path     []hexPathHop
+	Packets  []string
+	Payload  string
+	Surb     string
+	SurbKeys string
 }
 
-func TestBuildFileVectorForwardSphinx(t *testing.T) {
+func TestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
 
-	hexTests := buildVectorForwardSphinx(t)
+	withSURB := false
+	hexTests := buildVectorSphinx(t, withSURB)
+	withSURB = true
+	hexTests2 := buildVectorSphinx(t, withSURB)
+	hexTests = append(hexTests, hexTests2...)
 
 	serialized := []byte{}
 	handle := new(codec.JsonHandle)
@@ -59,18 +67,18 @@ func TestBuildFileVectorForwardSphinx(t *testing.T) {
 	err := enc.Encode(hexTests)
 	require.NoError(err)
 
-	err = ioutil.WriteFile("testdata/sphinx_forward_vectors.json", serialized, 0644)
+	err = ioutil.WriteFile(sphinxVectorsFile, serialized, 0644)
 	require.NoError(err)
 }
 
-func TestVectorForwardSphinx(t *testing.T) {
+func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
 
-	serialized, err := ioutil.ReadFile("testdata/sphinx_forward_vectors.json")
+	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
 
 	decoder := codec.NewDecoderBytes(serialized, new(codec.JsonHandle))
-	tests := []hexSphinxForwardTest{}
+	tests := []hexSphinxTest{}
 	err = decoder.Decode(&tests)
 	require.NoError(err)
 
@@ -94,15 +102,32 @@ func TestVectorForwardSphinx(t *testing.T) {
 			require.Equal(packet, rawPacket)
 
 			if i == len(test.Path)-1 {
-				require.Equalf(1, len(cmds), "Hop %d: Unexpected number of commands", i)
-				cmd, err := hex.DecodeString(test.Path[i].Commands[0])
-				require.NoError(err)
-				require.EqualValuesf(cmd, cmds[0].ToBytes([]byte{}), "Hop %d: recipient mismatch", i)
+				if len(test.Surb) > 0 {
+					require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
+					cmd, err := hex.DecodeString(test.Path[i].Commands[0])
+					require.NoError(err)
+					require.EqualValuesf(cmd, cmds[0].ToBytes([]byte{}), "Hop %d: recipient mismatch", i)
+					cmd, err = hex.DecodeString(test.Path[i].Commands[1])
+					require.NoError(err)
+					require.EqualValuesf(cmd, cmds[1].ToBytes([]byte{}), "SURB Hop %d: surb_reply mismatch", i)
 
-				testPayload, err := hex.DecodeString(test.Payload)
-				require.NoError(err)
-				require.Equalf(b, testPayload, "Hop %d: payload mismatch", i)
-				break
+					testSurbKeys, err := hex.DecodeString(test.SurbKeys)
+					require.NoError(err, "DecrytSURBPayload")
+					b, err = DecryptSURBPayload(b, testSurbKeys)
+					require.NoError(err)
+					testPayload, err := hex.DecodeString(test.Payload)
+					require.NoError(err)
+					require.Equalf(testPayload, b, "SURB Hop %d: payload mismatch", i)
+				} else {
+					require.Equalf(1, len(cmds), "Hop %d: Unexpected number of commands", i)
+					cmd, err := hex.DecodeString(test.Path[i].Commands[0])
+					require.NoError(err)
+					require.EqualValuesf(cmd, cmds[0].ToBytes([]byte{}), "Hop %d: recipient mismatch", i)
+
+					testPayload, err := hex.DecodeString(test.Payload)
+					require.NoError(err)
+					require.Equalf(b, testPayload, "Hop %d: payload mismatch", i)
+				}
 			} else {
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				cmd, err := hex.DecodeString(test.Path[i].Commands[0])
@@ -121,16 +146,16 @@ func TestVectorForwardSphinx(t *testing.T) {
 	}
 }
 
-func buildVectorForwardSphinx(t *testing.T) []hexSphinxForwardTest {
+func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)
 
-	tests := make([]hexSphinxForwardTest, constants.NrHops+1)
+	tests := make([]hexSphinxTest, constants.NrHops+1)
 	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
 
 		// Generate the "nodes" and path for the forward sphinx packet.
-		nodes, path := newPathVector(require, nrHops, false)
+		nodes, path := newPathVector(require, nrHops, withSURB)
 		hexNodes := make([]hexNodeParams, len(nodes))
 		for i, node := range nodes {
 			hexNodes[i] = hexNodeParams{
@@ -152,35 +177,63 @@ func buildVectorForwardSphinx(t *testing.T) []hexSphinxForwardTest {
 		}
 
 		// Create the packet.
+		pkt := []byte{}
+		surb := []byte{}
+		surbKeys := []byte{}
+		firstHop := &[32]byte{}
 		payload := []byte(testPayload)
-		pkt, err := NewPacket(rand.Reader, path, payload)
-		require.NoError(err, "NewPacket failed")
-		require.Len(pkt, HeaderLength+PayloadTagLength+len(payload), "Packet Length")
-		hexPackets := make([]string, len(nodes)+1)
-		hexPackets[0] = hex.EncodeToString(pkt)
+		var err error
+		if withSURB {
+			// Create the SURB.
+			surb, surbKeys, err = NewSURB(rand.Reader, path)
+			require.NoError(err, "NewSURB failed")
+			require.Equal(SURBLength, len(surb), "SURB length")
+
+			t.Logf("SURB KEYS %x", surbKeys)
+
+			// Create a reply packet using the SURB.
+			pkt, firstHop, err = NewPacketFromSURB(surb, payload)
+			require.NoError(err, "NewPacketFromSURB failed")
+			require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
+		} else {
+			pkt, err = NewPacket(rand.Reader, path, payload)
+			require.NoError(err, "NewPacket failed")
+			require.Len(pkt, HeaderLength+PayloadTagLength+len(payload), "Packet Length")
+		}
+
+		tests[nrHops] = hexSphinxTest{
+			Nodes:    hexNodes,
+			Path:     hexPath,
+			Packets:  make([]string, len(nodes)+1),
+			Surb:     hex.EncodeToString(surb),
+			SurbKeys: hex.EncodeToString(surbKeys),
+		}
+		tests[nrHops].Packets[0] = hex.EncodeToString(pkt)
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
 
 			// There's no sensible way to validate that `tag` is correct.
+			t.Logf("Unwrap %d\n", i)
 			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
-
-			hexPackets[i+1] = hex.EncodeToString(pkt)
+			tests[nrHops].Packets[i+1] = hex.EncodeToString(pkt)
 
 			if i == len(path)-1 {
-				require.Equalf(1, len(cmds), "Hop %d: Unexpected number of commands", i)
-				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: recipient mismatch", i)
+				if withSURB {
+					require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
+					require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: recipient mismatch", i)
+					require.EqualValuesf(path[i].Commands[1], cmds[1], "SURB Hop %d: surb_reply mismatch", i)
 
-				require.Equalf(b, payload, "Hop %d: payload mismatch", i)
-
-				hexTest := hexSphinxForwardTest{
-					Nodes:   hexNodes,
-					Path:    hexPath,
-					Packets: hexPackets,
-					Payload: hex.EncodeToString(b),
+					b, err = DecryptSURBPayload(b, surbKeys)
+					require.NoError(err, "DecrytSURBPayload")
+					require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
+				} else {
+					require.Equalf(1, len(cmds), "Hop %d: Unexpected number of commands", i)
+					require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: recipient mismatch", i)
+					require.Equalf(b, payload, "Hop %d: payload mismatch", i)
 				}
-				tests[nrHops] = hexTest
+				tests[nrHops].Payload = hex.EncodeToString(b)
 			} else {
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
