@@ -268,7 +268,7 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.txt>.
+                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst>.
 
 .. [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
