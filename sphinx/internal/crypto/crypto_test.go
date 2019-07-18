@@ -43,6 +43,16 @@ func TestHash(t *testing.T) {
 	assert.Equal(expected, actual, "Hash() mismatch against SHA512-256")
 }
 
+func TestVectorHash(t *testing.T) {
+	assert := assert.New(t)
+	mesg, err := hex.DecodeString("f72fbd7f19e0f192524aea4973354479d6507d964242b30ded31c87e81c5c889")
+	assert.NoError(err)
+	hash := Hash(mesg)
+	want, err := hex.DecodeString("9b931e466dc077f2cdf57784996dd19006a60e411692a8bdca4882c129c03a86")
+	assert.NoError(err)
+	assert.Equal(hash[:], want)
+}
+
 func TestMAC(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -75,6 +85,26 @@ func TestMAC(t *testing.T) {
 	m.Reset()
 	actual = m.Sum(nil)
 	assert.NotEqual(expected, actual, "Reset() did not appear to clear state")
+}
+
+func TestVectorMAC(t *testing.T) {
+	assert := assert.New(t)
+
+	var key [MACKeyLength]byte
+	_, err := rand.Read(key[:])
+	assert.NoError(err, "failed to read MAC key")
+
+	var src [256]byte
+	_, err = rand.Read(src[:])
+	assert.NoError(err, "failed to read source buffer")
+
+	m := NewMAC(&key)
+	macLen, err := m.Write(src[:])
+	assert.NoError(err)
+	assert.Equal(len(src), macLen)
+	actual := m.Sum(nil)
+
+	t.Logf("key %x src %x output %x", key[:], src[:], actual)
 }
 
 func TestStream(t *testing.T) {
