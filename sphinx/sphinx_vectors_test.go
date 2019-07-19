@@ -97,10 +97,6 @@ func TestVectorSphinx(t *testing.T) {
 			b, _, cmds, err := Unwrap(privateKey, packet)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
-			rawPacket, err := hex.DecodeString(test.Packets[i+1])
-			require.NoError(err)
-			require.Equal(packet, rawPacket)
-
 			if i == len(test.Path)-1 {
 				if len(test.Surb) > 0 {
 					require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
@@ -129,6 +125,10 @@ func TestVectorSphinx(t *testing.T) {
 					require.Equalf(b, testPayload, "Hop %d: payload mismatch", i)
 				}
 			} else {
+				rawPacket, err := hex.DecodeString(test.Packets[i+1])
+				require.NoError(err)
+				require.Equal(packet, rawPacket)
+
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				cmd, err := hex.DecodeString(test.Path[i].Commands[0])
 				require.NoError(err)
@@ -214,7 +214,6 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 			// There's no sensible way to validate that `tag` is correct.
 			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
-			tests[nrHops].Packets[i+1] = hex.EncodeToString(pkt)
 
 			if i == len(path)-1 {
 				if withSURB {
@@ -232,6 +231,7 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 				}
 				tests[nrHops].Payload = hex.EncodeToString(b)
 			} else {
+				tests[nrHops].Packets[i+1] = hex.EncodeToString(pkt)
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
 
