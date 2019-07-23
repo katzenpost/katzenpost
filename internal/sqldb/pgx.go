@@ -165,7 +165,7 @@ func newPgxImpl(db *SQLDB, dataSourceName string) (dbImpl, error) {
 		return nil, err
 	}
 	connCfg.Logger = p
-	connCfg.LogLevel = int(toPgxLogLevel(p.d.glue.Config().Logging.Level))
+	connCfg.LogLevel = toPgxLogLevel(p.d.glue.Config().Logging.Level)
 	poolCfg := pgx.ConnPoolConfig{
 		ConnConfig:     connCfg,
 		MaxConnections: numConns,
