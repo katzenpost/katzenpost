@@ -28,7 +28,7 @@ type Worker struct {
 }
 
 // Go excutes the function fn in a new Go routine.  Multiple Go routines may
-// be started under the same Worker.  It is the function's responsiblity to
+// be started under the same Worker.  It is the function's responsibility to
 // monitor the channel returned by `Worker.HaltCh()` and to return.
 func (w *Worker) Go(fn func()) {
 	w.initOnce.Do(w.init)

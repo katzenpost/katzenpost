@@ -87,7 +87,7 @@ func TestRetrieveMessage(t *testing.T) {
 
 func TestMessage(t *testing.T) {
 	const (
-		// All packet lenghts are currently normalized.
+		// All packet lengths are currently normalized.
 		expectedLen = cmdOverhead + messageEmptyLength
 		hint        = 0x17
 		seq         = 0xa5a5a5a5
