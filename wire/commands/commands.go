@@ -46,7 +46,6 @@ const (
 	voteOverhead     = 8 + eddsa.PublicKeySize
 	voteStatusLength = 1
 
-	digestLength       = 32
 	revealOverhead     = 8 + eddsa.PublicKeySize
 	revealStatusLength = 1
 
