@@ -60,7 +60,7 @@ var (
 	ErrInvalidKeyType = errors.New("invalid certificate key type")
 
 	// ErrVersionMismatch indicates that the given certificate is the wrong format version.
-	ErrVersionMismatch = errors.New("certificate expired")
+	ErrVersionMismatch = errors.New("certificate version mismatch")
 
 	// ErrCertificateExpired indicates that the given certificate has expired.
 	ErrCertificateExpired = errors.New("certificate expired")
