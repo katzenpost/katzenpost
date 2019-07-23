@@ -338,14 +338,14 @@ func (s *pgxSpool) Remove(u []byte) error {
 	return s.pgx.doUserDelete(u)
 }
 
-func (s *pgxSpool) Vaccum(udb userdb.UserDB) error {
+func (s *pgxSpool) Vacuum(udb userdb.UserDB) error {
 	// This never needs to happen iff the database is acting as both the
 	// UserDB and spool.
 	if !s.pgx.IsSpoolOnly() {
 		return nil
 	}
 
-	s.pgx.d.log.Errorf("Vaccum() not supported yet.") // TODO
+	s.pgx.d.log.Errorf("Vacuum() not supported yet.") // TODO
 	return nil
 }
 

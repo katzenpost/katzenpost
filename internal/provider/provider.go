@@ -779,7 +779,7 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	}
 
 	// Purge spools that belong to users that no longer exist in the user db.
-	if err = p.spool.Vaccum(p.userDB); err != nil {
+	if err = p.spool.Vacuum(p.userDB); err != nil {
 		return nil, err
 	}
 

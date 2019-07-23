@@ -197,7 +197,7 @@ func (s *boltSpool) Remove(u []byte) error {
 	})
 }
 
-func (s *boltSpool) Vaccum(udb userdb.UserDB) error {
+func (s *boltSpool) Vacuum(udb userdb.UserDB) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		// Grab the `users` bucket.
 		uBkt := tx.Bucket([]byte(usersBucket))
