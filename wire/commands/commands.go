@@ -453,7 +453,7 @@ func sendPacketFromBytes(b []byte) (Command, error) {
 	return r, nil
 }
 
-// RetrieveMessage is a de-serialized retreive_message command.
+// RetrieveMessage is a de-serialized retrieve_message command.
 type RetrieveMessage struct {
 	Sequence uint32
 }

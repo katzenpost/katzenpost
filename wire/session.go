@@ -90,9 +90,9 @@ func authenticateMessageFromBytes(b []byte) *authenticateMessage {
 	return m
 }
 
-// PeerCredentials is the peer's credentials received durring the authenticated
+// PeerCredentials is the peer's credentials received during the authenticated
 // key exchange.  By virtue of the Noise Protocol's design, the AdditionalData
-// is guaranteed to have been sent from a peer posessing the private component
+// is guaranteed to have been sent from a peer possessing the private component
 // of PublicKey.
 type PeerCredentials struct {
 	AdditionalData []byte
@@ -425,7 +425,7 @@ func (s *Session) Close() {
 }
 
 // PeerCredentials returns the peer's credentials.  This call MUST only be
-// called from a session that has succesfully completed Initialize().
+// called from a session that has successfully completed Initialize().
 func (s *Session) PeerCredentials() (*PeerCredentials, error) {
 	if atomic.LoadUint32(&s.state) != stateEstablished {
 		return nil, errors.New("wire/session: PeerCredentials() call in invalid state")
