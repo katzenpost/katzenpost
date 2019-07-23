@@ -783,7 +783,7 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		return nil, err
 	}
 
-	// Wire in the managment related commands.
+	// Wire in the management related commands.
 	if cfg.Management.Enable {
 		const (
 			cmdAddUser            = "ADD_USER"

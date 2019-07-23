@@ -149,7 +149,7 @@ func (p *pgxImpl) doUserDelete(u []byte) error {
 func newPgxImpl(db *SQLDB, dataSourceName string) (dbImpl, error) {
 	// The pgx connection pool code requires at least 2 conns, and internally
 	// will default to 5 if unspecified.  At a minimum all of the provider
-	// workers should be able to hit up the database simultaniously, while
+	// workers should be able to hit up the database simultaneously, while
 	// allowing for sufficient connections to authenticate.
 	numConns := 2 * db.glue.Config().Debug.NumProviderWorkers
 	if numConns < 5 {

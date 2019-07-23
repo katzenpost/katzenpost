@@ -163,7 +163,7 @@ func (s *boltSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 		remaining = 0
 	}
 
-	// Retreive the stored message and (optional) SURB ID.
+	// Retrieve the stored message and (optional) SURB ID.
 	mBkt := sBkt.Bucket(mKey)
 	if m := mBkt.Get([]byte(msgKey)); m != nil {
 		msg = make([]byte, 0, len(m))
