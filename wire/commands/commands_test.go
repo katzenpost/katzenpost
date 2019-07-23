@@ -237,6 +237,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 func TestGetVote(t *testing.T) {
 	require := require.New(t)
 	alice, err := eddsa.NewKeypair(rand.Reader)
+	require.NoError(err, "GetVote: NewKeypair() failed")
 
 	cmd := &GetVote{
 		Epoch:     123,
