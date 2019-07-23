@@ -85,7 +85,7 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		didGenerate = true
 		k, err := mixkey.New(m.glue.Config().Server.DataDir, e)
 		if err != nil {
-			// Clean up whatever keys that may have succeded.
+			// Clean up whatever keys that may have succeeded.
 			for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {
 				if kk, ok := m.keys[ee]; ok {
 					kk.Deref()

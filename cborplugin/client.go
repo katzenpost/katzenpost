@@ -64,7 +64,7 @@ type Parameters map[string]string
 // github.com/katzenpost/server/internal/provider/kaetzchen/kaetzchen.go
 type ServicePlugin interface {
 	// OnRequest is the method that is called when the Provider receives
-	// a request desgined for a particular agent. The caller will handle
+	// a request designed for a particular agent. The caller will handle
 	// extracting the payload component of the message
 	OnRequest(request *Request) ([]byte, error)
 

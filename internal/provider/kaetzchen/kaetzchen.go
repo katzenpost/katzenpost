@@ -59,7 +59,7 @@ type Kaetzchen interface {
 	Parameters() Parameters
 
 	// OnRequest is the method that is called when the Provider receives
-	// a request desgined for a particular agent.  The caller will handle
+	// a request designed for a particular agent.  The caller will handle
 	// extracting the payload component of the message.
 	//
 	// Implementations MUST:

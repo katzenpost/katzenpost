@@ -146,7 +146,7 @@ func (k *MixKey) IsReplay(rawTag []byte) bool {
 }
 
 func testAndSetTagDB(bkt *bolt.Bucket, tag []byte) bool {
-	// Retreive the counter from the database for the tag if it exists.
+	// Retrieve the counter from the database for the tag if it exists.
 	//
 	// XXX: The counter isn't actually used for anything since it isn't
 	// returned.  Not sure if it makes sense to keep it, but I don't think
@@ -272,7 +272,7 @@ func (k *MixKey) forceClose() {
 		epoch, _, _ := epochtime.Now()
 		if k.unlinkIfExpired && k.epoch < epoch-1 {
 			// People will probably complain that this doesn't attempt
-			// "secure" deletion, but that's fundementally a lost cause
+			// "secure" deletion, but that's fundamentally a lost cause
 			// given how many levels of indirection there are to files vs
 			// the raw physical media, and the cleanup process being slightly
 			// race prone around epoch transitions.  Use FDE.
