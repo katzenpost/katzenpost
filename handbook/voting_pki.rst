@@ -158,7 +158,6 @@ The logging section controls the logging, for example::
 * INFO
 * DEBUG
 
-
 Parameters section
 ``````````````````
 
@@ -166,35 +165,51 @@ The Parameters section holds the network parameters, for example::
 
   [Parameters]
     SendRatePerMinute = 30
-    MixLambda = 0.00025
-    MixMaxDelay = 90000
-    SendLambda = 15.0
+    Mu = 0.00025
+    MuMaxDelay = 9000
+    LambdaP = 15.0
     SendShift = 3
-    SendMaxInterval = 3000
-    MixLoopLambda = 0.00025
-    MixLoopMaxInterval = 90000
+    LambdaPMaxDelay = 3000
+    LambdaL = 0.00025
+    LambdaLMaxDelay = 9000
+    LambdaD = 0.00025
+    LambdaDMaxDelay = 9000
+    LambdaM = 0.00025
+    LambdaMMaxDelay = 9000
 
 * ``SendRatePerMinute`` is the rate limiter maximum allowed rate of
   packets per client.
 
-* ``MixLambda`` is the inverse of the mean of the exponential
+* ``Mu`` is the inverse of the mean of the exponential
   distribution that the Sphinx packet per-hop mixing delay will be
   sampled from.
 
-* ``MixMaxDelay`` is the maximum Sphinx packet per-hop mixing
+* ``MuMaxDelay`` is the maximum Sphinx packet per-hop mixing
   delay in milliseconds.
 
-* ``SendLambda`` is the inverse of the mean of the exponential
-  distribution that clients will sample to determine intervals
-  for sending forward and loop messages.
+* ``LambdaP``  LambdaP is the inverse of the mean of the exponential distribution
+  that **clients** will sample to determine the time interval between sending
+  messages from it's FIFO egress queue or drop decoy messages if the queue
+  is empty.
 
-* ``SendMaxInterval`` is the maximum send interval in milliseconds.
+* ``LambdaPMaxDelay`` is the maximum send interval for LambdaP in milliseconds
 
-* ``MixLoopLambda`` is the inverse of the mean of the exponential
-  distribution that mixes will sample to determine the intervals
-  for sending decoy loops.
+* ``LambdaL`` LambdaL is the inverse of the mean of the exponential distribution
+  that **clients** will sample to determine the time interval between sending
+  decoy loop messages.
 
-* ``MixLoopMaxInterval`` is the maximum send interval in milliseconds.
+* ``LambdaLMaxDelay`` sets the maximum send interval for LambdaL in milliseconds.
+
+* ``LambdaD`` is the inverse of the mean of the exponential distribution
+  that **clients** will sample to determine the time interval between sending
+  decoy drop messages.
+
+* ``LambdaDMaxDelay`` is the maximum send interval in milliseconds.
+
+* ``LambdaM`` is the inverse of the mean of the exponential distribution that 
+  **mixes** will sample to determine send timing of mix loop decoy traffic.
+
+* ``LambdaMMaxDelay`` sets the maximum delay for LambdaM
 
 
 Debug Section
