@@ -76,6 +76,7 @@ func TestECDHOps(t *testing.T) {
 func TestPublicKeyToFromPEMFile(t *testing.T) {
 	assert := assert.New(t)
 	aliceKeypair, err := NewKeypair(rand.Reader)
+	assert.NoError(err)
 	f, err := ioutil.TempFile("", "alice.pem")
 	assert.NoError(err)
 	err = aliceKeypair.PublicKey().ToPEMFile(f.Name())
