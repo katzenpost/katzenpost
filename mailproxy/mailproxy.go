@@ -53,7 +53,7 @@ func makeConfig(user, provider, providerKey, authority, onionAuthority, authorit
   User = "%s"
   Provider = "%s"
   ProviderKeyPin = "%s"
-  Authority = "PlaygroundAuthority"
+  NonvotingAuthority = "PlaygroundAuthority"
   InsecureKeyDiscovery = true
 
 [Management]
