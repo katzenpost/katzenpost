@@ -80,7 +80,7 @@ func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 func (s *mockSpool) Remove(u []byte) error { return nil }
 
-func (s *mockSpool) Vaccum(udb userdb.UserDB) error { return nil }
+func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
 
 func (s *mockSpool) Close() {}
 
