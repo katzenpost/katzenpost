@@ -6,24 +6,22 @@
 .. image:: https://godoc.org/github.com/katzenpost/server?status.svg
   :target: https://godoc.org/github.com/katzenpost/server
 
-Server Library
-==============
-
-To build the server see the 'daemons' repo:
-
-https://github.com/Katzenpost/daemons
-
+Katzenpost Mix Server
+=====================
 
 Building
-========
+--------
 
-Note that some of our dependencies use ``gopkg.in`` as their import host
-and this can cause you problems if you use the ``go get`` tool to install
-dependencies. See this issue https://github.com/kataras/iris/issues/605
-for more information. tl,dr; workaround -->
-::
+Dependencies pinned using go-modules.
+For more info on go-modules, see: https://github.com/golang/go/wiki/Modules
 
-   git config --global http.https://gopkg.in.followRedirects true
+Build the mix server like this:
+
+```
+export GO111MODULE=on
+cd cmd/server
+go build
+```
 
 
 license
