@@ -50,7 +50,7 @@ func genDeaddropAuthToken(senderPrivateKey *ecdh.PrivateKey, recipientPublicKey 
 	}
 	plaintext := [0]byte{}
 	ciphertext, _, _, err := hs.WriteMessage(nil, plaintext[:])
-	encoded := base64.StdEncoding.EncodeToString([]byte(ciphertext))
+	encoded := base64.StdEncoding.EncodeToString(ciphertext)
 	return encoded, err
 }
 
