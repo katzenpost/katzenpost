@@ -229,7 +229,7 @@ acknowledgments
 * I would like to thank Leif Ryge for feedback during the design of this
   client and many of it's protocols.
 
-* I would like to also thank Adam Langely for writing Pond ( https://github.com/agl/pond )
+* I would like to also thank Adam Langely for writing [Pond](https://github.com/agl/pond)
   which has very obviously inspired a few of our design choices and has provided some
   code that we use such as the PANDA cryptographic protocol and the Signal Double Ratchet.
 
