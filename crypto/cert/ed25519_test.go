@@ -60,6 +60,7 @@ func TestEd25519Certificate(t *testing.T) {
 
 	toSign := ephemeralPrivKey.PublicKey().Bytes()
 	certificate, err := Sign(signingPrivKey, toSign, expiration)
+	assert.NoError(err)
 
 	mesg, err := Verify(signingPrivKey.PublicKey(), certificate)
 	assert.NoError(err)
