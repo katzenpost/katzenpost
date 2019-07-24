@@ -7,8 +7,5 @@ env:
   global:
     GO111MODULE=on
 
-install:
- - go get -v -t ./...
-
 script:
  - make test
