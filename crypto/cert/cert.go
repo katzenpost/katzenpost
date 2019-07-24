@@ -139,7 +139,7 @@ func (c *certificate) message() ([]byte, error) {
 	if err != nil {
 		return nil, ErrImpossibleOutOfMemory
 	}
-	_, err = message.Write([]byte(c.Certified))
+	_, err = message.Write(c.Certified)
 	if err != nil {
 		return nil, ErrImpossibleOutOfMemory
 	}

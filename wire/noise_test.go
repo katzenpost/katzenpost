@@ -147,5 +147,5 @@ func TestNoiseParams2(t *testing.T) {
 	//   msgBob: plaintext
 	//   hsBob.PeerStatic(): aliceStatic.Public
 	assert.Equal(staticAlice.Public, hsBob.PeerStatic(), "static key mismatch")
-	assert.Equal([]byte(plaintext), []byte(msgBob), "plaintext mismatch")
+	assert.Equal([]byte(plaintext), msgBob, "plaintext mismatch")
 }
