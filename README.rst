@@ -9,7 +9,7 @@
 the catshadow client
 ====================
 
-Catshadow is a mix network messaging system. This respoitory contains
+Catshadow is a mix network messaging system. This repository contains
 a client library and a client program which can be used with a
 Katzenpost mix network. It not only uses strong modern end to end
 encryption (PANDA + Signal Double Ratchet), but it is also designed
@@ -28,7 +28,7 @@ usage
         The catshadow state file path. (default "catshadow_statefile")
 
 Firstly, generate your account and remote spool by running catshadow
-with the `-g` option, like so::
+with the `-g` option, like so:
 
    catshadow -f alice.toml -s alice.statefile -g
 
@@ -140,7 +140,7 @@ of the Poisson mix strategy has not been publicly solved yet but I
 suspect the solution has something to do with a discrete network event
 simulator and possibly some machine learning algorithms as
 well. Perhaps we all should consider the tuning of this mixnet
-messaging system as half of it's design.
+messaging system as half of its design.
 
 Another unfinished design area is: The Catshadow client periodically
 polls the client's remote message spool where the intervals between
@@ -227,7 +227,7 @@ acknowledgments
 ===============
 
 * I would like to thank Leif Ryge for feedback during the design of this
-  client and many of it's protocols.
+  client and many of its protocols.
 
 * I would like to also thank Adam Langely for writing Pond ( https://github.com/agl/pond )
   which has very obviously inspired a few of our design choices and has provided some
