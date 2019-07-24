@@ -165,7 +165,7 @@ func (k *kaetzchenDeaddrop) OnRequest(id uint64, payload []byte, hasSURB bool) (
 
 		// Retrieve a message.
 		sequence, ok := k.userSequenceMap[req.User]
-		msg := []byte{}
+		var msg []byte
 		remaining := 0
 		if !ok {
 			msg, _, remaining, err = k.glue.Provider().Spool().Get([]byte(req.User), false)

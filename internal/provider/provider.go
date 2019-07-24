@@ -623,7 +623,7 @@ func (p *provider) processLinkRegistration(user []byte, response http.ResponseWr
 }
 
 func (p *provider) processIdentityRegistration(user []byte, response http.ResponseWriter, request *http.Request) {
-	key, err := p.userDB.Identity(user)
+	key, _ := p.userDB.Identity(user)
 	if key != nil {
 		p.log.Errorf("Provider ServeHTTP Identity error")
 		response.WriteHeader(http.StatusInternalServerError)
@@ -662,7 +662,7 @@ func (p *provider) processIdentityRegistration(user []byte, response http.Respon
 		response.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if err = p.userDB.SetIdentity(user, identityKey); err != nil {
+	if err := p.userDB.SetIdentity(user, identityKey); err != nil {
 		p.log.Errorf("Provider ServeHTTP SetIdentity error: %s", err)
 		response.WriteHeader(http.StatusInternalServerError)
 		return
