@@ -19,6 +19,7 @@ require (
 	github.com/katzenpost/core v0.0.8-0.20190724071104-2cbc6b73ccb0
 	github.com/katzenpost/noise v0.0.0-20190323135632-a6bec72d870a
 	github.com/pkg/errors v0.8.1 // indirect
+	github.com/stretchr/testify v1.3.0
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
 	golang.org/x/text v0.3.2
