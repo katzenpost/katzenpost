@@ -122,7 +122,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		pandaChan:         make(chan panda.PandaUpdate),
 		addContactChan:    make(chan addContact),
 		sendMessageChan:   make(chan sendMessage),
-		getNicknamesChan:   make(chan chan []string),
+		getNicknamesChan:  make(chan chan []string),
 		removeContactChan: make(chan string),
 		contacts:          make(map[uint64]*Contact),
 		contactNicknames:  make(map[string]*Contact),
@@ -253,7 +253,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 func (c *Client) GetNicknames() []string {
 	responseChan := make(chan []string)
 	c.getNicknamesChan <- responseChan
-	return <- responseChan
+	return <-responseChan
 }
 
 // RemoveContact removes a contact from the Client's state.
@@ -460,7 +460,7 @@ func (c *Client) worker() {
 			if err != nil {
 				c.log.Errorf("create contact failure: %s", err.Error())
 			}
-		case responseChan := <- c.getNicknamesChan:
+		case responseChan := <-c.getNicknamesChan:
 			names := []string{}
 			for contact := range c.contactNicknames {
 				names = append(names, contact)
