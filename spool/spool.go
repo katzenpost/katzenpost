@@ -38,9 +38,9 @@ type Spool interface {
 	// Remove removes the spool identified by the username from the database.
 	Remove(u []byte) error
 
-	// Vaccum removes the spools that do not correspond to valid users in the
+	// Vacuum removes the spools that do not correspond to valid users in the
 	// provided UserDB.
-	Vaccum(udb userdb.UserDB) error
+	Vacuum(udb userdb.UserDB) error
 
 	// Close closes the Spool instance.
 	Close()
