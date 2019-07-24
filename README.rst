@@ -7,13 +7,26 @@
   :target: https://godoc.org/github.com/katzenpost/authority
 
 
-Katzenpost Directory Authority Library
-======================================
+Katzenpost Directory Authority
+==============================
 
-This library is implements the design as specified in:
-"Panoramix Mix Network Public Key Infrastructure Specification"
+Katzenpost has two directory authority servers; a voting and nonvoting server.
+The voting server's design is specified in the **"Katzenpost Mix Network Public Key Infrastructure Specification"** https://github.com/katzenpost/docs/blob/master/specs/pki.rst
 
 
+Building
+--------
+
+Requires golang 1.11 or later. Dependencies pinned using go-modules.
+For more info about go-modules, see: https://github.com/golang/go/wiki/Modules
+
+Build the mix server like this:
+
+```
+export GO111MODULE=on
+cd cmd/voting # (or cmd/nonvoting)
+go build
+```
 
 license
 =======
