@@ -16,12 +16,12 @@ Dependencies pinned using go-modules.
 For more info on go-modules, see: https://github.com/golang/go/wiki/Modules
 
 Build the mix server like this:
+::
 
-```
-export GO111MODULE=on
-cd cmd/server
-go build
-```
+  export GO111MODULE=on
+  cd cmd/server
+  go build
+
 
 
 license
