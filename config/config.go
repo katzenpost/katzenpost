@@ -341,6 +341,10 @@ type Provider struct {
 	// (e.g. "127.0.0.1:36967").
 	UserRegistrationHTTPAddresses []string
 
+	// AdvertiseUserRegistrationHTTPAddresses is the set of HTTP URLs
+	// that shall be advertised in the mixnet PKI document.
+	AdvertiseUserRegistrationHTTPAddresses []string
+
 	// SQLDB is the SQL database backend configuration.
 	SQLDB *SQLDB
 

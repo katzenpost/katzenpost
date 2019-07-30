@@ -45,9 +45,9 @@ import (
 )
 
 var (
-	errNotCached = errors.New("pki: requested epoch document not in cache")
+	errNotCached    = errors.New("pki: requested epoch document not in cache")
 	recheckInterval = 1 * time.Minute
-	WarpedEpoch = "false"
+	WarpedEpoch     = "false"
 )
 
 type pki struct {
@@ -341,6 +341,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		if err != nil {
 			return err
 		}
+
+		// Publish RegistrationHTTPAddresses
+		desc.RegistrationHTTPAddresses = p.glue.Provider().AdvertiseRegistrationHTTPAddresses()
 	}
 	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
 
