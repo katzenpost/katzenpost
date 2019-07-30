@@ -76,6 +76,7 @@ type Provider interface {
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
+	AdvertiseRegistrationHTTPAddresses() []string
 }
 
 type Scheduler interface {

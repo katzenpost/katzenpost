@@ -706,6 +706,12 @@ func (p *provider) initUserRegistrationHTTP() {
 	}
 }
 
+// AdvertiseRegistrationHTTP returns a slice of URL strings
+// or nil if no advertised HTTP URL was set in the configuration.
+func (p *provider) AdvertiseRegistrationHTTPAddresses() []string {
+	return p.glue.Config().Provider.AdvertiseUserRegistrationHTTPAddresses
+}
+
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.Provider, error) {
 	kaetzchenWorker, err := kaetzchen.New(glue)
