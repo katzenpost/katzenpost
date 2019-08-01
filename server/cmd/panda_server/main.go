@@ -11,6 +11,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/katzenpost/panda/server"
 	"github.com/katzenpost/server/cborplugin"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
@@ -61,7 +62,7 @@ func parametersHandler(response http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func requestHandler(panda *Panda, response http.ResponseWriter, req *http.Request) {
+func requestHandler(panda *server.Panda, response http.ResponseWriter, req *http.Request) {
 	log.Debug("request handler")
 	cborHandle := new(codec.CborHandle)
 	request := cborplugin.Request{
@@ -153,7 +154,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	panda, err := New(log, fileStore, dwellDuration, writeBackDuration)
+	panda, err := server.New(log, fileStore, dwellDuration, writeBackDuration)
 	if err != nil {
 		panic(err)
 	}
