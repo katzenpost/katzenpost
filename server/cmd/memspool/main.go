@@ -27,6 +27,7 @@ import (
 	"path"
 
 	"github.com/katzenpost/memspool/common"
+	"github.com/katzenpost/memspool/server"
 	"github.com/katzenpost/server/cborplugin"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
@@ -80,7 +81,7 @@ func parametersHandler(response http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request *http.Request) {
+func requestHandler(spoolMap *server.MemSpoolMap, response http.ResponseWriter, request *http.Request) {
 	log.Debug("requestHandler")
 
 	req := cborplugin.Request{
@@ -100,7 +101,7 @@ func requestHandler(spoolMap *MemSpoolMap, response http.ResponseWriter, request
 		panic(err)
 	}
 	log.Debug("before calling handleSpoolRequest")
-	spoolResponse := handleSpoolRequest(spoolMap, &spoolRequest)
+	spoolResponse := server.HandleSpoolRequest(spoolMap, &spoolRequest, log)
 	log.Debug("after calling handleSpoolRequest")
 
 	spoolResponseSerialized, err := spoolResponse.Encode()
@@ -159,14 +160,14 @@ func main() {
 	logBackend := setupLoggerBackend(level, f)
 	log.SetBackend(logBackend)
 
-	server := http.Server{}
+	httpServer := http.Server{}
 	socketFile := fmt.Sprintf("/tmp/%d.memspool.socket", os.Getpid())
 
 	unixListener, err := net.Listen("unix", socketFile)
 	if err != nil {
 		panic(err)
 	}
-	spoolMap, err := NewMemSpoolMap(dataStore, log)
+	spoolMap, err := server.NewMemSpoolMap(dataStore, log)
 	if err != nil {
 		panic(err)
 	}
@@ -180,7 +181,7 @@ func main() {
 	fmt.Printf("%s\n", socketFile)
 	log.Debug("memspool server started.")
 
-	server.Serve(unixListener)
+	httpServer.Serve(unixListener)
 	os.Remove(socketFile)
 	spoolMap.Shutdown()
 }

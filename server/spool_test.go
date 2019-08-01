@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package main
+package server
 
 import (
 	"io/ioutil"
@@ -22,6 +22,7 @@ import (
 
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -56,7 +57,11 @@ func TestMemSpoolMapBasics(t *testing.T) {
 	fileStore, err := ioutil.TempFile("", "catshadow_test_filestore")
 	assert.NoError(err)
 
-	spoolMap, err := NewMemSpoolMap(fileStore.Name(), log)
+	logBackend, err := log.New("", "debug", false)
+	assert.NoError(err)
+	logger := logBackend.GetLogger("test_logger")
+
+	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
 	assert.NoError(err)
 	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
 	assert.NoError(err)
@@ -92,7 +97,11 @@ func TestPersistence(t *testing.T) {
 	fileStore, err := ioutil.TempFile("", "catshadow_test_filestore")
 	assert.NoError(err)
 
-	spoolMap, err := NewMemSpoolMap(fileStore.Name(), log)
+	logBackend, err := log.New("", "debug", false)
+	assert.NoError(err)
+	logger := logBackend.GetLogger("test_logger")
+
+	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
 	assert.NoError(err)
 	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
 	assert.NoError(err)
@@ -105,7 +114,7 @@ func TestPersistence(t *testing.T) {
 	assert.Equal(message, message1)
 	spoolMap.Shutdown()
 
-	spoolMap, err = NewMemSpoolMap(fileStore.Name(), log)
+	spoolMap, err = NewMemSpoolMap(fileStore.Name(), logger)
 	assert.NoError(err)
 	message, err = spoolMap.ReadFromSpool(*spoolID, signature, messageID)
 	assert.NoError(err)

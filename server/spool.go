@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package main
+package server
 
 import (
 	"encoding/binary"
@@ -51,7 +51,7 @@ const (
 	SpoolStorageVersion = 0
 )
 
-func handleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest) *common.SpoolResponse {
+func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log *logging.Logger) *common.SpoolResponse {
 	log.Debug("start of handle spool request")
 	spoolResponse := common.SpoolResponse{}
 	spoolID := [common.SpoolIDSize]byte{}
@@ -284,12 +284,12 @@ func (m *MemSpoolMap) PurgeSpool(spoolID [common.SpoolIDSize]byte, signature []b
 func (m *MemSpoolMap) appendToSpoolWithMessageID(spoolID [common.SpoolIDSize]byte, messageID [common.MessageIDSize]byte, message []byte) error {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
-		log.Debugf("AppendToSpool: spool not found: %x", spoolID[:])
+		m.log.Debugf("AppendToSpool: spool not found: %x", spoolID[:])
 		return errors.New("AppendToSpool: spool not found")
 	}
 	spool, ok := raw_spool.(*MemSpool)
 	if !ok {
-		log.Debug("invalid spool found")
+		m.log.Debug("invalid spool found")
 		return errors.New("invalid spool found")
 	}
 	id := binary.BigEndian.Uint32(messageID[:])
@@ -300,12 +300,12 @@ func (m *MemSpoolMap) appendToSpoolWithMessageID(spoolID [common.SpoolIDSize]byt
 func (m *MemSpoolMap) AppendToSpool(spoolID [common.SpoolIDSize]byte, message []byte) error {
 	raw_spool, ok := m.spools.Load(spoolID)
 	if !ok {
-		log.Debugf("AppendToSpool: spool not found: %x", spoolID[:])
+		m.log.Debugf("AppendToSpool: spool not found: %x", spoolID[:])
 		return errors.New("AppendToSpool: spool not found")
 	}
 	spool, ok := raw_spool.(*MemSpool)
 	if !ok {
-		log.Debug("invalid spool found")
+		m.log.Debug("invalid spool found")
 		return errors.New("invalid spool found")
 	}
 	spool.Append(message)
