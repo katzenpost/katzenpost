@@ -14,16 +14,6 @@ git and Unix like operating system environment.
 Overview of our git repositories
 --------------------------------
 
-On the main organization github page, two repositories contain
-code that compiles to executable programs:
-
-* tools - Tools are programs that we use for testing and debugging.
-
-* daemons - The Daemons repo is used to build the Katzenpost
-  components such as mix client, mix server and PKI server. This
-  repository has vendored dependencies. For development and
-  testing, we generally do not use vendored dependencies.
-
 We do some additional ticket tracking in:
 
 * mixnet_uprising - Repository for tracking open tasks for the
@@ -42,10 +32,11 @@ of our core library:
 
 * core - Core library
 
-* server - Server library
+* server - Mix server
 
-* authority - Mix PKI library
+* authority - Mix PKI, nonvoting and voting Directory Authority servers and clients
 
+* tools - Tools are programs that we use for testing and debugging.
 
 Our core library's wire protocol depends on our fork
 of the golang noise library:
@@ -93,48 +84,48 @@ associated with them and it is likely they have bitrot:
 development workflow
 --------------------
 
-You have two choices:
+0. Acquire a recent version of golang (go1.11 or later) so that
+   you can use the go-modules features for dependency version pinning!
+   Read about go-modules here:
 
-1. You may choose to NOT use go dependency vendoring. In that case you
-can simply check out all our git repos yourself and you can also use
-"go get" to retrieve transitive dependencies. Keep in mind you'll have
-to move aside the vendoring directory in the ``daemons`` repo if you
-intend to build which your local copies of katzenpost dependencies
-instead of what is in the ``vendoring`` directory.
+   * https://github.com/golang/go/wiki/Modules
 
-2. Here's how to use our dependency vendoring system with a development
-workflow:
+1. Setup proper golang environment variables such
+   as GOPATH, GOROOT and GO111MODULE, for example:
+   ::
 
-0. Acquire a recent version of dep: https://github.com/golang/dep
+      export GO111MODULE=on
+      export GOPATH=/home/user/gopath
+      export GOROOT=/home/user/code/go
 
-1. Clone the Katzenpost daemons repository::
+2. Checkout the latest master branch of the component you
+   are interested in building:
+   ::
 
-     mkdir -p $GOPATH/src/github.com/katzenpost
-     git clone https://github.com/katzenpost/daemons.git
+      cd $GOPATH/src/github.com/katzenpost/
+      git clone https://github.com/katzenpost/server.git
+      cd server
+      git checkout master
 
-2. Checkout the latest master branch::
+3. Edit the source code and make it do cool stuff.
 
-     cd $GOPATH/src/github.com/katzenpost/daemons
-     git checkout master
+4. Track a new dependency with go-modules:
+   ::
 
-3. Edit the Gopkg.toml in the daemons repo and
-   replace version lines that look like this::
+      cd $GOPATH/src/github.com/katzenpost/server/
+      go get github.com/foo/bar@v1.2.3
 
-     version = "v0.0.1"
+   Or perhaps you'd like to build with the master branch of such a dependency:
+   ::
 
-   with::
+      cd $GOPATH/src/github.com/katzenpost/server/
+      go get github.com/foo/bar@master
 
-     branch = "master"
+5. Build the binary.
+   ::
 
-4. Fetch the Katzenpost vendored dependencies::
-
-     dep ensure
-
-5. Build the binaries::
-
-     (cd authority/nonvoting; go build)
-     (cd server; go generate; go build)
-     (cd mailproxy; go build)
+      cd $GOPATH/src/github.com/katzenpost/server/cmd/server
+      go build
 
 
 client and server internals
@@ -149,7 +140,7 @@ go routines for example.
 the Worker type
 ```````````````
 
-Katzenpost is NOT crash-only software. Everything has a proper
+Katzenpost is NOT crash-only software! Everything has a proper
 shutdown code path unlike many golang examples on the
 Internet. Struct types which act as worker goroutines MUST be a
 composite struct type with the Worker type which is defined in our
@@ -286,13 +277,10 @@ track down a problem that would otherwise be very difficult to detect.
 Exercising Katzenpost with Kimchi
 ---------------------------------
 
+* https://github.com/katzenpost/kimchi.git
+
 Kimchi is NOT a replacement for writing unit tests!
 All new code submitions MUST have unit tests.
-
-Our tools repository contains Kimchi, our integration test tool
-for Katzenpost mix clients, servers and PKI Directory Authority:
-
-* https://github.com/katzenpost/tools/tree/master/kimchi
 
 Kimchi does not actually perform any tests per se. However it can be
 used to exercise your code in order to determine if it works
