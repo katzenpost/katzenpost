@@ -23,7 +23,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 ===============
 
    Mixnets are designed with the assumption that a Public Key
-   Infraestructure (PKI) exists and it gives each client the same view of
+   Infrastructure (PKI) exists and it gives each client the same view of
    the network. This specification is inspired by the Tor and Mixminion
    Directory Authority systems [MIXMINIONDIRAUTH]_ [TORDIRAUTH]_, whose
    main features are precisely what we need for our PKI. These are
@@ -348,7 +348,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    Each authority MUST include its commit value for the
    shared random computation in this phase along with its signed vote.
    This computation is derived from the Tor Shared Random Subsystem,
-   [TORSRV].
+   [TORSRV]_.
 
 3.2.3 The vote_status Command
 
@@ -401,7 +401,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    the reveal period of the PKI schedule.
 
    The payload field contains the signed and serialized reveal value.  The
-   public_key field contains the public identity key o fthe sending Authority
+   public_key field contains the public identity key of the sending Authority
    which the receiving Authority can use to verify the signature of the
    payload. The epoch_number field is used by the receiving party to quickly
    check the epoch for the reveal before deserializing the payload.
@@ -422,7 +422,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 
    The epoch_number field of the reveal struct is compared with the epoch
    that is currently being voted on. reveal_too_early and reveal_too_late
-   are replied back to the autohrity to report their reveal was not
+   are replied back to the authority to report their reveal was not
    accepted. The status code reveal_not_authorized is used if the
    Authority is rejected. The reveal_already_received is used to
    report that a valid reveal command was already received for this
@@ -481,7 +481,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
          a seed to a deterministic random number generator that determines the
          order that new mixes are placed into the topology.
 
-3.4 Signature Collection
+3.5 Signature Collection
 ------------------------
 
    Each Authority exchanges their newly generated consensus files with
@@ -497,7 +497,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    // TODO: consider exchanging peers votes amongst authorities (or hashes thereof) to
    // ensure that an authority has distributed one and only unique vote amongst its peers.
 
-3.5 Publication
+3.6 Publication
 ---------------
 
    If the consensus is signed by a majority of members of the voting
@@ -554,7 +554,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    * MixKeys
 
    The map in the field called "MixKeys" should reflect the scheduled
-   downtown for one or more epochs by not have those epochs as keys in
+   downtime for one or more epochs by not have those epochs as keys in
    the map.
 
 4.2 Directory Format
@@ -579,7 +579,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 4.3 Shared Random Value structure
 ---------------------------------
 
-Katzenpost's Shared Random Value computation is inspired by Tor's Shared Random Subsystem [TORSRV].
+Katzenpost's Shared Random Value computation is inspired by Tor's Shared Random Subsystem [TORSRV]_.
 
 Each voting round a commit value is included in the votes sent to other authorities. These are produced as follows:
    H = SHA3-256
