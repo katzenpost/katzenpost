@@ -489,15 +489,15 @@ of decreasing importance, are:
 5.2 Mixing strategy
 -------------------
 
-As a mixing technique is used the Poisson mix strategy [LOOPIX]_
-[KESDOGAN98]_, which Requires that a packet at each hop in the route
-is delayed be some amount of time, randomly selected by the sender
-from an exponential distribution.  This strategy allows to prevent
-the timing correlation if the incoming and outgoing traffic from
-each node. Additionally, the parameters of the distribution used
-for generating the delay can be tuned up and down depending on the
-amount Of the traffic in the network and the application for which
-the system is deployed.
+As a mixing technique the Poisson mix strategy [LOOPIX]_
+[KESDOGAN98]_ is used, which REQUIRES that a packet at each hop in
+the route is delayed by some amount of time, randomly selected by
+the sender from an exponential distribution. This strategy allows
+to prevent the timing correlation of the incoming and outgoing
+traffic from each node. Additionally, the parameters of the
+distribution used for generating the delay can be tuned up and down
+depending on the amount of traffic in the network and the application
+for which the system is deployed.
 
 6. Security Considerations
 ==========================
