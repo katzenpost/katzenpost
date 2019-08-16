@@ -93,7 +93,7 @@ type Debug struct {
 
 	// PollingInterval is the interval in seconds that will be used to
 	// poll the receive queue.  By default this is 30 seconds.  Reducing
-	// the value too far WILL result in uneccesary Provider load, and
+	// the value too far WILL result in unnecessary Provider load, and
 	// increasing the value too far WILL adversely affect large message
 	// transmit performance.
 	PollingInterval int
@@ -310,10 +310,9 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 	return c.upstreamProxy
 }
 
-// FixupAndValidate applies defaults to config entries and validates the
-// supplied configuration.  Most people should call one of the Load variants
-// instead.
-func (c *Config) FixupAndValidate() error {
+// FixupAndMinimallyValidate applies defaults to config entries and validates the
+// all but the Account and Registration configuration sections.
+func (c *Config) FixupAndMinimallyValidate() error {
 	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
@@ -349,6 +348,26 @@ func (c *Config) FixupAndValidate() error {
 		return fmt.Errorf("config: Authority configuration is invalid")
 	}
 
+	// Panda is optional
+	if c.Panda != nil {
+		err := c.Panda.validate()
+		if err != nil {
+			return fmt.Errorf("config: Panda config is invalid: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// FixupAndValidate applies defaults to config entries and validates the
+// supplied configuration.  Most people should call one of the Load variants
+// instead.
+func (c *Config) FixupAndValidate() error {
+	err := c.FixupAndMinimallyValidate()
+	if err != nil {
+		return err
+	}
+
 	// Account
 	if err := c.Account.fixup(c); err != nil {
 		return fmt.Errorf("config: Account is invalid (User): %v", err)
@@ -359,14 +378,6 @@ func (c *Config) FixupAndValidate() error {
 	}
 	if err := c.Account.validate(c); err != nil {
 		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
-	}
-
-	// Panda is optional
-	if c.Panda != nil {
-		err = c.Panda.validate()
-		if err != nil {
-			return fmt.Errorf("config: Panda config is invalid: %v", err)
-		}
 	}
 
 	// Registration
