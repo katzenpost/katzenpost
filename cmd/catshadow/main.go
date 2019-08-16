@@ -172,15 +172,29 @@ func main() {
 		fmt.Println("catshadow client successfully created")
 		shellLog = c.GetLogger("catshadow_shell")
 	} else {
+
+		// Load previous state to setup our current client state.
+		backendLog, err := catshadowCfg.InitLogBackend()
+		if err != nil {
+			panic(err)
+		}
+		shellLog = backendLog.GetLogger("catshadow_shell")
+		stateWorker, state, err = catshadow.LoadStateWriter(backendLog.GetLogger("state_worker"), *stateFile, passphrase)
+		if err != nil {
+			panic(err)
+		}
+		cfg.Account = &clientConfig.Account{
+			User:     state.User,
+			Provider: state.Provider,
+		}
+
+		// Run a Client.
 		c, err := client.New(cfg)
 		if err != nil {
 			panic(err)
 		}
-		shellLog = c.GetLogger("catshadow_shell")
-		stateWorker, state, err = catshadow.LoadStateWriter(c.GetLogger("catshadow_state"), *stateFile, passphrase)
-		if err != nil {
-			panic(err)
-		}
+
+		// Make a catshadow Client.
 		catShadowClient, err = catshadow.New(c.GetBackendLog(), c, stateWorker, state)
 		if err != nil {
 			panic(err)

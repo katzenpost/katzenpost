@@ -9,7 +9,7 @@ require (
 	github.com/flynn-archive/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/hpcloud/tail v1.0.0 // indirect
 	github.com/katzenpost/channels v0.0.1
-	github.com/katzenpost/client v0.0.3-0.20190816105642-4049044b3d80
+	github.com/katzenpost/client v0.0.3-0.20190816132549-7c37d2825479
 	github.com/katzenpost/core v0.0.8-0.20190730121401-926fce1cae50
 	github.com/katzenpost/doubleratchet v0.0.0
 	github.com/katzenpost/kimchi v0.0.0-20190610145932-8ea583be2ba2 // indirect
