@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/mail"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/core/pki"
 	registration "github.com/katzenpost/registration_client"
 	"golang.org/x/net/idna"
+	"golang.org/x/text/secure/precis"
 )
 
 const (
@@ -199,6 +201,9 @@ func (p *Panda) validate() error {
 
 // Account is a provider account configuration.
 type Account struct {
+	// User is the account user name.
+	User string
+
 	// Provider is the provider identifier used by this account.
 	Provider string
 
@@ -208,11 +213,31 @@ type Account struct {
 
 func (accCfg *Account) fixup(cfg *Config) error {
 	var err error
+	if !cfg.Debug.CaseSensitiveUserIdentifiers {
+		accCfg.User, err = precis.UsernameCaseMapped.String(accCfg.User)
+	} else {
+		accCfg.User, err = precis.UsernameCasePreserved.String(accCfg.User)
+	}
+	if err != nil {
+		return err
+	}
+
 	accCfg.Provider, err = idna.Lookup.ToASCII(accCfg.Provider)
 	return err
 }
 
+func (accCfg *Account) toEmailAddr() (string, error) {
+	addr := fmt.Sprintf("%s@%s", accCfg.User, accCfg.Provider)
+	if _, err := mail.ParseAddress(addr); err != nil {
+		return "", fmt.Errorf("User/Provider does not form a valid e-mail address: %v", err)
+	}
+	return addr, nil
+}
+
 func (accCfg *Account) validate(cfg *Config) error {
+	if accCfg.User == "" {
+		return fmt.Errorf("User is missing")
+	}
 	if accCfg.Provider == "" {
 		return fmt.Errorf("Provider is missing")
 	}
@@ -326,15 +351,19 @@ func (c *Config) FixupAndValidate() error {
 
 	// Account
 	if err := c.Account.fixup(c); err != nil {
-		return fmt.Errorf("config: Account is invalid: %v", err)
+		return fmt.Errorf("config: Account is invalid (User): %v", err)
+	}
+	addr, err := c.Account.toEmailAddr()
+	if err != nil {
+		return fmt.Errorf("config: Account is invalid (Identifier): %v", err)
 	}
 	if err := c.Account.validate(c); err != nil {
-		return fmt.Errorf("config: Account is invalid: %v", err)
+		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
 	}
 
 	// Panda is optional
 	if c.Panda != nil {
-		err := c.Panda.validate()
+		err = c.Panda.validate()
 		if err != nil {
 			return fmt.Errorf("config: Panda config is invalid: %v", err)
 		}
@@ -344,7 +373,7 @@ func (c *Config) FixupAndValidate() error {
 	if c.Registration == nil {
 		return errors.New("config: error, Registration config section is non-optional")
 	} else {
-		err := c.Registration.validate()
+		err = c.Registration.validate()
 		if err != nil {
 			return err
 		}
