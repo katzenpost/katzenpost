@@ -53,6 +53,10 @@ type Client struct {
 	session *session.Session
 }
 
+func (c *Client) Provider() string {
+	return c.cfg.Account.Provider
+}
+
 func (c *Client) initLogging() error {
 	f := c.cfg.Logging.File
 	if !c.cfg.Logging.Disable && c.cfg.Logging.File != "" {
