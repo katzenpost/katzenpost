@@ -333,7 +333,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 	case c.retrSeq:
 		c.log.Debugf("RetrieveMessage: %d", cmd.Sequence)
 	case c.retrSeq + 1:
-		c.log.Debugf("RetriveMessage: %d (Popping head)", cmd.Sequence)
+		c.log.Debugf("RetrieveMessage: %d (Popping head)", cmd.Sequence)
 		c.retrSeq++ // Advance the sequence number.
 		advance = true
 	default:
