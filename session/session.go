@@ -78,7 +78,7 @@ type Session struct {
 
 // New establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, user string, cfg *config.Config, linkKey *ecdh.PrivateKey) (*Session, error) {
+func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config, linkKey *ecdh.PrivateKey) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups
@@ -96,7 +96,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, us
 	}
 	pkiCacheClient := pkiclient.New(pkiClient2)
 
-	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_c", user, cfg.Account.Provider))
+	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_c", cfg.Account.User, cfg.Account.Provider))
 
 	s := &Session{
 		cfg:           cfg,
@@ -115,7 +115,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, us
 
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
-		User:                user,
+		User:                cfg.Account.User,
 		Provider:            cfg.Account.Provider,
 		ProviderKeyPin:      cfg.Account.ProviderKeyPin,
 		LinkKey:             s.linkKey,
