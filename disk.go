@@ -50,6 +50,7 @@ type State struct {
 	SpoolReaderChan *channels.UnreliableSpoolReaderChannel
 	Contacts        []*Contact
 	User            string
+	Provider        string
 	LinkKey         *ecdh.PrivateKey
 	Inbox           []*Message
 }

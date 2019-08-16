@@ -96,6 +96,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		Contacts: make([]*Contact, 0),
 		Inbox:    make([]*Message, 0),
 		User:     user,
+		Provider: mixnetClient.Provider(),
 		LinkKey:  linkKey,
 	}
 	client, err := New(mixnetClient.GetBackendLog(), mixnetClient, stateWorker, state)
@@ -299,6 +300,7 @@ func (c *Client) marshal() ([]byte, error) {
 		Contacts:        contacts,
 		LinkKey:         c.linkKey,
 		User:            c.user,
+		Provider:        c.client.Provider(),
 		Inbox:           c.GetInbox(),
 	}
 	var serialized []byte
