@@ -96,7 +96,7 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	}
 	pkiCacheClient := pkiclient.New(pkiClient2)
 
-	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_c", cfg.Account.User, cfg.Account.Provider))
+	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", cfg.Account.User, cfg.Account.Provider))
 
 	s := &Session{
 		cfg:           cfg,
