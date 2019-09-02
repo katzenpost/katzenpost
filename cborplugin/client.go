@@ -141,6 +141,7 @@ func (c *Client) logPluginStderr(stderr io.ReadCloser) {
 	if err != nil {
 		c.log.Errorf("Failed to proxy cborplugin stderr to DEBUG log: %s", err)
 	}
+	c.Halt()
 }
 
 func (c *Client) launch(command string, args []string) error {
@@ -179,6 +180,7 @@ func (c *Client) launch(command string, args []string) error {
 	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", http.NoBody)
 	if err != nil {
 		c.log.Debugf("post failure: %s", err)
+		c.Halt()
 		return err
 	}
 	responseParams := make(Parameters)
