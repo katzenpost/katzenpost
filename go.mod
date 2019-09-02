@@ -12,7 +12,7 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/jackc/pgx v3.5.0+incompatible
 	github.com/katzenpost/authority v0.0.8
-	github.com/katzenpost/core v0.0.8-0.20190730121401-926fce1cae50
+	github.com/katzenpost/core v0.0.8-0.20190902180958-06e47a7c6c9e
 	github.com/katzenpost/noise v0.0.0-20190323135632-a6bec72d870a
 	github.com/pkg/errors v0.8.1 // indirect
 	github.com/stretchr/testify v1.3.0

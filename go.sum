@@ -32,6 +32,8 @@ github.com/katzenpost/core v0.0.8-0.20190724071104-2cbc6b73ccb0 h1:sWzRxGlPSMkJ0
 github.com/katzenpost/core v0.0.8-0.20190724071104-2cbc6b73ccb0/go.mod h1:UXMLmMXlBHrhMXhWTy4DvCXqwTRLOh4DP/mR1Cm1sR8=
 github.com/katzenpost/core v0.0.8-0.20190730121401-926fce1cae50 h1:Zrp+qrhOsD8S9QQv0G3F1wZYny/+173ZbMPTFuFvm/0=
 github.com/katzenpost/core v0.0.8-0.20190730121401-926fce1cae50/go.mod h1:xevA23RqD2cZRHyqSkOWFrJFPi/LP2N4gZHrL2gzay8=
+github.com/katzenpost/core v0.0.8-0.20190902180958-06e47a7c6c9e h1:Rsnbotr0nLySeRWP+ptPlFYuFUGO6zT5wjOr5j86Cc4=
+github.com/katzenpost/core v0.0.8-0.20190902180958-06e47a7c6c9e/go.mod h1:xevA23RqD2cZRHyqSkOWFrJFPi/LP2N4gZHrL2gzay8=
 github.com/katzenpost/noise v0.0.0-20190323135632-a6bec72d870a h1:QCmP/UbhJ5Y4rZhZn9yt9T6i2iMHKbCve62OaTQ5bzg=
 github.com/katzenpost/noise v0.0.0-20190323135632-a6bec72d870a/go.mod h1:1ekEhTkjp8tkres5FF4Obl+L/fw6DcmvDCLp4JJgyB4=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
