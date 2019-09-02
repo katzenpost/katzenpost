@@ -12,7 +12,7 @@
   Addresses = [ "172.28.1.4:29484"]
 
   # DataDir is the absolute path to the server's state files.
-  DataDir = "/conf/mixnets/test_mixnet/provider2"
+  DataDir = "/conf/provider_data"
 
   # IsProvider specifies if the server is a provider (vs a mix).
   IsProvider = true
@@ -42,7 +42,7 @@
   Disable = false
 
   # File specifies the log file, if omitted stdout will be used.
-  File = "/conf/mixnets/test_mixnet/provider2/katzenpost.log"
+  File = "/conf/provider_data/katzenpost.log"
 
   # Level specifies the log level out of `ERROR`, `WARNING`, `NOTICE`,
   # `INFO` and `DEBUG`.
@@ -60,7 +60,7 @@
 [Provider]
 
   EnableUserRegistrationHTTP = true
-  UserRegistrationHTTPAddresses = ["172.28.1.4:8080"]  
+  UserRegistrationHTTPAddresses = ["172.28.1.4:8080"]
 
   [[Provider.Kaetzchen]]
     Capability = "loop"
@@ -78,4 +78,4 @@
 
   # Path specifies the path to the management interface socket.  If left
   # empty it will use `management_sock` under the DataDir.
-  Path = "/conf/mixnets/test_mixnet/provider2/management_sock"
+  Path = "/conf/provider_data/management_sock"
