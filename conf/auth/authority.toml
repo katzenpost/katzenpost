@@ -80,16 +80,15 @@
 #
 
 [[Mixes]]
-  # mix0
-  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
-
-
-[[Mixes]]
   # mix1
-  IdentityKey = "1x8tq04hY+i83o9Yn2nrfTkFj4jXIMWCWilR7fgrWyM="
+  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
 
 [[Mixes]]
   # mix2
+  IdentityKey = "1x8tq04hY+i83o9Yn2nrfTkFj4jXIMWCWilR7fgrWyM="
+
+[[Mixes]]
+  # mix3
   IdentityKey = "La2FnsbKoU8dzQhfN4zkxSYn6T7LRWmFn0JgtlEklQw="
 
 #
