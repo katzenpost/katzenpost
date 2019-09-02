@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -157,13 +158,22 @@ func main() {
 	// Log to a file.
 	logFile := path.Join(logDir, fmt.Sprintf("memspool.%d.log", os.Getpid()))
 	f, err := os.Create(logFile)
+	if err != nil {
+		fmt.Println("Invalid logfile specified.")
+		os.Exit(1)
+	}
+
 	logBackend := setupLoggerBackend(level, f)
 	log.SetBackend(logBackend)
 
 	httpServer := http.Server{}
-	socketFile := fmt.Sprintf("/tmp/%d.memspool.socket", os.Getpid())
+	socketFile, err := ioutil.TempFile("", "memspool.socket")
+	if err != nil {
+		fmt.Println("Failed to create tmp socket file.")
+		os.Exit(1)
+	}
 
-	unixListener, err := net.Listen("unix", socketFile)
+	unixListener, err := net.Listen("unix", socketFile.Name())
 	if err != nil {
 		panic(err)
 	}
@@ -178,10 +188,10 @@ func main() {
 	http.HandleFunc("/request", _requestHandler)
 	http.HandleFunc("/parameters", parametersHandler)
 
-	fmt.Printf("%s\n", socketFile)
+	fmt.Printf("%s\n", socketFile.Name())
 	log.Debug("memspool server started.")
 
 	httpServer.Serve(unixListener)
-	os.Remove(socketFile)
+	os.Remove(socketFile.Name())
 	spoolMap.Shutdown()
 }
