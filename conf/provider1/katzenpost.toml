@@ -58,7 +58,8 @@
 #
 
 [Provider]
-  [[Provider.Kaetzchen]]
+EnableEphemeralClients = true
+[[Provider.Kaetzchen]]
     Disable = false
     Capability = "loop"
     Endpoint = "+loop"
