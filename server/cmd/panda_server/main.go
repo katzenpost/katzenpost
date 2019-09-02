@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/katzenpost/panda/server"
@@ -163,8 +165,11 @@ func main() {
 	}
 
 	server := http.Server{}
-	socketFile := fmt.Sprintf("/tmp/%d.panda.socket", os.Getpid())
-
+	tmpDir, err := ioutil.TempDir("", "panda_server")
+	if err != nil {
+		panic(err)
+	}
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.panda.socket", os.Getpid()))
 	unixListener, err := net.Listen("unix", socketFile)
 	if err != nil {
 		panic(err)
@@ -174,6 +179,6 @@ func main() {
 	http.HandleFunc("/parameters", parametersHandler)
 
 	fmt.Printf("%s\n", socketFile)
+	defer os.Remove(socketFile)
 	server.Serve(unixListener)
-	os.Remove(socketFile)
 }
