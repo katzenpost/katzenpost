@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/katzenpost/memspool/common"
 	"github.com/katzenpost/memspool/server"
@@ -167,13 +168,13 @@ func main() {
 	log.SetBackend(logBackend)
 
 	httpServer := http.Server{}
-	socketFile, err := ioutil.TempFile("", "memspool.socket")
+	tmpDir, err := ioutil.TempDir("", "memspool_server")
 	if err != nil {
-		fmt.Println("Failed to create tmp socket file.")
-		os.Exit(1)
+		panic(err)
 	}
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.memspool.socket", os.Getpid()))
 
-	unixListener, err := net.Listen("unix", socketFile.Name())
+	unixListener, err := net.Listen("unix", socketFile)
 	if err != nil {
 		panic(err)
 	}
@@ -188,10 +189,10 @@ func main() {
 	http.HandleFunc("/request", _requestHandler)
 	http.HandleFunc("/parameters", parametersHandler)
 
-	fmt.Printf("%s\n", socketFile.Name())
+	fmt.Printf("%s\n", socketFile)
 	log.Debug("memspool server started.")
 
 	httpServer.Serve(unixListener)
-	os.Remove(socketFile.Name())
+	os.Remove(socketFile)
 	spoolMap.Shutdown()
 }
