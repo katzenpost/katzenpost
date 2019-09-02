@@ -105,7 +105,7 @@ func New(command string, logBackend *log.Backend) *Client {
 }
 
 // Start execs the plugin and starts a worker thread to listen
-// on the halt chan sends a HUP to the plugin if the shutdown
+// on the halt chan sends a TERM signal to the plugin if the shutdown
 // even is dispatched.
 func (c *Client) Start(command string, args []string) error {
 	err := c.launch(command, args)
@@ -118,7 +118,7 @@ func (c *Client) Start(command string, args []string) error {
 
 func (c *Client) worker() {
 	<-c.HaltCh()
-	c.cmd.Process.Signal(syscall.SIGHUP)
+	c.cmd.Process.Signal(syscall.SIGTERM)
 	err := c.cmd.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
