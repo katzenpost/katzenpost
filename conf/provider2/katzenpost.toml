@@ -59,9 +59,7 @@
 
 [Provider]
 
-  EnableUserRegistrationHTTP = true
-  UserRegistrationHTTPAddresses = ["172.28.1.4:8080"]
-
+EnableEphemeralClients = true
   [[Provider.Kaetzchen]]
     Capability = "loop"
     Endpoint = "+loop"
