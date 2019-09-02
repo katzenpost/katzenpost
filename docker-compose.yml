@@ -23,7 +23,6 @@ services:
     command: /go/bin/server -f /conf/katzenpost.toml
     ports:
       - "127.0.0.1:29484:29484"
-      - "127.0.0.1:8060:8080"
     depends_on:
       - auth
       - provider1
