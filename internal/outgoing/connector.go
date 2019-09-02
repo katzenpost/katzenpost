@@ -66,6 +66,16 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 	co.RLock()
 	defer co.RUnlock()
 
+	if pkt == nil {
+		co.log.Debug("Dropping packet: packet is nil, wtf")
+		pkt.Dispose()
+		return
+	}
+	if pkt.NextNodeHop == nil {
+		co.log.Debug("Dropping packet: packet NextNodeHop is nil, wtf")
+		pkt.Dispose()
+		return
+	}
 	c, ok := co.conns[pkt.NextNodeHop.ID]
 	if !ok {
 		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
