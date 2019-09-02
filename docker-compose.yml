@@ -31,6 +31,45 @@ services:
       testing_net:
         ipv4_address: 172.28.1.4
 
+  mix1:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/mix1:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    depends_on:
+      - auth
+      - provider1
+    networks:
+      testing_net:
+        ipv4_address: 172.28.1.5
+
+  mix2:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/mix2:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    depends_on:
+      - auth
+      - provider1
+    networks:
+      testing_net:
+        ipv4_address: 172.28.1.6
+
+  mix3:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/mix3:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    depends_on:
+      - auth
+      - provider1
+    networks:
+      testing_net:
+        ipv4_address: 172.28.1.7
+
   auth:
     restart: unless-stopped
     image: katzenpost/authority
