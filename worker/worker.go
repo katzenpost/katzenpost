@@ -22,7 +22,8 @@ import "sync"
 // Worker is a set of managed background go routines.
 type Worker struct {
 	sync.WaitGroup
-	initOnce sync.Once
+	initOnce  sync.Once
+	closeOnce sync.Once
 
 	haltCh chan interface{}
 }
@@ -43,7 +44,9 @@ func (w *Worker) Go(fn func()) {
 // till all go routines have returned.
 func (w *Worker) Halt() {
 	w.initOnce.Do(w.init)
-	close(w.haltCh)
+	w.closeOnce.Do(func() {
+		close(w.haltCh)
+	})
 	w.Wait()
 }
 
