@@ -12,7 +12,7 @@
   Addresses = [ "172.28.1.3:59484"]
 
   # DataDir is the absolute path to the server's state files.
-  DataDir = "/conf/mixnets/test_mixnet/provider1"
+  DataDir = "/conf/provider_data"
 
   # IsProvider specifies if the server is a provider (vs a mix).
   IsProvider = true
@@ -42,7 +42,7 @@
   Disable = false
 
   # File specifies the log file, if omitted stdout will be used.
-  File = "/conf/mixnets/test_mixnet/provider1/katzenpost.log"
+  File = "/conf/provider_data/katzenpost.log"
 
   # Level specifies the log level out of `ERROR`, `WARNING`, `NOTICE`,
   # `INFO` and `DEBUG`.
@@ -70,9 +70,9 @@
      Command = "/go/bin/panda_server"
      MaxConcurrency = 1
      [Provider.CBORPluginKaetzchen.Config]
-      log_dir = "/conf/mixnets/test_mixnet/service_logs"
+      log_dir = "/conf/service_logs"
       log_level = "DEBUG"
-      fileStore = "/conf/mixnets/test_mixnet/service_logs/panda.storage"
+      fileStore = "/conf/service_data/panda.storage"
 
   [[Provider.CBORPluginKaetzchen]]
     Disable = false
@@ -81,8 +81,8 @@
     Command = "/go/bin/memspool"
     MaxConcurrency = 1
     [Provider.CBORPluginKaetzchen.Config]
-      data_store = "/conf/mixnets/test_mixnet/service_logs/memspool.storage"
-      log_dir = "/conf/mixnets/test_mixnet/service_logs"
+      data_store = "/conf/service_data/memspool.storage"
+      log_dir = "/conf/service_logs"
 
 #
 # The Management section specifies the management interface configuration.

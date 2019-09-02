@@ -11,7 +11,7 @@
   Addresses = [ "172.28.1.2:29483" ]
 
   # DataDir is the absolute path to the server's state files.
-  DataDir = "/conf/mixnets/test_mixnet/auth"
+  DataDir = "/conf/authority_data"
 
 #
 # The Logging section controls the logging.
@@ -23,7 +23,7 @@
   Disable = false
 
   # File specifies the log file, if omitted stdout will be used.
-  File = "/conf/mixnets/test_mixnet/auth/katzenpost.log"
+  File = "/conf/authority_data/katzenpost.log"
 
   # Level specifies the log level out of `ERROR`, `WARNING`, `NOTICE`,
   # `INFO` and `DEBUG`.
