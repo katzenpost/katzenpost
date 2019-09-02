@@ -173,7 +173,7 @@ func (k *CBORPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]b
 
 func (k *CBORPluginWorker) launch(command string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.New(k.log)
+	plugin := cborplugin.New(command, k.glue.LogBackend())
 	err := plugin.Start(command, args)
 	return plugin, err
 }

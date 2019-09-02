@@ -28,11 +28,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"os/exec"
 	"syscall"
 
+	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
@@ -84,6 +86,7 @@ type ServicePlugin interface {
 type Client struct {
 	worker.Worker
 
+	logBackend *log.Backend
 	log        *logging.Logger
 	httpClient *http.Client
 	cmd        *exec.Cmd
@@ -93,15 +96,16 @@ type Client struct {
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func New(log *logging.Logger) *Client {
+func New(command string, logBackend *log.Backend) *Client {
 	return &Client{
-		log:        log,
+		logBackend: logBackend,
+		log:        logBackend.GetLogger(command),
 		httpClient: nil,
 	}
 }
 
 // Start execs the plugin and starts a worker thread to listen
-// on the halt chan sends a HUP to the plugin if the shutdown
+// on the halt chan sends a TERM signal to the plugin if the shutdown
 // even is dispatched.
 func (c *Client) Start(command string, args []string) error {
 	err := c.launch(command, args)
@@ -114,7 +118,7 @@ func (c *Client) Start(command string, args []string) error {
 
 func (c *Client) worker() {
 	<-c.HaltCh()
-	c.cmd.Process.Signal(syscall.SIGHUP)
+	c.cmd.Process.Signal(syscall.SIGTERM)
 	err := c.cmd.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
@@ -131,10 +135,24 @@ func (c *Client) setupHTTPClient(socketPath string) {
 	}
 }
 
+func (c *Client) logPluginStderr(stderr io.ReadCloser) {
+	logWriter := c.logBackend.GetLogWriter(c.cmd.Path, "DEBUG")
+	_, err := io.Copy(logWriter, stderr)
+	if err != nil {
+		c.log.Errorf("Failed to proxy cborplugin stderr to DEBUG log: %s", err)
+	}
+	c.Halt()
+}
+
 func (c *Client) launch(command string, args []string) error {
 	// exec plugin
 	c.cmd = exec.Command(command, args...)
 	stdout, err := c.cmd.StdoutPipe()
+	if err != nil {
+		c.log.Debugf("pipe failure: %s", err)
+		return err
+	}
+	stderr, err := c.cmd.StderrPipe()
 	if err != nil {
 		c.log.Debugf("pipe failure: %s", err)
 		return err
@@ -144,6 +162,11 @@ func (c *Client) launch(command string, args []string) error {
 		c.log.Debugf("failed to exec: %s", err)
 		return err
 	}
+
+	// proxy stderr to our debug log
+	c.Go(func() {
+		c.logPluginStderr(stderr)
+	})
 
 	// read and decode plugin stdout
 	stdoutScanner := bufio.NewScanner(stdout)
@@ -157,6 +180,7 @@ func (c *Client) launch(command string, args []string) error {
 	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", http.NoBody)
 	if err != nil {
 		c.log.Debugf("post failure: %s", err)
+		c.Halt()
 		return err
 	}
 	responseParams := make(Parameters)
