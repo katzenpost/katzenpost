@@ -1,6 +1,9 @@
 package main
 
 import (
+	"time"
+
+	humanize "github.com/dustin/go-humanize"
 	"github.com/therecipe/qt/core"
 )
 
@@ -8,9 +11,10 @@ import (
 type Message struct {
 	core.QObject
 
-	Nickname string
-	Avatar   string
-	Message  string
+	Nickname  string
+	Avatar    string
+	Message   string
+	Timestamp time.Time
 }
 
 // ConversationModel holds a collection of messages
@@ -30,9 +34,10 @@ type ConversationModel struct {
 
 func (m *ConversationModel) init() {
 	m.SetRoles(map[int]*core.QByteArray{
-		RoleNickname: core.NewQByteArray2("nickname", -1),
-		RoleAvatar:   core.NewQByteArray2("avatar", -1),
-		RoleMessage:  core.NewQByteArray2("message", -1),
+		RoleNickname:  core.NewQByteArray2("nickname", -1),
+		RoleAvatar:    core.NewQByteArray2("avatar", -1),
+		RoleMessage:   core.NewQByteArray2("message", -1),
+		RoleTimestamp: core.NewQByteArray2("timestamp", -1),
 	})
 
 	m.ConnectData(m.data)
@@ -71,6 +76,10 @@ func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVaria
 	case RoleMessage:
 		{
 			return core.NewQVariant15(p.Message)
+		}
+	case RoleTimestamp:
+		{
+			return core.NewQVariant15(humanize.Time(p.Timestamp))
 		}
 
 	default:

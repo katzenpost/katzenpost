@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 // loadAccount loads the meta-data associated with an account
 func loadAccount() {
 	accountBridge.SetNickname("muesli")
@@ -31,6 +33,7 @@ func loadConversation(contact string) {
 		message.Nickname = contact
 		message.Avatar = "https://picsum.photos/129/129"
 		message.Message = "Hi there, this is a test!"
+		message.Timestamp = time.Now().Add(-8 * time.Hour)
 		conversationModel.AddMessage(message)
 	}
 	{
@@ -38,6 +41,7 @@ func loadConversation(contact string) {
 		message.Nickname = accountBridge.Nickname()
 		message.Avatar = "https://picsum.photos/130/130"
 		message.Message = "This is a reply!"
+		message.Timestamp = time.Now()
 		conversationModel.AddMessage(message)
 	}
 }

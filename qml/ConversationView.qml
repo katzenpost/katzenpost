@@ -51,7 +51,7 @@ ColumnLayout {
 
             Label {
                 id: timestampText
-                text: Qt.formatDateTime(model.timestamp, "d MMM hh:mm")
+                text: model.timestamp
                 color: "lightgrey"
                 anchors.right: sentByMe ? parent.right : undefined
             }
