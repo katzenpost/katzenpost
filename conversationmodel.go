@@ -10,7 +10,7 @@ type Message struct {
 
 	Nickname string
 	Avatar   string
-	Message string
+	Message  string
 }
 
 // ConversationModel holds a collection of messages
@@ -32,7 +32,7 @@ func (m *ConversationModel) init() {
 	m.SetRoles(map[int]*core.QByteArray{
 		RoleNickname: core.NewQByteArray2("nickname", -1),
 		RoleAvatar:   core.NewQByteArray2("avatar", -1),
-		RoleMessage:   core.NewQByteArray2("message", -1),
+		RoleMessage:  core.NewQByteArray2("message", -1),
 	})
 
 	m.ConnectData(m.data)
