@@ -189,8 +189,7 @@ ApplicationWindow {
                         property int sid: 1
                     }
                 }
-                ScrollIndicator.vertical: ScrollIndicator {
-                }
+                ScrollIndicator.vertical: ScrollIndicator {}
             }
         }
     }
