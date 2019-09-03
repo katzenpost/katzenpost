@@ -27,6 +27,7 @@ func loadContactList(contactListModel *ContactListModel) {
 // loadConversation loads the conversation with a contact
 func loadConversation(contact string) {
 	conversationModel.Clear()
+	accountBridge.SetRecipient(contact)
 
 	{
 		var message = NewMessage(nil)

@@ -79,7 +79,7 @@ ColumnLayout {
                 text: qsTr("Send")
                 enabled: messageField.length > 0
                 onClicked: {
-                    accountBridge.sendMessage("other", messageField.text);
+                    accountBridge.sendMessage(accountBridge.recipient, messageField.text);
                     messageField.text = "";
                 }
             }
