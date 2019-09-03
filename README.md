@@ -38,3 +38,5 @@ Follow the build instructions above, but instead of the last command, run:
 #### Run it
 
     ./deploy/linux/catchat
+
+![catchat Screenshot](/assets/screenshot.png)
