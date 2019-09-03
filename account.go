@@ -16,13 +16,13 @@ func loadAccount() {
 func loadContactList(contactListModel *ContactListModel) {
 	{
 		var contact = NewContact(nil)
-		contact.Nickname = "some user"
+		contact.Nickname = "Alice"
 		contact.Avatar = "https://picsum.photos/128/128"
 		contactListModel.AddContact(contact)
 	}
 	{
 		var contact = NewContact(nil)
-		contact.Nickname = "another user"
+		contact.Nickname = "Bob"
 		contact.Avatar = "https://picsum.photos/129/129"
 		contactListModel.AddContact(contact)
 	}
