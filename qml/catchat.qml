@@ -101,18 +101,6 @@ ApplicationWindow {
         }
 
         ToolButton {
-            id: postButton
-            anchors.right: menuButton.left
-            contentItem: Image {
-                fillMode: Image.Pad
-                horizontalAlignment: Image.AlignHCenter
-                verticalAlignment: Image.AlignVCenter
-                source: "images/post.png"
-            }
-            onClicked: {
-            }
-        }
-        ToolButton {
             anchors.right: parent.right
             id: menuButton
             Layout.alignment: Qt.AlignRight
