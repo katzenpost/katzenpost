@@ -2,6 +2,10 @@ package main
 
 import "time"
 
+var (
+	conversations = make(map[string][]*Message)
+)
+
 // loadAccount loads the meta-data associated with an account
 func loadAccount() {
 	accountBridge.SetNickname("muesli")
@@ -29,21 +33,28 @@ func loadConversation(contact string) {
 	conversationModel.Clear()
 	accountBridge.SetRecipient(contact)
 
-	{
-		var message = NewMessage(nil)
-		message.Nickname = contact
-		message.Avatar = "https://picsum.photos/129/129"
-		message.Message = "Hi there, this is a test!"
-		message.Timestamp = time.Now().Add(-8 * time.Hour)
-		conversationModel.AddMessage(message)
+	_, ok := conversations[contact]
+	if !ok {
+		{
+			var message = NewMessage(nil)
+			message.Nickname = contact
+			message.Avatar = "https://picsum.photos/129/129"
+			message.Message = "Hi there, this is a test!"
+			message.Timestamp = time.Now().Add(-8 * time.Hour)
+			conversations[contact] = append(conversations[contact], message)
+		}
+		{
+			var message = NewMessage(nil)
+			message.Nickname = accountBridge.Nickname()
+			message.Avatar = accountBridge.Avatar()
+			message.Message = "This is a reply!"
+			message.Timestamp = time.Now()
+			conversations[contact] = append(conversations[contact], message)
+		}
 	}
-	{
-		var message = NewMessage(nil)
-		message.Nickname = accountBridge.Nickname()
-		message.Avatar = "https://picsum.photos/130/130"
-		message.Message = "This is a reply!"
-		message.Timestamp = time.Now()
-		conversationModel.AddMessage(message)
+
+	for _, msg := range conversations[contact] {
+		conversationModel.AddMessage(msg)
 	}
 }
 
@@ -69,7 +80,9 @@ func sendMessage(recipient string, message string) {
 
 	var m = NewMessage(nil)
 	m.Nickname = accountBridge.Nickname()
-	m.Avatar = "https://picsum.photos/130/130"
+	m.Avatar = accountBridge.Nickname()
 	m.Message = message
+	m.Timestamp = time.Now()
 	conversationModel.AddMessage(m)
+	conversations[recipient] = append(conversations[recipient], m)
 }
