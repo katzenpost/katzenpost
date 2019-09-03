@@ -33,7 +33,7 @@ func loadConversation(contact string) {
 	}
 	{
 		var message = NewMessage(nil)
-		message.Nickname = "me"
+		message.Nickname = accountBridge.Nickname()
 		message.Avatar = "https://picsum.photos/130/130"
 		message.Message = "This is a reply!"
 		conversationModel.AddMessage(message)
@@ -61,7 +61,7 @@ func sendMessage(recipient string, message string) {
 	*/
 
 	var m = NewMessage(nil)
-	m.Nickname = "me"
+	m.Nickname = accountBridge.Nickname()
 	m.Avatar = "https://picsum.photos/130/130"
 	m.Message = message
 	conversationModel.AddMessage(m)
