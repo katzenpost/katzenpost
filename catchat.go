@@ -19,31 +19,6 @@ var (
 	conversationModel = NewConversationModel(nil)
 )
 
-func addContact(contact string, nickname string) bool {
-	var c = NewContact(nil)
-	c.Nickname = nickname
-	c.Avatar = "https://picsum.photos/140/140"
-	contactListModel.AddContact(c)
-
-	return true
-}
-
-func sendMessage(recipient string, message string) {
-	/*
-		err := backend.SendMessage()
-		if err != nil {
-			accountBridge.SetError(err)
-			return
-		}
-	*/
-
-	var m = NewMessage(nil)
-	m.Nickname = "me"
-	m.Avatar = "https://picsum.photos/130/130"
-	m.Message = message
-	conversationModel.AddMessage(m)
-}
-
 // runApp loads and executes the QML UI
 func runApp(config Config) {
 	var theme string
@@ -60,49 +35,11 @@ func runApp(config Config) {
 	}
 
 	app := qml.NewQQmlApplicationEngine(nil)
-	app.RootContext().SetContextProperty("uiBridge", uiBridge)
 	app.RootContext().SetContextProperty("accountBridge", accountBridge)
 	app.RootContext().SetContextProperty("settings", configBridge)
 
 	app.Load(core.NewQUrl3("qrc:/qml/catchat.qml", 0))
 	gui.QGuiApplication_Exec()
-}
-
-func loadAccount() {
-	accountBridge.SetNickname("muesli")
-	accountBridge.SetAvatar("https://picsum.photos/128/128")
-}
-
-func loadContactList(contactListModel *ContactListModel) {
-	{
-		var contact = NewContact(nil)
-		contact.Nickname = "some user"
-		contact.Avatar = "https://picsum.photos/128/128"
-		contactListModel.AddContact(contact)
-	}
-	{
-		var contact = NewContact(nil)
-		contact.Nickname = "another user"
-		contact.Avatar = "https://picsum.photos/129/129"
-		contactListModel.AddContact(contact)
-	}
-}
-
-func loadConversation(contact string) {
-	{
-		var message = NewMessage(nil)
-		message.Nickname = "another user"
-		message.Avatar = "https://picsum.photos/129/129"
-		message.Message = "Hi there, this is a test!"
-		conversationModel.AddMessage(message)
-	}
-	{
-		var message = NewMessage(nil)
-		message.Nickname = "me"
-		message.Avatar = "https://picsum.photos/130/130"
-		message.Message = "This is a reply!"
-		conversationModel.AddMessage(message)
-	}
 }
 
 func main() {

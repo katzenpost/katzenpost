@@ -4,11 +4,6 @@ import (
 	"github.com/therecipe/qt/core"
 )
 
-// UIBridge lets us trigger Go methods from QML
-type UIBridge struct {
-	core.QObject
-}
-
 // AccountBridge makes an account available in QML
 type AccountBridge struct {
 	core.QObject
@@ -17,9 +12,9 @@ type AccountBridge struct {
 	_ string `property:"avatar"`
 	_ string `property:"error"`
 
-	_ func(contact string, nickname string) bool `slot:"addContact"`
-	_ func(contact string)                       `slot:"loadConversation"`
-	_ func(recipient string, message string)     `slot:"sendMessage"`
+	_ func(passphrase string, nickname string) bool `slot:"addContact"`
+	_ func(contact string)                          `slot:"loadConversation"`
+	_ func(recipient string, message string)        `slot:"sendMessage"`
 
 	_ *core.QAbstractListModel `property:"contactListModel"`
 	_ *core.QAbstractListModel `property:"conversationModel"`
@@ -41,7 +36,6 @@ type ConfigBridge struct {
 }
 
 var (
-	uiBridge      *UIBridge
 	accountBridge *AccountBridge
 	configBridge  *ConfigBridge
 )
@@ -50,7 +44,6 @@ var (
 func setupQmlBridges() {
 	accountBridge = NewAccountBridge(nil)
 	configBridge = NewConfigBridge(nil)
-	uiBridge = NewUIBridge(nil)
 
 	accountBridge.ConnectAddContact(addContact)
 	accountBridge.ConnectLoadConversation(loadConversation)
