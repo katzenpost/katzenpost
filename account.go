@@ -26,7 +26,7 @@ func loadContactList(contactListModel *ContactListModel) {
 func loadConversation(contact string) {
 	{
 		var message = NewMessage(nil)
-		message.Nickname = "another user"
+		message.Nickname = contact
 		message.Avatar = "https://picsum.photos/129/129"
 		message.Message = "Hi there, this is a test!"
 		conversationModel.AddMessage(message)
