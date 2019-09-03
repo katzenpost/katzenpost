@@ -7,17 +7,20 @@ ListView {
 
     Layout.fillHeight: true
     width: 320
-    topMargin: 32
+    topMargin: 16
     leftMargin: 16
-    bottomMargin: 32
+    bottomMargin: 16
     rightMargin: 16
     spacing: 16
 
     model: accountBridge.contactListModel
     delegate: ItemDelegate {
         width: contactList.width - contactList.leftMargin - contactList.rightMargin
-        height: 64
-        onClicked: accountBridge.loadConversation(model.nickname)
+        height: 48
+        onClicked: {
+            swipe.currentIndex = 1
+            accountBridge.loadConversation(model.nickname)
+        }
 
         RowLayout {
             height: 48
@@ -30,9 +33,9 @@ ListView {
                 source: model.avatar
             }
             Label {
-                text: model.nickname
                 Layout.fillWidth: true
                 height: 48
+                text: model.nickname
             }
         }
     }
