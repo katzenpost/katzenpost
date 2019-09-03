@@ -198,6 +198,31 @@ ApplicationWindow {
         anchors.fill: parent
 
         ContactList {}
-        ConversationView {}
+
+        SwipeView {
+            id: swipe
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            clip: true
+
+            currentIndex: 0
+
+            Item {
+                Label {
+                    anchors.fill: parent
+                    anchors.margins: 16
+
+                    text: qsTr("Please select a chat to start messaging")
+                    color: "white"
+                    font.pointSize: 18
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+
+            Item {
+                ConversationView {}
+            }
+        }
     }
 }

@@ -3,8 +3,7 @@ import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
 
 ColumnLayout {
-    Layout.fillWidth: true
-    Layout.fillHeight: true
+    anchors.fill: parent
 
     ListView {
         id: conversationView
