@@ -67,19 +67,19 @@ func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVaria
 	switch role {
 	case RoleNickname:
 		{
-			return core.NewQVariant15(p.Nickname)
+			return core.NewQVariant1(p.Nickname)
 		}
 	case RoleAvatar:
 		{
-			return core.NewQVariant15(p.Avatar)
+			return core.NewQVariant1(p.Avatar)
 		}
 	case RoleMessage:
 		{
-			return core.NewQVariant15(p.Message)
+			return core.NewQVariant1(p.Message)
 		}
 	case RoleTimestamp:
 		{
-			return core.NewQVariant15(humanize.Time(p.Timestamp))
+			return core.NewQVariant1(humanize.Time(p.Timestamp))
 		}
 
 	default:
