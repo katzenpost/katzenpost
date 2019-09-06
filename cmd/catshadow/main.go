@@ -41,15 +41,6 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
-func randUser() string {
-	user := [32]byte{}
-	_, err := rand.Reader.Read(user[:])
-	if err != nil {
-		panic(err)
-	}
-	return fmt.Sprintf("%x", user[:])
-}
-
 func main() {
 	generate := flag.Bool("g", false, "Generate the state file and then run client.")
 	cfgFile := flag.String("f", "katzenpost.toml", "Path to the client config file.")
@@ -119,7 +110,11 @@ func main() {
 		registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
 
 		// Connect to random Provider.
-		user := randUser()
+		linkKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			panic(err)
+		}
+		user := fmt.Sprintf("%x", linkKey.Bytes())
 		account := &clientConfig.Account{
 			User:           user,
 			Provider:       registrationProvider.Name,
@@ -127,10 +122,6 @@ func main() {
 		}
 		cfg.Account = account
 		c, err := client.New(cfg)
-		if err != nil {
-			panic(err)
-		}
-		linkKey, err := ecdh.NewKeypair(rand.Reader)
 		if err != nil {
 			panic(err)
 		}
