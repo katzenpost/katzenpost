@@ -60,20 +60,13 @@ func addContact(client *catshadow.Client, nickname string, passphrase string) bo
 }
 
 // sendMessage sends a message to a contact
-func sendMessage(recipient string, message string) {
-	/*
-		err := backend.SendMessage()
-		if err != nil {
-			accountBridge.SetError(err)
-			return
-		}
-	*/
-
+func sendMessage(client *catshadow.Client, nickname string, message string) {
+	client.SendMessage(nickname, []byte(message))
 	var m = NewMessage(nil)
 	m.Nickname = accountBridge.Nickname()
 	m.Avatar = accountBridge.Nickname()
 	m.Message = message
 	m.Timestamp = time.Now()
 	conversationModel.AddMessage(m)
-	conversations[recipient] = append(conversations[recipient], m)
+	conversations[nickname] = append(conversations[nickname], m)
 }
