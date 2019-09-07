@@ -1,8 +1,11 @@
 language: go
 
 go:
-  - "1.10"
-  - "1.11"
+  - "1.12"
+
+env:
+  global:
+    GO111MODULE=on
 
 install:
   - git config --global http.https://gopkg.in.followRedirects true
