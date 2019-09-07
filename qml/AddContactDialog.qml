@@ -32,7 +32,7 @@ Popup {
             id: logo
             Layout.alignment: Qt.AlignHCenter
             smooth: true
-            source: "images/accounts/mastodon.svg"
+            source: "images/katzenpost_logo.png"
             sourceSize.height: 96
         }
 
