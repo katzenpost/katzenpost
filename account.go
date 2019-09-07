@@ -6,24 +6,12 @@ var (
 	conversations = make(map[string][]*Message)
 )
 
-// loadAccount loads the meta-data associated with an account
-func loadAccount() {
-	accountBridge.SetNickname("muesli")
-	accountBridge.SetAvatar("https://picsum.photos/128/128")
-}
-
 // loadContactList loads the contact list for an account
-func loadContactList(contactListModel *ContactListModel) {
-	{
+func loadContactList(contactListModel *ContactListModel, nickNames []string) {
+	for _, nickName := range nickNames {
 		var contact = NewContact(nil)
-		contact.Nickname = "Alice"
-		contact.Avatar = "https://picsum.photos/128/128"
-		contactListModel.AddContact(contact)
-	}
-	{
-		var contact = NewContact(nil)
-		contact.Nickname = "Bob"
-		contact.Avatar = "https://picsum.photos/129/129"
+		contact.Nickname = nickName
+		// XXX fix me: contact.Avatar = "https://picsum.photos/128/128"
 		contactListModel.AddContact(contact)
 	}
 }
