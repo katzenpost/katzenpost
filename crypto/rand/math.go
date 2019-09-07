@@ -25,7 +25,7 @@ import (
 	"math/rand"
 	"sync"
 
-	"git.schwanenlied.me/yawning/chacha20.git"
+	"github.com/katzenpost/chacha20"
 	"github.com/katzenpost/core/utils"
 )
 
