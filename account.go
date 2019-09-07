@@ -47,12 +47,11 @@ func loadConversation(contact string) {
 }
 
 // addContact adds a contact to the contact list
-func addContact(passphrase string, nickname string) bool {
+func addContact(nickname string) bool {
 	var c = NewContact(nil)
 	c.Nickname = nickname
-	c.Avatar = "https://picsum.photos/140/140"
+	c.Avatar = ""
 	contactListModel.AddContact(c)
-
 	return true
 }
 

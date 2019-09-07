@@ -76,7 +76,6 @@ func main() {
 
 	ga := gui.NewQGuiApplication(len(os.Args), os.Args)
 	ga.SetWindowIcon(gui.NewQIcon5(":/qml/images/katzenpost_logo.png"))
-	setupQmlBridges()
 
 	// load config
 	scope := gap.NewScope(gap.User, "katzenpost", "catchat")
@@ -85,17 +84,16 @@ func main() {
 		panic(err)
 	}
 	os.MkdirAll(configDir, 0700)
-
 	configFile, err = scope.ConfigPath("catchat.conf")
 	if err != nil {
 		panic(err)
 	}
 	config = LoadConfig(configFile)
 	if config.Theme == "" {
-		config.Theme = "Material"
+		config.Theme = "Fusion"
 	}
 	if config.Style == "" {
-		config.Style = "Dark"
+		config.Style = "Light"
 	}
 	configBridge.SetTheme(config.Theme)
 	configBridge.SetStyle(config.Style)
@@ -216,6 +214,7 @@ func main() {
 	catShadowClient.Start()
 
 	// Start graphical user interface.
+	setupQmlBridges(catShadowClient)
 	nickNames := catShadowClient.GetNicknames()
 	loadContactList(contactListModel, nickNames)
 	accountBridge.SetContactListModel(contactListModel)
