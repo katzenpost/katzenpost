@@ -20,7 +20,7 @@ import (
 	"encoding/binary"
 	"math/rand"
 
-	"git.schwanenlied.me/yawning/chacha20"
+	"github.com/katzenpost/chacha20"
 )
 
 // DeterministicRandReader is a random Reader whose output is a chacha20 keystream.
@@ -32,7 +32,7 @@ type DeterministicRandReader struct {
 // NewDeterministicRandReader returns a DeterministicRandReader initialized with key.
 func NewDeterministicRandReader(key []byte) (*DeterministicRandReader, error) {
 	var nonce [8]byte
-	cipher, err := chacha20.NewCipher(key, nonce[:])
+	cipher, err := chacha20.New(key, nonce[:])
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (r *DeterministicRandReader) Seed(seed int64) {
 	if int64(count) != seed {
 		panic("wtf")
 	}
-	r.cipher, err = chacha20.NewCipher(r.key, nonce[:])
+	r.cipher, err = chacha20.New(r.key, nonce[:])
 	if err != nil {
 		panic(err)
 	}
