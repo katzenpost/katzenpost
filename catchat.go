@@ -47,8 +47,8 @@ func main() {
 	core.QCoreApplication_SetOrganizationName("katzenpost")
 	core.QCoreApplication_SetAttribute(core.Qt__AA_EnableHighDpiScaling, true)
 
-	_ = gui.NewQGuiApplication(len(os.Args), os.Args)
-	// ga.SetWindowIcon(gui.NewQIcon5(":/qml/images/icon.png"))
+	ga := gui.NewQGuiApplication(len(os.Args), os.Args)
+	ga.SetWindowIcon(gui.NewQIcon5(":/qml/images/katzenpost_logo.png"))
 	setupQmlBridges()
 
 	// load config
