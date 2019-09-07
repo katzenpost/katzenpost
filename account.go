@@ -1,6 +1,10 @@
 package main
 
-import "time"
+import (
+	"time"
+
+	"github.com/katzenpost/catshadow"
+)
 
 var (
 	conversations = make(map[string][]*Message)
@@ -11,7 +15,7 @@ func loadContactList(contactListModel *ContactListModel, nickNames []string) {
 	for _, nickName := range nickNames {
 		var contact = NewContact(nil)
 		contact.Nickname = nickName
-		// XXX fix me: contact.Avatar = "https://picsum.photos/128/128"
+		// XXX contact.Avatar = "https://picsum.photos/128/128"
 		contactListModel.AddContact(contact)
 	}
 }
@@ -26,7 +30,6 @@ func loadConversation(contact string) {
 		{
 			var message = NewMessage(nil)
 			message.Nickname = contact
-			message.Avatar = "https://picsum.photos/129/129"
 			message.Message = "Hi there, this is a test!"
 			message.Timestamp = time.Now().Add(-8 * time.Hour)
 			conversations[contact] = append(conversations[contact], message)
@@ -47,7 +50,8 @@ func loadConversation(contact string) {
 }
 
 // addContact adds a contact to the contact list
-func addContact(nickname string) bool {
+func addContact(client *catshadow.Client, nickname string, passphrase string) bool {
+	client.NewContact(nickname, []byte(passphrase))
 	var c = NewContact(nil)
 	c.Nickname = nickname
 	c.Avatar = ""

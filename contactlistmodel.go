@@ -72,7 +72,11 @@ func (m *ContactListModel) data(index *core.QModelIndex, role int) *core.QVarian
 		}
 	case RoleAvatar:
 		{
-			return core.NewQVariant15(p.Avatar)
+			if p.Avatar == "" {
+				return core.NewQVariant15("qrc:/qml/images/katzenpost_logo.png")
+			} else {
+				return core.NewQVariant15(p.Avatar)
+			}
 		}
 
 	default:

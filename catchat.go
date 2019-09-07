@@ -90,10 +90,10 @@ func main() {
 	}
 	config = LoadConfig(configFile)
 	if config.Theme == "" {
-		config.Theme = "Fusion"
+		config.Theme = "Material"
 	}
 	if config.Style == "" {
-		config.Style = "Light"
+		config.Style = "Dark"
 	}
 	configBridge.SetTheme(config.Theme)
 	configBridge.SetStyle(config.Style)
