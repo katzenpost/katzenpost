@@ -39,6 +39,7 @@ services:
     depends_on:
       - auth
       - provider1
+      - provider2
     networks:
       testing_net:
         ipv4_address: 172.28.1.5
@@ -52,6 +53,7 @@ services:
     depends_on:
       - auth
       - provider1
+      - provider2
     networks:
       testing_net:
         ipv4_address: 172.28.1.6
@@ -65,6 +67,7 @@ services:
     depends_on:
       - auth
       - provider1
+      - provider2
     networks:
       testing_net:
         ipv4_address: 172.28.1.7
