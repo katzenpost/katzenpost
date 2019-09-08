@@ -66,7 +66,7 @@ tor configured with the socks port listening on 127.0.0.1 port 9050.
     SocksAddress = "127.0.0.1:9050"
 
   [Debug]
-  DisableDecoyLoops = true
+  DisableDecoyTraffic = true
   CaseSensitiveUserIdentifiers = false
   PollingInterval = 1
 

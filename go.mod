@@ -11,7 +11,7 @@ require (
 	github.com/fatih/color v1.7.0
 	github.com/flynn-archive/go-shlex v0.0.0-20150515145356-3f9db97f8568 // indirect
 	github.com/katzenpost/channels v0.0.1
-	github.com/katzenpost/client v0.0.3-0.20190907184639-69b83979f426
+	github.com/katzenpost/client v0.0.3-0.20190908130035-a6e41f0629f6
 	github.com/katzenpost/core v0.0.8-0.20190907182339-71fec89c259d
 	github.com/katzenpost/doubleratchet v0.0.0
 	github.com/katzenpost/memspool v0.0.1
