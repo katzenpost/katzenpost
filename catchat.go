@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	mrand "math/rand"
@@ -158,7 +159,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		user := fmt.Sprintf("%x", linkKey.Bytes())
+		user := base64.StdEncoding.EncodeToString(linkKey.Bytes())
 		account := &clientConfig.Account{
 			User:           user,
 			Provider:       provider.Name,
