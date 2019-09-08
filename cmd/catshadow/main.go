@@ -21,7 +21,9 @@ import (
 	"flag"
 	"fmt"
 	mrand "math/rand"
+	"net/url"
 	"os"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,6 +35,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/pki"
+	registration "github.com/katzenpost/registration_client"
 	"golang.org/x/crypto/ssh/terminal"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -111,21 +114,38 @@ func main() {
 		// Pick a registration Provider.
 		registerProviders := []*pki.MixDescriptor{}
 		for _, provider := range doc.Providers {
-			registerProviders = append(registerProviders, provider)
+			if provider.RegistrationHTTPAddresses != nil {
+				registerProviders = append(registerProviders, provider)
+			}
 		}
 		if len(registerProviders) == 0 {
 			panic("zero registration Providers found in the consensus")
 		}
 		registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
 
-		// Connect to random Provider.
+		// Register with that Provider.
+		fmt.Println("registering client with mixnet Provider")
 		user := randUser()
 		account := &clientConfig.Account{
 			User:           user,
 			Provider:       registrationProvider.Name,
 			ProviderKeyPin: registrationProvider.IdentityKey,
 		}
+		u, err := url.Parse(registrationProvider.RegistrationHTTPAddresses[0])
+		if err != nil {
+			panic(err)
+		}
+		registration := &clientConfig.Registration{
+			Address: u.Host,
+			Options: &registration.Options{
+				Scheme:       u.Scheme,
+				UseSocks:     strings.HasPrefix(cfg.UpstreamProxy.Type, "socks"),
+				SocksNetwork: cfg.UpstreamProxy.Network,
+				SocksAddress: cfg.UpstreamProxy.Address,
+			},
+		}
 		cfg.Account = account
+		cfg.Registration = registration
 		c, err := client.New(cfg)
 		if err != nil {
 			panic(err)
@@ -134,8 +154,12 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		err = client.RegisterClient(cfg, linkKey.PublicKey())
+		if err != nil {
+			panic(err)
+		}
 
-		// Create statefile.
+		// XXX Create statefile.
 		stateWorker, err = catshadow.NewStateWriter(c.GetLogger("catshadow_state"), *stateFile, passphrase)
 		if err != nil {
 			panic(err)
