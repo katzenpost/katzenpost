@@ -8,8 +8,7 @@ services:
       - ./conf/provider1:/conf
     command: /go/bin/server -f /conf/katzenpost.toml
     ports:
-      - "127.0.0.1:59484:59484"
-      - "127.0.0.1:36968:36968"
+      - "127.0.0.1:59484:59484:36968:36968"
     depends_on:
       - auth
     networks:
@@ -23,8 +22,7 @@ services:
       - ./conf/provider2:/conf
     command: /go/bin/server -f /conf/katzenpost.toml
     ports:
-      - "127.0.0.1:29484:29484"
-      - "127.0.0.1:36967:36967"
+      - "127.0.0.1:29484:29484:36967:36967"
     depends_on:
       - auth
       - provider1
