@@ -11,8 +11,11 @@ require (
 	github.com/katzenpost/minclient v0.0.5 // indirect
 	github.com/katzenpost/registration_client v0.0.1 // indirect
 	github.com/katzenpost/server v0.0.7
+	github.com/kr/pretty v0.1.0 // indirect
 	github.com/stretchr/testify v1.3.0
 	github.com/ugorji/go/codec v1.1.7
+	go.etcd.io/bbolt v1.3.3 // indirect
 	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
+	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )
