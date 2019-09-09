@@ -73,7 +73,7 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 	}
 	tag, newPosting, err := postingFromRequest(&req)
 	if err != nil {
-		k.log.Debugf("cannot decode tag and message")
+		k.log.Debug("cannot decode tag and message")
 		return k.encodeResp(&resp), nil
 	}
 
@@ -89,6 +89,7 @@ func (k *Panda) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, erro
 	}
 	if err != nil {
 		resp.StatusCode = common.PandaStatusStorageError
+		k.log.Debugf("PANDA storage error: %s", err)
 		return k.encodeResp(&resp), nil
 	}
 	if len(storedPosting.B) > 0 {
