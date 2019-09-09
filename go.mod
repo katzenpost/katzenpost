@@ -16,6 +16,7 @@ require (
 	github.com/katzenpost/doubleratchet v0.0.0
 	github.com/katzenpost/memspool v0.0.1
 	github.com/katzenpost/panda v0.0.4-0.20190801155026-ac87cceaf056
+	github.com/katzenpost/registration_client v0.0.1
 	github.com/mattn/go-colorable v0.1.2 // indirect
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20190907121410-71b5226ff739
