@@ -6,7 +6,6 @@ github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412 h1:w1UutsfOrms1J05zt7ISrnJIXKzwaspym5BTKGx93EI=
 github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412/go.mod h1:WPjqKcmVOxf0XSf3YxCJs6N6AOSrOx3obionmG7T0y0=
-github.com/coreos/bbolt v1.3.3 h1:n6AiVyVRKQFNb6mJlwESEvvLoDyiTzXX7ORAUlkeBdY=
 github.com/coreos/bbolt v1.3.3/go.mod h1:iRUV2dpdMOn7Bo10OQBFzIJO9kkE559Wcmn+qkEiiKk=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -18,16 +17,16 @@ github.com/katzenpost/chacha20 v0.0.0-20190907175840-5d3e00398cad h1:GUBy3gwZnLG
 github.com/katzenpost/chacha20 v0.0.0-20190907175840-5d3e00398cad/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/core v0.0.8-0.20190907182339-71fec89c259d h1:oCdxs29zPYiwSu4wZJrDJxidVMlYxxe2nqToKfRLe80=
 github.com/katzenpost/core v0.0.8-0.20190907182339-71fec89c259d/go.mod h1:gqp6bR2MDW8dy8bQ+BzvEwlBfHC3WYrKaNODK1TAS+4=
-github.com/katzenpost/minclient v0.0.6-0.20190907184312-6af60bbe31b6 h1:ZpASslART+fPvVpHtx+DV3SLdpthoG85lmFeSURjkqs=
-github.com/katzenpost/minclient v0.0.6-0.20190907184312-6af60bbe31b6/go.mod h1:hvJRcp9WMc8WAPemJEc+JtyTFA++u2zI6rhLX6feYP0=
+github.com/katzenpost/minclient v0.0.5 h1:lUPG4D7MQkBb1qEQOx/EFKjrJMVZJOLctiSUY1sWJ5I=
+github.com/katzenpost/minclient v0.0.5/go.mod h1:iP6HqTQzuNuyMYhzXL6pPWwthAmB7AgFEEGMm2G0XVc=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f/go.mod h1:xA8+73aJ0TU2W701F6Ac7LL8jiUuv6me5pO+/nIuaCM=
 github.com/katzenpost/noise v0.0.0-20190907181756-73de63f19ada h1:LC9wQpFyEGKYumiT+PL70iIXuvTSwiAZpB+qEaANIkk=
 github.com/katzenpost/noise v0.0.0-20190907181756-73de63f19ada/go.mod h1:TqIOjVOESMlMl9Z+XElrJlY9gtBthOFpolLV3tA0vSg=
 github.com/katzenpost/registration_client v0.0.1 h1:ZvlEQ0rfVEGEV67x7KVxMi0veiLn2QyM1bxfWb8u7Q8=
 github.com/katzenpost/registration_client v0.0.1/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
-github.com/katzenpost/server v0.0.8-0.20190724072104-f047a32043f3 h1:rL3DUaHmb5WtaLqpUvM00loC7nTC6EEQAuBzUH8G/JY=
-github.com/katzenpost/server v0.0.8-0.20190724072104-f047a32043f3/go.mod h1:sOea2sG8ggASFYNTXhjEGmdanyXYsJz0wE2BTA/mCo0=
+github.com/katzenpost/server v0.0.7 h1:D3OCuJ66ZIpcw3A23Fftgj85u/cVkVkyG+VnkCtIAco=
+github.com/katzenpost/server v0.0.7/go.mod h1:sOea2sG8ggASFYNTXhjEGmdanyXYsJz0wE2BTA/mCo0=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
@@ -43,7 +42,6 @@ github.com/ugorji/go v1.1.7/go.mod h1:kZn38zHttfInRq0xu/PH0az30d+z6vm202qpg1oXVM
 github.com/ugorji/go/codec v1.1.7 h1:2SvQaVZ1ouYrrKKwoSk2pzd4A9evlKJb9oTL+OaLUSs=
 github.com/ugorji/go/codec v1.1.7/go.mod h1:Ax+UKWsSmolVDwsd+7N3ZtXu+yMGCf907BLYF3GoBXY=
 go.etcd.io/bbolt v1.3.3/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
-golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2 h1:VklqNMn3ovrHsnt90PveolxSbWFaJdECFbxSq0Mqo2M=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472/go.mod h1:yigFU9vqHzYiE8UmvKecakEJjdnWj3jj499lnFckfCI=
 golang.org/x/crypto v0.0.0-20190907121410-71b5226ff739 h1:Gc7JIyxvWgD6m+QmVryY0MstDORNYididDGxgZ6Tnpk=
@@ -51,9 +49,7 @@ golang.org/x/crypto v0.0.0-20190907121410-71b5226ff739/go.mod h1:yigFU9vqHzYiE8U
 golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3/go.mod h1:t9HGtf8HONx5eT2rtn7q6eTqICYqUVnKs3thJo3Qplg=
 golang.org/x/net v0.0.0-20190724013045-ca1201d0de80 h1:Ao/3l156eZf2AW5wK8a7/smtodRU+gha3+BeqJ69lRk=
 golang.org/x/net v0.0.0-20190724013045-ca1201d0de80/go.mod h1:z5CRVTTTmAJ677TzLLGU+0bjPO0LkuOLi4/5GtJWs/s=
-golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a h1:1BGLXjeY4akVXGgbC9HugT3Jv3hCI0z56oJR5vAMgBU=
 golang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
-golang.org/x/sys v0.0.0-20190412213103-97732733099d h1:+R4KGOnez64A81RvjARKc4UT5/tI9ujCIVX+P5KiHuI=
 golang.org/x/sys v0.0.0-20190412213103-97732733099d/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20190902133755-9109b7679e13 h1:tdsQdquKbTNMsSZLqnLELJGzCANp9oXhu6zFBW6ODx4=
 golang.org/x/sys v0.0.0-20190902133755-9109b7679e13/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
