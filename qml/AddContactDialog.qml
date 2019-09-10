@@ -13,7 +13,7 @@ Popup {
 
     property var reset: function() {
         connectSwipeView.currentIndex = 0
-        contactArea.text = ""
+        passphraseArea.text = ""
         nicknameArea.text = ""
     }
 
@@ -52,39 +52,11 @@ Popup {
                         anchors.margins: 16
 
                         TextField {
-                            id: contactArea
+                            id: passphraseArea
                             focus: true
                             selectByMouse: true
-                            placeholderText: qsTr("Contact")
+                            placeholderText: qsTr("Passphrase")
                             Layout.fillWidth: true
-                        }
-
-                        Button {
-                            id: connectButton
-                            enabled: contactArea.text.length > 0
-                            Layout.alignment: Qt.AlignBottom | Qt.AlignCenter
-                            highlighted: true
-                            text: qsTr("Next")
-
-                            onClicked: {
-                                connectSwipeView.currentIndex = 1
-                            }
-                        }
-                }
-            }
-
-            Item {
-                id: authPage
-
-                ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 16
-
-                        Label {
-                            text: "Assign a nickname for this contact:"
-                            Layout.alignment: Qt.AlignCenter
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
                         }
 
                         TextField {
@@ -97,15 +69,15 @@ Popup {
 
                         Button {
                             id: authButton
-                            enabled: nicknameArea.text.length > 0
+                            enabled: passphraseArea.text.length > 0 && nicknameArea.text.length > 0
                             Layout.alignment: Qt.AlignBottom | Qt.AlignCenter
                             highlighted: true
                             text: qsTr("Add Contact")
 
                             onClicked: {
-                                var contact = contactArea.text
+                                var passphrase = passphraseArea.text
                                 var nickname = nicknameArea.text
-                                var result = accountBridge.addContact(contact, nickname)
+                                var result = accountBridge.addContact(passphrase, nickname)
                                 if (result) {
                                     addContactDialog.close()
                                 }
