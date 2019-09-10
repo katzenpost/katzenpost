@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
-	"encoding/base64"
 	"flag"
 	"fmt"
-	mrand "math/rand"
 	"os"
 	"syscall"
 	"time"
@@ -14,9 +11,6 @@ import (
 	catconfig "github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
 	clientConfig "github.com/katzenpost/client/config"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
 	gap "github.com/muesli/go-app-paths"
 	"github.com/therecipe/qt/core"
 	"github.com/therecipe/qt/gui"
@@ -132,40 +126,7 @@ func main() {
 			panic("cannot generate state file, already exists")
 		}
 
-		// Retrieve a copy of the PKI consensus document.
-		proxyCfg := cfg.UpstreamProxyConfig()
-		backendLog, err := catshadowCfg.InitLogBackend()
-		if err != nil {
-			panic(err)
-		}
-		pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
-		if err != nil {
-			panic(err)
-		}
-		currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
-		ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
-		defer cancel()
-		doc, _, err := pkiClient.Get(ctx, currentEpoch)
-		if err != nil {
-			panic(err)
-		}
-		if len(doc.Providers) == 0 {
-			panic("zero registration Providers found in the consensus")
-		}
-		provider := doc.Providers[mrand.Intn(len(doc.Providers))]
-
-		// Connect to random Provider.
-		linkKey, err := ecdh.NewKeypair(rand.Reader)
-		if err != nil {
-			panic(err)
-		}
-		user := base64.StdEncoding.EncodeToString(linkKey.Bytes())
-		account := &clientConfig.Account{
-			User:           user,
-			Provider:       provider.Name,
-			ProviderKeyPin: provider.IdentityKey,
-		}
-		cfg.Account = account
+		cfg, linkKey := client.AutoRegisterRandomClient(cfg)
 		c, err := client.New(cfg)
 		if err != nil {
 			panic(err)
@@ -177,12 +138,20 @@ func main() {
 			panic(err)
 		}
 		fmt.Println("creating remote message receiver spool")
-		catShadowClient, err = catshadow.NewClientAndRemoteSpool(c.GetBackendLog(), c, stateWorker, user, linkKey)
+		backendLog, err := catshadowCfg.InitLogBackend()
+		if err != nil {
+			panic(err)
+		}
+
+		user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
+		catShadowClient, err = catshadow.NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
 		if err != nil {
 			panic(err)
 		}
 		fmt.Println("catshadow client successfully created")
 	} else {
+		cfg, _ := client.AutoRegisterRandomClient(cfg)
+
 		// Load previous state to setup our current client state.
 		backendLog, err := catshadowCfg.InitLogBackend()
 		if err != nil {
