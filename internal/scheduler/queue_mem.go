@@ -17,6 +17,7 @@
 package scheduler
 
 import (
+	"container/heap"
 	mRand "math/rand"
 	"time"
 
@@ -50,7 +51,7 @@ func (q *memoryQueue) Peek() (time.Duration, *packet.Packet) {
 }
 
 func (q *memoryQueue) Pop() {
-	q.q.Pop()
+	heap.Pop(q.q)
 }
 
 func (q *memoryQueue) BulkEnqueue(batch []*packet.Packet) {
