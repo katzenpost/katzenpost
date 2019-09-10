@@ -20,17 +20,95 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
+	mrand "math/rand"
+	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/katzenpost/client/config"
+	clientConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/pki"
 	registration "github.com/katzenpost/registration_client"
 	"gopkg.in/op/go-logging.v1"
 )
+
+const (
+	initialPKIConsensusTimeout = 45 * time.Second
+)
+
+func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
+	// Retrieve a copy of the PKI consensus document.
+	logFilePath := ""
+	backendLog, err := log.New(logFilePath, "DEBUG", false)
+	if err != nil {
+		panic(err)
+	}
+	proxyCfg := cfg.UpstreamProxyConfig()
+	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
+	if err != nil {
+		panic(err)
+	}
+	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
+	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
+	defer cancel()
+	doc, _, err := pkiClient.Get(ctx, currentEpoch)
+	if err != nil {
+		panic(err)
+	}
+
+	// Pick a registration Provider.
+	registerProviders := []*pki.MixDescriptor{}
+	for _, provider := range doc.Providers {
+		if provider.RegistrationHTTPAddresses != nil {
+			registerProviders = append(registerProviders, provider)
+		}
+	}
+	if len(registerProviders) == 0 {
+		panic("zero registration Providers found in the consensus")
+	}
+	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
+
+	// Register with that Provider.
+	fmt.Println("registering client with mixnet Provider")
+	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	account := &clientConfig.Account{
+		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
+		Provider:       registrationProvider.Name,
+		ProviderKeyPin: registrationProvider.IdentityKey,
+	}
+
+	u, err := url.Parse(registrationProvider.RegistrationHTTPAddresses[0])
+	if err != nil {
+		panic(err)
+	}
+	registration := &clientConfig.Registration{
+		Address: u.Host,
+		Options: &registration.Options{
+			Scheme:       u.Scheme,
+			UseSocks:     strings.HasPrefix(cfg.UpstreamProxy.Type, "socks"),
+			SocksNetwork: cfg.UpstreamProxy.Network,
+			SocksAddress: cfg.UpstreamProxy.Address,
+		},
+	}
+	cfg.Account = account
+	cfg.Registration = registration
+	err = RegisterClient(cfg, linkKey.PublicKey())
+	if err != nil {
+		panic(err)
+	}
+	return cfg, linkKey
+}
 
 func RegisterClient(cfg *config.Config, linkKey *ecdh.PublicKey) error {
 	client, err := registration.New(cfg.Registration.Address, cfg.Registration.Options)

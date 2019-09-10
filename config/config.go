@@ -403,7 +403,7 @@ func Load(b []byte) (*Config, error) {
 	if undecoded := md.Undecoded(); len(undecoded) != 0 {
 		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
-	if err := cfg.FixupAndValidate(); err != nil {
+	if err := cfg.FixupAndMinimallyValidate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
