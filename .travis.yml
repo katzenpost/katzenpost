@@ -1,7 +1,7 @@
 language: go
 
 go:
-  - "1.12"
+  - "1.13"
 
 env:
   global:
@@ -12,6 +12,7 @@ install:
   - go get -v -t ./...
 
 script:
- - make test-internal
- - make test-voting
- - make test-nonvoting
+  - go test -cover -v -race ./internal/...
+  - go test -cover -v -race ./voting/...
+  - go test -cover -v -race ./nonvoting/...
+  - go test -cover -v -race -timeout 0 -ldflags "-X github.com/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/server/internal/pki.WarpedEpoch=true" ./tests/...
