@@ -213,6 +213,7 @@ ApplicationWindow {
                     anchors.margins: 16
 
                     text: qsTr("Please select a chat to start messaging")
+                    wrapMode: Text.Wrap
                     color: "white"
                     font.pointSize: 18
                     horizontalAlignment: Text.AlignHCenter
