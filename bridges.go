@@ -51,7 +51,7 @@ func setupQmlBridges(client *catshadow.Client) {
 		return addContact(client, nickname, passphrase)
 	})
 	accountBridge.ConnectLoadConversation(func(nickname string) {
-		loadConversation(nickname)
+		loadConversation(client, nickname)
 	})
 	accountBridge.ConnectSendMessage(func(recipient string, message string) {
 		sendMessage(client, recipient, message)

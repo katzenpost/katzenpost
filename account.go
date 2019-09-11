@@ -21,30 +21,17 @@ func loadContactList(contactListModel *ContactListModel, nickNames []string) {
 }
 
 // loadConversation loads the conversation with a contact
-func loadConversation(contact string) {
+func loadConversation(client *catshadow.Client, contact string) {
 	conversationModel.Clear()
 	accountBridge.SetRecipient(contact)
-
-	_, ok := conversations[contact]
-	if !ok {
-		{
-			var message = NewMessage(nil)
-			message.Nickname = contact
-			message.Message = "Hi there, this is a test!"
-			message.Timestamp = time.Now().Add(-8 * time.Hour)
-			conversations[contact] = append(conversations[contact], message)
+	conversation := client.GetConversation(contact)
+	for _, message := range conversation {
+		msg := &Message{
+			Nickname:  contact,
+			Avatar:    "",
+			Message:   string(message.Plaintext),
+			Timestamp: message.Timestamp,
 		}
-		{
-			var message = NewMessage(nil)
-			message.Nickname = accountBridge.Nickname()
-			message.Avatar = accountBridge.Avatar()
-			message.Message = "This is a reply!"
-			message.Timestamp = time.Now()
-			conversations[contact] = append(conversations[contact], message)
-		}
-	}
-
-	for _, msg := range conversations[contact] {
 		conversationModel.AddMessage(msg)
 	}
 }
