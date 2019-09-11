@@ -36,12 +36,11 @@ const (
 	nonceSize = 24
 )
 
-// Message encapsulates a decrypted message and two
-// metadata fields, sender nickname and received time.
+// Message encapsulates message that is sent or received.
 type Message struct {
-	Nickname     string
-	Plaintext    []byte
-	ReceivedTime time.Time
+	Plaintext []byte
+	Timestamp time.Time
+	Outbound  bool
 }
 
 // State is the struct type representing the Client's state
@@ -52,7 +51,7 @@ type State struct {
 	User            string
 	Provider        string
 	LinkKey         *ecdh.PrivateKey
-	Inbox           []*Message
+	Conversations   map[string][]*Message
 }
 
 // StateWriter takes ownership of the Client's encrypted statefile
