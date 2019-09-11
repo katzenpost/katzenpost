@@ -74,9 +74,9 @@ type Client struct {
 	contacts              map[uint64]*Contact
 	contactNicknames      map[string]*Contact
 	spoolReaderChan       *channels.UnreliableSpoolReaderChannel
-	inbox                 []*Message
-	inboxMutex            *sync.Mutex
 	readInboxPoissonTimer *poisson.Fount
+	conversations         map[string][]*Message
+	conversationsMutex    *sync.Mutex
 
 	client       *client.Client
 	session      *session.Session
@@ -93,11 +93,11 @@ type Client struct {
 // the previously saved state for an existing Client.
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
-		Contacts: make([]*Contact, 0),
-		Inbox:    make([]*Message, 0),
-		User:     user,
-		Provider: mixnetClient.Provider(),
-		LinkKey:  linkKey,
+		Contacts:      make([]*Contact, 0),
+		Conversations: make(map[string][]*Message),
+		User:          user,
+		Provider:      mixnetClient.Provider(),
+		LinkKey:       linkKey,
 	}
 	client, err := New(mixnetClient.GetBackendLog(), mixnetClient, stateWorker, state)
 	if err != nil {
@@ -120,19 +120,19 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		return nil, err
 	}
 	c := &Client{
-		pandaChan:         make(chan panda.PandaUpdate),
-		addContactChan:    make(chan addContact),
-		sendMessageChan:   make(chan sendMessage),
-		getNicknamesChan:  make(chan chan []string),
-		removeContactChan: make(chan string),
-		contacts:          make(map[uint64]*Contact),
-		contactNicknames:  make(map[string]*Contact),
-		spoolReaderChan:   state.SpoolReaderChan,
-		linkKey:           state.LinkKey,
-		user:              state.User,
-		inbox:             state.Inbox,
-		inboxMutex:        new(sync.Mutex),
-		stateWorker:       stateWorker,
+		pandaChan:          make(chan panda.PandaUpdate),
+		addContactChan:     make(chan addContact),
+		sendMessageChan:    make(chan sendMessage),
+		getNicknamesChan:   make(chan chan []string),
+		removeContactChan:  make(chan string),
+		contacts:           make(map[uint64]*Contact),
+		contactNicknames:   make(map[string]*Contact),
+		spoolReaderChan:    state.SpoolReaderChan,
+		linkKey:            state.LinkKey,
+		user:               state.User,
+		conversations:      state.Conversations,
+		conversationsMutex: new(sync.Mutex),
+		stateWorker:        stateWorker,
 		readInboxPoissonTimer: poisson.NewTimer(&poisson.Descriptor{
 			Lambda: readInboxPoissonLambda,
 			Max:    readInboxPoissonMax,
@@ -301,7 +301,7 @@ func (c *Client) marshal() ([]byte, error) {
 		LinkKey:         c.linkKey,
 		User:            c.user,
 		Provider:        c.client.Provider(),
-		Inbox:           c.GetInbox(),
+		Conversations:   c.GetAllConversations(),
 	}
 	var serialized []byte
 	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
@@ -380,6 +380,15 @@ func (c *Client) SendMessage(nickname string, message []byte) {
 }
 
 func (c *Client) doSendMessage(nickname string, message []byte) {
+	outMessage := Message{
+		Plaintext: message,
+		Timestamp: time.Now(),
+		Outbound:  true,
+	}
+	c.conversationsMutex.Lock()
+	c.conversations[nickname] = append(c.conversations[nickname], &outMessage)
+	defer c.conversationsMutex.Unlock()
+
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
 		c.log.Errorf("contact %s not found", nickname)
@@ -403,11 +412,16 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	c.log.Info("Sent message to %s.", nickname)
 }
 
-// GetInbox returns the Client's inbox.
-func (c *Client) GetInbox() []*Message {
-	c.inboxMutex.Lock()
-	defer c.inboxMutex.Unlock()
-	return c.inbox
+func (c *Client) GetConversation(nickname string) []*Message {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	return c.conversations[nickname]
+}
+
+func (c *Client) GetAllConversations() map[string][]*Message {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	return c.conversations
 }
 
 func (c *Client) readInbox() bool {
@@ -419,23 +433,25 @@ func (c *Client) readInbox() bool {
 	}
 	message := Message{}
 	var decrypted bool
+	var nickname string
 	for _, contact := range c.contacts {
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		if err != nil {
 			continue
 		} else {
 			decrypted = true
-			message.Nickname = contact.nickname
+			nickname = contact.nickname
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
 			message.Plaintext = plaintext[4 : 4+payloadLen]
-			message.ReceivedTime = time.Now()
+			message.Timestamp = time.Now()
+			message.Outbound = false
 			break
 		}
 	}
 	if decrypted {
-		c.inboxMutex.Lock()
-		defer c.inboxMutex.Unlock()
-		c.inbox = append(c.inbox, &message)
+		c.conversationsMutex.Lock()
+		defer c.conversationsMutex.Unlock()
+		c.conversations[nickname] = append(c.conversations[nickname], &message)
 		return true
 	}
 	c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
@@ -446,17 +462,38 @@ func (c *Client) readInbox() bool {
 func (c *Client) worker() {
 	c.readInboxPoissonTimer.Start()
 	defer c.readInboxPoissonTimer.Stop()
+
+	go func() {
+		for {
+			select {
+			case <-c.HaltCh():
+				return
+			case <-c.readInboxPoissonTimer.Channel():
+				if c.readInbox() {
+					c.save()
+				}
+				c.readInboxPoissonTimer.Next()
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-c.HaltCh():
+				return
+			case sendMessage := <-c.sendMessageChan:
+				c.doSendMessage(sendMessage.Name, sendMessage.Payload)
+			}
+		}
+	}()
+
 	for {
 		select {
 		case <-c.HaltCh():
 			c.log.Debug("Terminating gracefully.")
 			c.haltKeyExchanges()
 			return
-		case <-c.readInboxPoissonTimer.Channel():
-			if c.readInbox() {
-				c.save()
-			}
-			c.readInboxPoissonTimer.Next()
 		case addContact := <-c.addContactChan:
 			err := c.createContact(addContact.Name, addContact.SharedSecret)
 			if err != nil {
@@ -470,8 +507,6 @@ func (c *Client) worker() {
 			responseChan <- names
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
-		case sendMessage := <-c.sendMessageChan:
-			c.doSendMessage(sendMessage.Name, sendMessage.Payload)
 		case nickname := <-c.removeContactChan:
 			c.doContactRemoval(nickname)
 		}
