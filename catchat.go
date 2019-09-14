@@ -193,7 +193,7 @@ func main() {
 
 	// XXX
 	eventsChan := make(chan interface{})
-	handleEvents(eventsChan, conversationModel, contactListModel)
+	go handleEvents(eventsChan, conversationModel, contactListModel)
 
 	// Shutdown client after graphical user interface is halted.
 	catShadowClient.Shutdown()
