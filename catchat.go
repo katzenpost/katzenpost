@@ -191,7 +191,7 @@ func main() {
 	accountBridge.SetConversationModel(conversationModel)
 
 	// XXX
-	eventsChan := make(chan interface{})
+	eventsChan := catShadowClient.EventsChan()
 	go handleEvents(eventsChan, conversationModel, contactListModel)
 
 	runApp(config)

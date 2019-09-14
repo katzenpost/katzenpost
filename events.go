@@ -2,32 +2,26 @@ package main
 
 import (
 	"time"
+
+	"github.com/katzenpost/catshadow"
 )
 
-type KeyExchangeCompleted struct{}
-
-type MessageDelivered struct{}
-
-type MessageReceived struct {
-	Message string
-}
-
-func handleEvents(events chan interface{}, conversationModel *ConversationModel, contactListModel *ContactListModel) {
+func handleEvents(events <-chan interface{}, conversationModel *ConversationModel, contactListModel *ContactListModel) {
 	for {
 		ev, ok := <-events
 		if !ok {
 			break
 		}
 		switch event := ev.(type) {
-		case MessageDelivered:
-		case MessageReceived:
+		case catshadow.MessageDelivered:
+		case catshadow.MessageReceived:
 			var m = NewMessage(nil)
 			m.Nickname = accountBridge.Nickname()
-			//m.Avatar = accountBridge.Nickname()
-			m.Message = event.Message
+			// XXX fix me: m.Avatar = accountBridge.Nickname()
+			m.Message = string(event.Message)
 			m.Timestamp = time.Now()
 			conversationModel.AddMessage(m)
-		case KeyExchangeCompleted:
+		case catshadow.KeyExchangeCompleted:
 		}
 	}
 }
