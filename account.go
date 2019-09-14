@@ -6,10 +6,6 @@ import (
 	"github.com/katzenpost/catshadow"
 )
 
-var (
-	conversations = make(map[string][]*Message)
-)
-
 // loadContactList loads the contact list for an account
 func loadContactList(contactListModel *ContactListModel, nickNames []string) {
 	for _, nickName := range nickNames {
@@ -55,5 +51,4 @@ func sendMessage(client *catshadow.Client, nickname string, message string) {
 	m.Message = message
 	m.Timestamp = time.Now()
 	conversationModel.AddMessage(m)
-	conversations[nickname] = append(conversations[nickname], m)
 }
