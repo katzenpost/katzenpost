@@ -66,7 +66,8 @@ type MessageDelivered struct {
 }
 
 type MessageReceived struct {
-	Message []byte
+	Nickname string
+	Message  []byte
 }
 
 // Client is the mixnet client which interacts with other clients
@@ -442,12 +443,12 @@ func (c *Client) GetAllConversations() map[string][]*Message {
 	return c.conversations
 }
 
-func (c *Client) readInbox() (bool, *Message) {
+func (c *Client) readInbox() (bool, string, *Message) {
 	var err error
 	ciphertext, err := c.spoolReaderChan.Read(c.spoolService)
 	if err != nil {
 		c.log.Debugf("failure reading remote spool: %s", err)
-		return false, nil
+		return false, "", nil
 	}
 	message := Message{}
 	var decrypted bool
@@ -470,10 +471,10 @@ func (c *Client) readInbox() (bool, *Message) {
 		c.conversationsMutex.Lock()
 		defer c.conversationsMutex.Unlock()
 		c.conversations[nickname] = append(c.conversations[nickname], &message)
-		return true, &message
+		return true, nickname, &message
 	}
 	c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
-	return false, nil
+	return false, "", nil
 }
 
 // worker goroutine takes ownership of our contacts
@@ -487,10 +488,11 @@ func (c *Client) worker() {
 			case <-c.HaltCh():
 				return
 			case <-c.readInboxPoissonTimer.Channel():
-				if ok, message := c.readInbox(); ok {
+				if ok, nickname, message := c.readInbox(); ok {
 					c.save()
 					c.eventsChan <- MessageReceived{
-						Message: message.Plaintext,
+						Message:  message.Plaintext,
+						Nickname: nickname,
 					}
 				}
 				c.readInboxPoissonTimer.Next()
