@@ -16,8 +16,9 @@ func handleEvents(events <-chan interface{}, conversationModel *ConversationMode
 		case catshadow.MessageDelivered:
 		case catshadow.MessageReceived:
 			var m = NewMessage(nil)
-			m.Nickname = accountBridge.Nickname()
-			// XXX fix me: m.Avatar = accountBridge.Nickname()
+			// XXX fix me: m.Avatar = ...
+			m.Nickname = event.Nickname
+			m.Avatar = ""
 			m.Message = string(event.Message)
 			m.Timestamp = time.Now()
 			conversationModel.AddMessage(m)
