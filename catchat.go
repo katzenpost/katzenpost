@@ -189,11 +189,12 @@ func main() {
 	loadContactList(contactListModel, nickNames)
 	accountBridge.SetContactListModel(contactListModel)
 	accountBridge.SetConversationModel(conversationModel)
-	runApp(config)
 
 	// XXX
 	eventsChan := make(chan interface{})
 	go handleEvents(eventsChan, conversationModel, contactListModel)
+
+	runApp(config)
 
 	// Shutdown client after graphical user interface is halted.
 	catShadowClient.Shutdown()
