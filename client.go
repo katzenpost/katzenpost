@@ -57,11 +57,24 @@ type sendMessage struct {
 	Payload []byte
 }
 
+type KeyExchangeCompleted struct {
+	Nickname string
+}
+
+type MessageDelivered struct {
+	MessageIndex int
+}
+
+type MessageReceived struct {
+	Message []byte
+}
+
 // Client is the mixnet client which interacts with other clients
 // and services on the network.
 type Client struct {
 	worker.Worker
 
+	eventsChan        chan interface{}
 	pandaChan         chan panda.PandaUpdate
 	addContactChan    chan addContact
 	getNicknamesChan  chan chan []string
@@ -120,6 +133,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		return nil, err
 	}
 	c := &Client{
+		eventsChan:         make(chan interface{}),
 		pandaChan:          make(chan panda.PandaUpdate),
 		addContactChan:     make(chan addContact),
 		sendMessageChan:    make(chan sendMessage),
@@ -170,6 +184,10 @@ func (c *Client) Start() {
 		}
 	}
 	c.Go(c.worker)
+}
+
+func (c *Client) EventsChan() <-chan interface{} {
+	return c.eventsChan
 }
 
 // CreateRemoteSpool creates a remote spool for collecting messages
@@ -424,12 +442,12 @@ func (c *Client) GetAllConversations() map[string][]*Message {
 	return c.conversations
 }
 
-func (c *Client) readInbox() bool {
+func (c *Client) readInbox() (bool, *Message) {
 	var err error
 	ciphertext, err := c.spoolReaderChan.Read(c.spoolService)
 	if err != nil {
 		c.log.Debugf("failure reading remote spool: %s", err)
-		return false
+		return false, nil
 	}
 	message := Message{}
 	var decrypted bool
@@ -452,10 +470,10 @@ func (c *Client) readInbox() bool {
 		c.conversationsMutex.Lock()
 		defer c.conversationsMutex.Unlock()
 		c.conversations[nickname] = append(c.conversations[nickname], &message)
-		return true
+		return true, &message
 	}
 	c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
-	return false
+	return false, nil
 }
 
 // worker goroutine takes ownership of our contacts
@@ -469,8 +487,11 @@ func (c *Client) worker() {
 			case <-c.HaltCh():
 				return
 			case <-c.readInboxPoissonTimer.Channel():
-				if c.readInbox() {
+				if ok, message := c.readInbox(); ok {
 					c.save()
+					c.eventsChan <- MessageReceived{
+						Message: message.Plaintext,
+					}
 				}
 				c.readInboxPoissonTimer.Next()
 			}
