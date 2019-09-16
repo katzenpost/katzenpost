@@ -21,9 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/kimchi"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const basePort = 30000
@@ -31,9 +30,9 @@ const basePort = 30000
 // TestClientConnect tests that a client can connect and send a message to the loop service
 func TestClientConnect(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
-	voting := true
-	nVoting := 3
+	require := require.New(t)
+	voting := false
+	nVoting := 0
 	nProvider := 2
 	nMix := 6
 	k := kimchi.NewKimchi(basePort+400, "", nil, voting, nVoting, nProvider, nMix)
@@ -42,36 +41,39 @@ func TestClientConnect(t *testing.T) {
 
 	go func() {
 		defer k.Shutdown()
-		_, _, till := epochtime.Now()
-		till += epochtime.Period // wait for one vote round, aligned at start of epoch
-		<-time.After(till)
-		t.Logf("Time is up!")
 
 		// create a client configuration
 		cfg, username, linkKey, err := k.GetClientConfig()
-		assert.NoError(err)
+		require.NoError(err)
+		require.NotNil(cfg)
+
+		<-time.After(90 * time.Second) // must wait for provider to fetch pki document
+		t.Logf("Time is up!")
 
 		// instantiate a client instance
 		c, err := New(cfg)
-		assert.NoError(err)
+		require.NotNil(cfg)
+		require.NoError(err)
 
 		// add client log output
 		go k.LogTailer(username, cfg.Logging.File)
 
 		// instantiate a session
-		s, err := c.NewSession(username, linkKey)
-		assert.NoError(err)
+		s, err := c.NewSession(linkKey)
+		require.NoError(err)
 
 		// get a PKI document? needs client method...
 		desc, err := s.GetService("loop") // XXX: returns nil and no error?!
-		assert.NoError(err)
+		require.NoError(err)
 
 		// send a message
 		t.Logf("desc.Provider: %s", desc.Provider)
 		_, err = s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
-		assert.NoError(err)
+		t.Logf("Sent unreliable message to loop service")
+		require.NoError(err)
 
 		c.Shutdown()
+		t.Logf("Shutdown requested")
 		c.Wait()
 	}()
 
