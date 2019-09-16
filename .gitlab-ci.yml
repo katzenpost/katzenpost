@@ -1,13 +1,15 @@
 image: "golang:1.13"
 
-variables:
-  GO111MODULE: "on"
-
 before_script:
   - mkdir -p /go/src/github.com/katzenpost
   - cp -r /builds/katzenpost/* /go/src/github.com/katzenpost/
-  - cd /go/src/github.com/katzenpost/server
+  - cd /builds/katzenpost/server/
 
 test-server:
   script:
-    - go test -v -cover -race ./...
+    - mkdir -p coverage
+    - go test -v -cover -coverprofile cover.out -covermode atomic -race  ./...
+    - go tool cover -html=cover.out -o coverage/coverage.html
+  artifacts:
+    paths:
+      - coverage/
