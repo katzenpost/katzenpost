@@ -1,12 +1,15 @@
-image: "golang:1.12"
-
-variables:
-  GO111MODULE: "on"
+image: "golang:1.13"
 
 before_script:
-  - cp -r /builds/katzenpost /go/src/github.com/katzenpost/
-  - cd /go/src/github.com/katzenpost/client
+  - mkdir -p /go/src/github.com/katzenpost
+  - cp -r /builds/katzenpost/* /go/src/github.com/katzenpost/
+  - cd /builds/katzenpost/client/
 
 test-client:
   script:
-    - go test -v -cover -race -timeout 0 -ldflags "-X github.com/katzenpost/client/vendor/github.com/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/client/vendor/github.com/katzenpost/server/internal/pki.WarpedEpoch=true" ./...
+    - mkdir -p coverage
+    - go test -v -coverprofile cover.out -covermode atomic -race ./...
+    - go tool cover -html=cover.out -o coverage/coverage.html
+  artifacts:
+    paths:
+      - coverage/

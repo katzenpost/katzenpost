@@ -1,11 +1,7 @@
 language: go
 
 go:
-  - "1.12"
-
-env:
-  global:
-    GO111MODULE=on
+  - "1.13"
 
 script:
-  - go test -v -cover -race -timeout 0 -ldflags "-X github.com/katzenpost/client/vendor/github.com/katzenpost/core/epochtime.WarpedEpoch=true -X github.com/katzenpost/client/vendor/github.com/katzenpost/server/internal/pki.WarpedEpoch=true" ./...
+  - go test -v -cover -race ./...
