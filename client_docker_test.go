@@ -24,13 +24,15 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
 
-func TestCatshadowBasics(t *testing.T) {
+func createCatshadowClient(t *testing.T) *Client {
 	require := require.New(t)
 
 	// Load catshadow config file.
@@ -43,7 +45,11 @@ func TestCatshadowBasics(t *testing.T) {
 
 	tmpDir, err := ioutil.TempDir("", "catshadow_test")
 	require.NoError(err)
-	stateFile := filepath.Join(tmpDir, fmt.Sprintf("%d.catshadow.state", os.Getpid()))
+
+	id := [6]byte{}
+	_, err = rand.Reader.Read(id[:])
+	require.NoError(err)
+	stateFile := filepath.Join(tmpDir, fmt.Sprintf("%x.catshadow.state", id))
 	if _, err := os.Stat(stateFile); !os.IsNotExist(err) {
 		panic(err)
 	}
@@ -64,7 +70,50 @@ func TestCatshadowBasics(t *testing.T) {
 	stateWorker.Start()
 	catShadowClient.Start()
 
-	// XXX blah blah blah test stuff here.
+	return catShadowClient
+}
 
-	catShadowClient.Shutdown()
+func TestCatshadowBasics(t *testing.T) {
+	//require := require.New(t)
+
+	alice := createCatshadowClient(t)
+	bob := createCatshadowClient(t)
+
+	sharedSecret := []byte("twas brillig and slithy toves6e")
+	alice.NewContact("bob", sharedSecret)
+	bob.NewContact("alice", sharedSecret)
+
+	aliceEventsCh := alice.EventsChan()
+	ev := <-aliceEventsCh
+	_, ok := ev.(KeyExchangeCompleted)
+	if !ok {
+		panic("wtf")
+	}
+
+	bobEventsCh := bob.EventsChan()
+	ev = <-bobEventsCh
+	_, ok = ev.(KeyExchangeCompleted)
+	if !ok {
+		panic("wtf")
+	}
+
+	/*
+		alice.SendMessage("bob", []byte("hello bobby, this is a message"))
+		ev = <-aliceEventsCh
+		_, ok = ev.(MessageDelivered)
+		if !ok {
+			panic("wtf")
+		}
+
+
+		ev = <-bobEventsCh
+		_, ok = ev.(MessageReceived)
+		if !ok {
+			panic("wtf")
+		}
+	*/
+
+	time.Sleep(3 * time.Second)
+	alice.Shutdown()
+	bob.Shutdown()
 }

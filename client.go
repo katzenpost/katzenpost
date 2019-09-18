@@ -386,6 +386,9 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		}
 		contact.isPending = false
 		c.log.Debug("Double ratchet key exchange completed!")
+		c.eventsChan <- KeyExchangeCompleted{
+			Nickname: contact.nickname,
+		}
 	}
 	c.save()
 }
@@ -429,6 +432,9 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		c.log.Errorf("double ratchet channel write failure: %s", err)
 	}
 	c.log.Info("Sent message to %s.", nickname)
+	c.eventsChan <- MessageDelivered{
+		//MessageIndex: 123,
+	}
 }
 
 func (c *Client) GetConversation(nickname string) []*Message {
