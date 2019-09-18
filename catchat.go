@@ -27,8 +27,8 @@ var (
 	config     Config
 	configFile string
 
-	contactListModel  = NewContactListModel(nil)
-	conversationModel = NewConversationModel(nil)
+	contactListModel  *ContactListModel
+	conversationModel *ConversationModel
 )
 
 // runApp loads and executes the QML UI
@@ -97,6 +97,9 @@ func main() {
 	configBridge.SetPositionY(config.PositionY)
 	configBridge.SetWidth(config.Width)
 	configBridge.SetHeight(config.Height)
+
+	contactListModel = NewContactListModel(nil)
+	conversationModel = NewConversationModel(nil)
 
 	// Prepare catshadow client instance.
 
