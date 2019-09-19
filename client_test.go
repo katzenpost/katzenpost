@@ -18,6 +18,7 @@
 package client
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -94,7 +95,6 @@ func TestAutoRegisterRandomClient(t *testing.T) {
 	go func() {
 		defer k.Shutdown()
 		<-time.After(70 * time.Second) // must wait for provider to fetch pki document
-
 		cfg, err := k.GetClientNetconfig()
 		require.NoError(err)
 
@@ -113,6 +113,59 @@ func TestAutoRegisterRandomClient(t *testing.T) {
 		desc, err := s.GetService("loop")
 		require.NoError(err)
 		t.Logf("Found %v kaetzchen on %v", desc.Name, desc.Provider)
+
+		c.Shutdown()
+		t.Logf("Shutdown requested")
+		c.Wait()
+	}()
+	k.Wait()
+}
+
+// TestDecoyClient tests client with Decoy traffic enabled
+func TestDecoyClient(t *testing.T) {
+	require := require.New(t)
+	voting := false
+	nVoting := 0
+	nProvider := 2
+	nMix := 6
+	k := kimchi.NewKimchi(basePort+500, "", nil, voting, nVoting, nProvider, nMix)
+	t.Logf("Running TestAutoRegisterRandomClient.")
+	k.Run()
+
+	go func() {
+		defer k.Shutdown()
+		<-time.After(70 * time.Second) // must wait for provider to fetch pki document
+		cfg, err := k.GetClientNetconfig()
+		require.NoError(err)
+		cfg.Debug.DisableDecoyTraffic = false
+
+		_, linkKey := AutoRegisterRandomClient(cfg)
+		require.NotNil(linkKey)
+
+		// Verify that the client can connect
+		c, err := New(cfg)
+		require.NoError(err)
+
+		// instantiate a session
+		s, err := c.NewSession(linkKey)
+		require.NoError(err)
+
+		// look up a well known service
+		desc, err := s.GetService("loop")
+		require.NoError(err)
+		t.Logf("Found %v kaetzchen on %v", desc.Name, desc.Provider)
+
+		wg := &sync.WaitGroup{}
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				t.Logf("SendUnreliableMessage()")
+				_, err = s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
+				wg.Done()
+				require.NoError(err)
+			}()
+		}
+		wg.Wait()
 
 		c.Shutdown()
 		t.Logf("Shutdown requested")
