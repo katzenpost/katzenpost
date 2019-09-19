@@ -29,7 +29,6 @@ const basePort = 30000
 
 // TestClientConnect tests that a client can connect and send a message to the loop service
 func TestClientConnect(t *testing.T) {
-	t.Parallel()
 	require := require.New(t)
 	voting := false
 	nVoting := 0
@@ -62,8 +61,8 @@ func TestClientConnect(t *testing.T) {
 		s, err := c.NewSession(linkKey)
 		require.NoError(err)
 
-		// get a PKI document? needs client method...
-		desc, err := s.GetService("loop") // XXX: returns nil and no error?!
+		// look up a well known service
+		desc, err := s.GetService("loop")
 		require.NoError(err)
 
 		// send a message
@@ -79,4 +78,45 @@ func TestClientConnect(t *testing.T) {
 
 	k.Wait()
 	t.Logf("Terminated.")
+}
+
+// TestAutoRegisterRandomClient tests client registration
+func TestAutoRegisterRandomClient(t *testing.T) {
+	require := require.New(t)
+	voting := false
+	nVoting := 0
+	nProvider := 2
+	nMix := 6
+	k := kimchi.NewKimchi(basePort+500, "", nil, voting, nVoting, nProvider, nMix)
+	t.Logf("Running TestAutoRegisterRandomClient.")
+	k.Run()
+
+	go func() {
+		defer k.Shutdown()
+		<-time.After(70 * time.Second) // must wait for provider to fetch pki document
+
+		cfg, err := k.GetClientNetconfig()
+		require.NoError(err)
+
+		_, linkKey := AutoRegisterRandomClient(cfg)
+		require.NotNil(linkKey)
+
+		// Verify that the client can connect
+		c, err := New(cfg)
+		require.NoError(err)
+
+		// instantiate a session
+		s, err := c.NewSession(linkKey)
+		require.NoError(err)
+
+		// look up a well known service
+		desc, err := s.GetService("loop")
+		require.NoError(err)
+		t.Logf("Found %v kaetzchen on %v", desc.Name, desc.Provider)
+
+		c.Shutdown()
+		t.Logf("Shutdown requested")
+		c.Wait()
+	}()
+	k.Wait()
 }
