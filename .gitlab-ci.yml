@@ -8,7 +8,7 @@ before_script:
 test-client:
   script:
     - mkdir -p coverage
-    - go test -v -coverprofile cover.out -covermode atomic -race ./...
+    - go test -v -coverprofile cover.out -covermode atomic -coverpkg ./... -race ./...
     - go tool cover -html=cover.out -o coverage/coverage.html
   artifacts:
     paths:
