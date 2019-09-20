@@ -68,9 +68,11 @@ func TestClientConnect(t *testing.T) {
 
 		// send a message
 		t.Logf("desc.Provider: %s", desc.Provider)
-		_, err = s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
-		t.Logf("Sent unreliable message to loop service")
+		mesgID, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
 		require.NoError(err)
+		_, err = s.WaitForReply(mesgID)
+		require.NoError(err)
+		t.Logf("Sent unreliable message to loop service")
 
 		c.Shutdown()
 		t.Logf("Shutdown requested")
@@ -160,9 +162,11 @@ func TestDecoyClient(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				t.Logf("SendUnreliableMessage()")
-				_, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
-				wg.Done()
+				mesgID, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
 				require.NoError(err)
+				_, err = s.WaitForReply(mesgID)
+				require.NoError(err)
+				wg.Done()
 			}()
 		}
 		wg.Wait()
