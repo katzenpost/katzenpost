@@ -77,7 +77,11 @@ func (s *Session) waitForReply(id MessageID) ([]byte, error) {
 	s.mapLock.Lock()
 	waitCh, ok := s.waitChans[*id]
 	if ok {
-		defer delete(s.waitChans, *id)
+		defer func() {
+			s.mapLock.Lock()
+			delete(s.waitChans, *id)
+			s.mapLock.Unlock()
+		}()
 	} else {
 		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
@@ -85,7 +89,12 @@ func (s *Session) waitForReply(id MessageID) ([]byte, error) {
 	if ok {
 		// XXX Consider what will happen because of this deletion
 		// when we implement an ARQ based reliability.
-		defer delete(s.messageIDMap, *id)
+		defer func() {
+			s.mapLock.Lock()
+			delete(s.messageIDMap, *id)
+			s.mapLock.Unlock()
+		}()
+
 	} else {
 		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
