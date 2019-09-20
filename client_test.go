@@ -160,7 +160,7 @@ func TestDecoyClient(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				t.Logf("SendUnreliableMessage()")
-				_, err = s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
+				_, err := s.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello!"))
 				wg.Done()
 				require.NoError(err)
 			}()
