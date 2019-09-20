@@ -351,7 +351,7 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
-	c.log.Debugf("got panda update: %v", update)
+	c.log.Debug("got panda update")
 	contact, ok := c.contacts[update.ID]
 	if !ok {
 		c.log.Error("failure to perform PANDA update: invalid contact ID")
@@ -439,6 +439,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	}
 	c.log.Info("Sent message to %s.", nickname)
 	c.eventsChan <- MessageDelivered{
+		// XXX fix me, this is stupid
 		//MessageIndex: 123,
 	}
 }
