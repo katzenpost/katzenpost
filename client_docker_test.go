@@ -79,7 +79,7 @@ func TestCatshadowBasics(t *testing.T) {
 	alice := createCatshadowClient(t)
 	bob := createCatshadowClient(t)
 
-	sharedSecret := []byte("twas brillig and slithy toves6e")
+	sharedSecret := []byte("twas brillig and slithy toves")
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
@@ -104,7 +104,6 @@ func TestCatshadowBasics(t *testing.T) {
 		if !ok {
 			panic("wtf")
 		}
-
 
 		ev = <-bobEventsCh
 		_, ok = ev.(MessageReceived)

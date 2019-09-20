@@ -17,6 +17,8 @@
 package catshadow
 
 import (
+	"sync"
+
 	"github.com/katzenpost/channels"
 	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/crypto/rand"
@@ -87,6 +89,10 @@ type Contact struct {
 	// ratchet is the client's double ratchet for end to end encryption
 	ratchet *ratchet.Ratchet
 
+	// ratchetMutex is used to prevent a data race where the client
+	// marshall's the ratchet and encrypts using the ratchet at the same time.
+	ratchetMutex *sync.Mutex
+
 	// spoolWriterChan is a spool channel we must write to in order to
 	// send this contact a message.
 	spoolWriterChan *channels.UnreliableSpoolWriterChannel
@@ -112,6 +118,7 @@ func NewContact(nickname string, id uint64, spoolReaderChan *channels.Unreliable
 		id:                id,
 		isPending:         true,
 		ratchet:           ratchet,
+		ratchetMutex:      new(sync.Mutex),
 		keyExchange:       exchange,
 		pandaShutdownChan: make(chan struct{}),
 	}, nil
