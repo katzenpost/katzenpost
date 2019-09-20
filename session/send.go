@@ -52,11 +52,11 @@ func (s *Session) waitForSent(id MessageID) error {
 	waitCh, ok = s.waitSentChans[*id]
 	s.mapLock.Unlock()
 	if ok {
-		func() {
+		defer func() {
 			s.mapLock.Lock()
 			delete(s.waitSentChans, *id)
 			s.mapLock.Unlock()
-		}
+		}()
 	} else {
 		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
 	}
