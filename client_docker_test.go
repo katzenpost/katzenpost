@@ -54,6 +54,7 @@ func createCatshadowClient(t *testing.T) *Client {
 		panic(err)
 	}
 	cfg, linkKey := client.AutoRegisterRandomClient(cfg)
+	cfg.Logging.Level = "INFO" // verbosity reductionism
 	c, err := client.New(cfg)
 	require.NoError(err)
 	passphrase := []byte("")
@@ -79,7 +80,7 @@ func TestCatshadowBasics(t *testing.T) {
 	alice := createCatshadowClient(t)
 	bob := createCatshadowClient(t)
 
-	sharedSecret := []byte("twas brillig and slithy toves")
+	sharedSecret := []byte("twas brillig and slithy toves45678")
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
@@ -98,18 +99,19 @@ func TestCatshadowBasics(t *testing.T) {
 	}
 
 	/*
-		alice.SendMessage("bob", []byte("hello bobby, this is a message"))
-		ev = <-aliceEventsCh
-		_, ok = ev.(MessageDelivered)
-		if !ok {
-			panic("wtf")
-		}
+			alice.SendMessage("bob", []byte("hello bobby, this is a message"))
+			t.Log("unique cryptic string after SendMessage")
+			ev = <-aliceEventsCh
+			_, ok = ev.(MessageDelivered)
+			if !ok {
+				panic("wtf")
+			}
 
-		ev = <-bobEventsCh
-		_, ok = ev.(MessageReceived)
-		if !ok {
-			panic("wtf")
-		}
+		    ev = <-bobEventsCh
+			_, ok = ev.(MessageReceived)
+			if !ok {
+				panic("wtf")
+			}
 	*/
 
 	time.Sleep(3 * time.Second)
