@@ -1,0 +1,22 @@
+image: "golang:1.13"
+
+before_script:
+  - mkdir -p /go/src/github.com/katzenpost
+  - cp -r /builds/katzenpost/* /go/src/github.com/katzenpost/
+  - cd /go/src/github.com/katzenpost
+  - git clone https://github.com/katzenpost/memspool
+  - git clone https://github.com/katzenpost/panda
+  - cd /go/src/github.com/katzenpost/memspool/server/cmd/memspool
+  - go install
+  - cd /go/src/github.com/katzenpost/panda/server/cmd/panda_server
+  - go install
+  - cd /builds/katzenpost/catshadow/
+
+test-catshadow:
+  script:
+    - mkdir -p coverage
+    - go test -v -coverprofile cover.out -covermode atomic -coverpkg ./... -race ./...
+    - go tool cover -html=cover.out -o coverage/coverage.html
+  artifacts:
+    paths:
+      - coverage/
