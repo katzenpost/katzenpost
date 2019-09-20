@@ -73,7 +73,7 @@ func (s *Session) waitForSent(id MessageID) error {
 }
 
 // WaitForReply blocks until a reply is received.
-func (s *Session) waitForReply(id MessageID) ([]byte, error) {
+func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
 	s.log.Debugf("WaitForReply message ID: %x\n", *id)
 	err := s.waitForSent(id)
 	if err != nil {
@@ -259,8 +259,8 @@ func (s *Session) composeMessage(recipient, provider string, message []byte) (*M
 	return &msg, nil
 }
 
-// SendUnreliableMessage sends message without any automatic retransmissions.
-func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) ([]byte, error) {
+// SendUnreliableMessage asynchronously sends message without any automatic retransmissions.
+func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) (MessageID, error) {
 	msg, err := s.composeMessage(recipient, provider, message)
 	if err != nil {
 		return nil, err
@@ -276,5 +276,5 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 	if err != nil {
 		return nil, err
 	}
-	return s.waitForReply(msg.ID)
+	return msg.ID, nil
 }

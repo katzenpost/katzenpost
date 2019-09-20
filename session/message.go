@@ -30,7 +30,7 @@ type MessageID *[cConstants.MessageIDLength]byte
 // received SURB replies.
 type Message struct {
 	// ID is the message identifier
-	ID *[cConstants.MessageIDLength]byte
+	ID MessageID
 
 	// Recipient is the message recipient
 	Recipient string
