@@ -323,7 +323,9 @@ func (c *Client) marshal() ([]byte, error) {
 		Conversations:   c.GetAllConversations(),
 	}
 	var serialized []byte
+	c.conversationsMutex.Lock()
 	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
+	c.conversationsMutex.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +380,9 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			contact.pandaResult = err.Error()
 		}
 		contact.spoolWriterChan = exchange.SpoolWriter
+		contact.ratchetMutex.Lock()
 		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
+		contact.ratchetMutex.Unlock()
 		if err != nil {
 			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
 			c.log.Error(err.Error())
@@ -424,7 +428,9 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	payload := [channels.DoubleRatchetPayloadLength]byte{}
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
+	contact.ratchetMutex.Lock()
 	ciphertext := contact.ratchet.Encrypt(nil, payload[:])
+	contact.ratchetMutex.Unlock()
 	c.save()
 
 	err := contact.spoolWriterChan.Write(c.spoolService, ciphertext)
@@ -460,7 +466,9 @@ func (c *Client) readInbox() (bool, string, *Message) {
 	var decrypted bool
 	var nickname string
 	for _, contact := range c.contacts {
+		contact.ratchetMutex.Lock()
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
+		contact.ratchetMutex.Unlock()
 		if err != nil {
 			continue
 		} else {
