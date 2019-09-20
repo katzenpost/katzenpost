@@ -9,7 +9,7 @@ require (
 	github.com/katzenpost/core v0.0.8-0.20190916144859-1342f2214ce3
 	github.com/katzenpost/doubleratchet v0.0.0
 	github.com/katzenpost/kimchi v0.0.0-20190920152505-0ced4b468812
-	github.com/katzenpost/memspool v0.0.1
+	github.com/katzenpost/memspool v0.0.2-0.20190913065335-d7026beb0dd2
 	github.com/katzenpost/panda v0.0.4-0.20190916144128-08089f042087
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
