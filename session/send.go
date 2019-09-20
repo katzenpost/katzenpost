@@ -137,8 +137,6 @@ func (s *Session) sendNext() error {
 }
 
 func (s *Session) doSend(msg *Message) error {
-	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
@@ -156,6 +154,7 @@ func (s *Session) doSend(msg *Message) error {
 	if err != nil {
 		return err
 	}
+	s.mapLock.Lock()
 	if msg.WithSURB {
 		s.log.Debugf("doSend setting ReplyETA to %v", eta)
 		msg.Key = key
@@ -165,6 +164,7 @@ func (s *Session) doSend(msg *Message) error {
 		s.surbIDMap[surbID] = msg
 	}
 	eventCh, ok := s.waitSentChans[*msg.ID]
+	s.mapLock.Unlock()
 	if ok {
 		select {
 		case eventCh <- &MessageSentEvent{
