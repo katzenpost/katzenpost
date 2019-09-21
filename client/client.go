@@ -70,7 +70,11 @@ func (p *Panda) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, er
 		enc := codec.NewEncoderBytes(&rawRequest, &p.jsonHandle)
 		enc.Encode(request)
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
-		reply, err := p.session.SendUnreliableMessage(p.recipient, p.provider, rawRequest)
+		mesgID, err := p.session.SendUnreliableMessage(p.recipient, p.provider, rawRequest)
+		if err != nil {
+			return nil, err
+		}
+		reply, err := p.session.WaitForReply(mesgID)
 		if err != nil {
 			return nil, err
 		}

@@ -3,19 +3,16 @@ module github.com/katzenpost/panda
 go 1.12
 
 require (
+	git.schwanenlied.me/yawning/chacha20 v0.0.0-20170904085104-e3b1f968fc63 // indirect
+	git.schwanenlied.me/yawning/chacha20.git v0.0.0-20170904085104-e3b1f968fc63 // indirect
+	git.schwanenlied.me/yawning/newhope.git v0.0.0-20170622154529-9598792ba8f2 // indirect
 	github.com/coreos/bbolt v1.3.3
 	github.com/golang/protobuf v1.3.2
-	github.com/katzenpost/authority v0.0.9-0.20190801152344-51c6fd574a0d // indirect
-	github.com/katzenpost/client v0.0.2
-	github.com/katzenpost/core v0.0.8-0.20190730121401-926fce1cae50
-	github.com/katzenpost/minclient v0.0.5 // indirect
-	github.com/katzenpost/registration_client v0.0.1 // indirect
-	github.com/katzenpost/server v0.0.7
-	github.com/kr/pretty v0.1.0 // indirect
-	github.com/stretchr/testify v1.3.0
+	github.com/katzenpost/client v0.0.3-0.20190920164705-fb47abdd5f14
+	github.com/katzenpost/core v0.0.8-0.20190907182339-71fec89c259d
+	github.com/katzenpost/server v0.0.8-0.20190910174632-99fb3d5cec86
+	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
-	go.etcd.io/bbolt v1.3.3 // indirect
-	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
-	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
+	golang.org/x/crypto v0.0.0-20190909091759-094676da4a83
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )
