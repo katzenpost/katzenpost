@@ -17,23 +17,50 @@
 package common
 
 import (
+	"errors"
+
+	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/ugorji/go/codec"
 )
 
 const (
-	SpoolIDSize     = 12
-	SignatureSize   = 64
-	PublicKeySize   = 32
-	MessageIDSize   = 4
-	ResponsePadding = 121
-	QueryOverhead   = 171
+	// SpoolIDSize is the size of a spool identity
+	SpoolIDSize = 12
 
-	CreateSpoolCommand     = 0
-	PurgeSpoolCommand      = 1
-	AppendMessageCommand   = 2
+	// SignatureSize is the size of a spool command signature
+	SignatureSize = 64
+
+	// PublicKeySize is the size of a public key for verifying
+	// spool command signatures.
+	PublicKeySize = 32
+
+	// MessageIDSize is the size of a message identity.
+	MessageIDSize = 4
+
+	// ResponsePadding is size of the padding of the spool service response.
+	ResponsePadding = 121
+
+	// QueryOverhead is the number of bytes overhead
+	// from the spool command CBOR encoding.
+	QueryOverhead = 171
+
+	// SpoolPayloadLength is the length of the spool append message payload.
+	SpoolPayloadLength = (constants.UserForwardPayloadLength - 4) - QueryOverhead
+
+	// CreateSpoolCommand is the identity of the create spool command.
+	CreateSpoolCommand = 0
+
+	// PurgeSpoolCommand is the identity of the purge spool command.
+	PurgeSpoolCommand = 1
+
+	// AppendMessageCommand is the identity of the append message command.
+	AppendMessageCommand = 2
+
+	// RetrieveMessageCommand is the identity of the retrieve message command.
 	RetrieveMessageCommand = 3
 
+	// SpoolServiceName is the canonical name of the memspool service.
 	SpoolServiceName = "spool"
 )
 
@@ -117,6 +144,9 @@ func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, e
 }
 
 func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
+	if len(message) > SpoolPayloadLength {
+		return nil, errors.New("exceeds payload maximum")
+	}
 	s := SpoolRequest{
 		Command: AppendMessageCommand,
 		SpoolID: spoolID[:],
