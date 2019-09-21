@@ -49,7 +49,11 @@ func New(session *session.Session) *UnreliableSpoolService {
 }
 
 func (s *UnreliableSpoolService) submitCommand(cmd []byte, recipient, provider string) (*common.SpoolResponse, error) {
-	reply, err := s.session.SendUnreliableMessage(recipient, provider, cmd)
+	mesgID, err := s.session.SendUnreliableMessage(recipient, provider, cmd)
+	if err != nil {
+		return nil, err
+	}
+	reply, err := s.session.WaitForReply(mesgID)
 	if err != nil {
 		return nil, err
 	}
