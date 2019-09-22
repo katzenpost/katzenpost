@@ -22,9 +22,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/katzenpost/channels"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/memspool/client"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -46,12 +46,12 @@ type Message struct {
 // State is the struct type representing the Client's state
 // which is encrypted and persisted to disk.
 type State struct {
-	SpoolReaderChan *channels.UnreliableSpoolReaderChannel
-	Contacts        []*Contact
-	User            string
-	Provider        string
-	LinkKey         *ecdh.PrivateKey
-	Conversations   map[string][]*Message
+	SpoolReadDescriptor *client.SpoolReadDescriptor
+	Contacts            []*Contact
+	User                string
+	Provider            string
+	LinkKey             *ecdh.PrivateKey
+	Conversations       map[string][]*Message
 }
 
 // StateWriter takes ownership of the Client's encrypted statefile

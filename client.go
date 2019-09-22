@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/channels"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/client/session"
@@ -32,6 +31,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
+	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/memspool/client"
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
@@ -45,6 +45,9 @@ const (
 	// inbox for new messages
 	readInboxPoissonLambda = 0.0001234
 	readInboxPoissonMax    = 90000
+
+	// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
+	DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
 )
 
 type addContact struct {
@@ -87,14 +90,13 @@ type Client struct {
 	user                  string
 	contacts              map[uint64]*Contact
 	contactNicknames      map[string]*Contact
-	spoolReaderChan       *channels.UnreliableSpoolReaderChannel
+	spoolReadDescriptor   *memspoolclient.SpoolReadDescriptor
 	readInboxPoissonTimer *poisson.Fount
 	conversations         map[string][]*Message
 	conversationsMutex    *sync.Mutex
 
-	client       *client.Client
-	session      *session.Session
-	spoolService memspoolclient.SpoolService
+	client  *client.Client
+	session *session.Session
 
 	log        *logging.Logger
 	logBackend *log.Backend
@@ -134,29 +136,28 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		return nil, err
 	}
 	c := &Client{
-		eventsChan:         make(chan interface{}),
-		pandaChan:          make(chan panda.PandaUpdate),
-		addContactChan:     make(chan addContact),
-		sendMessageChan:    make(chan sendMessage),
-		getNicknamesChan:   make(chan chan []string),
-		removeContactChan:  make(chan string),
-		contacts:           make(map[uint64]*Contact),
-		contactNicknames:   make(map[string]*Contact),
-		spoolReaderChan:    state.SpoolReaderChan,
-		linkKey:            state.LinkKey,
-		user:               state.User,
-		conversations:      state.Conversations,
-		conversationsMutex: new(sync.Mutex),
-		stateWorker:        stateWorker,
+		eventsChan:          make(chan interface{}),
+		pandaChan:           make(chan panda.PandaUpdate),
+		addContactChan:      make(chan addContact),
+		sendMessageChan:     make(chan sendMessage),
+		getNicknamesChan:    make(chan chan []string),
+		removeContactChan:   make(chan string),
+		contacts:            make(map[uint64]*Contact),
+		contactNicknames:    make(map[string]*Contact),
+		spoolReadDescriptor: state.SpoolReadDescriptor,
+		linkKey:             state.LinkKey,
+		user:                state.User,
+		conversations:       state.Conversations,
+		conversationsMutex:  new(sync.Mutex),
+		stateWorker:         stateWorker,
 		readInboxPoissonTimer: poisson.NewTimer(&poisson.Descriptor{
 			Lambda: readInboxPoissonLambda,
 			Max:    readInboxPoissonMax,
 		}),
-		client:       mixnetClient,
-		session:      session,
-		spoolService: memspoolclient.New(session),
-		log:          logBackend.GetLogger("catshadow"),
-		logBackend:   logBackend,
+		client:     mixnetClient,
+		session:    session,
+		log:        logBackend.GetLogger("catshadow"),
+		logBackend: logBackend,
 	}
 	for _, contact := range state.Contacts {
 		c.contacts[contact.id] = contact
@@ -192,15 +193,17 @@ func (c *Client) EventsChan() <-chan interface{} {
 }
 
 // CreateRemoteSpool creates a remote spool for collecting messages
-// destined to this Client.
+// destined to this Client. This method blocks until the reply from
+// the remote spool service is received or the round trip timeout is reached.
 func (c *Client) CreateRemoteSpool() error {
 	desc, err := c.session.GetService(common.SpoolServiceName)
 	if err != nil {
 		return err
 	}
-	if c.spoolReaderChan == nil {
-		spoolService := memspoolclient.New(c.session)
-		c.spoolReaderChan, err = channels.NewUnreliableSpoolReaderChannel(desc.Name, desc.Provider, spoolService)
+	if c.spoolReadDescriptor == nil {
+		// Be warned that the call to NewSpoolReadDescriptor blocks until the reply
+		// is received or the round trip timeout is reached.
+		c.spoolReadDescriptor, err = memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
 		if err != nil {
 			return err
 		}
@@ -244,7 +247,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randID(), c.spoolReaderChan, c.session)
+	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.session)
 	if err != nil {
 		return err
 	}
@@ -315,12 +318,12 @@ func (c *Client) marshal() ([]byte, error) {
 		contacts = append(contacts, contact)
 	}
 	s := &State{
-		SpoolReaderChan: c.spoolReaderChan,
-		Contacts:        contacts,
-		LinkKey:         c.linkKey,
-		User:            c.user,
-		Provider:        c.client.Provider(),
-		Conversations:   c.GetAllConversations(),
+		SpoolReadDescriptor: c.spoolReadDescriptor,
+		Contacts:            contacts,
+		LinkKey:             c.linkKey,
+		User:                c.user,
+		Provider:            c.client.Provider(),
+		Conversations:       c.GetAllConversations(),
 	}
 	var serialized []byte
 	c.conversationsMutex.Lock()
@@ -379,7 +382,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
 		}
-		contact.spoolWriterChan = exchange.SpoolWriter
+		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.ratchetMutex.Lock()
 		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
 		contact.ratchetMutex.Unlock()
@@ -425,7 +428,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		return
 	}
 
-	payload := [channels.DoubleRatchetPayloadLength]byte{}
+	payload := [DoubleRatchetPayloadLength]byte{}
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
@@ -433,15 +436,16 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	contact.ratchetMutex.Unlock()
 	c.save()
 
-	err := contact.spoolWriterChan.Write(c.spoolService, ciphertext)
+	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
 	if err != nil {
-		c.log.Errorf("double ratchet channel write failure: %s", err)
+		c.log.Errorf("failed to compute spool append command: %s", err)
+		return
 	}
-	c.log.Info("Sent message to %s.", nickname)
-	c.eventsChan <- MessageDelivered{
-		// XXX fix me, this is stupid
-		//MessageIndex: 123,
+	mesgID, err := c.session.SendUnreliableMessage(contact.spoolWriteDescriptor.Receiver, contact.spoolWriteDescriptor.Provider, appendCmd)
+	if err != nil {
+		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 	}
+	c.log.Info("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
 }
 
 func (c *Client) GetConversation(nickname string) []*Message {
@@ -457,38 +461,42 @@ func (c *Client) GetAllConversations() map[string][]*Message {
 }
 
 func (c *Client) readInbox() (bool, string, *Message) {
-	var err error
-	ciphertext, err := c.spoolReaderChan.Read(c.spoolService)
-	if err != nil {
-		c.log.Debugf("failure reading remote spool: %s", err)
-		return false, "", nil
-	}
-	message := Message{}
-	var decrypted bool
-	var nickname string
-	for _, contact := range c.contacts {
-		contact.ratchetMutex.Lock()
-		plaintext, err := contact.ratchet.Decrypt(ciphertext)
-		contact.ratchetMutex.Unlock()
+	// XXX fix me
+	/*
+		var err error
+		// XXX c.spoolReadDescriptor
+		ciphertext, err := c.spoolReaderChan.Read(c.spoolService)
 		if err != nil {
-			continue
-		} else {
-			decrypted = true
-			nickname = contact.nickname
-			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			message.Plaintext = plaintext[4 : 4+payloadLen]
-			message.Timestamp = time.Now()
-			message.Outbound = false
-			break
+			c.log.Debugf("failure reading remote spool: %s", err)
+			return false, "", nil
 		}
-	}
-	if decrypted {
-		c.conversationsMutex.Lock()
-		defer c.conversationsMutex.Unlock()
-		c.conversations[nickname] = append(c.conversations[nickname], &message)
-		return true, nickname, &message
-	}
-	c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
+		message := Message{}
+		var decrypted bool
+		var nickname string
+		for _, contact := range c.contacts {
+			contact.ratchetMutex.Lock()
+			plaintext, err := contact.ratchet.Decrypt(ciphertext)
+			contact.ratchetMutex.Unlock()
+			if err != nil {
+				continue
+			} else {
+				decrypted = true
+				nickname = contact.nickname
+				payloadLen := binary.BigEndian.Uint32(plaintext[:4])
+				message.Plaintext = plaintext[4 : 4+payloadLen]
+				message.Timestamp = time.Now()
+				message.Outbound = false
+				break
+			}
+		}
+		if decrypted {
+			c.conversationsMutex.Lock()
+			defer c.conversationsMutex.Unlock()
+			c.conversations[nickname] = append(c.conversations[nickname], &message)
+			return true, nickname, &message
+		}
+		c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
+	*/
 	return false, "", nil
 }
 
