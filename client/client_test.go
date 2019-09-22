@@ -82,7 +82,7 @@ func TestNewUnreliableSpoolService(t *testing.T) {
 		// read from a spool (should find our original message)
 		resp, err := svc.ReadFromSpool(spoolId, messageID, spoolPrivateKey, desc.Name, desc.Provider)
 		require.NoError(err)
-		t.Logf("Got response: %v", resp)
+		t.Logf("Got message %s from spool %x with status %s", resp.Message, resp.SpoolID, resp.Status)
 		if !bytes.Equal(resp.SpoolID, spoolId) {
 			t.Logf("spool response returned status %s", resp.Status)
 			t.Errorf("spool ID's differ in response!?: %x vs %x", resp.SpoolID, spoolId)
@@ -97,9 +97,7 @@ func TestNewUnreliableSpoolService(t *testing.T) {
 
 		// read from a spool (should be empty?)
 		resp, err = svc.ReadFromSpool(spoolId, messageID, spoolPrivateKey, desc.Name, desc.Provider)
-
-		// TODO: verify spool is empty (or  missing?)
-
+		require.NoError(err)
 	}()
 	k.Wait()
 	t.Logf("Terminated")
