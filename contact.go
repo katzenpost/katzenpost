@@ -19,25 +19,25 @@ package catshadow
 import (
 	"sync"
 
-	"github.com/katzenpost/channels"
 	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/crypto/rand"
 	ratchet "github.com/katzenpost/doubleratchet"
+	"github.com/katzenpost/memspool/client"
 	"github.com/ugorji/go/codec"
 )
 
 var cborHandle = new(codec.CborHandle)
 
 type contactExchange struct {
-	SpoolWriter       *channels.UnreliableSpoolWriterChannel
-	SignedKeyExchange *ratchet.SignedKeyExchange
+	SpoolWriteDescriptor *client.SpoolWriteDescriptor
+	SignedKeyExchange    *ratchet.SignedKeyExchange
 }
 
 // NewContactExchangeBytes returns serialized contact exchange information.
-func NewContactExchangeBytes(spoolWriter *channels.UnreliableSpoolWriterChannel, signedKeyExchange *ratchet.SignedKeyExchange) ([]byte, error) {
+func NewContactExchangeBytes(spoolWriteDescriptor *client.SpoolWriteDescriptor, signedKeyExchange *ratchet.SignedKeyExchange) ([]byte, error) {
 	exchange := contactExchange{
-		SpoolWriter:       spoolWriter,
-		SignedKeyExchange: signedKeyExchange,
+		SpoolWriteDescriptor: spoolWriteDescriptor,
+		SignedKeyExchange:    signedKeyExchange,
 	}
 	var serialized []byte
 	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(exchange)
@@ -57,14 +57,14 @@ func parseContactExchangeBytes(contactExchangeBytes []byte) (*contactExchange, e
 }
 
 type serializedContact struct {
-	ID               uint64
-	Nickname         string
-	IsPending        bool
-	KeyExchange      []byte
-	PandaKeyExchange []byte
-	PandaResult      string
-	Ratchet          []byte
-	SpoolWriterChan  *channels.UnreliableSpoolWriterChannel
+	ID                   uint64
+	Nickname             string
+	IsPending            bool
+	KeyExchange          []byte
+	PandaKeyExchange     []byte
+	PandaResult          string
+	Ratchet              []byte
+	SpoolWriteDescriptor *client.SpoolWriteDescriptor
 }
 
 // Contact is a communications contact that we have bidirectional
@@ -72,17 +72,23 @@ type serializedContact struct {
 type Contact struct {
 	// id is the local unique contact ID.
 	id uint64
+
 	// nickname is also unique locally.
 	nickname string
+
 	// isPending is true if the key exchange has not been completed.
 	isPending bool
+
 	// keyExchange is the serialised double ratchet key exchange we generated.
 	keyExchange []byte
+
 	// pandaKeyExchange is the serialised PANDA key exchange we generated.
 	pandaKeyExchange []byte
+
 	// pandaShutdownChan can be closed to trigger the shutdown of a PANDA
 	// key exchange worker goroutine.
 	pandaShutdownChan chan struct{}
+
 	// pandaResult contains an error message if the PANDA exchange fails.
 	pandaResult string
 
@@ -93,13 +99,13 @@ type Contact struct {
 	// marshall's the ratchet and encrypts using the ratchet at the same time.
 	ratchetMutex *sync.Mutex
 
-	// spoolWriterChan is a spool channel we must write to in order to
-	// send this contact a message.
-	spoolWriterChan *channels.UnreliableSpoolWriterChannel
+	// spoolWriteDescriptor is a description of a remotely writable spool
+	// which we must write to in order to send this contact a message.
+	spoolWriteDescriptor *client.SpoolWriteDescriptor
 }
 
 // NewContact creates a new Contact or returns an error.
-func NewContact(nickname string, id uint64, spoolReaderChan *channels.UnreliableSpoolReaderChannel, session *session.Session) (*Contact, error) {
+func NewContact(nickname string, id uint64, spoolReadDescriptor *client.SpoolReadDescriptor, session *session.Session) (*Contact, error) {
 	ratchet, err := ratchet.New(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -108,8 +114,8 @@ func NewContact(nickname string, id uint64, spoolReaderChan *channels.Unreliable
 	if err != nil {
 		return nil, err
 	}
-	spoolWriterChan := spoolReaderChan.GetSpoolWriter()
-	exchange, err := NewContactExchangeBytes(spoolWriterChan, signedKeyExchange)
+	spoolWriteDescriptor := spoolReadDescriptor.GetWriteDescriptor()
+	exchange, err := NewContactExchangeBytes(spoolWriteDescriptor, signedKeyExchange)
 	if err != nil {
 		return nil, err
 	}
@@ -137,14 +143,14 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 	s := &serializedContact{
-		ID:               c.id,
-		Nickname:         c.nickname,
-		IsPending:        c.isPending,
-		KeyExchange:      c.keyExchange,
-		PandaKeyExchange: c.pandaKeyExchange,
-		PandaResult:      c.pandaResult,
-		Ratchet:          ratchetBlob,
-		SpoolWriterChan:  c.spoolWriterChan,
+		ID:                   c.id,
+		Nickname:             c.nickname,
+		IsPending:            c.isPending,
+		KeyExchange:          c.keyExchange,
+		PandaKeyExchange:     c.pandaKeyExchange,
+		PandaResult:          c.pandaResult,
+		Ratchet:              ratchetBlob,
+		SpoolWriteDescriptor: c.spoolWriteDescriptor,
 	}
 	var serialized []byte
 	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
@@ -181,7 +187,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.pandaKeyExchange = s.PandaKeyExchange
 	c.pandaResult = s.PandaResult
 	c.ratchet = r
-	c.spoolWriterChan = s.SpoolWriterChan
+	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 
 	return nil
 }
