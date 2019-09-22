@@ -33,11 +33,6 @@ import (
 )
 
 const (
-	CreateSpoolCommand     = 0
-	PurgeSpoolCommand      = 1
-	AppendMessageCommand   = 2
-	RetrieveMessageCommand = 3
-
 	metadataBucket = "metadata"
 	versionKey     = "version"
 
@@ -55,9 +50,9 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 	log.Debug("start of handle spool request")
 	spoolResponse := common.SpoolResponse{}
 	spoolID := [common.SpoolIDSize]byte{}
-	copy(spoolID[:], request.SpoolID)
+	copy(spoolID[:], request.SpoolID[:])
 	switch request.Command {
-	case CreateSpoolCommand:
+	case common.CreateSpoolCommand:
 		log.Debug("create spool")
 		publicKey := new(eddsa.PublicKey)
 		err := publicKey.FromBytes(request.PublicKey)
@@ -66,15 +61,15 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 			log.Error(spoolResponse.Status)
 			return &spoolResponse
 		}
-		spoolResponse.Status = "OK"
+		spoolResponse.Status = common.StatusOK
 		spoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
 			return &spoolResponse
 		}
-		spoolResponse.SpoolID = spoolID[:]
-	case PurgeSpoolCommand:
+		spoolResponse.SpoolID = *spoolID
+	case common.PurgeSpoolCommand:
 		log.Debug("purge spool")
 		err := spoolMap.PurgeSpool(spoolID, request.Signature)
 		if err != nil {
@@ -82,8 +77,8 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 			log.Error(spoolResponse.Status)
 			return &spoolResponse
 		}
-		spoolResponse.Status = "OK"
-	case AppendMessageCommand:
+		spoolResponse.Status = common.StatusOK
+	case common.AppendMessageCommand:
 		log.Debugf("append to spool, with spool ID: %d", request.SpoolID)
 		err := spoolMap.AppendToSpool(spoolID, request.Message)
 		log.Debug("after call to AppendToSpool")
@@ -92,8 +87,8 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 			log.Error(spoolResponse.Status)
 			return &spoolResponse
 		}
-		spoolResponse.Status = "OK"
-	case RetrieveMessageCommand:
+		spoolResponse.Status = common.StatusOK
+	case common.RetrieveMessageCommand:
 		log.Debug("read from spool")
 		log.Debugf("before ReadFromSpool with message ID %d", request.MessageID)
 		message, err := spoolMap.ReadFromSpool(spoolID, request.Signature, request.MessageID)
@@ -103,7 +98,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 			log.Error(spoolResponse.Status)
 			return &spoolResponse
 		}
-		spoolResponse.Status = "OK"
+		spoolResponse.Status = common.StatusOK
 		spoolResponse.Message = message
 	}
 	log.Debug("end of handle spool request")

@@ -29,7 +29,7 @@ func TestSerializationPaddingSymmetry(t *testing.T) {
 	publicKey := [32]byte{}
 	request := SpoolRequest{
 		Command:   1,
-		SpoolID:   spoolID[:],
+		SpoolID:   spoolID,
 		Signature: sig[:],
 		PublicKey: publicKey[:],
 		MessageID: 0,
@@ -39,7 +39,7 @@ func TestSerializationPaddingSymmetry(t *testing.T) {
 	assert.NoError(err)
 
 	response := SpoolResponse{
-		SpoolID: spoolID[:],
+		SpoolID: spoolID,
 		Message: []byte("hello123"),
 		Status:  "OK",
 	}

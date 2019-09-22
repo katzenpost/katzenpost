@@ -62,6 +62,9 @@ const (
 
 	// SpoolServiceName is the canonical name of the memspool service.
 	SpoolServiceName = "spool"
+
+	// StatusOK is a status string indicating there was no error on the spool operation.
+	StatusOK = "OK"
 )
 
 var (
@@ -73,7 +76,7 @@ type SpoolRequest struct {
 
 	// SpoolID identities a spool on a particular Provider host.
 	// This field must be SpoolIDSize bytes long.
-	SpoolID   []byte
+	SpoolID   [SpoolIDSize]byte
 	Signature []byte
 	PublicKey []byte
 	MessageID uint32
@@ -95,7 +98,7 @@ func (s *SpoolRequest) Encode() ([]byte, error) {
 }
 
 type SpoolResponse struct {
-	SpoolID []byte
+	SpoolID [SpoolIDSize]byte
 	Message []byte
 	Status  string
 	Padding []byte
@@ -117,13 +120,21 @@ func (s *SpoolResponse) Encode() ([]byte, error) {
 	return out, err
 }
 
+func (s *SpoolResponse) IsOK() bool {
+	return s.Status == StatusOK
+}
+
+func (s *SpoolResponse) StatusAsError() error {
+	return errors.New(s.Status)
+}
+
 func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
 	emtpySpoolID := [SpoolIDSize]byte{}
 	emptyMessage := []byte{}
 	s := SpoolRequest{
 		Command:   CreateSpoolCommand,
-		SpoolID:   emtpySpoolID[:],
+		SpoolID:   emtpySpoolID,
 		Signature: signature,
 		PublicKey: privKey.PublicKey().Bytes(),
 		MessageID: 0,
@@ -138,7 +149,7 @@ func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, e
 		Command:   PurgeSpoolCommand,
 		PublicKey: privKey.PublicKey().Bytes(),
 		Signature: signature,
-		SpoolID:   spoolID[:],
+		SpoolID:   spoolID,
 	}
 	return s.Encode()
 }
@@ -149,7 +160,7 @@ func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
 	}
 	s := SpoolRequest{
 		Command: AppendMessageCommand,
-		SpoolID: spoolID[:],
+		SpoolID: spoolID,
 		Message: message[:],
 	}
 	return s.Encode()
@@ -161,7 +172,7 @@ func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.P
 		Command:   RetrieveMessageCommand,
 		PublicKey: privKey.PublicKey().Bytes(),
 		Signature: signature,
-		SpoolID:   spoolID[:],
+		SpoolID:   spoolID,
 		MessageID: messageID,
 	}
 	return s.Encode()
