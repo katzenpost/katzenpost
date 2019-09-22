@@ -97,7 +97,7 @@ func TestNewUnreliableSpoolService(t *testing.T) {
 
 		// read from a spool (should be empty?)
 		resp, err = svc.ReadFromSpool(spoolId, messageID, spoolPrivateKey, desc.Name, desc.Provider)
-		require.NoError(err)
+		require.Error(err)
 	}()
 	k.Wait()
 	t.Logf("Terminated")
