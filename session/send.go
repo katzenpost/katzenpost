@@ -177,6 +177,9 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 // WaitForReply blocks until a reply is received or the
 // round trip timeout is reached.
 func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
+
+	s.awaitReplyMap
+
 	// XXX fix me
 	return nil, nil
 }
