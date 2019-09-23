@@ -156,7 +156,10 @@ func (s *Session) eventSinkWorker() {
 			case *ConnectionStatusEvent:
 				// XXX fix me
 			case *MessageReplyEvent:
-				s.awaitReplyMap.Load(*e.MessageID)
+				_, ok := s.awaitReplyMap.Load(*e.MessageID)
+				if ok {
+
+				}
 			case *MessageSentEvent:
 				// XXX fix me
 			default:
