@@ -34,93 +34,6 @@ const roundTripTimeSlop = time.Duration(88 * time.Second)
 
 var ReplyTimeoutError = errors.New("Failure waiting for reply, timeout reached")
 
-// WaitForSent blocks until the message with the corresponding message ID is sent.
-func (s *Session) waitForSent(id MessageID) error {
-	s.log.Debug("Waiting for message to be sent.")
-	var waitCh chan Event
-	var err error
-	s.mapLock.Lock()
-	msg, ok := s.messageIDMap[*id]
-	if !ok {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
-	} else {
-		if msg.Sent {
-			s.mapLock.Unlock()
-			return nil
-		}
-	}
-	waitCh, ok = s.waitSentChans[*id]
-	s.mapLock.Unlock()
-	if ok {
-		defer func() {
-			s.mapLock.Lock()
-			delete(s.waitSentChans, *id)
-			s.mapLock.Unlock()
-		}()
-	} else {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
-	}
-	if err != nil {
-		return err
-	}
-	select {
-	case <-waitCh:
-	case <-time.After(1 * time.Minute):
-		return fmt.Errorf("[%v] Failure waiting for reply, timeout", id)
-	}
-	s.log.Debug("Finished waiting. Message was sent.")
-	return nil
-}
-
-// WaitForReply blocks until a reply is received.
-func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
-	s.log.Debugf("WaitForReply message ID: %x\n", *id)
-	err := s.waitForSent(id)
-	if err != nil {
-		return nil, err
-	}
-	s.mapLock.Lock()
-	waitCh, ok := s.waitChans[*id]
-	if ok {
-		defer func() {
-			s.mapLock.Lock()
-			delete(s.waitChans, *id)
-			s.mapLock.Unlock()
-		}()
-	} else {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
-	}
-	msg, ok := s.messageIDMap[*id]
-	if ok {
-		// XXX Consider what will happen because of this deletion
-		// when we implement an ARQ based reliability.
-		defer func() {
-			s.mapLock.Lock()
-			delete(s.messageIDMap, *id)
-			s.mapLock.Unlock()
-		}()
-
-	} else {
-		err = fmt.Errorf("[%v] Failure waiting for reply, invalid message ID", id)
-	}
-	s.log.Debug("reply eta is %v", msg.ReplyETA)
-	s.mapLock.Unlock()
-	if err != nil {
-		return nil, err
-	}
-	select {
-	case event := <-waitCh:
-		e, ok := event.(*MessageReplyEvent)
-		if !ok {
-			s.log.Debug("UNKNOWN EVENT TYPE FOUND IN WAIT CHANNEL FOR THE GIVEN MESSAGE ID.")
-		}
-		return e.Payload, nil
-	case <-time.After(msg.ReplyETA + roundTripTimeSlop):
-		return nil, ReplyTimeoutError
-	}
-	// unreachable
-}
-
 func (s *Session) sendNext() error {
 	msg, err := s.egressQueue.Peek()
 	if err != nil {
@@ -159,29 +72,17 @@ func (s *Session) doSend(msg *Message) error {
 	if err != nil {
 		return err
 	}
-	s.mapLock.Lock()
 	if msg.WithSURB {
 		s.log.Debugf("doSend setting ReplyETA to %v", eta)
 		msg.Key = key
 		msg.SentAt = time.Now()
 		msg.Sent = true
 		msg.ReplyETA = eta
-		s.surbIDMap[surbID] = msg
+		s.surbIDMap.Store(surbID, msg)
 	}
-	eventCh, ok := s.waitSentChans[*msg.ID]
-	s.mapLock.Unlock()
-	if ok {
-		select {
-		case eventCh <- &MessageSentEvent{
-			MessageID: msg.ID,
-			Err:       nil,
-		}:
-		case <-time.After(3 * time.Second):
-			s.log.Debug("timeout reached when attempting to sent to waitSentChans")
-			break
-		}
-	} else {
-		s.log.Debug("no waitSentChans map entry found for that message ID")
+	s.eventCh.In() <- &MessageSentEvent{
+		MessageID: msg.ID,
+		Err:       nil, // XXX
 	}
 	return nil
 }
@@ -265,16 +166,17 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 	if err != nil {
 		return nil, err
 	}
-
-	s.mapLock.Lock()
-	s.messageIDMap[*msg.ID] = msg
-	s.waitChans[*msg.ID] = make(chan Event)
-	s.waitSentChans[*msg.ID] = make(chan Event)
-	s.mapLock.Unlock()
-
+	s.messageIDMap.Store(*msg.ID, msg)
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
 	}
 	return msg.ID, nil
+}
+
+// WaitForReply blocks until a reply is received or the
+// round trip timeout is reached.
+func (s *Session) WaitForReply(id MessageID) ([]byte, error) {
+	// XXX fix me
+	return nil, nil
 }

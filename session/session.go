@@ -39,6 +39,7 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/minclient"
+	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -52,6 +53,10 @@ type Session struct {
 	log       *logging.Logger
 
 	fatalErrCh chan error
+	opCh       chan workerOp
+
+	eventCh   channels.Channel
+	EventSink chan Event
 
 	// λP
 	pTimer *poisson.Fount
@@ -61,17 +66,14 @@ type Session struct {
 	lTimer *poisson.Fount
 
 	linkKey   *ecdh.PrivateKey
-	opCh      chan workerOp
 	onlineAt  time.Time
 	hasPKIDoc bool
 
 	egressQueue EgressQueue
 
-	waitSentChans map[[cConstants.MessageIDLength]byte]chan Event
-	waitChans     map[[cConstants.MessageIDLength]byte]chan Event
-	surbIDMap     map[[sConstants.SURBIDLength]byte]*Message
-	messageIDMap  map[[cConstants.MessageIDLength]byte]*Message
-	mapLock       *sync.Mutex
+	surbIDMap     sync.Map // [sConstants.SURBIDLength]byte -> *Message
+	messageIDMap  sync.Map // [cConstants.MessageIDLength]byte -> *Message
+	awaitReplyMap sync.Map // MessageID -> bool
 
 	decoyLoopTally uint64
 }
@@ -99,20 +101,16 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", cfg.Account.User, cfg.Account.Provider))
 
 	s := &Session{
-		cfg:           cfg,
-		linkKey:       linkKey,
-		pkiClient:     pkiClient,
-		log:           log,
-		fatalErrCh:    fatalErrCh,
-		opCh:          make(chan workerOp),
-		waitChans:     make(map[[sConstants.SURBIDLength]byte]chan Event),
-		waitSentChans: make(map[[cConstants.MessageIDLength]byte]chan Event),
+		cfg:         cfg,
+		linkKey:     linkKey,
+		pkiClient:   pkiClient,
+		log:         log,
+		fatalErrCh:  fatalErrCh,
+		eventCh:     channels.NewInfiniteChannel(),
+		EventSink:   make(chan Event),
+		opCh:        make(chan workerOp),
+		egressQueue: new(Queue),
 	}
-	s.surbIDMap = make(map[[sConstants.SURBIDLength]byte]*Message)
-	s.messageIDMap = make(map[[cConstants.MessageIDLength]byte]*Message)
-	s.mapLock = new(sync.Mutex)
-	s.egressQueue = new(Queue)
-
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
 		User:                cfg.Account.User,
@@ -130,6 +128,8 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
+	s.Go(s.eventSinkWorker)
+
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
 		return nil, err
@@ -144,6 +144,30 @@ func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cf
 	s.setTimers(doc)
 	s.Go(s.worker)
 	return s, nil
+}
+
+func (s *Session) eventSinkWorker() {
+	for {
+		select {
+		case <-s.HaltCh():
+			return
+		case e := <-s.eventCh.Out():
+			switch event := e.(type) {
+			case *ConnectionStatusEvent:
+				// XXX fix me
+			case *MessageReplyEvent:
+				s.awaitReplyMap.Load(*e.MessageID)
+			case *MessageSentEvent:
+				// XXX fix me
+			default:
+				err := errors.New("Aborting, received unknown event which should be impossible.")
+				s.log.Error(err.Error())
+				s.fatalErrCh <- err
+				return
+			}
+			s.EventSink <- e.(Event)
+		}
+	}
 }
 
 func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
@@ -220,13 +244,13 @@ func (s *Session) decrementDecoyLoopTally() {
 func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %x", idStr)
-	s.mapLock.Lock()
-	defer s.mapLock.Unlock()
-	msg, ok := s.surbIDMap[*surbID]
+
+	rawMessage, ok := s.surbIDMap.Load(surbID)
 	if !ok {
 		s.log.Debug("Strange, received reply with unexpected SURBID")
 		return nil
 	}
+	msg := rawMessage.(*Message)
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("SURB Reply decryption failure: %s", err)
@@ -237,30 +261,16 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		return nil
 	}
 	if msg.WithSURB && msg.IsDecoy {
-		_, ok := s.surbIDMap[*surbID]
-		if ok {
-			s.decrementDecoyLoopTally()
-			delete(s.surbIDMap, *surbID)
-			return nil
-		}
-		s.log.Warning("Reply is from an unknown Decoy Loop Message.")
+		s.decrementDecoyLoopTally()
+		s.surbIDMap.Delete(*surbID)
 		return nil
 	}
 	switch msg.SURBType {
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		waitCh, ok := s.waitChans[*msg.ID]
-		if ok {
-			select {
-			case waitCh <- &MessageReplyEvent{
-				MessageID: msg.ID,
-				Payload:   plaintext[2:],
-				Err:       nil,
-			}:
-			case <-time.After(3 * time.Second):
-				s.log.Warning("Message Reply Event send timeout failure.")
-			}
-		} else {
-			s.log.Warning("Error, failure to find wait chan in waitChans map for that message ID.")
+		s.eventCh.In() <- &MessageReplyEvent{
+			MessageID: msg.ID,
+			Payload:   plaintext[2:],
+			Err:       nil,
 		}
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
