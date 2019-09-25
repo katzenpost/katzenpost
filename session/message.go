@@ -50,6 +50,10 @@ type Message struct {
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration
 
+	// IsBlocking indicates whether or not the client is blocking on the
+	// sending of the query and the receiving of it's reply.
+	IsBlocking bool
+
 	// SURBID is the SURB identifier.
 	SURBID *[sConstants.SURBIDLength]byte
 
