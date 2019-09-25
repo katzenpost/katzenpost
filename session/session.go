@@ -152,22 +152,6 @@ func (s *Session) eventSinkWorker() {
 		case <-s.HaltCh():
 			return
 		case e := <-s.eventCh.Out():
-			switch event := e.(type) {
-			case *ConnectionStatusEvent:
-				// XXX fix me
-			case *MessageReplyEvent:
-				_, ok := s.awaitReplyMap.Load(*e.MessageID)
-				if ok {
-
-				}
-			case *MessageSentEvent:
-				// XXX fix me
-			default:
-				err := errors.New("Aborting, received unknown event which should be impossible.")
-				s.log.Error(err.Error())
-				s.fatalErrCh <- err
-				return
-			}
 			s.EventSink <- e.(Event)
 		}
 	}
@@ -270,10 +254,14 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	switch msg.SURBType {
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		s.eventCh.In() <- &MessageReplyEvent{
-			MessageID: msg.ID,
-			Payload:   plaintext[2:],
-			Err:       nil,
+		if msg.IsBlocking {
+			// XXX fix me
+		} else {
+			s.eventCh.In() <- &MessageReplyEvent{
+				MessageID: msg.ID,
+				Payload:   plaintext[2:],
+				Err:       nil,
+			}
 		}
 	default:
 		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
