@@ -190,7 +190,7 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	if err != nil {
 		return nil, err
 	}
-	sentWaitChan := make(chan interface{})
+	sentWaitChan := make(chan *Message)
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
 
 	replyWaitChan := make(chan []byte)
