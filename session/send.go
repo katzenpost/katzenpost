@@ -201,8 +201,7 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 		return nil, err
 	}
 	// wait until sent so that we know the ReplyETA for the waiting below
-	sentMessageRaw := <-sentWaitChan
-	sentMessage := sentMessageRaw.(*Message)
+	sentMessage := <-sentWaitChan
 	s.sentWaitChanMap.Delete(*msg.ID)
 	// wait for reply or round trip timeout
 	select {
