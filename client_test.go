@@ -137,7 +137,7 @@ func TestDecoyClient(t *testing.T) {
 		<-time.After(90 * time.Second) // must wait for provider to fetch pki document
 		cfg, err := k.GetClientNetconfig()
 		require.NoError(err)
-		cfg.Debug.DisableDecoyTraffic = false
+		//cfg.Debug.DisableDecoyTraffic = false
 
 		_, linkKey := AutoRegisterRandomClient(cfg)
 		require.NotNil(linkKey)
