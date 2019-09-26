@@ -232,7 +232,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %x", idStr)
 
-	rawMessage, ok := s.surbIDMap.Load(surbID)
+	rawMessage, ok := s.surbIDMap.Load(*surbID)
 	if !ok {
 		s.log.Debug("Strange, received reply with unexpected SURBID")
 		return nil
