@@ -94,7 +94,7 @@ func TestAutoRegisterRandomClient(t *testing.T) {
 
 	go func() {
 		defer k.Shutdown()
-		<-time.After(70 * time.Second) // must wait for provider to fetch pki document
+		<-time.After(90 * time.Second) // must wait for provider to fetch pki document
 		cfg, err := k.GetClientNetconfig()
 		require.NoError(err)
 
@@ -134,7 +134,7 @@ func TestDecoyClient(t *testing.T) {
 
 	go func() {
 		defer k.Shutdown()
-		<-time.After(70 * time.Second) // must wait for provider to fetch pki document
+		<-time.After(90 * time.Second) // must wait for provider to fetch pki document
 		cfg, err := k.GetClientNetconfig()
 		require.NoError(err)
 		cfg.Debug.DisableDecoyTraffic = false
@@ -156,7 +156,7 @@ func TestDecoyClient(t *testing.T) {
 		t.Logf("Found %v kaetzchen on %v", desc.Name, desc.Provider)
 
 		wg := &sync.WaitGroup{}
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 3; i++ {
 			wg.Add(1)
 			go func() {
 				t.Logf("SendUnreliableMessage()")
