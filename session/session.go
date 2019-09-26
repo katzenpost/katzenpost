@@ -71,9 +71,9 @@ type Session struct {
 
 	egressQueue EgressQueue
 
-	surbIDMap     sync.Map // [sConstants.SURBIDLength]byte -> *Message
-	messageIDMap  sync.Map // [cConstants.MessageIDLength]byte -> *Message
-	awaitReplyMap sync.Map // MessageID -> bool
+	surbIDMap        sync.Map // [sConstants.SURBIDLength]byte -> *Message
+	sentWaitChanMap  sync.Map // MessageID -> chan *Message
+	replyWaitChanMap sync.Map // MessageID -> chan []byte
 
 	decoyLoopTally uint64
 }
@@ -237,6 +237,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		s.log.Debug("Strange, received reply with unexpected SURBID")
 		return nil
 	}
+	s.surbIDMap.Delete(*surbID)
 	msg := rawMessage.(*Message)
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
@@ -249,13 +250,19 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	if msg.WithSURB && msg.IsDecoy {
 		s.decrementDecoyLoopTally()
-		s.surbIDMap.Delete(*surbID)
 		return nil
 	}
 	switch msg.SURBType {
 	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
 		if msg.IsBlocking {
-			// XXX fix me
+			replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
+			replyWaitChan := replyWaitChanRaw.(chan []byte)
+			if !ok {
+				err := fmt.Errorf("Impossible failure to acquire replyWaitChan for message ID %x", msg.ID)
+				s.fatalErrCh <- err
+				return err
+			}
+			replyWaitChan <- plaintext[2:]
 		} else {
 			s.eventCh.In() <- &MessageReplyEvent{
 				MessageID: msg.ID,

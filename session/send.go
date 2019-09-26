@@ -81,12 +81,13 @@ func (s *Session) doSend(msg *Message) error {
 		s.surbIDMap.Store(surbID, msg)
 	}
 	if msg.IsBlocking {
-		val, ok := s.messageSentWaitChanMap.Load(*msg.ID)
+		sentWaitChanRaw, ok := s.sentWaitChanMap.Load(*msg.ID)
 		if !ok {
 			err := fmt.Errorf("Impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
 			s.log.Error(err.Error())
 			s.fatalErrCh <- err
 		}
+		sentWaitChan := sentWaitChanRaw.(chan *Message)
 		sentWaitChan <- msg
 	} else {
 		s.eventCh.In() <- &MessageSentEvent{
@@ -177,7 +178,6 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 	if err != nil {
 		return nil, err
 	}
-	s.messageIDMap.Store(*msg.ID, msg)
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
@@ -190,24 +190,24 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	if err != nil {
 		return nil, err
 	}
-	s.messageIDMap.Store(*msg.ID, msg)
 	sentWaitChan := make(chan interface{})
-	s.messageSentWaitChanMap.Store(*msg.ID, sentWaitChan)
+	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
+
+	replyWaitChan := make(chan []byte)
+	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
+
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
 	}
 	// wait until sent so that we know the ReplyETA for the waiting below
-	sentMessage := <-sentWaitChan
+	sentMessageRaw := <-sentWaitChan
+	sentMessage := sentMessageRaw.(*Message)
+	s.sentWaitChanMap.Delete(*msg.ID)
 	// wait for reply or round trip timeout
-	replyWaitChan, ok := s.replyWaitChanMap.Load()
-	if !ok {
-		err := fmt.Errorf("Impossible failure, replyWaitChan not found for message ID %x", *msg.ID)
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
-	}
 	select {
 	case reply := <-replyWaitChan:
+		s.replyWaitChanMap.Delete(*msg.ID)
 		return reply, nil
 	case <-time.After(sentMessage.ReplyETA + roundTripTimeSlop):
 		return nil, ReplyTimeoutError
