@@ -175,14 +175,13 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 			// Determine if PKI doc is valid. If not then abort.
 			err := s.isDocValid(op.doc)
 			if err != nil {
-				s.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
 				err := fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+				s.log.Error(err.Error())
 				s.fatalErrCh <- err
 				return nil, err
 			}
 			return op.doc, nil
 		default:
-
 			continue
 		}
 	}
@@ -241,7 +240,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	msg := rawMessage.(*Message)
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
-		s.log.Infof("SURB Reply decryption failure: %s", err)
+		s.log.Infof("Impossible SURB Reply decryption failure: %s", err)
 		return err
 	}
 	if len(plaintext) != coreConstants.ForwardPayloadLength {
