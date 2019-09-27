@@ -75,11 +75,7 @@ func NewSpoolReadDescriptor(receiver, provider string, session *session.Session)
 	if err != nil {
 		return nil, err
 	}
-	mesgID, err := session.SendUnreliableMessage(receiver, provider, createCmd)
-	if err != nil {
-		return nil, err
-	}
-	reply, err := session.WaitForReply(mesgID)
+	reply, err := session.BlockingSendUnreliableMessage(receiver, provider, createCmd)
 	if err != nil {
 		return nil, err
 	}
