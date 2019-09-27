@@ -38,8 +38,8 @@ type opNewDocument struct {
 }
 
 func (s *Session) setPollingInterval(doc *pki.Document) {
-	// Clients have 3 poisson processes, λP, λL and, λD.
-	// However only LambdaP and LambdaL result in SURB replies.
+	// Clients have 2 poisson processes, λP and λL.
+	// They result in SURB replies.
 	interval := time.Duration(doc.LambdaP+doc.LambdaL) * time.Millisecond
 	s.minclient.SetPollInterval(interval)
 }
