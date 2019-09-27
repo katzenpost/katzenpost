@@ -8,7 +8,7 @@ require (
 	git.schwanenlied.me/yawning/newhope.git v0.0.0-20170622154529-9598792ba8f2 // indirect
 	github.com/coreos/bbolt v1.3.3
 	github.com/golang/protobuf v1.3.2
-	github.com/katzenpost/client v0.0.3-0.20190920164705-fb47abdd5f14
+	github.com/katzenpost/client v0.0.3-0.20190927151016-81d0a12412f2
 	github.com/katzenpost/core v0.0.8-0.20190907182339-71fec89c259d
 	github.com/katzenpost/server v0.0.8-0.20190910174632-99fb3d5cec86
 	github.com/stretchr/testify v1.4.0
