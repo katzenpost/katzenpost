@@ -74,7 +74,7 @@ func createCatshadowClient(t *testing.T) *Client {
 	return catShadowClient
 }
 
-func TestCatshadowBasics(t *testing.T) {
+func TestDockerCatshadowBasics(t *testing.T) {
 	//require := require.New(t)
 
 	alice := createCatshadowClient(t)
