@@ -134,10 +134,7 @@ func (s *Session) worker() {
 		}
 		if lambdaLFired {
 			if isConnected && !s.cfg.Debug.DisableDecoyTraffic {
-				err := s.sendLoopDecoy()
-				if err != nil {
-					s.log.Error(err.Error())
-				}
+				s.sendLoopDecoy()
 			}
 		}
 		if qo != nil {
@@ -172,16 +169,10 @@ func (s *Session) sendFromQueueOrDecoy() {
 	// Otherwise send a drop decoy message.
 	_, err := s.egressQueue.Peek()
 	if err == nil {
-		err := s.sendNext()
-		if err != nil {
-			panic(err)
-		}
+		s.sendNext()
 	} else {
 		if !s.cfg.Debug.DisableDecoyTraffic {
-			err = s.sendLoopDecoy()
-			if err != nil {
-				s.log.Warningf("Failed to send loop decoy traffic: %v", err)
-			}
+			s.sendLoopDecoy()
 		}
 	}
 }

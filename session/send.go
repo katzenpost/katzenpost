@@ -34,31 +34,38 @@ const roundTripTimeSlop = time.Duration(88 * time.Second)
 
 var ReplyTimeoutError = errors.New("Failure waiting for reply, timeout reached")
 
-func (s *Session) sendNext() error {
+func (s *Session) sendNext() {
 	msg, err := s.egressQueue.Peek()
 	if err != nil {
-		return err
+		err := errors.New("Impossible failure to Peek from queue")
+		s.log.Error(err.Error())
+		s.fatalErrCh <- err
+		return
 	}
 	if msg == nil {
-		return errors.New("send next failure, message is nil")
+		err := errors.New("Impossible failure, got nil message from queue")
+		s.log.Error(err.Error())
+		s.fatalErrCh <- err
+		return
 	}
-	m, ok := msg.(*Message)
-	if !ok {
-		return errors.New("send next failure, unknown message type")
-	}
-	err = s.doSend(m)
-	if err != nil {
-		return err
-	}
+	m := msg.(*Message)
+	s.doSend(m)
 	_, err = s.egressQueue.Pop()
-	return err
+	if err != nil {
+		err := errors.New("Impossible failure to Pop from queue")
+		s.log.Error(err.Error())
+		s.fatalErrCh <- err
+	}
 }
 
-func (s *Session) doSend(msg *Message) error {
+func (s *Session) doSend(msg *Message) {
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
-		return err
+		err := fmt.Errorf("Impossible failure, failed to generate SURB ID for message ID %x", *msg.ID)
+		s.log.Error(err.Error())
+		s.fatalErrCh <- err
+		return
 	}
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Debugf("doSend with SURB ID %x", idStr)
@@ -68,9 +75,6 @@ func (s *Session) doSend(msg *Message) error {
 		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
 	} else {
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
-	}
-	if err != nil {
-		return err
 	}
 	if msg.WithSURB {
 		s.log.Debugf("doSend setting ReplyETA to %v", eta)
@@ -86,30 +90,36 @@ func (s *Session) doSend(msg *Message) error {
 			err := fmt.Errorf("Impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
 			s.log.Error(err.Error())
 			s.fatalErrCh <- err
+			return
 		}
 		sentWaitChan := sentWaitChanRaw.(chan *Message)
 		sentWaitChan <- msg
 	} else {
 		s.eventCh.In() <- &MessageSentEvent{
 			MessageID: msg.ID,
-			Err:       nil, // XXX send error
+			Err:       err,
 		}
 	}
-	return nil
 }
 
-func (s *Session) sendLoopDecoy() error {
+func (s *Session) sendLoopDecoy() {
 	s.log.Info("sending loop decoy")
 	const loopService = "loop"
 	serviceDesc, err := s.GetService(loopService)
 	if err != nil {
-		return err
+		err := errors.New("failure to get loop service")
+		s.log.Error(err.Error())
+		s.fatalErrCh <- err
+		return
 	}
 	payload := [constants.UserForwardPayloadLength]byte{}
 	id := [cConstants.MessageIDLength]byte{}
 	_, err = io.ReadFull(rand.Reader, id[:])
 	if err != nil {
-		return err
+		err := errors.New("failure to generate message ID for loop decoy")
+		s.log.Error(err.Error())
+		s.fatalErrCh <- err
+		return
 	}
 	msg := &Message{
 		ID:        &id,
@@ -120,7 +130,7 @@ func (s *Session) sendLoopDecoy() error {
 		IsDecoy:   true,
 	}
 	defer s.incrementDecoyLoopTally()
-	return s.doSend(msg)
+	s.doSend(msg)
 }
 
 func (s *Session) composeMessage(recipient, provider string, message []byte, isBlocking bool) (*Message, error) {
