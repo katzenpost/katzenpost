@@ -19,6 +19,8 @@
 package client
 
 import (
+	"bytes"
+	"sync"
 	"testing"
 
 	"github.com/katzenpost/client/config"
@@ -30,7 +32,6 @@ import (
 func TestDockerClientBlockingSendReceive(t *testing.T) {
 	require := require.New(t)
 
-	// Load catshadow config file.
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
@@ -52,7 +53,6 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	require := require.New(t)
 
-	// Load catshadow config file.
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
@@ -75,7 +75,6 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 func TestDockerClientAsyncSendReceive(t *testing.T) {
 	require := require.New(t)
 
-	// Load catshadow config file.
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
@@ -104,4 +103,48 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	require.Equal(msgID[:], event2.MessageID[:])
 	require.True(utils.CtIsZero(event2.Payload))
 	require.NoError(event2.Err)
+}
+
+func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg.Debug.DisableDecoyTraffic = false
+	client, err := New(cfg)
+	require.NoError(err)
+
+	clientSession, err := client.NewSession(linkKey)
+	require.NoError(err)
+
+	desc, err := clientSession.GetService("loop")
+	require.NoError(err)
+
+	msgID, err := clientSession.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
+	require.NoError(err)
+	t.Logf("sent message ID %x", msgID)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		for eventRaw := range clientSession.EventSink {
+			switch event := eventRaw.(type) {
+			case *session.MessageSentEvent:
+				if bytes.Equal(msgID[:], event.MessageID[:]) {
+					require.NoError(event.Err)
+					wg.Done()
+				}
+			case *session.MessageReplyEvent:
+				if bytes.Equal(msgID[:], event.MessageID[:]) {
+					require.NoError(event.Err)
+					require.True(utils.CtIsZero(event.Payload))
+					wg.Done()
+					return
+				}
+			}
+		}
+	}()
+	wg.Wait()
 }
