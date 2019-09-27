@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -69,4 +70,38 @@ func TestClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
 	require.True(utils.CtIsZero(reply))
+}
+
+func TestClientAsyncSendReceive(t *testing.T) {
+	require := require.New(t)
+
+	// Load catshadow config file.
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	client, err := New(cfg)
+	require.NoError(err)
+
+	clientSession, err := client.NewSession(linkKey)
+	require.NoError(err)
+
+	desc, err := clientSession.GetService("loop")
+	require.NoError(err)
+
+	msgID, err := clientSession.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
+	require.NoError(err)
+	t.Logf("sent message ID %x", msgID)
+
+	eventRaw := <-clientSession.EventSink
+	event1 := eventRaw.(*session.MessageSentEvent)
+	require.Equal(msgID[:], event1.MessageID[:])
+	t.Logf("received event: %s", event1)
+
+	eventRaw = <-clientSession.EventSink
+	event2 := eventRaw.(*session.MessageReplyEvent)
+	t.Logf("received event: %s", event2)
+	require.Equal(msgID[:], event2.MessageID[:])
+	require.True(utils.CtIsZero(event2.Payload))
+	require.NoError(event2.Err)
 }
