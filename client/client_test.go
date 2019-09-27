@@ -25,8 +25,8 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/kimchi"
-	"github.com/stretchr/testify/require"
 	"github.com/katzenpost/memspool/common"
+	"github.com/stretchr/testify/require"
 )
 
 // TestNewUnreliableSpoolService tests creating a new spool service
@@ -57,9 +57,6 @@ func TestNewUnreliableSpoolService(t *testing.T) {
 		// create a spool key
 		spoolPrivateKey, err := eddsa.NewKeypair(rand.Reader)
 		require.NoError(err)
-
-		// create a new UnreliableSpoolService
-		svc := New(s)
 
 		// look up a spool provider
 		desc, err := s.GetService(common.SpoolServiceName)

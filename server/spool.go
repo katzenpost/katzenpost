@@ -72,7 +72,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 	case common.PurgeSpoolCommand:
 		log.Debug("purge spool")
 		err := spoolMap.PurgeSpool(spoolID, request.Signature)
-		spoolResponse.SpoolID = spoolID[:]
+		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
@@ -83,7 +83,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		log.Debugf("append to spool, with spool ID: %d", request.SpoolID)
 		err := spoolMap.AppendToSpool(spoolID, request.Message)
 		log.Debug("after call to AppendToSpool")
-		spoolResponse.SpoolID = spoolID[:]
+		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
@@ -95,7 +95,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		log.Debugf("before ReadFromSpool with message ID %d", request.MessageID)
 		message, err := spoolMap.ReadFromSpool(spoolID, request.Signature, request.MessageID)
 		log.Debug("after ReadFromSpool")
-		spoolResponse.SpoolID = spoolID[:]
+		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
