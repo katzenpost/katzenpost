@@ -56,7 +56,7 @@ func TestCreateCatshadowClient(t *testing.T) {
 // returns a running CatshadowClient configured from kimchi
 func getCatshadowClient(k *kimchi.Kimchi) (*Client, error) {
 	cfg, username, linkKey, err := k.GetClientConfig()
-	cfg.Panda = &config.Panda{Receiver: "+panda", Provider: "provider-0", BlobSize: 1000,}
+	cfg.Panda = &config.Panda{Receiver: "+panda", Provider: "provider-0", BlobSize: 1000}
 	if err != nil {
 		return nil, err
 	}
