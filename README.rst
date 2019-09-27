@@ -11,6 +11,21 @@ Katzenpost Mix Network Client Library
 =====================================
 
 
+optional docker tests
+---------------------
+
+To run the option docker tests firstly, see our docker repo
+and start your local dockerized mix network:
+
+https://github.com/katzenpost/docker
+
+A couple of minutes after startup run the following commands:
+::
+
+   GORACE=history_size=7 go test -v -tags=docker_test -race -run TestClientBlockingSendReceive
+   GORACE=history_size=7 go test -v -tags=docker_test -race -run TestClientBlockingSendReceiveWithDecoyTraffic
+
+
 license
 =======
 
