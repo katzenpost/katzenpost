@@ -22,9 +22,9 @@ https://github.com/katzenpost/docker
 A couple of minutes after startup run the following commands:
 ::
 
-   GORACE=history_size=7 go test -v -tags=docker_test -race -run TestClientBlockingSendReceive
-   GORACE=history_size=7 go test -v -tags=docker_test -race -run TestClientBlockingSendReceiveWithDecoyTraffic
-
+   GORACE=history_size=7 go test -v -tags=docker_test -race -run TestDockerClientBlockingSendReceive
+   GORACE=history_size=7 go test -v -tags=docker_test -race -run TestDockerClientBlockingSendReceiveWithDecoyTraffic
+   GORACE=history_size=7 go test -v -tags=docker_test -race -run TestDockerClientAsyncSendReceive
 
 license
 =======
