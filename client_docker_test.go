@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClientBlockingSendReceive(t *testing.T) {
+func TestDockerClientBlockingSendReceive(t *testing.T) {
 	require := require.New(t)
 
 	// Load catshadow config file.
@@ -49,7 +49,7 @@ func TestClientBlockingSendReceive(t *testing.T) {
 	require.True(utils.CtIsZero(reply))
 }
 
-func TestClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
+func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	require := require.New(t)
 
 	// Load catshadow config file.
@@ -72,7 +72,7 @@ func TestClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	require.True(utils.CtIsZero(reply))
 }
 
-func TestClientAsyncSendReceive(t *testing.T) {
+func TestDockerClientAsyncSendReceive(t *testing.T) {
 	require := require.New(t)
 
 	// Load catshadow config file.
