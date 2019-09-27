@@ -75,43 +75,42 @@ func createCatshadowClient(t *testing.T) *Client {
 }
 
 func TestDockerCatshadowBasics(t *testing.T) {
-	//require := require.New(t)
+	require := require.New(t)
 
 	alice := createCatshadowClient(t)
 	bob := createCatshadowClient(t)
 
-	sharedSecret := []byte("twas brillig and slithy toves45678")
+	//sharedSecret := []byte("twas brillig and slithy toves")
+	sharedSecret := []byte("111cooking MCs like a pound of bacon")
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
 	aliceEventsCh := alice.EventsChan()
 	ev := <-aliceEventsCh
 	_, ok := ev.(KeyExchangeCompleted)
-	if !ok {
-		panic("wtf")
-	}
+	require.True(ok)
 
 	bobEventsCh := bob.EventsChan()
 	ev = <-bobEventsCh
 	_, ok = ev.(KeyExchangeCompleted)
-	if !ok {
-		panic("wtf")
-	}
+	require.True(ok)
 
 	/*
-			alice.SendMessage("bob", []byte("hello bobby, this is a message"))
-			t.Log("unique cryptic string after SendMessage")
-			ev = <-aliceEventsCh
-			_, ok = ev.(MessageDelivered)
-			if !ok {
-				panic("wtf")
-			}
+		alice.SendMessage("bob", []byte("hello bobby, this is a message"))
+		t.Log("unique cryptic string after SendMessage")
 
-		    ev = <-bobEventsCh
-			_, ok = ev.(MessageReceived)
-			if !ok {
-				panic("wtf")
-			}
+
+			        ev = <-aliceEventsCh
+					_, ok = ev.(MessageDelivered)
+					if !ok {
+						panic("wtf")
+					}
+
+					ev = <-bobEventsCh
+					_, ok = ev.(MessageReceived)
+					if !ok {
+						panic("wtf")
+					}
 	*/
 
 	time.Sleep(3 * time.Second)
