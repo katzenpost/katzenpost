@@ -173,6 +173,7 @@ func (c *Client) Start() {
 	if pandaCfg == nil {
 		panic("panda failed, must have a panda service configured")
 	}
+	c.Go(c.eventChanReader)
 	for _, contact := range c.contacts {
 		if contact.isPending {
 			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.nickname))
@@ -186,6 +187,25 @@ func (c *Client) Start() {
 		}
 	}
 	c.Go(c.worker)
+}
+
+// XXX FIX ME
+func (c *Client) eventChanReader() {
+	for {
+		select {
+		case <-c.HaltCh():
+			return
+		case e := <-c.session.EventSink:
+			switch event := e.(type) {
+			case *session.MessageSentEvent:
+				c.log.Info("Message Sent Event: %s", event)
+			case *session.MessageReplyEvent:
+				c.log.Info("Message Reply Event: %s", event)
+			case *session.ConnectionStatusEvent:
+				c.log.Info("Connection Status Event: %s", event)
+			}
+		}
+	}
 }
 
 func (c *Client) EventsChan() <-chan interface{} {
@@ -381,6 +401,9 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
+			contact.isPending = false
+			c.save()
+			return
 		}
 		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.ratchetMutex.Lock()
@@ -390,9 +413,12 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
+			contact.isPending = false
+			c.save()
+			return
 		}
 		contact.isPending = false
-		c.log.Debug("Double ratchet key exchange completed!")
+		c.log.Info("Double ratchet key exchange completed!")
 		c.eventsChan <- KeyExchangeCompleted{
 			Nickname: contact.nickname,
 		}
@@ -445,6 +471,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 	}
+	// XXX do something with mesgID
 	c.log.Info("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
 }
 
