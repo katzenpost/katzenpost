@@ -60,8 +60,6 @@ type Session struct {
 
 	// λP
 	pTimer *poisson.Fount
-	// λD
-	dTimer *poisson.Fount
 	// λL
 	lTimer *poisson.Fount
 

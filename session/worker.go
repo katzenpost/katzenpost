@@ -66,17 +66,6 @@ func (s *Session) setTimers(doc *pki.Document) {
 	} else {
 		s.lTimer.SetPoisson(lDesc)
 	}
-
-	// λD
-	dDesc := &poisson.Descriptor{
-		Lambda: doc.LambdaD,
-		Max:    doc.LambdaDMaxDelay,
-	}
-	if s.dTimer == nil {
-		s.dTimer = poisson.NewTimer(dDesc)
-	} else {
-		s.dTimer.SetPoisson(dDesc)
-	}
 }
 
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
@@ -119,15 +108,12 @@ func (s *Session) maybeUpdateTimers(doc *pki.Document) {
 func (s *Session) worker() {
 	s.pTimer.Start()
 	defer s.pTimer.Stop()
-	s.dTimer.Start()
-	defer s.dTimer.Stop()
 	s.lTimer.Start()
 	defer s.lTimer.Stop()
 
 	var isConnected bool
 	for {
 		var lambdaPFired bool
-		var lambdaDFired bool
 		var lambdaLFired bool
 		var qo workerOp
 		select {
@@ -136,8 +122,6 @@ func (s *Session) worker() {
 			return
 		case <-s.pTimer.Timer.C:
 			lambdaPFired = true
-		case <-s.dTimer.Timer.C:
-			lambdaDFired = true
 		case <-s.lTimer.Timer.C:
 			lambdaLFired = true
 		case qo = <-s.opCh:
@@ -146,14 +130,6 @@ func (s *Session) worker() {
 		if lambdaPFired {
 			if isConnected {
 				s.sendFromQueueOrDecoy()
-			}
-		}
-		if lambdaDFired {
-			if isConnected && !s.cfg.Debug.DisableDecoyTraffic {
-				err := s.sendDropDecoy()
-				if err != nil {
-					s.log.Error(err.Error())
-				}
 			}
 		}
 		if lambdaLFired {
@@ -182,9 +158,6 @@ func (s *Session) worker() {
 		if lambdaPFired {
 			s.pTimer.Next()
 		}
-		if lambdaDFired {
-			s.dTimer.Next()
-		}
 		if lambdaLFired {
 			s.lTimer.Next()
 		}
@@ -205,7 +178,7 @@ func (s *Session) sendFromQueueOrDecoy() {
 		}
 	} else {
 		if !s.cfg.Debug.DisableDecoyTraffic {
-			err = s.sendDropDecoy()
+			err = s.sendLoopDecoy()
 			if err != nil {
 				s.log.Warningf("Failed to send loop decoy traffic: %v", err)
 			}

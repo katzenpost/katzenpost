@@ -123,30 +123,6 @@ func (s *Session) sendLoopDecoy() error {
 	return s.doSend(msg)
 }
 
-func (s *Session) sendDropDecoy() error {
-	s.log.Info("sending drop decoy")
-	const loopService = "loop"
-	serviceDesc, err := s.GetService(loopService)
-	if err != nil {
-		return err
-	}
-	payload := [constants.UserForwardPayloadLength]byte{}
-	id := [cConstants.MessageIDLength]byte{}
-	_, err = io.ReadFull(rand.Reader, id[:])
-	if err != nil {
-		return err
-	}
-	msg := &Message{
-		ID:        &id,
-		Recipient: serviceDesc.Name,
-		Provider:  serviceDesc.Provider,
-		Payload:   payload[:],
-		WithSURB:  false,
-		IsDecoy:   true,
-	}
-	return s.doSend(msg)
-}
-
 func (s *Session) composeMessage(recipient, provider string, message []byte, isBlocking bool) (*Message, error) {
 	s.log.Debug("SendMessage")
 	if len(message) > constants.UserForwardPayloadLength-4 {
