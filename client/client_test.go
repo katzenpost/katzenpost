@@ -22,8 +22,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/client"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/kimchi"
 	"github.com/katzenpost/memspool/common"
 	"github.com/stretchr/testify/require"
@@ -54,47 +52,54 @@ func TestNewUnreliableSpoolService(t *testing.T) {
 		require.NoError(err)
 		t.Logf("Instantiating session")
 
-		// create a spool key
-		spoolPrivateKey, err := eddsa.NewKeypair(rand.Reader)
-		require.NoError(err)
-
 		// look up a spool provider
 		desc, err := s.GetService(common.SpoolServiceName)
 		require.NoError(err)
 		t.Logf("Found spool provider: %v@%v", desc.Name, desc.Provider)
 
 		// create the spool on the remote provider
-		spoolId, err := svc.CreateSpool(spoolPrivateKey, desc.Name, desc.Provider)
+		spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.Name, desc.Provider, s)
 		require.NoError(err)
-		t.Logf("Created spool %x", spoolId)
 
 		// append to a spool
 		message := []byte("hello there")
-		err = svc.AppendToSpool(spoolId, message, desc.Name, desc.Provider)
+		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message)
 		require.NoError(err)
-		t.Logf("Appending message %s to spool %x on %v@%v", message, spoolId, desc.Name, desc.Provider)
+		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
+		require.NoError(err)
+		response, err := common.SpoolResponseFromBytes(rawResponse)
+		require.NoError(err)
+		require.True(response.IsOK())
 
 		messageID := uint32(1) // where do we learn messageID?
 
 		// read from a spool (should find our original message)
-		resp, err := svc.ReadFromSpool(spoolId, messageID, spoolPrivateKey, desc.Name, desc.Provider)
+		readCmd, err := common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
 		require.NoError(err)
-		t.Logf("Got message %s from spool %x with status %s", resp.Message, resp.SpoolID, resp.Status)
-		if !bytes.Equal(resp.SpoolID, spoolId) {
-			t.Logf("spool response returned status %s", resp.Status)
-			t.Errorf("spool ID's differ in response!?: %x vs %x", resp.SpoolID, spoolId)
-		}
-		require.True(bytes.Equal(resp.Message, message))
-		require.True(resp.Status == "OK")
-		require.True(len(resp.Padding) == 120)
+		rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, readCmd)
+		require.NoError(err)
+		response, err = common.SpoolResponseFromBytes(rawResponse)
+		require.NoError(err)
+		require.True(response.IsOK())
+		// XXX require.Equal(response.SpoolID, spoolReadDescriptor.ID)
+		require.True(bytes.Equal(response.Message, message))
 
 		// purge a spool
-		err = svc.PurgeSpool(spoolId, spoolPrivateKey, desc.Name, desc.Provider)
+		purgeCmd, err := common.PurgeSpool(spoolReadDescriptor.ID, spoolReadDescriptor.PrivateKey)
 		require.NoError(err)
+		rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, purgeCmd)
+		require.NoError(err)
+		response, err = common.SpoolResponseFromBytes(rawResponse)
+		require.NoError(err)
+		require.True(response.IsOK())
 
 		// read from a spool (should be empty?)
-		resp, err = svc.ReadFromSpool(spoolId, messageID, spoolPrivateKey, desc.Name, desc.Provider)
-		require.Error(err)
+		readCmd, err = common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
+		require.NoError(err)
+		rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, readCmd)
+		response, err = common.SpoolResponseFromBytes(rawResponse)
+		require.NoError(err)
+		require.False(response.IsOK())
 	}()
 	k.Wait()
 	t.Logf("Terminated")

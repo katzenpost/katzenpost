@@ -62,13 +62,13 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 			return &spoolResponse
 		}
 		spoolResponse.Status = common.StatusOK
-		spoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
+		newSpoolID, err := spoolMap.CreateSpool(publicKey, request.Signature)
 		if err != nil {
 			spoolResponse.Status = err.Error()
 			log.Error(spoolResponse.Status)
 			return &spoolResponse
 		}
-		spoolResponse.SpoolID = *spoolID
+		spoolResponse.SpoolID = *newSpoolID
 	case common.PurgeSpoolCommand:
 		log.Debug("purge spool")
 		err := spoolMap.PurgeSpool(spoolID, request.Signature)
