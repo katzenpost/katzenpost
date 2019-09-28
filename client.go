@@ -173,7 +173,7 @@ func (c *Client) Wait() {
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
 	if c.session != nil {
-		c.session.Halt()
+		c.session.Shutdown()
 	}
 	close(c.fatalErrCh)
 	close(c.haltedCh)
