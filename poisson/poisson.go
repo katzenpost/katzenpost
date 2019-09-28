@@ -56,9 +56,16 @@ func (t *Fount) DescriptorEquals(s *Descriptor) bool {
 	return t.desc.Equals(s)
 }
 
-// SetPoisson sets a new Poisson descriptor.
+// SetPoisson sets a new Poisson descriptor if the
+// descriptor is different than the one we have set already.
 func (t *Fount) SetPoisson(desc *Descriptor) {
-	t.desc = desc
+	if !t.DescriptorEquals(desc) {
+		if !t.Timer.Stop() {
+			<-t.Timer.C
+		}
+		t.desc = desc
+		t.Next()
+	}
 }
 
 func (t *Fount) nextInterval() time.Duration {
@@ -86,6 +93,9 @@ func (t *Fount) Next() {
 // NextMax resets the timer to the maximum
 // possible value.
 func (t *Fount) NextMax() {
+	if !t.Timer.Stop() {
+		<-t.Timer.C
+	}
 	t.Timer.Reset(math.MaxInt64)
 }
 

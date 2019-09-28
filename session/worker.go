@@ -1,5 +1,5 @@
 // worker.go - mixnet client worker
-// Copyright (C) 2018  David Stainton.
+// Copyright (C) 2018, 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -94,8 +94,9 @@ func (s *Session) maybeUpdateTimers(doc *pki.Document) {
 	// Determine if PKI doc is valid. If not then abort.
 	err := s.isDocValid(doc)
 	if err != nil {
-		s.log.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
-		s.fatalErrCh <- fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+		err := fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+		s.log.Error(err.Error())
+		s.fatalErrCh <- err
 		return
 	}
 	s.setTimers(doc)
@@ -151,14 +152,17 @@ func (s *Session) worker() {
 				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			} // end of switch
 		}
-
-		if lambdaPFired {
-			s.pTimer.Next()
+		if isConnected {
+			if lambdaPFired {
+				s.pTimer.Next()
+			}
+			if lambdaLFired {
+				s.lTimer.Next()
+			}
+		} else {
+			s.pTimer.NextMax()
+			s.lTimer.NextMax()
 		}
-		if lambdaLFired {
-			s.lTimer.Next()
-		}
-
 	}
 
 	// NOTREACHED

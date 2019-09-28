@@ -1,4 +1,4 @@
-// event.go - mixnet client session events
+// events.go - mixnet client session events
 // Copyright (C) 2018, 2019  Yawning Angel and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify

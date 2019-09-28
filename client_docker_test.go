@@ -92,17 +92,29 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	require.NoError(err)
 	t.Logf("sent message ID %x", msgID)
 
-	eventRaw := <-clientSession.EventSink
-	event1 := eventRaw.(*session.MessageSentEvent)
-	require.Equal(msgID[:], event1.MessageID[:])
-	t.Logf("received event: %s", event1)
-
-	eventRaw = <-clientSession.EventSink
-	event2 := eventRaw.(*session.MessageReplyEvent)
-	t.Logf("received event: %s", event2)
-	require.Equal(msgID[:], event2.MessageID[:])
-	require.True(utils.CtIsZero(event2.Payload))
-	require.NoError(event2.Err)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		for eventRaw := range clientSession.EventSink {
+			switch event := eventRaw.(type) {
+			case *session.MessageSentEvent:
+				if bytes.Equal(msgID[:], event.MessageID[:]) {
+					require.NoError(event.Err)
+					wg.Done()
+				}
+			case *session.MessageReplyEvent:
+				if bytes.Equal(msgID[:], event.MessageID[:]) {
+					require.NoError(event.Err)
+					require.True(utils.CtIsZero(event.Payload))
+					wg.Done()
+					return
+				}
+			default:
+				continue
+			}
+		}
+	}()
+	wg.Wait()
 }
 
 func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
@@ -143,6 +155,8 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 					wg.Done()
 					return
 				}
+			default:
+				continue
 			}
 		}
 	}()
