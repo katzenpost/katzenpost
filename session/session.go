@@ -148,9 +148,15 @@ func (s *Session) eventSinkWorker() {
 	for {
 		select {
 		case <-s.HaltCh():
+			s.log.Debugf("Event sink worker terminating gracefully.")
 			return
 		case e := <-s.eventCh.Out():
-			s.EventSink <- e.(Event)
+			select {
+			case s.EventSink <- e.(Event):
+			case <-s.HaltCh():
+				s.log.Debugf("Event sink worker terminating gracefully.")
+				return
+			}
 		}
 	}
 }
@@ -162,7 +168,7 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-s.HaltCh():
-			s.log.Debugf("Terminating gracefully.")
+			s.log.Debugf("Await first pki doc worker terminating gracefully")
 			return nil, errors.New("Terminating gracefully.")
 		case <-time.After(time.Duration(s.cfg.Debug.InitialMaxPKIRetrievalDelay) * time.Second):
 			return nil, errors.New("Timeout failure awaiting first PKI document.")
@@ -288,4 +294,11 @@ func (s *Session) onDocument(doc *pki.Document) {
 
 func (s *Session) GetPandaConfig() *config.Panda {
 	return s.cfg.Panda
+}
+
+func (s *Session) Shutdown() {
+	s.minclient.Shutdown()
+	s.minclient.Wait()
+	s.Halt()
+	s.log.Info("Session shutdown completed.")
 }

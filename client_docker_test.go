@@ -29,6 +29,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDockerClientConnectShutdown(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	client, err := New(cfg)
+	require.NoError(err)
+
+	session, err := client.NewSession(linkKey)
+	require.NoError(err)
+
+	<-session.EventSink
+
+	client.Shutdown()
+	client.Wait()
+}
+
 func TestDockerClientBlockingSendReceive(t *testing.T) {
 	require := require.New(t)
 
@@ -48,6 +67,9 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
 	require.True(utils.CtIsZero(reply))
+
+	client.Shutdown()
+	client.Wait()
 }
 
 func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
@@ -70,6 +92,9 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
 	require.True(utils.CtIsZero(reply))
+
+	client.Shutdown()
+	client.Wait()
 }
 
 func TestDockerClientAsyncSendReceive(t *testing.T) {
@@ -115,6 +140,9 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+
+	client.Shutdown()
+	client.Wait()
 }
 
 func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
@@ -161,4 +189,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+
+	client.Shutdown()
+	client.Wait()
 }

@@ -108,7 +108,9 @@ func (t *Fount) Start() {
 
 // Stop stops the timer.
 func (t *Fount) Stop() {
-	t.Timer.Stop()
+	if !t.Timer.Stop() {
+		<-t.Timer.C
+	}
 }
 
 // NewTimer is used to create a new Fount. A subsequent

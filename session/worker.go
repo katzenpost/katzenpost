@@ -108,9 +108,12 @@ func (s *Session) maybeUpdateTimers(doc *pki.Document) {
 // not yet started.
 func (s *Session) worker() {
 	s.pTimer.Start()
-	defer s.pTimer.Stop()
 	s.lTimer.Start()
-	defer s.lTimer.Stop()
+	defer func() {
+		s.pTimer.Stop()
+		s.lTimer.Stop()
+		s.log.Debug("Session timers stopped.")
+	}()
 
 	var isConnected bool
 	for {
@@ -119,7 +122,7 @@ func (s *Session) worker() {
 		var qo workerOp
 		select {
 		case <-s.HaltCh():
-			s.log.Debugf("Terminating gracefully.")
+			s.log.Debugf("Session worker terminating gracefully.")
 			return
 		case <-s.pTimer.Timer.C:
 			lambdaPFired = true
