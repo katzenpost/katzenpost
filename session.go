@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package session
+package client
 
 import (
 	"context"
@@ -78,7 +78,7 @@ type Session struct {
 
 // New establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-func New(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config, linkKey *ecdh.PrivateKey) (*Session, error) {
+func NewSession(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config, linkKey *ecdh.PrivateKey) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups

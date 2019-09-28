@@ -1,4 +1,4 @@
-// timerq_test.go - Time delayed queue tests
+// timer_queue_test.go - Time delayed queue tests
 // Copyright (C) 2018  Masala, David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package session
+package client
 
 import (
 	"io"
