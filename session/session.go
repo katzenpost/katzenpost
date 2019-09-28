@@ -200,12 +200,17 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 }
 
 // OnConnection will be called by the minclient api
-// upon connecting to the Provider
+// upon connection change status to the Provider
 func (s *Session) onConnection(err error) {
-	if err == nil {
-		s.opCh <- opConnStatusChanged{
-			isConnected: true,
-		}
+	s.log.Debugf("onConnection %v", err)
+
+	s.eventCh.In() <- &ConnectionStatusEvent{
+		IsConnected: err == nil,
+		Err:         err,
+	}
+
+	s.opCh <- opConnStatusChanged{
+		isConnected: err == nil,
 	}
 }
 
