@@ -59,6 +59,8 @@ github.com/katzenpost/client v0.0.3-0.20190920100131-361636bf6f9c h1:mVFgttMDhh1
 github.com/katzenpost/client v0.0.3-0.20190920100131-361636bf6f9c/go.mod h1:TugbuaRJTthySzXBKyLK9Vjf15M7u+NoQGju8oBqwwU=
 github.com/katzenpost/client v0.0.3-0.20190927151016-81d0a12412f2 h1:ifY4r0SSGJThgt4v56Y2yNojqiBFlU5gZtjsm93gi7I=
 github.com/katzenpost/client v0.0.3-0.20190927151016-81d0a12412f2/go.mod h1:SrzTAedisDlFx70XC7vrXwzkBPE60Zjc5GOw3kQ0T2E=
+github.com/katzenpost/client v0.0.3-0.20190928113438-7005603e0739 h1:cG97h3xGgpPat22TgzmblYiAt/u1nJznhZ1XlWS14P0=
+github.com/katzenpost/client v0.0.3-0.20190928113438-7005603e0739/go.mod h1:SrzTAedisDlFx70XC7vrXwzkBPE60Zjc5GOw3kQ0T2E=
 github.com/katzenpost/core v0.0.8-0.20190730121401-926fce1cae50 h1:Zrp+qrhOsD8S9QQv0G3F1wZYny/+173ZbMPTFuFvm/0=
 github.com/katzenpost/core v0.0.8-0.20190730121401-926fce1cae50/go.mod h1:xevA23RqD2cZRHyqSkOWFrJFPi/LP2N4gZHrL2gzay8=
 github.com/katzenpost/core v0.0.8-0.20190907182339-71fec89c259d h1:oCdxs29zPYiwSu4wZJrDJxidVMlYxxe2nqToKfRLe80=
