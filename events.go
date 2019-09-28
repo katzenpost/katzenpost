@@ -19,6 +19,7 @@ package client
 import (
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	cConstants "github.com/katzenpost/client/constants"
 )
@@ -73,6 +74,12 @@ type MessageSentEvent struct {
 	// MessageID is the local unique identifier for the message, generated
 	// when the message was enqueued.
 	MessageID *[cConstants.MessageIDLength]byte
+
+	// SentAt contains the time the message was sent.
+	SentAt time.Time
+
+	// ReplyETA is the expected round trip time to receive a response.
+	ReplyETA time.Duration
 
 	// Err is the error encountered when sending the message if any.
 	Err error

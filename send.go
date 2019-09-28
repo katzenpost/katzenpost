@@ -30,8 +30,6 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
-const roundTripTimeSlop = time.Duration(88 * time.Second)
-
 var ReplyTimeoutError = errors.New("Failure waiting for reply, timeout reached")
 
 func (s *Session) sendNext() {
@@ -80,7 +78,6 @@ func (s *Session) doSend(msg *Message) {
 		s.log.Debugf("doSend setting ReplyETA to %v", eta)
 		msg.Key = key
 		msg.SentAt = time.Now()
-		msg.Sent = true
 		msg.ReplyETA = eta
 		s.surbIDMap.Store(surbID, msg)
 	}
@@ -98,6 +95,8 @@ func (s *Session) doSend(msg *Message) {
 		s.eventCh.In() <- &MessageSentEvent{
 			MessageID: msg.ID,
 			Err:       err,
+			SentAt:    msg.SentAt,
+			ReplyETA:  msg.ReplyETA,
 		}
 	}
 }
@@ -152,7 +151,6 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 		Provider:   provider,
 		Payload:    payload[:],
 		WithSURB:   true,
-		SURBType:   cConstants.SurbTypeKaetzchen,
 		IsBlocking: isBlocking,
 	}
 	return &msg, nil
@@ -178,23 +176,25 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	}
 	sentWaitChan := make(chan *Message)
 	s.sentWaitChanMap.Store(*msg.ID, sentWaitChan)
+	defer s.sentWaitChanMap.Delete(*msg.ID)
 
 	replyWaitChan := make(chan []byte)
 	s.replyWaitChanMap.Store(*msg.ID, replyWaitChan)
+	defer s.replyWaitChanMap.Delete(*msg.ID)
 
 	err = s.egressQueue.Push(msg)
 	if err != nil {
 		return nil, err
 	}
+
 	// wait until sent so that we know the ReplyETA for the waiting below
 	sentMessage := <-sentWaitChan
-	s.sentWaitChanMap.Delete(*msg.ID)
+
 	// wait for reply or round trip timeout
 	select {
 	case reply := <-replyWaitChan:
-		s.replyWaitChanMap.Delete(*msg.ID)
 		return reply, nil
-	case <-time.After(sentMessage.ReplyETA + roundTripTimeSlop):
+	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
 		return nil, ReplyTimeoutError
 	}
 	// unreachable
