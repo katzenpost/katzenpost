@@ -18,7 +18,7 @@
 package client
 
 import (
-	// XXX "sync"
+	"sync"
 	"testing"
 	"time"
 
