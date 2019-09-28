@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/client/config"
 	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/crypto/rand"
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -218,6 +219,7 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 		SentAt:     time.Now().AddDate(0, 0, -1),
 		ReplyETA:   10 * time.Second,
 	}
+	// actually the key should be a SURB ID, but this works fine for the test
 	clientSession.surbIDMap.Store(msgID, &msg)
 	clientSession.garbageCollect()
 	_, ok := clientSession.surbIDMap.Load(msgID)
@@ -227,8 +229,6 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	client.Wait()
 }
 
-/*
-WTF doesn't this work!?
 func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	require := require.New(t)
 
@@ -251,6 +251,7 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	require.NoError(err)
 	t.Logf("sent message ID %x", msgID)
 
+	var surbID [sConstants.SURBIDLength]byte
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -259,10 +260,11 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 			case *MessageSentEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
-
-					_, ok := clientSession.surbIDMap.Load(msgID)
-					require.True(ok)
-
+					surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
+						surbID = rawSurbID.([sConstants.SURBIDLength]byte)
+						return true
+					}
+					clientSession.surbIDMap.Range(surbIDMapRange)
 					duration := time.Duration(event.ReplyETA + constants.RoundTripTimeSlop + (5 * time.Second))
 					t.Logf("Sleeping for %s so that the SURB ID Map entry will get garbage collected.", duration)
 					time.Sleep(duration)
@@ -277,10 +279,9 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	wg.Wait()
 
 	clientSession.garbageCollect()
-	_, ok := clientSession.surbIDMap.Load(msgID)
+	_, ok := clientSession.surbIDMap.Load(surbID)
 	require.False(ok)
 
 	client.Shutdown()
 	client.Wait()
 }
-*/
