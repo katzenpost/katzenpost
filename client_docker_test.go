@@ -20,10 +20,14 @@ package client
 
 import (
 	"bytes"
+	"io"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/client/constants"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -192,3 +196,91 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	client.Shutdown()
 	client.Wait()
 }
+
+func TestDockerClientTestGarbageCollection(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	client, err := New(cfg)
+	require.NoError(err)
+
+	clientSession, err := client.NewSession(linkKey)
+	require.NoError(err)
+
+	msgID := [constants.MessageIDLength]byte{}
+	_, err = io.ReadFull(rand.Reader, msgID[:])
+	var msg = Message{
+		ID:         &msgID,
+		IsBlocking: false,
+		SentAt:     time.Now().AddDate(0, 0, -1),
+		ReplyETA:   10 * time.Second,
+	}
+	clientSession.surbIDMap.Store(msgID, &msg)
+	clientSession.garbageCollect()
+	_, ok := clientSession.surbIDMap.Load(msgID)
+	require.False(ok)
+
+	client.Shutdown()
+	client.Wait()
+}
+
+/*
+WTF doesn't this work!?
+func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	client, err := New(cfg)
+	require.NoError(err)
+
+	clientSession, err := client.NewSession(linkKey)
+	require.NoError(err)
+
+	desc, err := clientSession.GetService("loop")
+	require.NoError(err)
+
+	// Send a message to a nonexistent service so that we don't get a reply and thus
+	// retain an entry in the SURB ID Map which we must garbage collect.
+	msgID, err := clientSession.SendUnreliableMessage("nonexistent", desc.Provider, []byte("hello"))
+	require.NoError(err)
+	t.Logf("sent message ID %x", msgID)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		for eventRaw := range clientSession.EventSink {
+			switch event := eventRaw.(type) {
+			case *MessageSentEvent:
+				if bytes.Equal(msgID[:], event.MessageID[:]) {
+					require.NoError(event.Err)
+
+					_, ok := clientSession.surbIDMap.Load(msgID)
+					require.True(ok)
+
+					duration := time.Duration(event.ReplyETA + constants.RoundTripTimeSlop + (5 * time.Second))
+					t.Logf("Sleeping for %s so that the SURB ID Map entry will get garbage collected.", duration)
+					time.Sleep(duration)
+					wg.Done()
+					return
+				}
+			default:
+				continue
+			}
+		}
+	}()
+	wg.Wait()
+
+	clientSession.garbageCollect()
+	_, ok := clientSession.surbIDMap.Load(msgID)
+	require.False(ok)
+
+	client.Shutdown()
+	client.Wait()
+}
+*/

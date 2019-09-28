@@ -44,9 +44,6 @@ type Message struct {
 	// SentAt contains the time the message was sent.
 	SentAt time.Time
 
-	// Sent is set to true if the message was sent on the network.
-	Sent bool
-
 	// ReplyETA is the expected round trip time to receive a response.
 	ReplyETA time.Duration
 
@@ -62,9 +59,6 @@ type Message struct {
 
 	// Reply is the SURB reply
 	Reply []byte
-
-	// SURBType is the SURB type.
-	SURBType int
 
 	// WithSURB specified if a SURB should be bundled with the forward payload.
 	WithSURB bool

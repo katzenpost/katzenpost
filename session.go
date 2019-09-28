@@ -127,6 +127,7 @@ func NewSession(ctx context.Context, fatalErrCh chan error, logBackend *log.Back
 	}
 
 	s.Go(s.eventSinkWorker)
+	s.Go(s.garbageCollectionWorker)
 
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
@@ -159,6 +160,43 @@ func (s *Session) eventSinkWorker() {
 			}
 		}
 	}
+}
+
+func (s *Session) garbageCollectionWorker() {
+	const garbageCollectionInterval = 10 * time.Minute
+	timer := time.NewTimer(garbageCollectionInterval)
+	defer timer.Stop()
+	for {
+		select {
+		case <-s.HaltCh():
+			s.log.Debugf("Garbage collection worker terminating gracefully.")
+			return
+		case <-timer.C:
+			s.garbageCollect()
+			timer.Reset(garbageCollectionInterval)
+		}
+	}
+}
+
+func (s *Session) garbageCollect() {
+	s.log.Debug("Running garbage collection process.")
+	// [sConstants.SURBIDLength]byte -> *Message
+	surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
+		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
+		message := rawMessage.(*Message)
+		if message.IsBlocking {
+			// Blocking sends don't need this garbage collection mechanism
+			// because the BlockingSendUnreliableMessage method will clean up
+			// after itself.
+			return true
+		}
+		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
+			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
+			s.surbIDMap.Delete(surbID)
+		}
+		return true
+	}
+	s.surbIDMap.Range(surbIDMapRange)
 }
 
 func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
@@ -260,26 +298,22 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		s.decrementDecoyLoopTally()
 		return nil
 	}
-	switch msg.SURBType {
-	case cConstants.SurbTypeKaetzchen, cConstants.SurbTypeInternal:
-		if msg.IsBlocking {
-			replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
-			replyWaitChan := replyWaitChanRaw.(chan []byte)
-			if !ok {
-				err := fmt.Errorf("Impossible failure to acquire replyWaitChan for message ID %x", msg.ID)
-				s.fatalErrCh <- err
-				return err
-			}
-			replyWaitChan <- plaintext[2:]
-		} else {
-			s.eventCh.In() <- &MessageReplyEvent{
-				MessageID: msg.ID,
-				Payload:   plaintext[2:],
-				Err:       nil,
-			}
+
+	if msg.IsBlocking {
+		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
+		if !ok {
+			err := fmt.Errorf("BUG, failure to acquire replyWaitChan for message ID %x", msg.ID)
+			s.fatalErrCh <- err
+			return err
 		}
-	default:
-		s.log.Warningf("Discarding SURB %v: Unknown type: 0x%02x", idStr, msg.SURBType)
+		replyWaitChan := replyWaitChanRaw.(chan []byte)
+		replyWaitChan <- plaintext[2:]
+	} else {
+		s.eventCh.In() <- &MessageReplyEvent{
+			MessageID: msg.ID,
+			Payload:   plaintext[2:],
+			Err:       nil,
+		}
 	}
 	return nil
 }
