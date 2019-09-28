@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"github.com/katzenpost/client/config"
-	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -122,12 +121,12 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	go func() {
 		for eventRaw := range clientSession.EventSink {
 			switch event := eventRaw.(type) {
-			case *session.MessageSentEvent:
+			case *MessageSentEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
 					wg.Done()
 				}
-			case *session.MessageReplyEvent:
+			case *MessageReplyEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
 					require.True(utils.CtIsZero(event.Payload))
@@ -171,12 +170,12 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	go func() {
 		for eventRaw := range clientSession.EventSink {
 			switch event := eventRaw.(type) {
-			case *session.MessageSentEvent:
+			case *MessageSentEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
 					wg.Done()
 				}
-			case *session.MessageReplyEvent:
+			case *MessageReplyEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
 					require.True(utils.CtIsZero(event.Payload))

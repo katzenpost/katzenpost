@@ -30,7 +30,6 @@ import (
 
 	"github.com/katzenpost/client/config"
 	clientConfig "github.com/katzenpost/client/config"
-	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -128,7 +127,7 @@ type Client struct {
 	haltedCh   chan interface{}
 	haltOnce   *sync.Once
 
-	session *session.Session
+	session *Session
 }
 
 func (c *Client) Provider() string {
@@ -180,12 +179,12 @@ func (c *Client) halt() {
 }
 
 // NewSession creates and returns a new session or an error.
-func (c *Client) NewSession(linkKey *ecdh.PrivateKey) (*session.Session, error) {
+func (c *Client) NewSession(linkKey *ecdh.PrivateKey) (*Session, error) {
 	var err error
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	c.session, err = session.New(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey)
+	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey)
 	return c.session, err
 }
 
