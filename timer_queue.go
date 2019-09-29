@@ -80,7 +80,7 @@ func (a *TimerQueue) Remove(i Item) error {
 			priority := mo.Value.(Item).Priority()
 			mo := a.priq.RemovePriority(priority)
 			if mo == nil {
-				return fmt.Errorf("Failed to remove item with priority %d", priority)
+				return fmt.Errorf("failed to remove item with priority %d", priority)
 			}
 		}
 	}

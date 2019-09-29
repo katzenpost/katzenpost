@@ -30,18 +30,18 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
-var ReplyTimeoutError = errors.New("Failure waiting for reply, timeout reached")
+var ErrReplyTimeout = errors.New("failure waiting for reply, timeout reached")
 
 func (s *Session) sendNext() {
 	msg, err := s.egressQueue.Peek()
 	if err != nil {
-		err := errors.New("Impossible failure to Peek from queue")
+		err := errors.New("impossible failure to Peek from queue")
 		s.log.Error(err.Error())
 		s.fatalErrCh <- err
 		return
 	}
 	if msg == nil {
-		err := errors.New("Impossible failure, got nil message from queue")
+		err := errors.New("impossible failure, got nil message from queue")
 		s.log.Error(err.Error())
 		s.fatalErrCh <- err
 		return
@@ -50,7 +50,7 @@ func (s *Session) sendNext() {
 	s.doSend(m)
 	_, err = s.egressQueue.Pop()
 	if err != nil {
-		err := errors.New("Impossible failure to Pop from queue")
+		err := errors.New("impossible failure to Pop from queue")
 		s.log.Error(err.Error())
 		s.fatalErrCh <- err
 	}
@@ -60,7 +60,7 @@ func (s *Session) doSend(msg *Message) {
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
-		err := fmt.Errorf("Impossible failure, failed to generate SURB ID for message ID %x", *msg.ID)
+		err := fmt.Errorf("impossible failure, failed to generate SURB ID for message ID %x", *msg.ID)
 		s.log.Error(err.Error())
 		s.fatalErrCh <- err
 		return
@@ -84,7 +84,7 @@ func (s *Session) doSend(msg *Message) {
 	if msg.IsBlocking {
 		sentWaitChanRaw, ok := s.sentWaitChanMap.Load(*msg.ID)
 		if !ok {
-			err := fmt.Errorf("Impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
+			err := fmt.Errorf("impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
 			s.log.Error(err.Error())
 			s.fatalErrCh <- err
 			return
@@ -195,7 +195,7 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	case reply := <-replyWaitChan:
 		return reply, nil
 	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
-		return nil, ReplyTimeoutError
+		return nil, ErrReplyTimeout
 	}
 	// unreachable
 }

@@ -78,7 +78,12 @@ type Session struct {
 
 // New establishes a session with provider using key.
 // This method will block until session is connected to the Provider.
-func NewSession(ctx context.Context, fatalErrCh chan error, logBackend *log.Backend, cfg *config.Config, linkKey *ecdh.PrivateKey) (*Session, error) {
+func NewSession(
+	ctx context.Context,
+	fatalErrCh chan error,
+	logBackend *log.Backend,
+	cfg *config.Config,
+	linkKey *ecdh.PrivateKey) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups
@@ -96,13 +101,13 @@ func NewSession(ctx context.Context, fatalErrCh chan error, logBackend *log.Back
 	}
 	pkiCacheClient := pkiclient.New(pkiClient2)
 
-	log := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", cfg.Account.User, cfg.Account.Provider))
+	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", cfg.Account.User, cfg.Account.Provider))
 
 	s := &Session{
 		cfg:         cfg,
 		linkKey:     linkKey,
 		pkiClient:   pkiClient,
-		log:         log,
+		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
 		eventCh:     channels.NewInfiniteChannel(),
 		EventSink:   make(chan Event),
@@ -207,9 +212,9 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 			return nil, ctx.Err()
 		case <-s.HaltCh():
 			s.log.Debugf("Await first pki doc worker terminating gracefully")
-			return nil, errors.New("Terminating gracefully.")
+			return nil, errors.New("terminating gracefully")
 		case <-time.After(time.Duration(s.cfg.Debug.InitialMaxPKIRetrievalDelay) * time.Second):
-			return nil, errors.New("Timeout failure awaiting first PKI document.")
+			return nil, errors.New("timeout failure awaiting first PKI document")
 		case qo = <-s.opCh:
 		}
 		switch op := qo.(type) {
@@ -217,7 +222,7 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 			// Determine if PKI doc is valid. If not then abort.
 			err := s.isDocValid(op.doc)
 			if err != nil {
-				err := fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+				err := fmt.Errorf("aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
 				s.log.Error(err.Error())
 				s.fatalErrCh <- err
 				return nil, err
@@ -238,7 +243,7 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 	}
 	serviceDescriptors := utils.FindServices(serviceName, doc)
 	if len(serviceDescriptors) == 0 {
-		return nil, errors.New("GetService failure, service not found in pki doc.")
+		return nil, errors.New("error, GetService failure, service not found in pki doc")
 	}
 	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
 }

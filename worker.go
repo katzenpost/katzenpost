@@ -94,7 +94,7 @@ func (s *Session) maybeUpdateTimers(doc *pki.Document) {
 	// Determine if PKI doc is valid. If not then abort.
 	err := s.isDocValid(doc)
 	if err != nil {
-		err := fmt.Errorf("Aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+		err := fmt.Errorf("aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
 		s.log.Error(err.Error())
 		s.fatalErrCh <- err
 		return
@@ -177,10 +177,8 @@ func (s *Session) sendFromQueueOrDecoy() {
 	_, err := s.egressQueue.Peek()
 	if err == nil {
 		s.sendNext()
-	} else {
-		if !s.cfg.Debug.DisableDecoyTraffic {
-			s.sendLoopDecoy()
-		}
+	} else if !s.cfg.Debug.DisableDecoyTraffic {
+		s.sendLoopDecoy()
 	}
 }
 
@@ -189,7 +187,7 @@ func (s *Session) isDocValid(doc *pki.Document) error {
 	for _, provider := range doc.Providers {
 		_, ok := provider.Kaetzchen[serviceLoop]
 		if !ok {
-			return errors.New("Error, found a Provider which does not have the loop service.")
+			return errors.New("found a Provider which does not have the loop service")
 		}
 	}
 	return nil

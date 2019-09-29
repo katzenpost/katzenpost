@@ -80,7 +80,7 @@ type Debug struct {
 	DisableDecoyTraffic bool
 
 	// SessionDialTimeout is the number of seconds that a session dial
-	// is allowed to take until it is cancelled.
+	// is allowed to take until it is canceled.
 	SessionDialTimeout int
 
 	// InitialMaxPKIRetrievalDelay is the initial maximum number of seconds
@@ -133,7 +133,7 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.C
 
 func (nvACfg *NonvotingAuthority) validate() error {
 	if nvACfg.PublicKey == nil {
-		return fmt.Errorf("PublicKey is missing")
+		return errors.New("error PublicKey is missing")
 	}
 	return nil
 }
@@ -155,7 +155,7 @@ func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Clien
 
 func (vACfg *VotingAuthority) validate() error {
 	if vACfg.Peers == nil || len(vACfg.Peers) == 0 {
-		return errors.New("VotingAuthority failure, must specify at least one peer.")
+		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
 		err := peer.Validate()
@@ -174,7 +174,7 @@ func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, e
 	case c.VotingAuthority != nil:
 		return c.VotingAuthority.New(l, pCfg)
 	}
-	return nil, fmt.Errorf("No Authority found")
+	return nil, errors.New("no Authority found")
 }
 
 // Panda is the PANDA configuration needed by clients
@@ -191,10 +191,10 @@ type Panda struct {
 
 func (p *Panda) validate() error {
 	if p.Receiver == "" {
-		return fmt.Errorf("Receiver is missing")
+		return errors.New("receiver is missing")
 	}
 	if p.Provider == "" {
-		return fmt.Errorf("Provider is missing")
+		return errors.New("provider is missing")
 	}
 	return nil
 }
@@ -229,17 +229,17 @@ func (accCfg *Account) fixup(cfg *Config) error {
 func (accCfg *Account) toEmailAddr() (string, error) {
 	addr := fmt.Sprintf("%s@%s", accCfg.User, accCfg.Provider)
 	if _, err := mail.ParseAddress(addr); err != nil {
-		return "", fmt.Errorf("User/Provider does not form a valid e-mail address: %v", err)
+		return "", fmt.Errorf("error User/Provider does not form a valid e-mail address: %v", err)
 	}
 	return addr, nil
 }
 
-func (accCfg *Account) validate(cfg *Config) error {
+func (accCfg *Account) validate() error {
 	if accCfg.User == "" {
-		return fmt.Errorf("User is missing")
+		return errors.New("user is missing")
 	}
 	if accCfg.Provider == "" {
-		return fmt.Errorf("Provider is missing")
+		return errors.New("provider is missing")
 	}
 	return nil
 }
@@ -252,7 +252,7 @@ type Registration struct {
 
 func (r *Registration) validate() error {
 	if r.Address == "" {
-		return errors.New("Registration Address cannot be empty.")
+		return errors.New("registration Address cannot be empty")
 	}
 	return nil
 }
@@ -376,20 +376,16 @@ func (c *Config) FixupAndValidate() error {
 	if err != nil {
 		return fmt.Errorf("config: Account is invalid (Identifier): %v", err)
 	}
-	if err := c.Account.validate(c); err != nil {
+	if err := c.Account.validate(); err != nil {
 		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
 	}
 
 	// Registration
 	if c.Registration == nil {
 		return errors.New("config: error, Registration config section is non-optional")
-	} else {
-		err = c.Registration.validate()
-		if err != nil {
-			return err
-		}
 	}
-	return nil
+	err = c.Registration.validate()
+	return err
 }
 
 // Load parses and validates the provided buffer b as a config file body and

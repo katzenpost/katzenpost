@@ -29,7 +29,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/client/config"
-	clientConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/epochtime"
@@ -81,7 +80,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 	if err != nil {
 		panic(err)
 	}
-	account := &clientConfig.Account{
+	account := &config.Account{
 		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
 		Provider:       registrationProvider.Name,
 		ProviderKeyPin: registrationProvider.IdentityKey,
@@ -91,7 +90,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 	if err != nil {
 		panic(err)
 	}
-	registration := &clientConfig.Registration{
+	cfgRegistration := &config.Registration{
 		Address: u.Host,
 		Options: &registration.Options{
 			Scheme:       u.Scheme,
@@ -101,7 +100,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 		},
 	}
 	cfg.Account = account
-	cfg.Registration = registration
+	cfg.Registration = cfgRegistration
 	err = RegisterClient(cfg, linkKey.PublicKey())
 	if err != nil {
 		panic(err)
