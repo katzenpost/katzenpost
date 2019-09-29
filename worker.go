@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/core/pki"
 )
@@ -71,7 +72,6 @@ func (s *Session) setTimers(doc *pki.Document) {
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 	isConnected := op.isConnected
 	if isConnected {
-		const skewWarnDelta = 2 * time.Minute
 		s.onlineAt = time.Now()
 
 		skew := s.minclient.ClockSkew()
@@ -79,7 +79,7 @@ func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 		if absSkew < 0 {
 			absSkew = -absSkew
 		}
-		if absSkew > skewWarnDelta {
+		if absSkew > constants.TimeSkewWarnDelta {
 			// Should this do more than just warn?  Should this
 			// use skewed time?  I don't know.
 			s.log.Warningf("The observed time difference between the host and provider clocks is '%v'. Correct your system time.", skew)
@@ -183,9 +183,8 @@ func (s *Session) sendFromQueueOrDecoy() {
 }
 
 func (s *Session) isDocValid(doc *pki.Document) error {
-	const serviceLoop = "loop"
 	for _, provider := range doc.Providers {
-		_, ok := provider.Kaetzchen[serviceLoop]
+		_, ok := provider.Kaetzchen[constants.LoopService]
 		if !ok {
 			return errors.New("found a Provider which does not have the loop service")
 		}

@@ -19,10 +19,9 @@ package client
 import (
 	"errors"
 	"sync"
-)
 
-// MaxQueueSize is the maximum queue size.
-const MaxQueueSize = 40
+	"github.com/katzenpost/client/constants"
+)
 
 // ErrQueueFull is the error issued when the queue is full.
 var ErrQueueFull = errors.New("queue is full")
@@ -47,7 +46,7 @@ type EgressQueue interface {
 // for messages sent by the client.
 type Queue struct {
 	sync.Mutex
-	content   [MaxQueueSize]Item
+	content   [constants.MaxEgressQueueSize]Item
 	readHead  int
 	writeHead int
 	len       int
@@ -58,11 +57,11 @@ type Queue struct {
 func (q *Queue) Push(e Item) error {
 	q.Lock()
 	defer q.Unlock()
-	if q.len >= MaxQueueSize {
+	if q.len >= constants.MaxEgressQueueSize {
 		return ErrQueueFull
 	}
 	q.content[q.writeHead] = e
-	q.writeHead = (q.writeHead + 1) % MaxQueueSize
+	q.writeHead = (q.writeHead + 1) % constants.MaxEgressQueueSize
 	q.len++
 	return nil
 }
@@ -77,7 +76,7 @@ func (q *Queue) Pop() (Item, error) {
 	}
 	result := q.content[q.readHead]
 	q.content[q.readHead] = &Message{}
-	q.readHead = (q.readHead + 1) % MaxQueueSize
+	q.readHead = (q.readHead + 1) % constants.MaxEgressQueueSize
 	q.len--
 	return result, nil
 }

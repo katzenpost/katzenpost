@@ -28,4 +28,18 @@ const (
 	// round trip timeout threshold. Used for GC and for blocking
 	// on reply in Session's BlockingSendUnreliableMessage method.
 	RoundTripTimeSlop = 8 * time.Second
+
+	// TimeSkewWarnDelta is the client connection time skew threshold
+	// where clients print a warning log entry.
+	TimeSkewWarnDelta = 2 * time.Minute
+
+	// LoopService is the name of the Katzenpost loop service.
+	LoopService = "loop"
+
+	// GarbageCollectionInterval is the time interval between running our
+	// SURB ID Map garbage collection routine.
+	GarbageCollectionInterval = 10 * time.Minute
+
+	// MaxEgressQueueSize is the maximum size of the egress queue.
+	MaxEgressQueueSize = 40
 )

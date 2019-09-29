@@ -168,8 +168,7 @@ func (s *Session) eventSinkWorker() {
 }
 
 func (s *Session) garbageCollectionWorker() {
-	const garbageCollectionInterval = 10 * time.Minute
-	timer := time.NewTimer(garbageCollectionInterval)
+	timer := time.NewTimer(cConstants.GarbageCollectionInterval)
 	defer timer.Stop()
 	for {
 		select {
@@ -178,7 +177,7 @@ func (s *Session) garbageCollectionWorker() {
 			return
 		case <-timer.C:
 			s.garbageCollect()
-			timer.Reset(garbageCollectionInterval)
+			timer.Reset(cConstants.GarbageCollectionInterval)
 		}
 	}
 }
