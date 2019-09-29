@@ -36,6 +36,7 @@ import (
 	pclient "github.com/katzenpost/panda/client"
 	panda "github.com/katzenpost/panda/crypto"
 	"github.com/ugorji/go/codec"
+	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -49,40 +50,15 @@ const (
 	DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
 )
 
-type addContact struct {
-	Name         string
-	SharedSecret []byte
-}
-
-type sendMessage struct {
-	Name    string
-	Payload []byte
-}
-
-type KeyExchangeCompleted struct {
-	Nickname string
-}
-
-type MessageDelivered struct {
-	MessageIndex int
-}
-
-type MessageReceived struct {
-	Nickname string
-	Message  []byte
-}
-
 // Client is the mixnet client which interacts with other clients
 // and services on the network.
 type Client struct {
 	worker.Worker
 
-	eventsChan        chan interface{}
-	pandaChan         chan panda.PandaUpdate
-	addContactChan    chan addContact
-	getNicknamesChan  chan chan []string
-	sendMessageChan   chan sendMessage
-	removeContactChan chan string
+	eventCh   channels.Channel
+	EventSink chan interface{}
+	opCh      chan workerOp
+	pandaChan chan panda.PandaUpdate
 
 	stateWorker           *StateWriter
 	linkKey               *ecdh.PrivateKey
@@ -135,12 +111,10 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		return nil, err
 	}
 	c := &Client{
-		eventsChan:          make(chan interface{}),
+		eventCh:             channels.NewInfiniteChannel(),
+		EventSink:           make(chan interface{}),
+		opCh:                make(chan workerOp, 8),
 		pandaChan:           make(chan panda.PandaUpdate),
-		addContactChan:      make(chan addContact),
-		sendMessageChan:     make(chan sendMessage),
-		getNicknamesChan:    make(chan chan []string),
-		removeContactChan:   make(chan string),
 		contacts:            make(map[uint64]*Contact),
 		contactNicknames:    make(map[string]*Contact),
 		spoolReadDescriptor: state.SpoolReadDescriptor,
@@ -172,7 +146,8 @@ func (c *Client) Start() {
 	if pandaCfg == nil {
 		panic("panda failed, must have a panda service configured")
 	}
-	c.Go(c.eventChanReader)
+	c.Go(c.clientEventChanReader)
+	c.Go(c.eventSinkWorker)
 	for _, contact := range c.contacts {
 		if contact.isPending {
 			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.nickname))
@@ -188,8 +163,26 @@ func (c *Client) Start() {
 	c.Go(c.worker)
 }
 
-// XXX FIX ME
-func (c *Client) eventChanReader() {
+func (c *Client) eventSinkWorker() {
+	for {
+		select {
+		case <-c.HaltCh():
+			c.log.Debugf("Event sink worker terminating gracefully.")
+			close(c.EventSink)
+			return
+		case e := <-c.eventCh.Out():
+			select {
+			case c.EventSink <- e:
+			case <-c.HaltCh():
+				c.log.Debugf("Event sink worker terminating gracefully.")
+				return
+			}
+		}
+	}
+}
+
+// XXX FIX ME, handle each event case properly.
+func (c *Client) clientEventChanReader() {
 	for {
 		select {
 		case <-c.HaltCh():
@@ -205,10 +198,6 @@ func (c *Client) eventChanReader() {
 			}
 		}
 	}
-}
-
-func (c *Client) EventsChan() <-chan interface{} {
-	return c.eventsChan
 }
 
 // CreateRemoteSpool creates a remote spool for collecting messages
@@ -237,9 +226,9 @@ func (c *Client) CreateRemoteSpool() error {
 // progress on the PANDA key exchange can be continued at a later
 // time after program shutdown or restart.
 func (c *Client) NewContact(nickname string, sharedSecret []byte) {
-	c.addContactChan <- addContact{
-		Name:         nickname,
-		SharedSecret: sharedSecret,
+	c.opCh <- &opAddContact{
+		name:         nickname,
+		sharedSecret: sharedSecret,
 	}
 }
 
@@ -292,15 +281,20 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	return nil
 }
 
+// XXX do we even need this method?
 func (c *Client) GetNicknames() []string {
-	responseChan := make(chan []string)
-	c.getNicknamesChan <- responseChan
-	return <-responseChan
+	getNicksOp := opGetNicknames{
+		responseChan: make(chan []string),
+	}
+	c.opCh <- &getNicksOp
+	return <-getNicksOp.responseChan
 }
 
 // RemoveContact removes a contact from the Client's state.
 func (c *Client) RemoveContact(nickname string) {
-	c.removeContactChan <- nickname
+	c.opCh <- &opRemoveContact{
+		name: nickname,
+	}
 }
 
 func (c *Client) doContactRemoval(nickname string) {
@@ -367,9 +361,10 @@ func (c *Client) haltKeyExchanges() {
 
 // Shutdown shuts down the client.
 func (c *Client) Shutdown() {
+	c.log.Info("Shutting down now.")
 	c.save()
 	c.Halt()
-	c.session.Halt()
+	c.client.Shutdown()
 }
 
 func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
@@ -401,6 +396,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
 			contact.isPending = false
+			close(contact.pandaShutdownChan)
 			c.save()
 			return
 		}
@@ -413,13 +409,14 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
 			contact.isPending = false
+			close(contact.pandaShutdownChan)
 			c.save()
-			return
 		}
 		contact.isPending = false
 		c.log.Info("Double ratchet key exchange completed!")
-		c.eventsChan <- KeyExchangeCompleted{
+		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.nickname,
+			Err:      err,
 		}
 	}
 	c.save()
@@ -427,9 +424,9 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) {
-	c.sendMessageChan <- sendMessage{
-		Name:    nickname,
-		Payload: message,
+	c.opCh <- &opSendMessage{
+		name:    nickname,
+		payload: message,
 	}
 }
 
@@ -524,63 +521,4 @@ func (c *Client) readInbox() (bool, string, *Message) {
 		c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
 	*/
 	return false, "", nil
-}
-
-// worker goroutine takes ownership of our contacts
-func (c *Client) worker() {
-	c.readInboxPoissonTimer.Start()
-	defer c.readInboxPoissonTimer.Stop()
-
-	go func() {
-		for {
-			select {
-			case <-c.HaltCh():
-				return
-			case <-c.readInboxPoissonTimer.Channel():
-				if ok, nickname, message := c.readInbox(); ok {
-					c.save()
-					c.eventsChan <- MessageReceived{
-						Message:  message.Plaintext,
-						Nickname: nickname,
-					}
-				}
-				c.readInboxPoissonTimer.Next()
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			select {
-			case <-c.HaltCh():
-				return
-			case sendMessage := <-c.sendMessageChan:
-				c.doSendMessage(sendMessage.Name, sendMessage.Payload)
-			}
-		}
-	}()
-
-	for {
-		select {
-		case <-c.HaltCh():
-			c.log.Debug("Terminating gracefully.")
-			c.haltKeyExchanges()
-			return
-		case addContact := <-c.addContactChan:
-			err := c.createContact(addContact.Name, addContact.SharedSecret)
-			if err != nil {
-				c.log.Errorf("create contact failure: %s", err.Error())
-			}
-		case responseChan := <-c.getNicknamesChan:
-			names := []string{}
-			for contact := range c.contactNicknames {
-				names = append(names, contact)
-			}
-			responseChan <- names
-		case update := <-c.pandaChan:
-			c.processPANDAUpdate(&update)
-		case nickname := <-c.removeContactChan:
-			c.doContactRemoval(nickname)
-		}
-	}
 }

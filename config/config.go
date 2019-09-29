@@ -39,8 +39,9 @@ type Config struct {
 }
 
 func (c *Config) ClientConfig() (*config.Config, error) {
+	logging := *c.Logging
 	cfg := &config.Config{
-		Logging:            c.Logging,
+		Logging:            &logging,
 		UpstreamProxy:      c.UpstreamProxy,
 		Debug:              c.Debug,
 		NonvotingAuthority: c.NonvotingAuthority,
