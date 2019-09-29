@@ -19,22 +19,22 @@ package catshadow
 import (
 	"sync"
 
-	"github.com/katzenpost/client/session"
+	"github.com/katzenpost/client"
 	"github.com/katzenpost/core/crypto/rand"
 	ratchet "github.com/katzenpost/doubleratchet"
-	"github.com/katzenpost/memspool/client"
+	memspoolClient "github.com/katzenpost/memspool/client"
 	"github.com/ugorji/go/codec"
 )
 
 var cborHandle = new(codec.CborHandle)
 
 type contactExchange struct {
-	SpoolWriteDescriptor *client.SpoolWriteDescriptor
+	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 	SignedKeyExchange    *ratchet.SignedKeyExchange
 }
 
 // NewContactExchangeBytes returns serialized contact exchange information.
-func NewContactExchangeBytes(spoolWriteDescriptor *client.SpoolWriteDescriptor, signedKeyExchange *ratchet.SignedKeyExchange) ([]byte, error) {
+func NewContactExchangeBytes(spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor, signedKeyExchange *ratchet.SignedKeyExchange) ([]byte, error) {
 	exchange := contactExchange{
 		SpoolWriteDescriptor: spoolWriteDescriptor,
 		SignedKeyExchange:    signedKeyExchange,
@@ -64,7 +64,7 @@ type serializedContact struct {
 	PandaKeyExchange     []byte
 	PandaResult          string
 	Ratchet              []byte
-	SpoolWriteDescriptor *client.SpoolWriteDescriptor
+	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
 
 // Contact is a communications contact that we have bidirectional
@@ -101,11 +101,11 @@ type Contact struct {
 
 	// spoolWriteDescriptor is a description of a remotely writable spool
 	// which we must write to in order to send this contact a message.
-	spoolWriteDescriptor *client.SpoolWriteDescriptor
+	spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
 
 // NewContact creates a new Contact or returns an error.
-func NewContact(nickname string, id uint64, spoolReadDescriptor *client.SpoolReadDescriptor, session *session.Session) (*Contact, error) {
+func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.SpoolReadDescriptor, session *client.Session) (*Contact, error) {
 	ratchet, err := ratchet.New(rand.Reader)
 	if err != nil {
 		return nil, err
