@@ -23,6 +23,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -131,6 +132,9 @@ type Session struct {
 	randReader io.Reader
 	tx         *noise.CipherState
 	rx         *noise.CipherState
+
+	rxKeyMutex *sync.RWMutex
+	txKeyMutex *sync.RWMutex
 
 	clockSkew   time.Duration
 	state       uint32
@@ -348,11 +352,17 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	var ctHdr [4]byte
 	binary.BigEndian.PutUint32(ctHdr[:], uint32(ctLen))
 	toSend := make([]byte, 0, macLen+4+ctLen)
+	s.txKeyMutex.RLock()
 	toSend = s.tx.Encrypt(toSend, nil, ctHdr[:])
+	s.txKeyMutex.RUnlock()
 
 	// Build the Ciphertext.
+	s.txKeyMutex.RLock()
 	toSend = s.tx.Encrypt(toSend, nil, pt)
+	s.txKeyMutex.RUnlock()
+	s.txKeyMutex.Lock()
 	s.tx.Rekey()
+	s.txKeyMutex.Unlock()
 
 	_, err := s.conn.Write(toSend)
 	if err != nil {
@@ -382,7 +392,9 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	if _, err := io.ReadFull(s.conn, ctHdrCt[:]); err != nil {
 		return nil, err
 	}
+	s.rxKeyMutex.RLock()
 	ctHdr, err := s.rx.Decrypt(nil, nil, ctHdrCt[:])
+	s.rxKeyMutex.RUnlock()
 	if err != nil {
 		return nil, err
 	}
@@ -396,11 +408,15 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	if _, err := io.ReadFull(s.conn, ct); err != nil {
 		return nil, err
 	}
+	s.rxKeyMutex.RLock()
 	pt, err := s.rx.Decrypt(nil, nil, ct)
+	s.rxKeyMutex.RUnlock()
 	if err != nil {
 		return nil, err
 	}
+	s.rxKeyMutex.Lock()
 	s.rx.Rekey()
+	s.rxKeyMutex.Unlock()
 
 	// Parse and return the command.
 	return commands.FromBytes(pt)
@@ -412,10 +428,14 @@ func (s *Session) Close() {
 	// state.  Without an underlying crypto break, Rekey() is backtracking
 	// resistant.
 	if s.tx != nil {
+		s.txKeyMutex.Lock()
 		s.tx.Rekey()
+		s.txKeyMutex.Unlock()
 	}
 	if s.rx != nil {
+		s.rxKeyMutex.Lock()
 		s.rx.Rekey()
+		s.rxKeyMutex.Unlock()
 	}
 	s.authenticationKey.Reset()
 	if s.conn != nil {
@@ -469,6 +489,8 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		randReader:        cfg.RandomReader,
 		isInitiator:       isInitiator,
 		state:             stateInit,
+		rxKeyMutex:        new(sync.RWMutex),
+		txKeyMutex:        new(sync.RWMutex),
 	}
 	if err := s.authenticationKey.FromBytes(cfg.AuthenticationKey.Bytes()); err != nil {
 		panic("wire/session: BUG: failed to copy authentication key: " + err.Error())
