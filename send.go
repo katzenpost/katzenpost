@@ -103,8 +103,7 @@ func (s *Session) doSend(msg *Message) {
 
 func (s *Session) sendLoopDecoy() {
 	s.log.Info("sending loop decoy")
-	const loopService = "loop"
-	serviceDesc, err := s.GetService(loopService)
+	serviceDesc, err := s.GetService(cConstants.LoopService)
 	if err != nil {
 		err := errors.New("failure to get loop service")
 		s.log.Error(err.Error())
