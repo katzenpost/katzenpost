@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/katzenpost/core/crypto/rand"
@@ -115,7 +116,7 @@ type connection struct {
 	sendCh         chan *connSendCtx
 	getConsensusCh chan *getConsensusCtx
 
-	retryDelay  time.Duration
+	retryDelay  int64 // used as atomic time.Duration
 	isConnected bool
 }
 
@@ -288,11 +289,11 @@ func (c *connection) doConnect(dialCtx context.Context) {
 
 		for _, addrPort := range dstAddrs {
 			select {
-			case <-time.After(c.retryDelay):
+			case <-time.After(time.Duration(atomic.LoadInt64(&c.retryDelay))):
 				// Back off the reconnect delay.
-				c.retryDelay += retryIncrement
-				if c.retryDelay > maxRetryDelay {
-					c.retryDelay = maxRetryDelay
+				atomic.AddInt64(&c.retryDelay, int64(retryIncrement))
+				if atomic.LoadInt64(&c.retryDelay) > int64(maxRetryDelay) {
+					atomic.StoreInt64(&c.retryDelay, int64(maxRetryDelay))
 				}
 			case <-c.HaltCh():
 				c.log.Debugf("(Re)connection attempts cancelled.")
@@ -408,7 +409,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				cmdCh <- err
 				return
 			}
-			c.retryDelay = 0
+			atomic.StoreInt64(&c.retryDelay, 0)
 			select {
 			case cmdCh <- rawCmd:
 			case <-cmdCloseCh:
