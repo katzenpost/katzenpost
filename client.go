@@ -26,7 +26,6 @@ import (
 
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/client/poisson"
-	"github.com/katzenpost/client/session"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
@@ -96,7 +95,7 @@ type Client struct {
 	conversationsMutex    *sync.Mutex
 
 	client  *client.Client
-	session *session.Session
+	session *client.Session
 
 	log        *logging.Logger
 	logBackend *log.Backend
@@ -197,11 +196,11 @@ func (c *Client) eventChanReader() {
 			return
 		case e := <-c.session.EventSink:
 			switch event := e.(type) {
-			case *session.MessageSentEvent:
+			case *client.MessageSentEvent:
 				c.log.Info("Message Sent Event: %s", event)
-			case *session.MessageReplyEvent:
+			case *client.MessageReplyEvent:
 				c.log.Info("Message Reply Event: %s", event)
-			case *session.ConnectionStatusEvent:
+			case *client.ConnectionStatusEvent:
 				c.log.Info("Connection Status Event: %s", event)
 			}
 		}
