@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/client/session"
+	"github.com/katzenpost/client"
 	"github.com/katzenpost/panda/common"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
@@ -43,7 +43,7 @@ const (
 // Panda is a PANDA client that uses our mixnet client library
 // to communicate with the PANDA kaetzchen service.
 type Panda struct {
-	session    *session.Session
+	session    *client.Session
 	log        *logging.Logger
 	blobSize   int
 	jsonHandle codec.JsonHandle
@@ -127,7 +127,7 @@ func (p *Panda) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, er
 }
 
 // New creates a new Panda instance.
-func New(blobSize int, s *session.Session, log *logging.Logger, recipient, provider string) *Panda {
+func New(blobSize int, s *client.Session, log *logging.Logger, recipient, provider string) *Panda {
 	p := &Panda{
 		session:   s,
 		blobSize:  blobSize,
