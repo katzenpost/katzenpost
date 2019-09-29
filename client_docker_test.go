@@ -54,7 +54,7 @@ func createCatshadowClient(t *testing.T) *Client {
 		panic(err)
 	}
 	cfg, linkKey := client.AutoRegisterRandomClient(cfg)
-	cfg.Logging.Level = "INFO" // verbosity reductionism
+	cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
 	require.NoError(err)
 	passphrase := []byte("")
@@ -85,14 +85,14 @@ func TestDockerCatshadowBasics(t *testing.T) {
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
-	aliceEventsCh := alice.EventsChan()
+	aliceEventsCh := alice.EventSink
 	ev := <-aliceEventsCh
-	_, ok := ev.(KeyExchangeCompleted)
+	_, ok := ev.(*KeyExchangeCompletedEvent)
 	require.True(ok)
 
-	bobEventsCh := bob.EventsChan()
+	bobEventsCh := bob.EventSink
 	ev = <-bobEventsCh
-	_, ok = ev.(KeyExchangeCompleted)
+	_, ok = ev.(*KeyExchangeCompletedEvent)
 	require.True(ok)
 
 	/*
