@@ -17,7 +17,7 @@
 package client
 
 import (
-	"github.com/katzenpost/client/session"
+	"github.com/katzenpost/client"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/memspool/common"
@@ -66,7 +66,7 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
-func NewSpoolReadDescriptor(receiver, provider string, session *session.Session) (*SpoolReadDescriptor, error) {
+func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) (*SpoolReadDescriptor, error) {
 	privateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, err
