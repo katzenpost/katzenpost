@@ -25,10 +25,10 @@ import (
 const MaxQueueSize = 40
 
 // ErrQueueFull is the error issued when the queue is full.
-var ErrQueueFull = errors.New("queue full error")
+var ErrQueueFull = errors.New("queue is full")
 
 // ErrQueueEmpty is the error issued when the queue is empty.
-var ErrQueueEmpty = errors.New("Error, queue is empty.")
+var ErrQueueEmpty = errors.New("queue is empty")
 
 // EgressQueue is the egress queue interface.
 type EgressQueue interface {

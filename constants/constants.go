@@ -27,5 +27,5 @@ const (
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold. Used for GC and for blocking
 	// on reply in Session's BlockingSendUnreliableMessage method.
-	RoundTripTimeSlop = time.Duration(8 * time.Second)
+	RoundTripTimeSlop = 8 * time.Second
 )
