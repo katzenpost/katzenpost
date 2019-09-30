@@ -104,6 +104,8 @@ github.com/katzenpost/panda v0.0.4-0.20190927160940-3f1bf1a9acfc h1:x2b9YWMEE98l
 github.com/katzenpost/panda v0.0.4-0.20190927160940-3f1bf1a9acfc/go.mod h1:MfcxFhX9D7RupwTVITWDJDaWr0sB195zHHbaeQFAsdU=
 github.com/katzenpost/panda v0.0.4-0.20190929092452-fb46420c8d6d h1:/lK9WZL56IOtW6ExFquyNwmr5Of+PDlm/3b/kJrLwsI=
 github.com/katzenpost/panda v0.0.4-0.20190929092452-fb46420c8d6d/go.mod h1:dPbAxBF2MSlShipgpNw8jOnpmMeyuu7PdbYFJL7h7GM=
+github.com/katzenpost/panda v0.0.4-0.20190930092228-e6aa54df75d2 h1:YJYhCExYBZH8cuRX2sduS5u9GWta8eKFZuvuF2bZ0V0=
+github.com/katzenpost/panda v0.0.4-0.20190930092228-e6aa54df75d2/go.mod h1:dPbAxBF2MSlShipgpNw8jOnpmMeyuu7PdbYFJL7h7GM=
 github.com/katzenpost/registration_client v0.0.1 h1:ZvlEQ0rfVEGEV67x7KVxMi0veiLn2QyM1bxfWb8u7Q8=
 github.com/katzenpost/registration_client v0.0.1/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
 github.com/katzenpost/server v0.0.7 h1:D3OCuJ66ZIpcw3A23Fftgj85u/cVkVkyG+VnkCtIAco=

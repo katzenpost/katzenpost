@@ -24,7 +24,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
@@ -74,48 +73,77 @@ func createCatshadowClient(t *testing.T) *Client {
 	return catShadowClient
 }
 
-func TestDockerCatshadowBasics(t *testing.T) {
+func TestDockerPandaSuccess(t *testing.T) {
 	require := require.New(t)
-
-	t.Log("BEGINNING OF TEST")
 
 	alice := createCatshadowClient(t)
 	bob := createCatshadowClient(t)
 
-	//sharedSecret := []byte("twas brillig and slithy toves")
-	sharedSecret := []byte("222cooking MCs like a pound of bacon")
+	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
 	aliceEventsCh := alice.EventSink
 	ev := <-aliceEventsCh
-	_, ok := ev.(*KeyExchangeCompletedEvent)
+	keyExchangeCompletedEvent, ok := ev.(*KeyExchangeCompletedEvent)
 	require.True(ok)
+	require.Nil(keyExchangeCompletedEvent.Err)
 
 	bobEventsCh := bob.EventSink
 	ev = <-bobEventsCh
-	_, ok = ev.(*KeyExchangeCompletedEvent)
+	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
 	require.True(ok)
+	require.Nil(keyExchangeCompletedEvent.Err)
 
-	/*
-		alice.SendMessage("bob", []byte("hello bobby, this is a message"))
-		t.Log("unique cryptic string after SendMessage")
-
-
-			        ev = <-aliceEventsCh
-					_, ok = ev.(MessageDelivered)
-					if !ok {
-						panic("wtf")
-					}
-
-					ev = <-bobEventsCh
-					_, ok = ev.(MessageReceived)
-					if !ok {
-						panic("wtf")
-					}
-	*/
-
-	time.Sleep(3 * time.Second)
 	alice.Shutdown()
 	bob.Shutdown()
+}
+
+func TestDockerPandaTagContendedError(t *testing.T) {
+	require := require.New(t)
+
+	alice := createCatshadowClient(t)
+	bob := createCatshadowClient(t)
+
+	sharedSecret := []byte("twas brillig and the slithy toves")
+	alice.NewContact("bob", sharedSecret)
+	bob.NewContact("alice", sharedSecret)
+
+	aliceEventsCh := alice.EventSink
+	ev := <-aliceEventsCh
+	keyExchangeCompletedEvent, ok := ev.(*KeyExchangeCompletedEvent)
+	require.True(ok)
+	require.Nil(keyExchangeCompletedEvent.Err)
+
+	bobEventsCh := bob.EventSink
+	ev = <-bobEventsCh
+	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
+	require.True(ok)
+	require.Nil(keyExchangeCompletedEvent.Err)
+
+	alice.Shutdown()
+	bob.Shutdown()
+
+	// second phase of test, use same panda shared secret
+	// in order to test that it invokes a tag contended error
+	ada := createCatshadowClient(t)
+	jeff := createCatshadowClient(t)
+
+	ada.NewContact("jeff", sharedSecret)
+	jeff.NewContact("ada", sharedSecret)
+
+	adaEventsCh := ada.EventSink
+	ev = <-adaEventsCh
+	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
+	require.True(ok)
+	require.NotNil(keyExchangeCompletedEvent.Err)
+
+	jeffEventsCh := jeff.EventSink
+	ev = <-jeffEventsCh
+	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
+	require.True(ok)
+	require.NotNil(keyExchangeCompletedEvent.Err)
+
+	ada.Shutdown()
+	jeff.Shutdown()
 }

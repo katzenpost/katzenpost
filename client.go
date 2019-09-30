@@ -325,8 +325,8 @@ func (c *Client) marshal() ([]byte, error) {
 
 func (c *Client) haltKeyExchanges() {
 	for _, contact := range c.contacts {
-		c.log.Debugf("Halting pending key exchange for '%s' contact.", contact.nickname)
 		if contact.isPending {
+			c.log.Debugf("Halting pending key exchange for '%s' contact.", contact.nickname)
 			if contact.pandaShutdownChan != nil {
 				close(contact.pandaShutdownChan)
 			}
@@ -357,9 +357,17 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		contact.pandaKeyExchange = nil
 		contact.pandaShutdownChan = nil
 		c.log.Infof("Key exchange with %s failed: %s", contact.nickname, update.Err)
+		c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			Nickname: contact.nickname,
+			Err:      update.Err,
+		}
 	case update.Serialised != nil:
 		if bytes.Equal(contact.pandaKeyExchange, update.Serialised) {
 			c.log.Infof("Strange, our PANDA key exchange echoed our exchange bytes: %s", contact.nickname)
+			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+				Nickname: contact.nickname,
+				Err:      errors.New("strange, our PANDA key exchange echoed our exchange bytes"),
+			}
 			return
 		}
 		contact.pandaKeyExchange = update.Serialised
@@ -372,8 +380,11 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
 			contact.isPending = false
-			close(contact.pandaShutdownChan)
 			c.save()
+			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+				Nickname: contact.nickname,
+				Err:      err,
+			}
 			return
 		}
 		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
@@ -385,14 +396,17 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
 			contact.isPending = false
-			close(contact.pandaShutdownChan)
 			c.save()
+			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+				Nickname: contact.nickname,
+				Err:      err,
+			}
+			return
 		}
 		contact.isPending = false
 		c.log.Info("Double ratchet key exchange completed!")
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.nickname,
-			Err:      err,
 		}
 	}
 	c.save()
