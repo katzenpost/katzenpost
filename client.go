@@ -24,13 +24,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/catshadow/constants"
 	"github.com/katzenpost/client"
-	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
-	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/memspool/client"
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
@@ -40,35 +39,25 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-const (
-	// these two constants control the frequency of polling the remote
-	// inbox for new messages
-	readInboxPoissonLambda = 0.0001234
-	readInboxPoissonMax    = 90000
-
-	// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
-	DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
-)
-
 // Client is the mixnet client which interacts with other clients
 // and services on the network.
 type Client struct {
 	worker.Worker
 
-	eventCh   channels.Channel
-	EventSink chan interface{}
-	opCh      chan workerOp
-	pandaChan chan panda.PandaUpdate
+	eventCh    channels.Channel
+	EventSink  chan interface{}
+	opCh       chan workerOp
+	pandaChan  chan panda.PandaUpdate
+	fatalErrCh chan error
 
-	stateWorker           *StateWriter
-	linkKey               *ecdh.PrivateKey
-	user                  string
-	contacts              map[uint64]*Contact
-	contactNicknames      map[string]*Contact
-	spoolReadDescriptor   *memspoolclient.SpoolReadDescriptor
-	readInboxPoissonTimer *poisson.Fount
-	conversations         map[string][]*Message
-	conversationsMutex    *sync.Mutex
+	stateWorker         *StateWriter
+	linkKey             *ecdh.PrivateKey
+	user                string
+	contacts            map[uint64]*Contact
+	contactNicknames    map[string]*Contact
+	spoolReadDescriptor *memspoolclient.SpoolReadDescriptor
+	conversations       map[string][]*Message
+	conversationsMutex  *sync.Mutex
 
 	client  *client.Client
 	session *client.Session
@@ -90,7 +79,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		Provider:      mixnetClient.Provider(),
 		LinkKey:       linkKey,
 	}
-	client, err := New(mixnetClient.GetBackendLog(), mixnetClient, stateWorker, state)
+	client, err := New(logBackend, mixnetClient, stateWorker, state)
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +104,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		EventSink:           make(chan interface{}),
 		opCh:                make(chan workerOp, 8),
 		pandaChan:           make(chan panda.PandaUpdate),
+		fatalErrCh:          make(chan error),
 		contacts:            make(map[uint64]*Contact),
 		contactNicknames:    make(map[string]*Contact),
 		spoolReadDescriptor: state.SpoolReadDescriptor,
@@ -123,14 +113,10 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		conversations:       state.Conversations,
 		conversationsMutex:  new(sync.Mutex),
 		stateWorker:         stateWorker,
-		readInboxPoissonTimer: poisson.NewTimer(&poisson.Descriptor{
-			Lambda: readInboxPoissonLambda,
-			Max:    readInboxPoissonMax,
-		}),
-		client:     mixnetClient,
-		session:    session,
-		log:        logBackend.GetLogger("catshadow"),
-		logBackend: logBackend,
+		client:              mixnetClient,
+		session:             session,
+		log:                 logBackend.GetLogger("catshadow"),
+		logBackend:          logBackend,
 	}
 	for _, contact := range state.Contacts {
 		c.contacts[contact.id] = contact
@@ -146,7 +132,6 @@ func (c *Client) Start() {
 	if pandaCfg == nil {
 		panic("panda failed, must have a panda service configured")
 	}
-	c.Go(c.clientEventChanReader)
 	c.Go(c.eventSinkWorker)
 	for _, contact := range c.contacts {
 		if contact.isPending {
@@ -161,14 +146,23 @@ func (c *Client) Start() {
 		}
 	}
 	c.Go(c.worker)
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-c.fatalErrCh
+		if !ok {
+			return
+		}
+		c.log.Warningf("Shutting down due to error: %v", err)
+		c.Shutdown()
+	}()
 }
 
 func (c *Client) eventSinkWorker() {
+	defer close(c.EventSink)
 	for {
 		select {
 		case <-c.HaltCh():
 			c.log.Debugf("Event sink worker terminating gracefully.")
-			close(c.EventSink)
 			return
 		case e := <-c.eventCh.Out():
 			select {
@@ -176,25 +170,6 @@ func (c *Client) eventSinkWorker() {
 			case <-c.HaltCh():
 				c.log.Debugf("Event sink worker terminating gracefully.")
 				return
-			}
-		}
-	}
-}
-
-// XXX FIX ME, handle each event case properly.
-func (c *Client) clientEventChanReader() {
-	for {
-		select {
-		case <-c.HaltCh():
-			return
-		case e := <-c.session.EventSink:
-			switch event := e.(type) {
-			case *client.MessageSentEvent:
-				c.log.Info("Message Sent Event: %s", event)
-			case *client.MessageReplyEvent:
-				c.log.Info("Message Reply Event: %s", event)
-			case *client.ConnectionStatusEvent:
-				c.log.Info("Connection Status Event: %s", event)
 			}
 		}
 	}
@@ -365,6 +340,7 @@ func (c *Client) Shutdown() {
 	c.save()
 	c.Halt()
 	c.client.Shutdown()
+	close(c.fatalErrCh)
 }
 
 func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
@@ -450,7 +426,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		return
 	}
 
-	payload := [DoubleRatchetPayloadLength]byte{}
+	payload := [constants.DoubleRatchetPayloadLength]byte{}
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
@@ -483,7 +459,7 @@ func (c *Client) GetAllConversations() map[string][]*Message {
 	return c.conversations
 }
 
-func (c *Client) readInbox() (bool, string, *Message) {
+func (c *Client) readRemoteSpool() (bool, string, *Message) {
 	// XXX fix me
 	/*
 		var err error

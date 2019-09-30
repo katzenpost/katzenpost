@@ -30,6 +30,7 @@ import (
 
 // Config is the top level catshadow configuration.
 type Config struct {
+	ClientLogging      *config.Logging
 	Logging            *config.Logging
 	UpstreamProxy      *config.UpstreamProxy
 	Debug              *config.Debug
@@ -39,9 +40,8 @@ type Config struct {
 }
 
 func (c *Config) ClientConfig() (*config.Config, error) {
-	logging := *c.Logging
 	cfg := &config.Config{
-		Logging:            &logging,
+		Logging:            c.ClientLogging,
 		UpstreamProxy:      c.UpstreamProxy,
 		Debug:              c.Debug,
 		NonvotingAuthority: c.NonvotingAuthority,
