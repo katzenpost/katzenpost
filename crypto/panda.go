@@ -164,12 +164,20 @@ func (kx *KeyExchange) Run() {
 	case panda_proto.KeyExchange_INIT:
 		if err := kx.derivePassword(); err != nil {
 			kx.log.Error(err.Error())
+			kx.pandaChan <- PandaUpdate{
+				ID:  kx.contactID,
+				Err: err,
+			}
 			return
 		}
 		kx.status = panda_proto.KeyExchange_EXCHANGE1
 		err := kx.updateSerialised()
 		if err != nil {
 			kx.log.Error(err.Error())
+			kx.pandaChan <- PandaUpdate{
+				ID:  kx.contactID,
+				Err: err,
+			}
 			return
 		}
 		kx.log.Info("password derivation complete.")
@@ -182,12 +190,20 @@ func (kx *KeyExchange) Run() {
 	case panda_proto.KeyExchange_EXCHANGE1:
 		if err := kx.exchange1(); err != nil {
 			kx.log.Error(err.Error())
+			kx.pandaChan <- PandaUpdate{
+				ID:  kx.contactID,
+				Err: err,
+			}
 			return
 		}
 		kx.status = panda_proto.KeyExchange_EXCHANGE2
 		err := kx.updateSerialised()
 		if err != nil {
 			kx.log.Error(err.Error())
+			kx.pandaChan <- PandaUpdate{
+				ID:  kx.contactID,
+				Err: err,
+			}
 			return
 		}
 		kx.log.Info("first message exchange complete")
