@@ -16,12 +16,14 @@
 
 package catshadow
 
-import ()
+import (
+	"fmt"
+
+	"github.com/katzenpost/client"
+)
 
 func (c *Client) worker() {
-	c.readInboxPoissonTimer.Start()
-	defer c.readInboxPoissonTimer.Stop()
-
+	var isConnected bool
 	for {
 		var qo workerOp
 		select {
@@ -29,34 +31,48 @@ func (c *Client) worker() {
 			c.log.Debug("Terminating gracefully.")
 			c.haltKeyExchanges()
 			return
-		case <-c.readInboxPoissonTimer.Channel():
-			//c.readInbox()
-			//c.readInboxPoissonTimer.Next() // XXX todo: MUST set timer to max val when disconnected. duh.
 		case update := <-c.pandaChan:
-			c.log.Info("BEFORE PANDA UPDATE")
 			c.processPANDAUpdate(&update)
-			c.log.Info("AFTER PANDA UPDATE")
+			continue
 		case qo = <-c.opCh:
+		case rawClientEvent := <-c.session.EventSink:
+			switch event := rawClientEvent.(type) {
+			case *client.ConnectionStatusEvent:
+				isConnected = event.IsConnected
+				c.log.Infof("Connection status change: isConnected %v", isConnected)
+			case *client.MessageSentEvent:
+				// XXX todo fix me
+				continue
+			case *client.MessageReplyEvent:
+				// XXX todo fix me
+				continue
+			default:
+				err := fmt.Errorf("bug, received unknown event from client EventSink: %v", event)
+				c.log.Error(err.Error())
+				c.fatalErrCh <- err
+				return
+			}
 		}
 
-		switch op := qo.(type) {
-		case *opAddContact:
-			c.log.Info("BEFORE CREATE CONTACT")
-			err := c.createContact(op.name, op.sharedSecret)
-			if err != nil {
-				c.log.Errorf("create contact failure: %s", err.Error())
+		if qo != nil {
+			switch op := qo.(type) {
+			case *opAddContact:
+				err := c.createContact(op.name, op.sharedSecret)
+				if err != nil {
+					c.log.Errorf("create contact failure: %s", err.Error())
+				}
+			case *opRemoveContact:
+				c.doContactRemoval(op.name)
+			case *opSendMessage:
+				c.doSendMessage(op.name, op.payload)
+			case *opGetNicknames:
+				names := []string{}
+				for contact := range c.contactNicknames {
+					names = append(names, contact)
+				}
+				op.responseChan <- names
 			}
-			c.log.Info("AFTER CREATE CONTACT")
-		case *opRemoveContact:
-			c.doContactRemoval(op.name)
-		case *opSendMessage:
-			c.doSendMessage(op.name, op.payload)
-		case *opGetNicknames:
-			names := []string{}
-			for contact := range c.contactNicknames {
-				names = append(names, contact)
-			}
-			op.responseChan <- names
-		}
+		} // end of if qo != nil {
+
 	} // end of for loop
 }

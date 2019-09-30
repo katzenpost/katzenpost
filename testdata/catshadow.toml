@@ -2,6 +2,11 @@
 [UpstreamProxy]
   Type = "none"
 
+[ClientLogging]
+  Disable = false
+  Level = "INFO"
+  File = ""
+
 [Logging]
   Disable = false
   Level = "DEBUG"
