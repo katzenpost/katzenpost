@@ -18,11 +18,11 @@ package client
 
 import (
 	"errors"
-	"fmt"
+	"math"
 	"time"
 
 	"github.com/katzenpost/client/constants"
-	"github.com/katzenpost/client/poisson"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
 )
 
@@ -43,30 +43,6 @@ func (s *Session) setPollingInterval(doc *pki.Document) {
 	// They result in SURB replies.
 	interval := time.Duration(doc.LambdaP+doc.LambdaL) * time.Millisecond
 	s.minclient.SetPollInterval(interval)
-}
-
-func (s *Session) setTimers(doc *pki.Document) {
-	// λP
-	pDesc := &poisson.Descriptor{
-		Lambda: doc.LambdaP,
-		Max:    doc.LambdaPMaxDelay,
-	}
-	if s.pTimer == nil {
-		s.pTimer = poisson.NewTimer(pDesc)
-	} else {
-		s.pTimer.SetPoisson(pDesc)
-	}
-
-	// λL
-	lDesc := &poisson.Descriptor{
-		Lambda: doc.LambdaL,
-		Max:    doc.LambdaLMaxDelay,
-	}
-	if s.lTimer == nil {
-		s.lTimer = poisson.NewTimer(lDesc)
-	} else {
-		s.lTimer.SetPoisson(lDesc)
-	}
 }
 
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
@@ -90,32 +66,38 @@ func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 	return isConnected
 }
 
-func (s *Session) maybeUpdateTimers(doc *pki.Document) {
-	// Determine if PKI doc is valid. If not then abort.
-	err := s.isDocValid(doc)
-	if err != nil {
-		err := fmt.Errorf("aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
+func (s *Session) worker() {
+	const maxDuration = math.MaxInt64
+	mRng := rand.NewMath()
+	// The PKI doc should be cached since we've
+	// already waited until we received it.
+	doc := s.minclient.CurrentDocument()
+	if doc == nil {
+		s.fatalErrCh <- errors.New("aborting, PKI doc is nil")
 		return
 	}
-	s.setTimers(doc)
-}
 
-// worker performs work. It runs in it's own goroutine
-// and implements a shutdown code path as well.
-// This function assumes the timers are setup but
-// not yet started.
-func (s *Session) worker() {
-	s.pTimer.Start()
-	s.lTimer.Start()
-	defer func() {
-		s.pTimer.Stop()
-		s.lTimer.Stop()
-		s.log.Debug("Session timers stopped.")
-	}()
+	// λP
+	lambdaP := doc.LambdaP
+	lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
+	if lambdaPMsec > doc.LambdaPMaxDelay {
+		lambdaPMsec = doc.LambdaPMaxDelay
+	}
+	lambdaPInterval := time.Duration(lambdaPMsec) * time.Millisecond
+	lambdaPTimer := time.NewTimer(lambdaPInterval)
+	defer lambdaPTimer.Stop()
 
-	var isConnected bool
+	// λL
+	lambdaL := doc.LambdaL
+	lambdaLMsec := uint64(rand.Exp(mRng, lambdaL))
+	if lambdaLMsec > doc.LambdaLMaxDelay {
+		lambdaLMsec = doc.LambdaLMaxDelay
+	}
+	lambdaLInterval := time.Duration(lambdaLMsec) * time.Millisecond
+	lambdaLTimer := time.NewTimer(lambdaLInterval)
+	defer lambdaLTimer.Stop()
+
+	isConnected := true
 	for {
 		var lambdaPFired bool
 		var lambdaLFired bool
@@ -124,9 +106,9 @@ func (s *Session) worker() {
 		case <-s.HaltCh():
 			s.log.Debugf("Session worker terminating gracefully.")
 			return
-		case <-s.pTimer.Timer.C:
+		case <-lambdaPTimer.C:
 			lambdaPFired = true
-		case <-s.lTimer.Timer.C:
+		case <-lambdaLTimer.C:
 			lambdaLFired = true
 		case qo = <-s.opCh:
 		}
@@ -150,21 +132,42 @@ func (s *Session) worker() {
 				isConnected = s.connStatusChange(op)
 			case opNewDocument:
 				s.setPollingInterval(op.doc)
-				s.maybeUpdateTimers(op.doc)
+				err := s.isDocValid(doc)
+				if err != nil {
+					s.fatalErrCh <- err
+				}
+				lambdaP = doc.LambdaP
+				lambdaL = doc.LambdaL
 			default:
 				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			} // end of switch
 		}
 		if isConnected {
 			if lambdaPFired {
-				s.pTimer.Next()
+				lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
+				if lambdaPMsec > doc.LambdaPMaxDelay {
+					lambdaPMsec = doc.LambdaPMaxDelay
+				}
+				lambdaPInterval = time.Duration(lambdaPMsec) * time.Millisecond
+				lambdaPTimer.Reset(lambdaPInterval)
 			}
 			if lambdaLFired {
-				s.lTimer.Next()
+				lambdaLMsec := uint64(rand.Exp(mRng, lambdaL))
+				if lambdaLMsec > doc.LambdaLMaxDelay {
+					lambdaLMsec = doc.LambdaLMaxDelay
+				}
+				lambdaLInterval = time.Duration(lambdaLMsec) * time.Millisecond
+				lambdaLTimer.Reset(lambdaLInterval)
 			}
 		} else {
-			s.pTimer.NextMax()
-			s.lTimer.NextMax()
+			if !lambdaPFired && !lambdaPTimer.Stop() {
+				<-lambdaPTimer.C
+			}
+			if !lambdaLFired && !lambdaLTimer.Stop() {
+				<-lambdaLTimer.C
+			}
+			lambdaPTimer.Reset(maxDuration)
+			lambdaLTimer.Reset(maxDuration)
 		}
 	}
 

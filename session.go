@@ -29,7 +29,6 @@ import (
 	"github.com/katzenpost/client/config"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/client/internal/pkiclient"
-	"github.com/katzenpost/client/poisson"
 	"github.com/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -57,11 +56,6 @@ type Session struct {
 
 	eventCh   channels.Channel
 	EventSink chan Event
-
-	// λP
-	pTimer *poisson.Fount
-	// λL
-	lTimer *poisson.Fount
 
 	linkKey   *ecdh.PrivateKey
 	onlineAt  time.Time
@@ -141,11 +135,10 @@ func NewSession(
 
 	// block until we get the first PKI document
 	// and then set our timers accordingly
-	doc, err := s.awaitFirstPKIDoc(ctx)
+	err = s.awaitFirstPKIDoc(ctx)
 	if err != nil {
 		return nil, err
 	}
-	s.setTimers(doc)
 	s.Go(s.worker)
 	return s, nil
 }
@@ -203,17 +196,17 @@ func (s *Session) garbageCollect() {
 	s.surbIDMap.Range(surbIDMapRange)
 }
 
-func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
+func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
 	for {
 		var qo workerOp
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-s.HaltCh():
 			s.log.Debugf("Await first pki doc worker terminating gracefully")
-			return nil, errors.New("terminating gracefully")
+			return errors.New("terminating gracefully")
 		case <-time.After(time.Duration(s.cfg.Debug.InitialMaxPKIRetrievalDelay) * time.Second):
-			return nil, errors.New("timeout failure awaiting first PKI document")
+			return errors.New("timeout failure awaiting first PKI document")
 		case qo = <-s.opCh:
 		}
 		switch op := qo.(type) {
@@ -221,16 +214,17 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) (*pki.Document, error) {
 			// Determine if PKI doc is valid. If not then abort.
 			err := s.isDocValid(op.doc)
 			if err != nil {
-				err := fmt.Errorf("aborting, PKI doc is not valid for the Loopix decoy traffic use case: %v", err)
+				err := fmt.Errorf("aborting, PKI doc is not valid for our decoy traffic use case: %v", err)
 				s.log.Error(err.Error())
 				s.fatalErrCh <- err
-				return nil, err
+				return err
 			}
-			return op.doc, nil
+			return nil
 		default:
 			continue
 		}
 	}
+	// NOT REACHED
 }
 
 // GetService returns a randomly selected service
