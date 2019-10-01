@@ -105,7 +105,7 @@ func NewSession(
 		fatalErrCh:  fatalErrCh,
 		eventCh:     channels.NewInfiniteChannel(),
 		EventSink:   make(chan Event),
-		opCh:        make(chan workerOp),
+		opCh:        make(chan workerOp, 8),
 		egressQueue: new(Queue),
 	}
 	// Configure and bring up the minclient instance.
@@ -246,13 +246,22 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 func (s *Session) onConnection(err error) {
 	s.log.Debugf("onConnection %v", err)
 
-	s.eventCh.In() <- &ConnectionStatusEvent{
+	select {
+	case <-s.HaltCh():
+		s.log.Debugf("onConnection callback terminating gracefully")
+		return
+	case s.eventCh.In() <- &ConnectionStatusEvent{
 		IsConnected: err == nil,
 		Err:         err,
+	}:
 	}
-
-	s.opCh <- opConnStatusChanged{
+	select {
+	case <-s.HaltCh():
+		s.log.Debugf("onConnection callback terminating gracefully")
+		return
+	case s.opCh <- opConnStatusChanged{
 		isConnected: err == nil,
+	}:
 	}
 }
 
@@ -329,8 +338,7 @@ func (s *Session) GetPandaConfig() *config.Panda {
 }
 
 func (s *Session) Shutdown() {
+	s.Halt()
 	s.minclient.Shutdown()
 	s.minclient.Wait()
-	s.Halt()
-	s.log.Info("Session shutdown completed.")
 }
