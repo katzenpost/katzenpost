@@ -318,6 +318,9 @@ func (s *Session) onDocument(doc *pki.Document) {
 	s.opCh <- opNewDocument{
 		doc: doc,
 	}
+	s.eventCh.In() <- &NewDocumentEvent{
+		Document: doc,
+	}
 }
 
 func (s *Session) GetPandaConfig() *config.Panda {

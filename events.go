@@ -22,6 +22,7 @@ import (
 	"time"
 
 	cConstants "github.com/katzenpost/client/constants"
+	"github.com/katzenpost/core/pki"
 )
 
 // Event is the generic event sent over the event listener channel.
@@ -91,4 +92,15 @@ func (e *MessageSentEvent) String() string {
 		return fmt.Sprintf("MessageSent: %v failed: %v", hex.EncodeToString(e.MessageID[:]), e.Err)
 	}
 	return fmt.Sprintf("MessageSent: %v", hex.EncodeToString(e.MessageID[:]))
+}
+
+// NewDocumentEvent is the new document event, signaling that
+// we have received a new document from the PKI.
+type NewDocumentEvent struct {
+	Document *pki.Document
+}
+
+// String returns a string representation of a NewDocumentEvent.
+func (e *NewDocumentEvent) String() string {
+	return fmt.Sprintf("PKI Document for epoch %d", e.Document.Epoch)
 }
