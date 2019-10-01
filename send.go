@@ -35,24 +35,18 @@ var ErrReplyTimeout = errors.New("failure waiting for reply, timeout reached")
 func (s *Session) sendNext() {
 	msg, err := s.egressQueue.Peek()
 	if err != nil {
-		err := errors.New("impossible failure to Peek from queue")
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
+		s.fatalErrCh <- errors.New("impossible failure to Peek from queue")
 		return
 	}
 	if msg == nil {
-		err := errors.New("impossible failure, got nil message from queue")
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
+		s.fatalErrCh <- errors.New("impossible failure, got nil message from queue")
 		return
 	}
 	m := msg.(*Message)
 	s.doSend(m)
 	_, err = s.egressQueue.Pop()
 	if err != nil {
-		err := errors.New("impossible failure to Pop from queue")
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
+		s.fatalErrCh <- errors.New("impossible failure to Pop from queue")
 	}
 }
 
@@ -60,9 +54,7 @@ func (s *Session) doSend(msg *Message) {
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
-		err := fmt.Errorf("impossible failure, failed to generate SURB ID for message ID %x", *msg.ID)
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
+		s.fatalErrCh <- fmt.Errorf("impossible failure, failed to generate SURB ID for message ID %x", *msg.ID)
 		return
 	}
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
@@ -84,9 +76,7 @@ func (s *Session) doSend(msg *Message) {
 	if msg.IsBlocking {
 		sentWaitChanRaw, ok := s.sentWaitChanMap.Load(*msg.ID)
 		if !ok {
-			err := fmt.Errorf("impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
-			s.log.Error(err.Error())
-			s.fatalErrCh <- err
+			s.fatalErrCh <- fmt.Errorf("impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
 			return
 		}
 		sentWaitChan := sentWaitChanRaw.(chan *Message)
@@ -105,18 +95,14 @@ func (s *Session) sendLoopDecoy() {
 	s.log.Info("sending loop decoy")
 	serviceDesc, err := s.GetService(cConstants.LoopService)
 	if err != nil {
-		err := errors.New("failure to get loop service")
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
+		s.fatalErrCh <- errors.New("failure to get loop service")
 		return
 	}
 	payload := [constants.UserForwardPayloadLength]byte{}
 	id := [cConstants.MessageIDLength]byte{}
 	_, err = io.ReadFull(rand.Reader, id[:])
 	if err != nil {
-		err := errors.New("failure to generate message ID for loop decoy")
-		s.log.Error(err.Error())
-		s.fatalErrCh <- err
+		s.fatalErrCh <- errors.New("failure to generate message ID for loop decoy")
 		return
 	}
 	msg := &Message{
