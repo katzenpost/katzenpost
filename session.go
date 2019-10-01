@@ -243,23 +243,12 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 // upon connection change status to the Provider
 func (s *Session) onConnection(err error) {
 	s.log.Debugf("onConnection %v", err)
-
-	select {
-	case <-s.HaltCh():
-		s.log.Debugf("onConnection callback terminating gracefully")
-		return
-	case s.eventCh.In() <- &ConnectionStatusEvent{
+	s.eventCh.In() <- &ConnectionStatusEvent{
 		IsConnected: err == nil,
 		Err:         err,
-	}:
 	}
-	select {
-	case <-s.HaltCh():
-		s.log.Debugf("onConnection callback terminating gracefully")
-		return
-	case s.opCh <- opConnStatusChanged{
+	s.opCh <- opConnStatusChanged{
 		isConnected: err == nil,
-	}:
 	}
 }
 
