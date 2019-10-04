@@ -22,12 +22,11 @@ import (
 )
 
 const (
-	// ReadInboxPoissonLambda is use to tune a poisson process for controlling
-	// remote spool polling interval.
-	ReadInboxPoissonLambda = 0.0001234
-
-	// ReadInboxPoissonMax is the maximum remote spool polling interval.
-	ReadInboxPoissonMax = 90000
+	// ReadInboxLambdaPDivisor is used to divide our LambdaP parameter
+	// to determine our new lambda parameter for our poisson process
+	// which is used in selecting time intervals between attempting
+	// to retreive messages from our remote Provider.
+	ReadInboxLambdaPDivisor = 4
 
 	// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
 	DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
