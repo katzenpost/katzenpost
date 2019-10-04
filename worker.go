@@ -19,11 +19,31 @@ package catshadow
 import (
 	"fmt"
 
+	"github.com/katzenpost/catshadow/constants"
 	"github.com/katzenpost/client"
 )
 
 func (c *Client) worker() {
-	var isConnected bool
+	const maxDuration = math.MaxInt64
+	mRng := rand.NewMath()
+
+	// Retreive cached PKI doc.
+	doc := c.session.CurrentDocument()
+	if doc == nil {
+		s.fatalErrCh <- errors.New("aborting, PKI doc is nil")
+		return
+	}
+
+	lambdaP := doc.LambdaP
+	lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
+	if lambdaPMsec > doc.LambdaPMaxDelay {
+		lambdaPMsec = doc.LambdaPMaxDelay
+	}
+	lambdaPInterval := time.Duration(lambdaPMsec) * time.Millisecond
+	lambdaPTimer := time.NewTimer(lambdaPInterval)
+	defer lambdaPTimer.Stop()
+
+	isConnected := true
 	for {
 		var qo workerOp
 		select {
@@ -44,6 +64,11 @@ func (c *Client) worker() {
 				// XXX todo fix me
 				continue
 			case *client.MessageReplyEvent:
+				// XXX todo fix me
+				continue
+			case *client.NewDocumentEvent:
+				doc = event.Document
+				lambdaP = doc.LambdaP
 				// XXX todo fix me
 				continue
 			default:
@@ -72,6 +97,7 @@ func (c *Client) worker() {
 				}
 				op.responseChan <- names
 			}
+			continue
 		} // end of if qo != nil {
 
 	} // end of for loop
