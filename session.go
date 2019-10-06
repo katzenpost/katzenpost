@@ -323,6 +323,10 @@ func (s *Session) onDocument(doc *pki.Document) {
 	}
 }
 
+func (s *Session) CurrentDocument() *pki.Document {
+	return s.minclient.CurrentDocument()
+}
+
 func (s *Session) GetPandaConfig() *config.Panda {
 	return s.cfg.Panda
 }
