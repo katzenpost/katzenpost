@@ -61,7 +61,7 @@ func (c *Client) worker() {
 			return
 		case <-readInboxTimer.C:
 			if isConnected {
-				// XXX TODO fixme: read inbox here
+				c.sendReadInbox()
 				readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
 				readInboxTimer.Reset(readInboxInterval)
 			}
