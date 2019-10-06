@@ -461,6 +461,26 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	c.log.Info("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
 }
 
+func (c *Client) sendReadInbox() {
+	sequence := c.spoolReadDescriptor.ReadOffset
+	cmd, err := common.ReadFromSpool(c.spoolReadDescriptor.ID, sequence, c.spoolReadDescriptor.PrivateKey)
+	if err != nil {
+		c.fatalErrCh <- errors.New("failed to compose spool read command")
+		return
+	}
+	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
+	if err != nil {
+		c.log.Error("failed to send inbox retrieval message")
+		return
+	}
+	c.log.Debugf("message inbox retreival has message ID %x", mesgID)
+	// XXX fixme todo: store the mesgID somewhere such that when the message
+	// is sent we get notified of this event and store the associated SURB ID
+	// AND then when we get the corresponding SURB reply message we can determine
+	// that we have in fact received the message that we set out to retreive...
+	// and update our conversations database.
+}
+
 func (c *Client) GetConversation(nickname string) []*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()

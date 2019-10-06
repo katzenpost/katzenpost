@@ -17,31 +17,39 @@
 package catshadow
 
 import (
+	"errors"
 	"fmt"
+	"math"
+	mrand "math/rand"
+	"time"
 
 	"github.com/katzenpost/catshadow/constants"
 	"github.com/katzenpost/client"
+	"github.com/katzenpost/core/crypto/rand"
 )
 
+func getReadInboxInterval(mRng *mrand.Rand, lambdaP float64, lambdaPMaxDelay uint64) time.Duration {
+	readInboxMsec := uint64(rand.Exp(rand.NewMath(), (lambdaP / constants.ReadInboxLambdaPDivisor)))
+	if readInboxMsec > (lambdaPMaxDelay * constants.ReadInboxLambdaPDivisor) {
+		readInboxMsec = lambdaPMaxDelay * constants.ReadInboxLambdaPDivisor
+	}
+	return time.Duration(readInboxMsec) * time.Millisecond
+}
+
 func (c *Client) worker() {
-	const maxDuration = math.MaxInt64
+	const maxDuration = time.Duration(math.MaxInt64)
 	mRng := rand.NewMath()
 
 	// Retreive cached PKI doc.
 	doc := c.session.CurrentDocument()
 	if doc == nil {
-		s.fatalErrCh <- errors.New("aborting, PKI doc is nil")
+		c.fatalErrCh <- errors.New("aborting, PKI doc is nil")
 		return
 	}
 
-	lambdaP := doc.LambdaP
-	lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
-	if lambdaPMsec > doc.LambdaPMaxDelay {
-		lambdaPMsec = doc.LambdaPMaxDelay
-	}
-	lambdaPInterval := time.Duration(lambdaPMsec) * time.Millisecond
-	lambdaPTimer := time.NewTimer(lambdaPInterval)
-	defer lambdaPTimer.Stop()
+	readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+	readInboxTimer := time.NewTimer(readInboxInterval)
+	defer readInboxTimer.Stop()
 
 	isConnected := true
 	for {
@@ -51,15 +59,30 @@ func (c *Client) worker() {
 			c.log.Debug("Terminating gracefully.")
 			c.haltKeyExchanges()
 			return
+		case <-readInboxTimer.C:
+			if isConnected {
+				// XXX TODO fixme: read inbox here
+				readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+				readInboxTimer.Reset(readInboxInterval)
+			}
+		case qo = <-c.opCh:
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
 			continue
-		case qo = <-c.opCh:
 		case rawClientEvent := <-c.session.EventSink:
 			switch event := rawClientEvent.(type) {
 			case *client.ConnectionStatusEvent:
+				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
+				if isConnected != event.IsConnected && event.IsConnected {
+					readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+					readInboxTimer.Reset(readInboxInterval)
+					isConnected = event.IsConnected
+					continue
+				}
 				isConnected = event.IsConnected
-				c.log.Infof("Connection status change: isConnected %v", isConnected)
+				if !isConnected {
+					readInboxTimer.Reset(maxDuration)
+				}
 			case *client.MessageSentEvent:
 				// XXX todo fix me
 				continue
@@ -68,13 +91,11 @@ func (c *Client) worker() {
 				continue
 			case *client.NewDocumentEvent:
 				doc = event.Document
-				lambdaP = doc.LambdaP
-				// XXX todo fix me
+				readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+				readInboxTimer.Reset(readInboxInterval)
 				continue
 			default:
-				err := fmt.Errorf("bug, received unknown event from client EventSink: %v", event)
-				c.log.Error(err.Error())
-				c.fatalErrCh <- err
+				c.fatalErrCh <- fmt.Errorf("bug, received unknown event from client EventSink: %v", event)
 				return
 			}
 		}
