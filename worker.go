@@ -87,7 +87,7 @@ func (c *Client) worker() {
 				// XXX todo fix me
 				continue
 			case *client.MessageReplyEvent:
-				// XXX todo fix me
+				c.handleReply(event)
 				continue
 			case *client.NewDocumentEvent:
 				doc = event.Document
