@@ -552,6 +552,11 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		c.conversationsMutex.Lock()
 		defer c.conversationsMutex.Unlock()
 		c.conversations[nickname] = append(c.conversations[nickname], &message)
+		c.eventCh.In() <- MessageReceivedEvent{
+			Nickname:  nickname,
+			Message:   message.Plaintext,
+			Timestamp: time.Now(),
+		}
 		return
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID, err)
