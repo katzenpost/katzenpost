@@ -26,6 +26,7 @@ import (
 
 	"github.com/katzenpost/catshadow/constants"
 	"github.com/katzenpost/client"
+	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
@@ -49,6 +50,9 @@ type Client struct {
 	opCh       chan workerOp
 	pandaChan  chan panda.PandaUpdate
 	fatalErrCh chan error
+
+	// messageID -> ?
+	sendMap *sync.Map
 
 	stateWorker         *StateWriter
 	linkKey             *ecdh.PrivateKey
@@ -105,6 +109,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		opCh:                make(chan workerOp, 8),
 		pandaChan:           make(chan panda.PandaUpdate),
 		fatalErrCh:          make(chan error),
+		sendMap:             new(sync.Map),
 		contacts:            make(map[uint64]*Contact),
 		contactNicknames:    make(map[string]*Contact),
 		spoolReadDescriptor: state.SpoolReadDescriptor,
@@ -428,6 +433,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	}
 	c.conversationsMutex.Lock()
 	c.conversations[nickname] = append(c.conversations[nickname], &outMessage)
+	conversationIndex := len(c.conversations[nickname]) // XXX or should it be zero indexed?
 	defer c.conversationsMutex.Unlock()
 
 	contact, ok := c.contactNicknames[nickname]
@@ -457,8 +463,11 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 	}
-	// XXX do something with mesgID
 	c.log.Info("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
+	c.sendMap.Store(*mesgID, SentMessageDescriptor{
+		Nickname:          nickname,
+		ConversationIndex: conversationIndex,
+	})
 }
 
 func (c *Client) sendReadInbox() {
@@ -468,17 +477,42 @@ func (c *Client) sendReadInbox() {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
+	_, err = c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
 	if err != nil {
 		c.log.Error("failed to send inbox retrieval message")
 		return
 	}
-	c.log.Debugf("message inbox retreival has message ID %x", mesgID)
-	// XXX fixme todo: store the mesgID somewhere such that when the message
-	// is sent we get notified of this event and store the associated SURB ID
-	// AND then when we get the corresponding SURB reply message we can determine
-	// that we have in fact received the message that we set out to retreive...
-	// and update our conversations database.
+}
+
+func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
+	defer c.sendMap.Delete(*replyEvent.MessageID)
+	spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
+	if err != nil {
+		c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
+		return
+	}
+	if !spoolResponse.IsOK() {
+		c.log.Errorf("Spool response status error: %s", spoolResponse.Status)
+		return
+	}
+
+	// Here we handle replies from sending messages to a contact's remote queue.
+	rawSentMessageDescriptor, ok := c.sendMap.Load(*replyEvent.MessageID)
+	if ok {
+		sentMessageDescriptor, typeOK := rawSentMessageDescriptor.(*SentMessageDescriptor)
+		if !typeOK {
+			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
+			return
+		}
+		c.eventCh.In() <- MessageDeliveredEvent{
+			Nickname:     sentMessageDescriptor.Nickname,
+			MessageIndex: sentMessageDescriptor.ConversationIndex,
+		}
+		return
+	}
+
+	// Here we handle replies from remote queue message retrievals.
+	c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 }
 
 func (c *Client) GetConversation(nickname string) []*Message {
@@ -493,42 +527,32 @@ func (c *Client) GetAllConversations() map[string][]*Message {
 	return c.conversations
 }
 
-func (c *Client) readRemoteSpool() (bool, string, *Message) {
-	// XXX fix me
-	/*
-		var err error
-		// XXX c.spoolReadDescriptor
-		ciphertext, err := c.spoolReaderChan.Read(c.spoolService)
+func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) {
+	var err error
+	message := Message{}
+	var decrypted bool
+	var nickname string
+	for _, contact := range c.contacts {
+		contact.ratchetMutex.Lock()
+		plaintext, err := contact.ratchet.Decrypt(ciphertext)
+		contact.ratchetMutex.Unlock()
 		if err != nil {
-			c.log.Debugf("failure reading remote spool: %s", err)
-			return false, "", nil
+			continue
+		} else {
+			decrypted = true
+			nickname = contact.nickname
+			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
+			message.Plaintext = plaintext[4 : 4+payloadLen]
+			message.Timestamp = time.Now()
+			message.Outbound = false
+			break
 		}
-		message := Message{}
-		var decrypted bool
-		var nickname string
-		for _, contact := range c.contacts {
-			contact.ratchetMutex.Lock()
-			plaintext, err := contact.ratchet.Decrypt(ciphertext)
-			contact.ratchetMutex.Unlock()
-			if err != nil {
-				continue
-			} else {
-				decrypted = true
-				nickname = contact.nickname
-				payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-				message.Plaintext = plaintext[4 : 4+payloadLen]
-				message.Timestamp = time.Now()
-				message.Outbound = false
-				break
-			}
-		}
-		if decrypted {
-			c.conversationsMutex.Lock()
-			defer c.conversationsMutex.Unlock()
-			c.conversations[nickname] = append(c.conversations[nickname], &message)
-			return true, nickname, &message
-		}
-		c.log.Debugf("failure to find ratchet which will decrypt this message: %s", err)
-	*/
-	return false, "", nil
+	}
+	if decrypted {
+		c.conversationsMutex.Lock()
+		defer c.conversationsMutex.Unlock()
+		c.conversations[nickname] = append(c.conversations[nickname], &message)
+		return
+	}
+	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID, err)
 }
