@@ -484,6 +484,10 @@ func (c *Client) sendReadInbox() {
 	}
 }
 
+func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
+	c.sendMap.Delete(gcEvent.MessageID)
+}
+
 func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	rawSentMessageDescriptor, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
