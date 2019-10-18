@@ -190,9 +190,7 @@ func main() {
 	accountBridge.SetContactListModel(contactListModel)
 	accountBridge.SetConversationModel(conversationModel)
 
-	// XXX
-	eventsChan := catShadowClient.EventsChan()
-	go handleEvents(eventsChan, conversationModel, contactListModel)
+	go handleEvents(catShadowClient.EventSink, conversationModel, contactListModel)
 
 	runApp(config)
 

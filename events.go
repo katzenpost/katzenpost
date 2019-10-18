@@ -1,28 +1,38 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/katzenpost/catshadow"
+	"github.com/katzenpost/client"
 )
 
 func handleEvents(events <-chan interface{}, conversationModel *ConversationModel, contactListModel *ContactListModel) {
 	for {
 		ev, ok := <-events
 		if !ok {
-			break
+			return
 		}
 		switch event := ev.(type) {
-		case catshadow.MessageDelivered:
-		case catshadow.MessageReceived:
+		case *client.ConnectionStatusEvent:
+			// XXX fix me
+		case *catshadow.KeyExchangeCompletedEvent:
+			// XXX fix me
+		case *catshadow.MessageSentEvent:
+			// XXX fix me
+		case *catshadow.MessageDeliveredEvent:
+			// XXX fix me
+		case *catshadow.MessageReceivedEvent:
 			var m = NewMessage(nil)
-			// XXX fix me: m.Avatar = ...
 			m.Nickname = event.Nickname
-			m.Avatar = ""
+			m.Avatar = "" // XXX fix me
 			m.Message = string(event.Message)
 			m.Timestamp = time.Now()
 			conversationModel.AddMessage(m)
-		case catshadow.KeyExchangeCompleted:
+		default:
+			// This case indicates a programming BUG!
+			panic(fmt.Sprintf("%s is an unknown event received, aborting", event))
 		}
 	}
 }
