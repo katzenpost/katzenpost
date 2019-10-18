@@ -131,6 +131,25 @@ Ratchet:
 * https://github.com/katzenpost/core
 
 
+testing
+=======
+
+optional docker tests
+---------------------
+
+To run the optional docker tests firstly, see our docker repo
+and start your local dockerized mix network:
+
+https://github.com/katzenpost/docker
+
+A couple of minutes after startup run the tests like this:
+::
+
+   GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker
+
+This will run our docker based integration tests for the catshadow library.
+
+
 contact
 =======
 
