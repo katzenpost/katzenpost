@@ -190,7 +190,7 @@ func (s *Session) garbageCollect() {
 		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
-			s.eventCh.In() <- MessageIDGarbageCollected{
+			s.eventCh.In() <- &MessageIDGarbageCollected{
 				MessageID: message.ID,
 			}
 		}
