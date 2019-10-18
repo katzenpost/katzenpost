@@ -124,6 +124,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		logBackend:          logBackend,
 	}
 	for _, contact := range state.Contacts {
+		contact.ratchetMutex = new(sync.Mutex)
 		c.contacts[contact.id] = contact
 		c.contactNicknames[contact.nickname] = contact
 	}
