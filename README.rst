@@ -41,7 +41,7 @@ https://github.com/katzenpost/docker
 A couple of minutes after startup run the tests like this:
 ::
 
-   GORACE=history_size=7 go test -race -v -run Docker
+   GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker
 
 
 license
