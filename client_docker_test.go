@@ -80,6 +80,11 @@ func TestDockerPandaSuccess(t *testing.T) {
 	bob := createCatshadowClient(t)
 
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
@@ -106,20 +111,37 @@ func TestDockerPandaTagContendedError(t *testing.T) {
 	bob := createCatshadowClient(t)
 
 	sharedSecret := []byte("twas brillig and the slithy toves")
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
 	aliceEventsCh := alice.EventSink
-	ev := <-aliceEventsCh
-	keyExchangeCompletedEvent, ok := ev.(*KeyExchangeCompletedEvent)
-	require.True(ok)
-	require.Nil(keyExchangeCompletedEvent.Err)
+loop1:
+	for {
+		ev := <-aliceEventsCh
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop1
+		default:
+		}
+	}
 
 	bobEventsCh := bob.EventSink
-	ev = <-bobEventsCh
-	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
-	require.True(ok)
-	require.Nil(keyExchangeCompletedEvent.Err)
+loop2:
+	for {
+		ev := <-bobEventsCh
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop2
+		default:
+		}
+	}
 
 	alice.Shutdown()
 	bob.Shutdown()
@@ -132,17 +154,27 @@ func TestDockerPandaTagContendedError(t *testing.T) {
 	ada.NewContact("jeff", sharedSecret)
 	jeff.NewContact("ada", sharedSecret)
 
-	adaEventsCh := ada.EventSink
-	ev = <-adaEventsCh
-	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
-	require.True(ok)
-	require.NotNil(keyExchangeCompletedEvent.Err)
+loop3:
+	for {
+		ev := <-ada.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.NotNil(event.Err)
+			break loop3
+		default:
+		}
+	}
 
-	jeffEventsCh := jeff.EventSink
-	ev = <-jeffEventsCh
-	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
-	require.True(ok)
-	require.NotNil(keyExchangeCompletedEvent.Err)
+loop4:
+	for {
+		ev := <-jeff.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.NotNil(event.Err)
+			break loop4
+		default:
+		}
+	}
 
 	ada.Shutdown()
 	jeff.Shutdown()
