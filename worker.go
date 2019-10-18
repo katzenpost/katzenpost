@@ -71,6 +71,8 @@ func (c *Client) worker() {
 			continue
 		case rawClientEvent := <-c.session.EventSink:
 			switch event := rawClientEvent.(type) {
+			case *client.MessageIDGarbageCollected:
+				c.garbageCollectSendMap(event)
 			case *client.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
