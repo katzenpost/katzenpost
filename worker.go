@@ -85,6 +85,8 @@ func (c *Client) worker() {
 				if !isConnected {
 					readInboxTimer.Reset(maxDuration)
 				}
+				// Forward event to our event sink.
+				c.eventCh.In() <- event
 			case *client.MessageSentEvent:
 				c.handleSent(event)
 				continue
