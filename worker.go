@@ -84,7 +84,7 @@ func (c *Client) worker() {
 					readInboxTimer.Reset(maxDuration)
 				}
 			case *client.MessageSentEvent:
-				// XXX todo fix me
+				c.handleSent(event)
 				continue
 			case *client.MessageReplyEvent:
 				c.handleReply(event)
