@@ -30,6 +30,17 @@ type KeyExchangeCompletedEvent struct {
 	Err error
 }
 
+// MessageSentEvent is an event signaling that the message
+// was sent.
+type MessageSentEvent struct {
+	// Nickname is the nickname of the recipient of our delivered message.
+	Nickname string
+	// MessageIndex indicates which message in the conversation was delivered.
+	MessageIndex int
+}
+
+// MessageDeliveredEvent is an event signaling that the message
+// has been delivered.
 type MessageDeliveredEvent struct {
 	// Nickname is the nickname of the recipient of our delivered message.
 	Nickname string

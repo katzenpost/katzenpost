@@ -484,6 +484,22 @@ func (c *Client) sendReadInbox() {
 	}
 }
 
+func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
+	rawSentMessageDescriptor, ok := c.sendMap.Load(*sentEvent.MessageID)
+	if ok {
+		defer c.sendMap.Delete(*sentEvent.MessageID)
+		sentMessageDescriptor, typeOK := rawSentMessageDescriptor.(*SentMessageDescriptor)
+		if !typeOK {
+			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
+			return
+		}
+		c.eventCh.In() <- MessageSentEvent{
+			Nickname:     sentMessageDescriptor.Nickname,
+			MessageIndex: sentMessageDescriptor.ConversationIndex,
+		}
+	}
+}
+
 func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 	defer c.sendMap.Delete(*replyEvent.MessageID)
 	spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
