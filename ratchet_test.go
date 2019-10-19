@@ -10,6 +10,11 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
+// TODO: there are tests missing:
+// out-of-order for new DH ratchet
+// what if both start sending at the same time
+
+// TODO: refactor
 func nowFunc() time.Time {
 	var t time.Time
 	return t
@@ -33,13 +38,16 @@ func pairedRatchet() (a, b *Ratchet) {
 	if err != nil {
 		panic(err)
 	}
+
 	b, err = New(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
+
 	a.Now = nowFunc
 	b.Now = nowFunc
 
+	// TODO: this is repeated
 	a.MyIdentityPrivate = privA
 	a.MySigningPublic = aSigningPublic
 	a.TheirIdentityPublic = pubB
@@ -54,12 +62,15 @@ func pairedRatchet() (a, b *Ratchet) {
 	if err := a.FillKeyExchange(kxA); err != nil {
 		panic(err)
 	}
+
 	if err := b.FillKeyExchange(kxB); err != nil {
 		panic(err)
 	}
+
 	if err := a.CompleteKeyExchange(kxB); err != nil {
 		panic(err)
 	}
+
 	if err := b.CompleteKeyExchange(kxA); err != nil {
 		panic(err)
 	}
@@ -76,11 +87,13 @@ func TestExchange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !bytes.Equal(msg, result) {
 		t.Fatalf("result doesn't match: %x vs %x", msg, result)
 	}
 }
 
+// TODO: how is this test different?
 func TestActualRealExchange(t *testing.T) {
 	// create two new ratchets
 	a, err := New(rand.Reader)
@@ -119,6 +132,7 @@ func TestActualRealExchange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !bytes.Equal(msg, result) {
 		t.Fatalf("result doesn't match: %x vs %x", msg, result)
 	}
@@ -132,6 +146,7 @@ collective behavior embodies values—and the institutions we create do, too.`)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !bytes.Equal(msg2, result2) {
 		t.Fatalf("result doesn't match: %x vs %x", msg2, result2)
 	}
@@ -240,6 +255,7 @@ func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
 
 }
 
+// TODO: this test should check for equality
 func testScript(t *testing.T, script []scriptAction) {
 	type delayedMessage struct {
 		msg       []byte

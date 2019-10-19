@@ -142,6 +142,7 @@ func (r *Ratchet) randBytes(buf []byte) {
 	}
 }
 
+// New creates a new ratchet struct
 func New(rand io.Reader) (*Ratchet, error) {
 	r := &Ratchet{
 		rand:       rand,
@@ -149,17 +150,20 @@ func New(rand io.Reader) (*Ratchet, error) {
 		kxPrivate1: new([32]byte),
 		saved:      make(map[[32]byte]map[uint32]savedKey),
 	}
+
 	r.randBytes(r.kxPrivate0[:])
 	r.randBytes(r.kxPrivate1[:])
 	mySigningPublic, mySigningPrivate, err := ed25519.GenerateKey(rand)
 	if err != nil {
 		return nil, err
 	}
+
 	r.MySigningPublic = *mySigningPublic
 	r.MySigningPrivate = *mySigningPrivate
 	extra25519.PrivateKeyToCurve25519(&r.MyIdentityPrivate, mySigningPrivate)
 	curve25519.ScalarBaseMult(&r.MyIdentityPublic, &r.MyIdentityPrivate)
 
+	// TODO: probably unnecessary
 	// sanity math assertion
 	var curve25519Public [32]byte
 	extra25519.PublicKeyToCurve25519(&curve25519Public, &r.MySigningPublic)
@@ -229,7 +233,8 @@ var (
 	rootKeyUpdateLabel     = []byte("root key update")
 	sendHeaderKeyLabel     = []byte("next send header key")
 	messageKeyLabel        = []byte("message key")
-	chainKeyStepLabel      = []byte("chain key step")
+	// TODO: this should be next sending chain key
+	chainKeyStepLabel = []byte("chain key step")
 )
 
 func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error {
@@ -283,7 +288,9 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 	if len(kx.Dh) != len(public0) {
 		return errors.New("ratchet: peer's key exchange is invalid")
 	}
+
 	if len(kx.Dh1) != len(public0) {
+		// TODO: ???
 		return errors.New("ratchet: peer using old-form key exchange")
 	}
 
@@ -342,6 +349,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 
 // Encrypt acts like append() but appends an encrypted version of msg to out.
 func (r *Ratchet) Encrypt(out, msg []byte) []byte {
+	// TODO: ???
 	if r.ratchet {
 		r.randBytes(r.sendRatchetPrivate[:])
 		copy(r.sendHeaderKey[:], r.nextSendHeaderKey[:])
@@ -369,10 +377,12 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 	var sendRatchetPublic [32]byte
 	curve25519.ScalarBaseMult(&sendRatchetPublic, &r.sendRatchetPrivate)
 	var header [headerSize]byte
+	// TODO: ???
 	var headerNonce, messageNonce [24]byte
 	r.randBytes(headerNonce[:])
 	r.randBytes(messageNonce[:])
 
+	// TODO: the order is wrong
 	binary.LittleEndian.PutUint32(header[0:4], r.sendCount)
 	binary.LittleEndian.PutUint32(header[4:8], r.prevSendCount)
 	copy(header[8:], sendRatchetPublic[:])
@@ -385,6 +395,7 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 
 // trySavedKeys tries to decrypt ciphertext using keys saved for missing messages.
 func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
+	// TODO: is this check needed?
 	if len(ciphertext) < sealedHeaderSize {
 		return nil, errors.New("ratchet: header too small to be valid")
 	}
@@ -418,6 +429,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 			return nil, errors.New("ratchet: corrupt message")
 		}
 		delete(messageKeys, msgNum)
+		// TODO: weird way to check
 		if len(messageKeys) == 0 {
 			delete(r.saved, headerKey)
 		}
@@ -519,6 +531,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	header, ok := secretbox.Open(nil, sealedHeader, &nonce, &r.recvHeaderKey)
 	ok = ok && !isZeroKey(&r.recvHeaderKey)
+	// TODO: this becomes very weird
 	if ok {
 		if len(header) != headerSize {
 			return nil, errors.New("ratchet: incorrect header size")
