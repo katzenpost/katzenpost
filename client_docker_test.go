@@ -31,7 +31,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func createCatshadowClient(t *testing.T) *Client {
+func createRandomStateFile(t *testing.T) string {
+	require := require.New(t)
+
+	tmpDir, err := ioutil.TempDir("", "catshadow_test")
+	require.NoError(err)
+	id := [6]byte{}
+	_, err = rand.Reader.Read(id[:])
+	require.NoError(err)
+	stateFile := filepath.Join(tmpDir, fmt.Sprintf("%x.catshadow.state", id))
+	_, err = os.Stat(stateFile)
+	require.True(os.IsNotExist(err))
+	return stateFile
+}
+
+func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	require := require.New(t)
 
 	// Load catshadow config file.
@@ -42,16 +56,6 @@ func createCatshadowClient(t *testing.T) *Client {
 	cfg, err := catshadowCfg.ClientConfig()
 	require.NoError(err)
 
-	tmpDir, err := ioutil.TempDir("", "catshadow_test")
-	require.NoError(err)
-
-	id := [6]byte{}
-	_, err = rand.Reader.Read(id[:])
-	require.NoError(err)
-	stateFile := filepath.Join(tmpDir, fmt.Sprintf("%x.catshadow.state", id))
-	if _, err := os.Stat(stateFile); !os.IsNotExist(err) {
-		panic(err)
-	}
 	cfg, linkKey := client.AutoRegisterRandomClient(cfg)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
@@ -76,8 +80,10 @@ func createCatshadowClient(t *testing.T) *Client {
 func TestDockerPandaSuccess(t *testing.T) {
 	require := require.New(t)
 
-	alice := createCatshadowClient(t)
-	bob := createCatshadowClient(t)
+	aliceState := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceState)
+	bobState := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobState)
 
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
@@ -88,17 +94,27 @@ func TestDockerPandaSuccess(t *testing.T) {
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
-	aliceEventsCh := alice.EventSink
-	ev := <-aliceEventsCh
-	keyExchangeCompletedEvent, ok := ev.(*KeyExchangeCompletedEvent)
-	require.True(ok)
-	require.Nil(keyExchangeCompletedEvent.Err)
+loop1:
+	for {
+		ev := <-alice.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop1
+		default:
+		}
+	}
 
-	bobEventsCh := bob.EventSink
-	ev = <-bobEventsCh
-	keyExchangeCompletedEvent, ok = ev.(*KeyExchangeCompletedEvent)
-	require.True(ok)
-	require.Nil(keyExchangeCompletedEvent.Err)
+loop2:
+	for {
+		ev := <-bob.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop2
+		default:
+		}
+	}
 
 	alice.Shutdown()
 	bob.Shutdown()
@@ -107,8 +123,10 @@ func TestDockerPandaSuccess(t *testing.T) {
 func TestDockerPandaTagContendedError(t *testing.T) {
 	require := require.New(t)
 
-	alice := createCatshadowClient(t)
-	bob := createCatshadowClient(t)
+	aliceState := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceState)
+	bobState := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobState)
 
 	sharedSecret := []byte("twas brillig and the slithy toves")
 	randBytes := [8]byte{}
@@ -119,10 +137,9 @@ func TestDockerPandaTagContendedError(t *testing.T) {
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
-	aliceEventsCh := alice.EventSink
 loop1:
 	for {
-		ev := <-aliceEventsCh
+		ev := <-alice.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
 			require.Nil(event.Err)
@@ -131,10 +148,9 @@ loop1:
 		}
 	}
 
-	bobEventsCh := bob.EventSink
 loop2:
 	for {
-		ev := <-bobEventsCh
+		ev := <-bob.EventSink
 		switch event := ev.(type) {
 		case *KeyExchangeCompletedEvent:
 			require.Nil(event.Err)
@@ -148,8 +164,10 @@ loop2:
 
 	// second phase of test, use same panda shared secret
 	// in order to test that it invokes a tag contended error
-	ada := createCatshadowClient(t)
-	jeff := createCatshadowClient(t)
+	adaState := createRandomStateFile(t)
+	ada := createCatshadowClientWithState(t, adaState)
+	jeffState := createRandomStateFile(t)
+	jeff := createCatshadowClientWithState(t, jeffState)
 
 	ada.NewContact("jeff", sharedSecret)
 	jeff.NewContact("ada", sharedSecret)
