@@ -197,3 +197,52 @@ loop4:
 	ada.Shutdown()
 	jeff.Shutdown()
 }
+
+func TestDockerSendReceive(t *testing.T) {
+	require := require.New(t)
+
+	aliceState := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceState)
+	bobState := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobState)
+
+	sharedSecret := []byte(`Modern encrypted communication networks are vulnerable to traffic
+analysis and can leak such meta-data as the social graph of users,
+their geographical location, the timing of messages and their order,
+message size, and many other kinds of meta-data.`)
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
+	alice.NewContact("bob", sharedSecret)
+	bob.NewContact("alice", sharedSecret)
+
+loop1:
+	for {
+		ev := <-alice.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop1
+		default:
+		}
+	}
+
+loop2:
+	for {
+		ev := <-bob.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			require.Nil(event.Err)
+			break loop2
+		default:
+		}
+	}
+
+	alice.SendMessage("bob", []byte("Hi! Hello."))
+	<-alice.EventSink
+
+	alice.Shutdown()
+	bob.Shutdown()
+}
