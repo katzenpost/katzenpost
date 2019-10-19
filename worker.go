@@ -121,8 +121,9 @@ func (c *Client) worker() {
 					names = append(names, contact)
 				}
 				op.responseChan <- names
+			default:
+				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}
-			continue
 		} // end of if qo != nil {
 
 	} // end of for loop
