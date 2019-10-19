@@ -166,18 +166,20 @@ func (c *Client) Start() {
 func (c *Client) eventSinkWorker() {
 	defer close(c.EventSink)
 	for {
+		defer c.log.Debug("Event sink worker terminating gracefully.")
+		c.log.Debug("Event sink worker: BEFORE select statements.")
+		var event interface{} = nil
 		select {
 		case <-c.HaltCh():
-			c.log.Debugf("Event sink worker terminating gracefully.")
 			return
-		case e := <-c.eventCh.Out():
-			select {
-			case c.EventSink <- e:
-			case <-c.HaltCh():
-				c.log.Debugf("Event sink worker terminating gracefully.")
-				return
-			}
+		case event = <-c.eventCh.Out():
 		}
+		select {
+		case c.EventSink <- event:
+		case <-c.HaltCh():
+			return
+		}
+		c.log.Debug("Event sink worker: AFTER select statements.")
 	}
 }
 
@@ -427,6 +429,7 @@ func (c *Client) SendMessage(nickname string, message []byte) {
 }
 
 func (c *Client) doSendMessage(nickname string, message []byte) {
+	c.log.Debug("doSendMessage")
 	outMessage := Message{
 		Plaintext: message,
 		Timestamp: time.Now(),
@@ -461,6 +464,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		return
 	}
 	mesgID, err := c.session.SendUnreliableMessage(contact.spoolWriteDescriptor.Receiver, contact.spoolWriteDescriptor.Provider, appendCmd)
+	c.log.Debugf("SendUnreliableMessage returned Message ID %x", mesgID)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 	}
@@ -469,6 +473,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		Nickname:          nickname,
 		ConversationIndex: conversationIndex,
 	})
+	c.log.Debug("doSendMessage: message sent")
 }
 
 func (c *Client) sendReadInbox() {
@@ -486,10 +491,12 @@ func (c *Client) sendReadInbox() {
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
+	c.log.Debug("Garbage Collecting Message ID %x", gcEvent.MessageID[:])
 	c.sendMap.Delete(gcEvent.MessageID)
 }
 
 func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
+	c.log.Debug("handleSent")
 	rawSentMessageDescriptor, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
 		defer c.sendMap.Delete(*sentEvent.MessageID)
@@ -498,7 +505,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
 			return
 		}
-		c.eventCh.In() <- MessageSentEvent{
+		c.eventCh.In() <- &MessageSentEvent{
 			Nickname:     sentMessageDescriptor.Nickname,
 			MessageIndex: sentMessageDescriptor.ConversationIndex,
 		}
@@ -506,6 +513,8 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 }
 
 func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
+	c.log.Debug("handleReply")
+
 	defer c.sendMap.Delete(*replyEvent.MessageID)
 	spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
 	if err != nil {
@@ -525,7 +534,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
 			return
 		}
-		c.eventCh.In() <- MessageDeliveredEvent{
+		c.eventCh.In() <- &MessageDeliveredEvent{
 			Nickname:     sentMessageDescriptor.Nickname,
 			MessageIndex: sentMessageDescriptor.ConversationIndex,
 		}
@@ -573,7 +582,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		c.conversationsMutex.Lock()
 		defer c.conversationsMutex.Unlock()
 		c.conversations[nickname] = append(c.conversations[nickname], &message)
-		c.eventCh.In() <- MessageReceivedEvent{
+		c.eventCh.In() <- &MessageReceivedEvent{
 			Nickname:  nickname,
 			Message:   message.Plaintext,
 			Timestamp: time.Now(),
