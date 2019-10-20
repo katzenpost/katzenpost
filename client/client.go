@@ -91,6 +91,6 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 		ID:         spoolResponse.SpoolID,
 		Receiver:   receiver,
 		Provider:   provider,
-		ReadOffset: 0,
+		ReadOffset: 1,
 	}, nil
 }
