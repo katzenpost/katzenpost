@@ -98,6 +98,7 @@ func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log
 		spoolResponse.SpoolID = spoolID
 		if err != nil {
 			spoolResponse.Status = err.Error()
+			spoolResponse.MessageID = request.MessageID
 			log.Error(spoolResponse.Status)
 			return &spoolResponse
 		}

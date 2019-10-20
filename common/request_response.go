@@ -98,10 +98,11 @@ func (s *SpoolRequest) Encode() ([]byte, error) {
 }
 
 type SpoolResponse struct {
-	SpoolID [SpoolIDSize]byte
-	Message []byte
-	Status  string
-	Padding []byte
+	SpoolID   [SpoolIDSize]byte
+	MessageID uint32
+	Message   []byte
+	Status    string
+	Padding   []byte
 }
 
 func SpoolResponseFromBytes(raw []byte) (SpoolResponse, error) {
