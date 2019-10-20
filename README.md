@@ -61,6 +61,10 @@ https://github.com/katzenpost/catshadow
 
 #### Run it
 
+You only need to pass it the -g option the first time you run catchat
+so that it generates a new encrypted state file.
+
+
     Usage of ./deploy/linux/catchat:
       -f string
          Path to the client config file. (default "katzenpost.toml")
