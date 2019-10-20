@@ -142,7 +142,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 }
 
 // SendUnreliableMessage asynchronously sends message without any automatic retransmissions.
-func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) (MessageID, error) {
+func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
 	msg, err := s.composeMessage(recipient, provider, message, false)
 	if err != nil {
 		return nil, err
