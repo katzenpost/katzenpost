@@ -68,14 +68,14 @@ func (m *ContactListModel) data(index *core.QModelIndex, role int) *core.QVarian
 	switch role {
 	case RoleNickname:
 		{
-			return core.NewQVariant15(p.Nickname)
+			return core.NewQVariant1(p.Nickname)
 		}
 	case RoleAvatar:
 		{
 			if p.Avatar == "" {
-				return core.NewQVariant15("qrc:/qml/images/katzenpost_logo.png")
+				return core.NewQVariant1("qrc:/qml/images/katzenpost_logo.png")
 			} else {
-				return core.NewQVariant15(p.Avatar)
+				return core.NewQVariant1(p.Avatar)
 			}
 		}
 

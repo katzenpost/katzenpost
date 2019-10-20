@@ -197,7 +197,11 @@ ApplicationWindow {
     RowLayout {
         anchors.fill: parent
 
-        ContactList {}
+        ContactList {
+            Layout.minimumWidth: mainWindow.width * 0.3
+            Layout.preferredWidth: mainWindow.width * 0.3
+            Layout.maximumWidth: mainWindow.width * 0.3
+        }
 
         SwipeView {
             id: swipe

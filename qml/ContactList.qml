@@ -6,7 +6,6 @@ ListView {
     id: contactList
 
     Layout.fillHeight: true
-    width: 320
     topMargin: 16
     leftMargin: 16
     bottomMargin: 16
