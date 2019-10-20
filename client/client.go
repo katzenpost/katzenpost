@@ -54,6 +54,11 @@ type SpoolReadDescriptor struct {
 	ReadOffset uint32
 }
 
+// IncrementOffset increments the ReadOffset
+func (r *SpoolReadDescriptor) IncrementOffset() {
+	r.ReadOffset += 1
+}
+
 // GetWriteDescriptor returns a SpoolWriteDescriptor which can
 // used write to the given spool.
 func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
