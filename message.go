@@ -23,14 +23,11 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 )
 
-// MessageID is a message identity byte array.
-type MessageID *[cConstants.MessageIDLength]byte
-
 // Message is a message reference which is used to match future
 // received SURB replies.
 type Message struct {
 	// ID is the message identifier
-	ID MessageID
+	ID *[cConstants.MessageIDLength]byte
 
 	// Recipient is the message recipient
 	Recipient string
