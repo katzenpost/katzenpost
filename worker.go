@@ -61,11 +61,31 @@ func (c *Client) worker() {
 			return
 		case <-readInboxTimer.C:
 			if isConnected {
+				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
 				readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
 				readInboxTimer.Reset(readInboxInterval)
 			}
 		case qo = <-c.opCh:
+			switch op := qo.(type) {
+			case *opAddContact:
+				err := c.createContact(op.name, op.sharedSecret)
+				if err != nil {
+					c.log.Errorf("create contact failure: %s", err.Error())
+				}
+			case *opRemoveContact:
+				c.doContactRemoval(op.name)
+			case *opSendMessage:
+				c.doSendMessage(op.name, op.payload)
+			case *opGetNicknames:
+				names := []string{}
+				for contact := range c.contactNicknames {
+					names = append(names, contact)
+				}
+				op.responseChan <- names
+			default:
+				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
+			}
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
 			continue
@@ -103,28 +123,5 @@ func (c *Client) worker() {
 				return
 			}
 		}
-
-		if qo != nil {
-			switch op := qo.(type) {
-			case *opAddContact:
-				err := c.createContact(op.name, op.sharedSecret)
-				if err != nil {
-					c.log.Errorf("create contact failure: %s", err.Error())
-				}
-			case *opRemoveContact:
-				c.doContactRemoval(op.name)
-			case *opSendMessage:
-				c.doSendMessage(op.name, op.payload)
-			case *opGetNicknames:
-				names := []string{}
-				for contact := range c.contactNicknames {
-					names = append(names, contact)
-				}
-				op.responseChan <- names
-			default:
-				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
-			}
-		} // end of if qo != nil {
-
 	} // end of for loop
 }

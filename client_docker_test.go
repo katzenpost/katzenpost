@@ -206,10 +206,7 @@ func TestDockerSendReceive(t *testing.T) {
 	bobState := createRandomStateFile(t)
 	bob := createCatshadowClientWithState(t, bobState)
 
-	sharedSecret := []byte(`Modern encrypted communication networks are vulnerable to traffic
-analysis and can leak such meta-data as the social graph of users,
-their geographical location, the timing of messages and their order,
-message size, and many other kinds of meta-data.`)
+	sharedSecret := []byte(`oxcart pillage village bicycle gravity socks`)
 	randBytes := [8]byte{}
 	_, err := rand.Reader.Read(randBytes[:])
 	require.NoError(err)
@@ -218,30 +215,66 @@ message size, and many other kinds of meta-data.`)
 	alice.NewContact("bob", sharedSecret)
 	bob.NewContact("alice", sharedSecret)
 
-loop1:
-	for {
-		ev := <-alice.EventSink
-		switch event := ev.(type) {
-		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
-			break loop1
-		default:
+	bobKXFinishedChan := make(chan bool)
+	bobReceivedMessageChan := make(chan bool)
+	go func() {
+		for {
+			ev := <-bob.EventSink
+			switch event := ev.(type) {
+			case *KeyExchangeCompletedEvent:
+				require.Nil(event.Err)
+				bobKXFinishedChan <- true
+			case *MessageReceivedEvent:
+				// fields: Nickname, Message, Timestamp
+				require.Equal(event.Nickname, "alice")
+				bob.log.Debugf("BOB RECEIVED MESSAGE:\n%s", string(event.Message))
+				bobReceivedMessageChan <- true
+			default:
+			}
 		}
-	}
+	}()
 
-loop2:
-	for {
-		ev := <-bob.EventSink
-		switch event := ev.(type) {
-		case *KeyExchangeCompletedEvent:
-			require.Nil(event.Err)
-			break loop2
-		default:
+	aliceKXFinishedChan := make(chan bool)
+	aliceSentChan := make(chan bool)
+	aliceDeliveredChan := make(chan bool)
+	go func() {
+		for {
+			ev := <-alice.EventSink
+			switch event := ev.(type) {
+			case *KeyExchangeCompletedEvent:
+				require.Nil(event.Err)
+				aliceKXFinishedChan <- true
+				break
+			case *MessageSentEvent:
+				require.Equal(event.Nickname, "bob")
+				aliceSentChan <- true
+			case *MessageDeliveredEvent:
+				require.Equal(event.Nickname, "bob")
+				aliceDeliveredChan <- true
+			default:
+			}
 		}
-	}
+	}()
 
-	alice.SendMessage("bob", []byte("Hi! Hello."))
-	<-alice.EventSink
+	<-bobKXFinishedChan
+	<-aliceKXFinishedChan
+	alice.SendMessage("bob", []byte(`Data encryption is used widely to protect the content of Internet
+communications and enables the myriad of activities that are popular today,
+from online banking to chatting with loved ones. However, encryption is not
+sufficient to protect the meta-data associated with the communications.
+`))
+	<-aliceSentChan
+	<-aliceDeliveredChan
+	<-bobReceivedMessageChan
+
+	alice.SendMessage("bob", []byte(`Since 1979, there has been active academic research into communication
+meta-data protection, also called anonymous communication networking, that has
+produced various designs. Of these, mix networks are among the most practical
+and can readily scale to millions of users.
+`))
+	<-aliceSentChan
+	<-aliceDeliveredChan
+	<-bobReceivedMessageChan
 
 	alice.Shutdown()
 	bob.Shutdown()
