@@ -29,14 +29,44 @@ Before you can build catchat you need to install the [Go/Qt bindings](https://gi
     cd $(go env GOPATH)/src/github.com/katzenpost/catchat
     $(go env GOPATH)/bin/qtdeploy build desktop
 
-#### Within a Docker container
+
+### Building within a Docker container
 
 Follow the build instructions above, but instead of the last command, run:
 
     $(go env GOPATH)/bin/qtdeploy -docker build linux
 
+
+#### Testing catchat
+
+You can test catchat with a local mixnet. The recommended way to do
+this is to first run a docker based mixnet locally, see here:
+
+https://github.com/katzenpost/docker
+
+
+Once you get your mixnet running give it a couple of minutes to get fully connected
+so that it will route your messages. After that you can start catchat locally.
+
+    cd $(go env GOPATH)/src/github.com/katzenpost/catchat
+    ./deploy/linux/catchat -f ../catshadow/testdata/catshadow.toml -s bob.state -g
+
+As you can see here, this last command uses the catshadow configuration file from the
+catshadow git repo. Please aquire the catshadow repo so that you can use this configuration
+file which will work with the docker mixnet you are running:
+
+https://github.com/katzenpost/catshadow
+
+
+
 #### Run it
 
-    ./deploy/linux/catchat
+    Usage of ./deploy/linux/catchat:
+      -f string
+         Path to the client config file. (default "katzenpost.toml")
+      -g Generate the state file and then run client.
+      -s string
+         The catshadow state file path. (default "catshadow_statefile")
+
 
 ![catchat Screenshot](/assets/screenshot.png)
