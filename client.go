@@ -51,7 +51,7 @@ type Client struct {
 	pandaChan  chan panda.PandaUpdate
 	fatalErrCh chan error
 
-	// messageID -> ?
+	// messageID -> *SentMessageDescriptor
 	sendMap *sync.Map
 
 	stateWorker         *StateWriter
@@ -164,10 +164,11 @@ func (c *Client) Start() {
 }
 
 func (c *Client) eventSinkWorker() {
-	defer close(c.EventSink)
+	defer func() {
+		c.log.Debug("Event sink worker terminating gracefully.")
+		close(c.EventSink)
+	}()
 	for {
-		defer c.log.Debug("Event sink worker terminating gracefully.")
-		c.log.Debug("Event sink worker: BEFORE select statements.")
 		var event interface{} = nil
 		select {
 		case <-c.HaltCh():
@@ -179,7 +180,6 @@ func (c *Client) eventSinkWorker() {
 		case <-c.HaltCh():
 			return
 		}
-		c.log.Debug("Event sink worker: AFTER select statements.")
 	}
 }
 
@@ -352,7 +352,6 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
-	c.log.Debug("got panda update")
 	contact, ok := c.contacts[update.ID]
 	if !ok {
 		c.log.Error("failure to perform PANDA update: invalid contact ID")
@@ -429,7 +428,6 @@ func (c *Client) SendMessage(nickname string, message []byte) {
 }
 
 func (c *Client) doSendMessage(nickname string, message []byte) {
-	c.log.Debug("doSendMessage")
 	outMessage := Message{
 		Plaintext: message,
 		Timestamp: time.Now(),
@@ -438,7 +436,7 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	c.conversationsMutex.Lock()
 	c.conversations[nickname] = append(c.conversations[nickname], &outMessage)
 	conversationIndex := len(c.conversations[nickname]) // XXX or should it be zero indexed?
-	defer c.conversationsMutex.Unlock()
+	c.conversationsMutex.Unlock()
 
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
@@ -464,16 +462,14 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		return
 	}
 	mesgID, err := c.session.SendUnreliableMessage(contact.spoolWriteDescriptor.Receiver, contact.spoolWriteDescriptor.Provider, appendCmd)
-	c.log.Debugf("SendUnreliableMessage returned Message ID %x", mesgID)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 	}
-	c.log.Info("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
-	c.sendMap.Store(*mesgID, SentMessageDescriptor{
+	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
+	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
 		Nickname:          nickname,
 		ConversationIndex: conversationIndex,
 	})
-	c.log.Debug("doSendMessage: message sent")
 }
 
 func (c *Client) sendReadInbox() {
@@ -496,12 +492,11 @@ func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected
 }
 
 func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
-	c.log.Debug("handleSent")
 	rawSentMessageDescriptor, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
-		defer c.sendMap.Delete(*sentEvent.MessageID)
 		sentMessageDescriptor, typeOK := rawSentMessageDescriptor.(*SentMessageDescriptor)
 		if !typeOK {
+			c.sendMap.Delete(*sentEvent.MessageID)
 			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
 			return
 		}
@@ -513,8 +508,6 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 }
 
 func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
-	c.log.Debug("handleReply")
-
 	defer c.sendMap.Delete(*replyEvent.MessageID)
 	spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
 	if err != nil {
@@ -540,7 +533,6 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 		}
 		return
 	}
-
 	// Here we handle replies from remote queue message retrievals.
 	c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 }
@@ -567,6 +559,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		contact.ratchetMutex.Unlock()
 		if err != nil {
+			c.log.Debugf("Decryption err: %s", err.Error())
 			continue
 		} else {
 			decrypted = true
@@ -579,6 +572,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 	}
 	if decrypted {
+		c.spoolReadDescriptor.IncrementOffset() // XXX use a lock or atomic increment?
 		c.conversationsMutex.Lock()
 		defer c.conversationsMutex.Unlock()
 		c.conversations[nickname] = append(c.conversations[nickname], &message)
