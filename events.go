@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/katzenpost/catshadow"
 	"github.com/katzenpost/client"
@@ -28,7 +27,7 @@ func handleEvents(events <-chan interface{}, conversationModel *ConversationMode
 			m.Nickname = event.Nickname
 			m.Avatar = "" // XXX fix me
 			m.Message = string(event.Message)
-			m.Timestamp = time.Now()
+			m.Timestamp = event.Timestamp
 			conversationModel.AddMessage(m)
 		default:
 			// This case indicates a programming BUG!
