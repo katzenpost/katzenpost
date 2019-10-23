@@ -51,6 +51,8 @@ func (c *Client) worker() {
 	readInboxTimer := time.NewTimer(readInboxInterval)
 	defer readInboxTimer.Stop()
 
+	gcMessagestimer := time.NewTimer(constants.GarbageCollectionInterval)
+
 	isConnected := true
 	for {
 		var qo workerOp
@@ -59,6 +61,9 @@ func (c *Client) worker() {
 			c.log.Debug("Terminating gracefully.")
 			c.haltKeyExchanges()
 			return
+		case <-gcMessagestimer.C:
+			c.garbageCollectConversations()
+			gcMessagestimer.Reset(constants.GarbageCollectionInterval)
 		case <-readInboxTimer.C:
 			if isConnected {
 				c.log.Debug("READING INBOX")

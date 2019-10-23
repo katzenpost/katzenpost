@@ -17,6 +17,8 @@
 package constants
 
 import (
+	"time"
+
 	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/memspool/common"
 )
@@ -30,4 +32,15 @@ const (
 
 	// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
 	DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
+
+	// MessageExpirationDuration is the duration of time after which messages will be removed.
+	MessageExpirationDuration = 168 * time.Hour
+
+	// MessageIDLen is the length of our message IDs which are used the keys in a map
+	// to reference individual messages of a conversation.
+	MessageIDLen = 4
+
+	// GarbageCollectionInterval is the time interval between garbage collecting
+	// old messages.
+	GarbageCollectionInterval = 120 * time.Minute
 )
