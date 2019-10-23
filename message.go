@@ -16,10 +16,14 @@
 
 package catshadow
 
+import (
+	"github.com/katzenpost/catshadow/constants"
+)
+
 type SentMessageDescriptor struct {
 	// Nickname is the contact nickname to whom a message was sent.
 	Nickname string
 
-	// ConversationIndex is the numerical index for the given message in the conversation.
-	ConversationIndex int
+	// MessageID is the key in the conversation map referencing a specific message.
+	MessageID [constants.MessageIDLen]byte
 }

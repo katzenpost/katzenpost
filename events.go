@@ -18,6 +18,8 @@ package catshadow
 
 import (
 	"time"
+
+	"github.com/katzenpost/catshadow/constants"
 )
 
 // KeyExchangeCompletedEvent is an event signaling the completion
@@ -35,8 +37,9 @@ type KeyExchangeCompletedEvent struct {
 type MessageSentEvent struct {
 	// Nickname is the nickname of the recipient of our delivered message.
 	Nickname string
-	// MessageIndex indicates which message in the conversation was delivered.
-	MessageIndex int
+
+	// MessageID is the key in the conversation map referencing a specific message.
+	MessageID [constants.MessageIDLen]byte
 }
 
 // MessageDeliveredEvent is an event signaling that the message
@@ -44,8 +47,9 @@ type MessageSentEvent struct {
 type MessageDeliveredEvent struct {
 	// Nickname is the nickname of the recipient of our delivered message.
 	Nickname string
-	// MessageIndex indicates which message in the conversation was delivered.
-	MessageIndex int
+
+	// MessageID is the key in the conversation map referencing a specific message.
+	MessageID [constants.MessageIDLen]byte
 }
 
 // MessageReceivedEvent is the event signaling that a message was received.

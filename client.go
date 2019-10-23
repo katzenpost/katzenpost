@@ -60,7 +60,7 @@ type Client struct {
 	contacts            map[uint64]*Contact
 	contactNicknames    map[string]*Contact
 	spoolReadDescriptor *memspoolclient.SpoolReadDescriptor
-	conversations       map[string][]*Message
+	conversations       map[string]map[[constants.MessageIDLen]byte]*Message
 	conversationsMutex  *sync.Mutex
 
 	client  *client.Client
@@ -78,7 +78,7 @@ type Client struct {
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
 		Contacts:      make([]*Contact, 0),
-		Conversations: make(map[string][]*Message),
+		Conversations: make(map[string]map[[constants.MessageIDLen]byte]*Message),
 		User:          user,
 		Provider:      mixnetClient.Provider(),
 		LinkKey:       linkKey,
@@ -134,6 +134,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 // Start starts the client worker goroutine and the
 // read-inbox worker goroutine.
 func (c *Client) Start() {
+	c.garbageCollectConversations()
 	pandaCfg := c.session.GetPandaConfig()
 	if pandaCfg == nil {
 		panic("panda failed, must have a panda service configured")
@@ -179,6 +180,18 @@ func (c *Client) eventSinkWorker() {
 		case c.EventSink <- event:
 		case <-c.HaltCh():
 			return
+		}
+	}
+}
+
+func (c *Client) garbageCollectConversations() {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	for _, messages := range c.conversations {
+		for mesgID, message := range messages {
+			if time.Now().After(message.Timestamp.Add(constants.MessageExpirationDuration)) {
+				delete(messages, mesgID)
+			}
 		}
 	}
 }
@@ -434,9 +447,17 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 		Timestamp: time.Now(),
 		Outbound:  true,
 	}
+	convoMesgID := [constants.MessageIDLen]byte{}
+	_, err := rand.Reader.Read(convoMesgID[:])
+	if err != nil {
+		c.fatalErrCh <- err
+	}
 	c.conversationsMutex.Lock()
-	c.conversations[nickname] = append(c.conversations[nickname], &outMessage)
-	conversationIndex := len(c.conversations[nickname]) // XXX or should it be zero indexed?
+	_, ok := c.conversations[nickname]
+	if !ok {
+		c.conversations[nickname] = make(map[[constants.MessageIDLen]byte]*Message)
+	}
+	c.conversations[nickname][convoMesgID] = &outMessage
 	c.conversationsMutex.Unlock()
 
 	contact, ok := c.contactNicknames[nickname]
@@ -468,8 +489,8 @@ func (c *Client) doSendMessage(nickname string, message []byte) {
 	}
 	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
-		Nickname:          nickname,
-		ConversationIndex: conversationIndex,
+		Nickname:  nickname,
+		MessageID: convoMesgID,
 	})
 }
 
@@ -502,8 +523,8 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			return
 		}
 		c.eventCh.In() <- &MessageSentEvent{
-			Nickname:     sentMessageDescriptor.Nickname,
-			MessageIndex: sentMessageDescriptor.ConversationIndex,
+			Nickname:  sentMessageDescriptor.Nickname,
+			MessageID: sentMessageDescriptor.MessageID,
 		}
 	}
 }
@@ -529,8 +550,8 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			return
 		}
 		c.eventCh.In() <- &MessageDeliveredEvent{
-			Nickname:     sentMessageDescriptor.Nickname,
-			MessageIndex: sentMessageDescriptor.ConversationIndex,
+			Nickname:  sentMessageDescriptor.Nickname,
+			MessageID: sentMessageDescriptor.MessageID,
 		}
 		return
 	}
@@ -538,13 +559,13 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 	c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 }
 
-func (c *Client) GetConversation(nickname string) []*Message {
+func (c *Client) GetConversation(nickname string) map[[constants.MessageIDLen]byte]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations[nickname]
 }
 
-func (c *Client) GetAllConversations() map[string][]*Message {
+func (c *Client) GetAllConversations() map[string]map[[constants.MessageIDLen]byte]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations
@@ -574,9 +595,19 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 	}
 	if decrypted {
 		c.spoolReadDescriptor.IncrementOffset() // XXX use a lock or atomic increment?
+		convoMesgID := [constants.MessageIDLen]byte{}
+		_, err := rand.Reader.Read(convoMesgID[:])
+		if err != nil {
+			c.fatalErrCh <- err
+		}
 		c.conversationsMutex.Lock()
 		defer c.conversationsMutex.Unlock()
-		c.conversations[nickname] = append(c.conversations[nickname], &message)
+		_, ok := c.conversations[nickname]
+		if !ok {
+			c.conversations[nickname] = make(map[[constants.MessageIDLen]byte]*Message)
+		}
+		c.conversations[nickname][convoMesgID] = &message
+
 		c.eventCh.In() <- &MessageReceivedEvent{
 			Nickname:  nickname,
 			Message:   message.Plaintext,
