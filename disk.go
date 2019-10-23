@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/memspool/client"
 	"github.com/ugorji/go/codec"
@@ -64,27 +65,21 @@ type StateWriter struct {
 	stateCh   chan []byte
 	stateFile string
 
-	key   [32]byte
-	nonce [24]byte
+	key [32]byte
 }
 
-// LoadStateWriter decrypts the given stateFile and returns the State
-// as well as a new StateWriter.
-func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
-	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize+nonceSize)
-	worker := &StateWriter{
-		log:       log,
-		stateCh:   make(chan []byte),
-		stateFile: stateFile,
-	}
-	copy(worker.key[:], secret[0:32])
-	copy(worker.nonce[:], secret[32:])
-
-	ciphertext, err := ioutil.ReadFile(stateFile)
+func GetStateFromFile(stateFile string, passphrase []byte) (*State, *[keySize]byte, error) {
+	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize)
+	rawFile, err := ioutil.ReadFile(stateFile)
 	if err != nil {
 		return nil, nil, err
 	}
-	plaintext, ok := secretbox.Open(nil, ciphertext, &worker.nonce, &worker.key)
+	nonce := [nonceSize]byte{}
+	copy(nonce[:], rawFile[:nonceSize])
+	ciphertext := rawFile[nonceSize:]
+	key := [keySize]byte{}
+	copy(key[:], secret)
+	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, &key)
 	if !ok {
 		return nil, nil, errors.New("failed to decrypted statefile")
 	}
@@ -93,20 +88,35 @@ func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (
 	if err != nil {
 		return nil, nil, err
 	}
+	return state, &key, nil
+}
+
+// LoadStateWriter decrypts the given stateFile and returns the State
+// as well as a new StateWriter.
+func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
+	worker := &StateWriter{
+		log:       log,
+		stateCh:   make(chan []byte),
+		stateFile: stateFile,
+	}
+	state, key, err := GetStateFromFile(stateFile, passphrase)
+	if err != nil {
+		return nil, nil, err
+	}
+	copy(worker.key[:], key[:])
 	return worker, state, nil
 }
 
 // NewStateWriter is a constructor for StateWriter which is to be used when creating
 // the statefile for the first time.
 func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, error) {
-	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize+nonceSize)
+	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize)
 	worker := &StateWriter{
 		log:       log,
 		stateCh:   make(chan []byte),
 		stateFile: stateFile,
 	}
 	copy(worker.key[:], secret[0:32])
-	copy(worker.nonce[:], secret[32:])
 	return worker, nil
 }
 
@@ -117,12 +127,18 @@ func (w *StateWriter) Start() {
 }
 
 func (w *StateWriter) writeState(payload []byte) error {
-	ciphertext := secretbox.Seal(nil, payload, &w.nonce, &w.key)
+	nonce := [nonceSize]byte{}
+	_, err := rand.Reader.Read(nonce[:])
+	if err != nil {
+		return err
+	}
+	ciphertext := secretbox.Seal(nil, payload, &nonce, &w.key)
 	out, err := os.OpenFile(w.stateFile+".tmp", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
-	_, err = out.Write(ciphertext)
+	outBytes := append(nonce[:], ciphertext...)
+	_, err = out.Write(outBytes)
 	if err != nil {
 		return err
 	}

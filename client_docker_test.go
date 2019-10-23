@@ -19,6 +19,7 @@
 package catshadow
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -27,9 +28,25 @@ import (
 
 	"github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
+	cConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
+
+func getClientState(c *Client) *State {
+	contacts := []*Contact{}
+	for _, contact := range c.contacts {
+		contacts = append(contacts, contact)
+	}
+	return &State{
+		SpoolReadDescriptor: c.spoolReadDescriptor,
+		Contacts:            contacts,
+		LinkKey:             c.linkKey,
+		User:                c.user,
+		Provider:            c.client.Provider(),
+		Conversations:       c.GetAllConversations(),
+	}
+}
 
 func createRandomStateFile(t *testing.T) string {
 	require := require.New(t)
@@ -68,6 +85,43 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 
 	user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
 	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
+	require.NoError(err)
+
+	// Start catshadow client.
+	stateWorker.Start()
+	catShadowClient.Start()
+
+	return catShadowClient
+}
+
+func reloadCatshadowState(t *testing.T, stateFile string) *Client {
+	require := require.New(t)
+
+	// Load catshadow config file.
+	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
+	require.NoError(err)
+	var stateWorker *StateWriter
+	var catShadowClient *Client
+
+	cfg, err := catshadowCfg.ClientConfig()
+	require.NoError(err)
+
+	passphrase := []byte("")
+	state, _, err := GetStateFromFile(stateFile, passphrase)
+	require.NoError(err)
+	cfg.Account = &cConfig.Account{
+		User:     state.User,
+		Provider: state.Provider,
+	}
+
+	logBackend, err := catshadowCfg.InitLogBackend()
+	require.NoError(err)
+	c, err := client.New(cfg)
+	require.NoError(err)
+	stateWorker, state, err = LoadStateWriter(c.GetLogger("catshadow_state"), stateFile, passphrase)
+	require.NoError(err)
+
+	catShadowClient, err = New(logBackend, c, stateWorker, state)
 	require.NoError(err)
 
 	// Start catshadow client.
@@ -123,10 +177,10 @@ loop2:
 func TestDockerPandaTagContendedError(t *testing.T) {
 	require := require.New(t)
 
-	aliceState := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceState)
-	bobState := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobState)
+	aliceStateFilePath := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath)
+	bobStateFilePath := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobStateFilePath)
 
 	sharedSecret := []byte("twas brillig and the slithy toves")
 	randBytes := [8]byte{}
@@ -201,10 +255,10 @@ loop4:
 func TestDockerSendReceive(t *testing.T) {
 	require := require.New(t)
 
-	aliceState := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceState)
-	bobState := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobState)
+	aliceStateFilePath := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath)
+	bobStateFilePath := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobStateFilePath)
 
 	sharedSecret := []byte(`oxcart pillage village bicycle gravity socks`)
 	randBytes := [8]byte{}
@@ -276,6 +330,45 @@ and can readily scale to millions of users.
 	<-aliceDeliveredChan
 	<-bobReceivedMessageChan
 
+	// Test statefile persistence of conversation.
+
+	alice.log.Debug("LOADING ALICE'S CONVERSATION")
+	aliceConvesation := alice.GetConversation("bob")
+	for i, mesg := range aliceConvesation {
+		alice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	}
+
+	bob.log.Debug("LOADING BOB'S CONVERSATION")
+	bobConvesation := bob.GetConversation("alice")
+	for i, mesg := range bobConvesation {
+		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	}
+
 	alice.Shutdown()
 	bob.Shutdown()
+
+	newAlice := reloadCatshadowState(t, aliceStateFilePath)
+	newAlice.log.Debug("LOADING ALICE'S CONVERSATION")
+	aliceConvesation = newAlice.GetConversation("bob")
+	for i, mesg := range aliceConvesation {
+		newAlice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	}
+
+	newBob := reloadCatshadowState(t, bobStateFilePath)
+	newBob.log.Debug("LOADING BOB'S CONVERSATION")
+	bobConvesation = newBob.GetConversation("alice")
+	for i, mesg := range bobConvesation {
+		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	}
+	newAliceState := getClientState(newAlice)
+	aliceState := getClientState(alice)
+	aliceBobConvo1 := aliceState.Conversations["bob"]
+	aliceBobConvo2 := newAliceState.Conversations["bob"]
+	newAlice.log.Debug("convo1\n")
+	for i, message := range aliceBobConvo1 {
+		require.True(bytes.Equal(message.Plaintext, aliceBobConvo2[i].Plaintext))
+		// XXX require.True(message.Timestamp.Equal(aliceBobConvo2[i].Timestamp))
+	}
+	newAlice.Shutdown()
+	newBob.Shutdown()
 }
