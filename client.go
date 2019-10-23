@@ -348,6 +348,7 @@ func (c *Client) Shutdown() {
 	c.save()
 	c.Halt()
 	c.client.Shutdown()
+	c.stateWorker.Halt()
 	close(c.fatalErrCh)
 }
 
@@ -579,7 +580,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		c.eventCh.In() <- &MessageReceivedEvent{
 			Nickname:  nickname,
 			Message:   message.Plaintext,
-			Timestamp: time.Now(),
+			Timestamp: message.Timestamp,
 		}
 		return
 	}
