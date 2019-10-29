@@ -852,9 +852,9 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
 
 ::
 
-   @online{KatzMixnet,
-   title = {Katzenpost Mix Network Specification},
+   @online{KatzEndToEnd,
+   title = {Katzenpost Mix Network End-to-end Protocol Specification},
    author = {Yawning Angel and George Danezis and Claudia Diaz and Ania Piotrowska and David Stainton},
-   url = {https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst},
+   url = {https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.rst},
    year = {2017}
    }
