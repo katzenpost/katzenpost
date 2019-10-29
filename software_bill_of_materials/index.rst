@@ -186,6 +186,22 @@ Forks of external dependencies:
 
 
 
+catchat
+-------
+
+https://github.com/katzenpost/catchat with license AGPL-3.0
+
+depends on:
+
+* github.com/katzenpost/catshadow with license AGPL-3.0
+* github.com/katzenpost/client with license AGPL-3.0
+* github.com/therecipe/qt/core with license LGPL-3.0
+* github.com/dustin/go-humanize with license MIT
+* github.com/BurntSushi/toml with license MIT
+* github.com/muesli/go-app-paths with license MIT
+* golang.org/x/crypto with license https://github.com/golang/crypto/blob/master/LICENSE
+
+
 doubleratchet
 -------------
 
@@ -196,8 +212,7 @@ fork of double ratchet from agl's pond ( https://github.com/agl/pond )
 depends on:
 
 * github.com/agl/ed25519 with license BSD-3-Clause
-* golang.org/x/crypto/curve25519 with license https://github.com/golang/crypto/blob/master/LICENSE
-* golang.org/x/crypto/nacl/secretbox with license https://github.com/golang/crypto/blob/master/LICENSE
+* golang.org/x/crypto with license https://github.com/golang/crypto/blob/master/LICENSE
 * github.com/ugorji/go/codec with license MIT
 
 
