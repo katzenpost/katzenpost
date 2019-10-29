@@ -178,11 +178,27 @@ Client depends on:
 * github.com/ugorji/go/codec with license MIT  
 * golang.org/x/crypto with license https://github.com/golang/crypto/blob/master/LICENSE
 * gopkg.in/eapache/channels.v1 with license MIT
-* gopkg.in/op/go-logging.v1 with license BSD-3-Clause 
+* gopkg.in/op/go-logging.v1 with license BSD-3-Clause
 
 Forks of external dependencies:
 
 * https://github.com/katzenpost/panda/tree/master/crypto with license https://github.com/katzenpost/panda/blob/master/crypto/LICENSE
+
+
+
+doubleratchet
+-------------
+
+github.com/katzenpost/doubleratchet with license https://github.com/katzenpost/doubleratchet/blob/master/LICENSE
+
+fork of double ratchet from agl's pond ( https://github.com/agl/pond )
+
+depends on:
+
+* github.com/agl/ed25519 with license BSD-3-Clause
+* golang.org/x/crypto/curve25519 with license https://github.com/golang/crypto/blob/master/LICENSE
+* golang.org/x/crypto/nacl/secretbox with license https://github.com/golang/crypto/blob/master/LICENSE
+* github.com/ugorji/go/codec with license MIT
 
 
 Memspool
