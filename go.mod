@@ -3,9 +3,6 @@ module github.com/katzenpost/panda
 go 1.12
 
 require (
-	git.schwanenlied.me/yawning/chacha20 v0.0.0-20170904085104-e3b1f968fc63 // indirect
-	git.schwanenlied.me/yawning/chacha20.git v0.0.0-20170904085104-e3b1f968fc63 // indirect
-	git.schwanenlied.me/yawning/newhope.git v0.0.0-20170622154529-9598792ba8f2 // indirect
 	github.com/coreos/bbolt v1.3.3
 	github.com/golang/protobuf v1.3.2
 	github.com/katzenpost/client v0.0.3-0.20190929084952-6620f9fb6cd2
