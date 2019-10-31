@@ -193,9 +193,10 @@ https://github.com/katzenpost/catchat with license AGPL-3.0
 
 depends on:
 
+* QT, the C++ library with license LGPL-3.0 https://doc.qt.io/qt-5/opensourcelicense.html
+* github.com/therecipe/qt/core with license LGPL-3.0
 * github.com/katzenpost/catshadow with license AGPL-3.0
 * github.com/katzenpost/client with license AGPL-3.0
-* github.com/therecipe/qt/core with license LGPL-3.0
 * github.com/dustin/go-humanize with license MIT
 * github.com/BurntSushi/toml with license MIT
 * github.com/muesli/go-app-paths with license MIT
