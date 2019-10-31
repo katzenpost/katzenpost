@@ -3,18 +3,21 @@ Katzenpost Software Bill of Materials
 
 .. rubric:: Abstract
 
-This document describes the Katzenpost software dependencies
-and their licenses. This could be useful for determining software
-license compliance.
+This document describes the Katzenpost software dependencies and their
+licenses for the core katzenpost server side components AND the
+catshadow anonymous messaging system with QT user interface. This
+document is meant to be useful for determining software license
+compliance and to assist in audits.
 
 
 Dependencies and Licenses
 =========================
 
 We use go-modules ( https://github.com/golang/go/wiki/Modules ) in
-each golang git repository to pin dependencies. Therefore the
-dependencies expressed in this document can easily be derived from the
-`go.mod` file at the root of each git repo.
+each golang git repository to pin dependencies. Therefore these
+dependencies can easily be derived from the `go.mod` file at the
+root of each git repo. Auditors wishing to quickly learn the transitive
+dependencies can do so by looking at these files.
 
 
 Core
@@ -186,7 +189,7 @@ Forks of external dependencies:
 
 
 
-catchat
+Catchat
 -------
 
 https://github.com/katzenpost/catchat with license AGPL-3.0
@@ -203,8 +206,8 @@ depends on:
 * golang.org/x/crypto with license https://github.com/golang/crypto/blob/master/LICENSE
 
 
-doubleratchet
--------------
+Double Ratchet
+--------------
 
 github.com/katzenpost/doubleratchet with license https://github.com/katzenpost/doubleratchet/blob/master/LICENSE
 
