@@ -264,8 +264,9 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			// Accumulate a list of all clients to facilitate clean shutdown.
 			kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
 
-			// Start the worker.
-			kaetzchenWorker.Go(func() {
+			// Start the workers _after_ we have added all of the entries to pluginChans
+			// otherwise the worker() goroutines race this thread.
+			defer kaetzchenWorker.Go(func() {
 				kaetzchenWorker.worker(endpoint, pluginClient)
 			})
 		}
