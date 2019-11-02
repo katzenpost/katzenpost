@@ -94,7 +94,7 @@ services:
       - "127.0.0.1:21483:21483"
     networks:
       testing_net:
-        ipv4_address: 172.28.1.2
+        ipv4_address: 172.28.1.10
   auth2:
     restart: unless-stopped
     image: katzenpost/authority
