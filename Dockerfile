@@ -13,7 +13,7 @@ WORKDIR /go/authority
 
 # Build the binary
 COPY . .
-RUN cd cmd/nonvoting && go build
+RUN cd cmd/voting && go build
 
 FROM alpine
 
@@ -21,7 +21,7 @@ RUN apk update && \
     apk add --no-cache ca-certificates tzdata && \
     update-ca-certificates
 
-COPY --from=builder /go/authority/cmd/nonvoting/nonvoting /go/bin/nonvoting
+COPY --from=builder /go/authority/cmd/voting/voting /go/bin/voting
 
 # Expose the application port
 # EXPOSE 8181
@@ -30,4 +30,4 @@ COPY --from=builder /go/authority/cmd/nonvoting/nonvoting /go/bin/nonvoting
 VOLUME /conf
 
 # This form of ENTRYPOINT allows the process to catch signals from the `docker stop` command
-ENTRYPOINT /go/bin/nonvoting -f /conf/authority.toml
+ENTRYPOINT /go/bin/voting -f /conf/authority.toml
