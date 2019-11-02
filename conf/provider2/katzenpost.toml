@@ -20,22 +20,23 @@
 #
 # The PKI section contains the directory authority configuration.
 #
+
 [PKI]
   [PKI.Voting]
   [[PKI.Voting.Peers]]
-    Addresses = ["172.28.1.10:29483"]
-    IdentityPublicKey = "yftvUNe597+VpB92/D4ZYemFk4k//G3dL+VGJv2oJ30="
-    LinkPublicKey = "lS9yYV9TSvIPSHQDFtOkkKJMh/MsjhMx4DB6Sb81vGs="
+    Addresses = ["172.28.1.10:21483"]
+    IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+    LinkPublicKey = "I49V1w7OJ/Kcw7YbEvo+92akE9cYLGeXRBg6KE/sYS8="
 
   [[PKI.Voting.Peers]]
-    Addresses = ["172.28.1.8:29483"]
-    IdentityPublicKey = "KhB8yGWzyiof/KzoOdzvph8hbm6PVLkDrl0RFtMe+jE="
-    LinkPublicKey = "fuJM0f6NVX5dVOPrQSsvO/0HDUEPlP3ZNjt72DgTngE="
+    Addresses = ["172.28.1.8:22483"]
+    IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+    LinkPublicKey = "fZcGD+uPm18BYuDKXS3eozp9+i2hW2SWgnuapP0ftgE="
 
   [[PKI.Voting.Peers]]
-    Addresses = ["172.28.1.9:29483"]
-    IdentityPublicKey = "T7k2iiO4Wxyl9ACCaG1quA7oC8bBZGc2593XSiz19o4="
-    LinkPublicKey = "fLtjYvzbUkkVlKDcgmMZz+GEwFFMGt8eBcY8W4RD0HA="
+    Addresses = ["172.28.1.9:23483"]
+    IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+    LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
 
 
 #
