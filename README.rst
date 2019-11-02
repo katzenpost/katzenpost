@@ -17,12 +17,22 @@ docker-compose situation is not meant for production use.
    docker build --no-cache -t katzenpost/server .
 
 
-2. build the voting authority docker image
+2. build the authority docker image
+
+voting authority
 ::
 
    git clone https://github.com/katzenpost/authority.git
    cd authority
-   docker build --no-cache -t katzenpost/authority .
+   docker build -f Dockerfile.voting --no-cache -t katzenpost/voting_authority .
+
+nonvoting authority
+::
+
+   git clone https://github.com/katzenpost/authority.git
+   cd authority
+   docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
+
 
 3. run docker-compose from this repository
 ::
