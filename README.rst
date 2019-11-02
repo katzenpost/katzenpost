@@ -34,7 +34,7 @@ nonvoting authority
    docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
 
 
-3. run docker-compose from this repository
+3. run docker-compose from this repository (control-c to exit)
 ::
 
    docker-compose up
@@ -45,3 +45,10 @@ remove the state changes on disk by running the following command:
 ::
 
    git clean -ffdx
+
+
+**NOTE**: If you switch between voting and nonvoting authority mixnets then
+you must run this command after shutting down the old docker composed mixnet:
+::
+
+   docker network prune
