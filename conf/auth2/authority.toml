@@ -8,10 +8,22 @@
 
   # Addresses are the IP address/port combinations that the authority will bind
   # to for incoming connections.
-  Addresses = [ "172.28.1.2:29483" ]
+  Addresses = [ "172.28.1.8:29483" ]
 
   # DataDir is the absolute path to the server's state files.
   DataDir = "/conf/authority_data"
+
+[[Authorities]]
+   IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+   Addresses = [ "172.28.1.10:29483" ]
+
+#[[Authorities]]
+#   IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+#   Addresses = [ "172.28.1.8:29483" ]
+
+[[Authorities]]
+   IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+   Addresses = [ "172.28.1.9:29483" ]
 
 #
 # The Logging section controls the logging.
