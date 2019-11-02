@@ -277,6 +277,10 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 			a.s.log.Warning("Rejecting authority authentication, no link key entry.")
 			return false
 		}
+		if creds.PublicKey == nil {
+			a.s.log.Warning("Rejecting authority authentication, public key is nil.")
+			return false
+		}
 		if !linkKey.Equal(creds.PublicKey) {
 			a.s.log.Warning("Rejecting authority authentication, public key mismatch.")
 			return false
