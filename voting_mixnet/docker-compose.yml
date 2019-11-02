@@ -86,7 +86,7 @@ services:
 
   auth1:
     restart: unless-stopped
-    image: katzenpost/authority
+    image: katzenpost/voting_authority
     volumes:
       - ./conf/auth1:/conf
     command: /go/bin/voting -f /conf/authority.toml
@@ -97,7 +97,7 @@ services:
         ipv4_address: 172.28.1.10
   auth2:
     restart: unless-stopped
-    image: katzenpost/authority
+    image: katzenpost/voting_authority
     volumes:
       - ./conf/auth2:/conf
     command: /go/bin/voting -f /conf/authority.toml
@@ -108,7 +108,7 @@ services:
         ipv4_address: 172.28.1.8
   auth3:
     restart: unless-stopped
-    image: katzenpost/authority
+    image: katzenpost/voting_authority
     volumes:
       - ./conf/auth3:/conf
     command: /go/bin/voting -f /conf/authority.toml
