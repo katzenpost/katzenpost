@@ -151,12 +151,14 @@ func TestCommandVectors(t *testing.T) {
 	noOpBytes, err := hex.DecodeString(cmdsTest.NoOp)
 	assert.NoError(err)
 	cmd, err := FromBytes(noOpBytes)
+	assert.NoError(err)
 	_, ok := cmd.(*NoOp)
 	assert.True(ok)
 
 	disconnectBytes, err := hex.DecodeString(cmdsTest.Disconnect)
 	assert.NoError(err)
 	cmd, err = FromBytes(disconnectBytes)
+	assert.NoError(err)
 	_, ok = cmd.(*Disconnect)
 	assert.True(ok)
 
