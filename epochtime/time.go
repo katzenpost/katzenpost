@@ -20,7 +20,7 @@ package epochtime
 import "time"
 
 // Period is the duration of a Katzenpost epoch.
-var Period = 3 * time.Hour
+var Period = 10 * time.Minute
 
 // WarpedEpoch is a flag that can be passed at build time to set the epoch Period
 var WarpedEpoch string
