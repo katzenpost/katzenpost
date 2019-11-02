@@ -20,17 +20,23 @@
 #
 # The PKI section contains the directory authority configuration.
 #
-
 [PKI]
+  [PKI.Voting]
+  [[PKI.Voting.Peers]]
+    Addresses = ["172.28.1.10:29483"]
+    IdentityPublicKey = "yftvUNe597+VpB92/D4ZYemFk4k//G3dL+VGJv2oJ30="
+    LinkPublicKey = "lS9yYV9TSvIPSHQDFtOkkKJMh/MsjhMx4DB6Sb81vGs="
 
-  # Nonvoting is a simple non-voting PKI for mixnets/test deployments.
-  [PKI.Nonvoting]
+  [[PKI.Voting.Peers]]
+    Addresses = ["172.28.1.8:29483"]
+    IdentityPublicKey = "KhB8yGWzyiof/KzoOdzvph8hbm6PVLkDrl0RFtMe+jE="
+    LinkPublicKey = "fuJM0f6NVX5dVOPrQSsvO/0HDUEPlP3ZNjt72DgTngE="
 
-    # Address is the IP address/port combination of the directory authority.
-    Address = "172.28.1.2:29483"
+  [[PKI.Voting.Peers]]
+    Addresses = ["172.28.1.9:29483"]
+    IdentityPublicKey = "T7k2iiO4Wxyl9ACCaG1quA7oC8bBZGc2593XSiz19o4="
+    LinkPublicKey = "fLtjYvzbUkkVlKDcgmMZz+GEwFFMGt8eBcY8W4RD0HA="
 
-    # PublicKey is the directory authority's public key in Base64 or Base16 format.
-    PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
 
 #
 # The Logging section controls the logging.
