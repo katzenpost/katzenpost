@@ -74,6 +74,16 @@ AdvertiseUserRegistrationHTTPAddresses = ["http://127.0.0.1:36967"]
     Endpoint = "+loop"
     Disable = false
 
+   [[Provider.CBORPluginKaetzchen]]
+     Disable = false
+     Capability = "echo"
+     Endpoint = "+echo"
+     Command = "/go/bin/echo_server"
+     MaxConcurrency = 1
+     [Provider.CBORPluginKaetzchen.Config]
+      log_dir = "/conf/service_logs"
+      log_level = "DEBUG"
+
 #
 # The Management section specifies the management interface configuration.
 #
