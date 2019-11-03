@@ -13,7 +13,7 @@ services:
     depends_on:
       - auth
     networks:
-      testing_net:
+      nonvoting_test_net:
         ipv4_address: 172.28.1.3
 
   provider2:
@@ -29,7 +29,7 @@ services:
       - auth
       - provider1
     networks:
-      testing_net:
+      nonvoting_test_net:
         ipv4_address: 172.28.1.4
 
   mix1:
@@ -43,7 +43,7 @@ services:
       - provider1
       - provider2
     networks:
-      testing_net:
+      nonvoting_test_net:
         ipv4_address: 172.28.1.5
 
   mix2:
@@ -57,7 +57,7 @@ services:
       - provider1
       - provider2
     networks:
-      testing_net:
+      nonvoting_test_net:
         ipv4_address: 172.28.1.6
 
   mix3:
@@ -71,7 +71,7 @@ services:
       - provider1
       - provider2
     networks:
-      testing_net:
+      nonvoting_test_net:
         ipv4_address: 172.28.1.7
 
   auth:
@@ -83,11 +83,11 @@ services:
     ports:
       - "127.0.0.1:29483:29483"
     networks:
-      testing_net:
+      nonvoting_test_net:
         ipv4_address: 172.28.1.2
 
 networks:
-  testing_net:
+  nonvoting_test_net:
     ipam:
       driver: default
       config:
