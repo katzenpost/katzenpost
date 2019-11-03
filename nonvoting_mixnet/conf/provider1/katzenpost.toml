@@ -69,6 +69,16 @@ AdvertiseUserRegistrationHTTPAddresses = ["http://127.0.0.1:36968"]
 
    [[Provider.CBORPluginKaetzchen]]
      Disable = false
+     Capability = "echo"
+     Endpoint = "+echo"
+     Command = "/go/bin/echo_server"
+     MaxConcurrency = 1
+     [Provider.CBORPluginKaetzchen.Config]
+      log_dir = "/conf/service_logs"
+      log_level = "DEBUG"
+
+   [[Provider.CBORPluginKaetzchen]]
+     Disable = false
      Capability = "panda"
      Endpoint = "+panda"
      Command = "/go/bin/panda_server"
