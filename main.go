@@ -148,7 +148,7 @@ func main() {
 	}
 	fmt.Printf("sending ping to %s@%s\n", serviceDesc.Name, serviceDesc.Provider)
 
-	mesg, err := s.SendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, []byte("hello"))
+	mesg, err := s.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, []byte("hi, hello there, how are you?"))
 	if err != nil {
 		panic(err)
 	}
