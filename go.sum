@@ -1,0 +1,12 @@
+github.com/katzenpost/core v0.0.7 h1:ZI4oYACe/3n2iS2XsCccGbTFdhhRJunjFW05Utwna+g=
+github.com/katzenpost/core v0.0.7/go.mod h1:UXMLmMXlBHrhMXhWTy4DvCXqwTRLOh4DP/mR1Cm1sR8=
+github.com/katzenpost/server v0.0.7 h1:D3OCuJ66ZIpcw3A23Fftgj85u/cVkVkyG+VnkCtIAco=
+github.com/katzenpost/server v0.0.7/go.mod h1:sOea2sG8ggASFYNTXhjEGmdanyXYsJz0wE2BTA/mCo0=
+github.com/op/go-logging v0.0.0-20160315200505-970db520ece7 h1:lDH9UUVJtmYCjyT0CI4q8xvlXPxeZ0gYCVvWbmPlp88=
+github.com/op/go-logging v0.0.0-20160315200505-970db520ece7/go.mod h1:HzydrMdWErDVzsI23lYNej1Htcns9BCg93Dk0bBINWk=
+github.com/ugorji/go v1.1.7 h1:/68gy2h+1mWMrwZFeD1kQialdSzAb432dtpeJ42ovdo=
+github.com/ugorji/go v1.1.7/go.mod h1:kZn38zHttfInRq0xu/PH0az30d+z6vm202qpg1oXVMw=
+github.com/ugorji/go/codec v1.1.7 h1:2SvQaVZ1ouYrrKKwoSk2pzd4A9evlKJb9oTL+OaLUSs=
+github.com/ugorji/go/codec v1.1.7/go.mod h1:Ax+UKWsSmolVDwsd+7N3ZtXu+yMGCf907BLYF3GoBXY=
+gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473 h1:6D+BvnJ/j6e222UW8s2qTSe3wGBtvo0MbVQG/c5k8RE=
+gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473/go.mod h1:N1eN2tsCx0Ydtgjl4cqmbRCsY4/+z4cYDeqwZTk6zog=
