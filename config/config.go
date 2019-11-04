@@ -158,9 +158,8 @@ func (vACfg *VotingAuthority) validate() error {
 		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
-		err := peer.Validate()
-		if err != nil {
-			return err
+		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
+			return errors.New("invalid voting authority peer")
 		}
 	}
 	return nil
@@ -338,11 +337,11 @@ func (c *Config) FixupAndMinimallyValidate() error {
 	switch {
 	case c.NonvotingAuthority == nil && c.VotingAuthority != nil:
 		if err := c.VotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+			return fmt.Errorf("config: NonvotingAuthority/VotingAuthority is invalid: %s", err)
 		}
 	case c.NonvotingAuthority != nil && c.VotingAuthority == nil:
 		if err := c.NonvotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: NonvotingAuthority is invalid: %s", err)
+			return fmt.Errorf("config: NonvotingAuthority/VotingAuthority is invalid: %s", err)
 		}
 	default:
 		return fmt.Errorf("config: Authority configuration is invalid")
