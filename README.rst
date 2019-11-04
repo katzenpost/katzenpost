@@ -34,7 +34,7 @@ nonvoting authority
    docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
 
 
-3. run docker-compose from this repository (control-c to exit)
+3. run docker-compose from this repository and cd into one of the folders depending on your usecase (control-c to exit)
 ::
 
    docker-compose up
