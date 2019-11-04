@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
@@ -80,8 +79,8 @@ func (cfg *Config) validate() error {
 	}
 	for _, v := range cfg.Authorities {
 		for _, a := range v.Addresses {
-			if err := utils.EnsureAddrIPPort(a); err != nil {
-				return fmt.Errorf("voting/client: Invalid Address: %v", err)
+			if len(a) == 0 {
+				return errors.New("voting/client: Invalid Address: zero length")
 			}
 		}
 		if v.IdentityPublicKey == nil {
@@ -134,7 +133,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		if err == nil {
 			break
 		}
-		if i == len(idxs) - 1 {
+		if i == len(idxs)-1 {
 			return nil, err
 		}
 	}
