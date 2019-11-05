@@ -1,0 +1,15 @@
+
+[UpstreamProxy]
+  Type = "none"
+
+[Logging]
+  Disable = false
+  Level = "DEBUG"
+
+[NonvotingAuthority]
+    Address = "127.0.0.1:29483"
+    PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+
+[Debug]
+  PollingInterval = 10
+  
