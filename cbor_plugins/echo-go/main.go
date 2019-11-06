@@ -139,7 +139,12 @@ func main() {
 
 	// start service
 	server := http.Server{}
-	socketFile := fmt.Sprintf("/tmp/%d.echo.socket", os.Getpid())
+
+	tmpDir, err := ioutil.TempDir("", "memspool_server")
+	if err != nil {
+		panic(err)
+	}
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.echo.socket", os.Getpid()))
 
 	unixListener, err := net.Listen("unix", socketFile)
 	if err != nil {
