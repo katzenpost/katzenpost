@@ -121,6 +121,7 @@ func NewSession(
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
 		DialContextFn:       proxyCfg.ToDialContext("authority"),
+		PreferedTransports:  pki.Transport("onion"), // XXX
 		MessagePollInterval: 1 * time.Second,
 		EnableTimeSync:      false, // Be explicit about it.
 	}
