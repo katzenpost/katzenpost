@@ -38,7 +38,7 @@
   Disable = false
 
   # File specifies the log file, if omitted stdout will be used.
-  File = "/conf/katzenpost.log" #"/conf/authority_data/katzenpost.log"
+  File = "/conf/authority_data/katzenpost.log"
 
   # Level specifies the log level out of `ERROR`, `WARNING`, `NOTICE`,
   # `INFO` and `DEBUG`.
