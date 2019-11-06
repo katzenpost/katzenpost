@@ -14,7 +14,7 @@ This repository contains optional plugins for the Katzenpost mix server.
 
 See the handbook to learn how to configure external plugins:
 
-* https://github.com/katzenpost/docs/blob/master/handbook/index.rst#external-kaetzchen-plugin-configuration
+* https://github.com/katzenpost/docs/blob/master/handbook/mix_server.rst#external-kaetzchen-plugin-configuration
 
 
 Status
