@@ -20,10 +20,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 
 	"github.com/katzenpost/server/cborplugin"
 	"github.com/op/go-logging"
