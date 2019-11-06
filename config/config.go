@@ -97,6 +97,10 @@ type Debug struct {
 	// increasing the value too far WILL adversely affect large message
 	// transmit performance.
 	PollingInterval int
+
+	// PreferedTransports is a list of the transports will be used to make
+	// outgoing network connections, with the most prefered first.
+	PreferedTransports []pki.Transport
 }
 
 func (d *Debug) fixup() {
