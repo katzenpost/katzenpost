@@ -5,6 +5,7 @@
 [Logging]
   Disable = false
   Level = "DEBUG"
+  File = "/tmp/ping.log"
 
 [VotingAuthority]
     [[VotingAuthority.Peers]]
