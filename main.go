@@ -51,8 +51,7 @@ func randUser() string {
 
 func register(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
 	// Retrieve a copy of the PKI consensus document.
-	logFilePath := ""
-	backendLog, err := log.New(logFilePath, "DEBUG", false)
+	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
 	if err != nil {
 		panic(err)
 	}
@@ -81,8 +80,6 @@ func register(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
 	}
 	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
 
-	// Register with that Provider.
-	fmt.Println("registering client with mixnet Provider")
 	linkKey, err := ecdh.NewKeypair(rand.Reader)
 	if err != nil {
 		panic(err)
@@ -118,8 +115,10 @@ func register(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
 func main() {
 	var configFile string
 	var service string
+	var count int
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.StringVar(&service, "s", "", "service name")
+	flag.IntVar(&count, "n", 5, "count")
 	flag.Parse()
 
 	if service == "" {
@@ -146,13 +145,42 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("sending ping to %s@%s\n", serviceDesc.Name, serviceDesc.Provider)
 
-	mesg, err := s.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, []byte("hi, hello there, how are you?"))
-	if err != nil {
-		panic(err)
+	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
+	passed := 0
+	failed := 0
+	for i := 0; i < count; i++ {
+		_, err := s.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, []byte(`Data encryption is used widely to protect the content of Internet
+communications and enables the myriad of activities that are popular today,
+from online banking to chatting with loved ones. However, encryption is not
+sufficient to protect the meta-data associated with the communications.
+
+Modern encrypted communication networks are vulnerable to traffic analysis and
+can leak such meta-data as the social graph of users, their geographical
+location, the timing of messages and their order, message size, and many other
+kinds of meta-data.
+
+Since 1979, there has been active academic research into communication
+meta-data protection, also called anonymous communication networking, that has
+produced various designs. Of these, mix networks are among the most practical
+and can readily scale to millions of users.
+
+The Mix Network workshop will focus on bringing together experts from
+the research and practitioner communities to give technical lectures on key
+Mix networking topics in relation to attacks, defences, and practical
+applications and usage considerations.`))
+		if err != nil {
+			failed++
+			fmt.Printf(".")
+			continue
+		}
+		passed++
+		fmt.Printf("!")
 	}
-	fmt.Printf("reply: %s\n", mesg)
-	fmt.Println("Done. Shutting down.")
+	fmt.Printf("\n")
+
+	percent := (float64(passed) * float64(100)) / float64(count)
+	fmt.Printf("Success rate is %f percent %d/%d)\n", percent, passed, count)
+
 	c.Shutdown()
 }
