@@ -142,7 +142,7 @@ func main() {
 	// start service
 	server := http.Server{}
 
-	tmpDir, err := ioutil.TempDir("", "memspool_server")
+	tmpDir, err := ioutil.TempDir("", "echo_server")
 	if err != nil {
 		panic(err)
 	}
