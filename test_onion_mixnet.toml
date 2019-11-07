@@ -1,0 +1,35 @@
+
+[UpstreamProxy]
+  Type = "socks5"
+  Network = "tcp"
+  Address = "127.0.0.1:9050"
+
+[Logging]
+  Disable = false
+  Level = "DEBUG"
+  File = "/tmp/my_catshadow.log"
+
+[VotingAuthority]
+    [[VotingAuthority.Peers]]
+      Addresses = ["gmhlr3yqdwe4zxsfyitexw36g4mod3ycibdocmvwnq77432jdg4bswyd.onion:21483"]
+      LinkPublicKey = "I49V1w7OJ/Kcw7YbEvo+92akE9cYLGeXRBg6KE/sYS8="
+      IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+
+    [[VotingAuthority.Peers]]
+      Addresses = ["nhwzqsoueqoi7jnf3dqzwfr2aodkygd6ifwopshtoe5yjsahj2lxlvqd.onion:22483"]
+      LinkPublicKey = "fZcGD+uPm18BYuDKXS3eozp9+i2hW2SWgnuapP0ftgE="
+      IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+
+    [[VotingAuthority.Peers]]
+      Addresses = ["x777kjia66phfemrk3wjldz7qntdihaxtan3dy5qt3nlffb5xouqawad.onion:23483"]
+      LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
+      IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+
+
+[Debug]
+  PreferedTransports = ["onion"]
+
+[Panda]
+  Receiver = "+panda"
+  Provider = "provider1"
+  BlobSize = 1000
