@@ -78,6 +78,7 @@ func register(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
 	if len(registerProviders) == 0 {
 		panic("zero registration Providers found in the consensus")
 	}
+	mrand.Seed(time.Now().UTC().UnixNano())
 	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
 
 	linkKey, err := ecdh.NewKeypair(rand.Reader)
