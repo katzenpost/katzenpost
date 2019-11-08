@@ -106,15 +106,13 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 			// max send tokens
 			c.maxSendTokens = atomic.LoadUint64(&c.l.sendBurst)
 			switch c.maxSendTokens {
-			case c.maxSendTokens:
-				return true
 			case 0:
 				c.log.Debugf("Rate limit disabled, no MaxSendTokens.")
 				c.sendTokenIncr = 0
 				c.sendTokens = 0
 				c.maxSendTokens = 0
 			default:
-				c.log.Debugf("Rate limit MaxSendTokens updated: %v", c.sendTokenIncr)
+				c.log.Debugf("Rate limit MaxSendTokens updated: %v", c.maxSendTokens)
 			}
 
 			return true
