@@ -23,6 +23,7 @@ import (
 	"io"
 
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/sphinx/internal/crypto"
@@ -150,6 +151,10 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	var routingInfo []byte
 	if skippedHops := constants.NrHops - nrHops; skippedHops > 0 {
 		routingInfo = make([]byte, skippedHops*perHopRoutingInfoLength)
+		_, err := io.ReadFull(rand.Reader, routingInfo)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	for i := nrHops - 1; i >= 0; i-- {
 		isTerminal := i == nrHops-1
