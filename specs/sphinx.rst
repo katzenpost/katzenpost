@@ -525,7 +525,7 @@ The ``Sphinx_Create_Header`` operation consists of the following steps:
       routing_info = ri_fragment
       if num_hops < MAX_HOPS:
           pad_len = (MAX_HOPS - num_hops) * PER_HOP_RI_LENGTH
-          routing_info = routing_info | ZEROBYTES( pad_len )
+          routing_info = routing_info | RNG( pad_len )
 
       /* Calculate the routing info for the rest of the hops. */
       for i = num_hops - 2; i >= 0; --i:
