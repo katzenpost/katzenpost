@@ -454,8 +454,14 @@ congestion and or load at a manageable level, however assuming
 the ``Sphinx_Unwrap`` operation was successful, the packet MUST be
 fed into the replay detection mechanism.
 
+Nodes MUST ensure that the time a packet is forwarded to the next Node
+is around the time of reception plus the delay specified in ``NodeDelayCommand``.
+Since exact millisecond processing is unpractical, implementations MAY tolerate
+a small window around that time for packets to be forwarded.
+That tolerance window SHOULD be kept minimal.
+
 Nodes MUST discard packets that have been delayed
-for more time than specified by the ``NodeDelayCommand``.
+for significantly more time than specified by the ``NodeDelayCommand``.
 
 5. Anonymity Considerations
 ===========================
