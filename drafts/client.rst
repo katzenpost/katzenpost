@@ -90,7 +90,7 @@ document are to be interpreted as described in [RFC2119]_.
 Client's make use of decoy traffic as described in [KATZDECOY]_.
 However, unlike the [LOOPIX]_ design, clients do NOT give one another
 their Provider and spool identities. Instead, clients exchange
-*dead drop information* so they can retreive messages while
+*dead drop information* so they can retrieve messages while
 hiding their Provider information and location on the network, as
 described in [KATZDEADDROP]_.
 
@@ -98,30 +98,30 @@ Not all applications will make use of this 'client to client' communication
 pattern and instead may require clients to communicate with mixnet services
 with a SURB based query and reponse protocol as described in [KAETZCHEN]_.
 
-3. Message Retreival
+3. Message Retrieval
 ====================
 
-There are two types of message retreival that are possible. They are:
+There are two types of message retrieval that are possible. They are:
 
-* Retreival from a local Provider
-* Retreival from a remote Provider (a.k.a. dead drop as described
+* Retrieval from a local Provider
+* Retrieval from a remote Provider (a.k.a. dead drop as described
   in [KATZDEADDROP]_)
 
-3.1 Message Retreival from local Provider
+3.1 Message Retrieval from local Provider
 -----------------------------------------
 
-This refers to 'Retreival from a local Provider', as described in
+This refers to 'Retrieval from a local Provider', as described in
 the [LOOPIX]_ paper and in section ``3. Client and Provider Core Protocol``
 of the [KATZMIXE2E]_ document. It is relevant as message retrieval from dead
 drops causes messages to be delivered into the client's Provider
 and must then be retrieved using the wire protocol directly.
 
-3.2 Message Retreival from remote Provider
+3.2 Message Retrieval from remote Provider
 ------------------------------------------
 
-This refers to 'Retreival from remote Provider', as defined in the
+This refers to 'Retrieval from remote Provider', as defined in the
 ``Katzenpost Dead Drop Extension`` [KATZDEADDROP]_ specification
-document. The documents goes into detail around how the remote Provider
+document. The document goes into detail around how the remote Provider
 can be queried over the mixnet.
 
 3.3 Conclusion
@@ -143,7 +143,7 @@ and our low level mix network protocols.
 It may be useful to send messages with an arbitrary size. Stream
 orientation sends bytes of data to the application as soon as the
 ordered bytes are available; whereas, the ability to send arbitrarily
-sized messages is qualitatively frona different protocol category. This is
+sized messages is qualitatively from a different protocol category. This is
 different because in our message oriented scheme, data is only
 presented to the application once reassembly of the entire message is
 completed.
@@ -403,7 +403,7 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
+                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
