@@ -261,6 +261,9 @@ Appendix A.1 Normative References
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
                 <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
+.. [KATZMIXPKI] Angel, Y., Diaz, C., Piotrowska, A., Stainton, D.,
+		"Katzenpost Mix Network PKI Specification", November 2017,
+                <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>
 
 .. [ZCASHPAYMENTAPI]  <https://github.com/zcash/zcash/blob/master/doc/payment-api.md>.
 
