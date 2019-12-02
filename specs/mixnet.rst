@@ -103,9 +103,9 @@ document are to be interpreted as described in [RFC2119]_.
 
 The presented system design is based on [LOOPIX]_. The detailed
 End-to-end specification, describing the operations performed
-By the sender and recipient, as well sender’s provider and
-Recipient’s provider, are presented in “Katzenpost Mix Network
-End-to-end Protocol Specification”. Below, we present the system overview.
+by the sender and recipient, as well sender’s Provider and
+recipient’s Provider, are presented in [KATZMIXE2E]_.
+Below, we present the system overview.
 
 The Provider ran by each service provider is responsible for
 accepting packets from the client, and forwarding them
