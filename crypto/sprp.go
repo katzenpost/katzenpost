@@ -1,5 +1,5 @@
 // sprp.go - SPRP wrapper.
-// Copyright (C) 2019  Yawning Angel, David Stainton
+// Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
