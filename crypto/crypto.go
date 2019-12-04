@@ -22,7 +22,9 @@ import (
 	"time"
 
 	"crypto/sha256"
-	"github.com/katzenpost/core/pki"
+	"git.schwanenlied.me/yawning/aez.git"
+	"github.com/katzenpost/chacha20poly1305"
+	"github.com/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
 )
@@ -30,6 +32,12 @@ import (
 const (
 	// PayloadSize is the size of the Reunion protocol payload.
 	PayloadSize = 4096
+
+	// SPRPKeyLength is the key size of the SPRP in bytes.
+	SPRPKeyLength = 48
+
+	// SPRPIVLength is the IV size of the SPRP in bytes.
+	SPRPIVLength = 16
 )
 
 type message interface {
@@ -38,23 +46,54 @@ type message interface {
 	ToBytes(b []byte) []byte
 }
 
-type t1Message struct {
-	alpha []byte // 32 bytes
-	beta  []byte // 32 bytes
-	gamma []byte // PayloadSize bytes
-}
-
 // NewT1Message returns a new T1 Message
-func NewT1Message(elligatorPubKey *[32]byte, passphrase []byte, crs string, secretKey1, secretKey2 *[32]byte) []byte {
-	return nil // XXX
+func NewT1Message(elligatorPubKey, a2PubKey *[32]byte, payload, passphrase []byte, secretKey1, secretKey2 *[32]byte, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
+	// alpha
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	k1, k1iv, err := kdf(crs, passphrase, epoch)
+	if err != nil {
+		return nil, err
+	}
+	alpha := aez.Encrypt(k1[:], k1iv[:], nil, 0, elligatorPubKey[:], nil)
+
+	// beta
+	aead1, err := chacha20poly1305.New(secretKey1[:])
+	if err != nil {
+		return nil, err
+	}
+	ad := []byte{}
+	nonce1 := [chacha20poly1305.NonceSize]byte{}
+	_, err = rand.Reader.Read(nonce1[:])
+	if err != nil {
+		return nil, err
+	}
+	beta := []byte{}
+	beta = aead1.Seal(beta, nonce1[:], a2PubKey[:], ad)
+	beta = append(beta, nonce1[:]...)
+
+	// gamma
+	aead2, err := chacha20poly1305.New(secretKey2[:])
+	if err != nil {
+		return nil, err
+	}
+	nonce2 := [chacha20poly1305.NonceSize]byte{}
+	_, err = rand.Reader.Read(nonce2[:])
+	if err != nil {
+		return nil, err
+	}
+	gamma := []byte{}
+	gamma = aead2.Seal(gamma, nonce2[:], payload, ad)
+	gamma = append(gamma, nonce2[:]...)
+
+	output := []byte{}
+	output = append(output, alpha...)
+	output = append(output, beta...)
+	output = append(output, gamma...)
+	return output, nil
 }
 
-type t2Message struct{}
-
-type t3Message struct{}
-
-func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, error) {
-	hashFunc := sha256.New // XXX or what?
+func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, []byte, error) {
+	hashFunc := sha256.New
 	salt := commonReferenceString
 	t := uint32(9001)
 	memory := uint32(9001)
@@ -70,12 +109,17 @@ func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte,
 	hkdfContext1 = append(hkdfContext1, rawEpoch[:]...)
 
 	kdfReader := hkdf.Expand(hashFunc, prk1, hkdfContext1)
-	key := [32]byte{}
+	key := [SPRPKeyLength]byte{}
 	_, err := kdfReader.Read(key[:])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return key[:], nil
+	iv := [SPRPIVLength]byte{}
+	_, err = kdfReader.Read(iv[:])
+	if err != nil {
+		return nil, nil, err
+	}
+	return key[:], iv[:], nil
 }
 
 // getLatestMidnight returns the big endian byte slice of the
@@ -92,12 +136,12 @@ func getLatestMidnight() []byte {
 // getCommonReferenceString returns the common reference string.
 // CRS = GMT_MIDNIGHT || SharedRandom || EpochID
 // XXX TODO: append the Reunion server instance ID.
-func getCommonReferenceString(doc *pki.Document) []byte {
+func getCommonReferenceString(sharedRandomValue []byte, epoch uint64) []byte {
 	out := []byte{}
 	out = append(out, getLatestMidnight()...)
-	out = append(out, doc.SharedRandomValue...)
+	out = append(out, sharedRandomValue...)
 	var tmp [8]byte
-	binary.BigEndian.PutUint64(tmp[:], doc.Epoch)
+	binary.BigEndian.PutUint64(tmp[:], epoch)
 	out = append(out, tmp[:]...)
 	return out
 }
