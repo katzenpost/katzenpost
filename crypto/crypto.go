@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"crypto/sha256"
-	"git.schwanenlied.me/yawning/aez.git"
 	"github.com/katzenpost/chacha20poly1305"
 	"github.com/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/argon2"
@@ -32,65 +31,7 @@ import (
 const (
 	// PayloadSize is the size of the Reunion protocol payload.
 	PayloadSize = 4096
-
-	// SPRPKeyLength is the key size of the SPRP in bytes.
-	SPRPKeyLength = 48
-
-	// SPRPIVLength is the IV size of the SPRP in bytes.
-	SPRPIVLength = 16
 )
-
-type message interface {
-	// ToBytes appends the serialized command to slice b, and returns the
-	// resulting slice.
-	ToBytes(b []byte) []byte
-}
-
-// NewT1Message returns a new T1 Message
-func NewT1Message(elligatorPubKey, a2PubKey *[32]byte, payload, passphrase []byte, secretKey1, secretKey2 *[32]byte, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-	// alpha
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	k1, k1iv, err := kdf(crs, passphrase, epoch)
-	if err != nil {
-		return nil, err
-	}
-	alpha := aez.Encrypt(k1[:], k1iv[:], nil, 0, elligatorPubKey[:], nil)
-
-	// beta
-	aead1, err := chacha20poly1305.New(secretKey1[:])
-	if err != nil {
-		return nil, err
-	}
-	ad := []byte{}
-	nonce1 := [chacha20poly1305.NonceSize]byte{}
-	_, err = rand.Reader.Read(nonce1[:])
-	if err != nil {
-		return nil, err
-	}
-	beta := []byte{}
-	beta = aead1.Seal(beta, nonce1[:], a2PubKey[:], ad)
-	beta = append(beta, nonce1[:]...)
-
-	// gamma
-	aead2, err := chacha20poly1305.New(secretKey2[:])
-	if err != nil {
-		return nil, err
-	}
-	nonce2 := [chacha20poly1305.NonceSize]byte{}
-	_, err = rand.Reader.Read(nonce2[:])
-	if err != nil {
-		return nil, err
-	}
-	gamma := []byte{}
-	gamma = aead2.Seal(gamma, nonce2[:], payload, ad)
-	gamma = append(gamma, nonce2[:]...)
-
-	output := []byte{}
-	output = append(output, alpha...)
-	output = append(output, beta...)
-	output = append(output, gamma...)
-	return output, nil
-}
 
 func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, []byte, error) {
 	hashFunc := sha256.New
@@ -144,4 +85,56 @@ func getCommonReferenceString(sharedRandomValue []byte, epoch uint64) []byte {
 	binary.BigEndian.PutUint64(tmp[:], epoch)
 	out = append(out, tmp[:]...)
 	return out
+}
+
+// NewT1Message returns a new T1 Message
+func NewT1Message(elligatorPubKey, a2PubKey *[32]byte, payload, passphrase []byte, secretKey1, secretKey2 *[32]byte, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
+
+	// alpha
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	k1, k1iv, err := kdf(crs, passphrase, epoch)
+	if err != nil {
+		return nil, err
+	}
+
+	key := [SPRPKeyLength]byte{}
+	copy(key[:], k1)
+	iv := [SPRPIVLength]byte{}
+	copy(iv[:], k1iv)
+	alpha := SPRPEncrypt(&key, &iv, elligatorPubKey[:])
+
+	// beta
+	aead1, err := chacha20poly1305.New(secretKey1[:])
+	if err != nil {
+		return nil, err
+	}
+	ad := []byte{}
+	nonce1 := [chacha20poly1305.NonceSize]byte{}
+	_, err = rand.Reader.Read(nonce1[:])
+	if err != nil {
+		return nil, err
+	}
+	beta := []byte{}
+	beta = aead1.Seal(beta, nonce1[:], a2PubKey[:], ad)
+	beta = append(beta, nonce1[:]...)
+
+	// gamma
+	aead2, err := chacha20poly1305.New(secretKey2[:])
+	if err != nil {
+		return nil, err
+	}
+	nonce2 := [chacha20poly1305.NonceSize]byte{}
+	_, err = rand.Reader.Read(nonce2[:])
+	if err != nil {
+		return nil, err
+	}
+	gamma := []byte{}
+	gamma = aead2.Seal(gamma, nonce2[:], payload, ad)
+	gamma = append(gamma, nonce2[:]...)
+
+	output := []byte{}
+	output = append(output, alpha...)
+	output = append(output, beta...)
+	output = append(output, gamma...)
+	return output, nil
 }
