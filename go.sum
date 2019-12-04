@@ -4,6 +4,7 @@ git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6 h1:zOrl
 git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6/go.mod h1:BWqTsj8PgcPriQJGl7el20J/7TuT1d/hSyFDXMEpoEo=
 git.schwanenlied.me/yawning/poly1305.git v0.0.0-20151107134637-dfc796fe731c h1:I9Zkh0ViBYbjla0yv9MF+0FvX2wtu5xfY35LskxjQHo=
 git.schwanenlied.me/yawning/poly1305.git v0.0.0-20151107134637-dfc796fe731c/go.mod h1:XFtvjxaiskgfHxVpJaHBCGcLGyAcc11Xk9HKen1eh9E=
+github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412 h1:w1UutsfOrms1J05zt7ISrnJIXKzwaspym5BTKGx93EI=
 github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412/go.mod h1:WPjqKcmVOxf0XSf3YxCJs6N6AOSrOx3obionmG7T0y0=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
