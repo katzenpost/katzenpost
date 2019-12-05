@@ -32,6 +32,15 @@ import (
 const (
 	// PayloadSize is the size of the Reunion protocol payload.
 	PayloadSize = 4096
+
+	// SymmetricKeySize is the size of the symmetric keys we use.
+	SymmetricKeySize = 32
+
+	t1AlphaSize = SPRPMinimumBlockLenth
+	t1BetaSize  = SymmetricKeySize + chacha20poly1305.NonceSize + chacha20poly1305.Overhead
+
+	// Type1MessageSize is the size in byte of the Type 1 Message.
+	Type1MessageSize = t1AlphaSize + t1BetaSize + PayloadSize
 )
 
 var ErrInvalidMessageSize = errors.New("invalid message size")
@@ -148,4 +157,15 @@ func newT1Gamma(payload []byte, secretKey *[32]byte) ([]byte, error) {
 	gamma = aead2.Seal(gamma, nonce2[:], payload, ad)
 	gamma = append(gamma, nonce2[:]...)
 	return gamma, nil
+}
+
+// decodeT1Message upon success returns alpha, beta, gamma
+func decodeT1Message(message []byte) ([]byte, []byte, []byte, error) {
+	if len(message) != Type1MessageSize {
+		return nil, nil, nil, errors.New("t1 message has invalid length")
+	}
+	alpha := message[:t1AlphaSize]
+	beta := message[t1AlphaSize : t1AlphaSize+t1BetaSize]
+	gamma := message[t1AlphaSize+t1BetaSize:]
+	return alpha, beta, gamma, nil
 }

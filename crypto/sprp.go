@@ -20,6 +20,8 @@ package crypto
 import "git.schwanenlied.me/yawning/aez.git"
 
 const (
+	SPRPMinimumBlockLenth = 32
+
 	// SPRPKeyLength is the key size of the SPRP in bytes.
 	SPRPKeyLength = 48
 

@@ -33,7 +33,7 @@ func NewClient(passphrase []byte) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	keypair2, err := NewKeypair(true)
+	keypair2, err := NewKeypair(false)
 	if err != nil {
 		return nil, err
 	}
