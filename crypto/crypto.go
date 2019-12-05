@@ -36,6 +36,41 @@ const (
 
 var ErrInvalidMessageSize = errors.New("invalid message size")
 
+type Client struct {
+	k1 *Keypair
+	k2 *Keypair
+	s1 *[32]byte
+	s2 *[32]byte
+}
+
+func NewClient() (*Client, error) {
+	keypair1, err := NewKeypair(true)
+	if err != nil {
+		return nil, err
+	}
+	keypair2, err := NewKeypair(true)
+	if err != nil {
+		return nil, err
+	}
+	s1 := [32]byte{}
+	_, err = rand.Reader.Read(s1[:])
+	if err != nil {
+		return nil, err
+	}
+	s2 := [32]byte{}
+	_, err = rand.Reader.Read(s2[:])
+	if err != nil {
+		return nil, err
+	}
+	client := &Client{
+		k1: keypair1,
+		k2: keypair2,
+		s1: &s1,
+		s2: &s2,
+	}
+	return client, nil
+}
+
 func padMessage(message []byte) ([]byte, error) {
 	if len(message) > PayloadSize-4 {
 		return nil, ErrInvalidMessageSize
