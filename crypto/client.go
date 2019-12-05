@@ -129,7 +129,7 @@ func (c *Client) Type2MessageFromType1(message []byte, sharedRandomValue []byte,
 	rKey := [RepresentativeLength]byte{}
 	copy(rKey[:], elligatorPub1)
 	r := Representative(rKey)
-	_ = r.ToPublic()
+	b1PubKey := r.ToPublic()
 
 	// hkdf_context = "type 2" || EpochID
 	hkdfContext := []byte("Type-2")
@@ -138,7 +138,27 @@ func (c *Client) Type2MessageFromType1(message []byte, sharedRandomValue []byte,
 	hkdfContext = append(hkdfContext, tmp[:]...)
 
 	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	_ = hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
+	prk2 := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
+	kdfReader := hkdf.Expand(HashFunc, prk2, hkdfContext)
+	k2Outer := [SPRPKeyLength]byte{}
+	_, err = kdfReader.Read(k2Outer[:])
+	if err != nil {
+		return nil, err
+	}
 
-	return nil, nil // XXX
+	k2idh := [32]byte{}
+	c.keypair1.Private().Exp(&k2idh, b1PubKey)
+
+	kdfReader = hkdf.Expand(HashFunc, k2idh[:], crs)
+	k2Inner := [SPRPKeyLength]byte{}
+	_, err = kdfReader.Read(k2Inner[:])
+	if err != nil {
+		return nil, err
+	}
+
+	// XXX correct?
+	k2InnerIV := [SPRPIVLength]byte{}
+	k2OuterIV := [SPRPIVLength]byte{}
+	t2 := SPRPEncrypt(&k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.s1[:]))
+	return t2, nil
 }
