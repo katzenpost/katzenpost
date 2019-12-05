@@ -49,6 +49,9 @@ const (
 
 	// SharedSecretLength is the length of a Curve25519 shared secret.
 	SharedSecretLength = 32
+
+	// GroupElementLength is the length of a ECDH group element in bytes.
+	GroupElementLength = PublicKeyLength
 )
 
 // PublicKeyLengthError is the error returned when the public key being
@@ -123,6 +126,18 @@ func (repr *Representative) ToPublic() *PublicKey {
 
 // PrivateKey is a Curve25519 private key in little-endian byte order.
 type PrivateKey [PrivateKeyLength]byte
+
+// Exp sets the group element dst to be the result of x^y, over the ECDH
+// group.
+func Exp(dst, x, y *[GroupElementLength]byte) {
+	curve25519.ScalarMult(dst, y, x)
+}
+
+// Exp calculates the shared secret with the provided public key.
+func (private *PrivateKey) Exp(sharedSecret *[GroupElementLength]byte, publicKey *PublicKey) {
+	p := ([GroupElementLength]byte)(*private)
+	Exp(sharedSecret, (*[GroupElementLength]byte)(publicKey), &p)
+}
 
 // Bytes returns a pointer to the raw Curve25519 private key.
 func (private *PrivateKey) Bytes() *[PrivateKeyLength]byte {
