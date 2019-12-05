@@ -19,6 +19,7 @@ package crypto
 
 import (
 	"encoding/binary"
+	"errors"
 	"time"
 
 	"crypto/sha256"
@@ -32,6 +33,18 @@ const (
 	// PayloadSize is the size of the Reunion protocol payload.
 	PayloadSize = 4096
 )
+
+var ErrInvalidMessageSize = errors.New("invalid message size")
+
+func padMessage(message []byte) ([]byte, error) {
+	if len(message) > PayloadSize-4 {
+		return nil, ErrInvalidMessageSize
+	}
+	payload := make([]byte, PayloadSize)
+	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
+	copy(payload[4:], message)
+	return payload, nil
+}
 
 func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, []byte, error) {
 	hashFunc := sha256.New
