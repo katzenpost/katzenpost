@@ -99,16 +99,6 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 		return nil, err
 	}
 
-	if len(alpha) != t1AlphaSize {
-		panic("wtf1")
-	}
-	if len(beta) != t1BetaSize {
-		panic("wtf2")
-	}
-	if len(gamma) != t1GammaSize {
-		panic("wtf3")
-	}
-
 	output := []byte{}
 	output = append(output, alpha...)
 	output = append(output, beta...)
