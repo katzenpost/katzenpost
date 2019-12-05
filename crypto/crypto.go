@@ -31,31 +31,32 @@ import (
 
 const (
 	// PayloadSize is the size of the Reunion protocol payload.
-	PayloadSize = 4096
+	PayloadSize = 1000
 
 	// SymmetricKeySize is the size of the symmetric keys we use.
 	SymmetricKeySize = 32
 
 	t1AlphaSize = SPRPMinimumBlockLenth
 	t1BetaSize  = SymmetricKeySize + chacha20poly1305.NonceSize + chacha20poly1305.Overhead
+	t1GammaSize = PayloadSize + chacha20poly1305.NonceSize + chacha20poly1305.Overhead
 
 	// Type1MessageSize is the size in byte of the Type 1 Message.
-	Type1MessageSize = t1AlphaSize + t1BetaSize + PayloadSize
+	Type1MessageSize = t1AlphaSize + t1BetaSize + t1GammaSize
 )
 
 var ErrInvalidMessageSize = errors.New("invalid message size")
 
-func padMessage(message []byte) ([]byte, error) {
+func padMessage(message []byte) (*[PayloadSize]byte, error) {
 	if len(message) > PayloadSize-4 {
 		return nil, ErrInvalidMessageSize
 	}
-	payload := make([]byte, PayloadSize)
+	payload := [PayloadSize]byte{}
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
-	return payload, nil
+	return &payload, nil
 }
 
-func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, []byte, error) {
+func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, error) {
 	hashFunc := sha256.New
 	salt := commonReferenceString
 	// XXX t := uint32(9001)
@@ -76,14 +77,9 @@ func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte,
 	key := [SPRPKeyLength]byte{}
 	_, err := kdfReader.Read(key[:])
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	iv := [SPRPIVLength]byte{}
-	_, err = kdfReader.Read(iv[:])
-	if err != nil {
-		return nil, nil, err
-	}
-	return key[:], iv[:], nil
+	return key[:], nil
 }
 
 // getLatestMidnight returns the big endian byte slice of the
@@ -110,21 +106,6 @@ func getCommonReferenceString(sharedRandomValue []byte, epoch uint64) []byte {
 	return out
 }
 
-func newT1Alpha(epoch uint64, sharedRandomValue []byte, passphrase []byte, elligatorPubKey *[32]byte) ([]byte, error) {
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	k1, k1iv, err := kdf(crs, passphrase, epoch)
-	if err != nil {
-		return nil, err
-	}
-
-	key := [SPRPKeyLength]byte{}
-	copy(key[:], k1)
-	iv := [SPRPIVLength]byte{}
-	copy(iv[:], k1iv)
-	alpha := SPRPEncrypt(&key, &iv, elligatorPubKey[:])
-	return alpha, nil
-}
-
 func newT1Beta(elligatorPubKey, secretKey *[32]byte) ([]byte, error) {
 	aead1, err := chacha20poly1305.New(secretKey[:])
 	if err != nil {
@@ -142,7 +123,12 @@ func newT1Beta(elligatorPubKey, secretKey *[32]byte) ([]byte, error) {
 	return beta, nil
 }
 
-func newT1Gamma(payload []byte, secretKey *[32]byte) ([]byte, error) {
+func newT1Gamma(message []byte, secretKey *[32]byte) ([]byte, error) {
+	payload, err := padMessage(message)
+	if err != nil {
+		return nil, err
+	}
+
 	aead2, err := chacha20poly1305.New(secretKey[:])
 	if err != nil {
 		return nil, err
@@ -154,7 +140,7 @@ func newT1Gamma(payload []byte, secretKey *[32]byte) ([]byte, error) {
 	}
 	gamma := []byte{}
 	ad := []byte{}
-	gamma = aead2.Seal(gamma, nonce2[:], payload, ad)
+	gamma = aead2.Seal(gamma, nonce2[:], payload[:], ad)
 	gamma = append(gamma, nonce2[:]...)
 	return gamma, nil
 }

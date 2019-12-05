@@ -29,7 +29,7 @@ func TestMessageTypeT1Decoding(t *testing.T) {
 	require.NoError(err)
 	require.Equal(len(alpha), t1AlphaSize)
 	require.Equal(len(beta), t1BetaSize)
-	require.Equal(len(gamma), PayloadSize)
+	require.Equal(len(gamma), t1GammaSize)
 
 	t1i := [Type1MessageSize + 1]byte{}
 	alpha, beta, gamma, err = decodeT1Message(t1i[:])

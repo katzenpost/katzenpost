@@ -17,12 +17,16 @@
 package crypto
 
 import (
+	"encoding/binary"
+
 	"github.com/katzenpost/core/crypto/rand"
 )
 
 type Client struct {
-	k1         *Keypair
-	k2         *Keypair
+	keypair1   *Keypair
+	keypair2   *Keypair
+	k1         *[SPRPKeyLength]byte
+	k1Counter  uint64
 	s1         *[32]byte
 	s2         *[32]byte
 	passphrase []byte
@@ -48,8 +52,8 @@ func NewClient(passphrase []byte) (*Client, error) {
 		return nil, err
 	}
 	client := &Client{
-		k1:         keypair1,
-		k2:         keypair2,
+		keypair1:   keypair1,
+		keypair2:   keypair2,
 		s1:         &s1,
 		s2:         &s2,
 		passphrase: passphrase,
@@ -58,19 +62,40 @@ func NewClient(passphrase []byte) (*Client, error) {
 }
 
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
-	k1ElligatorPub := c.k1.Representative().ToPublic().Bytes()
-	alpha, err := newT1Alpha(epoch, sharedRandomValue, c.passphrase, k1ElligatorPub)
+	keypair1ElligatorPub := c.keypair1.Representative().ToPublic().Bytes()
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	k1, err := kdf(crs, c.passphrase, epoch)
 	if err != nil {
 		return nil, err
 	}
-	beta, err := newT1Beta(c.k2.Public().Bytes(), c.s1)
+	c.k1 = &[SPRPKeyLength]byte{}
+	copy(c.k1[:], k1)
+	key := [SPRPKeyLength]byte{}
+	copy(key[:], k1)
+	iv := [SPRPIVLength]byte{}
+	binary.BigEndian.PutUint64(iv[:], c.k1Counter)
+	alpha := SPRPEncrypt(&key, &iv, keypair1ElligatorPub[:])
+
+	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.s1)
 	if err != nil {
 		return nil, err
 	}
-	gamma, err := newT1Gamma(payload, c.s2)
+
+	gamma, err := newT1Gamma(payload[:], c.s2)
 	if err != nil {
 		return nil, err
 	}
+
+	if len(alpha) != t1AlphaSize {
+		panic("wtf1")
+	}
+	if len(beta) != t1BetaSize {
+		panic("wtf2")
+	}
+	if len(gamma) != t1GammaSize {
+		panic("wtf3")
+	}
+
 	output := []byte{}
 	output = append(output, alpha...)
 	output = append(output, beta...)
@@ -78,6 +103,26 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	return output, nil
 }
 
-func (c *Client) Type2MessageFromType1(message []byte) ([]byte, error) {
+func (c *Client) Type2MessageFromType1(message []byte, epoch uint64) ([]byte, error) {
+	alpha, _, _, err := decodeT1Message(message)
+	if err != nil {
+		return nil, err
+	}
+
+	iv := [SPRPIVLength]byte{}
+	binary.BigEndian.PutUint64(iv[:], c.k1Counter)
+	elligatorPub1 := SPRPDecrypt(c.k1, &iv, alpha)
+
+	rKey := [RepresentativeLength]byte{}
+	copy(rKey[:], elligatorPub1)
+	r := Representative(rKey)
+	_ = r.ToPublic()
+
+	// hkdf_context = "type 2" || EpochID
+	hkdfContext := []byte("Type-2")
+	var tmp [8]byte
+	binary.BigEndian.PutUint64(tmp[:], epoch)
+	hkdfContext = append(hkdfContext, tmp[:]...)
+
 	return nil, nil // XXX
 }
