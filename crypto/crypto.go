@@ -149,3 +149,17 @@ func decodeT1Message(message []byte) ([]byte, []byte, []byte, error) {
 	gamma := message[t1AlphaSize+t1BetaSize:]
 	return alpha, beta, gamma, nil
 }
+
+func decryptT1Beta(candidateKey []byte, t1Beta []byte) ([]byte, error) {
+	aead, err := chacha20poly1305.New(candidateKey)
+	if err != nil {
+		return nil, err
+	}
+	nonce := [chacha20poly1305.NonceSize]byte{}
+	ad := []byte{}
+	dst, err := aead.Open([]byte{}, nonce[:], t1Beta, ad)
+	if err != nil {
+		return nil, err
+	}
+	return dst, nil
+}

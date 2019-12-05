@@ -46,11 +46,18 @@ func TestClientBasics(t *testing.T) {
 	require.NoError(err)
 	t.Logf("client2 t1 %x", client2T1)
 
-	client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1, sharedRandom[:], epoch)
+	client1T1Alpha, client1T1Beta, _, err := decodeT1Message(client1T1)
+	require.NoError(err)
+
+	client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha, sharedRandom[:], epoch)
 	require.NoError(err)
 
 	client1CandidateKey, err := client1.GetCandidateKey(client2T2, client1B1, epoch, sharedRandom[:])
 	require.NoError(err)
 
-	t.Logf("client1CandidateKey %x", client1CandidateKey)
+	t.Logf("client1CandidateKey %x client1T1Beta %x", client1CandidateKey, client1T1Beta)
+
+	//b2, err := decryptT1Beta(client1CandidateKey, client1T1Beta)
+	//require.NoError(err)
+	//t.Logf("b2 %x", b2)
 }

@@ -105,11 +105,7 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	return output, nil
 }
 
-func (c *Client) ProcessType1MessageAlpha(t1 []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
-	alpha, _, _, err := decodeT1Message(t1)
-	if err != nil {
-		return nil, nil, err
-	}
+func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
 
 	iv := [SPRPIVLength]byte{}
 	binary.BigEndian.PutUint64(iv[:], c.k1Counter)
@@ -131,7 +127,7 @@ func (c *Client) ProcessType1MessageAlpha(t1 []byte, sharedRandomValue []byte, e
 	prk2 := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
 	kdfReader := hkdf.Expand(HashFunc, prk2, hkdfContext)
 	k2Outer := [SPRPKeyLength]byte{}
-	_, err = kdfReader.Read(k2Outer[:])
+	_, err := kdfReader.Read(k2Outer[:])
 	if err != nil {
 		return nil, nil, err
 	}
