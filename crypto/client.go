@@ -105,8 +105,8 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	return output, nil
 }
 
-func (c *Client) ProcessType1Message(message []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
-	alpha, _, _, err := decodeT1Message(message)
+func (c *Client) ProcessType1MessageAlpha(t1 []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
+	alpha, _, _, err := decodeT1Message(t1)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -153,7 +153,6 @@ func (c *Client) ProcessType1Message(message []byte, sharedRandomValue []byte, e
 }
 
 func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-
 	// hkdf_context = "type 2" || EpochID
 	hkdfContext := []byte("Type-2")
 	var tmp [8]byte
