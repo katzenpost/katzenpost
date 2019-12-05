@@ -28,10 +28,9 @@ type Client struct {
 	keypair1       *Keypair
 	keypair2       *Keypair
 	k1             *[SPRPKeyLength]byte
-	k1Counter      uint64
+	k1Counter      uint64 // XXX when to increment?
 	s1             *[32]byte
 	s2             *[32]byte
-	passphrase     []byte
 	sharedEpochKey []byte
 }
 
@@ -57,8 +56,8 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 
 	crs := getCommonReferenceString(sharedRandomValue, epoch)
 	salt := crs
-	// XXX t := uint32(9001)
-	t := uint32(1)
+	// XXX t := uint32(9001) // XXX are you sure you want it set this big?
+	t := uint32(1) // testing value to speed things up
 	memory := uint32(9001)
 	threads := uint8(1)
 	keyLen := uint32(32)
@@ -77,7 +76,7 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	keypair1ElligatorPub := c.keypair1.Representative().ToPublic().Bytes()
 	crs := getCommonReferenceString(sharedRandomValue, epoch)
 
-	k1, err := kdf(crs, c.passphrase, epoch)
+	k1, err := kdf(crs, c.sharedEpochKey, epoch)
 	if err != nil {
 		return nil, err
 	}
@@ -151,4 +150,8 @@ func (c *Client) Type2MessageFromType1(message []byte, sharedRandomValue []byte,
 	k2OuterIV := [SPRPIVLength]byte{}
 	t2 := SPRPEncrypt(&k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.s1[:]))
 	return t2, nil
+}
+
+func (c *Client) GetCandidateFromType2Message(t2 []byte) []byte {
+	return nil // XXX
 }
