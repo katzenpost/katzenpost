@@ -25,9 +25,10 @@ import (
 	"crypto/sha256"
 	"github.com/katzenpost/chacha20poly1305"
 	"github.com/katzenpost/core/crypto/rand"
-	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
 )
+
+var HashFunc = sha256.New
 
 const (
 	// PayloadSize is the size of the Reunion protocol payload.
@@ -56,16 +57,9 @@ func padMessage(message []byte) (*[PayloadSize]byte, error) {
 	return &payload, nil
 }
 
-func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, error) {
-	hashFunc := sha256.New
+func kdf(commonReferenceString []byte, sharedEpochKey []byte, epoch uint64) ([]byte, error) {
 	salt := commonReferenceString
-	// XXX t := uint32(9001)
-	t := uint32(1)
-	memory := uint32(9001)
-	threads := uint8(1)
-	keyLen := uint32(32)
-	keyStretched := argon2.IDKey(passphrase, salt, t, memory, threads, keyLen)
-	prk1 := hkdf.Extract(hashFunc, keyStretched, salt)
+	prk1 := hkdf.Extract(HashFunc, sharedEpochKey, salt)
 
 	// XXX should we also bind the Reunion server identity?
 	hkdfContext1 := []byte("type 1")
@@ -73,7 +67,7 @@ func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte,
 	binary.BigEndian.PutUint64(rawEpoch[:], epoch)
 	hkdfContext1 = append(hkdfContext1, rawEpoch[:]...)
 
-	kdfReader := hkdf.Expand(hashFunc, prk1, hkdfContext1)
+	kdfReader := hkdf.Expand(HashFunc, prk1, hkdfContext1)
 	key := [SPRPKeyLength]byte{}
 	_, err := kdfReader.Read(key[:])
 	if err != nil {

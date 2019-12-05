@@ -26,12 +26,12 @@ import (
 func TestClientBasics(t *testing.T) {
 	require := require.New(t)
 
-	require.NoError(nil)
-	passphrase := []byte("bridge traffic is busy tonight")
-	client1, err := NewClient(passphrase)
-	require.NoError(err)
 	epoch := uint64(1234567)
 	sharedRandom := [64]byte{}
+	passphrase := []byte("bridge traffic is busy tonight")
+
+	client1, err := NewClient(passphrase, sharedRandom[:], epoch)
+	require.NoError(err)
 	_, err = rand.Reader.Read(sharedRandom[:])
 	require.NoError(err)
 	payload := []byte("This is the payload.")
@@ -40,14 +40,14 @@ func TestClientBasics(t *testing.T) {
 	require.NoError(err)
 	t.Logf("client1 t1 %x", client1T1)
 
-	client2, err := NewClient(passphrase)
+	client2, err := NewClient(passphrase, sharedRandom[:], epoch)
 	require.NoError(err)
 
 	client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload)
 	require.NoError(err)
 	t.Logf("client2 t1 %x", client2T1)
 
-	client2T2, err := client2.Type2MessageFromType1(client1T1, epoch)
+	client2T2, err := client2.Type2MessageFromType1(client1T1, sharedRandom[:], epoch)
 	require.NoError(err)
 
 	t.Logf("t2 %x", client2T2)

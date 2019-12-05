@@ -20,19 +20,22 @@ import (
 	"encoding/binary"
 
 	"github.com/katzenpost/core/crypto/rand"
+	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/hkdf"
 )
 
 type Client struct {
-	keypair1   *Keypair
-	keypair2   *Keypair
-	k1         *[SPRPKeyLength]byte
-	k1Counter  uint64
-	s1         *[32]byte
-	s2         *[32]byte
-	passphrase []byte
+	keypair1       *Keypair
+	keypair2       *Keypair
+	k1             *[SPRPKeyLength]byte
+	k1Counter      uint64
+	s1             *[32]byte
+	s2             *[32]byte
+	passphrase     []byte
+	sharedEpochKey []byte
 }
 
-func NewClient(passphrase []byte) (*Client, error) {
+func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Client, error) {
 	keypair1, err := NewKeypair(true)
 	if err != nil {
 		return nil, err
@@ -51,12 +54,21 @@ func NewClient(passphrase []byte) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	salt := crs
+	// XXX t := uint32(9001)
+	t := uint32(1)
+	memory := uint32(9001)
+	threads := uint8(1)
+	keyLen := uint32(32)
+
 	client := &Client{
-		keypair1:   keypair1,
-		keypair2:   keypair2,
-		s1:         &s1,
-		s2:         &s2,
-		passphrase: passphrase,
+		keypair1:       keypair1,
+		keypair2:       keypair2,
+		s1:             &s1,
+		s2:             &s2,
+		sharedEpochKey: argon2.IDKey(passphrase, salt, t, memory, threads, keyLen),
 	}
 	return client, nil
 }
@@ -64,6 +76,7 @@ func NewClient(passphrase []byte) (*Client, error) {
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
 	keypair1ElligatorPub := c.keypair1.Representative().ToPublic().Bytes()
 	crs := getCommonReferenceString(sharedRandomValue, epoch)
+
 	k1, err := kdf(crs, c.passphrase, epoch)
 	if err != nil {
 		return nil, err
@@ -103,7 +116,7 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	return output, nil
 }
 
-func (c *Client) Type2MessageFromType1(message []byte, epoch uint64) ([]byte, error) {
+func (c *Client) Type2MessageFromType1(message []byte, sharedRandomValue []byte, epoch uint64) ([]byte, error) {
 	alpha, _, _, err := decodeT1Message(message)
 	if err != nil {
 		return nil, err
@@ -123,6 +136,9 @@ func (c *Client) Type2MessageFromType1(message []byte, epoch uint64) ([]byte, er
 	var tmp [8]byte
 	binary.BigEndian.PutUint64(tmp[:], epoch)
 	hkdfContext = append(hkdfContext, tmp[:]...)
+
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	_ = hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
 
 	return nil, nil // XXX
 }
