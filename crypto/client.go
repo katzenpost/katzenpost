@@ -63,20 +63,21 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	if err != nil {
 		return nil, err
 	}
-
 	beta, err := newT1Beta(c.k2.Public().Bytes(), c.s1)
 	if err != nil {
 		return nil, err
 	}
-
 	gamma, err := newT1Gamma(payload, c.s2)
 	if err != nil {
 		return nil, err
 	}
-
 	output := []byte{}
 	output = append(output, alpha...)
 	output = append(output, beta...)
 	output = append(output, gamma...)
 	return output, nil
+}
+
+func (c *Client) Type2MessageFromType1(message []byte) ([]byte, error) {
+	return nil, nil // XXX
 }

@@ -49,7 +49,8 @@ func padMessage(message []byte) ([]byte, error) {
 func kdf(commonReferenceString []byte, passphrase []byte, epoch uint64) ([]byte, []byte, error) {
 	hashFunc := sha256.New
 	salt := commonReferenceString
-	t := uint32(9001)
+	// XXX t := uint32(9001)
+	t := uint32(1)
 	memory := uint32(9001)
 	threads := uint8(1)
 	keyLen := uint32(32)
