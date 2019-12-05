@@ -105,10 +105,10 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	return output, nil
 }
 
-func (c *Client) Type2MessageFromType1(message []byte, sharedRandomValue []byte, epoch uint64) ([]byte, error) {
+func (c *Client) ProcessType1Message(message []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
 	alpha, _, _, err := decodeT1Message(message)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	iv := [SPRPIVLength]byte{}
@@ -126,13 +126,14 @@ func (c *Client) Type2MessageFromType1(message []byte, sharedRandomValue []byte,
 	binary.BigEndian.PutUint64(tmp[:], epoch)
 	hkdfContext = append(hkdfContext, tmp[:]...)
 
+	// hkdf extract and expand
 	crs := getCommonReferenceString(sharedRandomValue, epoch)
 	prk2 := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
 	kdfReader := hkdf.Expand(HashFunc, prk2, hkdfContext)
 	k2Outer := [SPRPKeyLength]byte{}
 	_, err = kdfReader.Read(k2Outer[:])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	k2idh := [32]byte{}
@@ -142,16 +143,47 @@ func (c *Client) Type2MessageFromType1(message []byte, sharedRandomValue []byte,
 	k2Inner := [SPRPKeyLength]byte{}
 	_, err = kdfReader.Read(k2Inner[:])
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// XXX correct?
 	k2InnerIV := [SPRPIVLength]byte{}
 	k2OuterIV := [SPRPIVLength]byte{}
 	t2 := SPRPEncrypt(&k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.s1[:]))
-	return t2, nil
+	return t2, b1PubKey, nil
 }
 
-func (c *Client) GetCandidateFromType2Message(t2 []byte) []byte {
-	return nil // XXX
+func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
+
+	// hkdf_context = "type 2" || EpochID
+	hkdfContext := []byte("Type-2")
+	var tmp [8]byte
+	binary.BigEndian.PutUint64(tmp[:], epoch)
+	hkdfContext = append(hkdfContext, tmp[:]...)
+
+	// HKDF extract and expand
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	prk3 := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
+	kdfReader := hkdf.Expand(HashFunc, prk3, hkdfContext)
+	k3Outer := [SPRPKeyLength]byte{}
+	_, err := kdfReader.Read(k3Outer[:])
+	if err != nil {
+		return nil, err
+	}
+
+	// DH operation
+	k3idh := [32]byte{}
+	c.keypair1.Private().Exp(&k3idh, alpha)
+
+	// HKDF extract and expand
+	prk3i := hkdf.Extract(HashFunc, k3idh[:], crs)
+	kdfReader = hkdf.Expand(HashFunc, prk3i, hkdfContext)
+	k3Inner := [SPRPKeyLength]byte{}
+	_, err = kdfReader.Read(k3Inner[:])
+	if err != nil {
+		return nil, err
+	}
+
+	k3InnerIV := [SPRPIVLength]byte{}
+	k3OuterIV := [SPRPIVLength]byte{}
+	return SPRPDecrypt(&k3Outer, &k3OuterIV, SPRPDecrypt(&k3Inner, &k3InnerIV, t2)), nil
 }

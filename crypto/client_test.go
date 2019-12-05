@@ -38,7 +38,6 @@ func TestClientBasics(t *testing.T) {
 
 	client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload)
 	require.NoError(err)
-	t.Logf("client1 t1 %x", client1T1)
 
 	client2, err := NewClient(passphrase, sharedRandom[:], epoch)
 	require.NoError(err)
@@ -47,8 +46,11 @@ func TestClientBasics(t *testing.T) {
 	require.NoError(err)
 	t.Logf("client2 t1 %x", client2T1)
 
-	client2T2, err := client2.Type2MessageFromType1(client1T1, sharedRandom[:], epoch)
+	client2T2, client1B1, err := client2.ProcessType1Message(client1T1, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	t.Logf("t2 %x", client2T2)
+	client1CandidateKey, err := client1.GetCandidateKey(client2T2, client1B1, epoch, sharedRandom[:])
+	require.NoError(err)
+
+	t.Logf("client1CandidateKey %x", client1CandidateKey)
 }
