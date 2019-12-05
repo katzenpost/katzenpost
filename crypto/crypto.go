@@ -36,41 +36,6 @@ const (
 
 var ErrInvalidMessageSize = errors.New("invalid message size")
 
-type Client struct {
-	k1 *Keypair
-	k2 *Keypair
-	s1 *[32]byte
-	s2 *[32]byte
-}
-
-func NewClient() (*Client, error) {
-	keypair1, err := NewKeypair(true)
-	if err != nil {
-		return nil, err
-	}
-	keypair2, err := NewKeypair(true)
-	if err != nil {
-		return nil, err
-	}
-	s1 := [32]byte{}
-	_, err = rand.Reader.Read(s1[:])
-	if err != nil {
-		return nil, err
-	}
-	s2 := [32]byte{}
-	_, err = rand.Reader.Read(s2[:])
-	if err != nil {
-		return nil, err
-	}
-	client := &Client{
-		k1: keypair1,
-		k2: keypair2,
-		s1: &s1,
-		s2: &s2,
-	}
-	return client, nil
-}
-
 func padMessage(message []byte) ([]byte, error) {
 	if len(message) > PayloadSize-4 {
 		return nil, ErrInvalidMessageSize
@@ -182,29 +147,4 @@ func newT1Gamma(payload []byte, secretKey *[32]byte) ([]byte, error) {
 	gamma = aead2.Seal(gamma, nonce2[:], payload, ad)
 	gamma = append(gamma, nonce2[:]...)
 	return gamma, nil
-}
-
-// NewT1Message returns a new T1 Message
-func NewT1Message(elligatorPubKey *[32]byte, payload, passphrase []byte, secretKey1, secretKey2 *[32]byte, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-
-	alpha, err := newT1Alpha(epoch, sharedRandomValue, passphrase, elligatorPubKey)
-	if err != nil {
-		return nil, err
-	}
-
-	beta, err := newT1Beta(elligatorPubKey, secretKey1)
-	if err != nil {
-		return nil, err
-	}
-
-	gamma, err := newT1Gamma(payload, secretKey2)
-	if err != nil {
-		return nil, err
-	}
-
-	output := []byte{}
-	output = append(output, alpha...)
-	output = append(output, beta...)
-	output = append(output, gamma...)
-	return output, nil
 }
