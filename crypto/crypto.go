@@ -135,10 +135,7 @@ func getCommonReferenceString(sharedRandomValue []byte, epoch uint64) []byte {
 	return out
 }
 
-// NewT1Message returns a new T1 Message
-func NewT1Message(elligatorPubKey, a2PubKey *[32]byte, payload, passphrase []byte, secretKey1, secretKey2 *[32]byte, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-
-	// alpha
+func newT1Alpha(epoch uint64, sharedRandomValue []byte, passphrase []byte, elligatorPubKey *[32]byte) ([]byte, error) {
 	crs := getCommonReferenceString(sharedRandomValue, epoch)
 	k1, k1iv, err := kdf(crs, passphrase, epoch)
 	if err != nil {
@@ -150,9 +147,11 @@ func NewT1Message(elligatorPubKey, a2PubKey *[32]byte, payload, passphrase []byt
 	iv := [SPRPIVLength]byte{}
 	copy(iv[:], k1iv)
 	alpha := SPRPEncrypt(&key, &iv, elligatorPubKey[:])
+	return alpha, nil
+}
 
-	// beta
-	aead1, err := chacha20poly1305.New(secretKey1[:])
+func newT1Beta(elligatorPubKey, secretKey *[32]byte) ([]byte, error) {
+	aead1, err := chacha20poly1305.New(secretKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -163,11 +162,13 @@ func NewT1Message(elligatorPubKey, a2PubKey *[32]byte, payload, passphrase []byt
 		return nil, err
 	}
 	beta := []byte{}
-	beta = aead1.Seal(beta, nonce1[:], a2PubKey[:], ad)
+	beta = aead1.Seal(beta, nonce1[:], elligatorPubKey[:], ad)
 	beta = append(beta, nonce1[:]...)
+	return beta, nil
+}
 
-	// gamma
-	aead2, err := chacha20poly1305.New(secretKey2[:])
+func newT1Gamma(payload []byte, secretKey *[32]byte) ([]byte, error) {
+	aead2, err := chacha20poly1305.New(secretKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +178,29 @@ func NewT1Message(elligatorPubKey, a2PubKey *[32]byte, payload, passphrase []byt
 		return nil, err
 	}
 	gamma := []byte{}
+	ad := []byte{}
 	gamma = aead2.Seal(gamma, nonce2[:], payload, ad)
 	gamma = append(gamma, nonce2[:]...)
+	return gamma, nil
+}
+
+// NewT1Message returns a new T1 Message
+func NewT1Message(elligatorPubKey *[32]byte, payload, passphrase []byte, secretKey1, secretKey2 *[32]byte, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
+
+	alpha, err := newT1Alpha(epoch, sharedRandomValue, passphrase, elligatorPubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	beta, err := newT1Beta(elligatorPubKey, secretKey1)
+	if err != nil {
+		return nil, err
+	}
+
+	gamma, err := newT1Gamma(payload, secretKey2)
+	if err != nil {
+		return nil, err
+	}
 
 	output := []byte{}
 	output = append(output, alpha...)
