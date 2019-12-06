@@ -57,25 +57,6 @@ func padMessage(message []byte) (*[PayloadSize]byte, error) {
 	return &payload, nil
 }
 
-func kdf(commonReferenceString []byte, sharedEpochKey []byte, epoch uint64) ([]byte, error) {
-	salt := commonReferenceString
-	prk1 := hkdf.Extract(HashFunc, sharedEpochKey, salt)
-
-	// XXX should we also bind the Reunion server identity?
-	hkdfContext1 := []byte("type 1")
-	var rawEpoch [8]byte
-	binary.BigEndian.PutUint64(rawEpoch[:], epoch)
-	hkdfContext1 = append(hkdfContext1, rawEpoch[:]...)
-
-	kdfReader := hkdf.Expand(HashFunc, prk1, hkdfContext1)
-	key := [SPRPKeyLength]byte{}
-	_, err := kdfReader.Read(key[:])
-	if err != nil {
-		return nil, err
-	}
-	return key[:], nil
-}
-
 // getLatestMidnight returns the big endian byte slice of the
 // unix epoch seconds since the recent UTC midnight.
 func getLatestMidnight() []byte {
@@ -162,4 +143,42 @@ func decryptT1Beta(candidateKey []byte, t1Beta []byte) ([]byte, error) {
 		return nil, err
 	}
 	return dst, nil
+}
+
+func deriveOuterSPRPKey(sharedRandomValue []byte, epoch uint64, sharedEpochKey []byte) (*[SPRPKeyLength]byte, []byte, error) {
+	// hkdf_context = "type 2" || EpochID
+	hkdfContext := []byte("Type-2")
+	var tmp [8]byte
+	binary.BigEndian.PutUint64(tmp[:], epoch)
+	hkdfContext = append(hkdfContext, tmp[:]...)
+
+	// hkdf extract and expand
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	prk := hkdf.Extract(HashFunc, sharedEpochKey, crs)
+	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
+	key := [SPRPKeyLength]byte{}
+	_, err := kdfReader.Read(key[:])
+	if err != nil {
+		return nil, nil, err
+	}
+	return &key, hkdfContext, nil
+}
+
+func deriveT1SprpKey(sharedRandomValue []byte, epoch uint64, sharedEpochKey []byte) (*[SPRPKeyLength]byte, error) {
+	// hkdf_context = "type 1" || EpochID
+	hkdfContext := []byte("Type-1")
+	var tmp [8]byte
+	binary.BigEndian.PutUint64(tmp[:], epoch)
+	hkdfContext = append(hkdfContext, tmp[:]...)
+
+	// hkdf extract and expand
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	prk := hkdf.Extract(HashFunc, sharedEpochKey, crs)
+	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
+	key := [SPRPKeyLength]byte{}
+	_, err := kdfReader.Read(key[:])
+	if err != nil {
+		return nil, err
+	}
+	return &key, nil
 }
