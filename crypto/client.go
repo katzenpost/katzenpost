@@ -18,7 +18,6 @@ package crypto
 
 import (
 	"encoding/binary"
-	"fmt"
 
 	"github.com/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/argon2"
@@ -141,8 +140,6 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	k2OuterIV := [SPRPIVLength]byte{}
 	t2 := SPRPEncrypt(k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.sessionKey1[:]))
 
-	fmt.Printf("SENDER session key %x\n", c.sessionKey1[:])
-	fmt.Printf("SENDER t2 %x\n", t2)
 	return t2, b1PubKey, nil
 }
 

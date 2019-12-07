@@ -42,11 +42,9 @@ func TestClientBasics(t *testing.T) {
 	require.NoError(err)
 
 	// both clients generate a t1 message
-	t.Log("client 1")
 	client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)
 	require.NoError(err)
 
-	t.Log("client 2")
 	client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload2)
 	require.NoError(err)
 
@@ -70,16 +68,15 @@ func TestClientBasics(t *testing.T) {
 	client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1, epoch, sharedRandom[:])
 	require.NoError(err)
 
-	t.Logf("Candidate Key %x\n", client2CandidateKey)
-	t.Logf("Session Key %x\n", client1.sessionKey1[:])
-
 	require.Equal(client2CandidateKey, client1.sessionKey1[:])
-	t.Logf("client1T1Beta %x", client1T1Beta)
-
 	require.Equal(client1CandidateKey, client2.sessionKey1[:])
-	t.Logf("client1T1Beta %x", client2T1Beta)
 
-	b2, err := decryptT1Beta(client1CandidateKey, client2T1Beta)
+	client1B2, err := decryptT1Beta(client1CandidateKey, client2T1Beta)
 	require.NoError(err)
-	t.Logf("b2 %x", b2)
+	t.Logf("b2 %x", client1B2)
+
+	client2B2, err := decryptT1Beta(client2CandidateKey, client1T1Beta)
+	require.NoError(err)
+	t.Logf("b2 %x", client2B2)
+
 }
