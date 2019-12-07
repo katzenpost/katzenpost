@@ -17,6 +17,7 @@
 package crypto
 
 import (
+	"crypto/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,4 +39,24 @@ func TestMessageTypeT1Decoding(t *testing.T) {
 	t1j := [Type1MessageSize - 1]byte{}
 	alpha, beta, gamma, err = decodeT1Message(t1j[:])
 	require.Error(err)
+}
+
+func TestT1Beta(t *testing.T) {
+	require := require.New(t)
+
+	var pubKey [32]byte
+	_, err := rand.Read(pubKey[:])
+	require.NoError(err)
+
+	var secretKey [32]byte
+	_, err = rand.Read(secretKey[:])
+	require.NoError(err)
+
+	beta, err := newT1Beta(&pubKey, &secretKey)
+	require.NoError(err)
+
+	outputKey, err := decryptT1Beta(secretKey[:], beta)
+	require.NoError(err)
+
+	require.Equal(pubKey[:], outputKey)
 }

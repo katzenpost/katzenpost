@@ -38,7 +38,7 @@ const (
 	SymmetricKeySize = 32
 
 	t1AlphaSize = SPRPMinimumBlockLenth
-	t1BetaSize  = SymmetricKeySize + chacha20poly1305.NonceSize + chacha20poly1305.Overhead
+	t1BetaSize  = SymmetricKeySize + chacha20poly1305.Overhead
 	t1GammaSize = PayloadSize + chacha20poly1305.NonceSize + chacha20poly1305.Overhead
 
 	// Type1MessageSize is the size in byte of the Type 1 Message.
@@ -81,20 +81,15 @@ func getCommonReferenceString(sharedRandomValue []byte, epoch uint64) []byte {
 	return out
 }
 
-func newT1Beta(elligatorPubKey, secretKey *[32]byte) ([]byte, error) {
+func newT1Beta(pubKey, secretKey *[32]byte) ([]byte, error) {
 	aead1, err := chacha20poly1305.New(secretKey[:])
 	if err != nil {
 		return nil, err
 	}
 	ad := []byte{}
-	nonce1 := [chacha20poly1305.NonceSize]byte{}
-	_, err = rand.Reader.Read(nonce1[:])
-	if err != nil {
-		return nil, err
-	}
+	nonce := [chacha20poly1305.NonceSize]byte{}
 	beta := []byte{}
-	beta = aead1.Seal(beta, nonce1[:], elligatorPubKey[:], ad)
-	beta = append(beta, nonce1[:]...)
+	beta = aead1.Seal(beta, nonce[:], pubKey[:], ad)
 	return beta, nil
 }
 
@@ -138,7 +133,8 @@ func decryptT1Beta(candidateKey []byte, t1Beta []byte) ([]byte, error) {
 	}
 	nonce := [chacha20poly1305.NonceSize]byte{}
 	ad := []byte{}
-	dst, err := aead.Open([]byte{}, nonce[:], t1Beta, ad)
+	dst := []byte{}
+	dst, err = aead.Open(dst, nonce[:], t1Beta, ad)
 	if err != nil {
 		return nil, err
 	}

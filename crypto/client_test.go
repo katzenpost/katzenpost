@@ -42,31 +42,44 @@ func TestClientBasics(t *testing.T) {
 	require.NoError(err)
 
 	// both clients generate a t1 message
+	t.Log("client 1")
 	client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)
 	require.NoError(err)
 
+	t.Log("client 2")
 	client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload2)
 	require.NoError(err)
-	t.Logf("client2 t1 %x", client2T1)
 
 	// client2 decodes the t1 message from client1
 	client1T1Alpha, client1T1Beta, _, err := decodeT1Message(client1T1)
 	require.NoError(err)
-
-	// client2 processes the alpha portion of the received t1 message...
-	// generating a t2 message
 	client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	// client1 decodes the t2 message from client2
-	client1CandidateKey, err := client1.GetCandidateKey(client2T2, client1B1, epoch, sharedRandom[:])
+	// client1 decodes the t1 message from client2
+	client2T1Alpha, client2T1Beta, _, err := decodeT1Message(client2T1)
+	require.NoError(err)
+	client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	// test that the candidate key is client2's s1
-	require.Equal(client1CandidateKey, client2.s1[:])
+	// client1 decodes the t2 message from client2
+	client1CandidateKey, err := client1.GetCandidateKey(client2T2, client2B1, epoch, sharedRandom[:])
+	require.NoError(err)
+
+	// client1 decodes the t2 message from client2
+	client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1, epoch, sharedRandom[:])
+	require.NoError(err)
+
+	t.Logf("Candidate Key %x\n", client2CandidateKey)
+	t.Logf("Session Key %x\n", client1.sessionKey1[:])
+
+	require.Equal(client2CandidateKey, client1.sessionKey1[:])
 	t.Logf("client1T1Beta %x", client1T1Beta)
 
-	b2, err := decryptT1Beta(client1CandidateKey, client1T1Beta)
+	require.Equal(client1CandidateKey, client2.sessionKey1[:])
+	t.Logf("client1T1Beta %x", client2T1Beta)
+
+	b2, err := decryptT1Beta(client1CandidateKey, client2T1Beta)
 	require.NoError(err)
 	t.Logf("b2 %x", b2)
 }

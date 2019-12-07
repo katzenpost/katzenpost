@@ -30,8 +30,8 @@ type Client struct {
 	keypair2       *Keypair
 	k1             *[SPRPKeyLength]byte
 	k1Counter      uint64 // XXX when to increment?
-	s1             *[32]byte
-	s2             *[32]byte
+	sessionKey1    *[32]byte
+	sessionKey2    *[32]byte
 	sharedEpochKey []byte
 }
 
@@ -44,13 +44,13 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 	if err != nil {
 		return nil, err
 	}
-	s1 := [32]byte{}
-	_, err = rand.Reader.Read(s1[:])
+	sessionKey1 := [32]byte{}
+	_, err = rand.Reader.Read(sessionKey1[:])
 	if err != nil {
 		return nil, err
 	}
-	s2 := [32]byte{}
-	_, err = rand.Reader.Read(s2[:])
+	sessionKey2 := [32]byte{}
+	_, err = rand.Reader.Read(sessionKey2[:])
 	if err != nil {
 		return nil, err
 	}
@@ -66,17 +66,15 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 	client := &Client{
 		keypair1:       keypair1,
 		keypair2:       keypair2,
-		s1:             &s1,
-		s2:             &s2,
+		sessionKey1:    &sessionKey1,
+		sessionKey2:    &sessionKey2,
 		sharedEpochKey: argon2.IDKey(passphrase, salt, t, memory, threads, keyLen),
 	}
 	return client, nil
 }
 
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
-	keypair1ElligatorPub := c.keypair1.Representative().ToPublic().Bytes()
-	fmt.Printf("><><><><><><><><>< keypair1.public_key %x\n", c.keypair1.Public().Bytes())
-
+	keypair1ElligatorPub := c.keypair1.Representative().Bytes()
 	k1, err := deriveT1SprpKey(sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
 		return nil, err
@@ -86,12 +84,12 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	binary.BigEndian.PutUint64(iv[:], c.k1Counter)
 	alpha := SPRPEncrypt(k1, &iv, keypair1ElligatorPub[:])
 
-	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.s1)
+	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.sessionKey1)
 	if err != nil {
 		return nil, err
 	}
 
-	gamma, err := newT1Gamma(payload[:], c.s2)
+	gamma, err := newT1Gamma(payload[:], c.sessionKey2)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +117,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	r := Representative(rKey)
 	b1PubKey := r.ToPublic()
 
-	fmt.Printf("><><><><><><><><>< Decrypted un-elligatored key: %x\n", *b1PubKey)
+	// T2 message construction:
 
 	k2Outer, hkdfContext, err := deriveOuterSPRPKey(sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
@@ -131,6 +129,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 
 	crs := getCommonReferenceString(sharedRandomValue, epoch)
 	prk2i := hkdf.Extract(HashFunc, k2idh[:], crs)
+
 	kdfReader := hkdf.Expand(HashFunc, prk2i, hkdfContext)
 	k2Inner := [SPRPKeyLength]byte{}
 	_, err = kdfReader.Read(k2Inner[:])
@@ -140,7 +139,10 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 
 	k2InnerIV := [SPRPIVLength]byte{}
 	k2OuterIV := [SPRPIVLength]byte{}
-	t2 := SPRPEncrypt(k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.s1[:]))
+	t2 := SPRPEncrypt(k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.sessionKey1[:]))
+
+	fmt.Printf("SENDER session key %x\n", c.sessionKey1[:])
+	fmt.Printf("SENDER t2 %x\n", t2)
 	return t2, b1PubKey, nil
 }
 
@@ -167,5 +169,6 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 
 	k3InnerIV := [SPRPIVLength]byte{}
 	k3OuterIV := [SPRPIVLength]byte{}
-	return SPRPDecrypt(k3Outer, &k3OuterIV, SPRPDecrypt(&k3Inner, &k3InnerIV, t2)), nil
+
+	return SPRPDecrypt(&k3Inner, &k3InnerIV, SPRPDecrypt(k3Outer, &k3OuterIV, t2)), nil
 }
