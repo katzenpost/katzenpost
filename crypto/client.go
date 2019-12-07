@@ -169,3 +169,69 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 
 	return SPRPDecrypt(&k3Inner, &k3InnerIV, SPRPDecrypt(k3Outer, &k3OuterIV, t2)), nil
 }
+
+func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte, epoch uint64) ([]byte, error) {
+	hkdfContext := []byte("Type-3")
+	var tmp [8]byte
+	binary.BigEndian.PutUint64(tmp[:], epoch)
+	hkdfContext = append(hkdfContext, tmp[:]...)
+
+	// hkdf extract and expand
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	prk := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
+	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
+	k3Outer := [SPRPKeyLength]byte{}
+	_, err := kdfReader.Read(k3Outer[:])
+	if err != nil {
+		return nil, err
+	}
+
+	dh := [32]byte{}
+	c.keypair2.Private().Exp(&dh, beta2)
+
+	prk3i := hkdf.Extract(HashFunc, dh[:], crs)
+	kdfReader = hkdf.Expand(HashFunc, prk3i, hkdfContext)
+	k3Inner := [SPRPKeyLength]byte{}
+	_, err = kdfReader.Read(k3Inner[:])
+	if err != nil {
+		return nil, err
+	}
+
+	k3InnerIV := [SPRPIVLength]byte{}
+	k3OuterIV := [SPRPIVLength]byte{}
+	t3 := SPRPEncrypt(&k3Outer, &k3OuterIV, SPRPEncrypt(&k3Inner, &k3InnerIV, c.sessionKey2[:]))
+	return t3, nil
+}
+
+func (c *Client) DecryptType3Message(t3 []byte, beta2 *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
+	hkdfContext := []byte("Type-3")
+	var tmp [8]byte
+	binary.BigEndian.PutUint64(tmp[:], epoch)
+	hkdfContext = append(hkdfContext, tmp[:]...)
+
+	// hkdf extract and expand
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
+	prk := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
+	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
+	k3Outer := [SPRPKeyLength]byte{}
+	_, err := kdfReader.Read(k3Outer[:])
+	if err != nil {
+		return nil, err
+	}
+
+	dh := [32]byte{}
+	c.keypair2.Private().Exp(&dh, beta2)
+
+	prk3i := hkdf.Extract(HashFunc, dh[:], crs)
+	kdfReader = hkdf.Expand(HashFunc, prk3i, hkdfContext)
+	k3Inner := [SPRPKeyLength]byte{}
+	_, err = kdfReader.Read(k3Inner[:])
+	if err != nil {
+		return nil, err
+	}
+
+	k3InnerIV := [SPRPIVLength]byte{}
+	k3OuterIV := [SPRPIVLength]byte{}
+	gammaKey := SPRPDecrypt(&k3Inner, &k3InnerIV, SPRPDecrypt(&k3Outer, &k3OuterIV, t3))
+	return gammaKey, nil
+}

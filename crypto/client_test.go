@@ -34,37 +34,31 @@ func TestClientBasics(t *testing.T) {
 	payload1 := []byte("This is the payload1")
 	payload2 := []byte("This is the payload2")
 
-	// create client1 and client2
 	client1, err := NewClient(passphrase, sharedRandom[:], epoch)
 	require.NoError(err)
 
 	client2, err := NewClient(passphrase, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	// both clients generate a t1 message
 	client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)
 	require.NoError(err)
 
 	client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload2)
 	require.NoError(err)
 
-	// client2 decodes the t1 message from client1
-	client1T1Alpha, client1T1Beta, _, err := decodeT1Message(client1T1)
+	client1T1Alpha, client1T1Beta, client1T1Gamma, err := decodeT1Message(client1T1)
 	require.NoError(err)
 	client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	// client1 decodes the t1 message from client2
-	client2T1Alpha, client2T1Beta, _, err := decodeT1Message(client2T1)
+	client2T1Alpha, client2T1Beta, client2T1Gamma, err := decodeT1Message(client2T1)
 	require.NoError(err)
 	client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	// client1 decodes the t2 message from client2
 	client1CandidateKey, err := client1.GetCandidateKey(client2T2, client2B1, epoch, sharedRandom[:])
 	require.NoError(err)
 
-	// client1 decodes the t2 message from client2
 	client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1, epoch, sharedRandom[:])
 	require.NoError(err)
 
@@ -73,10 +67,32 @@ func TestClientBasics(t *testing.T) {
 
 	client1B2, err := decryptT1Beta(client1CandidateKey, client2T1Beta)
 	require.NoError(err)
-	t.Logf("b2 %x", client1B2)
+	require.Equal(client2.keypair2.Public().Bytes()[:], client1B2.Bytes()[:])
 
 	client2B2, err := decryptT1Beta(client2CandidateKey, client1T1Beta)
 	require.NoError(err)
-	t.Logf("b2 %x", client2B2)
+	require.Equal(client1.keypair2.Public().Bytes()[:], client2B2.Bytes()[:])
 
+	client1T3, err := client1.ComposeType3Message(client1B2, sharedRandom[:], epoch)
+	require.NoError(err)
+
+	client2T3, err := client2.ComposeType3Message(client2B2, sharedRandom[:], epoch)
+	require.NoError(err)
+
+	client1GammaKey, err := client1.DecryptType3Message(client2T3, client1B2, epoch, sharedRandom[:])
+	require.NoError(err)
+	require.Equal(client1GammaKey, client2.sessionKey2[:])
+
+	client2GammaKey, err := client2.DecryptType3Message(client1T3, client2B2, epoch, sharedRandom[:])
+	require.NoError(err)
+	require.Equal(client2GammaKey, client1.sessionKey2[:])
+
+	plaintext1, err := decryptT1Gamma(client1GammaKey, client2T1Gamma)
+	require.NoError(err)
+
+	plaintext2, err := decryptT1Gamma(client2GammaKey, client1T1Gamma)
+	require.NoError(err)
+
+	require.Equal(payload1, plaintext2)
+	require.Equal(payload2, plaintext1)
 }

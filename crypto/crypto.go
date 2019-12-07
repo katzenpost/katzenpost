@@ -24,7 +24,6 @@ import (
 
 	"crypto/sha256"
 	"github.com/katzenpost/chacha20poly1305"
-	"github.com/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -39,7 +38,7 @@ const (
 
 	t1AlphaSize = SPRPMinimumBlockLenth
 	t1BetaSize  = SymmetricKeySize + chacha20poly1305.Overhead
-	t1GammaSize = PayloadSize + chacha20poly1305.NonceSize + chacha20poly1305.Overhead
+	t1GammaSize = PayloadSize + chacha20poly1305.Overhead
 
 	// Type1MessageSize is the size in byte of the Type 1 Message.
 	Type1MessageSize = t1AlphaSize + t1BetaSize + t1GammaSize
@@ -55,6 +54,14 @@ func padMessage(message []byte) (*[PayloadSize]byte, error) {
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	return &payload, nil
+}
+
+func removeMessagePadding(message []byte) ([]byte, error) {
+	messageSize := binary.BigEndian.Uint32(message[:4])
+	if int(messageSize) > len(message)-4 {
+		return nil, errors.New("invalid padding")
+	}
+	return message[4 : messageSize+4], nil
 }
 
 // getLatestMidnight returns the big endian byte slice of the
@@ -99,19 +106,14 @@ func newT1Gamma(message []byte, secretKey *[32]byte) ([]byte, error) {
 		return nil, err
 	}
 
-	aead2, err := chacha20poly1305.New(secretKey[:])
+	aead, err := chacha20poly1305.New(secretKey[:])
 	if err != nil {
 		return nil, err
 	}
-	nonce2 := [chacha20poly1305.NonceSize]byte{}
-	_, err = rand.Reader.Read(nonce2[:])
-	if err != nil {
-		return nil, err
-	}
+	nonce := [chacha20poly1305.NonceSize]byte{}
 	gamma := []byte{}
 	ad := []byte{}
-	gamma = aead2.Seal(gamma, nonce2[:], payload[:], ad)
-	gamma = append(gamma, nonce2[:]...)
+	gamma = aead.Seal(gamma, nonce[:], payload[:], ad)
 	return gamma, nil
 }
 
@@ -126,7 +128,7 @@ func decodeT1Message(message []byte) ([]byte, []byte, []byte, error) {
 	return alpha, beta, gamma, nil
 }
 
-func decryptT1Beta(candidateKey []byte, t1Beta []byte) ([]byte, error) {
+func decryptT1Beta(candidateKey []byte, t1Beta []byte) (*PublicKey, error) {
 	aead, err := chacha20poly1305.New(candidateKey)
 	if err != nil {
 		return nil, err
@@ -138,7 +140,7 @@ func decryptT1Beta(candidateKey []byte, t1Beta []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dst, nil
+	return NewPublicKey(dst)
 }
 
 func deriveOuterSPRPKey(sharedRandomValue []byte, epoch uint64, sharedEpochKey []byte) (*[SPRPKeyLength]byte, []byte, error) {
@@ -177,4 +179,19 @@ func deriveT1SprpKey(sharedRandomValue []byte, epoch uint64, sharedEpochKey []by
 		return nil, err
 	}
 	return &key, nil
+}
+
+func decryptT1Gamma(key []byte, ciphertext []byte) ([]byte, error) {
+	aead, err := chacha20poly1305.New(key)
+	if err != nil {
+		return nil, err
+	}
+	nonce := [chacha20poly1305.NonceSize]byte{}
+	ad := []byte{}
+	dst := []byte{}
+	plaintext, err := aead.Open(dst, nonce[:], ciphertext, ad)
+	if err != nil {
+		return nil, err
+	}
+	return removeMessagePadding(plaintext)
 }

@@ -58,5 +58,5 @@ func TestT1Beta(t *testing.T) {
 	outputKey, err := decryptT1Beta(secretKey[:], beta)
 	require.NoError(err)
 
-	require.Equal(pubKey[:], outputKey)
+	require.Equal(pubKey[:], outputKey.Bytes()[:])
 }
