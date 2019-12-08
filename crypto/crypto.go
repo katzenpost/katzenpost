@@ -36,7 +36,7 @@ const (
 	// SymmetricKeySize is the size of the symmetric keys we use.
 	SymmetricKeySize = 32
 
-	t1AlphaSize = SPRPMinimumBlockLenth
+	t1AlphaSize = SPRPMinimumBlockLength
 	t1BetaSize  = SymmetricKeySize + chacha20poly1305.Overhead
 	t1GammaSize = PayloadSize + chacha20poly1305.Overhead
 
