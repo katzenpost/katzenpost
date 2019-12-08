@@ -79,18 +79,10 @@ func TestClientBasics(t *testing.T) {
 	client2T3, err := client2.ComposeType3Message(client2B2, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	client1GammaKey, err := client1.DecryptType3Message(client2T3, client1B2, epoch, sharedRandom[:])
-	require.NoError(err)
-	require.Equal(client1GammaKey, client2.sessionKey2[:])
-
-	client2GammaKey, err := client2.DecryptType3Message(client1T3, client2B2, epoch, sharedRandom[:])
-	require.NoError(err)
-	require.Equal(client2GammaKey, client1.sessionKey2[:])
-
-	plaintext1, err := decryptT1Gamma(client1GammaKey, client2T1Gamma)
+	plaintext1, err := client1.ProcessType3Message(client2T3, client2T1Gamma, client1B2, epoch, sharedRandom[:])
 	require.NoError(err)
 
-	plaintext2, err := decryptT1Gamma(client2GammaKey, client1T1Gamma)
+	plaintext2, err := client2.ProcessType3Message(client1T3, client1T1Gamma, client2B2, epoch, sharedRandom[:])
 	require.NoError(err)
 
 	require.Equal(payload1, plaintext2)

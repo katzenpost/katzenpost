@@ -203,7 +203,7 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 	return t3, nil
 }
 
-func (c *Client) DecryptType3Message(t3 []byte, beta2 *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
+func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
 	hkdfContext := []byte("Type-3")
 	var tmp [8]byte
 	binary.BigEndian.PutUint64(tmp[:], epoch)
@@ -233,5 +233,10 @@ func (c *Client) DecryptType3Message(t3 []byte, beta2 *PublicKey, epoch uint64, 
 	k3InnerIV := [SPRPIVLength]byte{}
 	k3OuterIV := [SPRPIVLength]byte{}
 	gammaKey := SPRPDecrypt(&k3Inner, &k3InnerIV, SPRPDecrypt(&k3Outer, &k3OuterIV, t3))
-	return gammaKey, nil
+
+	payload, err := decryptT1Gamma(gammaKey, gamma)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
 }
