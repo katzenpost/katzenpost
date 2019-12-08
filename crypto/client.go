@@ -27,8 +27,6 @@ import (
 type Client struct {
 	keypair1       *Keypair
 	keypair2       *Keypair
-	k1             *[SPRPKeyLength]byte
-	k1Counter      uint64 // XXX when to increment?
 	sessionKey1    *[32]byte
 	sessionKey2    *[32]byte
 	sharedEpochKey []byte
@@ -78,9 +76,7 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	if err != nil {
 		return nil, err
 	}
-	c.k1 = k1
 	iv := [SPRPIVLength]byte{}
-	binary.BigEndian.PutUint64(iv[:], c.k1Counter)
 	alpha := SPRPEncrypt(k1, &iv, keypair1ElligatorPub[:])
 
 	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.sessionKey1)
@@ -108,7 +104,6 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	}
 
 	iv := [SPRPIVLength]byte{}
-	binary.BigEndian.PutUint64(iv[:], c.k1Counter)
 	elligatorPub1 := SPRPDecrypt(k1, &iv, alpha)
 
 	rKey := [RepresentativeLength]byte{}
