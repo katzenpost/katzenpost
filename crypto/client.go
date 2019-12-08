@@ -17,11 +17,15 @@
 package crypto
 
 import (
-	"encoding/binary"
-
 	"github.com/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
+)
+
+const (
+	type1Message = "type-1"
+	type2Message = "type-2"
+	type3Message = "type-3"
 )
 
 type Client struct {
@@ -72,7 +76,7 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
 	keypair1ElligatorPub := c.keypair1.Representative().Bytes()
-	k1, err := deriveT1SprpKey(sharedRandomValue, epoch, c.sharedEpochKey)
+	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +102,7 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 
 func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
 
-	k1, err := deriveT1SprpKey(sharedRandomValue, epoch, c.sharedEpochKey)
+	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,8 +116,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	b1PubKey := r.ToPublic()
 
 	// T2 message construction:
-
-	k2Outer, hkdfContext, err := deriveOuterSPRPKey(sharedRandomValue, epoch, c.sharedEpochKey)
+	k2Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,7 +142,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 }
 
 func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveOuterSPRPKey(sharedRandomValue, epoch, c.sharedEpochKey)
+	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
 		return nil, err
 	}
@@ -166,17 +169,7 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 }
 
 func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte, epoch uint64) ([]byte, error) {
-	hkdfContext := []byte("Type-3")
-	var tmp [8]byte
-	binary.BigEndian.PutUint64(tmp[:], epoch)
-	hkdfContext = append(hkdfContext, tmp[:]...)
-
-	// hkdf extract and expand
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
-	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
-	k3Outer := [SPRPKeyLength]byte{}
-	_, err := kdfReader.Read(k3Outer[:])
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
 		return nil, err
 	}
@@ -184,8 +177,9 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 	dh := [32]byte{}
 	c.keypair2.Private().Exp(&dh, beta2)
 
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
 	prk3i := hkdf.Extract(HashFunc, dh[:], crs)
-	kdfReader = hkdf.Expand(HashFunc, prk3i, hkdfContext)
+	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
 	k3Inner := [SPRPKeyLength]byte{}
 	_, err = kdfReader.Read(k3Inner[:])
 	if err != nil {
@@ -194,22 +188,12 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 
 	k3InnerIV := [SPRPIVLength]byte{}
 	k3OuterIV := [SPRPIVLength]byte{}
-	t3 := SPRPEncrypt(&k3Outer, &k3OuterIV, SPRPEncrypt(&k3Inner, &k3InnerIV, c.sessionKey2[:]))
+	t3 := SPRPEncrypt(k3Outer, &k3OuterIV, SPRPEncrypt(&k3Inner, &k3InnerIV, c.sessionKey2[:]))
 	return t3, nil
 }
 
 func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-	hkdfContext := []byte("Type-3")
-	var tmp [8]byte
-	binary.BigEndian.PutUint64(tmp[:], epoch)
-	hkdfContext = append(hkdfContext, tmp[:]...)
-
-	// hkdf extract and expand
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk := hkdf.Extract(HashFunc, c.sharedEpochKey, crs)
-	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
-	k3Outer := [SPRPKeyLength]byte{}
-	_, err := kdfReader.Read(k3Outer[:])
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey)
 	if err != nil {
 		return nil, err
 	}
@@ -217,8 +201,9 @@ func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch u
 	dh := [32]byte{}
 	c.keypair2.Private().Exp(&dh, beta2)
 
+	crs := getCommonReferenceString(sharedRandomValue, epoch)
 	prk3i := hkdf.Extract(HashFunc, dh[:], crs)
-	kdfReader = hkdf.Expand(HashFunc, prk3i, hkdfContext)
+	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
 	k3Inner := [SPRPKeyLength]byte{}
 	_, err = kdfReader.Read(k3Inner[:])
 	if err != nil {
@@ -227,7 +212,7 @@ func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch u
 
 	k3InnerIV := [SPRPIVLength]byte{}
 	k3OuterIV := [SPRPIVLength]byte{}
-	gammaKey := SPRPDecrypt(&k3Inner, &k3InnerIV, SPRPDecrypt(&k3Outer, &k3OuterIV, t3))
+	gammaKey := SPRPDecrypt(&k3Inner, &k3InnerIV, SPRPDecrypt(k3Outer, &k3OuterIV, t3))
 
 	payload, err := decryptT1Gamma(gammaKey, gamma)
 	if err != nil {

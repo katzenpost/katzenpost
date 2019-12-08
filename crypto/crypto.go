@@ -143,9 +143,8 @@ func decryptT1Beta(candidateKey []byte, t1Beta []byte) (*PublicKey, error) {
 	return NewPublicKey(dst)
 }
 
-func deriveOuterSPRPKey(sharedRandomValue []byte, epoch uint64, sharedEpochKey []byte) (*[SPRPKeyLength]byte, []byte, error) {
-	// hkdf_context = "type 2" || EpochID
-	hkdfContext := []byte("Type-2")
+func deriveSprpKey(typeName string, sharedRandomValue []byte, epoch uint64, sharedEpochKey []byte) (*[SPRPKeyLength]byte, []byte, error) {
+	hkdfContext := []byte(typeName)
 	var tmp [8]byte
 	binary.BigEndian.PutUint64(tmp[:], epoch)
 	hkdfContext = append(hkdfContext, tmp[:]...)
@@ -160,25 +159,6 @@ func deriveOuterSPRPKey(sharedRandomValue []byte, epoch uint64, sharedEpochKey [
 		return nil, nil, err
 	}
 	return &key, hkdfContext, nil
-}
-
-func deriveT1SprpKey(sharedRandomValue []byte, epoch uint64, sharedEpochKey []byte) (*[SPRPKeyLength]byte, error) {
-	// hkdf_context = "type 1" || EpochID
-	hkdfContext := []byte("Type-1")
-	var tmp [8]byte
-	binary.BigEndian.PutUint64(tmp[:], epoch)
-	hkdfContext = append(hkdfContext, tmp[:]...)
-
-	// hkdf extract and expand
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk := hkdf.Extract(HashFunc, sharedEpochKey, crs)
-	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
-	key := [SPRPKeyLength]byte{}
-	_, err := kdfReader.Read(key[:])
-	if err != nil {
-		return nil, err
-	}
-	return &key, nil
 }
 
 func decryptT1Gamma(key []byte, ciphertext []byte) ([]byte, error) {
