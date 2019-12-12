@@ -1,0 +1,92 @@
+// client_benchmark_test.go - Reunion core crypto client benchmarks.
+// Copyright (C) 2019 David Stainton.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+package crypto
+
+import (
+	"testing"
+
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/stretchr/testify/require"
+)
+
+func BenchmarkClientExchange(b *testing.B) {
+	require := require.New(b)
+
+	epoch := uint64(1234567)
+	sharedRandom := [64]byte{}
+	_, err := rand.Reader.Read(sharedRandom[:])
+	require.NoError(err)
+	passphrase := []byte("bridge traffic is busy tonight")
+	payload1 := []byte("This is the payload1")
+	payload2 := []byte("This is the payload2")
+
+	client1, err := NewClient(passphrase, sharedRandom[:], epoch)
+	require.NoError(err)
+
+	client2, err := NewClient(passphrase, sharedRandom[:], epoch)
+	require.NoError(err)
+
+	for n := 0; n < b.N; n++ {
+		client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)
+		require.NoError(err)
+
+		client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload2)
+		require.NoError(err)
+
+		client1T1Alpha, client1T1Beta, client1T1Gamma, err := decodeT1Message(client1T1)
+		require.NoError(err)
+		client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha, sharedRandom[:], epoch)
+		require.NoError(err)
+
+		client2T1Alpha, client2T1Beta, client2T1Gamma, err := decodeT1Message(client2T1)
+		require.NoError(err)
+		client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha, sharedRandom[:], epoch)
+		require.NoError(err)
+
+		client1CandidateKey, err := client1.GetCandidateKey(client2T2, client2B1, epoch, sharedRandom[:])
+		require.NoError(err)
+
+		client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1, epoch, sharedRandom[:])
+		require.NoError(err)
+
+		require.Equal(client2CandidateKey, client1.sessionKey1[:])
+		require.Equal(client1CandidateKey, client2.sessionKey1[:])
+
+		client1B2, err := decryptT1Beta(client1CandidateKey, client2T1Beta)
+		require.NoError(err)
+		require.Equal(client2.keypair2.Public().Bytes()[:], client1B2.Bytes()[:])
+
+		client2B2, err := decryptT1Beta(client2CandidateKey, client1T1Beta)
+		require.NoError(err)
+		require.Equal(client1.keypair2.Public().Bytes()[:], client2B2.Bytes()[:])
+
+		client1T3, err := client1.ComposeType3Message(client1B2, sharedRandom[:], epoch)
+		require.NoError(err)
+
+		client2T3, err := client2.ComposeType3Message(client2B2, sharedRandom[:], epoch)
+		require.NoError(err)
+
+		plaintext1, err := client1.ProcessType3Message(client2T3, client2T1Gamma, client1B2, epoch, sharedRandom[:])
+		require.NoError(err)
+
+		plaintext2, err := client2.ProcessType3Message(client1T3, client1T1Gamma, client2B2, epoch, sharedRandom[:])
+		require.NoError(err)
+
+		require.Equal(payload1, plaintext2)
+		require.Equal(payload2, plaintext1)
+	}
+}
