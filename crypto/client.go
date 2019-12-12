@@ -56,8 +56,7 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 		return nil, err
 	}
 
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	salt := crs
+	salt := getSalt(sharedRandomValue, epoch)
 	// XXX t := uint32(9001) // XXX are you sure you want it set this big?
 	t := uint32(1) // testing value to speed things up
 	memory := uint32(9001)
@@ -124,8 +123,8 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	k2idh := [32]byte{}
 	c.keypair1.Private().Exp(&k2idh, b1PubKey)
 
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk2i := hkdf.Extract(HashFunc, k2idh[:], crs)
+	salt := getSalt(sharedRandomValue, epoch)
+	prk2i := hkdf.Extract(HashFunc, k2idh[:], salt)
 
 	kdfReader := hkdf.Expand(HashFunc, prk2i, hkdfContext)
 	k2Inner := [SPRPKeyLength]byte{}
@@ -152,8 +151,8 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 	c.keypair1.Private().Exp(&k3idh, alpha)
 
 	// HKDF extract and expand
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk3i := hkdf.Extract(HashFunc, k3idh[:], crs)
+	salt := getSalt(sharedRandomValue, epoch)
+	prk3i := hkdf.Extract(HashFunc, k3idh[:], salt)
 
 	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
 	k3Inner := [SPRPKeyLength]byte{}
@@ -177,8 +176,8 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 	dh := [32]byte{}
 	c.keypair2.Private().Exp(&dh, beta2)
 
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk3i := hkdf.Extract(HashFunc, dh[:], crs)
+	salt := getSalt(sharedRandomValue, epoch)
+	prk3i := hkdf.Extract(HashFunc, dh[:], salt)
 	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
 	k3Inner := [SPRPKeyLength]byte{}
 	_, err = kdfReader.Read(k3Inner[:])
@@ -201,8 +200,8 @@ func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch u
 	dh := [32]byte{}
 	c.keypair2.Private().Exp(&dh, beta2)
 
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk3i := hkdf.Extract(HashFunc, dh[:], crs)
+	salt := getSalt(sharedRandomValue, epoch)
+	prk3i := hkdf.Extract(HashFunc, dh[:], salt)
 	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
 	k3Inner := [SPRPKeyLength]byte{}
 	_, err = kdfReader.Read(k3Inner[:])

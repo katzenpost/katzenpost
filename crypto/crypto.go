@@ -75,10 +75,9 @@ func getLatestMidnight() []byte {
 	return tmp[:]
 }
 
-// getCommonReferenceString returns the common reference string.
-// CRS = GMT_MIDNIGHT || SharedRandom || EpochID
-// XXX TODO: append the Reunion server instance ID.
-func getCommonReferenceString(sharedRandomValue []byte, epoch uint64) []byte {
+// getSalt returns the salt value composed of:
+// GMT_MIDNIGHT || SharedRandom || EpochID
+func getSalt(sharedRandomValue []byte, epoch uint64) []byte {
 	out := []byte{}
 	out = append(out, getLatestMidnight()...)
 	out = append(out, sharedRandomValue...)
@@ -150,8 +149,8 @@ func deriveSprpKey(typeName string, sharedRandomValue []byte, epoch uint64, shar
 	hkdfContext = append(hkdfContext, tmp[:]...)
 
 	// hkdf extract and expand
-	crs := getCommonReferenceString(sharedRandomValue, epoch)
-	prk := hkdf.Extract(HashFunc, sharedEpochKey, crs)
+	salt := getSalt(sharedRandomValue, epoch)
+	prk := hkdf.Extract(HashFunc, sharedEpochKey, salt)
 	kdfReader := hkdf.Expand(HashFunc, prk, hkdfContext)
 	key := [SPRPKeyLength]byte{}
 	_, err := kdfReader.Read(key[:])

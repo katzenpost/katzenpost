@@ -71,8 +71,7 @@ func TestKeyStretching(t *testing.T) {
 	require.NoError(err)
 	passphrase := []byte("bridge traffic is busy tonight")
 
-	crs := getCommonReferenceString(sharedRandom[:], epoch)
-	salt := crs
+	salt := getSalt(sharedRandom[:], epoch)
 	// XXX t := uint32(9001) // XXX are you sure you want it set this big?
 	time := uint32(9001) // testing value to speed things up
 	memory := uint32(9001)
