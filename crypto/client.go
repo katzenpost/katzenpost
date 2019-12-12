@@ -26,6 +26,9 @@ const (
 	type1Message = "type-1"
 	type2Message = "type-2"
 	type3Message = "type-3"
+
+	// SharedEpochKeySize is the length of the shared epoch key.
+	SharedEpochKeySize = 32
 )
 
 type Client struct {
@@ -36,7 +39,7 @@ type Client struct {
 	sharedEpochKey []byte
 }
 
-func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Client, error) {
+func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error) {
 	keypair1, err := NewKeypair(true)
 	if err != nil {
 		return nil, err
@@ -55,22 +58,26 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 	if err != nil {
 		return nil, err
 	}
-
-	salt := getSalt(sharedRandomValue, epoch)
-	// XXX t := uint32(9001) // XXX are you sure you want it set this big?
-	t := uint32(1) // testing value to speed things up
-	memory := uint32(9001)
-	threads := uint8(1)
-	keyLen := uint32(32)
-
 	client := &Client{
 		keypair1:       keypair1,
 		keypair2:       keypair2,
 		sessionKey1:    &sessionKey1,
 		sessionKey2:    &sessionKey2,
-		sharedEpochKey: argon2.IDKey(passphrase, salt, t, memory, threads, keyLen),
+		sharedEpochKey: sharedEpochKey[:],
 	}
 	return client, nil
+}
+
+func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Client, error) {
+	salt := getSalt(sharedRandomValue, epoch)
+	// XXX t := uint32(9001) // XXX are you sure you want it set this big?
+	t := uint32(1) // testing value to speed things up
+	memory := uint32(9001)
+	threads := uint8(1)
+	key := argon2.IDKey(passphrase, salt, t, memory, threads, SharedEpochKeySize)
+	k := [SharedEpochKeySize]byte{}
+	copy(k[:], key)
+	return NewClientFromKey(&k)
 }
 
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {

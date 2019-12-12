@@ -116,8 +116,8 @@ func newT1Gamma(message []byte, secretKey *[32]byte) ([]byte, error) {
 	return gamma, nil
 }
 
-// decodeT1Message upon success returns alpha, beta, gamma
-func decodeT1Message(message []byte) ([]byte, []byte, []byte, error) {
+// DecodeT1Message upon success returns alpha, beta, gamma
+func DecodeT1Message(message []byte) ([]byte, []byte, []byte, error) {
 	if len(message) != Type1MessageSize {
 		return nil, nil, nil, errors.New("t1 message has invalid length")
 	}
@@ -127,7 +127,8 @@ func decodeT1Message(message []byte) ([]byte, []byte, []byte, error) {
 	return alpha, beta, gamma, nil
 }
 
-func decryptT1Beta(candidateKey []byte, t1Beta []byte) (*PublicKey, error) {
+// DecryptT1Beta decrypts the Beta portion of a T1 message.
+func DecryptT1Beta(candidateKey []byte, t1Beta []byte) (*PublicKey, error) {
 	aead, err := chacha20poly1305.New(candidateKey)
 	if err != nil {
 		return nil, err
