@@ -30,14 +30,18 @@ func TestClientBasics(t *testing.T) {
 	sharedRandom := [64]byte{}
 	_, err := rand.Reader.Read(sharedRandom[:])
 	require.NoError(err)
-	passphrase := []byte("bridge traffic is busy tonight")
 	payload1 := []byte("This is the payload1")
 	payload2 := []byte("This is the payload2")
 
-	client1, err := NewClient(passphrase, sharedRandom[:], epoch)
+	sharedEpochKey1 := [SharedEpochKeySize]byte{}
+	_, err = rand.Reader.Read(sharedEpochKey1[:])
+	sharedEpochKey2 := [SharedEpochKeySize]byte{}
+	copy(sharedEpochKey2[:], sharedEpochKey1[:])
+
+	client1, err := NewClientFromKey(&sharedEpochKey1)
 	require.NoError(err)
 
-	client2, err := NewClient(passphrase, sharedRandom[:], epoch)
+	client2, err := NewClientFromKey(&sharedEpochKey2)
 	require.NoError(err)
 
 	client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)

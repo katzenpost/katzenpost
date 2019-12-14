@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/argon2"
 )
 
 func TestMessageTypeT1Decoding(t *testing.T) {
@@ -60,23 +59,4 @@ func TestT1Beta(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal(pubKey[:], outputKey.Bytes()[:])
-}
-
-func NoTestKeyStretching(t *testing.T) {
-	require := require.New(t)
-
-	epoch := uint64(1234567)
-	sharedRandom := [64]byte{}
-	_, err := rand.Reader.Read(sharedRandom[:])
-	require.NoError(err)
-	passphrase := []byte("bridge traffic is busy tonight")
-
-	salt := getSalt(sharedRandom[:], epoch)
-	// XXX t := uint32(9001) // XXX are you sure you want it set this big?
-	time := uint32(9001) // testing value to speed things up
-	memory := uint32(9001)
-	threads := uint8(1)
-	keyLen := uint32(32)
-
-	argon2.IDKey(passphrase, salt, time, memory, threads, keyLen)
 }

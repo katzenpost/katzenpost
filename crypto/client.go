@@ -61,8 +61,7 @@ func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error)
 
 func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Client, error) {
 	salt := getSalt(sharedRandomValue, epoch)
-	// XXX t := uint32(9001) // XXX are you sure you want it set this big?
-	t := uint32(1) // testing value to speed things up
+	t := uint32(9001)
 	memory := uint32(9001)
 	threads := uint8(1)
 	key := argon2.IDKey(passphrase, salt, t, memory, threads, SharedEpochKeySize)
