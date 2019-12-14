@@ -47,12 +47,12 @@ func BenchmarkClientExchange(b *testing.B) {
 		client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload2)
 		require.NoError(err)
 
-		client1T1Alpha, client1T1Beta, client1T1Gamma, err := decodeT1Message(client1T1)
+		client1T1Alpha, client1T1Beta, client1T1Gamma, err := DecodeT1Message(client1T1)
 		require.NoError(err)
 		client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha, sharedRandom[:], epoch)
 		require.NoError(err)
 
-		client2T1Alpha, client2T1Beta, client2T1Gamma, err := decodeT1Message(client2T1)
+		client2T1Alpha, client2T1Beta, client2T1Gamma, err := DecodeT1Message(client2T1)
 		require.NoError(err)
 		client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha, sharedRandom[:], epoch)
 		require.NoError(err)
@@ -66,11 +66,11 @@ func BenchmarkClientExchange(b *testing.B) {
 		require.Equal(client2CandidateKey, client1.sessionKey1[:])
 		require.Equal(client1CandidateKey, client2.sessionKey1[:])
 
-		client1B2, err := decryptT1Beta(client1CandidateKey, client2T1Beta)
+		client1B2, err := DecryptT1Beta(client1CandidateKey, client2T1Beta)
 		require.NoError(err)
 		require.Equal(client2.keypair2.Public().Bytes()[:], client1B2.Bytes()[:])
 
-		client2B2, err := decryptT1Beta(client2CandidateKey, client1T1Beta)
+		client2B2, err := DecryptT1Beta(client2CandidateKey, client1T1Beta)
 		require.NoError(err)
 		require.Equal(client1.keypair2.Public().Bytes()[:], client2B2.Bytes()[:])
 
