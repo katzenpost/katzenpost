@@ -35,9 +35,9 @@ const (
 type Client struct {
 	keypair1       *Keypair
 	keypair2       *Keypair
-	sessionKey1    *[32]byte
-	sessionKey2    *[32]byte
-	sharedEpochKey []byte
+	sessionKey1    *memguard.LockedBuffer
+	sessionKey2    *memguard.LockedBuffer
+	sharedEpochKey *memguard.LockedBuffer
 }
 
 func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error) {
@@ -49,14 +49,12 @@ func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error)
 	if err != nil {
 		return nil, err
 	}
-	lockBuf1 := memguard.NewBufferFromReader(rand.Reader, 32)
-	lockBuf2 := memguard.NewBufferFromReader(rand.Reader, 32)
 	client := &Client{
 		keypair1:       keypair1,
 		keypair2:       keypair2,
-		sessionKey1:    lockBuf1.ByteArray32(),
-		sessionKey2:    lockBuf2.ByteArray32(),
-		sharedEpochKey: sharedEpochKey[:],
+		sessionKey1:    memguard.NewBufferFromReader(rand.Reader, 32),
+		sessionKey2:    memguard.NewBufferFromReader(rand.Reader, 32),
+		sharedEpochKey: memguard.NewBufferFromBytes(sharedEpochKey[:]),
 	}
 	return client, nil
 }
@@ -70,24 +68,25 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 	key := argon2.IDKey(passphrase, salt, t, memory, threads, SharedEpochKeySize)
 	k := [SharedEpochKeySize]byte{}
 	copy(k[:], key)
+	memguard.WipeBytes(key)
 	return NewClientFromKey(&k)
 }
 
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
 	keypair1ElligatorPub := c.keypair1.Representative().Bytes()
-	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey)
+	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}
 	iv := [SPRPIVLength]byte{}
 	alpha := SPRPEncrypt(k1, &iv, keypair1ElligatorPub[:])
 
-	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.sessionKey1)
+	beta, err := newT1Beta(c.keypair2.Public().Bytes(), c.sessionKey1.ByteArray32())
 	if err != nil {
 		return nil, err
 	}
 
-	gamma, err := newT1Gamma(payload[:], c.sessionKey2)
+	gamma, err := newT1Gamma(payload[:], c.sessionKey2.ByteArray32())
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +100,7 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 
 func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
 
-	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey)
+	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -115,7 +114,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	b1PubKey := r.ToPublic()
 
 	// T2 message construction:
-	k2Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey)
+	k2Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -135,13 +134,13 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 
 	k2InnerIV := [SPRPIVLength]byte{}
 	k2OuterIV := [SPRPIVLength]byte{}
-	t2 := SPRPEncrypt(k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.sessionKey1[:]))
+	t2 := SPRPEncrypt(k2Outer, &k2OuterIV, SPRPEncrypt(&k2Inner, &k2InnerIV, c.sessionKey1.Bytes()))
 
 	return t2, b1PubKey, nil
 }
 
 func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey)
+	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +167,7 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 }
 
 func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte, epoch uint64) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey)
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -187,12 +186,12 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 
 	k3InnerIV := [SPRPIVLength]byte{}
 	k3OuterIV := [SPRPIVLength]byte{}
-	t3 := SPRPEncrypt(k3Outer, &k3OuterIV, SPRPEncrypt(&k3Inner, &k3InnerIV, c.sessionKey2[:]))
+	t3 := SPRPEncrypt(k3Outer, &k3OuterIV, SPRPEncrypt(&k3Inner, &k3InnerIV, c.sessionKey2.Bytes()))
 	return t3, nil
 }
 
 func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey)
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}

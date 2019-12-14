@@ -63,8 +63,8 @@ func BenchmarkBasicTwoClientExchange(b *testing.B) {
 		client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1, epoch, sharedRandom[:])
 		require.NoError(err)
 
-		require.Equal(client2CandidateKey, client1.sessionKey1[:])
-		require.Equal(client1CandidateKey, client2.sessionKey1[:])
+		require.Equal(client2CandidateKey, client1.sessionKey1.Bytes())
+		require.Equal(client1CandidateKey, client2.sessionKey1.Bytes())
 
 		client1B2, err := DecryptT1Beta(client1CandidateKey, client2T1Beta)
 		require.NoError(err)
