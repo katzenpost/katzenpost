@@ -17,6 +17,7 @@
 package crypto
 
 import (
+	"github.com/awnumar/memguard"
 	"github.com/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
@@ -48,21 +49,13 @@ func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error)
 	if err != nil {
 		return nil, err
 	}
-	sessionKey1 := [32]byte{}
-	_, err = rand.Reader.Read(sessionKey1[:])
-	if err != nil {
-		return nil, err
-	}
-	sessionKey2 := [32]byte{}
-	_, err = rand.Reader.Read(sessionKey2[:])
-	if err != nil {
-		return nil, err
-	}
+	lockBuf1 := memguard.NewBufferFromReader(rand.Reader, 32)
+	lockBuf2 := memguard.NewBufferFromReader(rand.Reader, 32)
 	client := &Client{
 		keypair1:       keypair1,
 		keypair2:       keypair2,
-		sessionKey1:    &sessionKey1,
-		sessionKey2:    &sessionKey2,
+		sessionKey1:    lockBuf1.ByteArray32(),
+		sessionKey2:    lockBuf2.ByteArray32(),
 		sharedEpochKey: sharedEpochKey[:],
 	}
 	return client, nil
