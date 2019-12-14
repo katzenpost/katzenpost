@@ -33,6 +33,7 @@ import (
 	"fmt"
 
 	"github.com/agl/ed25519/extra25519"
+	"github.com/awnumar/memguard"
 	"github.com/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/curve25519"
 )
@@ -125,7 +126,24 @@ func (repr *Representative) ToPublic() *PublicKey {
 }
 
 // PrivateKey is a Curve25519 private key in little-endian byte order.
-type PrivateKey [PrivateKeyLength]byte
+type PrivateKey struct {
+	privBuf *memguard.LockedBuffer
+}
+
+func NewRandomePrivateKey() *PrivateKey {
+	p := &PrivateKey{
+		privBuf: memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength),
+	}
+	r := p.privBuf.Bytes()
+	digest := sha256.Sum256(r)
+	digest[0] &= 248
+	digest[31] &= 127
+	digest[31] |= 64
+	p.privBuf.Melt()
+	copy(r, digest[:])
+	p.privBuf.Freeze()
+	return p
+}
 
 // Exp sets the group element dst to be the result of x^y, over the ECDH
 // group.
@@ -135,13 +153,17 @@ func Exp(dst, x, y *[GroupElementLength]byte) {
 
 // Exp calculates the shared secret with the provided public key.
 func (private *PrivateKey) Exp(sharedSecret *[GroupElementLength]byte, publicKey *PublicKey) {
-	p := ([GroupElementLength]byte)(*private)
-	Exp(sharedSecret, (*[GroupElementLength]byte)(publicKey), &p)
+	Exp(sharedSecret, (*[GroupElementLength]byte)(publicKey), private.ByteArray32())
 }
 
 // Bytes returns a pointer to the raw Curve25519 private key.
-func (private *PrivateKey) Bytes() *[PrivateKeyLength]byte {
-	return (*[PrivateKeyLength]byte)(private)
+func (private *PrivateKey) Bytes() []byte {
+	return private.privBuf.Bytes()
+}
+
+// Bytes returns a pointer to the raw Curve25519 private key.
+func (private *PrivateKey) ByteArray32() *[32]byte {
+	return private.privBuf.ByteArray32()
 }
 
 // Hex returns the hexdecimal representation of the Curve25519 private key.
@@ -183,37 +205,24 @@ func (keypair *Keypair) HasElligator() bool {
 // an Elligator representative of the public key.
 func NewKeypair(elligator bool) (*Keypair, error) {
 	keypair := new(Keypair)
-	keypair.private = new(PrivateKey)
 	keypair.public = new(PublicKey)
 	if elligator {
 		keypair.representative = new(Representative)
 	}
 
 	for {
-		// Generate a Curve25519 private key.  Like everyone who does this,
-		// run the CSPRNG output through SHA256 for extra tinfoil hattery.
-		priv := keypair.private.Bytes()[:]
-		_, err := rand.Reader.Read(priv)
-		if err != nil {
-			return nil, err
-		}
-		digest := sha256.Sum256(priv)
-		digest[0] &= 248
-		digest[31] &= 127
-		digest[31] |= 64
-		copy(priv, digest[:])
-
+		keypair.private = NewRandomePrivateKey()
 		if elligator {
 			// Apply the Elligator transform.  This fails ~50% of the time.
 			if !extra25519.ScalarBaseMult(keypair.public.Bytes(),
 				keypair.representative.Bytes(),
-				keypair.private.Bytes()) {
+				keypair.private.ByteArray32()) {
 				continue
 			}
 		} else {
 			// Generate the corresponding Curve25519 public key.
 			curve25519.ScalarBaseMult(keypair.public.Bytes(),
-				keypair.private.Bytes())
+				keypair.private.ByteArray32())
 		}
 
 		return keypair, nil
