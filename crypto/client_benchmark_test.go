@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func BenchmarkClientExchange(b *testing.B) {
+func BenchmarkBasicTwoClientExchange(b *testing.B) {
 	require := require.New(b)
 
 	epoch := uint64(1234567)
@@ -89,4 +89,129 @@ func BenchmarkClientExchange(b *testing.B) {
 		require.Equal(payload1, plaintext2)
 		require.Equal(payload2, plaintext1)
 	}
+}
+
+type testData struct {
+	epoch        uint64
+	sharedRandom []byte
+	clients      []*Client
+	t1s          [][]byte
+	phase2       []*phase2State
+}
+
+type phase2State struct {
+	t2                 []byte
+	beta, gamma, beta2 []byte
+}
+
+func createMultiClientBenchmarkData(b *testing.B, n int) *testData {
+	require := require.New(b)
+
+	payload1 := []byte("This is the payload1")
+	epoch := uint64(1234567)
+	sharedEpochKey := [SharedEpochKeySize]byte{}
+	_, err := rand.Reader.Read(sharedEpochKey[:])
+	require.NoError(err)
+	sharedEpochKey2 := [SharedEpochKeySize]byte{}
+	_, err = rand.Reader.Read(sharedEpochKey2[:])
+	require.NoError(err)
+	sharedRandom := [64]byte{}
+	_, err = rand.Reader.Read(sharedRandom[:])
+	require.NoError(err)
+
+	tests := testData{
+		epoch:        epoch,
+		sharedRandom: sharedRandom[:],
+		clients:      make([]*Client, n),
+		t1s:          make([][]byte, n),
+		phase2:       make([]*phase2State, 0),
+	}
+	k := 2
+
+	// phase 1
+	for i := 0; i < k; i++ {
+		client, err := NewClientFromKey(&sharedEpochKey)
+		require.NoError(err)
+
+		tests.clients[i] = client
+
+		t1, err := client.GenerateType1Message(epoch, sharedRandom[:], payload1)
+		require.NoError(err)
+
+		tests.t1s[i] = t1
+	}
+
+	for i := k; i < n; i++ {
+		sharedRandom2 := [64]byte{}
+		_, err := rand.Reader.Read(sharedRandom2[:])
+		require.NoError(err)
+
+		client, err := NewClientFromKey(&sharedEpochKey2)
+		require.NoError(err)
+
+		tests.clients[i] = client
+
+		t1, err := client.GenerateType1Message(epoch, sharedRandom[:], payload1)
+		require.NoError(err)
+
+		tests.t1s[i] = t1
+	}
+
+	// phase 2
+	for i := 1; i < len(tests.clients); i++ {
+		alpha, beta, gamma, err := DecodeT1Message(tests.t1s[0])
+		require.NoError(err)
+		t2, beta2, err := tests.clients[i].ProcessType1MessageAlpha(alpha, sharedRandom[:], epoch)
+		require.NoError(err)
+
+		tests.phase2 = append(tests.phase2, &phase2State{
+			t2:    t2,
+			beta:  beta,
+			gamma: gamma,
+			beta2: beta2.Bytes()[:],
+		})
+	}
+
+	// phase 3
+	for i := 0; i < len(tests.phase2); i++ {
+		state := tests.phase2[i]
+		beta2PubKey, err := NewPublicKey(state.beta2)
+		require.NoError(err)
+		candidateKey, err := tests.clients[0].GetCandidateKey(state.t2, beta2PubKey, tests.epoch, tests.sharedRandom)
+		require.NoError(err)
+		_, err = DecryptT1Beta(candidateKey, state.beta)
+	}
+	return &tests
+}
+
+func BenchmarkPhases(b *testing.B) {
+	require := require.New(b)
+
+	tests := createMultiClientBenchmarkData(b, 1000)
+	runPhase2Tests := func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			for i := 1; i < len(tests.t1s); i++ {
+				client1T1Alpha, _, _, err := DecodeT1Message(tests.t1s[i])
+				require.NoError(err)
+				_, _, err = tests.clients[0].ProcessType1MessageAlpha(client1T1Alpha, tests.sharedRandom, tests.epoch)
+				require.NoError(err)
+			}
+		}
+	}
+	b.Run("phase2", runPhase2Tests)
+	runPhase3Tests := func(b *testing.B) {
+		for n := 0; n < b.N; n++ {
+			for i := 1; i < len(tests.phase2); i++ {
+				state := tests.phase2[i]
+				beta2PubKey, err := NewPublicKey(state.beta2)
+				require.NoError(err)
+				candidateKey, err := tests.clients[0].GetCandidateKey(state.t2, beta2PubKey, tests.epoch, tests.sharedRandom)
+				require.NoError(err)
+				_, err = DecryptT1Beta(candidateKey, state.beta)
+				_, err = tests.clients[0].ComposeType3Message(beta2PubKey, tests.sharedRandom, tests.epoch)
+				require.NoError(err)
+			}
+		}
+	}
+	b.Run("phase3", runPhase3Tests)
 }
