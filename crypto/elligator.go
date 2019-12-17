@@ -130,9 +130,12 @@ type PrivateKey struct {
 	privBuf *memguard.LockedBuffer
 }
 
-func NewRandomePrivateKey() *PrivateKey {
+func NewRandomPrivateKey() *PrivateKey {
 	p := &PrivateKey{
 		privBuf: memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength),
+	}
+	if p.privBuf.Size() != PrivateKeyLength {
+		panic("NewRandomPrivateKey failure, buffer not 32 bytes long")
 	}
 	r := p.privBuf.Bytes()
 	digest := sha256.Sum256(r)
@@ -211,7 +214,7 @@ func NewKeypair(elligator bool) (*Keypair, error) {
 	}
 
 	for {
-		keypair.private = NewRandomePrivateKey()
+		keypair.private = NewRandomPrivateKey()
 		if elligator {
 			// Apply the Elligator transform.  This fails ~50% of the time.
 			if !extra25519.ScalarBaseMult(keypair.public.Bytes(),
