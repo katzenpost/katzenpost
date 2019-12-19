@@ -29,7 +29,50 @@ package crypto
 
 import (
 	"testing"
+
+	"github.com/katzenpost/core/crypto/rand"
+	"github.com/stretchr/testify/require"
 )
+
+func TestPrivateKey(t *testing.T) {
+	require := require.New(t)
+
+	privateKey := NewRandomPrivateKey()
+	privateKey2 := NewEmptyPrivateKey()
+	err := privateKey2.FromBytes(privateKey.Bytes())
+	require.NoError(err)
+	require.Equal(privateKey.Bytes(), privateKey2.Bytes())
+}
+
+func TestPublicKey(t *testing.T) {
+	require := require.New(t)
+
+	publicKey := new(PublicKey)
+	fu := [32]byte{}
+	_, err := rand.Reader.Read(fu[:])
+	require.NoError(err)
+
+	publicKey.FromBytes(fu[:])
+	publicKey2 := new(PublicKey)
+	err = publicKey2.FromBytes(publicKey.Bytes()[:])
+	require.NoError(err)
+	require.Equal(publicKey.Bytes(), publicKey2.Bytes())
+}
+
+func TestRepresentativeKey(t *testing.T) {
+	require := require.New(t)
+
+	representativeKey := new(Representative)
+	fu := [32]byte{}
+	_, err := rand.Reader.Read(fu[:])
+	require.NoError(err)
+
+	representativeKey.FromBytes(fu[:])
+	representativeKey2 := new(Representative)
+	err = representativeKey2.FromBytes(representativeKey.Bytes()[:])
+	require.NoError(err)
+	require.Equal(representativeKey.Bytes(), representativeKey2.Bytes())
+}
 
 // TestNewKeypair tests Curve25519/Elligator keypair generation.
 func TestNewKeypair(t *testing.T) {
@@ -56,4 +99,23 @@ func TestNewKeypair(t *testing.T) {
 	if !keypair.HasElligator() {
 		t.Fatal("NewKeypair(true) mising an Elligator representative")
 	}
+}
+
+func TestNewKeypairSerialization(t *testing.T) {
+	require := require.New(t)
+
+	keypair, err := NewKeypair(true)
+	require.NoError(err)
+
+	fu, err := keypair.MarshalBinary()
+	require.NoError(err)
+
+	keypair2, err := NewKeypair(true)
+	require.NoError(err)
+	err = keypair2.UnmarshalBinary(fu)
+	require.NoError(err)
+
+	fu2, err := keypair2.MarshalBinary()
+	require.NoError(err)
+	require.Equal(fu, fu2)
 }

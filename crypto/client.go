@@ -19,9 +19,12 @@ package crypto
 import (
 	"github.com/awnumar/memguard"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
 )
+
+var cborHandle = new(codec.CborHandle)
 
 const (
 	type1Message = "type-1"
@@ -31,6 +34,14 @@ const (
 	// SharedEpochKeySize is the length of the shared epoch key.
 	SharedEpochKeySize = 32
 )
+
+type clientCbor struct {
+	Keypair1       *Keypair
+	Keypair2       *Keypair
+	SessionKey1    []byte
+	SessionKey2    []byte
+	SharedEpochKey []byte
+}
 
 type Client struct {
 	keypair1       *Keypair
@@ -216,4 +227,24 @@ func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch u
 		return nil, err
 	}
 	return payload, nil
+}
+
+func (c *Client) Marshal() ([]byte, error) {
+	var serialized []byte
+	cc := clientCbor{
+		Keypair1:       c.keypair1,
+		Keypair2:       c.keypair2,
+		SessionKey1:    c.sessionKey1.Bytes(),
+		SessionKey2:    c.sessionKey2.Bytes(),
+		SharedEpochKey: c.sharedEpochKey.Bytes(),
+	}
+	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&cc)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+func (c *Client) Unmarshal(data []byte) error {
+	return codec.NewDecoderBytes(data, cborHandle).Decode(c)
 }

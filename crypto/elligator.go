@@ -35,6 +35,7 @@ import (
 	"github.com/agl/ed25519/extra25519"
 	"github.com/awnumar/memguard"
 	"github.com/katzenpost/core/crypto/rand"
+	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -54,6 +55,15 @@ const (
 	// GroupElementLength is the length of a ECDH group element in bytes.
 	GroupElementLength = PublicKeyLength
 )
+
+// RepresentativeKeyLengthError is the error returned when the public key being
+// imported is an invalid length.
+type RepresentativeKeyLengthError int
+
+func (e RepresentativeKeyLengthError) Error() string {
+	return fmt.Sprintf("ntor: Invalid Elligator Representative Curve25519 public key length: %d",
+		int(e))
+}
 
 // PublicKeyLengthError is the error returned when the public key being
 // imported is an invalid length.
@@ -77,13 +87,34 @@ func (e PrivateKeyLengthError) Error() string {
 type PublicKey [PublicKeyLength]byte
 
 // Bytes returns a pointer to the raw Curve25519 public key.
-func (public *PublicKey) Bytes() *[PublicKeyLength]byte {
-	return (*[PublicKeyLength]byte)(public)
+func (k *PublicKey) Bytes() *[PublicKeyLength]byte {
+	return (*[PublicKeyLength]byte)(k)
+}
+
+// FromBytes deserializes the byte slice b into the PublicKey.
+func (k *PublicKey) FromBytes(b []byte) error {
+	if len(b) != PublicKeyLength {
+		return PublicKeyLengthError(len(b))
+	}
+	copy((*[PublicKeyLength]byte)(k)[:], b)
+	return nil
+}
+
+// MarshalBinary is an implementation of a method on the
+// BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) MarshalBinary() ([]byte, error) {
+	return k.Bytes()[:], nil
+}
+
+// UnmarshalBinary is an implementation of a method on the
+// BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PublicKey) UnmarshalBinary(data []byte) error {
+	return k.FromBytes(data)
 }
 
 // Hex returns the hexdecimal representation of the Curve25519 public key.
-func (public *PublicKey) Hex() string {
-	return hex.EncodeToString(public.Bytes()[:])
+func (k *PublicKey) Hex() string {
+	return hex.EncodeToString(k.Bytes()[:])
 }
 
 // NewPublicKey creates a PublicKey from the raw bytes.
@@ -112,9 +143,30 @@ func PublicKeyFromHex(encoded string) (*PublicKey, error) {
 // in little-endian byte order.
 type Representative [RepresentativeLength]byte
 
+// FromBytes deserializes the byte slice b into the PublicKey.
+func (repr *Representative) FromBytes(b []byte) error {
+	if len(b) != RepresentativeLength {
+		return RepresentativeKeyLengthError(len(b))
+	}
+	copy((*[RepresentativeLength]byte)(repr)[:], b)
+	return nil
+}
+
 // Bytes returns a pointer to the raw Elligator representative.
 func (repr *Representative) Bytes() *[RepresentativeLength]byte {
 	return (*[RepresentativeLength]byte)(repr)
+}
+
+// MarshalBinary is an implementation of a method on the
+// BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
+func (repr *Representative) MarshalBinary() ([]byte, error) {
+	return repr.Bytes()[:], nil
+}
+
+// UnmarshalBinary is an implementation of a method on the
+// BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (repr *Representative) UnmarshalBinary(data []byte) error {
+	return repr.FromBytes(data)
 }
 
 // ToPublic converts a Elligator representative to a Curve25519 public key.
@@ -130,12 +182,22 @@ type PrivateKey struct {
 	privBuf *memguard.LockedBuffer
 }
 
+func NewEmptyPrivateKey() *PrivateKey {
+	p := &PrivateKey{
+		privBuf: memguard.NewBuffer(PrivateKeyLength),
+	}
+	if p.privBuf.Size() != PrivateKeyLength {
+		memguard.SafePanic("NewRandomPrivateKey failure, buffer not 32 bytes long")
+	}
+	return p
+}
+
 func NewRandomPrivateKey() *PrivateKey {
 	p := &PrivateKey{
 		privBuf: memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength),
 	}
 	if p.privBuf.Size() != PrivateKeyLength {
-		panic("NewRandomPrivateKey failure, buffer not 32 bytes long")
+		memguard.SafePanic("NewRandomPrivateKey failure, buffer not 32 bytes long")
 	}
 	r := p.privBuf.Bytes()
 	digest := sha256.Sum256(r)
@@ -155,23 +217,52 @@ func Exp(dst, x, y *[GroupElementLength]byte) {
 }
 
 // Exp calculates the shared secret with the provided public key.
-func (private *PrivateKey) Exp(sharedSecret *[GroupElementLength]byte, publicKey *PublicKey) {
-	Exp(sharedSecret, (*[GroupElementLength]byte)(publicKey), private.ByteArray32())
+func (k *PrivateKey) Exp(sharedSecret *[GroupElementLength]byte, publicKey *PublicKey) {
+	Exp(sharedSecret, (*[GroupElementLength]byte)(publicKey), k.ByteArray32())
+}
+
+// FromBytes deserializes the byte slice b into the PrivateKey.
+func (k *PrivateKey) FromBytes(b []byte) error {
+	if len(b) != PrivateKeyLength {
+		return PrivateKeyLengthError(len(b))
+	}
+	k.privBuf.Melt()
+	copy(k.privBuf.Bytes(), b)
+	k.privBuf.Freeze()
+	return nil
 }
 
 // Bytes returns a pointer to the raw Curve25519 private key.
-func (private *PrivateKey) Bytes() []byte {
-	return private.privBuf.Bytes()
+func (k *PrivateKey) Bytes() []byte {
+	return k.privBuf.Bytes()
+}
+
+// MarshalBinary is an implementation of a method on the
+// BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) MarshalBinary() ([]byte, error) {
+	return k.Bytes(), nil
+}
+
+// UnmarshalBinary is an implementation of a method on the
+// BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) UnmarshalBinary(data []byte) error {
+	return k.FromBytes(data)
 }
 
 // Bytes returns a pointer to the raw Curve25519 private key.
-func (private *PrivateKey) ByteArray32() *[32]byte {
-	return private.privBuf.ByteArray32()
+func (k *PrivateKey) ByteArray32() *[32]byte {
+	return k.privBuf.ByteArray32()
 }
 
 // Hex returns the hexdecimal representation of the Curve25519 private key.
-func (private *PrivateKey) Hex() string {
-	return hex.EncodeToString(private.Bytes()[:])
+func (k *PrivateKey) Hex() string {
+	return hex.EncodeToString(k.Bytes()[:])
+}
+
+type KeypairSerializable struct {
+	Public         *PublicKey
+	Private        *PrivateKey
+	Representative *Representative
 }
 
 // Keypair is a Curve25519 keypair with an optional Elligator representative.
@@ -202,6 +293,44 @@ func (keypair *Keypair) Representative() *Representative {
 // HasElligator returns true if the Keypair has an Elligator representative.
 func (keypair *Keypair) HasElligator() bool {
 	return nil != keypair.representative
+}
+
+// MarshalBinary is an implementation of a method on the
+// BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
+func (keypair *Keypair) MarshalBinary() ([]byte, error) {
+	var serialized []byte
+	k := KeypairSerializable{
+		Public:         keypair.public,
+		Private:        keypair.private,
+		Representative: keypair.representative,
+	}
+	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&k)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+// UnmarshalBinary is an implementation of a method on the
+// BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (keypair *Keypair) UnmarshalBinary(data []byte) error {
+	k := &KeypairSerializable{
+		Public: &PublicKey{},
+		Private: &PrivateKey{
+			privBuf: memguard.NewBuffer(PrivateKeyLength),
+		},
+		Representative: &Representative{},
+	}
+	k.Private.privBuf.Melt()
+	defer k.Private.privBuf.Freeze()
+	err := codec.NewDecoderBytes(data, cborHandle).Decode(k)
+	if err != nil {
+		return err
+	}
+	keypair.public = k.Public
+	keypair.private = k.Private
+	keypair.representative = k.Representative
+	return nil
 }
 
 // NewKeypair generates a new Curve25519 keypair, and optionally also generates

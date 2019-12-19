@@ -92,3 +92,25 @@ func TestClientBasics(t *testing.T) {
 	require.Equal(payload1, plaintext2)
 	require.Equal(payload2, plaintext1)
 }
+
+func TestClientSerialization(t *testing.T) {
+	require := require.New(t)
+
+	sharedEpochKey := [SharedEpochKeySize]byte{}
+	_, err := rand.Reader.Read(sharedEpochKey[:])
+
+	client, err := NewClientFromKey(&sharedEpochKey)
+	require.NoError(err)
+
+	serialized, err := client.Marshal()
+	require.NoError(err)
+
+	blankEpochKey := [SharedEpochKeySize]byte{}
+	client2, err := NewClientFromKey(&blankEpochKey)
+	require.NoError(err)
+	err = client2.Unmarshal(serialized)
+	require.NoError(err)
+
+	_, err = client2.Marshal()
+	require.NoError(err)
+}
