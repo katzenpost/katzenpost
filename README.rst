@@ -1,6 +1,17 @@
 
+===============
 Reunion Library
 ===============
+
+.. image:: https://travis-ci.org/katzenpost/reunion.svg?branch=master
+  :target: https://travis-ci.org/katzenpost/reunion
+
+.. image:: https://coveralls.io/repos/github/katzenpost/reunion/badge.svg?branch=master
+  :target: https://coveralls.io/github/katzenpost/reunion
+
+.. image:: https://godoc.org/github.com/katzenpost/reunion?status.svg
+  :target: https://godoc.org/github.com/katzenpost/reunion
+
 
 Reunion is a cryptographic protocol allowing an asynchronous n-way
 passphrase authenticated exchange facilitated by the Reunion
@@ -13,22 +24,21 @@ Status
 
 Work-in-progress.
 
+The core cryptographic operations are in working order at this
+time. There are some unit tests and bench marks which demonstrate the
+basic protocol interaction between two clients.
+
 
 Cryptographic Primitives
 ------------------------
 
-* lioness: https://git.schwanenlied.me/yawning/lioness
 * AEZ: git.schwanenlied.me/yawning/aez.git
 * chacha20+poly1305 aead: https://git.schwanenlied.me/yawning/chacha20poly1305
                             https://godoc.org/golang.org/x/crypto/chacha20poly1305
 * argon2id: https://godoc.org/golang.org/x/crypto/argon2
-* rijndael: https://github.com/katzenpost/panda/blob/master/crypto/rijndael/rijndael.go
 * hkdf: https://godoc.org/golang.org/x/crypto/hkdf
 * curve25519: https://github.com/katzenpost/core/blob/master/crypto/ecdh/ecdh.go
 * elligator: https://github.com/agl/ed25519/blob/master/extra25519/extra25519.go
-  Here's the ntor elligator:
-  https://github.com/Yawning/obfs4/blob/master/common/ntor/ntor.go
-
 
 license
 =======
