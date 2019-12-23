@@ -16,7 +16,10 @@
 
 package crypto
 
-import "git.schwanenlied.me/yawning/aez.git"
+import (
+	"git.schwanenlied.me/yawning/aez.git"
+	"github.com/awnumar/memguard"
+)
 
 const (
 	// SPRPMinimumBlockLength is the minimum block length of the SPRP.
@@ -42,7 +45,8 @@ func SPRPDecrypt(key *[SPRPKeyLength]byte, iv *[SPRPIVLength]byte, msg []byte) [
 	if !ok {
 		// Not covered by unit tests because this indicates a bug in the AEZ
 		// implementation, that is hard to force.
-		panic("crypto/SPRPDecrypt: BUG - aez.Decrypt failed with tau = 0")
+		memguard.SafePanic("crypto/SPRPDecrypt: BUG - aez.Decrypt failed with tau = 0")
+
 	}
 	return dst
 }
