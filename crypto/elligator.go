@@ -237,6 +237,11 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 	return nil
 }
 
+// Destroy destroys the private key material and frees up the memory.
+func (k *PrivateKey) Destroy() {
+	k.privBuf.Destroy()
+}
+
 // Bytes returns a pointer to the raw Curve25519 private key.
 func (k *PrivateKey) Bytes() []byte {
 	return k.privBuf.Bytes()
@@ -278,6 +283,11 @@ type Keypair struct {
 	public         *PublicKey
 	private        *PrivateKey
 	representative *Representative
+}
+
+// Destroy causes the private key meterial to be destroyed.
+func (keypair *Keypair) Destroy() {
+	keypair.private.Destroy()
 }
 
 // Public returns the Curve25519 public key belonging to the Keypair.

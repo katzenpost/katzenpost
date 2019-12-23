@@ -91,6 +91,16 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 	return NewClientFromKey(&k)
 }
 
+// Destroy destroys all the Client's key material
+// and frees up the memory.
+func (c *Client) Destroy() {
+	c.keypair1.Destroy()
+	c.keypair2.Destroy()
+	c.sessionKey1.Destroy()
+	c.sessionKey2.Destroy()
+	c.sharedEpochKey.Destroy()
+}
+
 // GenerateType1Message generates a Type 1 message.
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
 	keypair1ElligatorPub := c.keypair1.Representative().Bytes()
