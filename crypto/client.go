@@ -43,6 +43,13 @@ type clientCbor struct {
 	SharedEpochKey []byte
 }
 
+// Client encapsulate all the key material
+// and provides a few methods for performing
+// core cryptographic operations that form the
+// Reunion protocol. Note that this so called
+// Client does NOT keep any state. Therefore
+// these client methods are supplemented with
+// some helper functions defined in crypto.go
 type Client struct {
 	keypair1       *Keypair
 	keypair2       *Keypair
@@ -51,6 +58,7 @@ type Client struct {
 	sharedEpochKey *memguard.LockedBuffer
 }
 
+// NewClientFromKey creates a new client given a shared epoch key.
 func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error) {
 	keypair1, err := NewKeypair(true)
 	if err != nil {
@@ -70,6 +78,7 @@ func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error)
 	return client, nil
 }
 
+// NewClient creates a new client given a shared passphrase, shared random value and an epoch number.
 func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Client, error) {
 	salt := getSalt(sharedRandomValue, epoch)
 	t := uint32(9001)
@@ -82,6 +91,7 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 	return NewClientFromKey(&k)
 }
 
+// GenerateType1Message generates a Type 1 message.
 func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
 	keypair1ElligatorPub := c.keypair1.Representative().Bytes()
 	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
@@ -108,6 +118,7 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 	return output, nil
 }
 
+// ProcessType1MessageAlpha processes the alpha portion of a type one message.
 func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
 
 	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
@@ -149,6 +160,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	return t2, b1PubKey, nil
 }
 
+// GetCandidateKey extracts a candidate key from a type two message.
 func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
 	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
@@ -176,6 +188,7 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 	return SPRPDecrypt(&k3Inner, &k3InnerIV, SPRPDecrypt(k3Outer, &k3OuterIV, t2)), nil
 }
 
+// ComposeType3Message composes a type three message.
 func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte, epoch uint64) ([]byte, error) {
 	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
@@ -200,6 +213,7 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 	return t3, nil
 }
 
+// ProcessType3Message processes a type three message.
 func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
 	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
@@ -229,6 +243,7 @@ func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch u
 	return payload, nil
 }
 
+// Marshal serializes the client key material.
 func (c *Client) Marshal() ([]byte, error) {
 	var serialized []byte
 	cc := clientCbor{
@@ -245,6 +260,7 @@ func (c *Client) Marshal() ([]byte, error) {
 	return serialized, nil
 }
 
+// Unmarshal deserializes the client key material.
 func (c *Client) Unmarshal(data []byte) error {
 	return codec.NewDecoderBytes(data, cborHandle).Decode(c)
 }

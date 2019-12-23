@@ -14,12 +14,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package provides core cryptographic functions for the Reunion protocol.
 package crypto
 
 import "git.schwanenlied.me/yawning/aez.git"
 
 const (
+	// SPRPMinimumBlockLength is the minimum block length of the SPRP.
 	SPRPMinimumBlockLength = 32
 
 	// SPRPKeyLength is the key size of the SPRP in bytes.

@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package provides core cryptographic functions for the Reunion protocol.
+// Package crypto provides core cryptographic functionality for the Reunion protocol.
 package crypto
 
 import (
@@ -27,6 +27,9 @@ import (
 	"golang.org/x/crypto/hkdf"
 )
 
+// HashFunc implements the Hash interface
+// as defined in https://godoc.org/hash#Hash
+// We use it below in our HKDF construction.
 var HashFunc = sha256.New
 
 const (
@@ -44,6 +47,7 @@ const (
 	Type1MessageSize = t1AlphaSize + t1BetaSize + t1GammaSize
 )
 
+// ErrInvalidMessageSize is an error indicating an invalid message size.
 var ErrInvalidMessageSize = errors.New("invalid message size")
 
 func padMessage(message []byte) (*[PayloadSize]byte, error) {

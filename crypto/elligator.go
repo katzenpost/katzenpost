@@ -182,6 +182,9 @@ type PrivateKey struct {
 	privBuf *memguard.LockedBuffer
 }
 
+// NewEmptyPrivateKey creates a new PrivateKey with the lockedBuffer
+// initialized to the correct size but not yet initialized to random
+// bytes.
 func NewEmptyPrivateKey() *PrivateKey {
 	p := &PrivateKey{
 		privBuf: memguard.NewBuffer(PrivateKeyLength),
@@ -192,6 +195,8 @@ func NewEmptyPrivateKey() *PrivateKey {
 	return p
 }
 
+// NewRandomPrivateKey creates a new PrivateKey with the lockedBuffer
+// initialized to PrivateKeyLength random bytes.
 func NewRandomPrivateKey() *PrivateKey {
 	p := &PrivateKey{
 		privBuf: memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength),
@@ -249,7 +254,7 @@ func (k *PrivateKey) UnmarshalBinary(data []byte) error {
 	return k.FromBytes(data)
 }
 
-// Bytes returns a pointer to the raw Curve25519 private key.
+// ByteArray32 returns a pointer to the raw Curve25519 private key.
 func (k *PrivateKey) ByteArray32() *[32]byte {
 	return k.privBuf.ByteArray32()
 }
@@ -259,6 +264,7 @@ func (k *PrivateKey) Hex() string {
 	return hex.EncodeToString(k.Bytes()[:])
 }
 
+// KeypairSerializable is used to help serialize Keypair.
 type KeypairSerializable struct {
 	Public         *PublicKey
 	Private        *PrivateKey
