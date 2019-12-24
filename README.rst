@@ -3,12 +3,6 @@
 Reunion
 =======
 
-.. image:: https://travis-ci.org/katzenpost/reunion.svg?branch=master
-  :target: https://travis-ci.org/katzenpost/reunion
-
-.. image:: https://coveralls.io/repos/github/katzenpost/reunion/badge.svg?branch=master
-  :target: https://coveralls.io/github/katzenpost/reunion
-
 .. image:: https://godoc.org/github.com/katzenpost/reunion?status.svg
   :target: https://godoc.org/github.com/katzenpost/reunion
 
