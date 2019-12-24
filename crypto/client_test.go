@@ -40,9 +40,11 @@ func TestClientBasics(t *testing.T) {
 
 	client1, err := NewClientFromKey(&sharedEpochKey1)
 	require.NoError(err)
+	defer client1.Destroy()
 
 	client2, err := NewClientFromKey(&sharedEpochKey2)
 	require.NoError(err)
+	defer client2.Destroy()
 
 	client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)
 	require.NoError(err)
@@ -101,6 +103,7 @@ func TestClientSerialization(t *testing.T) {
 
 	client, err := NewClientFromKey(&sharedEpochKey)
 	require.NoError(err)
+	defer client.Destroy()
 
 	serialized, err := client.Marshal()
 	require.NoError(err)
@@ -108,6 +111,8 @@ func TestClientSerialization(t *testing.T) {
 	blankEpochKey := [SharedEpochKeySize]byte{}
 	client2, err := NewClientFromKey(&blankEpochKey)
 	require.NoError(err)
+	defer client2.Destroy()
+
 	err = client2.Unmarshal(serialized)
 	require.NoError(err)
 
