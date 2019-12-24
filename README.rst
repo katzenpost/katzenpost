@@ -1,7 +1,7 @@
 
-===============
-Reunion Library
-===============
+=======
+Reunion
+=======
 
 .. image:: https://travis-ci.org/katzenpost/reunion.svg?branch=master
   :target: https://travis-ci.org/katzenpost/reunion
@@ -11,6 +11,9 @@ Reunion Library
 
 .. image:: https://godoc.org/github.com/katzenpost/reunion?status.svg
   :target: https://godoc.org/github.com/katzenpost/reunion
+
+.. image:: https://api.codacy.com/project/badge/Grade/fa6651c5ed42478ca07c330faf5001c6
+  :target: https://www.codacy.com/gh/katzenpost/reunion?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=katzenpost/reunion&amp;utm_campaign=Badge_Grade
 
 
 Reunion is a cryptographic protocol allowing an asynchronous n-way
@@ -34,7 +37,6 @@ Cryptographic Primitives
 
 * AEZ: git.schwanenlied.me/yawning/aez.git
 * chacha20+poly1305 aead: https://git.schwanenlied.me/yawning/chacha20poly1305
-                            https://godoc.org/golang.org/x/crypto/chacha20poly1305
 * argon2id: https://godoc.org/golang.org/x/crypto/argon2
 * hkdf: https://godoc.org/golang.org/x/crypto/hkdf
 * curve25519: https://github.com/katzenpost/core/blob/master/crypto/ecdh/ecdh.go
