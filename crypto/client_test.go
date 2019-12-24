@@ -19,6 +19,7 @@ package crypto
 import (
 	"testing"
 
+	"github.com/awnumar/memguard"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
@@ -93,6 +94,8 @@ func TestClientBasics(t *testing.T) {
 
 	require.Equal(payload1, plaintext2)
 	require.Equal(payload2, plaintext1)
+
+	memguard.Purge()
 }
 
 func TestClientSerialization(t *testing.T) {
@@ -118,4 +121,6 @@ func TestClientSerialization(t *testing.T) {
 
 	_, err = client2.Marshal()
 	require.NoError(err)
+
+	memguard.Purge()
 }
