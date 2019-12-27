@@ -27,17 +27,34 @@ import (
 )
 
 var cborHandle = new(codec.CborHandle)
+
+// ShutdownErrMessage is an error invoked during shutdown.
 var ShutdownErrMessage = "reunion: shutdown requested"
 
 const (
-	InitialState       = 0
-	T1MessageSentState = 1
-	T2MessageSentState = 2
-	T3MessageSentState = 3
+	initialState       = 0
+	t1MessageSentState = 1
+	t2MessageSentState = 2
+	t3MessageSentState = 3
 )
 
-// ReunionUpdate represents an update to the reunion client state or to report
-// a failure.
+// Command interface represents query and response Reunion DB commands.
+type Command interface {
+	// ToBytes appends the serialized command to slice b, and returns the
+	// resulting slice.
+	ToBytes(b []byte) []byte
+}
+
+// ReunionDatabase is an interface which represents the
+// Reunion DB that protocol clients interact with.
+type ReunionDatabase interface {
+	// Query sends a query command to the Reunion DB and returns the
+	// response command or an error.
+	Query(command Command, haltCh chan interface{}) (Command, error)
+}
+
+// ReunionUpdate represents an update to the reunion client state or
+// to report a failure.
 type ReunionUpdate struct {
 	ContactID  uint64
 	Error      error
@@ -82,6 +99,7 @@ type Exchange struct {
 	receivedT2s map[[32]byte]bool
 }
 
+// Marshal returns a serialization of the Exchange or an error.
 func (e *Exchange) Marshal() ([]byte, error) {
 	ex := exchangeCbor{
 		ContactID:   e.contactID,
@@ -125,7 +143,9 @@ func (e *Exchange) sentUpdateOK() bool {
 	return true
 }
 
-// Run performs the Reunion exchange.
+// Run performs the Reunion exchange. It implemented a very simple
+// FSM which uses the updateChan to save it's state after each
+// state transition.
 //
 // The Reunion paper states:
 //
@@ -141,11 +161,11 @@ func (e *Exchange) sentUpdateOK() bool {
 // 9:A <- DB: fetch state and confirm epoch end by retrieving new epoch
 func (e *Exchange) Run() {
 	switch e.status {
-	case InitialState:
+	case initialState:
 		// 1:A <- DB: fetch current epoch and current set of data for epoch state
 		// 2:A -> DB: transmit א message
 		// XXX
-		e.status = T1MessageSentState
+		e.status = t1MessageSentState
 		if !e.sentUpdateOK() {
 			return
 		}
@@ -154,11 +174,11 @@ func (e *Exchange) Run() {
 			return
 		}
 		fallthrough
-	case T1MessageSentState:
+	case t1MessageSentState:
 		// 3:A <- DB: fetch epoch state
 		// 4:A -> DB: transmit one ב message for each א
 		// XXX
-		e.status = T2MessageSentState
+		e.status = t2MessageSentState
 		if !e.sentUpdateOK() {
 			return
 		}
@@ -167,11 +187,11 @@ func (e *Exchange) Run() {
 			return
 		}
 		fallthrough
-	case T2MessageSentState:
+	case t2MessageSentState:
 		// 5:A <- DB: fetch epoch state for replies to A’s א
 		// 6:A -> DB: transmit one ג message for each new ב
 		// XXX
-		e.status = T3MessageSentState
+		e.status = t3MessageSentState
 		if !e.sentUpdateOK() {
 			return
 		}
@@ -180,7 +200,7 @@ func (e *Exchange) Run() {
 			return
 		}
 		fallthrough
-	case T3MessageSentState:
+	case t3MessageSentState:
 		// 7:A <- DB: fetch epoch state for replies to A’s
 		// 8:A -> DB: continue sending ב and ג messages until epoch ends
 		// 9:A <- DB: fetch state and confirm epoch end by retrieving new epoch
