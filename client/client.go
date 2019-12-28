@@ -38,21 +38,6 @@ const (
 	t3MessageSentState = 3
 )
 
-// Command interface represents query and response Reunion DB commands.
-type Command interface {
-	// ToBytes appends the serialized command to slice b, and returns the
-	// resulting slice.
-	ToBytes(b []byte) []byte
-}
-
-// ReunionDatabase is an interface which represents the
-// Reunion DB that protocol clients interact with.
-type ReunionDatabase interface {
-	// Query sends a query command to the Reunion DB and returns the
-	// response command or an error.
-	Query(command Command, haltCh chan interface{}) (Command, error)
-}
-
 // ReunionUpdate represents an update to the reunion client state or
 // to report a failure.
 type ReunionUpdate struct {
