@@ -45,10 +45,14 @@ const (
 // ReunionUpdate represents an update to the reunion client state or
 // to report a failure.
 type ReunionUpdate struct {
-	ContactID  uint64
-	Error      error
+	// ContactID is the unique contact identity.
+	ContactID uint64
+	// Error contains an error or nil if no error.
+	Error error
+	// Serialized is the serialized Exchange state.
 	Serialized []byte
-	Result     []byte
+	// Result is the received decrypted T1 message payload.
+	Result []byte
 }
 
 type exchangeCbor struct {
