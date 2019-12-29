@@ -30,8 +30,7 @@ const (
 	// to indicate there was no error with the received query command.
 	ResponseStatusOK = 0
 
-	cmdOverhead  = 1
-	sendT1Length = crypto.Type1MessageSize + 8
+	cmdOverhead = 1
 
 	// Reunion client/DB commands.
 	fetchState     commandID = 0

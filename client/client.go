@@ -92,6 +92,7 @@ type Exchange struct {
 	receivedT2s map[[32]byte]bool
 }
 
+// NewExchange creates a new Exchange struct type.
 func NewExchange(
 	payload []byte,
 	log *logging.Logger,
