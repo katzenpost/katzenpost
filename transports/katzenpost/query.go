@@ -31,6 +31,8 @@ type KatzenpostTransport struct {
 	provider  string
 }
 
+// Query sends the command to the destination Reunion DB service
+// over a Katzenpost mix network.
 func (k *KatzenpostTransport) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
 	rawQuery := command.ToBytes()
 	reply, err := k.session.BlockingSendUnreliableMessage(k.recipient, k.provider, rawQuery)
