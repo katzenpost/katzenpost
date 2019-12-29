@@ -175,11 +175,11 @@ func (e *Exchange) sendT1() bool {
 		e.log.Error(err.Error())
 		return false
 	}
-	sendT1Cmd := commands.SendT1{
+	t1Cmd := commands.SendT1{
 		Epoch:   e.epoch,
 		Payload: t1,
 	}
-	rawResponse, err := e.db.Query(&sendT1Cmd, e.shutdownChan)
+	rawResponse, err := e.db.Query(&t1Cmd, e.shutdownChan)
 	if err != nil {
 		e.log.Error(err.Error())
 		return false
@@ -193,6 +193,36 @@ func (e *Exchange) sendT1() bool {
 		e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
 		return false
 	}
+	return true
+}
+
+func (e *Exchange) sendT2Messages() bool {
+	/*
+		t2, b1PubKey, err := e.client.ProcessType1MessageAlpha(alpha, e.sharedRandomValue, e.epoch)
+		if err != nil {
+			e.log.Error(err.Error())
+			return false
+		}
+		t2Cmd := commands.SendT2{
+			Epoch:   e.epoch,
+			T1Hash:  fufu,
+			Payload: lala,
+		}
+		rawResponse, err := e.db.Query(&t2Cmd, e.shutdownChan)
+		if err != nil {
+			e.log.Error(err.Error())
+			return false
+		}
+		response, ok := rawResponse.(*commands.MessageResponse)
+		if !ok {
+			e.log.Error(InvalidResponseErrMessage)
+			return false
+		}
+		if response.ErrorCode != commands.ResponseStatusOK {
+			e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
+			return false
+		}
+	*/
 	return true
 }
 

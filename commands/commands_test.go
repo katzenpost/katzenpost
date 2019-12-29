@@ -1,0 +1,137 @@
+// commands_test.go - Tests for reunion protocol commands.
+// Copyright (C) 2019  David Stainton.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+package commands
+
+import (
+	"crypto/sha256"
+	"testing"
+
+	"github.com/katzenpost/reunion/crypto"
+	"github.com/stretchr/testify/require"
+)
+
+func TestFetchStateCommand(t *testing.T) {
+	require := require.New(t)
+
+	cmd := new(FetchState)
+	cmd.Epoch = 1234
+	cmd.ChunkIndex = 5432
+	b := cmd.ToBytes()
+	require.Equal(len(b), fetchStateLength)
+
+	c, err := FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	cmd2 := c.(*FetchState)
+	require.Equal(cmd.Epoch, cmd2.Epoch)
+	require.Equal(cmd.ChunkIndex, cmd2.ChunkIndex)
+}
+
+func TestStateResponseCommand(t *testing.T) {
+	require := require.New(t)
+
+	cmd := new(StateResponse)
+	cmd.ErrorCode = 123
+	cmd.Truncated = true
+	cmd.LeftOverChunksHint = 332
+	cmd.Payload = make([]byte, chunkLength)
+	b := cmd.ToBytes()
+	require.Equal(len(b), stateResponseLength)
+
+	c, err := FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	cmd2 := c.(*StateResponse)
+	require.Equal(cmd.ErrorCode, cmd2.ErrorCode)
+	require.Equal(cmd.Truncated, cmd2.Truncated)
+	require.Equal(cmd.LeftOverChunksHint, cmd2.LeftOverChunksHint)
+	require.Equal(cmd.Payload, cmd2.Payload)
+}
+
+func TestSendT1Command(t *testing.T) {
+	require := require.New(t)
+
+	cmd := new(SendT1)
+	cmd.Epoch = 123
+	cmd.Payload = make([]byte, crypto.Type1MessageSize)
+
+	b := cmd.ToBytes()
+	require.Equal(len(b), sendT1Length)
+
+	c, err := FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	cmd2 := c.(*SendT1)
+	require.Equal(cmd.Epoch, cmd2.Epoch)
+	require.Equal(cmd.Payload, cmd2.Payload)
+}
+
+func TestSendT2Command(t *testing.T) {
+	require := require.New(t)
+
+	cmd := new(SendT2)
+	cmd.Epoch = 123
+	cmd.T1Hash = [sha256.Size]byte{}
+	cmd.Payload = make([]byte, crypto.Type2MessageSize)
+
+	b := cmd.ToBytes()
+	require.Equal(len(b), sendT2Length)
+
+	c, err := FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	cmd2 := c.(*SendT2)
+	require.Equal(cmd.Epoch, cmd2.Epoch)
+	require.Equal(cmd.T1Hash, cmd2.T1Hash)
+	require.Equal(cmd.Payload, cmd2.Payload)
+}
+
+func TestSendT3Command(t *testing.T) {
+	require := require.New(t)
+
+	cmd := new(SendT3)
+	cmd.Epoch = 123
+	cmd.T2Hash = [sha256.Size]byte{}
+	cmd.Payload = make([]byte, crypto.Type2MessageSize)
+
+	b := cmd.ToBytes()
+	require.Equal(len(b), sendT3Length)
+
+	c, err := FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	cmd2 := c.(*SendT3)
+	require.Equal(cmd.Epoch, cmd2.Epoch)
+	require.Equal(cmd.T2Hash, cmd2.T2Hash)
+	require.Equal(cmd.Payload, cmd2.Payload)
+}
+
+func TestMessageResponseCommand(t *testing.T) {
+	require := require.New(t)
+
+	cmd := new(MessageResponse)
+	cmd.ErrorCode = 123
+
+	b := cmd.ToBytes()
+	require.Equal(len(b), messageResponseLength)
+
+	c, err := FromBytes(b)
+	require.NoError(err)
+	require.IsType(cmd, c)
+	cmd2 := c.(*MessageResponse)
+	require.Equal(cmd.ErrorCode, cmd2.ErrorCode)
+}

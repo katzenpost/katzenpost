@@ -43,8 +43,14 @@ const (
 	t1BetaSize  = SymmetricKeySize + chacha20poly1305.Overhead
 	t1GammaSize = PayloadSize + chacha20poly1305.Overhead
 
-	// Type1MessageSize is the size in byte of the Type 1 Message.
+	// Type1MessageSize is the size in bytes of the Type 1 Message.
 	Type1MessageSize = t1AlphaSize + t1BetaSize + t1GammaSize
+
+	// Type2MessageSize is the size in bytes of the Type 2 Message.
+	Type2MessageSize = SPRPMinimumBlockLength
+
+	// Type3MessageSize is the size in bytes of the Type 3 Message.
+	Type3MessageSize = SymmetricKeySize
 )
 
 // ErrInvalidMessageSize is an error indicating an invalid message size.
