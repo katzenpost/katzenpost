@@ -21,21 +21,25 @@ package katzenpost
 import (
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/reunion/commands"
-	"gopkg.in/op/go-logging.v1"
 )
 
-type KatzenpostTransport struct {
-	log       *logging.Logger
-	session   *client.Session
-	recipient string
-	provider  string
+// Transport is used by Reunion protocol
+// clients to send queries to the Reunion DB service.
+type Transport struct {
+	// Session is a client Session which
+	// can be used to send mixnet messages.
+	Session *client.Session
+	// Recipient is the destination service.
+	Recipient string
+	// Provider is the destination Provider.
+	Provider string
 }
 
 // Query sends the command to the destination Reunion DB service
 // over a Katzenpost mix network.
-func (k *KatzenpostTransport) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
+func (k *Transport) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
 	rawQuery := command.ToBytes()
-	reply, err := k.session.BlockingSendUnreliableMessage(k.recipient, k.provider, rawQuery)
+	reply, err := k.Session.BlockingSendUnreliableMessage(k.Recipient, k.Provider, rawQuery)
 	if err != nil {
 		return nil, err
 	}
