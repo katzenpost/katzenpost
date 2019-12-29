@@ -20,7 +20,7 @@ package client
 import (
 	"errors"
 
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/reunion/commands"
 	"github.com/katzenpost/reunion/crypto"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
@@ -30,6 +30,10 @@ var cborHandle = new(codec.CborHandle)
 
 // ShutdownErrMessage is an error invoked during shutdown.
 var ShutdownErrMessage = "reunion: shutdown requested"
+
+// InvalidResponseErrMessage is an error used to indicate
+// that an invalid response from the Reunion server was received.
+var InvalidResponseErrMessage = "invalid response received from Reunion DB"
 
 const (
 	initialState       = 0
@@ -69,19 +73,55 @@ type exchangeCbor struct {
 // For every t2 message sent in reply to their own t1,
 // they construct and transmit a t3 message.
 type Exchange struct {
-	worker.Worker
+	log          *logging.Logger
+	updateChan   chan ReunionUpdate
+	db           commands.ReunionDatabase
+	shutdownChan chan interface{}
 
-	log        *logging.Logger
-	updateChan chan ReunionUpdate
+	status            int
+	contactID         uint64
+	epoch             uint64
+	sharedRandomValue []byte
 
-	status      int
-	contactID   uint64
-	epoch       uint64
-	client      *crypto.Client
+	client *crypto.Client
+
+	payload     []byte
 	t1          []byte
 	sentT2Map   map[[32]byte][]byte
 	sentT3Map   map[[32]byte][]byte
 	receivedT2s map[[32]byte]bool
+}
+
+func NewExchange(
+	payload []byte,
+	log *logging.Logger,
+	db commands.ReunionDatabase,
+	contactID uint64,
+	passphrase []byte,
+	sharedRandomValue []byte,
+	epoch uint64,
+	updateChan chan ReunionUpdate) (*Exchange, error) {
+
+	client, err := crypto.NewClient(passphrase, sharedRandomValue, epoch)
+	if err != nil {
+		return nil, err
+	}
+	return &Exchange{
+		log:               log,
+		updateChan:        updateChan,
+		db:                db,
+		shutdownChan:      make(chan interface{}),
+		status:            initialState,
+		contactID:         contactID,
+		epoch:             epoch,
+		sharedRandomValue: sharedRandomValue,
+		client:            client,
+		payload:           payload,
+		t1:                nil,
+		sentT2Map:         make(map[[32]byte][]byte),
+		sentT3Map:         make(map[[32]byte][]byte),
+		receivedT2s:       make(map[[32]byte]bool),
+	}, nil
 }
 
 // Marshal returns a serialization of the Exchange or an error.
@@ -106,7 +146,7 @@ func (e *Exchange) Marshal() ([]byte, error) {
 
 func (e *Exchange) shouldStop() bool {
 	select {
-	case <-e.HaltCh():
+	case <-e.shutdownChan:
 		return true
 	default:
 		return false
@@ -128,28 +168,49 @@ func (e *Exchange) sentUpdateOK() bool {
 	return true
 }
 
-// Run performs the Reunion exchange. It implemented a very simple
+func (e *Exchange) sendT1() bool {
+	t1, err := e.client.GenerateType1Message(e.epoch, e.sharedRandomValue, e.payload)
+	if err != nil {
+		e.log.Error(err.Error())
+		return false
+	}
+	sendT1Cmd := commands.SendT1{
+		Epoch:   e.epoch,
+		Payload: t1,
+	}
+	rawResponse, err := e.db.Query(&sendT1Cmd, e.shutdownChan)
+	if err != nil {
+		e.log.Error(err.Error())
+		return false
+	}
+	response, ok := rawResponse.(*commands.MessageResponse)
+	if !ok {
+		e.log.Error(InvalidResponseErrMessage)
+		return false
+	}
+	if response.ErrorCode != commands.ResponseStatusOK {
+		e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
+		return false
+	}
+	return true
+}
+
+func (e *Exchange) fetchState() bool {
+	return false // XXX
+}
+
+// Run performs the Reunion exchange and expresses a simple
 // FSM which uses the updateChan to save it's state after each
-// state transition.
-//
-// The Reunion paper states:
-//
-// Output:Output: n Messages from n parties which share the SecretPhrase
-// 1:A <- DB: fetch current epoch and current set of data for epoch state
-// 2:A -> DB: transmit א message
-// 3:A <- DB: fetch epoch state
-// 4:A -> DB: transmit one ב message for each א
-// 5:A <- DB: fetch epoch state for replies to A’s א
-// 6:A -> DB: transmit one ג message for each new ב
-// 7:A <- DB: fetch epoch state for replies to A’s
-// 8:A -> DB: continue sending ב and ג messages until epoch ends
-// 9:A <- DB: fetch state and confirm epoch end by retrieving new epoch
+// state transition. This method is meant to run in it's own
+// goroutine.
 func (e *Exchange) Run() {
 	switch e.status {
 	case initialState:
-		// 1:A <- DB: fetch current epoch and current set of data for epoch state
+		// XXX 1:A <- DB: fetch current epoch and current set of data for epoch state
 		// 2:A -> DB: transmit א message
-		// XXX
+		if !e.sendT1() {
+			return
+		}
 		e.status = t1MessageSentState
 		if !e.sentUpdateOK() {
 			return
