@@ -227,6 +227,35 @@ func (e *Exchange) sendT2Messages() bool {
 }
 
 func (e *Exchange) fetchState() bool {
+
+	fetchStateCmd := new(commands.FetchState)
+	fetchStateCmd.Epoch = e.epoch
+	//fetchStateCmd.ChunkIndex = chunkIndex
+
+	rawResponse, err := e.db.Query(fetchStateCmd, e.shutdownChan)
+	if err != nil {
+		e.log.Error(err.Error())
+		return false
+	}
+	response, ok := rawResponse.(*commands.StateResponse)
+	if !ok {
+		e.log.Error("fetch state: wrong response command received")
+		return false
+	}
+	if response.ErrorCode != commands.ResponseStatusOK {
+		e.log.Errorf("fetch state: received an error status code from the reunion db: %d", response.ErrorCode)
+		return false
+	}
+	if !response.Truncated {
+
+	} else {
+		// XXX do something with
+		// response.LeftOverChunksHint
+	}
+
+	// XXX do something with
+	// response.Payload
+
 	return false // XXX
 }
 
