@@ -81,7 +81,9 @@ func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error)
 // NewClient creates a new client given a shared passphrase, shared random value and an epoch number.
 func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Client, error) {
 	salt := getSalt(sharedRandomValue, epoch)
-	t := uint32(9001)
+	// XXX how many iterations should we use?
+	// This makes it run for 2.2s on my crappy laptop.
+	t := uint32(250)
 	memory := uint32(9001)
 	threads := uint8(1)
 	key := argon2.IDKey(passphrase, salt, t, memory, threads, SharedEpochKeySize)
