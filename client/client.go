@@ -39,8 +39,10 @@ var (
 	InvalidResponseErrMessage = "invalid response received from Reunion DB"
 )
 
+// Error is an error string.
 type Error string
 
+// Error returns the error string.
 func (e Error) Error() string { return string(e) }
 
 const (
@@ -237,6 +239,7 @@ func (e *Exchange) fetchState() error {
 			return nil
 		}
 
+		e.log.Debugf("fetch sleeping for %v ", delay)
 		select {
 		case <-e.shutdownChan:
 			return ShutdownError
@@ -478,6 +481,7 @@ func (e *Exchange) Run() {
 	case initialState:
 		// XXX not required -> 1:A <- DB: fetch current epoch and current set of data for epoch state
 		// 2:A -> DB: transmit א message
+		e.log.Debug("sending T1 message")
 		if !e.sendT1() {
 			return
 		}
@@ -494,12 +498,14 @@ func (e *Exchange) Run() {
 		e.log.Debug("Entered T1 Sent State")
 		for {
 			// 3:A <- DB: fetch epoch state
+			e.log.Debug("fetching state")
 			err := e.fetchState()
 			if err != nil {
 				e.log.Error(err.Error())
 				return
 			}
 			// 4:A -> DB: transmit one ב message for each א
+			e.log.Debug("sending T2 messages")
 			if !e.sendT2Messages() {
 				return
 			}
@@ -513,6 +519,7 @@ func (e *Exchange) Run() {
 			}
 			// 5:A <- DB: fetch epoch state for replies to A’s א
 			// 6:A -> DB: transmit one ג message for each new ב
+			e.log.Debug("sending T3 messages")
 			if !e.sendT3Messages() {
 				continue
 			}
@@ -521,13 +528,17 @@ func (e *Exchange) Run() {
 			if !e.sentUpdateOK() {
 				return
 			}
+			e.log.Debug("sent update OK")
 			if e.shouldStop() {
 				e.log.Error(ShutdownError.Error())
 				return
 			}
+			e.log.Debug("before process T3 messages")
 			if e.processT3Messages() {
+				e.log.Debug("OK")
 				break // XXX should we try to send more than one T3 message?
 			}
+			e.log.Debug("!OK")
 		} // end for loop
 		fallthrough
 	case t3MessageSentState:

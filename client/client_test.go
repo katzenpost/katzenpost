@@ -19,6 +19,8 @@ package client
 
 import (
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/katzenpost/core/log"
@@ -39,7 +41,7 @@ func NewMockReunionDB() *MockReunionDB {
 }
 
 func (m *MockReunionDB) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
-	var response commands.Command = nil
+	var response commands.Command
 	switch cmd := command.(type) {
 	case *commands.FetchState:
 		var serialized []byte
@@ -96,10 +98,16 @@ func TestClientServerBasics(t *testing.T) {
 	require.NoError(err)
 	aliceExchangelog := logBackend.GetLogger("reunion_exchange")
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	aliceUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		for {
-			<-aliceUpdateCh
+			update := <-aliceUpdateCh
+			if len(update.Result) > 0 {
+				fmt.Printf("Alice got result: %s", update.Result)
+				defer wg.Done()
+			}
 		}
 	}()
 
@@ -116,7 +124,11 @@ func TestClientServerBasics(t *testing.T) {
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		for {
-			<-bobUpdateCh
+			update := <-bobUpdateCh
+			if len(update.Result) > 0 {
+				fmt.Printf("Bob got result: %s", update.Result)
+				defer wg.Done()
+			}
 		}
 	}()
 
@@ -128,5 +140,5 @@ func TestClientServerBasics(t *testing.T) {
 	go aliceExchange.Run()
 	go bobExchange.Run()
 
-	// XXX ...
+	wg.Wait()
 }
