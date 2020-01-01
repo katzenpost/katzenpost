@@ -266,6 +266,7 @@ func (e *Exchange) processState(chunk *server.ReunionStateChunk) bool {
 		if bytes.Equal(t1Hash, myT1Hash) {
 			continue
 		}
+		e.log.Debug("storing a T1")
 		t1HashAr := [sha256.Size]byte{}
 		copy(t1HashAr[:], t1Hash)
 		_, ok := e.receivedT1s[t1HashAr]
@@ -278,6 +279,7 @@ func (e *Exchange) processState(chunk *server.ReunionStateChunk) bool {
 		if !bytes.Equal(sendT2.T1Hash[:], myT1Hash) {
 			continue
 		}
+		e.log.Debug("storing a T2")
 		h := sha256.New()
 		h.Write(sendT2.Payload)
 		t2Hash := h.Sum(nil)
@@ -292,6 +294,7 @@ func (e *Exchange) processState(chunk *server.ReunionStateChunk) bool {
 		if _, ok := e.sentT2Map[sendT3.T2Hash]; !ok {
 			continue
 		}
+		e.log.Debug("storing a T3")
 		if _, ok := e.receivedT3s[sendT3.T2Hash]; !ok {
 			e.receivedT3s[sendT3.T2Hash] = sendT3.Payload
 			hasNew = true
@@ -349,6 +352,9 @@ func (e *Exchange) sendT2Messages() bool {
 			e.log.Error(err.Error())
 			return false
 		}
+
+		// XXX
+		//e.receivedT1Alphas[t1Hash] = alphaPubKey
 		e.receivedT1Alphas = append(e.receivedT1Alphas, alphaPubKey)
 
 		h := sha256.New()
@@ -388,6 +394,7 @@ func (e *Exchange) sendT2Messages() bool {
 func (e *Exchange) sendT3Messages() bool {
 	hasSentT3 := false
 	for t2Hash, t2 := range e.receivedT2s {
+		e.log.Debug("for each t2")
 		if _, ok := e.sentT2Map[t2Hash]; ok {
 			continue
 		}
@@ -396,12 +403,14 @@ func (e *Exchange) sendT3Messages() bool {
 		}
 		// XXX correct?
 		for i := 0; i < len(e.receivedT1Alphas); i++ {
+			e.log.Debug("for each decrypted T1 Alpha")
 			candidateKey, err := e.client.GetCandidateKey(t2, e.receivedT1Alphas[i], e.epoch, e.sharedRandomValue)
 			if err != nil {
 				e.log.Error(err.Error())
 				return false
 			}
 			for t1hash, t1 := range e.receivedT1s {
+				e.log.Debug("for each T1")
 				_, t1beta, _, err := crypto.DecodeT1Message(t1)
 				if err != nil {
 					e.log.Error(err.Error())
@@ -422,6 +431,7 @@ func (e *Exchange) sendT3Messages() bool {
 					T2Hash:  t2Hash,
 					Payload: t3,
 				}
+				e.log.Debug("before sending sendT3 command to reunion DB")
 				rawResponse, err := e.db.Query(&sendT3Cmd, e.shutdownChan)
 				if err != nil {
 					e.log.Error(err.Error())
@@ -446,7 +456,9 @@ func (e *Exchange) sendT3Messages() bool {
 }
 
 func (e *Exchange) processT3Messages() bool {
+	e.log.Debug("processT3Messages")
 	for _, t3 := range e.receivedT3s {
+		e.log.Debug("for each t3")
 		for t1Hash, t1 := range e.receivedT1s {
 			beta, ok := e.decryptedT1Betas[t1Hash]
 			if !ok {
@@ -469,6 +481,7 @@ func (e *Exchange) processT3Messages() bool {
 			}
 		}
 	}
+	e.log.Debug("false")
 	return false
 }
 
