@@ -105,7 +105,6 @@ func TestClientServerBasics(t *testing.T) {
 
 	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
 	require.NoError(err)
-	go aliceExchange.Run()
 
 	// bob client
 	bobPayload := []byte("yo")
@@ -123,6 +122,10 @@ func TestClientServerBasics(t *testing.T) {
 
 	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh)
 	require.NoError(err)
+
+	// Run reunion client exchanges.
+
+	go aliceExchange.Run()
 	go bobExchange.Run()
 
 	// XXX ...

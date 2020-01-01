@@ -35,6 +35,7 @@ type ReunionStateChunk struct {
 	T3s []*commands.SendT3
 }
 
+// NewReunionStateChunk creates a new ReunionStateChunk.
 func NewReunionStateChunk() *ReunionStateChunk {
 	return &ReunionStateChunk{
 		Sequence: 0,
