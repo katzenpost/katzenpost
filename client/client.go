@@ -104,18 +104,27 @@ type Exchange struct {
 
 	payload []byte
 
-	sentT1    []byte
+	sentT1 []byte
+
+	// t2 hash -> t2
 	sentT2Map map[[32]byte][]byte
+	// not used
 	sentT3Map map[[32]byte][]byte
 
-	receivedT1s map[[32]byte][]byte
-	receivedT2s map[[32]byte][]byte
-	receivedT3s map[[32]byte][]byte
-
+	// t1 hash -> t1
 	repliedT1s map[[32]byte][]byte
+	// t2 hash -> t2
 	repliedT2s map[[32]byte][]byte
 
+	// t1 hash -> t1
+	receivedT1s map[[32]byte][]byte
+	// t2 hash -> t2
+	receivedT2s map[[32]byte][]byte
+	// t2 hash -> t3
+	receivedT3s map[[32]byte][]byte
+
 	receivedT1Alphas []*crypto.PublicKey
+	// t1 hash -> beta
 	decryptedT1Betas map[[32]byte]*crypto.PublicKey
 
 	remoteSequence uint64

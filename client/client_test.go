@@ -28,15 +28,19 @@ import (
 	"github.com/katzenpost/reunion/server"
 	"github.com/stretchr/testify/require"
 	"github.com/ugorji/go/codec"
+	"gopkg.in/op/go-logging.v1"
 )
 
 type MockReunionDB struct {
+	sync.RWMutex
 	state *server.ReunionStateChunk
+	log   *logging.Logger
 }
 
-func NewMockReunionDB() *MockReunionDB {
+func NewMockReunionDB(mylog *logging.Logger) *MockReunionDB {
 	return &MockReunionDB{
 		state: server.NewReunionStateChunk(),
+		log:   mylog,
 	}
 }
 
@@ -44,6 +48,8 @@ func (m *MockReunionDB) Query(command commands.Command, haltCh chan interface{})
 	var response commands.Command
 	switch cmd := command.(type) {
 	case *commands.FetchState:
+		m.RLock()
+		defer m.RUnlock()
 		var serialized []byte
 		err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&m.state)
 		if err != nil {
@@ -56,18 +62,25 @@ func (m *MockReunionDB) Query(command commands.Command, haltCh chan interface{})
 			Payload:            serialized,
 		}
 	case *commands.SendT1:
+		m.Lock()
+		defer m.Unlock()
 		m.state.T1s = append(m.state.T1s, cmd)
 		response = &commands.MessageResponse{
 			ErrorCode: commands.ResponseStatusOK,
 		}
 		m.state.Sequence++
 	case *commands.SendT2:
+		m.Lock()
+		defer m.Unlock()
 		m.state.T2s = append(m.state.T2s, cmd)
 		response = &commands.MessageResponse{
 			ErrorCode: commands.ResponseStatusOK,
 		}
 		m.state.Sequence++
 	case *commands.SendT3:
+		m.Lock()
+		defer m.Unlock()
+		m.log.Debug("appending T3")
 		m.state.T3s = append(m.state.T3s, cmd)
 		response = &commands.MessageResponse{
 			ErrorCode: commands.ResponseStatusOK,
@@ -83,7 +96,15 @@ func TestClientServerBasics(t *testing.T) {
 	require := require.New(t)
 
 	// variable shared among reunion clients
-	reunionDB := NewMockReunionDB()
+	f := ""
+	level := "DEBUG"
+	disable := false
+	logBackend, err := log.New(f, level, disable)
+	require.NoError(err)
+
+	dblog := logBackend.GetLogger("Reunion_DB")
+	reunionDB := NewMockReunionDB(dblog)
+
 	srv := []byte{1, 2, 3}
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
 	epoch := uint64(12322)
@@ -91,12 +112,8 @@ func TestClientServerBasics(t *testing.T) {
 	// alice client
 	alicePayload := []byte("sup")
 	aliceContactID := uint64(1)
-	f := ""
-	level := "DEBUG"
-	disable := false
-	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
-	aliceExchangelog := logBackend.GetLogger("reunion_exchange")
+	aliceExchangelog := logBackend.GetLogger("alice_exchange")
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -119,7 +136,7 @@ func TestClientServerBasics(t *testing.T) {
 	bobContactID := uint64(1)
 	bobLogBackend, err := log.New(f, level, disable)
 	require.NoError(err)
-	bobExchangelog := bobLogBackend.GetLogger("reunion_exchange")
+	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
 
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
