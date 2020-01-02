@@ -108,8 +108,6 @@ type Exchange struct {
 
 	// t2 hash -> t2
 	sentT2Map map[[32]byte][]byte
-	// not used
-	sentT3Map map[[32]byte][]byte
 
 	// t1 hash -> t1
 	repliedT1s map[[32]byte][]byte
@@ -159,7 +157,6 @@ func NewExchange(
 
 		sentT1:    nil,
 		sentT2Map: make(map[[32]byte][]byte),
-		sentT3Map: make(map[[32]byte][]byte),
 
 		receivedT1s: make(map[[32]byte][]byte),
 		receivedT2s: make(map[[32]byte][]byte),
@@ -182,7 +179,6 @@ func (e *Exchange) Marshal() ([]byte, error) {
 		Client:      e.client,
 		SentT1:      e.sentT1,
 		SentT2Map:   e.sentT2Map,
-		SentT3Map:   e.sentT3Map,
 		ReceivedT2s: e.receivedT2s,
 	}
 	var serialized []byte
@@ -542,9 +538,7 @@ func (e *Exchange) Run() {
 			// 5:A <- DB: fetch epoch state for replies to A’s א
 			// 6:A -> DB: transmit one ג message for each new ב
 			e.log.Debug("sending T3 messages")
-			if !e.sendT3Messages() {
-				continue
-			}
+			e.sendT3Messages()
 			e.log.Debug("T3 Message Sent")
 			e.status = t3MessageSentState
 			if !e.sentUpdateOK() {
@@ -555,6 +549,14 @@ func (e *Exchange) Run() {
 				e.log.Error(ShutdownError.Error())
 				return
 			}
+
+			e.log.Debug("fetching state")
+			err = e.fetchState()
+			if err != nil {
+				e.log.Error(err.Error())
+				return
+			}
+
 			e.log.Debug("before process T3 messages")
 			if e.processT3Messages() {
 				e.log.Debug("OK")
