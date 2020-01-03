@@ -58,14 +58,6 @@ type Command interface {
 	ToBytes() []byte
 }
 
-// ReunionDatabase is an interface which represents the
-// Reunion DB that protocol clients interact with.
-type ReunionDatabase interface {
-	// Query sends a query command to the Reunion DB and returns the
-	// response command or an error.
-	Query(command Command, haltCh chan interface{}) (Command, error)
-}
-
 // FetchState command is used by clients to fetch the current Reunion DB state.
 type FetchState struct {
 	// Epoch specifies the current Reunion epoch.
@@ -207,6 +199,9 @@ func sendT2FromBytes(b []byte) (Command, error) {
 type SendT3 struct {
 	// Epoch specifies the current Reunion epoch.
 	Epoch uint64
+
+	// T1Hash is the hash of the T1 message which this T3 message is replying.
+	T1Hash [sha256.Size]byte
 
 	// T2Hash is the hash of the T2 message which this T3 message is replying.
 	T2Hash [sha256.Size]byte

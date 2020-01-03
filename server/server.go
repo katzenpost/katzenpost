@@ -18,29 +18,271 @@
 package server
 
 import (
+	"container/list"
+	"crypto/sha256"
+	"errors"
+	"sync"
+
 	"github.com/katzenpost/reunion/commands"
+	"github.com/ugorji/go/codec"
 )
 
-// ReunionStateChunk is a chunk of the state of the Reunion DB.
+var cborHandle = new(codec.CborHandle)
+
+// ReunionDatabase is an interface which represents the
+// Reunion DB that protocol clients interact with.
+type ReunionDatabase interface {
+	// Query sends a query command to the Reunion DB and returns the
+	// response command or an error.
+	Query(command commands.Command, haltCh chan interface{}) (commands.Command, error)
+}
+
+// LockedList is used to coordinate access to it's linked list
+// of T2 and T3 messages.
+type LockedList struct {
+	sync.RWMutex
+
+	list *list.List
+}
+
+func NewLockedList() *LockedList {
+	return &LockedList{
+		list: list.New(),
+	}
+}
+
+func (l *LockedList) Append(item interface{}) {
+	l.Lock()
+	defer l.Unlock()
+
+	l.list.PushBack(item)
+}
+
+// Range calls f sequentially for each item in the list.
+// If f returns false, Range stops the iteration.
+func (l *LockedList) Range(f func(item interface{}) bool) {
+	l.RLock()
+	defer l.RUnlock()
+
+	for e := l.list.Front(); e != nil; e = e.Next() {
+		if !f(e.Value) {
+			break
+		}
+	}
+}
+
+// T1Message
+type T1Message struct {
+	// Payload contains the T1 message.
+	Payload []byte
+}
+
+// T2Message
+type T2Message struct {
+	// Payload contains the T2 message.
+	Payload []byte
+}
+
+// T3Message
+type T3Message struct {
+	// T2Hash is the hash of the T2 message which this T3 message is replying.
+	T2Hash [sha256.Size]byte
+
+	// Payload contains the T3 message.
+	Payload []byte
+}
+
+// T2T3Message
+type T2T3Message struct {
+	// T2Hash is the hash of the T2 message which this T3 message is replying.
+	T2Hash *[sha256.Size]byte
+
+	// T2Payload contains the T2 message.
+	T2Payload []byte
+
+	// T3Payload contains the T3 message.
+	T3Payload []byte
+}
+
+type cborReunionState struct {
+	// T1Map is a slice of the SendT1 command received from a client.
+	// t1 hash -> t1
+	T1Map map[[32]byte][]byte
+
+	// messageMap: t1 hash -> slice of
+	MessageMap map[[32]byte][]*T2T3Message
+}
+
+// ReunionState is the state of the Reunion DB.
 // This is the type which is fetched by the FetchState
 // command.
-type ReunionStateChunk struct {
-	// Sequence is incremented with every change to the DB.
-	Sequence uint64
-	// T1s is a slice of the SendT1 command received from a client.
-	T1s []*commands.SendT1
-	// T2s is a slice of the SendT2 command received from a client.
-	T2s []*commands.SendT2
-	// T3s is a slice of the SendT3 command received from a client.
-	T3s []*commands.SendT3
+type ReunionState struct {
+	// t1Map is a slice of the SendT1 command received from a client.
+	t1Map *sync.Map
+
+	// messageMap maps the t1 hash to a linked list containing
+	// t2 and t3 messages, the LockedList defined above.
+	messageMap *sync.Map
 }
 
 // NewReunionStateChunk creates a new ReunionStateChunk.
-func NewReunionStateChunk() *ReunionStateChunk {
-	return &ReunionStateChunk{
-		Sequence: 0,
-		T1s:      make([]*commands.SendT1, 0),
-		T2s:      make([]*commands.SendT2, 0),
-		T3s:      make([]*commands.SendT3, 0),
+func NewReunionState() *ReunionState {
+	return &ReunionState{
+		t1Map:      new(sync.Map),
+		messageMap: new(sync.Map),
 	}
+}
+
+// Marshal returns a CBOR serialization of an inconsistent snapshot.
+func (s *ReunionState) Marshal() ([]byte, error) {
+	c := cborReunionState{
+		T1Map:      make(map[[32]byte][]byte),
+		MessageMap: make(map[[32]byte][]*T2T3Message),
+	}
+	var err error
+	s.t1Map.Range(func(t1hash, t1 interface{}) bool {
+		t1hashAr, ok := t1hash.([32]byte)
+		if !ok {
+			err = errors.New("Range failure, invalid input type")
+			return false
+		}
+		t1bytes, ok := t1.([]byte)
+		if !ok {
+			err = errors.New("Range failure, invalid input type")
+			return false
+		}
+		c.T1Map[t1hashAr] = t1bytes
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.messageMap.Range(func(t1hash, messages interface{}) bool {
+		t1hashAr, ok := t1hash.([32]byte)
+		if !ok {
+			err = errors.New("Range failure, invalid key type")
+			return false
+		}
+		_, ok = c.MessageMap[t1hashAr]
+		if !ok {
+			c.MessageMap[t1hashAr] = make([]*T2T3Message, 0)
+		}
+		mesgs, ok := messages.(*LockedList)
+		if !ok {
+			err = errors.New("Range failure, invalid list type")
+			return false
+		}
+		mesgs.Range(func(item interface{}) bool {
+			switch message := item.(type) {
+			case *T2Message:
+				c.MessageMap[t1hashAr] = append(c.MessageMap[t1hashAr], &T2T3Message{
+					T2Hash:    nil,
+					T2Payload: message.Payload,
+					T3Payload: nil,
+				})
+				return true
+			case *T3Message:
+				c.MessageMap[t1hashAr] = append(c.MessageMap[t1hashAr], &T2T3Message{
+					T2Hash:    &message.T2Hash,
+					T2Payload: nil,
+					T3Payload: message.Payload,
+				})
+				return true
+			default:
+				err = errors.New("Marshal failure due to invalid message type")
+				return false
+			}
+		})
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	var serialized []byte
+	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(&c)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+func (s *ReunionState) Unmarshal(data []byte) error {
+	state := cborReunionState{
+		T1Map:      make(map[[32]byte][]byte),
+		MessageMap: make(map[[32]byte][]*T2T3Message),
+	}
+	err := codec.NewDecoderBytes(data, cborHandle).Decode(&state)
+	if err != nil {
+		return err
+	}
+	for t1hash, t1 := range state.T1Map {
+		s.t1Map.Store(t1hash, t1)
+	}
+	for t1hash, messages := range state.MessageMap {
+		for _, t2t3 := range messages {
+			if len(t2t3.T2Payload) > 0 {
+				s.messageMap.Store(t1hash, &T2Message{
+					Payload: t2t3.T2Payload,
+				})
+			} else if len(t2t3.T3Payload) > 0 {
+				s.messageMap.Store(t1hash, &T3Message{
+					Payload: t2t3.T3Payload,
+				})
+			} else {
+				return errors.New("Unmarshal failure due to a zero size message")
+			}
+		}
+	}
+	return nil
+}
+
+// AppendMessage receives a message which can be one of these types:
+// *commands.SendT1
+// *commands.SendT2
+// *commands.SendT3
+func (s *ReunionState) AppendMessage(message interface{}) error {
+	switch mesg := message.(type) {
+	case *commands.SendT1:
+		h := sha256.New()
+		h.Write(mesg.Payload)
+		t1Hash := h.Sum(nil)
+		_, ok := s.t1Map.Load(t1Hash)
+		if ok {
+			errors.New("cannot append T1, already present")
+		}
+		s.t1Map.Store(t1Hash, mesg.Payload)
+		s.messageMap.Store(t1Hash, NewLockedList())
+		return nil
+	case *commands.SendT2:
+		l, ok := s.messageMap.Load(mesg.T1Hash)
+		if !ok {
+			s.messageMap.Store(mesg.T1Hash, NewLockedList())
+		}
+		messageList, ok := l.(*LockedList)
+		if !ok {
+			return errors.New("wtf, invalid list type")
+		}
+		messageList.Append(&T2Message{
+			Payload: mesg.Payload,
+		})
+		return nil
+	case *commands.SendT3:
+		l, ok := s.messageMap.Load(mesg.T1Hash)
+		if !ok {
+			s.messageMap.Store(mesg.T1Hash, NewLockedList())
+		}
+		messageList, ok := l.(*LockedList)
+		if !ok {
+			return errors.New("wtf, invalid list type")
+		}
+		messageList.Append(&T3Message{
+			T2Hash:  mesg.T2Hash,
+			Payload: mesg.Payload,
+		})
+		return nil
+	default:
+		return errors.New("ReunionState.AppendMessage failued: unknown message type")
+	}
+	// unreached
 }
