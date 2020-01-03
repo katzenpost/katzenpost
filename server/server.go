@@ -45,12 +45,14 @@ type LockedList struct {
 	list *list.List
 }
 
+// NewLockedList creates a new LockedList.
 func NewLockedList() *LockedList {
 	return &LockedList{
 		list: list.New(),
 	}
 }
 
+// Append to linked list after taking mutex.
 func (l *LockedList) Append(item interface{}) {
 	l.Lock()
 	defer l.Unlock()
@@ -109,7 +111,7 @@ type cborReunionState struct {
 	// t1 hash -> t1
 	T1Map map[[32]byte][]byte
 
-	// messageMap: t1 hash -> slice of
+	// MessageMap: t1 hash -> slice of
 	MessageMap map[[32]byte][]*T2T3Message
 }
 
@@ -167,12 +169,12 @@ func (s *ReunionState) Marshal() ([]byte, error) {
 		if !ok {
 			c.MessageMap[t1hashAr] = make([]*T2T3Message, 0)
 		}
-		mesgs, ok := messages.(*LockedList)
+		messageList, ok := messages.(*LockedList)
 		if !ok {
 			err = errors.New("Range failure, invalid list type")
 			return false
 		}
-		mesgs.Range(func(item interface{}) bool {
+		messageList.Range(func(item interface{}) bool {
 			switch message := item.(type) {
 			case *T2Message:
 				c.MessageMap[t1hashAr] = append(c.MessageMap[t1hashAr], &T2T3Message{
@@ -207,6 +209,7 @@ func (s *ReunionState) Marshal() ([]byte, error) {
 	return serialized, nil
 }
 
+// Unmarshal deserializes the state CBOR blob.
 func (s *ReunionState) Unmarshal(data []byte) error {
 	state := cborReunionState{
 		T1Map:      make(map[[32]byte][]byte),
@@ -216,19 +219,35 @@ func (s *ReunionState) Unmarshal(data []byte) error {
 	if err != nil {
 		return err
 	}
-	for t1hash, t1 := range state.T1Map {
-		s.t1Map.Store(t1hash, t1)
+	for _, t1 := range state.T1Map {
+		err := s.AppendMessage(&commands.SendT1{
+			Payload: t1,
+		})
+		if err != nil {
+			return err
+		}
 	}
 	for t1hash, messages := range state.MessageMap {
 		for _, t2t3 := range messages {
 			if len(t2t3.T2Payload) > 0 {
-				s.messageMap.Store(t1hash, &T2Message{
+				sendT2 := commands.SendT2{
+					T1Hash:  t1hash,
 					Payload: t2t3.T2Payload,
-				})
+				}
+				err := s.AppendMessage(&sendT2)
+				if err != nil {
+					return err
+				}
 			} else if len(t2t3.T3Payload) > 0 {
-				s.messageMap.Store(t1hash, &T3Message{
+				sendT3 := commands.SendT3{
+					T1Hash:  t1hash,
+					T2Hash:  *t2t3.T2Hash,
 					Payload: t2t3.T3Payload,
-				})
+				}
+				err := s.AppendMessage(&sendT3)
+				if err != nil {
+					return err
+				}
 			} else {
 				return errors.New("Unmarshal failure due to a zero size message")
 			}
@@ -247,39 +266,52 @@ func (s *ReunionState) AppendMessage(message interface{}) error {
 		h := sha256.New()
 		h.Write(mesg.Payload)
 		t1Hash := h.Sum(nil)
-		_, ok := s.t1Map.Load(t1Hash)
+		t1HashAr := [sha256.Size]byte{}
+		copy(t1HashAr[:], t1Hash)
+		_, ok := s.t1Map.Load(t1HashAr)
 		if ok {
 			errors.New("cannot append T1, already present")
 		}
-		s.t1Map.Store(t1Hash, mesg.Payload)
-		s.messageMap.Store(t1Hash, NewLockedList())
+		s.t1Map.Store(t1HashAr, mesg.Payload)
+		s.messageMap.Store(t1HashAr, NewLockedList())
 		return nil
 	case *commands.SendT2:
 		l, ok := s.messageMap.Load(mesg.T1Hash)
-		if !ok {
-			s.messageMap.Store(mesg.T1Hash, NewLockedList())
+		if ok {
+			messageList, ok := l.(*LockedList)
+			if !ok {
+				return errors.New("wtf, invalid list type")
+			}
+			messageList.Append(&T2Message{
+				Payload: mesg.Payload,
+			})
+		} else {
+			messageList := NewLockedList()
+			messageList.Append(&T2Message{
+				Payload: mesg.Payload,
+			})
+			s.messageMap.Store(mesg.T1Hash, messageList)
 		}
-		messageList, ok := l.(*LockedList)
-		if !ok {
-			return errors.New("wtf, invalid list type")
-		}
-		messageList.Append(&T2Message{
-			Payload: mesg.Payload,
-		})
 		return nil
 	case *commands.SendT3:
 		l, ok := s.messageMap.Load(mesg.T1Hash)
-		if !ok {
-			s.messageMap.Store(mesg.T1Hash, NewLockedList())
+		if ok {
+			messageList, ok := l.(*LockedList)
+			if !ok {
+				return errors.New("wtf, invalid list type")
+			}
+			messageList.Append(&T3Message{
+				T2Hash:  mesg.T2Hash,
+				Payload: mesg.Payload,
+			})
+		} else {
+			messageList := NewLockedList()
+			messageList.Append(&T3Message{
+				T2Hash:  mesg.T2Hash,
+				Payload: mesg.Payload,
+			})
+			s.messageMap.Store(mesg.T1Hash, messageList)
 		}
-		messageList, ok := l.(*LockedList)
-		if !ok {
-			return errors.New("wtf, invalid list type")
-		}
-		messageList.Append(&T3Message{
-			T2Hash:  mesg.T2Hash,
-			Payload: mesg.Payload,
-		})
 		return nil
 	default:
 		return errors.New("ReunionState.AppendMessage failued: unknown message type")
