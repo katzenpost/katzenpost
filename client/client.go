@@ -540,7 +540,6 @@ func (e *Exchange) Run() {
 			e.log.Debug("sending T3 messages")
 			e.sendT3Messages()
 			e.log.Debug("T3 Message Sent")
-			e.status = t3MessageSentState
 			if !e.sentUpdateOK() {
 				return
 			}
@@ -549,28 +548,12 @@ func (e *Exchange) Run() {
 				e.log.Error(ShutdownError.Error())
 				return
 			}
-
-			e.log.Debug("fetching state")
-			err = e.fetchState()
-			if err != nil {
-				e.log.Error(err.Error())
-				return
-			}
-
 			e.log.Debug("before process T3 messages")
 			if e.processT3Messages() {
 				e.log.Debug("OK")
-				break // XXX should we try to send more than one T3 message?
 			}
 			e.log.Debug("!OK")
 		} // end for loop
-		fallthrough
-	case t3MessageSentState:
-		// 7:A <- DB: fetch epoch state for replies to A’s
-		// 8:A -> DB: continue sending ב and ג messages until epoch ends
-		// 9:A <- DB: fetch state and confirm epoch end by retrieving new epoch
-		// XXX
-		e.log.Debug("Entered T3 Sent State")
 	default:
 		e.updateChan <- ReunionUpdate{
 			ContactID: e.contactID,
