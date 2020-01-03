@@ -106,7 +106,9 @@ type T2T3Message struct {
 	T3Payload []byte
 }
 
-type cborReunionState struct {
+// SerializableReunionState represents the ReunionState in
+// a serializable struct type.
+type SerializableReunionState struct {
 	// T1Map is a slice of the SendT1 command received from a client.
 	// t1 hash -> t1
 	T1Map map[[32]byte][]byte
@@ -135,9 +137,10 @@ func NewReunionState() *ReunionState {
 	}
 }
 
-// Marshal returns a CBOR serialization of an inconsistent snapshot.
-func (s *ReunionState) Marshal() ([]byte, error) {
-	c := cborReunionState{
+// Serializable returns a *SerializableReunionState copy of the
+// data encapsulated in *ReunionState.
+func (s *ReunionState) Serializable() (*SerializableReunionState, error) {
+	c := SerializableReunionState{
 		T1Map:      make(map[[32]byte][]byte),
 		MessageMap: make(map[[32]byte][]*T2T3Message),
 	}
@@ -201,6 +204,15 @@ func (s *ReunionState) Marshal() ([]byte, error) {
 		return nil, err
 	}
 
+	return &c, nil
+}
+
+// Marshal returns a CBOR serialization of an inconsistent snapshot.
+func (s *ReunionState) Marshal() ([]byte, error) {
+	c, err := s.Serializable()
+	if err != nil {
+		return nil, err
+	}
 	var serialized []byte
 	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(&c)
 	if err != nil {
@@ -211,7 +223,7 @@ func (s *ReunionState) Marshal() ([]byte, error) {
 
 // Unmarshal deserializes the state CBOR blob.
 func (s *ReunionState) Unmarshal(data []byte) error {
-	state := cborReunionState{
+	state := SerializableReunionState{
 		T1Map:      make(map[[32]byte][]byte),
 		MessageMap: make(map[[32]byte][]*T2T3Message),
 	}
