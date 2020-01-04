@@ -35,7 +35,7 @@ const (
 	SharedEpochKeySize = 32
 )
 
-type clientCbor struct {
+type serializableSession struct {
 	Keypair1       *Keypair
 	Keypair2       *Keypair
 	SessionKey1    []byte
@@ -43,23 +43,25 @@ type clientCbor struct {
 	SharedEpochKey []byte
 }
 
-// Client encapsulate all the key material
+// Session encapsulates all the key material
 // and provides a few methods for performing
 // core cryptographic operations that form the
 // Reunion protocol. Note that this so called
-// Client does NOT keep any state. Therefore
+// Session does NOT keep any state. Therefore
 // these client methods are supplemented with
 // some helper functions defined in crypto.go
-type Client struct {
-	keypair1       *Keypair
-	keypair2       *Keypair
-	sessionKey1    *memguard.LockedBuffer
-	sessionKey2    *memguard.LockedBuffer
-	sharedEpochKey *memguard.LockedBuffer
+type Session struct {
+	epoch             uint64
+	sharedRandomValue []byte
+	keypair1          *Keypair
+	keypair2          *Keypair
+	sessionKey1       *memguard.LockedBuffer
+	sessionKey2       *memguard.LockedBuffer
+	sharedEpochKey    *memguard.LockedBuffer
 }
 
-// NewClientFromKey creates a new client given a shared epoch key.
-func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error) {
+// NewSessionFromKey creates a new client given a shared epoch key.
+func NewSessionFromKey(sharedEpochKey *[SharedEpochKeySize]byte, sharedRandomValue []byte, epoch uint64) (*Session, error) {
 	keypair1, err := NewKeypair(true)
 	if err != nil {
 		return nil, err
@@ -68,18 +70,20 @@ func NewClientFromKey(sharedEpochKey *[SharedEpochKeySize]byte) (*Client, error)
 	if err != nil {
 		return nil, err
 	}
-	client := &Client{
-		keypair1:       keypair1,
-		keypair2:       keypair2,
-		sessionKey1:    memguard.NewBufferFromReader(rand.Reader, 32),
-		sessionKey2:    memguard.NewBufferFromReader(rand.Reader, 32),
-		sharedEpochKey: memguard.NewBufferFromBytes(sharedEpochKey[:]),
+	client := &Session{
+		epoch:             epoch,
+		sharedRandomValue: sharedRandomValue,
+		keypair1:          keypair1,
+		keypair2:          keypair2,
+		sessionKey1:       memguard.NewBufferFromReader(rand.Reader, 32),
+		sessionKey2:       memguard.NewBufferFromReader(rand.Reader, 32),
+		sharedEpochKey:    memguard.NewBufferFromBytes(sharedEpochKey[:]),
 	}
 	return client, nil
 }
 
-// NewClient creates a new client given a shared passphrase, shared random value and an epoch number.
-func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Client, error) {
+// NewSession creates a new client given a shared passphrase, shared random value and an epoch number.
+func NewSession(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Session, error) {
 	salt := getSalt(sharedRandomValue, epoch)
 	// XXX how many iterations should we use?
 	// This makes it run for 2.2s on my crappy laptop.
@@ -90,12 +94,12 @@ func NewClient(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Clie
 	k := [SharedEpochKeySize]byte{}
 	copy(k[:], key)
 	memguard.WipeBytes(key)
-	return NewClientFromKey(&k)
+	return NewSessionFromKey(&k, sharedRandomValue, epoch)
 }
 
-// Destroy destroys all the Client's key material
+// Destroy destroys all the Session's key material
 // and frees up the memory.
-func (c *Client) Destroy() {
+func (c *Session) Destroy() {
 	c.keypair1.Destroy()
 	c.keypair2.Destroy()
 	c.sessionKey1.Destroy()
@@ -104,9 +108,9 @@ func (c *Client) Destroy() {
 }
 
 // GenerateType1Message generates a Type 1 message.
-func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload []byte) ([]byte, error) {
+func (c *Session) GenerateType1Message(payload []byte) ([]byte, error) {
 	keypair1ElligatorPub := c.keypair1.Representative().Bytes()
-	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
+	k1, _, err := deriveSprpKey(type1Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -131,9 +135,9 @@ func (c *Client) GenerateType1Message(epoch uint64, sharedRandomValue, payload [
 }
 
 // ProcessType1MessageAlpha processes the alpha portion of a type one message.
-func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte, epoch uint64) ([]byte, *PublicKey, error) {
+func (c *Session) ProcessType1MessageAlpha(alpha []byte) ([]byte, *PublicKey, error) {
 
-	k1, _, err := deriveSprpKey(type1Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
+	k1, _, err := deriveSprpKey(type1Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -147,7 +151,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	b1PubKey := r.ToPublic()
 
 	// T2 message construction:
-	k2Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
+	k2Outer, hkdfContext, err := deriveSprpKey(type2Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -155,7 +159,7 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 	k2idh := [32]byte{}
 	c.keypair1.Private().Exp(&k2idh, b1PubKey)
 
-	salt := getSalt(sharedRandomValue, epoch)
+	salt := getSalt(c.sharedRandomValue, c.epoch)
 	prk2i := hkdf.Extract(HashFunc, k2idh[:], salt)
 
 	kdfReader := hkdf.Expand(HashFunc, prk2i, hkdfContext)
@@ -173,8 +177,8 @@ func (c *Client) ProcessType1MessageAlpha(alpha []byte, sharedRandomValue []byte
 }
 
 // GetCandidateKey extracts a candidate key from a type two message.
-func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
+func (c *Session) GetCandidateKey(t2 []byte, alpha *PublicKey) ([]byte, error) {
+	k3Outer, hkdfContext, err := deriveSprpKey(type2Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +188,7 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 	c.keypair1.Private().Exp(&k3idh, alpha)
 
 	// HKDF extract and expand
-	salt := getSalt(sharedRandomValue, epoch)
+	salt := getSalt(c.sharedRandomValue, c.epoch)
 	prk3i := hkdf.Extract(HashFunc, k3idh[:], salt)
 
 	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
@@ -201,8 +205,8 @@ func (c *Client) GetCandidateKey(t2 []byte, alpha *PublicKey, epoch uint64, shar
 }
 
 // ComposeType3Message composes a type three message.
-func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte, epoch uint64) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
+func (c *Session) ComposeType3Message(beta2 *PublicKey) ([]byte, error) {
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +214,7 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 	dh := [32]byte{}
 	c.keypair2.Private().Exp(&dh, beta2)
 
-	salt := getSalt(sharedRandomValue, epoch)
+	salt := getSalt(c.sharedRandomValue, c.epoch)
 	prk3i := hkdf.Extract(HashFunc, dh[:], salt)
 	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
 	k3Inner := [SPRPKeyLength]byte{}
@@ -226,8 +230,8 @@ func (c *Client) ComposeType3Message(beta2 *PublicKey, sharedRandomValue []byte,
 }
 
 // ProcessType3Message processes a type three message.
-func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch uint64, sharedRandomValue []byte) ([]byte, error) {
-	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, sharedRandomValue, epoch, c.sharedEpochKey.Bytes())
+func (c *Session) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey) ([]byte, error) {
+	k3Outer, hkdfContext, err := deriveSprpKey(type3Message, c.sharedRandomValue, c.epoch, c.sharedEpochKey.Bytes())
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +239,7 @@ func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch u
 	dh := [32]byte{}
 	c.keypair2.Private().Exp(&dh, beta2)
 
-	salt := getSalt(sharedRandomValue, epoch)
+	salt := getSalt(c.sharedRandomValue, c.epoch)
 	prk3i := hkdf.Extract(HashFunc, dh[:], salt)
 	kdfReader := hkdf.Expand(HashFunc, prk3i, hkdfContext)
 	k3Inner := [SPRPKeyLength]byte{}
@@ -256,9 +260,9 @@ func (c *Client) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey, epoch u
 }
 
 // Marshal serializes the client key material.
-func (c *Client) Marshal() ([]byte, error) {
+func (c *Session) Marshal() ([]byte, error) {
 	var serialized []byte
-	cc := clientCbor{
+	cc := serializableSession{
 		Keypair1:       c.keypair1,
 		Keypair2:       c.keypair2,
 		SessionKey1:    c.sessionKey1.Bytes(),
@@ -273,6 +277,6 @@ func (c *Client) Marshal() ([]byte, error) {
 }
 
 // Unmarshal deserializes the client key material.
-func (c *Client) Unmarshal(data []byte) error {
+func (c *Session) Unmarshal(data []byte) error {
 	return codec.NewDecoderBytes(data, cborHandle).Decode(c)
 }

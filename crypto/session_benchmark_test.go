@@ -38,33 +38,33 @@ func BenchmarkBasicTwoClientExchange(b *testing.B) {
 	sharedEpochKey2 := [SharedEpochKeySize]byte{}
 	copy(sharedEpochKey2[:], sharedEpochKey1[:])
 
-	client1, err := NewClientFromKey(&sharedEpochKey1)
+	client1, err := NewSessionFromKey(&sharedEpochKey1, sharedRandom[:], epoch)
 	require.NoError(err)
 
-	client2, err := NewClientFromKey(&sharedEpochKey2)
+	client2, err := NewSessionFromKey(&sharedEpochKey2, sharedRandom[:], epoch)
 	require.NoError(err)
 
 	for n := 0; n < b.N; n++ {
-		client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)
+		client1T1, err := client1.GenerateType1Message(payload1)
 		require.NoError(err)
 
-		client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload2)
+		client2T1, err := client2.GenerateType1Message(payload2)
 		require.NoError(err)
 
 		client1T1Alpha, client1T1Beta, client1T1Gamma, err := DecodeT1Message(client1T1)
 		require.NoError(err)
-		client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha, sharedRandom[:], epoch)
+		client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha)
 		require.NoError(err)
 
 		client2T1Alpha, client2T1Beta, client2T1Gamma, err := DecodeT1Message(client2T1)
 		require.NoError(err)
-		client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha, sharedRandom[:], epoch)
+		client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha)
 		require.NoError(err)
 
-		client1CandidateKey, err := client1.GetCandidateKey(client2T2, client2B1, epoch, sharedRandom[:])
+		client1CandidateKey, err := client1.GetCandidateKey(client2T2, client2B1)
 		require.NoError(err)
 
-		client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1, epoch, sharedRandom[:])
+		client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1)
 		require.NoError(err)
 
 		require.Equal(client2CandidateKey, client1.sessionKey1.Bytes())
@@ -78,16 +78,16 @@ func BenchmarkBasicTwoClientExchange(b *testing.B) {
 		require.NoError(err)
 		require.Equal(client1.keypair2.Public().Bytes()[:], client2B2.Bytes()[:])
 
-		client1T3, err := client1.ComposeType3Message(client1B2, sharedRandom[:], epoch)
+		client1T3, err := client1.ComposeType3Message(client1B2)
 		require.NoError(err)
 
-		client2T3, err := client2.ComposeType3Message(client2B2, sharedRandom[:], epoch)
+		client2T3, err := client2.ComposeType3Message(client2B2)
 		require.NoError(err)
 
-		plaintext1, err := client1.ProcessType3Message(client2T3, client2T1Gamma, client1B2, epoch, sharedRandom[:])
+		plaintext1, err := client1.ProcessType3Message(client2T3, client2T1Gamma, client1B2)
 		require.NoError(err)
 
-		plaintext2, err := client2.ProcessType3Message(client1T3, client1T1Gamma, client2B2, epoch, sharedRandom[:])
+		plaintext2, err := client2.ProcessType3Message(client1T3, client1T1Gamma, client2B2)
 		require.NoError(err)
 
 		require.Equal(payload1, plaintext2)
@@ -98,7 +98,7 @@ func BenchmarkBasicTwoClientExchange(b *testing.B) {
 type testData struct {
 	epoch        uint64
 	sharedRandom []byte
-	clients      []*Client
+	sessions     []*Session
 	t1s          [][]byte
 	phase2       []*phase2State
 }
@@ -126,7 +126,7 @@ func createMultiClientBenchmarkData(b *testing.B, n int) *testData {
 	tests := testData{
 		epoch:        epoch,
 		sharedRandom: sharedRandom[:],
-		clients:      make([]*Client, n),
+		sessions:     make([]*Session, n),
 		t1s:          make([][]byte, n),
 		phase2:       make([]*phase2State, 0),
 	}
@@ -134,12 +134,12 @@ func createMultiClientBenchmarkData(b *testing.B, n int) *testData {
 
 	// phase 1
 	for i := 0; i < k; i++ {
-		client, err := NewClientFromKey(&sharedEpochKey)
+		client, err := NewSessionFromKey(&sharedEpochKey, sharedRandom[:], epoch)
 		require.NoError(err)
 
-		tests.clients[i] = client
+		tests.sessions[i] = client
 
-		t1, err := client.GenerateType1Message(epoch, sharedRandom[:], payload1)
+		t1, err := client.GenerateType1Message(payload1)
 		require.NoError(err)
 
 		tests.t1s[i] = t1
@@ -150,22 +150,22 @@ func createMultiClientBenchmarkData(b *testing.B, n int) *testData {
 		_, err := rand.Reader.Read(sharedRandom2[:])
 		require.NoError(err)
 
-		client, err := NewClientFromKey(&sharedEpochKey2)
+		client, err := NewSessionFromKey(&sharedEpochKey2, sharedRandom[:], epoch)
 		require.NoError(err)
 
-		tests.clients[i] = client
+		tests.sessions[i] = client
 
-		t1, err := client.GenerateType1Message(epoch, sharedRandom[:], payload1)
+		t1, err := client.GenerateType1Message(payload1)
 		require.NoError(err)
 
 		tests.t1s[i] = t1
 	}
 
 	// phase 2
-	for i := 1; i < len(tests.clients); i++ {
+	for i := 1; i < len(tests.sessions); i++ {
 		alpha, beta, gamma, err := DecodeT1Message(tests.t1s[0])
 		require.NoError(err)
-		t2, beta2, err := tests.clients[i].ProcessType1MessageAlpha(alpha, sharedRandom[:], epoch)
+		t2, beta2, err := tests.sessions[i].ProcessType1MessageAlpha(alpha)
 		require.NoError(err)
 
 		tests.phase2 = append(tests.phase2, &phase2State{
@@ -181,7 +181,7 @@ func createMultiClientBenchmarkData(b *testing.B, n int) *testData {
 		state := tests.phase2[i]
 		beta2PubKey, err := NewPublicKey(state.beta2)
 		require.NoError(err)
-		candidateKey, err := tests.clients[0].GetCandidateKey(state.t2, beta2PubKey, tests.epoch, tests.sharedRandom)
+		candidateKey, err := tests.sessions[0].GetCandidateKey(state.t2, beta2PubKey)
 		require.NoError(err)
 		_, err = DecryptT1Beta(candidateKey, state.beta)
 	}
@@ -197,7 +197,7 @@ func BenchmarkPhases(b *testing.B) {
 			for i := 1; i < len(tests.t1s); i++ {
 				client1T1Alpha, _, _, err := DecodeT1Message(tests.t1s[i])
 				require.NoError(err)
-				_, _, err = tests.clients[0].ProcessType1MessageAlpha(client1T1Alpha, tests.sharedRandom, tests.epoch)
+				_, _, err = tests.sessions[0].ProcessType1MessageAlpha(client1T1Alpha)
 				require.NoError(err)
 			}
 		}
@@ -209,10 +209,10 @@ func BenchmarkPhases(b *testing.B) {
 				state := tests.phase2[i]
 				beta2PubKey, err := NewPublicKey(state.beta2)
 				require.NoError(err)
-				candidateKey, err := tests.clients[0].GetCandidateKey(state.t2, beta2PubKey, tests.epoch, tests.sharedRandom)
+				candidateKey, err := tests.sessions[0].GetCandidateKey(state.t2, beta2PubKey)
 				require.NoError(err)
 				_, err = DecryptT1Beta(candidateKey, state.beta)
-				_, err = tests.clients[0].ComposeType3Message(beta2PubKey, tests.sharedRandom, tests.epoch)
+				_, err = tests.sessions[0].ComposeType3Message(beta2PubKey)
 				require.NoError(err)
 			}
 		}

@@ -39,34 +39,34 @@ func TestClientBasics(t *testing.T) {
 	sharedEpochKey2 := [SharedEpochKeySize]byte{}
 	copy(sharedEpochKey2[:], sharedEpochKey1[:])
 
-	client1, err := NewClientFromKey(&sharedEpochKey1)
+	client1, err := NewSessionFromKey(&sharedEpochKey1, sharedRandom[:], epoch)
 	require.NoError(err)
 	defer client1.Destroy()
 
-	client2, err := NewClientFromKey(&sharedEpochKey2)
+	client2, err := NewSessionFromKey(&sharedEpochKey2, sharedRandom[:], epoch)
 	require.NoError(err)
 	defer client2.Destroy()
 
-	client1T1, err := client1.GenerateType1Message(epoch, sharedRandom[:], payload1)
+	client1T1, err := client1.GenerateType1Message(payload1)
 	require.NoError(err)
 
-	client2T1, err := client2.GenerateType1Message(epoch, sharedRandom[:], payload2)
+	client2T1, err := client2.GenerateType1Message(payload2)
 	require.NoError(err)
 
 	client1T1Alpha, client1T1Beta, client1T1Gamma, err := DecodeT1Message(client1T1)
 	require.NoError(err)
-	client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha, sharedRandom[:], epoch)
+	client2T2, client1B1, err := client2.ProcessType1MessageAlpha(client1T1Alpha)
 	require.NoError(err)
 
 	client2T1Alpha, client2T1Beta, client2T1Gamma, err := DecodeT1Message(client2T1)
 	require.NoError(err)
-	client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha, sharedRandom[:], epoch)
+	client1T2, client2B1, err := client1.ProcessType1MessageAlpha(client2T1Alpha)
 	require.NoError(err)
 
-	client1CandidateKey, err := client1.GetCandidateKey(client2T2, client2B1, epoch, sharedRandom[:])
+	client1CandidateKey, err := client1.GetCandidateKey(client2T2, client2B1)
 	require.NoError(err)
 
-	client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1, epoch, sharedRandom[:])
+	client2CandidateKey, err := client2.GetCandidateKey(client1T2, client1B1)
 	require.NoError(err)
 
 	require.Equal(client2CandidateKey, client1.sessionKey1.Bytes())
@@ -80,16 +80,16 @@ func TestClientBasics(t *testing.T) {
 	require.NoError(err)
 	require.Equal(client1.keypair2.Public().Bytes()[:], client2B2.Bytes()[:])
 
-	client1T3, err := client1.ComposeType3Message(client1B2, sharedRandom[:], epoch)
+	client1T3, err := client1.ComposeType3Message(client1B2)
 	require.NoError(err)
 
-	client2T3, err := client2.ComposeType3Message(client2B2, sharedRandom[:], epoch)
+	client2T3, err := client2.ComposeType3Message(client2B2)
 	require.NoError(err)
 
-	plaintext1, err := client1.ProcessType3Message(client2T3, client2T1Gamma, client1B2, epoch, sharedRandom[:])
+	plaintext1, err := client1.ProcessType3Message(client2T3, client2T1Gamma, client1B2)
 	require.NoError(err)
 
-	plaintext2, err := client2.ProcessType3Message(client1T3, client1T1Gamma, client2B2, epoch, sharedRandom[:])
+	plaintext2, err := client2.ProcessType3Message(client1T3, client1T1Gamma, client2B2)
 	require.NoError(err)
 
 	require.Equal(payload1, plaintext2)
@@ -101,10 +101,15 @@ func TestClientBasics(t *testing.T) {
 func TestClientSerialization(t *testing.T) {
 	require := require.New(t)
 
-	sharedEpochKey := [SharedEpochKeySize]byte{}
-	_, err := rand.Reader.Read(sharedEpochKey[:])
+	epoch := uint64(1234567)
+	sharedRandom := [64]byte{}
+	_, err := rand.Reader.Read(sharedRandom[:])
+	require.NoError(err)
 
-	client, err := NewClientFromKey(&sharedEpochKey)
+	sharedEpochKey := [SharedEpochKeySize]byte{}
+	_, err = rand.Reader.Read(sharedEpochKey[:])
+
+	client, err := NewSessionFromKey(&sharedEpochKey, sharedRandom[:], epoch)
 	require.NoError(err)
 	defer client.Destroy()
 
@@ -112,7 +117,7 @@ func TestClientSerialization(t *testing.T) {
 	require.NoError(err)
 
 	blankEpochKey := [SharedEpochKeySize]byte{}
-	client2, err := NewClientFromKey(&blankEpochKey)
+	client2, err := NewSessionFromKey(&blankEpochKey, sharedRandom[:], epoch)
 	require.NoError(err)
 	defer client2.Destroy()
 
