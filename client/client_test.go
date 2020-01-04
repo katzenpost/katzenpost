@@ -18,7 +18,6 @@
 package client
 
 import (
-	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -27,69 +26,23 @@ import (
 	"github.com/katzenpost/reunion/commands"
 	"github.com/katzenpost/reunion/server"
 	"github.com/stretchr/testify/require"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
 type MockReunionDB struct {
-	sync.RWMutex
-	state *server.ReunionStateChunk
-	log   *logging.Logger
+	server *server.Server
+	log    *logging.Logger
 }
 
 func NewMockReunionDB(mylog *logging.Logger) *MockReunionDB {
 	return &MockReunionDB{
-		state: server.NewReunionStateChunk(),
-		log:   mylog,
+		server: server.NewServer(),
+		log:    mylog,
 	}
 }
 
 func (m *MockReunionDB) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
-	var response commands.Command
-	switch cmd := command.(type) {
-	case *commands.FetchState:
-		m.RLock()
-		defer m.RUnlock()
-		var serialized []byte
-		err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&m.state)
-		if err != nil {
-			return nil, err
-		}
-		response = &commands.StateResponse{
-			ErrorCode:          commands.ResponseStatusOK,
-			Truncated:          false,
-			LeftOverChunksHint: 0,
-			Payload:            serialized,
-		}
-	case *commands.SendT1:
-		m.Lock()
-		defer m.Unlock()
-		m.state.T1s = append(m.state.T1s, cmd)
-		response = &commands.MessageResponse{
-			ErrorCode: commands.ResponseStatusOK,
-		}
-		m.state.Sequence++
-	case *commands.SendT2:
-		m.Lock()
-		defer m.Unlock()
-		m.state.T2s = append(m.state.T2s, cmd)
-		response = &commands.MessageResponse{
-			ErrorCode: commands.ResponseStatusOK,
-		}
-		m.state.Sequence++
-	case *commands.SendT3:
-		m.Lock()
-		defer m.Unlock()
-		m.log.Debug("appending T3")
-		m.state.T3s = append(m.state.T3s, cmd)
-		response = &commands.MessageResponse{
-			ErrorCode: commands.ResponseStatusOK,
-		}
-		m.state.Sequence++
-	default:
-		return nil, errors.New("invalid query received")
-	}
-	return response, nil
+	return m.server.ProcessQuery(command, haltCh)
 }
 
 func TestClientServerBasics(t *testing.T) {

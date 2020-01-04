@@ -48,8 +48,6 @@ func (e Error) Error() string { return string(e) }
 const (
 	initialState       = 0
 	t1MessageSentState = 1
-	t2MessageSentState = 2
-	t3MessageSentState = 3
 
 	// ShutdownError is an error invoked during shutdown.
 	ShutdownError = Error("reunion: shutdown requested")
@@ -68,11 +66,12 @@ type ReunionUpdate struct {
 	Result []byte
 }
 
-type exchangeCbor struct {
+// XXX fix me: ensure this struct type is a serializable form of the Exchange type.
+type serializableExchange struct {
 	Status      int
 	ContactID   uint64
 	Epoch       uint64
-	Client      *crypto.Client
+	Session     *crypto.Session
 	SentT1      []byte
 	SentT2Map   map[[32]byte][]byte
 	SentT3Map   map[[32]byte][]byte
@@ -92,15 +91,12 @@ type exchangeCbor struct {
 type Exchange struct {
 	log          *logging.Logger
 	updateChan   chan ReunionUpdate
-	db           commands.ReunionDatabase
+	db           server.ReunionDatabase
 	shutdownChan chan interface{}
 
-	status            int
-	contactID         uint64
-	epoch             uint64
-	sharedRandomValue []byte
-
-	client *crypto.Client
+	status    int
+	contactID uint64
+	session   *crypto.Session
 
 	payload []byte
 
@@ -132,28 +128,26 @@ type Exchange struct {
 func NewExchange(
 	payload []byte,
 	log *logging.Logger,
-	db commands.ReunionDatabase,
+	db server.ReunionDatabase,
 	contactID uint64,
 	passphrase []byte,
 	sharedRandomValue []byte,
 	epoch uint64,
 	updateChan chan ReunionUpdate) (*Exchange, error) {
 
-	client, err := crypto.NewClient(passphrase, sharedRandomValue, epoch)
+	session, err := crypto.NewSession(passphrase, sharedRandomValue, epoch)
 	if err != nil {
 		return nil, err
 	}
 	return &Exchange{
-		log:               log,
-		updateChan:        updateChan,
-		db:                db,
-		shutdownChan:      make(chan interface{}),
-		status:            initialState,
-		contactID:         contactID,
-		epoch:             epoch,
-		sharedRandomValue: sharedRandomValue,
-		client:            client,
-		payload:           payload,
+		log:          log,
+		updateChan:   updateChan,
+		db:           db,
+		shutdownChan: make(chan interface{}),
+		status:       initialState,
+		contactID:    contactID,
+		session:      session,
+		payload:      payload,
 
 		sentT1:    nil,
 		sentT2Map: make(map[[32]byte][]byte),
@@ -171,12 +165,12 @@ func NewExchange(
 }
 
 // Marshal returns a serialization of the Exchange or an error.
+// XXX fix me
 func (e *Exchange) Marshal() ([]byte, error) {
-	ex := exchangeCbor{
+	ex := serializableExchange{
 		ContactID:   e.contactID,
 		Status:      e.status,
-		Epoch:       e.epoch,
-		Client:      e.client,
+		Session:     e.session,
 		SentT1:      e.sentT1,
 		SentT2Map:   e.sentT2Map,
 		ReceivedT2s: e.receivedT2s,
@@ -214,9 +208,58 @@ func (e *Exchange) sentUpdateOK() bool {
 
 }
 
+func (e *Exchange) processState(state *server.SerializableReunionState) (bool, error) {
+	hasNew := false
+
+	h := sha256.New()
+	h.Write([]byte(e.sentT1))
+	myT1Hash := h.Sum(nil)
+
+	for t1hash, t1 := range state.T1Map {
+		// skip our own t1
+		if bytes.Equal(t1hash[:], myT1Hash) {
+			continue
+		}
+		if _, ok := e.receivedT1s[t1hash]; !ok {
+			e.receivedT1s[t1hash] = t1
+			hasNew = true
+		}
+	}
+	for _, messages := range state.MessageMap {
+		for _, message := range messages {
+			if len(message.T2Payload) > 0 {
+				h := sha256.New()
+				h.Write(message.T2Payload)
+				t2Hash := h.Sum(nil)
+				t2HashAr := [sha256.Size]byte{}
+				copy(t2HashAr[:], t2Hash)
+				if _, ok := e.receivedT2s[t2HashAr]; !ok {
+					e.receivedT2s[t2HashAr] = message.T2Payload
+					hasNew = true
+				}
+			} else if len(message.T3Payload) > 0 {
+				if _, ok := e.receivedT3s[*message.T2Hash]; !ok {
+					e.receivedT3s[*message.T2Hash] = message.T3Payload
+					hasNew = true
+				}
+			} else {
+				return false, errors.New("wtf, invalid message found")
+			}
+		}
+	}
+	return hasNew, nil
+}
+
 func (e *Exchange) fetchState() error {
 	fetchStateCmd := new(commands.FetchState)
-	fetchStateCmd.Epoch = e.epoch
+	fetchStateCmd.Epoch = e.session.Epoch()
+	h := sha256.New()
+	h.Write(e.sentT1)
+	t1Hash := h.Sum(nil)
+	t1HashAr := [sha256.Size]byte{}
+	copy(t1HashAr[:], t1Hash)
+	fetchStateCmd.T1Hash = t1HashAr
+
 	delay := 15 * time.Second
 	for {
 		rawResponse, err := e.db.Query(fetchStateCmd, e.shutdownChan)
@@ -230,17 +273,21 @@ func (e *Exchange) fetchState() error {
 		if response.ErrorCode != commands.ResponseStatusOK {
 			return fmt.Errorf("fetch state: received an error status code from the reunion db: %d", response.ErrorCode)
 		}
-		chunk := new(server.ReunionStateChunk)
-		err = codec.NewDecoderBytes(response.Payload, cborHandle).Decode(chunk)
+		state := new(server.SerializableReunionState)
+		err = codec.NewDecoderBytes(response.Payload, cborHandle).Decode(state)
 		if err != nil {
 			return err
 		}
 		if response.Truncated {
 			return errors.New("truncated Reunion DB state not yet supported")
 		}
-		if chunk.Sequence > e.remoteSequence {
-			e.processState(chunk)
-			e.remoteSequence = chunk.Sequence
+
+		ok, err = e.processState(state)
+		e.log.Debugf("process state OK: %v \n", ok)
+		if err != nil {
+			return err
+		}
+		if ok {
 			return nil
 		}
 
@@ -257,66 +304,15 @@ func (e *Exchange) fetchState() error {
 	} // end of for loop
 }
 
-func (e *Exchange) processState(chunk *server.ReunionStateChunk) bool {
-	hasNew := false
-
-	h := sha256.New()
-	h.Write([]byte(e.sentT1))
-	myT1Hash := h.Sum(nil)
-
-	for _, t1 := range chunk.T1s {
-		h := sha256.New()
-		h.Write([]byte(t1.Payload))
-		t1Hash := h.Sum(nil)
-		if bytes.Equal(t1Hash, myT1Hash) {
-			continue
-		}
-		e.log.Debug("storing a T1")
-		t1HashAr := [sha256.Size]byte{}
-		copy(t1HashAr[:], t1Hash)
-		_, ok := e.receivedT1s[t1HashAr]
-		if !ok {
-			e.receivedT1s[t1HashAr] = t1.Payload
-			hasNew = true
-		}
-	}
-	for _, sendT2 := range chunk.T2s {
-		if !bytes.Equal(sendT2.T1Hash[:], myT1Hash) {
-			continue
-		}
-		e.log.Debug("storing a T2")
-		h := sha256.New()
-		h.Write(sendT2.Payload)
-		t2Hash := h.Sum(nil)
-		t2HashAr := [sha256.Size]byte{}
-		copy(t2HashAr[:], t2Hash)
-		if _, ok := e.receivedT2s[t2HashAr]; !ok {
-			e.receivedT2s[t2HashAr] = sendT2.Payload
-			hasNew = true
-		}
-	}
-	for _, sendT3 := range chunk.T3s {
-		if _, ok := e.sentT2Map[sendT3.T2Hash]; !ok {
-			continue
-		}
-		e.log.Debug("storing a T3")
-		if _, ok := e.receivedT3s[sendT3.T2Hash]; !ok {
-			e.receivedT3s[sendT3.T2Hash] = sendT3.Payload
-			hasNew = true
-		}
-	}
-	return hasNew
-}
-
 func (e *Exchange) sendT1() bool {
 	var err error
-	e.sentT1, err = e.client.GenerateType1Message(e.epoch, e.sharedRandomValue, e.payload)
+	e.sentT1, err = e.session.GenerateType1Message(e.payload)
 	if err != nil {
 		e.log.Error(err.Error())
 		return false
 	}
 	t1Cmd := commands.SendT1{
-		Epoch:   e.epoch,
+		Epoch:   e.session.Epoch(),
 		Payload: e.sentT1,
 	}
 	rawResponse, err := e.db.Query(&t1Cmd, e.shutdownChan)
@@ -352,7 +348,7 @@ func (e *Exchange) sendT2Messages() bool {
 			e.log.Error(err.Error())
 			return false
 		}
-		t2, alphaPubKey, err := e.client.ProcessType1MessageAlpha(alpha, e.sharedRandomValue, e.epoch)
+		t2, alphaPubKey, err := e.session.ProcessType1MessageAlpha(alpha)
 		if err != nil {
 			e.log.Error(err.Error())
 			return false
@@ -372,7 +368,7 @@ func (e *Exchange) sendT2Messages() bool {
 
 		// reply with t2 and t1 hash
 		t2Cmd := commands.SendT2{
-			Epoch:   e.epoch,
+			Epoch:   e.session.Epoch(),
 			T1Hash:  t1Hash,
 			Payload: t2,
 		}
@@ -409,7 +405,7 @@ func (e *Exchange) sendT3Messages() bool {
 		// XXX correct?
 		for i := 0; i < len(e.receivedT1Alphas); i++ {
 			e.log.Debug("for each decrypted T1 Alpha")
-			candidateKey, err := e.client.GetCandidateKey(t2, e.receivedT1Alphas[i], e.epoch, e.sharedRandomValue)
+			candidateKey, err := e.session.GetCandidateKey(t2, e.receivedT1Alphas[i])
 			if err != nil {
 				e.log.Error(err.Error())
 				return false
@@ -426,13 +422,13 @@ func (e *Exchange) sendT3Messages() bool {
 					e.log.Error(err.Error())
 					continue
 				}
-				t3, err := e.client.ComposeType3Message(beta, e.sharedRandomValue, e.epoch)
+				t3, err := e.session.ComposeType3Message(beta)
 				if err != nil {
 					e.log.Error(err.Error())
 					return false
 				}
 				sendT3Cmd := commands.SendT3{
-					Epoch:   e.epoch,
+					Epoch:   e.session.Epoch(),
 					T2Hash:  t2Hash,
 					Payload: t3,
 				}
@@ -474,7 +470,7 @@ func (e *Exchange) processT3Messages() bool {
 				e.log.Error(err.Error())
 				return false
 			}
-			plaintext, err := e.client.ProcessType3Message(t3, gamma, beta, e.epoch, e.sharedRandomValue)
+			plaintext, err := e.session.ProcessType3Message(t3, gamma, beta)
 			if err != nil {
 				e.updateChan <- ReunionUpdate{
 					ContactID:  e.contactID,
@@ -527,7 +523,6 @@ func (e *Exchange) Run() {
 			if !e.sendT2Messages() {
 				return
 			}
-			e.status = t2MessageSentState
 			if !e.sentUpdateOK() {
 				return
 			}
