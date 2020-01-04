@@ -36,11 +36,13 @@ const (
 )
 
 type serializableSession struct {
-	Keypair1       *Keypair
-	Keypair2       *Keypair
-	SessionKey1    []byte
-	SessionKey2    []byte
-	SharedEpochKey []byte
+	Epoch             uint64
+	SharedRandomValue []byte
+	Keypair1          *Keypair
+	Keypair2          *Keypair
+	SessionKey1       []byte
+	SessionKey2       []byte
+	SharedEpochKey    []byte
 }
 
 // Session encapsulates all the key material
@@ -95,6 +97,11 @@ func NewSession(passphrase []byte, sharedRandomValue []byte, epoch uint64) (*Ses
 	copy(k[:], key)
 	memguard.WipeBytes(key)
 	return NewSessionFromKey(&k, sharedRandomValue, epoch)
+}
+
+// Epoch returns the epoch.
+func (c *Session) Epoch() uint64 {
+	return c.epoch
 }
 
 // Destroy destroys all the Session's key material
@@ -263,11 +270,13 @@ func (c *Session) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey) ([]byt
 func (c *Session) Marshal() ([]byte, error) {
 	var serialized []byte
 	cc := serializableSession{
-		Keypair1:       c.keypair1,
-		Keypair2:       c.keypair2,
-		SessionKey1:    c.sessionKey1.Bytes(),
-		SessionKey2:    c.sessionKey2.Bytes(),
-		SharedEpochKey: c.sharedEpochKey.Bytes(),
+		Epoch:             c.epoch,
+		SharedRandomValue: c.sharedRandomValue,
+		Keypair1:          c.keypair1,
+		Keypair2:          c.keypair2,
+		SessionKey1:       c.sessionKey1.Bytes(),
+		SessionKey2:       c.sessionKey2.Bytes(),
+		SharedEpochKey:    c.sharedEpochKey.Bytes(),
 	}
 	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&cc)
 	if err != nil {
