@@ -21,6 +21,7 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/katzenpost/reunion/commands"
@@ -174,7 +175,7 @@ type ReunionState struct {
 	messageMap *sync.Map
 }
 
-// NewReunionStateChunk creates a new ReunionStateChunk.
+// NewReunionState creates a new ReunionState.
 func NewReunionState() *ReunionState {
 	return &ReunionState{
 		t1Map:      new(sync.Map),
@@ -294,6 +295,7 @@ func (s *ReunionState) Unmarshal(data []byte) error {
 // *commands.SendT2
 // *commands.SendT3
 func (s *ReunionState) AppendMessage(message interface{}) error {
+	fmt.Println("AppendMessage")
 	switch mesg := message.(type) {
 	case *commands.SendT1:
 		h := sha256.New()
@@ -303,12 +305,14 @@ func (s *ReunionState) AppendMessage(message interface{}) error {
 		copy(t1HashAr[:], t1Hash)
 		_, ok := s.t1Map.Load(t1HashAr)
 		if ok {
-			errors.New("cannot append T1, already present")
+			return errors.New("cannot append T1, already present")
 		}
 		s.t1Map.Store(t1HashAr, mesg.Payload)
 		s.messageMap.Store(t1HashAr, NewLockedList())
+		fmt.Println("AppendMessage t1")
 		return nil
 	case *commands.SendT2:
+		fmt.Println("AppendMessage t2")
 		l, ok := s.messageMap.Load(mesg.T1Hash)
 		if ok {
 			messageList, ok := l.(*LockedList)
@@ -327,6 +331,7 @@ func (s *ReunionState) AppendMessage(message interface{}) error {
 		}
 		return nil
 	case *commands.SendT3:
+		fmt.Println("AppendMessage t3")
 		l, ok := s.messageMap.Load(mesg.T1Hash)
 		if ok {
 			messageList, ok := l.(*LockedList)
