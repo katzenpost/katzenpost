@@ -73,19 +73,64 @@ func (l *LockedList) Range(f func(item interface{}) bool) {
 	}
 }
 
-// T1Message
+// Serializable returns a serializable type representing our list.
+func (l *LockedList) Serializable() ([]*T2T3Message, error) {
+	t := make([]*T2T3Message, 0)
+	var err error
+	l.Range(func(item interface{}) bool {
+		switch message := item.(type) {
+		case *T2Message:
+			t = append(t, &T2T3Message{
+				T2Hash:    nil,
+				T2Payload: message.Payload,
+				T3Payload: nil,
+			})
+			return true
+		case *T3Message:
+			t = append(t, &T2T3Message{
+				T2Hash:    &message.T2Hash,
+				T2Payload: nil,
+				T3Payload: message.Payload,
+			})
+			return true
+		default:
+			err = errors.New("Marshal failure due to invalid message type")
+			return false
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// Marshal returns a CBOR serialization of an consistent snapshot.
+func (l *LockedList) Marshal() ([]byte, error) {
+	t, err := l.Serializable()
+	if err != nil {
+		return nil, err
+	}
+	var serialized []byte
+	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(t)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+// T1Message is used for serializing ReunionState.
 type T1Message struct {
 	// Payload contains the T1 message.
 	Payload []byte
 }
 
-// T2Message
+// T2Message is used for serializing ReunionState.
 type T2Message struct {
 	// Payload contains the T2 message.
 	Payload []byte
 }
 
-// T3Message
+// T3Message is used for serializing ReunionState.
 type T3Message struct {
 	// T2Hash is the hash of the T2 message which this T3 message is replying.
 	T2Hash [sha256.Size]byte
@@ -94,7 +139,7 @@ type T3Message struct {
 	Payload []byte
 }
 
-// T2T3Message
+// T2T3Message is used for serializing ReunionState.
 type T2T3Message struct {
 	// T2Hash is the hash of the T2 message which this T3 message is replying.
 	T2Hash *[sha256.Size]byte
@@ -168,36 +213,12 @@ func (s *ReunionState) Serializable() (*SerializableReunionState, error) {
 			err = errors.New("Range failure, invalid key type")
 			return false
 		}
-		_, ok = c.MessageMap[t1hashAr]
-		if !ok {
-			c.MessageMap[t1hashAr] = make([]*T2T3Message, 0)
-		}
 		messageList, ok := messages.(*LockedList)
-		if !ok {
-			err = errors.New("Range failure, invalid list type")
+		messagesSlice, err := messageList.Serializable()
+		if err != nil {
 			return false
 		}
-		messageList.Range(func(item interface{}) bool {
-			switch message := item.(type) {
-			case *T2Message:
-				c.MessageMap[t1hashAr] = append(c.MessageMap[t1hashAr], &T2T3Message{
-					T2Hash:    nil,
-					T2Payload: message.Payload,
-					T3Payload: nil,
-				})
-				return true
-			case *T3Message:
-				c.MessageMap[t1hashAr] = append(c.MessageMap[t1hashAr], &T2T3Message{
-					T2Hash:    &message.T2Hash,
-					T2Payload: nil,
-					T3Payload: message.Payload,
-				})
-				return true
-			default:
-				err = errors.New("Marshal failure due to invalid message type")
-				return false
-			}
-		})
+		c.MessageMap[t1hashAr] = messagesSlice
 		return true
 	})
 	if err != nil {
@@ -329,4 +350,69 @@ func (s *ReunionState) AppendMessage(message interface{}) error {
 		return errors.New("ReunionState.AppendMessage failued: unknown message type")
 	}
 	// unreached
+}
+
+// Server is a reunion server.
+type Server struct {
+	state *ReunionState
+}
+
+// NewServer returns a new Server with a new ReunionState.
+func NewServer() *Server {
+	return &Server{
+		state: NewReunionState(),
+	}
+}
+
+// ProcessQuery processes the given query command and returns a response command or an error.
+func (s *Server) ProcessQuery(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
+	var response commands.Command
+	switch cmd := command.(type) {
+	case *commands.FetchState:
+		messages, ok := s.state.messageMap.Load(cmd.T1Hash)
+		if !ok {
+			return nil, errors.New("invalid message map value")
+		}
+		messageList, ok := messages.(*LockedList)
+		if !ok {
+			return nil, errors.New("invalid message list")
+		}
+		serialized, err := messageList.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		response = &commands.StateResponse{
+			ErrorCode:          commands.ResponseStatusOK,
+			Truncated:          false,
+			LeftOverChunksHint: 0,
+			Payload:            serialized,
+		}
+	case *commands.SendT1:
+		err := s.state.AppendMessage(cmd)
+		if err != nil {
+			return nil, err
+		}
+		response = &commands.MessageResponse{
+			ErrorCode: commands.ResponseStatusOK,
+		}
+	case *commands.SendT2:
+		err := s.state.AppendMessage(cmd)
+		if err != nil {
+			return nil, err
+		}
+		response = &commands.MessageResponse{
+			ErrorCode: commands.ResponseStatusOK,
+		}
+	case *commands.SendT3:
+		err := s.state.AppendMessage(cmd)
+		if err != nil {
+			return nil, err
+		}
+		response = &commands.MessageResponse{
+			ErrorCode: commands.ResponseStatusOK,
+		}
+	default:
+		return nil, errors.New("invalid query command received")
+	}
+	return response, nil
 }

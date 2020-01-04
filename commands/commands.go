@@ -36,7 +36,7 @@ const (
 
 	chunkLength           = 40000 // XXX fix me!
 	cmdOverhead           = 1
-	fetchStateLength      = cmdOverhead + 8 + 4
+	fetchStateLength      = cmdOverhead + 8 + 4 + 32
 	stateResponseLength   = cmdOverhead + 1 + 1 + 4 + chunkLength
 	sendT1Length          = cmdOverhead + 8 + crypto.Type1MessageSize
 	sendT2Length          = cmdOverhead + 8 + 32 + crypto.Type2MessageSize
@@ -65,14 +65,18 @@ type FetchState struct {
 	// ChunkIndex is the index indicating which chunk of the Reunion DB state
 	// to fetch.
 	ChunkIndex uint32
+
+	// T1Hash is the hash of the T1 message which is linked with a set of received messages.
+	T1Hash [sha256.Size]byte
 }
 
 // ToBytes serializes the SendT1 command and returns the resulting slice.
 func (s *FetchState) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8+4)
+	out := make([]byte, fetchStateLength)
 	out[0] = byte(fetchState)
 	binary.BigEndian.PutUint64(out[1:9], s.Epoch)
 	binary.BigEndian.PutUint32(out[9:], s.ChunkIndex)
+	copy(out[13:], s.T1Hash[:])
 	return out
 }
 
