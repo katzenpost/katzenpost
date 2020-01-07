@@ -165,7 +165,7 @@ func NewExchange(
 }
 
 // Marshal returns a serialization of the Exchange or an error.
-// XXX fix me
+// XXX fix me; added many more fields since this was written...
 func (e *Exchange) Marshal() ([]byte, error) {
 	ex := serializableExchange{
 		ContactID:   e.contactID,
@@ -208,7 +208,7 @@ func (e *Exchange) sentUpdateOK() bool {
 
 }
 
-func (e *Exchange) processState(state *server.SerializableReunionState) (bool, error) {
+func (e *Exchange) processState(state *server.RequestedReunionState) (bool, error) {
 	hasNew := false
 
 	h := sha256.New()
@@ -225,26 +225,24 @@ func (e *Exchange) processState(state *server.SerializableReunionState) (bool, e
 			hasNew = true
 		}
 	}
-	for _, messages := range state.MessageMap {
-		for _, message := range messages {
-			if len(message.T2Payload) > 0 {
-				h := sha256.New()
-				h.Write(message.T2Payload)
-				t2Hash := h.Sum(nil)
-				t2HashAr := [sha256.Size]byte{}
-				copy(t2HashAr[:], t2Hash)
-				if _, ok := e.receivedT2s[t2HashAr]; !ok {
-					e.receivedT2s[t2HashAr] = message.T2Payload
-					hasNew = true
-				}
-			} else if len(message.T3Payload) > 0 {
-				if _, ok := e.receivedT3s[*message.T2Hash]; !ok {
-					e.receivedT3s[*message.T2Hash] = message.T3Payload
-					hasNew = true
-				}
-			} else {
-				return false, errors.New("wtf, invalid message found")
+	for _, message := range state.Messages {
+		if len(message.T2Payload) > 0 {
+			h := sha256.New()
+			h.Write(message.T2Payload)
+			t2Hash := h.Sum(nil)
+			t2HashAr := [sha256.Size]byte{}
+			copy(t2HashAr[:], t2Hash)
+			if _, ok := e.receivedT2s[t2HashAr]; !ok {
+				e.receivedT2s[t2HashAr] = message.T2Payload
+				hasNew = true
 			}
+		} else if len(message.T3Payload) > 0 {
+			if _, ok := e.receivedT3s[*message.T2Hash]; !ok {
+				e.receivedT3s[*message.T2Hash] = message.T3Payload
+				hasNew = true
+			}
+		} else {
+			return false, errors.New("wtf, invalid message found")
 		}
 	}
 	return hasNew, nil
@@ -273,24 +271,21 @@ func (e *Exchange) fetchState() error {
 		if response.ErrorCode != commands.ResponseStatusOK {
 			return fmt.Errorf("fetch state: received an error status code from the reunion db: %d", response.ErrorCode)
 		}
-		state := new(server.SerializableReunionState)
-		err = codec.NewDecoderBytes(response.Payload, cborHandle).Decode(state)
+		state := new(server.RequestedReunionState)
+		err = state.Unmarshal(response.Payload)
 		if err != nil {
 			return err
 		}
 		if response.Truncated {
 			return errors.New("truncated Reunion DB state not yet supported")
 		}
-
 		ok, err = e.processState(state)
-		e.log.Debugf("process state OK: %v \n", ok)
 		if err != nil {
 			return err
 		}
 		if ok {
 			return nil
 		}
-
 		e.log.Debugf("fetch sleeping for %v ", delay)
 		select {
 		case <-e.shutdownChan:
@@ -354,7 +349,7 @@ func (e *Exchange) sendT2Messages() bool {
 			return false
 		}
 
-		// XXX
+		// XXX store it in a map under a t1 hash key like so:
 		//e.receivedT1Alphas[t1Hash] = alphaPubKey
 		e.receivedT1Alphas = append(e.receivedT1Alphas, alphaPubKey)
 
@@ -394,65 +389,66 @@ func (e *Exchange) sendT2Messages() bool {
 
 func (e *Exchange) sendT3Messages() bool {
 	hasSentT3 := false
-	for t2Hash, t2 := range e.receivedT2s {
-		e.log.Debug("for each t2")
-		if _, ok := e.sentT2Map[t2Hash]; ok {
-			continue
-		}
-		if _, ok := e.repliedT2s[t2Hash]; ok {
-			continue
-		}
-		// XXX correct?
-		for i := 0; i < len(e.receivedT1Alphas); i++ {
-			e.log.Debug("for each decrypted T1 Alpha")
+	/*
+		for t2Hash, t2 := range e.receivedT2s {
+			e.log.Debug("for each t2")
+			if _, ok := e.sentT2Map[t2Hash]; ok {
+				continue
+			}
+			if _, ok := e.repliedT2s[t2Hash]; ok {
+				continue
+			}
+
+			// XXX fix me - somehow get the decrypted unelligatored t1 alpha
+			i := 0 // wrong
 			candidateKey, err := e.session.GetCandidateKey(t2, e.receivedT1Alphas[i])
 			if err != nil {
 				e.log.Error(err.Error())
 				return false
 			}
-			for t1hash, t1 := range e.receivedT1s {
-				e.log.Debug("for each T1")
-				_, t1beta, _, err := crypto.DecodeT1Message(t1)
-				if err != nil {
-					e.log.Error(err.Error())
-					return false
-				}
-				beta, err := crypto.DecryptT1Beta(candidateKey, t1beta)
-				if err != nil {
-					e.log.Error(err.Error())
-					continue
-				}
-				t3, err := e.session.ComposeType3Message(beta)
-				if err != nil {
-					e.log.Error(err.Error())
-					return false
-				}
-				sendT3Cmd := commands.SendT3{
-					Epoch:   e.session.Epoch(),
-					T2Hash:  t2Hash,
-					Payload: t3,
-				}
-				e.log.Debug("before sending sendT3 command to reunion DB")
-				rawResponse, err := e.db.Query(&sendT3Cmd, e.shutdownChan)
-				if err != nil {
-					e.log.Error(err.Error())
-					return false
-				}
-				response, ok := rawResponse.(*commands.MessageResponse)
-				if !ok {
-					e.log.Error(InvalidResponseErrMessage)
-					return false
-				}
-				if response.ErrorCode != commands.ResponseStatusOK {
-					e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
-					return false
-				}
-				e.decryptedT1Betas[t1hash] = beta
-				hasSentT3 = true
+
+			// XXX fix me
+			_, t1beta, _, err := crypto.DecodeT1Message(t1)
+			if err != nil {
+				e.log.Error(err.Error())
+				return false
 			}
+			beta, err := crypto.DecryptT1Beta(candidateKey, t1beta)
+			if err != nil {
+				e.log.Error(err.Error())
+				continue
+			}
+			t3, err := e.session.ComposeType3Message(beta)
+			if err != nil {
+				e.log.Error(err.Error())
+				return false
+			}
+			sendT3Cmd := commands.SendT3{
+				Epoch:   e.session.Epoch(),
+				T2Hash:  t2Hash,
+				Payload: t3,
+			}
+			e.log.Debug("before sending sendT3 command to reunion DB")
+			rawResponse, err := e.db.Query(&sendT3Cmd, e.shutdownChan)
+			if err != nil {
+				e.log.Error(err.Error())
+				return false
+			}
+			response, ok := rawResponse.(*commands.MessageResponse)
+			if !ok {
+				e.log.Error(InvalidResponseErrMessage)
+				return false
+			}
+			if response.ErrorCode != commands.ResponseStatusOK {
+				e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
+				return false
+			}
+			e.decryptedT1Betas[t1hash] = beta
+			hasSentT3 = true
+
+			e.repliedT2s[t2Hash] = t2
 		}
-		e.repliedT2s[t2Hash] = t2
-	}
+	*/
 	return hasSentT3
 }
 

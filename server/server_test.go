@@ -50,6 +50,21 @@ func TestStateSerialization1(t *testing.T) {
 		require.Equal(t1bytes, myt1)
 		return true
 	})
+
+	s, err := state1.Serializable()
+	require.NoError(err)
+	require.Equal(len(s.T1Map), 1)
+	require.Equal(len(s.MessageMap), 1)
+
+	r, err := state1.Marshal()
+	require.NoError(err)
+
+	state3 := new(SerializableReunionState)
+	err = state3.Unmarshal(r)
+	require.NoError(err)
+	require.Equal(len(state3.T1Map), 1)
+	require.Equal(len(state3.MessageMap), 1)
+
 }
 
 func TestStateSerialization2(t *testing.T) {
@@ -122,4 +137,19 @@ func TestStateSerialization3(t *testing.T) {
 	b2, err := state2.Marshal()
 	require.NoError(err)
 	require.Equal(b1, b2)
+}
+
+func TestServer(t *testing.T) {
+	require := require.New(t)
+
+	server := NewServer()
+	sendt1 := commands.SendT1{
+		Epoch:   123,
+		Payload: []byte{0xDE, 0xAD, 0xBE, 0xEF},
+	}
+	haltCh := make(chan interface{})
+	_, err := server.ProcessQuery(&sendt1, haltCh)
+	require.NoError(err)
+
+	// XXX ...
 }

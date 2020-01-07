@@ -21,7 +21,6 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/katzenpost/reunion/commands"
@@ -152,6 +151,31 @@ type T2T3Message struct {
 	T3Payload []byte
 }
 
+// RequestedReunionState is the serialized struct type which is
+// sent to the client in response to their fetch state command.
+type RequestedReunionState struct {
+	// T1Map maps T1 hashes to T1 messages.
+	T1Map map[[32]byte][]byte
+
+	// Messages is a slice of *T2T3Message.
+	Messages []*T2T3Message
+}
+
+// Marshal returns a CBOR serialization of the state.
+func (s *RequestedReunionState) Marshal() ([]byte, error) {
+	var serialized []byte
+	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+// Unmarshal deserializes the state CBOR blob.
+func (s *RequestedReunionState) Unmarshal(data []byte) error {
+	return codec.NewDecoderBytes(data, cborHandle).Decode(s)
+}
+
 // SerializableReunionState represents the ReunionState in
 // a serializable struct type.
 type SerializableReunionState struct {
@@ -161,6 +185,21 @@ type SerializableReunionState struct {
 
 	// MessageMap: t1 hash -> slice of
 	MessageMap map[[32]byte][]*T2T3Message
+}
+
+// Unmarshal deserializes the state CBOR blob.
+func (s *SerializableReunionState) Unmarshal(data []byte) error {
+	return codec.NewDecoderBytes(data, cborHandle).Decode(s)
+}
+
+// Marshal returns a CBOR serialization of the state.
+func (s *SerializableReunionState) Marshal() ([]byte, error) {
+	var serialized []byte
+	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
 }
 
 // ReunionState is the state of the Reunion DB.
@@ -183,14 +222,11 @@ func NewReunionState() *ReunionState {
 	}
 }
 
-// Serializable returns a *SerializableReunionState copy of the
-// data encapsulated in *ReunionState.
-func (s *ReunionState) Serializable() (*SerializableReunionState, error) {
-	c := SerializableReunionState{
-		T1Map:      make(map[[32]byte][]byte),
-		MessageMap: make(map[[32]byte][]*T2T3Message),
-	}
+// SerializableT1Map returns a serializable map representing a
+// inconsistent snapshot of our T1 sync.Map.
+func (s *ReunionState) SerializableT1Map() (map[[32]byte][]byte, error) {
 	var err error
+	t1Map := make(map[[32]byte][]byte)
 	s.t1Map.Range(func(t1hash, t1 interface{}) bool {
 		t1hashAr, ok := t1hash.([32]byte)
 		if !ok {
@@ -202,9 +238,24 @@ func (s *ReunionState) Serializable() (*SerializableReunionState, error) {
 			err = errors.New("Range failure, invalid input type")
 			return false
 		}
-		c.T1Map[t1hashAr] = t1bytes
+		t1Map[t1hashAr] = t1bytes
 		return true
 	})
+	if err != nil {
+		return nil, err
+	}
+	return t1Map, nil
+}
+
+// Serializable returns a *SerializableReunionState copy of the
+// data encapsulated in *ReunionState.
+func (s *ReunionState) Serializable() (*SerializableReunionState, error) {
+	c := SerializableReunionState{
+		T1Map:      make(map[[32]byte][]byte),
+		MessageMap: make(map[[32]byte][]*T2T3Message),
+	}
+	var err error
+	c.T1Map, err = s.SerializableT1Map()
 	if err != nil {
 		return nil, err
 	}
@@ -235,12 +286,7 @@ func (s *ReunionState) Marshal() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var serialized []byte
-	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(&c)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return c.Marshal()
 }
 
 // Unmarshal deserializes the state CBOR blob.
@@ -295,7 +341,6 @@ func (s *ReunionState) Unmarshal(data []byte) error {
 // *commands.SendT2
 // *commands.SendT3
 func (s *ReunionState) AppendMessage(message interface{}) error {
-	fmt.Println("AppendMessage")
 	switch mesg := message.(type) {
 	case *commands.SendT1:
 		h := sha256.New()
@@ -309,10 +354,8 @@ func (s *ReunionState) AppendMessage(message interface{}) error {
 		}
 		s.t1Map.Store(t1HashAr, mesg.Payload)
 		s.messageMap.Store(t1HashAr, NewLockedList())
-		fmt.Println("AppendMessage t1")
 		return nil
 	case *commands.SendT2:
-		fmt.Println("AppendMessage t2")
 		l, ok := s.messageMap.Load(mesg.T1Hash)
 		if ok {
 			messageList, ok := l.(*LockedList)
@@ -331,7 +374,6 @@ func (s *ReunionState) AppendMessage(message interface{}) error {
 		}
 		return nil
 	case *commands.SendT3:
-		fmt.Println("AppendMessage t3")
 		l, ok := s.messageMap.Load(mesg.T1Hash)
 		if ok {
 			messageList, ok := l.(*LockedList)
@@ -382,7 +424,19 @@ func (s *Server) ProcessQuery(command commands.Command, haltCh chan interface{})
 		if !ok {
 			return nil, errors.New("invalid message list")
 		}
-		serialized, err := messageList.Marshal()
+		t2t3messages, err := messageList.Serializable()
+		if err != nil {
+			return nil, err
+		}
+		t1Map, err := s.state.SerializableT1Map()
+		if err != nil {
+			return nil, err
+		}
+		requested := &RequestedReunionState{
+			T1Map:    t1Map,
+			Messages: t2t3messages,
+		}
+		serialized, err := requested.Marshal()
 		if err != nil {
 			return nil, err
 		}
