@@ -37,20 +37,14 @@ var (
 	// InvalidResponseErrMessage is an error used to indicate
 	// that an invalid response from the Reunion server was received.
 	InvalidResponseErrMessage = "invalid response received from Reunion DB"
+
+	// ShutdownError is an error invoked during shutdown.
+	ShutdownError = errors.New("reunion: shutdown requested")
 )
-
-// Error is an error string.
-type Error string
-
-// Error returns the error string.
-func (e Error) Error() string { return string(e) }
 
 const (
 	initialState       = 0
 	t1MessageSentState = 1
-
-	// ShutdownError is an error invoked during shutdown.
-	ShutdownError = Error("reunion: shutdown requested")
 )
 
 // ReunionUpdate represents an update to the reunion client state or
