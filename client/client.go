@@ -328,6 +328,7 @@ func (e *Exchange) sendT1() bool {
 }
 
 func (e *Exchange) sendT2Messages() bool {
+	hasSent := false
 	for t1Hash, t1 := range e.receivedT1s {
 		_, ok := e.repliedT1s[t1Hash]
 		if ok {
@@ -349,8 +350,8 @@ func (e *Exchange) sendT2Messages() bool {
 			return false
 		}
 
-		// XXX store it in a map under a t1 hash key like so:
-		//e.receivedT1Alphas[t1Hash] = alphaPubKey
+		// XXX store it in a map or what?
+		// XXX e.receivedT1Alphas[t1Hash] = alphaPubKey
 		e.receivedT1Alphas = append(e.receivedT1Alphas, alphaPubKey)
 
 		h := sha256.New()
@@ -383,77 +384,82 @@ func (e *Exchange) sendT2Messages() bool {
 		}
 		e.repliedT1s[t1Hash] = t1
 		delete(e.receivedT1s, t1Hash)
+		hasSent = true
 	}
-	return true
+	return hasSent
 }
 
 func (e *Exchange) sendT3Messages() bool {
 	hasSentT3 := false
-	/*
-		for t2Hash, t2 := range e.receivedT2s {
-			e.log.Debug("for each t2")
-			if _, ok := e.sentT2Map[t2Hash]; ok {
-				continue
-			}
-			if _, ok := e.repliedT2s[t2Hash]; ok {
-				continue
-			}
 
-			// XXX fix me - somehow get the decrypted unelligatored t1 alpha
-			i := 0 // wrong
-			candidateKey, err := e.session.GetCandidateKey(t2, e.receivedT1Alphas[i])
-			if err != nil {
-				e.log.Error(err.Error())
-				return false
-			}
-
-			// XXX fix me
-			_, t1beta, _, err := crypto.DecodeT1Message(t1)
-			if err != nil {
-				e.log.Error(err.Error())
-				return false
-			}
-			beta, err := crypto.DecryptT1Beta(candidateKey, t1beta)
-			if err != nil {
-				e.log.Error(err.Error())
-				continue
-			}
-			t3, err := e.session.ComposeType3Message(beta)
-			if err != nil {
-				e.log.Error(err.Error())
-				return false
-			}
-			sendT3Cmd := commands.SendT3{
-				Epoch:   e.session.Epoch(),
-				T2Hash:  t2Hash,
-				Payload: t3,
-			}
-			e.log.Debug("before sending sendT3 command to reunion DB")
-			rawResponse, err := e.db.Query(&sendT3Cmd, e.shutdownChan)
-			if err != nil {
-				e.log.Error(err.Error())
-				return false
-			}
-			response, ok := rawResponse.(*commands.MessageResponse)
-			if !ok {
-				e.log.Error(InvalidResponseErrMessage)
-				return false
-			}
-			if response.ErrorCode != commands.ResponseStatusOK {
-				e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
-				return false
-			}
-			e.decryptedT1Betas[t1hash] = beta
-			hasSentT3 = true
-
-			e.repliedT2s[t2Hash] = t2
+	for t2Hash, t2 := range e.receivedT2s {
+		e.log.Debug("for each t2")
+		if _, ok := e.sentT2Map[t2Hash]; ok {
+			continue
 		}
-	*/
+		if _, ok := e.repliedT2s[t2Hash]; ok {
+			continue
+		}
+
+		// XXX fix me - somehow get the decrypted unelligatored t1 alpha
+		i := 0 // wrong
+		candidateKey, err := e.session.GetCandidateKey(t2, e.receivedT1Alphas[i])
+		if err != nil {
+			e.log.Error(err.Error())
+			return false
+		}
+
+		// XXX fix me; how to find this t1?
+		_, t1beta, _, err := crypto.DecodeT1Message(t1)
+		if err != nil {
+			e.log.Error(err.Error())
+			return false
+		}
+		beta, err := crypto.DecryptT1Beta(candidateKey, t1beta)
+		if err != nil {
+			e.log.Error(err.Error())
+			continue
+		}
+		t3, err := e.session.ComposeType3Message(beta)
+		if err != nil {
+			e.log.Error(err.Error())
+			return false
+		}
+		sendT3Cmd := commands.SendT3{
+			Epoch:   e.session.Epoch(),
+			T2Hash:  t2Hash,
+			Payload: t3,
+		}
+		e.log.Debug("before sending sendT3 command to reunion DB")
+		rawResponse, err := e.db.Query(&sendT3Cmd, e.shutdownChan)
+		if err != nil {
+			e.log.Error(err.Error())
+			return false
+		}
+		response, ok := rawResponse.(*commands.MessageResponse)
+		if !ok {
+			e.log.Error(InvalidResponseErrMessage)
+			return false
+		}
+		if response.ErrorCode != commands.ResponseStatusOK {
+			e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
+			return false
+		}
+		e.decryptedT1Betas[t1hash] = beta
+		hasSentT3 = true
+
+		e.repliedT2s[t2Hash] = t2
+	}
+
 	return hasSentT3
 }
 
 func (e *Exchange) processT3Messages() bool {
 	e.log.Debug("processT3Messages")
+
+	// XXX can we rewrite this to not have two nested for loops?
+	// do clients need to send more information in the commands?
+
 	for _, t3 := range e.receivedT3s {
 		e.log.Debug("for each t3")
 		for t1Hash, t1 := range e.receivedT1s {

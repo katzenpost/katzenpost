@@ -34,10 +34,8 @@ const (
 	// to indicate there was no error with the received query command.
 	ResponseStatusOK = 0
 
-	chunkLength           = 40000 // XXX fix me!
 	cmdOverhead           = 1
 	fetchStateLength      = cmdOverhead + 8 + 4 + 32
-	stateResponseLength   = cmdOverhead + 1 + 1 + 4 + chunkLength
 	sendT1Length          = cmdOverhead + 8 + crypto.Type1MessageSize
 	sendT2Length          = cmdOverhead + 8 + 32 + crypto.Type2MessageSize
 	sendT3Length          = cmdOverhead + 8 + 32 + crypto.Type3MessageSize
@@ -119,9 +117,6 @@ func (s *StateResponse) ToBytes() []byte {
 }
 
 func stateResponseFromBytes(b []byte) (Command, error) {
-	if len(b) != stateResponseLength {
-		return nil, errInvalidCommand
-	}
 	s := new(StateResponse)
 	s.ErrorCode = b[1]
 	if b[2] == 1 {
