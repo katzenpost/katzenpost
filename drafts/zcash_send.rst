@@ -253,7 +253,7 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
+                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst>.
 
 .. [KATZMIXWIRE] Angel, Y., "Katzenpost Mix Network Wire Protocol Specification", June 2017.
                  <https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst>.
