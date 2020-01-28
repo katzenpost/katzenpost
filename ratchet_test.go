@@ -8,7 +8,15 @@ import (
 	"time"
 
 	"golang.org/x/crypto/curve25519"
+
+	. "gopkg.in/check.v1"
 )
+
+func Test(t *testing.T) { TestingT(t) }
+
+type DoubleRatchetSuite struct{}
+
+var _ = Suite(&DoubleRatchetSuite{})
 
 // TODO: there are tests missing:
 // out-of-order for new DH ratchet
@@ -78,23 +86,19 @@ func pairedRatchet() (a, b *Ratchet) {
 	return
 }
 
-func TestExchange(t *testing.T) {
+func (s *DoubleRatchetSuite) Test_KeyExchange(c *C) {
 	a, b := pairedRatchet()
 
 	msg := []byte("test message")
 	encrypted := a.Encrypt(nil, msg)
 	result, err := b.Decrypt(encrypted)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c.Assert(err, IsNil)
 
-	if !bytes.Equal(msg, result) {
-		t.Fatalf("result doesn't match: %x vs %x", msg, result)
-	}
+	c.Assert(msg, DeepEquals, result)
 }
 
 // TODO: how is this test different?
-func TestActualRealExchange(t *testing.T) {
+func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 	// create two new ratchets
 	a, err := New(rand.Reader)
 	if err != nil {
@@ -129,52 +133,38 @@ func TestActualRealExchange(t *testing.T) {
 	msg := []byte("test message")
 	encrypted := a.Encrypt(nil, msg)
 	result, err := b.Decrypt(encrypted)
-	if err != nil {
-		t.Fatal(err)
-	}
+	c.Assert(err, IsNil)
 
-	if !bytes.Equal(msg, result) {
-		t.Fatalf("result doesn't match: %x vs %x", msg, result)
-	}
+	c.Assert(msg, DeepEquals, result)
 
 	msg2 := []byte(`This essay might seem to focus on the ethical weight of
 each scientist’s personal, professional choices. But I am actually more concerned
 about how we, as cryptographers and computer scientists, act in aggregate. Our
 collective behavior embodies values—and the institutions we create do, too.`)
-	encrypted2 := a.Encrypt(nil, msg2)
-	result2, err := b.Decrypt(encrypted2)
-	if err != nil {
-		t.Fatal(err)
-	}
+	encrypted = a.Encrypt(nil, msg2)
+	result, err = b.Decrypt(encrypted)
 
-	if !bytes.Equal(msg2, result2) {
-		t.Fatalf("result doesn't match: %x vs %x", msg2, result2)
-	}
+	c.Assert(err, IsNil)
+	c.Assert(msg2, DeepEquals, result)
 }
 
-func TestSerialization(t *testing.T) {
+func (s *DoubleRatchetSuite) Test_Serialization(c *C) {
 	a, b := pairedRatchet()
 
 	// 1
-	msg1 := []byte("test message number one is a short one")
-	encrypted1 := a.Encrypt(nil, msg1)
-	result1, err := b.Decrypt(encrypted1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(msg1, result1) {
-		t.Fatalf("result doesn't match: %x vs %x", msg1, result1)
-	}
+	msg := []byte("test message number one is a short one")
+	encrypted := a.Encrypt(nil, msg)
+	result, err := b.Decrypt(encrypted)
+	c.Assert(err, IsNil)
+	c.Assert(msg, DeepEquals, result)
 
 	serialized, err := a.MarshalBinary()
-	if err != nil {
-		t.Fatal(err)
-	}
-	c, err := New(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	c.UnmarshalBinary(serialized)
+	c.Assert(err, IsNil)
+
+	r, err := New(rand.Reader)
+	c.Assert(err, IsNil)
+
+	r.UnmarshalBinary(serialized)
 
 	// 2
 	msg2 := []byte(`The word privacy, its meaning abstract and debated, its connotations often
@@ -185,14 +175,10 @@ more winning a word and, in fact, I spoke of secure messaging instead of private
 messaging or anonymous messaging because I think it better captures what I
 want conveyed: that a communication whose endpoints are manifest is not at all
 secure. A person needs to feel insecure if using such a channel.`)
-	encrypted2 := c.Encrypt(nil, msg2)
-	result2, err := b.Decrypt(encrypted2)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(msg2, result2) {
-		t.Fatalf("result doesn't match: %x vs %x", msg2, result2)
-	}
+	encrypted = r.Encrypt(nil, msg2)
+	result, err = b.Decrypt(encrypted)
+	c.Assert(err, IsNil)
+	c.Assert(msg2, DeepEquals, result)
 
 	// 3
 	msg3 := []byte(`But even the word security doesn’t support a good framing of our problem:
@@ -203,15 +189,10 @@ human rights. 189 This makes surveillance a thing against which one can fight.
 The surveillance camera and data center make visual our emerging dystopia,
 while privacy, anonymity, and security are so abstract as to nearly defy visual
 representation.`)
-	encrypted3 := c.Encrypt(nil, msg3)
-	result3, err := b.Decrypt(encrypted3)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(msg3, result3) {
-		t.Fatalf("result doesn't match: %x vs %x", msg3, result3)
-	}
-
+	encrypted = r.Encrypt(nil, msg3)
+	result, err = b.Decrypt(encrypted)
+	c.Assert(err, IsNil)
+	c.Assert(msg3, DeepEquals, result)
 }
 
 type scriptAction struct {
