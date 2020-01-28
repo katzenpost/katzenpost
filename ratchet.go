@@ -188,7 +188,7 @@ func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 	var public0, public1 [32]byte
 	curve25519.ScalarBaseMult(&public0, r.kxPrivate0)
 	curve25519.ScalarBaseMult(&public1, r.kxPrivate1)
-	kx.Dh = public0[:]
+	kx.Dh = public0[:] // TODO: why we have two of these?
 	kx.Dh1 = public1[:]
 
 	return nil
