@@ -17,6 +17,7 @@
 package outgoing
 
 import (
+	"github.com/katzenpost/server/internal/instrument"
 	"bytes"
 	"context"
 	"fmt"
@@ -192,6 +193,7 @@ func (c *outgoingConn) worker() {
 				}
 			}
 			c.log.Debugf("TCP connection established.")
+			instrument.Outgoing()
 			start := time.Now()
 
 			// Handle the new connection.
