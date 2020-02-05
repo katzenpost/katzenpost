@@ -1,3 +1,5 @@
+// +build prometheus
+
 package instrument
 
 import (
