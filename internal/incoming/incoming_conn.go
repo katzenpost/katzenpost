@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -260,6 +261,7 @@ func (c *incomingConn) worker() {
 			continue
 		}
 
+		instrument.Incoming(rawCmd)
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
 			case *commands.RetrieveMessage:
@@ -352,6 +354,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		remaining = math.MaxUint8
 	}
 	hint := uint8(remaining)
+	instrument.IngressQueue(hint)
 
 	var respCmd commands.Command
 	if surbID != nil {
