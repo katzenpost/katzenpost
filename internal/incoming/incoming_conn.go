@@ -427,6 +427,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 
 		if c.sendTokens == 0 {
 			c.log.Debugf("Dropping packet: %v (Rate limited)", pkt.ID)
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			return nil
 		}
