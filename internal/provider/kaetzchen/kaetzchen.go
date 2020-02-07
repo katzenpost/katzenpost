@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
@@ -173,6 +174,8 @@ func (k *KaetzchenWorker) worker() {
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
+				instrument.PacketsDropped()
+				instrument.KaetzchenPacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -189,6 +192,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		k.incrementDropCounter()
+		instrument.KaetzchenRequestsDropped(k.getDropCounter)
 		return
 	}
 
@@ -201,9 +205,11 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	case err == nil:
 	case err == ErrNoResponse:
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
+		instrument.KaetzchenRequests()
 		return
 	default:
 		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v)", pkt.ID, err)
+		instrument.KaetzchenRequestsFailed()
 		return
 	}
 
