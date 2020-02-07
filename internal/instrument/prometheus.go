@@ -93,7 +93,12 @@ var (
 		},
 		[]string{"epoch"}
 	)
-
+	cancelledOutgoingConns = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_total_cancelled_outgoing_connections",
+			Help: "Number of cancelled outgoing connections",
+		}
+	)
 
 )
 
@@ -111,6 +116,8 @@ func Init() {
 	prometheus.MustRegister(kaetzchenRequestsFailed)
 	prometheus.MustRegister(mixPacketsDropped)
 	prometheus.MustRegister(mixQueueSize)
+	prometheus.MustRegister(pkiDocs)
+	prometheus.MustRegister(cancelledOutgoingConns)
 
 	// Expose registered metrics via HTTP
 	http.Handle("/metrics", promhttp.Handler())
@@ -168,4 +175,8 @@ func MixQueueSize(size uint64) {
 
 func PKIDocs(epoch string) {
 	pkiDocs.With(prometheus.Labels{"epoch": epoch})
+}
+
+func CancelledOutgoing() {
+	cancelledOutgoingConns.Inc()
 }
