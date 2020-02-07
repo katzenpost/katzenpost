@@ -86,6 +86,13 @@ var (
 			Help: "Size of the mix queue",
 		},
 	)
+	pkiDocs = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_total_number_of_pki_docs_per_epoch"
+			Help: "Number of pki docs in an epoch"
+		},
+		[]string{"epoch"}
+	)
 
 
 )
@@ -157,4 +164,8 @@ func MixPacketsDropped() {
 
 func MixQueueSize(size uint64) {
 	mixQueueSize.Observe(float64(size))
+}
+
+func PKIDocs(epoch string) {
+	pkiDocs.With(prometheus.Labels{"epoch": epoch})
 }

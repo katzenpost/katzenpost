@@ -21,6 +21,7 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	mRand "math/rand"
@@ -39,6 +40,7 @@ import (
 	"github.com/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/server/internal/provider/kaetzchen"
@@ -90,12 +92,14 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	// fields are visible to any other party involved.
 	if subtle.ConstantTimeCompare(pkt.Recipient.ID[:], d.recipient) != 1 {
 		d.log.Debugf("Dropping packet: %v (Invalid recipient)", pkt.ID)
+		instrument.PacketsDropped()
 		return
 	}
 
 	idBase, id := binary.BigEndian.Uint64(pkt.SurbReply.ID[0:]), binary.BigEndian.Uint64(pkt.SurbReply.ID[8:])
 	if idBase != d.surbIDBase {
 		d.log.Debugf("Dropping packet: %v (Invalid SURB ID base: %v)", pkt.ID, idBase)
+		instrument.PacketsDropped()
 		return
 	}
 
@@ -104,11 +108,13 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	ctx := d.loadAndDeleteSURBCtx(id)
 	if ctx == nil {
 		d.log.Debugf("Dropping packet: %v (Unknown SURB ID: 0x%08x)", pkt.ID, id)
+		instrument.PacketsDropped()
 		return
 	}
 
 	if _, err := sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
 		d.log.Debugf("Dropping packet: %v (SURB ID: 0x08x%): %v", pkt.ID, id, err)
+		instrument.PacketsDropped()
 		return
 	}
 
@@ -133,19 +139,23 @@ func (d *decoy) worker() {
 		case newEnt := <-d.docCh:
 			if !d.glue.Config().Debug.SendDecoyTraffic {
 				d.log.Debugf("Received PKI document but decoy traffic is disabled, ignoring.")
+				instrument.IgnoredPKIDocs()
 				continue
 			}
 
 			now, _, _ := epochtime.Now()
 			if entEpoch := newEnt.Epoch(); entEpoch != now {
 				d.log.Debugf("Received PKI document for non-current epoch, ignoring: %v", entEpoch)
+				instrument.IgnoredPKIDocs()
 				continue
 			}
 			if d.glue.Config().Server.IsProvider {
 				d.log.Debugf("Received PKI document when Provider, ignoring (not supported yet).")
+				instrument.IgnoredPKIDocs()
 				continue
 			}
 			d.log.Debugf("Received new PKI document for epoch: %v", now)
+			instrument.PKIDocs(fmt.Sprintf("%v", now))
 			docCache = newEnt
 		case <-timer.C:
 			timerFired = true
