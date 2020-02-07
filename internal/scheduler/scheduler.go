@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
@@ -104,6 +105,8 @@ func (sch *scheduler) worker() {
 				// Ensure that the packet's delay is not pathologically malformed.
 				if pkt.Delay > maxDelay {
 					sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
+					instrument.PacketsDropped()
+					instrument.MixPacketsDropped()
 					pkt.Dispose()
 					continue
 				}
@@ -113,9 +116,12 @@ func (sch *scheduler) worker() {
 				if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
 					sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
 					toEnqueue = append(toEnqueue, pkt)
+					instrument.MixQueueSize(len(toEnqueue))
 				} else {
 					sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
 					sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
+					instrument.PacketsDropped()
+					instrument.MixPacketsDropped()
 					pkt.Dispose()
 				}
 			}
@@ -181,6 +187,8 @@ func (sch *scheduler) worker() {
 				// ... unless the deadline has been blown by more than the
 				// configured slack time.
 				sch.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-dispatchAt)
+				instrument.PacketsDropped()
+				instrument.MixPacketsDropped()
 				pkt.Dispose()
 			} else {
 				// Dispatch the packet to the next hop.  Note that the callee

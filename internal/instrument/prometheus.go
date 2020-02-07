@@ -27,7 +27,7 @@ var (
 		},
 	)
 	ingressQueueSize = prometheus.NewSummary(
-		prometheus.GaugeOpts{
+		prometheus.SummaryOpts{
 			Name: "katzenpost_ingress_queue_size",
 			Help: "Size of the ingress queue",
 		},
@@ -74,6 +74,18 @@ var (
 			Help: "Number of total failed kaetzchen requests",
 		},
 	)
+	mixPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_kaetzchen_number_of_mix_packets_dropped",
+			Help: "Number of total dropped mixed packets",
+		},
+	)
+	mixQueueSize = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Name: "katzenpost_mix_queue_size",
+			Help: "Size of the mix queue",
+		},
+	)
 
 
 )
@@ -90,6 +102,8 @@ func Init() {
 	prometheus.MustRegister(kaetzchenPacketsDropped)
 	prometheus.MustRegister(kaetzchenRequestsDropped)
 	prometheus.MustRegister(kaetzchenRequestsFailed)
+	prometheus.MustRegister(mixPacketsDropped)
+	prometheus.MustRegister(mixQueueSize)
 
 	// Expose registered metrics via HTTP
 	http.Handle("/metrics", promhttp.Handler())
@@ -107,7 +121,7 @@ func Outgoing() {
 }
 
 func IngressQueue(size uint8) {
-	ingressQueueSize.Set(float64(size))
+	ingressQueueSize.Observe(float64(size))
 }
 
 func PacketsDropped() {
@@ -135,4 +149,12 @@ func KaetzchenRequestsDropped(dropCounter uint64) {
 
 func KaetzchenRequestsFailed() {
 	kaetzchenRequestsFailed.Inc()
+}
+
+func MixPacketsDropped() {
+	mixPacketsDropped.Inc()
+}
+
+func MixQueueSize(size uint64) {
+	mixQueueSize.Observe(float64(size))
 }
