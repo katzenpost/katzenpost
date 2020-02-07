@@ -200,6 +200,7 @@ func (c *outgoingConn) worker() {
 			if c.onConnEstablished(conn, dialCtx.Done()) {
 				// Canceled with a connection established.
 				c.log.Debugf("Existing connection canceled.")
+				instrument.CancelledOutgoing()
 				return
 			}
 
@@ -278,6 +279,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			if err := w.SendCommand(&cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				return
 			}
@@ -319,6 +321,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			now := monotime.Now()
 			if now-pkt.DispatchAt > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
 				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-pkt.DispatchAt)
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -328,6 +331,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			// This is presumably a early connect, and we aren't allowed to
 			// actually send packets to the peer yet.
 			c.log.Debugf("Dropping packet: %v (Out of epoch)", pkt.ID)
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
