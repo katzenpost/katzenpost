@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/mixkey"
@@ -120,6 +121,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 			// The packet decrypted successfully, the MAC was valid, and the
 			// tag was seen before, therefore drop the packet as a replay.
 			lastErr = errors.New("crypto: Packet is a replay")
+			instrument.PacketsReplayed()
 			break
 		}
 
@@ -170,6 +172,7 @@ func (w *Worker) worker() {
 		dwellTime := now - pkt.RecvAt
 		if dwellTime > unwrapSlack {
 			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		} else {
@@ -180,6 +183,7 @@ func (w *Worker) worker() {
 		w.log.Debugf("Attempting to unwrap packet: %v", pkt.ID)
 		if err := w.doUnwrap(pkt); err != nil {
 			w.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
@@ -190,11 +194,13 @@ func (w *Worker) worker() {
 		if pkt.IsForward() {
 			if pkt.Payload != nil {
 				w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.ID)
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
 			if pkt.MustTerminate {
 				w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.ID)
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -203,6 +209,7 @@ func (w *Worker) worker() {
 			pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
 			if pkt.Delay > constants.NumMixKeys*epochtime.Period {
 				w.log.Debugf("Dropping packet: %v (Delay %v is past what is possible)", pkt.ID, pkt.Delay)
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -227,6 +234,7 @@ func (w *Worker) worker() {
 					// time appears to be "excessive".  Discard the packet,
 					// the client is doing something non-standard anyway.
 					w.log.Debugf("Dropping packet: %v (Delay 0 queue delay: %v)", pkt.ID, dwellTime)
+					instrument.PacketsDropped()
 					pkt.Dispose()
 					continue
 				}
@@ -264,6 +272,7 @@ func (w *Worker) worker() {
 
 			// Mixes will only ever see forward commands.
 			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
@@ -275,6 +284,7 @@ func (w *Worker) worker() {
 
 		if pkt.MustForward {
 			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.ID)
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
@@ -287,6 +297,7 @@ func (w *Worker) worker() {
 			w.glue.Provider().OnPacket(pkt)
 		} else {
 			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
+			instrument.PacketsDropped("user")
 			pkt.Dispose()
 		}
 	}
