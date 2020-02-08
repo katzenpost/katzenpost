@@ -16,7 +16,7 @@ func Incoming(cmd commands.Command) {}
 func Outgoing() {}
 
 // IngressQueue observes the size of the ingress queue
-func IngressQueue() {}
+func IngressQueue(size uint8) {}
 
 // PacketsDropped increments the counter for the number of packets dropped
 func PacketsDropped() {}

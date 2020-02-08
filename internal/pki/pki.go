@@ -166,9 +166,8 @@ func (p *pki) worker() {
 			p.docs[epoch] = ent
 			p.Unlock()
 			didUpdate = true
+			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
 		}
-
-		instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
 
 		p.pruneFailures()
 		if didUpdate {

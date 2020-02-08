@@ -26,9 +26,9 @@ import (
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -297,7 +297,7 @@ func (w *Worker) worker() {
 			w.glue.Provider().OnPacket(pkt)
 		} else {
 			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			instrument.PacketsDropped("user")
+			instrument.PacketsDropped()
 			pkt.Dispose()
 		}
 	}

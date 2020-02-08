@@ -116,7 +116,7 @@ func (sch *scheduler) worker() {
 				if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
 					sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
 					toEnqueue = append(toEnqueue, pkt)
-					instrument.MixQueueSize(len(toEnqueue))
+					instrument.MixQueueSize(uint64(len(toEnqueue)))
 				} else {
 					sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
 					sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
