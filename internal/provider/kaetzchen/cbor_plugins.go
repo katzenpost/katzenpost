@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/cborplugin"
 	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
@@ -84,6 +85,7 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 	handlerCh, ok := k.pluginChans[recipient]
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", recipient)
+		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
 	ch := handlerCh.Out()
@@ -98,12 +100,14 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
 		}
 
 		k.processKaetzchen(pkt, pluginClient)
+		instrument.KaetzchenRequests()
 	}
 }
 
@@ -120,6 +124,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
 
@@ -132,6 +137,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	case nil:
 	case ErrNoResponse:
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
+		instrument.KaetzchenRequests
 		return
 	default:
 		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, resp)
