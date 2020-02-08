@@ -40,6 +40,7 @@ import (
 	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/pkicache"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -139,6 +140,7 @@ func (p *pki) worker() {
 			}
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
 				if err == cpki.ErrNoDocument {
 					p.setFailedFetch(epoch, err)
 				}
@@ -149,11 +151,13 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
+				instrument.FailedPKICacheGeneration(fmt.Sprintf("%v", epoch))
 				continue
 			}
 			if err = p.validateCacheEntry(ent); err != nil {
 				p.log.Warningf("Generated PKI cache is invalid: %v", err)
 				p.setFailedFetch(epoch, err)
+				instrument.InvalidPKICache(fmt.Sprintf("%v", epoch))
 				continue
 			}
 
@@ -163,6 +167,9 @@ func (p *pki) worker() {
 			p.Unlock()
 			didUpdate = true
 		}
+
+		instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
+
 		p.pruneFailures()
 		if didUpdate {
 			// Dispose of the old PKI documents.
