@@ -192,7 +192,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		k.incrementDropCounter()
-		instrument.KaetzchenRequestsDropped(k.getDropCounter)
+		instrument.KaetzchenRequestsDropped(k.getDropCounter())
 		return
 	}
 

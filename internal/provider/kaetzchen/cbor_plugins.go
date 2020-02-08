@@ -137,7 +137,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	case nil:
 	case ErrNoResponse:
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
-		instrument.KaetzchenRequests
+		instrument.KaetzchenRequests()
 		return
 	default:
 		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, resp)

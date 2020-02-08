@@ -32,8 +32,8 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
-	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/debug"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
