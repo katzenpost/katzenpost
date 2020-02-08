@@ -91,12 +91,38 @@ var (
 			Name: "katzenpost_total_number_of_pki_docs_per_epoch"
 			Help: "Number of pki docs in an epoch"
 		},
-		[]string{"epoch"}
+		[]string{"epoch"},
 	)
 	cancelledOutgoingConns = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_total_cancelled_outgoing_connections",
 			Help: "Number of cancelled outgoing connections",
+		},
+	)
+	fetchedPKIDocs = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_total_fetched_pki_docs_per_epoch",
+			Help: "Number of fetch PKI docs per epoch",
+		},
+		[]string{"epoch"},
+	)
+	failedFetchPKIDocs = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_total_failed_fetch_pki_docs_per_epoch",
+			Help: "Number of failed PKI docs fetches per epoch"
+		}
+	)
+	failedPKICacheGeneration = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "katzenpost_total_failed_pki_cache_generation_per_epoch",
+			Help: "Number of failed PKI caches generation per epoch",
+		},
+		[]string{"epoch"},
+	)
+	invalidPKICache = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name : "katzenpost_total_invalid_pki_cache_per_epoch",
+			Help : "Number of invalid PKI caches per epoch"
 		}
 	)
 
@@ -118,6 +144,10 @@ func Init() {
 	prometheus.MustRegister(mixQueueSize)
 	prometheus.MustRegister(pkiDocs)
 	prometheus.MustRegister(cancelledOutgoingConns)
+	prometheus.MustRegister(fetchedPKIDocs)
+	prometheus.MustRegister(failedFetchPKIDocs)
+	prometheus.MustRegister(failedPKICacheGeneration)
+	prometheus.MustRegister(invalidPKICache)
 
 	// Expose registered metrics via HTTP
 	http.Handle("/metrics", promhttp.Handler())
@@ -179,4 +209,20 @@ func PKIDocs(epoch string) {
 
 func CancelledOutgoing() {
 	cancelledOutgoingConns.Inc()
+}
+
+func FetchedPKIDocs(epoch string) {
+	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch})
+}
+
+func FailedFetchPKIDocs(epoch string) {
+	failedFetchPKIDocs.With(prometheus.Labels{"epoch": epoch})
+}
+
+func FailedPKICacheGeneration(epoch string) {
+	failedPKICacheGeneration.With(prometheus.Labels{"epoch": epoch})
+}
+
+func InvalidPKICache(epoch string) {
+	invalidPKICache.With(prometheus.Labels{"epoch": epoch})
 }
