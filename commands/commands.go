@@ -36,9 +36,10 @@ const (
 
 	cmdOverhead           = 1
 	fetchStateLength      = cmdOverhead + 8 + 4 + 32
+	stateResponseLength   = cmdOverhead + 1 + 1 + 4 + crypto.PayloadSize
 	sendT1Length          = cmdOverhead + 8 + crypto.Type1MessageSize
-	sendT2Length          = cmdOverhead + 8 + 32 + crypto.Type2MessageSize
-	sendT3Length          = cmdOverhead + 8 + 32 + crypto.Type3MessageSize
+	sendT2Length          = cmdOverhead + 8 + 32 + 32 + crypto.Type2MessageSize
+	sendT3Length          = cmdOverhead + 8 + 32 + 32 + 32 + crypto.Type3MessageSize
 	messageResponseLength = cmdOverhead + 1
 
 	// Reunion client/DB commands.
@@ -164,8 +165,11 @@ type SendT2 struct {
 	// Epoch specifies the current Reunion epoch.
 	Epoch uint64
 
-	// T1Hash is the hash of the T1 message which this T2 message is replying.
-	T1Hash [sha256.Size]byte
+	// SrcT1Hash is the hash of the T1 message sent by this sender.
+	SrcT1Hash [sha256.Size]byte
+
+	// DstT1Hash is the hash of the T1 message which this T2 message is replying.
+	DstT1Hash [sha256.Size]byte
 
 	// Payload contains the T2 message.
 	Payload []byte
@@ -173,10 +177,11 @@ type SendT2 struct {
 
 // ToBytes serializes the SendT2 command and returns the resulting slice.
 func (s *SendT2) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8+32)
+	out := make([]byte, cmdOverhead+8+32+32)
 	out[0] = byte(sendT2)
 	binary.BigEndian.PutUint64(out[1:9], s.Epoch)
-	copy(out[9:], s.T1Hash[:])
+	copy(out[9:], s.SrcT1Hash[:])
+	copy(out[9+sha256.Size:], s.DstT1Hash[:])
 	out = append(out, s.Payload...)
 	return out
 }
@@ -187,10 +192,13 @@ func sendT2FromBytes(b []byte) (Command, error) {
 	}
 	s := new(SendT2)
 	s.Epoch = binary.BigEndian.Uint64(b[1:9])
-	hash := [sha256.Size]byte{}
-	copy(hash[:], b[9:9+sha256.Size])
-	s.T1Hash = hash
-	s.Payload = b[9+sha256.Size:]
+	srchash := [sha256.Size]byte{}
+	copy(srchash[:], b[9:9+sha256.Size])
+	s.SrcT1Hash = srchash
+	dsthash := [sha256.Size]byte{}
+	copy(dsthash[:], b[9+sha256.Size:9+sha256.Size+sha256.Size])
+	s.DstT1Hash = dsthash
+	s.Payload = b[9+sha256.Size+sha256.Size:]
 	return s, nil
 }
 
@@ -199,8 +207,11 @@ type SendT3 struct {
 	// Epoch specifies the current Reunion epoch.
 	Epoch uint64
 
-	// T1Hash is the hash of the T1 message which this T3 message is replying.
-	T1Hash [sha256.Size]byte
+	// SrcT1Hash is the hash of the T1 message sent by this sender.
+	SrcT1Hash [sha256.Size]byte
+
+	// DstT1Hash is the hash of the T1 message which this T2 message is replying.
+	DstT1Hash [sha256.Size]byte
 
 	// T2Hash is the hash of the T2 message which this T3 message is replying.
 	T2Hash [sha256.Size]byte
@@ -211,10 +222,12 @@ type SendT3 struct {
 
 // ToBytes serializes the SendT2 command and returns the resulting slice.
 func (s *SendT3) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8+32)
+	out := make([]byte, cmdOverhead+8+32+32+32)
 	out[0] = byte(sendT3)
 	binary.BigEndian.PutUint64(out[1:9], s.Epoch)
-	copy(out[9:], s.T2Hash[:])
+	copy(out[9:], s.SrcT1Hash[:])
+	copy(out[9+sha256.Size:], s.DstT1Hash[:])
+	copy(out[9+sha256.Size+sha256.Size:], s.T2Hash[:])
 	out = append(out, s.Payload...)
 	return out
 }
@@ -224,11 +237,29 @@ func sendT3FromBytes(b []byte) (Command, error) {
 		return nil, errInvalidCommand
 	}
 	s := new(SendT3)
-	s.Epoch = binary.BigEndian.Uint64(b[1:9])
+	head := 1
+	tail := 9
+	s.Epoch = binary.BigEndian.Uint64(b[head:tail])
+
+	srchash := [sha256.Size]byte{}
+	head = tail
+	tail = head + sha256.Size
+	copy(srchash[:], b[head:tail])
+	s.SrcT1Hash = srchash
+
+	dsthash := [sha256.Size]byte{}
+	head = tail
+	tail = head + sha256.Size
+	copy(dsthash[:], b[head:tail])
+	s.DstT1Hash = dsthash
+
 	hash := [sha256.Size]byte{}
-	copy(hash[:], b[9:9+sha256.Size])
+	head = tail
+	tail = head + sha256.Size
+	copy(hash[:], b[head:tail])
 	s.T2Hash = hash
-	s.Payload = b[9+sha256.Size:]
+
+	s.Payload = b[tail:]
 	return s, nil
 }
 

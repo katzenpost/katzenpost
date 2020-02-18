@@ -17,12 +17,18 @@
 package commands
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"testing"
 
 	"github.com/katzenpost/reunion/crypto"
 	"github.com/stretchr/testify/require"
 )
+
+func fillRand(require *require.Assertions, b []byte) {
+	_, err := rand.Read(b)
+	require.NoError(err, "failed to randomize buffer")
+}
 
 func TestFetchStateCommand(t *testing.T) {
 	require := require.New(t)
@@ -48,7 +54,7 @@ func TestStateResponseCommand(t *testing.T) {
 	cmd.ErrorCode = 123
 	cmd.Truncated = true
 	cmd.LeftOverChunksHint = 332
-	cmd.Payload = make([]byte, chunkLength)
+	cmd.Payload = make([]byte, crypto.PayloadSize)
 	b := cmd.ToBytes()
 	require.Equal(len(b), stateResponseLength)
 
@@ -85,8 +91,13 @@ func TestSendT2Command(t *testing.T) {
 
 	cmd := new(SendT2)
 	cmd.Epoch = 123
-	cmd.T1Hash = [sha256.Size]byte{}
+	cmd.SrcT1Hash = [sha256.Size]byte{}
+	fillRand(require, cmd.SrcT1Hash[:])
+
+	cmd.DstT1Hash = [sha256.Size]byte{}
+	fillRand(require, cmd.DstT1Hash[:])
 	cmd.Payload = make([]byte, crypto.Type2MessageSize)
+	fillRand(require, cmd.Payload[:])
 
 	b := cmd.ToBytes()
 	require.Equal(len(b), sendT2Length)
@@ -96,7 +107,8 @@ func TestSendT2Command(t *testing.T) {
 	require.IsType(cmd, c)
 	cmd2 := c.(*SendT2)
 	require.Equal(cmd.Epoch, cmd2.Epoch)
-	require.Equal(cmd.T1Hash, cmd2.T1Hash)
+	require.Equal(cmd.SrcT1Hash, cmd2.SrcT1Hash)
+	require.Equal(cmd.DstT1Hash, cmd2.DstT1Hash)
 	require.Equal(cmd.Payload, cmd2.Payload)
 }
 
@@ -105,8 +117,14 @@ func TestSendT3Command(t *testing.T) {
 
 	cmd := new(SendT3)
 	cmd.Epoch = 123
+	cmd.SrcT1Hash = [sha256.Size]byte{}
+	fillRand(require, cmd.SrcT1Hash[:])
+	cmd.DstT1Hash = [sha256.Size]byte{}
+	fillRand(require, cmd.DstT1Hash[:])
 	cmd.T2Hash = [sha256.Size]byte{}
+	fillRand(require, cmd.T2Hash[:])
 	cmd.Payload = make([]byte, crypto.Type2MessageSize)
+	fillRand(require, cmd.Payload[:])
 
 	b := cmd.ToBytes()
 	require.Equal(len(b), sendT3Length)
@@ -116,6 +134,8 @@ func TestSendT3Command(t *testing.T) {
 	require.IsType(cmd, c)
 	cmd2 := c.(*SendT3)
 	require.Equal(cmd.Epoch, cmd2.Epoch)
+	require.Equal(cmd.SrcT1Hash, cmd2.SrcT1Hash)
+	require.Equal(cmd.DstT1Hash, cmd2.DstT1Hash)
 	require.Equal(cmd.T2Hash, cmd2.T2Hash)
 	require.Equal(cmd.Payload, cmd2.Payload)
 }
