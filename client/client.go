@@ -36,8 +36,8 @@ var (
 	// that an invalid response from the Reunion server was received.
 	InvalidResponseErrMessage = "invalid response received from Reunion DB"
 
-	// ShutdownError is an error invoked during shutdown.
-	ShutdownError = errors.New("reunion: shutdown requested")
+	// ErrShutdown is an error invoked during shutdown.
+	ErrShutdown = errors.New("reunion: shutdown requested")
 )
 
 const (
