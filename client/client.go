@@ -517,7 +517,7 @@ func (e *Exchange) Run() {
 			return
 		}
 		if e.shouldStop() {
-			e.log.Error(ShutdownError.Error())
+			e.log.Error(ErrShutdown.Error())
 			return
 		}
 		fallthrough
@@ -538,7 +538,7 @@ func (e *Exchange) Run() {
 				return
 			}
 			if e.shouldStop() {
-				e.log.Error(ShutdownError.Error())
+				e.log.Error(ErrShutdown.Error())
 				return
 			}
 
@@ -551,7 +551,7 @@ func (e *Exchange) Run() {
 				return
 			}
 			if e.shouldStop() {
-				e.log.Error(ShutdownError.Error())
+				e.log.Error(ErrShutdown.Error())
 				return
 			}
 
