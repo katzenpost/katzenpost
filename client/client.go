@@ -201,6 +201,7 @@ func (e *Exchange) sentUpdateOK() bool {
 		ContactID:  e.contactID,
 		Error:      err,
 		Serialized: serialized,
+		Result:     nil,
 	}
 	if err != nil {
 		return false
@@ -443,6 +444,7 @@ func (e *Exchange) sendT3Messages() bool {
 }
 
 func (e *Exchange) processT3Messages() bool {
+	processed := false
 	for srcT1Hash, t3 := range e.receivedT3s {
 		beta, ok := e.decryptedT1Betas[srcT1Hash]
 		if !ok {
@@ -470,9 +472,9 @@ func (e *Exchange) processT3Messages() bool {
 			Serialized: nil,
 			Result:     plaintext,
 		}
-		return true
+		processed = true
 	}
-	return false
+	return processed
 }
 
 // Run performs the Reunion exchange and expresses a simple
