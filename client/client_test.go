@@ -92,6 +92,7 @@ func TestClientServerBasics1(t *testing.T) {
 	require.NoError(err)
 	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
 
+	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		for {
@@ -208,6 +209,7 @@ func TestClientServerBasics2(t *testing.T) {
 	require.NoError(err)
 	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
 
+	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		for {
