@@ -39,7 +39,7 @@ const (
 	stateResponseLength   = cmdOverhead + 1 + 1 + 4 + crypto.PayloadSize
 	sendT1Length          = cmdOverhead + 8 + crypto.Type1MessageSize
 	sendT2Length          = cmdOverhead + 8 + 32 + 32 + crypto.Type2MessageSize
-	sendT3Length          = cmdOverhead + 8 + 32 + 32 + 32 + crypto.Type3MessageSize
+	sendT3Length          = cmdOverhead + 8 + 32 + 32 + crypto.Type3MessageSize
 	messageResponseLength = cmdOverhead + 1
 
 	// Reunion client/DB commands.
@@ -213,21 +213,17 @@ type SendT3 struct {
 	// DstT1Hash is the hash of the T1 message which this T2 message is replying.
 	DstT1Hash [sha256.Size]byte
 
-	// T2Hash is the hash of the T2 message which this T3 message is replying.
-	T2Hash [sha256.Size]byte
-
 	// Payload contains the T3 message.
 	Payload []byte
 }
 
 // ToBytes serializes the SendT2 command and returns the resulting slice.
 func (s *SendT3) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8+32+32+32)
+	out := make([]byte, cmdOverhead+8+32+32)
 	out[0] = byte(sendT3)
 	binary.BigEndian.PutUint64(out[1:9], s.Epoch)
 	copy(out[9:], s.SrcT1Hash[:])
 	copy(out[9+sha256.Size:], s.DstT1Hash[:])
-	copy(out[9+sha256.Size+sha256.Size:], s.T2Hash[:])
 	out = append(out, s.Payload...)
 	return out
 }
@@ -252,12 +248,6 @@ func sendT3FromBytes(b []byte) (Command, error) {
 	tail = head + sha256.Size
 	copy(dsthash[:], b[head:tail])
 	s.DstT1Hash = dsthash
-
-	hash := [sha256.Size]byte{}
-	head = tail
-	tail = head + sha256.Size
-	copy(hash[:], b[head:tail])
-	s.T2Hash = hash
 
 	s.Payload = b[tail:]
 	return s, nil

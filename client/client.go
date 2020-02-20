@@ -414,7 +414,6 @@ func (e *Exchange) sendT3Messages() bool {
 		}
 		sendT3Cmd := commands.SendT3{
 			Epoch:     e.session.Epoch(),
-			T2Hash:    t2HashAr,
 			SrcT1Hash: myT1HashAr,
 			DstT1Hash: srcT1Hash,
 			Payload:   t3,

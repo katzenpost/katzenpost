@@ -395,9 +395,7 @@ func (s *ReunionState) AppendMessage(message interface{}) error {
 		}
 		messageList.Append(&T3Message{
 			SrcT1Hash: mesg.SrcT1Hash,
-			// XXX T2Hash not used.
-			T2Hash:  mesg.T2Hash,
-			Payload: mesg.Payload,
+			Payload:   mesg.Payload,
 		})
 		s.messageMap.Store(mesg.DstT1Hash, messageList)
 		return nil
