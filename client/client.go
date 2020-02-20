@@ -45,6 +45,10 @@ const (
 	t1MessageSentState = 1
 )
 
+// ExchangeHash is a 32 byte array which represents a hash of
+// one of our cryptographic messages, t1 hash, t2 hash etc.
+type ExchangeHash [32]byte
+
 // ReunionUpdate represents an update to the reunion client state or
 // to report a failure.
 type ReunionUpdate struct {
@@ -65,9 +69,9 @@ type serializableExchange struct {
 	Epoch       uint64
 	Session     *crypto.Session
 	SentT1      []byte
-	SentT2Map   map[[32]byte][]byte
-	SentT3Map   map[[32]byte][]byte
-	ReceivedT2s map[[32]byte][]byte
+	SentT2Map   map[ExchangeHash][]byte
+	SentT3Map   map[ExchangeHash][]byte
+	ReceivedT2s map[ExchangeHash][]byte
 }
 
 // Exchange encapsulates all the client key material and
@@ -95,27 +99,27 @@ type Exchange struct {
 	sentT1 []byte
 
 	// t2 hash -> t2
-	sentT2Map map[[32]byte][]byte
+	sentT2Map map[ExchangeHash][]byte
 
 	// t1 hash -> t1
-	repliedT1s map[[32]byte][]byte
+	repliedT1s map[ExchangeHash][]byte
 	// t2 hash -> t2
-	repliedT2s map[[32]byte][]byte
+	repliedT2s map[ExchangeHash][]byte
 
 	// t1 hash -> t1
-	receivedT1s map[[32]byte][]byte
+	receivedT1s map[ExchangeHash][]byte
 
 	// src t1 hash -> t2
-	receivedT2s map[[32]byte][]byte
+	receivedT2s map[ExchangeHash][]byte
 
 	// src t1 hash -> t3
-	receivedT3s map[[32]byte][]byte
+	receivedT3s map[ExchangeHash][]byte
 
 	// t1 hash -> unelligator'ed t1 alpha pub key
-	receivedT1Alphas map[[32]byte]*crypto.PublicKey
+	receivedT1Alphas map[ExchangeHash]*crypto.PublicKey
 
 	// t1 hash -> beta
-	decryptedT1Betas map[[32]byte]*crypto.PublicKey
+	decryptedT1Betas map[ExchangeHash]*crypto.PublicKey
 
 	remoteSequence uint64
 }
@@ -146,17 +150,17 @@ func NewExchange(
 		payload:      payload,
 
 		sentT1:    nil,
-		sentT2Map: make(map[[32]byte][]byte),
+		sentT2Map: make(map[ExchangeHash][]byte),
 
-		receivedT1s: make(map[[32]byte][]byte),
-		receivedT2s: make(map[[32]byte][]byte),
-		receivedT3s: make(map[[32]byte][]byte),
+		receivedT1s: make(map[ExchangeHash][]byte),
+		receivedT2s: make(map[ExchangeHash][]byte),
+		receivedT3s: make(map[ExchangeHash][]byte),
 
-		repliedT1s: make(map[[32]byte][]byte),
-		repliedT2s: make(map[[32]byte][]byte),
+		repliedT1s: make(map[ExchangeHash][]byte),
+		repliedT2s: make(map[ExchangeHash][]byte),
 
-		receivedT1Alphas: make(map[[32]byte]*crypto.PublicKey),
-		decryptedT1Betas: make(map[[32]byte]*crypto.PublicKey),
+		receivedT1Alphas: make(map[ExchangeHash]*crypto.PublicKey),
+		decryptedT1Betas: make(map[ExchangeHash]*crypto.PublicKey),
 	}, nil
 }
 
