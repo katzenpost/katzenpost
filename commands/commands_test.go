@@ -121,8 +121,6 @@ func TestSendT3Command(t *testing.T) {
 	fillRand(require, cmd.SrcT1Hash[:])
 	cmd.DstT1Hash = [sha256.Size]byte{}
 	fillRand(require, cmd.DstT1Hash[:])
-	cmd.T2Hash = [sha256.Size]byte{}
-	fillRand(require, cmd.T2Hash[:])
 	cmd.Payload = make([]byte, crypto.Type2MessageSize)
 	fillRand(require, cmd.Payload[:])
 
@@ -136,7 +134,6 @@ func TestSendT3Command(t *testing.T) {
 	require.Equal(cmd.Epoch, cmd2.Epoch)
 	require.Equal(cmd.SrcT1Hash, cmd2.SrcT1Hash)
 	require.Equal(cmd.DstT1Hash, cmd2.DstT1Hash)
-	require.Equal(cmd.T2Hash, cmd2.T2Hash)
 	require.Equal(cmd.Payload, cmd2.Payload)
 }
 
