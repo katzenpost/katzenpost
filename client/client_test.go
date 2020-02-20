@@ -62,6 +62,9 @@ func TestClientServerBasics1(t *testing.T) {
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
 	epoch := uint64(12322)
 
+	var bobResult []byte
+	var aliceResult []byte
+
 	// alice client
 	alicePayload := []byte("Hello Bobby, what's up dude?")
 	aliceContactID := uint64(1)
@@ -75,9 +78,9 @@ func TestClientServerBasics1(t *testing.T) {
 		for {
 			update := <-aliceUpdateCh
 			if len(update.Result) > 0 {
-				fmt.Printf("\n\n<>< Alice got result: %s\n\n", update.Result)
+				aliceResult = update.Result
+				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
 				wg.Done()
-				break
 			}
 		}
 	}()
@@ -98,9 +101,9 @@ func TestClientServerBasics1(t *testing.T) {
 		for {
 			update := <-bobUpdateCh
 			if len(update.Result) > 0 {
-				fmt.Printf("\n\n<>< Bob got result: %s\n\n", update.Result)
+				bobResult = update.Result
+				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
 				wg.Done()
-				break
 			}
 		}
 	}()
@@ -109,43 +112,31 @@ func TestClientServerBasics1(t *testing.T) {
 	require.NoError(err)
 
 	// Run the reunion client exchanges manually instead of using the Exchange method.
-	fmt.Println("send t1 messages")
 	hasAliceSent := aliceExchange.sendT1()
-	fmt.Printf("Alice sent t1: %v\n", hasAliceSent)
 	hasBobSent := bobExchange.sendT1()
-	fmt.Printf("Bob sent t1: %v\n", hasBobSent)
+	require.True(hasAliceSent)
+	require.True(hasBobSent)
 
-	fmt.Println("fetching states")
 	err = aliceExchange.fetchState()
 	require.NoError(err)
 	err = bobExchange.fetchState()
 	require.NoError(err)
 
-	fmt.Printf("Alice has received %d t1s\n", len(aliceExchange.receivedT1s))
-	fmt.Printf("Bob has received %d t1s\n", len(bobExchange.receivedT1s))
-
-	fmt.Println("send t2 messages")
 	hasAliceSent = aliceExchange.sendT2Messages()
-	fmt.Printf("Alice sent t2: %v\n", hasAliceSent)
 	hasBobSent = bobExchange.sendT2Messages()
-	fmt.Printf("Bob sent t2: %v\n", hasBobSent)
+	require.True(hasAliceSent)
+	require.True(hasBobSent)
 
-	fmt.Println("fetching states")
 	err = aliceExchange.fetchState()
 	require.NoError(err)
 	err = bobExchange.fetchState()
 	require.NoError(err)
 
-	fmt.Printf("Alice has received %d t2s\n", len(aliceExchange.receivedT2s))
-	fmt.Printf("Bob has received %d t2s\n", len(bobExchange.receivedT2s))
-
-	fmt.Println("send t3 messages")
 	hasAliceSent = aliceExchange.sendT3Messages()
-	fmt.Printf("Alice sent t3: %v\n", hasAliceSent)
 	hasBobSent = bobExchange.sendT3Messages()
-	fmt.Printf("Bob sent t3: %v\n", hasBobSent)
+	require.True(hasAliceSent)
+	require.True(hasBobSent)
 
-	fmt.Println("last, fetching states")
 	err = aliceExchange.fetchState()
 	require.NoError(err)
 	err = bobExchange.fetchState()
@@ -157,9 +148,10 @@ func TestClientServerBasics1(t *testing.T) {
 	bobExchange.processT3Messages()
 	bobExchange.sentUpdateOK()
 
-	// Wait for results from both clients.
-	fmt.Println("waiting for finality")
 	wg.Wait()
+
+	require.Equal(aliceResult, bobPayload)
+	require.Equal(bobResult, alicePayload)
 }
 
 func TestClientServerBasics2(t *testing.T) {
