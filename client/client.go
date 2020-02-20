@@ -18,11 +18,9 @@
 package client
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/katzenpost/reunion/commands"
 	"github.com/katzenpost/reunion/crypto"
@@ -106,12 +104,16 @@ type Exchange struct {
 
 	// t1 hash -> t1
 	receivedT1s map[[32]byte][]byte
-	// t2 hash -> t2
+
+	// src t1 hash -> t2
 	receivedT2s map[[32]byte][]byte
-	// t2 hash -> t3
+
+	// src t1 hash -> t3
 	receivedT3s map[[32]byte][]byte
 
-	receivedT1Alphas []*crypto.PublicKey
+	// t1 hash -> unelligator'ed t1 alpha pub key
+	receivedT1Alphas map[[32]byte]*crypto.PublicKey
+
 	// t1 hash -> beta
 	decryptedT1Betas map[[32]byte]*crypto.PublicKey
 
@@ -153,7 +155,7 @@ func NewExchange(
 		repliedT1s: make(map[[32]byte][]byte),
 		repliedT2s: make(map[[32]byte][]byte),
 
-		receivedT1Alphas: make([]*crypto.PublicKey, 0),
+		receivedT1Alphas: make(map[[32]byte]*crypto.PublicKey),
 		decryptedT1Betas: make(map[[32]byte]*crypto.PublicKey),
 	}, nil
 }
@@ -205,35 +207,29 @@ func (e *Exchange) sentUpdateOK() bool {
 func (e *Exchange) processState(state *server.RequestedReunionState) (bool, error) {
 	hasNew := false
 
-	h := sha256.New()
-	h.Write([]byte(e.sentT1))
-	myT1Hash := h.Sum(nil)
-
 	for t1hash, t1 := range state.T1Map {
-		// skip our own t1
-		if bytes.Equal(t1hash[:], myT1Hash) {
-			continue
-		}
 		if _, ok := e.receivedT1s[t1hash]; !ok {
+			e.log.Debugf("t1 hash %x", t1hash)
 			e.receivedT1s[t1hash] = t1
 			hasNew = true
 		}
 	}
 	for _, message := range state.Messages {
 		if len(message.T2Payload) > 0 {
-			h := sha256.New()
-			h.Write(message.T2Payload)
-			t2Hash := h.Sum(nil)
-			t2HashAr := [sha256.Size]byte{}
-			copy(t2HashAr[:], t2Hash)
-			if _, ok := e.receivedT2s[t2HashAr]; !ok {
-				e.receivedT2s[t2HashAr] = message.T2Payload
+			if _, ok := e.receivedT2s[message.SrcT1Hash]; !ok {
+				e.log.Debug("t2 payload")
+				e.receivedT2s[message.SrcT1Hash] = message.T2Payload
 				hasNew = true
+			} else {
+				e.log.Debugf("skipping received t2 because it's src t1 hash %x already exists in the map", message.SrcT1Hash[:])
 			}
 		} else if len(message.T3Payload) > 0 {
-			if _, ok := e.receivedT3s[*message.T2Hash]; !ok {
-				e.receivedT3s[*message.T2Hash] = message.T3Payload
+			if _, ok := e.receivedT3s[message.SrcT1Hash]; !ok {
+				e.log.Debug("t3 payload")
+				e.receivedT3s[message.SrcT1Hash] = message.T3Payload
 				hasNew = true
+			} else {
+				e.log.Debug("skipping received t3 because it's src t1 hash already exists in the map")
 			}
 		} else {
 			return false, errors.New("wtf, invalid message found")
@@ -252,45 +248,27 @@ func (e *Exchange) fetchState() error {
 	copy(t1HashAr[:], t1Hash)
 	fetchStateCmd.T1Hash = t1HashAr
 
-	delay := 15 * time.Second
-	for {
-		rawResponse, err := e.db.Query(fetchStateCmd, e.shutdownChan)
-		if err != nil {
-			return err
-		}
-		response, ok := rawResponse.(*commands.StateResponse)
-		if !ok {
-			return errors.New("fetch state: wrong response command received")
-		}
-		if response.ErrorCode != commands.ResponseStatusOK {
-			return fmt.Errorf("fetch state: received an error status code from the reunion db: %d", response.ErrorCode)
-		}
-		state := new(server.RequestedReunionState)
-		err = state.Unmarshal(response.Payload)
-		if err != nil {
-			return err
-		}
-		if response.Truncated {
-			return errors.New("truncated Reunion DB state not yet supported")
-		}
-		ok, err = e.processState(state)
-		if err != nil {
-			return err
-		}
-		if ok {
-			return nil
-		}
-		e.log.Debugf("fetch sleeping for %v ", delay)
-		select {
-		case <-e.shutdownChan:
-			return ShutdownError
-		case <-time.After(delay):
-			delay *= 2
-			if delay > time.Hour {
-				delay = time.Hour
-			}
-		}
-	} // end of for loop
+	rawResponse, err := e.db.Query(fetchStateCmd, e.shutdownChan)
+	if err != nil {
+		return err
+	}
+	response, ok := rawResponse.(*commands.StateResponse)
+	if !ok {
+		return errors.New("fetch state: wrong response command received")
+	}
+	if response.ErrorCode != commands.ResponseStatusOK {
+		return fmt.Errorf("fetch state: received an error status code from the reunion db: %d", response.ErrorCode)
+	}
+	state := new(server.RequestedReunionState)
+	err = state.Unmarshal(response.Payload)
+	if err != nil {
+		return err
+	}
+	if response.Truncated {
+		return errors.New("truncated Reunion DB state not yet supported")
+	}
+	_, err = e.processState(state)
+	return err
 }
 
 func (e *Exchange) sendT1() bool {
@@ -323,12 +301,17 @@ func (e *Exchange) sendT1() bool {
 
 func (e *Exchange) sendT2Messages() bool {
 	hasSent := false
+
+	h := sha256.New()
+	h.Write([]byte(e.sentT1))
+	myT1Hash := h.Sum(nil)
+	myT1HashAr := [sha256.Size]byte{}
+	copy(myT1HashAr[:], myT1Hash)
+
 	for t1Hash, t1 := range e.receivedT1s {
 		_, ok := e.repliedT1s[t1Hash]
 		if ok {
-			continue
-		}
-		if bytes.Equal(e.sentT1, t1) {
+			e.log.Debug("skipping previously replied")
 			continue
 		}
 
@@ -344,9 +327,7 @@ func (e *Exchange) sendT2Messages() bool {
 			return false
 		}
 
-		// XXX store it in a map or what?
-		// XXX e.receivedT1Alphas[t1Hash] = alphaPubKey
-		e.receivedT1Alphas = append(e.receivedT1Alphas, alphaPubKey)
+		e.receivedT1Alphas[t1Hash] = alphaPubKey
 
 		h := sha256.New()
 		h.Write(t2)
@@ -358,10 +339,12 @@ func (e *Exchange) sendT2Messages() bool {
 
 		// reply with t2 and t1 hash
 		t2Cmd := commands.SendT2{
-			Epoch:   e.session.Epoch(),
-			T1Hash:  t1Hash,
-			Payload: t2,
+			Epoch:     e.session.Epoch(),
+			SrcT1Hash: myT1HashAr,
+			DstT1Hash: t1Hash,
+			Payload:   t2,
 		}
+		e.log.Debug("sending t2")
 		rawResponse, err := e.db.Query(&t2Cmd, e.shutdownChan)
 		if err != nil {
 			e.log.Error(err.Error())
@@ -377,7 +360,6 @@ func (e *Exchange) sendT2Messages() bool {
 			return false
 		}
 		e.repliedT1s[t1Hash] = t1
-		delete(e.receivedT1s, t1Hash)
 		hasSent = true
 	}
 	return hasSent
@@ -386,24 +368,45 @@ func (e *Exchange) sendT2Messages() bool {
 func (e *Exchange) sendT3Messages() bool {
 	hasSentT3 := false
 
-	for t2Hash, t2 := range e.receivedT2s {
+	e.log.Debugf("receivedT2s is size %d", len(e.receivedT2s))
+
+	h := sha256.New()
+	h.Write([]byte(e.sentT1))
+	myT1Hash := h.Sum(nil)
+	myT1HashAr := [sha256.Size]byte{}
+	copy(myT1HashAr[:], myT1Hash)
+
+	for srcT1Hash, t2 := range e.receivedT2s {
 		e.log.Debug("for each t2")
-		if _, ok := e.sentT2Map[t2Hash]; ok {
-			continue
+
+		t1, ok := e.receivedT1s[srcT1Hash]
+		if !ok {
+			e.log.Errorf("error yo, t1 hash %x missing from map", srcT1Hash[:])
+			return false
 		}
-		if _, ok := e.repliedT2s[t2Hash]; ok {
+
+		h := sha256.New()
+		h.Write(t2)
+		t2Hash := h.Sum(nil)
+		t2HashAr := [sha256.Size]byte{}
+		copy(t2HashAr[:], t2Hash)
+
+		if _, ok := e.repliedT2s[t2HashAr]; ok {
+			e.log.Debug("skipping sent t2hash")
 			continue
 		}
 
-		// XXX fix me - somehow get the decrypted unelligatored t1 alpha
-		i := 0 // wrong
-		candidateKey, err := e.session.GetCandidateKey(t2, e.receivedT1Alphas[i])
+		alphaKey, ok := e.receivedT1Alphas[srcT1Hash]
+		if !ok {
+			e.log.Errorf("src t1 hash not found in received t1 alphas map")
+			return false
+		}
+		candidateKey, err := e.session.GetCandidateKey(t2, alphaKey)
 		if err != nil {
 			e.log.Error(err.Error())
 			return false
 		}
 
-		// XXX fix me; how to find this t1?
 		_, t1beta, _, err := crypto.DecodeT1Message(t1)
 		if err != nil {
 			e.log.Error(err.Error())
@@ -420,9 +423,11 @@ func (e *Exchange) sendT3Messages() bool {
 			return false
 		}
 		sendT3Cmd := commands.SendT3{
-			Epoch:   e.session.Epoch(),
-			T2Hash:  t2Hash,
-			Payload: t3,
+			Epoch:     e.session.Epoch(),
+			T2Hash:    t2HashAr,
+			SrcT1Hash: myT1HashAr,
+			DstT1Hash: srcT1Hash,
+			Payload:   t3,
 		}
 		e.log.Debug("before sending sendT3 command to reunion DB")
 		rawResponse, err := e.db.Query(&sendT3Cmd, e.shutdownChan)
@@ -439,44 +444,51 @@ func (e *Exchange) sendT3Messages() bool {
 			e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
 			return false
 		}
-		e.decryptedT1Betas[t1hash] = beta
+
+		e.decryptedT1Betas[srcT1Hash] = beta
 		hasSentT3 = true
 
-		e.repliedT2s[t2Hash] = t2
+		e.repliedT2s[t2HashAr] = t2
 	}
 
 	return hasSentT3
 }
 
 func (e *Exchange) processT3Messages() bool {
-	e.log.Debug("processT3Messages")
+	e.log.Debugf("processT3Messages %d t3s", len(e.receivedT3s))
 
-	// XXX can we rewrite this to not have two nested for loops?
-	// do clients need to send more information in the commands?
-
-	for _, t3 := range e.receivedT3s {
+	for srcT1Hash, t3 := range e.receivedT3s {
 		e.log.Debug("for each t3")
-		for t1Hash, t1 := range e.receivedT1s {
-			beta, ok := e.decryptedT1Betas[t1Hash]
-			if !ok {
-				continue
-			}
-			_, _, gamma, err := crypto.DecodeT1Message(t1)
-			if err != nil {
-				e.log.Error(err.Error())
-				return false
-			}
-			plaintext, err := e.session.ProcessType3Message(t3, gamma, beta)
-			if err != nil {
-				e.updateChan <- ReunionUpdate{
-					ContactID:  e.contactID,
-					Error:      nil,
-					Serialized: nil,
-					Result:     plaintext,
-				}
-				return true
-			}
+
+		beta, ok := e.decryptedT1Betas[srcT1Hash]
+		if !ok {
+			e.log.Debug("src t1 hash not found in decrypted t1 beta map")
+			continue
 		}
+		t1, ok := e.receivedT1s[srcT1Hash]
+		if !ok {
+			e.log.Error("error, t1 missing from map")
+			return false
+		}
+		_, _, gamma, err := crypto.DecodeT1Message(t1)
+		if err != nil {
+			e.log.Debug("decode t1 message failure")
+			e.log.Error(err.Error())
+			return false
+		}
+		plaintext, err := e.session.ProcessType3Message(t3, gamma, beta)
+		if err != nil {
+			e.log.Debug("ProcessType3Message failure")
+			return false
+		}
+		e.updateChan <- ReunionUpdate{
+			ContactID:  e.contactID,
+			Error:      nil,
+			Serialized: nil,
+			Result:     plaintext,
+		}
+		e.log.Debug("true")
+		return true
 	}
 	e.log.Debug("false")
 	return false
@@ -487,6 +499,7 @@ func (e *Exchange) processT3Messages() bool {
 // state transition. This method is meant to run in it's own
 // goroutine.
 func (e *Exchange) Run() {
+	defer e.log.Debug("Run was halted.")
 	switch e.status {
 	case initialState:
 		// XXX not required -> 1:A <- DB: fetch current epoch and current set of data for epoch state
@@ -515,10 +528,8 @@ func (e *Exchange) Run() {
 				return
 			}
 			// 4:A -> DB: transmit one ב message for each א
-			e.log.Debug("sending T2 messages")
-			if !e.sendT2Messages() {
-				return
-			}
+			e.log.Debug("maybe send T2 messages")
+			e.sendT2Messages()
 			if !e.sentUpdateOK() {
 				return
 			}
@@ -526,24 +537,27 @@ func (e *Exchange) Run() {
 				e.log.Error(ShutdownError.Error())
 				return
 			}
+
 			// 5:A <- DB: fetch epoch state for replies to A’s א
 			// 6:A -> DB: transmit one ג message for each new ב
-			e.log.Debug("sending T3 messages")
+			e.log.Debug("maybe send T3 messages")
 			e.sendT3Messages()
-			e.log.Debug("T3 Message Sent")
+
 			if !e.sentUpdateOK() {
 				return
 			}
-			e.log.Debug("sent update OK")
 			if e.shouldStop() {
 				e.log.Error(ShutdownError.Error())
 				return
 			}
+
 			e.log.Debug("before process T3 messages")
 			if e.processT3Messages() {
 				e.log.Debug("OK")
+				break
 			}
 			e.log.Debug("!OK")
+
 		} // end for loop
 	default:
 		e.updateChan <- ReunionUpdate{

@@ -45,7 +45,123 @@ func (m *MockReunionDB) Query(command commands.Command, haltCh chan interface{})
 	return m.server.ProcessQuery(command, haltCh)
 }
 
-func TestClientServerBasics(t *testing.T) {
+func TestClientServerBasics1(t *testing.T) {
+	require := require.New(t)
+
+	// variable shared among reunion clients
+	f := ""
+	level := "DEBUG"
+	disable := false
+	logBackend, err := log.New(f, level, disable)
+	require.NoError(err)
+
+	dblog := logBackend.GetLogger("Reunion_DB")
+	reunionDB := NewMockReunionDB(dblog)
+
+	srv := []byte{1, 2, 3}
+	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
+	epoch := uint64(12322)
+
+	// alice client
+	alicePayload := []byte("Hello Bobby, what's up dude?")
+	aliceContactID := uint64(1)
+	require.NoError(err)
+	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	aliceUpdateCh := make(chan ReunionUpdate)
+	go func() {
+		for {
+			update := <-aliceUpdateCh
+			if len(update.Result) > 0 {
+				fmt.Printf("\n\n<>< Alice got result: %s\n\n", update.Result)
+				wg.Done()
+				break
+			}
+		}
+	}()
+
+	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	require.NoError(err)
+
+	// bob client
+	bobPayload := []byte("yo Alice, so you are a cryptographer and a language designer both?")
+	bobContactID := uint64(1)
+	bobLogBackend, err := log.New(f, level, disable)
+	require.NoError(err)
+	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
+
+	bobUpdateCh := make(chan ReunionUpdate)
+	go func() {
+		for {
+			update := <-bobUpdateCh
+			if len(update.Result) > 0 {
+				fmt.Printf("\n\n<>< Bob got result: %s\n\n", update.Result)
+				wg.Done()
+				break
+			}
+		}
+	}()
+
+	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	require.NoError(err)
+
+	// Run the reunion client exchanges manually instead of using the Exchange method.
+	fmt.Println("send t1 messages")
+	hasAliceSent := aliceExchange.sendT1()
+	fmt.Printf("Alice sent t1: %v\n", hasAliceSent)
+	hasBobSent := bobExchange.sendT1()
+	fmt.Printf("Bob sent t1: %v\n", hasBobSent)
+
+	fmt.Println("fetching states")
+	err = aliceExchange.fetchState()
+	require.NoError(err)
+	err = bobExchange.fetchState()
+	require.NoError(err)
+
+	fmt.Printf("Alice has received %d t1s\n", len(aliceExchange.receivedT1s))
+	fmt.Printf("Bob has received %d t1s\n", len(bobExchange.receivedT1s))
+
+	fmt.Println("send t2 messages")
+	hasAliceSent = aliceExchange.sendT2Messages()
+	fmt.Printf("Alice sent t2: %v\n", hasAliceSent)
+	hasBobSent = bobExchange.sendT2Messages()
+	fmt.Printf("Bob sent t2: %v\n", hasBobSent)
+
+	fmt.Println("fetching states")
+	err = aliceExchange.fetchState()
+	require.NoError(err)
+	err = bobExchange.fetchState()
+	require.NoError(err)
+
+	fmt.Printf("Alice has received %d t2s\n", len(aliceExchange.receivedT2s))
+	fmt.Printf("Bob has received %d t2s\n", len(bobExchange.receivedT2s))
+
+	fmt.Println("send t3 messages")
+	hasAliceSent = aliceExchange.sendT3Messages()
+	fmt.Printf("Alice sent t3: %v\n", hasAliceSent)
+	hasBobSent = bobExchange.sendT3Messages()
+	fmt.Printf("Bob sent t3: %v\n", hasBobSent)
+
+	fmt.Println("last, fetching states")
+	err = aliceExchange.fetchState()
+	require.NoError(err)
+	err = bobExchange.fetchState()
+	require.NoError(err)
+
+	aliceExchange.processT3Messages()
+	aliceExchange.sentUpdateOK()
+
+	bobExchange.processT3Messages()
+	bobExchange.sentUpdateOK()
+
+	// Wait for results from both clients.
+	fmt.Println("waiting for finality")
+	wg.Wait()
+}
+
+func TestClientServerBasics2(t *testing.T) {
 	require := require.New(t)
 
 	// variable shared among reunion clients
@@ -75,8 +191,9 @@ func TestClientServerBasics(t *testing.T) {
 		for {
 			update := <-aliceUpdateCh
 			if len(update.Result) > 0 {
-				fmt.Printf("Alice got result: %s", update.Result)
-				defer wg.Done()
+				fmt.Printf("\nAlice got result: %s\n\n", update.Result)
+				wg.Done()
+				break
 			}
 		}
 	}()
@@ -96,8 +213,9 @@ func TestClientServerBasics(t *testing.T) {
 		for {
 			update := <-bobUpdateCh
 			if len(update.Result) > 0 {
-				fmt.Printf("Bob got result: %s", update.Result)
-				defer wg.Done()
+				fmt.Printf("\nBob got result: %s\n\n", update.Result)
+				wg.Done()
+				break
 			}
 		}
 	}()
