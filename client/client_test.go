@@ -171,8 +171,11 @@ func TestClientServerBasics2(t *testing.T) {
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
 	epoch := uint64(12322)
 
+	var bobResult []byte
+	var aliceResult []byte
+
 	// alice client
-	alicePayload := []byte("sup")
+	alicePayload := []byte("sup bobby")
 	aliceContactID := uint64(1)
 	require.NoError(err)
 	aliceExchangelog := logBackend.GetLogger("alice_exchange")
@@ -184,6 +187,7 @@ func TestClientServerBasics2(t *testing.T) {
 		for {
 			update := <-aliceUpdateCh
 			if len(update.Result) > 0 {
+				aliceResult = update.Result
 				fmt.Printf("\nAlice got result: %s\n\n", update.Result)
 				wg.Done()
 				break
@@ -195,7 +199,7 @@ func TestClientServerBasics2(t *testing.T) {
 	require.NoError(err)
 
 	// bob client
-	bobPayload := []byte("yo")
+	bobPayload := []byte("yo alice")
 	bobContactID := uint64(1)
 	bobLogBackend, err := log.New(f, level, disable)
 	require.NoError(err)
@@ -207,6 +211,7 @@ func TestClientServerBasics2(t *testing.T) {
 		for {
 			update := <-bobUpdateCh
 			if len(update.Result) > 0 {
+				bobResult = update.Result
 				fmt.Printf("\nBob got result: %s\n\n", update.Result)
 				wg.Done()
 				break
@@ -223,4 +228,7 @@ func TestClientServerBasics2(t *testing.T) {
 	go bobExchange.Run()
 
 	wg.Wait()
+
+	require.Equal(aliceResult, bobPayload)
+	require.Equal(bobResult, alicePayload)
 }
