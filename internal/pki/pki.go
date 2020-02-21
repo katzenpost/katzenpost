@@ -125,6 +125,7 @@ func (p *pki) worker() {
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
+			instrument.SetFetchedPKIDocsTimer()
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
@@ -167,7 +168,7 @@ func (p *pki) worker() {
 			p.Unlock()
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
-			instrument.FetchedPKIDocsDuration()
+			instrument.TimeFetchedPKIDocsDuration()
 		}
 
 		p.pruneFailures()

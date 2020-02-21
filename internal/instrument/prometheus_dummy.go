@@ -33,8 +33,11 @@ func KaetzchenPacketsDropped() {}
 // KaetzchenRequests increments the counter for the number of kaetzchen requests
 func KaetzchenRequests() {}
 
-// KaetzchenRequestsDuration times amount of time for a kaetzchen request
-func KaetzchenRequestsDuration() {}
+// SetKaetzchenRequestsTimer sets the kaetzchen requests timer struct
+func SetKaetzchenRequestsTimer() {}
+
+// TimeKaetzchenRequestsDuration times how long it takes for a ketzchen request to execute
+func TimeKaetzchenRequestsDuration() {}
 
 // KaetzchenRequestsDropped increments the counter for the number of dropped kaetzchen requests
 func KaetzchenRequestsDropped(dropCounter uint64) {}
@@ -57,8 +60,11 @@ func CancelledOutgoing() {}
 // FetchedPKIDocs increments the counter for the number of fetched PKI docs per epoch
 func FetchedPKIDocs(epoch string) {}
 
-// FetchedPKIDocsDuration times the time it takes to a fetch a PKI doc in an epoch
-func FetchedPKIDocsDuration() {}
+// SetFetchedPKIDocsTimer sets a timer for the fetchedPKIDocs variable
+func SetFetchedPKIDocsTimer() {}
+
+// TimeFetchedPKIFocsDuration times the duration of how long it takes to fetch a PKI Doc
+func TimeFetchedPKIDocsDuration() {}
 
 // FailedFetchPKIDocs increments the counter for the number of times fetching a PKI doc failed per epoch
 func FailedFetchPKIDocs(epoch string) {}

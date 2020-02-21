@@ -61,7 +61,6 @@ var (
 			Help: "Duration of a kaetzchen request in seconds",
 		},
 	)
-	kaetzchenRequestsTimer  = prometheus.NewTimer(kaetzchenRequestsDuration)
 	kaetzchenPacketsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_kaetzchen_dropped_packets_total",
@@ -118,8 +117,7 @@ var (
 			Help: "Duration of PKI docs fetching requests per epoch",
 		},
 	)
-	fetchedPKIDocsTimer = promtheus.NewTimer(fetchedPKIDocsDuration)
-	failedFetchPKIDocs  = prometheus.NewCounterVec(
+	failedFetchPKIDocs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "katzenpost_failed_fetch_pki_docs_per_epoch_total",
 			Help: "Number of failed PKI docs fetches per epoch",
@@ -141,6 +139,9 @@ var (
 		[]string{"epoch"},
 	)
 )
+
+var kaetzchenRequestsTimer *prometheus.Timer
+var fetchedPKIDocsTimer *prometheus.Timer
 
 // Initialize instrumentation
 func Init() {
@@ -211,8 +212,13 @@ func KaetzchenRequests() {
 	kaetzchenRequests.Inc()
 }
 
-// KaetzchenRequestsDuration times amount of time for a kaetzchen request
-func KaetzchenRequestsDuration() {
+// SetKaetzchenRequestsTimer sets the kaetzchen requests timer struct
+func SetKaetzchenRequestsTimer() {
+	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
+}
+
+// TimeKaetzchenRequestsDuration times how long it takes for a ketzchen request to execute
+func TimeKaetzchenRequestsDuration() {
 	kaetzchenRequestsTimer.ObserveDuration()
 }
 
@@ -251,8 +257,13 @@ func FetchedPKIDocs(epoch string) {
 	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch})
 }
 
-// FetchedPKIDocsDuration times the time it takes to a fetch a PKI doc in an epoch
-func FetchedPKIDocsDuration() {
+// SetFetchedPKIDocsTimer sets a timer for the fetchedPKIDocs variable
+func SetFetchedPKIDocsTimer() {
+	fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
+}
+
+// TimeFetchedPKIFocsDuration times the duration of how long it takes to fetch a PKI Doc
+func TimeFetchedPKIDocsDuration() {
 	fetchedPKIDocsTimer.ObserveDuration()
 }
 
