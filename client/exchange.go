@@ -111,6 +111,7 @@ type Exchange struct {
 	decryptedT1Betas map[ExchangeHash]*crypto.PublicKey
 }
 
+// NewExchangeFromSnapshot creates a new Exchange given a snapshot blob.
 func NewExchangeFromSnapshot(
 	serialized []byte,
 	log *logging.Logger,
