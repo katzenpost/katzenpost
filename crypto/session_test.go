@@ -113,7 +113,7 @@ func TestClientSerialization(t *testing.T) {
 	require.NoError(err)
 	defer client.Destroy()
 
-	serialized, err := client.Marshal()
+	serialized, err := client.MarshalBinary()
 	require.NoError(err)
 
 	blankEpochKey := [SharedEpochKeySize]byte{}
@@ -121,11 +121,23 @@ func TestClientSerialization(t *testing.T) {
 	require.NoError(err)
 	defer client2.Destroy()
 
-	err = client2.Unmarshal(serialized)
+	err = client2.UnmarshalBinary(serialized)
 	require.NoError(err)
 
-	_, err = client2.Marshal()
+	serialized2, err := client2.MarshalBinary()
 	require.NoError(err)
+
+	client3, err := NewSessionFromKey(&blankEpochKey, sharedRandom[:], epoch)
+	require.NoError(err)
+	defer client3.Destroy()
+
+	err = client3.UnmarshalBinary(serialized2)
+	require.NoError(err)
+
+	serialized3, err := client3.MarshalBinary()
+	require.NoError(err)
+
+	require.Equal(serialized2, serialized3)
 
 	memguard.Purge()
 }

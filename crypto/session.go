@@ -267,7 +267,7 @@ func (c *Session) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey) ([]byt
 }
 
 // Marshal serializes the client key material.
-func (c *Session) Marshal() ([]byte, error) {
+func (c *Session) MarshalBinary() ([]byte, error) {
 	var serialized []byte
 	cc := serializableSession{
 		Epoch:             c.epoch,
@@ -286,6 +286,18 @@ func (c *Session) Marshal() ([]byte, error) {
 }
 
 // Unmarshal deserializes the client key material.
-func (c *Session) Unmarshal(data []byte) error {
-	return codec.NewDecoderBytes(data, cborHandle).Decode(c)
+func (c *Session) UnmarshalBinary(data []byte) error {
+	cc := new(serializableSession)
+	err := codec.NewDecoderBytes(data, cborHandle).Decode(cc)
+	if err != nil {
+		return err
+	}
+	c.epoch = cc.Epoch
+	c.sharedRandomValue = cc.SharedRandomValue
+	c.keypair1 = cc.Keypair1
+	c.keypair2 = cc.Keypair2
+	c.sessionKey1 = memguard.NewBufferFromBytes(cc.SessionKey1)
+	c.sessionKey2 = memguard.NewBufferFromBytes(cc.SessionKey2)
+	c.sharedEpochKey = memguard.NewBufferFromBytes(cc.SharedEpochKey)
+	return nil
 }
