@@ -63,18 +63,6 @@ type ReunionUpdate struct {
 	Result []byte
 }
 
-// XXX fix me: ensure this struct type is a serializable form of the Exchange type.
-type serializableExchange struct {
-	Status      int
-	ContactID   uint64
-	Epoch       uint64
-	Session     *crypto.Session
-	SentT1      []byte
-	SentT2Map   map[ExchangeHash][]byte
-	SentT3Map   map[ExchangeHash][]byte
-	ReceivedT2s map[ExchangeHash][]byte
-}
-
 // Exchange encapsulates all the client key material and
 // protocol state transitions.
 //
@@ -121,8 +109,34 @@ type Exchange struct {
 
 	// t1 hash -> beta
 	decryptedT1Betas map[ExchangeHash]*crypto.PublicKey
+}
 
-	remoteSequence uint64
+func NewExchangeFromSnapshot(
+	serialized []byte,
+	log *logging.Logger,
+	db server.ReunionDatabase,
+	updateChan chan ReunionUpdate) *Exchange {
+
+	ex := &Exchange{
+		log:          log,
+		updateChan:   updateChan,
+		db:           db,
+		shutdownChan: make(chan interface{}),
+
+		status:           0,
+		contactID:        0,
+		session:          nil,
+		sentT1:           nil,
+		sentT2Map:        make(map[ExchangeHash][]byte),
+		receivedT1s:      make(map[ExchangeHash][]byte),
+		receivedT2s:      make(map[ExchangeHash][]byte),
+		receivedT3s:      make(map[ExchangeHash][]byte),
+		repliedT1s:       make(map[ExchangeHash][]byte),
+		repliedT2s:       make(map[ExchangeHash][]byte),
+		receivedT1Alphas: make(map[ExchangeHash]*crypto.PublicKey),
+		decryptedT1Betas: make(map[ExchangeHash]*crypto.PublicKey),
+	}
+	return ex
 }
 
 // NewExchange creates a new Exchange struct type.
@@ -165,23 +179,46 @@ func NewExchange(
 	}, nil
 }
 
+// Unmarshal returns an error if the given data fails to be deserialized.
+func (e *Exchange) Unmarshal(data []byte) error {
+	state := new(serializableExchange)
+	err := state.Unmarshal(data)
+	if err != nil {
+		return err
+	}
+	e.contactID = state.ContactID
+	e.status = state.Status
+	e.session = state.Session
+	e.sentT1 = state.SentT1
+	e.sentT2Map = state.SentT2Map
+	e.receivedT1s = state.ReceivedT1s
+	e.receivedT2s = state.ReceivedT2s
+	e.receivedT3s = state.ReceivedT3s
+	e.repliedT1s = state.RepliedT1s
+	e.repliedT2s = state.RepliedT2s
+	e.receivedT1Alphas = state.ReceivedT1Alphas
+	e.decryptedT1Betas = state.DecryptedT1Betas
+	return nil
+}
+
 // Marshal returns a serialization of the Exchange or an error.
 // XXX fix me; added many more fields since this was written...
 func (e *Exchange) Marshal() ([]byte, error) {
 	ex := serializableExchange{
-		ContactID:   e.contactID,
-		Status:      e.status,
-		Session:     e.session,
-		SentT1:      e.sentT1,
-		SentT2Map:   e.sentT2Map,
-		ReceivedT2s: e.receivedT2s,
+		ContactID:        e.contactID,
+		Status:           e.status,
+		Session:          e.session,
+		SentT1:           e.sentT1,
+		SentT2Map:        e.sentT2Map,
+		ReceivedT1s:      e.receivedT1s,
+		ReceivedT2s:      e.receivedT2s,
+		ReceivedT3s:      e.receivedT3s,
+		RepliedT1s:       e.repliedT1s,
+		RepliedT2s:       e.repliedT2s,
+		ReceivedT1Alphas: e.receivedT1Alphas,
+		DecryptedT1Betas: e.decryptedT1Betas,
 	}
-	var serialized []byte
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&ex)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return ex.Marshal()
 }
 
 func (e *Exchange) shouldStop() bool {
@@ -237,8 +274,10 @@ func (e *Exchange) processState(state *server.RequestedReunionState) (bool, erro
 }
 
 func (e *Exchange) fetchState() error {
+	fmt.Printf("session is %v\n", e.session)
 	fetchStateCmd := new(commands.FetchState)
 	fetchStateCmd.Epoch = e.session.Epoch()
+
 	h := sha256.New()
 	h.Write(e.sentT1)
 	t1Hash := h.Sum(nil)

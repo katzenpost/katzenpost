@@ -496,3 +496,119 @@ func TestClientServerBasics4(t *testing.T) {
 	require.Equal(nsaResult, gchqPayload)
 	require.Equal(gchqResult, nsaPayload)
 }
+
+func TestClientStateSavingAndRecovery(t *testing.T) {
+	require := require.New(t)
+
+	// variable shared among reunion clients
+	f := ""
+	level := "DEBUG"
+	disable := false
+	logBackend, err := log.New(f, level, disable)
+	require.NoError(err)
+
+	dblog := logBackend.GetLogger("Reunion_DB")
+	reunionDB := NewMockReunionDB(dblog)
+
+	srv := []byte{1, 2, 3}
+	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
+	epoch := uint64(12322)
+
+	var bobResult []byte
+	var aliceResult []byte
+
+	// alice client
+	alicePayload := []byte("Hello Bobby, what's up dude?")
+	aliceContactID := uint64(1)
+	require.NoError(err)
+	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	aliceUpdateCh := make(chan ReunionUpdate)
+	go func() {
+		for {
+			update := <-aliceUpdateCh
+			if len(update.Result) > 0 {
+				aliceResult = update.Result
+				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
+				wg.Done()
+			}
+		}
+	}()
+
+	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	require.NoError(err)
+
+	// bob client
+	bobPayload := []byte("yo Alice, so you are a cryptographer and a language designer both?")
+	bobContactID := uint64(1)
+	bobLogBackend, err := log.New(f, level, disable)
+	require.NoError(err)
+	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
+
+	wg.Add(1)
+	bobUpdateCh := make(chan ReunionUpdate)
+	go func() {
+		for {
+			update := <-bobUpdateCh
+			if len(update.Result) > 0 {
+				bobResult = update.Result
+				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
+				wg.Done()
+			}
+		}
+	}()
+
+	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	require.NoError(err)
+
+	// Run the reunion client exchanges manually instead of using the Exchange method.
+	hasAliceSent := aliceExchange.sendT1()
+	hasBobSent := bobExchange.sendT1()
+	require.True(hasAliceSent)
+	require.True(hasBobSent)
+
+	aliceSerialized, err := aliceExchange.Marshal()
+	require.NoError(err)
+	aliceExchange = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	bobSerialized, err := bobExchange.Marshal()
+	require.NoError(err)
+	bobExchange = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+
+	err = aliceExchange.fetchState()
+	require.NoError(err)
+	err = bobExchange.fetchState()
+	require.NoError(err)
+
+	hasAliceSent = aliceExchange.sendT2Messages()
+	hasBobSent = bobExchange.sendT2Messages()
+	require.True(hasAliceSent)
+	require.True(hasBobSent)
+
+	err = aliceExchange.fetchState()
+	require.NoError(err)
+	err = bobExchange.fetchState()
+	require.NoError(err)
+
+	hasAliceSent = aliceExchange.sendT3Messages()
+	hasBobSent = bobExchange.sendT3Messages()
+	require.True(hasAliceSent)
+	require.True(hasBobSent)
+
+	err = aliceExchange.fetchState()
+	require.NoError(err)
+	err = bobExchange.fetchState()
+	require.NoError(err)
+
+	aliceExchange.processT3Messages()
+	aliceExchange.sentUpdateOK()
+
+	bobExchange.processT3Messages()
+	bobExchange.sentUpdateOK()
+
+	wg.Wait()
+
+	require.Equal(aliceResult, bobPayload)
+	require.Equal(bobResult, alicePayload)
+}
