@@ -594,6 +594,16 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	err = bobExchange.fetchState()
 	require.NoError(err)
 
+	aliceSerialized, err = aliceExchange.Marshal()
+	require.NoError(err)
+	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	require.NoError(err)
+
+	bobSerialized, err = bobExchange.Marshal()
+	require.NoError(err)
+	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+	require.NoError(err)
+
 	hasAliceSent = aliceExchange.sendT3Messages()
 	hasBobSent = bobExchange.sendT3Messages()
 	require.True(hasAliceSent)
@@ -604,11 +614,18 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	err = bobExchange.fetchState()
 	require.NoError(err)
 
-	aliceExchange.processT3Messages()
-	aliceExchange.sentUpdateOK()
+	aliceSerialized, err = aliceExchange.Marshal()
+	require.NoError(err)
+	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	require.NoError(err)
 
+	bobSerialized, err = bobExchange.Marshal()
+	require.NoError(err)
+	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+	require.NoError(err)
+
+	aliceExchange.processT3Messages()
 	bobExchange.processT3Messages()
-	bobExchange.sentUpdateOK()
 
 	wg.Wait()
 
