@@ -36,6 +36,7 @@ import (
 	"github.com/katzenpost/server/internal/decoy"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/incoming"
+	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/outgoing"
 	"github.com/katzenpost/server/internal/pki"
 	"github.com/katzenpost/server/internal/provider"
@@ -227,6 +228,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if err := s.initLogging(); err != nil {
 		return nil, err
 	}
+	instrument.Init()
 
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	if s.cfg.Debug.IsUnsafe() {

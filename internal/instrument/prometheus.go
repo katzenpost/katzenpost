@@ -143,7 +143,7 @@ var (
 var kaetzchenRequestsTimer *prometheus.Timer
 var fetchedPKIDocsTimer *prometheus.Timer
 
-// Initialize instrumentation
+// Init initialize instrumentation
 func Init() {
 	// Register metrics
 	prometheus.MustRegister(incomingConns)
@@ -262,7 +262,7 @@ func SetFetchedPKIDocsTimer() {
 	fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
 }
 
-// TimeFetchedPKIFocsDuration times the duration of how long it takes to fetch a PKI Doc
+// TimeFetchedPKIDocsDuration times the duration of how long it takes to fetch a PKI Doc
 func TimeFetchedPKIDocsDuration() {
 	fetchedPKIDocsTimer.ObserveDuration()
 }

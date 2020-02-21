@@ -13,7 +13,7 @@ WORKDIR /go/server
 
 # Build the binary
 COPY . .
-RUN cd cmd/server && go build
+RUN cd cmd/server && go build -tags prometheus
 RUN cd /go ; git clone https://github.com/katzenpost/memspool.git ; cd memspool/server/cmd/memspool ;  go build
 RUN cd /go ; git clone https://github.com/katzenpost/panda.git ; cd panda/server/cmd/panda_server ; go build
 RUN cd /go ; git clone https://github.com/katzenpost/server_plugins.git ; cd server_plugins/cbor_plugins/echo-go ; go build -o echo_server
