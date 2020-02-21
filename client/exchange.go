@@ -263,7 +263,6 @@ func (e *Exchange) processState(state *server.RequestedReunionState) (bool, erro
 }
 
 func (e *Exchange) fetchState() error {
-	fmt.Printf("session is %v\n", e.session)
 	fetchStateCmd := new(commands.FetchState)
 	fetchStateCmd.Epoch = e.session.Epoch()
 
