@@ -4,7 +4,6 @@ package instrument
 
 import (
 	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/katzenpost/core/wire/commands"
@@ -41,13 +40,13 @@ var (
 	packetsReplayed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_replayed_packets_total",
-			Help: "Number of replayed packets"
+			Help: "Number of replayed packets",
 		},
 	)
 	ignoredPKIDocs = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_documents_ignored_total",
-			Help: "Number of ignored PKI Documents"
+			Help: "Number of ignored PKI Documents",
 		},
 	)
 	kaetzchenRequests = prometheus.NewCounter(
@@ -56,6 +55,13 @@ var (
 			Help: "Number of Kaetzchen requests",
 		},
 	)
+	kaetzchenRequestsDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Name: "katzenpost_kaetzchen_requests_duration_seconds",
+			Help: "Duration of a kaetzchen request in seconds",
+		},
+	)
+	kaetzchenRequestsTimer  = prometheus.NewTimer(kaetzchenRequestsDuration)
 	kaetzchenPacketsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_kaetzchen_dropped_packets_total",
@@ -64,7 +70,7 @@ var (
 	)
 	kaetzchenRequestsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "katzenpost_kaetzchen_dropped_requests_total"
+			Name: "katzenpost_kaetzchen_dropped_requests_total",
 			Help: "Number of total dropped kaetzchen requests",
 		},
 	)
@@ -88,8 +94,8 @@ var (
 	)
 	pkiDocs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "katzenpost_pki_docs_per_epoch_total"
-			Help: "Number of pki docs in an epoch"
+			Name: "katzenpost_pki_docs_per_epoch_total",
+			Help: "Number of pki docs in an epoch",
 		},
 		[]string{"epoch"},
 	)
@@ -106,11 +112,19 @@ var (
 		},
 		[]string{"epoch"},
 	)
-	failedFetchPKIDocs = prometheus.NewCounterVec(
+	fetchedPKIDocsDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Name: "katzenpost_fetched_pki_docs_per_epoch_duration",
+			Help: "Duration of PKI docs fetching requests per epoch",
+		},
+	)
+	fetchedPKIDocsTimer = promtheus.NewTimer(fetchedPKIDocsDuration)
+	failedFetchPKIDocs  = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "katzenpost_failed_fetch_pki_docs_per_epoch_total",
-			Help: "Number of failed PKI docs fetches per epoch"
-		}
+			Help: "Number of failed PKI docs fetches per epoch",
+		},
+		[]string{"epoch"},
 	)
 	failedPKICacheGeneration = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -121,12 +135,13 @@ var (
 	)
 	invalidPKICache = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name : "katzenpost_invalid_pki_cache_per_epoch_total",
-			Help : "Number of invalid PKI caches per epoch"
-		}
+			Name: "katzenpost_invalid_pki_cache_per_epoch_total",
+			Help: "Number of invalid PKI caches per epoch",
+		},
+		[]string{"epoch"},
 	)
-
 )
+
 // Initialize instrumentation
 func Init() {
 	// Register metrics
@@ -146,27 +161,7 @@ func Init() {
 	prometheus.MustRegister(cancelledOutgoingConns)
 	prometheus.MustRegister(fetchedPKIDocs)
 	prometheus.MustRegister(failedFetchPKIDocs)
-	prometheus.MustRegister(fErica proves that she is salted peer that Bob is connected to.
-		Erica proves she ran the SMP correctly for each peer.
-		Alice completes SMP correctly for the search term Carroll.
-		Alice aggregates the proofs together to create a single proof of connection that hides the SMP which could allow Erica to identify the proof.
-		￼
-		1058×794 37 KB
-		Who knows what
-		Alice knows that she is connected by two hops to Carroll.
-		Bob knows that one of his peers was trying to search for someone
-		Erica knows that one of her peer was searching for someone
-		In order to prevent people from seeing if a search attempt succeeded its important to create proofs for every search attempt.
-		
-		We also need to continue the search to a certain depth in the social tree even if we have created the proof.
-		
-		This might be prohibitively expensive but we can make a trade off here.
-		
-		Attacks
-		An attacker can brute force the network looking for peers
-		We can use a ZKP in order to rate limit all requests. github.com/kobigurk/semaphore, Semaphore RLN, rate limiting nullifier for spam prevention in anonymous p2p setting 1
-		
-		Loop attack: An attacker creates a loop of peailedPKICacheGeneration)
+	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
 
 	// Expose registered metrics via HTTP
@@ -216,9 +211,14 @@ func KaetzchenRequests() {
 	kaetzchenRequests.Inc()
 }
 
+// KaetzchenRequestsDuration times amount of time for a kaetzchen request
+func KaetzchenRequestsDuration() {
+	kaetzchenRequestsTimer.ObserveDuration()
+}
+
 // KaetzchenRequestsDropped increments the counter for the number of dropped kaetzchen requests
 func KaetzchenRequestsDropped(dropCounter uint64) {
-	kaetzchenRequestsDropped.Add(dropCounter)
+	kaetzchenRequestsDropped.Add(float64(dropCounter))
 }
 
 // KaetzchenRequestsFailed increments the counter for the number of failed kaetzchen requests
@@ -249,6 +249,11 @@ func CancelledOutgoing() {
 // FetchedPKIDocs increments the counter for the number of fetched PKI docs per epoch
 func FetchedPKIDocs(epoch string) {
 	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch})
+}
+
+// FetchedPKIDocsDuration times the time it takes to a fetch a PKI doc in an epoch
+func FetchedPKIDocsDuration() {
+	fetchedPKIDocsTimer.ObserveDuration()
 }
 
 // FailedFetchPKIDocs increments the counter for the number of times fetching a PKI doc failed per epoch

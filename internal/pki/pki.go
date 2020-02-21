@@ -167,6 +167,7 @@ func (p *pki) worker() {
 			p.Unlock()
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
+			instrument.FetchedPKIDocsDuration()
 		}
 
 		p.pruneFailures()
