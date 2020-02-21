@@ -571,10 +571,13 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 
 	aliceSerialized, err := aliceExchange.Marshal()
 	require.NoError(err)
-	aliceExchange = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	require.NoError(err)
+
 	bobSerialized, err := bobExchange.Marshal()
 	require.NoError(err)
-	bobExchange = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+	require.NoError(err)
 
 	err = aliceExchange.fetchState()
 	require.NoError(err)

@@ -321,10 +321,7 @@ func (keypair *Keypair) MarshalBinary() ([]byte, error) {
 		Representative: keypair.representative,
 	}
 	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&k)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return serialized, err
 }
 
 // UnmarshalBinary is an implementation of a method on the

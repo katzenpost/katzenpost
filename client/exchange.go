@@ -115,28 +115,16 @@ func NewExchangeFromSnapshot(
 	serialized []byte,
 	log *logging.Logger,
 	db server.ReunionDatabase,
-	updateChan chan ReunionUpdate) *Exchange {
+	updateChan chan ReunionUpdate) (*Exchange, error) {
 
 	ex := &Exchange{
 		log:          log,
 		updateChan:   updateChan,
 		db:           db,
 		shutdownChan: make(chan interface{}),
-
-		status:           0,
-		contactID:        0,
-		session:          nil,
-		sentT1:           nil,
-		sentT2Map:        make(map[ExchangeHash][]byte),
-		receivedT1s:      make(map[ExchangeHash][]byte),
-		receivedT2s:      make(map[ExchangeHash][]byte),
-		receivedT3s:      make(map[ExchangeHash][]byte),
-		repliedT1s:       make(map[ExchangeHash][]byte),
-		repliedT2s:       make(map[ExchangeHash][]byte),
-		receivedT1Alphas: make(map[ExchangeHash]*crypto.PublicKey),
-		decryptedT1Betas: make(map[ExchangeHash]*crypto.PublicKey),
 	}
-	return ex
+	err := ex.Unmarshal(serialized)
+	return ex, err
 }
 
 // NewExchange creates a new Exchange struct type.
@@ -184,7 +172,7 @@ func (e *Exchange) Unmarshal(data []byte) error {
 	state := new(serializableExchange)
 	err := state.Unmarshal(data)
 	if err != nil {
-		return err
+		return fmt.Errorf("wtf unmarshal failure: %s\n", err.Error())
 	}
 	e.contactID = state.ContactID
 	e.status = state.Status

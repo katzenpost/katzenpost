@@ -279,10 +279,7 @@ func (c *Session) MarshalBinary() ([]byte, error) {
 		SharedEpochKey:    c.sharedEpochKey.Bytes(),
 	}
 	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&cc)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return serialized, err
 }
 
 // Unmarshal deserializes the client key material.
