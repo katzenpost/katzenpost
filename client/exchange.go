@@ -173,7 +173,7 @@ func (e *Exchange) Unmarshal(data []byte) error {
 	state := new(serializableExchange)
 	err := state.Unmarshal(data)
 	if err != nil {
-		return fmt.Errorf("wtf unmarshal failure: %s\n", err.Error())
+		return fmt.Errorf("wtf unmarshal failure: %s", err.Error())
 	}
 	e.contactID = state.ContactID
 	e.status = state.Status
