@@ -14,8 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package katzenpost provides the client ACN transport for Reunion
-// DB queries over http.
+// Package http provides the client transport for Reunion DB queries over http.
 package http
 
 import (
@@ -28,24 +27,24 @@ import (
 	"github.com/katzenpost/reunion/commands"
 )
 
-// HTTPTransport is used by Reunion protocol
+// Transport is used by Reunion protocol
 // clients to send queries to the Reunion DB service
 // over HTTP.
-type HTTPTransport struct {
+type Transport struct {
 	url    string
 	client *http.Client
 }
 
-// NewHTTPTransport creates a new HTTPTransport given a URL string.
-func NewHTTPTransport(url string) *HTTPTransport {
-	return &HTTPTransport{
+// NewHTTPTransport creates a new Transport given a URL string.
+func NewTransport(url string) *Transport {
+	return &Transport{
 		url:    url,
 		client: &http.Client{Timeout: time.Second * 10},
 	}
 }
 
 // Query sends the command to the destination Reunion DB service over HTTP.
-func (k *HTTPTransport) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
+func (k *Transport) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
 	request, err := http.NewRequest("POST", k.url, bytes.NewBuffer(command.ToBytes()))
 	if err != nil {
 		return nil, fmt.Errorf("HTTPTransport Query error: %s", err.Error())

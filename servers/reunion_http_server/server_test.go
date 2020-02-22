@@ -38,11 +38,11 @@ func TestHTTPServer1(t *testing.T) {
 	urlPath := "/reunion"
 	logPath := ""
 	logLevel := "DEBUG"
-	reunionServer := runHttpServer(address, urlPath, logPath, logLevel)
+	reunionServer := runHTTPServer(address, urlPath, logPath, logLevel)
 
 	epoch := uint64(1234)
 	url := fmt.Sprintf("http://%s%s", address, urlPath)
-	httpTransport := http.NewHTTPTransport(url)
+	httpTransport := http.NewTransport(url)
 
 	myT1 := make([]byte, crypto.Type1MessageSize)
 	blurb := []byte("cats and honeybadgers use cryptography for the win twice on sunday")
@@ -91,11 +91,11 @@ func TestHTTPServer2(t *testing.T) {
 	urlPath := "/reunion"
 	logPath := ""
 	logLevel := "DEBUG"
-	reunionServer := runHttpServer(address, urlPath, logPath, logLevel)
+	reunionServer := runHTTPServer(address, urlPath, logPath, logLevel)
 
 	epoch := uint64(1234)
 	url := fmt.Sprintf("http://%s%s", address, urlPath)
-	httpTransport := http.NewHTTPTransport(url)
+	httpTransport := http.NewTransport(url)
 
 	// variable shared among reunion clients
 	f := ""

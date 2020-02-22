@@ -61,7 +61,7 @@ func httpReunionServerFactory(s *server.Server, log *logging.Logger) func(w http
 	}
 }
 
-func runHttpServer(address, urlPath, logPath, logLevel string) *http.Server {
+func runHTTPServer(address, urlPath, logPath, logLevel string) *http.Server {
 	logBackend, err := log.New(logPath, logLevel, false)
 	if err != nil {
 		panic(err)
@@ -83,9 +83,9 @@ func runHttpServer(address, urlPath, logPath, logLevel string) *http.Server {
 
 func main() {
 	address := flag.String("l", "127.0.0.1:12345", "Listen address. Defaults to 127.0.0.1:12345")
-	urlPath := flag.String("p", "/reunion", "Reunion URL path. Defaults to /reunion")
-	logPath := flag.String("log", "", "Log file path. Defaults to STDOUT")
-	logLevel := flag.String("level", "DEBUG", "Log level. Defaults to DEBUG")
+	urlPath := flag.String("p", "/reunion", "Reunion URL path.")
+	logPath := flag.String("log", "", "Log file path. Default STDOUT.")
+	logLevel := flag.String("level", "DEBUG", "Log level.")
 	flag.Parse()
-	runHttpServer(*address, *urlPath, *logPath, *logLevel)
+	runHTTPServer(*address, *urlPath, *logPath, *logLevel)
 }
