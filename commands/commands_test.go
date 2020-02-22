@@ -35,7 +35,9 @@ func TestFetchStateCommand(t *testing.T) {
 
 	cmd := new(FetchState)
 	cmd.Epoch = 1234
-	cmd.ChunkIndex = 5432
+	cmd.T1Hash = [sha256.Size]byte{}
+	fillRand(require, cmd.T1Hash[:])
+
 	b := cmd.ToBytes()
 	require.Equal(len(b), fetchStateLength)
 
@@ -44,7 +46,7 @@ func TestFetchStateCommand(t *testing.T) {
 	require.IsType(cmd, c)
 	cmd2 := c.(*FetchState)
 	require.Equal(cmd.Epoch, cmd2.Epoch)
-	require.Equal(cmd.ChunkIndex, cmd2.ChunkIndex)
+	require.Equal(cmd.T1Hash[:], cmd2.T1Hash[:])
 }
 
 func TestStateResponseCommand(t *testing.T) {

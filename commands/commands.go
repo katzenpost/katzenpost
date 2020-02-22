@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/katzenpost/reunion/crypto"
 )
@@ -35,7 +36,7 @@ const (
 	ResponseStatusOK = 0
 
 	cmdOverhead           = 1
-	fetchStateLength      = cmdOverhead + 8 + 4 + 32
+	fetchStateLength      = cmdOverhead + 8 + 32
 	stateResponseLength   = cmdOverhead + 1 + 1 + 4 + crypto.PayloadSize
 	sendT1Length          = cmdOverhead + 8 + crypto.Type1MessageSize
 	sendT2Length          = cmdOverhead + 8 + 32 + 32 + crypto.Type2MessageSize
@@ -61,9 +62,6 @@ type Command interface {
 type FetchState struct {
 	// Epoch specifies the current Reunion epoch.
 	Epoch uint64
-	// ChunkIndex is the index indicating which chunk of the Reunion DB state
-	// to fetch.
-	ChunkIndex uint32
 
 	// T1Hash is the hash of the T1 message which is linked with a set of received messages.
 	T1Hash [sha256.Size]byte
@@ -74,8 +72,7 @@ func (s *FetchState) ToBytes() []byte {
 	out := make([]byte, fetchStateLength)
 	out[0] = byte(fetchState)
 	binary.BigEndian.PutUint64(out[1:9], s.Epoch)
-	binary.BigEndian.PutUint32(out[9:], s.ChunkIndex)
-	copy(out[13:], s.T1Hash[:])
+	copy(out[9:], s.T1Hash[:])
 	return out
 }
 
@@ -85,7 +82,9 @@ func fetchStateFromBytes(b []byte) (Command, error) {
 	}
 	s := new(FetchState)
 	s.Epoch = binary.BigEndian.Uint64(b[1:9])
-	s.ChunkIndex = binary.BigEndian.Uint32(b[9:13])
+	t1Hash := [sha256.Size]byte{}
+	copy(t1Hash[:], b[9:])
+	s.T1Hash = t1Hash
 	return s, nil
 }
 
@@ -281,7 +280,7 @@ func messageResponseFromBytes(b []byte) (Command, error) {
 // an error.
 func FromBytes(b []byte) (Command, error) {
 	if len(b) < cmdOverhead {
-		return nil, errInvalidCommand
+		return nil, fmt.Errorf("%s: only read %d bytes which is less than cmdOverhead", errInvalidCommand.Error(), len(b))
 	}
 	id := b[0]
 	switch commandID(id) {
@@ -298,6 +297,6 @@ func FromBytes(b []byte) (Command, error) {
 	case messageReponse:
 		return messageResponseFromBytes(b)
 	default:
-		return nil, errInvalidCommand
+		return nil, fmt.Errorf("%s: with command ID %d", errInvalidCommand.Error(), id)
 	}
 }
