@@ -31,8 +31,7 @@ func TestServer(t *testing.T) {
 		Epoch:   123,
 		Payload: []byte{0xDE, 0xAD, 0xBE, 0xEF},
 	}
-	haltCh := make(chan interface{})
-	_, err := server.ProcessQuery(&sendt1, haltCh)
+	_, err := server.ProcessQuery(&sendt1)
 	require.NoError(err)
 
 	// XXX ...

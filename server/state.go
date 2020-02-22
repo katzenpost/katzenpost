@@ -34,7 +34,7 @@ var cborHandle = new(codec.CborHandle)
 type ReunionDatabase interface {
 	// Query sends a query command to the Reunion DB and returns the
 	// response command or an error.
-	Query(command commands.Command, haltCh chan interface{}) (commands.Command, error)
+	Query(command commands.Command) (commands.Command, error)
 }
 
 // T1Message is used for serializing ReunionState.

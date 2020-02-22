@@ -44,7 +44,7 @@ func NewTransport(url string) *Transport {
 }
 
 // Query sends the command to the destination Reunion DB service over HTTP.
-func (k *Transport) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
+func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	request, err := http.NewRequest("POST", k.url, bytes.NewBuffer(command.ToBytes()))
 	if err != nil {
 		return nil, fmt.Errorf("HTTPTransport Query error: %s", err.Error())

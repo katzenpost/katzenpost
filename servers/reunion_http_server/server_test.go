@@ -63,8 +63,7 @@ func TestHTTPServer1(t *testing.T) {
 	rawRequest2 := sendT1Cmd2.ToBytes()
 	require.Equal(rawRequest, rawRequest2)
 
-	haltCh := make(chan interface{})
-	serverReplyRaw, err := httpTransport.Query(sendT1Cmd, haltCh)
+	serverReplyRaw, err := httpTransport.Query(sendT1Cmd)
 	require.NoError(err)
 	require.NotNil(serverReplyRaw)
 
@@ -77,7 +76,7 @@ func TestHTTPServer1(t *testing.T) {
 		T1Hash: myT1HashAr,
 	}
 
-	serverReplyRaw, err = httpTransport.Query(sendFetch, haltCh)
+	serverReplyRaw, err = httpTransport.Query(sendFetch)
 	require.NoError(err)
 	require.NotNil(serverReplyRaw)
 

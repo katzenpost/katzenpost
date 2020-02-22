@@ -273,7 +273,7 @@ func (e *Exchange) fetchState() error {
 	copy(t1HashAr[:], t1Hash)
 	fetchStateCmd.T1Hash = t1HashAr
 
-	rawResponse, err := e.db.Query(fetchStateCmd, e.shutdownChan)
+	rawResponse, err := e.db.Query(fetchStateCmd)
 	if err != nil {
 		return err
 	}
@@ -307,7 +307,7 @@ func (e *Exchange) sendT1() bool {
 		Epoch:   e.session.Epoch(),
 		Payload: e.sentT1,
 	}
-	rawResponse, err := e.db.Query(&t1Cmd, e.shutdownChan)
+	rawResponse, err := e.db.Query(&t1Cmd)
 	if err != nil {
 		e.log.Error(err.Error())
 		return false
@@ -372,7 +372,7 @@ func (e *Exchange) sendT2Messages() bool {
 			DstT1Hash: t1Hash,
 			Payload:   t2,
 		}
-		rawResponse, err := e.db.Query(&t2Cmd, e.shutdownChan)
+		rawResponse, err := e.db.Query(&t2Cmd)
 		if err != nil {
 			e.log.Error(err.Error())
 			return false
@@ -446,7 +446,7 @@ func (e *Exchange) sendT3Messages() bool {
 			DstT1Hash: srcT1Hash,
 			Payload:   t3,
 		}
-		rawResponse, err := e.db.Query(&sendT3Cmd, e.shutdownChan)
+		rawResponse, err := e.db.Query(&sendT3Cmd)
 		if err != nil {
 			e.log.Error(err.Error())
 			return false

@@ -40,7 +40,7 @@ func NewServer() *Server {
 }
 
 // ProcessQuery processes the given query command and returns a response command or an error.
-func (s *Server) ProcessQuery(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
+func (s *Server) ProcessQuery(command commands.Command) (commands.Command, error) {
 	var response commands.Command
 	switch cmd := command.(type) {
 	case *commands.FetchState:

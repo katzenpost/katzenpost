@@ -46,8 +46,7 @@ func httpReunionServerFactory(s *server.Server, log *logging.Logger) func(w http
 			log.Errorf("1 reunion HTTP server invalid query command: %s", err.Error())
 			return
 		}
-		haltCh := make(chan interface{})
-		replyCmd, err := s.ProcessQuery(cmd, haltCh)
+		replyCmd, err := s.ProcessQuery(cmd)
 		if err != nil {
 			log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
 			return

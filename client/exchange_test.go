@@ -41,8 +41,8 @@ func NewMockReunionDB(mylog *logging.Logger) *MockReunionDB {
 	}
 }
 
-func (m *MockReunionDB) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
-	return m.server.ProcessQuery(command, haltCh)
+func (m *MockReunionDB) Query(command commands.Command) (commands.Command, error) {
+	return m.server.ProcessQuery(command)
 }
 
 func TestClientServerBasics1(t *testing.T) {
