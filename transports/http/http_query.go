@@ -20,6 +20,7 @@ package http
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"time"
@@ -44,19 +45,18 @@ func NewHTTPTransport(url string) *HTTPTransport {
 }
 
 // Query sends the command to the destination Reunion DB service over HTTP.
-func (k *HTTPTransport) Query(command commands.Command) (commands.Command, error) {
-	rawQuery := command.ToBytes()
-	request, err := http.NewRequest("POST", k.url, bytes.NewBuffer(rawQuery))
+func (k *HTTPTransport) Query(command commands.Command, haltCh chan interface{}) (commands.Command, error) {
+	request, err := http.NewRequest("POST", k.url, bytes.NewBuffer(command.ToBytes()))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("HTTPTransport Query error: %s", err.Error())
 	}
 	response, err := k.client.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("HTTPTransport Query error: %s", err.Error())
 	}
 	reply, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("HTTPTransport Query error: %s", err.Error())
 	}
 	return commands.FromBytes(reply)
 }

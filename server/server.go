@@ -23,6 +23,10 @@ import (
 	"github.com/katzenpost/reunion/commands"
 )
 
+// XXX TODO: implement thread that writes inconsistent snapshot to disk every X seconds.
+// It should probably make use of an atomic to set state to clean or dirty so
+// that we only write to disk when something changed.
+
 // Server is a reunion server.
 type Server struct {
 	state *ReunionState
@@ -95,7 +99,7 @@ func (s *Server) ProcessQuery(command commands.Command, haltCh chan interface{})
 			ErrorCode: commands.ResponseStatusOK,
 		}
 	default:
-		return nil, errors.New("invalid query command received")
+		return nil, errors.New("Reunion server ProcessQuery received invalid query command")
 	}
 	return response, nil
 }
