@@ -35,7 +35,7 @@ type Transport struct {
 	client *http.Client
 }
 
-// NewHTTPTransport creates a new Transport given a URL string.
+// NewTransport creates a new Transport given a URL string.
 func NewTransport(url string) *Transport {
 	return &Transport{
 		url:    url,
