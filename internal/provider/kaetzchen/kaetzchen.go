@@ -181,13 +181,12 @@ func (k *KaetzchenWorker) worker() {
 			}
 		}
 
-		instrument.SetKaetzchenRequestsTimer()
 		k.processKaetzchen(pkt)
-		instrument.TimeFetchedPKIDocsDuration()
 	}
 }
 
 func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
+	instrument.SetKaetzchenRequestsTimer()
 	defer pkt.Dispose()
 
 	ct, surb, err := packet.ParseForwardPacket(pkt)
@@ -234,6 +233,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		// implementation should have caught this.
 		k.log.Debugf("Kaetzchen message: %v (Has reply but no SURB)", pkt.ID)
 	}
+	instrument.TimeFetchedPKIDocsDuration()
 }
 
 func (k *KaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {
