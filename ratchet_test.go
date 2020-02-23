@@ -1,7 +1,6 @@
 package ratchet
 
 import (
-	"bytes"
 	"crypto/rand"
 	"io"
 	"testing"
@@ -28,8 +27,8 @@ func nowFunc() time.Time {
 	return t
 }
 
-func pairedRatchet() (a, b *Ratchet) {
-	var privA, pubA, privB, pubB [32]byte
+func pairedRatchet(c *C) (a, b *Ratchet) {
+	var privA, pubA, privB, pubB [publicKeySize]byte
 	io.ReadFull(rand.Reader, privA[:])
 	io.ReadFull(rand.Reader, privB[:])
 	curve25519.ScalarBaseMult(&pubA, &privA)
@@ -38,19 +37,16 @@ func pairedRatchet() (a, b *Ratchet) {
 	// These are the "Ed25519" public keys for the two parties. Of course,
 	// they're not actually valid Ed25519 keys but that doesn't matter
 	// here.
-	var aSigningPublic, bSigningPublic [32]byte
+	// this seems to be the signed prekey
+	var aSigningPublic, bSigningPublic [publicKeySize]byte
 	io.ReadFull(rand.Reader, aSigningPublic[:])
 	io.ReadFull(rand.Reader, bSigningPublic[:])
 
-	a, err := New(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
+	a, err := NewRatchet(rand.Reader)
+	c.Assert(err, IsNil)
 
-	b, err = New(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
+	b, err = NewRatchet(rand.Reader)
+	c.Assert(err, IsNil)
 
 	a.Now = nowFunc
 	b.Now = nowFunc
@@ -67,27 +63,24 @@ func pairedRatchet() (a, b *Ratchet) {
 	b.TheirSigningPublic = aSigningPublic
 
 	kxA, kxB := new(KeyExchange), new(KeyExchange)
-	if err := a.FillKeyExchange(kxA); err != nil {
-		panic(err)
-	}
 
-	if err := b.FillKeyExchange(kxB); err != nil {
-		panic(err)
-	}
+	err = a.FillKeyExchange(kxA)
+	c.Assert(err, IsNil)
 
-	if err := a.CompleteKeyExchange(kxB); err != nil {
-		panic(err)
-	}
+	err = b.FillKeyExchange(kxB)
+	c.Assert(err, IsNil)
 
-	if err := b.CompleteKeyExchange(kxA); err != nil {
-		panic(err)
-	}
+	err = a.CompleteKeyExchange(kxB)
+	c.Assert(err, IsNil)
+
+	err = b.CompleteKeyExchange(kxA)
+	c.Assert(err, IsNil)
 
 	return
 }
 
 func (s *DoubleRatchetSuite) Test_KeyExchange(c *C) {
-	a, b := pairedRatchet()
+	a, b := pairedRatchet(c)
 
 	msg := []byte("test message")
 	encrypted := a.Encrypt(nil, msg)
@@ -100,11 +93,11 @@ func (s *DoubleRatchetSuite) Test_KeyExchange(c *C) {
 // TODO: how is this test different?
 func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 	// create two new ratchets
-	a, err := New(rand.Reader)
+	a, err := NewRatchet(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
-	b, err := New(rand.Reader)
+	b, err := NewRatchet(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -149,7 +142,7 @@ collective behavior embodies values—and the institutions we create do, too.`)
 }
 
 func (s *DoubleRatchetSuite) Test_Serialization(c *C) {
-	a, b := pairedRatchet()
+	a, b := pairedRatchet(c)
 
 	// 1
 	msg := []byte("test message number one is a short one")
@@ -161,7 +154,7 @@ func (s *DoubleRatchetSuite) Test_Serialization(c *C) {
 	serialized, err := a.MarshalBinary()
 	c.Assert(err, IsNil)
 
-	r, err := New(rand.Reader)
+	r, err := NewRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
 	r.UnmarshalBinary(serialized)
@@ -217,36 +210,35 @@ const (
 	delay
 )
 
-func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
+func reinitRatchet(c *C, r *Ratchet) *Ratchet {
 	state := r.Marshal(nowFunc(), 1*time.Hour)
-	newR, err := New(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
+	newR, err := NewRatchet(rand.Reader)
+	c.Assert(err, IsNil)
+
 	newR.Now = nowFunc
 	newR.MyIdentityPrivate = r.MyIdentityPrivate
 	newR.TheirIdentityPublic = r.TheirIdentityPublic
 	newR.MySigningPublic = r.MySigningPublic
 	newR.TheirSigningPublic = r.TheirSigningPublic
-	if err := newR.Unmarshal(state); err != nil {
-		t.Fatalf("Failed to unmarshal: %s", err)
-	}
+
+	err = newR.Unmarshal(state)
+	c.Assert(err, IsNil)
 
 	return newR
 
 }
 
-// TODO: this test should check for equality
-func testScript(t *testing.T, script []scriptAction) {
+func testScript(c *C, script []scriptAction) {
 	type delayedMessage struct {
 		msg       []byte
 		encrypted []byte
 		fromA     bool
 	}
-	delayedMessages := make(map[int]delayedMessage)
-	a, b := pairedRatchet()
 
-	for i, action := range script {
+	delayedMessages := make(map[int]delayedMessage)
+	a, b := pairedRatchet(c)
+
+	for _, action := range script {
 		switch action.object {
 		case sendA, sendB:
 			sender, receiver := a, b
@@ -261,24 +253,19 @@ func testScript(t *testing.T, script []scriptAction) {
 			switch action.result {
 			case deliver:
 				result, err := receiver.Decrypt(encrypted)
-				if err != nil {
-					t.Fatalf("#%d: receiver returned error: %s", i, err)
-				}
-				if !bytes.Equal(result, msg[:]) {
-					t.Fatalf("#%d: bad message: got %x, not %x", i, result, msg[:])
-				}
+				c.Assert(err, IsNil)
+				c.Assert(result, DeepEquals, msg[:])
+
 			case delay:
-				if _, ok := delayedMessages[action.id]; ok {
-					t.Fatalf("#%d: already have delayed message with id %d", i, action.id)
-				}
+				ok := delayedMessages[action.id]
+				c.Assert(ok, Not(IsNil))
+
 				delayedMessages[action.id] = delayedMessage{msg[:], encrypted, sender == a}
 			case drop:
 			}
 		case sendDelayed:
 			delayed, ok := delayedMessages[action.id]
-			if !ok {
-				t.Fatalf("#%d: no such delayed message id: %d", i, action.id)
-			}
+			c.Assert(ok, Equals, true)
 
 			receiver := a
 			if delayed.fromA {
@@ -286,21 +273,17 @@ func testScript(t *testing.T, script []scriptAction) {
 			}
 
 			result, err := receiver.Decrypt(delayed.encrypted)
-			if err != nil {
-				t.Fatalf("#%d: receiver returned error: %s", i, err)
-			}
-			if !bytes.Equal(result, delayed.msg) {
-				t.Fatalf("#%d: bad message: got %x, not %x", i, result, delayed.msg)
-			}
+			c.Assert(err, IsNil)
+			c.Assert(result, DeepEquals, delayed.msg)
 		}
 
-		a = reinitRatchet(t, a)
-		b = reinitRatchet(t, b)
+		a = reinitRatchet(c, a)
+		b = reinitRatchet(c, b)
 	}
 }
 
-func TestBackAndForth(t *testing.T) {
-	testScript(t, []scriptAction{
+func (s *DoubleRatchetSuite) Test_RatchetBackAndForth(c *C) {
+	testScript(c, []scriptAction{
 		{sendA, deliver, -1},
 		{sendB, deliver, -1},
 		{sendA, deliver, -1},
@@ -310,8 +293,8 @@ func TestBackAndForth(t *testing.T) {
 	})
 }
 
-func TestReorder(t *testing.T) {
-	testScript(t, []scriptAction{
+func (s *DoubleRatchetSuite) Test_RatchetReordering(c *C) {
+	testScript(c, []scriptAction{
 		{sendA, deliver, -1},
 		{sendA, delay, 0},
 		{sendA, deliver, -1},
@@ -319,8 +302,8 @@ func TestReorder(t *testing.T) {
 	})
 }
 
-func TestReorderAfterRatchet(t *testing.T) {
-	testScript(t, []scriptAction{
+func (s *DoubleRatchetSuite) Test_RatchetReorderAfterDHRatchet(c *C) {
+	testScript(c, []scriptAction{
 		{sendA, deliver, -1},
 		{sendA, delay, 0},
 		{sendB, deliver, -1},
@@ -330,8 +313,8 @@ func TestReorderAfterRatchet(t *testing.T) {
 	})
 }
 
-func TestDrop(t *testing.T) {
-	testScript(t, []scriptAction{
+func (s *DoubleRatchetSuite) Test_RatchetDroppedMessages(c *C) {
+	testScript(c, []scriptAction{
 		{sendA, drop, -1},
 		{sendA, drop, -1},
 		{sendA, drop, -1},
