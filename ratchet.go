@@ -23,6 +23,7 @@ const ()
 
 var cborHandle = new(codec.CborHandle)
 
+// KeyExchange is structure containing the public keys
 type KeyExchange struct {
 	PublicKey      []byte
 	IdentityPublic []byte
@@ -30,23 +31,27 @@ type KeyExchange struct {
 	Dh1            []byte
 }
 
+// SignedKeyExchange is structure containing the signature data
 type SignedKeyExchange struct {
 	Signed    []byte
 	Signature []byte
 }
 
+// MessageKey is structure containing the data associated with the message key
 type MessageKey struct {
 	Num          uint32
 	Key          []byte
 	CreationTime int64
 }
 
+// SavedKeys is structure containing the saved keys from delayed messages
 type SavedKeys struct {
 	HeaderKey   []byte
 	MessageKeys []*MessageKey
 }
 
-type RatchetState struct {
+// State constains all the data associated with a ratchet
+type State struct {
 	TheirSigningPublic  []byte
 	TheirIdentityPublic []byte
 	MySigningPublic     []byte
@@ -71,7 +76,7 @@ type RatchetState struct {
 	Ratchet             bool
 }
 
-// Ratchet contains the per-contact, crypto state.
+// Ratchet stucture contains the per-contact, crypto state.
 type Ratchet struct {
 	TheirSigningPublic  [32]byte
 	TheirIdentityPublic [32]byte
@@ -123,12 +128,13 @@ func (r *Ratchet) randBytes(buf []byte) {
 	}
 }
 
-// New creates a new ratchet struct
-func New(rand io.Reader) (*Ratchet, error) {
+// NewRatchet creates a new ratchet struct
+// TODO: why does this use ed and montgomery forms?
+func NewRatchet(rand io.Reader) (*Ratchet, error) {
 	r := &Ratchet{
 		rand:       rand,
-		kxPrivate0: new([32]byte),
-		kxPrivate1: new([32]byte),
+		kxPrivate0: new([privateKeySize]byte),
+		kxPrivate1: new([privateKeySize]byte),
 		saved:      make(map[[32]byte]map[uint32]savedKey),
 	}
 
@@ -144,33 +150,38 @@ func New(rand io.Reader) (*Ratchet, error) {
 	extra25519.PrivateKeyToCurve25519(&r.MyIdentityPrivate, mySigningPrivate)
 	curve25519.ScalarBaseMult(&r.MyIdentityPublic, &r.MyIdentityPrivate)
 
-	// TODO: probably unnecessary
 	// sanity math assertion
-	var curve25519Public [32]byte
+	var curve25519Public [publicKeySize]byte
 	extra25519.PublicKeyToCurve25519(&curve25519Public, &r.MySigningPublic)
 	if !bytes.Equal(curve25519Public[:], r.MyIdentityPublic[:]) {
-		panic("wtf")
+		panic("Incorrect Public/Private Keys")
 	}
 
 	return r, nil
 }
 
+// CreateKeyExchange created and add the appropiate fields for the KeyExchange
 func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 	kx := &KeyExchange{
 		PublicKey:      make([]byte, len(r.MySigningPublic[:])),
 		IdentityPublic: make([]byte, len(r.TheirIdentityPublic[:])),
 	}
+
 	copy(kx.PublicKey, r.MySigningPublic[:])
 	copy(kx.IdentityPublic, r.MyIdentityPublic[:])
+
 	err := r.FillKeyExchange(kx)
 	if err != nil {
 		return nil, err
 	}
+
 	serialized := []byte{}
 	enc := codec.NewEncoderBytes(&serialized, cborHandle)
 	if err := enc.Encode(kx); err != nil {
 		return nil, err
 	}
+
+	// TODO: why sign with ed?
 	sig := ed25519.Sign(&r.MySigningPrivate, serialized)
 	return &SignedKeyExchange{
 		Signed:    serialized,
@@ -182,7 +193,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 // ratchet.
 func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
-		return errors.New("ratchet: handshake already complete")
+		return errors.New("Ratchet: handshake already complete")
 	}
 
 	var public0, public1 [32]byte
@@ -200,7 +211,7 @@ func deriveKey(out *[32]byte, label []byte, h hash.Hash) {
 	h.Write(label)
 	n := h.Sum(out[:0])
 	if &n[0] != &out[0] {
-		panic("hash function too large")
+		panic("Hash function too large")
 	}
 }
 
@@ -218,8 +229,9 @@ var (
 	chainKeyStepLabel = []byte("chain key step")
 )
 
+// ProcessKeyExchange processes the data of a KeyExchange
 func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error {
-	var sig [64]byte
+	var sig [signatureSize]byte
 	if len(signedKeyExchange.Signature) != len(sig) {
 		return errors.New("invalid signature length")
 	}
@@ -230,29 +242,34 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 	if err != nil {
 		return err
 	}
+
 	if len(kx.PublicKey) != len(r.TheirSigningPublic) {
-		return errors.New("invalid public key")
+		return errors.New("Invalid public key")
 	}
 	copy(r.TheirSigningPublic[:], kx.PublicKey)
 
 	if !ed25519.Verify(&r.TheirSigningPublic, signedKeyExchange.Signed, &sig) {
-		return errors.New("invalid signature")
+		return errors.New("Invalid signature")
 	}
 
-	var ed25519Public, curve25519Public [32]byte
+	var ed25519Public, curve25519Public [publicKeySize]byte
 	copy(ed25519Public[:], kx.PublicKey)
 	extra25519.PublicKeyToCurve25519(&curve25519Public, &ed25519Public)
 	if !bytes.Equal(curve25519Public[:], kx.IdentityPublic[:]) {
-		return errors.New("ratchet: key exchange public key and identity public key must be isomorphically equal")
+		return errors.New("Ratchet: key exchange public key and identity public key must be isomorphically equal")
 	}
+
 	if len(kx.PublicKey) != len(r.TheirSigningPublic) {
-		return errors.New("invalid public key")
+		return errors.New("Invalid public key")
 	}
+
 	copy(r.TheirSigningPublic[:], kx.PublicKey)
 	if len(r.TheirIdentityPublic) != len(kx.IdentityPublic) {
-		return errors.New("invalid public identity")
+		return errors.New("Invalid public identity key")
 	}
+
 	copy(r.TheirIdentityPublic[:], kx.IdentityPublic)
+
 	return r.CompleteKeyExchange(kx)
 }
 
@@ -260,19 +277,19 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 // establishes the ratchet.
 func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 	if r.kxPrivate0 == nil {
-		return errors.New("ratchet: handshake already complete")
+		return errors.New("Ratchet: handshake already complete")
 	}
 
 	var public0 [32]byte
 	curve25519.ScalarBaseMult(&public0, r.kxPrivate0)
 
 	if len(kx.Dh) != len(public0) {
-		return errors.New("ratchet: peer's key exchange is invalid")
+		return errors.New("Ratchet: peer's key exchange is invalid")
 	}
 
 	if len(kx.Dh1) != len(public0) {
 		// TODO: ???
-		return errors.New("ratchet: peer using old-form key exchange")
+		return errors.New("Ratchet: peer using old-form key exchange")
 	}
 
 	var amAlice bool
@@ -282,7 +299,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 	case 1:
 		amAlice = false
 	case 0:
-		return errors.New("ratchet: peer echoed our own DH values back")
+		return errors.New("Ratchet: peer echoed our own DH values back")
 	}
 
 	var theirDH [32]byte
@@ -312,6 +329,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 		deriveKey(&r.nextSendHeaderKey, sendHeaderKeyLabel, h)
 		deriveKey(&r.nextRecvHeaderKey, nextRecvHeaderKeyLabel, h)
 		deriveKey(&r.recvChainKey, chainKeyLabel, h)
+		// TODO: what is this?
 		copy(r.recvRatchetPublic[:], kx.Dh1)
 	} else {
 		deriveKey(&r.sendHeaderKey, headerKeyLabel, h)
@@ -330,19 +348,21 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 
 // Encrypt acts like append() but appends an encrypted version of msg to out.
 func (r *Ratchet) Encrypt(out, msg []byte) []byte {
-	// TODO: ???
 	if r.ratchet {
 		r.randBytes(r.sendRatchetPrivate[:])
 		copy(r.sendHeaderKey[:], r.nextSendHeaderKey[:])
 
-		var sharedKey, keyMaterial [32]byte
+		var sharedKey, keyMaterial [sharedKeySize]byte
 		curve25519.ScalarMult(&sharedKey, &r.sendRatchetPrivate, &r.recvRatchetPublic)
+
+		// TODO: define as a separate function
 		sha := sha256.New()
 		sha.Write(rootKeyUpdateLabel)
 		sha.Write(r.rootKey[:])
 		sha.Write(sharedKey[:])
 		sha.Sum(keyMaterial[:0])
 		h := hmac.New(sha256.New, keyMaterial[:])
+
 		deriveKey(&r.rootKey, rootKeyLabel, h)
 		deriveKey(&r.nextSendHeaderKey, sendHeaderKeyLabel, h)
 		deriveKey(&r.sendChainKey, chainKeyLabel, h)
@@ -351,15 +371,15 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 	}
 
 	h := hmac.New(sha256.New, r.sendChainKey[:])
-	var messageKey [32]byte
+	var messageKey [messageKeySize]byte
 	deriveKey(&messageKey, messageKeyLabel, h)
 	deriveKey(&r.sendChainKey, chainKeyStepLabel, h)
 
-	var sendRatchetPublic [32]byte
+	var sendRatchetPublic [publicKeySize]byte
 	curve25519.ScalarBaseMult(&sendRatchetPublic, &r.sendRatchetPrivate)
 	var header [headerSize]byte
 	// TODO: ???
-	var headerNonce, messageNonce [24]byte
+	var headerNonce, messageNonce [nonceSize]byte
 	r.randBytes(headerNonce[:])
 	r.randBytes(messageNonce[:])
 
@@ -371,18 +391,18 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 	out = append(out, headerNonce[:]...)
 	out = secretbox.Seal(out, header[:], &headerNonce, &r.sendHeaderKey)
 	r.sendCount++
+
 	return secretbox.Seal(out, msg, &messageNonce, &messageKey)
 }
 
-// trySavedKeys tries to decrypt ciphertext using keys saved for missing messages.
+// trySavedKeys tries to decrypt the ciphertext using keys saved for delayed messages.
 func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
-	// TODO: is this check needed?
 	if len(ciphertext) < sealedHeaderSize {
-		return nil, errors.New("ratchet: header too small to be valid")
+		return nil, errors.New("Ratchet: header too small to be valid")
 	}
 
 	sealedHeader := ciphertext[:sealedHeaderSize]
-	var nonce [24]byte
+	var nonce [nonceSize]byte
 	copy(nonce[:], sealedHeader)
 	sealedHeader = sealedHeader[len(nonce):]
 
@@ -407,7 +427,7 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 		copy(nonce[:], header[nonceInHeaderOffset:])
 		msg, ok := secretbox.Open(nil, sealedMessage, &nonce, &msgKey.key)
 		if !ok {
-			return nil, errors.New("ratchet: corrupt message")
+			return nil, errors.New("Ratchet: corrupt message")
 		}
 		delete(messageKeys, msgNum)
 		// TODO: weird way to check
@@ -426,18 +446,18 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 // key. If any messages have been skipped over, it also returns savedKeys, a
 // map suitable for merging with r.saved, that contains the message keys for
 // the missing messages.
-func (r *Ratchet) saveKeys(headerKey, recvChainKey *[32]byte, messageNum, receivedCount uint32) (provisionalChainKey, messageKey [32]byte, savedKeys map[[32]byte]map[uint32]savedKey, err error) {
+func (r *Ratchet) saveKeys(headerKey, recvChainKey *[receivingChainKeySize]byte, messageNum, receivedCount uint32) (provisionalChainKey, messageKey [messageKeySize]byte, savedKeys map[[messageKeySize]byte]map[uint32]savedKey, err error) {
 	if messageNum < receivedCount {
 		// This is a message from the past, but we didn't have a saved
 		// key for it, which means that it's a duplicate message or we
 		// expired the save key.
-		err = errors.New("ratchet: duplicate message or message delayed longer than tolerance")
+		err = errors.New("Ratchet: duplicate message or message delayed longer than tolerance")
 		return
 	}
 
 	missingMessages := messageNum - receivedCount
 	if missingMessages > maxMissingMessages {
-		err = errors.New("ratchet: message exceeds reordering limit")
+		err = errors.New("Ratchet: message exceeds reordering limit")
 		return
 	}
 
@@ -474,7 +494,7 @@ func (r *Ratchet) saveKeys(headerKey, recvChainKey *[32]byte, messageNum, receiv
 
 // mergeSavedKeys takes a map of saved message keys from saveKeys and merges it
 // into r.saved.
-func (r *Ratchet) mergeSavedKeys(newKeys map[[32]byte]map[uint32]savedKey) {
+func (r *Ratchet) mergeSavedKeys(newKeys map[[messageKeySize]byte]map[uint32]savedKey) {
 	for headerKey, newMessageKeys := range newKeys {
 		messageKeys, ok := r.saved[headerKey]
 		if !ok {
@@ -498,6 +518,7 @@ func isZeroKey(key *[32]byte) bool {
 	return x == 0
 }
 
+// Decrypt decrypts a message
 func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	msg, err := r.trySavedKeys(ciphertext)
 	if err != nil || msg != nil {
@@ -506,17 +527,19 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	sealedHeader := ciphertext[:sealedHeaderSize]
 	sealedMessage := ciphertext[sealedHeaderSize:]
-	var nonce [24]byte
+	var nonce [nonceSize]byte
 	copy(nonce[:], sealedHeader)
 	sealedHeader = sealedHeader[len(nonce):]
 
 	header, ok := secretbox.Open(nil, sealedHeader, &nonce, &r.recvHeaderKey)
 	ok = ok && !isZeroKey(&r.recvHeaderKey)
+
 	// TODO: this becomes very weird
 	if ok {
 		if len(header) != headerSize {
-			return nil, errors.New("ratchet: incorrect header size")
+			return nil, errors.New("Ratchet: incorrect header size")
 		}
+
 		messageNum := binary.LittleEndian.Uint32(header[:4])
 		provisionalChainKey, messageKey, savedKeys, err := r.saveKeys(&r.recvHeaderKey, &r.recvChainKey, messageNum, r.recvCount)
 		if err != nil {
@@ -537,14 +560,14 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	header, ok = secretbox.Open(nil, sealedHeader, &nonce, &r.nextRecvHeaderKey)
 	if !ok {
-		return nil, errors.New("ratchet: cannot decrypt")
+		return nil, errors.New("Ratchet: cannot decrypt")
 	}
 	if len(header) != headerSize {
-		return nil, errors.New("ratchet: incorrect header size")
+		return nil, errors.New("Ratchet: incorrect header size")
 	}
 
 	if r.ratchet {
-		return nil, errors.New("ratchet: received message encrypted to next header key without ratchet flag set")
+		return nil, errors.New("Ratchet: received message encrypted to next header key without ratchet flag set")
 	}
 
 	messageNum := binary.LittleEndian.Uint32(header[:4])
@@ -609,6 +632,7 @@ func dup(key *[32]byte) []byte {
 	return ret
 }
 
+// MarshalBinary transforms the object into a stream
 func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 	s := r.Marshal(time.Now(), RatchetKeyMaxLifetime)
 	var serialized []byte
@@ -616,11 +640,13 @@ func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 	if err := enc.Encode(s); err != nil {
 		return nil, err
 	}
+
 	return serialized, nil
 }
 
-func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *RatchetState {
-	s := &RatchetState{
+// Marshal transforms the object into a stream
+func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
+	s := &State{
 		TheirSigningPublic:  dup(&r.TheirSigningPublic),
 		TheirIdentityPublic: dup(&r.TheirIdentityPublic),
 		MySigningPublic:     dup(&r.MySigningPublic),
@@ -673,10 +699,11 @@ func unmarshalKey(dst *[32]byte, src []byte) bool {
 	return true
 }
 
-var badSerialisedKeyLengthErr = errors.New("ratchet: bad serialised key length")
+var errSerialisedKeyLength = errors.New("ratchet: bad serialised key length")
 
+// UnmarshalBinary transforms the stream into the object
 func (r *Ratchet) UnmarshalBinary(data []byte) error {
-	state := RatchetState{}
+	state := State{}
 	err := codec.NewDecoderBytes(data, cborHandle).Decode(&state)
 	if err != nil {
 		return err
@@ -684,7 +711,8 @@ func (r *Ratchet) UnmarshalBinary(data []byte) error {
 	return r.Unmarshal(&state)
 }
 
-func (r *Ratchet) Unmarshal(s *RatchetState) error {
+// Unmarshal transforms the stream into the object
+func (r *Ratchet) Unmarshal(s *State) error {
 	copy(r.MySigningPublic[:], s.MySigningPublic)
 	copy(r.MySigningPrivate[:], s.MySigningPrivate)
 	if !unmarshalKey(&r.rootKey, s.RootKey) ||
@@ -700,7 +728,8 @@ func (r *Ratchet) Unmarshal(s *RatchetState) error {
 		!unmarshalKey(&r.recvChainKey, s.RecvChainKey) ||
 		!unmarshalKey(&r.sendRatchetPrivate, s.SendRatchetPrivate) ||
 		!unmarshalKey(&r.recvRatchetPublic, s.RecvRatchetPublic) {
-		return badSerialisedKeyLengthErr
+
+		return errSerialisedKeyLength
 	}
 
 	r.sendCount = s.SendCount
@@ -711,7 +740,7 @@ func (r *Ratchet) Unmarshal(s *RatchetState) error {
 	if len(s.Private0) > 0 {
 		if !unmarshalKey(r.kxPrivate0, s.Private0) ||
 			!unmarshalKey(r.kxPrivate1, s.Private1) {
-			return badSerialisedKeyLengthErr
+			return errSerialisedKeyLength
 		}
 	} else {
 		r.kxPrivate0 = nil
@@ -721,14 +750,16 @@ func (r *Ratchet) Unmarshal(s *RatchetState) error {
 	for _, saved := range s.SavedKeys {
 		var headerKey [32]byte
 		if !unmarshalKey(&headerKey, saved.HeaderKey) {
-			return badSerialisedKeyLengthErr
+			return errSerialisedKeyLength
 		}
+
 		messageKeys := make(map[uint32]savedKey)
 		for _, messageKey := range saved.MessageKeys {
 			var savedKey savedKey
 			if !unmarshalKey(&savedKey.key, messageKey.Key) {
-				return badSerialisedKeyLengthErr
+				return errSerialisedKeyLength
 			}
+
 			savedKey.timestamp = time.Unix(messageKey.CreationTime, 0)
 			messageKeys[messageKey.Num] = savedKey
 		}

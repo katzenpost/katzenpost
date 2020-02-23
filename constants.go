@@ -7,10 +7,17 @@ import (
 )
 
 const (
+	privateKeySize = 32
+	publicKeySize  = 32
+	signatureSize  = 64
+
+	sharedKeySize         = 32
 	rootKeySize           = 32
+	chainKeySize          = 32
 	sendingChainKeySize   = 32
 	receivingChainKeySize = 32
 	messageKeySize        = 32
+	nonceSize             = 24
 	// headerSize is the size, in bytes, of a header's plaintext contents.
 	headerSize = 4 /* uint32 message count */ +
 		4 /* uint32 previous message count */ +
