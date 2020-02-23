@@ -18,11 +18,9 @@ type DoubleRatchetSuite struct{}
 var _ = Suite(&DoubleRatchetSuite{})
 
 // TODO: there are tests missing:
-// out-of-order for new DH ratchet
 // what if both start sending at the same time
 
-// TODO: refactor
-func nowFunc() time.Time {
+func now() time.Time {
 	var t time.Time
 	return t
 }
@@ -48,8 +46,8 @@ func pairedRatchet(c *C) (a, b *Ratchet) {
 	b, err = NewRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	a.Now = nowFunc
-	b.Now = nowFunc
+	a.Now = now
+	b.Now = now
 
 	// TODO: this is repeated
 	a.MyIdentityPrivate = privA
@@ -211,11 +209,11 @@ const (
 )
 
 func reinitRatchet(c *C, r *Ratchet) *Ratchet {
-	state := r.Marshal(nowFunc(), 1*time.Hour)
+	state := r.Marshal(now(), 1*time.Hour)
 	newR, err := NewRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	newR.Now = nowFunc
+	newR.Now = now
 	newR.MyIdentityPrivate = r.MyIdentityPrivate
 	newR.TheirIdentityPublic = r.TheirIdentityPublic
 	newR.MySigningPublic = r.MySigningPublic
