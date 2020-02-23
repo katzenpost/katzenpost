@@ -5,7 +5,6 @@ package ratchet
 import (
 	"bytes"
 	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"hash"
@@ -17,6 +16,7 @@ import (
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
+	"golang.org/x/crypto/sha3"
 )
 
 const ()
@@ -322,7 +322,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 	}
 
-	h := hmac.New(sha256.New, keyMaterial)
+	h := hmac.New(sha3.New256, keyMaterial)
 	deriveKey(&r.rootKey, rootKeyLabel, h)
 	if amAlice {
 		deriveKey(&r.recvHeaderKey, headerKeyLabel, h)
@@ -356,12 +356,12 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		curve25519.ScalarMult(&sharedKey, &r.sendRatchetPrivate, &r.recvRatchetPublic)
 
 		// TODO: define as a separate function
-		sha := sha256.New()
+		sha := sha3.New256()
 		sha.Write(rootKeyUpdateLabel)
 		sha.Write(r.rootKey[:])
 		sha.Write(sharedKey[:])
 		sha.Sum(keyMaterial[:0])
-		h := hmac.New(sha256.New, keyMaterial[:])
+		h := hmac.New(sha3.New256, keyMaterial[:])
 
 		deriveKey(&r.rootKey, rootKeyLabel, h)
 		deriveKey(&r.nextSendHeaderKey, sendHeaderKeyLabel, h)
@@ -370,7 +370,7 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		r.ratchet = false
 	}
 
-	h := hmac.New(sha256.New, r.sendChainKey[:])
+	h := hmac.New(sha3.New256, r.sendChainKey[:])
 	var messageKey [messageKeySize]byte
 	deriveKey(&messageKey, messageKeyLabel, h)
 	deriveKey(&r.sendChainKey, chainKeyStepLabel, h)
@@ -476,7 +476,7 @@ func (r *Ratchet) saveKeys(headerKey, recvChainKey *[receivingChainKeySize]byte,
 	copy(provisionalChainKey[:], recvChainKey[:])
 
 	for n := receivedCount; n <= messageNum; n++ {
-		h := hmac.New(sha256.New, provisionalChainKey[:])
+		h := hmac.New(sha3.New256, provisionalChainKey[:])
 		deriveKey(&messageKey, messageKeyLabel, h)
 		deriveKey(&provisionalChainKey, chainKeyStepLabel, h)
 		if n < messageNum {
@@ -583,14 +583,14 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	curve25519.ScalarMult(&sharedKey, &r.sendRatchetPrivate, &dhPublic)
 
-	sha := sha256.New()
+	sha := sha3.New256()
 	sha.Write(rootKeyUpdateLabel)
 	sha.Write(r.rootKey[:])
 	sha.Write(sharedKey[:])
 
 	var rootKeyHMAC hash.Hash
 	sha.Sum(keyMaterial[:0])
-	rootKeyHMAC = hmac.New(sha256.New, keyMaterial[:])
+	rootKeyHMAC = hmac.New(sha3.New256, keyMaterial[:])
 	deriveKey(&rootKey, rootKeyLabel, rootKeyHMAC)
 	deriveKey(&chainKey, chainKeyLabel, rootKeyHMAC)
 
