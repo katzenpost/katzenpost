@@ -55,6 +55,7 @@ Popup {
                             id: passphraseArea
                             focus: true
                             selectByMouse: true
+                            echoMode: TextInput.Password
                             placeholderText: qsTr("Passphrase")
                             Layout.fillWidth: true
                         }
