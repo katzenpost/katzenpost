@@ -95,6 +95,15 @@ Page {
                     Layout.fillWidth: true
                     placeholderText: qsTr("Compose message")
                     wrapMode: TextArea.Wrap
+
+                    Keys.onReturnPressed: {
+                        if (!sendButton.enabled) {
+                            return
+                        }
+
+                        sendButton.clicked()
+                        event.accepted = true
+                    }
                 }
 
                 Button {
