@@ -143,7 +143,7 @@ func (m *ConversationModel) removeMessage(row int) {
 }
 
 func (m *ConversationModel) updateMessageStatus(id string, status int) {
-	fmt.Println("Updating message status:", id, status)
+	// fmt.Println("Updating message status:", id, status)
 	for _, v := range m.Messages() {
 		if v.MessageID == id {
 			v.Status = status
