@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sort"
 	"time"
 
 	"github.com/katzenpost/catshadow"
@@ -18,33 +19,52 @@ func loadContactList(contactListModel *ContactListModel, nickNames []string) {
 
 // loadConversation loads the conversation with a contact
 func loadConversation(client *catshadow.Client, contact string) {
-	conversationModel.Clear()
 	accountBridge.SetRecipient(contact)
+
+	conversationModel.Clear()
 	conversation := client.GetConversation(contact)
+
+	var msgs Messages
 	for _, message := range conversation {
-		msg := &Message{
-			Nickname:  contact,
-			Avatar:    "",
-			Message:   string(message.Plaintext),
-			Timestamp: message.Timestamp,
+		var m = NewMessage(nil)
+
+		if message.Outbound {
+			m.Nickname = accountBridge.Nickname()
+		} else {
+			m.Nickname = contact
 		}
-		conversationModel.AddMessage(msg)
+
+		m.Avatar = ""
+		m.Message = string(message.Plaintext)
+		m.Timestamp = message.Timestamp
+		m.Outbound = message.Outbound
+
+		msgs = append(msgs, m)
+	}
+
+	sort.Sort(msgs)
+
+	for _, m := range msgs {
+		conversationModel.AddMessage(m)
 	}
 }
 
 // addContact adds a contact to the contact list
 func addContact(client *catshadow.Client, nickname string, passphrase string) bool {
 	client.NewContact(nickname, []byte(passphrase))
+
 	var c = NewContact(nil)
 	c.Nickname = nickname
 	c.Avatar = ""
 	contactListModel.AddContact(c)
+
 	return true
 }
 
 // sendMessage sends a message to a contact
 func sendMessage(client *catshadow.Client, nickname string, message string) {
 	client.SendMessage(nickname, []byte(message))
+
 	var m = NewMessage(nil)
 	m.Nickname = accountBridge.Nickname()
 	m.Avatar = accountBridge.Nickname()
