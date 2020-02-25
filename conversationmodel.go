@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
@@ -49,6 +50,13 @@ func (m *ConversationModel) init() {
 	m.ConnectAppendMessage(m.appendMessage)
 	m.ConnectRemoveMessage(m.removeMessage)
 	m.ConnectClear(m.clear)
+
+	go func() {
+		for {
+			time.Sleep(time.Minute)
+			m.updateMessageTime()
+		}
+	}()
 }
 
 func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVariant {
@@ -79,6 +87,9 @@ func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVaria
 		}
 	case RoleTimestamp:
 		{
+			if time.Since(p.Timestamp) < time.Minute {
+				return core.NewQVariant1("now")
+			}
 			return core.NewQVariant1(humanize.Time(p.Timestamp))
 		}
 
@@ -124,6 +135,15 @@ func (m *ConversationModel) removeMessage(row int) {
 	m.BeginRemoveRows(core.NewQModelIndex(), row, row)
 	m.SetMessages(append(m.Messages()[:trow], m.Messages()[trow+1:]...))
 	m.EndRemoveRows()
+}
+
+func (m *ConversationModel) updateMessageTime() {
+	fmt.Println("Updating message timestamps...")
+	if len(m.Messages()) > 0 {
+		var fIndex = m.Index(0, 0, core.NewQModelIndex())
+		var lIndex = m.Index(len(m.Messages())-1, 0, core.NewQModelIndex())
+		m.DataChanged(fIndex, lIndex, []int{RoleTimestamp})
+	}
 }
 
 func init() {
