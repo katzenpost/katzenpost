@@ -11,14 +11,23 @@ ListView {
     bottomMargin: 16
     rightMargin: 16
     spacing: 16
-
+    focus: true
+    highlightFollowsCurrentItem: true
     model: accountBridge.contactListModel
+    currentIndex: -1
+
+    onCurrentItemChanged: {
+        var nickname = model.data(model.index(currentIndex, 0), Qt.UserRole + 1)
+        swipe.currentIndex = 1
+        accountBridge.loadConversation(nickname)
+    }
+
     delegate: ItemDelegate {
+        highlighted: ListView.isCurrentItem
         width: contactList.width - contactList.leftMargin - contactList.rightMargin
         height: 48
         onClicked: {
-            swipe.currentIndex = 1
-            accountBridge.loadConversation(model.nickname)
+            contactList.currentIndex = index
         }
 
         RowLayout {
