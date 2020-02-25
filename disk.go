@@ -22,7 +22,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/katzenpost/catshadow/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/worker"
@@ -53,7 +52,7 @@ type State struct {
 	User                string
 	Provider            string
 	LinkKey             *ecdh.PrivateKey
-	Conversations       map[string]map[[constants.MessageIDLen]byte]*Message
+	Conversations       map[string]map[MessageID]*Message
 }
 
 // StateWriter takes ownership of the Client's encrypted statefile

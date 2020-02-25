@@ -81,7 +81,7 @@ func (c *Client) worker() {
 			case *opRemoveContact:
 				c.doContactRemoval(op.name)
 			case *opSendMessage:
-				c.doSendMessage(op.name, op.payload)
+				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetNicknames:
 				names := []string{}
 				for contact := range c.contactNicknames {

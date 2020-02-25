@@ -60,7 +60,7 @@ type Client struct {
 	contacts            map[uint64]*Contact
 	contactNicknames    map[string]*Contact
 	spoolReadDescriptor *memspoolclient.SpoolReadDescriptor
-	conversations       map[string]map[[constants.MessageIDLen]byte]*Message
+	conversations       map[string]map[MessageID]*Message
 	conversationsMutex  *sync.Mutex
 
 	client  *client.Client
@@ -70,6 +70,8 @@ type Client struct {
 	logBackend *log.Backend
 }
 
+type MessageID [constants.MessageIDLen]byte
+
 // NewClientAndRemoteSpool creates a new Client and creates a new remote spool
 // for collecting messages destined to this Client. The Client is associated with
 // this remote spool and this state is preserved in the encrypted statefile, of course.
@@ -78,7 +80,7 @@ type Client struct {
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
 		Contacts:      make([]*Contact, 0),
-		Conversations: make(map[string]map[[constants.MessageIDLen]byte]*Message),
+		Conversations: make(map[string]map[MessageID]*Message),
 		User:          user,
 		Provider:      mixnetClient.Provider(),
 		LinkKey:       linkKey,
@@ -434,28 +436,32 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
-func (c *Client) SendMessage(nickname string, message []byte) {
+func (c *Client) SendMessage(nickname string, message []byte) MessageID {
+	convoMesgID := MessageID{}
+	_, err := rand.Reader.Read(convoMesgID[:])
+	if err != nil {
+		c.fatalErrCh <- err
+	}
+
 	c.opCh <- &opSendMessage{
+		id:      convoMesgID,
 		name:    nickname,
 		payload: message,
 	}
+
+	return convoMesgID
 }
 
-func (c *Client) doSendMessage(nickname string, message []byte) {
+func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message []byte) {
 	outMessage := Message{
 		Plaintext: message,
 		Timestamp: time.Now(),
 		Outbound:  true,
 	}
-	convoMesgID := [constants.MessageIDLen]byte{}
-	_, err := rand.Reader.Read(convoMesgID[:])
-	if err != nil {
-		c.fatalErrCh <- err
-	}
 	c.conversationsMutex.Lock()
 	_, ok := c.conversations[nickname]
 	if !ok {
-		c.conversations[nickname] = make(map[[constants.MessageIDLen]byte]*Message)
+		c.conversations[nickname] = make(map[MessageID]*Message)
 	}
 	c.conversations[nickname][convoMesgID] = &outMessage
 	c.conversationsMutex.Unlock()
@@ -559,13 +565,13 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 	c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 }
 
-func (c *Client) GetConversation(nickname string) map[[constants.MessageIDLen]byte]*Message {
+func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations[nickname]
 }
 
-func (c *Client) GetAllConversations() map[string]map[[constants.MessageIDLen]byte]*Message {
+func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations
@@ -595,7 +601,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 	}
 	if decrypted {
 		c.spoolReadDescriptor.IncrementOffset() // XXX use a lock or atomic increment?
-		convoMesgID := [constants.MessageIDLen]byte{}
+		convoMesgID := MessageID{}
 		_, err := rand.Reader.Read(convoMesgID[:])
 		if err != nil {
 			c.fatalErrCh <- err
@@ -604,7 +610,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		defer c.conversationsMutex.Unlock()
 		_, ok := c.conversations[nickname]
 		if !ok {
-			c.conversations[nickname] = make(map[[constants.MessageIDLen]byte]*Message)
+			c.conversations[nickname] = make(map[MessageID]*Message)
 		}
 		c.conversations[nickname][convoMesgID] = &message
 
