@@ -28,6 +28,7 @@ type opRemoveContact struct {
 }
 
 type opSendMessage struct {
+	id      MessageID
 	name    string
 	payload []byte
 }
