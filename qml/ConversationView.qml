@@ -7,7 +7,7 @@ Page {
     anchors.fill: parent
 
     header: ToolBar {
-        Material.primary: Material.BlueGrey
+        Material.primary: Material.accent
 
         ToolButton {
             text: qsTr("Back")
