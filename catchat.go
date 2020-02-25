@@ -90,16 +90,6 @@ func main() {
 	if config.Style == "" {
 		config.Style = "Dark"
 	}
-	configBridge.SetTheme(config.Theme)
-	configBridge.SetStyle(config.Style)
-	configBridge.SetFirstRun(config.FirstRun)
-	configBridge.SetPositionX(config.PositionX)
-	configBridge.SetPositionY(config.PositionY)
-	configBridge.SetWidth(config.Width)
-	configBridge.SetHeight(config.Height)
-
-	contactListModel = NewContactListModel(nil)
-	conversationModel = NewConversationModel(nil)
 
 	// Prepare catshadow client instance.
 
@@ -187,7 +177,18 @@ func main() {
 	catShadowClient.Start()
 
 	// Start graphical user interface.
+	contactListModel = NewContactListModel(nil)
+	conversationModel = NewConversationModel(nil)
 	setupQmlBridges(catShadowClient)
+
+	configBridge.SetTheme(config.Theme)
+	configBridge.SetStyle(config.Style)
+	configBridge.SetFirstRun(config.FirstRun)
+	configBridge.SetPositionX(config.PositionX)
+	configBridge.SetPositionY(config.PositionY)
+	configBridge.SetWidth(config.Width)
+	configBridge.SetHeight(config.Height)
+
 	nickNames := catShadowClient.GetNicknames()
 	loadContactList(contactListModel, nickNames)
 	accountBridge.SetContactListModel(contactListModel)
@@ -200,7 +201,7 @@ func main() {
 	// Shutdown client after graphical user interface is halted.
 	catShadowClient.Shutdown()
 
-	// Save QT user interface config on clean shutdown.
+	// Save Qt user interface config on clean shutdown.
 	config.Theme = configBridge.Theme()
 	config.Style = configBridge.Style()
 	config.PositionX = configBridge.PositionX()
@@ -208,5 +209,6 @@ func main() {
 	config.Width = configBridge.Width()
 	config.Height = configBridge.Height()
 	config.FirstRun = false
+
 	SaveConfig(configFile, config)
 }
