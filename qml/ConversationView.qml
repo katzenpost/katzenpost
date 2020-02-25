@@ -81,7 +81,7 @@ Page {
                     }
                     Label {
                         id: statusText
-                        text: model.status
+                        text: model.status == 1 ? "✓" : "✓✓"
                         color: "lightgrey"
                         visible: model.status > 0
                     }

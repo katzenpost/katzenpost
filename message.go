@@ -6,6 +6,12 @@ import (
 	"github.com/therecipe/qt/core"
 )
 
+const (
+	StatusUnknown = iota
+	StatusSent
+	StatusDelivered
+)
+
 // Message holds the data for a message
 type Message struct {
 	core.QObject

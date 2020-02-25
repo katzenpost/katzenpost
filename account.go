@@ -71,5 +71,6 @@ func sendMessage(client *catshadow.Client, nickname string, message string) {
 	m.Message = message
 	m.Timestamp = time.Now()
 	m.Outbound = true
+	m.Status = StatusSent
 	conversationModel.AddMessage(m)
 }
