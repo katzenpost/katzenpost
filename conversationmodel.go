@@ -8,16 +8,6 @@ import (
 	"github.com/therecipe/qt/core"
 )
 
-// Message holds the data for a message
-type Message struct {
-	core.QObject
-
-	Nickname  string
-	Avatar    string
-	Message   string
-	Timestamp time.Time
-}
-
 // ConversationModel holds a collection of messages
 type ConversationModel struct {
 	core.QAbstractListModel
