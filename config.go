@@ -35,6 +35,13 @@ func LoadConfig(configFile string) Config {
 		log.Fatal("Could not decode config file: ", err)
 	}
 
+	if config.Theme == "" {
+		config.Theme = "Material"
+	}
+	if config.Style == "" {
+		config.Style = "Dark"
+	}
+
 	return config
 }
 

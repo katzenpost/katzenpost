@@ -84,12 +84,6 @@ func main() {
 		panic(err)
 	}
 	config = LoadConfig(configFile)
-	if config.Theme == "" {
-		config.Theme = "Material"
-	}
-	if config.Style == "" {
-		config.Style = "Dark"
-	}
 
 	// Prepare catshadow client instance.
 
