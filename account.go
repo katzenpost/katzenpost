@@ -63,14 +63,14 @@ func addContact(client *catshadow.Client, nickname string, passphrase string) bo
 
 // sendMessage sends a message to a contact
 func sendMessage(client *catshadow.Client, nickname string, message string) {
-	client.SendMessage(nickname, []byte(message))
+	id := client.SendMessage(nickname, []byte(message))
 
 	var m = NewMessage(nil)
+	m.MessageID = string(id[:])
 	m.Nickname = accountBridge.Nickname()
 	m.Avatar = accountBridge.Nickname()
 	m.Message = message
 	m.Timestamp = time.Now()
 	m.Outbound = true
-	m.Status = StatusSent
 	conversationModel.AddMessage(m)
 }
