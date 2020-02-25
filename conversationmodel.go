@@ -143,12 +143,20 @@ func (m *ConversationModel) removeMessage(row int) {
 }
 
 func (m *ConversationModel) updateMessageStatus(id string, status int) {
-	for i, v := range m.Messages() {
+	fmt.Println("Updating message status:", id, status)
+	for _, v := range m.Messages() {
 		if v.MessageID == id {
 			v.Status = status
 
-			var index = m.Index(i, 0, core.NewQModelIndex())
-			m.DataChanged(index, index, []int{RoleStatus})
+			/*
+				var index = m.Index(i, 0, core.NewQModelIndex())
+				m.DataChanged(index, index, []int{RoleStatus})
+			*/
+
+			var fIndex = m.Index(0, 0, core.NewQModelIndex())
+			var lIndex = m.Index(len(m.Messages())-1, 0, core.NewQModelIndex())
+			m.DataChanged(fIndex, lIndex, []int{RoleStatus})
+
 			return
 		}
 	}

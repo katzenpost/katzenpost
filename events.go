@@ -31,10 +31,10 @@ func handleEvents(events <-chan interface{}, conversationModel *ConversationMode
 			// XXX fix me
 
 		case *catshadow.MessageSentEvent:
-			// XXX fix me
+			conversationModel.updateMessageStatus(string(event.MessageID[:]), StatusSent)
 
 		case *catshadow.MessageDeliveredEvent:
-			// XXX fix me
+			conversationModel.updateMessageStatus(string(event.MessageID[:]), StatusDelivered)
 
 		case *catshadow.MessageReceivedEvent:
 			var m = NewMessage(nil)
