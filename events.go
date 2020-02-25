@@ -16,7 +16,6 @@ func handleEvents(events <-chan interface{}, conversationModel *ConversationMode
 
 		switch event := ev.(type) {
 		case *client.ConnectionStatusEvent:
-			fmt.Println(event.IsConnected, event.Err)
 			status := "Connecting..."
 			if event.IsConnected {
 				status = "Connected"

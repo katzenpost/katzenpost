@@ -25,9 +25,11 @@ type ConversationModel struct {
 
 func (m *ConversationModel) init() {
 	m.SetRoles(map[int]*core.QByteArray{
+		RoleMessageID: core.NewQByteArray2("messageid", -1),
 		RoleNickname:  core.NewQByteArray2("nickname", -1),
 		RoleAvatar:    core.NewQByteArray2("avatar", -1),
 		RoleMessage:   core.NewQByteArray2("message", -1),
+		RoleStatus:    core.NewQByteArray2("status", -1),
 		RoleOutbound:  core.NewQByteArray2("outbound", -1),
 		RoleTimestamp: core.NewQByteArray2("timestamp", -1),
 	})
@@ -64,6 +66,10 @@ func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVaria
 	}
 
 	switch role {
+	case RoleMessageID:
+		{
+			return core.NewQVariant1(p.MessageID)
+		}
 	case RoleNickname:
 		{
 			return core.NewQVariant1(p.Nickname)
@@ -75,6 +81,10 @@ func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVaria
 	case RoleMessage:
 		{
 			return core.NewQVariant1(p.Message)
+		}
+	case RoleStatus:
+		{
+			return core.NewQVariant1(p.Status)
 		}
 	case RoleOutbound:
 		{
@@ -130,6 +140,18 @@ func (m *ConversationModel) removeMessage(row int) {
 	m.BeginRemoveRows(core.NewQModelIndex(), row, row)
 	m.SetMessages(append(m.Messages()[:trow], m.Messages()[trow+1:]...))
 	m.EndRemoveRows()
+}
+
+func (m *ConversationModel) updateMessageStatus(id string, status int) {
+	for i, v := range m.Messages() {
+		if v.MessageID == id {
+			v.Status = status
+
+			var index = m.Index(i, 0, core.NewQModelIndex())
+			m.DataChanged(index, index, []int{RoleStatus})
+			return
+		}
+	}
 }
 
 func (m *ConversationModel) updateMessageTime() {

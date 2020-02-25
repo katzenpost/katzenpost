@@ -70,11 +70,21 @@ Page {
                     }
                 }
 
-                Label {
-                    id: timestampText
-                    text: model.timestamp
-                    color: "lightgrey"
+                Row {
+                    spacing: 6
                     anchors.right: model.outbound ? parent.right : undefined
+
+                    Label {
+                        id: timestampText
+                        text: model.timestamp
+                        color: "lightgrey"
+                    }
+                    Label {
+                        id: statusText
+                        text: model.status
+                        color: "lightgrey"
+                        visible: model.status > 0
+                    }
                 }
             }
 

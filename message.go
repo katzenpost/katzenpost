@@ -10,10 +10,12 @@ import (
 type Message struct {
 	core.QObject
 
+	MessageID string
 	Nickname  string
 	Avatar    string
 	Message   string
 	Outbound  bool
+	Status    int
 	Timestamp time.Time
 }
 

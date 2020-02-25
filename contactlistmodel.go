@@ -9,8 +9,10 @@ const (
 	RoleNickname = int(core.Qt__UserRole) + 1<<iota
 	RoleAvatar
 	RoleMessage
+	RoleStatus
 	RoleTimestamp
 	RoleOutbound
+	RoleMessageID
 )
 
 // Contact holds the data for a contact
