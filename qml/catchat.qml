@@ -266,7 +266,7 @@ ApplicationWindow {
                     anchors.fill: parent
                     anchors.margins: 16
 
-                    text: qsTr("Please select a chat to start messaging")
+                    text: qsTr("Please select a contact to start messaging")
                     wrapMode: Text.Wrap
                     color: "white"
                     font.pointSize: 18
