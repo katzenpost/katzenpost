@@ -50,5 +50,6 @@ func sendMessage(client *catshadow.Client, nickname string, message string) {
 	m.Avatar = accountBridge.Nickname()
 	m.Message = message
 	m.Timestamp = time.Now()
+	m.Outbound = true
 	conversationModel.AddMessage(m)
 }

@@ -10,6 +10,7 @@ const (
 	RoleAvatar
 	RoleMessage
 	RoleTimestamp
+	RoleOutbound
 )
 
 // Contact holds the data for a contact

@@ -28,6 +28,7 @@ func (m *ConversationModel) init() {
 		RoleNickname:  core.NewQByteArray2("nickname", -1),
 		RoleAvatar:    core.NewQByteArray2("avatar", -1),
 		RoleMessage:   core.NewQByteArray2("message", -1),
+		RoleOutbound:  core.NewQByteArray2("outbound", -1),
 		RoleTimestamp: core.NewQByteArray2("timestamp", -1),
 	})
 
@@ -74,6 +75,10 @@ func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVaria
 	case RoleMessage:
 		{
 			return core.NewQVariant1(p.Message)
+		}
+	case RoleOutbound:
+		{
+			return core.NewQVariant1(p.Outbound)
 		}
 	case RoleTimestamp:
 		{

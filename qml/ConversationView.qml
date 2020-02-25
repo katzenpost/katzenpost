@@ -39,15 +39,13 @@ Page {
             spacing: 12
             model: accountBridge.conversationModel
             delegate: Column {
-                anchors.right: sentByMe ? parent.right : undefined
+                anchors.right: model.outbound ? parent.right : undefined
                 spacing: 6
-
-                readonly property bool sentByMe: model.nickname == accountBridge.nickname
 
                 Row {
                     id: messageRow
                     spacing: 6
-                    anchors.right: sentByMe ? parent.right : undefined
+                    anchors.right: model.outbound ? parent.right : undefined
 
                     Image {
                         id: avatar
@@ -59,12 +57,12 @@ Page {
                     Rectangle {
                         width: Math.min(messageText.implicitWidth + 24, conversationView.width - avatar.width - messageRow.spacing)
                         height: messageText.implicitHeight + 24
-                        color: sentByMe ? "lightgrey" : "steelblue"
+                        color: model.outbound ? "lightgrey" : "steelblue"
 
                         Label {
                             id: messageText
                             text: model.message
-                            color: sentByMe ? "black" : "white"
+                            color: model.outbound ? "black" : "white"
                             anchors.fill: parent
                             anchors.margins: 12
                             wrapMode: Label.Wrap
@@ -76,7 +74,7 @@ Page {
                     id: timestampText
                     text: model.timestamp
                     color: "lightgrey"
-                    anchors.right: sentByMe ? parent.right : undefined
+                    anchors.right: model.outbound ? parent.right : undefined
                 }
             }
 
