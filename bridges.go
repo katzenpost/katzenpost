@@ -11,6 +11,7 @@ type AccountBridge struct {
 
 	_ string `property:"nickname"`
 	_ string `property:"avatar"`
+	_ string `property:"status"`
 	_ string `property:"error"`
 	_ string `property:"recipient"`
 

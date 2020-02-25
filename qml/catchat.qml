@@ -57,6 +57,47 @@ ApplicationWindow {
             width: 340
             height: 500
         }
+
+        Popup {
+            id: errorDialog
+            modal: true
+            focus: true
+            contentHeight: errorLayout.height
+            visible: accountBridge.error.length > 0
+            x: mainWindow.width / 2 - width / 2
+            y: mainWindow.height / 2 - height / 2 - mainWindow.header.height
+            width: Math.min(mainWindow.width * 0.66, errorLayout.implicitWidth + 32)
+
+            ColumnLayout {
+                id: errorLayout
+                spacing: 20
+                width: parent.width
+
+                Label {
+                    text: qsTr("Error")
+                    font.bold: true
+                }
+
+                Label {
+                    Layout.fillWidth: true
+                    wrapMode: Label.Wrap
+                    font.pointSize: 14
+                    text: accountBridge.error
+                }
+
+                Button {
+                    id: okButton
+                    Layout.alignment: Qt.AlignCenter
+                    highlighted: true
+
+                    text: qsTr("Close")
+                    onClicked: {
+                        accountBridge.error = ""
+                        errorDialog.close()
+                    }
+                }
+            }
+        }
     }
 
     header: ToolBar {
@@ -93,6 +134,15 @@ ApplicationWindow {
             Label {
                 id: titleLabel
                 text: accountBridge.nickname
+                font.pointSize: 13
+                elide: Label.ElideRight
+                horizontalAlignment: Image.AlignHCenter
+                verticalAlignment: Qt.AlignVCenter
+            }
+
+            Label {
+                id: statusLabel
+                text: accountBridge.status
                 font.pointSize: 13
                 elide: Label.ElideRight
                 horizontalAlignment: Image.AlignHCenter
