@@ -38,6 +38,7 @@ Page {
             verticalLayoutDirection: ListView.BottomToTop
             spacing: 12
             model: accountBridge.conversationModel
+
             delegate: Column {
                 anchors.right: model.outbound ? parent.right : undefined
                 spacing: 6
@@ -59,13 +60,15 @@ Page {
                         height: messageText.implicitHeight + 24
                         color: model.outbound ? "lightgrey" : "steelblue"
 
-                        Label {
+                        TextEdit {
                             id: messageText
                             text: model.message
                             color: model.outbound ? "black" : "white"
                             anchors.fill: parent
                             anchors.margins: 12
                             wrapMode: Label.Wrap
+                            selectByMouse: true
+                            readOnly: true
                         }
                     }
                 }
@@ -103,6 +106,7 @@ Page {
                     Layout.fillWidth: true
                     placeholderText: qsTr("Compose message")
                     wrapMode: TextArea.Wrap
+                    selectByMouse: true
 
                     Keys.onReturnPressed: {
                         if (!sendButton.enabled) {
