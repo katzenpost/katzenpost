@@ -33,8 +33,8 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/server/internal/debug"
-	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -61,6 +61,37 @@ type incomingConn struct {
 	fromClient    bool
 	fromMix       bool
 	canSend       bool
+}
+
+var (
+	incomingConns = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_incoming_requests_total",
+			Subsystem: "incoming_conn",
+			Help:      "Number of incoming requests",
+		},
+		[]string{"command"},
+	)
+	packetsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_dropped_packets_total",
+			Subsystem: "incoming_conn",
+			Help:      "Number of dropped packets",
+		},
+	)
+	ingressQueueSize = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Name:      "katzenpost_ingress_queue_size",
+			Subsystem: "incoming_conn",
+			Help:      "Size of the ingress queue",
+		},
+	)
+)
+
+func initPrometheus() {
+	prometheus.MustRegister(incomingConns)
+	prometheus.MustRegister(packetsDropped)
+	prometheus.MustRegister(ingressQueueSize)
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -137,6 +168,9 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *incomingConn) worker() {
+	// Initialize prometheus metrics
+	initPrometheus()
+
 	defer func() {
 		c.log.Debugf("Closing.")
 		c.c.Close()
@@ -261,7 +295,9 @@ func (c *incomingConn) worker() {
 			continue
 		}
 
-		instrument.Incoming(rawCmd)
+		cmdStr := fmt.Sprintf("%T", rawCmd)
+		incomingConns.With(prometheus.Labels{"command": cmdStr}).Inc()
+
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
 			case *commands.RetrieveMessage:
@@ -354,7 +390,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		remaining = math.MaxUint8
 	}
 	hint := uint8(remaining)
-	instrument.IngressQueue(hint)
+	ingressQueueSize.Observe(float64(hint))
 
 	var respCmd commands.Command
 	if surbID != nil {
@@ -427,7 +463,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 
 		if c.sendTokens == 0 {
 			c.log.Debugf("Dropping packet: %v (Rate limited)", pkt.ID)
-			instrument.PacketsDropped()
+			packetsDropped.Inc()
 			pkt.Dispose()
 			return nil
 		}

@@ -17,13 +17,14 @@
 package outgoing
 
 import (
-	"github.com/katzenpost/server/internal/instrument"
 	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"sync/atomic"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/monotime"
@@ -47,6 +48,37 @@ type outgoingConn struct {
 	id         uint64
 	retryDelay time.Duration
 	canSend    bool
+}
+
+var (
+	outgoingConns = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_outgoing_connections_total",
+			Subsystem: "outgoing_conn",
+			Help:      "Number of outgoing connections",
+		},
+	)
+	canceledOutgoingConns = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_cancelled_outgoing_connections_total",
+			Subsystem: "outgoing_conn",
+			Help:      "Number of cancelled outgoing connections",
+		},
+	)
+	packetsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_dropped_packets_total",
+			Subsystem: "outgoing_conn",
+			Help:      "Number of dropped packets",
+		},
+	)
+)
+
+// InitPrometheus registers prometheus metrics
+func InitPrometheus() {
+	prometheus.MustRegister(outgoingConns)
+	prometheus.MustRegister(canceledOutgoingConns)
+	prometheus.MustRegister(packetsDropped)
 }
 
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -86,6 +118,8 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 }
 
 func (c *outgoingConn) worker() {
+	InitPrometheus()
+
 	const (
 		retryIncrement = 15 * time.Second
 		maxRetryDelay  = 120 * time.Second
@@ -193,14 +227,15 @@ func (c *outgoingConn) worker() {
 				}
 			}
 			c.log.Debugf("TCP connection established.")
-			instrument.Outgoing()
+			outgoingConns.Inc()
+
 			start := time.Now()
 
 			// Handle the new connection.
 			if c.onConnEstablished(conn, dialCtx.Done()) {
 				// Canceled with a connection established.
 				c.log.Debugf("Existing connection canceled.")
-				instrument.CancelledOutgoing()
+				canceledOutgoingConns.Inc()
 				return
 			}
 
@@ -279,7 +314,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			if err := w.SendCommand(&cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
-				instrument.PacketsDropped()
+				packetsDropped.Inc()
 				pkt.Dispose()
 				return
 			}
@@ -321,7 +356,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			now := monotime.Now()
 			if now-pkt.DispatchAt > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
 				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-pkt.DispatchAt)
-				instrument.PacketsDropped()
+				packetsDropped.Inc()
 				pkt.Dispose()
 				continue
 			}
@@ -331,7 +366,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			// This is presumably a early connect, and we aren't allowed to
 			// actually send packets to the peer yet.
 			c.log.Debugf("Dropping packet: %v (Out of epoch)", pkt.ID)
-			instrument.PacketsDropped()
+			packetsDropped.Inc()
 			pkt.Dispose()
 			continue
 		}
