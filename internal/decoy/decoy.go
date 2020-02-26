@@ -40,10 +40,10 @@ import (
 	"github.com/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/server/internal/provider/kaetzchen"
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -75,6 +75,38 @@ type decoy struct {
 	surbIDBase uint64
 }
 
+// Prometheus metrics
+var (
+	packetsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_dropped_packets_total",
+			Subsystem: "decoy",
+			Help:      "Number of dropped packets",
+		},
+	)
+	ignoredPKIDocs = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_documents_ignored_total",
+			Subsystem: "decoy",
+			Help:      "Number of ignored PKI Documents",
+		},
+	)
+	pkiDocs = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_pki_docs_per_epoch_total",
+			Subsystem: "decoy",
+			Help:      "Number of pki docs in an epoch",
+		},
+		[]string{"epoch"},
+	)
+)
+
+func initPrometheus() {
+	prometheus.MustRegister(packetsDropped)
+	prometheus.MustRegister(ignoredPKIDocs)
+	prometheus.MustRegister(pkiDocs)
+}
+
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
 	d.docCh <- ent
 }
@@ -92,14 +124,14 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	// fields are visible to any other party involved.
 	if subtle.ConstantTimeCompare(pkt.Recipient.ID[:], d.recipient) != 1 {
 		d.log.Debugf("Dropping packet: %v (Invalid recipient)", pkt.ID)
-		instrument.PacketsDropped()
+		packetsDropped.Inc()
 		return
 	}
 
 	idBase, id := binary.BigEndian.Uint64(pkt.SurbReply.ID[0:]), binary.BigEndian.Uint64(pkt.SurbReply.ID[8:])
 	if idBase != d.surbIDBase {
 		d.log.Debugf("Dropping packet: %v (Invalid SURB ID base: %v)", pkt.ID, idBase)
-		instrument.PacketsDropped()
+		packetsDropped.Inc()
 		return
 	}
 
@@ -108,13 +140,13 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	ctx := d.loadAndDeleteSURBCtx(id)
 	if ctx == nil {
 		d.log.Debugf("Dropping packet: %v (Unknown SURB ID: 0x%08x)", pkt.ID, id)
-		instrument.PacketsDropped()
+		packetsDropped.Inc()
 		return
 	}
 
 	if _, err := sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
 		d.log.Debugf("Dropping packet: %v (SURB ID: 0x08x%): %v", pkt.ID, id, err)
-		instrument.PacketsDropped()
+		packetsDropped.Inc()
 		return
 	}
 
@@ -123,6 +155,9 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 }
 
 func (d *decoy) worker() {
+	// Initialize prometheus metrics
+	initPrometheus()
+
 	const maxDuration = math.MaxInt64
 
 	wakeInterval := time.Duration(maxDuration)
@@ -139,23 +174,23 @@ func (d *decoy) worker() {
 		case newEnt := <-d.docCh:
 			if !d.glue.Config().Debug.SendDecoyTraffic {
 				d.log.Debugf("Received PKI document but decoy traffic is disabled, ignoring.")
-				instrument.IgnoredPKIDocs()
+				ignoredPKIDocs.Inc()
 				continue
 			}
 
 			now, _, _ := epochtime.Now()
 			if entEpoch := newEnt.Epoch(); entEpoch != now {
 				d.log.Debugf("Received PKI document for non-current epoch, ignoring: %v", entEpoch)
-				instrument.IgnoredPKIDocs()
+				ignoredPKIDocs.Inc()
 				continue
 			}
 			if d.glue.Config().Server.IsProvider {
 				d.log.Debugf("Received PKI document when Provider, ignoring (not supported yet).")
-				instrument.IgnoredPKIDocs()
+				ignoredPKIDocs.Inc()
 				continue
 			}
 			d.log.Debugf("Received new PKI document for epoch: %v", now)
-			instrument.PKIDocs(fmt.Sprintf("%v", now))
+			pkiDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", now)}).Inc()
 			docCache = newEnt
 		case <-timer.C:
 			timerFired = true

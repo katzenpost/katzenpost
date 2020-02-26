@@ -30,8 +30,8 @@ import (
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
 	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/packet"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
@@ -102,6 +102,61 @@ type KaetzchenWorker struct {
 	dropCounter uint64
 }
 
+var (
+	packetsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_dropped_packets_total",
+			Subsystem: "kaetzchen",
+			Help:      "Number of dropped packets",
+		},
+	)
+	kaetzchenRequests = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_kaetzchen_requests_total",
+			Subsystem: "kaetzchen",
+			Help:      "Number of Kaetzchen requests",
+		},
+	)
+	kaetzchenRequestsDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Name:      "katzenpost_kaetzchen_requests_duration_seconds",
+			Subsystem: "kaetzchen",
+			Help:      "Duration of a kaetzchen request in seconds",
+		},
+	)
+	kaetzchenPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_kaetzchen_dropped_packets_total",
+			Subsystem: "kaetzchen",
+			Help:      "Number of dropped kaetzchen packets",
+		},
+	)
+	kaetzchenRequestsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_kaetzchen_dropped_requests_total",
+			Subsystem: "kaetzchen",
+			Help:      "Number of total dropped kaetzchen requests",
+		},
+	)
+	kaetzchenRequestsFailed = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name:      "katzenpost_kaetzchen_failed_requests_total",
+			Subsystem: "kaetzchen",
+			Help:      "Number of total failed kaetzchen requests",
+		},
+	)
+	kaetzchenRequestsTimer *prometheus.Timer
+)
+
+func InitPrometheus() {
+	prometheus.MustRegister(packetsDropped)
+	prometheus.MustRegister(kaetzchenPacketsDropped)
+	prometheus.MustRegister(kaetzchenRequests)
+	prometheus.MustRegister(kaetzchenRequestsDropped)
+	prometheus.MustRegister(kaetzchenRequestsFailed)
+	prometheus.MustRegister(kaetzchenRequestsDuration)
+}
+
 func (k *KaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
 	_, ok := k.kaetzchen[recipient]
 	return ok
@@ -156,6 +211,8 @@ func (k *KaetzchenWorker) incrementDropCounter() uint64 {
 }
 
 func (k *KaetzchenWorker) worker() {
+	InitPrometheus()
+
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -174,8 +231,8 @@ func (k *KaetzchenWorker) worker() {
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
-				instrument.PacketsDropped()
-				instrument.KaetzchenPacketsDropped()
+				packetsDropped.Inc()
+				kaetzchenPacketsDropped.Inc()
 				pkt.Dispose()
 				continue
 			}
@@ -186,14 +243,15 @@ func (k *KaetzchenWorker) worker() {
 }
 
 func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
-	instrument.SetKaetzchenRequestsTimer()
+	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
+	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		k.incrementDropCounter()
-		instrument.KaetzchenRequestsDropped(k.getDropCounter())
+		kaetzchenRequestsDropped.Add(float64(k.getDropCounter()))
 		return
 	}
 
@@ -206,11 +264,11 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	case err == nil:
 	case err == ErrNoResponse:
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
-		instrument.KaetzchenRequests()
+		kaetzchenRequests.Inc()
 		return
 	default:
 		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v)", pkt.ID, err)
-		instrument.KaetzchenRequestsFailed()
+		kaetzchenRequestsFailed.Inc()
 		return
 	}
 
@@ -233,7 +291,6 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		// implementation should have caught this.
 		k.log.Debugf("Kaetzchen message: %v (Has reply but no SURB)", pkt.ID)
 	}
-	instrument.TimeKaetzchenRequestsDuration()
 }
 
 func (k *KaetzchenWorker) KaetzchenForPKI() map[string]map[string]interface{} {

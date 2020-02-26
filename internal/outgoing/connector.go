@@ -23,7 +23,6 @@ import (
 
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
@@ -69,20 +68,20 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 
 	if pkt == nil {
 		co.log.Debug("Dropping packet: packet is nil, wtf")
-		instrument.PacketsDropped()
+		packetsDropped.Inc()
 		pkt.Dispose()
 		return
 	}
 	if pkt.NextNodeHop == nil {
 		co.log.Debug("Dropping packet: packet NextNodeHop is nil, wtf")
-		instrument.PacketsDropped()
+		packetsDropped.Inc()
 		pkt.Dispose()
 		return
 	}
 	c, ok := co.conns[pkt.NextNodeHop.ID]
 	if !ok {
 		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
-		instrument.PacketsDropped()
+		packetsDropped.Inc()
 		pkt.Dispose()
 		return
 	}
@@ -91,6 +90,7 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 }
 
 func (co *connector) worker() {
+	InitPrometheus()
 	const (
 		initialSpawnDelay = 15 * time.Second
 		resweepInterval   = 3 * time.Minute
