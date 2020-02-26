@@ -76,7 +76,7 @@ var (
 	)
 )
 
-func initPrometheus() {
+func init() {
 	prometheus.MustRegister(packetsDropped)
 	prometheus.MustRegister(mixPacketsDropped)
 	prometheus.MustRegister(mixQueueSize)
@@ -97,8 +97,6 @@ func (sch *scheduler) OnPacket(pkt *packet.Packet) {
 }
 
 func (sch *scheduler) worker() {
-	// Initialize prometheus metrics
-	initPrometheus()
 
 	var absoluteMaxDelay = epochtime.Period * constants.NumMixKeys
 

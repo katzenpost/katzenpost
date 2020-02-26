@@ -90,7 +90,6 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 }
 
 func (co *connector) worker() {
-	InitPrometheus()
 	const (
 		initialSpawnDelay = 15 * time.Second
 		resweepInterval   = 3 * time.Minute

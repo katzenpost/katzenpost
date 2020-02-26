@@ -110,7 +110,7 @@ var (
 	fetchedPKIDocsTimer *prometheus.Timer
 )
 
-func initPrometheus() {
+func init() {
 	prometheus.MustRegister(fetchedPKIDocs)
 	prometheus.MustRegister(fetchedPKIDocsDuration)
 	prometheus.MustRegister(failedFetchPKIDocs)
@@ -121,7 +121,6 @@ func (p *pki) StartWorker() {
 }
 
 func (p *pki) worker() {
-	initPrometheus()
 
 	const initialSpawnDelay = 5 * time.Second
 

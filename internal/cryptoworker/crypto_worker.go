@@ -65,7 +65,7 @@ var (
 	)
 )
 
-func initPrometheus() {
+func init() {
 	prometheus.MustRegister(packetsReplayed)
 	prometheus.MustRegister(packetsDropped)
 }
@@ -161,7 +161,6 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 }
 
 func (w *Worker) worker() {
-	initPrometheus()
 
 	const absoluteMinimumDelay = 1 * time.Millisecond
 
