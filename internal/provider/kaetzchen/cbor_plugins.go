@@ -77,7 +77,6 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 }
 
 func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient cborplugin.ServicePlugin) {
-	InitPrometheus()
 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond

@@ -75,7 +75,7 @@ var (
 )
 
 // InitPrometheus registers prometheus metrics
-func InitPrometheus() {
+func init() {
 	prometheus.MustRegister(outgoingConns)
 	prometheus.MustRegister(canceledOutgoingConns)
 	prometheus.MustRegister(packetsDropped)
@@ -118,7 +118,6 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 }
 
 func (c *outgoingConn) worker() {
-	InitPrometheus()
 
 	const (
 		retryIncrement = 15 * time.Second

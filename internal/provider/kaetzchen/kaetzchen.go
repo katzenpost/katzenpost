@@ -124,13 +124,6 @@ var (
 			Help:      "Duration of a kaetzchen request in seconds",
 		},
 	)
-	kaetzchenPacketsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Name:      "katzenpost_kaetzchen_dropped_packets_total",
-			Subsystem: "kaetzchen",
-			Help:      "Number of dropped kaetzchen packets",
-		},
-	)
 	kaetzchenRequestsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name:      "katzenpost_kaetzchen_dropped_requests_total",
@@ -148,9 +141,8 @@ var (
 	kaetzchenRequestsTimer *prometheus.Timer
 )
 
-func InitPrometheus() {
+func init() {
 	prometheus.MustRegister(packetsDropped)
-	prometheus.MustRegister(kaetzchenPacketsDropped)
 	prometheus.MustRegister(kaetzchenRequests)
 	prometheus.MustRegister(kaetzchenRequestsDropped)
 	prometheus.MustRegister(kaetzchenRequestsFailed)
@@ -211,7 +203,6 @@ func (k *KaetzchenWorker) incrementDropCounter() uint64 {
 }
 
 func (k *KaetzchenWorker) worker() {
-	InitPrometheus()
 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
@@ -232,7 +223,6 @@ func (k *KaetzchenWorker) worker() {
 				count := k.incrementDropCounter()
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue), total drops %d", pkt.ID, dwellTime, count)
 				packetsDropped.Inc()
-				kaetzchenPacketsDropped.Inc()
 				pkt.Dispose()
 				continue
 			}

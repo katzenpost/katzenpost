@@ -88,7 +88,7 @@ var (
 	)
 )
 
-func initPrometheus() {
+func init() {
 	prometheus.MustRegister(incomingConns)
 	prometheus.MustRegister(packetsDropped)
 	prometheus.MustRegister(ingressQueueSize)
@@ -168,8 +168,6 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *incomingConn) worker() {
-	// Initialize prometheus metrics
-	initPrometheus()
 
 	defer func() {
 		c.log.Debugf("Closing.")
