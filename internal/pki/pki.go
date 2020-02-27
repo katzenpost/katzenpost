@@ -607,12 +607,12 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	var err error
-	if !glue.Config().Server.OnlyAdvertiseAltAddresses {
+	if glue.Config().Server.OnlyAdvertiseAltAddresses {
+		p.descAddrMap = make(map[cpki.Transport][]string)
+	} else {
 		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
 			return nil, err
 		}
-	} else {
-		p.descAddrMap = make(map[cpki.Transport][]string)
 	}
 
 	for k, v := range glue.Config().Server.AltAddresses {
@@ -624,6 +624,10 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
 		}
 		p.descAddrMap[kTransport] = v
+	}
+
+	if len(p.descAddrMap) == 0 {
+		return nil, errors.New("Descriptor address map is zero size.")
 	}
 
 	if glue.Config().PKI.Nonvoting != nil {
