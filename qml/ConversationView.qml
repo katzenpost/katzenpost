@@ -60,15 +60,13 @@ Page {
                         height: messageText.implicitHeight + 24
                         color: model.outbound ? "lightgrey" : "steelblue"
 
-                        TextEdit {
+                        ChatText {
                             id: messageText
                             text: model.message
                             color: model.outbound ? "black" : "white"
                             anchors.fill: parent
                             anchors.margins: 12
                             wrapMode: Label.Wrap
-                            selectByMouse: true
-                            readOnly: true
                         }
                     }
                 }
@@ -101,12 +99,11 @@ Page {
             RowLayout {
                 width: parent.width
 
-                TextArea {
+                ChatEdit {
                     id: messageField
                     Layout.fillWidth: true
                     placeholderText: qsTr("Compose message")
                     wrapMode: TextArea.Wrap
-                    selectByMouse: true
 
                     Keys.onReturnPressed: {
                         if (!sendButton.enabled) {
