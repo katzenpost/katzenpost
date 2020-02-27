@@ -53,22 +53,25 @@ type outgoingConn struct {
 var (
 	outgoingConns = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_outgoing_connections_total",
-			Subsystem: "outgoing_conn",
+			Namespace: constants.Namespace,
+			Name:      "outgoing_connections_total",
+			Subsystem: constants.OutgoingConnSubsystem,
 			Help:      "Number of outgoing connections",
 		},
 	)
 	canceledOutgoingConns = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_cancelled_outgoing_connections_total",
-			Subsystem: "outgoing_conn",
+			Namespace: constants.Namespace,
+			Name:      "canceled_outgoing_connections_total",
+			Subsystem: constants.OutgoingConnSubsystem,
 			Help:      "Number of cancelled outgoing connections",
 		},
 	)
 	packetsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_dropped_packets_total",
-			Subsystem: "outgoing_conn",
+			Namespace: constants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: constants.OutgoingConnSubsystem,
 			Help:      "Number of dropped packets",
 		},
 	)

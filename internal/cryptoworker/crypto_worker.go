@@ -51,15 +51,17 @@ type Worker struct {
 var (
 	packetsReplayed = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_replayed_packets_total",
-			Subsystem: "crypto_worker",
+			Namespace: constants.Namespace,
+			Name:      "replayed_packets_total",
+			Subsystem: constants.CryptoWorkerSubsystem,
 			Help:      "Number of replayed packets",
 		},
 	)
 	packetsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_dropped_packets_total",
-			Subsystem: "crypto_worker",
+			Namespace: constants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: constants.CryptoWorkerSubsystem,
 			Help:      "Number of dropped packets",
 		},
 	)

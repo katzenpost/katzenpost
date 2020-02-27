@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
+	internalConstants "github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/prometheus/client_golang/prometheus"
@@ -66,23 +67,26 @@ type incomingConn struct {
 var (
 	incomingConns = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_incoming_requests_total",
-			Subsystem: "incoming_conn",
+			Namespace: internalConstants.Namespace,
+			Name:      "incoming_requests_total",
+			Subsystem: internalConstants.IncomingConnSubsystem,
 			Help:      "Number of incoming requests",
 		},
 		[]string{"command"},
 	)
 	packetsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_dropped_packets_total",
-			Subsystem: "incoming_conn",
+			Namespace: internalConstants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: internalConstants.IncomingConnSubsystem,
 			Help:      "Number of dropped packets",
 		},
 	)
 	ingressQueueSize = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Name:      "katzenpost_ingress_queue_size",
-			Subsystem: "incoming_conn",
+			Namespace: internalConstants.Namespace,
+			Name:      "ingress_queue_size",
+			Subsystem: internalConstants.IncomingConnSubsystem,
 			Help:      "Size of the ingress queue",
 		},
 	)

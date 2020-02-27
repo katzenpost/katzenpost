@@ -39,6 +39,7 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/core/worker"
+	internalConstants "github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/katzenpost/server/internal/pkicache"
@@ -79,22 +80,25 @@ type decoy struct {
 var (
 	packetsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_dropped_packets_total",
-			Subsystem: "decoy",
+			Namespace: internalConstants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: internalConstants.DecoySubsystem,
 			Help:      "Number of dropped packets",
 		},
 	)
 	ignoredPKIDocs = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_documents_ignored_total",
-			Subsystem: "decoy",
+			Namespace: internalConstants.Namespace,
+			Name:      "documents_ignored_total",
+			Subsystem: internalConstants.DecoySubsystem,
 			Help:      "Number of ignored PKI Documents",
 		},
 	)
 	pkiDocs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_pki_docs_per_epoch_total",
-			Subsystem: "decoy",
+			Namespace: internalConstants.Namespace,
+			Name:      "pki_docs_per_epoch_total",
+			Subsystem: internalConstants.DecoySubsystem,
 			Help:      "Number of pki docs in an epoch",
 		},
 		[]string{"epoch"},

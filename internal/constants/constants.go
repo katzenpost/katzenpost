@@ -25,4 +25,17 @@ const (
 
 	// KeepAliveInterval is the TCP/IP KeepAlive interval.
 	KeepAliveInterval = 3 * time.Minute
+
+	// Namespace is the namespace for the prometheus metrics
+	Namespace = "katzenpost"
+
+	// These Subsystem constants are subsystem strings for prometheus metrics
+	CryptoWorkerSubsystem = "crypto_worker"
+	DecoySubsystem        = "decoy"
+	IncomingConnSubsystem = "incoming_conn"
+	KaetzchenSubsystem    = "kaetzchen"
+	OutgoingConnSubsystem = "outgoing_conn"
+	PKISubsystem          = "pki"
+	ProviderSubsystem     = "provider"
+	SchedulerSubsystem    = "scheduler"
 )
