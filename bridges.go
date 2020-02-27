@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/katzenpost/catshadow"
 	"github.com/therecipe/qt/core"
 )
 
@@ -44,17 +43,19 @@ var (
 )
 
 // setupQmlBridges initializes the QML bridges
-func setupQmlBridges(client *catshadow.Client) {
+func setupQmlBridges() {
 	accountBridge = NewAccountBridge(nil)
 	configBridge = NewConfigBridge(nil)
 
+	accountBridge.SetStatus("Connecting...")
+
 	accountBridge.ConnectAddContact(func(passphrase string, nickname string) bool {
-		return addContact(client, nickname, passphrase)
+		return addContact(catShadowClient, nickname, passphrase)
 	})
 	accountBridge.ConnectLoadConversation(func(nickname string) {
-		loadConversation(client, nickname)
+		loadConversation(catShadowClient, nickname)
 	})
 	accountBridge.ConnectSendMessage(func(recipient string, message string) {
-		sendMessage(client, recipient, message)
+		sendMessage(catShadowClient, recipient, message)
 	})
 }

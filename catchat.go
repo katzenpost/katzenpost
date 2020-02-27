@@ -24,9 +24,13 @@ const (
 )
 
 var (
-	config     Config
-	configFile string
+	config Config
 
+	generate         = flag.Bool("g", false, "Generate the state file and then run client.")
+	clientConfigFile = flag.String("f", "katzenpost.toml", "Path to the client config file.")
+	stateFile        = flag.String("s", "catshadow_statefile", "The catshadow state file path.")
+
+	catShadowClient   *catshadow.Client
 	contactListModel  *ContactListModel
 	conversationModel *ConversationModel
 )
@@ -54,56 +58,9 @@ func runApp(config Config) {
 	gui.QGuiApplication_Exec()
 }
 
-func main() {
-	generate := flag.Bool("g", false, "Generate the state file and then run client.")
-	cfgFile := flag.String("f", "katzenpost.toml", "Path to the client config file.")
-	stateFile := flag.String("s", "catshadow_statefile", "The catshadow state file path.")
-	flag.Parse()
-
-	// Set the umask to something "paranoid".
-	syscall.Umask(0077)
-
-	fmt.Println("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
-
-	core.QCoreApplication_SetApplicationName("catchat")
-	core.QCoreApplication_SetOrganizationName("katzenpost")
-	core.QCoreApplication_SetAttribute(core.Qt__AA_EnableHighDpiScaling, true)
-
-	ga := gui.NewQGuiApplication(len(os.Args), os.Args)
-	ga.SetWindowIcon(gui.NewQIcon5(":/qml/images/katzenpost_logo.png"))
-
-	// load config
-	scope := gap.NewScope(gap.User, "katzenpost", "catchat")
-	configDir, err := scope.ConfigPath("")
-	if err != nil {
-		panic(err)
-	}
-	os.MkdirAll(configDir, 0700)
-	configFile, err = scope.ConfigPath("catchat.conf")
-	if err != nil {
-		panic(err)
-	}
-	config = LoadConfig(configFile)
-
-	// Prepare catshadow client instance.
-
-	// Load catshadow config file.
-	catshadowCfg, err := catconfig.LoadFile(*cfgFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *cfgFile, err)
-		os.Exit(-1)
-	}
-
-	// Decrypt and load the catshadow state file.
-	fmt.Print("Enter statefile decryption passphrase: ")
-	passphrase, err := terminal.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		panic(err)
-	}
-	fmt.Print("\n")
+func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 	var stateWorker *catshadow.StateWriter
 	var state *catshadow.State
-	var catShadowClient *catshadow.Client
 	cfg, err := catshadowCfg.ClientConfig()
 	if err != nil {
 		panic(err)
@@ -170,10 +127,63 @@ func main() {
 	stateWorker.Start()
 	catShadowClient.Start()
 
-	// Start graphical user interface.
+	go handleEvents(catShadowClient.EventSink, conversationModel, contactListModel)
+
+	nickNames := catShadowClient.GetNicknames()
+	loadContactList(contactListModel, nickNames)
+}
+
+func main() {
+	flag.Parse()
+
+	// Set the umask to something "paranoid".
+	syscall.Umask(0077)
+
+	fmt.Println("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
+
+	core.QCoreApplication_SetApplicationName("catchat")
+	core.QCoreApplication_SetOrganizationName("katzenpost")
+	core.QCoreApplication_SetAttribute(core.Qt__AA_EnableHighDpiScaling, true)
+
+	ga := gui.NewQGuiApplication(len(os.Args), os.Args)
+	ga.SetWindowIcon(gui.NewQIcon5(":/qml/images/katzenpost_logo.png"))
+
+	// load config
+	scope := gap.NewScope(gap.User, "katzenpost", "catchat")
+	configDir, err := scope.ConfigPath("")
+	if err != nil {
+		panic(err)
+	}
+	os.MkdirAll(configDir, 0700)
+	configFile, err := scope.ConfigPath("catchat.conf")
+	if err != nil {
+		panic(err)
+	}
+	config = LoadConfig(configFile)
+
+	// Prepare catshadow client instance.
 	contactListModel = NewContactListModel(nil)
 	conversationModel = NewConversationModel(nil)
-	setupQmlBridges(catShadowClient)
+
+	// Load catshadow config file.
+	catshadowCfg, err := catconfig.LoadFile(*clientConfigFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *clientConfigFile, err)
+		os.Exit(-1)
+	}
+
+	// Decrypt and load the catshadow state file.
+	fmt.Print("Enter statefile decryption passphrase: ")
+	passphrase, err := terminal.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println()
+
+	go setupCatShadow(catshadowCfg, passphrase)
+
+	// Start graphical user interface.
+	setupQmlBridges()
 
 	configBridge.SetTheme(config.Theme)
 	configBridge.SetStyle(config.Style)
@@ -183,12 +193,8 @@ func main() {
 	configBridge.SetWidth(config.Width)
 	configBridge.SetHeight(config.Height)
 
-	nickNames := catShadowClient.GetNicknames()
-	loadContactList(contactListModel, nickNames)
 	accountBridge.SetContactListModel(contactListModel)
 	accountBridge.SetConversationModel(conversationModel)
-
-	go handleEvents(catShadowClient.EventSink, conversationModel, contactListModel)
 
 	runApp(config)
 
