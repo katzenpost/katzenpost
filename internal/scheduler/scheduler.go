@@ -55,22 +55,25 @@ type scheduler struct {
 var (
 	packetsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_dropped_packets_total",
-			Subsystem: "scheduler",
+			Namespace: constants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: constants.SchedulerSubsystem,
 			Help:      "Number of dropped packets",
 		},
 	)
 	mixPacketsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_kaetzchen_mix_packets_dropped_total",
-			Subsystem: "scheduler",
+			Namespace: constants.Namespace,
+			Name:      "kaetzchen_mix_packets_dropped_total",
+			Subsystem: constants.SchedulerSubsystem,
 			Help:      "Number of total dropped mixed packets",
 		},
 	)
 	mixQueueSize = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Name:      "katzenpost_mix_queue_size",
-			Subsystem: "scheduler",
+			Namespace: constants.Namespace,
+			Name:      "mix_queue_size",
+			Subsystem: constants.SchedulerSubsystem,
 			Help:      "Size of the mix queue",
 		},
 	)

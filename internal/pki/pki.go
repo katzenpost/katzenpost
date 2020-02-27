@@ -70,39 +70,44 @@ type pki struct {
 var (
 	fetchedPKIDocs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_fetched_pki_docs_per_epoch_total",
-			Subsystem: "pki",
+			Namespace: constants.Namespace,
+			Name:      "fetched_pki_docs_per_epoch_total",
+			Subsystem: constants.PKISubsystem,
 			Help:      "Number of fetch PKI docs per epoch",
 		},
 		[]string{"epoch"},
 	)
 	fetchedPKIDocsDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Name:      "katzenpost_fetched_pki_docs_per_epoch_duration",
-			Subsystem: "pki",
+			Namespace: constants.Namespace,
+			Name:      "fetched_pki_docs_per_epoch_duration",
+			Subsystem: constants.PKISubsystem,
 			Help:      "Duration of PKI docs fetching requests per epoch",
 		},
 	)
 	failedFetchPKIDocs = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_failed_fetch_pki_docs_per_epoch_total",
-			Subsystem: "pki",
+			Namespace: constants.Namespace,
+			Name:      "failed_fetch_pki_docs_per_epoch_total",
+			Subsystem: constants.PKISubsystem,
 			Help:      "Number of failed PKI docs fetches per epoch",
 		},
 		[]string{"epoch"},
 	)
 	failedPKICacheGeneration = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_failed_pki_cache_generation_per_epoch_total",
-			Subsystem: "pki",
+			Namespace: constants.Namespace,
+			Name:      "failed_pki_cache_generation_per_epoch_total",
+			Subsystem: constants.PKISubsystem,
 			Help:      "Number of failed PKI caches generation per epoch",
 		},
 		[]string{"epoch"},
 	)
 	invalidPKICache = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
+			Namespace: constants.Namespace,
 			Name:      "katzenpost_invalid_pki_cache_per_epoch_total",
-			Subsystem: "pki",
+			Subsystem: constants.PKISubsystem,
 			Help:      "Number of invalid PKI caches per epoch",
 		},
 		[]string{"epoch"},

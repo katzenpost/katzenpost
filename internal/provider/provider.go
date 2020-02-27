@@ -38,6 +38,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
+	internalConstants "github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
@@ -81,14 +82,15 @@ type provider struct {
 var (
 	packetsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_dropped_packets_total",
-			Subsystem: "provider",
+			Namespace: internalConstants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: internalConstants.ProviderSubsystem,
 			Help:      "Number of dropped packets",
 		},
 	)
 )
 
-func initPrometheus() {
+func init() {
 	prometheus.MustRegister(packetsDropped)
 }
 
@@ -204,7 +206,6 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 }
 
 func (p *provider) worker() {
-	initPrometheus()
 
 	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
 

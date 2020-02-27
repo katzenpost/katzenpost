@@ -29,6 +29,7 @@ import (
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
+	"github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 	"github.com/prometheus/client_golang/prometheus"
@@ -105,36 +106,41 @@ type KaetzchenWorker struct {
 var (
 	packetsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_dropped_packets_total",
-			Subsystem: "kaetzchen",
+			Namespace: constants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: constants.KaetzchenSubsystem,
 			Help:      "Number of dropped packets",
 		},
 	)
 	kaetzchenRequests = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_kaetzchen_requests_total",
-			Subsystem: "kaetzchen",
+			Namespace: constants.Namespace,
+			Name:      "requests_total",
+			Subsystem: constants.KaetzchenSubsystem,
 			Help:      "Number of Kaetzchen requests",
 		},
 	)
 	kaetzchenRequestsDuration = prometheus.NewSummary(
 		prometheus.SummaryOpts{
-			Name:      "katzenpost_kaetzchen_requests_duration_seconds",
-			Subsystem: "kaetzchen",
+			Namespace: constants.Namespace,
+			Name:      "requests_duration_seconds",
+			Subsystem: constants.KaetzchenSubsystem,
 			Help:      "Duration of a kaetzchen request in seconds",
 		},
 	)
 	kaetzchenRequestsDropped = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_kaetzchen_dropped_requests_total",
-			Subsystem: "kaetzchen",
+			Namespace: constants.Namespace,
+			Name:      "dropped_requests_total",
+			Subsystem: constants.KaetzchenSubsystem,
 			Help:      "Number of total dropped kaetzchen requests",
 		},
 	)
 	kaetzchenRequestsFailed = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name:      "katzenpost_kaetzchen_failed_requests_total",
-			Subsystem: "kaetzchen",
+			Namespace: constants.Namespace,
+			Name:      "failed_requests_total",
+			Subsystem: constants.KaetzchenSubsystem,
 			Help:      "Number of total failed kaetzchen requests",
 		},
 	)
