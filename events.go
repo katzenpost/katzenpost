@@ -44,6 +44,8 @@ func handleEvents(events <-chan interface{}, conversationModel *ConversationMode
 			m.Timestamp = event.Timestamp
 			conversationModel.AddMessage(m)
 
+			notify("catchat", "New message received from "+m.Nickname)
+
 		default:
 			// This case indicates a programming BUG!
 			panic(fmt.Sprintf("%s is an unknown event received, aborting", event))
