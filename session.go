@@ -300,7 +300,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
 		if !ok {
-			err := fmt.Errorf("BUG, failure to acquire replyWaitChan for message ID %x", msg.ID)
+			err := fmt.Errorf("Failure to acquire replyWaitChan for message ID %x", msg.ID)
 			s.fatalErrCh <- err
 			return err
 		}
