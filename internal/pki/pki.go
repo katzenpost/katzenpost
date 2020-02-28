@@ -616,6 +616,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	for k, v := range glue.Config().Server.AltAddresses {
+		p.log.Debugf("AltAddresses map entry: %v %v", k, v)
 		if len(v) == 0 {
 			continue
 		}
@@ -623,7 +624,6 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		if _, ok := p.descAddrMap[kTransport]; ok {
 			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
 		}
-		p.log.Debugf("Populating mix descriptor address map with %s %s", kTransport, v)
 		p.descAddrMap[kTransport] = v
 	}
 
