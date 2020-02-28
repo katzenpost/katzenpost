@@ -1,7 +1,7 @@
 catchat
 =======
 
-A chat client (eventually) using catshadow.
+A chat client using catshadow.
 
 ## Installation
 
