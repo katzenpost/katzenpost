@@ -25,3 +25,7 @@ rcc*
 
 # Builds
 deploy/
+vendor/
+
+# state files
+*.state
