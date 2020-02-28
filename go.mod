@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/katzenpost/client v0.0.3-0.20191106202554-6e7339fb9e3a
+	github.com/katzenpost/client v0.0.3-0.20200228204158-b4cd2ad63d44
 	github.com/katzenpost/core v0.0.8-0.20191117121951-d5cf686c5a78
 	github.com/katzenpost/doubleratchet v0.0.0
 	github.com/katzenpost/kimchi v0.0.0-20190920152505-0ced4b468812
