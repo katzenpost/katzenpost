@@ -52,19 +52,19 @@ Popup {
                         anchors.margins: 16
 
                         TextField {
+                            id: nicknameArea
+                            focus: true
+                            selectByMouse: true
+                            placeholderText: qsTr("Nickname")
+                            Layout.fillWidth: true
+                        }
+
+                        TextField {
                             id: passphraseArea
                             focus: true
                             selectByMouse: true
                             echoMode: TextInput.Password
                             placeholderText: qsTr("Passphrase")
-                            Layout.fillWidth: true
-                        }
-
-                        TextField {
-                            id: nicknameArea
-                            focus: true
-                            selectByMouse: true
-                            placeholderText: qsTr("Nickname")
                             Layout.fillWidth: true
                         }
 
