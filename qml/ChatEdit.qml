@@ -10,6 +10,7 @@ TextArea
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.RightButton
+        cursorShape: Qt.IBeamCursor
         hoverEnabled: true
         onClicked: {
             contextMenu.x = mouse.x;
