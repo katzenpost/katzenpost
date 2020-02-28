@@ -72,6 +72,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 	if len(registerProviders) == 0 {
 		panic("zero registration Providers found in the consensus")
 	}
+	mrand.Seed(time.Now().UTC().UnixNano())
 	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
 
 	// Register with that Provider.
