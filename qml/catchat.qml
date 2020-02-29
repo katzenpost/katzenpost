@@ -259,6 +259,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
+            interactive: false
 
             currentIndex: 0
 
