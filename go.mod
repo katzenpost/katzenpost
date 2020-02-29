@@ -16,14 +16,16 @@ require (
 	github.com/katzenpost/authority v0.0.9-0.20190907184439-988189a151b2
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
 	github.com/katzenpost/core v0.0.8-0.20200229014121-58f9830aa10b
+	github.com/katzenpost/noise v0.0.0-20190907211420-4c2fa3a5d7a1 // indirect
 	github.com/lib/pq v1.2.0 // indirect
 	github.com/prometheus/client_golang v1.4.0
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/shopspring/decimal v0.0.0-20190905144223-a36b5d85f337 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
+	golang.org/x/crypto v0.0.0-20190909091759-094676da4a83 // indirect
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
-	golang.org/x/text v0.3.0
+	golang.org/x/text v0.3.2
 	gopkg.in/eapache/channels.v1 v1.1.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )
