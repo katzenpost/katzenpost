@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/coreos/bbolt v1.3.3
 	github.com/katzenpost/chacha20 v0.0.0-20190907175840-5d3e00398cad
-	github.com/katzenpost/core v0.0.8-0.20191102115433-acdd77c18f73
+	github.com/katzenpost/core v0.0.8-0.20200229014121-58f9830aa10b
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	go.etcd.io/bbolt v1.3.3 // indirect
