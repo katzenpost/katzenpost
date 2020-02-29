@@ -128,7 +128,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	for _, contact := range state.Contacts {
 		contact.ratchetMutex = new(sync.Mutex)
 		c.contacts[contact.id] = contact
-		c.contactNicknames[contact.nickname] = contact
+		c.contactNicknames[contact.Nickname] = contact
 	}
 	return c, nil
 }
@@ -143,10 +143,10 @@ func (c *Client) Start() {
 	}
 	c.Go(c.eventSinkWorker)
 	for _, contact := range c.contacts {
-		if contact.isPending {
-			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.nickname))
+		if contact.IsPending {
+			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
 			meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
-			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.nickname))
+			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange)
 			if err != nil {
 				panic(err)
@@ -258,7 +258,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 		return err
 	}
 	c.contacts[contact.ID()] = contact
-	c.contactNicknames[contact.nickname] = contact
+	c.contactNicknames[contact.Nickname] = contact
 	pandaCfg := c.session.GetPandaConfig()
 	if pandaCfg == nil {
 		return errors.New("panda failed, must have a panda service configured")
@@ -280,12 +280,12 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 }
 
 // XXX do we even need this method?
-func (c *Client) GetNicknames() []string {
-	getNicksOp := opGetNicknames{
-		responseChan: make(chan []string),
+func (c *Client) GetContacts() map[string]*Contact {
+	getContactsOp := opGetContacts{
+		responseChan: make(chan map[string]*Contact),
 	}
-	c.opCh <- &getNicksOp
-	return <-getNicksOp.responseChan
+	c.opCh <- &getContactsOp
+	return <-getContactsOp.responseChan
 }
 
 // RemoveContact removes a contact from the Client's state.
@@ -301,7 +301,7 @@ func (c *Client) doContactRemoval(nickname string) {
 		c.log.Errorf("contact removal failed, %s not found in contacts", nickname)
 		return
 	}
-	if contact.isPending {
+	if contact.IsPending {
 		if contact.pandaShutdownChan != nil {
 			close(contact.pandaShutdownChan)
 		}
@@ -348,8 +348,8 @@ func (c *Client) marshal() ([]byte, error) {
 
 func (c *Client) haltKeyExchanges() {
 	for _, contact := range c.contacts {
-		if contact.isPending {
-			c.log.Debugf("Halting pending key exchange for '%s' contact.", contact.nickname)
+		if contact.IsPending {
+			c.log.Debugf("Halting pending key exchange for '%s' contact.", contact.Nickname)
 			if contact.pandaShutdownChan != nil {
 				close(contact.pandaShutdownChan)
 			}
@@ -379,16 +379,16 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		contact.pandaResult = update.Err.Error()
 		contact.pandaKeyExchange = nil
 		contact.pandaShutdownChan = nil
-		c.log.Infof("Key exchange with %s failed: %s", contact.nickname, update.Err)
+		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Err)
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
-			Nickname: contact.nickname,
+			Nickname: contact.Nickname,
 			Err:      update.Err,
 		}
 	case update.Serialised != nil:
 		if bytes.Equal(contact.pandaKeyExchange, update.Serialised) {
-			c.log.Infof("Strange, our PANDA key exchange echoed our exchange bytes: %s", contact.nickname)
+			c.log.Infof("Strange, our PANDA key exchange echoed our exchange bytes: %s", contact.Nickname)
 			c.eventCh.In() <- &KeyExchangeCompletedEvent{
-				Nickname: contact.nickname,
+				Nickname: contact.Nickname,
 				Err:      errors.New("strange, our PANDA key exchange echoed our exchange bytes"),
 			}
 			return
@@ -402,10 +402,10 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
-			contact.isPending = false
+			contact.IsPending = false
 			c.save()
 			c.eventCh.In() <- &KeyExchangeCompletedEvent{
-				Nickname: contact.nickname,
+				Nickname: contact.Nickname,
 				Err:      err,
 			}
 			return
@@ -418,18 +418,18 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
 			c.log.Error(err.Error())
 			contact.pandaResult = err.Error()
-			contact.isPending = false
+			contact.IsPending = false
 			c.save()
 			c.eventCh.In() <- &KeyExchangeCompletedEvent{
-				Nickname: contact.nickname,
+				Nickname: contact.Nickname,
 				Err:      err,
 			}
 			return
 		}
-		contact.isPending = false
+		contact.IsPending = false
 		c.log.Info("Double ratchet key exchange completed!")
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
-			Nickname: contact.nickname,
+			Nickname: contact.Nickname,
 		}
 	}
 	c.save()
@@ -471,7 +471,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		c.log.Errorf("contact %s not found", nickname)
 		return
 	}
-	if contact.isPending {
+	if contact.IsPending {
 		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
 		return
 	}
@@ -591,7 +591,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			continue
 		} else {
 			decrypted = true
-			nickname = contact.nickname
+			nickname = contact.Nickname
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
 			message.Plaintext = plaintext[4 : 4+payloadLen]
 			message.Timestamp = time.Now()

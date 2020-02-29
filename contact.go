@@ -73,11 +73,11 @@ type Contact struct {
 	// id is the local unique contact ID.
 	id uint64
 
-	// nickname is also unique locally.
-	nickname string
+	// Nickname is also unique locally.
+	Nickname string
 
-	// isPending is true if the key exchange has not been completed.
-	isPending bool
+	// IsPending is true if the key exchange has not been completed.
+	IsPending bool
 
 	// keyExchange is the serialised double ratchet key exchange we generated.
 	keyExchange []byte
@@ -120,9 +120,9 @@ func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.
 		return nil, err
 	}
 	return &Contact{
-		nickname:          nickname,
+		Nickname:          nickname,
 		id:                id,
-		isPending:         true,
+		IsPending:         true,
 		ratchet:           ratchet,
 		ratchetMutex:      new(sync.Mutex),
 		keyExchange:       exchange,
@@ -144,8 +144,8 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 	}
 	s := &serializedContact{
 		ID:                   c.id,
-		Nickname:             c.nickname,
-		IsPending:            c.isPending,
+		Nickname:             c.Nickname,
+		IsPending:            c.IsPending,
 		KeyExchange:          c.keyExchange,
 		PandaKeyExchange:     c.pandaKeyExchange,
 		PandaResult:          c.pandaResult,
@@ -181,8 +181,8 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	}
 
 	c.id = s.ID
-	c.nickname = s.Nickname
-	c.isPending = s.IsPending
+	c.Nickname = s.Nickname
+	c.IsPending = s.IsPending
 	c.keyExchange = s.KeyExchange
 	c.pandaKeyExchange = s.PandaKeyExchange
 	c.pandaResult = s.PandaResult

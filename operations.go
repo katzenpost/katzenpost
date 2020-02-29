@@ -33,6 +33,6 @@ type opSendMessage struct {
 	payload []byte
 }
 
-type opGetNicknames struct {
-	responseChan chan []string
+type opGetContacts struct {
+	responseChan chan map[string]*Contact
 }
