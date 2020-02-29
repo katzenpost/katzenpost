@@ -1,26 +1,30 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/therecipe/qt/core"
 )
 
 // Model Roles
 const (
-	RoleNickname = int(core.Qt__UserRole) + 1<<iota
+	RoleNickname = int(core.Qt__UserRole) + iota
 	RoleAvatar
 	RoleMessage
 	RoleStatus
 	RoleTimestamp
 	RoleOutbound
 	RoleMessageID
+	RoleKeyExchanged
 )
 
 // Contact holds the data for a contact
 type Contact struct {
 	core.QObject
 
-	Nickname string
-	Avatar   string
+	Nickname     string
+	Avatar       string
+	KeyExchanged bool
 }
 
 // ContactListModel holds a collection of contacts
@@ -40,8 +44,9 @@ type ContactListModel struct {
 
 func (m *ContactListModel) init() {
 	m.SetRoles(map[int]*core.QByteArray{
-		RoleNickname: core.NewQByteArray2("nickname", -1),
-		RoleAvatar:   core.NewQByteArray2("avatar", -1),
+		RoleNickname:     core.NewQByteArray2("nickname", -1),
+		RoleAvatar:       core.NewQByteArray2("avatar", -1),
+		RoleKeyExchanged: core.NewQByteArray2("keyexchanged", -1),
 	})
 
 	m.ConnectData(m.data)
@@ -80,6 +85,10 @@ func (m *ContactListModel) data(index *core.QModelIndex, role int) *core.QVarian
 			} else {
 				return core.NewQVariant1(p.Avatar)
 			}
+		}
+	case RoleKeyExchanged:
+		{
+			return core.NewQVariant1(p.KeyExchanged)
 		}
 
 	default:
@@ -124,6 +133,21 @@ func (m *ContactListModel) removeContact(row int) {
 	m.BeginRemoveRows(core.NewQModelIndex(), row, row)
 	m.SetContacts(append(m.Contacts()[:trow], m.Contacts()[trow+1:]...))
 	m.EndRemoveRows()
+}
+
+func (m *ContactListModel) updateContactStatus(nickname string, keyExchanged bool) {
+	fmt.Println("Updating contact status:", nickname, keyExchanged)
+	for _, v := range m.Contacts() {
+		if v.Nickname == nickname {
+			v.KeyExchanged = keyExchanged
+
+			var fIndex = m.Index(0, 0, core.NewQModelIndex())
+			var lIndex = m.Index(len(m.Contacts())-1, 0, core.NewQModelIndex())
+			m.DataChanged(fIndex, lIndex, []int{RoleKeyExchanged})
+
+			return
+		}
+	}
 }
 
 func init() {
