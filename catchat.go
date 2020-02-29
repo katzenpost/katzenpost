@@ -129,8 +129,8 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 
 	go handleEvents(catShadowClient.EventSink, conversationModel, contactListModel)
 
-	nickNames := catShadowClient.GetNicknames()
-	loadContactList(contactListModel, nickNames)
+	contacts := catShadowClient.GetContacts()
+	loadContactList(contactListModel, contacts)
 }
 
 func main() {

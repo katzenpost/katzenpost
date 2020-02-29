@@ -8,10 +8,11 @@ import (
 )
 
 // loadContactList loads the contact list for an account
-func loadContactList(contactListModel *ContactListModel, nickNames []string) {
-	for _, nickName := range nickNames {
+func loadContactList(contactListModel *ContactListModel, contacts map[string]*catshadow.Contact) {
+	for _, c := range contacts {
 		var contact = NewContact(nil)
-		contact.Nickname = nickName
+		contact.Nickname = c.Nickname
+		contact.KeyExchanged = !c.IsPending
 		// XXX contact.Avatar = "https://picsum.photos/128/128"
 		contactListModel.AddContact(contact)
 	}
@@ -19,7 +20,13 @@ func loadContactList(contactListModel *ContactListModel, nickNames []string) {
 
 // loadConversation loads the conversation with a contact
 func loadConversation(client *catshadow.Client, contact string) {
-	accountBridge.SetRecipient(contact)
+	c := contactListModel.getContact(contact)
+	if c == nil {
+		panic("Could not find unknown contact with name: " + contact)
+	}
+
+	accountBridge.SetRecipient(c.Nickname)
+	accountBridge.SetKeyExchanged(c.KeyExchanged)
 
 	conversationModel.Clear()
 	conversation := client.GetConversation(contact)
@@ -31,7 +38,7 @@ func loadConversation(client *catshadow.Client, contact string) {
 		if message.Outbound {
 			m.Nickname = accountBridge.Nickname()
 		} else {
-			m.Nickname = contact
+			m.Nickname = c.Nickname
 		}
 
 		m.Avatar = ""

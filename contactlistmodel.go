@@ -150,6 +150,16 @@ func (m *ContactListModel) updateContactStatus(nickname string, keyExchanged boo
 	}
 }
 
+func (m *ContactListModel) getContact(nickname string) *Contact {
+	for _, v := range m.Contacts() {
+		if v.Nickname == nickname {
+			return v
+		}
+	}
+
+	return nil
+}
+
 func init() {
 	ContactListModel_QRegisterMetaType()
 	Contact_QRegisterMetaType()

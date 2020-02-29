@@ -118,7 +118,7 @@ Page {
                 Button {
                     id: sendButton
                     text: qsTr("Send")
-                    enabled: messageField.length > 0
+                    enabled: messageField.length > 0 && accountBridge.keyExchanged
                     onClicked: {
                         accountBridge.sendMessage(accountBridge.recipient, messageField.text);
                         messageField.text = "";

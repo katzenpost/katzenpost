@@ -13,6 +13,7 @@ type AccountBridge struct {
 	_ string `property:"status"`
 	_ string `property:"error"`
 	_ string `property:"recipient"`
+	_ bool   `property:"keyExchanged"`
 
 	_ func(passphrase string, nickname string) bool `slot:"addContact"`
 	_ func(contact string)                          `slot:"loadConversation"`
