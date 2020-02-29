@@ -82,12 +82,8 @@ func (c *Client) worker() {
 				c.doContactRemoval(op.name)
 			case *opSendMessage:
 				c.doSendMessage(op.id, op.name, op.payload)
-			case *opGetNicknames:
-				names := []string{}
-				for contact := range c.contactNicknames {
-					names = append(names, contact)
-				}
-				op.responseChan <- names
+			case *opGetContacts:
+				op.responseChan <- c.contactNicknames
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}
