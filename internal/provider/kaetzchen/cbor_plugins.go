@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/server/cborplugin"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
@@ -76,6 +77,7 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 }
 
 func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient cborplugin.ServicePlugin) {
+
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -84,6 +86,7 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 	handlerCh, ok := k.pluginChans[recipient]
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", recipient)
+		kaetzchenRequestsDropped.Inc()
 		return
 	}
 	ch := handlerCh.Out()
@@ -98,12 +101,14 @@ func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, 
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
+				packetsDropped.Inc()
 				pkt.Dispose()
 				continue
 			}
 		}
 
 		k.processKaetzchen(pkt, pluginClient)
+		kaetzchenRequests.Inc()
 	}
 }
 
@@ -115,11 +120,14 @@ func (k *CBORPluginWorker) haltAllClients() {
 }
 
 func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cborplugin.ServicePlugin) {
+	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
+	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		kaetzchenRequestsDropped.Inc()
 		return
 	}
 
@@ -132,6 +140,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 	case nil:
 	case ErrNoResponse:
 		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
+		kaetzchenRequests.Inc()
 		return
 	default:
 		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, resp)
