@@ -104,13 +104,13 @@ func (c *Client) worker() {
 					readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
+					c.eventCh.In() <- event
 					continue
 				}
 				isConnected = event.IsConnected
 				if !isConnected {
 					readInboxTimer.Reset(maxDuration)
 				}
-				// Forward event to our event sink.
 				c.eventCh.In() <- event
 			case *client.MessageSentEvent:
 				c.handleSent(event)

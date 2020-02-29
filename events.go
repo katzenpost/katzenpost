@@ -41,7 +41,7 @@ type MessageSentEvent struct {
 }
 
 // MessageDeliveredEvent is an event signaling that the message
-// has been delivered.
+// has been delivered to the remote spool.
 type MessageDeliveredEvent struct {
 	// Nickname is the nickname of the recipient of our delivered message.
 	Nickname string
