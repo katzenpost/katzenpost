@@ -43,14 +43,17 @@ func handleEvents(events <-chan interface{}, conversationModel *ConversationMode
 			conversationModel.updateMessageStatus(string(event.MessageID[:]), StatusDelivered)
 
 		case *catshadow.MessageReceivedEvent:
+			notify("catchat", "New message received from "+event.Nickname)
+			if accountBridge.Recipient() != event.Nickname {
+				return
+			}
+
 			var m = NewMessage(nil)
 			m.Nickname = event.Nickname
 			m.Avatar = "" // XXX fix me
 			m.Message = string(event.Message)
 			m.Timestamp = event.Timestamp
 			conversationModel.AddMessage(m)
-
-			notify("catchat", "New message received from "+m.Nickname)
 
 		default:
 			// This case indicates a programming BUG!
