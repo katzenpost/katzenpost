@@ -145,6 +145,10 @@ func (m *ContactListModel) updateContactStatus(nickname string, keyExchanged boo
 			var lIndex = m.Index(len(m.Contacts())-1, 0, core.NewQModelIndex())
 			m.DataChanged(fIndex, lIndex, []int{RoleKeyExchanged})
 
+			if accountBridge.Recipient() == nickname {
+				accountBridge.SetKeyExchanged(true)
+			}
+
 			return
 		}
 	}
