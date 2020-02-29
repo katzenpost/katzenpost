@@ -28,7 +28,7 @@ func handleEvents(events <-chan interface{}, conversationModel *ConversationMode
 			accountBridge.SetStatus(status)
 
 		case *catshadow.KeyExchangeCompletedEvent:
-			fmt.Println(event.Nickname, event.Err.Error())
+			fmt.Println(event.Nickname, event.Err)
 
 			if event.Err != nil {
 				accountBridge.SetError(event.Err.Error())
