@@ -6,11 +6,6 @@ ListView {
     id: contactList
 
     Layout.fillHeight: true
-    topMargin: 16
-    leftMargin: 16
-    bottomMargin: 16
-    rightMargin: 16
-    spacing: 16
     focus: true
     highlightFollowsCurrentItem: true
     model: accountBridge.contactListModel
@@ -25,7 +20,7 @@ ListView {
     delegate: ItemDelegate {
         highlighted: ListView.isCurrentItem
         width: contactList.width - contactList.leftMargin - contactList.rightMargin
-        height: 48
+        height: 64
         onClicked: {
             contactList.currentIndex = index
         }
@@ -37,22 +32,30 @@ ListView {
 
             Image {
                 id: avatar
-                sourceSize.height: parent.height
+                Layout.topMargin: 8
+                Layout.bottomMargin: 8
+                Layout.leftMargin: 8
+                Layout.rightMargin: 4
+                sourceSize.height: parent.height - 16
                 smooth: true
                 source: model.avatar
             }
             Label {
-                Layout.leftMargin: 8
+                Layout.topMargin: 8
+                Layout.bottomMargin: 8
+                Layout.leftMargin: 4
                 Layout.rightMargin: 4
                 Layout.fillWidth: true
                 height: parent.height
                 text: model.nickname
             }
             Label {
+                Layout.topMargin: 8
+                Layout.bottomMargin: 8
                 Layout.leftMargin: 4
                 Layout.rightMargin: 8
                 height: parent.height
-                text: "(Awaiting key exchange)"
+                text: "Awaiting key exchange"
                 opacity: 0.66
                 visible: !model.keyexchanged
             }
