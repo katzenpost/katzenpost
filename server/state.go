@@ -252,6 +252,7 @@ func NewReunionStates() *ReunionStates {
 // Marshal returns a CBOR serialization of the state.
 func (s *ReunionStates) Unmarshal(data []byte) error {
 	ss := new(SerializableReunionStates)
+	ss.states = make(map[uint64]*ReunionState)
 	err := codec.NewDecoderBytes(data, cborHandle).Decode(ss)
 	if err != nil {
 		return err
@@ -266,6 +267,7 @@ func (s *ReunionStates) Unmarshal(data []byte) error {
 func (s *ReunionStates) Marshal() ([]byte, error) {
 	var serialized []byte
 	ss := new(SerializableReunionStates)
+	ss.states = make(map[uint64]*ReunionState)
 	var err error
 	s.states.Range(func(k, v interface{}) bool {
 		key, ok := k.(uint64)
