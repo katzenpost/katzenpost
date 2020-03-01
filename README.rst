@@ -10,20 +10,23 @@ Reunion
   :target: https://www.codacy.com/gh/katzenpost/reunion?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=katzenpost/reunion&amp;utm_campaign=Badge_Grade
 
 
-Reunion is a cryptographic protocol allowing an asynchronous n-way
+Reunion is a cryptographic protocol allowing an asynchronous
 passphrase authenticated exchange facilitated by the Reunion
-server. Compared to PANDA it's much better because it leaks less
+server acting as a broadcast channel and ciphertext intermediary.
+Compared to PANDA it's much better because it leaks less
 metadata and resists precomputational attacks by the server.
 
 
 Status
 ------
 
-Work-in-progress.
+This cryptographic library is in working order.
+However the Server doesn't have enough tests yet.
 
-The core cryptographic operations are in working order at this
-time. There are some unit tests and bench marks which demonstrate the
-basic protocol interaction between two clients.
+There are two servers written so far:
+
+1. HTTP Reunion server
+2. Katzenpost mix server plugin
 
 
 Cryptographic Primitives
@@ -35,6 +38,15 @@ Cryptographic Primitives
 * hkdf: https://godoc.org/golang.org/x/crypto/hkdf
 * curve25519: https://github.com/katzenpost/core/blob/master/crypto/ecdh/ecdh.go
 * elligator: https://github.com/agl/ed25519/blob/master/extra25519/extra25519.go
+
+
+disclaimer
+==========
+
+Thus far there are not been very much code review and no formal security audit of this code.
+
+DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.
+
 
 license
 =======
