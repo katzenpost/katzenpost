@@ -30,3 +30,7 @@ type Clock struct{}
 func (t *Clock) Now() (current uint64, elapsed, till time.Duration) {
 	return epochtime.Now()
 }
+
+func (t *Clock) Period() time.Duration {
+	return epochtime.Period
+}

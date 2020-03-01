@@ -68,7 +68,7 @@ func NewServerFromStatefile(epochClock epochtime.EpochClock, stateFilePath, logP
 		return nil, err
 	}
 	s.states.MaybeAddEpochs(s.epochClock)
-	s.states.FilterOldEpochs(epochClock)
+	s.states.GarbageCollectOldEpochs(epochClock)
 	s.Go(s.worker)
 	return s, nil
 }
@@ -92,6 +92,7 @@ func NewServer(epochClock epochtime.EpochClock, stateFilePath, logPath, logLevel
 	return s, nil
 }
 
+// GetNewLogger returns a logger for the given subsystem name.
 func (s *Server) GetNewLogger(name string) *logging.Logger {
 	return s.logBackend.GetLogger(name)
 }
@@ -217,8 +218,8 @@ func (s *Server) ProcessQuery(command commands.Command) (commands.Command, error
 	return response, nil
 }
 
-func (s *Server) doFlush() {
-	// XXX write states to disk
+func (s *Server) doFlush() error {
+	return s.states.AtomicWriteToFile(s.stateFilePath)
 }
 
 func (s *Server) maybeFlush() {
@@ -226,7 +227,10 @@ func (s *Server) maybeFlush() {
 	if nEntries == 0 {
 		return
 	}
-	s.doFlush()
+	err := s.doFlush()
+	if err != nil {
+		panic("flush to disk failure, aborting...") // XXX should we panic here or what?
+	}
 	atomic.StoreUint64(&s.nDirtyEntries, 0)
 }
 
@@ -236,12 +240,25 @@ func (s *Server) worker() {
 	flushTicker := time.NewTicker(writeBackInterval)
 	defer flushTicker.Stop()
 
+	gcTicker := time.NewTicker(s.epochClock.Period() / 2)
+	defer gcTicker.Stop()
+
+	newEpochTicker := time.NewTicker(s.epochClock.Period() / 8)
+	defer flushTicker.Stop()
+
 	for {
 		select {
 		case <-s.HaltCh():
 			return
 		case <-flushTicker.C:
 			s.maybeFlush()
+			continue
+		case <-gcTicker.C:
+			s.states.GarbageCollectOldEpochs(s.epochClock)
+			continue
+		case <-newEpochTicker.C:
+			s.states.MaybeAddEpochs(s.epochClock)
+			continue
 		}
 	}
 }

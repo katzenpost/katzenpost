@@ -238,8 +238,8 @@ func (s *ReunionStates) MaybeAddEpochs(epochClock epochtime.EpochClock) {
 	}
 }
 
-// FilterOldEpochs remove old epochs from our epochs sync.Map.
-func (s *ReunionStates) FilterOldEpochs(epochClock epochtime.EpochClock) {
+// GarbageCollectOldEpochs remove old epochs from our epochs sync.Map.
+func (s *ReunionStates) GarbageCollectOldEpochs(epochClock epochtime.EpochClock) {
 	epoch, elapsed, till := epochClock.Now()
 	validEpochs := make(map[uint64]bool)
 	validEpochs[epoch] = true
@@ -268,9 +268,8 @@ func (s *ReunionStates) LoadFromFile(filePath string) error {
 	return errors.New("not yet implemented") // XXX fix me
 }
 
-// AtomicLoadFromFile atomically loads the file into s.states from
-// the given file path string.
-func (s *ReunionStates) AtomicLoadFromFile(filePath string) error {
+// AtomicWriteToFile atomically writes our state to the file.
+func (s *ReunionStates) AtomicWriteToFile(filePath string) error {
 	return errors.New("not yet implemented") // XXX fix me
 }
 
