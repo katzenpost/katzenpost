@@ -20,17 +20,19 @@ import (
 	"flag"
 	"io/ioutil"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/reunion/commands"
+	"github.com/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/reunion/server"
 	"gopkg.in/op/go-logging.v1"
 )
 
 func httpReunionServerFactory(s *server.Server, log *logging.Logger) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-
 		rawRequest, err := ioutil.ReadAll(req.Body)
 		if err != nil {
 			log.Errorf("reunion HTTP server failed to ReadAll raw command data: %s", err.Error())
@@ -60,14 +62,13 @@ func httpReunionServerFactory(s *server.Server, log *logging.Logger) func(w http
 	}
 }
 
-func runHTTPServer(address, urlPath, logPath, logLevel string) *http.Server {
-	logBackend, err := log.New(logPath, logLevel, false)
+func runHTTPServer(address, urlPath, logPath, logLevel string, clock *katzenpost.Clock, stateFilePath string) (*http.Server, *server.Server, error) {
+	reunionServer, err := server.NewServer(clock, stateFilePath, logPath, logLevel)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
-	reunionServer := server.NewServer()
 	httpServeMux := http.NewServeMux()
-	httpLog := logBackend.GetLogger("reunion_http_server")
+	httpLog := reunionServer.GetNewLogger("reunion_http_server")
 	httpServeMux.HandleFunc(urlPath, httpReunionServerFactory(reunionServer, httpLog))
 	httpServer := &http.Server{
 		Addr:           address,
@@ -77,7 +78,7 @@ func runHTTPServer(address, urlPath, logPath, logLevel string) *http.Server {
 		MaxHeaderBytes: 1 << 20,
 	}
 	go httpServer.ListenAndServe()
-	return httpServer
+	return httpServer, reunionServer, nil
 }
 
 func main() {
@@ -85,6 +86,19 @@ func main() {
 	urlPath := flag.String("p", "/reunion", "Reunion URL path.")
 	logPath := flag.String("log", "", "Log file path. Default STDOUT.")
 	logLevel := flag.String("level", "DEBUG", "Log level.")
+	stateFilePath := flag.String("s", "statefile", "State file path.")
+	epochClockName := flag.String("epochClock", "katzenpost", "The epoch-clock to use.")
 	flag.Parse()
-	runHTTPServer(*address, *urlPath, *logPath, *logLevel)
+	if *epochClockName != "katzenpost" {
+		panic("Thus far only the Katzenpost epoch clock is supported in this server implementation.")
+	}
+	_, server, err := runHTTPServer(*address, *urlPath, *logPath, *logLevel, new(katzenpost.Clock), *stateFilePath)
+	if err != nil {
+		panic(err)
+	}
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	<-sigs
+	server.Halt()
 }

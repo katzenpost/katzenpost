@@ -17,9 +17,9 @@
 package main
 
 import (
-	"context"
 	"crypto/sha256"
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"testing"
 
@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/reunion/client"
 	"github.com/katzenpost/reunion/commands"
 	"github.com/katzenpost/reunion/crypto"
+	"github.com/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/reunion/transports/http"
 	"github.com/stretchr/testify/require"
 )
@@ -38,9 +39,15 @@ func TestHTTPServer1(t *testing.T) {
 	urlPath := "/reunion"
 	logPath := ""
 	logLevel := "DEBUG"
-	reunionServer := runHTTPServer(address, urlPath, logPath, logLevel)
+	clock := new(katzenpost.Clock)
+	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	require.NoError(err)
+	stateFile.Close()
 
-	epoch := uint64(1234)
+	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
+	require.NoError(err)
+
+	epoch, _, _ := clock.Now()
 	url := fmt.Sprintf("http://%s%s", address, urlPath)
 	httpTransport := http.NewTransport(url)
 
@@ -80,7 +87,7 @@ func TestHTTPServer1(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(serverReplyRaw)
 
-	reunionServer.Shutdown(context.TODO())
+	reunionServer.Halt()
 }
 
 func TestHTTPServer2(t *testing.T) {
@@ -90,9 +97,15 @@ func TestHTTPServer2(t *testing.T) {
 	urlPath := "/reunion"
 	logPath := ""
 	logLevel := "DEBUG"
-	reunionServer := runHTTPServer(address, urlPath, logPath, logLevel)
+	clock := new(katzenpost.Clock)
+	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	require.NoError(err)
+	stateFile.Close()
 
-	epoch := uint64(1234)
+	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
+	require.NoError(err)
+
+	epoch, _, _ := clock.Now()
 	url := fmt.Sprintf("http://%s%s", address, urlPath)
 	httpTransport := http.NewTransport(url)
 
@@ -162,5 +175,5 @@ func TestHTTPServer2(t *testing.T) {
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)
 
-	reunionServer.Shutdown(context.TODO())
+	reunionServer.Halt()
 }

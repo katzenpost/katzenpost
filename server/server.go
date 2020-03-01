@@ -46,6 +46,7 @@ type Server struct {
 	nDirtyEntries uint64
 	epochClock    epochtime.EpochClock
 	log           *logging.Logger
+	logBackend    *log.Backend
 }
 
 // NewServerFromStatefile loads the state from a file.
@@ -59,6 +60,7 @@ func NewServerFromStatefile(epochClock epochtime.EpochClock, stateFilePath, logP
 		states:        NewReunionStates(),
 		nDirtyEntries: 0,
 		epochClock:    epochClock,
+		logBackend:    logBackend,
 		log:           logBackend.GetLogger("reunion_server_core"),
 	}
 	err = s.states.LoadFromFile(stateFilePath)
@@ -82,11 +84,16 @@ func NewServer(epochClock epochtime.EpochClock, stateFilePath, logPath, logLevel
 		states:        NewReunionStates(),
 		nDirtyEntries: 0,
 		epochClock:    epochClock,
+		logBackend:    logBackend,
 		log:           logBackend.GetLogger("reunion_server_core"),
 	}
 	s.states.MaybeAddEpochs(s.epochClock)
 	s.Go(s.worker)
 	return s, nil
+}
+
+func (s *Server) GetNewLogger(name string) *logging.Logger {
+	return s.logBackend.GetLogger(name)
 }
 
 func (s *Server) incrementDirtyEntryCount() {
