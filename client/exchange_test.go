@@ -19,11 +19,14 @@ package client
 
 import (
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"testing"
 
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/reunion/commands"
+	"github.com/katzenpost/reunion/epochtime"
+	"github.com/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/reunion/server"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
@@ -34,11 +37,20 @@ type MockReunionDB struct {
 	log    *logging.Logger
 }
 
-func NewMockReunionDB(mylog *logging.Logger) *MockReunionDB {
-	return &MockReunionDB{
-		server: server.NewServer(),
-		log:    mylog,
+func NewMockReunionDB(mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
+	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	if err != nil {
+		return nil, err
 	}
+	stateFile.Close()
+
+	logPath := ""
+	logLevel := "DEBUG"
+	s, err := server.NewServer(clock, stateFile.Name(), logPath, logLevel)
+	return &MockReunionDB{
+		server: s,
+		log:    mylog,
+	}, err
 }
 
 func (m *MockReunionDB) Query(command commands.Command) (commands.Command, error) {
@@ -55,12 +67,14 @@ func TestClientServerBasics1(t *testing.T) {
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
 
+	clock := new(katzenpost.Clock)
+	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB := NewMockReunionDB(dblog)
+	reunionDB, err := NewMockReunionDB(dblog, clock)
+	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
-	epoch := uint64(12322)
 
 	var bobResult []byte
 	var aliceResult []byte
@@ -164,12 +178,14 @@ func TestClientServerBasics2(t *testing.T) {
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
 
+	clock := new(katzenpost.Clock)
+	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB := NewMockReunionDB(dblog)
+	reunionDB, err := NewMockReunionDB(dblog, clock)
+	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
-	epoch := uint64(12322)
 
 	var bobResult []byte
 	var aliceResult []byte
@@ -243,12 +259,14 @@ func NoTestClientServerBasics3(t *testing.T) {
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
 
+	clock := new(katzenpost.Clock)
+	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB := NewMockReunionDB(dblog)
+	reunionDB, err := NewMockReunionDB(dblog, clock)
+	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
-	epoch := uint64(12322)
 
 	var bobResult []byte
 	var aliceResult []byte
@@ -369,13 +387,15 @@ func TestClientServerBasics4(t *testing.T) {
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
 
+	clock := new(katzenpost.Clock)
+	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB := NewMockReunionDB(dblog)
+	reunionDB, err := NewMockReunionDB(dblog, clock)
+	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
 	passphrase1 := []byte("blah blah motorcycle pencil sharpening gas tank")
 	passphrase2 := []byte("super secret spy trade craft pass phrase oh so clever")
-	epoch := uint64(12322)
 
 	var bobResult []byte
 	var aliceResult []byte
@@ -507,12 +527,14 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
 
+	clock := new(katzenpost.Clock)
+	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB := NewMockReunionDB(dblog)
+	reunionDB, err := NewMockReunionDB(dblog, clock)
+	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
-	epoch := uint64(12322)
 
 	var bobResult []byte
 	var aliceResult []byte

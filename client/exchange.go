@@ -263,14 +263,14 @@ func (e *Exchange) processState(state *server.RequestedReunionState) (bool, erro
 }
 
 func (e *Exchange) fetchState() error {
-	fetchStateCmd := new(commands.FetchState)
-	fetchStateCmd.Epoch = e.session.Epoch()
-
 	h := sha256.New()
 	h.Write(e.sentT1)
 	t1Hash := h.Sum(nil)
 	t1HashAr := [sha256.Size]byte{}
 	copy(t1HashAr[:], t1Hash)
+
+	fetchStateCmd := new(commands.FetchState)
+	fetchStateCmd.Epoch = e.session.Epoch()
 	fetchStateCmd.T1Hash = t1HashAr
 
 	rawResponse, err := e.db.Query(fetchStateCmd)
