@@ -27,10 +27,13 @@ import (
 // the Katzenpost epoch timer.
 type Clock struct{}
 
+// Now returns the current Katzenpost epoch, time since the start of the
+// current epoch, and time till the next epoch.
 func (t *Clock) Now() (current uint64, elapsed, till time.Duration) {
 	return epochtime.Now()
 }
 
+// Period returns the epoch duration.
 func (t *Clock) Period() time.Duration {
 	return epochtime.Period
 }

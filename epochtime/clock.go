@@ -23,7 +23,7 @@ import (
 
 // EpochClock the interface which Reunion uses for epoch clocks.
 type EpochClock interface {
-	// Now returns the current Katzenpost epoch, time since the start of the
+	// Now returns the current epoch, time since the start of the
 	// current epoch, and time till the next epoch.
 	Now() (current uint64, elapsed, till time.Duration)
 
