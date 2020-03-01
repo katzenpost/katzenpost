@@ -1,4 +1,4 @@
-// timer.go - Reunion Katzenpost epoch timer.
+// clock.go - Reunion epoch clock.
 // Copyright (C) 2020  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,19 +14,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package time provides the Reunion protocol Katzenpost epoch timer.
-package time
+// Package epochtime provides the Reunion protocol epoch timer.
+package epochtime
 
 import (
 	"time"
-
-	"github.com/katzenpost/epochtime"
 )
 
-// EpochTimer provides the Epochtimer interface for the
-// Katzenpost epoch timer.
-type EpochTimer struct{}
-
-func (t *EpochTimer) Now() (current uint64, elapsed, till time.Duration) {
-	return epochtime.Now()
+// EpochClock the interface which Reunion uses for epoch clocks.
+type EpochClock interface {
+	// Now returns the current Katzenpost epoch, time since the start of the
+	// current epoch, and time till the next epoch.
+	Now() (current uint64, elapsed, till time.Duration)
 }
