@@ -22,6 +22,8 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sync"
 
 	"github.com/katzenpost/reunion/commands"
@@ -213,6 +215,27 @@ func (s *SerializableReunionState) Marshal() ([]byte, error) {
 	return serialized, nil
 }
 
+// SerializableReunionStates represents the serializable
+// form of the ReunionStates type.
+type SerializableReunionStates struct {
+	states map[uint64]*ReunionState
+}
+
+// Unmarshal deserializes the state CBOR blob.
+func (s *SerializableReunionStates) Unmarshal(data []byte) error {
+	return codec.NewDecoderBytes(data, cborHandle).Decode(s)
+}
+
+// Marshal returns a CBOR serialization of the state.
+func (s *SerializableReunionStates) Marshal() ([]byte, error) {
+	var serialized []byte
+	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
 // ReunionStates is a type encapsulating sync.Map of uint64 -> *ReunionState.
 type ReunionStates struct {
 	states *sync.Map // uint64 -> *ReunionState
@@ -226,6 +249,49 @@ func NewReunionStates() *ReunionStates {
 	return s
 }
 
+// Marshal returns a CBOR serialization of the state.
+func (s *ReunionStates) Unmarshal(data []byte) error {
+	ss := new(SerializableReunionStates)
+	err := codec.NewDecoderBytes(data, cborHandle).Decode(ss)
+	if err != nil {
+		return err
+	}
+	for k, v := range ss.states {
+		s.states.Store(k, v)
+	}
+	return nil
+}
+
+// Marshal returns a CBOR serialization of the state.
+func (s *ReunionStates) Marshal() ([]byte, error) {
+	var serialized []byte
+	ss := new(SerializableReunionStates)
+	var err error
+	s.states.Range(func(k, v interface{}) bool {
+		key, ok := k.(uint64)
+		if !ok {
+			err = errors.New("invalid sync.Map entry")
+			return false
+		}
+		value, ok := v.(*ReunionState)
+		if !ok {
+			err = errors.New("invalid sync.Map entry")
+			return false
+		}
+		ss.states[key] = value
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(ss)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
+}
+
+// MaybeAddEpochs adds sync.Map entries for the currenlty valid epochs.
 func (s *ReunionStates) MaybeAddEpochs(epochClock epochtime.EpochClock) {
 	epoch, elapsed, till := epochClock.Now()
 	_, _ = s.states.LoadOrStore(epoch, NewReunionState())
@@ -265,12 +331,40 @@ func (s *ReunionStates) GarbageCollectOldEpochs(epochClock epochtime.EpochClock)
 // LoadFromFile loads a ReunionStates from then given file
 // if it exists.
 func (s *ReunionStates) LoadFromFile(filePath string) error {
-	return nil // XXX fix me
+	inBytes, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		return err
+	}
+	return s.Unmarshal(inBytes)
 }
 
 // AtomicWriteToFile atomically writes our state to the file.
 func (s *ReunionStates) AtomicWriteToFile(filePath string) error {
-	return nil // XXX fix me
+	out, err := os.OpenFile(filePath+".tmp", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	outBytes, err := s.Marshal()
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(outBytes)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(filePath + "~"); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(filePath, filePath+"~"); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(filePath+".tmp", filePath); err != nil {
+		return err
+	}
+	if err := os.Remove(filePath + "~"); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // GetStateFromEpoch returns a state given an epoch if such an entry
