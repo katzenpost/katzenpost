@@ -17,21 +17,33 @@
 package server
 
 import (
+	"io/ioutil"
 	"testing"
 
 	"github.com/katzenpost/reunion/commands"
+	"github.com/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/stretchr/testify/require"
 )
 
 func TestServer(t *testing.T) {
 	require := require.New(t)
 
-	server := NewServer()
+	clock := new(katzenpost.Clock)
+	epoch, _, _ := clock.Now()
+	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	require.NoError(err)
+	stateFile.Close()
+
+	logPath := ""
+	logLevel := "DEBUG"
+	server, err := NewServer(clock, stateFile.Name(), logPath, logLevel)
+	require.NoError(err)
+
 	sendt1 := commands.SendT1{
-		Epoch:   123,
+		Epoch:   epoch,
 		Payload: []byte{0xDE, 0xAD, 0xBE, 0xEF},
 	}
-	_, err := server.ProcessQuery(&sendt1)
+	_, err = server.ProcessQuery(&sendt1)
 	require.NoError(err)
 
 	// XXX ...

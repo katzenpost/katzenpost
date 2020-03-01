@@ -21,9 +21,11 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/katzenpost/reunion/commands"
+	"github.com/katzenpost/reunion/epochtime"
 	"github.com/ugorji/go/codec"
 )
 
@@ -211,6 +213,108 @@ func (s *SerializableReunionState) Marshal() ([]byte, error) {
 	return serialized, nil
 }
 
+// ReunionStates is a type encapsulating sync.Map of uint64 -> *ReunionState.
+type ReunionStates struct {
+	states *sync.Map // uint64 -> *ReunionState
+}
+
+// NewReunionStates creates a new ReunionStates.
+func NewReunionStates() *ReunionStates {
+	s := &ReunionStates{
+		states: new(sync.Map),
+	}
+	return s
+}
+
+func (s *ReunionStates) MaybeAddEpochs(epochClock epochtime.EpochClock) {
+	epoch, elapsed, till := epochClock.Now()
+	_, _ = s.states.LoadOrStore(epoch, NewReunionState())
+	if till <= epochGracePeriod {
+		_, _ = s.states.LoadOrStore(epoch-1, NewReunionState())
+	} else {
+		if elapsed <= epochGracePeriod {
+			_, _ = s.states.LoadOrStore(epoch+1, NewReunionState())
+		}
+	}
+}
+
+// FilterOldEpochs remove old epochs from our epochs sync.Map.
+func (s *ReunionStates) FilterOldEpochs(epochClock epochtime.EpochClock) {
+	epoch, elapsed, till := epochClock.Now()
+	validEpochs := make(map[uint64]bool)
+	validEpochs[epoch] = true
+	if till <= epochGracePeriod {
+		validEpochs[epoch-1] = true
+	} else {
+		if elapsed <= epochGracePeriod {
+			validEpochs[epoch+1] = true
+		}
+	}
+	s.states.Range(func(key, value interface{}) bool {
+		k, ok := key.(uint64)
+		if !ok {
+			panic("impossible error")
+		}
+		if _, ok := validEpochs[k]; !ok {
+			s.states.Delete(k)
+		}
+		return true
+	})
+}
+
+// LoadFromFile loads a ReunionStates from then given file
+// if it exists.
+func (s *ReunionStates) LoadFromFile(filePath string) error {
+	return errors.New("not yet implemented") // XXX fix me
+}
+
+// AtomicLoadFromFile atomically loads the file into s.states from
+// the given file path string.
+func (s *ReunionStates) AtomicLoadFromFile(filePath string) error {
+	return errors.New("not yet implemented") // XXX fix me
+}
+
+// GetStateFromEpoch returns a state given an epoch if such an entry
+// if found in the sync.Map.
+func (s *ReunionStates) GetStateFromEpoch(epoch uint64) (*ReunionState, error) {
+	rawState, ok := s.states.Load(epoch)
+	if !ok {
+		return nil, fmt.Errorf("epoch %d not found in state map", epoch)
+	}
+	state, ok := rawState.(*ReunionState)
+	if !ok {
+		return nil, errors.New("Bug, invalid state found in epochs sync.Map")
+	}
+	return state, nil
+}
+
+// AppendMessage receives a message which can be one of these types:
+// *commands.SendT1
+// *commands.SendT2
+// *commands.SendT3
+func (s *ReunionStates) AppendMessage(message commands.Command) error {
+	var epoch uint64
+	switch mesg := message.(type) {
+	case *commands.SendT1:
+		epoch = mesg.Epoch
+	case *commands.SendT2:
+		epoch = mesg.Epoch
+	case *commands.SendT3:
+		epoch = mesg.Epoch
+	default:
+		return errors.New("ReunionStates.AppendMessage failued: unknown message type")
+	}
+	rawState, ok := s.states.Load(epoch)
+	if ok {
+		state, ok := rawState.(*ReunionState)
+		if !ok {
+			return errors.New("Bug, invalid state found in epochs sync.Map")
+		}
+		return state.AppendMessage(message)
+	}
+	return fmt.Errorf("AppendMessage failure, %d epoch not found in sync.Map", epoch)
+}
+
 // ReunionState is the state of the Reunion DB.
 // This is the type which is fetched by the FetchState
 // command.
@@ -346,61 +450,82 @@ func (s *ReunionState) Unmarshal(data []byte) error {
 	return nil
 }
 
+func (s *ReunionState) appendT1(sendT1 *commands.SendT1) error {
+	h := sha256.New()
+	h.Write(sendT1.Payload)
+	t1Hash := h.Sum(nil)
+	t1HashAr := [sha256.Size]byte{}
+	copy(t1HashAr[:], t1Hash)
+	_, ok := s.t1Map.Load(t1HashAr)
+	if ok {
+		return errors.New("cannot append T1, already present")
+	}
+	s.t1Map.Store(t1HashAr, sendT1.Payload)
+	s.messageMap.Store(t1HashAr, NewLockedList())
+	return nil
+}
+
+func (s *ReunionState) appendT2(sendT2 *commands.SendT2) error {
+	l, ok := s.messageMap.Load(sendT2.DstT1Hash)
+	var messageList *LockedList
+	if ok {
+		messageList, ok = l.(*LockedList)
+		if !ok {
+			return errors.New("wtf, invalid list type")
+		}
+	} else {
+		messageList = NewLockedList()
+	}
+	messageList.Append(&T2Message{
+		SrcT1Hash: sendT2.SrcT1Hash,
+		Payload:   sendT2.Payload,
+	})
+	s.messageMap.Store(sendT2.DstT1Hash, messageList)
+	return nil
+}
+
+func (s *ReunionState) appendT3(sendT2 *commands.SendT3) error {
+	l, ok := s.messageMap.Load(sendT2.DstT1Hash)
+	var messageList *LockedList
+	if ok {
+		messageList, ok = l.(*LockedList)
+		if !ok {
+			return errors.New("wtf, invalid list type")
+		}
+	} else {
+		messageList = NewLockedList()
+	}
+	messageList.Append(&T3Message{
+		SrcT1Hash: sendT2.SrcT1Hash,
+		Payload:   sendT2.Payload,
+	})
+	s.messageMap.Store(sendT2.DstT1Hash, messageList)
+	return nil
+}
+
 // AppendMessage receives a message which can be one of these types:
 // *commands.SendT1
 // *commands.SendT2
 // *commands.SendT3
-func (s *ReunionState) AppendMessage(message interface{}) error {
+func (s *ReunionState) AppendMessage(message commands.Command) error {
 	switch mesg := message.(type) {
 	case *commands.SendT1:
-		h := sha256.New()
-		h.Write(mesg.Payload)
-		t1Hash := h.Sum(nil)
-		t1HashAr := [sha256.Size]byte{}
-		copy(t1HashAr[:], t1Hash)
-		_, ok := s.t1Map.Load(t1HashAr)
-		if ok {
-			return errors.New("cannot append T1, already present")
+		err := s.appendT1(mesg)
+		if err != nil {
+			return err
 		}
-		s.t1Map.Store(t1HashAr, mesg.Payload)
-		s.messageMap.Store(t1HashAr, NewLockedList())
-		return nil
 	case *commands.SendT2:
-		l, ok := s.messageMap.Load(mesg.DstT1Hash)
-		var messageList *LockedList
-		if ok {
-			messageList, ok = l.(*LockedList)
-			if !ok {
-				return errors.New("wtf, invalid list type")
-			}
-		} else {
-			messageList = NewLockedList()
+		err := s.appendT2(mesg)
+		if err != nil {
+			return err
 		}
-		messageList.Append(&T2Message{
-			SrcT1Hash: mesg.SrcT1Hash,
-			Payload:   mesg.Payload,
-		})
-		s.messageMap.Store(mesg.DstT1Hash, messageList)
-		return nil
 	case *commands.SendT3:
-		l, ok := s.messageMap.Load(mesg.DstT1Hash)
-		var messageList *LockedList
-		if ok {
-			messageList, ok = l.(*LockedList)
-			if !ok {
-				return errors.New("wtf, invalid list type")
-			}
-		} else {
-			messageList = NewLockedList()
+		err := s.appendT3(mesg)
+		if err != nil {
+			return err
 		}
-		messageList.Append(&T3Message{
-			SrcT1Hash: mesg.SrcT1Hash,
-			Payload:   mesg.Payload,
-		})
-		s.messageMap.Store(mesg.DstT1Hash, messageList)
-		return nil
 	default:
 		return errors.New("ReunionState.AppendMessage failued: unknown message type")
 	}
-	// unreached
+	return nil
 }
