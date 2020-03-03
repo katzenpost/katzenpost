@@ -15,6 +15,7 @@ WORKDIR /go/server
 COPY . .
 RUN cd cmd/server && go build -tags prometheus
 RUN cd /go ; git clone https://github.com/katzenpost/memspool.git ; cd memspool/server/cmd/memspool ;  go build
+RUN cd /go ; git clone https://github.com/katzenpost/reunion.git ; cd reunion/servers/reunion_katzenpost_server ; go build
 RUN cd /go ; git clone https://github.com/katzenpost/panda.git ; cd panda/server/cmd/panda_server ; go build
 RUN cd /go ; git clone https://github.com/katzenpost/server_plugins.git ; cd server_plugins/cbor_plugins/echo-go ; go build -o echo_server
 
@@ -26,6 +27,7 @@ RUN apk update && \
 
 COPY --from=builder /go/server/cmd/server/server /go/bin/server
 COPY --from=builder /go/memspool/server/cmd/memspool/memspool /go/bin/memspool
+COPY --from=builder /go/reunion/servers/reunion_katzenpost_server /go/bin/reunion_katzenpost_server
 COPY --from=builder /go/panda/server/cmd/panda_server/panda_server /go/bin/panda_server
 COPY --from=builder /go/server_plugins/cbor_plugins/echo-go/echo_server /go/bin/echo_server
 
