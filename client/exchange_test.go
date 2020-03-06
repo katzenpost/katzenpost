@@ -82,7 +82,6 @@ func TestClientServerBasics1(t *testing.T) {
 	// alice client
 	alicePayload := []byte("Hello Bobby, what's up dude?")
 	aliceContactID := uint64(1)
-	require.NoError(err)
 	aliceExchangelog := logBackend.GetLogger("alice_exchange")
 
 	var wg sync.WaitGroup
