@@ -119,6 +119,7 @@ func main() {
 	}
 	httpLog := reunionServer.GetNewLogger("reunion_http_server")
 
+	httpLog.Debug("Starting up...")
 	_requestHandler := func(response http.ResponseWriter, request *http.Request) {
 		requestHandler(httpLog, reunionServer, response, request)
 	}
