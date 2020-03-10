@@ -42,6 +42,7 @@ const (
 )
 
 var (
+	mixPublishDeadline = epochtime.Period /2
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
 )
@@ -118,7 +119,6 @@ func (s *state) worker() {
 }
 
 func (s *state) onWakeup() {
-	const publishDeadline = 3600 * time.Second
 	epoch, _, till := epochtime.Now()
 
 	s.Lock()
@@ -138,7 +138,7 @@ func (s *state) onWakeup() {
 
 	// If it is past the descriptor upload period and we have yet to generate a
 	// document for the *next* epoch, generate one.
-	if till < publishDeadline && s.documents[epoch+1] == nil {
+	if till < mixPublishDeadline && s.documents[epoch+1] == nil {
 		if m, ok := s.descriptors[epoch+1]; ok && s.hasEnoughDescriptors(m) {
 			s.generateDocument(epoch + 1)
 		}
