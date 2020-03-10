@@ -38,8 +38,7 @@ type Transport struct {
 // Query sends the command to the destination Reunion DB service
 // over a Katzenpost mix network.
 func (k *Transport) Query(command commands.Command) (commands.Command, error) {
-	rawQuery := command.ToBytes()
-	reply, err := k.Session.BlockingSendUnreliableMessage(k.Recipient, k.Provider, rawQuery)
+	reply, err := k.Session.BlockingSendUnreliableMessage(k.Recipient, k.Provider, command.ToBytes())
 	if err != nil {
 		return nil, err
 	}

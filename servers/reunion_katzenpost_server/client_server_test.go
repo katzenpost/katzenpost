@@ -60,12 +60,10 @@ func register(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
 	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
 	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
 	defer cancel()
-	fmt.Println("yo1")
 	doc, _, err := pkiClient.Get(ctx, currentEpoch)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("yo2")
 
 	// Pick a registration Provider.
 	registerProviders := []*pki.MixDescriptor{}

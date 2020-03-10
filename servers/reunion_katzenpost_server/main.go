@@ -53,12 +53,12 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 	}
 	err := codec.NewDecoder(req.Body, new(codec.CborHandle)).Decode(&request)
 	if err != nil {
-		log.Errorf("invalid query command: %s", err.Error())
+		log.Errorf("query command must be of type cborplugin.Request: %s", err.Error())
 		return
 	}
 	cmd, err := commands.FromBytes(request.Payload)
 	if err != nil {
-		log.Errorf("invalid query command: %s", err.Error())
+		log.Errorf("invalid Reunion query command found in request Payload len %d: %s", len(request.Payload), err.Error())
 		return
 	}
 	replyCmd, err := server.ProcessQuery(cmd)
