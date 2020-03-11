@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -56,9 +57,10 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		log.Errorf("query command must be of type cborplugin.Request: %s", err.Error())
 		return
 	}
-	cmd, err := commands.FromBytes(request.Payload)
+	cmdLen := binary.BigEndian.Uint32(request.Payload[:4])
+	cmd, err := commands.FromBytes(request.Payload[4 : cmdLen+4])
 	if err != nil {
-		log.Errorf("invalid Reunion query command found in request Payload len %d: %s", len(request.Payload), err.Error())
+		log.Errorf("invalid Reunion query command found in request Payload len %d: %s", len(request.Payload[4:cmdLen+4]), err.Error())
 		return
 	}
 	replyCmd, err := server.ProcessQuery(cmd)
