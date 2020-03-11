@@ -455,7 +455,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 	}
 
 	// Otherwise, return an error based on the time.
-	now, _, till := epochtime.Now()
+	now, elapsed, _ := epochtime.Now()
 	switch epoch {
 	case now:
 		// Check to see if we are doing a bootstrap, and it's possible that
@@ -467,11 +467,13 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 
 		// We missed the deadline to publish a descriptor for the current
 		// epoch, so we will never be able to service this request.
+		s.log.Errorf("No document for current epoch %v generated and never will be", now)
 		return nil, errGone
 	case now + 1:
 		// If it's past the time by which we should have generated a document
 		// then we will never be able to service this.
-		if till < generationDeadline {
+		if elapsed > generationDeadline {
+			s.log.Errorf("No document for next epoch %v and it's already past 7/8 of previous epoch", now+1)
 			return nil, errGone
 		}
 		return nil, errNotYet
@@ -479,6 +481,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		if epoch < now {
 			// Requested epoch is in the past, and it's not in the cache.
 			// We will never be able to satisfy this request.
+			s.log.Errorf("No document for epoch %v, because we are already in %v", epoch, now)
 			return nil, errGone
 		}
 		return nil, fmt.Errorf("state: Request for invalid epoch: %v", epoch)
