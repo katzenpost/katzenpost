@@ -48,6 +48,8 @@ var (
 	errNotCached    = errors.New("pki: requested epoch document not in cache")
 	recheckInterval = 1 * time.Minute
 	WarpedEpoch     = "false"
+	nextFetchTill = epochtime.Period / 3
+	pkiEarlyConnectSlack = epochtime.Period / 6
 )
 
 type pki struct {
@@ -406,7 +408,6 @@ func (p *pki) entryForEpoch(epoch uint64) *pkicache.Entry {
 }
 
 func (p *pki) documentsToFetch() []uint64 {
-	const nextFetchTill = 45 * time.Minute
 
 	ret := make([]uint64, 0, constants.NumMixKeys+1)
 	now, _, till := epochtime.Now()
@@ -428,7 +429,6 @@ func (p *pki) documentsToFetch() []uint64 {
 }
 
 func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, uint64, time.Duration) {
-	const pkiEarlyConnectSlack = 30 * time.Minute
 
 	// Figure out the list of epochs to consider valid.
 	//
