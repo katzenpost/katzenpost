@@ -15,9 +15,9 @@ require (
 	github.com/jackc/pgx v3.5.0+incompatible
 	github.com/katzenpost/authority v0.0.9-0.20190907184439-988189a151b2
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
-	github.com/katzenpost/core v0.0.8-0.20191102182224-0c2d40bb92ac
+	github.com/katzenpost/core v0.0.8-0.20200229014121-58f9830aa10b
 	github.com/lib/pq v1.2.0 // indirect
-	github.com/pkg/errors v0.8.1 // indirect
+	github.com/prometheus/client_golang v1.4.0
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/shopspring/decimal v0.0.0-20190905144223-a36b5d85f337 // indirect
 	github.com/stretchr/testify v1.4.0
