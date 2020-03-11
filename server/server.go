@@ -193,26 +193,31 @@ func (s *Server) ProcessQuery(command commands.Command) (commands.Command, error
 	var response commands.Command
 	switch cmd := command.(type) {
 	case *commands.FetchState:
+		s.log.Debug("fetch state")
 		response, err = s.fetchState(cmd)
 		if err != nil {
 			return nil, err
 		}
 	case *commands.SendT1:
+		s.log.Debug("send t1")
 		response, err = s.sendT1(cmd)
 		if err != nil {
 			return nil, err
 		}
 	case *commands.SendT2:
+		s.log.Debug("send t2")
 		response, err = s.sendT2(cmd)
 		if err != nil {
 			return nil, err
 		}
 	case *commands.SendT3:
+		s.log.Debug("send t3")
 		response, err = s.sendT3(cmd)
 		if err != nil {
 			return nil, err
 		}
 	default:
+		s.log.Debug("Reunion server ProcessQuery received invalid query command")
 		return nil, errors.New("Reunion server ProcessQuery received invalid query command")
 	}
 	return response, nil

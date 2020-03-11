@@ -19,6 +19,8 @@
 package katzenpost
 
 import (
+	"fmt"
+
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/reunion/commands"
 )
@@ -42,5 +44,9 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	return commands.FromBytes(reply)
+	cmd, err := commands.FromBytes(reply)
+	if err != nil {
+		return nil, fmt.Errorf("Katzenpost Transport Query failure, reply len %d, %s", len(reply), err.Error())
+	}
+	return cmd, nil
 }

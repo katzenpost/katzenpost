@@ -69,6 +69,7 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		return
 	}
 	rawReply := replyCmd.ToBytes()
+	log.Debugf("after server.ProcessQuery, reply command len %d", len(rawReply))
 	reply := cborplugin.Response{
 		Payload: rawReply,
 	}
