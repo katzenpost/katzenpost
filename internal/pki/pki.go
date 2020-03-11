@@ -41,6 +41,7 @@ import (
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/pkicache"
+	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -68,11 +69,66 @@ type pki struct {
 	lastWarnedEpoch    uint64
 }
 
+var (
+	fetchedPKIDocs = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: constants.Namespace,
+			Name:      "fetched_pki_docs_per_epoch_total",
+			Subsystem: constants.PKISubsystem,
+			Help:      "Number of fetch PKI docs per epoch",
+		},
+		[]string{"epoch"},
+	)
+	fetchedPKIDocsDuration = prometheus.NewSummary(
+		prometheus.SummaryOpts{
+			Namespace: constants.Namespace,
+			Name:      "fetched_pki_docs_per_epoch_duration",
+			Subsystem: constants.PKISubsystem,
+			Help:      "Duration of PKI docs fetching requests per epoch",
+		},
+	)
+	failedFetchPKIDocs = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: constants.Namespace,
+			Name:      "failed_fetch_pki_docs_per_epoch_total",
+			Subsystem: constants.PKISubsystem,
+			Help:      "Number of failed PKI docs fetches per epoch",
+		},
+		[]string{"epoch"},
+	)
+	failedPKICacheGeneration = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: constants.Namespace,
+			Name:      "failed_pki_cache_generation_per_epoch_total",
+			Subsystem: constants.PKISubsystem,
+			Help:      "Number of failed PKI caches generation per epoch",
+		},
+		[]string{"epoch"},
+	)
+	invalidPKICache = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: constants.Namespace,
+			Name:      "katzenpost_invalid_pki_cache_per_epoch_total",
+			Subsystem: constants.PKISubsystem,
+			Help:      "Number of invalid PKI caches per epoch",
+		},
+		[]string{"epoch"},
+	)
+	fetchedPKIDocsTimer *prometheus.Timer
+)
+
+func init() {
+	prometheus.MustRegister(fetchedPKIDocs)
+	prometheus.MustRegister(fetchedPKIDocsDuration)
+	prometheus.MustRegister(failedFetchPKIDocs)
+}
+
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
 }
 
 func (p *pki) worker() {
+
 	const initialSpawnDelay = 5 * time.Second
 
 	timer := time.NewTimer(initialSpawnDelay)
@@ -126,6 +182,7 @@ func (p *pki) worker() {
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
+			fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
@@ -141,6 +198,7 @@ func (p *pki) worker() {
 			}
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+				failedFetchPKIDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
 				if err == cpki.ErrNoDocument {
 					p.setFailedFetch(epoch, err)
 				}
@@ -151,11 +209,13 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
+				failedPKICacheGeneration.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
 				continue
 			}
 			if err = p.validateCacheEntry(ent); err != nil {
 				p.log.Warningf("Generated PKI cache is invalid: %v", err)
 				p.setFailedFetch(epoch, err)
+				invalidPKICache.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
 				continue
 			}
 
@@ -164,7 +224,10 @@ func (p *pki) worker() {
 			p.docs[epoch] = ent
 			p.Unlock()
 			didUpdate = true
+			fetchedPKIDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)})
+			fetchedPKIDocsTimer.ObserveDuration()
 		}
+
 		p.pruneFailures()
 		if didUpdate {
 			// Dispose of the old PKI documents.
@@ -607,15 +670,16 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	var err error
-	if !glue.Config().Server.OnlyAdvertiseAltAddresses {
+	if glue.Config().Server.OnlyAdvertiseAltAddresses {
+		p.descAddrMap = make(map[cpki.Transport][]string)
+	} else {
 		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
 			return nil, err
 		}
-	} else {
-		p.descAddrMap = make(map[cpki.Transport][]string)
 	}
 
 	for k, v := range glue.Config().Server.AltAddresses {
+		p.log.Debugf("AltAddresses map entry: %v %v", k, v)
 		if len(v) == 0 {
 			continue
 		}
@@ -624,6 +688,10 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
 		}
 		p.descAddrMap[kTransport] = v
+	}
+
+	if len(p.descAddrMap) == 0 {
+		return nil, errors.New("Descriptor address map is zero size.")
 	}
 
 	if glue.Config().PKI.Nonvoting != nil {

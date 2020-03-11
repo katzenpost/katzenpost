@@ -38,6 +38,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
+	internalConstants "github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
@@ -49,6 +50,7 @@ import (
 	"github.com/katzenpost/server/userdb"
 	"github.com/katzenpost/server/userdb/boltuserdb"
 	"github.com/katzenpost/server/userdb/externuserdb"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
@@ -75,6 +77,21 @@ type provider struct {
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
 
 	httpServers []*http.Server
+}
+
+var (
+	packetsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: internalConstants.Namespace,
+			Name:      "dropped_packets_total",
+			Subsystem: internalConstants.ProviderSubsystem,
+			Help:      "Number of dropped packets",
+		},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(packetsDropped)
 }
 
 func (p *provider) Halt() {
@@ -189,6 +206,7 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 }
 
 func (p *provider) worker() {
+
 	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
 
 	defer p.log.Debugf("Halting Provider worker.")
@@ -205,6 +223,7 @@ func (p *provider) worker() {
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
+				packetsDropped.Inc()
 				pkt.Dispose()
 				continue
 			}
@@ -219,6 +238,7 @@ func (p *provider) worker() {
 			// can't be a SURB-Reply.
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				packetsDropped.Inc()
 				pkt.Dispose()
 			} else {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
@@ -231,6 +251,7 @@ func (p *provider) worker() {
 		if p.cborPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				packetsDropped.Inc()
 				pkt.Dispose()
 			} else {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
@@ -244,6 +265,7 @@ func (p *provider) worker() {
 		recipient, err := p.fixupRecipient(pkt.Recipient.ID[:])
 		if err != nil {
 			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+			packetsDropped.Inc()
 			pkt.Dispose()
 			continue
 		}
@@ -251,6 +273,7 @@ func (p *provider) worker() {
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
 			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+			packetsDropped.Inc()
 			pkt.Dispose()
 			continue
 		}
@@ -286,6 +309,7 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
+		packetsDropped.Inc()
 		return
 	}
 
