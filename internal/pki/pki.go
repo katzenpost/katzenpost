@@ -345,7 +345,7 @@ func (p *pki) pruneDocuments() {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-	publishDeadline := epochtime.Period / 3
+	publishDeadline := epochtime.Period / 2
 
 	epoch, _, till := epochtime.Now()
 	doPublishEpoch := uint64(0)
