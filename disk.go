@@ -18,6 +18,7 @@ package catshadow
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"time"
@@ -65,30 +66,78 @@ type StateWriter struct {
 	stateCh   chan []byte
 	stateFile string
 
-	key [32]byte
+	key *[32]byte
 }
 
-func GetStateFromFile(stateFile string, passphrase []byte) (*State, *[keySize]byte, error) {
-	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize)
-	rawFile, err := ioutil.ReadFile(stateFile)
-	if err != nil {
-		return nil, nil, err
-	}
+func encryptState(state []byte, key *[32]byte) ([]byte, error) {
 	nonce := [nonceSize]byte{}
-	copy(nonce[:], rawFile[:nonceSize])
-	ciphertext := rawFile[nonceSize:]
+	_, err := rand.Reader.Read(nonce[:])
+	if err != nil {
+		return nil, err
+	}
+	ciphertext := secretbox.Seal(nil, state, &nonce, key)
+	ciphertext = append(nonce[:], ciphertext...)
+	return ciphertext, nil
+}
+
+func decryptState(ciphertext []byte, key *[32]byte) ([]byte, error) {
+	nonce := [nonceSize]byte{}
+	copy(nonce[:], ciphertext[:nonceSize])
+	ciphertext = ciphertext[nonceSize:]
+	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, key)
+	if !ok {
+		return nil, errors.New("failed to decrypted statefile")
+	}
+	return plaintext, nil
+}
+
+func stretchKey(passphrase []byte) *[32]byte {
+	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize)
 	key := [keySize]byte{}
 	copy(key[:], secret)
-	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, &key)
-	if !ok {
-		return nil, nil, errors.New("failed to decrypted statefile")
+	return &key
+}
+
+func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
+	rawFile, err := ioutil.ReadFile(stateFile)
+	if err != nil {
+		return nil, err
+	}
+	plaintext, err := decryptState(rawFile, key)
+	if err != nil {
+		return nil, err
 	}
 	state := new(State)
 	err = codec.NewDecoderBytes(plaintext, cborHandle).Decode(state)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return state, &key, nil
+	return state, nil
+}
+
+func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
+	outFn := stateFile
+	tmpFn := fmt.Sprintf("%s.tmp", stateFile)
+	backupFn := fmt.Sprintf("%s~", stateFile)
+	ciphertext, err := encryptState(state, key)
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(tmpFn, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = out.Write(ciphertext)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(outFn, backupFn); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Rename(tmpFn, outFn); err != nil {
+		return err
+	}
+	return nil
 }
 
 // LoadStateWriter decrypts the given stateFile and returns the State
@@ -99,24 +148,25 @@ func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (
 		stateCh:   make(chan []byte),
 		stateFile: stateFile,
 	}
-	state, key, err := GetStateFromFile(stateFile, passphrase)
+	key := stretchKey(passphrase)
+	state, err := decryptStateFile(stateFile, key)
 	if err != nil {
 		return nil, nil, err
 	}
-	copy(worker.key[:], key[:])
+	worker.key = key
 	return worker, state, nil
 }
 
 // NewStateWriter is a constructor for StateWriter which is to be used when creating
 // the statefile for the first time.
 func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, error) {
-	secret := argon2.Key(passphrase, nil, 3, 32*1024, 4, keySize)
+	key := stretchKey(passphrase)
 	worker := &StateWriter{
 		log:       log,
 		stateCh:   make(chan []byte),
 		stateFile: stateFile,
+		key:       key,
 	}
-	copy(worker.key[:], secret[0:32])
 	return worker, nil
 }
 
@@ -127,34 +177,7 @@ func (w *StateWriter) Start() {
 }
 
 func (w *StateWriter) writeState(payload []byte) error {
-	nonce := [nonceSize]byte{}
-	_, err := rand.Reader.Read(nonce[:])
-	if err != nil {
-		return err
-	}
-	ciphertext := secretbox.Seal(nil, payload, &nonce, &w.key)
-	out, err := os.OpenFile(w.stateFile+".tmp", os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return err
-	}
-	outBytes := append(nonce[:], ciphertext...)
-	_, err = out.Write(outBytes)
-	if err != nil {
-		return err
-	}
-	if err := os.Remove(w.stateFile + "~"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := os.Rename(w.stateFile, w.stateFile+"~"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if err := os.Rename(w.stateFile+".tmp", w.stateFile); err != nil {
-		return err
-	}
-	if err := os.Remove(w.stateFile + "~"); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
+	return encryptStateFile(w.stateFile, payload, w.key)
 }
 
 func (w *StateWriter) worker() {

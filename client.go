@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/catshadow/constants"
 	"github.com/katzenpost/client"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -70,7 +69,7 @@ type Client struct {
 	logBackend *log.Backend
 }
 
-type MessageID [constants.MessageIDLen]byte
+type MessageID [MessageIDLen]byte
 
 // NewClientAndRemoteSpool creates a new Client and creates a new remote spool
 // for collecting messages destined to this Client. The Client is associated with
@@ -191,7 +190,7 @@ func (c *Client) garbageCollectConversations() {
 	defer c.conversationsMutex.Unlock()
 	for _, messages := range c.conversations {
 		for mesgID, message := range messages {
-			if time.Now().After(message.Timestamp.Add(constants.MessageExpirationDuration)) {
+			if time.Now().After(message.Timestamp.Add(MessageExpirationDuration)) {
 				delete(messages, mesgID)
 			}
 		}
@@ -476,7 +475,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		return
 	}
 
-	payload := [constants.DoubleRatchetPayloadLength]byte{}
+	payload := [DoubleRatchetPayloadLength]byte{}
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()

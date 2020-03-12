@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package constants
+package catshadow
 
 import (
 	"time"
@@ -24,12 +24,6 @@ import (
 )
 
 const (
-	// ReadInboxLambdaPDivisor is used to divide our LambdaP parameter
-	// to determine our new lambda parameter for our poisson process
-	// which is used in selecting time intervals between attempting
-	// to retreive messages from our remote Provider.
-	ReadInboxLambdaPDivisor = 4
-
 	// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
 	DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
 
