@@ -15,14 +15,46 @@ not only uses strong modern end to end encryption (Noise + Double
 Ratchet), but it is also designed to reduce the amount of metadata
 leaked onto the network.
 
-This code is actively being developed. At the moment I intend
-to use this library with our experimental Qt user interface, catchat:
+This code is actively being developed and is intended
+to be used with our Qt user interface, catchat:
 
 * https://github.com/katzenpost/catchat
 
 
+contact
+=======
+
+* IRC: irc.oftc.net #katzenpost <irc://irc.oftc.net/#katzenpost>
+* Mailing List <https://lists.mixnetworks.org/listinfo/katzenpost>
+
+
+disclaimer
+==========
+
+Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.
+
+
+testing
+=======
+
+optional docker tests
+---------------------
+
+To run the optional docker tests firstly, see our docker repo
+and start your local dockerized mix network:
+
+https://github.com/katzenpost/docker
+
+A couple of minutes after startup run the tests like this:
+::
+
+   GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker
+
+This will run our docker based integration tests for the catshadow library.
+
+
 design
-------
+======
 
 It is my understanding that in terms of the analysis presented in this
 blog post ( Brian Warner's **"Petmail mailbox-server delivery protocol"**
@@ -130,39 +162,6 @@ Ratchet:
 * https://github.com/katzenpost/minclient
 * https://github.com/katzenpost/core
 
-
-testing
-=======
-
-optional docker tests
----------------------
-
-To run the optional docker tests firstly, see our docker repo
-and start your local dockerized mix network:
-
-https://github.com/katzenpost/docker
-
-A couple of minutes after startup run the tests like this:
-::
-
-   GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker
-
-This will run our docker based integration tests for the catshadow library.
-
-
-contact
-=======
-
-* IRC: irc.oftc.net #katzenpost <irc://irc.oftc.net/#katzenpost>
-* Mailing List <https://lists.mixnetworks.org/listinfo/katzenpost>
-
-
-disclaimer
-==========
-
-Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.
-
-😼
 
 license
 =======

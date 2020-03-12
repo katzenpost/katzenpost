@@ -20,25 +20,28 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	mrand "math/rand"
 	"time"
 
-	"github.com/katzenpost/catshadow/constants"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/core/crypto/rand"
 )
 
-func getReadInboxInterval(mRng *mrand.Rand, lambdaP float64, lambdaPMaxDelay uint64) time.Duration {
-	readInboxMsec := uint64(rand.Exp(rand.NewMath(), (lambdaP / constants.ReadInboxLambdaPDivisor)))
-	if readInboxMsec > (lambdaPMaxDelay * constants.ReadInboxLambdaPDivisor) {
-		readInboxMsec = lambdaPMaxDelay * constants.ReadInboxLambdaPDivisor
+// ReadInboxLambdaPDivisor is used to divide our LambdaP parameter
+// to determine our new lambda parameter for our poisson process
+// which is used in selecting time intervals between attempting
+// to retreive messages from our remote Provider.
+const ReadInboxLambdaPDivisor = 4
+
+func getReadInboxInterval(lambdaP float64, lambdaPMaxDelay uint64) time.Duration {
+	readInboxMsec := uint64(rand.Exp(rand.NewMath(), (lambdaP / ReadInboxLambdaPDivisor)))
+	if readInboxMsec > (lambdaPMaxDelay * ReadInboxLambdaPDivisor) {
+		readInboxMsec = lambdaPMaxDelay * ReadInboxLambdaPDivisor
 	}
 	return time.Duration(readInboxMsec) * time.Millisecond
 }
 
 func (c *Client) worker() {
 	const maxDuration = time.Duration(math.MaxInt64)
-	mRng := rand.NewMath()
 
 	// Retreive cached PKI doc.
 	doc := c.session.CurrentDocument()
@@ -47,11 +50,11 @@ func (c *Client) worker() {
 		return
 	}
 
-	readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+	readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
 	readInboxTimer := time.NewTimer(readInboxInterval)
 	defer readInboxTimer.Stop()
 
-	gcMessagestimer := time.NewTimer(constants.GarbageCollectionInterval)
+	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
 
 	isConnected := true
 	for {
@@ -63,12 +66,12 @@ func (c *Client) worker() {
 			return
 		case <-gcMessagestimer.C:
 			c.garbageCollectConversations()
-			gcMessagestimer.Reset(constants.GarbageCollectionInterval)
+			gcMessagestimer.Reset(GarbageCollectionInterval)
 		case <-readInboxTimer.C:
 			if isConnected {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
-				readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
 				readInboxTimer.Reset(readInboxInterval)
 			}
 		case qo = <-c.opCh:
@@ -97,7 +100,7 @@ func (c *Client) worker() {
 			case *client.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
-					readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+					readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
 					c.eventCh.In() <- event
@@ -116,7 +119,7 @@ func (c *Client) worker() {
 				continue
 			case *client.NewDocumentEvent:
 				doc = event.Document
-				readInboxInterval := getReadInboxInterval(mRng, doc.LambdaP, doc.LambdaPMaxDelay)
+				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
 				readInboxTimer.Reset(readInboxInterval)
 				continue
 			default:
