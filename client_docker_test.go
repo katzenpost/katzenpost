@@ -107,7 +107,8 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	require.NoError(err)
 
 	passphrase := []byte("")
-	state, _, err := GetStateFromFile(stateFile, passphrase)
+	key := stretchKey(passphrase)
+	state, err := decryptStateFile(stateFile, key)
 	require.NoError(err)
 	cfg.Account = &cConfig.Account{
 		User:     state.User,
