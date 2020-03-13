@@ -58,7 +58,7 @@ func (c *Client) worker() {
 
 	isConnected := true
 	for {
-		var qo workerOp
+		var qo interface{}
 		select {
 		case <-c.HaltCh():
 			c.log.Debug("Terminating gracefully.")

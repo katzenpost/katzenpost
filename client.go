@@ -46,7 +46,7 @@ type Client struct {
 
 	eventCh    channels.Channel
 	EventSink  chan interface{}
-	opCh       chan workerOp
+	opCh       chan interface{}
 	pandaChan  chan panda.PandaUpdate
 	fatalErrCh chan error
 
@@ -107,7 +107,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	c := &Client{
 		eventCh:             channels.NewInfiniteChannel(),
 		EventSink:           make(chan interface{}),
-		opCh:                make(chan workerOp, 8),
+		opCh:                make(chan interface{}, 8),
 		pandaChan:           make(chan panda.PandaUpdate),
 		fatalErrCh:          make(chan error),
 		sendMap:             new(sync.Map),
