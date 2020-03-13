@@ -16,8 +16,6 @@
 
 package catshadow
 
-type workerOp interface{}
-
 type opAddContact struct {
 	name         string
 	sharedSecret []byte
