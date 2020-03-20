@@ -80,6 +80,11 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		return
 	}
 	log.Debugf("serialized response is len %d", len(serialized))
+
+	serializedLen := [4]byte{}
+	binary.BigEndian.PutUint32(serializedLen[:], uint32(len(serialized)))
+	serialized = append(serializedLen[:], serialized...)
+
 	_, err = response.Write(serialized)
 	if err != nil {
 		log.Error(err.Error())

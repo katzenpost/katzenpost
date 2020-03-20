@@ -44,7 +44,8 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd, err := commands.FromBytes(reply)
+	replyLen := binary.BigEndian.Uint32(reply[:4])
+	cmd, err := commands.FromBytes(reply[4 : 4+replyLen])
 	if err != nil {
 		return nil, fmt.Errorf("Katzenpost Transport Query failure, reply len %d, %s", len(reply), err.Error())
 	}
