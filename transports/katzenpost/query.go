@@ -19,6 +19,7 @@
 package katzenpost
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/katzenpost/client"
