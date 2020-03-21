@@ -8,18 +8,26 @@
 
   # Addresses are the IP address/port combinations that the authority will bind
   # to for incoming connections.
-  Addresses = [ "192.0.2.1:29483", "[2001:DB8::1]:29483" ]
+  Addresses = [ "172.28.1.10:21483", "[2001:DB8::1]:29483" ]
 
   # DataDir is the absolute path to the server's state files.
+  # Must have 700 permissions.
   DataDir = "/var/lib/katzenpost-authority"
 
-[[Authorities]]
-   IdentityPublicKey = "BEEF95721381C0756D28954524BB1D090F54C8DD9295F84B1D8A93F1E3C17AD8"
-   Addresses = [ "192.0.2.7:29483", "[2001:DB8::7]:29483" ]
+#[[Authorities]]
+#   IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+#   LinkPublicKey = "I49V1w7OJ/Kcw7YbEvo+92akE9cYLGeXRBg6KE/sYS8="
+#   Addresses = [ "172.28.1.10:21483" ]
 
 [[Authorities]]
-   IdentityPublicKey = "CAFE95721381C0756D28954524BB1D090F54C8DD9295F84B1D8A93F1E3C17AD8"
-   Addresses = [ "192.0.2.6:29483", "[2001:DB8::6]:29483" ]
+   IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+   LinkPublicKey = "fZcGD+uPm18BYuDKXS3eozp9+i2hW2SWgnuapP0ftgE="
+   Addresses = [ "172.28.1.8:22483" ]
+
+[[Authorities]]
+   IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+   LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
+   Addresses = [ "172.28.1.9:23483" ]
 
 #
 # The Logging section controls the logging.
@@ -31,7 +39,7 @@
   Disable = false
 
   # File specifies the log file, if omitted stdout will be used.
-  # File = "/var/log/katzenpost.log"
+  #File = "/var/log/katzenpost-authority.log"
 
   # Level specifies the log level out of `ERROR`, `WARNING`, `NOTICE`,
   # `INFO` and `DEBUG`.
@@ -46,31 +54,38 @@
 [Parameters]
 
   # Send rate per minute rating limiting.
-  SendRatePerMinute = 100
+  SendRatePerMinute = 0
 
-  # MixLambda is the inverse of the mean of the exponential distribution that
+  # Mu is the inverse of the mean of the exponential distribution that
   # clients will use to sample delays.
-  MixLambda = 0.00025
+  Mu = 0.001
 
-  # MixMaxDelay is the maximum per-hop delay in milliseconds.
+  # MuMaxDelay is the maximum per-hop delay in milliseconds.
   #
   # If omitted, the MaxDelay will be derived from the 0.99999 quantile of
   # of the exponential distribution.
-  MixMaxDelay = 90000
+  MuMaxDelay = 90000
 
-  # SendLambda is the mean of the poisson distribution that clients will use
+  # LambdaP is the mean of the poisson distribution that clients will use
   # to sample the send scheduling interval (seconds).
-  SendLambda = 15.0
+  LambdaP = 0.0001234
 
-  # SendMaxInterval is the maximum send interval in milliseconds.
-  SendMaxInterval = 123000
+  # LambaPMaxDelay is the maximum send interval in milliseconds.
+  LambdaPMaxDelay = 30000
 
-  # MixLoopLambda is the inverse of the mean of the exponential distribution
-  # that clients will sample to determine send timing of loop decoy messages.
-  MixLoopLambda = 15.0
+  # LambdaL is the mean of the poisson distribution that clients will use
+  # to sample the send scheduling interval (seconds).
+  LambdaL = 0.0001234
 
-  # MixLoopMaxInterval is the maximum send interval in milliseconds.
-  MixLoopMaxInterval = 123000
+  # LambaLMaxDelay is the maximum send interval in milliseconds.
+  LambdaLMaxDelay = 30000
+
+  # LambdaD is the mean of the poisson distribution that clients will use
+  # to sample the send scheduling interval (seconds).
+  LambdaD = 0.0001234
+
+  # LambaDMaxDelay is the maximum send interval in milliseconds.
+  LambdaDMaxDelay = 30000
 
 
 #
@@ -78,24 +93,31 @@
 #
 
 [[Mixes]]
-
+  # mix1
   # IdentityKey is the node's EdDSA signing key, in either Base16 OR Base64
   # format.
-  IdentityKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
 
 [[Mixes]]
+  # mix2
+  IdentityKey = "1x8tq04hY+i83o9Yn2nrfTkFj4jXIMWCWilR7fgrWyM="
 
-  IdentityKey = "900895721381C0756D28954524BB1D090F54C8DD9295F84B1D8A93F1E3C17AD8"
+[[Mixes]]
+  # mix3
+  IdentityKey = "La2FnsbKoU8dzQhfN4zkxSYn6T7LRWmFn0JgtlEklQw="
 
 #
 # The Providers array defines the list of white-listed Provider nodes.
 #
 
 [[Providers]]
-
   # Identifier is the human readable provider identifier, such as a FQDN.
-  Identifier = "example.com"
-
+  Identifier = "provider2"
   # IdentityKey is the provider's EdDSA signing key, in either Base16 OR Base64
   # format.
-  IdentityKey = "0AV1syaCdBbm3CLmgXLj6HdlMNiTeeIxoDc8Lgk41e0="
+  IdentityKey = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
+
+[[Providers]]
+  Identifier = "provider1"
+  IdentityKey = "2krwfNDfbakZCSTUUZYKXwdduzlEgS9Jfwm7eyZ0sCg="
+
