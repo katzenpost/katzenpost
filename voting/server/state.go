@@ -1175,6 +1175,9 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 
 	// Check for redundant uploads.
 	if d, ok := m[pk]; ok {
+		if d.raw == nil {
+			return fmt.Errorf("state: Wtf, raw field of descriptor for epoch %v is nil", epoch)
+		}
 		// If the descriptor changes, then it will be rejected to prevent
 		// nodes from reneging on uploads.
 		if !bytes.Equal(d.raw, rawDesc) {
