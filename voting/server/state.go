@@ -764,15 +764,6 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	return nil, nil, errors.New("consensus failure")
 }
 
-func (s *state) GetConsensus(epoch uint64) (*document, error) {
-	s.Lock()
-	defer s.Unlock()
-	if d := s.documents[epoch]; d != nil {
-		return d, nil
-	}
-	return nil, errNotYet
-}
-
 func (s *state) isTabulated(epoch uint64) bool {
 	if _, ok := s.documents[epoch]; ok {
 		return true

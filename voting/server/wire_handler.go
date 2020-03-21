@@ -154,7 +154,7 @@ func (s *Server) onReveal(cmd *commands.Reveal) commands.Command {
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
 	resp := &commands.Consensus{}
-	doc, err := s.state.GetConsensus(cmd.Epoch)
+	doc, err := s.state.documentForEpoch(cmd.Epoch)
 	if err != nil {
 		s.log.Errorf("Peer %v: Failed to retreive document for epoch '%v': %v", rAddr, cmd.Epoch, err)
 		switch err {
@@ -166,7 +166,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	} else {
 		s.log.Debugf("Peer: %v: Serving document for epoch %v.", rAddr, cmd.Epoch)
 		resp.ErrorCode = commands.ConsensusOk
-		resp.Payload = doc.raw
+		resp.Payload = doc
 	}
 	return resp
 }
