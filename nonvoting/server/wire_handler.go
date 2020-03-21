@@ -103,7 +103,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	resp := &commands.Consensus{}
 	doc, err := s.state.documentForEpoch(cmd.Epoch)
 	if err != nil {
-		s.log.Errorf("Peer %v: Failed to retreive document for epoch '%v': %v", rAddr, cmd.Epoch, err)
+		s.log.Errorf("Peer %v: Failed to retrieve document for epoch '%v': %v", rAddr, cmd.Epoch, err)
 		switch err {
 		case errGone:
 			resp.ErrorCode = commands.ConsensusGone
@@ -132,7 +132,8 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		// the node's clock is and the current time.
 	default:
 		// The peer is publishing for an epoch that's invalid.
-		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v'", rAddr, cmd.Epoch)
+		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v'," +
+		" epoch should be around '%v'", rAddr, cmd.Epoch, now)
 		return resp
 	}
 
