@@ -302,7 +302,10 @@ func (a *AuthorityPeer) Validate() error {
 		}
 	}
 	if a.IdentityPublicKey == nil {
-		return fmt.Errorf("config: %v: AuthorityPeer is missing Identifier", a)
+		return fmt.Errorf("config: %v: AuthorityPeer is missing Identity Key", a)
+	}
+	if a.LinkPublicKey == nil {
+		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key", a)
 	}
 	return nil
 }
