@@ -208,7 +208,7 @@ func (s *state) generateDocument(epoch uint64) {
 		Topology:          topology,
 		Providers:         providers,
 	}
-	// For compatibliity with shared s11n implementation between voting
+	// For compatibility with shared s11n implementation between voting
 	// and non-voting authority, add SharedRandomValue.
 	doc.SharedRandomValue = make([]byte, s11n.SharedRandomValueLength)
 
@@ -435,7 +435,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	d.raw = rawDesc
 	m[pk] = d
 
-	s.log.Debugf("Node %v: Sucessfully submitted descriptor for epoch %v.", desc.IdentityKey, epoch)
+	s.log.Debugf("Node %v: Successfully submitted descriptor for epoch %v.", desc.IdentityKey, epoch)
 	s.onUpdate()
 	return nil
 }

@@ -132,7 +132,7 @@ func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, ver
 	return signed, nil
 }
 
-// VerifyAndParseDocument verifies the signautre and deserializes the document.
+// VerifyAndParseDocument verifies the signature and deserializes the document.
 func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, error) {
 	payload, err := cert.Verify(verifier, b)
 	if err != nil {

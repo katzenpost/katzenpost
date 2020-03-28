@@ -156,7 +156,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	resp := &commands.Consensus{}
 	doc, err := s.state.documentForEpoch(cmd.Epoch)
 	if err != nil {
-		s.log.Errorf("Peer %v: Failed to retreive document for epoch '%v': %v", rAddr, cmd.Epoch, err)
+		s.log.Errorf("Peer %v: Failed to retrieve document for epoch '%v': %v", rAddr, cmd.Epoch, err)
 		switch err {
 		case errGone:
 			resp.ErrorCode = commands.ConsensusGone
