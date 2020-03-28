@@ -24,7 +24,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/ugorji/go/codec"
+	"github.com/fxamacker/cbor/v2"
 )
 
 const (
@@ -33,8 +33,6 @@ const (
 )
 
 var (
-	cborHandle *codec.CborHandle
-
 	// ErrImpossibleDecode is an impossible decoding error.
 	ErrImpossibleDecode = errors.New("impossible to decode")
 
@@ -185,20 +183,13 @@ func Sign(signer Signer, data []byte, expiration int64) ([]byte, error) {
 			Payload:  signer.Sign(mesg),
 		},
 	}
-	out := []byte{}
-	enc := codec.NewEncoderBytes(&out, cborHandle)
-	err = enc.Encode(&cert)
-	if err != nil {
-		return nil, ErrImpossibleEncode
-	}
-	return out, nil
+	return cbor.Marshal(cert)
 }
 
 // GetCertified returns the certified data.
 func GetCertified(rawCert []byte) ([]byte, error) {
 	cert := certificate{}
-	dec := codec.NewDecoderBytes(rawCert, cborHandle)
-	err := dec.Decode(&cert)
+	err := cbor.Unmarshal(rawCert, &cert)
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
@@ -212,8 +203,7 @@ func GetCertified(rawCert []byte) ([]byte, error) {
 // GetSignatures returns all the signatures.
 func GetSignatures(rawCert []byte) ([]Signature, error) {
 	cert := certificate{}
-	dec := codec.NewDecoderBytes(rawCert, cborHandle)
-	err := dec.Decode(&cert)
+	err := cbor.Unmarshal(rawCert, &cert)
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
@@ -228,8 +218,7 @@ func GetSignatures(rawCert []byte) ([]Signature, error) {
 // if it matches with the given identity.
 func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
 	cert := certificate{}
-	dec := codec.NewDecoderBytes(rawCert, cborHandle)
-	err := dec.Decode(&cert)
+	err := cbor.Unmarshal(rawCert, &cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
@@ -264,8 +253,7 @@ func (d byIdentity) Less(i, j int) bool {
 func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
 	// decode certificate
 	cert := new(certificate)
-	dec := codec.NewDecoderBytes(rawCert, cborHandle)
-	err := dec.Decode(cert)
+	err := cbor.Unmarshal(rawCert, &cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
@@ -298,9 +286,7 @@ func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
 	sort.Sort(byIdentity(cert.Signatures))
 
 	// serialize certificate
-	out := []byte{}
-	enc := codec.NewEncoderBytes(&out, cborHandle)
-	err = enc.Encode(&cert)
+	out, err := cbor.Marshal(&cert)
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
@@ -312,8 +298,7 @@ func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
 func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byte, error) {
 	// decode certificate
 	cert := new(certificate)
-	dec := codec.NewDecoderBytes(rawCert, cborHandle)
-	err := dec.Decode(cert)
+	err := cbor.Unmarshal(rawCert, &cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
@@ -342,9 +327,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 		return nil, ErrBadSignature
 	}
 	// serialize certificate
-	out := []byte{}
-	enc := codec.NewEncoderBytes(&out, cborHandle)
-	err = enc.Encode(&cert)
+	out, err := cbor.Marshal(cert)
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
@@ -355,8 +338,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 // It returns the certified data if the signature is valid.
 func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 	cert := new(certificate)
-	enc := codec.NewDecoderBytes(rawCert, cborHandle)
-	err := enc.Decode(cert)
+	err := cbor.Unmarshal(rawCert, &cert)
 	if err != nil {
 		return nil, err
 	}
@@ -421,9 +403,4 @@ func VerifyThreshold(verifiers []Verifier, threshold int, rawCert []byte) ([]byt
 		return certified, good, bad, nil
 	}
 	return nil, good, bad, ErrThresholdNotMet
-}
-
-func init() {
-	cborHandle = new(codec.CborHandle)
-	cborHandle.Canonical = true
 }
