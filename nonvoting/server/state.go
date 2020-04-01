@@ -126,13 +126,18 @@ func (s *state) onWakeup() {
 
 	// If we are doing a bootstrap, and we don't have a document, attempt
 	// to generate one for the current epoch regardless of the time.
-	if epoch == s.bootstrapEpoch && s.documents[epoch] == nil {
+	if (epoch == s.bootstrapEpoch || epoch == s.bootstrapEpoch+1) && s.documents[epoch] == nil {
 		// The bootstrap phase will belatedly generate a document for
 		// the current epoch iff it receives descriptor uploads for *ALL*
 		// nodes it knows about (eg: Test setups).
 		nrBootstrapDescs := len(s.authorizedMixes) + len(s.authorizedProviders)
-		if m, ok := s.descriptors[epoch]; ok && len(m) == nrBootstrapDescs {
+		m, ok := s.descriptors[epoch]
+		if ok && len(m) == nrBootstrapDescs {
+			s.log.Debugf("All descriptors uploaded, bootstrapping document")
 			s.generateDocument(epoch)
+		} else {
+			s.log.Debugf("We are in bootstrapping state for current epoch %v but only have " +
+			"%d descriptors out of %d authorized nodes", epoch, len(m), nrBootstrapDescs)
 		}
 	}
 
@@ -141,6 +146,8 @@ func (s *state) onWakeup() {
 	if till < mixPublishDeadline && s.documents[epoch+1] == nil {
 		if m, ok := s.descriptors[epoch+1]; ok && s.hasEnoughDescriptors(m) {
 			s.generateDocument(epoch + 1)
+		} else {
+			s.log.Debugf("Not enough descriptors for next epoch %v yet", epoch+1)
 		}
 	}
 
@@ -461,7 +468,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		// Check to see if we are doing a bootstrap, and it's possible that
 		// we may decide to publish a document at some point ignoring the
 		// standard schedule.
-		if now == s.bootstrapEpoch {
+		if now == s.bootstrapEpoch || now - 1 == s.bootstrapEpoch {
 			return nil, errNotYet
 		}
 
@@ -470,6 +477,9 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		s.log.Errorf("No document for current epoch %v generated and never will be", now)
 		return nil, errGone
 	case now + 1:
+		if now == s.bootstrapEpoch {
+			return nil, errNotYet
+		}
 		// If it's past the time by which we should have generated a document
 		// then we will never be able to service this.
 		if elapsed > generationDeadline {
