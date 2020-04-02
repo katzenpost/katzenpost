@@ -11,6 +11,7 @@ require (
 	github.com/coreos/bbolt v1.3.3
 	github.com/dchest/siphash v1.2.1 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.5.0+incompatible
 	github.com/katzenpost/authority v0.0.9-0.20200328223147-c3646881ec66
