@@ -52,7 +52,7 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 	request := cborplugin.Request{
 		Payload: make([]byte, 0),
 	}
-	err := codec.NewDecoder(req.Body, new(codec.CborHandle)).Decode(&request)
+	err := codec.NewDecoder(req.Body, cborHandle).Decode(&request)
 	if err != nil {
 		log.Errorf("query command must be of type cborplugin.Request: %s", err.Error())
 		return
@@ -80,11 +80,6 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		return
 	}
 	log.Debugf("serialized response is len %d", len(serialized))
-
-	serializedLen := [4]byte{}
-	binary.BigEndian.PutUint32(serializedLen[:], uint32(len(serialized)))
-	serialized = append(serializedLen[:], serialized...)
-
 	_, err = response.Write(serialized)
 	if err != nil {
 		log.Error(err.Error())
