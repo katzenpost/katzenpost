@@ -46,10 +46,10 @@ import (
 )
 
 var (
-	errNotCached    = errors.New("pki: requested epoch document not in cache")
-	recheckInterval = 1 * time.Minute
-	WarpedEpoch     = "false"
-	nextFetchTill = epochtime.Period / 2
+	errNotCached         = errors.New("pki: requested epoch document not in cache")
+	recheckInterval      = 1 * time.Minute
+	WarpedEpoch          = "false"
+	nextFetchTill        = epochtime.Period / 2
 	pkiEarlyConnectSlack = epochtime.Period / 6
 )
 
@@ -116,12 +116,6 @@ var (
 	)
 	fetchedPKIDocsTimer *prometheus.Timer
 )
-
-func init() {
-	prometheus.MustRegister(fetchedPKIDocs)
-	prometheus.MustRegister(fetchedPKIDocsDuration)
-	prometheus.MustRegister(failedFetchPKIDocs)
-}
 
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
@@ -762,6 +756,10 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 }
 
 func init() {
+	prometheus.MustRegister(fetchedPKIDocs)
+	prometheus.MustRegister(fetchedPKIDocsDuration)
+	prometheus.MustRegister(failedFetchPKIDocs)
+
 	if WarpedEpoch == "true" {
 		recheckInterval = 20 * time.Second
 	}
