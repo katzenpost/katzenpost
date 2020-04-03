@@ -34,9 +34,9 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -184,7 +184,8 @@ func (c *Client) launch(command string, args []string) error {
 		return err
 	}
 	responseParams := make(Parameters)
-	err = codec.NewDecoder(rawResponse.Body, new(codec.CborHandle)).Decode(&responseParams)
+	decoder := cbor.NewDecoder(rawResponse.Body)
+	err = decoder.Decode(&responseParams)
 	if err != nil {
 		c.log.Debugf("decode failure: %s", err)
 		return err
@@ -196,9 +197,8 @@ func (c *Client) launch(command string, args []string) error {
 
 // OnRequest send a query request to plugin using CBOR + HTTP over Unix domain socket.
 func (c *Client) OnRequest(request *Request) ([]byte, error) {
-	serialized := []byte{}
-	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
-	if err := enc.Encode(request); err != nil {
+	serialized, err := cbor.Marshal(request)
+	if err != nil {
 		return nil, err
 	}
 
@@ -207,7 +207,8 @@ func (c *Client) OnRequest(request *Request) ([]byte, error) {
 		return nil, err
 	}
 	response := new(Response)
-	err = codec.NewDecoder(rawResponse.Body, new(codec.CborHandle)).Decode(&response)
+	decoder := cbor.NewDecoder(rawResponse.Body)
+	err = decoder.Decode(&response)
 	if err != nil {
 		return nil, err
 	}
