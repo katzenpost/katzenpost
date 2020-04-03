@@ -26,33 +26,32 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/reunion/commands"
 	"github.com/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/reunion/server"
 	"github.com/katzenpost/server/cborplugin"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
 func parametersHandler(response http.ResponseWriter, req *http.Request) {
 	params := new(cborplugin.Parameters)
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
-	if err := enc.Encode(params); err != nil {
+	serialized, err := cbor.Marshal(params)
+	if err != nil {
 		panic(err)
 	}
-	_, err := response.Write(serialized)
+	_, err = response.Write(serialized)
 	if err != nil {
 		panic(err)
 	}
 }
 
 func requestHandler(log *logging.Logger, server *server.Server, response http.ResponseWriter, req *http.Request) {
-	cborHandle := new(codec.CborHandle)
+	decoder := cbor.NewDecoder(req.Body)
 	request := cborplugin.Request{
 		Payload: make([]byte, 0),
 	}
-	err := codec.NewDecoder(req.Body, new(codec.CborHandle)).Decode(&request)
+	err := decoder.Decode(&request)
 	if err != nil {
 		log.Errorf("query command must be of type cborplugin.Request: %s", err.Error())
 		return
@@ -73,9 +72,8 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 	reply := cborplugin.Response{
 		Payload: rawReply,
 	}
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, cborHandle)
-	if err := enc.Encode(reply); err != nil {
+	serialized, err := cbor.Marshal(reply)
+	if err != nil {
 		log.Error(err.Error())
 		return
 	}
