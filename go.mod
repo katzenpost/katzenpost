@@ -13,8 +13,7 @@ require (
 	github.com/katzenpost/client v0.0.3-0.20200229014943-9ad6e0eb46bc
 	github.com/katzenpost/kimchi v0.0.0-20190923104312-3f798235dc4f // indirect
 	github.com/katzenpost/panda v0.0.4-0.20200229021837-f71485219734 // indirect
-	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/muesli/go-app-paths v0.0.0-20190807044811-d2c0b0de0ab1
+	github.com/muesli/go-app-paths v0.2.1
 	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
 	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
 	github.com/therecipe/qt v0.0.0-20191229182118-1b040f91f390

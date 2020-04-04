@@ -149,7 +149,7 @@ func main() {
 	ga.SetWindowIcon(gui.NewQIcon5(":/qml/images/katzenpost_logo.png"))
 
 	// load config
-	scope := gap.NewScope(gap.User, "katzenpost", "catchat")
+	scope := gap.NewScope(gap.User, "catchat")
 	configDir, err := scope.ConfigPath("")
 	if err != nil {
 		panic(err)
