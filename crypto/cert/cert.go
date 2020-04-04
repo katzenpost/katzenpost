@@ -357,7 +357,7 @@ func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 			if verifier.Verify(sig.Payload, mesg) {
 				return cert.Certified, nil
 			}
-			return nil, nil
+			return nil, ErrBadSignature
 		}
 	}
 	return nil, ErrIdentitySignatureNotFound
