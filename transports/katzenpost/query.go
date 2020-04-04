@@ -51,7 +51,7 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	response := cborplugin.Response{}
 	err = cbor.Unmarshal(reply[4:4+replyLen], &response)
 	if err != nil {
-		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode cbor in reply len %d, %s", len(reply), err.Error())
+		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode cbor in reply len %d, %s", replyLen, err.Error())
 	}
 	replyLen = binary.BigEndian.Uint32(response.Payload[:4])
 	cmd, err := commands.FromBytes(reply[4 : 4+replyLen])
