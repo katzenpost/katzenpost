@@ -71,6 +71,26 @@ func TestEd25519Certificate(t *testing.T) {
 func TestEd25519BadCertificate(t *testing.T) {
 	assert := assert.New(t)
 
+	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
+	assert.NoError(err)
+
+	// expiration in six months
+	expiration := time.Now().AddDate(0, 6, 0).Unix()
+	certified := signingPrivKey.PublicKey().Bytes()
+	certified[3] = 235 // modify the signed data so that the Verify will fail
+
+	certificate, err := Sign(signingPrivKey, certified, expiration)
+	assert.NoError(err)
+
+	mesg, err := Verify(signingPrivKey.PublicKey(), certificate)
+	assert.Error(err)
+	assert.Equal(ErrBadSignature, err)
+	assert.Nil(mesg)
+}
+
+func TestEd25519WrongCertificate(t *testing.T) {
+	assert := assert.New(t)
+
 	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
 	assert.NoError(err)
 
@@ -79,7 +99,6 @@ func TestEd25519BadCertificate(t *testing.T) {
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
-
 	certificate, err := Sign(signingPrivKey, ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
 
