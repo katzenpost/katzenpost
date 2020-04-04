@@ -67,7 +67,11 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
 		return
 	}
+
 	rawReply := replyCmd.ToBytes()
+	rawReplyLen := [4]byte{}
+	binary.BigEndian.PutUint32(rawReplyLen[:4], uint32(len(rawReply)))
+	rawReply = append(rawReplyLen[:], rawReply...)
 	log.Debugf("after server.ProcessQuery, reply command len %d", len(rawReply))
 	reply := cborplugin.Response{
 		Payload: rawReply,
@@ -77,6 +81,10 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		log.Error(err.Error())
 		return
 	}
+	serializedLen := [4]byte{}
+	binary.BigEndian.PutUint32(serializedLen[:4], uint32(len(serialized)))
+	serialized = append(serializedLen[:], serialized...)
+
 	log.Debugf("serialized response is len %d", len(serialized))
 
 	_, err = response.Write(serialized)
