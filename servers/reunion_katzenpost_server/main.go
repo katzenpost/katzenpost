@@ -88,9 +88,6 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		log.Error(err.Error())
 		return
 	}
-	serializedLen := [4]byte{}
-	binary.BigEndian.PutUint32(serializedLen[:4], uint32(len(serialized)))
-	serialized = append(serializedLen[:], serialized...)
 
 	log.Debugf("serialized response is len %d", len(serialized))
 
