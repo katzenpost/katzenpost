@@ -37,7 +37,7 @@ Follow the build instructions above, but instead of the last command, run:
     $(go env GOPATH)/bin/qtdeploy -docker build linux
 
 
-#### Testing catchat
+## Testing catchat
 
 You can test catchat with a local mixnet. The recommended way to do
 this is to first run a docker based mixnet locally, see here:
@@ -58,8 +58,7 @@ file which will work with the docker mixnet you are running:
 https://github.com/katzenpost/catshadow
 
 
-
-#### Run it
+## Run it
 
 You only need to pass it the -g option the first time you run catchat
 so that it generates a new encrypted state file.
