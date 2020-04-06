@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -47,11 +48,17 @@ func parametersHandler(response http.ResponseWriter, req *http.Request) {
 }
 
 func requestHandler(log *logging.Logger, server *server.Server, response http.ResponseWriter, req *http.Request) {
-	decoder := cbor.NewDecoder(req.Body)
+	requestBuffer := bytes.NewBuffer([]byte{})
+	_, err := requestBuffer.ReadFrom(req.Body)
+	if err != nil {
+		log.Errorf("bytes.Buffer ReadFrom error: %s", err.Error())
+		return
+	}
+	requestSlice := requestBuffer.Bytes()
 	request := cborplugin.Request{
 		Payload: make([]byte, 0),
 	}
-	err := decoder.Decode(&request)
+	err = cbor.Unmarshal(requestSlice, &request)
 	if err != nil {
 		log.Errorf("query command must be of type cborplugin.Request: %s", err.Error())
 		return
