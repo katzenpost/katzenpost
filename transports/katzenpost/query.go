@@ -20,6 +20,7 @@ package katzenpost
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
@@ -47,13 +48,17 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	replyLen := binary.BigEndian.Uint32(reply[:4])
-	response := cborplugin.Response{}
-	err = cbor.Unmarshal(reply[4:4+replyLen], &response)
-	if err != nil {
-		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode cbor in reply len %d, %s", replyLen, err.Error())
+	if reply == nil {
+		return nil, errors.New("error, reply is nil")
 	}
-	replyLen = binary.BigEndian.Uint32(response.Payload[:4])
+	response := cborplugin.Response{
+		Payload: make([]byte, 0),
+	}
+	err = cbor.Unmarshal(reply, &response)
+	if err != nil {
+		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot Unmarshal cbor in reply len %d, %s", len(reply), err.Error())
+	}
+	replyLen := binary.BigEndian.Uint32(response.Payload[:4])
 	cmd, err := commands.FromBytes(reply[4 : 4+replyLen])
 	if err != nil {
 		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode command in reply len %d, %s", len(response.Payload), err.Error())
