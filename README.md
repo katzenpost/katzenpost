@@ -12,11 +12,7 @@ See the [install instructions](http://golang.org/doc/install.html).
 
 You will also need Qt5 and its development headers installed.
 
-#### Dependencies
-
-Before you can build catchat you need to install the [Go/Qt bindings](https://github.com/therecipe/qt/wiki/Installation#regular-installation).
-
-#### Qt5 dependencies (Ubuntu example)
+#### Dependencies (Ubuntu example)
 
     apt-get --no-install-recommends install build-essential libglib2.0-dev libglu1-mesa-dev libpulse-dev
     apt-get --no-install-recommends install libqt*5-dev qt*5-dev qt*5-doc-html qml-module-qtquick*
@@ -37,7 +33,7 @@ Follow the build instructions above, but instead of the last command, run:
     $(go env GOPATH)/bin/qtdeploy -docker build linux
 
 
-#### Testing catchat
+## Testing catchat
 
 You can test catchat with a local mixnet. The recommended way to do
 this is to first run a docker based mixnet locally, see here:
@@ -58,8 +54,7 @@ file which will work with the docker mixnet you are running:
 https://github.com/katzenpost/catshadow
 
 
-
-#### Run it
+## Run it
 
 You only need to pass it the -g option the first time you run catchat
 so that it generates a new encrypted state file.

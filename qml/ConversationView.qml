@@ -19,7 +19,9 @@ Page {
 
         Label {
             id: pageTitle
-            text: "Chat with " + accountBridge.recipient
+            text: accountBridge.keyExchanged ?
+                qsTr("Chat with") + " " + accountBridge.recipient :
+                qsTr("Awaiting key exchange with") + " " + accountBridge.recipient
             font.pixelSize: 20
             anchors.centerIn: parent
         }
