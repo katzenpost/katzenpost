@@ -54,8 +54,9 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	response := cborplugin.Response{
 		Payload: make([]byte, 0),
 	}
-	err = cbor.Unmarshal(reply, &response)
+	err = cbor.Unmarshal(reply[:], &response)
 	if err != nil {
+		fmt.Printf("%x", reply)
 		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot Unmarshal cbor in reply len %d, %s", len(reply), err.Error())
 	}
 	replyLen := binary.BigEndian.Uint32(response.Payload[:4])
