@@ -4,10 +4,10 @@ go 1.13
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/katzenpost/authority v0.0.9-0.20200328223147-c3646881ec66
-	github.com/katzenpost/core v0.0.8-0.20200328221344-83888e422355
-	github.com/katzenpost/kimchi v0.0.0-20190919180141-c3fbd2593e78
-	github.com/katzenpost/minclient v0.0.6-0.20200328222521-0184c59a7923
+	github.com/katzenpost/authority v0.0.9
+	github.com/katzenpost/core v0.0.8
+	github.com/katzenpost/kimchi v0.0.0-20190923104312-3f798235dc4f
+	github.com/katzenpost/minclient v0.0.6
 	github.com/katzenpost/registration_client v0.0.1
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
