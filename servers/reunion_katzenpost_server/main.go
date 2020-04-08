@@ -79,7 +79,7 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 	rawReplyLen := [4]byte{}
 	binary.BigEndian.PutUint32(rawReplyLen[:4], uint32(len(rawReply)))
 	rawReply = append(rawReplyLen[:], rawReply...)
-	log.Debugf("after server.ProcessQuery, reply command len %d %x", len(rawReply), rawReply)
+	log.Debugf("after server.ProcessQuery, reply command len %d", len(rawReply))
 	reply := cborplugin.Response{
 		Payload: rawReply,
 	}
@@ -89,7 +89,7 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 		return
 	}
 
-	log.Debugf("serialized response is len %d %x", len(serialized), serialized)
+	log.Debugf("serialized response is len %d", len(serialized))
 
 	_, err = response.Write(serialized)
 	if err != nil {
