@@ -8,10 +8,8 @@ require (
 	github.com/gen2brain/beeep v0.0.0-20200131162055-1f001e98c9e1
 	github.com/godbus/dbus v4.1.0+incompatible // indirect
 	github.com/gopherjs/gopherwasm v1.1.0 // indirect
-	github.com/katzenpost/authority v0.0.9-0.20200229015030-c6674ad45788 // indirect
-	github.com/katzenpost/catshadow v0.0.2-0.20200229043958-da759a768c08
-	github.com/katzenpost/client v0.0.3-0.20200229014943-9ad6e0eb46bc
-	github.com/katzenpost/kimchi v0.0.0-20190923104312-3f798235dc4f // indirect
+	github.com/katzenpost/catshadow v0.0.3
+	github.com/katzenpost/client v0.0.3
 	github.com/katzenpost/panda v0.0.4-0.20200229021837-f71485219734 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/muesli/go-app-paths v0.0.0-20190807044811-d2c0b0de0ab1
