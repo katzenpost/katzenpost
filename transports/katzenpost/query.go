@@ -23,10 +23,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/server/cborplugin"
 )
 
 // Transport is used by Reunion protocol
@@ -51,18 +49,10 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	if reply == nil {
 		return nil, errors.New("error, reply is nil")
 	}
-	response := cborplugin.Response{
-		Payload: make([]byte, 0),
-	}
-	err = cbor.Unmarshal(reply[:], &response)
-	if err != nil {
-		fmt.Printf("%x", reply)
-		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot Unmarshal cbor in reply len %d, %s", len(reply), err.Error())
-	}
-	replyLen := binary.BigEndian.Uint32(response.Payload[:4])
+	replyLen := binary.BigEndian.Uint32(reply[:4])
 	cmd, err := commands.FromBytes(reply[4 : 4+replyLen])
 	if err != nil {
-		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode command in reply len %d, %s", len(response.Payload), err.Error())
+		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode command in reply len %d, %s", replyLen, err.Error())
 	}
 	return cmd, nil
 }
