@@ -7,24 +7,14 @@ require (
 	git.schwanenlied.me/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	git.schwanenlied.me/yawning/bloom.git v0.0.0-20181019144233-44d6c5c71ed1
 	github.com/BurntSushi/toml v0.3.1
-	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/coreos/bbolt v1.3.3
-	github.com/dchest/siphash v1.2.1 // indirect
-	github.com/eapache/queue v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.2.0
-	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.5.0+incompatible
-	github.com/katzenpost/authority v0.0.9-0.20200328223147-c3646881ec66
-	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 // indirect
-	github.com/katzenpost/core v0.0.8-0.20200328221344-83888e422355
-	github.com/katzenpost/noise v0.0.0-20190907211420-4c2fa3a5d7a1 // indirect
-	github.com/lib/pq v1.2.0 // indirect
+	github.com/katzenpost/authority v0.0.9
+	github.com/katzenpost/core v0.0.8
 	github.com/prometheus/client_golang v1.4.0
-	github.com/satori/go.uuid v1.2.0 // indirect
-	github.com/shopspring/decimal v0.0.0-20190905144223-a36b5d85f337 // indirect
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
-	golang.org/x/crypto v0.0.0-20190909091759-094676da4a83 // indirect
 	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80
 	golang.org/x/text v0.3.2
 	gopkg.in/eapache/channels.v1 v1.1.0
