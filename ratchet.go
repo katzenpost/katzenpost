@@ -862,3 +862,28 @@ func (r *Ratchet) Unmarshal(s *State) error {
 
 	return nil
 }
+
+// DestroyRatchet destroys the ratchet
+func DestroyRatchet(r *Ratchet) {
+	r.TheirSigningPublic.Destroy()
+	r.TheirIdentityPublic.Destroy()
+	r.MySigningPublic.Destroy()
+	r.MySigningPrivate.Destroy()
+	r.MyIdentityPrivate.Destroy()
+	r.MyIdentityPublic.Destroy()
+
+	r.rootKey.Destroy()
+	r.sendHeaderKey.Destroy()
+	r.recvHeaderKey.Destroy()
+	r.nextSendHeaderKey.Destroy()
+	r.nextRecvHeaderKey.Destroy()
+	r.sendChainKey.Destroy()
+	r.recvChainKey.Destroy()
+	r.sendRatchetPrivate.Destroy()
+	r.recvRatchetPublic.Destroy()
+	r.sendCount, r.recvCount = uint32(0), uint32(0)
+	r.prevSendCount = uint32(0)
+
+	r.kxPrivate0.Destroy()
+	r.kxPrivate1.Destroy()
+}
