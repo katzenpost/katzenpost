@@ -10,7 +10,7 @@ Double Ratchet Library
 ======================
 
 This library is a fork of agl's double ratchet in his pond messaging system.
-I have made several changes in this fork:
+We have made several changes in this fork:
 
 * serialization in CBOR instead of protobufs
 * this library takes ownership of all key material used

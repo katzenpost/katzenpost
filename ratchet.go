@@ -13,6 +13,7 @@ import (
 
 	"github.com/agl/ed25519"
 	"github.com/agl/ed25519/extra25519"
+	"github.com/awnumar/memguard"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -24,6 +25,7 @@ const ()
 var cborHandle = new(codec.CborHandle)
 
 // KeyExchange is structure containing the public keys
+// alll of this
 type KeyExchange struct {
 	PublicKey      []byte
 	IdentityPublic []byte
@@ -109,7 +111,7 @@ type Ratchet struct {
 	// kxPrivate0 and kxPrivate1 contain curve25519 private values during
 	// the key exchange phase. They are not valid once key exchange has
 	// completed.
-	kxPrivate0, kxPrivate1 *[32]byte
+	kxPrivate0, kxPrivate1 *memguard.LockedBuffer
 
 	rand io.Reader
 }
@@ -129,17 +131,17 @@ func (r *Ratchet) randBytes(buf []byte) {
 }
 
 // NewRatchet creates a new ratchet struct
-// TODO: why does this use ed and montgomery forms?
-func NewRatchet(rand io.Reader) (*Ratchet, error) {
+func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	r := &Ratchet{
 		rand:       rand,
-		kxPrivate0: new([privateKeySize]byte),
-		kxPrivate1: new([privateKeySize]byte),
+		kxPrivate0: memguard.NewBuffer(privateKeySize),
+		kxPrivate1: memguard.NewBuffer(privateKeySize),
 		saved:      make(map[[32]byte]map[uint32]savedKey),
 	}
 
-	r.randBytes(r.kxPrivate0[:])
-	r.randBytes(r.kxPrivate1[:])
+	r.randBytes(r.kxPrivate0.ByteArray32()[:])
+	r.randBytes(r.kxPrivate1.ByteArray32()[:])
+
 	mySigningPublic, mySigningPrivate, err := ed25519.GenerateKey(rand)
 	if err != nil {
 		return nil, err
@@ -197,8 +199,8 @@ func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 	}
 
 	var public0, public1 [32]byte
-	curve25519.ScalarBaseMult(&public0, r.kxPrivate0)
-	curve25519.ScalarBaseMult(&public1, r.kxPrivate1)
+	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
+	curve25519.ScalarBaseMult(&public1, r.kxPrivate1.ByteArray32())
 	kx.Dh = public0[:] // TODO: why we have two of these?
 	kx.Dh1 = public1[:]
 
@@ -281,7 +283,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 	}
 
 	var public0 [32]byte
-	curve25519.ScalarBaseMult(&public0, r.kxPrivate0)
+	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
 
 	if len(kx.Dh) != len(public0) {
 		return errors.New("Ratchet: peer's key exchange is invalid")
@@ -307,16 +309,16 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 
 	keyMaterial := make([]byte, 0, 32*5)
 	var sharedKey [32]byte
-	curve25519.ScalarMult(&sharedKey, r.kxPrivate0, &theirDH)
+	curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), &theirDH)
 	keyMaterial = append(keyMaterial, sharedKey[:]...)
 
 	if amAlice {
 		curve25519.ScalarMult(&sharedKey, &r.MyIdentityPrivate, &theirDH)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, &r.TheirIdentityPublic)
+		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), &r.TheirIdentityPublic)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 	} else {
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0, &r.TheirIdentityPublic)
+		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), &r.TheirIdentityPublic)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 		curve25519.ScalarMult(&sharedKey, &r.MyIdentityPrivate, &theirDH)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
@@ -336,12 +338,12 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 		deriveKey(&r.nextRecvHeaderKey, sendHeaderKeyLabel, h)
 		deriveKey(&r.nextSendHeaderKey, nextRecvHeaderKeyLabel, h)
 		deriveKey(&r.sendChainKey, chainKeyLabel, h)
-		copy(r.sendRatchetPrivate[:], r.kxPrivate1[:])
+		copy(r.sendRatchetPrivate[:], r.kxPrivate1.ByteArray32()[:])
 	}
 
 	r.ratchet = amAlice
-	r.kxPrivate0 = nil
-	r.kxPrivate1 = nil
+	r.kxPrivate0.Wipe()
+	r.kxPrivate1.Wipe()
 
 	return nil
 }
@@ -665,8 +667,8 @@ func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
 		SendCount:           r.sendCount,
 		RecvCount:           r.recvCount,
 		PrevSendCount:       r.prevSendCount,
-		Private0:            dup(r.kxPrivate0),
-		Private1:            dup(r.kxPrivate1),
+		Private0:            dup(r.kxPrivate0.ByteArray32()),
+		Private1:            dup(r.kxPrivate1.ByteArray32()),
 		Ratchet:             r.ratchet,
 	}
 
@@ -738,8 +740,8 @@ func (r *Ratchet) Unmarshal(s *State) error {
 	r.ratchet = s.Ratchet
 
 	if len(s.Private0) > 0 {
-		if !unmarshalKey(r.kxPrivate0, s.Private0) ||
-			!unmarshalKey(r.kxPrivate1, s.Private1) {
+		if !unmarshalKey(r.kxPrivate0.ByteArray32(), s.Private0) ||
+			!unmarshalKey(r.kxPrivate1.ByteArray32(), s.Private1) {
 			return errSerialisedKeyLength
 		}
 	} else {
