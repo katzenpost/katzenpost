@@ -77,6 +77,14 @@ type State struct {
 	Ratchet             bool
 }
 
+// savedKey contains a message key and timestamp for a message which has not
+// been received. The timestamp comes from the message by which we learn of the
+// missing message.
+type savedKey struct {
+	key       [keySize]byte
+	timestamp time.Time
+}
+
 // Ratchet stucture contains the per-contact, crypto state.
 type Ratchet struct {
 	TheirSigningPublic  *memguard.LockedBuffer // 32 bytes long
@@ -115,14 +123,6 @@ type Ratchet struct {
 	kxPrivate0, kxPrivate1 *memguard.LockedBuffer
 
 	rand io.Reader
-}
-
-// savedKey contains a message key and timestamp for a message which has not
-// been received. The timestamp comes from the message by which we learn of the
-// missing message.
-type savedKey struct {
-	key       [32]byte
-	timestamp time.Time
 }
 
 func (r *Ratchet) randBytes(buf []byte) {
@@ -174,7 +174,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 		IdentityPublic: make([]byte, publicKeySize),
 	}
 
-	copy(kx.PublicKey, r.MySigningPublic.ByteArray32()[:]) // TODO: change to a constant time copy
+	copy(kx.PublicKey, r.MySigningPublic.ByteArray32()[:])
 	copy(kx.IdentityPublic, r.MyIdentityPublic.ByteArray32()[:])
 
 	err := r.FillKeyExchange(kx)
@@ -188,7 +188,6 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 		return nil, err
 	}
 
-	// TODO: why sign with ed?
 	sig := ed25519.Sign(r.MySigningPrivate.ByteArray64(), serialized)
 	return &SignedKeyExchange{
 		Signed:    serialized,
@@ -232,15 +231,13 @@ func deriveKey(label []byte, h hash.Hash) *memguard.LockedBuffer {
 // These constants are used as the label argument to deriveKey to derive
 // independent keys from a master key.
 var (
-	chainKeyLabel          = []byte("chain key")
-	headerKeyLabel         = []byte("header key")
-	nextRecvHeaderKeyLabel = []byte("next receive header key")
-	rootKeyLabel           = []byte("root key")
-	rootKeyUpdateLabel     = []byte("root key update")
-	sendHeaderKeyLabel     = []byte("next send header key")
-	messageKeyLabel        = []byte("message key")
-	// TODO: this should be next sending chain key
-	chainKeyStepLabel = []byte("chain key step")
+	chainKeyLabel      = []byte("chain key")
+	headerKeyLabel     = []byte("header key")
+	nextHeaderKeyLabel = []byte("next header key")
+	rootKeyLabel       = []byte("root key")
+	rootKeyUpdateLabel = []byte("root key update")
+	messageKeyLabel    = []byte("message key")
+	chainKeyStepLabel  = []byte("chain key step")
 )
 
 // ProcessKeyExchange processes the data of a KeyExchange
@@ -363,14 +360,14 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 
 	if amAlice {
 		r.recvHeaderKey = deriveKey(headerKeyLabel, h)
-		r.nextSendHeaderKey = deriveKey(sendHeaderKeyLabel, h)
-		r.nextRecvHeaderKey = deriveKey(nextRecvHeaderKeyLabel, h)
+		r.nextSendHeaderKey = deriveKey(nextHeaderKeyLabel, h)
+		r.nextRecvHeaderKey = deriveKey(nextHeaderKeyLabel, h)
 		r.recvChainKey = deriveKey(chainKeyLabel, h)
 		r.recvRatchetPublic.Copy(kx.Dh1)
 	} else {
 		r.sendHeaderKey = deriveKey(headerKeyLabel, h)
-		r.nextRecvHeaderKey = deriveKey(sendHeaderKeyLabel, h)
-		r.nextSendHeaderKey = deriveKey(nextRecvHeaderKeyLabel, h)
+		r.nextRecvHeaderKey = deriveKey(nextHeaderKeyLabel, h)
+		r.nextSendHeaderKey = deriveKey(nextHeaderKeyLabel, h)
 		r.sendChainKey = deriveKey(chainKeyLabel, h)
 		r.sendRatchetPrivate.Copy(r.kxPrivate1.ByteArray32()[:])
 	}
@@ -408,7 +405,7 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		h := hmac.New(sha3.New256, keyMaterial[:])
 
 		r.rootKey = deriveKey(rootKeyLabel, h)
-		r.nextSendHeaderKey = deriveKey(sendHeaderKeyLabel, h)
+		r.nextSendHeaderKey = deriveKey(headerKeyLabel, h)
 		r.sendChainKey = deriveKey(chainKeyLabel, h)
 		r.prevSendCount, r.sendCount = r.sendCount, 0
 		r.ratchet = false
@@ -661,7 +658,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	r.recvChainKey.Copy(provisionalChainKey.ByteArray32()[:])
 	r.recvHeaderKey.Copy(r.nextRecvHeaderKey.ByteArray32()[:])
 
-	r.nextRecvHeaderKey = deriveKey(sendHeaderKeyLabel, rootKeyHMAC)
+	r.nextRecvHeaderKey = deriveKey(headerKeyLabel, rootKeyHMAC)
 
 	r.sendRatchetPrivate.Melt()
 	defer r.sendRatchetPrivate.Freeze()
