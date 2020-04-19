@@ -25,7 +25,6 @@ const ()
 var cborHandle = new(codec.CborHandle)
 
 // KeyExchange is structure containing the public keys
-// alll of this
 type KeyExchange struct {
 	PublicKey      []byte
 	IdentityPublic []byte
@@ -214,7 +213,7 @@ func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 }
 
 // deriveKey takes an HMAC object and a label and calculates out = HMAC(k, label).
-func deriveKey(out *[32]byte, label []byte, h hash.Hash) {
+func deriveKey(out *[keySize]byte, label []byte, h hash.Hash) {
 	h.Reset()
 	h.Write(label)
 	n := h.Sum(out[:0])
@@ -344,6 +343,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 
 	h := hmac.New(sha3.New256, keyMaterial)
 	deriveKey(&r.rootKey, rootKeyLabel, h)
+	wipe(keyMaterial)
 
 	if amAlice {
 		deriveKey(&r.recvHeaderKey, headerKeyLabel, h)
