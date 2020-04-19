@@ -26,6 +26,7 @@ func now() time.Time {
 }
 
 func pairedRatchet(c *C) (a, b *Ratchet) {
+	// this is not using the secure memory lock as it is only testing
 	var privA, pubA, privB, pubB [publicKeySize]byte
 	io.ReadFull(rand.Reader, privA[:])
 	io.ReadFull(rand.Reader, privB[:])
@@ -40,10 +41,10 @@ func pairedRatchet(c *C) (a, b *Ratchet) {
 	io.ReadFull(rand.Reader, aSigningPublic[:])
 	io.ReadFull(rand.Reader, bSigningPublic[:])
 
-	a, err := NewRatchet(rand.Reader)
+	a, err := InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	b, err = NewRatchet(rand.Reader)
+	b, err = InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
 	a.Now = now
@@ -91,11 +92,11 @@ func (s *DoubleRatchetSuite) Test_KeyExchange(c *C) {
 // TODO: how is this test different?
 func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 	// create two new ratchets
-	a, err := NewRatchet(rand.Reader)
+	a, err := InitRatchet(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
-	b, err := NewRatchet(rand.Reader)
+	b, err := InitRatchet(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
@@ -152,7 +153,7 @@ func (s *DoubleRatchetSuite) Test_Serialization(c *C) {
 	serialized, err := a.MarshalBinary()
 	c.Assert(err, IsNil)
 
-	r, err := NewRatchet(rand.Reader)
+	r, err := InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
 	r.UnmarshalBinary(serialized)
@@ -210,7 +211,7 @@ const (
 
 func reinitRatchet(c *C, r *Ratchet) *Ratchet {
 	state := r.Marshal(now(), 1*time.Hour)
-	newR, err := NewRatchet(rand.Reader)
+	newR, err := InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
 	newR.Now = now
