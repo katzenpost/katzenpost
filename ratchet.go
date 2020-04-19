@@ -130,7 +130,7 @@ func (r *Ratchet) randBytes(buf []byte) {
 	}
 }
 
-// NewRatchet creates a new ratchet struct
+// InitRatchet initializes a ratchet struct
 func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	r := &Ratchet{
 		rand:       rand,
@@ -745,8 +745,8 @@ func (r *Ratchet) Unmarshal(s *State) error {
 			return errSerialisedKeyLength
 		}
 	} else {
-		r.kxPrivate0 = nil
-		r.kxPrivate1 = nil
+		r.kxPrivate0.Wipe()
+		r.kxPrivate1.Wipe()
 	}
 
 	for _, saved := range s.SavedKeys {
