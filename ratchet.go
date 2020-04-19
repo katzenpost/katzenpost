@@ -389,6 +389,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 	if r.ratchet {
 		r.sendRatchetPrivate, _ = memguard.NewBufferFromReader(r.rand, keySize)
+
 		r.sendHeaderKey.Melt()
 		defer r.sendHeaderKey.Freeze()
 		r.sendHeaderKey.Copy(r.nextSendHeaderKey.ByteArray32()[:])
@@ -396,7 +397,6 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		var sharedKey, keyMaterial [sharedKeySize]byte
 		curve25519.ScalarMult(&sharedKey, r.sendRatchetPrivate.ByteArray32(), r.recvRatchetPublic.ByteArray32())
 
-		// TODO: define as a separate function
 		sha := sha3.New256()
 		sha.Write(rootKeyUpdateLabel)
 		sha.Write(r.rootKey.ByteArray32()[:])
@@ -470,7 +470,6 @@ func (r *Ratchet) trySavedKeys(ciphertext []byte) ([]byte, error) {
 			return nil, errors.New("Ratchet: corrupt message")
 		}
 		delete(messageKeys, msgNum)
-		// TODO: weird way to check
 		if len(messageKeys) == 0 {
 			delete(r.saved, headerKey)
 		}

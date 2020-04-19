@@ -17,9 +17,6 @@ type DoubleRatchetSuite struct{}
 
 var _ = Suite(&DoubleRatchetSuite{})
 
-// TODO: there are tests missing:
-// what if both start sending at the same time
-
 func now() time.Time {
 	var t time.Time
 	return t
@@ -93,7 +90,6 @@ func (s *DoubleRatchetSuite) Test_KeyExchange(c *C) {
 	c.Assert(msg, DeepEquals, result)
 }
 
-// TODO: how is this test different?
 func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 	// create two new ratchets
 	a, err := InitRatchet(rand.Reader)
