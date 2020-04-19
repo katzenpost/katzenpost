@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	keySize        = 32
 	privateKeySize = 32
 	publicKeySize  = 32
 	signatureSize  = 64
