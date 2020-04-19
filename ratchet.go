@@ -106,7 +106,7 @@ type Ratchet struct {
 
 	// saved is a map from a header key to a map from sequence number to
 	// message key.
-	saved map[[32]byte]map[uint32]savedKey
+	saved map[[keySize]byte]map[uint32]savedKey
 
 	// kxPrivate0 and kxPrivate1 contain curve25519 private values during
 	// the key exchange phase. They are not valid once key exchange has

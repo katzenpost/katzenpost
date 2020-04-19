@@ -25,7 +25,7 @@ func now() time.Time {
 	return t
 }
 
-func pairedRatchet(c *C) (a, b *Ratchet) {
+func pairedRatchet(c *C) (aRatchet, bRatchet *Ratchet) {
 	// this is not using the secure memory lock as it is only testing
 	var privA, pubA, privB, pubB [publicKeySize]byte
 	io.ReadFull(rand.Reader, privA[:])
@@ -36,43 +36,43 @@ func pairedRatchet(c *C) (a, b *Ratchet) {
 	// These are the "Ed25519" public keys for the two parties. Of course,
 	// they're not actually valid Ed25519 keys but that doesn't matter
 	// here.
-	// this seems to be the signed prekey
 	var aSigningPublic, bSigningPublic [publicKeySize]byte
 	io.ReadFull(rand.Reader, aSigningPublic[:])
 	io.ReadFull(rand.Reader, bSigningPublic[:])
 
-	a, err := InitRatchet(rand.Reader)
+	var err error
+	aRatchet, err = InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	b, err = InitRatchet(rand.Reader)
+	bRatchet, err = InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	a.Now = now
-	b.Now = now
+	aRatchet.Now = now
+	bRatchet.Now = now
 
 	// TODO: this is repeated
-	a.MyIdentityPrivate = privA
-	a.MySigningPublic = aSigningPublic
-	a.TheirIdentityPublic = pubB
-	a.TheirSigningPublic = bSigningPublic
+	aRatchet.MyIdentityPrivate = privA
+	aRatchet.MySigningPublic = aSigningPublic
+	aRatchet.TheirIdentityPublic = pubB
+	aRatchet.TheirSigningPublic = bSigningPublic
 
-	b.MyIdentityPrivate = privB
-	b.MySigningPublic = bSigningPublic
-	b.TheirIdentityPublic = pubA
-	b.TheirSigningPublic = aSigningPublic
+	bRatchet.MyIdentityPrivate = privB
+	bRatchet.MySigningPublic = bSigningPublic
+	bRatchet.TheirIdentityPublic = pubA
+	bRatchet.TheirSigningPublic = aSigningPublic
 
 	kxA, kxB := new(KeyExchange), new(KeyExchange)
 
-	err = a.FillKeyExchange(kxA)
+	err = aRatchet.FillKeyExchange(kxA)
 	c.Assert(err, IsNil)
 
-	err = b.FillKeyExchange(kxB)
+	err = bRatchet.FillKeyExchange(kxB)
 	c.Assert(err, IsNil)
 
-	err = a.CompleteKeyExchange(kxB)
+	err = aRatchet.CompleteKeyExchange(kxB)
 	c.Assert(err, IsNil)
 
-	err = b.CompleteKeyExchange(kxA)
+	err = bRatchet.CompleteKeyExchange(kxA)
 	c.Assert(err, IsNil)
 
 	return
