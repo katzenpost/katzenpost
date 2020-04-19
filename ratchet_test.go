@@ -88,6 +88,9 @@ func (s *DoubleRatchetSuite) Test_KeyExchange(c *C) {
 	c.Assert(err, IsNil)
 
 	c.Assert(msg, DeepEquals, result)
+
+	DestroyRatchet(a)
+	DestroyRatchet(b)
 }
 
 func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
@@ -138,6 +141,9 @@ collective behavior embodies values—and the institutions we create do, too.`)
 
 	c.Assert(err, IsNil)
 	c.Assert(msg2, DeepEquals, result)
+
+	DestroyRatchet(a)
+	DestroyRatchet(b)
 }
 
 func (s *DoubleRatchetSuite) Test_Serialization(c *C) {
@@ -185,6 +191,10 @@ representation.`)
 	result, err = b.Decrypt(encrypted)
 	c.Assert(err, IsNil)
 	c.Assert(msg3, DeepEquals, result)
+
+	DestroyRatchet(a)
+	DestroyRatchet(b)
+	DestroyRatchet(r)
 }
 
 type scriptAction struct {
