@@ -2,10 +2,10 @@ package ratchet
 
 import (
 	"crypto/rand"
-	"io"
 	"testing"
 	"time"
 
+	"github.com/awnumar/memguard"
 	"golang.org/x/crypto/curve25519"
 
 	. "gopkg.in/check.v1"
@@ -27,18 +27,22 @@ func now() time.Time {
 
 func pairedRatchet(c *C) (aRatchet, bRatchet *Ratchet) {
 	// this is not using the secure memory lock as it is only testing
-	var privA, pubA, privB, pubB [publicKeySize]byte
-	io.ReadFull(rand.Reader, privA[:])
-	io.ReadFull(rand.Reader, privB[:])
-	curve25519.ScalarBaseMult(&pubA, &privA)
-	curve25519.ScalarBaseMult(&pubB, &privB)
+	var privA, pubA, privB, pubB *memguard.LockedBuffer
+	var tmpPubA, tmpPubB [publicKeySize]byte
+	privA, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
+	privB, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
+
+	curve25519.ScalarBaseMult(&tmpPubA, privA.ByteArray32())
+	curve25519.ScalarBaseMult(&tmpPubB, privB.ByteArray32())
+	pubA = memguard.NewBufferFromBytes(tmpPubA[:])
+	pubB = memguard.NewBufferFromBytes(tmpPubB[:])
 
 	// These are the "Ed25519" public keys for the two parties. Of course,
 	// they're not actually valid Ed25519 keys but that doesn't matter
 	// here.
-	var aSigningPublic, bSigningPublic [publicKeySize]byte
-	io.ReadFull(rand.Reader, aSigningPublic[:])
-	io.ReadFull(rand.Reader, bSigningPublic[:])
+	var sigA, sigB *memguard.LockedBuffer
+	sigA, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
+	sigB, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
 
 	var err error
 	aRatchet, err = InitRatchet(rand.Reader)
@@ -50,16 +54,16 @@ func pairedRatchet(c *C) (aRatchet, bRatchet *Ratchet) {
 	aRatchet.Now = now
 	bRatchet.Now = now
 
-	// TODO: this is repeated
+	// Forced here for purposes of the test
 	aRatchet.MyIdentityPrivate = privA
-	aRatchet.MySigningPublic = aSigningPublic
+	aRatchet.MySigningPublic = sigA
 	aRatchet.TheirIdentityPublic = pubB
-	aRatchet.TheirSigningPublic = bSigningPublic
+	aRatchet.TheirSigningPublic = sigB
 
 	bRatchet.MyIdentityPrivate = privB
-	bRatchet.MySigningPublic = bSigningPublic
+	bRatchet.MySigningPublic = sigB
 	bRatchet.TheirIdentityPublic = pubA
-	bRatchet.TheirSigningPublic = aSigningPublic
+	bRatchet.TheirSigningPublic = sigA
 
 	kxA, kxB := new(KeyExchange), new(KeyExchange)
 
