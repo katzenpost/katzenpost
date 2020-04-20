@@ -1,5 +1,5 @@
 // contact.go - client
-// Copyright (C) 2019  David Stainton.
+// Copyright (C) 2019, 2020  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -106,7 +106,7 @@ type Contact struct {
 
 // NewContact creates a new Contact or returns an error.
 func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.SpoolReadDescriptor, session *client.Session) (*Contact, error) {
-	ratchet, err := ratchet.New(rand.Reader)
+	ratchet, err := ratchet.InitRatchet(rand.Reader)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 // the given Contact with deserialized Contact fields
 // from the given binary blob.
 func (c *Contact) UnmarshalBinary(data []byte) error {
-	r, err := ratchet.New(rand.Reader)
+	r, err := ratchet.InitRatchet(rand.Reader)
 	if err != nil {
 		return err
 	}
@@ -190,4 +190,8 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 
 	return nil
+}
+
+func (c *Contact) Destroy() {
+	ratchet.DestroyRatchet(c.ratchet)
 }
