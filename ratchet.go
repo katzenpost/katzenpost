@@ -685,6 +685,16 @@ func dup(key *[32]byte) []byte {
 	return ret
 }
 
+func dupLockedBuffer(key *memguard.LockedBuffer) []byte {
+	if key == nil {
+		return nil
+	}
+
+	ret := make([]byte, 32)
+	copy(ret, key.ByteArray32()[:])
+	return ret
+}
+
 // MarshalBinary transforms the object into a stream
 func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 	s := r.Marshal(time.Now(), RatchetKeyMaxLifetime)
@@ -700,26 +710,26 @@ func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 // Marshal transforms the object into a stream
 func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
 	s := &State{
-		TheirSigningPublic:  dup(r.TheirSigningPublic.ByteArray32()),
-		TheirIdentityPublic: dup(r.TheirIdentityPublic.ByteArray32()),
-		MySigningPublic:     dup(r.MySigningPublic.ByteArray32()),
+		TheirSigningPublic:  dupLockedBuffer(r.TheirSigningPublic),
+		TheirIdentityPublic: dupLockedBuffer(r.TheirIdentityPublic),
+		MySigningPublic:     dupLockedBuffer(r.MySigningPublic),
 		MySigningPrivate:    r.MySigningPrivate.ByteArray64()[:],
-		MyIdentityPrivate:   dup(r.MyIdentityPrivate.ByteArray32()),
-		MyIdentityPublic:    dup(r.MyIdentityPublic.ByteArray32()),
-		RootKey:             dup(r.rootKey.ByteArray32()),
-		SendHeaderKey:       dup(r.sendHeaderKey.ByteArray32()),
-		RecvHeaderKey:       dup(r.recvHeaderKey.ByteArray32()),
-		NextSendHeaderKey:   dup(r.nextSendHeaderKey.ByteArray32()),
-		NextRecvHeaderKey:   dup(r.nextRecvHeaderKey.ByteArray32()),
-		SendChainKey:        dup(r.sendChainKey.ByteArray32()),
-		RecvChainKey:        dup(r.recvChainKey.ByteArray32()),
-		SendRatchetPrivate:  dup(r.sendRatchetPrivate.ByteArray32()),
-		RecvRatchetPublic:   dup(r.recvRatchetPublic.ByteArray32()),
+		MyIdentityPrivate:   dupLockedBuffer(r.MyIdentityPrivate),
+		MyIdentityPublic:    dupLockedBuffer(r.MyIdentityPublic),
+		RootKey:             dupLockedBuffer(r.rootKey),
+		SendHeaderKey:       dupLockedBuffer(r.sendHeaderKey),
+		RecvHeaderKey:       dupLockedBuffer(r.recvHeaderKey),
+		NextSendHeaderKey:   dupLockedBuffer(r.nextSendHeaderKey),
+		NextRecvHeaderKey:   dupLockedBuffer(r.nextRecvHeaderKey),
+		SendChainKey:        dupLockedBuffer(r.sendChainKey),
+		RecvChainKey:        dupLockedBuffer(r.recvChainKey),
+		SendRatchetPrivate:  dupLockedBuffer(r.sendRatchetPrivate),
+		RecvRatchetPublic:   dupLockedBuffer(r.recvRatchetPublic),
 		SendCount:           r.sendCount,
 		RecvCount:           r.recvCount,
 		PrevSendCount:       r.prevSendCount,
-		Private0:            dup(r.kxPrivate0.ByteArray32()),
-		Private1:            dup(r.kxPrivate1.ByteArray32()),
+		Private0:            dupLockedBuffer(r.kxPrivate0),
+		Private1:            dupLockedBuffer(r.kxPrivate1),
 		Ratchet:             r.ratchet,
 	}
 
