@@ -146,7 +146,17 @@ collective behavior embodies values—and the institutions we create do, too.`)
 	DestroyRatchet(b)
 }
 
-func (s *DoubleRatchetSuite) Test_Serialization(c *C) {
+func (s *DoubleRatchetSuite) Test_Serialization0(c *C) {
+	// create two new ratchets
+	a, err := InitRatchet(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	_, err = a.MarshalBinary()
+	c.Assert(err, IsNil)
+}
+
+func (s *DoubleRatchetSuite) Test_Serialization1(c *C) {
 	a, b := pairedRatchet(c)
 
 	// 1
