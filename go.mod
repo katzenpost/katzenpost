@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/katzenpost/client v0.0.3
 	github.com/katzenpost/core v0.0.8
-	github.com/katzenpost/doubleratchet v0.0.1
+	github.com/katzenpost/doubleratchet v0.0.2
 	github.com/katzenpost/kimchi v0.0.0-20190923104312-3f798235dc4f
 	github.com/katzenpost/memspool v0.0.2-0.20200229015906-808a4762ea2d
 	github.com/katzenpost/panda v0.0.4-0.20190930092228-e6aa54df75d2
