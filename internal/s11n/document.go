@@ -51,6 +51,7 @@ type Document struct {
 	// specified version so that it can be rejected if the format changes.
 	Version           string
 	Epoch             uint64
+	GenesisEpoch      uint64
 	SendRatePerMinute uint64
 
 	Mu              float64
@@ -69,6 +70,7 @@ type Document struct {
 
 	SharedRandomCommit []byte
 	SharedRandomValue  []byte
+	PriorSharedRandom [][]byte
 }
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
