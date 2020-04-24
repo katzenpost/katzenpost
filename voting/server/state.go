@@ -304,6 +304,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	// Build the Document.
 	doc := &s11n.Document{
 		Epoch:             s.votingEpoch,
+		GenesisEpoch:      s.genesisEpoch,
 		SendRatePerMinute: params.SendRatePerMinute,
 		Mu:                params.Mu,
 		MuMaxDelay:        params.MuMaxDelay,
