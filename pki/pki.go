@@ -46,6 +46,9 @@ type Document struct {
 	// Epoch is the epoch for which this Document instance is valid for.
 	Epoch uint64
 
+	// GenesisEpoch is the epoch on which authorities started consensus
+	GenesisEpoch uint64
+
 	// SendRatePerMinute is the number of packets per minute a client can send.
 	SendRatePerMinute uint64
 
@@ -101,6 +104,9 @@ type Document struct {
 
 	// SharedRandomValue produced by voting process.
 	SharedRandomValue []byte
+
+	// PriorSharedRandom used by applications that need a longer lived SRV.
+	PriorSharedRandom [][]byte
 }
 
 // String returns a string representation of a Document.
