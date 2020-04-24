@@ -22,6 +22,7 @@ jobs:
 
     - name: Install Qt packages
       run: |
+        sudo apt-get update
         sudo apt-get --no-install-recommends install build-essential git libglib2.0-dev libglu1-mesa-dev libpulse-dev
         sudo apt-get --no-install-recommends install libqt*5-dev qt*5-dev qt*5-doc-html qml-module-qtquick*
         sudo apt-get install qml-module-qtmultimedia qml-module-qt-labs-folderlistmodel qml-module-qt-labs-settings
