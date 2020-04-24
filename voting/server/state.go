@@ -274,8 +274,6 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Assign nodes to layers.
 	var topology [][][]byte
-	// XXX: should a bootstrapping authority fetch prior consensus' Topology from another authority?
-
 	// TODO: We could re-use a prior topology for a configurable number of epochs
 
 	// We prefer to not randomize the topology if there is an existing topology to avoid
@@ -284,10 +282,6 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
 		topology = s.generateTopology(nodes, d.doc, srv)
 	} else {
-		// XXX: ask another authority for a consensus
-		// (this might be better placed at bootstrap)
-		// Or, this authority will vote with a random
-		// topology and never reach consenus with the other authorities
 		topology = s.generateRandomTopology(nodes, srv)
 	}
 
