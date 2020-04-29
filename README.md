@@ -1,6 +1,10 @@
 catchat
 =======
 
+[![Build Status](https://github.com/katzenpost/catchat/workflows/build/badge.svg)](https://github.com/katzenpost/catchat/actions)
+[![Go ReportCard](http://goreportcard.com/badge/katzenpost/catchat)](http://goreportcard.com/report/katzenpost/catchat)
+[![GoDoc](https://godoc.org/github.com/golang/gddo?status.svg)](https://pkg.go.dev/github.com/katzenpost/catchat?tab=doc)
+
 A chat client using catshadow.
 
 ## Installation
