@@ -10,7 +10,7 @@ require (
 	github.com/coreos/bbolt v1.3.3
 	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/jackc/pgx v3.5.0+incompatible
-	github.com/katzenpost/authority v0.0.9
+	github.com/katzenpost/authority v0.0.10
 	github.com/katzenpost/core v0.0.8
 	github.com/prometheus/client_golang v1.4.0
 	github.com/stretchr/testify v1.4.0
