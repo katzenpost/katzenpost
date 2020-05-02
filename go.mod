@@ -8,7 +8,7 @@ require (
 	github.com/katzenpost/client v0.0.4
 	github.com/katzenpost/core v0.0.8
 	github.com/katzenpost/doubleratchet v0.0.2
-	github.com/katzenpost/memspool v0.0.2
+	github.com/katzenpost/memspool v0.0.3
 	github.com/katzenpost/panda v0.0.4
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
