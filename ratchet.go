@@ -11,9 +11,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/agl/ed25519"
-	"github.com/agl/ed25519/extra25519"
+	"crypto/ed25519"
 	"github.com/awnumar/memguard"
+	"github.com/katzenpost/core/crypto/extra25519"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -188,7 +188,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 		return nil, err
 	}
 
-	sig := ed25519.Sign(r.MySigningPrivate.ByteArray64(), serialized)
+	sig := ed25519.Sign(ed25519.PrivateKey(r.MySigningPrivate.ByteArray64()[:]), serialized)
 	return &SignedKeyExchange{
 		Signed:    serialized,
 		Signature: sig[:],
@@ -265,7 +265,7 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 	r.TheirSigningPublic.Wipe()
 	r.TheirSigningPublic.Copy(kx.PublicKey)
 
-	if !ed25519.Verify(r.TheirSigningPublic.ByteArray32(), signedKeyExchange.Signed, &sig) {
+	if !ed25519.Verify(ed25519.PublicKey(r.TheirSigningPublic.ByteArray32()[:]), signedKeyExchange.Signed, sig[:]) {
 		return errors.New("Invalid signature")
 	}
 
