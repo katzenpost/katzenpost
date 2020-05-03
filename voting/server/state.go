@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	bolt "github.com/coreos/bbolt"
+	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/authority/voting/server/config"
