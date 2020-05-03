@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"time"
 
-	bolt "github.com/coreos/bbolt"
+	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/server/internal/glue"

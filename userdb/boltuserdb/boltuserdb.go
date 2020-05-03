@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"sync"
 
-	bolt "github.com/coreos/bbolt"
+	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/server/userdb"
 )
