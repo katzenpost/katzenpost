@@ -5,7 +5,7 @@ go 1.13
 require (
 	github.com/agl/ed25519 v0.0.0-20170116200512-5312a6153412
 	github.com/awnumar/memguard v0.22.1
-	github.com/katzenpost/core v0.0.9-0.20200503074353-a8dbe266e3e5
+	github.com/katzenpost/core v0.0.9-0.20200503083807-190c21ccd72a
 	github.com/kr/pretty v0.2.0 // indirect
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
