@@ -28,10 +28,10 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/katzenpost/core/extra25519"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/utils"
 	"crypto/ed25519"
+	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/extra25519"
+	"github.com/katzenpost/core/utils"
 )
 
 const (
