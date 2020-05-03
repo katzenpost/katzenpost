@@ -9,7 +9,7 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/agl/ed25519"
+	"crypto/ed25519"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -17,10 +17,14 @@ func TestCurve25519Conversion(t *testing.T) {
 	public, private, _ := ed25519.GenerateKey(rand.Reader)
 
 	var curve25519Public, curve25519Public2, curve25519Private [32]byte
-	PrivateKeyToCurve25519(&curve25519Private, private)
+	var pk [64]byte
+	var pub [32]byte
+	copy(pk[:], private)
+	copy(pub[:], public)
+	PrivateKeyToCurve25519(&curve25519Private, &pk)
 	curve25519.ScalarBaseMult(&curve25519Public, &curve25519Private)
 
-	if !PublicKeyToCurve25519(&curve25519Public2, public) {
+	if !PublicKeyToCurve25519(&curve25519Public2, &pub) {
 		t.Fatalf("PublicKeyToCurve25519 failed")
 	}
 
