@@ -31,7 +31,7 @@ import (
 	"github.com/katzenpost/core/extra25519"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/utils"
-	"golang.org/x/crypto/ed25519"
+	"crypto/ed25519"
 )
 
 const (
