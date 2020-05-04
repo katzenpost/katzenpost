@@ -178,11 +178,19 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
 		}
 	}
+	if d.GenesisEpoch == 0 {
+		return nil, fmt.Errorf("Document has invalid GenesisEpoch")
+	}
+	if len(d.PriorSharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
+		return nil, fmt.Errorf("Document has invalid PriorSharedRandom")
+	}
 
 	doc := new(pki.Document)
 	doc.SharedRandomCommit = d.SharedRandomCommit
+	doc.PriorSharedRandom = d.PriorSharedRandom
 	doc.SharedRandomValue = d.SharedRandomValue
 	doc.Epoch = d.Epoch
+	doc.GenesisEpoch = d.GenesisEpoch
 	doc.SendRatePerMinute = d.SendRatePerMinute
 	doc.Mu = d.Mu
 	doc.MuMaxDelay = d.MuMaxDelay
