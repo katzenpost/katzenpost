@@ -1,0 +1,22 @@
+
+[UpstreamProxy]
+  Type = "none"
+
+[Logging]
+  Disable = false
+  Level = "DEBUG"
+  File = ""
+
+[NonvotingAuthority]
+    Address = "127.0.0.1:29483"
+    PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+
+[Debug]
+  DisableDecoyTraffic = true
+  CaseSensitiveUserIdentifiers = false
+  PollingInterval = 1
+
+[Panda]
+  Receiver = "+panda"
+  Provider = "provider1"
+  BlobSize = 1000
