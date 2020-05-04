@@ -29,6 +29,25 @@ There are two servers written so far:
 2. Katzenpost mix server plugin
 
 
+Katzenpost mix server plugin
+----------------------------
+
+To configure your katzenpost provider, add the following lines to your
+configuration file in the [Provider] section, with the appropriate paths.
+
+::
+
+  [[Provider.CBORPluginKaetzchen]]
+    Capability = "reunion"
+    Endpoint = "+reunion"
+    Command = "/path/to/reunion_katzenpost_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
+      log_level = "NOTICE"
+      log = "/path/to/reunion.log"
+      s = "/path/to/reunion.storage"
+
+
 Cryptographic Primitives
 ------------------------
 
