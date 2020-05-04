@@ -18,6 +18,10 @@ github.com/katzenpost/core v0.0.10 h1:tKfuvACncRclP75Sf+kanTPl7vGW1o4lk8t8p/ucQv
 github.com/katzenpost/core v0.0.10/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
 github.com/katzenpost/core v0.0.11-0.20200504142627-252aae77190c h1:J0uuQ2LluIcHQGMytRpf1mXq0lWRuvGgxKz1WqSetDY=
 github.com/katzenpost/core v0.0.11-0.20200504142627-252aae77190c/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
+github.com/katzenpost/core v0.0.11-0.20200504204043-297c0817eb25 h1:nsD0aXuj4EQ2HMs3XBm+cgj4X4TdisMQwkqRzt5NpWY=
+github.com/katzenpost/core v0.0.11-0.20200504204043-297c0817eb25/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
+github.com/katzenpost/core v0.0.11 h1:WU1C35IumVhRkrEvVgqtfvxWSfxbuLO5neXIKKEdDNU=
+github.com/katzenpost/core v0.0.11/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f/go.mod h1:xA8+73aJ0TU2W701F6Ac7LL8jiUuv6me5pO+/nIuaCM=
 github.com/katzenpost/noise v0.0.0-20190907211420-4c2fa3a5d7a1 h1:bD6fNKhG5mnTWpxscA9mrCV94ZsqYj4VUEwrjingfbM=
