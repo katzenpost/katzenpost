@@ -67,6 +67,7 @@ var (
 	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
 	errGone                  = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet                = errors.New("authority: Document is not ready yet")
+	weekOfEpochs             = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
 )
 
 type descriptor struct {
@@ -96,16 +97,18 @@ type state struct {
 	documents    map[uint64]*document
 	descriptors  map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
 	votes        map[uint64]map[[eddsa.PublicKeySize]byte]*document
+	priorSRV     [][]byte
 	reveals      map[uint64]map[[eddsa.PublicKeySize]byte][]byte
 	certificates map[uint64]map[[eddsa.PublicKeySize]byte][]byte
 
 	updateCh chan interface{}
 
-	votingEpoch uint64
-	verifiers   []cert.Verifier
-	threshold   int
-	dissenters  int
-	state       string
+	votingEpoch  uint64
+	genesisEpoch uint64
+	verifiers    []cert.Verifier
+	threshold    int
+	dissenters   int
+	state        string
 }
 
 func (s *state) Halt() {
@@ -166,6 +169,17 @@ func (s *state) fsm() <-chan time.Time {
 			s.state = stateBootstrap
 			break
 		}
+		// If the authority has recently bootstrapped, the previous SRV values and genesisEpoch must be updated
+		if s.genesisEpoch == 0 {
+			// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
+			if d, ok := s.documents[s.votingEpoch-1]; ok {
+				s.genesisEpoch = d.doc.GenesisEpoch
+				s.priorSRV = d.doc.PriorSharedRandom
+			} else {
+				s.genesisEpoch = s.votingEpoch
+			}
+		}
+
 		if !s.voted(s.votingEpoch) {
 			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
 			s.vote(s.votingEpoch)
@@ -196,6 +210,8 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			// failed to make consensus. try to join next round.
 			s.state = stateBootstrap
+			s.genesisEpoch = 0 // reset genesis
+			s.priorSRV = make([][]byte, 0)
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
 		}
@@ -285,8 +301,6 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Assign nodes to layers.
 	var topology [][][]byte
-	// XXX: should a bootstrapping authority fetch prior consensus' Topology from another authority?
-
 	// TODO: We could re-use a prior topology for a configurable number of epochs
 
 	// We prefer to not randomize the topology if there is an existing topology to avoid
@@ -295,16 +309,13 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
 		topology = s.generateTopology(nodes, d.doc, srv)
 	} else {
-		// XXX: ask another authority for a consensus
-		// (this might be better placed at bootstrap)
-		// Or, this authority will vote with a random
-		// topology and never reach consenus with the other authorities
 		topology = s.generateRandomTopology(nodes, srv)
 	}
 
 	// Build the Document.
 	doc := &s11n.Document{
 		Epoch:             s.votingEpoch,
+		GenesisEpoch:      s.genesisEpoch,
 		SendRatePerMinute: params.SendRatePerMinute,
 		Mu:                params.Mu,
 		MuMaxDelay:        params.MuMaxDelay,
@@ -319,6 +330,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		Topology:          topology,
 		Providers:         providers,
 		SharedRandomValue: srv,
+		PriorSharedRandom: s.priorSRV,
 	}
 	return doc
 }
@@ -839,6 +851,14 @@ func (s *state) tabulate(epoch uint64) {
 	if err != nil {
 		s.log.Warningf("No shared random for epoch %v, aborting!, %v", epoch, err)
 		return
+	}
+
+	// if there are no prior SRV values, copy the current srv twice
+	if len(s.priorSRV) == 0 {
+		s.priorSRV = [][]byte{srv, srv}
+	} else if s.genesisEpoch-epoch%weekOfEpochs == 0 {
+		// rotate the weekly epochs if it is time to do so.
+		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
 
 	// include all the valid mixes from votes, including our own.
