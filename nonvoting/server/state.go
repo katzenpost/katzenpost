@@ -45,6 +45,7 @@ var (
 	mixPublishDeadline = epochtime.Period /2
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
+	weekOfEpochs = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
 )
 
 type descriptor struct {
@@ -71,9 +72,11 @@ type state struct {
 
 	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
+	priorSRV     [][]byte
 
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
+	genesisEpoch uint64
 }
 
 func (s *state) Halt() {
@@ -201,6 +204,7 @@ func (s *state) generateDocument(epoch uint64) {
 	// Build the Document.
 	doc := &s11n.Document{
 		Epoch:             epoch,
+		GenesisEpoch:      s.genesisEpoch,
 		SendRatePerMinute: s.s.cfg.Parameters.SendRatePerMinute,
 		Mu:                s.s.cfg.Parameters.Mu,
 		MuMaxDelay:        s.s.cfg.Parameters.MuMaxDelay,
@@ -217,7 +221,17 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 	// For compatibility with shared s11n implementation between voting
 	// and non-voting authority, add SharedRandomValue.
-	doc.SharedRandomValue = make([]byte, s11n.SharedRandomValueLength)
+	srv := make([]byte, s11n.SharedRandomValueLength)
+	doc.SharedRandomValue = srv
+
+	// if there are no prior SRV values, copy the current srv twice
+	if len(s.priorSRV) == 0 {
+		s.priorSRV = [][]byte{srv, srv}
+	} else if s.genesisEpoch-epoch%weekOfEpochs == 0 {
+		// rotate the weekly epochs if it is time to do so.
+		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
+	}
+	doc.PriorSharedRandom = s.priorSRV
 
 	// Serialize and sign the Document.
 	signed, err := s11n.SignDocument(s.s.identityKey, doc)
@@ -648,8 +662,14 @@ func newState(s *Server) (*state, error) {
 	//
 	// This could be relaxed a bit, but it's primarily intended for debugging.
 	epoch, _, _ := epochtime.Now()
-	if _, ok := st.documents[epoch]; !ok {
+	d, ok := st.documents[epoch]
+	if !ok {
 		st.bootstrapEpoch = epoch
+		st.genesisEpoch = epoch
+		st.priorSRV = make([][]byte, 0)
+	} else {
+		st.genesisEpoch = d.doc.GenesisEpoch
+		st.priorSRV = d.doc.PriorSharedRandom
 	}
 
 	st.Go(st.worker)
