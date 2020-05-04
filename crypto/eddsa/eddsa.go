@@ -28,10 +28,10 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/agl/ed25519/extra25519"
+	"crypto/ed25519"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/crypto/extra25519"
 	"github.com/katzenpost/core/utils"
-	"golang.org/x/crypto/ed25519"
 )
 
 const (
