@@ -2,6 +2,9 @@ FROM golang:alpine AS builder
 
 LABEL authors="Christian Muehlhaeuser: muesli@gmail.com"
 
+# Can pass --build-arg warped=true to decrease epoch period
+ARG warped=false
+
 # Install git & make
 # Git is required for fetching the dependencies
 RUN apk update && \
@@ -13,7 +16,7 @@ WORKDIR /go/server
 
 # Build the binary
 COPY . .
-RUN cd cmd/server && go build
+RUN cd cmd/server && go build -ldflags "-X github.com/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/server/internal/pki.WarpedEpoch=${warped}"
 RUN cd /go ; git clone https://github.com/katzenpost/memspool ; cd memspool/server/cmd/memspool ;  go build
 RUN cd /go ; git clone https://github.com/katzenpost/reunion ; cd reunion ; cd servers/reunion_katzenpost_server ; go build
 RUN cd /go ; git clone https://github.com/katzenpost/panda ; cd panda/server/cmd/panda_server ; go build
