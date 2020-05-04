@@ -37,7 +37,7 @@ Cryptographic Primitives
 * argon2id: https://godoc.org/golang.org/x/crypto/argon2
 * hkdf: https://godoc.org/golang.org/x/crypto/hkdf
 * curve25519: https://github.com/katzenpost/core/blob/master/crypto/ecdh/ecdh.go
-* elligator: https://github.com/agl/ed25519/blob/master/extra25519/extra25519.go
+* elligator: https://github.com/katzenpost/core/blob/master/crypto/extra25519/extra25519.go
 
 
 disclaimer

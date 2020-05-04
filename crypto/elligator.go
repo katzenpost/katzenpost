@@ -32,8 +32,8 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/agl/ed25519/extra25519"
 	"github.com/awnumar/memguard"
+	"github.com/katzenpost/core/crypto/extra25519"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
