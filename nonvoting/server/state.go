@@ -46,6 +46,7 @@ var (
 	errGone   = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet = errors.New("authority: Document is not ready yet")
 	weekOfEpochs = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
+	WarpedEpoch string
 )
 
 type descriptor struct {
@@ -97,7 +98,10 @@ func (s *state) onUpdate() {
 }
 
 func (s *state) worker() {
-	const wakeInterval = 60 * time.Second
+	var wakeInterval = 60 * time.Second
+	if WarpedEpoch == "true" {
+		wakeInterval = 5 * time.Second
+	}
 
 	t := time.NewTicker(wakeInterval)
 	defer func() {
