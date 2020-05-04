@@ -186,11 +186,12 @@ type PrivateKey struct {
 // initialized to the correct size but not yet initialized to random
 // bytes.
 func NewEmptyPrivateKey() *PrivateKey {
-	p := &PrivateKey{
-		privBuf: memguard.NewBuffer(PrivateKeyLength),
+	pkb, err := memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength)
+	if err != nil {
+		memguard.SafePanic(err)
 	}
-	if p.privBuf.Size() != PrivateKeyLength {
-		memguard.SafePanic("NewRandomPrivateKey failure, buffer not 32 bytes long")
+	p := &PrivateKey{
+		privBuf: pkb,
 	}
 	return p
 }
@@ -198,11 +199,12 @@ func NewEmptyPrivateKey() *PrivateKey {
 // NewRandomPrivateKey creates a new PrivateKey with the lockedBuffer
 // initialized to PrivateKeyLength random bytes.
 func NewRandomPrivateKey() *PrivateKey {
-	p := &PrivateKey{
-		privBuf: memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength),
+	pkb, err := memguard.NewBufferFromReader(rand.Reader, PrivateKeyLength)
+	if err != nil {
+		memguard.SafePanic(err)
 	}
-	if p.privBuf.Size() != PrivateKeyLength {
-		memguard.SafePanic("NewRandomPrivateKey failure, buffer not 32 bytes long")
+	p := &PrivateKey{
+		privBuf: pkb,
 	}
 	r := p.privBuf.Bytes()
 	digest := sha256.Sum256(r)

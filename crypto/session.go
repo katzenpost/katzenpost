@@ -72,13 +72,21 @@ func NewSessionFromKey(sharedEpochKey *[SharedEpochKeySize]byte, sharedRandomVal
 	if err != nil {
 		return nil, err
 	}
+	sk1, err := memguard.NewBufferFromReader(rand.Reader, 32)
+	if err != nil {
+		memguard.SafePanic(err)
+	}
+	sk2, err := memguard.NewBufferFromReader(rand.Reader, 32)
+	if err != nil {
+		memguard.SafePanic(err)
+	}
 	client := &Session{
 		epoch:             epoch,
 		sharedRandomValue: sharedRandomValue,
 		keypair1:          keypair1,
 		keypair2:          keypair2,
-		sessionKey1:       memguard.NewBufferFromReader(rand.Reader, 32),
-		sessionKey2:       memguard.NewBufferFromReader(rand.Reader, 32),
+		sessionKey1:       sk1,
+		sessionKey2:       sk2,
 		sharedEpochKey:    memguard.NewBufferFromBytes(sharedEpochKey[:]),
 	}
 	return client, nil
