@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUnreliableSpoolService(t *testing.T) {
+func TestDockerUnreliableSpoolService(t *testing.T) {
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
