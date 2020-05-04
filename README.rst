@@ -34,16 +34,17 @@ nonvoting authority
    docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
 
 
+**NOTE** katzenpost expects its configuration files to be readable by the owner only. Fix the permissions by running the fix_perms.sh script in git root:
+::
+
+   ./fix_perms.sh
+
+
 3. run docker-compose from this repository and cd into one of the folders depending on your usecase (control-c to exit)
 ::
 
    docker-compose up
 
-
-**NOTE** katzenpost expects its configuration files to be readable by the owner only. Fix the permissions by:
-::
-
-   chmod 700 -R *_mixnet/conf
 
 
 **NOTE**: between restarting your local docker mixnet you **SHOULD**
