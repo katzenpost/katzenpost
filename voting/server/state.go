@@ -233,6 +233,17 @@ func (s *state) consense(epoch uint64) {
 		}
 		if _, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, c); err == nil {
 			if pDoc, err := s11n.VerifyAndParseDocument(c, good[0]); err == nil {
+
+				// Persist the document to disk.
+				if err := s.db.Update(func(tx *bolt.Tx) error {
+					bkt := tx.Bucket([]byte(documentsBucket))
+					bkt.Put(epochToBytes(epoch), []byte(c))
+					return nil
+				}); err != nil {
+					// Persistence failures are FATAL.
+					s.s.fatalErrCh <- err
+				}
+
 				s.documents[epoch] = &document{doc: pDoc, raw: c}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
 				for _, g := range good {
