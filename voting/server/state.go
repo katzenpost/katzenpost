@@ -32,7 +32,6 @@ import (
 	"sync"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/authority/voting/client"
 	"github.com/katzenpost/authority/voting/server/config"
@@ -46,6 +45,7 @@ import (
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/wire/commands"
 	"github.com/katzenpost/core/worker"
+	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/sha3"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -856,7 +856,7 @@ func (s *state) tabulate(epoch uint64) {
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.priorSRV) == 0 {
 		s.priorSRV = [][]byte{srv, srv}
-	} else if s.genesisEpoch-epoch%weekOfEpochs == 0 {
+	} else if (s.genesisEpoch-epoch)%weekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
