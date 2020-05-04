@@ -40,6 +40,12 @@ nonvoting authority
    docker-compose up
 
 
+**NOTE** katzenpost expects its configuration files to be readable by the owner only. Fix the permissions by:
+::
+
+   chmod 700 -R *_mixnet/conf
+
+
 **NOTE**: between restarting your local docker mixnet you **SHOULD**
 remove the state changes on disk by running the following command:
 ::
