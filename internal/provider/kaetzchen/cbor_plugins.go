@@ -63,7 +63,6 @@ type CBORPluginWorker struct {
 	haltOnce    sync.Once
 	pluginChans PluginChans
 	clients     []*cborplugin.Client
-	forPKI      ServiceMap
 }
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
@@ -171,7 +170,24 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
 func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
-	return k.forPKI
+	s := make(ServiceMap)
+	for _, k := range k.clients {
+		capa := k.Capability()
+		if _, ok :=  s[capa]; ok {
+			// skip adding twice
+			continue
+		}
+		params := make(PluginParameters)
+		p := k.GetParameters()
+		if p != nil {
+			for key, value := range *p {
+				params[key] = value
+			}
+		}
+		params[ParameterEndpoint] = capa
+		s[capa] = params
+	}
+	return s
 }
 
 // IsKaetzchen returns true if the given recipient is one of our workers.
@@ -195,7 +211,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),
 		clients:     make([]*cborplugin.Client, 0),
-		forPKI:      make(ServiceMap),
 	}
 
 	capaMap := make(map[string]bool)
@@ -256,20 +271,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 				return nil, err
 			}
 
-			if !gotParams {
-				// just once we call the Parameters method on the plugin
-				// and use that info to populate our forPKI map which
-				// ends up populating the PKI document
-				p := pluginClient.GetParameters()
-				if p != nil {
-					for key, value := range *p {
-						params[key] = value
-					}
-				}
-				params[ParameterEndpoint] = pluginConf.Endpoint
-				gotParams = true
-			}
-
 			// Accumulate a list of all clients to facilitate clean shutdown.
 			kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
 
@@ -280,7 +281,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			})
 		}
 
-		kaetzchenWorker.forPKI[capa] = params
 		capaMap[capa] = true
 	}
 
