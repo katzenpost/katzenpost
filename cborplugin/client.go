@@ -233,6 +233,11 @@ func (c *Client) GetParameters() *Parameters {
 		c.log.Debugf("decode failure: %s", err)
 		return nil
 	}
+	// XXX: why does this happen?
+	if responseParams == nil {
+		c.log.Debugf("no parameters set for %s", c.capability)
+		responseParams = make(Parameters)
+	}
 	responseParams["endpoint"] = c.endpoint
 	return &responseParams
 }
