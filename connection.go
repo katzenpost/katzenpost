@@ -35,11 +35,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-const (
-	keepAliveInterval = 3 * time.Minute
-	connectTimeout    = 1 * time.Minute
-)
-
 var (
 	// ErrNotConnected is the error returned when an operation fails due to the
 	// client not currently being connected to the Provider.
@@ -53,6 +48,10 @@ var (
 		KeepAlive: keepAliveInterval,
 		Timeout:   connectTimeout,
 	}
+
+	keepAliveInterval   = 3 * time.Minute
+	connectTimeout      = 1 * time.Minute
+	pkiFallbackInterval = 3 * time.Minute
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -188,7 +187,6 @@ func (c *connection) getDescriptor() error {
 
 func (c *connection) connectWorker() {
 	defer c.log.Debugf("Terminating connect worker.")
-	const pkiFallbackInterval = 3 * time.Minute
 
 	dialCtx, cancelFn := context.WithCancel(context.Background())
 	go func() {
@@ -409,6 +407,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				cmdCh <- err
 				return
 			}
+			// XXX: why retryDelay 0?
 			atomic.StoreInt64(&c.retryDelay, 0)
 			select {
 			case cmdCh <- rawCmd:
@@ -448,6 +447,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		} else {
 			fetchDelay = 0
 		}
+		c.log.Debugf("fetchDelay %d", fetchDelay)
 	}
 	var seq uint32
 	checkSeq := func(cmdSeq uint32) error {
@@ -463,6 +463,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		selectAt = time.Now()
 		select {
 		case <-time.After(fetchDelay):
+			c.log.Debugf("<-time.After(fetchDelay) %d", fetchDelay)
 			doFetch = true
 		case <-c.fetchCh:
 			doFetch = true
@@ -533,6 +534,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
+				c.log.Debugf("pollInterval is :%d", pollInterval)
 				fetchDelay = pollInterval
 			}
 			continue
@@ -756,4 +758,12 @@ func newConnection(c *Client) *connection {
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx)
 	return k
+}
+
+func init() {
+	if WarpedEpoch == "true" {
+		keepAliveInterval = 30 * time.Second
+		connectTimeout = 10 * time.Second
+		pkiFallbackInterval = 30 * time.Second
+	}
 }
