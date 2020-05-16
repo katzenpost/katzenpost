@@ -249,10 +249,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		copy(endpoint[:], rawEp)
 		kaetzchenWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
 
-		// Add entry from this plugin for the PKI.
-		params := make(map[string]interface{})
-		gotParams := false
-
 		// Start the plugin clients.
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {
 			kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s %d", capa, i)
