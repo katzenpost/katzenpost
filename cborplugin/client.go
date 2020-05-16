@@ -70,6 +70,10 @@ type ServicePlugin interface {
 	// extracting the payload component of the message
 	OnRequest(request *Request) ([]byte, error)
 
+	// Capability returns the agent's functionality for publication in
+	// the Provider's descriptor.
+	Capability() string
+
 	// Parameters returns the agent's paramenters for publication in
 	// the Provider's descriptor.
 	GetParameters() *Parameters
@@ -91,6 +95,7 @@ type Client struct {
 	httpClient *http.Client
 	cmd        *exec.Cmd
 	socketPath string
+	capability string
 	params     *Parameters
 }
 
@@ -213,6 +218,13 @@ func (c *Client) OnRequest(request *Request) ([]byte, error) {
 		return nil, err
 	}
 	return response.Payload, nil
+}
+
+// Capability are used in Mix Descriptor publication to give
+// service clients more information about the service. Not
+// plugins will need to use this feature.
+func (c *Client) Capability() string {
+	return c.capability
 }
 
 // GetParameters are used in Mix Descriptor publication to give
