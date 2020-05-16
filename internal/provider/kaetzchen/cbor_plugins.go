@@ -196,9 +196,9 @@ func (k *CBORPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]b
 	return ok
 }
 
-func (k *CBORPluginWorker) launch(command string, args []string) (*cborplugin.Client, error) {
+func (k *CBORPluginWorker) launch(command, capability string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.New(command, k.glue.LogBackend())
+	plugin := cborplugin.New(command, capability, k.glue.LogBackend())
 	err := plugin.Start(command, args)
 	return plugin, err
 }
@@ -261,7 +261,7 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 				}
 			}
 
-			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, args)
+			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, args)
 			if err != nil {
 				kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
 				return nil, err

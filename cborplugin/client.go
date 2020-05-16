@@ -101,8 +101,9 @@ type Client struct {
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func New(command string, logBackend *log.Backend) *Client {
+func New(command, capability string, logBackend *log.Backend) *Client {
 	return &Client{
+		capability: capability,
 		logBackend: logBackend,
 		log:        logBackend.GetLogger(command),
 		httpClient: nil,
