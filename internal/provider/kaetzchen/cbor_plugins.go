@@ -184,7 +184,6 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 				params[key] = value
 			}
 		}
-		params[ParameterEndpoint] = capa
 		s[capa] = params
 	}
 	return s
@@ -196,9 +195,9 @@ func (k *CBORPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]b
 	return ok
 }
 
-func (k *CBORPluginWorker) launch(command, capability string, args []string) (*cborplugin.Client, error) {
+func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.New(command, capability, k.glue.LogBackend())
+	plugin := cborplugin.New(command, capability, endpoint, k.glue.LogBackend())
 	err := plugin.Start(command, args)
 	return plugin, err
 }
@@ -261,7 +260,7 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 				}
 			}
 
-			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, args)
+			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
 			if err != nil {
 				kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
 				return nil, err
