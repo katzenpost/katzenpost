@@ -95,15 +95,17 @@ type Client struct {
 	httpClient *http.Client
 	cmd        *exec.Cmd
 	socketPath string
+	endpoint   string
 	capability string
 	params     *Parameters
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func New(command, capability string, logBackend *log.Backend) *Client {
+func New(command, capability, endpoint string, logBackend *log.Backend) *Client {
 	return &Client{
 		capability: capability,
+		endpoint:   endpoint,
 		logBackend: logBackend,
 		log:        logBackend.GetLogger(command),
 		httpClient: nil,
@@ -181,22 +183,6 @@ func (c *Client) launch(command string, args []string) error {
 	c.log.Debugf("plugin socket path:'%s'\n", c.socketPath)
 	c.setupHTTPClient(c.socketPath)
 
-	// get plugin parameters if any
-	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
-	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", http.NoBody)
-	if err != nil {
-		c.log.Debugf("post failure: %s", err)
-		c.Halt()
-		return err
-	}
-	responseParams := make(Parameters)
-	decoder := cbor.NewDecoder(rawResponse.Body)
-	err = decoder.Decode(&responseParams)
-	if err != nil {
-		c.log.Debugf("decode failure: %s", err)
-		return err
-	}
-	c.params = &responseParams
 	c.log.Debug("finished launching plugin.")
 	return nil
 }
@@ -232,5 +218,21 @@ func (c *Client) Capability() string {
 // service clients more information about the service. Not
 // plugins will need to use this feature.
 func (c *Client) GetParameters() *Parameters {
-	return c.params
+	// get plugin parameters if any
+	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
+	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", http.NoBody)
+	if err != nil {
+		c.log.Debugf("post failure: %s", err)
+		c.Halt()
+		return nil
+	}
+	responseParams := make(Parameters)
+	decoder := cbor.NewDecoder(rawResponse.Body)
+	err = decoder.Decode(&responseParams)
+	if err != nil {
+		c.log.Debugf("decode failure: %s", err)
+		return nil
+	}
+	responseParams["endpoint"] = c.endpoint
+	return &responseParams
 }
