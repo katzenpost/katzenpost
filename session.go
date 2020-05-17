@@ -294,9 +294,10 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
 		if !ok {
-			err := fmt.Errorf("Failure to acquire replyWaitChan for message ID %x", msg.ID)
-			s.fatalErrCh <- err
-			return err
+			//XXX: this can happen if a SURB-ACK arrives after a call to BlockingSendUnreliableMessage has timed-out
+			// because the session.surbIDMap has not been deleted or garbage collected
+			s.log.Warningf("Discarding surb %v for blocking message %x : caller likely timed-out", idStr, msg.ID)
+			return nil
 		}
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
 		replyWaitChan <- plaintext[2:]
