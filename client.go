@@ -21,6 +21,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -34,6 +36,8 @@ import (
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
 	panda "github.com/katzenpost/panda/crypto"
+	reunionClient "github.com/katzenpost/reunion/client"
+	reunionTransport "github.com/katzenpost/reunion/transports/katzenpost"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
@@ -44,11 +48,12 @@ import (
 type Client struct {
 	worker.Worker
 
-	eventCh    channels.Channel
-	EventSink  chan interface{}
-	opCh       chan interface{}
-	pandaChan  chan panda.PandaUpdate
-	fatalErrCh chan error
+	eventCh     channels.Channel
+	EventSink   chan interface{}
+	opCh        chan interface{}
+	pandaChan   chan panda.PandaUpdate
+	reunionChan chan reunionClient.ReunionUpdate
+	fatalErrCh  chan error
 
 	// messageID -> *SentMessageDescriptor
 	sendMap *sync.Map
@@ -108,6 +113,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		eventCh:             channels.NewInfiniteChannel(),
 		EventSink:           make(chan interface{}),
 		opCh:                make(chan interface{}, 8),
+		reunionChan:         make(chan reunionClient.ReunionUpdate),
 		pandaChan:           make(chan panda.PandaUpdate),
 		fatalErrCh:          make(chan error),
 		sendMap:             new(sync.Map),
@@ -364,6 +370,68 @@ func (c *Client) Shutdown() {
 	c.client.Shutdown()
 	c.stateWorker.Halt()
 	close(c.fatalErrCh)
+}
+
+func (c *Client) processReunionUpdate(update *reunionClient.ReunionUpdate) {
+	contact, ok := c.contacts[update.ContactID]
+	if !ok {
+		c.log.Error("failure to perform Reunion update: invalid contact ID")
+		return
+	}
+	if !contact.IsPending {
+		// we performed multiple exchanges, but this one has probably arrived too late
+		c.log.Error("received reunion update after pairing occurred")
+		return
+	}
+	switch {
+	case update.Error != nil:
+		contact.reunionResult = update.Error.Error()
+		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Error)
+		c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			Nickname: contact.Nickname,
+			Err:      update.Error,
+		}
+	case update.Serialized != nil:
+		c.log.Infof("Key exchange with %s update received", contact.Nickname)
+	case update.Result != nil:
+		c.log.Debug("Reunion completed")
+		contact.keyExchange = nil
+		exchange, err := parseContactExchangeBytes(update.Result)
+		if err != nil {
+			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
+			c.log.Error(err.Error())
+			contact.pandaResult = err.Error()
+			contact.IsPending = false
+			c.save()
+			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+				Nickname: contact.Nickname,
+				Err:      err,
+			}
+			return
+		}
+		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
+		contact.ratchetMutex.Lock()
+		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
+		contact.ratchetMutex.Unlock()
+		if err != nil {
+			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
+			c.log.Error(err.Error())
+			contact.reunionResult = err.Error()
+			contact.IsPending = false
+			c.save()
+			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+				Nickname: contact.Nickname,
+				Err:      err,
+			}
+			return
+		}
+		contact.IsPending = false
+		c.log.Info("Double ratchet key exchange completed!")
+		c.eventCh.In() <- &KeyExchangeCompletedEvent{
+			Nickname: contact.Nickname,
+		}
+	}
+	c.save()
 }
 
 func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {

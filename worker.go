@@ -93,6 +93,9 @@ func (c *Client) worker() {
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
 			continue
+		case update := <-c.reunionChan:
+			c.processReunionUpdate(&update)
+			continue
 		case rawClientEvent := <-c.session.EventSink:
 			switch event := rawClientEvent.(type) {
 			case *client.MessageIDGarbageCollected:

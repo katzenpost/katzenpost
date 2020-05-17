@@ -63,6 +63,7 @@ type serializedContact struct {
 	KeyExchange          []byte
 	PandaKeyExchange     []byte
 	PandaResult          string
+	ReunionResult        []byte
 	Ratchet              []byte
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
@@ -91,6 +92,9 @@ type Contact struct {
 
 	// pandaResult contains an error message if the PANDA exchange fails.
 	pandaResult string
+
+	// reunionResult contains an error message if the Reunion exchange fails.
+	reunionResult string
 
 	// ratchet is the client's double ratchet for end to end encryption
 	ratchet *ratchet.Ratchet
