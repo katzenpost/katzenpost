@@ -6,6 +6,8 @@ git.schwanenlied.me/yawning/bloom.git v0.0.0-20181019144233-44d6c5c71ed1 h1:xhmJ
 git.schwanenlied.me/yawning/bloom.git v0.0.0-20181019144233-44d6c5c71ed1/go.mod h1:GZ84cORdAXx9o+gao9zDUCKlMCFcNVditnz/4FCpdnk=
 git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6 h1:zOrl5/RvK48MxMrif6Z+/OpuYyRnvB+ZTrQWEV9VYb0=
 git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6/go.mod h1:BWqTsj8PgcPriQJGl7el20J/7TuT1d/hSyFDXMEpoEo=
+git.schwanenlied.me/yawning/poly1305.git v0.0.0-20151107134637-dfc796fe731c h1:I9Zkh0ViBYbjla0yv9MF+0FvX2wtu5xfY35LskxjQHo=
+git.schwanenlied.me/yawning/poly1305.git v0.0.0-20151107134637-dfc796fe731c/go.mod h1:XFtvjxaiskgfHxVpJaHBCGcLGyAcc11Xk9HKen1eh9E=
 github.com/BurntSushi/toml v0.3.1 h1:WXkYYl6Yr3qBf1K79EBnL4mak0OimBfB0XUf9Vl28OQ=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
@@ -68,8 +70,12 @@ github.com/katzenpost/authority v0.0.12/go.mod h1:6wFg6ZElyEHYsPN5PPLTT+KmmTAKuc
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
+github.com/katzenpost/chacha20poly1305 v0.0.0-20191204073434-41b24f726a2c h1:U6AFK4td+6/I6ddqZltT513uG86Gtsh9LEl5HPnbsqA=
+github.com/katzenpost/chacha20poly1305 v0.0.0-20191204073434-41b24f726a2c/go.mod h1:XeiiK6+o8EgPsG5oq3cr9yZUfEu6GyU5IA0MePXDnqY=
 github.com/katzenpost/client v0.0.7 h1:iI4mcTnZ84OW37nBC7M29BDiDzFpFgZlp987qgOdIBQ=
 github.com/katzenpost/client v0.0.7/go.mod h1:Q+jHAbOaWj+serubyRHNVB8o9CKsOD5wErseln97s/8=
+github.com/katzenpost/client v0.0.8-0.20200517110816-f2729684554a h1:Idblqd1s0TFhy9WZpg37HPWaj67z3it4oRwWtEd8GeQ=
+github.com/katzenpost/client v0.0.8-0.20200517110816-f2729684554a/go.mod h1:Q+jHAbOaWj+serubyRHNVB8o9CKsOD5wErseln97s/8=
 github.com/katzenpost/core v0.0.11 h1:WU1C35IumVhRkrEvVgqtfvxWSfxbuLO5neXIKKEdDNU=
 github.com/katzenpost/core v0.0.11/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
 github.com/katzenpost/doubleratchet v0.0.4 h1:yZe+BVx2EWWuRz1loauNsM5ggYlydWd+rX50831x1gk=
@@ -86,6 +92,10 @@ github.com/katzenpost/panda v0.0.7 h1:BI5hTsBJkP/5dwjoa4ld295iydgxxDbSXJlWcoa1IS
 github.com/katzenpost/panda v0.0.7/go.mod h1:AiuvuzAfxA1eTMqYQFQcf709HjLk1G2WOqDVWzOeUbw=
 github.com/katzenpost/registration_client v0.0.1 h1:ZvlEQ0rfVEGEV67x7KVxMi0veiLn2QyM1bxfWb8u7Q8=
 github.com/katzenpost/registration_client v0.0.1/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
+github.com/katzenpost/reunion v0.0.0-20200504211733-3088a1ab3e76 h1:N2FgLOCMWyJ4+NwEDSVfml5CYic1bo+eDvpZAz3tpVs=
+github.com/katzenpost/reunion v0.0.0-20200504211733-3088a1ab3e76/go.mod h1:/S12fywTZa1q/bK7utREYQWthtdlMugms3rswQLHtH4=
+github.com/katzenpost/reunion v0.0.0-20200517125043-159e97bda2ac h1:tgg7r5L58279IRr6cWxN95kSDTQbMSkAUlbLG3k8uiA=
+github.com/katzenpost/reunion v0.0.0-20200517125043-159e97bda2ac/go.mod h1:/S12fywTZa1q/bK7utREYQWthtdlMugms3rswQLHtH4=
 github.com/katzenpost/server v0.0.12 h1:UQJ+SL9wEgu4leYRSmrxmqNw63AWGXuPigrtDbJQAwk=
 github.com/katzenpost/server v0.0.12/go.mod h1:6cQYA4eWIAiX+YBlPW+2K52BIAfJEQERsbfHbYhAdFg=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
