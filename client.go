@@ -143,20 +143,20 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 func (c *Client) Start() {
 	c.garbageCollectConversations()
 	pandaCfg := c.session.GetPandaConfig()
-	if pandaCfg == nil {
-		panic("panda failed, must have a panda service configured")
-	}
 	c.Go(c.eventSinkWorker)
 	for _, contact := range c.contacts {
 		if contact.IsPending {
-			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-			meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
-			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
-			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange)
-			if err != nil {
-				panic(err)
+			// XXX: add reunion resumption here too
+			if pandaCfg != nil {
+				logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
+				meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+				logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
+				kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange)
+				if err != nil {
+					panic(err)
+				}
+				go kx.Run()
 			}
-			go kx.Run()
 		}
 	}
 	c.Go(c.worker)
@@ -264,13 +264,27 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	}
 	c.contacts[contact.ID()] = contact
 	c.contactNicknames[contact.Nickname] = contact
+	err = c.doPANDAExchange(contact, sharedSecret)
+	if err != nil  {
+		c.log.Notice("PANDA Failure for %v: %v", contact, err)
+		err = c.doReunion(contact, sharedSecret)
+		if err != nil {
+			c.log.Notice("Reunion Failure for %v: %v", contact, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
+	// Use PANDA
 	pandaCfg := c.session.GetPandaConfig()
 	if pandaCfg == nil {
 		return errors.New("panda failed, must have a panda service configured")
 	}
-	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", nickname))
+	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
 	meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
-	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", nickname))
+	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
 	if err != nil {
 		return err
@@ -281,6 +295,39 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	c.save()
 
 	c.log.Info("New PANDA key exchange in progress.")
+	return nil
+}
+
+func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
+	// Get SharedRandom
+	doc := c.session.CurrentDocument()
+	sharedRandomWeekly := doc.PriorSharedRandom[0]
+
+	// Get reunion endpoints and epoch values
+	for _, p := range doc.Providers {
+		for cap := range p.Kaetzchen {
+			if cap == "reunion" {
+				endpoint := p.Kaetzchen[cap]["endpoint"].(string)
+				epochs := parmToEpochs(p.Kaetzchen[cap]["epoch"].(string))
+				if epochs == nil {
+					c.log.Fatalf("Provider's Reunion Epoch Descriptor Il Formatted")
+				}
+				// XXX: skip oldest epoch, it frequently expires in testing with WarpedEpoch
+				for _, epoch := range epochs[1:] {
+					dblog := c.logBackend.GetLogger(fmt.Sprintf("reunion:%s@%s:%d", endpoint, p.Name, epoch))
+					transport := &reunionTransport.Transport{Session: c.session, Recipient: endpoint, Provider: p.Name}
+					exchange, err := reunionClient.NewExchange(contact.keyExchange, dblog, transport, contact.ID(),
+						sharedSecret, sharedRandomWeekly, epoch, c.reunionChan)
+					if err != nil {
+						return err
+					}
+					go exchange.Run()
+					c.log.Info("New reunion exchange in progress.")
+					c.save()
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -689,4 +736,18 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		return
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID, err)
+}
+
+// helper for extracting epoch's from reunion descriptor
+func parmToEpochs(epochstr string) []uint64 {
+	epochsAsc := strings.Split(strings.Trim(epochstr, "[]"), ",")
+	epochs := make([]uint64, 0)
+	for _, e := range epochsAsc {
+		epoch, err := strconv.Atoi(strings.Trim(e, " "))
+		if err != nil {
+			return nil
+		}
+		epochs = append(epochs, uint64(epoch))
+	}
+	return epochs
 }
