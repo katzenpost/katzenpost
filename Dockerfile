@@ -5,7 +5,7 @@ LABEL authors="Christian Muehlhaeuser: muesli@gmail.com"
 # Can pass --build-arg warped=true to decrease epoch period
 ARG warped=false
 
-ENV ldflags="-X github.com/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/server/internal/pki.WarpedEpoch=${warped}"
+ENV ldflags="-X github.com/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
 # Install git & make
 # Git is required for fetching the dependencies
