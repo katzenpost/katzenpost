@@ -182,12 +182,6 @@ func (s *Session) garbageCollect() {
 	surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
 		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
 		message := rawMessage.(*Message)
-		if message.IsBlocking {
-			// Blocking sends don't need this garbage collection mechanism
-			// because the BlockingSendUnreliableMessage method will clean up
-			// after itself.
-			return true
-		}
 		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
