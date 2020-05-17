@@ -510,19 +510,29 @@ func (e *Exchange) processT3Messages() bool {
 // goroutine.
 func (e *Exchange) Run() {
 	defer e.log.Debug("Run was halted.")
+	haltedfn := func() {
+		e.updateChan <- ReunionUpdate{
+			ContactID: e.contactID,
+			Error:     errors.New("Run was halted."),
+		}
+	}
+
 	switch e.status {
 	case initialState:
 		// XXX not required -> 1:A <- DB: fetch current epoch and current set of data for epoch state
 		// 2:A -> DB: transmit א message
 		if !e.sendT1() {
+			defer haltedfn()
 			return
 		}
 		e.status = t1MessageSentState
 		if !e.sentUpdateOK() {
+			defer haltedfn()
 			return
 		}
 		if e.shouldStop() {
 			e.log.Error(ErrShutdown.Error())
+			defer haltedfn()
 			return
 		}
 		fallthrough
@@ -532,15 +542,18 @@ func (e *Exchange) Run() {
 			err := e.fetchState()
 			if err != nil {
 				e.log.Error(err.Error())
+				defer haltedfn()
 				return
 			}
 			// 4:A -> DB: transmit one ב message for each א
 			e.sendT2Messages()
 			if !e.sentUpdateOK() {
+				defer haltedfn()
 				return
 			}
 			if e.shouldStop() {
 				e.log.Error(ErrShutdown.Error())
+				defer haltedfn()
 				return
 			}
 
@@ -549,10 +562,12 @@ func (e *Exchange) Run() {
 			e.sendT3Messages()
 
 			if !e.sentUpdateOK() {
+				defer haltedfn()
 				return
 			}
 			if e.shouldStop() {
 				e.log.Error(ErrShutdown.Error())
+				defer haltedfn()
 				return
 			}
 
