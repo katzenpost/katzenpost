@@ -45,10 +45,12 @@ func NewTransport(url string) *Transport {
 }
 
 
+// CurrentSharedRandoms returns the valid shared randoms the transport provides
 func (k *Transport) CurrentSharedRandoms() ([][]byte, error) {
 	return nil, errors.New("NotImplemented")
 }
 
+// CurrentEpochs returns the valid epochs the transport provides
 func (k *Transport) CurrentEpochs() ([]uint64, error) {
 	return nil, errors.New("NotImplemented")
 }
