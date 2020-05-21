@@ -38,7 +38,7 @@ import (
 func parametersHandler(response http.ResponseWriter, req *http.Request, clock *katzenpost.Clock) {
 	params := make(cborplugin.Parameters)
 	epoch, _, _ := clock.Now()
-	params["epoch"] = fmt.Sprintf("[%d, %d, %d]", epoch - 1, epoch, epoch + 1)
+	params["epoch"] = fmt.Sprintf("[%d, %d, %d]", epoch-1, epoch, epoch+1)
 	serialized, err := cbor.Marshal(params)
 	if err != nil {
 		panic(err)
