@@ -63,7 +63,8 @@ type serializedContact struct {
 	KeyExchange          []byte
 	PandaKeyExchange     []byte
 	PandaResult          string
-	ReunionResult        []byte
+	ReunionKeyExchange   []byte
+	ReunionResult        string
 	Ratchet              []byte
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
@@ -92,6 +93,9 @@ type Contact struct {
 
 	// pandaResult contains an error message if the PANDA exchange fails.
 	pandaResult string
+
+	// reunionKeyExchange is the serialized Reunion exchange state.
+	reunionKeyExchange []byte
 
 	// reunionResult contains an error message if the Reunion exchange fails.
 	reunionResult string
@@ -153,6 +157,8 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		KeyExchange:          c.keyExchange,
 		PandaKeyExchange:     c.pandaKeyExchange,
 		PandaResult:          c.pandaResult,
+		ReunionKeyExchange:   c.reunionKeyExchange,
+		ReunionResult:        c.reunionResult,
 		Ratchet:              ratchetBlob,
 		SpoolWriteDescriptor: c.spoolWriteDescriptor,
 	}
@@ -190,6 +196,8 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.keyExchange = s.KeyExchange
 	c.pandaKeyExchange = s.PandaKeyExchange
 	c.pandaResult = s.PandaResult
+	c.reunionKeyExchange = s.ReunionKeyExchange
+	c.reunionResult = s.ReunionResult
 	c.ratchet = r
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 

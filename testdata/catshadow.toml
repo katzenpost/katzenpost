@@ -21,7 +21,9 @@
   CaseSensitiveUserIdentifiers = false
   PollingInterval = 1
 
-[Panda]
-  Receiver = "+panda"
-  Provider = "provider1"
-  BlobSize = 1000
+#[Panda]
+#  Receiver = "+panda"
+#  Provider = "provider1"
+#  BlobSize = 1000
+[Reunion]
+   Enable = true
