@@ -19,6 +19,7 @@ package http
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -41,6 +42,15 @@ func NewTransport(url string) *Transport {
 		url:    url,
 		client: &http.Client{Timeout: time.Second * 10},
 	}
+}
+
+
+func (k *Transport) CurrentSharedRandoms() ([][]byte, error) {
+	return nil, errors.New("NotImplemented")
+}
+
+func (k *Transport) CurrentEpochs() ([]uint64, error) {
+	return nil, errors.New("NotImplemented")
 }
 
 // Query sends the command to the destination Reunion DB service over HTTP.
