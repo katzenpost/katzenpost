@@ -69,19 +69,16 @@ func (k *Transport) CurrentEpochs() ([]uint64, error) {
 	if err != nil {
 		return nil, errors.New("Provider not found in PKI")
 	}
-	ep, ok := p.Kaetzchen[k.Recipient]
-	if !ok {
-		return nil, errors.New("Reunion endpoint not found in PKI")
-	}
-	parm, ok := ep["epoch"]
-	if !ok {
+	if ep, ok := p.Kaetzchen["reunion"]; ok {
+		if parm, ok := ep["epoch"]; ok {
+			if epochs := parmToEpochs(parm.(string)); epochs != nil {
+				return epochs, nil
+			}
+			return nil, errors.New("No valid epochs found in descriptor")
+		}
 		return nil, errors.New("Providers Reunion descriptor il formatted")
 	}
-	epochs := parmToEpochs(parm.(string))
-	if epochs == nil {
-		return nil, errors.New("No valid epochs found in descriptor")
-	}
-	return epochs, nil
+	return nil, errors.New("Reunion endpoint not found in PKI")
 }
 
 // Query sends the command to the destination Reunion DB service
