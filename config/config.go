@@ -180,6 +180,18 @@ func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, e
 	return nil, errors.New("no Authority found")
 }
 
+// Reunion is the Reunion configuration needed by clients
+// in order to use the Reunion service
+type Reunion struct {
+	// Enable indicates that the reunion protocol should be used
+	Enable bool
+}
+
+func (r *Reunion) validate() error {
+	// stub for future options, e.g. alternate clocks, etc
+	return nil
+}
+
 // Panda is the PANDA configuration needed by clients
 // in order to use the PANDA service
 type Panda struct {
@@ -304,6 +316,7 @@ type Config struct {
 	Account            *Account
 	Registration       *Registration
 	Panda              *Panda
+	Reunion            *Reunion
 	upstreamProxy      *proxy.Config
 }
 
@@ -356,6 +369,14 @@ func (c *Config) FixupAndMinimallyValidate() error {
 		err := c.Panda.validate()
 		if err != nil {
 			return fmt.Errorf("config: Panda config is invalid: %v", err)
+		}
+	}
+
+	// Reunion is optional
+	if c.Reunion != nil {
+		err := c.Reunion.validate()
+		if err != nil {
+			return fmt.Errorf("config: Reunion config is invalid: %v", err)
 		}
 	}
 

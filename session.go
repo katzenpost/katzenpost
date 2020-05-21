@@ -326,6 +326,10 @@ func (s *Session) CurrentDocument() *pki.Document {
 	return s.minclient.CurrentDocument()
 }
 
+func (s *Session) GetReunionConfig() *config.Reunion {
+	return s.cfg.Reunion
+}
+
 func (s *Session) GetPandaConfig() *config.Panda {
 	return s.cfg.Panda
 }
