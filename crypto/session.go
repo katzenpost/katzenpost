@@ -112,6 +112,11 @@ func (c *Session) Epoch() uint64 {
 	return c.epoch
 }
 
+// SharedRandom returns the shared random value.
+func (c *Session) SharedRandom() []byte {
+	return c.sharedRandomValue
+}
+
 // Destroy destroys all the Session's key material
 // and frees up the memory.
 func (c *Session) Destroy() {
