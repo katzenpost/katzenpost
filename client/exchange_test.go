@@ -57,6 +57,16 @@ func (m *MockReunionDB) Query(command commands.Command) (commands.Command, error
 	return m.server.ProcessQuery(command)
 }
 
+func (m *MockReunionDB) CurrentEpochs() ([]uint64, error) {
+	clock := new(katzenpost.Clock)
+	epoch, _, _ := clock.Now()
+	return []uint64{epoch - 1, epoch, epoch + 1}, nil
+}
+
+func (m *MockReunionDB) CurrentSharedRandoms() ([][]byte, error) {
+	return [][]byte{[]byte{1, 2, 3}, []byte("bbq"), []byte("lol")}, nil
+}
+
 func TestClientServerBasics1(t *testing.T) {
 	require := require.New(t)
 
