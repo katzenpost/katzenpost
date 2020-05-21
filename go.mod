@@ -4,12 +4,12 @@ go 1.12
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/katzenpost/client v0.0.8-0.20200517185103-1b42ba455d02
+	github.com/katzenpost/client v0.0.8-0.20200521183937-3ab5270bfa36
 	github.com/katzenpost/core v0.0.11
 	github.com/katzenpost/doubleratchet v0.0.4
 	github.com/katzenpost/memspool v0.0.6
 	github.com/katzenpost/panda v0.0.7
-	github.com/katzenpost/reunion v0.0.0-20200517125043-159e97bda2ac
+	github.com/katzenpost/reunion v0.0.0-20200521214309-25a7411c4d36
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79

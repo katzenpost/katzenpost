@@ -21,8 +21,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -36,8 +34,8 @@ import (
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
 	panda "github.com/katzenpost/panda/crypto"
-	reunionClient "github.com/katzenpost/reunion/client"
-	reunionTransport "github.com/katzenpost/reunion/transports/katzenpost"
+	rClient "github.com/katzenpost/reunion/client"
+	rTrans "github.com/katzenpost/reunion/transports/katzenpost"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
@@ -52,7 +50,7 @@ type Client struct {
 	EventSink   chan interface{}
 	opCh        chan interface{}
 	pandaChan   chan panda.PandaUpdate
-	reunionChan chan reunionClient.ReunionUpdate
+	reunionChan chan rClient.ReunionUpdate
 	fatalErrCh  chan error
 
 	// messageID -> *SentMessageDescriptor
@@ -113,7 +111,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		eventCh:             channels.NewInfiniteChannel(),
 		EventSink:           make(chan interface{}),
 		opCh:                make(chan interface{}, 8),
-		reunionChan:         make(chan reunionClient.ReunionUpdate),
+		reunionChan:         make(chan rClient.ReunionUpdate),
 		pandaChan:           make(chan panda.PandaUpdate),
 		fatalErrCh:          make(chan error),
 		sendMap:             new(sync.Map),
@@ -143,11 +141,34 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 func (c *Client) Start() {
 	c.garbageCollectConversations()
 	pandaCfg := c.session.GetPandaConfig()
+	reunionCfg := c.session.GetReunionConfig()
+
 	c.Go(c.eventSinkWorker)
 	for _, contact := range c.contacts {
 		if contact.IsPending {
-			// XXX: add reunion resumption here too
-			if pandaCfg != nil {
+			if reunionCfg != nil && reunionCfg.Enable == true {
+				transports, err := c.getReunionTransports() // could put outside this loop
+				if err != nil {
+					// XXX: handle with a UI notification
+					c.log.Warningf("Reunion configured, but no transports found")
+					break
+				}
+				if contact.reunionKeyExchange == nil {
+					// XXX: redo the exchange?
+					c.log.Warningf("No exchange found for contact!?")
+					continue
+				}
+				for _, tr := range transports {
+					lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
+					dblog := c.logBackend.GetLogger(lstr)
+					exchange, err := rClient.NewExchangeFromSnapshot(contact.reunionKeyExchange, dblog, tr, c.reunionChan)
+					if err != nil {
+						c.log.Warningf("Reunion failed: %v", err)
+						continue
+					}
+					go exchange.Run()
+				}
+			} else if pandaCfg != nil {
 				logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
 				meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
 				logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
@@ -264,24 +285,38 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	}
 	c.contacts[contact.ID()] = contact
 	c.contactNicknames[contact.Nickname] = contact
-	err = c.doPANDAExchange(contact, sharedSecret)
-	if err != nil  {
-		c.log.Notice("PANDA Failure for %v: %v", contact, err)
+
+	// Use PANDA or Reunion
+	pandaCfg := c.session.GetPandaConfig()
+	reunionCfg := c.session.GetReunionConfig()
+
+	switch {
+	case reunionCfg != nil && pandaCfg != nil:
+		// both reunion and panda have a configuration entry, and reunion is enabled
+		if reunionCfg.Enable == true {
+			return errors.New("One of Reunion OR Panda must be configured, not both")
+		}
+		fallthrough
+	case pandaCfg != nil:
+		panic("WTF")
+		err = c.doPANDAExchange(contact, sharedSecret)
+		if err != nil {
+			c.log.Notice("PANDA Failure for %v: %v", contact, err)
+			return err
+		}
+	case reunionCfg != nil:
 		err = c.doReunion(contact, sharedSecret)
 		if err != nil {
 			c.log.Notice("Reunion Failure for %v: %v", contact, err)
 			return err
 		}
 	}
-	return nil
+	return err
 }
 
 func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	// Use PANDA
 	pandaCfg := c.session.GetPandaConfig()
-	if pandaCfg == nil {
-		return errors.New("panda failed, must have a panda service configured")
-	}
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
 	meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
@@ -298,33 +333,59 @@ func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	return nil
 }
 
-func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
-	// Get SharedRandom
+func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
+	// Get consensus
 	doc := c.session.CurrentDocument()
-	sharedRandomWeekly := doc.PriorSharedRandom[0]
+	transports := make([]*rTrans.Transport, 0)
 
 	// Get reunion endpoints and epoch values
 	for _, p := range doc.Providers {
-		for cap := range p.Kaetzchen {
-			if cap == "reunion" {
-				endpoint := p.Kaetzchen[cap]["endpoint"].(string)
-				epochs := parmToEpochs(p.Kaetzchen[cap]["epoch"].(string))
-				if epochs == nil {
-					c.log.Fatalf("Provider's Reunion Epoch Descriptor Il Formatted")
+		if r, ok := p.Kaetzchen["reunion"]; ok {
+			if ep, ok := r["endpoint"]; ok {
+				ep := ep.(string)
+				trans := &rTrans.Transport{Session: c.session, Recipient: ep, Provider: p.Name}
+				c.log.Debugf("Adding transport %v", trans)
+				transports = append(transports, trans)
+			} else {
+				return nil, errors.New("Provider kaetzchen descriptor missing endpoint")
+			}
+		}
+	}
+	if len(transports) > 0 {
+		return transports, nil
+	}
+	return nil, errors.New("Found no reunion transports")
+}
+
+func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
+	c.log.Info("DoReunion called")
+	rtransports, err := c.getReunionTransports()
+	if err != nil {
+		panic(err)
+		return err
+	}
+	for _, tr := range rtransports {
+		epochs, err := tr.CurrentEpochs()
+		if err != nil {
+			panic(err)
+			return err
+		}
+		srvs, err := tr.CurrentSharedRandoms()
+		if err != nil {
+			panic(err)
+			return err
+		}
+		for _, srv := range srvs {
+			for _, epoch := range epochs {
+				lstr := fmt.Sprintf("reunion with %s at %s@%s:%d", contact.Nickname, tr.Recipient, tr.Provider, epoch)
+				dblog := c.logBackend.GetLogger(lstr)
+				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), sharedSecret, srv, epoch, c.reunionChan)
+				if err != nil {
+					panic(err)
+					return err
 				}
-				// XXX: skip oldest epoch, it frequently expires in testing with WarpedEpoch
-				for _, epoch := range epochs[1:] {
-					dblog := c.logBackend.GetLogger(fmt.Sprintf("reunion:%s@%s:%d", endpoint, p.Name, epoch))
-					transport := &reunionTransport.Transport{Session: c.session, Recipient: endpoint, Provider: p.Name}
-					exchange, err := reunionClient.NewExchange(contact.keyExchange, dblog, transport, contact.ID(),
-						sharedSecret, sharedRandomWeekly, epoch, c.reunionChan)
-					if err != nil {
-						return err
-					}
-					go exchange.Run()
-					c.log.Info("New reunion exchange in progress.")
-					c.save()
-				}
+				go ex.Run()
+				c.log.Info("New reunion exchange in progress.")
 			}
 		}
 	}
@@ -419,7 +480,8 @@ func (c *Client) Shutdown() {
 	close(c.fatalErrCh)
 }
 
-func (c *Client) processReunionUpdate(update *reunionClient.ReunionUpdate) {
+func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
+	c.log.Debug("got a reunion update")
 	contact, ok := c.contacts[update.ContactID]
 	if !ok {
 		c.log.Error("failure to perform Reunion update: invalid contact ID")
@@ -439,6 +501,10 @@ func (c *Client) processReunionUpdate(update *reunionClient.ReunionUpdate) {
 			Err:      update.Error,
 		}
 	case update.Serialized != nil:
+		// XXX: isn't this going to break because ReunionUpdate tells us nothing about
+		// what epochs or srvs were used?
+		// XXX: should we deserialize the exchange and keep a map keyed by epoch/srv/transport?
+		contact.reunionKeyExchange = update.Serialized
 		c.log.Infof("Key exchange with %s update received", contact.Nickname)
 	case update.Result != nil:
 		c.log.Debug("Reunion completed")
@@ -447,7 +513,7 @@ func (c *Client) processReunionUpdate(update *reunionClient.ReunionUpdate) {
 		if err != nil {
 			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
 			c.log.Error(err.Error())
-			contact.pandaResult = err.Error()
+			contact.reunionResult = err.Error()
 			contact.IsPending = false
 			c.save()
 			c.eventCh.In() <- &KeyExchangeCompletedEvent{
@@ -736,18 +802,4 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		return
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID, err)
-}
-
-// helper for extracting epoch's from reunion descriptor
-func parmToEpochs(epochstr string) []uint64 {
-	epochsAsc := strings.Split(strings.Trim(epochstr, "[]"), ",")
-	epochs := make([]uint64, 0)
-	for _, e := range epochsAsc {
-		epoch, err := strconv.Atoi(strings.Trim(e, " "))
-		if err != nil {
-			return nil
-		}
-		epochs = append(epochs, uint64(epoch))
-	}
-	return epochs
 }
