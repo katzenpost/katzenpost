@@ -125,7 +125,43 @@ func NewExchangeFromSnapshot(
 		shutdownChan: make(chan interface{}),
 	}
 	err := ex.Unmarshal(serialized)
-	return ex, err
+	if err != nil {
+		return ex, err
+	}
+
+	// Fetch the current SharedRandoms and Epochs
+	srvs, err := db.CurrentSharedRandoms()
+	if err != nil {
+		return ex, err
+	}
+	epochs, err := db.CurrentEpochs()
+	if err != nil {
+		return ex, err
+	}
+
+	// Verify that the session epoch is still valid
+	current := false
+	for _, ep := range epochs {
+		if ex.session.Epoch() == ep {
+			current = true
+		}
+	}
+	if !current {
+		return ex, errors.New("Epoch has expired, cannot resume exchange")
+	}
+	current = false
+
+	// Verify that the session shared random is still valid
+	ssrv := ex.session.SharedRandom()
+	for _, srv := range srvs {
+		if bytes.Equal(srv, ssrv) {
+			current = true
+		}
+	}
+	if !current {
+		return ex, errors.New("SharedRandom has expired, cannot resume exchange")
+	}
+	return ex, nil
 }
 
 // NewExchange creates a new Exchange struct type.
