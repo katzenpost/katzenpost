@@ -34,6 +34,9 @@ const (
 	// ResponseStatusOK is an ErrorCode value used in responses from the Reunion DB
 	// to indicate there was no error with the received query command.
 	ResponseStatusOK = 0
+	// ResponseStatusInvalidCommand is an ErrorCode value used in responses
+	// from the Reunion DB to indicate the command was not accepted.
+	ResponseInvalidCommand = 0xFF
 
 	cmdOverhead           = 1
 	fetchStateLength      = cmdOverhead + 8 + 32

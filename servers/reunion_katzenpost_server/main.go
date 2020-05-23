@@ -74,7 +74,8 @@ func requestHandler(log *logging.Logger, server *server.Server, response http.Re
 	replyCmd, err := server.ProcessQuery(cmd)
 	if err != nil {
 		log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
-		return
+		// XXX: this is also triggered by an expired epoch... and does not return error to client
+		replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
 	}
 
 	rawReply := replyCmd.ToBytes()
