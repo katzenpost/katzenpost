@@ -63,10 +63,16 @@ type serializedContact struct {
 	KeyExchange          []byte
 	PandaKeyExchange     []byte
 	PandaResult          string
-	ReunionKeyExchange   []byte
-	ReunionResult        string
+	ReunionKeyExchange   map[uint64]boundExchange
+	ReunionResult        map[uint64]string
 	Ratchet              []byte
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
+}
+
+type boundExchange struct {
+	serialized []byte
+	recipient string
+	provider string
 }
 
 // Contact is a communications contact that we have bidirectional
@@ -95,10 +101,10 @@ type Contact struct {
 	pandaResult string
 
 	// reunionKeyExchange is the serialized Reunion exchange state.
-	reunionKeyExchange []byte
+	reunionKeyExchange map[uint64]boundExchange
 
 	// reunionResult contains an error message if the Reunion exchange fails.
-	reunionResult string
+	reunionResult map[uint64]string
 
 	// ratchet is the client's double ratchet for end to end encryption
 	ratchet *ratchet.Ratchet

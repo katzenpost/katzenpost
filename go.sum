@@ -138,6 +138,12 @@ github.com/katzenpost/reunion v0.0.0-20200521203522-9ed8f91f60d5 h1:1rghxhsxzGX1
 github.com/katzenpost/reunion v0.0.0-20200521203522-9ed8f91f60d5/go.mod h1:/S12fywTZa1q/bK7utREYQWthtdlMugms3rswQLHtH4=
 github.com/katzenpost/reunion v0.0.0-20200521214309-25a7411c4d36 h1:KWBTKbfiqaesmD1puP9O4pnCZ+3a4lLya07Nsirp+fM=
 github.com/katzenpost/reunion v0.0.0-20200521214309-25a7411c4d36/go.mod h1:xD/c7A62Cxn1LmKn+/Sv8rHRG2/O9DapLQLrt5kmkzw=
+github.com/katzenpost/reunion v0.0.0-20200523112334-969b82dfdc64 h1:aOqFRDPN4AVxvPAbop37k6bmomBWPUr+j90tSlD/YqQ=
+github.com/katzenpost/reunion v0.0.0-20200523112334-969b82dfdc64/go.mod h1:xD/c7A62Cxn1LmKn+/Sv8rHRG2/O9DapLQLrt5kmkzw=
+github.com/katzenpost/reunion v0.0.0-20200524083522-32650d518d28 h1:cOAVESn3V3N4CSD/Pic/4Zz85dz1dn2HWmPDU2q+jpc=
+github.com/katzenpost/reunion v0.0.0-20200524083522-32650d518d28/go.mod h1:xD/c7A62Cxn1LmKn+/Sv8rHRG2/O9DapLQLrt5kmkzw=
+github.com/katzenpost/reunion v0.0.0-20200524095201-d15178703b13 h1:HcL5/ecN2KPVZxRDV7GmAtJnDmd4jpmMU103WKjnID0=
+github.com/katzenpost/reunion v0.0.0-20200524095201-d15178703b13/go.mod h1:xD/c7A62Cxn1LmKn+/Sv8rHRG2/O9DapLQLrt5kmkzw=
 github.com/katzenpost/server v0.0.12 h1:UQJ+SL9wEgu4leYRSmrxmqNw63AWGXuPigrtDbJQAwk=
 github.com/katzenpost/server v0.0.12/go.mod h1:6cQYA4eWIAiX+YBlPW+2K52BIAfJEQERsbfHbYhAdFg=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=

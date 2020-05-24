@@ -158,15 +158,28 @@ func (c *Client) Start() {
 					c.log.Warningf("No exchange found for contact!?")
 					continue
 				}
-				for _, tr := range transports {
-					lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
-					dblog := c.logBackend.GetLogger(lstr)
-					exchange, err := rClient.NewExchangeFromSnapshot(contact.reunionKeyExchange, dblog, tr, c.reunionChan)
-					if err != nil {
-						c.log.Warningf("Reunion failed: %v", err)
-						continue
+				for eid, ex:= range contact.reunionKeyExchange {
+					// see if the transport still exists in current transports
+					m := false
+					for _, tr := range transports {
+						if tr.Recipient == ex.recipient && tr.Provider == ex.provider {
+							m = true
+							lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
+							dblog := c.logBackend.GetLogger(lstr)
+							exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan)
+							if err != nil {
+								c.log.Warningf("Reunion failed: %v", err)
+							} else {
+								go exchange.Run()
+								break
+							}
+						}
 					}
-					go exchange.Run()
+					// transport not found
+					if m == false {
+						c.log.Warningf("Reunion transport %s@%s no longer exists!", ex.recipient, ex.provider)
+						delete(contact.reunionKeyExchange, eid)
+					}
 				}
 			} else if pandaCfg != nil {
 				logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
@@ -384,6 +397,8 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 					panic(err)
 					return err
 				}
+				// create a mapping from exchange ID to transport and serialized updates
+				contact.reunionKeyExchange[ex.ExchangeID] = boundExchange{recipient: tr.Recipient, provider: tr.Provider}
 				go ex.Run()
 				c.log.Info("New reunion exchange in progress.")
 			}
@@ -490,31 +505,42 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 	if !contact.IsPending {
 		// we performed multiple exchanges, but this one has probably arrived too late
 		c.log.Error("received reunion update after pairing occurred")
+		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
+			// remove the map entry
+			delete(contact.reunionKeyExchange, update.ExchangeID)
+		}
 		return
 	}
 	switch {
 	case update.Error != nil:
-		contact.reunionResult = update.Error.Error()
+		contact.reunionResult[update.ExchangeID] = update.Error.Error()
 		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Error)
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 			Err:      update.Error,
 		}
+		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
+			delete(contact.reunionKeyExchange, update.ExchangeID) // remove map entry
+		}
 	case update.Serialized != nil:
-		// XXX: isn't this going to break because ReunionUpdate tells us nothing about
-		// what epochs or srvs were used?
-		// XXX: should we deserialize the exchange and keep a map keyed by epoch/srv/transport?
-		contact.reunionKeyExchange = update.Serialized
-		c.log.Infof("Key exchange with %s update received", contact.Nickname)
+		if ex, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
+			ex.serialized = update.Serialized
+			c.log.Infof("Key exchange with %s update received", contact.Nickname)
+		} else {
+			c.log.Infof("Key exchange with %s update received after another valid exchange", contact.Nickname)
+		}
 	case update.Result != nil:
 		c.log.Debug("Reunion completed")
 		contact.keyExchange = nil
+		contact.IsPending = false
 		exchange, err := parseContactExchangeBytes(update.Result)
+		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
+			delete(contact.reunionKeyExchange, update.ExchangeID) // remove map entry
+		}
 		if err != nil {
 			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
 			c.log.Error(err.Error())
-			contact.reunionResult = err.Error()
-			contact.IsPending = false
+			contact.reunionResult[update.ExchangeID] = err.Error()
 			c.save()
 			c.eventCh.In() <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
@@ -529,8 +555,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 		if err != nil {
 			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
 			c.log.Error(err.Error())
-			contact.reunionResult = err.Error()
-			contact.IsPending = false
+			contact.reunionResult[update.ExchangeID] = err.Error()
 			c.save()
 			c.eventCh.In() <- &KeyExchangeCompletedEvent{
 				Nickname: contact.Nickname,
@@ -538,7 +563,6 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 			}
 			return
 		}
-		contact.IsPending = false
 		c.log.Info("Double ratchet key exchange completed!")
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
