@@ -84,7 +84,7 @@ type Exchange struct {
 
 	status    int
 	contactID uint64
-	exchangeID uint64
+	ExchangeID uint64
 	session   *crypto.Session
 
 	payload []byte
@@ -190,7 +190,7 @@ func NewExchange(
 		shutdownChan: make(chan interface{}),
 		status:       initialState,
 		contactID:    contactID,
-		exchangeID:   rand.Uint64(),
+		ExchangeID:   rand.Uint64(),
 		session:      session,
 		payload:      payload,
 
@@ -217,7 +217,7 @@ func (e *Exchange) Unmarshal(data []byte) error {
 		return fmt.Errorf("wtf unmarshal failure: %s", err.Error())
 	}
 	e.contactID = state.ContactID
-	e.exchangeID = state.ExchangeID
+	e.ExchangeID = state.ExchangeID
 	e.status = state.Status
 	e.session = state.Session
 	e.sentT1 = state.SentT1
@@ -267,7 +267,7 @@ func (e *Exchange) sentUpdateOK() bool {
 	serialized, err := e.Marshal()
 	e.updateChan <- ReunionUpdate{
 		ContactID:  e.contactID,
-		ExchangeID: e.exchangeID,
+		ExchangeID: e.ExchangeID,
 		Error:      err,
 		Serialized: serialized,
 		Result:     nil,
@@ -537,6 +537,7 @@ func (e *Exchange) processT3Messages() bool {
 			return false
 		}
 		e.updateChan <- ReunionUpdate{
+			ExchangeID: e.ExchangeID,
 			ContactID:  e.contactID,
 			Error:      nil,
 			Serialized: nil,
@@ -555,6 +556,7 @@ func (e *Exchange) Run() {
 	defer e.log.Debug("Run was halted.")
 	haltedfn := func() {
 		e.updateChan <- ReunionUpdate{
+			ExchangeID: e.ExchangeID,
 			ContactID: e.contactID,
 			Error:     errors.New("Run was halted."),
 		}
@@ -620,6 +622,7 @@ func (e *Exchange) Run() {
 		} // end for loop
 	default:
 		e.updateChan <- ReunionUpdate{
+			ExchangeID: e.ExchangeID,
 			ContactID: e.contactID,
 			Error:     errors.New("unknown state error"),
 		}
