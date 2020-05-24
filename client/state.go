@@ -25,6 +25,7 @@ import (
 type serializableExchange struct {
 	Status           int
 	ContactID        uint64
+	ExchangeID       uint64
 	Session          *crypto.Session
 	SentT1           []byte
 	SentT2Map        map[ExchangeHash][]byte

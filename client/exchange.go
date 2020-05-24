@@ -19,6 +19,7 @@ package client
 
 import (
 	"bytes"
+	"math/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -55,6 +56,8 @@ type ExchangeHash [32]byte
 type ReunionUpdate struct {
 	// ContactID is the unique contact identity.
 	ContactID uint64
+	// ExchangeID is the unique reunion exchange identity.
+	ExchangeID uint64
 	// Error contains an error or nil if no error.
 	Error error
 	// Serialized is the serialized Exchange state.
@@ -81,6 +84,7 @@ type Exchange struct {
 
 	status    int
 	contactID uint64
+	exchangeID uint64
 	session   *crypto.Session
 
 	payload []byte
@@ -186,6 +190,7 @@ func NewExchange(
 		shutdownChan: make(chan interface{}),
 		status:       initialState,
 		contactID:    contactID,
+		exchangeID:   rand.Uint64(),
 		session:      session,
 		payload:      payload,
 
@@ -212,6 +217,7 @@ func (e *Exchange) Unmarshal(data []byte) error {
 		return fmt.Errorf("wtf unmarshal failure: %s", err.Error())
 	}
 	e.contactID = state.ContactID
+	e.exchangeID = state.ExchangeID
 	e.status = state.Status
 	e.session = state.Session
 	e.sentT1 = state.SentT1
@@ -261,6 +267,7 @@ func (e *Exchange) sentUpdateOK() bool {
 	serialized, err := e.Marshal()
 	e.updateChan <- ReunionUpdate{
 		ContactID:  e.contactID,
+		ExchangeID: e.exchangeID,
 		Error:      err,
 		Serialized: serialized,
 		Result:     nil,
