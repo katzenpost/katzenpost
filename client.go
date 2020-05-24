@@ -153,11 +153,6 @@ func (c *Client) Start() {
 					c.log.Warningf("Reunion configured, but no transports found")
 					break
 				}
-				if contact.reunionKeyExchange == nil {
-					// XXX: redo the exchange?
-					c.log.Warningf("No exchange found for contact!?")
-					continue
-				}
 				for eid, ex:= range contact.reunionKeyExchange {
 					// see if the transport still exists in current transports
 					m := false
@@ -317,6 +312,8 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 			return err
 		}
 	case reunionCfg != nil:
+		contact.reunionKeyExchange = make(map[uint64]boundExchange)
+		contact.reunionResult = make(map[uint64]string)
 		err = c.doReunion(contact, sharedSecret)
 		if err != nil {
 			c.log.Notice("Reunion Failure for %v: %v", contact, err)
