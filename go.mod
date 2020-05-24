@@ -9,7 +9,7 @@ require (
 	github.com/katzenpost/doubleratchet v0.0.4
 	github.com/katzenpost/memspool v0.0.6
 	github.com/katzenpost/panda v0.0.7
-	github.com/katzenpost/reunion v0.0.0-20200521214309-25a7411c4d36
+	github.com/katzenpost/reunion v0.0.0-20200524095201-d15178703b13
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
