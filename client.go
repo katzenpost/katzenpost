@@ -311,7 +311,6 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 		}
 		fallthrough
 	case pandaCfg != nil:
-		panic("WTF")
 		err = c.doPANDAExchange(contact, sharedSecret)
 		if err != nil {
 			c.log.Notice("PANDA Failure for %v: %v", contact, err)
@@ -374,18 +373,15 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 	c.log.Info("DoReunion called")
 	rtransports, err := c.getReunionTransports()
 	if err != nil {
-		panic(err)
 		return err
 	}
 	for _, tr := range rtransports {
 		epochs, err := tr.CurrentEpochs()
 		if err != nil {
-			panic(err)
 			return err
 		}
 		srvs, err := tr.CurrentSharedRandoms()
 		if err != nil {
-			panic(err)
 			return err
 		}
 		for _, srv := range srvs {
@@ -394,7 +390,6 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 				dblog := c.logBackend.GetLogger(lstr)
 				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), sharedSecret, srv, epoch, c.reunionChan)
 				if err != nil {
-					panic(err)
 					return err
 				}
 				// create a mapping from exchange ID to transport and serialized updates
