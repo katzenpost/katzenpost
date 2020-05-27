@@ -177,3 +177,142 @@ func TestHTTPServer2(t *testing.T) {
 
 	reunionServer.Halt()
 }
+
+func TestHTTPServer3(t *testing.T) {
+	require := require.New(t)
+
+	address := "127.0.0.1:12345"
+	urlPath := "/reunion"
+	logPath := ""
+	logLevel := "DEBUG"
+	clock := new(katzenpost.Clock)
+	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	require.NoError(err)
+	stateFile.Close()
+
+	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
+	require.NoError(err)
+
+	epoch, _, _ := clock.Now()
+	url := fmt.Sprintf("http://%s%s", address, urlPath)
+	httpTransport := http.NewTransport(url)
+
+	// variable shared among reunion clients
+	f := ""
+	level := "DEBUG"
+	disable := false
+	logBackend, err := log.New(f, level, disable)
+	require.NoError(err)
+
+	srv := []byte{1, 2, 3}
+	passphrase1 := []byte("blah blah motorcycle pencil sharpening gas tank")
+	passphrase2 := []byte("a man a plan a canal panama, bitches")
+
+	var bobResult []byte
+	var aliceResult []byte
+	var nsaResult []byte
+	var gchqResult []byte
+
+	// alice client
+	alicePayload := []byte("Hello Bobby, what's up dude?")
+	aliceContactID := uint64(1)
+	require.NoError(err)
+	aliceExchangelog := logBackend.GetLogger("alice_exchange")
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	aliceUpdateCh := make(chan client.ReunionUpdate)
+	go func() {
+		for {
+			update := <-aliceUpdateCh
+			if len(update.Result) > 0 {
+				aliceResult = update.Result
+				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
+				wg.Done()
+			}
+		}
+	}()
+
+	aliceExchange, err := client.NewExchange(alicePayload, aliceExchangelog, httpTransport, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh)
+	require.NoError(err)
+
+	// bob client
+	bobPayload := []byte("Hello Alice, what's cracking?")
+	bobContactID := uint64(2)
+	require.NoError(err)
+	bobExchangelog := logBackend.GetLogger("bob_exchange")
+
+	wg.Add(1)
+	bobUpdateCh := make(chan client.ReunionUpdate)
+	go func() {
+		for {
+			update := <-bobUpdateCh
+			if len(update.Result) > 0 {
+				bobResult = update.Result
+				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
+				wg.Done()
+			}
+		}
+	}()
+
+	bobExchange, err := client.NewExchange(bobPayload, bobExchangelog, httpTransport, bobContactID, passphrase1, srv, epoch, bobUpdateCh)
+	require.NoError(err)
+
+	// NSA client
+	nsaPayload := []byte("Hello GCHQ, what's cracking?")
+	nsaContactID := uint64(3)
+	require.NoError(err)
+	nsaExchangelog := logBackend.GetLogger("nsa_exchange")
+
+	wg.Add(1)
+	nsaUpdateCh := make(chan client.ReunionUpdate)
+	go func() {
+		for {
+			update := <-nsaUpdateCh
+			if len(update.Result) > 0 {
+				nsaResult = update.Result
+				fmt.Printf("\n Nsa got result: %s\n\n", update.Result)
+				wg.Done()
+			}
+		}
+	}()
+
+	nsaExchange, err := client.NewExchange(nsaPayload, nsaExchangelog, httpTransport, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh)
+	require.NoError(err)
+
+	// GCHQ client
+	gchqPayload := []byte("Hello NSA, what's upper?")
+	gchqContactID := uint64(4)
+	require.NoError(err)
+	gchqExchangelog := logBackend.GetLogger("gchq_exchange")
+
+	wg.Add(1)
+	gchqUpdateCh := make(chan client.ReunionUpdate)
+	go func() {
+		for {
+			update := <-gchqUpdateCh
+			if len(update.Result) > 0 {
+				gchqResult = update.Result
+				fmt.Printf("\n Gchq got result: %s\n\n", update.Result)
+				wg.Done()
+			}
+		}
+	}()
+
+	gchqExchange, err := client.NewExchange(gchqPayload, gchqExchangelog, httpTransport, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh)
+	require.NoError(err)
+
+	go aliceExchange.Run()
+	go bobExchange.Run()
+	go nsaExchange.Run()
+	go gchqExchange.Run()
+
+	wg.Wait()
+
+	require.Equal(aliceResult, bobPayload)
+	require.Equal(bobResult, alicePayload)
+	require.Equal(nsaResult, gchqPayload)
+	require.Equal(gchqResult, nsaPayload)
+
+	reunionServer.Halt()
+}
