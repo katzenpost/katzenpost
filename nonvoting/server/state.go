@@ -20,12 +20,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"golang.org/x/crypto/sha3"
 	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
+	"io"
 
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
+	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -225,15 +227,48 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 	// For compatibility with shared s11n implementation between voting
 	// and non-voting authority, add SharedRandomValue.
-	srv := make([]byte, s11n.SharedRandomValueLength)
-	doc.SharedRandomValue = srv
+	reveal := make([]byte, s11n.SharedRandomLength)
+
+	// generate the SharedRandomValue
+	rn := make([]byte, 32)
+	n, err := io.ReadFull(rand.Reader, rn)
+	if err != nil || n != 32 {
+		// XXX: if n != 32, err == nil
+		s.s.fatalErrCh <- err
+		return
+	}
+
+	binary.BigEndian.PutUint64(reveal, epoch)
+	h := sha3.Sum256(rn)
+	copy(reveal[8:], h[:])
+	srv := sha3.New256()
+	srv.Write([]byte("shared-random"))
+	srv.Write(epochToBytes(epoch))
+	srv.Write(s.s.IdentityKey().Bytes())
+	srv.Write(reveal)
+
+	// include last srv as hash input
+	if s.genesisEpoch != epoch {
+		if d, ok := s.documents[epoch-1]; ok {
+			srv.Write(d.doc.SharedRandomValue)
+		} else {
+			s.log.Errorf("Epoch %d is not genesisEpoch %d but no prior document exists!?", epoch, s.genesisEpoch)
+			s.s.fatalErrCh <- err
+			return
+		}
+	} else {
+		zeros := make([]byte, 32)
+		srv.Write(zeros)
+	}
+
+	doc.SharedRandomValue = srv.Sum(nil)
 
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.priorSRV) == 0 {
-		s.priorSRV = [][]byte{srv, srv}
+		s.priorSRV = [][]byte{doc.SharedRandomValue, doc.SharedRandomValue}
 	} else if (s.genesisEpoch-epoch)%weekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
-		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
+		s.priorSRV = [][]byte{doc.SharedRandomValue, s.priorSRV[0]}
 	}
 	doc.PriorSharedRandom = s.priorSRV
 
