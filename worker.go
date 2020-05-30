@@ -36,13 +36,6 @@ type opNewDocument struct {
 	doc *pki.Document
 }
 
-func (s *Session) setPollingInterval(doc *pki.Document) {
-	// Clients have 2 poisson processes, λP and λL.
-	// They result in SURB replies.
-	interval := time.Duration(doc.LambdaP+doc.LambdaL) * time.Millisecond
-	s.minclient.SetPollInterval(interval)
-}
-
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 	isConnected := op.isConnected
 	if isConnected {
@@ -121,7 +114,6 @@ func (s *Session) worker() {
 				}
 				isConnected = newConnectedStatus
 			case opNewDocument:
-				s.setPollingInterval(op.doc)
 				err := s.isDocValid(op.doc)
 				if err != nil {
 					s.fatalErrCh <- err
