@@ -80,6 +80,7 @@ func TestDocument(t *testing.T) {
 	// Generate a Document.
 	doc := &Document{
 		Epoch:              debugTestEpoch,
+		GenesisEpoch:       debugTestEpoch,
 		SendRatePerMinute:  testSendRate,
 		Topology:           make([][][]byte, 3),
 		Mu:                 0.42,
@@ -103,13 +104,9 @@ func TestDocument(t *testing.T) {
 		idx++
 	}
 
-	t.Logf("Document: '%v'", doc)
-
 	// Serialize and sign.
 	signed, err := SignDocument(k, doc)
 	require.NoError(err, "SignDocument()")
-
-	t.Logf("signed document: '%v':", signed)
 
 	// Validate and deserialize.
 	ddoc, err := VerifyAndParseDocument([]byte(signed), k.PublicKey())
