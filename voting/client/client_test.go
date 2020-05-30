@@ -204,6 +204,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 	doc := &s11n.Document{
 		Version:            s11n.DocumentVersion,
 		Epoch:              epoch,
+		GenesisEpoch:       epoch,
 		Mu:                 0.25,
 		MuMaxDelay:         4000,
 		LambdaP:            1.2,
