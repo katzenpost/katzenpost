@@ -346,6 +346,9 @@ func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	// Get consensus
 	doc := c.session.CurrentDocument()
+	if doc == nil {
+		return nil, errors.New("No current document, wtf")
+	}
 	transports := make([]*rTrans.Transport, 0)
 
 	// Get reunion endpoints and epoch values
