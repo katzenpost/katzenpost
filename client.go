@@ -385,7 +385,10 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 		if err != nil {
 			return err
 		}
-		for _, srv := range srvs {
+		// what should we do to reduce the number of exchanges initiated?
+		// if this is the first reunion, choose the latest published epoch and srv ?
+		// (after some time, try other epochs and srvs?)
+		for _, srv := range srvs[0:1] {
 			for _, epoch := range epochs {
 				lstr := fmt.Sprintf("reunion with %s at %s@%s:%d", contact.Nickname, tr.Recipient, tr.Provider, epoch)
 				dblog := c.logBackend.GetLogger(lstr)
@@ -396,7 +399,7 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 				// create a mapping from exchange ID to transport and serialized updates
 				contact.reunionKeyExchange[ex.ExchangeID] = boundExchange{recipient: tr.Recipient, provider: tr.Provider}
 				go ex.Run()
-				c.log.Info("New reunion exchange in progress.")
+				c.log.Info("New reunion exchange %v in progress.", ex.ExchangeID)
 			}
 		}
 	}
