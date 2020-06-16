@@ -283,6 +283,7 @@ func (c *Client) randID() uint64 {
 	// unreachable
 }
 
+// called by worker upon opAddContact
 func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
