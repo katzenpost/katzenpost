@@ -501,9 +501,12 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 	if !contact.IsPending {
 		// we performed multiple exchanges, but this one has probably arrived too late
 		c.log.Debugf("received reunion update for exchange %v after pairing occurred", update.ExchangeID)
+		// remove the map entries
 		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
-			// remove the map entry
 			delete(contact.reunionKeyExchange, update.ExchangeID)
+		}
+		if _, ok := contact.reunionResult[update.ExchangeID]; ok {
+			delete(contact.reunionResult, update.ExchangeID)
 		}
 		return
 	}
