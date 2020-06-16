@@ -532,8 +532,6 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 		}
 	case update.Result != nil:
 		c.log.Debugf("Reunion exchange %v completed", update.ExchangeID)
-		contact.keyExchange = nil
-		contact.IsPending = false
 		exchange, err := parseContactExchangeBytes(update.Result)
 		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
 			delete(contact.reunionKeyExchange, update.ExchangeID) // remove map entry
@@ -565,6 +563,8 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 			return
 		}
 		// XXX: should purge the reunionResults now...
+		contact.keyExchange = nil
+		contact.IsPending = false
 		c.log.Info("Reunion double ratchet key exchange completed by exchange %v!", update.ExchangeID)
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
