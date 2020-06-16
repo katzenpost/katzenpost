@@ -72,6 +72,7 @@ func (c *Client) worker() {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
 				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				c.log.Debugf("readInboxInterval: %d", readInboxInterval/time.Millisecond)
 				readInboxTimer.Reset(readInboxInterval)
 			}
 		case qo = <-c.opCh:
