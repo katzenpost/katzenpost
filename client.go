@@ -492,7 +492,7 @@ func (c *Client) Shutdown() {
 }
 
 func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
-	c.log.Debug("got a reunion update")
+	c.log.Debug("got a reunion update for exchange %v", update.ExchangeID)
 	contact, ok := c.contacts[update.ContactID]
 	if !ok {
 		c.log.Error("failure to perform Reunion update: invalid contact ID")
@@ -500,7 +500,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 	}
 	if !contact.IsPending {
 		// we performed multiple exchanges, but this one has probably arrived too late
-		c.log.Error("received reunion update after pairing occurred")
+		c.log.Debugf("received reunion update for exchange %v after pairing occurred", update.ExchangeID)
 		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
 			// remove the map entry
 			delete(contact.reunionKeyExchange, update.ExchangeID)
@@ -510,23 +510,25 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 	switch {
 	case update.Error != nil:
 		contact.reunionResult[update.ExchangeID] = update.Error.Error()
-		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Error)
+		c.log.Infof("Reunion key exchange %v with %s failed: %s", update.ExchangeID, contact.Nickname, update.Error)
+		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
+			delete(contact.reunionKeyExchange, update.ExchangeID) // remove map entry
+		}
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 			Err:      update.Error,
 		}
-		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
-			delete(contact.reunionKeyExchange, update.ExchangeID) // remove map entry
-		}
+		return
+
 	case update.Serialized != nil:
 		if ex, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
 			ex.serialized = update.Serialized
-			c.log.Infof("Key exchange with %s update received", contact.Nickname)
+			c.log.Infof("Reunion key exchange %v with %s update received", update.ExchangeID, contact.Nickname)
 		} else {
-			c.log.Infof("Key exchange with %s update received after another valid exchange", contact.Nickname)
+			c.log.Infof("Reunion key exchange %v with %s update received after another valid exchange", update.ExchangeID, contact.Nickname)
 		}
 	case update.Result != nil:
-		c.log.Debug("Reunion completed")
+		c.log.Debugf("Reunion exchange %v completed", update.ExchangeID)
 		contact.keyExchange = nil
 		contact.IsPending = false
 		exchange, err := parseContactExchangeBytes(update.Result)
@@ -534,7 +536,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 			delete(contact.reunionKeyExchange, update.ExchangeID) // remove map entry
 		}
 		if err != nil {
-			err = fmt.Errorf("failure to parse contact exchange bytes: %s", err)
+			err = fmt.Errorf("Reunion failure to parse contact exchange %v bytes: %s", update.ExchangeID, err)
 			c.log.Error(err.Error())
 			contact.reunionResult[update.ExchangeID] = err.Error()
 			c.save()
@@ -549,7 +551,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
 		contact.ratchetMutex.Unlock()
 		if err != nil {
-			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
+			err = fmt.Errorf("Reunion double ratchet key exchange %v failure: %s", update.ExchangeID, err)
 			c.log.Error(err.Error())
 			contact.reunionResult[update.ExchangeID] = err.Error()
 			c.save()
@@ -559,7 +561,8 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 			}
 			return
 		}
-		c.log.Info("Double ratchet key exchange completed!")
+		// XXX: should purge the reunionResults now...
+		c.log.Info("Reunion double ratchet key exchange completed by exchange %v!", update.ExchangeID)
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 		}
