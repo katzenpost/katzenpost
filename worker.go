@@ -30,7 +30,7 @@ import (
 // to determine our new lambda parameter for our poisson process
 // which is used in selecting time intervals between attempting
 // to retreive messages from our remote Provider.
-const ReadInboxLambdaPDivisor = 4
+const ReadInboxLambdaPDivisor = 42
 
 func getReadInboxInterval(lambdaP float64, lambdaPMaxDelay uint64) time.Duration {
 	readInboxMsec := uint64(rand.Exp(rand.NewMath(), (lambdaP / ReadInboxLambdaPDivisor)))
