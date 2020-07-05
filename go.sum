@@ -1,3 +1,18 @@
+# Copyright (C) 2020  David Stainton.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 git.schwanenlied.me/yawning/aez.git v0.0.0-20180408160647-ec7426b44926 h1:z1JlywFx2QW25Z4P9fzORXaxf35ph/ZrhZINmfnDt10=
 git.schwanenlied.me/yawning/aez.git v0.0.0-20180408160647-ec7426b44926/go.mod h1:sXNmB4ljkeRBT0xvmbMGP7ldvC2C2CIUXBlqIO8XGc4=
 git.schwanenlied.me/yawning/avl.git v0.0.0-20180224045358-04c7c776e391 h1:2gwxqmSIgUzY8o2d9ojieh+8tu4q5euHp9/VcNdRAJI=
