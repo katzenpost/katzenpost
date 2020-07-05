@@ -162,13 +162,6 @@ Ratchet:
 * https://github.com/katzenpost/minclient
 * https://github.com/katzenpost/core
 
-
-license
-=======
-
-AGPL: see LICENSE file for details.
-
-
 acknowledgments
 ===============
 
@@ -177,13 +170,45 @@ acknowledgments
 
 * I would like to also thank Adam Langely for writing [Pond](https://github.com/agl/pond)
   which has very obviously inspired a few of our design choices and has provided some
-  code that we use such as the PANDA cryptographic protocol and the Signal Double Ratchet.
+  code that we use such as the PANDA cryptographic protocol and the Double Ratchet.
 
 
 supported by
 ============
 
-The development of the Catshadow Katzenpost client has been supported by the Samsung Next Stack Zero grant.
-See **Announcing the Samsung NEXT Stack Zero Grant recipients**.
+The development of the Catshadow Katzenpost client has been supported by:
 
+* The Samsung Next Stack Zero grant
+* NLnet and the NGI0 PET Fund paid for by the European Commission
+
+.. image:: https://katzenpost.mixnetworks.org/_static/images/eu-flag-tiny.jpg
+
+
+See **NLnet accouncement** https://nlnet.nl/project/katzenpost/index.html
+
+
+See **Announcing the Samsung NEXT Stack Zero Grant recipients**.
 https://samsungnext.com/whats-next/category/podcasts/decentralization-samsung-next-stack-zero-grant-recipients/
+
+
+
+
+license
+=======
+
+AGPL: see LICENSE file for details.
+
+Copyright (C) 2020  David Stainton.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
