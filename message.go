@@ -1,5 +1,7 @@
+// SPDX-FileCopyrightText: 2019, David Stainton <dawuud@riseup.net>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
 // message.go - client message descriptor types
-// Copyright (C) 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
