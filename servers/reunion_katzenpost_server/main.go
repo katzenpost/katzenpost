@@ -35,8 +35,10 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-func parametersHandler(response http.ResponseWriter, req *http.Request) {
-	params := new(cborplugin.Parameters)
+func parametersHandler(response http.ResponseWriter, req *http.Request, clock *katzenpost.Clock) {
+	params := make(cborplugin.Parameters)
+	epoch, _, _ := clock.Now()
+	params["epoch"] = fmt.Sprintf("[%d, %d, %d]", epoch-1, epoch, epoch+1)
 	serialized, err := cbor.Marshal(params)
 	if err != nil {
 		panic(err)
@@ -137,8 +139,11 @@ func main() {
 	_requestHandler := func(response http.ResponseWriter, request *http.Request) {
 		requestHandler(httpLog, reunionServer, response, request)
 	}
+	_parametersHandler := func(response http.ResponseWriter, request *http.Request) {
+		parametersHandler(response, request, clock)
+	}
 	http.HandleFunc("/request", _requestHandler)
-	http.HandleFunc("/parameters", parametersHandler)
+	http.HandleFunc("/parameters", _parametersHandler)
 	fmt.Printf("%s\n", socketFile)
 	httpServer.Serve(unixListener)
 	os.Remove(socketFile)

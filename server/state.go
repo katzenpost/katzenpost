@@ -39,6 +39,8 @@ type ReunionDatabase interface {
 	// Query sends a query command to the Reunion DB and returns the
 	// response command or an error.
 	Query(command commands.Command) (commands.Command, error)
+	CurrentSharedRandoms() ([][]byte, error)
+	CurrentEpochs() ([]uint64, error)
 }
 
 // T1Message is used for serializing ReunionState.
