@@ -63,7 +63,6 @@ type CBORPluginWorker struct {
 	haltOnce    sync.Once
 	pluginChans PluginChans
 	clients     []*cborplugin.Client
-	forPKI      ServiceMap
 }
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
@@ -171,7 +170,23 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
 func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
-	return k.forPKI
+	s := make(ServiceMap)
+	for _, k := range k.clients {
+		capa := k.Capability()
+		if _, ok :=  s[capa]; ok {
+			// skip adding twice
+			continue
+		}
+		params := make(PluginParameters)
+		p := k.GetParameters()
+		if p != nil {
+			for key, value := range *p {
+				params[key] = value
+			}
+		}
+		s[capa] = params
+	}
+	return s
 }
 
 // IsKaetzchen returns true if the given recipient is one of our workers.
@@ -180,9 +195,9 @@ func (k *CBORPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]b
 	return ok
 }
 
-func (k *CBORPluginWorker) launch(command string, args []string) (*cborplugin.Client, error) {
+func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.New(command, k.glue.LogBackend())
+	plugin := cborplugin.New(command, capability, endpoint, k.glue.LogBackend())
 	err := plugin.Start(command, args)
 	return plugin, err
 }
@@ -195,7 +210,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),
 		clients:     make([]*cborplugin.Client, 0),
-		forPKI:      make(ServiceMap),
 	}
 
 	capaMap := make(map[string]bool)
@@ -234,10 +248,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		copy(endpoint[:], rawEp)
 		kaetzchenWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
 
-		// Add entry from this plugin for the PKI.
-		params := make(map[string]interface{})
-		gotParams := false
-
 		// Start the plugin clients.
 		for i := 0; i < pluginConf.MaxConcurrency; i++ {
 			kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s %d", capa, i)
@@ -250,24 +260,10 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 				}
 			}
 
-			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, args)
+			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
 			if err != nil {
 				kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
 				return nil, err
-			}
-
-			if !gotParams {
-				// just once we call the Parameters method on the plugin
-				// and use that info to populate our forPKI map which
-				// ends up populating the PKI document
-				p := pluginClient.GetParameters()
-				if p != nil {
-					for key, value := range *p {
-						params[key] = value
-					}
-				}
-				params[ParameterEndpoint] = pluginConf.Endpoint
-				gotParams = true
 			}
 
 			// Accumulate a list of all clients to facilitate clean shutdown.
@@ -280,7 +276,6 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			})
 		}
 
-		kaetzchenWorker.forPKI[capa] = params
 		capaMap[capa] = true
 	}
 

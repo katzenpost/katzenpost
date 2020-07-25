@@ -49,7 +49,7 @@ var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = 1 * time.Minute
 	WarpedEpoch          = "false"
-	nextFetchTill        = epochtime.Period / 2
+	nextFetchTill        = epochtime.Period/8
 	pkiEarlyConnectSlack = epochtime.Period / 6
 )
 
@@ -761,6 +761,6 @@ func init() {
 	prometheus.MustRegister(failedFetchPKIDocs)
 
 	if WarpedEpoch == "true" {
-		recheckInterval = 20 * time.Second
+		recheckInterval = 5 * time.Second
 	}
 }
