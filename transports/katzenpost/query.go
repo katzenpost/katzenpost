@@ -22,6 +22,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/reunion/commands"
@@ -37,6 +39,46 @@ type Transport struct {
 	Recipient string
 	// Provider is the destination Provider.
 	Provider string
+}
+
+// CurrentSharedRandoms returns the valid SharedRandoms in the PKI
+// but in the future may return a transport specific SharedRandom
+func (k *Transport) CurrentSharedRandoms() ([][]byte, error) {
+	doc := k.Session.CurrentDocument()
+	return doc.PriorSharedRandom, nil
+}
+
+// CurrentEpochs returns the valid Epochs that this service has announced
+func (k *Transport) CurrentEpochs() ([]uint64, error) {
+	parmToEpochs := func(epochstr string) []uint64 {
+		epochsAsc := strings.Split(strings.Trim(epochstr, "[]"), ",")
+		epochs := make([]uint64, 0)
+		for _, e := range epochsAsc {
+			epoch, err := strconv.Atoi(strings.Trim(e, " "))
+			if err != nil {
+				return nil
+			}
+			epochs = append(epochs, uint64(epoch))
+		}
+		return epochs
+	}
+
+	// Verify the service is still advertising valid epochs in the current PKI
+	doc := k.Session.CurrentDocument()
+	p, err := doc.GetProvider(k.Provider)
+	if err != nil {
+		return nil, errors.New("Provider not found in PKI")
+	}
+	if ep, ok := p.Kaetzchen["reunion"]; ok {
+		if parm, ok := ep["epoch"]; ok {
+			if epochs := parmToEpochs(parm.(string)); epochs != nil {
+				return epochs, nil
+			}
+			return nil, errors.New("No valid epochs found in descriptor")
+		}
+		return nil, errors.New("Providers Reunion descriptor il formatted")
+	}
+	return nil, errors.New("Reunion endpoint not found in PKI")
 }
 
 // Query sends the command to the destination Reunion DB service
