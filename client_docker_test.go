@@ -62,12 +62,15 @@ func createRandomStateFile(t *testing.T) string {
 	return stateFile
 }
 
-func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
+func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion bool) *Client {
 	require := require.New(t)
 
-	// Load catshadow config file.
 	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
+	if useReunion {
+		catshadowCfg.Panda = nil
+		catshadowCfg.Reunion.Enable = true
+	}
 	var stateWorker *StateWriter
 	var catShadowClient *Client
 	cfg, err := catshadowCfg.ClientConfig()
@@ -136,9 +139,9 @@ func TestDockerPandaSuccess(t *testing.T) {
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceState)
+	alice := createCatshadowClientWithState(t, aliceState, false)
 	bobState := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobState)
+	bob := createCatshadowClientWithState(t, bobState, false)
 
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
@@ -179,9 +182,9 @@ func TestDockerPandaTagContendedError(t *testing.T) {
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceStateFilePath)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath, false)
 	bobStateFilePath := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobStateFilePath)
+	bob := createCatshadowClientWithState(t, bobStateFilePath, false)
 
 	sharedSecret := []byte("twas brillig and the slithy toves")
 	randBytes := [8]byte{}
@@ -220,9 +223,9 @@ loop2:
 	// second phase of test, use same panda shared secret
 	// in order to test that it invokes a tag contended error
 	adaState := createRandomStateFile(t)
-	ada := createCatshadowClientWithState(t, adaState)
+	ada := createCatshadowClientWithState(t, adaState, false)
 	jeffState := createRandomStateFile(t)
-	jeff := createCatshadowClientWithState(t, jeffState)
+	jeff := createCatshadowClientWithState(t, jeffState, false)
 
 	ada.NewContact("jeff", sharedSecret)
 	jeff.NewContact("ada", sharedSecret)
@@ -257,9 +260,9 @@ func TestDockerSendReceive(t *testing.T) {
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceStateFilePath)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath, false)
 	bobStateFilePath := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobStateFilePath)
+	bob := createCatshadowClientWithState(t, bobStateFilePath, false)
 
 	sharedSecret := []byte(`oxcart pillage village bicycle gravity socks`)
 	randBytes := [8]byte{}
@@ -372,4 +375,78 @@ and can readily scale to millions of users.
 	}
 	newAlice.Shutdown()
 	newBob.Shutdown()
+}
+
+func TestDockerReunionSuccess(t *testing.T) {
+	require := require.New(t)
+
+	aliceState := createRandomStateFile(t)
+	alice := createCatshadowClientWithState(t, aliceState, true)
+
+	bobState := createRandomStateFile(t)
+	bob := createCatshadowClientWithState(t, bobState, true)
+
+	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
+	randBytes := [8]byte{}
+	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	sharedSecret = append(sharedSecret, randBytes[:]...)
+
+	alice.NewContact("bob", sharedSecret)
+	bob.NewContact("alice", sharedSecret)
+
+	//for i:=0; i<10; i++ {
+	//	go func() {
+	//		malState := createRandomStateFile(t)
+	//		mal := createCatshadowClientWithState(t, malState)
+	//		antifaState := createRandomStateFile(t)
+	//		antifa := createCatshadowClientWithState(t, antifaState)
+	//		randBytes := [8]byte{}
+	//		rand.Reader.Read(randBytes[:])
+
+	//		go func() {mal.NewContact("antifa", randBytes[:])}()
+	//		go func() {antifa.NewContact("mal", randBytes[:])}()
+	//	}()
+	//}
+	afails := 0
+	bfails := 0
+
+loop1:
+	for {
+		ev := <-alice.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			// XXX: we do multiple exchanges, some will fail
+			alice.log.Debugf("reunion ALICE RECEIVED event: %v\n", event)
+			if event.Err != nil {
+				afails++
+				require.True(afails < 6)
+				continue
+			} else {
+				break loop1
+			}
+		default:
+		}
+	}
+
+loop2:
+	for {
+		ev := <-bob.EventSink
+		switch event := ev.(type) {
+		case *KeyExchangeCompletedEvent:
+			// XXX: we do multiple exchanges, some will fail
+			bob.log.Debugf("reunion BOB RECEIVED event: %v\n", event)
+			if event.Err != nil {
+				bfails++
+				require.True(bfails < 6)
+				continue
+			} else {
+				break loop2
+			}
+		default:
+		}
+	}
+
+	alice.Shutdown()
+	bob.Shutdown()
 }
