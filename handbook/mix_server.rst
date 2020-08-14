@@ -500,7 +500,7 @@ The following commands are possible:
 * ``SET_USER_IDENTITY`` - Set a given user's identity key.
   The syntax of the command is as follows::
 
-    SET_USER_IDENTITY alice ED25519_public_key_in_hex_or_base64
+    SET_USER_IDENTITY alice X25519_public_key_in_hex_or_base64
 
 * ``REMOVE_USER_IDENTITY`` - Remove a given user's identity key.
   MUST be called before removing the user with the ``REMOVE_USER`` command.
