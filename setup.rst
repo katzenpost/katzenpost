@@ -131,6 +131,12 @@ Add :term:`User`\s to the :term:`Provider` using the management interface:
 
     socat unix:/<path-to-data-dir>/management_sock STDOUT
     ADD_USER alice X25519_public_key_in_hex_or_base64
+    
+In case you want to use the automatic key discovery for mailproxy, the user identity key (identity.public.pem) also needs to be set:
+
+.. code:: console
+
+    SET_USER_IDENTITY alice X25519_public_key_in_hex_or_base64
 
 Run the Authority
 =================
