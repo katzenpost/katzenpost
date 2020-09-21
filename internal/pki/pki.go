@@ -449,6 +449,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		p.log.Warningf("Authority rejected upload for epoch: %v (Conflict/Late)", doPublishEpoch)
 		p.lastPublishedEpoch = doPublishEpoch
 	default:
+		// XXX: the voting authority implementation does not return any of the above error types...
+		// and the mix will continue to fail to submit the same descriptor repeatedly.
+		p.lastPublishedEpoch = doPublishEpoch
 	}
 
 	return err
