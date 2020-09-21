@@ -8,7 +8,7 @@ require (
 	github.com/katzenpost/client v0.0.8
 	github.com/katzenpost/core v0.0.11
 	github.com/katzenpost/memspool v0.0.7
-	github.com/katzenpost/server v0.0.13
+	github.com/katzenpost/server v0.0.14
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
