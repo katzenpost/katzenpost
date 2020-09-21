@@ -40,8 +40,8 @@ import (
 const (
 	defaultLogLevel                    = "NOTICE"
 	defaultPollingInterval             = 10
-	defaultInitialMaxPKIRetrievalDelay = 10
-	defaultSessionDialTimeout          = 10
+	defaultInitialMaxPKIRetrievalDelay = 30
+	defaultSessionDialTimeout          = 30
 )
 
 var defaultLogging = Logging{
