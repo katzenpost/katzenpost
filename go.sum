@@ -82,6 +82,8 @@ github.com/katzenpost/memspool v0.0.6 h1:+dw0N3DGD9He1qOXJRHp1ZfEbAGVg8hxKGhuNjA
 github.com/katzenpost/memspool v0.0.6/go.mod h1:A4mtCyZKpPihTWL5fuvEqz4FUmDHgFRF2Ooq15YSFE0=
 github.com/katzenpost/memspool v0.0.7 h1:/Bs+CcIyXtwYTDM+HygkFX5h4On/h0/BxUHJ6znoE5U=
 github.com/katzenpost/memspool v0.0.7/go.mod h1:24FkWsMX/J5AM9RFlK+CND+paONoVYSrAhESuUmnZOQ=
+github.com/katzenpost/memspool v0.0.8 h1:F3iGxB9FbTXJ4XBrrkhYJO3jyL8ajsP3NvduKR5CEAg=
+github.com/katzenpost/memspool v0.0.8/go.mod h1:FsE+f7OdDvUKzFvsjwelRtaSDmcDPvvAkesF+OIkQGg=
 github.com/katzenpost/minclient v0.0.7 h1:7+K+6IEYngxGk3Mmvyq+dXGvWKZp4tQ9/f0VgQZr5kA=
 github.com/katzenpost/minclient v0.0.7/go.mod h1:jjFDNK1YxG0pjVwkbAjKS6jnFXmZRpcPeARwhaCNClE=
 github.com/katzenpost/minclient v0.0.8 h1:oDdSQzmgXzpMvFjYxOpOW37wf6HOCR13sc0en0UHd5Q=
@@ -94,12 +96,15 @@ github.com/katzenpost/panda v0.0.7 h1:BI5hTsBJkP/5dwjoa4ld295iydgxxDbSXJlWcoa1IS
 github.com/katzenpost/panda v0.0.7/go.mod h1:AiuvuzAfxA1eTMqYQFQcf709HjLk1G2WOqDVWzOeUbw=
 github.com/katzenpost/panda v0.0.8 h1:ABx2TZn6ZIO1jVGu/xksVmlq93THky9QdEWugZQTeh4=
 github.com/katzenpost/panda v0.0.8/go.mod h1:NaK9uP9xRgswnpo9MHpX7WofeaojnBHyZEMIDGOfPgg=
+github.com/katzenpost/panda v0.0.9 h1:TjkWpDCGrUyXEUtrQUdWVL7/ebM6GvL8u4edKMB2b7E=
+github.com/katzenpost/panda v0.0.9/go.mod h1:xB5HB2qm5hj12j0fnBgZHkpZKhNZ0yhUuzQ1U/i+mtM=
 github.com/katzenpost/registration_client v0.0.1 h1:ZvlEQ0rfVEGEV67x7KVxMi0veiLn2QyM1bxfWb8u7Q8=
 github.com/katzenpost/registration_client v0.0.1/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
 github.com/katzenpost/server v0.0.12 h1:UQJ+SL9wEgu4leYRSmrxmqNw63AWGXuPigrtDbJQAwk=
 github.com/katzenpost/server v0.0.12/go.mod h1:6cQYA4eWIAiX+YBlPW+2K52BIAfJEQERsbfHbYhAdFg=
 github.com/katzenpost/server v0.0.13 h1:e94l/NF8RoDo2doYBUsgcZi8cmKcJWafN+cPIBUxgdo=
 github.com/katzenpost/server v0.0.13/go.mod h1:6cQYA4eWIAiX+YBlPW+2K52BIAfJEQERsbfHbYhAdFg=
+github.com/katzenpost/server v0.0.14/go.mod h1:pPoZ5HSwbXrNkcHVSXYn/40AihFUph8Zch84YYGqXZ4=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
