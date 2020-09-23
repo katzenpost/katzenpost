@@ -149,12 +149,11 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	r.MySigningPublic = memguard.NewBufferFromBytes(mySigningPublic[:])
 	r.MySigningPrivate = memguard.NewBufferFromBytes(mySigningPrivate[:])
 
-	var tmpIdentityPrivate, tmpIdentityPublic [privateKeySize]byte
-	extra25519.PrivateKeyToCurve25519(&tmpIdentityPrivate, r.MySigningPrivate.ByteArray64())
-	r.MyIdentityPrivate = memguard.NewBufferFromBytes(tmpIdentityPrivate[:])
-
-	curve25519.ScalarBaseMult(&tmpIdentityPublic, r.MyIdentityPrivate.ByteArray32())
-	r.MyIdentityPublic = memguard.NewBufferFromBytes(tmpIdentityPublic[:])
+	// OK
+	r.MyIdentityPrivate = memguard.NewBuffer(privateKeySize)
+	r.MyIdentityPublic = memguard.NewBuffer(publicKeySize)
+	extra25519.PrivateKeyToCurve25519(r.MyIdentityPrivate.ByteArray32(), r.MySigningPrivate.ByteArray64())
+	curve25519.ScalarBaseMult(r.MyIdentityPublic.ByteArray32(), r.MyIdentityPrivate.ByteArray32())
 
 	// sanity math assertion
 	var curve25519Public [publicKeySize]byte
