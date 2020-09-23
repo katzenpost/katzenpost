@@ -198,11 +198,12 @@ func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 		return errors.New("Ratchet: handshake already complete")
 	}
 
-	var public0, public1 [publicKeySize]byte
-	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
-	curve25519.ScalarBaseMult(&public1, r.kxPrivate1.ByteArray32())
-	kx.Dh = public0[:]
-	kx.Dh1 = public1[:]
+	public0 := memguard.NewBuffer(publicKeySize)
+	public1 := memguard.NewBuffer(publicKeySize)
+	curve25519.ScalarBaseMult(public0.ByteArray32(), r.kxPrivate0.ByteArray32())
+	curve25519.ScalarBaseMult(public1.ByteArray32(), r.kxPrivate1.ByteArray32())
+	kx.Dh = public0.Bytes()
+	kx.Dh1 = public1.Bytes()
 
 	return nil
 }
