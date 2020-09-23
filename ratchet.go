@@ -156,8 +156,8 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	curve25519.ScalarBaseMult(r.MyIdentityPublic.ByteArray32(), r.MyIdentityPrivate.ByteArray32())
 
 	// sanity math assertion
-	var curve25519Public [publicKeySize]byte
-	extra25519.PublicKeyToCurve25519(&curve25519Public, r.MySigningPublic.ByteArray32())
+	curve25519Public := memguard.NewBuffer(publicKeySize)
+	extra25519.PublicKeyToCurve25519(curve25519Public.ByteArray32(), r.MySigningPublic.ByteArray32())
 
 	if !bytes.Equal(curve25519Public[:], r.MyIdentityPublic.ByteArray32()[:]) {
 		panic("Failed: Incorrect Public/Private Keys")
@@ -169,12 +169,9 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 // CreateKeyExchange created and add the appropiate fields for the KeyExchange
 func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 	kx := &KeyExchange{
-		PublicKey:      make([]byte, publicKeySize),
-		IdentityPublic: make([]byte, publicKeySize),
+		PublicKey:      r.MySigningPublic.Bytes(),
+		IdentityPublic: r.MyIdentityPublic.Bytes(),
 	}
-
-	copy(kx.PublicKey, r.MySigningPublic.ByteArray32()[:])
-	copy(kx.IdentityPublic, r.MyIdentityPublic.ByteArray32()[:])
 
 	err := r.FillKeyExchange(kx)
 	if err != nil {
@@ -187,7 +184,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 		return nil, err
 	}
 
-	sig := ed25519.Sign(ed25519.PrivateKey(r.MySigningPrivate.ByteArray64()[:]), serialized)
+	sig := ed25519.Sign(ed25519.PrivateKey(r.MySigningPrivate.Bytes()), serialized)
 	return &SignedKeyExchange{
 		Signed:    serialized,
 		Signature: sig[:],
