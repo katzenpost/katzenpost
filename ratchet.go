@@ -159,7 +159,7 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	curve25519Public := memguard.NewBuffer(publicKeySize)
 	extra25519.PublicKeyToCurve25519(curve25519Public.ByteArray32(), r.MySigningPublic.ByteArray32())
 
-	if !bytes.Equal(curve25519Public[:], r.MyIdentityPublic.ByteArray32()[:]) {
+	if !r.MyIdentityPublic.EqualTo(curve25519Public.Bytes()) {
 		panic("Failed: Incorrect Public/Private Keys")
 	}
 
