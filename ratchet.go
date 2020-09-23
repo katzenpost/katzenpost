@@ -608,21 +608,23 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	var dhPublic, sharedKey, keyMaterial [32]byte
-	copy(dhPublic[:], header[8:])
+	dhPublic := memguard.NewBuffer(keySize)
+	sharedKey := memguard.NewBuffer(keySize)
+	keyMaterial := memguard.NewBuffer(keySize)
+	dhPublic.Copy(header[8:])
 
-	curve25519.ScalarMult(&sharedKey, r.sendRatchetPrivate.ByteArray32(), &dhPublic)
+	curve25519.ScalarMult(sharedKey.ByteArray32(), r.sendRatchetPrivate.ByteArray32(), dhPublic.ByteArray32())
 
 	sha := sha3.New256()
 	sha.Write(rootKeyUpdateLabel)
-	sha.Write(r.rootKey.ByteArray32()[:])
-	sha.Write(sharedKey[:])
+	sha.Write(r.rootKey.Bytes())
+	sha.Write(sharedKey.Bytes())
 
 	var rootKeyHMAC hash.Hash
 	var chainKey *memguard.LockedBuffer
 
-	sha.Sum(keyMaterial[:0])
-	rootKeyHMAC = hmac.New(sha3.New256, keyMaterial[:])
+	sha.Sum(keyMaterial.Bytes()[:0])
+	rootKeyHMAC = hmac.New(sha3.New256, keyMaterial.Bytes())
 	r.rootKey = deriveKey(rootKeyLabel, rootKeyHMAC)
 	chainKey = deriveKey(chainKeyLabel, rootKeyHMAC)
 
@@ -641,8 +643,8 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	defer r.recvChainKey.Freeze()
 	r.recvHeaderKey.Melt()
 	defer r.recvHeaderKey.Freeze()
-	r.recvChainKey.Copy(provisionalChainKey.ByteArray32()[:])
-	r.recvHeaderKey.Copy(r.nextRecvHeaderKey.ByteArray32()[:])
+	r.recvChainKey.Copy(provisionalChainKey.Bytes())
+	r.recvHeaderKey.Copy(r.nextRecvHeaderKey.Bytes())
 
 	r.nextRecvHeaderKey = deriveKey(headerKeyLabel, rootKeyHMAC)
 
@@ -652,7 +654,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 
 	r.recvRatchetPublic.Melt()
 	defer r.recvRatchetPublic.Freeze()
-	r.recvRatchetPublic.Copy(dhPublic[:])
+	r.recvRatchetPublic.Copy(dhPublic.Bytes())
 
 	r.recvCount = messageNum + 1
 	r.mergeSavedKeys(oldSavedKeys)
