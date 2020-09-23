@@ -163,6 +163,19 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 		panic("Failed: Incorrect Public/Private Keys")
 	}
 
+	// zero initialize key fields
+	r.TheirSigningPublic = memguard.NewBuffer(publicKeySize)
+	r.TheirIdentityPublic = memguard.NewBuffer(publicKeySize)
+	r.rootKey = memguard.NewBuffer(privateKeySize)
+	r.sendHeaderKey = memguard.NewBuffer(privateKeySize)
+	r.recvHeaderKey = memguard.NewBuffer(privateKeySize)
+	r.nextSendHeaderKey = memguard.NewBuffer(privateKeySize)
+	r.nextRecvHeaderKey = memguard.NewBuffer(privateKeySize)
+	r.sendChainKey = memguard.NewBuffer(privateKeySize)
+	r.recvChainKey = memguard.NewBuffer(privateKeySize)
+	r.sendRatchetPrivate = memguard.NewBuffer(privateKeySize)
+	r.recvRatchetPublic = memguard.NewBuffer(privateKeySize)
+
 	return r, nil
 }
 
@@ -674,16 +687,6 @@ func dup(key *[32]byte) []byte {
 	return ret
 }
 
-func dupLockedBuffer(key *memguard.LockedBuffer) []byte {
-	if key == nil {
-		return nil
-	}
-
-	ret := make([]byte, 32)
-	copy(ret, key.ByteArray32()[:])
-	return ret
-}
-
 // MarshalBinary transforms the object into a stream
 func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 	s := r.Marshal(time.Now(), RatchetKeyMaxLifetime)
@@ -698,27 +701,28 @@ func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 
 // Marshal transforms the object into a stream
 func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
+	// XXX: does not serialize fixed length keys if the doubleratchet handshake has not yet completed.
 	s := &State{
-		TheirSigningPublic:  dupLockedBuffer(r.TheirSigningPublic),
-		TheirIdentityPublic: dupLockedBuffer(r.TheirIdentityPublic),
-		MySigningPublic:     dupLockedBuffer(r.MySigningPublic),
-		MySigningPrivate:    r.MySigningPrivate.ByteArray64()[:],
-		MyIdentityPrivate:   dupLockedBuffer(r.MyIdentityPrivate),
-		MyIdentityPublic:    dupLockedBuffer(r.MyIdentityPublic),
-		RootKey:             dupLockedBuffer(r.rootKey),
-		SendHeaderKey:       dupLockedBuffer(r.sendHeaderKey),
-		RecvHeaderKey:       dupLockedBuffer(r.recvHeaderKey),
-		NextSendHeaderKey:   dupLockedBuffer(r.nextSendHeaderKey),
-		NextRecvHeaderKey:   dupLockedBuffer(r.nextRecvHeaderKey),
-		SendChainKey:        dupLockedBuffer(r.sendChainKey),
-		RecvChainKey:        dupLockedBuffer(r.recvChainKey),
-		SendRatchetPrivate:  dupLockedBuffer(r.sendRatchetPrivate),
-		RecvRatchetPublic:   dupLockedBuffer(r.recvRatchetPublic),
+		TheirSigningPublic:  r.TheirSigningPublic.Bytes(),
+		TheirIdentityPublic: r.TheirIdentityPublic.Bytes(),
+		MySigningPublic:     r.MySigningPublic.Bytes(),
+		MySigningPrivate:    r.MySigningPrivate.Bytes(),
+		MyIdentityPrivate:   r.MyIdentityPrivate.Bytes(),
+		MyIdentityPublic:    r.MyIdentityPublic.Bytes(),
+		RootKey:             r.rootKey.Bytes(),
+		SendHeaderKey:       r.sendHeaderKey.Bytes(),
+		RecvHeaderKey:       r.recvHeaderKey.Bytes(),
+		NextSendHeaderKey:   r.nextSendHeaderKey.Bytes(),
+		NextRecvHeaderKey:   r.nextRecvHeaderKey.Bytes(),
+		SendChainKey:        r.sendChainKey.Bytes(),
+		RecvChainKey:        r.recvChainKey.Bytes(),
+		SendRatchetPrivate:  r.sendRatchetPrivate.Bytes(),
+		RecvRatchetPublic:   r.recvRatchetPublic.Bytes(),
 		SendCount:           r.sendCount,
 		RecvCount:           r.recvCount,
 		PrevSendCount:       r.prevSendCount,
-		Private0:            dupLockedBuffer(r.kxPrivate0),
-		Private1:            dupLockedBuffer(r.kxPrivate1),
+		Private0:            r.kxPrivate0.Bytes(),
+		Private1:            r.kxPrivate1.Bytes(),
 		Ratchet:             r.ratchet,
 	}
 
@@ -730,12 +734,12 @@ func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
 			}
 			keys = append(keys, &MessageKey{
 				Num:          messageNum,
-				Key:          dup(&savedKey.key),
+				Key:          savedKey.key[:],
 				CreationTime: savedKey.timestamp.Unix(),
 			})
 		}
 		s.SavedKeys = append(s.SavedKeys, &SavedKeys{
-			HeaderKey:   dup(&headerKey),
+			HeaderKey:   headerKey[:],
 			MessageKeys: keys,
 		})
 	}
