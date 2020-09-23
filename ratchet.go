@@ -377,15 +377,19 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		defer r.sendHeaderKey.Freeze()
 		r.sendHeaderKey.Copy(r.nextSendHeaderKey.ByteArray32()[:])
 
-		var sharedKey, keyMaterial [sharedKeySize]byte
-		curve25519.ScalarMult(&sharedKey, r.sendRatchetPrivate.ByteArray32(), r.recvRatchetPublic.ByteArray32())
+		sharedKey := memguard.NewBuffer(sharedKeySize)
+		keyMaterial := memguard.NewBuffer(sharedKeySize)
+		if sharedKeySize != 32 {
+			panic("sharedKeySize has changed from 32 bytes!")
+		}
+		curve25519.ScalarMult(sharedKey.ByteArray32(), r.sendRatchetPrivate.ByteArray32(), r.recvRatchetPublic.ByteArray32())
 
 		sha := sha3.New256()
 		sha.Write(rootKeyUpdateLabel)
-		sha.Write(r.rootKey.ByteArray32()[:])
-		sha.Write(sharedKey[:])
-		sha.Sum(keyMaterial[:0])
-		h := hmac.New(sha3.New256, keyMaterial[:])
+		sha.Write(r.rootKey.Bytes())
+		sha.Write(sharedKey.Bytes())
+		sha.Sum(keyMaterial.Bytes()[:0])
+		h := hmac.New(sha3.New256, keyMaterial.Bytes())
 
 		r.rootKey = deriveKey(rootKeyLabel, h)
 		r.nextSendHeaderKey = deriveKey(headerKeyLabel, h)
@@ -394,9 +398,8 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		r.ratchet = false
 	}
 
-	var messageKey *memguard.LockedBuffer // 32 bytes long
-	h := hmac.New(sha3.New256, r.sendChainKey.ByteArray32()[:])
-	messageKey = deriveKey(messageKeyLabel, h)
+	h := hmac.New(sha3.New256, r.sendChainKey.Bytes())
+	messageKey := deriveKey(messageKeyLabel, h)
 	r.sendChainKey = deriveKey(chainKeyStepLabel, h)
 
 	var sendRatchetPublic [publicKeySize]byte
