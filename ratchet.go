@@ -238,11 +238,9 @@ var (
 
 // ProcessKeyExchange processes the data of a KeyExchange
 func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error {
-	var sig [signatureSize]byte
-	if len(signedKeyExchange.Signature) != len(sig) {
+	if len(signedKeyExchange.Signature) != signatureSize {
 		return errors.New("invalid signature length")
 	}
-	copy(sig[:], signedKeyExchange.Signature)
 
 	kx := new(KeyExchange)
 	err := codec.NewDecoderBytes(signedKeyExchange.Signed, cborHandle).Decode(&kx)
@@ -254,40 +252,29 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 		return errors.New("Invalid public key")
 	}
 
+	if len(kx.IdentityPublic) != publicKeySize {
+		return errors.New("Invalid public identity key")
+	}
+	if !ed25519.Verify(ed25519.PublicKey(kx.PublicKey), signedKeyExchange.Signed, signedKeyExchange.Signature) {
+		return errors.New("Invalid signature")
+	}
 	if r.TheirSigningPublic == nil {
 		r.TheirSigningPublic = memguard.NewBuffer(publicKeySize)
 	}
 
-	r.TheirSigningPublic.Wipe()
 	r.TheirSigningPublic.Copy(kx.PublicKey)
-
-	if !ed25519.Verify(ed25519.PublicKey(r.TheirSigningPublic.ByteArray32()[:]), signedKeyExchange.Signed, sig[:]) {
-		return errors.New("Invalid signature")
-	}
 
 	var ed25519Public, curve25519Public [publicKeySize]byte
 	copy(ed25519Public[:], kx.PublicKey)
 	extra25519.PublicKeyToCurve25519(&curve25519Public, &ed25519Public)
-	if !bytes.Equal(curve25519Public[:], kx.IdentityPublic[:]) {
+	if !bytes.Equal(curve25519Public[:], kx.IdentityPublic) {
 		return errors.New("Ratchet: key exchange public key and identity public key must be isomorphically equal")
-	}
-
-	if len(kx.PublicKey) != r.TheirSigningPublic.Size() {
-		return errors.New("Invalid public key")
-	}
-
-	r.TheirSigningPublic.Wipe()
-	r.TheirSigningPublic.Copy(kx.PublicKey)
-
-	if publicKeySize != len(kx.IdentityPublic) {
-		return errors.New("Invalid public identity key")
 	}
 
 	if r.TheirIdentityPublic == nil {
 		r.TheirIdentityPublic = memguard.NewBuffer(publicKeySize)
 	}
 
-	r.TheirIdentityPublic.Wipe()
 	r.TheirIdentityPublic.Copy(kx.IdentityPublic)
 
 	return r.CompleteKeyExchange(kx)
