@@ -344,15 +344,6 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 	deriveKey(r.rootKey, rootKeyLabel, h)
 	wipe(keyMaterial)
 
-	r.sendHeaderKey = memguard.NewBuffer(keySize)
-	r.recvHeaderKey = memguard.NewBuffer(keySize)
-	r.nextSendHeaderKey = memguard.NewBuffer(keySize)
-	r.nextRecvHeaderKey = memguard.NewBuffer(keySize)
-	r.sendRatchetPrivate = memguard.NewBuffer(keySize)
-	r.recvRatchetPublic = memguard.NewBuffer(keySize)
-	r.sendChainKey = memguard.NewBuffer(keySize)
-	r.recvChainKey = memguard.NewBuffer(keySize)
-
 	if amAlice {
 		deriveKey(r.recvHeaderKey, headerKeyLabel, h)
 		deriveKey(r.nextSendHeaderKey, nextHeaderKeyLabel, h)
