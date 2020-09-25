@@ -31,12 +31,12 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/pki"
 	"github.com/katzenpost/core/utils"
-	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -877,9 +877,8 @@ func Store(cfg *Config, fileName string) error {
 	defer f.Close()
 
 	// Serialize the descriptor.
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, new(codec.JsonHandle))
-	if err := enc.Encode(cfg); err != nil {
+	serialized, err := cbor.Marshal(cfg)
+	if err != nil {
 		return err
 	}
 	_, err = f.Write(serialized)
