@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/client"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -36,7 +37,6 @@ import (
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
 	panda "github.com/katzenpost/panda/crypto"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -337,14 +337,9 @@ func (c *Client) marshal() ([]byte, error) {
 		Provider:            c.client.Provider(),
 		Conversations:       c.GetAllConversations(),
 	}
-	var serialized []byte
 	c.conversationsMutex.Lock()
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	c.conversationsMutex.Unlock()
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	defer c.conversationsMutex.Unlock()
+	return cbor.Marshal(s)
 }
 
 func (c *Client) haltKeyExchanges() {

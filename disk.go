@@ -25,11 +25,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/memspool/client"
-	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
@@ -110,8 +110,7 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
-	err = codec.NewDecoderBytes(plaintext, cborHandle).Decode(state)
-	if err != nil {
+	if err = cbor.Unmarshal(plaintext, &state); err != nil {
 		return nil, err
 	}
 	return state, nil

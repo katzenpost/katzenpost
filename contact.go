@@ -21,14 +21,12 @@ package catshadow
 import (
 	"sync"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/core/crypto/rand"
 	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/memspool/client"
-	"github.com/ugorji/go/codec"
 )
-
-var cborHandle = new(codec.CborHandle)
 
 type contactExchange struct {
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
@@ -41,18 +39,12 @@ func NewContactExchangeBytes(spoolWriteDescriptor *memspoolClient.SpoolWriteDesc
 		SpoolWriteDescriptor: spoolWriteDescriptor,
 		SignedKeyExchange:    signedKeyExchange,
 	}
-	var serialized []byte
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(exchange)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(exchange)
 }
 
 func parseContactExchangeBytes(contactExchangeBytes []byte) (*contactExchange, error) {
 	exchange := new(contactExchange)
-	err := codec.NewDecoderBytes(contactExchangeBytes, cborHandle).Decode(exchange)
-	if err != nil {
+	if err := cbor.Unmarshal(contactExchangeBytes, &exchange); err != nil {
 		return nil, err
 	}
 	return exchange, nil
@@ -154,12 +146,7 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		Ratchet:              ratchetBlob,
 		SpoolWriteDescriptor: c.spoolWriteDescriptor,
 	}
-	var serialized []byte
-	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(s)
 }
 
 // UnmarshalBinary does what you expect and initializes
@@ -172,8 +159,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	}
 
 	s := new(serializedContact)
-	err = codec.NewDecoderBytes(data, cborHandle).Decode(s)
-	if err != nil {
+	if err = cbor.Unmarshal(data, &s); err != nil {
 		return err
 	}
 
