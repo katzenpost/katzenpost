@@ -72,7 +72,8 @@ func (p *Panda) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, er
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
 		reply, err := p.session.BlockingSendUnreliableMessage(p.recipient, p.provider, rawRequest)
 		if err != nil {
-			return nil, err
+			// do not abort loop on dropped messages
+			continue
 		}
 		response := new(common.PandaResponse)
 		dec := codec.NewDecoderBytes(bytes.TrimRight(reply, "\x00"), &p.jsonHandle)
