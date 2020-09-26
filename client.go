@@ -372,8 +372,24 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 	switch {
 	case update.Err != nil:
+		// restart the handshake with the current state if the error is due to SURB-ACK timeout
+		if update.Err == client.ErrReplyTimeout {
+			pandaCfg := c.session.GetPandaConfig()
+			if pandaCfg == nil {
+				panic("panda failed, must have a panda service configured")
+			}
+
+			c.log.Error("PANDA handshake for client %s timed-out; restarting exchange", contact.Nickname)
+			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
+			meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
+			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange)
+			if err != nil {
+				panic(err)
+			}
+			go kx.Run()
+		}
 		contact.pandaResult = update.Err.Error()
-		contact.pandaKeyExchange = nil
 		contact.pandaShutdownChan = nil
 		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Err)
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
