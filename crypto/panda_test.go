@@ -161,3 +161,74 @@ func TestKeyExchange(t *testing.T) {
 	require.True(ok)
 	require.Equal(reply, msg1)
 }
+
+func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, secret []byte, message []byte) {
+
+	shutdownChan := make(chan struct{})
+	go func() {
+		<-shutdownChan
+	}()
+	contactID := uint64(123)
+	pandaChan := make(chan PandaUpdate)
+	kx, err := NewKeyExchange(rand.Reader, log, mp, secret, message, contactID, pandaChan, shutdownChan)
+
+	go func() {
+		var reply []byte
+		for {
+			pandaUpdate := <-pandaChan
+			close(shutdownChan)
+			sr := kx.Marshal()
+			kx, err = UnmarshalKeyExchange(rand.Reader, log, mp, sr, contactID, pandaChan, shutdownChan)
+			kx.pandaChan = pandaChan
+			shutdownChan = make(chan struct{})
+
+			kx.shutdownChan = shutdownChan
+			kx.contactID = contactID
+			if err != nil {
+				resultChan <- err
+				return
+			}
+			go kx.Run()
+
+			reply = pandaUpdate.Result
+			if reply != nil {
+				resultChan <- reply
+			}
+		}
+	}()
+	if err != nil {
+		resultChan <- err
+	}
+	kx.log = log
+	kx.Run()
+	if err != nil {
+		resultChan <- err
+	}
+}
+
+
+func TestKeyExchangeWithSerialization(t *testing.T) {
+	require := require.New(t)
+
+	a, b := make(chan interface{}), make(chan interface{})
+	mp := NewSimpleMeetingPlace()
+	secret := []byte("foo")
+	msg1 := []byte("test1")
+	msg2 := []byte("test2")
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(err)
+
+	go runKX(a, logBackend.GetLogger("a_kx"), mp, secret, msg1)
+	go runKXWithSerialize(b, logBackend.GetLogger("b_kx"), mp, secret, msg2)
+
+	result := <-a
+	reply, ok := result.([]byte)
+	require.True(ok)
+	require.Equal(reply, msg2)
+
+	result = <-b
+	reply, ok = result.([]byte)
+	require.True(ok)
+	require.Equal(reply, msg1)
+}
