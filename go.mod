@@ -7,7 +7,7 @@ require (
 	github.com/katzenpost/authority v0.0.13
 	github.com/katzenpost/core v0.0.11
 	github.com/katzenpost/minclient v0.0.8
-	github.com/katzenpost/registration_client v0.0.1
+	github.com/katzenpost/registration_client v0.0.2
 	github.com/katzenpost/server v0.0.13 // indirect
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/net v0.0.0-20200501053045-e0ff5e5a1de5
