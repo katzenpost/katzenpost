@@ -48,9 +48,6 @@ func pairedRatchet(c *C) (aRatchet, bRatchet *Ratchet) {
 	bRatchet, err = InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	aRatchet.Now = now
-	bRatchet.Now = now
-
 	// Forced here for purposes of the test
 	aRatchet.MyIdentityPrivate = privA
 	aRatchet.MySigningPublic = sigA
@@ -242,7 +239,6 @@ func reinitRatchet(c *C, r *Ratchet) *Ratchet {
 	newR, err := InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	newR.Now = now
 	newR.MyIdentityPrivate = r.MyIdentityPrivate
 	newR.TheirIdentityPublic = r.TheirIdentityPublic
 	newR.MySigningPublic = r.MySigningPublic
