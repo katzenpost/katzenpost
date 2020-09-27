@@ -863,8 +863,7 @@ func (r *Ratchet) Unmarshal(s *State) error {
 			if !unmarshalKey(&savedKey.key, messageKey.Key) {
 				return errSerialisedKeyLength
 			}
-
-			savedKey.timestamp = time.Unix(messageKey.CreationTime, 0)
+			savedKey.timestamp = time.Unix(0, messageKey.CreationTime)
 			messageKeys[messageKey.Num] = savedKey
 		}
 
