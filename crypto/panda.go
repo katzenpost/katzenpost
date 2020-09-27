@@ -80,7 +80,7 @@ func NewKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPla
 	return kx, nil
 }
 
-func UnmarshalKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPlace, serialised []byte) (*KeyExchange, error) {
+func UnmarshalKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPlace, serialised []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan chan struct{}) (*KeyExchange, error) {
 	var p panda_proto.KeyExchange
 	if err := proto.Unmarshal(serialised, &p); err != nil {
 		return nil, err
@@ -96,6 +96,9 @@ func UnmarshalKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace Meet
 		kxBytes:      p.KeyExchangeBytes,
 		message1:     p.Message1,
 		message2:     p.Message2,
+		contactID:    contactID,
+		pandaChan:    pandaChan,
+		shutdownChan: shutdownChan,
 	}
 
 	copy(kx.key[:], p.Key)

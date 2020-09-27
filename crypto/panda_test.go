@@ -102,7 +102,7 @@ func TestSerialise(t *testing.T) {
 	require.NoError(err)
 
 	serialised := kx.Marshal()
-	_, err = UnmarshalKeyExchange(rand.Reader, logBackend.GetLogger("unmarshal_kx"), mp, serialised)
+	_, err = UnmarshalKeyExchange(rand.Reader, logBackend.GetLogger("unmarshal_kx"), mp, serialised, contactID, pandaChan, shutdownChan)
 	require.NoError(err)
 }
 
