@@ -100,6 +100,9 @@ func (c *Client) RegisterAccountWithIdentityAndLinkKey(user string, linkKey *ecd
 	if err != nil {
 		return err
 	}
+	if err := response.Body.Close(); err != nil {
+		return err
+	}
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("Registration failure: received status code %d", response.StatusCode)
 	}
