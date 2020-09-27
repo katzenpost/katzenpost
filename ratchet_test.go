@@ -342,3 +342,34 @@ func (s *DoubleRatchetSuite) Test_RatchetDroppedMessages(c *C) {
 		{sendB, deliver, -1},
 	})
 }
+
+func (s *DoubleRatchetSuite) Test_serialize_savedkeys(c *C) {
+	a, b := pairedRatchet(c)
+	msg := []byte("test message")
+	encrypted1 := a.Encrypt(nil, msg)
+	encrypted2 := a.Encrypt(nil, msg)
+	encrypted3 := a.Encrypt(nil, msg)
+	result, err := b.Decrypt(encrypted2)
+	c.Assert(err, IsNil)
+
+	c.Assert(msg, DeepEquals, result)
+	serialized, err := a.MarshalBinary()
+	c.Assert(err, IsNil)
+	serialized2, err := b.MarshalBinary()
+	c.Assert(err, IsNil)
+
+
+	r, err := InitRatchet(rand.Reader)
+	c.Assert(err, IsNil)
+
+	r.UnmarshalBinary(serialized)
+
+	t, err := InitRatchet(rand.Reader)
+	c.Assert(err, IsNil)
+	t.UnmarshalBinary(serialized2)
+	result, err = t.Decrypt(encrypted3)
+	c.Assert(err, IsNil)
+	result, err = t.Decrypt(encrypted1)
+	c.Assert(err, IsNil)
+
+}
