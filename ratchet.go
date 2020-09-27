@@ -743,7 +743,7 @@ func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
 			keys = append(keys, &MessageKey{
 				Num:          messageNum,
 				Key:          dup(&savedKey.key),
-				CreationTime: savedKey.timestamp.Unix(),
+				CreationTime: savedKey.timestamp.UnixNano(),
 			})
 		}
 		s.SavedKeys = append(s.SavedKeys, &SavedKeys{
