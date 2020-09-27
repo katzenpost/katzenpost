@@ -505,11 +505,12 @@ func (r *Ratchet) saveKeys(headerKey, recvChainKey *[receivingChainKeySize]byte,
 	var now time.Time
 	if missingMessages > 0 {
 		messageKeys = make(map[uint32]savedKey)
-		if r.Now == nil {
-			now = time.Now()
-		} else {
-			now = r.Now()
-		}
+	}
+	if r.Now == nil {
+		now = time.Now()
+	} else {
+		panic(r.Now())
+		now = r.Now()
 	}
 
 	provisionalChainKey = memguard.NewBuffer(keySize)
