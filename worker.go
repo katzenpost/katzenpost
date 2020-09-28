@@ -74,6 +74,7 @@ func (c *Client) worker() {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
 				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				c.log.Debug("<-readInboxTimer.C: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 			}
 		case qo = <-c.opCh:
@@ -103,6 +104,7 @@ func (c *Client) worker() {
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
 					readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+					c.log.Debug("ConnectionStatusEvent: Connected: Setting readInboxTimer to %s", readInboxInterval)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
 					c.eventCh.In() <- event
@@ -110,6 +112,7 @@ func (c *Client) worker() {
 				}
 				isConnected = event.IsConnected
 				if !isConnected {
+					c.log.Debug("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s", maxDuration)
 					readInboxTimer.Reset(maxDuration)
 				}
 				c.eventCh.In() <- event
@@ -122,6 +125,7 @@ func (c *Client) worker() {
 			case *client.NewDocumentEvent:
 				doc = event.Document
 				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				c.log.Debug("NewDocumentEvent: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 				continue
 			default:
