@@ -121,7 +121,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
-	stateWorker, state, err = LoadStateWriter(c.GetLogger("catshadow_state"), stateFile, passphrase)
+	stateWorker, state, err = LoadStateWriter(c.GetLogger(cfg.Account.User+" "+"catshadow_state"), stateFile, passphrase)
 	require.NoError(err)
 
 	catShadowClient, err = New(logBackend, c, stateWorker, state)
@@ -262,18 +262,28 @@ func TestDockerSendReceive(t *testing.T) {
 	alice := createCatshadowClientWithState(t, aliceStateFilePath)
 	bobStateFilePath := createRandomStateFile(t)
 	bob := createCatshadowClientWithState(t, bobStateFilePath)
+	malStateFilePath := createRandomStateFile(t)
+	mal := createCatshadowClientWithState(t, malStateFilePath)
 
 	sharedSecret := []byte(`oxcart pillage village bicycle gravity socks`)
+	sharedSecret2 := make([]byte, len(sharedSecret))
 	randBytes := [8]byte{}
 	_, err := rand.Reader.Read(randBytes[:])
+	require.NoError(err)
+	_, err = rand.Reader.Read(sharedSecret2[:])
 	require.NoError(err)
 	sharedSecret = append(sharedSecret, randBytes[:]...)
 
 	alice.NewContact("bob", sharedSecret)
+	// bob has 2 contacts
 	bob.NewContact("alice", sharedSecret)
+	bob.NewContact("mal", sharedSecret2)
+	mal.NewContact("bob", sharedSecret2)
 
 	bobKXFinishedChan := make(chan bool)
 	bobReceivedMessageChan := make(chan bool)
+	bobSentChan := make(chan bool)
+	bobDeliveredChan := make(chan bool)
 	go func() {
 		for {
 			ev := <-bob.EventSink
@@ -283,9 +293,15 @@ func TestDockerSendReceive(t *testing.T) {
 				bobKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
-				require.Equal(event.Nickname, "alice")
-				bob.log.Debugf("BOB RECEIVED MESSAGE:\n%s", string(event.Message))
+				bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
 				bobReceivedMessageChan <- true
+			case *MessageDeliveredEvent:
+				require.Equal(event.Nickname, "mal")
+				bobDeliveredChan <- true
+			case *MessageSentEvent:
+				bob.log.Debugf("BOB SENT MESSAGE to %s", event.Nickname)
+				require.Equal(event.Nickname, "mal")
+				bobSentChan <- true
 			default:
 			}
 		}
@@ -303,6 +319,7 @@ func TestDockerSendReceive(t *testing.T) {
 				aliceKXFinishedChan <- true
 				break
 			case *MessageSentEvent:
+				alice.log.Debugf("ALICE SENT MESSAGE to %s", event.Nickname)
 				require.Equal(event.Nickname, "bob")
 				aliceSentChan <- true
 			case *MessageDeliveredEvent:
@@ -313,8 +330,39 @@ func TestDockerSendReceive(t *testing.T) {
 		}
 	}()
 
+	malKXFinishedChan := make(chan bool)
+	malSentChan := make(chan bool)
+	malReceivedMessageChan := make(chan bool)
+	malDeliveredChan := make(chan bool)
+	go func() {
+		for {
+			ev := <-mal.EventSink
+			switch event := ev.(type) {
+			case *KeyExchangeCompletedEvent:
+				require.Nil(event.Err)
+				malKXFinishedChan <- true
+			case *MessageReceivedEvent:
+				// fields: Nickname, Message, Timestamp
+				require.Equal(event.Nickname, "bob")
+				mal.log.Debugf("MAL RECEIVED MESSAGE:\n%s", string(event.Message))
+				malReceivedMessageChan <- true
+			case *MessageDeliveredEvent:
+				require.Equal(event.Nickname, "bob")
+				malDeliveredChan <- true
+			case *MessageSentEvent:
+				mal.log.Debugf("MAL SENT MESSAGE to %s", event.Nickname)
+				require.Equal(event.Nickname, "bob")
+				malSentChan <- true
+
+			default:
+			}
+		}
+	}()
+
 	<-bobKXFinishedChan
 	<-aliceKXFinishedChan
+	<-malKXFinishedChan
+	<-bobKXFinishedChan
 	alice.SendMessage("bob", []byte(`Data encryption is used widely to protect the content of Internet
 communications and enables the myriad of activities that are popular today,
 from online banking to chatting with loved ones. However, encryption is not
@@ -333,6 +381,17 @@ and can readily scale to millions of users.
 	<-aliceDeliveredChan
 	<-bobReceivedMessageChan
 
+	mal.SendMessage("bob", []byte(`Hello bob`))
+	<-malSentChan
+	<-malDeliveredChan
+	<-bobReceivedMessageChan
+
+	// bob replies to mal
+	bob.SendMessage("mal", []byte(`Hello mal`))
+	<-bobSentChan
+	<-bobDeliveredChan
+	<-malReceivedMessageChan
+
 	// Test statefile persistence of conversation.
 
 	alice.log.Debug("LOADING ALICE'S CONVERSATION")
@@ -347,22 +406,53 @@ and can readily scale to millions of users.
 		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
+	mal.log.Debug("LOADING MAL'S CONVERSATION")
+	malConvesation := mal.GetConversation("bob")
+	for i, mesg := range malConvesation {
+		bob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+	}
+
 	alice.Shutdown()
 	bob.Shutdown()
+	mal.Shutdown()
 
 	newAlice := reloadCatshadowState(t, aliceStateFilePath)
-	newAlice.log.Debug("LOADING ALICE'S CONVERSATION")
+	newAlice.log.Debug("LOADING ALICE'S CONVERSATION WITH BOB")
 	aliceConvesation = newAlice.GetConversation("bob")
 	for i, mesg := range aliceConvesation {
 		newAlice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
 	newBob := reloadCatshadowState(t, bobStateFilePath)
-	newBob.log.Debug("LOADING BOB'S CONVERSATION")
+	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH ALICE")
 	bobConvesation = newBob.GetConversation("alice")
 	for i, mesg := range bobConvesation {
 		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
+
+	newMal := reloadCatshadowState(t, malStateFilePath)
+	newMal.log.Debug("LOADING MAL'S CONVERSATION WITH BOB")
+	malBobConversation := newMal.GetConversation("bob")
+	for i, mesg := range malBobConversation {
+		newMal.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+		if !mesg.Outbound {
+			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
+		} else {
+			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
+		}
+	}
+
+	newBob.log.Debug("LOADING BOB'S CONVERSATION WITH MAL")
+	bobMalConversation := newBob.GetConversation("mal")
+	for i, mesg := range bobMalConversation {
+		newBob.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
+		if !mesg.Outbound {
+			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello bob`)))
+		} else {
+			require.True(bytes.Equal(mesg.Plaintext, []byte(`Hello mal`)))
+		}
+	}
+
 	newAliceState := getClientState(newAlice)
 	aliceState := getClientState(alice)
 	aliceBobConvo1 := aliceState.Conversations["bob"]
