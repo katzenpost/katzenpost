@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	github.com/coreos/bbolt v1.3.3
-	github.com/katzenpost/client v0.0.8
+	github.com/katzenpost/client v0.0.9-0.20200930100131-4c27a1fc68e2
 	github.com/katzenpost/core v0.0.11
 	github.com/katzenpost/server v0.0.14
 	github.com/stretchr/testify v1.4.0

@@ -24,6 +24,7 @@ import (
 
 	cc "github.com/katzenpost/client"
 	"github.com/katzenpost/client/config"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/memspool/common"
 	"github.com/stretchr/testify/require"
 )
@@ -94,4 +95,52 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 
 	client.Shutdown()
 	client.Wait()
+}
+
+func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	cfg, linkKey := cc.AutoRegisterRandomClient(cfg)
+	client, err := cc.New(cfg)
+	require.NoError(err)
+
+	s, err := client.NewSession(linkKey)
+	require.NoError(err)
+
+	// look up a spool provider
+	desc, err := s.GetService(common.SpoolServiceName)
+	require.NoError(err)
+	t.Logf("Found spool provider: %v@%v", desc.Name, desc.Provider)
+
+	// create the spool on the remote provider
+	spoolReadDescriptor, err := NewSpoolReadDescriptor(desc.Name, desc.Provider, s)
+	require.NoError(err)
+	messageID := uint32(1) // where do we learn messageID?
+	for i := 0; i < 20; i += 1 {
+		// append to a spool
+		var message [common.SpoolPayloadLength]byte
+		rand.Reader.Read(message[:])
+		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:])
+		require.NoError(err)
+		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
+		require.NoError(err)
+		response, err := common.SpoolResponseFromBytes(rawResponse)
+		require.NoError(err)
+		require.True(response.IsOK())
+
+		// read from a spool (should find our original message)
+		readCmd, err := common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
+		require.NoError(err)
+		rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, readCmd)
+		require.NoError(err)
+		response, err = common.SpoolResponseFromBytes(rawResponse)
+		require.NoError(err)
+		require.True(response.IsOK())
+		// XXX require.Equal(response.SpoolID, spoolReadDescriptor.ID)
+		require.True(bytes.Equal(response.Message, message[:]))
+		messageID += 1
+	}
 }
