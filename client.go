@@ -422,7 +422,6 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			}
 			return
 		}
-		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.ratchetMutex.Lock()
 		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
 		contact.ratchetMutex.Unlock()
@@ -438,6 +437,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			}
 			return
 		}
+		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.IsPending = false
 		c.log.Info("Double ratchet key exchange completed!")
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
@@ -623,6 +623,9 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 	decrypted = false
 	var nickname string
 	for _, contact := range c.contacts {
+		if contact.IsPending {
+			continue
+		}
 		contact.ratchetMutex.Lock()
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		contact.ratchetMutex.Unlock()
