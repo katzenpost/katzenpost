@@ -13,9 +13,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/panda/server"
 	"github.com/katzenpost/server/cborplugin"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -53,12 +53,11 @@ func setupLoggerBackend(level logging.Level, writer io.Writer) logging.LeveledBa
 
 func parametersHandler(response http.ResponseWriter, req *http.Request) {
 	params := new(cborplugin.Parameters)
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
-	if err := enc.Encode(params); err != nil {
+	serialized, err := cbor.Marshal(params)
+	if err != nil {
 		panic(err)
 	}
-	_, err := response.Write(serialized)
+	_, err = response.Write(serialized)
 	if err != nil {
 		panic(err)
 	}
@@ -66,11 +65,16 @@ func parametersHandler(response http.ResponseWriter, req *http.Request) {
 
 func requestHandler(panda *server.Panda, response http.ResponseWriter, req *http.Request) {
 	log.Debug("request handler")
-	cborHandle := new(codec.CborHandle)
 	request := cborplugin.Request{
 		Payload: make([]byte, 0),
 	}
-	err := codec.NewDecoder(req.Body, new(codec.CborHandle)).Decode(&request)
+	buf, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		log.Error(err.Error())
+		panic(err)
+	}
+	req.Body.Close()
+	err = cbor.Unmarshal(buf, &request)
 	if err != nil {
 		log.Error(err.Error())
 		panic(err)
@@ -87,9 +91,8 @@ func requestHandler(panda *server.Panda, response http.ResponseWriter, req *http
 	reply := cborplugin.Response{
 		Payload: pandaResponse,
 	}
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, cborHandle)
-	if err := enc.Encode(reply); err != nil {
+	serialized, err := cbor.Marshal(reply)
+	if err != nil {
 		log.Error(err.Error())
 		panic(err)
 	}

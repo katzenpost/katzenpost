@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/coreos/bbolt v1.3.3
+	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/golang/protobuf v1.4.1
 	github.com/katzenpost/client v0.0.8
 	github.com/katzenpost/core v0.0.11
