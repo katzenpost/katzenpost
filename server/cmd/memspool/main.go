@@ -28,14 +28,13 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/memspool/common"
 	"github.com/katzenpost/memspool/server"
 	"github.com/katzenpost/server/cborplugin"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
-var cborHandle = new(codec.CborHandle)
 var log = logging.MustGetLogger("memspool")
 var logFormat = logging.MustStringFormatter(
 	"%{level:.4s} %{id:03x} %{message}",
@@ -72,13 +71,12 @@ func parametersHandler(response http.ResponseWriter, req *http.Request) {
 	log.Debug("parametersHandler")
 
 	params := new(cborplugin.Parameters)
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
-	if err := enc.Encode(params); err != nil {
+	serialized, err := cbor.Marshal(params)
+	if err != nil {
 		panic(err)
 	}
-	_, err := response.Write(serialized)
-	if err != nil {
+	n, err := response.Write(serialized)
+	if err != nil || n != len(serialized) {
 		panic(err)
 	}
 }
@@ -89,7 +87,12 @@ func requestHandler(spoolMap *server.MemSpoolMap, response http.ResponseWriter, 
 	req := cborplugin.Request{
 		Payload: make([]byte, 0),
 	}
-	err := codec.NewDecoder(request.Body, cborHandle).Decode(&req)
+	buf, err := ioutil.ReadAll(request.Body)
+	if err != nil {
+		panic(err)
+	}
+	request.Body.Close()
+	err = cbor.Unmarshal(buf, &req)
 	if err != nil {
 		log.Debugf("failed to decode Request: %s", err)
 		panic(err)
@@ -97,7 +100,7 @@ func requestHandler(spoolMap *server.MemSpoolMap, response http.ResponseWriter, 
 	spoolRequest := common.SpoolRequest{}
 	spoolRequestLen := binary.BigEndian.Uint32(req.Payload[:4])
 	log.Debugf("before decoding SpoolRequest len %d", len(req.Payload))
-	err = codec.NewDecoderBytes(req.Payload[4:spoolRequestLen+4], cborHandle).Decode(&spoolRequest)
+	err = cbor.Unmarshal(req.Payload[4:spoolRequestLen+4], &spoolRequest)
 	if err != nil {
 		log.Debugf("failed to decode SpoolRequest: %s", err)
 		panic(err)
@@ -113,9 +116,8 @@ func requestHandler(spoolMap *server.MemSpoolMap, response http.ResponseWriter, 
 	reply := cborplugin.Response{
 		Payload: spoolResponseSerialized,
 	}
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, cborHandle)
-	if err := enc.Encode(reply); err != nil {
+	serialized, err := cbor.Marshal(reply)
+	if err != nil {
 		panic(err)
 	}
 	_, err = response.Write(serialized)

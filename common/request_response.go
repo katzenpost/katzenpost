@@ -19,9 +19,9 @@ package common
 import (
 	"errors"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/ugorji/go/codec"
 )
 
 const (
@@ -39,7 +39,7 @@ const (
 	MessageIDSize = 4
 
 	// ResponsePadding is size of the padding of the spool service response.
-	ResponsePadding = 121
+	ResponsePadding = 171
 
 	// QueryOverhead is the number of bytes overhead
 	// from the spool command CBOR encoding.
@@ -67,10 +67,6 @@ const (
 	StatusOK = "OK"
 )
 
-var (
-	cborHandle = new(codec.CborHandle)
-)
-
 type SpoolRequest struct {
 	Command byte
 
@@ -85,16 +81,15 @@ type SpoolRequest struct {
 
 func SpoolRequestFromBytes(raw []byte) (SpoolRequest, error) {
 	s := SpoolRequest{}
-	dec := codec.NewDecoderBytes(raw, cborHandle)
-	err := dec.Decode(&s)
-	return s, err
+	err := cbor.Unmarshal(raw, &s)
+	if err != nil {
+		return s, err
+	}
+	return s, nil
 }
 
 func (s *SpoolRequest) Encode() ([]byte, error) {
-	out := []byte{}
-	enc := codec.NewEncoderBytes(&out, cborHandle)
-	err := enc.Encode(s)
-	return out, err
+	return cbor.Marshal(s)
 }
 
 type SpoolResponse struct {
@@ -107,18 +102,17 @@ type SpoolResponse struct {
 
 func SpoolResponseFromBytes(raw []byte) (SpoolResponse, error) {
 	s := SpoolResponse{}
-	dec := codec.NewDecoderBytes(raw, cborHandle)
-	err := dec.Decode(&s)
-	return s, err
+	err := cbor.Unmarshal(raw, &s)
+	if err != nil {
+		return s, err
+	}
+	return s, nil
 }
 
 func (s *SpoolResponse) Encode() ([]byte, error) {
-	out := []byte{}
-	enc := codec.NewEncoderBytes(&out, cborHandle)
-	padding := [120]byte{}
+	padding := [109]byte{}
 	s.Padding = padding[:]
-	err := enc.Encode(s)
-	return out, err
+	return cbor.Marshal(s)
 }
 
 func (s *SpoolResponse) IsOK() bool {

@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/coreos/bbolt v1.3.3
+	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/katzenpost/client v0.0.9-0.20200930100131-4c27a1fc68e2
 	github.com/katzenpost/core v0.0.11
 	github.com/katzenpost/server v0.0.14
