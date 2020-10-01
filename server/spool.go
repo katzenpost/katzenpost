@@ -204,6 +204,12 @@ func (m *MemSpoolMap) load(tx *bolt.Tx, spoolsBucket *bolt.Bucket) error {
 				return err
 			}
 		}
+		raw_spool, ok := m.spools.Load(spoolID)
+		if !ok {
+			panic("wtf")
+		}
+		k, _ := cur.Last() // obtain the latest MessageID
+		raw_spool.(*MemSpool).current = binary.BigEndian.Uint32(k[:])
 	}
 	return nil
 }
