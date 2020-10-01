@@ -23,6 +23,7 @@ import (
 	"github.com/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/memspool/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -105,19 +106,22 @@ func TestPersistence(t *testing.T) {
 	assert.NoError(err)
 	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
 	assert.NoError(err)
-	message1 := []byte("hello")
-	err = spoolMap.AppendToSpool(*spoolID, message1)
-	assert.NoError(err)
-	messageID := uint32(1)
-	message, err := spoolMap.ReadFromSpool(*spoolID, signature, messageID)
-	assert.NoError(err)
-	assert.Equal(message, message1)
-	spoolMap.Shutdown()
-
-	spoolMap, err = NewMemSpoolMap(fileStore.Name(), logger)
-	assert.NoError(err)
-	message, err = spoolMap.ReadFromSpool(*spoolID, signature, messageID)
-	assert.NoError(err)
-	assert.Equal(message, message1)
+	messages := make([][]byte, 1)
+	for i := 1; i < 100; i++ {
+		msg := make([]byte, common.SpoolPayloadLength)
+		n, err := rand.Reader.Read(msg)
+		assert.NoError(err)
+		assert.Equal(n, len(msg))
+		messages = append(messages, msg)
+		err = spoolMap.AppendToSpool(*spoolID, msg)
+		assert.NoError(err)
+		messageID := uint32(i)
+		message, err := spoolMap.ReadFromSpool(*spoolID, signature, messageID)
+		assert.NoError(err)
+		assert.Equal(message, msg)
+		spoolMap.Shutdown()
+		spoolMap, err = NewMemSpoolMap(fileStore.Name(), logger)
+		assert.NoError(err)
+	}
 	spoolMap.Shutdown()
 }
