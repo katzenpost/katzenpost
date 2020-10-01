@@ -88,14 +88,16 @@ func requestHandler(spoolMap *server.MemSpoolMap, response http.ResponseWriter, 
 		Payload: make([]byte, 0),
 	}
 	buf, err := ioutil.ReadAll(request.Body)
+	defer request.Body.Close()
 	if err != nil {
-		panic(err)
+		http.Error(response, err.Error(), 500)
+		return
 	}
-	request.Body.Close()
 	err = cbor.Unmarshal(buf, &req)
 	if err != nil {
 		log.Debugf("failed to decode Request: %s", err)
-		panic(err)
+		http.Error(response, err.Error(), 500)
+		return
 	}
 	spoolRequest := common.SpoolRequest{}
 	spoolRequestLen := binary.BigEndian.Uint32(req.Payload[:4])
@@ -103,7 +105,8 @@ func requestHandler(spoolMap *server.MemSpoolMap, response http.ResponseWriter, 
 	err = cbor.Unmarshal(req.Payload[4:spoolRequestLen+4], &spoolRequest)
 	if err != nil {
 		log.Debugf("failed to decode SpoolRequest: %s", err)
-		panic(err)
+		http.Error(response, err.Error(), 500)
+		return
 	}
 	log.Debug("before calling handleSpoolRequest")
 	spoolResponse := server.HandleSpoolRequest(spoolMap, &spoolRequest, log)
@@ -111,18 +114,23 @@ func requestHandler(spoolMap *server.MemSpoolMap, response http.ResponseWriter, 
 
 	spoolResponseSerialized, err := spoolResponse.Encode()
 	if err != nil {
-		panic(err)
+		log.Debugf("failed to encode SpoolResponse: %s", err)
+		http.Error(response, err.Error(), 500)
+		return
 	}
 	reply := cborplugin.Response{
 		Payload: spoolResponseSerialized,
 	}
 	serialized, err := cbor.Marshal(reply)
 	if err != nil {
-		panic(err)
+		log.Debugf("failed to encode cborplugin.Response: %s", err)
+		http.Error(response, err.Error(), 500)
+		return
 	}
 	_, err = response.Write(serialized)
 	if err != nil {
-		panic(err)
+		log.Debugf("failed to write response: %s", err)
+		return
 	}
 	log.Debug("success")
 }
