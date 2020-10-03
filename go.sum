@@ -81,8 +81,8 @@ github.com/katzenpost/authority v0.0.12 h1:e2VJTivx8WDie9mbjutaxpnqXdTUY4hRaRgfg
 github.com/katzenpost/authority v0.0.12/go.mod h1:6wFg6ZElyEHYsPN5PPLTT+KmmTAKucjIPVGPDdir9lQ=
 github.com/katzenpost/authority v0.0.13 h1:pJWeyZ3iS7clfk91f6T9ESoNPcT43s59rtlGDg9v0l4=
 github.com/katzenpost/authority v0.0.13/go.mod h1:6wFg6ZElyEHYsPN5PPLTT+KmmTAKucjIPVGPDdir9lQ=
-github.com/katzenpost/catshadow v0.0.13 h1:60jBGcxfdqo89LV7hSJQoBJMeLHUl9om62ammFFBxUI=
-github.com/katzenpost/catshadow v0.0.13/go.mod h1:UvxvY9me6RfuDQrq5wFQsrXHtd31sr9jFdDU6ol9HIg=
+github.com/katzenpost/catshadow v0.0.14 h1:XrGvBelSk2kp+d5T5qEGAONeofvmth79+HzLZyE8Edw=
+github.com/katzenpost/catshadow v0.0.14/go.mod h1:uhcHIFsDSnr3ytKx7opcNu5io3PHF9OadDnnewzdMoE=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
@@ -92,8 +92,8 @@ github.com/katzenpost/client v0.0.9 h1:EG4fc9RRiQCYBKn4Ct/vSD7IBnpdLpHYuunmK5n6Z
 github.com/katzenpost/client v0.0.9/go.mod h1:LnxVIX0BLiYtRz8h0U40YC6dBVfYkuqSMN/oKkZ+fp8=
 github.com/katzenpost/core v0.0.11 h1:WU1C35IumVhRkrEvVgqtfvxWSfxbuLO5neXIKKEdDNU=
 github.com/katzenpost/core v0.0.11/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
-github.com/katzenpost/doubleratchet v0.0.4 h1:yZe+BVx2EWWuRz1loauNsM5ggYlydWd+rX50831x1gk=
-github.com/katzenpost/doubleratchet v0.0.4/go.mod h1:WKkei3XuCXBhGzhP/sjaMVZarfVVH2hFjhe1yIBbVHQ=
+github.com/katzenpost/doubleratchet v0.0.5 h1:Jibi+2ObdXtDHRBQwXv+Wdlr+VBoJd6oLsisGbqW9rs=
+github.com/katzenpost/doubleratchet v0.0.5/go.mod h1:odNOjX2+Ypjp2OZuyB7fcLc7CYcBkBMcDBiicwi7Xno=
 github.com/katzenpost/memspool v0.0.10/go.mod h1:NZGtvAV25MHASCTYFMdHn7I4r0BsXlSdE7kLTauBeH4=
 github.com/katzenpost/memspool v0.0.12 h1:3Ku4OiOCeSzclYT+IziMs5gwiuwmDTQ15rKKlVr0N/A=
 github.com/katzenpost/memspool v0.0.12/go.mod h1:NZGtvAV25MHASCTYFMdHn7I4r0BsXlSdE7kLTauBeH4=
