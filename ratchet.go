@@ -50,6 +50,51 @@ type SavedKeys struct {
 	MessageKeys []*MessageKey
 }
 
+// MarshalBinary implements encoding.BinaryUnmarshaler interface
+func (s *SavedKeys) MarshalBinary() ([]byte, error) {
+	type messageKey struct {
+		Num          uint32
+		Key          []byte
+		CreationTime int64
+	}
+	type savedKeys struct {
+		HeaderKey   []byte
+		MessageKeys []*messageKey
+	}
+	tmp := &savedKeys{}
+	tmp.HeaderKey = s.HeaderKey
+	for _, m := range s.MessageKeys {
+		tmp.MessageKeys = append(tmp.MessageKeys, &messageKey{Num: m.Num, Key: m.Key, CreationTime: m.CreationTime})
+	}
+	return cbor.Marshal(tmp)
+}
+
+// UnmarshalBinary instantiates memguard.LockedBuffer instances for each deserialized key
+func (s *SavedKeys) UnmarshalBinary(data []byte) error {
+	type messageKey struct {
+		Num          uint32
+		Key          []byte
+		CreationTime int64
+	}
+	type savedKeys struct {
+		HeaderKey   []byte
+		MessageKeys []*messageKey
+	}
+	tmp := &savedKeys{}
+
+	cbor.Unmarshal(data, &tmp)
+	if len(tmp.HeaderKey) == keySize {
+		s.HeaderKey = tmp.HeaderKey
+		for _, m := range tmp.MessageKeys {
+			if len(m.Key) == keySize {
+				s.MessageKeys = append(s.MessageKeys, &MessageKey{Num: m.Num,
+					Key: m.Key, CreationTime: m.CreationTime})
+			}
+		}
+	}
+	return nil
+}
+
 // State constains all the data associated with a ratchet
 type State struct {
 	TheirSigningPublic  []byte
@@ -137,6 +182,7 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 		saved: make(map[[keySize]byte]map[uint32]savedKey),
 	}
 
+	r.rootKey, _ = memguard.NewBufferFromReader(rand, privateKeySize)
 	r.kxPrivate0, _ = memguard.NewBufferFromReader(rand, privateKeySize)
 	r.kxPrivate1, _ = memguard.NewBufferFromReader(rand, privateKeySize)
 
@@ -147,6 +193,16 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 
 	r.MySigningPublic = memguard.NewBufferFromBytes(mySigningPublic[:])
 	r.MySigningPrivate = memguard.NewBufferFromBytes(mySigningPrivate[:])
+	r.TheirSigningPublic = memguard.NewBuffer(keySize)
+	r.TheirIdentityPublic = memguard.NewBuffer(keySize)
+	r.sendHeaderKey = memguard.NewBuffer(keySize)
+	r.recvHeaderKey = memguard.NewBuffer(keySize)
+	r.nextSendHeaderKey = memguard.NewBuffer(keySize)
+	r.nextRecvHeaderKey = memguard.NewBuffer(keySize)
+	r.sendChainKey = memguard.NewBuffer(keySize)
+	r.recvChainKey = memguard.NewBuffer(keySize)
+	r.sendRatchetPrivate = memguard.NewBuffer(keySize)
+	r.recvRatchetPublic = memguard.NewBuffer(keySize)
 
 	var tmpIdentityPrivate, tmpIdentityPublic [privateKeySize]byte
 	extra25519.PrivateKeyToCurve25519(&tmpIdentityPrivate, r.MySigningPrivate.ByteArray64())
@@ -260,6 +316,8 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 		r.TheirSigningPublic = memguard.NewBuffer(publicKeySize)
 	}
 
+	r.TheirSigningPublic.Melt()
+	defer r.TheirSigningPublic.Freeze()
 	r.TheirSigningPublic.Wipe()
 	r.TheirSigningPublic.Copy(kx.PublicKey)
 
@@ -289,6 +347,8 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 		r.TheirIdentityPublic = memguard.NewBuffer(publicKeySize)
 	}
 
+	r.TheirIdentityPublic.Melt()
+	defer r.TheirIdentityPublic.Freeze()
 	r.TheirIdentityPublic.Wipe()
 	r.TheirIdentityPublic.Copy(kx.IdentityPublic)
 
