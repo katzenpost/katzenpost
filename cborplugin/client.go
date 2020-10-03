@@ -33,6 +33,7 @@ import (
 	"net/http"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/log"
@@ -135,6 +136,7 @@ func (c *Client) worker() {
 
 func (c *Client) setupHTTPClient(socketPath string) {
 	c.httpClient = &http.Client{
+		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 				return new(net.Dialer).DialContext(ctx, "unix", socketPath)
