@@ -140,6 +140,18 @@ func TestStoragePurgeTags(t *testing.T) {
 	}
 	err = store.Put(tag1, posting1)
 	assert.NoError(err)
+	for i := 0; i < 10; i++ {
+		t := &[common.PandaTagLength]byte{}
+		_, err = rand.Reader.Read(t[:])
+		assert.NoError(err)
+		p := &PandaPosting{
+			UnixTime: time.Now().Unix(),
+			A:        []byte("A"),
+			B:        []byte("B"),
+		}
+		err = store.Put(t, p)
+		assert.NoError(err)
+	}
 	store.Shutdown()
 
 	dwellDuration = time.Second * 30
