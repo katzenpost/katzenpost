@@ -81,13 +81,15 @@ github.com/katzenpost/authority v0.0.12 h1:e2VJTivx8WDie9mbjutaxpnqXdTUY4hRaRgfg
 github.com/katzenpost/authority v0.0.12/go.mod h1:6wFg6ZElyEHYsPN5PPLTT+KmmTAKucjIPVGPDdir9lQ=
 github.com/katzenpost/authority v0.0.13 h1:pJWeyZ3iS7clfk91f6T9ESoNPcT43s59rtlGDg9v0l4=
 github.com/katzenpost/authority v0.0.13/go.mod h1:6wFg6ZElyEHYsPN5PPLTT+KmmTAKucjIPVGPDdir9lQ=
-github.com/katzenpost/catshadow v0.0.12 h1:x1dsfESCAE5yfFoe+CYjqn2Kg05Ww4HoKbGEdxImF/8=
-github.com/katzenpost/catshadow v0.0.12/go.mod h1:KdPp70GOugZUOVVGUllwxsMCMtWckM0C/umifB8VUH8=
+github.com/katzenpost/catshadow v0.0.13 h1:60jBGcxfdqo89LV7hSJQoBJMeLHUl9om62ammFFBxUI=
+github.com/katzenpost/catshadow v0.0.13/go.mod h1:UvxvY9me6RfuDQrq5wFQsrXHtd31sr9jFdDU6ol9HIg=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/client v0.0.8 h1:g4a5IDKu+AxhGru9E+OVGjKgTeY8UkToNETeFgAelHU=
 github.com/katzenpost/client v0.0.8/go.mod h1:KFpgpGWwmGzXVeq9JGU7swr2x11jk7W/WBmjtSdA89A=
+github.com/katzenpost/client v0.0.9 h1:EG4fc9RRiQCYBKn4Ct/vSD7IBnpdLpHYuunmK5n6ZMc=
+github.com/katzenpost/client v0.0.9/go.mod h1:LnxVIX0BLiYtRz8h0U40YC6dBVfYkuqSMN/oKkZ+fp8=
 github.com/katzenpost/core v0.0.11 h1:WU1C35IumVhRkrEvVgqtfvxWSfxbuLO5neXIKKEdDNU=
 github.com/katzenpost/core v0.0.11/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
 github.com/katzenpost/doubleratchet v0.0.4 h1:yZe+BVx2EWWuRz1loauNsM5ggYlydWd+rX50831x1gk=
@@ -107,6 +109,8 @@ github.com/katzenpost/registration_client v0.0.1 h1:ZvlEQ0rfVEGEV67x7KVxMi0veiLn
 github.com/katzenpost/registration_client v0.0.1/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
 github.com/katzenpost/registration_client v0.0.2-0.20200927212749-ccba7f063b75 h1:jR1WqVv137P7G2BiuQJFHtwN2Jb/PzyOK480Wy9XisY=
 github.com/katzenpost/registration_client v0.0.2-0.20200927212749-ccba7f063b75/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
+github.com/katzenpost/registration_client v0.0.2 h1:FQZumdHWggQ+W2lIch6TOQnuhJuBP9tNn6A1IqHALDU=
+github.com/katzenpost/registration_client v0.0.2/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
 github.com/katzenpost/server v0.0.13 h1:e94l/NF8RoDo2doYBUsgcZi8cmKcJWafN+cPIBUxgdo=
 github.com/katzenpost/server v0.0.13/go.mod h1:6cQYA4eWIAiX+YBlPW+2K52BIAfJEQERsbfHbYhAdFg=
 github.com/katzenpost/server v0.0.14 h1:cqLIDbrNHFyLCuA2optsBAjDQuGRlMcmRSv/CRKoe8w=
