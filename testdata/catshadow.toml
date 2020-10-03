@@ -34,7 +34,7 @@
 [Debug]
   DisableDecoyTraffic = true
   CaseSensitiveUserIdentifiers = false
-  PollingInterval = 1
+  PollingInterval = 1000
 
 [Panda]
   Receiver = "+panda"
