@@ -104,6 +104,10 @@ func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 		panic(err)
 	}
 
+	// reinit the ratchets
+	a = reinitRatchet(c, a)
+	b = reinitRatchet(c, b)
+
 	// create the key exchange blobs
 	akx, err := a.CreateKeyExchange()
 	if err != nil {
@@ -123,6 +127,10 @@ func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 	if err != nil {
 		panic(err)
 	}
+
+	// reinit the ratchets
+	a = reinitRatchet(c, a)
+	b = reinitRatchet(c, b)
 
 	// try to encrypt and decrypt a message
 	msg := []byte("test message")
