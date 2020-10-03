@@ -127,7 +127,7 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 	stateWorker.Start()
 	catShadowClient.Start()
 
-	go handleEvents(catShadowClient.EventSink, conversationModel, contactListModel)
+	go eventLoop(catShadowClient.EventSink, conversationModel, contactListModel)
 
 	contacts := catShadowClient.GetContacts()
 	loadContactList(contactListModel, contacts)
