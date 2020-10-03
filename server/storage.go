@@ -174,7 +174,9 @@ func (s *PandaStorage) worker() {
 	defer func() {
 		err := s.Vacuum()
 		if err != nil {
-			panic(err)
+			// no logger here? too fucking bad
+			//panic(err)
+			return
 		}
 	}()
 	ticker := time.NewTicker(s.writeBackInterval)
@@ -187,7 +189,9 @@ func (s *PandaStorage) worker() {
 		}
 		err := s.Vacuum()
 		if err != nil {
-			panic(err)
+			// no logger here? too fucking bad
+			continue
+			//panic(err)
 		}
 	}
 }
