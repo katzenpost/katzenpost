@@ -117,7 +117,7 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 		}
 
 		// Make a catshadow Client.
-		catShadowClient, err = catshadow.New(c.GetBackendLog(), c, stateWorker, state)
+		catShadowClient, err = catshadow.New(backendLog, c, stateWorker, state)
 		if err != nil {
 			panic(err)
 		}
