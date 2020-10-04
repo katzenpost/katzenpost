@@ -553,7 +553,7 @@ func (r *Ratchet) saveKeys(headerKey, recvChainKey *[receivingChainKeySize]byte,
 	}
 
 	missingMessages := messageNum - receivedCount
-	if missingMessages > maxMissingMessages {
+	if missingMessages > MaxMissingMessages {
 		err = errors.New("Ratchet: message exceeds reordering limit")
 		return
 	}
