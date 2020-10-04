@@ -504,6 +504,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	mesgID, err := c.session.SendUnreliableMessage(contact.spoolWriteDescriptor.Receiver, contact.spoolWriteDescriptor.Provider, appendCmd)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
+		return
 	}
 	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
