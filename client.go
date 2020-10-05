@@ -366,7 +366,6 @@ func (c *Client) Shutdown() {
 	c.Halt()
 	c.client.Shutdown()
 	c.stateWorker.Halt()
-	close(c.fatalErrCh)
 }
 
 func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
