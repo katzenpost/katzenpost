@@ -523,7 +523,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	item := queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
 		Provider: contact.spoolWriteDescriptor.Provider,
 		Command:  appendCmd, ID: convoMesgID}
-	if err := contact.outbound.Peek(); err != nil {
+	if _, err := contact.outbound.Peek(); err == client.ErrQueueEmpty {
 		// no messages already queued, so call sendMessage immediately
 		defer c.sendMessage(contact)
 	}
