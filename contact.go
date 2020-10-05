@@ -58,7 +58,7 @@ type serializedContact struct {
 	PandaKeyExchange     []byte
 	PandaResult          string
 	Ratchet              []byte
-	Outbound             *client.Queue
+	Outbound             *Queue
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
 
@@ -101,7 +101,7 @@ type Contact struct {
 	// outbound is a queue of messages waiting to be sent for this client
 	// messages must be acknowledged in order before another message will
 	// be sent
-	outbound *client.Queue
+	outbound *Queue
 }
 
 // NewContact creates a new Contact or returns an error.
@@ -127,7 +127,7 @@ func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.
 		ratchetMutex:      new(sync.Mutex),
 		keyExchange:       exchange,
 		pandaShutdownChan: make(chan struct{}),
-		outbound:          new(client.Queue),
+		outbound:          new(Queue),
 	}, nil
 }
 
