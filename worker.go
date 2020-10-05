@@ -91,6 +91,8 @@ func (c *Client) worker() {
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
 				op.responseChan <- c.contactNicknames
+			case *opRetransmit:
+				c.sendMessage(c.contactNicknames[op.name])
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}

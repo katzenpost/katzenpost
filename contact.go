@@ -58,6 +58,7 @@ type serializedContact struct {
 	PandaKeyExchange     []byte
 	PandaResult          string
 	Ratchet              []byte
+	Outbound             *client.Queue
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
 
@@ -96,6 +97,11 @@ type Contact struct {
 	// spoolWriteDescriptor is a description of a remotely writable spool
 	// which we must write to in order to send this contact a message.
 	spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
+
+	// outbound is a queue of messages waiting to be sent for this client
+	// messages must be acknowledged in order before another message will
+	// be sent
+	outbound *client.Queue
 }
 
 // NewContact creates a new Contact or returns an error.
@@ -121,6 +127,7 @@ func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.
 		ratchetMutex:      new(sync.Mutex),
 		keyExchange:       exchange,
 		pandaShutdownChan: make(chan struct{}),
+		outbound:          new(client.Queue),
 	}, nil
 }
 
@@ -145,6 +152,7 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		PandaResult:          c.pandaResult,
 		Ratchet:              ratchetBlob,
 		SpoolWriteDescriptor: c.spoolWriteDescriptor,
+		Outbound:             c.outbound,
 	}
 	return cbor.Marshal(s)
 }
@@ -176,6 +184,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.pandaResult = s.PandaResult
 	c.ratchet = r
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
+	c.outbound = s.Outbound
 
 	return nil
 }
