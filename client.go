@@ -573,7 +573,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				return
 			}
 			if !spoolResponse.IsOK() {
-				c.log.Errorf("Spool response ID %x status error: %s for SpoolID %x",
+				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 				// XXX: should emit an event to the client ? eg spool write failure
 				return
