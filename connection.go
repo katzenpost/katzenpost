@@ -535,8 +535,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 				c.log.Debugf("pollInterval is :%d", pollInterval)
-				fetchDelay = pollInterval
 			}
+			fetchDelay = pollInterval
 			continue
 		}
 
