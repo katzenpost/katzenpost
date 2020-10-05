@@ -57,6 +57,7 @@ func (c *Client) worker() {
 	defer readInboxTimer.Stop()
 
 	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
+	defer gcMessagestimer.Stop()
 
 	isConnected := true
 	for {
