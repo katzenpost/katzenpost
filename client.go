@@ -80,11 +80,6 @@ type queuedSpoolCommand struct {
 	ID       MessageID
 }
 
-// Priority implements the Item interface for the queue type but we don't use it here
-func (q queuedSpoolCommand) Priority() uint64 {
-	return uint64(0)
-}
-
 // NewClientAndRemoteSpool creates a new Client and creates a new remote spool
 // for collecting messages destined to this Client. The Client is associated with
 // this remote spool and this state is preserved in the encrypted statefile, of course.
@@ -519,10 +514,10 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	// enqueue the message for sending
-	item := queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
+	item := &queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
 		Provider: contact.spoolWriteDescriptor.Provider,
 		Command:  appendCmd, ID: convoMesgID}
-	if _, err := contact.outbound.Peek(); err == client.ErrQueueEmpty {
+	if _, err := contact.outbound.Peek(); err == ErrQueueEmpty {
 		// no messages already queued, so call sendMessage immediately
 		defer c.sendMessage(contact)
 	}
@@ -534,14 +529,10 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 
 func (c *Client) sendMessage(contact *Contact) {
 	// Transmit the oldest message on tip of queue; it will be Pop'd upon ACK
-	item, err := contact.outbound.Peek()
-	if err == client.ErrQueueEmpty {
+	cmd, err := contact.outbound.Peek()
+	if err == ErrQueueEmpty {
 		c.log.Debugf("No messages to send for contact: %s", contact.Nickname)
 		return
-	}
-	cmd, ok := item.(queuedSpoolCommand)
-	if !ok {
-		panic("wtf")
 	}
 
 	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
