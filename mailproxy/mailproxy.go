@@ -19,8 +19,10 @@
 package mailproxy
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -32,6 +34,8 @@ import (
 const (
 	mailproxyConfigName = "mailproxy.toml"
 )
+
+var cannotUpdateError = errors.New("WARNING: configuration already exists, registration_client does not support updating an existing configuration")
 
 func makeConfig(user, provider, providerKey, authority, onionAuthority, authorityKey, dataDir, socksNet, socksAddr string, preferOnion bool) []byte {
 	configFormatStr := `
@@ -98,12 +102,29 @@ func GenerateConfig(user, provider, providerKey, authority, onionAuthority, auth
 	// generate and write keys to disk
 	linkPriv := filepath.Join(basePath, "link.private.pem")
 	linkPub := filepath.Join(basePath, "link.public.pem")
+
+	// if the keys already exist, do not trample
+	if _, err := os.Stat(linkPriv); err == nil {
+		return nil, nil, cannotUpdateError
+	}
+
 	linkPrivateKey, err := ecdh.Load(linkPriv, linkPub, rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
 	idPriv := filepath.Join(basePath, "identity.private.pem")
 	idPub := filepath.Join(basePath, "identity.public.pem")
+
+	// if the keys already exist, do not trample
+	if _, err := os.Stat(idPriv); err == nil {
+		return nil, nil, cannotUpdateError
+	}
+
+	// if the keys already exist, do not trample
+	if _, err := os.Stat(idPub); err == nil {
+		return nil, nil, cannotUpdateError
+	}
+
 	identityPrivateKey, err := ecdh.Load(idPriv, idPub, rand.Reader)
 	if err != nil {
 		return nil, nil, err
@@ -112,6 +133,12 @@ func GenerateConfig(user, provider, providerKey, authority, onionAuthority, auth
 	// write the configuration file
 	configData := makeConfig(user, provider, providerKey, authority, onionAuthority, authorityKey, dataDir, socksNet, socksAddr, preferOnion)
 	configPath := filepath.Join(dataDir, mailproxyConfigName)
+
+	// if the config already exist, do not trample
+	if _, err := os.Stat(configPath); err == nil {
+		return nil, nil, cannotUpdateError
+	}
+
 	err = ioutil.WriteFile(configPath, configData, 0600)
 	if err != nil {
 		return nil, nil, err
