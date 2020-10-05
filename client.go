@@ -592,6 +592,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			}
 			// message has been sent, so schedule a retransmission event
 			go func() {
+				<-time.After(sentEvent.ReplyETA + cConstants.RoundTripTimeSlop)
 				c.opCh <- opRetransmit{
 					name: tp.Nickname,
 					when: sentEvent.ReplyETA,
