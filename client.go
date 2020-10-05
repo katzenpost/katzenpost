@@ -73,6 +73,18 @@ type Client struct {
 
 type MessageID [MessageIDLen]byte
 
+type queuedSpoolCommand struct {
+	Provider string
+	Receiver string
+	Command  []byte
+	ID       MessageID
+}
+
+// Priority implements the Item interface for the queue type but we don't use it here
+func (q queuedSpoolCommand) Priority() uint64 {
+	return uint64(0)
+}
+
 // NewClientAndRemoteSpool creates a new Client and creates a new remote spool
 // for collecting messages destined to this Client. The Client is associated with
 // this remote spool and this state is preserved in the encrypted statefile, of course.
@@ -500,22 +512,45 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	contact.ratchetMutex.Lock()
 	ciphertext := contact.ratchet.Encrypt(nil, payload[:])
 	contact.ratchetMutex.Unlock()
-	c.save()
 
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
 		return
 	}
-	mesgID, err := c.session.SendUnreliableMessage(contact.spoolWriteDescriptor.Receiver, contact.spoolWriteDescriptor.Provider, appendCmd)
+
+	// enqueue the message for sending
+	item := queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
+		Provider: contact.spoolWriteDescriptor.Provider,
+		Command:  appendCmd, ID: convoMesgID}
+	if err := contact.outbound.Push(item); err != nil {
+		return
+	}
+	c.save()
+}
+
+func (c *Client) sendMessage(contact *Contact) {
+	// Transmit the oldest message on tip of queue; it will be Pop'd upon ACK
+	item, err := contact.outbound.Peek()
+	if err == client.ErrQueueEmpty {
+		c.log.Debugf("No messages to send for contact: %s", contact.Nickname)
+		return
+	}
+	cmd, ok := item.(queuedSpoolCommand)
+	if !ok {
+		panic("wtf")
+	}
+
+	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
+	mesgID, err := c.session.SendUnreliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
 	}
-	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
+	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", contact.Nickname, *mesgID)
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
-		Nickname:  nickname,
-		MessageID: convoMesgID,
+		Nickname:  contact.Nickname,
+		MessageID: cmd.ID,
 	})
 }
 
@@ -547,10 +582,22 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	if ok {
 		switch tp := orig.(type) {
 		case *SentMessageDescriptor:
+			if sentEvent.Err != nil {
+				panic(sentEvent.Err)
+			}
+
 			if tp.Nickname == c.user { // ack for readInbox
 				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
 				return
 			}
+			// message has been sent, so schedule a retransmission event
+			go func() {
+				c.opCh <- opRetransmit{
+					name: tp.Nickname,
+					when: sentEvent.ReplyETA,
+				}
+			}()
+
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
@@ -585,6 +632,14 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					Nickname:  tp.Nickname,
 					MessageID: tp.MessageID,
 				}
+				if contact, ok := c.contactNicknames[tp.Nickname]; ok {
+					if _, err := contact.outbound.Pop(); err != nil {
+						panic("wtf, delivery for message that doesn't exist")
+					}
+				} else {
+					panic("wtf, contact is missing")
+				}
+				c.sendMessage(c.contactNicknames[tp.Nickname]) // try and send the next message for the user
 				return
 			}
 

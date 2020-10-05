@@ -18,6 +18,10 @@
 
 package catshadow
 
+import (
+	"time"
+)
+
 type opAddContact struct {
 	name         string
 	sharedSecret []byte
@@ -35,4 +39,9 @@ type opSendMessage struct {
 
 type opGetContacts struct {
 	responseChan chan map[string]*Contact
+}
+
+type opRetransmit struct {
+	name string
+	when time.Duration
 }
