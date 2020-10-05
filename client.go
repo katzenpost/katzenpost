@@ -165,6 +165,12 @@ func (c *Client) Start() {
 		c.log.Warningf("Shutting down due to error: %v", err)
 		c.Shutdown()
 	}()
+	// Shutdown if the client halts for some reason
+	go func() {
+		c.client.Wait()
+		c.Shutdown()
+	}()
+
 }
 
 func (c *Client) eventSinkWorker() {
