@@ -161,7 +161,7 @@ func (c *Client) Start() {
 			}
 			go kx.Run()
 		} else {
-			if _, err := contact.outbound.Peek(); err != nil {
+			if _, err := contact.outbound.Peek(); err == nil {
 				// prod worker to start draining contact outbound queue
 				defer func() { c.opCh <- &opRetransmit{contact: contact} }()
 			}
@@ -535,6 +535,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		defer c.sendMessage(contact)
 	}
 	if err := contact.outbound.Push(item); err != nil {
+		c.log.Debugf("Failed to enqueue message!")
 		return
 	}
 	c.save()
