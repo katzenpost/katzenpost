@@ -21,8 +21,9 @@ import (
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/client/constants"
 )
+
+const MaxQueueSize = 20
 
 // ErrQueueFull is the error issued when the queue is full.
 var ErrQueueFull = errors.New("queue is full")
@@ -34,7 +35,7 @@ var ErrQueueEmpty = errors.New("queue is empty")
 // for messages sent by the client.
 type Queue struct {
 	sync.Mutex
-	content   [constants.MaxEgressQueueSize]*queuedSpoolCommand
+	content   [MaxQueueSize]*queuedSpoolCommand
 	readHead  int
 	writeHead int
 	len       int
@@ -45,11 +46,11 @@ type Queue struct {
 func (q *Queue) Push(e *queuedSpoolCommand) error {
 	q.Lock()
 	defer q.Unlock()
-	if q.len >= constants.MaxEgressQueueSize {
+	if q.len >= MaxQueueSize {
 		return ErrQueueFull
 	}
 	q.content[q.writeHead] = e
-	q.writeHead = (q.writeHead + 1) % constants.MaxEgressQueueSize
+	q.writeHead = (q.writeHead + 1) % MaxQueueSize
 	q.len++
 	return nil
 }
@@ -64,7 +65,7 @@ func (q *Queue) Pop() (*queuedSpoolCommand, error) {
 	}
 	result := q.content[q.readHead]
 	q.content[q.readHead] = &queuedSpoolCommand{}
-	q.readHead = (q.readHead + 1) % constants.MaxEgressQueueSize
+	q.readHead = (q.readHead + 1) % MaxQueueSize
 	q.len--
 	return result, nil
 }
@@ -82,7 +83,7 @@ func (q *Queue) Peek() (*queuedSpoolCommand, error) {
 }
 
 type serializedQ struct {
-	Content   [constants.MaxEgressQueueSize]*queuedSpoolCommand
+	Content   [MaxQueueSize]*queuedSpoolCommand
 	ReadHead  int
 	WriteHead int
 	Len       int
