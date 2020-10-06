@@ -160,6 +160,8 @@ func (c *Client) Start() {
 				panic(err)
 			}
 			go kx.Run()
+		} else {
+			c.sendMessage(contact)
 		}
 	}
 	c.Go(c.worker)
