@@ -65,6 +65,7 @@ func (c *Client) worker() {
 		select {
 		case <-c.HaltCh():
 			c.log.Debug("Terminating gracefully.")
+			c.stopContactTimers()
 			c.haltKeyExchanges()
 			return
 		case <-gcMessagestimer.C:
@@ -92,7 +93,8 @@ func (c *Client) worker() {
 			case *opGetContacts:
 				op.responseChan <- c.contactNicknames
 			case *opRetransmit:
-				c.sendMessage(c.contactNicknames[op.name])
+				c.log.Debugf("RETRANSMISSION for %s", op.contact.Nickname)
+				c.sendMessage(op.contact)
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}

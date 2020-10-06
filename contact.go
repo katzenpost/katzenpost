@@ -20,6 +20,7 @@ package catshadow
 
 import (
 	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/client"
@@ -102,6 +103,7 @@ type Contact struct {
 	// messages must be acknowledged in order before another message will
 	// be sent
 	outbound *Queue
+	rtx      *time.Timer
 }
 
 // NewContact creates a new Contact or returns an error.

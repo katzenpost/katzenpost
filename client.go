@@ -161,7 +161,10 @@ func (c *Client) Start() {
 			}
 			go kx.Run()
 		} else {
-			c.sendMessage(contact)
+			if _, err := contact.outbound.Peek(); err != nil {
+				// prod worker to start draining contact outbound queue
+				defer func() { c.opCh <- &opRetransmit{contact: contact} }()
+			}
 		}
 	}
 	c.Go(c.worker)
@@ -355,6 +358,14 @@ func (c *Client) marshal() ([]byte, error) {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return cbor.Marshal(s)
+}
+
+func (c *Client) stopContactTimers() {
+	for _, contact := range c.contacts {
+		if contact.rtx != nil {
+			contact.rtx.Stop()
+		}
+	}
 }
 
 func (c *Client) haltKeyExchanges() {
@@ -586,14 +597,20 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
 				return
 			}
-			// message has been sent, so schedule a retransmission event
-			go func() {
-				<-time.After(sentEvent.ReplyETA + cConstants.RoundTripTimeSlop)
-				c.opCh <- &opRetransmit{
-					name: tp.Nickname,
-					when: sentEvent.ReplyETA,
+
+			// since the retransmission occurs per contact
+			// set a timer on the contact
+			if contact, ok := c.contactNicknames[tp.Nickname]; !ok {
+				panic("contact not found")
+			} else {
+				c.log.Debugf("Sending new msg and resetting timer")
+				if contact.rtx != nil {
+					contact.rtx.Stop()
 				}
-			}()
+				contact.rtx = time.AfterFunc(sentEvent.ReplyETA*2, func() {
+					c.opCh <- &opRetransmit{contact: contact}
+				})
+			}
 
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
@@ -625,18 +642,25 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			if tp.Nickname != c.user {
 				// Is a Message Delivery acknowledgement for a spool write
 				c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
+				// cancel retransmission timer
+				if contact, ok := c.contactNicknames[tp.Nickname]; ok {
+					// cancel the retransmission timer
+					if contact.rtx != nil {
+						contact.rtx.Stop()
+					}
+					if _, err := contact.outbound.Pop(); err != nil {
+						panic("wtf, delivery for message that doesn't exist")
+					}
+					// try to send the next message, if one exists
+					defer c.sendMessage(contact)
+				} else {
+					panic("wtf, contact is missing")
+				}
+				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.eventCh.In() <- &MessageDeliveredEvent{
 					Nickname:  tp.Nickname,
 					MessageID: tp.MessageID,
 				}
-				if contact, ok := c.contactNicknames[tp.Nickname]; ok {
-					if _, err := contact.outbound.Pop(); err != nil {
-						panic("wtf, delivery for message that doesn't exist")
-					}
-				} else {
-					panic("wtf, contact is missing")
-				}
-				c.sendMessage(c.contactNicknames[tp.Nickname]) // try and send the next message for the user
 				return
 			}
 
@@ -644,12 +668,12 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			off := binary.BigEndian.Uint32(tp.MessageID[:4])
 
 			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d", spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
-			c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
 			switch {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
 				return // dup
 			case spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset:
 				c.spoolReadDescriptor.IncrementOffset()
+				c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
 				if !c.decryptMessage(replyEvent.MessageID, spoolResponse.Message) {
 					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
 				}

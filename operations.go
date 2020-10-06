@@ -18,9 +18,6 @@
 
 package catshadow
 
-import (
-	"time"
-)
 
 type opAddContact struct {
 	name         string
@@ -42,6 +39,5 @@ type opGetContacts struct {
 }
 
 type opRetransmit struct {
-	name string
-	when time.Duration
+	contact *Contact
 }
