@@ -649,7 +649,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			case spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset:
 				c.spoolReadDescriptor.IncrementOffset()
 				if !c.decryptMessage(replyEvent.MessageID, spoolResponse.Message) {
-					panic("failure to decrypt tip of spool")
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
 				}
 			default:
 				panic("received spool response for MessageID not requested yet")
