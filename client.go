@@ -649,12 +649,15 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 						contact.rtx.Stop()
 					}
 					if _, err := contact.outbound.Pop(); err != nil {
-						panic("wtf, delivery for message that doesn't exist")
+						// duplicate ACK?
+						c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x",
+							contact.Nickname, *replyEvent.MessageID)
+					} else {
+						// try to send the next message, if one exists
+						defer c.sendMessage(contact)
 					}
-					// try to send the next message, if one exists
-					defer c.sendMessage(contact)
 				} else {
-					panic("wtf, contact is missing")
+					panic("contact is missing")
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.eventCh.In() <- &MessageDeliveredEvent{
