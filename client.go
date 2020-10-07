@@ -595,12 +595,12 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	if ok {
 		switch tp := orig.(type) {
 		case *SentMessageDescriptor:
-			if sentEvent.Err != nil {
-				panic(sentEvent.Err)
-			}
-
 			if tp.Nickname == c.user { // ack for readInbox
-				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
+				if sentEvent.Err != nil {
+					c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
+				} else {
+					c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
+				}
 				return
 			}
 
@@ -609,6 +609,20 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			if contact, ok := c.contactNicknames[tp.Nickname]; !ok {
 				panic("contact not found")
 			} else {
+				if sentEvent.Err != nil {
+					c.log.Debugf("message send for %s failed with err: %s", tp.Nickname, sentEvent.Err)
+					// XXX: need to do something to resume transmission...
+					if contact.rtx != nil {
+						contact.rtx.Stop()
+					}
+					c.eventCh.In() <- &MessageNotSentEvent{
+						Nickname:  tp.Nickname,
+						MessageID: tp.MessageID,
+					}
+					c.opCh <- &opRetransmit{contact: contact}
+					return
+				}
+
 				c.log.Debugf("Sending new msg and resetting timer")
 				if contact.rtx != nil {
 					contact.rtx.Stop()
