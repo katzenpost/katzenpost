@@ -563,6 +563,11 @@ func (c *Client) sendMessage(contact *Contact) {
 }
 
 func (c *Client) sendReadInbox() {
+	// apparently never checks to see if the spool has been made first...
+	if c.spoolReadDescriptor == nil {
+		c.log.Errorf("Should not sendReadInbox before the remote spool was made...")
+		return
+	}
 	sequence := c.spoolReadDescriptor.ReadOffset
 	cmd, err := common.ReadFromSpool(c.spoolReadDescriptor.ID, sequence, c.spoolReadDescriptor.PrivateKey)
 	if err != nil {
