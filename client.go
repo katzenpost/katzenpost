@@ -93,17 +93,17 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		Provider:      mixnetClient.Provider(),
 		LinkKey:       linkKey,
 	}
-	client, err := New(logBackend, mixnetClient, stateWorker, state)
+	c, err := New(logBackend, mixnetClient, stateWorker, state)
 	if err != nil {
 		return nil, err
 	}
-	client.save()
-	err = client.CreateRemoteSpool()
+	c.save()
+	err = c.CreateRemoteSpool()
 	if err != nil {
 		return nil, err
 	}
-	client.save()
-	return client, nil
+	c.save()
+	return c, nil
 }
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
