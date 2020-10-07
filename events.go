@@ -32,6 +32,16 @@ type KeyExchangeCompletedEvent struct {
 	Err error
 }
 
+// MessageNotSentEvent is an event signalling that the message
+// was not sent.
+type MessageNotSentEvent struct {
+	// Nickname is the nickname of the recipient of our delivered message.
+	Nickname string
+
+	// MessageID is the key in the conversation map referencing a specific message.
+	MessageID MessageID
+}
+
 // MessageSentEvent is an event signaling that the message
 // was sent.
 type MessageSentEvent struct {
