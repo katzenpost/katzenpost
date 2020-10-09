@@ -264,9 +264,9 @@ func TestDockerSendReceive(t *testing.T) {
 	aliceStateFilePath := createRandomStateFile(t)
 	alice := createCatshadowClientWithState(t, aliceStateFilePath, false)
 	bobStateFilePath := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobStateFilePath)
+	bob := createCatshadowClientWithState(t, bobStateFilePath, false)
 	malStateFilePath := createRandomStateFile(t)
-	mal := createCatshadowClientWithState(t, malStateFilePath)
+	mal := createCatshadowClientWithState(t, malStateFilePath, false)
 
 	sharedSecret := []byte(`oxcart pillage village bicycle gravity socks`)
 	sharedSecret2 := make([]byte, len(sharedSecret))
