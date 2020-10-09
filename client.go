@@ -1,5 +1,7 @@
+// SPDX-FileCopyrightText: 2019, David Stainton <dawuud@riseup.net>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
 // client.go - client
-// Copyright (C) 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -24,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/client"
 	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -36,7 +39,6 @@ import (
 	panda "github.com/katzenpost/panda/crypto"
 	rClient "github.com/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/reunion/transports/katzenpost"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -74,6 +76,13 @@ type Client struct {
 
 type MessageID [MessageIDLen]byte
 
+type queuedSpoolCommand struct {
+	Provider string
+	Receiver string
+	Command  []byte
+	ID       MessageID
+}
+
 // NewClientAndRemoteSpool creates a new Client and creates a new remote spool
 // for collecting messages destined to this Client. The Client is associated with
 // this remote spool and this state is preserved in the encrypted statefile, of course.
@@ -87,17 +96,17 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		Provider:      mixnetClient.Provider(),
 		LinkKey:       linkKey,
 	}
-	client, err := New(logBackend, mixnetClient, stateWorker, state)
+	c, err := New(logBackend, mixnetClient, stateWorker, state)
 	if err != nil {
 		return nil, err
 	}
-	client.save()
-	err = client.CreateRemoteSpool()
+	c.save()
+	err = c.CreateRemoteSpool()
 	if err != nil {
 		return nil, err
 	}
-	client.save()
-	return client, nil
+	c.save()
+	return c, nil
 }
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
@@ -153,7 +162,7 @@ func (c *Client) Start() {
 					c.log.Warningf("Reunion configured, but no transports found")
 					break
 				}
-				for eid, ex:= range contact.reunionKeyExchange {
+				for eid, ex := range contact.reunionKeyExchange {
 					// see if the transport still exists in current transports
 					m := false
 					for _, tr := range transports {
@@ -186,6 +195,11 @@ func (c *Client) Start() {
 				}
 				go kx.Run()
 			}
+		} else {
+			if _, err := contact.outbound.Peek(); err == nil {
+				// prod worker to start draining contact outbound queue
+				defer func() { c.opCh <- &opRetransmit{contact: contact} }()
+			}
 		}
 	}
 	c.Go(c.worker)
@@ -198,6 +212,12 @@ func (c *Client) Start() {
 		c.log.Warningf("Shutting down due to error: %v", err)
 		c.Shutdown()
 	}()
+	// Shutdown if the client halts for some reason
+	go func() {
+		c.client.Wait()
+		c.Shutdown()
+	}()
+
 }
 
 func (c *Client) eventSinkWorker() {
@@ -463,14 +483,17 @@ func (c *Client) marshal() ([]byte, error) {
 		Provider:            c.client.Provider(),
 		Conversations:       c.GetAllConversations(),
 	}
-	var serialized []byte
 	c.conversationsMutex.Lock()
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	c.conversationsMutex.Unlock()
-	if err != nil {
-		return nil, err
+	defer c.conversationsMutex.Unlock()
+	return cbor.Marshal(s)
+}
+
+func (c *Client) stopContactTimers() {
+	for _, contact := range c.contacts {
+		if contact.rtx != nil {
+			contact.rtx.Stop()
+		}
 	}
-	return serialized, nil
 }
 
 func (c *Client) haltKeyExchanges() {
@@ -491,7 +514,6 @@ func (c *Client) Shutdown() {
 	c.Halt()
 	c.client.Shutdown()
 	c.stateWorker.Halt()
-	close(c.fatalErrCh)
 }
 
 func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
@@ -585,8 +607,24 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 	switch {
 	case update.Err != nil:
+		// restart the handshake with the current state if the error is due to SURB-ACK timeout
+		if update.Err == client.ErrReplyTimeout {
+			pandaCfg := c.session.GetPandaConfig()
+			if pandaCfg == nil {
+				panic("panda failed, must have a panda service configured")
+			}
+
+			c.log.Error("PANDA handshake for client %s timed-out; restarting exchange", contact.Nickname)
+			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
+			meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
+			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
+			if err != nil {
+				panic(err)
+			}
+			go kx.Run()
+		}
 		contact.pandaResult = update.Err.Error()
-		contact.pandaKeyExchange = nil
 		contact.pandaShutdownChan = nil
 		c.log.Infof("Key exchange with %s failed: %s", contact.Nickname, update.Err)
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
@@ -619,7 +657,6 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			}
 			return
 		}
-		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.ratchetMutex.Lock()
 		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
 		contact.ratchetMutex.Unlock()
@@ -635,6 +672,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			}
 			return
 		}
+		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.IsPending = false
 		c.log.Info("Double ratchet key exchange completed!")
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
@@ -691,36 +729,70 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	contact.ratchetMutex.Lock()
 	ciphertext := contact.ratchet.Encrypt(nil, payload[:])
 	contact.ratchetMutex.Unlock()
-	c.save()
 
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
 		return
 	}
-	mesgID, err := c.session.SendUnreliableMessage(contact.spoolWriteDescriptor.Receiver, contact.spoolWriteDescriptor.Provider, appendCmd)
+
+	// enqueue the message for sending
+	item := &queuedSpoolCommand{Receiver: contact.spoolWriteDescriptor.Receiver,
+		Provider: contact.spoolWriteDescriptor.Provider,
+		Command:  appendCmd, ID: convoMesgID}
+	if _, err := contact.outbound.Peek(); err == ErrQueueEmpty {
+		// no messages already queued, so call sendMessage immediately
+		defer c.sendMessage(contact)
+	}
+	if err := contact.outbound.Push(item); err != nil {
+		c.log.Debugf("Failed to enqueue message!")
+		return
+	}
+	c.save()
+}
+
+func (c *Client) sendMessage(contact *Contact) {
+	// Transmit the oldest message on tip of queue; it will be Pop'd upon ACK
+	cmd, err := contact.outbound.Peek()
+	if err == ErrQueueEmpty {
+		c.log.Debugf("No messages to send for contact: %s", contact.Nickname)
+		return
+	}
+
+	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
+	mesgID, err := c.session.SendUnreliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
+		return
 	}
-	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", nickname, mesgID)
+	c.log.Debug("Message enqueued for sending to %s, message-ID: %x", contact.Nickname, *mesgID)
 	c.sendMap.Store(*mesgID, &SentMessageDescriptor{
-		Nickname:  nickname,
-		MessageID: convoMesgID,
+		Nickname:  contact.Nickname,
+		MessageID: cmd.ID,
 	})
 }
 
 func (c *Client) sendReadInbox() {
+	// apparently never checks to see if the spool has been made first...
+	if c.spoolReadDescriptor == nil {
+		c.log.Errorf("Should not sendReadInbox before the remote spool was made...")
+		return
+	}
 	sequence := c.spoolReadDescriptor.ReadOffset
 	cmd, err := common.ReadFromSpool(c.spoolReadDescriptor.ID, sequence, c.spoolReadDescriptor.PrivateKey)
 	if err != nil {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	_, err = c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
+	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
 	if err != nil {
 		c.log.Error("failed to send inbox retrieval message")
 		return
 	}
+	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
+	var a MessageID
+	binary.BigEndian.PutUint32(a[:4], sequence)
+	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname: c.user, MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
@@ -729,49 +801,124 @@ func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected
 }
 
 func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
-	rawSentMessageDescriptor, ok := c.sendMap.Load(*sentEvent.MessageID)
+	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
-		sentMessageDescriptor, typeOK := rawSentMessageDescriptor.(*SentMessageDescriptor)
-		if !typeOK {
-			c.sendMap.Delete(*sentEvent.MessageID)
-			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
-			return
-		}
-		c.eventCh.In() <- &MessageSentEvent{
-			Nickname:  sentMessageDescriptor.Nickname,
-			MessageID: sentMessageDescriptor.MessageID,
+		switch tp := orig.(type) {
+		case *SentMessageDescriptor:
+			if tp.Nickname == c.user { // ack for readInbox
+				if sentEvent.Err != nil {
+					c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
+				} else {
+					c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
+				}
+				return
+			}
+
+			// since the retransmission occurs per contact
+			// set a timer on the contact
+			if contact, ok := c.contactNicknames[tp.Nickname]; !ok {
+				panic("contact not found")
+			} else {
+				if sentEvent.Err != nil {
+					c.log.Debugf("message send for %s failed with err: %s", tp.Nickname, sentEvent.Err)
+					// XXX: need to do something to resume transmission...
+					if contact.rtx != nil {
+						contact.rtx.Stop()
+					}
+					c.eventCh.In() <- &MessageNotSentEvent{
+						Nickname:  tp.Nickname,
+						MessageID: tp.MessageID,
+					}
+					c.opCh <- &opRetransmit{contact: contact}
+					return
+				}
+
+				c.log.Debugf("Sending new msg and resetting timer")
+				if contact.rtx != nil {
+					contact.rtx.Stop()
+				}
+				contact.rtx = time.AfterFunc(sentEvent.ReplyETA*2, func() {
+					c.opCh <- &opRetransmit{contact: contact}
+				})
+			}
+
+			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
+			c.eventCh.In() <- &MessageSentEvent{
+				Nickname:  tp.Nickname,
+				MessageID: tp.MessageID,
+			}
+		default:
+			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")
 		}
 	}
 }
 
 func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
-	defer c.sendMap.Delete(*replyEvent.MessageID)
-	spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
-	if err != nil {
-		c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
-		return
-	}
-	if !spoolResponse.IsOK() {
-		c.log.Errorf("Spool response status error: %s", spoolResponse.Status)
-		return
-	}
+	if ev, ok := c.sendMap.Load(*replyEvent.MessageID); ok {
+		defer c.sendMap.Delete(replyEvent.MessageID)
+		switch tp := ev.(type) {
+		case *SentMessageDescriptor:
+			spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
+			if err != nil {
+				c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
+				return
+			}
+			if !spoolResponse.IsOK() {
+				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
+					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
+				// XXX: should emit an event to the client ? eg spool write failure
+				return
+			}
+			if tp.Nickname != c.user {
+				// Is a Message Delivery acknowledgement for a spool write
+				c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
+				// cancel retransmission timer
+				if contact, ok := c.contactNicknames[tp.Nickname]; ok {
+					// cancel the retransmission timer
+					if contact.rtx != nil {
+						contact.rtx.Stop()
+					}
+					if _, err := contact.outbound.Pop(); err != nil {
+						// duplicate ACK?
+						c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x",
+							contact.Nickname, *replyEvent.MessageID)
+					} else {
+						// try to send the next message, if one exists
+						defer c.sendMessage(contact)
+					}
+				} else {
+					panic("contact is missing")
+				}
+				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
+				c.eventCh.In() <- &MessageDeliveredEvent{
+					Nickname:  tp.Nickname,
+					MessageID: tp.MessageID,
+				}
+				return
+			}
 
-	// Here we handle replies from sending messages to a contact's remote queue.
-	rawSentMessageDescriptor, ok := c.sendMap.Load(*replyEvent.MessageID)
-	if ok {
-		sentMessageDescriptor, typeOK := rawSentMessageDescriptor.(*SentMessageDescriptor)
-		if !typeOK {
-			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type.")
+			// is a valid response to the tip of our spool, so increment the pointer
+			off := binary.BigEndian.Uint32(tp.MessageID[:4])
+
+			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d", spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
+			switch {
+			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
+				return // dup
+			case spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset:
+				c.spoolReadDescriptor.IncrementOffset()
+				c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
+				if !c.decryptMessage(replyEvent.MessageID, spoolResponse.Message) {
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+				}
+			default:
+				panic("received spool response for MessageID not requested yet")
+			}
+			return
+		default:
+			c.fatalErrCh <- errors.New("BUG, sendMap entry has incorrect type")
 			return
 		}
-		c.eventCh.In() <- &MessageDeliveredEvent{
-			Nickname:  sentMessageDescriptor.Nickname,
-			MessageID: sentMessageDescriptor.MessageID,
-		}
-		return
 	}
-	// Here we handle replies from remote queue message retrievals.
-	c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 }
 
 func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
@@ -786,12 +933,15 @@ func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
 	return c.conversations
 }
 
-func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) {
+func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) (decrypted bool) {
 	var err error
 	message := Message{}
-	var decrypted bool
+	decrypted = false
 	var nickname string
 	for _, contact := range c.contacts {
+		if contact.IsPending {
+			continue
+		}
 		contact.ratchetMutex.Lock()
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		contact.ratchetMutex.Unlock()
@@ -809,12 +959,12 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 	}
 	if decrypted {
-		c.spoolReadDescriptor.IncrementOffset() // XXX use a lock or atomic increment?
 		convoMesgID := MessageID{}
-		_, err := rand.Reader.Read(convoMesgID[:])
+		_, err = rand.Reader.Read(convoMesgID[:])
 		if err != nil {
 			c.fatalErrCh <- err
 		}
+		c.log.Debugf("Message decrypted for %s: %x", nickname, convoMesgID)
 		c.conversationsMutex.Lock()
 		defer c.conversationsMutex.Unlock()
 		_, ok := c.conversations[nickname]
@@ -830,5 +980,6 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		return
 	}
-	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", messageID, err)
+	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
+	return
 }

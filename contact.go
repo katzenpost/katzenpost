@@ -1,5 +1,7 @@
+// SPDX-FileCopyrightText: 2019, 2020, David Stainton <dawuud@riseup.net>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
 // contact.go - client
-// Copyright (C) 2019, 2020  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -18,15 +20,14 @@ package catshadow
 
 import (
 	"sync"
+	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/client"
 	"github.com/katzenpost/core/crypto/rand"
 	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/memspool/client"
-	"github.com/ugorji/go/codec"
 )
-
-var cborHandle = new(codec.CborHandle)
 
 type contactExchange struct {
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
@@ -39,18 +40,12 @@ func NewContactExchangeBytes(spoolWriteDescriptor *memspoolClient.SpoolWriteDesc
 		SpoolWriteDescriptor: spoolWriteDescriptor,
 		SignedKeyExchange:    signedKeyExchange,
 	}
-	var serialized []byte
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(exchange)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(exchange)
 }
 
 func parseContactExchangeBytes(contactExchangeBytes []byte) (*contactExchange, error) {
 	exchange := new(contactExchange)
-	err := codec.NewDecoderBytes(contactExchangeBytes, cborHandle).Decode(exchange)
-	if err != nil {
+	if err := cbor.Unmarshal(contactExchangeBytes, &exchange); err != nil {
 		return nil, err
 	}
 	return exchange, nil
@@ -66,6 +61,7 @@ type serializedContact struct {
 	ReunionKeyExchange   map[uint64]boundExchange
 	ReunionResult        map[uint64]string
 	Ratchet              []byte
+	Outbound             *Queue
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
 
@@ -116,6 +112,12 @@ type Contact struct {
 	// spoolWriteDescriptor is a description of a remotely writable spool
 	// which we must write to in order to send this contact a message.
 	spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
+
+	// outbound is a queue of messages waiting to be sent for this client
+	// messages must be acknowledged in order before another message will
+	// be sent
+	outbound *Queue
+	rtx      *time.Timer
 }
 
 // NewContact creates a new Contact or returns an error.
@@ -141,6 +143,7 @@ func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.
 		ratchetMutex:      new(sync.Mutex),
 		keyExchange:       exchange,
 		pandaShutdownChan: make(chan struct{}),
+		outbound:          new(Queue),
 	}, nil
 }
 
@@ -167,13 +170,9 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		ReunionResult:        c.reunionResult,
 		Ratchet:              ratchetBlob,
 		SpoolWriteDescriptor: c.spoolWriteDescriptor,
+		Outbound:             c.outbound,
 	}
-	var serialized []byte
-	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(s)
 }
 
 // UnmarshalBinary does what you expect and initializes
@@ -186,8 +185,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	}
 
 	s := new(serializedContact)
-	err = codec.NewDecoderBytes(data, cborHandle).Decode(s)
-	if err != nil {
+	if err = cbor.Unmarshal(data, &s); err != nil {
 		return err
 	}
 
@@ -206,6 +204,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.reunionResult = s.ReunionResult
 	c.ratchet = r
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
+	c.outbound = s.Outbound
 
 	return nil
 }

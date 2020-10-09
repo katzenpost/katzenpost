@@ -1,5 +1,7 @@
+// SPDX-FileCopyrightText: 2019, David Stainton <dawuud@riseup.net>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
 // events.go - catshadow events
-// Copyright (C) 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -28,6 +30,16 @@ type KeyExchangeCompletedEvent struct {
 	Nickname string
 	// Err is a key exchange error or is set to nil on success.
 	Err error
+}
+
+// MessageNotSentEvent is an event signalling that the message
+// was not sent.
+type MessageNotSentEvent struct {
+	// Nickname is the nickname of the recipient of our delivered message.
+	Nickname string
+
+	// MessageID is the key in the conversation map referencing a specific message.
+	MessageID MessageID
 }
 
 // MessageSentEvent is an event signaling that the message

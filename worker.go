@@ -1,5 +1,7 @@
+// SPDX-FileCopyrightText: 2019, David Stainton <dawuud@riseup.net>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
 // worker.go - client operations worker
-// Copyright (C) 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -55,6 +57,7 @@ func (c *Client) worker() {
 	defer readInboxTimer.Stop()
 
 	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
+	defer gcMessagestimer.Stop()
 
 	isConnected := true
 	for {
@@ -62,6 +65,7 @@ func (c *Client) worker() {
 		select {
 		case <-c.HaltCh():
 			c.log.Debug("Terminating gracefully.")
+			c.stopContactTimers()
 			c.haltKeyExchanges()
 			return
 		case <-gcMessagestimer.C:
@@ -72,7 +76,7 @@ func (c *Client) worker() {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
 				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
-				c.log.Debugf("readInboxInterval: %d", readInboxInterval/time.Millisecond)
+				c.log.Debug("<-readInboxTimer.C: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 			}
 		case qo = <-c.opCh:
@@ -88,6 +92,9 @@ func (c *Client) worker() {
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
 				op.responseChan <- c.contactNicknames
+			case *opRetransmit:
+				c.log.Debugf("RETRANSMISSION for %s", op.contact.Nickname)
+				c.sendMessage(op.contact)
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}
@@ -105,6 +112,7 @@ func (c *Client) worker() {
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
 					readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+					c.log.Debug("ConnectionStatusEvent: Connected: Setting readInboxTimer to %s", readInboxInterval)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
 					c.eventCh.In() <- event
@@ -112,6 +120,7 @@ func (c *Client) worker() {
 				}
 				isConnected = event.IsConnected
 				if !isConnected {
+					c.log.Debug("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s", maxDuration)
 					readInboxTimer.Reset(maxDuration)
 				}
 				c.eventCh.In() <- event
@@ -124,6 +133,7 @@ func (c *Client) worker() {
 			case *client.NewDocumentEvent:
 				doc = event.Document
 				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				c.log.Debug("NewDocumentEvent: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 				continue
 			default:
