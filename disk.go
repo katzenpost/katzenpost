@@ -1,5 +1,7 @@
+// SPDX-FileCopyrightText: 2019, David Stainton <dawuud@riseup.net>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
 // disk.go - statefile worker, serialization and encryption
-// Copyright (C) 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -23,11 +25,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/memspool/client"
-	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/nacl/secretbox"
 	"gopkg.in/op/go-logging.v1"
@@ -108,8 +110,7 @@ func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
 		return nil, err
 	}
 	state := new(State)
-	err = codec.NewDecoderBytes(plaintext, cborHandle).Decode(state)
-	if err != nil {
+	if err = cbor.Unmarshal(plaintext, &state); err != nil {
 		return nil, err
 	}
 	return state, nil

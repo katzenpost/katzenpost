@@ -1,5 +1,7 @@
+// SPDX-FileCopyrightText: 2019, David Stainton <dawuud@riseup.net>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
 // operations.go - catshadow operations
-// Copyright (C) 2019  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -15,6 +17,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 package catshadow
+
 
 type opAddContact struct {
 	name         string
@@ -33,4 +36,8 @@ type opSendMessage struct {
 
 type opGetContacts struct {
 	responseChan chan map[string]*Contact
+}
+
+type opRetransmit struct {
+	contact *Contact
 }
