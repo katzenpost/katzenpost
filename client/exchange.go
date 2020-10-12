@@ -19,10 +19,10 @@ package client
 
 import (
 	"bytes"
-	"math/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"github.com/katzenpost/reunion/commands"
 	"github.com/katzenpost/reunion/crypto"
@@ -82,10 +82,10 @@ type Exchange struct {
 	db           server.ReunionDatabase
 	shutdownChan chan interface{}
 
-	status    int
-	contactID uint64
+	status     int
+	contactID  uint64
 	ExchangeID uint64
-	session   *crypto.Session
+	session    *crypto.Session
 
 	payload []byte
 
@@ -557,8 +557,8 @@ func (e *Exchange) Run() {
 	haltedfn := func() {
 		e.updateChan <- ReunionUpdate{
 			ExchangeID: e.ExchangeID,
-			ContactID: e.contactID,
-			Error:     errors.New("Run was halted."),
+			ContactID:  e.contactID,
+			Error:      errors.New("Run was halted."),
 		}
 	}
 
@@ -623,8 +623,8 @@ func (e *Exchange) Run() {
 	default:
 		e.updateChan <- ReunionUpdate{
 			ExchangeID: e.ExchangeID,
-			ContactID: e.contactID,
-			Error:     errors.New("unknown state error"),
+			ContactID:  e.contactID,
+			Error:      errors.New("unknown state error"),
 		}
 		return
 	}
