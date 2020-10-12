@@ -88,7 +88,7 @@ func (s *Session) worker() {
 
 	defer s.log.Debug("session worker halted")
 
-	isConnected := true
+	isConnected := false
 	mustResetBothTimers := false
 	for {
 		var lambdaPFired bool
@@ -109,10 +109,8 @@ func (s *Session) worker() {
 			switch op := qo.(type) {
 			case opConnStatusChanged:
 				newConnectedStatus := s.connStatusChange(op)
-				if newConnectedStatus != isConnected {
-					mustResetBothTimers = true
-				}
 				isConnected = newConnectedStatus
+				mustResetBothTimers = true
 			case opNewDocument:
 				err := s.isDocValid(op.doc)
 				if err != nil {
@@ -135,20 +133,16 @@ func (s *Session) worker() {
 			}
 		}
 		if isConnected {
-			if lambdaPFired {
-				lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
-				if lambdaPMsec > doc.LambdaPMaxDelay {
-					lambdaPMsec = doc.LambdaPMaxDelay
-				}
-				lambdaPInterval = time.Duration(lambdaPMsec) * time.Millisecond
+			lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
+			if lambdaPMsec > doc.LambdaPMaxDelay {
+				lambdaPMsec = doc.LambdaPMaxDelay
 			}
-			if lambdaLFired {
-				lambdaLMsec := uint64(rand.Exp(mRng, lambdaL))
-				if lambdaLMsec > doc.LambdaLMaxDelay {
-					lambdaLMsec = doc.LambdaLMaxDelay
-				}
-				lambdaLInterval = time.Duration(lambdaLMsec) * time.Millisecond
+			lambdaPInterval = time.Duration(lambdaPMsec) * time.Millisecond
+			lambdaLMsec := uint64(rand.Exp(mRng, lambdaL))
+			if lambdaLMsec > doc.LambdaLMaxDelay {
+				lambdaLMsec = doc.LambdaLMaxDelay
 			}
+			lambdaLInterval = time.Duration(lambdaLMsec) * time.Millisecond
 		} else {
 			lambdaLInterval = time.Duration(maxDuration)
 			lambdaPInterval = time.Duration(maxDuration)
