@@ -19,7 +19,7 @@
 
 [ClientLogging]
   Disable = false
-  Level = "DEBUG"
+  Level = "NOTICE"
   File = ""
 
 [Logging]
@@ -50,7 +50,7 @@
 [Debug]
   DisableDecoyTraffic = false
   CaseSensitiveUserIdentifiers = false
-  PollingInterval = 10
+  PollingInterval = 50
 
 [Panda]
   Receiver = "+panda"
