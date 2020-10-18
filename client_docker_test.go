@@ -72,6 +72,8 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	if useReunion {
 		catshadowCfg.Panda = nil
 		catshadowCfg.Reunion.Enable = true
+	} else {
+		catshadowCfg.Reunion.Enable = false
 	}
 	var stateWorker *StateWriter
 	var catShadowClient *Client
