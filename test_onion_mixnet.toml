@@ -7,29 +7,38 @@
 [Logging]
   Disable = false
   Level = "DEBUG"
-  File = "/tmp/my_catshadow.log"
+  File = ""
+
+[ClientLogging]
+  Disable = false
+  Level = "NOTICE"
+  File = ""
 
 [VotingAuthority]
-    [[VotingAuthority.Peers]]
-      Addresses = ["gmhlr3yqdwe4zxsfyitexw36g4mod3ycibdocmvwnq77432jdg4bswyd.onion:21483"]
-      LinkPublicKey = "I49V1w7OJ/Kcw7YbEvo+92akE9cYLGeXRBg6KE/sYS8="
-      IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+[[VotingAuthority.Peers]]
+  Addresses = ["n5axysudjvjjkpy4r7hur7qfgybfaiwrfz2mqwkvnyylqxinldtao2ad.onion:30000"]
+  IdentityPublicKey = "EmUWxb6ocBBXhxlrAKgxVd/6tyIDVK/8pIY/nZrqSDQ="
+  LinkPublicKey = "Mcfs706pyzBIvEj+k5t2L9t9x+LplOR4wz3RiVrgoVU="
 
-    [[VotingAuthority.Peers]]
-      Addresses = ["nhwzqsoueqoi7jnf3dqzwfr2aodkygd6ifwopshtoe5yjsahj2lxlvqd.onion:22483"]
-      LinkPublicKey = "fZcGD+uPm18BYuDKXS3eozp9+i2hW2SWgnuapP0ftgE="
-      IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+[[VotingAuthority.Peers]]
+  Addresses = ["mj5ouhyjvokgvbcp56lh56plxvzh4wcrq3fadpqf6ewdqmuy7pr3n6qd.onion:30000"]
+  IdentityPublicKey = "vdOAeoRtWKFDw+W4k3sNN1EMT9ZsaHHmuCHOEKSg1aA="
+  LinkPublicKey = "VNmU4g1hXBS7BQ1RJYMGNjNg4fIZbCimppeJ1XwrqX4="
 
-    [[VotingAuthority.Peers]]
-      Addresses = ["x777kjia66phfemrk3wjldz7qntdihaxtan3dy5qt3nlffb5xouqawad.onion:23483"]
-      LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
-      IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
-
+[[VotingAuthority.Peers]]
+  Addresses = ["pz6obnsyh7vmpmtmrsam443jh4gkei77q3y66ty3fd6h6wjdvcmu6pid.onion:30000"]
+  IdentityPublicKey = "bFgvws69dJrc3ACKXN5aCJKLHjkN7D8DA2HDKkhSNIk="
+  LinkPublicKey = "p1JekMh8uCPDsRSP5Uc59DJvEGMmA/B0mcMCXx1WEkk="
 
 [Debug]
+  CaseSensitiveUserIdentifiers = false
+  PollingInterval = 1000
   PreferedTransports = ["onion"]
 
 [Panda]
   Receiver = "+panda"
   Provider = "provider1"
   BlobSize = 1000
+
+[Reunion]
+  Enable = false
