@@ -149,10 +149,31 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 // read-inbox worker goroutine.
 func (c *Client) Start() {
 	c.garbageCollectConversations()
+	c.Go(c.eventSinkWorker)
+	c.Go(c.worker)
+	c.restartContactExchanges()
+	c.restartSending()
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-c.fatalErrCh
+		if !ok {
+			return
+		}
+		c.log.Warningf("Shutting down due to error: %v", err)
+		c.Shutdown()
+	}()
+	// Shutdown if the client halts for some reason
+	go func() {
+		c.client.Wait()
+		c.Shutdown()
+	}()
+
+}
+
+// restart contact exchanges
+func (c *Client) restartContactExchanges() {
 	pandaCfg := c.session.GetPandaConfig()
 	reunionCfg := c.session.GetReunionConfig()
-
-	c.Go(c.eventSinkWorker)
 	for _, contact := range c.contacts {
 		if contact.IsPending {
 			if reunionCfg != nil && reunionCfg.Enable == true {
@@ -195,29 +216,19 @@ func (c *Client) Start() {
 				}
 				go kx.Run()
 			}
-		} else {
+		}
+	}
+}
+
+func (c *Client) restartSending() {
+	for _, contact := range c.contacts {
+		if !contact.IsPending {
 			if _, err := contact.outbound.Peek(); err == nil {
 				// prod worker to start draining contact outbound queue
 				defer func() { c.opCh <- &opRetransmit{contact: contact} }()
 			}
 		}
 	}
-	c.Go(c.worker)
-	// Start the fatal error watcher.
-	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
-		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
-	}()
-	// Shutdown if the client halts for some reason
-	go func() {
-		c.client.Wait()
-		c.Shutdown()
-	}()
-
 }
 
 func (c *Client) eventSinkWorker() {
