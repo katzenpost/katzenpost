@@ -553,9 +553,12 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 		if _, ok := contact.reunionKeyExchange[update.ExchangeID]; ok {
 			delete(contact.reunionKeyExchange, update.ExchangeID) // remove map entry
 		}
-		c.eventCh.In() <- &KeyExchangeCompletedEvent{
-			Nickname: contact.Nickname,
-			Err:      update.Error,
+		// XXX: if there are other reunion key exchanges pending for this client, we probably do not want to emit an error event just yet...
+		if len(contact.reunionKeyExchange) == 0 {
+			c.eventCh.In() <- &KeyExchangeCompletedEvent{
+				Nickname: contact.Nickname,
+				Err:      update.Error,
+			}
 		}
 		return
 
