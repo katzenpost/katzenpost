@@ -9,6 +9,7 @@ import (
 const (
 	StatusUnknown = iota
 	StatusSent
+	StatusNotSent
 	StatusDelivered
 )
 

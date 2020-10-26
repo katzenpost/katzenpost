@@ -44,6 +44,10 @@ func handleEvent(ev interface{}, conversationModel *ConversationModel, contactLi
 	case *catshadow.MessageSentEvent:
 		conversationModel.updateMessageStatus(string(event.MessageID[:]), StatusSent)
 
+	case *catshadow.MessageNotSentEvent:
+		// XXX: conversationModel.updateMessageStatus(string(event.MessageID[:]), StatusNotSent)
+		return
+
 	case *catshadow.MessageDeliveredEvent:
 		conversationModel.updateMessageStatus(string(event.MessageID[:]), StatusDelivered)
 
