@@ -166,7 +166,6 @@ func (s *Session) worker() {
 				lambdaDMsec = doc.LambdaDMaxDelay
 			}
 			lambdaDInterval = time.Duration(lambdaDMsec) * time.Millisecond
-
 		} else {
 			lambdaLInterval = time.Duration(maxDuration)
 			lambdaPInterval = time.Duration(maxDuration)
@@ -176,7 +175,7 @@ func (s *Session) worker() {
 		if mustResetAllTimers {
 			lambdaPTimer.Reset(lambdaPInterval)
 			lambdaLTimer.Reset(lambdaLInterval)
-			lambdaDTimer.Reset(lambdaLInterval)
+			lambdaDTimer.Reset(lambdaDInterval)
 			mustResetAllTimers = false
 		} else {
 			// reset only the timer that fired
