@@ -170,6 +170,7 @@ func (s *Session) worker() {
 		} else {
 			lambdaLInterval = time.Duration(maxDuration)
 			lambdaPInterval = time.Duration(maxDuration)
+			lambdaDInterval = time.Duration(maxDuration)
 		}
 
 		if mustResetAllTimers {
