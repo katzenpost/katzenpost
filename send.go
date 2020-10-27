@@ -58,13 +58,14 @@ func (s *Session) doSend(msg *Message) {
 		s.fatalErrCh <- fmt.Errorf("impossible failure, failed to generate SURB ID for message ID %x", *msg.ID)
 		return
 	}
-	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
-	s.log.Debugf("doSend with SURB ID %x", idStr)
 	key := []byte{}
 	var eta time.Duration
 	if msg.WithSURB {
+		idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
+		s.log.Debugf("doSend with SURB ID %x", idStr)
 		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
 	} else {
+		s.log.Debugf("doSend without SURB")
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
 	}
 
