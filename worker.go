@@ -158,7 +158,7 @@ func (s *Session) worker() {
 				lambdaPTimer.Reset(lambdaPInterval)
 				continue
 			}
-			if lambdaPFired {
+			if lambdaLFired {
 				lambdaLTimer.Reset(lambdaLInterval)
 			}
 		}
