@@ -68,6 +68,7 @@ func (s *Session) worker() {
 		return
 	}
 
+	// LambdaP timer setup
 	lambdaP := doc.LambdaP
 	lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
 	if lambdaPMsec > doc.LambdaPMaxDelay {
@@ -77,6 +78,7 @@ func (s *Session) worker() {
 	lambdaPTimer := time.NewTimer(lambdaPInterval)
 	defer lambdaPTimer.Stop()
 
+	// LambdaL timer setup
 	lambdaL := doc.LambdaL
 	lambdaLMsec := uint64(rand.Exp(mRng, lambdaL))
 	if lambdaLMsec > doc.LambdaLMaxDelay {
@@ -86,13 +88,24 @@ func (s *Session) worker() {
 	lambdaLTimer := time.NewTimer(lambdaLInterval)
 	defer lambdaLTimer.Stop()
 
+	// LambdaD timer setup
+	lambdaD := doc.LambdaD
+	lambdaDMsec := uint64(rand.Exp(mRng, lambdaD))
+	if lambdaDMsec > doc.LambdaDMaxDelay {
+		lambdaDMsec = doc.LambdaDMaxDelay
+	}
+	lambdaDInterval := time.Duration(lambdaDMsec) * time.Millisecond
+	lambdaDTimer := time.NewTimer(lambdaDInterval)
+	defer lambdaDTimer.Stop()
+
 	defer s.log.Debug("session worker halted")
 
 	isConnected := false
-	mustResetBothTimers := false
+	mustResetAllTimers := false
 	for {
 		var lambdaPFired bool
 		var lambdaLFired bool
+		var lambdaDFired bool
 		var qo workerOp
 		select {
 		case <-s.HaltCh():
@@ -102,6 +115,8 @@ func (s *Session) worker() {
 			lambdaPFired = true
 		case <-lambdaLTimer.C:
 			lambdaLFired = true
+		case <-lambdaDTimer.C:
+			lambdaDFired = true
 		case qo = <-s.opCh:
 		}
 
@@ -110,7 +125,7 @@ func (s *Session) worker() {
 			case opConnStatusChanged:
 				newConnectedStatus := s.connStatusChange(op)
 				isConnected = newConnectedStatus
-				mustResetBothTimers = true
+				mustResetAllTimers = true
 			case opNewDocument:
 				err := s.isDocValid(op.doc)
 				if err != nil {
@@ -119,7 +134,8 @@ func (s *Session) worker() {
 				doc = op.doc
 				lambdaP = doc.LambdaP
 				lambdaL = doc.LambdaL
-				mustResetBothTimers = true
+				lambdaD = doc.LambdaD
+				mustResetAllTimers = true
 			default:
 				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			} // end of switch
@@ -129,6 +145,8 @@ func (s *Session) worker() {
 					s.sendFromQueueOrDecoy()
 				} else if lambdaLFired && !s.cfg.Debug.DisableDecoyTraffic {
 					s.sendLoopDecoy()
+				} else if lambdaDFired && !s.cfg.Debug.DisableDecoyTraffic {
+					s.sendDropDecoy()
 				}
 			}
 		}
