@@ -174,7 +174,7 @@ func (s *Session) sendFromQueueOrDecoy() {
 	if err == nil {
 		s.sendNext()
 	} else if !s.cfg.Debug.DisableDecoyTraffic {
-		s.sendLoopDecoy()
+		s.sendDropDecoy()
 	}
 }
 

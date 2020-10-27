@@ -104,6 +104,31 @@ func (s *Session) doSend(msg *Message) {
 	}
 }
 
+func (s *Session) sendDropDecoy() {
+	s.log.Info("sending drop decoy")
+	serviceDesc, err := s.GetService(cConstants.LoopService)
+	if err != nil {
+		s.fatalErrCh <- errors.New("failure to get loop service")
+		return
+	}
+	payload := [constants.UserForwardPayloadLength]byte{}
+	id := [cConstants.MessageIDLength]byte{}
+	_, err = io.ReadFull(rand.Reader, id[:])
+	if err != nil {
+		s.fatalErrCh <- errors.New("failure to generate message ID for drop decoy")
+		return
+	}
+	msg := &Message{
+		ID:        &id,
+		Recipient: serviceDesc.Name,
+		Provider:  serviceDesc.Provider,
+		Payload:   payload[:],
+		WithSURB:  false,
+		IsDecoy:   true,
+	}
+	s.doSend(msg)
+}
+
 func (s *Session) sendLoopDecoy() {
 	s.log.Info("sending loop decoy")
 	serviceDesc, err := s.GetService(cConstants.LoopService)
