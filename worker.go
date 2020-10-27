@@ -161,23 +161,32 @@ func (s *Session) worker() {
 				lambdaLMsec = doc.LambdaLMaxDelay
 			}
 			lambdaLInterval = time.Duration(lambdaLMsec) * time.Millisecond
+			lambdaDMsec := uint64(rand.Exp(mRng, lambdaD))
+			if lambdaDMsec > doc.LambdaDMaxDelay {
+				lambdaDMsec = doc.LambdaDMaxDelay
+			}
+			lambdaDInterval = time.Duration(lambdaDMsec) * time.Millisecond
+
 		} else {
 			lambdaLInterval = time.Duration(maxDuration)
 			lambdaPInterval = time.Duration(maxDuration)
 		}
 
-		if mustResetBothTimers {
+		if mustResetAllTimers {
 			lambdaPTimer.Reset(lambdaPInterval)
 			lambdaLTimer.Reset(lambdaLInterval)
-			mustResetBothTimers = false
+			lambdaDTimer.Reset(lambdaLInterval)
+			mustResetAllTimers = false
 		} else {
 			// reset only the timer that fired
 			if lambdaPFired {
 				lambdaPTimer.Reset(lambdaPInterval)
-				continue
 			}
 			if lambdaLFired {
 				lambdaLTimer.Reset(lambdaLInterval)
+			}
+			if lambdaDFired {
+				lambdaDTimer.Reset(lambdaDInterval)
 			}
 		}
 	}
