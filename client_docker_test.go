@@ -87,6 +87,8 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	passphrase := []byte("")
 	stateWorker, err = NewStateWriter(c.GetLogger("catshadow_state"), stateFile, passphrase)
 	require.NoError(err)
+	// must start stateWorker BEFORE calling NewClientAndRemoteSpool
+	stateWorker.Start()
 	backendLog, err := catshadowCfg.InitLogBackend()
 	require.NoError(err)
 
@@ -95,7 +97,6 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	require.NoError(err)
 
 	// Start catshadow client.
-	stateWorker.Start()
 	catShadowClient.Start()
 
 	return catShadowClient

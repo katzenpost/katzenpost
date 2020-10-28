@@ -480,10 +480,7 @@ func (c *Client) save() {
 	if err != nil {
 		panic(err)
 	}
-	err = c.stateWorker.writeState(serialized)
-	if err != nil {
-		panic(err)
-	}
+	c.stateWorker.stateCh <- serialized
 }
 
 func (c *Client) marshal() ([]byte, error) {
@@ -526,7 +523,6 @@ func (c *Client) haltKeyExchanges() {
 // Shutdown shuts down the client.
 func (c *Client) Shutdown() {
 	c.log.Info("Shutting down now.")
-	c.save()
 	c.Halt()
 	c.client.Shutdown()
 	c.stateWorker.Halt()

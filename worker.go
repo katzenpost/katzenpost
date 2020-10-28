@@ -67,6 +67,7 @@ func (c *Client) worker() {
 			c.log.Debug("Terminating gracefully.")
 			c.stopContactTimers()
 			c.haltKeyExchanges()
+			c.save()
 			return
 		case <-gcMessagestimer.C:
 			c.garbageCollectConversations()
