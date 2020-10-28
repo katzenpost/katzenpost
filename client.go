@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
+	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/memspool/client"
 	"github.com/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/panda/client"
@@ -41,6 +42,10 @@ import (
 	rTrans "github.com/katzenpost/reunion/transports/katzenpost"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
+)
+
+var (
+	errTrialDecryptionFailed = errors.New("Trial Decryption Failed")
 )
 
 // Client is the mixnet client which interacts with other clients
@@ -919,11 +924,33 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
 				return // dup
 			case spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset:
-				c.spoolReadDescriptor.IncrementOffset()
 				c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
-				if !c.decryptMessage(replyEvent.MessageID, spoolResponse.Message) {
+				err := c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
+				switch err {
+				case errTrialDecryptionFailed:
+					// this message did not correspond to any known contacts
+					// if we have any contacts pending key exchange, do not increment the spool descriptor
+					// in order to avoid losing the first message. this is due to a race where the contact
+					// has already completed the key exchange and sent a first message, before we have
+					// completed our key exchange.
+					// XXX: this could break things if a contact key exchange never completes...
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					for _, contact := range c.contacts {
+						if contact.IsPending {
+							c.log.Warning("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
+							return
+						}
+					}
+					c.log.Warning("received message we could not decrypt while NO key exchange pending, skipping this message")
+				case nil:
+					// message was decrypted successfully
+					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
+				default:
+					// received an error, likely due to retransmission
 					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
 				}
+				// in all other cases, advance the spool read descriptor
+				c.spoolReadDescriptor.IncrementOffset()
 			default:
 				panic("received spool response for MessageID not requested yet")
 			}
@@ -947,10 +974,10 @@ func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
 	return c.conversations
 }
 
-func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) (decrypted bool) {
+func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) error {
 	var err error
 	message := Message{}
-	decrypted = false
+	decrypted := false
 	var nickname string
 	for _, contact := range c.contacts {
 		if contact.IsPending {
@@ -959,10 +986,12 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		contact.ratchetMutex.Lock()
 		plaintext, err := contact.ratchet.Decrypt(ciphertext)
 		contact.ratchetMutex.Unlock()
-		if err != nil {
-			c.log.Debugf("Decryption err: %s", err.Error())
+		switch err {
+		case ratchet.ErrCannotDecrypt:
+			// this contact could not decrypt the message, try another
 			continue
-		} else {
+		case nil:
+			// message decrypted successfully
 			decrypted = true
 			nickname = contact.Nickname
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
@@ -970,6 +999,10 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			message.Timestamp = time.Now()
 			message.Outbound = false
 			break
+		default:
+			// every other type of error indicates an invalid message
+			c.log.Debugf("Decryption err: %s", err.Error())
+			return err
 		}
 	}
 	if decrypted {
@@ -992,8 +1025,8 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			Message:   message.Plaintext,
 			Timestamp: message.Timestamp,
 		}
-		return
+		return nil
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
-	return
+	return errTrialDecryptionFailed
 }
