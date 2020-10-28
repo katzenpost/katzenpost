@@ -362,7 +362,6 @@ func (s *DoubleRatchetSuite) Test_serialize_savedkeys(c *C) {
 	serialized2, err := b.MarshalBinary()
 	c.Assert(err, IsNil)
 
-
 	r, err := InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
