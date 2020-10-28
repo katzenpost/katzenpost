@@ -84,8 +84,8 @@ github.com/katzenpost/core v0.0.11 h1:WU1C35IumVhRkrEvVgqtfvxWSfxbuLO5neXIKKEdDN
 github.com/katzenpost/core v0.0.11 h1:WU1C35IumVhRkrEvVgqtfvxWSfxbuLO5neXIKKEdDNU=
 github.com/katzenpost/core v0.0.11/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
 github.com/katzenpost/core v0.0.11/go.mod h1:z8uIYZj4iaLCqXLcoY8nz/YBqVi/s1RnZkHFAd797SQ=
-github.com/katzenpost/doubleratchet v0.0.6 h1:sDSaBXa3IqYF2XYa06nG1w5n+zvMApCT0CRSBq4STzI=
-github.com/katzenpost/doubleratchet v0.0.6/go.mod h1:odNOjX2+Ypjp2OZuyB7fcLc7CYcBkBMcDBiicwi7Xno=
+github.com/katzenpost/doubleratchet v0.0.7 h1:gDpMLhRldeXfi70KYLLBoaBAWAGrdTv2iPpzdnXNwaE=
+github.com/katzenpost/doubleratchet v0.0.7/go.mod h1:odNOjX2+Ypjp2OZuyB7fcLc7CYcBkBMcDBiicwi7Xno=
 github.com/katzenpost/memspool v0.0.10 h1:Vcs4yInKN5cdauthKzcd9/PkU5WliY+untQWlUHPozc=
 github.com/katzenpost/memspool v0.0.10/go.mod h1:NZGtvAV25MHASCTYFMdHn7I4r0BsXlSdE7kLTauBeH4=
 github.com/katzenpost/memspool v0.0.12 h1:3Ku4OiOCeSzclYT+IziMs5gwiuwmDTQ15rKKlVr0N/A=
