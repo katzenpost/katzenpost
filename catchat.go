@@ -81,6 +81,8 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 		if err != nil {
 			panic(err)
 		}
+		// Start the stateworker
+		stateWorker.Start()
 		fmt.Println("creating remote message receiver spool")
 		backendLog, err := catshadowCfg.InitLogBackend()
 		if err != nil {
@@ -105,6 +107,8 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 		if err != nil {
 			panic(err)
 		}
+		// Start the stateworker
+		stateWorker.Start()
 		cfg.Account = &clientConfig.Account{
 			User:     state.User,
 			Provider: state.Provider,
@@ -124,7 +128,6 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 	}
 
 	// Start catshadow client.
-	stateWorker.Start()
 	catShadowClient.Start()
 
 	go eventLoop(catShadowClient.EventSink, conversationModel, contactListModel)
