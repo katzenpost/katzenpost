@@ -137,8 +137,8 @@ func TestClientServerBasics1(t *testing.T) {
 	// Run the reunion client exchanges manually instead of using the Exchange method.
 	hasAliceSent := aliceExchange.sendT1()
 	hasBobSent := bobExchange.sendT1()
-	require.True(hasAliceSent)
-	require.True(hasBobSent)
+	require.NoError(hasAliceSent)
+	require.NoError(hasBobSent)
 
 	err = aliceExchange.fetchState()
 	require.NoError(err)
@@ -147,8 +147,8 @@ func TestClientServerBasics1(t *testing.T) {
 
 	hasAliceSent = aliceExchange.sendT2Messages()
 	hasBobSent = bobExchange.sendT2Messages()
-	require.True(hasAliceSent)
-	require.True(hasBobSent)
+	require.NoError(hasAliceSent)
+	require.NoError(hasBobSent)
 
 	err = aliceExchange.fetchState()
 	require.NoError(err)
@@ -157,8 +157,8 @@ func TestClientServerBasics1(t *testing.T) {
 
 	hasAliceSent = aliceExchange.sendT3Messages()
 	hasBobSent = bobExchange.sendT3Messages()
-	require.True(hasAliceSent)
-	require.True(hasBobSent)
+	require.NoError(hasAliceSent)
+	require.NoError(hasBobSent)
 
 	err = aliceExchange.fetchState()
 	require.NoError(err)
@@ -597,8 +597,8 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	// Run the reunion client exchanges manually instead of using the Exchange method.
 	hasAliceSent := aliceExchange.sendT1()
 	hasBobSent := bobExchange.sendT1()
-	require.True(hasAliceSent)
-	require.True(hasBobSent)
+	require.NoError(hasAliceSent)
+	require.NoError(hasBobSent)
 
 	aliceSerialized, err := aliceExchange.Marshal()
 	require.NoError(err)
@@ -617,8 +617,8 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 
 	hasAliceSent = aliceExchange.sendT2Messages()
 	hasBobSent = bobExchange.sendT2Messages()
-	require.True(hasAliceSent)
-	require.True(hasBobSent)
+	require.NoError(hasAliceSent)
+	require.NoError(hasBobSent)
 
 	err = aliceExchange.fetchState()
 	require.NoError(err)
@@ -637,8 +637,8 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 
 	hasAliceSent = aliceExchange.sendT3Messages()
 	hasBobSent = bobExchange.sendT3Messages()
-	require.True(hasAliceSent)
-	require.True(hasBobSent)
+	require.NoError(hasAliceSent)
+	require.NoError(hasBobSent)
 
 	err = aliceExchange.fetchState()
 	require.NoError(err)
