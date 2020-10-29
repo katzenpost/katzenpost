@@ -35,9 +35,9 @@ import (
 var (
 	cborHandle = new(codec.CborHandle)
 
-	// InvalidResponseErrMessage is an error used to indicate
+	// InvalidResponseErr is an error used to indicate
 	// that an invalid response from the Reunion server was received.
-	InvalidResponseErrMessage = "invalid response received from Reunion DB"
+	InvalidResponseErr = errors.New("invalid response received from Reunion DB")
 
 	// ErrShutdown is an error invoked during shutdown.
 	ErrShutdown = errors.New("reunion: shutdown requested")
@@ -340,12 +340,11 @@ func (e *Exchange) fetchState() error {
 	return err
 }
 
-func (e *Exchange) sendT1() bool {
+func (e *Exchange) sendT1() error {
 	var err error
 	e.sentT1, err = e.session.GenerateType1Message(e.payload)
 	if err != nil {
-		e.log.Error(err.Error())
-		return false
+		return err
 	}
 	t1Cmd := commands.SendT1{
 		Epoch:   e.session.Epoch(),
@@ -353,22 +352,19 @@ func (e *Exchange) sendT1() bool {
 	}
 	rawResponse, err := e.db.Query(&t1Cmd)
 	if err != nil {
-		e.log.Error(err.Error())
-		return false
+		return err
 	}
 	response, ok := rawResponse.(*commands.MessageResponse)
 	if !ok {
-		e.log.Error(InvalidResponseErrMessage)
-		return false
+		return InvalidResponseErr
 	}
 	if response.ErrorCode != commands.ResponseStatusOK {
-		e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
-		return false
+		return fmt.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
 	}
-	return true
+	return nil
 }
 
-func (e *Exchange) sendT2Messages() bool {
+func (e *Exchange) sendT2Messages() error {
 	hasSent := false
 
 	h := sha256.New()
@@ -390,13 +386,11 @@ func (e *Exchange) sendT2Messages() bool {
 		// decrypt alpha pub key and store it in our state
 		alpha, _, _, err := crypto.DecodeT1Message(t1)
 		if err != nil {
-			e.log.Error(err.Error())
-			return false
+			return err
 		}
 		t2, alphaPubKey, err := e.session.ProcessType1MessageAlpha(alpha)
 		if err != nil {
-			e.log.Error(err.Error())
-			return false
+			return err
 		}
 
 		e.receivedT1Alphas[t1Hash] = alphaPubKey
@@ -418,25 +412,25 @@ func (e *Exchange) sendT2Messages() bool {
 		}
 		rawResponse, err := e.db.Query(&t2Cmd)
 		if err != nil {
-			e.log.Error(err.Error())
-			return false
+			return err
 		}
 		response, ok := rawResponse.(*commands.MessageResponse)
 		if !ok {
-			e.log.Error(InvalidResponseErrMessage)
-			return false
+			return InvalidResponseErr
 		}
 		if response.ErrorCode != commands.ResponseStatusOK {
-			e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
-			return false
+			return fmt.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
 		}
 		e.repliedT1s[t1Hash] = t1
 		hasSent = true
 	}
-	return hasSent
+	if hasSent {
+		return nil
+	}
+	return fmt.Errorf("Failed to send T2 Messages!")
 }
 
-func (e *Exchange) sendT3Messages() bool {
+func (e *Exchange) sendT3Messages() error {
 	hasSentT3 := false
 
 	h := sha256.New()
@@ -448,8 +442,7 @@ func (e *Exchange) sendT3Messages() bool {
 	for srcT1Hash, t2 := range e.receivedT2s {
 		t1, ok := e.receivedT1s[srcT1Hash]
 		if !ok {
-			e.log.Errorf("error, t1 hash %x missing from map", srcT1Hash[:])
-			return false
+			return fmt.Errorf("error, t1 hash %x missing from map", srcT1Hash[:])
 		}
 		h := sha256.New()
 		h.Write(t2)
@@ -462,17 +455,15 @@ func (e *Exchange) sendT3Messages() bool {
 		}
 		alphaKey, ok := e.receivedT1Alphas[srcT1Hash]
 		if !ok {
-			return false
+			return fmt.Errorf("Failed to send T3 message because no T1 Alpha was found")
 		}
 		candidateKey, err := e.session.GetCandidateKey(t2, alphaKey)
 		if err != nil {
-			e.log.Error(err.Error())
-			return false
+			return err
 		}
 		_, t1beta, _, err := crypto.DecodeT1Message(t1)
 		if err != nil {
-			e.log.Error(err.Error())
-			return false
+			return err
 		}
 		beta, err := crypto.DecryptT1Beta(candidateKey, t1beta)
 		if err != nil {
@@ -481,8 +472,7 @@ func (e *Exchange) sendT3Messages() bool {
 		}
 		t3, err := e.session.ComposeType3Message(beta)
 		if err != nil {
-			e.log.Error(err.Error())
-			return false
+			return err
 		}
 		sendT3Cmd := commands.SendT3{
 			Epoch:     e.session.Epoch(),
@@ -492,26 +482,25 @@ func (e *Exchange) sendT3Messages() bool {
 		}
 		rawResponse, err := e.db.Query(&sendT3Cmd)
 		if err != nil {
-			e.log.Error(err.Error())
-			return false
+			return err
 		}
 		response, ok := rawResponse.(*commands.MessageResponse)
 		if !ok {
-			e.log.Error(InvalidResponseErrMessage)
-			return false
+			return InvalidResponseErr
 		}
 		if response.ErrorCode != commands.ResponseStatusOK {
-			e.log.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
-			return false
+			return fmt.Errorf("received an error status code from the reunion db: %d", response.ErrorCode)
 		}
 
 		e.decryptedT1Betas[srcT1Hash] = beta
-		hasSentT3 = true
 
 		e.repliedT2s[t2HashAr] = t2
+		hasSentT3 = true
 	}
-
-	return hasSentT3
+	if hasSentT3 {
+		return nil
+	}
+	return fmt.Errorf("Failed to send T3 Messages!")
 }
 
 func (e *Exchange) processT3Messages() bool {
