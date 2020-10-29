@@ -556,9 +556,15 @@ func (e *Exchange) Run() {
 	case initialState:
 		// XXX not required -> 1:A <- DB: fetch current epoch and current set of data for epoch state
 		// 2:A -> DB: transmit א message
-		if !e.sendT1() {
-			defer haltedfn()
-			return
+		for {
+			err := e.sendT1()
+			if err == client.ErrReplyTimeout {
+				continue
+			} else if err != nil {
+				defer haltedfn()
+				return
+			}
+			break
 		}
 		e.status = t1MessageSentState
 		if !e.sentUpdateOK() {
@@ -585,7 +591,12 @@ func (e *Exchange) Run() {
 				return
 			}
 			// 4:A -> DB: transmit one ב message for each א
-			e.sendT2Messages()
+			if err := e.sendT2Messages(); err != nil {
+				e.log.Error(err.Error())
+			} else {
+				e.log.Debug("Sent T2 Messages successfully")
+			}
+
 			if !e.sentUpdateOK() {
 				defer haltedfn()
 				return
@@ -598,7 +609,11 @@ func (e *Exchange) Run() {
 
 			// 5:A <- DB: fetch epoch state for replies to A’s א
 			// 6:A -> DB: transmit one ג message for each new ב
-			e.sendT3Messages()
+			if err := e.sendT3Messages(); err != nil {
+				e.log.Error(err.Error())
+			} else {
+				e.log.Debug("Sent T3 Messages successfully")
+			}
 
 			if !e.sentUpdateOK() {
 				defer haltedfn()
