@@ -122,6 +122,21 @@ These resources can help you learn more:
 
 .. rubric:: Supported by
 
+* NLnet and the NGI0 PET Fund paid for by the European Commission
+
+.. image:: https://katzenpost.mixnetworks.org/_static/images/eu-flag-tiny.jpg
+
+
+See **NLnet accouncement** https://nlnet.nl/project/katzenpost/index.html
+
+
+* The Samsung Next Stack Zero grant
+
+See **Announcing the Samsung NEXT Stack Zero Grant recipients**.
+https://samsungnext.com/whats-next/category/podcasts/decentralization-samsung-next-stack-zero-grant-recipients/
+
+* The Panoramix Project
+
 .. image:: /_static/images/eu-flag.jpg
     :width: 80px
     :alt: European Union flag
