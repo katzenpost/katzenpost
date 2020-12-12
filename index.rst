@@ -30,10 +30,7 @@ protocols.
 However we realize we cannot simply write a mix network and core
 protocol libraries and expect people to use them. Therefore we are
 working towards a demonstration encrypted chat client which will
-communicate over our mix network. In the spirit of pond this new chat
-client will use PANDA (Phrase Automated Nym Discovery Authentication)
-for the key exchange and the Signal Double Ratchet for the end to end
-encryption.
+communicate over our mix network.
 
 Traffic analysis helps governments, corporations and Internet service
 providers learn more information about the communication even if it is
@@ -53,12 +50,6 @@ these kinds of communications metadata:
 * frequency of sent messages
 * frequency of received messages
 
-However we also consider bad actors within the mix network as well as
-active attackers. Our threat model is very clearly articulated in the
-"Loopix Anonymity System" however at the end of each of our design
-specification documents we have not only a security section but an
-anonymity considersations section as well.
-
 There are many message oriented applications and protocols that could
 benefit from using our mix network. For example our mix network is not
 only good for chat clients but also other types of applications:
@@ -66,8 +57,8 @@ only good for chat clients but also other types of applications:
 * transporting interactions between CRDTs
 * transporting interactions to DHTs
 * database transaction anonymization
-* 'crypto currency' anonymization, especially Zcash which has shielded transactions
-  which are particularly well suited to being used with a mix network transport protocol
+* 'crypto currency' anonymization
+
 
 For further discussion regarding Zcash usage with Katzenpost please see:
 :doc:`zcash`.
@@ -106,8 +97,11 @@ Development
     → godocs: Go package documentation <https://godoc.org/?q=katzenpost>
 
 
-Mixnets?!
-=========
+What is a mix network?
+======================
+
+A mix network is a type of anonymous communication network.
+These resources can help you learn more:
 
 * :doc:`docs/mixnet_academy/syllabus`
 * `Mixnet Bibliography <https://bib.mixnetworks.org>`_
