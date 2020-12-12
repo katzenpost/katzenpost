@@ -31,38 +31,12 @@ create a document describing the collective view of the network. Mixnet clients
 download the consensus document so that they may utilize the network to route
 their Sphinx packets.
 
-Install a release
------------------
+Install
+-------
 
-The daemons release contains the voting authority server
-and can be found here:
-
-* https://github.com/katzenpost/daemons/releases
-
-
-Building The Voting Directory Authority from source
----------------------------------------------------
-
-Building from source has the following prerequisites:
-
-* Some familiarity with building Go binaries.
-* `Go <https://golang.org>`_ 1.10 or later.
-* A recent version of `dep <https://github.com/golang/dep>`_.
-
-
-The directory authority library git repository lives here:
+See the authority readme:
 
 * https://github.com/katzenpost/authority
-
-However our ``daemons`` git repository uses dependency vendoring.
-Therefore to build from source using vendoring do this::
-
-  cd $GOPATH/src/github/katzenpost
-  git clone https://github.com/katzenpost/daemons.git
-  cd daemons
-  dep ensure -v
-  cd authority/voting
-  go build
 
 
 CLI usage of The Voting Directory Authority
@@ -82,40 +56,10 @@ The ``-g`` option is used to generate the public and private signing and link ke
 Configuring The Voting Directory Authority
 ----------------------------------------------
 
-A sample configuration file can be found in our daemons repository, here:
+A sample configuration file can be found in our docker repository, here:
 
-* https://github.com/katzenpost/daemons/blob/master/authority/voting/authority.toml.sample
+* https://github.com/katzenpost/docker
 
-Generating configuration files and keys for a set of voting authorities can be done with the genconfig tool:
-
-* https://github.com/katzenpost/tools/genconfig
-
-The ``tools`` repo uses the same dependency vendoring as the ``daemons`` repo. See instructions there for using ``go dep``.
-
-The genconfig tool has the following commandline usage::
-
-     ./genconfig -help
-     Usage of ./genconfig:
-       -b string
-         	Path to use as baseDir option
-       -n int
-         	Number of mixes. (default 6)
-       -nv int
-         	Generate voting configuration (default 3)
-       -p int
-         	Number of providers. (default 2)
-       -v	Generate voting configuration
-
-The configuration files and keys are placed in a directory structure under the baseDir::
-     user@katz:~/go/src/github.com/katzenpost/tools/genconfig$ ./genconfig -b mixnet -v
-     user@katz:~/go/src/github.com/katzenpost/tools/genconfig$ ls mixnet/
-     authority-0  authority-2  node-1  node-3  node-5      provider-1
-     authority-1  node-0       node-2  node-4  provider-0
-     user@katz:~/go/src/github.com/katzenpost/tools/genconfig$ ls mixnet/authority-0
-     authority-0.example.org.toml  identity.private.pem  identity.public.pem
-
-The configuration files are defaulted with loopback addresses so that a local testing mixnet can be run; if you want to run the mixnet on several computers you will need to edit the ``DataDir``, ``Addresses`` and likely ``Identifier`` entries in each configuration file.
-As absolute paths to the ``DataDir`` are required, the configuration structure produced by ``genconfig`` is not portable.
 
 Authority section
 `````````````````

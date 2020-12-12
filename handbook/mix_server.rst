@@ -9,19 +9,20 @@ Both of these components are provided for by the ``server`` binary.
 Each Provider and Mix MUST be white-listed by the Directory Authority (PKI)
 in order to participate in the network.
 
-Building the ``server`` binary
-------------------------------
+Install
+-------
 
-Our HACKING guide goes into more detail about
-how we perform builds however you should know that
-the mix server uses grpc+protobufs for the mix service
-plugin system and therefore requires a ``go generate``
-command before building.
-::
+See the mix server readme:
 
-   cd $GOPATH/github.com/katzenpost/daemons/server
-   go generate
-   go build
+* https://github.com/katzenpost/server
+
+
+Configuration
+-------------
+
+A sample configuration file can be found in our docker repository, here:
+
+* https://github.com/katzenpost/docker
 
 
 ``server`` Commandline Usage

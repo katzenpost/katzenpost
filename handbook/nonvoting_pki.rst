@@ -4,23 +4,16 @@ Katzenpost Mix Network Public Key Infrastructure
 Overview
 --------
 
-Currently Katzenpost has one PKI system that is ready for deployment;
-the non-voting Directory Authority. Whether or not this should be used
-on a production system depends on your threat model. This is
-essentially a single point of failure. If this PKI system becomes
+This is essentially a single point of failure. If this PKI system becomes
 compromised by an adversary it's game over for anonymity and security
-guarantees.
+guarantees. Consider using the voting authority instead.
 
 The Katzenpost voting Directory Authority system is a replacement for
-the non-voting Directory Authority and is actively being developed.
-However it's votiing protocol is NOT byzantine fault tolerant.
-Therefore a Directory Authority server which is participating in the
-voting protocol can easily perform a denial of service attack for each
-voting round. This would cause the mix network to become totally
-unusable.
-
-Future development efforts will include designing and implementing one
-or more byzantine fault tolerant PKI systems for Katzenpost.
+the non-voting Directory Authority. However it's votiing protocol is
+NOT byzantine fault tolerant. Therefore a Directory Authority server
+which is participating in the voting protocol can easily perform a
+denial of service attack for each voting round. This would cause the
+mix network to become totally unusable.
 
 All Katzenpost PKI systems have two essential components:
 
@@ -34,25 +27,20 @@ network consensus document so that they can route messages through the
 mix network.
 
 
-Building The Non-voting Directory Authority
--------------------------------------------
+Install
+-------
 
-The easiest way to build the nonvoting Authority server is with
-this single commandline::
+See the authority readme:
 
-   go get github.com/katzenpost/daemons/authority/nonvoting
+* https://github.com/katzenpost/authority
 
-However you can of course use git to clone all of our git
-repositories and dependencies. You may then build the
-nonvoing authority as follows::
 
-   cd $GOPATH/github.com/katzenpost/daemons/authority/nonvoting
-   go build
+Configuration
+-------------
 
-Neither of these build strategies is ideal because the latest
-versions of any of our software dependencies may make breaking
-changes. We therefore recommend using our golang vendoring system
-to perform the build as described above.
+A sample configuration file can be found in our docker repository, here:
+
+* https://github.com/katzenpost/docker
 
 
 CLI usage of The Non-voting Directory Authority
