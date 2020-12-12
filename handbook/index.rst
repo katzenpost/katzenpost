@@ -55,28 +55,30 @@ by looking at the "releases.rst" file in the top-level
 of this repository.
 
 
-0. Acquire a recent version of dep: https://github.com/golang/dep
+0. Make sure you have a recent version of Go that supports go modules.
 
-1. Clone the Katzenpost daemons repository::
+1. Follow the build instructions for each Katzenpost component you want to build.
 
-     mkdir $GOPATH/github.com/katzenpost
-     git clone https://github.com/katzenpost/daemons.git
 
-2. Checkout the latest stable release tag::
+There are two server infrastructure components:
 
-     cd $GOPATH/github.com/katzenpost/daemons
-     git checkout v0.0.1 # replace v0.0.1 with latest version tag
+* https://github.com/katzenpost/server
 
-2. Fetch the Katzenpost vendored dependencies::
+* https://github.com/katzenpost/authority
 
-     dep ensure
 
-3. Build the binaries::
+There are several clients. Our latest work-in-progress:
 
-     (cd authority/nonvoting; go build)
-     (cd server; go build)
-     (cd mailproxy; go build)
+* https://github.com/katzenpost/catchat
 
+The old client from the Panoramix EU 2020 grant deliverable:
+
+* https://github.com/katzenpost/mailproxy
+
+
+Additionally HashCloak makes crypto currency clients that work with Katzenpost:
+
+* https://github.com/hashcloak
 
 The Katzenpost Configuration File Format
 ----------------------------------------
@@ -90,24 +92,9 @@ NOTE: ``#`` may be used at the beginning of a line to denote a comment
 instead of an effective configuration line.
 
 
-Example Katzenpost Configuration Files
---------------------------------------
-
-Sample Katzenpost configuration files are located in our ``daemons``
-git repository under the component's corresponding subdirectory:
-
-* https://github.com/katzenpost/daemons
-
-
 Notes on Building a Test Mix Network
 ------------------------------------
 
-Providers, mixes and the Directory Authority are distinct components
-of a Katzenpost mix network which SHOULD be deployed on separate
-server machines. If you are building a test network on a single
-machine then all mix network components must have differing network
-endpoints; that is, if their IP addresses do not differ then their TCP
-port numbers must be different.
+See our docker repo:
 
-
-
+https://github.com/katzenpost/docker

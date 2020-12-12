@@ -274,26 +274,6 @@ Certainly you could do all of this and add extra debug log statements to help
 track down a problem that would otherwise be very difficult to detect.
 
 
-Exercising Katzenpost with Kimchi
----------------------------------
-
-* https://github.com/katzenpost/kimchi.git
-
-Kimchi is NOT a replacement for writing unit tests!
-All new code submitions MUST have unit tests.
-
-Kimchi does not actually perform any tests per se. However it can be
-used to exercise your code in order to determine if it works
-correctly. Using Kimchi is supposed to be easier than hand configuring
-many instances of the "server".
-
-Currently Kimchi does not utilize a configuration file. You may need
-to make minor code changes to Kimchi in order for it to test your new
-code. Kimchi does not run any code in the daemons repo. Instead it
-provides alternate main functions which spawns many goroutines to
-run each component of the Katzenpost system.
-
-
 Making a code contribution
 --------------------------
 
@@ -305,6 +285,8 @@ Making a code contribution
 
    It is a good idea to discuss your code change with us before
    investing your time in writing the code.
+
+   These days the IRC channel is not so active. Try contacting us over the mailing list.
 
 1. Write a specification document
 
