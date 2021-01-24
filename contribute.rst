@@ -16,7 +16,7 @@ Contribution Guidelines
 Project Ideas
 =============
 
- * We applied for Google Summer of Code 2018 but didn't get in. The project ideas are still up for grabs:
+ * See the Project-Ideas page on our wiki:
    https://github.com/katzenpost/mixnet_uprising/wiki/Project-Ideas
 
  * Some of our other longer term projects ideas involving future research
