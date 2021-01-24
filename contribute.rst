@@ -11,7 +11,6 @@ Contribution Guidelines
 =======================
 
 #. Get familiar with the various repositories on our `Github <https://www.github.com/katzenpost>`_.
-#. Contact us on our mailing. These days our IRC channel isn't as active as it used to be.
 #. Open a pull request on Github. We will help with occurring problems and merge your changes back into the main project.
 
 Project Ideas
