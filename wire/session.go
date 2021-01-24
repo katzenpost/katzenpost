@@ -146,7 +146,7 @@ func (s *Session) handshake() error {
 		s.authenticationKey.Reset() // Don't need this anymore, and s has a copy.
 		atomic.CompareAndSwapUint32(&s.state, stateInit, stateInvalid)
 	}()
-	prologue := []byte{0x00}
+	prologue := []byte{0x01} // Prologue indicates version 1. Version 0 uses NewHope Simple not Kyber.
 
 	// Convert to the noise library's idea of a X25519 key.
 	dhKey := noise.DHKey{
@@ -155,7 +155,7 @@ func (s *Session) handshake() error {
 	}
 
 	// Initialize the Noise library.
-	cs := noise.NewCipherSuiteHFS(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b, noise.HFSNewHopeSimple)
+	cs := noise.NewCipherSuiteHFS(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b, noise.HFSKyber)
 	hs, err := noise.NewHandshakeState(noise.Config{
 		CipherSuite:   cs,
 		Random:        s.randReader,
@@ -171,15 +171,15 @@ func (s *Session) handshake() error {
 	const (
 		prologueLen = 1
 		keyLen      = 32
-		sendALen    = 1824
-		sendBLen    = 2176
-		msg1Len     = prologueLen + keyLen + sendALen                            // -> (prologue), e, f
-		msg2Len     = (keyLen + sendBLen + macLen + keyLen) + (macLen + authLen) // <- e, f, ee, ff, s, es, (auth)
-		msg3Len     = (macLen + keyLen) + (macLen + authLen)                     // -> s, se, (auth)
+		sendALen    = 1600
+		sendBLen    = 1568
+		msg1Len     = prologueLen + sendALen                 // -> (prologue), e, e1
+		msg2Len     = 1680 + authLen                         // <- e, ee, ekem1, s, es, (auth)
+		msg3Len     = (macLen + keyLen) + (macLen + authLen) // -> s, se, (auth)
 	)
 
 	if s.isInitiator {
-		// -> (prologue), e, f
+		// -> (prologue), e, e1
 		msg1 := make([]byte, 0, msg1Len)
 		msg1 = append(msg1, prologue...)
 		msg1, _, _, err = hs.WriteMessage(msg1, nil)
@@ -190,7 +190,7 @@ func (s *Session) handshake() error {
 			return err
 		}
 
-		// <- e, f, ee, ff, s, es, (auth)
+		// <- e, ee, ekem1, s, es, (auth)
 		msg2 := make([]byte, msg2Len)
 		if _, err = io.ReadFull(s.conn, msg2); err != nil {
 			return err
@@ -233,7 +233,7 @@ func (s *Session) handshake() error {
 			return err
 		}
 	} else {
-		// -> (prologue), e, f
+		// -> (prologue), e, e1
 		msg1 := make([]byte, msg1Len)
 		if _, err = io.ReadFull(s.conn, msg1); err != nil {
 			return err
@@ -246,7 +246,7 @@ func (s *Session) handshake() error {
 			return err
 		}
 
-		// <- e, f, ee, ff, s, es, (auth)
+		// <- e, ee, ekem1, s, es, (auth)
 		ourAuth := &authenticateMessage{
 			ad:       s.additionalData,
 			unixTime: uint32(time.Now().Unix()), // XXX: Add noise.
