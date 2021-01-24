@@ -6,6 +6,8 @@ This repository contains the sources of the Katzenpost website.
 Download
 ========
 
+::
+
     git clone https://github.com/katzenpost/website.git
     cd website/docs
     git pull # update submodule
@@ -15,7 +17,7 @@ Build
 =====
 
 To build locally, install `sphinx
-<http://www.sphinx-doc.org/en/stable/install.html>`_, then run ``make html`` (or ``make text`` for plaintext output).
+<http://www.sphinx-doc.org/en/stable/install.html>`_, then run ``make html`` (or ``make text`` for plaintext output)::
 
     pip install -U ablog sphinx
     make html
@@ -24,6 +26,8 @@ To build locally, install `sphinx
     
 Deploy
 ======
+
+::
 
     ./publish.sh
 
