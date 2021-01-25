@@ -10,6 +10,6 @@ require (
 	github.com/katzenpost/catshadow v0.0.27
 	github.com/katzenpost/client v0.0.18
 	github.com/muesli/go-app-paths v0.2.1
-	github.com/therecipe/qt v0.0.0-20200126204426-5074eb6d8c41
+	github.com/therecipe/qt v0.0.0-20200904063919-c0c124a5770d
 	golang.org/x/crypto v0.0.0-20200429183012-4b2356b1ed79
 )
