@@ -32,7 +32,7 @@
 
 [Debug]
   CaseSensitiveUserIdentifiers = false
-  PollingInterval = 1000
+  PollingInterval = 500
   PreferedTransports = ["onion"]
 
 [Panda]
