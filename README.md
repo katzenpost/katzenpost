@@ -24,9 +24,10 @@ You will also need Qt5 and its development headers installed.
 #### Building catchat
 
     export QT_PKG_CONFIG=true
-    go get -u -v -tags=no_env github.com/therecipe/qt/cmd/...
     go get -d -u -v github.com/katzenpost/catchat
     cd $(go env GOPATH)/src/github.com/katzenpost/catchat
+    go get -u -v -tags=no_env github.com/therecipe/qt/cmd/...
+    go mod vendor
     $(go env GOPATH)/bin/qtdeploy build desktop
 
 
