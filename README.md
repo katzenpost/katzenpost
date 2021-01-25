@@ -27,8 +27,13 @@ You will also need Qt5 and its development headers installed.
     go get -d -u -v github.com/katzenpost/catchat
     cd $(go env GOPATH)/src/github.com/katzenpost/catchat
     go get -u -v -tags=no_env github.com/therecipe/qt/cmd/...
+    $(go env GOPATH)/bin/qtsetup
     go mod vendor
     $(go env GOPATH)/bin/qtdeploy build desktop
+
+Note that you may also need to export the QT_VERSION of your systems Qt5 libraries, for example on debian testing the packaged version is 5.15.2.
+
+    export QT_VERSION=5.15.2
 
 
 ### Building within a Docker container

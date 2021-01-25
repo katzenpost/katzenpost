@@ -85,6 +85,8 @@ github.com/katzenpost/authority v0.0.13 h1:pJWeyZ3iS7clfk91f6T9ESoNPcT43s59rtlGD
 github.com/katzenpost/authority v0.0.13/go.mod h1:6wFg6ZElyEHYsPN5PPLTT+KmmTAKucjIPVGPDdir9lQ=
 github.com/katzenpost/catshadow v0.0.27 h1:g3B3czf+1WkXklV+Ft+bjqNlK5EKberLefrFZcOXOWc=
 github.com/katzenpost/catshadow v0.0.27/go.mod h1:3SK7LaLXkxBIz97TZzW8riUTRRdfeItPB/4GZQEiVHQ=
+github.com/katzenpost/catshadow v0.0.28 h1:sVGo7JsbSOyfUTKP8CoyAkCw2zjnv2cC+QdfC59XmIA=
+github.com/katzenpost/catshadow v0.0.28/go.mod h1:ohsYNqEOo9W1UbaCla1pD32MDu/Yp87c8/bbmQYskrw=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
@@ -123,6 +125,8 @@ github.com/katzenpost/registration_client v0.0.3 h1:RfaJD39dWnS3Qotv+C9ZsiOFe2wW
 github.com/katzenpost/registration_client v0.0.3/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
 github.com/katzenpost/reunion v0.0.2 h1:qolw5oaUml2o4aq4di4kQxTvvkskRRcgo9MWb/Oaew0=
 github.com/katzenpost/reunion v0.0.2/go.mod h1:nvMQkq77L09im03ndYzvTZT6FFMeHaeyElhF9WuMSSw=
+github.com/katzenpost/reunion v0.0.3 h1:3LaS3rnb2TM1YqO3PFy4CMcq3Q6MkI80Q3pQXVSufto=
+github.com/katzenpost/reunion v0.0.3/go.mod h1:nvMQkq77L09im03ndYzvTZT6FFMeHaeyElhF9WuMSSw=
 github.com/katzenpost/server v0.0.13 h1:e94l/NF8RoDo2doYBUsgcZi8cmKcJWafN+cPIBUxgdo=
 github.com/katzenpost/server v0.0.13/go.mod h1:6cQYA4eWIAiX+YBlPW+2K52BIAfJEQERsbfHbYhAdFg=
 github.com/katzenpost/server v0.0.14 h1:cqLIDbrNHFyLCuA2optsBAjDQuGRlMcmRSv/CRKoe8w=
