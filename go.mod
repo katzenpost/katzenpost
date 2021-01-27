@@ -12,7 +12,7 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/katzenpost/authority v0.0.13
+	github.com/katzenpost/authority v0.0.14
 	github.com/katzenpost/core v0.0.12
 	github.com/prometheus/client_golang v1.6.0
 	github.com/stretchr/testify v1.4.0
