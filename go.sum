@@ -21,6 +21,8 @@ github.com/katzenpost/noise v0.0.0-20210124211525-27a6fd2c9d6e h1:O1WTxdt1Z6hsud
 github.com/katzenpost/noise v0.0.0-20210124211525-27a6fd2c9d6e/go.mod h1:L6ioEZo4vpnAgdh4x8qenV7T0/k8mltat1EjxQO0TNA=
 github.com/katzenpost/noise v0.0.0-20210124214301-a4fefc0ffd7f h1:kxk/WPxabKtj5/x+YfXNqDhcsBzqkQ8w5dvgVFtBOyE=
 github.com/katzenpost/noise v0.0.0-20210124214301-a4fefc0ffd7f/go.mod h1:L6ioEZo4vpnAgdh4x8qenV7T0/k8mltat1EjxQO0TNA=
+github.com/katzenpost/noise v0.0.1 h1:xdabBTuulwwspmuvCHx25GffA+We14RaVLQadOcGiW8=
+github.com/katzenpost/noise v0.0.1/go.mod h1:L6ioEZo4vpnAgdh4x8qenV7T0/k8mltat1EjxQO0TNA=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
 github.com/kr/pretty v0.2.1/go.mod h1:ipq/a2n7PKx3OHsz4KJII5eveXtPO4qwEXGdVfWzfnI=
