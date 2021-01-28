@@ -1,6 +1,7 @@
 import QtQuick 2.5
 import QtQuick.Controls 2.2
 import QtQuick.Layouts 1.3
+import QtQuick.Dialogs 1.3
 
 ListView {
     id: contactList
@@ -24,6 +25,35 @@ ListView {
         height: 64
         onClicked: {
             contactList.currentIndex = index
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            // we don't want to eat clicks on the Label
+            acceptedButtons: Qt.RightButton
+            propagateComposedEvents: true
+
+            onReleased: {
+                if (mouse.button == Qt.RightButton) {
+                    contextMenu.x = mouse.x;
+                    contextMenu.y = mouse.y;
+                    contextMenu.open();
+                    return;
+                }
+
+                mouse.accepted = false;
+            }
+
+            Menu {
+                id: contextMenu
+                MenuItem {
+                    text: "Change Avatar"
+                    onTriggered: {
+                        contactList.currentIndex = index
+                        imageFileDialog.open()
+                    }
+                }
+            }
         }
 
         RowLayout {
@@ -59,6 +89,23 @@ ListView {
                 text: "Awaiting key exchange"
                 opacity: 0.66
                 visible: !model.keyexchanged
+            }
+        }
+    }
+
+    FileDialog {
+        id: imageFileDialog
+        title: "Please choose an avatar"
+        folder: shortcuts.home
+        nameFilters: [ "Image files (*.jpg *.jpeg *.png *.gif)", "All files (*)" ]
+        selectExisting: true
+        selectMultiple: false
+
+        onAccepted: {
+            for (var i = 0; i < imageFileDialog.fileUrls.length; i++) {
+                var nickname = model.data(model.index(0, 0), Qt.UserRole)
+
+                accountBridge.loadAvatar(nickname, imageFileDialog.fileUrls[i])
             }
         }
     }

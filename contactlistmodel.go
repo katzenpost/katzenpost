@@ -2,7 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"net/url"
+	"os"
 
+	gap "github.com/muesli/go-app-paths"
 	"github.com/therecipe/qt/core"
 )
 
@@ -81,6 +85,13 @@ func (m *ContactListModel) data(index *core.QModelIndex, role int) *core.QVarian
 	case RoleAvatar:
 		{
 			if p.Avatar == "" {
+				scope := gap.NewScope(gap.User, "catchat")
+				dst, _ := scope.DataPath(p.Nickname)
+				_, err := os.Stat(dst)
+				if err == nil && !os.IsNotExist(err) {
+					return core.NewQVariant1("file://" + dst)
+				}
+
 				return core.NewQVariant1("qrc:/qml/images/katzenpost_logo.png")
 			} else {
 				return core.NewQVariant1(p.Avatar)
@@ -148,6 +159,46 @@ func (m *ContactListModel) updateContactStatus(nickname string, keyExchanged boo
 			if accountBridge.Recipient() == nickname {
 				accountBridge.SetKeyExchanged(true)
 			}
+
+			return
+		}
+	}
+}
+
+func (m *ContactListModel) updateAvatar(nickname string, image string) {
+	fmt.Println("Updating contact avatar:", nickname, image)
+	for _, v := range m.Contacts() {
+		if v.Nickname == nickname {
+			scope := gap.NewScope(gap.User, "catchat")
+			dst, _ := scope.DataPath(nickname)
+
+			u, err := url.ParseRequestURI(image)
+			if err != nil {
+				return
+			}
+			source, err := os.Open(u.Path)
+			if err != nil {
+				return
+			}
+			defer source.Close()
+
+			destination, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+			if err != nil {
+				return
+			}
+			defer destination.Close()
+
+			_, err = io.Copy(destination, source)
+			if err != nil {
+				return
+			}
+
+			v.Avatar = "file://" + dst
+			fmt.Println(v.Avatar)
+
+			var fIndex = m.Index(0, 0, core.NewQModelIndex())
+			var lIndex = m.Index(len(m.Contacts())-1, 0, core.NewQModelIndex())
+			m.DataChanged(fIndex, lIndex, []int{RoleAvatar})
 
 			return
 		}

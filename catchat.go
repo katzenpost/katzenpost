@@ -158,6 +158,11 @@ func main() {
 		panic(err)
 	}
 	os.MkdirAll(configDir, 0700)
+	dataDir, err := scope.DataDirs()
+	if err != nil {
+		panic(err)
+	}
+	os.MkdirAll(dataDir[0], 0700)
 	configFile, err := scope.ConfigPath("catchat.conf")
 	if err != nil {
 		panic(err)
