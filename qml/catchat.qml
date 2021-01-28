@@ -1,4 +1,4 @@
-import QtQuick 2.4
+import QtQuick 2.6
 import QtQuick.Controls 2.2
 import QtQuick.Controls.Material 2.1
 import QtQuick.Layouts 1.3
@@ -103,6 +103,34 @@ ApplicationWindow {
                         errorDialog.close()
                     }
                 }
+            }
+        }
+    }
+
+    Item {
+        Shortcut {
+            sequence: "Ctrl+Q"
+            onActivated: {
+                Qt.quit()
+            }
+        }
+        Shortcut {
+            sequence: "Ctrl+N"
+            onActivated: {
+                addContactDialog.reset()
+                addContactDialog.open()
+            }
+        }
+        Shortcut {
+            sequence: "Ctrl+,"
+            onActivated: {
+                settingsDialog.open()
+            }
+        }
+        Shortcut {
+            sequence: "Ctrl+K"
+            onActivated: {
+                contactList.forceActiveFocus()
             }
         }
     }
