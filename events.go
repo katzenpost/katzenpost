@@ -52,7 +52,13 @@ func handleEvent(ev interface{}, conversationModel *ConversationModel, contactLi
 		conversationModel.updateMessageStatus(string(event.MessageID[:]), StatusDelivered)
 
 	case *catshadow.MessageReceivedEvent:
-		notify("catchat", "New message received from "+event.Nickname)
+		switch config.Notification {
+		case "Full":
+			notify("catchat", "New message received from "+event.Nickname)
+		case "Anonymized":
+			notify("catchat", "New message received")
+		}
+
 		if accountBridge.Recipient() != event.Nickname {
 			return
 		}
