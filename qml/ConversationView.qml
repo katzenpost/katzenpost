@@ -5,6 +5,7 @@ import QtQuick.Layouts 1.3
 
 Page {
     anchors.fill: parent
+    property alias messageTextField: messageField
 
     header: ToolBar {
         Material.primary: Material.accent

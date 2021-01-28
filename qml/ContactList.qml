@@ -14,6 +14,7 @@ ListView {
     onCurrentItemChanged: {
         var nickname = model.data(model.index(currentIndex, 0), Qt.UserRole)
         swipe.currentIndex = 1
+        conversationView.messageTextField.forceActiveFocus()
         accountBridge.loadConversation(nickname)
     }
 
