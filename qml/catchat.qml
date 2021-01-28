@@ -58,6 +58,13 @@ ApplicationWindow {
             height: 500
         }
 
+        SettingsDialog {
+            id: settingsDialog
+            x: (mainWindow.width - width) / 2
+            y: mainWindow.height / 6
+            width: Math.min(mainWindow.width, mainWindow.height) / 3 * 2
+        }
+
         Popup {
             id: errorDialog
             modal: true
