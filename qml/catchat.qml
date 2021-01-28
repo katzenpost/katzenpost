@@ -202,6 +202,7 @@ ApplicationWindow {
                 x: parent.width - width
                 transformOrigin: Menu.TopRight
 
+/*
                 MenuItem {
                     text: qsTr("Connect")
                     onTriggered: function() {
@@ -209,12 +210,11 @@ ApplicationWindow {
                         connectDialog.open()
                     }
                 }
-                /*
+*/
                 MenuItem {
                     text: qsTr("Settings")
                     onTriggered: settingsDialog.open()
                 }
-                */
                 MenuItem {
                     text: qsTr("About")
                     onTriggered: aboutDialog.open()
