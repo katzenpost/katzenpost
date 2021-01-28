@@ -9,13 +9,14 @@ import (
 
 // Config holds catchat's config settings
 type Config struct {
-	Theme     string
-	Style     string
-	PositionX int
-	PositionY int
-	Width     int
-	Height    int
-	FirstRun  bool
+	Theme        string
+	Style        string
+	Notification string
+	PositionX    int
+	PositionY    int
+	Width        int
+	Height       int
+	FirstRun     bool
 }
 
 // LoadConfig returns the current config as a Config struct
@@ -23,9 +24,10 @@ func LoadConfig(configFile string) Config {
 	_, err := os.Stat(configFile)
 	if err != nil {
 		SaveConfig(configFile, Config{
-			Theme:    "Material",
-			Style:    "Dark",
-			FirstRun: true,
+			Theme:        "Material",
+			Style:        "Dark",
+			Notification: "Full",
+			FirstRun:     true,
 		})
 		//log.Fatal("Config file is missing, but a template was created for you! Please edit ", configFile)
 	}
@@ -40,6 +42,9 @@ func LoadConfig(configFile string) Config {
 	}
 	if config.Style == "" {
 		config.Style = "Dark"
+	}
+	if config.Notification == "" {
+		config.Notification = "Full"
 	}
 
 	return config

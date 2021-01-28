@@ -32,6 +32,7 @@ type ConfigBridge struct {
 	_ string `property:"redirectURL"`
 	_ string `property:"theme"`
 	_ string `property:"style"`
+	_ string `property:"notification"`
 	_ int    `property:"positionX"`
 	_ int    `property:"positionY"`
 	_ int    `property:"width"`
