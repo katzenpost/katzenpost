@@ -51,6 +51,7 @@ ApplicationWindow {
 
         AddContactDialog {
             id: addContactDialog
+            enabled: accountBridge.status == "Connected"
             x: mainWindow.width / 2 - width / 2
             y: mainWindow.height / 2 - height / 2 - mainWindow.header.height
             width: 340
@@ -117,8 +118,10 @@ ApplicationWindow {
         Shortcut {
             sequence: "Ctrl+N"
             onActivated: {
-                addContactDialog.reset()
-                addContactDialog.open()
+                if (accountBridge.status == "Connected") {
+                    addContactDialog.reset()
+                    addContactDialog.open()
+                }
             }
         }
         Shortcut {
@@ -233,6 +236,7 @@ ApplicationWindow {
             id: drawerLayout
             anchors.fill: parent
 
+/*
             Label {
                 text: accountBridge.nickname
             }
@@ -240,6 +244,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 orientation: Qt.Horizontal
             }
+*/
 
             ListView {
                 id: listView
@@ -250,13 +255,16 @@ ApplicationWindow {
                     width: parent.width
                     text: model.title
                     highlighted: ListView.isCurrentItem
+                    enabled: (model.sid != 0) || (accountBridge.status == "Connected")
                     onClicked: {
                         listView.currentIndex = -1
                         drawer.close()
                         switch (model.sid) {
                         case 0:
-                            addContactDialog.reset()
-                            addContactDialog.open()
+                            if (accountBridge.status == "Connected") {
+                                addContactDialog.reset()
+                                addContactDialog.open()
+                            }
                             break
                         case 1:
                             Qt.quit()
