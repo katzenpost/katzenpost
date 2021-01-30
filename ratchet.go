@@ -153,10 +153,6 @@ type savedKey struct {
 	timestamp time.Time
 }
 
-func (s *savedKey) wipe() {
-	utils.ExplicitBzero(s.key[:])
-}
-
 // Ratchet stucture contains the per-contact, crypto state.
 type Ratchet struct {
 	TheirSigningPublic  *memguard.LockedBuffer // 32 bytes long
@@ -294,7 +290,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 
 // fillKeyExchange sets elements of kx with key exchange information from the
 // ratchet.
-func (r *Ratchet) fillKeyExchange(kx *KeyExchange) error {
+func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
 	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
