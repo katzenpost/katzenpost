@@ -151,6 +151,10 @@ type savedKey struct {
 	timestamp time.Time
 }
 
+func (s *savedKey) wipe() {
+	utils.ExplicitBzero(s.key[:])
+}
+
 // Ratchet stucture contains the per-contact, crypto state.
 type Ratchet struct {
 	TheirSigningPublic  *memguard.LockedBuffer // 32 bytes long
@@ -640,6 +644,16 @@ func (r *Ratchet) mergeSavedKeys(newKeys map[[messageKeySize]byte]map[uint32]sav
 	}
 }
 
+func (r *Ratchet) wipeSavedKeys() {
+	for headerKey, keys := range r.saved {
+		for _, savedKey := range keys {
+			savedKey.wipe()
+		}
+		delete(r.saved, headerKey)
+		utils.ExplicitBzero(headerKey[:])
+	}
+}
+
 // isZeroKey returns true if key is all zeros.
 func isZeroKey(key *[32]byte) bool {
 	var x uint8
@@ -974,7 +988,8 @@ func DestroyRatchet(r *Ratchet) {
 	r.recvRatchetPublic.Destroy()
 	r.sendCount, r.recvCount = uint32(0), uint32(0)
 	r.prevSendCount = uint32(0)
-
 	r.kxPrivate0.Destroy()
 	r.kxPrivate1.Destroy()
+
+	r.wipeSavedKeys()
 }
