@@ -15,6 +15,7 @@ import (
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/crypto/extra25519"
+	"github.com/katzenpost/core/utils"
 
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
@@ -436,7 +437,7 @@ func (r *Ratchet) CompleteKeyExchange(kx *KeyExchange) error {
 
 	h := hmac.New(sha3.New256, keyMaterial)
 	r.rootKey = deriveKey(rootKeyLabel, h)
-	wipe(keyMaterial)
+	utils.ExplicitBzero(keyMaterial)
 
 	r.sendHeaderKey = memguard.NewBuffer(keySize)
 	r.recvHeaderKey = memguard.NewBuffer(keySize)
