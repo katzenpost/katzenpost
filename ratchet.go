@@ -268,7 +268,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 	copy(kx.PublicKey, r.MySigningPublic.ByteArray32()[:])
 	copy(kx.IdentityPublic, r.MyIdentityPublic.ByteArray32()[:])
 
-	err := r.FillKeyExchange(kx)
+	err := r.fillKeyExchange(kx)
 	if err != nil {
 		return nil, err
 	}
@@ -285,9 +285,9 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 	}, nil
 }
 
-// FillKeyExchange sets elements of kx with key exchange information from the
+// fillKeyExchange sets elements of kx with key exchange information from the
 // ratchet.
-func (r *Ratchet) FillKeyExchange(kx *KeyExchange) error {
+func (r *Ratchet) fillKeyExchange(kx *KeyExchange) error {
 	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
