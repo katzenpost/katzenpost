@@ -72,6 +72,51 @@ type SavedKeys struct {
 	MessageKeys []*MessageKey
 }
 
+// MarshalBinary implements encoding.BinaryUnmarshaler interface
+func (s *SavedKeys) MarshalBinary() ([]byte, error) {
+	type messageKey struct {
+		Num          uint32
+		Key          []byte
+		CreationTime int64
+	}
+	type savedKeys struct {
+		HeaderKey   []byte
+		MessageKeys []*messageKey
+	}
+	tmp := &savedKeys{}
+	tmp.HeaderKey = s.HeaderKey
+	for _, m := range s.MessageKeys {
+		tmp.MessageKeys = append(tmp.MessageKeys, &messageKey{Num: m.Num, Key: m.Key, CreationTime: m.CreationTime})
+	}
+	return cbor.Marshal(tmp)
+}
+
+// UnmarshalBinary instantiates memguard.LockedBuffer instances for each deserialized key
+func (s *SavedKeys) UnmarshalBinary(data []byte) error {
+	type messageKey struct {
+		Num          uint32
+		Key          []byte
+		CreationTime int64
+	}
+	type savedKeys struct {
+		HeaderKey   []byte
+		MessageKeys []*messageKey
+	}
+	tmp := &savedKeys{}
+
+	cbor.Unmarshal(data, &tmp)
+	if len(tmp.HeaderKey) == keySize {
+		s.HeaderKey = memguard.LockedButmp.HeaderKey
+		for _, m := range tmp.MessageKeys {
+			if len(m.Key) == keySize {
+				s.MessageKeys = append(s.MessageKeys, &MessageKey{Num: m.Num,
+					Key: m.Key, CreationTime: m.CreationTime})
+			}
+		}
+	}
+	return nil
+}
+
 // State constains all the data associated with a ratchet
 type State struct {
 	TheirSigningPublic  []byte
