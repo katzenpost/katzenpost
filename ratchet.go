@@ -203,9 +203,19 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 		saved: make(map[[keySize]byte]map[uint32]savedKey),
 	}
 
-	r.rootKey, _ = memguard.NewBufferFromReader(rand, privateKeySize)
-	r.kxPrivate0, _ = memguard.NewBufferFromReader(rand, privateKeySize)
-	r.kxPrivate1, _ = memguard.NewBufferFromReader(rand, privateKeySize)
+	var err error
+	r.rootKey, err = memguard.NewBufferFromReader(rand, privateKeySize)
+	if err != nil {
+		return nil, err
+	}
+	r.kxPrivate0, err = memguard.NewBufferFromReader(rand, privateKeySize)
+	if err != nil {
+		return nil, err
+	}
+	r.kxPrivate1, err = memguard.NewBufferFromReader(rand, privateKeySize)
+	if err != nil {
+		return nil, err
+	}
 
 	mySigningPublic, mySigningPrivate, err := ed25519.GenerateKey(rand)
 	if err != nil {
