@@ -31,7 +31,7 @@ const (
 	nonceInHeaderOffset = 4 + 4 + 32
 	// maxMissingMessages is the maximum number of missing messages that
 	// we'll keep track of.
-	maxMissingMessages = 8
+	MaxMissingMessages = 8
 
 	// RatchetKeyMaxLifetime is the maximum lifetime of the ratchet
 	RatchetKeyMaxLifetime = time.Hour * 672
