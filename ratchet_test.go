@@ -5,9 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/awnumar/memguard"
-	"golang.org/x/crypto/curve25519"
-
 	. "gopkg.in/check.v1"
 )
 
@@ -23,24 +20,6 @@ func now() time.Time {
 }
 
 func pairedRatchet(c *C) (aRatchet, bRatchet *Ratchet) {
-	// this is not using the secure memory lock as it is only testing
-	var privA, pubA, privB, pubB *memguard.LockedBuffer
-	var tmpPubA, tmpPubB [publicKeySize]byte
-	privA, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
-	privB, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
-
-	curve25519.ScalarBaseMult(&tmpPubA, privA.ByteArray32())
-	curve25519.ScalarBaseMult(&tmpPubB, privB.ByteArray32())
-	pubA = memguard.NewBufferFromBytes(tmpPubA[:])
-	pubB = memguard.NewBufferFromBytes(tmpPubB[:])
-
-	// These are the "Ed25519" public keys for the two parties. Of course,
-	// they're not actually valid Ed25519 keys but that doesn't matter
-	// here.
-	var sigA, sigB *memguard.LockedBuffer
-	sigA, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
-	sigB, _ = memguard.NewBufferFromReader(rand.Reader, publicKeySize)
-
 	var err error
 	aRatchet, err = InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
@@ -48,30 +27,25 @@ func pairedRatchet(c *C) (aRatchet, bRatchet *Ratchet) {
 	bRatchet, err = InitRatchet(rand.Reader)
 	c.Assert(err, IsNil)
 
-	// Forced here for purposes of the test
-	aRatchet.MyIdentityPrivate = privA
-	aRatchet.MySigningPublic = sigA
-	aRatchet.TheirIdentityPublic = pubB
-	aRatchet.TheirSigningPublic = sigB
+	// create the key exchange blobs
+	akx, err := aRatchet.CreateKeyExchange()
+	if err != nil {
+		panic(err)
+	}
+	bkx, err := bRatchet.CreateKeyExchange()
+	if err != nil {
+		panic(err)
+	}
 
-	bRatchet.MyIdentityPrivate = privB
-	bRatchet.MySigningPublic = sigB
-	bRatchet.TheirIdentityPublic = pubA
-	bRatchet.TheirSigningPublic = sigA
-
-	kxA, kxB := new(KeyExchange), new(KeyExchange)
-
-	err = aRatchet.FillKeyExchange(kxA)
-	c.Assert(err, IsNil)
-
-	err = bRatchet.FillKeyExchange(kxB)
-	c.Assert(err, IsNil)
-
-	err = aRatchet.CompleteKeyExchange(kxB)
-	c.Assert(err, IsNil)
-
-	err = bRatchet.CompleteKeyExchange(kxA)
-	c.Assert(err, IsNil)
+	// do the actual key exchange
+	err = aRatchet.ProcessKeyExchange(bkx)
+	if err != nil {
+		panic(err)
+	}
+	err = bRatchet.ProcessKeyExchange(akx)
+	if err != nil {
+		panic(err)
+	}
 
 	return
 }
@@ -101,10 +75,6 @@ func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 		panic(err)
 	}
 
-	// reinit the ratchets
-	a = reinitRatchet(c, a)
-	b = reinitRatchet(c, b)
-
 	// create the key exchange blobs
 	akx, err := a.CreateKeyExchange()
 	if err != nil {
@@ -124,10 +94,6 @@ func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
 	if err != nil {
 		panic(err)
 	}
-
-	// reinit the ratchets
-	a = reinitRatchet(c, a)
-	b = reinitRatchet(c, b)
 
 	// try to encrypt and decrypt a message
 	msg := []byte("test message")
