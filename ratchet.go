@@ -654,16 +654,6 @@ func (r *Ratchet) wipeSavedKeys() {
 	}
 }
 
-// isZeroKey returns true if key is all zeros.
-func isZeroKey(key *[32]byte) bool {
-	var x uint8
-	for _, v := range key {
-		x |= v
-	}
-
-	return x == 0
-}
-
 // Decrypt decrypts a message
 func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	msg, err := r.trySavedKeys(ciphertext)
@@ -678,7 +668,7 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	sealedHeader = sealedHeader[len(nonce):]
 
 	header, ok := secretbox.Open(nil, sealedHeader, &nonce, r.recvHeaderKey.ByteArray32())
-	ok = ok && !isZeroKey(r.recvHeaderKey.ByteArray32())
+	ok = ok && !utils.CtIsZero(r.recvHeaderKey.ByteArray32()[:])
 
 	if ok {
 		if len(header) != headerSize {
