@@ -140,10 +140,8 @@ func (s *DoubleRatchetSuite) Test_Serialization1(c *C) {
 	serialized, err := a.MarshalBinary()
 	c.Assert(err, IsNil)
 
-	r, err := InitRatchet(rand.Reader)
+	r, err := NewRatchetFromBytes(rand.Reader, serialized)
 	c.Assert(err, IsNil)
-
-	r.UnmarshalBinary(serialized)
 
 	// 2
 	msg2 := []byte(`The word privacy, its meaning abstract and debated, its connotations often
@@ -201,20 +199,12 @@ const (
 )
 
 func reinitRatchet(c *C, r *Ratchet) *Ratchet {
-	state := r.Marshal(now(), 1*time.Hour)
-	newR, err := InitRatchet(rand.Reader)
+	state, err := r.MarshalBinary()
 	c.Assert(err, IsNil)
-
-	newR.MyIdentityPrivate = r.MyIdentityPrivate
-	newR.TheirIdentityPublic = r.TheirIdentityPublic
-	newR.MySigningPublic = r.MySigningPublic
-	newR.TheirSigningPublic = r.TheirSigningPublic
-
-	err = newR.Unmarshal(state)
+	DestroyRatchet(r)
+	newR, err := NewRatchetFromBytes(rand.Reader, state)
 	c.Assert(err, IsNil)
-
 	return newR
-
 }
 
 func testScript(c *C, script []scriptAction) {
@@ -328,14 +318,12 @@ func (s *DoubleRatchetSuite) Test_serialize_savedkeys(c *C) {
 	serialized2, err := b.MarshalBinary()
 	c.Assert(err, IsNil)
 
-	r, err := InitRatchet(rand.Reader)
+	_, err = NewRatchetFromBytes(rand.Reader, serialized)
 	c.Assert(err, IsNil)
 
-	r.UnmarshalBinary(serialized)
-
-	t, err := InitRatchet(rand.Reader)
+	t, err := NewRatchetFromBytes(rand.Reader, serialized2)
 	c.Assert(err, IsNil)
-	t.UnmarshalBinary(serialized2)
+
 	result, err = t.Decrypt(encrypted3)
 	c.Assert(err, IsNil)
 	result, err = t.Decrypt(encrypted1)
