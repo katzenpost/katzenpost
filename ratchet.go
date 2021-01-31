@@ -167,14 +167,14 @@ type savedKey struct {
 
 // Ratchet stucture contains the per-contact, crypto state.
 type Ratchet struct {
-	TheirSigningPublic  *memguard.LockedBuffer // 32 bytes long
-	TheirIdentityPublic *memguard.LockedBuffer // 32 bytes long
+	theirSigningPublic  *memguard.LockedBuffer // 32 bytes long
+	theirIdentityPublic *memguard.LockedBuffer // 32 bytes long
 
-	MySigningPublic  *memguard.LockedBuffer // 32 bytes long
-	MySigningPrivate *memguard.LockedBuffer // 64 bytes long
+	mySigningPublic  *memguard.LockedBuffer // 32 bytes long
+	mySigningPrivate *memguard.LockedBuffer // 64 bytes long
 
-	MyIdentityPrivate *memguard.LockedBuffer // 32 bytes long
-	MyIdentityPublic  *memguard.LockedBuffer // 32 bytes long
+	myIdentityPrivate *memguard.LockedBuffer // 32 bytes long
+	myIdentityPublic  *memguard.LockedBuffer // 32 bytes long
 
 	// Now is an optional function that will be used to get the current
 	// time. If nil, time.Now is used.
@@ -267,12 +267,12 @@ func newRatchetFromState(rand io.Reader, s *State) (*Ratchet, error) {
 		// key exchange has not completed yet.
 		r.kxPrivate0 = memguard.NewBufferFromBytes(s.Private0)
 		r.kxPrivate1 = memguard.NewBufferFromBytes(s.Private1)
-		r.TheirSigningPublic = memguard.NewBufferFromBytes(s.TheirSigningPublic)
-		r.TheirIdentityPublic = memguard.NewBufferFromBytes(s.TheirIdentityPublic)
-		r.MySigningPublic = memguard.NewBufferFromBytes(s.MySigningPublic)
-		r.MySigningPrivate = memguard.NewBufferFromBytes(s.MySigningPrivate)
-		r.MyIdentityPrivate = memguard.NewBufferFromBytes(s.MyIdentityPrivate)
-		r.MyIdentityPublic = memguard.NewBufferFromBytes(s.MyIdentityPublic)
+		r.theirSigningPublic = memguard.NewBufferFromBytes(s.TheirSigningPublic)
+		r.theirIdentityPublic = memguard.NewBufferFromBytes(s.TheirIdentityPublic)
+		r.mySigningPublic = memguard.NewBufferFromBytes(s.MySigningPublic)
+		r.mySigningPrivate = memguard.NewBufferFromBytes(s.MySigningPrivate)
+		r.myIdentityPrivate = memguard.NewBufferFromBytes(s.MyIdentityPrivate)
+		r.myIdentityPublic = memguard.NewBufferFromBytes(s.MyIdentityPublic)
 	}
 
 	for _, saved := range s.SavedKeys {
@@ -317,10 +317,10 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 		return nil, ErrFailedToInitializeRatchet
 	}
 
-	r.MySigningPublic = memguard.NewBufferFromBytes(mySigningPublic[:])
-	r.MySigningPrivate = memguard.NewBufferFromBytes(mySigningPrivate[:])
-	r.TheirSigningPublic = memguard.NewBuffer(keySize)
-	r.TheirIdentityPublic = memguard.NewBuffer(keySize)
+	r.mySigningPublic = memguard.NewBufferFromBytes(mySigningPublic[:])
+	r.mySigningPrivate = memguard.NewBufferFromBytes(mySigningPrivate[:])
+	r.theirSigningPublic = memguard.NewBuffer(keySize)
+	r.theirIdentityPublic = memguard.NewBuffer(keySize)
 	r.sendHeaderKey = memguard.NewBuffer(keySize)
 	r.recvHeaderKey = memguard.NewBuffer(keySize)
 	r.nextSendHeaderKey = memguard.NewBuffer(keySize)
@@ -330,22 +330,22 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	r.sendRatchetPrivate = memguard.NewBuffer(keySize)
 	r.recvRatchetPublic = memguard.NewBuffer(keySize)
 
-	r.MyIdentityPrivate = memguard.NewBuffer(privateKeySize)
-	r.MyIdentityPublic = memguard.NewBuffer(publicKeySize)
-	extra25519.PrivateKeyToCurve25519(r.MyIdentityPrivate.ByteArray32(), r.MySigningPrivate.ByteArray64())
-	curve25519.ScalarBaseMult(r.MyIdentityPublic.ByteArray32(), r.MyIdentityPrivate.ByteArray32())
+	r.myIdentityPrivate = memguard.NewBuffer(privateKeySize)
+	r.myIdentityPublic = memguard.NewBuffer(publicKeySize)
+	extra25519.PrivateKeyToCurve25519(r.myIdentityPrivate.ByteArray32(), r.mySigningPrivate.ByteArray64())
+	curve25519.ScalarBaseMult(r.myIdentityPublic.ByteArray32(), r.myIdentityPrivate.ByteArray32())
 
 	// sanity math assertion
 	curve25519Public := memguard.NewBuffer(publicKeySize)
-	extra25519.PublicKeyToCurve25519(curve25519Public.ByteArray32(), r.MySigningPublic.ByteArray32())
+	extra25519.PublicKeyToCurve25519(curve25519Public.ByteArray32(), r.mySigningPublic.ByteArray32())
 
-	if !r.MyIdentityPublic.EqualTo(curve25519Public.Bytes()) {
+	if !r.myIdentityPublic.EqualTo(curve25519Public.Bytes()) {
 		panic("Failed: Incorrect Public/Private Keys")
 	}
 
 	// zero initialize key fields
-	r.TheirSigningPublic = memguard.NewBuffer(publicKeySize)
-	r.TheirIdentityPublic = memguard.NewBuffer(publicKeySize)
+	r.theirSigningPublic = memguard.NewBuffer(publicKeySize)
+	r.theirIdentityPublic = memguard.NewBuffer(publicKeySize)
 	r.rootKey = memguard.NewBuffer(privateKeySize)
 	r.sendHeaderKey = memguard.NewBuffer(privateKeySize)
 	r.recvHeaderKey = memguard.NewBuffer(privateKeySize)
@@ -362,8 +362,8 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 // CreateKeyExchange created and add the appropiate fields for the KeyExchange
 func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 	kx := &KeyExchange{
-		PublicKey:      r.MySigningPublic.Bytes(),
-		IdentityPublic: r.MyIdentityPublic.Bytes(),
+		PublicKey:      r.mySigningPublic.Bytes(),
+		IdentityPublic: r.myIdentityPublic.Bytes(),
 	}
 
 	err := r.fillKeyExchange(kx)
@@ -376,11 +376,11 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 		return nil, err
 	}
 
-	sig := ed25519.Sign(ed25519.PrivateKey(r.MySigningPrivate.Bytes()), serialized)
+	sig := ed25519.Sign(ed25519.PrivateKey(r.mySigningPrivate.Bytes()), serialized)
 
-	r.MySigningPrivate.Destroy()
-	r.MySigningPublic.Destroy()
-	r.MyIdentityPublic.Destroy()
+	r.mySigningPrivate.Destroy()
+	r.mySigningPublic.Destroy()
+	r.myIdentityPublic.Destroy()
 
 	return &SignedKeyExchange{
 		Signed:    serialized,
@@ -457,13 +457,13 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 
 	signedKeyExchange.Wipe()
 
-	if r.TheirSigningPublic == nil {
-		r.TheirSigningPublic = memguard.NewBuffer(publicKeySize)
+	if r.theirSigningPublic == nil {
+		r.theirSigningPublic = memguard.NewBuffer(publicKeySize)
 	}
 
-	r.TheirSigningPublic.Melt()
-	defer r.TheirSigningPublic.Freeze()
-	r.TheirSigningPublic.Copy(kx.PublicKey)
+	r.theirSigningPublic.Melt()
+	defer r.theirSigningPublic.Freeze()
+	r.theirSigningPublic.Copy(kx.PublicKey)
 
 	var ed25519Public, curve25519Public [publicKeySize]byte
 	copy(ed25519Public[:], kx.PublicKey)
@@ -472,13 +472,13 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 		return ErrKeyExchangeKeysNotIsomorphicallyEqual
 	}
 
-	if r.TheirIdentityPublic == nil {
-		r.TheirIdentityPublic = memguard.NewBuffer(publicKeySize)
+	if r.theirIdentityPublic == nil {
+		r.theirIdentityPublic = memguard.NewBuffer(publicKeySize)
 	}
 
-	r.TheirIdentityPublic.Melt()
-	defer r.TheirIdentityPublic.Freeze()
-	r.TheirIdentityPublic.Copy(kx.IdentityPublic)
+	r.theirIdentityPublic.Melt()
+	defer r.theirIdentityPublic.Freeze()
+	r.theirIdentityPublic.Copy(kx.IdentityPublic)
 
 	defer kx.Wipe()
 	return r.completeKeyExchange(kx)
@@ -522,18 +522,18 @@ func (r *Ratchet) completeKeyExchange(kx *KeyExchange) error {
 	keyMaterial = append(keyMaterial, sharedKey[:]...)
 
 	if amAlice {
-		curve25519.ScalarMult(&sharedKey, r.MyIdentityPrivate.ByteArray32(), &theirDH)
+		curve25519.ScalarMult(&sharedKey, r.myIdentityPrivate.ByteArray32(), &theirDH)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), r.TheirIdentityPublic.ByteArray32())
+		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), r.theirIdentityPublic.ByteArray32())
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 	} else {
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), r.TheirIdentityPublic.ByteArray32())
+		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), r.theirIdentityPublic.ByteArray32())
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		curve25519.ScalarMult(&sharedKey, r.MyIdentityPrivate.ByteArray32(), &theirDH)
+		curve25519.ScalarMult(&sharedKey, r.myIdentityPrivate.ByteArray32(), &theirDH)
 		keyMaterial = append(keyMaterial, sharedKey[:]...)
 	}
 
-	r.MyIdentityPrivate.Destroy()
+	r.myIdentityPrivate.Destroy()
 
 	h := hmac.New(sha3.New256, keyMaterial)
 	deriveKey(r.rootKey, rootKeyLabel, h)
@@ -875,20 +875,20 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 
 // MarshalBinary transforms the object into a stream
 func (r *Ratchet) MarshalBinary() (data []byte, err error) {
-	s := r.Marshal(time.Now(), RatchetKeyMaxLifetime)
+	s := r.marshal(time.Now(), RatchetKeyMaxLifetime)
 	//defer s.Wipe()
 	return cbor.Marshal(s)
 }
 
 // Marshal transforms the object into a stream
-func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
+func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) *State {
 	s := &State{
-		TheirSigningPublic:  r.TheirSigningPublic.Bytes(),
-		TheirIdentityPublic: r.TheirIdentityPublic.Bytes(),
-		MySigningPublic:     r.MySigningPublic.Bytes(),
-		MySigningPrivate:    r.MySigningPrivate.Bytes(),
-		MyIdentityPrivate:   r.MyIdentityPrivate.Bytes(),
-		MyIdentityPublic:    r.MyIdentityPublic.Bytes(),
+		TheirSigningPublic:  r.theirSigningPublic.Bytes(),
+		TheirIdentityPublic: r.theirIdentityPublic.Bytes(),
+		MySigningPublic:     r.mySigningPublic.Bytes(),
+		MySigningPrivate:    r.mySigningPrivate.Bytes(),
+		MyIdentityPrivate:   r.myIdentityPrivate.Bytes(),
+		MyIdentityPublic:    r.myIdentityPublic.Bytes(),
 		RootKey:             r.rootKey.Bytes(),
 		SendHeaderKey:       r.sendHeaderKey.Bytes(),
 		RecvHeaderKey:       r.recvHeaderKey.Bytes(),
@@ -929,12 +929,12 @@ func (r *Ratchet) Marshal(now time.Time, lifetime time.Duration) *State {
 
 // DestroyRatchet destroys the ratchet
 func DestroyRatchet(r *Ratchet) {
-	r.TheirSigningPublic.Destroy()
-	r.TheirIdentityPublic.Destroy()
-	r.MySigningPublic.Destroy()
-	r.MySigningPrivate.Destroy()
-	r.MyIdentityPrivate.Destroy()
-	r.MyIdentityPublic.Destroy()
+	r.theirSigningPublic.Destroy()
+	r.theirIdentityPublic.Destroy()
+	r.mySigningPublic.Destroy()
+	r.mySigningPrivate.Destroy()
+	r.myIdentityPrivate.Destroy()
+	r.myIdentityPublic.Destroy()
 
 	r.rootKey.Destroy()
 	r.sendHeaderKey.Destroy()
