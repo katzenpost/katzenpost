@@ -131,8 +131,8 @@ func (s *SavedKeys) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// State constains all the data associated with a ratchet
-type State struct {
+// state constains all the data associated with a ratchet
+type state struct {
 	TheirSigningPublic  []byte
 	TheirIdentityPublic []byte
 	MySigningPublic     []byte
@@ -217,7 +217,7 @@ func (r *Ratchet) randBytes(buf []byte) {
 // there's an error.
 func NewRatchetFromBytes(rand io.Reader, data []byte) (*Ratchet, error) {
 	defer utils.ExplicitBzero(data)
-	state := State{}
+	state := state{}
 	if err := cbor.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
@@ -226,7 +226,7 @@ func NewRatchetFromBytes(rand io.Reader, data []byte) (*Ratchet, error) {
 
 // newRatchetFromState unmarshals state into a new ratchet.
 // state's fields are wiped in the process of copying them.
-func newRatchetFromState(rand io.Reader, s *State) (*Ratchet, error) {
+func newRatchetFromState(rand io.Reader, s *state) (*Ratchet, error) {
 	r := &Ratchet{
 		rand:          rand,
 		saved:         make(map[*memguard.LockedBuffer]map[uint32]savedKey),
@@ -881,8 +881,8 @@ func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 }
 
 // Marshal transforms the object into a stream
-func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) *State {
-	s := &State{
+func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) *state {
+	s := &state{
 		TheirSigningPublic:  r.theirSigningPublic.Bytes(),
 		TheirIdentityPublic: r.theirIdentityPublic.Bytes(),
 		MySigningPublic:     r.mySigningPublic.Bytes(),
