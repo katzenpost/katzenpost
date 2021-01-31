@@ -407,7 +407,6 @@ func (r *Ratchet) fillKeyExchange(kx *KeyExchange) error {
 
 // deriveKey takes an HMAC object and a label and calculates out = HMAC(k, label).
 func deriveKey(key *memguard.LockedBuffer, label []byte, h hash.Hash) {
-	// XXX: I'm not sure here...
 	h.Reset()
 	h.Write(label)
 	if !key.IsMutable() {
@@ -416,7 +415,7 @@ func deriveKey(key *memguard.LockedBuffer, label []byte, h hash.Hash) {
 	}
 	h.Sum(key.Bytes()[:0])
 	if key.Size() != keySize {
-		panic("Hash function too large")
+		panic("Hash function wrong size")
 	}
 }
 
@@ -515,7 +514,7 @@ func (r *Ratchet) completeKeyExchange(kx *KeyExchange) error {
 	var theirDH [publicKeySize]byte
 	copy(theirDH[:], kx.Dh)
 
-	//XXX can we make this a LockedBuffer as well?
+	// XXX can we make this a LockedBuffer as well?
 	keyMaterial := make([]byte, 0, publicKeySize*5)
 	var sharedKey [sharedKeySize]byte
 	curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), &theirDH)
