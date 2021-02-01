@@ -67,8 +67,8 @@ type serializedContact struct {
 
 type boundExchange struct {
 	serialized []byte
-	recipient string
-	provider string
+	recipient  string
+	provider   string
 }
 
 // Contact is a communications contact that we have bidirectional
@@ -179,17 +179,12 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 // the given Contact with deserialized Contact fields
 // from the given binary blob.
 func (c *Contact) UnmarshalBinary(data []byte) error {
-	r, err := ratchet.InitRatchet(rand.Reader)
-	if err != nil {
-		return err
-	}
-
 	s := new(serializedContact)
-	if err = cbor.Unmarshal(data, &s); err != nil {
+	if err := cbor.Unmarshal(data, &s); err != nil {
 		return err
 	}
 
-	err = r.UnmarshalBinary(s.Ratchet)
+	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet)
 	if err != nil {
 		return err
 	}
