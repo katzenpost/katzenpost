@@ -71,59 +71,51 @@ func (s *signedKeyExchange) Wipe() {
 	utils.ExplicitBzero(s.Signature)
 }
 
-// MessageKey is structure containing the data associated with the message key
-type MessageKey struct {
+// messageKey is structure containing the data associated with the message key
+type messageKey struct {
 	Num          uint32
 	Key          *memguard.LockedBuffer
 	CreationTime int64
 }
 
-// SavedKeys is structure containing the saved keys from delayed messages
-type SavedKeys struct {
+// savedKeys is structure containing the saved keys from delayed messages
+type savedKeys struct {
 	HeaderKey   *memguard.LockedBuffer
-	MessageKeys []*MessageKey
+	MessageKeys []*messageKey
+}
+
+type cborMessageKey struct {
+	Num          uint32
+	Key          []byte
+	CreationTime int64
+}
+type cborSavedKeys struct {
+	HeaderKey   []byte
+	MessageKeys []*cborMessageKey
 }
 
 // MarshalBinary implements encoding.BinaryUnmarshaler interface
-func (s *SavedKeys) MarshalBinary() ([]byte, error) {
-	type messageKey struct {
-		Num          uint32
-		Key          []byte
-		CreationTime int64
-	}
-	type savedKeys struct {
-		HeaderKey   []byte
-		MessageKeys []*messageKey
-	}
-	tmp := &savedKeys{}
+func (s *savedKeys) MarshalBinary() ([]byte, error) {
+	tmp := &cborSavedKeys{}
 	if s.HeaderKey.IsAlive() {
 		tmp.HeaderKey = s.HeaderKey.Bytes()
 		for _, m := range s.MessageKeys {
-			tmp.MessageKeys = append(tmp.MessageKeys, &messageKey{Num: m.Num, Key: m.Key.Bytes(), CreationTime: m.CreationTime})
+			tmp.MessageKeys = append(tmp.MessageKeys, &cborMessageKey{Num: m.Num, Key: m.Key.Bytes(), CreationTime: m.CreationTime})
 		}
 	}
 	return cbor.Marshal(tmp)
 }
 
 // UnmarshalBinary instantiates memguard.LockedBuffer instances for each deserialized key
-func (s *SavedKeys) UnmarshalBinary(data []byte) error {
-	type messageKey struct {
-		Num          uint32
-		Key          []byte
-		CreationTime int64
-	}
-	type savedKeys struct {
-		HeaderKey   []byte
-		MessageKeys []*messageKey
-	}
-	tmp := &savedKeys{}
+func (s *savedKeys) UnmarshalBinary(data []byte) error {
+	tmp := &cborSavedKeys{}
 
 	cbor.Unmarshal(data, &tmp)
 	if len(tmp.HeaderKey) == keySize {
 		s.HeaderKey = memguard.NewBufferFromBytes(tmp.HeaderKey)
 		for _, m := range tmp.MessageKeys {
 			if len(m.Key) == keySize {
-				s.MessageKeys = append(s.MessageKeys, &MessageKey{Num: m.Num,
+				s.MessageKeys = append(s.MessageKeys, &messageKey{Num: m.Num,
 					Key: memguard.NewBufferFromBytes(m.Key), CreationTime: m.CreationTime})
 			}
 		}
@@ -139,7 +131,7 @@ type state struct {
 	MySigningPrivate    []byte
 	MyIdentityPrivate   []byte
 	MyIdentityPublic    []byte
-	SavedKeys           []*SavedKeys
+	SavedKeys           []*savedKeys
 	RootKey             []byte
 	SendHeaderKey       []byte
 	RecvHeaderKey       []byte
@@ -906,18 +898,18 @@ func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) *state {
 	}
 
 	for headerKey, messageKeys := range r.saved {
-		keys := make([]*MessageKey, 0, len(messageKeys))
+		keys := make([]*messageKey, 0, len(messageKeys))
 		for messageNum, savedKey := range messageKeys {
 			if now.Sub(savedKey.timestamp) > lifetime {
 				continue
 			}
-			keys = append(keys, &MessageKey{
+			keys = append(keys, &messageKey{
 				Num:          messageNum,
 				Key:          savedKey.key,
 				CreationTime: savedKey.timestamp.UnixNano(),
 			})
 		}
-		s.SavedKeys = append(s.SavedKeys, &SavedKeys{
+		s.SavedKeys = append(s.SavedKeys, &savedKeys{
 			HeaderKey:   headerKey,
 			MessageKeys: keys,
 		})
