@@ -45,28 +45,28 @@ var (
 	ErrKeyExchangeKeysNotIsomorphicallyEqual  = errors.New("Ratchet: key exchange and identity public keys must be isomorphically equal")
 )
 
-// KeyExchange is structure containing the public keys
-type KeyExchange struct {
+// keyExchange is structure containing the public keys
+type keyExchange struct {
 	PublicKey      []byte
 	IdentityPublic []byte
 	Dh             []byte
 	Dh1            []byte
 }
 
-func (k *KeyExchange) Wipe() {
+func (k *keyExchange) Wipe() {
 	utils.ExplicitBzero(k.PublicKey)
 	utils.ExplicitBzero(k.IdentityPublic)
 	utils.ExplicitBzero(k.Dh)
 	utils.ExplicitBzero(k.Dh1)
 }
 
-// SignedKeyExchange is structure containing the signature data
-type SignedKeyExchange struct {
+// signedKeyExchange is structure containing the signature data
+type signedKeyExchange struct {
 	Signed    []byte
 	Signature []byte
 }
 
-func (s *SignedKeyExchange) Wipe() {
+func (s *signedKeyExchange) Wipe() {
 	utils.ExplicitBzero(s.Signed)
 	utils.ExplicitBzero(s.Signature)
 }
@@ -359,9 +359,9 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	return r, nil
 }
 
-// CreateKeyExchange created and add the appropiate fields for the KeyExchange
-func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
-	kx := &KeyExchange{
+// CreateKeyExchange created and add the appropiate fields for the keyExchange
+func (r *Ratchet) CreateKeyExchange() (*signedKeyExchange, error) {
+	kx := &keyExchange{
 		PublicKey:      r.mySigningPublic.Bytes(),
 		IdentityPublic: r.myIdentityPublic.Bytes(),
 	}
@@ -382,7 +382,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 	r.mySigningPublic.Destroy()
 	r.myIdentityPublic.Destroy()
 
-	return &SignedKeyExchange{
+	return &signedKeyExchange{
 		Signed:    serialized,
 		Signature: sig[:],
 	}, nil
@@ -390,7 +390,7 @@ func (r *Ratchet) CreateKeyExchange() (*SignedKeyExchange, error) {
 
 // fillKeyExchange sets elements of kx with key exchange information from the
 // ratchet.
-func (r *Ratchet) fillKeyExchange(kx *KeyExchange) error {
+func (r *Ratchet) fillKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
@@ -431,13 +431,13 @@ var (
 	chainKeyStepLabel  = []byte("chain key step")
 )
 
-// ProcessKeyExchange processes the data of a KeyExchange
-func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error {
+// ProcessKeyExchange processes the data of a keyExchange
+func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *signedKeyExchange) error {
 	if len(signedKeyExchange.Signature) != signatureSize {
 		return ErrInvalidSignatureLength
 	}
 
-	kx := new(KeyExchange)
+	kx := new(keyExchange)
 	err := cbor.Unmarshal(signedKeyExchange.Signed, &kx)
 	if err != nil {
 		return err
@@ -483,9 +483,9 @@ func (r *Ratchet) ProcessKeyExchange(signedKeyExchange *SignedKeyExchange) error
 	return r.completeKeyExchange(kx)
 }
 
-// completeKeyExchange takes a KeyExchange message from the other party and
+// completeKeyExchange takes a keyExchange message from the other party and
 // establishes the ratchet.
-func (r *Ratchet) completeKeyExchange(kx *KeyExchange) error {
+func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
