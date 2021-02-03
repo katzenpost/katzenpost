@@ -341,14 +341,12 @@ func (r *Ratchet) fillKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
-
-	public0 := memguard.NewBuffer(publicKeySize)
-	public1 := memguard.NewBuffer(publicKeySize)
-	curve25519.ScalarBaseMult(public0.ByteArray32(), r.kxPrivate0.ByteArray32())
-	curve25519.ScalarBaseMult(public1.ByteArray32(), r.kxPrivate1.ByteArray32())
-	kx.Dh = public0.Bytes()
-	kx.Dh1 = public1.Bytes()
-
+	public0 := [publicKeySize]byte{}
+	public1 := [publicKeySize]byte{}
+	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
+	curve25519.ScalarBaseMult(&public1, r.kxPrivate1.ByteArray32())
+	kx.Dh = public0[:]
+	kx.Dh1 = public1[:]
 	return nil
 }
 
