@@ -43,15 +43,25 @@ var (
 	ErrKeyExchangeKeysNotIsomorphicallyEqual  = errors.New("Ratchet: key exchange and identity public keys must be isomorphically equal")
 )
 
+// These constants are used as the label argument to deriveKey to derive
+// independent keys from a master key.
+var (
+	chainKeyLabel      = []byte("chain key")
+	headerKeyLabel     = []byte("header key")
+	nextHeaderKeyLabel = []byte("next header key")
+	rootKeyLabel       = []byte("root key")
+	rootKeyUpdateLabel = []byte("root key update")
+	messageKeyLabel    = []byte("message key")
+	chainKeyStepLabel  = []byte("chain key step")
+)
+
 // keyExchange is structure containing the public keys
 type keyExchange struct {
-	IdentityPublic []byte
-	Dh             []byte
-	Dh1            []byte
+	Dh  []byte
+	Dh1 []byte
 }
 
 func (k *keyExchange) Wipe() {
-	utils.ExplicitBzero(k.IdentityPublic)
 	utils.ExplicitBzero(k.Dh)
 	utils.ExplicitBzero(k.Dh1)
 }
@@ -110,25 +120,22 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 
 // state constains all the data associated with a ratchet
 type state struct {
-	TheirIdentityPublic []byte
-	MyIdentityPrivate   []byte
-	MyIdentityPublic    []byte
-	SavedKeys           []*savedKeys
-	RootKey             []byte
-	SendHeaderKey       []byte
-	RecvHeaderKey       []byte
-	NextSendHeaderKey   []byte
-	NextRecvHeaderKey   []byte
-	SendChainKey        []byte
-	RecvChainKey        []byte
-	SendRatchetPrivate  []byte
-	RecvRatchetPublic   []byte
-	SendCount           uint32
-	RecvCount           uint32
-	PrevSendCount       uint32
-	Private0            []byte
-	Private1            []byte
-	Ratchet             bool
+	SavedKeys          []*savedKeys
+	RootKey            []byte
+	SendHeaderKey      []byte
+	RecvHeaderKey      []byte
+	NextSendHeaderKey  []byte
+	NextRecvHeaderKey  []byte
+	SendChainKey       []byte
+	RecvChainKey       []byte
+	SendRatchetPrivate []byte
+	RecvRatchetPublic  []byte
+	SendCount          uint32
+	RecvCount          uint32
+	PrevSendCount      uint32
+	Private0           []byte
+	Private1           []byte
+	Ratchet            bool
 }
 
 // savedKey contains a message key and timestamp for a message which has not
@@ -141,10 +148,6 @@ type savedKey struct {
 
 // Ratchet stucture contains the per-contact, crypto state.
 type Ratchet struct {
-	theirIdentityPublic *memguard.LockedBuffer // 32 bytes long
-	myIdentityPrivate   *memguard.LockedBuffer // 32 bytes long
-	myIdentityPublic    *memguard.LockedBuffer // 32 bytes long
-
 	// Now is an optional function that will be used to get the current
 	// time. If nil, time.Now is used.
 	Now func() time.Time
@@ -236,9 +239,6 @@ func newRatchetFromState(rand io.Reader, s *state) (*Ratchet, error) {
 		// key exchange has not completed yet.
 		r.kxPrivate0 = memguard.NewBufferFromBytes(s.Private0)
 		r.kxPrivate1 = memguard.NewBufferFromBytes(s.Private1)
-		r.theirIdentityPublic = memguard.NewBufferFromBytes(s.TheirIdentityPublic)
-		r.myIdentityPrivate = memguard.NewBufferFromBytes(s.MyIdentityPrivate)
-		r.myIdentityPublic = memguard.NewBufferFromBytes(s.MyIdentityPublic)
 	}
 
 	for _, saved := range s.SavedKeys {
@@ -278,7 +278,6 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 		return nil, err
 	}
 
-	r.theirIdentityPublic = memguard.NewBuffer(keySize)
 	r.sendHeaderKey = memguard.NewBuffer(keySize)
 	r.recvHeaderKey = memguard.NewBuffer(keySize)
 	r.nextSendHeaderKey = memguard.NewBuffer(keySize)
@@ -287,25 +286,7 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	r.recvChainKey = memguard.NewBuffer(keySize)
 	r.sendRatchetPrivate = memguard.NewBuffer(keySize)
 	r.recvRatchetPublic = memguard.NewBuffer(keySize)
-
-	r.myIdentityPrivate, err = memguard.NewBufferFromReader(rand, privateKeySize)
-	if err != nil {
-		return nil, ErrFailedToInitializeRatchet
-	}
-	r.myIdentityPublic = memguard.NewBuffer(publicKeySize)
-	curve25519.ScalarBaseMult(r.myIdentityPublic.ByteArray32(), r.myIdentityPrivate.ByteArray32())
-
-	// zero initialize key fields
-	r.theirIdentityPublic = memguard.NewBuffer(publicKeySize)
-	r.rootKey = memguard.NewBuffer(privateKeySize)
-	r.sendHeaderKey = memguard.NewBuffer(privateKeySize)
-	r.recvHeaderKey = memguard.NewBuffer(privateKeySize)
-	r.nextSendHeaderKey = memguard.NewBuffer(privateKeySize)
-	r.nextRecvHeaderKey = memguard.NewBuffer(privateKeySize)
-	r.sendChainKey = memguard.NewBuffer(privateKeySize)
-	r.recvChainKey = memguard.NewBuffer(privateKeySize)
-	r.sendRatchetPrivate = memguard.NewBuffer(privateKeySize)
-	r.recvRatchetPublic = memguard.NewBuffer(privateKeySize)
+	r.rootKey = memguard.NewBuffer(keySize)
 
 	return r, nil
 }
@@ -316,38 +297,22 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 // Ratchet's ProcessKeyExchange method to process this byte blob
 // and establish a communications channel with the sender.
 func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
-	kx := &keyExchange{
-		IdentityPublic: r.myIdentityPublic.Bytes(),
-	}
-
-	err := r.fillKeyExchange(kx)
-	if err != nil {
-		return nil, err
-	}
-
-	serialized, err := cbor.Marshal(kx)
-	if err != nil {
-		return nil, err
-	}
-
-	r.myIdentityPublic.Destroy()
-
-	return serialized, nil
-}
-
-// fillKeyExchange sets elements of kx with key exchange information from the
-// ratchet.
-func (r *Ratchet) fillKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
-		return ErrHandshakeAlreadyComplete
+		return nil, ErrHandshakeAlreadyComplete
 	}
 	public0 := [publicKeySize]byte{}
 	public1 := [publicKeySize]byte{}
 	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
 	curve25519.ScalarBaseMult(&public1, r.kxPrivate1.ByteArray32())
-	kx.Dh = public0[:]
-	kx.Dh1 = public1[:]
-	return nil
+	kx := &keyExchange{
+		Dh:  public0[:],
+		Dh1: public1[:],
+	}
+	serialized, err := cbor.Marshal(kx)
+	if err != nil {
+		return nil, err
+	}
+	return serialized, nil
 }
 
 // deriveKey takes an HMAC object and a label and calculates out = HMAC(k, label).
@@ -364,18 +329,6 @@ func deriveKey(key *memguard.LockedBuffer, label []byte, h hash.Hash) {
 	}
 }
 
-// These constants are used as the label argument to deriveKey to derive
-// independent keys from a master key.
-var (
-	chainKeyLabel      = []byte("chain key")
-	headerKeyLabel     = []byte("header key")
-	nextHeaderKeyLabel = []byte("next header key")
-	rootKeyLabel       = []byte("root key")
-	rootKeyUpdateLabel = []byte("root key update")
-	messageKeyLabel    = []byte("message key")
-	chainKeyStepLabel  = []byte("chain key step")
-)
-
 // ProcessKeyExchange processes the data of a keyExchange
 // which is used to establish an encrypted authenticated
 // communications channel.
@@ -385,15 +338,6 @@ func (r *Ratchet) ProcessKeyExchange(exchangePayload []byte) error {
 	if err != nil {
 		return err
 	}
-
-	if len(kx.IdentityPublic) != publicKeySize {
-		return ErrInvalidPublicIdentityKey
-	}
-
-	r.theirIdentityPublic.Melt()
-	defer r.theirIdentityPublic.Freeze()
-	r.theirIdentityPublic.Copy(kx.IdentityPublic)
-
 	defer kx.Wipe()
 	return r.completeKeyExchange(kx)
 }
@@ -431,20 +375,6 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), &theirDH)
 	keyMaterial = append(keyMaterial, sharedKey[:]...)
 
-	if amAlice {
-		curve25519.ScalarMult(&sharedKey, r.myIdentityPrivate.ByteArray32(), &theirDH)
-		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), r.theirIdentityPublic.ByteArray32())
-		keyMaterial = append(keyMaterial, sharedKey[:]...)
-	} else {
-		curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), r.theirIdentityPublic.ByteArray32())
-		keyMaterial = append(keyMaterial, sharedKey[:]...)
-		curve25519.ScalarMult(&sharedKey, r.myIdentityPrivate.ByteArray32(), &theirDH)
-		keyMaterial = append(keyMaterial, sharedKey[:]...)
-	}
-
-	r.myIdentityPrivate.Destroy()
-
 	h := hmac.New(sha3.New256, keyMaterial)
 	deriveKey(r.rootKey, rootKeyLabel, h)
 	utils.ExplicitBzero(keyMaterial)
@@ -471,11 +401,8 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 
 	r.kxPrivate0.Melt()
 	r.kxPrivate1.Melt()
-	r.kxPrivate0.Wipe()
-	r.kxPrivate1.Wipe()
-	r.kxPrivate0.Freeze()
-	r.kxPrivate1.Freeze()
-
+	r.kxPrivate0.Destroy()
+	r.kxPrivate1.Destroy()
 	return nil
 }
 
@@ -793,24 +720,25 @@ func (r *Ratchet) MarshalBinary() (data []byte, err error) {
 // Marshal transforms the object into a stream
 func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) *state {
 	s := &state{
-		TheirIdentityPublic: r.theirIdentityPublic.Bytes(),
-		MyIdentityPrivate:   r.myIdentityPrivate.Bytes(),
-		MyIdentityPublic:    r.myIdentityPublic.Bytes(),
-		RootKey:             r.rootKey.Bytes(),
-		SendHeaderKey:       r.sendHeaderKey.Bytes(),
-		RecvHeaderKey:       r.recvHeaderKey.Bytes(),
-		NextSendHeaderKey:   r.nextSendHeaderKey.Bytes(),
-		NextRecvHeaderKey:   r.nextRecvHeaderKey.Bytes(),
-		SendChainKey:        r.sendChainKey.Bytes(),
-		RecvChainKey:        r.recvChainKey.Bytes(),
-		SendRatchetPrivate:  r.sendRatchetPrivate.Bytes(),
-		RecvRatchetPublic:   r.recvRatchetPublic.Bytes(),
-		SendCount:           r.sendCount,
-		RecvCount:           r.recvCount,
-		PrevSendCount:       r.prevSendCount,
-		Private0:            r.kxPrivate0.Bytes(),
-		Private1:            r.kxPrivate1.Bytes(),
-		Ratchet:             r.ratchet,
+		RootKey:            r.rootKey.Bytes(),
+		SendHeaderKey:      r.sendHeaderKey.Bytes(),
+		RecvHeaderKey:      r.recvHeaderKey.Bytes(),
+		NextSendHeaderKey:  r.nextSendHeaderKey.Bytes(),
+		NextRecvHeaderKey:  r.nextRecvHeaderKey.Bytes(),
+		SendChainKey:       r.sendChainKey.Bytes(),
+		RecvChainKey:       r.recvChainKey.Bytes(),
+		SendRatchetPrivate: r.sendRatchetPrivate.Bytes(),
+		RecvRatchetPublic:  r.recvRatchetPublic.Bytes(),
+		SendCount:          r.sendCount,
+		RecvCount:          r.recvCount,
+		PrevSendCount:      r.prevSendCount,
+		Ratchet:            r.ratchet,
+	}
+	if r.kxPrivate0 != nil {
+		s.Private0 = r.kxPrivate0.Bytes()
+	}
+	if r.kxPrivate1 != nil {
+		s.Private1 = r.kxPrivate1.Bytes()
 	}
 
 	for headerKey, messageKeys := range r.saved {
@@ -836,10 +764,6 @@ func (r *Ratchet) marshal(now time.Time, lifetime time.Duration) *state {
 
 // DestroyRatchet destroys the ratchet
 func DestroyRatchet(r *Ratchet) {
-	r.theirIdentityPublic.Destroy()
-	r.myIdentityPrivate.Destroy()
-	r.myIdentityPublic.Destroy()
-
 	r.rootKey.Destroy()
 	r.sendHeaderKey.Destroy()
 	r.recvHeaderKey.Destroy()
@@ -851,8 +775,11 @@ func DestroyRatchet(r *Ratchet) {
 	r.recvRatchetPublic.Destroy()
 	r.sendCount, r.recvCount = uint32(0), uint32(0)
 	r.prevSendCount = uint32(0)
-	r.kxPrivate0.Destroy()
-	r.kxPrivate1.Destroy()
-
+	if r.kxPrivate0 != nil {
+		r.kxPrivate0.Destroy()
+	}
+	if r.kxPrivate1 != nil {
+		r.kxPrivate1.Destroy()
+	}
 	r.wipeSavedKeys()
 }
