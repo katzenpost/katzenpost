@@ -404,6 +404,7 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 // Encrypt acts like append() but appends an encrypted version of msg to out.
 func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 	if r.ratchet {
+		var err error
 		r.sendRatchetPrivate, err = memguard.NewBufferFromReader(r.rand, keySize)
 		if err != nil {
 			panic(err)
