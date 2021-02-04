@@ -404,7 +404,10 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 // Encrypt acts like append() but appends an encrypted version of msg to out.
 func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 	if r.ratchet {
-		r.sendRatchetPrivate, _ = memguard.NewBufferFromReader(r.rand, keySize)
+		r.sendRatchetPrivate, err = memguard.NewBufferFromReader(r.rand, keySize)
+		if err != nil {
+			panic(err)
+		}
 
 		r.sendHeaderKey.Melt()
 		r.sendHeaderKey.Copy(r.nextSendHeaderKey.ByteArray32()[:])
