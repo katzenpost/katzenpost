@@ -2,106 +2,73 @@ package ratchet
 
 import (
 	"crypto/rand"
+	"fmt"
 	"testing"
-	"time"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/require"
 )
 
-func Test(t *testing.T) { TestingT(t) }
-
-type DoubleRatchetSuite struct{}
-
-var _ = Suite(&DoubleRatchetSuite{})
-
-func now() time.Time {
-	var t time.Time
-	return t
-}
-
-func pairedRatchet(c *C) (aRatchet, bRatchet *Ratchet) {
+func pairedRatchet(t *testing.T) (aRatchet, bRatchet *Ratchet) {
 	var err error
 	aRatchet, err = InitRatchet(rand.Reader)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	bRatchet, err = InitRatchet(rand.Reader)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	// create the key exchange blobs
 	akx, err := aRatchet.CreateKeyExchange()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	bkx, err := bRatchet.CreateKeyExchange()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	// do the actual key exchange
 	err = aRatchet.ProcessKeyExchange(bkx)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	err = bRatchet.ProcessKeyExchange(akx)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	return
 }
 
-func (s *DoubleRatchetSuite) Test_KeyExchange(c *C) {
-	a, b := pairedRatchet(c)
+func Test_KeyExchange(t *testing.T) {
+	a, b := pairedRatchet(t)
 
 	msg := []byte("test message")
 	encrypted := a.Encrypt(nil, msg)
 	result, err := b.Decrypt(encrypted)
-	c.Assert(err, IsNil)
-
-	c.Assert(msg, DeepEquals, result)
+	require.NoError(t, err)
+	require.Equal(t, msg, result)
 
 	DestroyRatchet(a)
 	DestroyRatchet(b)
 }
 
-func (s *DoubleRatchetSuite) Test_RealKeyExchange(c *C) {
+func Test_RealKeyExchange(t *testing.T) {
 	// create two new ratchets
 	a, err := InitRatchet(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	b, err := InitRatchet(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	// create the key exchange blobs
 	akx, err := a.CreateKeyExchange()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	bkx, err := b.CreateKeyExchange()
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	// do the actual key exchange
 	err = a.ProcessKeyExchange(bkx)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	err = b.ProcessKeyExchange(akx)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	// try to encrypt and decrypt a message
 	msg := []byte("test message")
 	encrypted := a.Encrypt(nil, msg)
 	result, err := b.Decrypt(encrypted)
-	c.Assert(err, IsNil)
-
-	c.Assert(msg, DeepEquals, result)
+	require.NoError(t, err)
+	require.Equal(t, msg, result)
 
 	msg2 := []byte(`This essay might seem to focus on the ethical weight of
 each scientist’s personal, professional choices. But I am actually more concerned
@@ -109,39 +76,36 @@ about how we, as cryptographers and computer scientists, act in aggregate. Our
 collective behavior embodies values—and the institutions we create do, too.`)
 	encrypted = a.Encrypt(nil, msg2)
 	result, err = b.Decrypt(encrypted)
-
-	c.Assert(err, IsNil)
-	c.Assert(msg2, DeepEquals, result)
+	require.NoError(t, err)
+	require.Equal(t, msg2, result)
 
 	DestroyRatchet(a)
 	DestroyRatchet(b)
 }
 
-func (s *DoubleRatchetSuite) Test_Serialization0(c *C) {
+func Test_Serialization0(t *testing.T) {
 	// create two new ratchets
 	a, err := InitRatchet(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 	_, err = a.MarshalBinary()
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 }
 
-func (s *DoubleRatchetSuite) Test_Serialization1(c *C) {
-	a, b := pairedRatchet(c)
+func Test_Serialization1(t *testing.T) {
+	a, b := pairedRatchet(t)
 
 	// 1
 	msg := []byte("test message number one is a short one")
 	encrypted := a.Encrypt(nil, msg)
 	result, err := b.Decrypt(encrypted)
-	c.Assert(err, IsNil)
-	c.Assert(msg, DeepEquals, result)
+	require.NoError(t, err)
+	require.Equal(t, msg, result)
 
 	serialized, err := a.MarshalBinary()
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	r, err := NewRatchetFromBytes(rand.Reader, serialized)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	// 2
 	msg2 := []byte(`The word privacy, its meaning abstract and debated, its connotations often
@@ -154,8 +118,8 @@ want conveyed: that a communication whose endpoints are manifest is not at all
 secure. A person needs to feel insecure if using such a channel.`)
 	encrypted = r.Encrypt(nil, msg2)
 	result, err = b.Decrypt(encrypted)
-	c.Assert(err, IsNil)
-	c.Assert(msg2, DeepEquals, result)
+	require.NoError(t, err)
+	require.Equal(t, msg2, result)
 
 	// 3
 	msg3 := []byte(`But even the word security doesn’t support a good framing of our problem:
@@ -168,8 +132,8 @@ while privacy, anonymity, and security are so abstract as to nearly defy visual
 representation.`)
 	encrypted = r.Encrypt(nil, msg3)
 	result, err = b.Decrypt(encrypted)
-	c.Assert(err, IsNil)
-	c.Assert(msg3, DeepEquals, result)
+	require.NoError(t, err)
+	require.Equal(t, msg3, result)
 
 	DestroyRatchet(a)
 	DestroyRatchet(b)
@@ -198,16 +162,18 @@ const (
 	delay
 )
 
-func reinitRatchet(c *C, r *Ratchet) *Ratchet {
+func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
 	state, err := r.MarshalBinary()
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 	DestroyRatchet(r)
+
 	newR, err := NewRatchetFromBytes(rand.Reader, state)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
+
 	return newR
 }
 
-func testScript(c *C, script []scriptAction) {
+func testScript(t *testing.T, script []scriptAction) {
 	type delayedMessage struct {
 		msg       []byte
 		encrypted []byte
@@ -215,9 +181,9 @@ func testScript(c *C, script []scriptAction) {
 	}
 
 	delayedMessages := make(map[int]delayedMessage)
-	a, b := pairedRatchet(c)
+	a, b := pairedRatchet(t)
 
-	for _, action := range script {
+	for i, action := range script {
 		switch action.object {
 		case sendA, sendB:
 			sender, receiver := a, b
@@ -232,19 +198,17 @@ func testScript(c *C, script []scriptAction) {
 			switch action.result {
 			case deliver:
 				result, err := receiver.Decrypt(encrypted)
-				c.Assert(err, IsNil)
-				c.Assert(result, DeepEquals, msg[:])
-
+				require.NoError(t, err, fmt.Sprintf("#%d: receiver returned error: %s", i, err))
+				require.Equal(t, msg[:], result, fmt.Sprintf("#%d: bad message: got %x, not %x", i, result, msg[:]))
 			case delay:
-				ok := delayedMessages[action.id]
-				c.Assert(ok, Not(IsNil))
-
+				_, ok := delayedMessages[action.id]
+				require.False(t, ok, fmt.Sprintf("#%d: already have delayed message with id %d", i, action.id))
 				delayedMessages[action.id] = delayedMessage{msg[:], encrypted, sender == a}
 			case drop:
 			}
 		case sendDelayed:
 			delayed, ok := delayedMessages[action.id]
-			c.Assert(ok, Equals, true)
+			require.True(t, ok, fmt.Sprintf("#%d: no such delayed message id: %d", i, action.id))
 
 			receiver := a
 			if delayed.fromA {
@@ -252,17 +216,17 @@ func testScript(c *C, script []scriptAction) {
 			}
 
 			result, err := receiver.Decrypt(delayed.encrypted)
-			c.Assert(err, IsNil)
-			c.Assert(result, DeepEquals, delayed.msg)
+			require.NoError(t, err, fmt.Sprintf("#%d: receiver returned error: %s", i, err))
+			require.Equal(t, delayed.msg, result, fmt.Sprintf("#%d: bad message: got %x, not %x", i, result, delayed.msg))
 		}
 
-		a = reinitRatchet(c, a)
-		b = reinitRatchet(c, b)
+		a = reinitRatchet(t, a)
+		b = reinitRatchet(t, b)
 	}
 }
 
-func (s *DoubleRatchetSuite) Test_RatchetBackAndForth(c *C) {
-	testScript(c, []scriptAction{
+func Test_RatchetBackAndForth(t *testing.T) {
+	testScript(t, []scriptAction{
 		{sendA, deliver, -1},
 		{sendB, deliver, -1},
 		{sendA, deliver, -1},
@@ -272,8 +236,8 @@ func (s *DoubleRatchetSuite) Test_RatchetBackAndForth(c *C) {
 	})
 }
 
-func (s *DoubleRatchetSuite) Test_RatchetReordering(c *C) {
-	testScript(c, []scriptAction{
+func Test_RatchetReordering(t *testing.T) {
+	testScript(t, []scriptAction{
 		{sendA, deliver, -1},
 		{sendA, delay, 0},
 		{sendA, deliver, -1},
@@ -281,8 +245,8 @@ func (s *DoubleRatchetSuite) Test_RatchetReordering(c *C) {
 	})
 }
 
-func (s *DoubleRatchetSuite) Test_RatchetReorderAfterDHRatchet(c *C) {
-	testScript(c, []scriptAction{
+func Test_RatchetReorderAfterDHRatchet(t *testing.T) {
+	testScript(t, []scriptAction{
 		{sendA, deliver, -1},
 		{sendA, delay, 0},
 		{sendB, deliver, -1},
@@ -292,8 +256,8 @@ func (s *DoubleRatchetSuite) Test_RatchetReorderAfterDHRatchet(c *C) {
 	})
 }
 
-func (s *DoubleRatchetSuite) Test_RatchetDroppedMessages(c *C) {
-	testScript(c, []scriptAction{
+func Test_RatchetDroppedMessages(t *testing.T) {
+	testScript(t, []scriptAction{
 		{sendA, drop, -1},
 		{sendA, drop, -1},
 		{sendA, drop, -1},
@@ -303,30 +267,29 @@ func (s *DoubleRatchetSuite) Test_RatchetDroppedMessages(c *C) {
 	})
 }
 
-func (s *DoubleRatchetSuite) Test_serialize_savedkeys(c *C) {
-	a, b := pairedRatchet(c)
+func Test_serialize_savedkeys(t *testing.T) {
+	a, b := pairedRatchet(t)
 	msg := []byte("test message")
 	encrypted1 := a.Encrypt(nil, msg)
 	encrypted2 := a.Encrypt(nil, msg)
 	encrypted3 := a.Encrypt(nil, msg)
 	result, err := b.Decrypt(encrypted2)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
+	require.Equal(t, msg, result)
 
-	c.Assert(msg, DeepEquals, result)
 	serialized, err := a.MarshalBinary()
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 	serialized2, err := b.MarshalBinary()
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	_, err = NewRatchetFromBytes(rand.Reader, serialized)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
-	t, err := NewRatchetFromBytes(rand.Reader, serialized2)
-	c.Assert(err, IsNil)
+	l, err := NewRatchetFromBytes(rand.Reader, serialized2)
+	require.NoError(t, err)
 
-	result, err = t.Decrypt(encrypted3)
-	c.Assert(err, IsNil)
-	result, err = t.Decrypt(encrypted1)
-	c.Assert(err, IsNil)
-
+	result, err = l.Decrypt(encrypted3)
+	require.NoError(t, err)
+	result, err = l.Decrypt(encrypted1)
+	require.NoError(t, err)
 }
