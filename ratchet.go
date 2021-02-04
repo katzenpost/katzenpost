@@ -57,12 +57,12 @@ var (
 
 // keyExchange is structure containing the public keys
 type keyExchange struct {
-	Dh  []byte
+	Dh0 []byte
 	Dh1 []byte
 }
 
 func (k *keyExchange) Wipe() {
-	utils.ExplicitBzero(k.Dh)
+	utils.ExplicitBzero(k.Dh0)
 	utils.ExplicitBzero(k.Dh1)
 }
 
@@ -305,7 +305,7 @@ func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
 	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
 	curve25519.ScalarBaseMult(&public1, r.kxPrivate1.ByteArray32())
 	kx := &keyExchange{
-		Dh:  public0[:],
+		Dh0: public0[:],
 		Dh1: public1[:],
 	}
 	serialized, err := cbor.Marshal(kx)
@@ -348,14 +348,14 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
-	if len(kx.Dh) != publicKeySize || len(kx.Dh1) != publicKeySize {
+	if len(kx.Dh0) != publicKeySize || len(kx.Dh1) != publicKeySize {
 		return ErrInvalidKeyExchange
 	}
 
 	public0 := memguard.NewBuffer(publicKeySize)
 	curve25519.ScalarBaseMult(public0.ByteArray32(), r.kxPrivate0.ByteArray32())
 	var amAlice bool
-	switch bytes.Compare(public0.Bytes(), kx.Dh) {
+	switch bytes.Compare(public0.Bytes(), kx.Dh0) {
 	case -1:
 		amAlice = true
 	case 1:
@@ -365,7 +365,7 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	}
 	public0.Destroy()
 
-	theirDH := memguard.NewBufferFromBytes(kx.Dh)
+	theirDH := memguard.NewBufferFromBytes(kx.Dh0)
 	sharedKey := memguard.NewBuffer(sharedKeySize)
 	curve25519.ScalarMult(sharedKey.ByteArray32(), r.kxPrivate0.ByteArray32(), theirDH.ByteArray32())
 	theirDH.Destroy()
