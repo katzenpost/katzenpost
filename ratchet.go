@@ -389,7 +389,7 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 		deriveKey(r.sendChainKey, chainKeyLabel, h)
 		r.sendRatchetPrivate.Melt()
 		r.sendRatchetPrivate.Copy(r.kxPrivate1.Bytes())
-		r.sendRatchetPrivate.Melt()
+		r.sendRatchetPrivate.Freeze()
 	}
 
 	r.ratchet = amAlice
@@ -407,8 +407,8 @@ func (r *Ratchet) Encrypt(out, msg []byte) []byte {
 		r.sendRatchetPrivate, _ = memguard.NewBufferFromReader(r.rand, keySize)
 
 		r.sendHeaderKey.Melt()
-		defer r.sendHeaderKey.Freeze()
 		r.sendHeaderKey.Copy(r.nextSendHeaderKey.ByteArray32()[:])
+		r.sendHeaderKey.Freeze()
 
 		sharedKey := memguard.NewBuffer(sharedKeySize)
 		keyMaterial := memguard.NewBuffer(sharedKeySize)
@@ -621,8 +621,8 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 		}
 
 		r.recvChainKey.Melt()
-		defer r.recvChainKey.Freeze()
 		r.recvChainKey.Copy(provisionalChainKey.Bytes())
+		r.recvChainKey.Freeze()
 
 		r.mergeSavedKeys(savedKeys)
 		r.recvCount = messageNum + 1
@@ -681,21 +681,22 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	r.recvChainKey.Melt()
-	defer r.recvChainKey.Freeze()
-	r.recvHeaderKey.Melt()
-	defer r.recvHeaderKey.Freeze()
 	r.recvChainKey.Copy(provisionalChainKey.Bytes())
+	r.recvChainKey.Freeze()
+
+	r.recvHeaderKey.Melt()
 	r.recvHeaderKey.Copy(r.nextRecvHeaderKey.Bytes())
+	r.recvHeaderKey.Freeze()
 
 	deriveKey(r.nextRecvHeaderKey, headerKeyLabel, rootKeyHMAC)
 
 	r.sendRatchetPrivate.Melt()
-	defer r.sendRatchetPrivate.Freeze()
 	r.sendRatchetPrivate.Wipe()
+	r.sendRatchetPrivate.Freeze()
 
 	r.recvRatchetPublic.Melt()
-	defer r.recvRatchetPublic.Freeze()
 	r.recvRatchetPublic.Copy(dhPublic.Bytes())
+	r.recvRatchetPublic.Freeze()
 
 	r.recvCount = messageNum + 1
 	r.mergeSavedKeys(oldSavedKeys)
