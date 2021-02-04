@@ -348,16 +348,14 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
-
-	var public0 [publicKeySize]byte
-	curve25519.ScalarBaseMult(&public0, r.kxPrivate0.ByteArray32())
-
-	if len(kx.Dh) != publicKeySize {
+	if len(kx.Dh) != publicKeySize || len(kx.Dh1) != publicKeySize {
 		return ErrInvalidKeyExchange
 	}
 
+	public0 := memguard.NewBuffer(publicKeySize)
+	curve25519.ScalarBaseMult(public0.ByteArray32(), r.kxPrivate0.ByteArray32())
 	var amAlice bool
-	switch bytes.Compare(public0[:], kx.Dh) {
+	switch bytes.Compare(public0.Bytes(), kx.Dh) {
 	case -1:
 		amAlice = true
 	case 1:
@@ -365,19 +363,16 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	case 0:
 		return ErrEchoedDHValues
 	}
+	public0.Destroy()
 
-	var theirDH [publicKeySize]byte
-	copy(theirDH[:], kx.Dh)
+	theirDH := memguard.NewBufferFromBytes(kx.Dh)
+	sharedKey := memguard.NewBuffer(sharedKeySize)
+	curve25519.ScalarMult(sharedKey.ByteArray32(), r.kxPrivate0.ByteArray32(), theirDH.ByteArray32())
+	theirDH.Destroy()
 
-	// XXX can we make this a LockedBuffer as well?
-	keyMaterial := make([]byte, 0, publicKeySize*5)
-	var sharedKey [sharedKeySize]byte
-	curve25519.ScalarMult(&sharedKey, r.kxPrivate0.ByteArray32(), &theirDH)
-	keyMaterial = append(keyMaterial, sharedKey[:]...)
-
-	h := hmac.New(sha3.New256, keyMaterial)
+	h := hmac.New(sha3.New256, sharedKey.Bytes())
 	deriveKey(r.rootKey, rootKeyLabel, h)
-	utils.ExplicitBzero(keyMaterial)
+	sharedKey.Destroy()
 
 	if amAlice {
 		deriveKey(r.recvHeaderKey, headerKeyLabel, h)
