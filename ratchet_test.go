@@ -35,7 +35,8 @@ func Test_KeyExchange(t *testing.T) {
 	a, b := pairedRatchet(t)
 
 	msg := []byte("test message")
-	encrypted := a.Encrypt(nil, msg)
+	encrypted, err := a.Encrypt(nil, msg)
+	require.NoError(t, err)
 	result, err := b.Decrypt(encrypted)
 	require.NoError(t, err)
 	require.Equal(t, msg, result)
@@ -65,7 +66,8 @@ func Test_RealKeyExchange(t *testing.T) {
 
 	// try to encrypt and decrypt a message
 	msg := []byte("test message")
-	encrypted := a.Encrypt(nil, msg)
+	encrypted, err := a.Encrypt(nil, msg)
+	require.NoError(t, err)
 	result, err := b.Decrypt(encrypted)
 	require.NoError(t, err)
 	require.Equal(t, msg, result)
@@ -74,7 +76,8 @@ func Test_RealKeyExchange(t *testing.T) {
 each scientist’s personal, professional choices. But I am actually more concerned
 about how we, as cryptographers and computer scientists, act in aggregate. Our
 collective behavior embodies values—and the institutions we create do, too.`)
-	encrypted = a.Encrypt(nil, msg2)
+	encrypted, err = a.Encrypt(nil, msg2)
+	require.NoError(t, err)
 	result, err = b.Decrypt(encrypted)
 	require.NoError(t, err)
 	require.Equal(t, msg2, result)
@@ -87,7 +90,7 @@ func Test_Serialization0(t *testing.T) {
 	// create two new ratchets
 	a, err := InitRatchet(rand.Reader)
 	require.NoError(t, err)
-	_, err = a.MarshalBinary()
+	_, err = a.Save()
 	require.NoError(t, err)
 }
 
@@ -96,12 +99,13 @@ func Test_Serialization1(t *testing.T) {
 
 	// 1
 	msg := []byte("test message number one is a short one")
-	encrypted := a.Encrypt(nil, msg)
+	encrypted, err := a.Encrypt(nil, msg)
+	require.NoError(t, err)
 	result, err := b.Decrypt(encrypted)
 	require.NoError(t, err)
 	require.Equal(t, msg, result)
 
-	serialized, err := a.MarshalBinary()
+	serialized, err := a.Save()
 	require.NoError(t, err)
 
 	r, err := NewRatchetFromBytes(rand.Reader, serialized)
@@ -116,7 +120,8 @@ more winning a word and, in fact, I spoke of secure messaging instead of private
 messaging or anonymous messaging because I think it better captures what I
 want conveyed: that a communication whose endpoints are manifest is not at all
 secure. A person needs to feel insecure if using such a channel.`)
-	encrypted = r.Encrypt(nil, msg2)
+	encrypted, err = r.Encrypt(nil, msg2)
+	require.NoError(t, err)
 	result, err = b.Decrypt(encrypted)
 	require.NoError(t, err)
 	require.Equal(t, msg2, result)
@@ -130,7 +135,8 @@ human rights. 189 This makes surveillance a thing against which one can fight.
 The surveillance camera and data center make visual our emerging dystopia,
 while privacy, anonymity, and security are so abstract as to nearly defy visual
 representation.`)
-	encrypted = r.Encrypt(nil, msg3)
+	encrypted, err = r.Encrypt(nil, msg3)
+	require.NoError(t, err)
 	result, err = b.Decrypt(encrypted)
 	require.NoError(t, err)
 	require.Equal(t, msg3, result)
@@ -163,7 +169,7 @@ const (
 )
 
 func reinitRatchet(t *testing.T, r *Ratchet) *Ratchet {
-	state, err := r.MarshalBinary()
+	state, err := r.Save()
 	require.NoError(t, err)
 	DestroyRatchet(r)
 
@@ -193,7 +199,8 @@ func testScript(t *testing.T, script []scriptAction) {
 
 			var msg [20]byte
 			rand.Reader.Read(msg[:])
-			encrypted := sender.Encrypt(nil, msg[:])
+			encrypted, err := sender.Encrypt(nil, msg[:])
+			require.NoError(t, err)
 
 			switch action.result {
 			case deliver:
@@ -270,16 +277,19 @@ func Test_RatchetDroppedMessages(t *testing.T) {
 func Test_serialize_savedkeys(t *testing.T) {
 	a, b := pairedRatchet(t)
 	msg := []byte("test message")
-	encrypted1 := a.Encrypt(nil, msg)
-	encrypted2 := a.Encrypt(nil, msg)
-	encrypted3 := a.Encrypt(nil, msg)
+	encrypted1, err := a.Encrypt(nil, msg)
+	require.NoError(t, err)
+	encrypted2, err := a.Encrypt(nil, msg)
+	require.NoError(t, err)
+	encrypted3, err := a.Encrypt(nil, msg)
+	require.NoError(t, err)
 	result, err := b.Decrypt(encrypted2)
 	require.NoError(t, err)
 	require.Equal(t, msg, result)
 
-	serialized, err := a.MarshalBinary()
+	serialized, err := a.Save()
 	require.NoError(t, err)
-	serialized2, err := b.MarshalBinary()
+	serialized2, err := b.Save()
 	require.NoError(t, err)
 
 	_, err = NewRatchetFromBytes(rand.Reader, serialized)
