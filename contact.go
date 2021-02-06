@@ -31,14 +31,14 @@ import (
 
 type contactExchange struct {
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
-	SignedKeyExchange    *ratchet.SignedKeyExchange
+	KeyExchange          []byte
 }
 
 // NewContactExchangeBytes returns serialized contact exchange information.
-func NewContactExchangeBytes(spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor, signedKeyExchange *ratchet.SignedKeyExchange) ([]byte, error) {
+func NewContactExchangeBytes(spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor, keyExchange []byte) ([]byte, error) {
 	exchange := contactExchange{
 		SpoolWriteDescriptor: spoolWriteDescriptor,
-		SignedKeyExchange:    signedKeyExchange,
+		KeyExchange:          keyExchange,
 	}
 	return cbor.Marshal(exchange)
 }
@@ -155,7 +155,7 @@ func (c *Contact) ID() uint64 {
 // MarshalBinary does what you expect and returns
 // a serialized Contact.
 func (c *Contact) MarshalBinary() ([]byte, error) {
-	ratchetBlob, err := c.ratchet.MarshalBinary()
+	ratchetBlob, err := c.ratchet.Save()
 	if err != nil {
 		return nil, err
 	}
