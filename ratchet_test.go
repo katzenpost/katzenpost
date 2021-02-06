@@ -244,12 +244,16 @@ func Test_RatchetBackAndForth(t *testing.T) {
 }
 
 func Test_RatchetReordering(t *testing.T) {
-	testScript(t, []scriptAction{
-		{sendA, deliver, -1},
-		{sendA, delay, 0},
-		{sendA, deliver, -1},
-		{sendDelayed, deliver, 0},
-	})
+	script := []scriptAction{}
+	script = append(script, scriptAction{sendA, deliver, -1})
+	for i := 0; i < MaxMissingMessages; i++ {
+		script = append(script, scriptAction{sendA, delay, i})
+	}
+	for i := MaxMissingMessages; i >= 0; i-- {
+		script = append(script, scriptAction{sendA, deliver, i})
+	}
+
+	testScript(t, script)
 }
 
 func Test_RatchetReorderAfterDHRatchet(t *testing.T) {
