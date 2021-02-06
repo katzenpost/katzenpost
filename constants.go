@@ -40,5 +40,5 @@ const (
 	RatchetKeyMaxLifetime = time.Hour * 672
 
 	// DoubleRatchetOverhead is the number of bytes the ratchet adds in ciphertext overhead.
-	DoubleRatchetOverhead = 120
+	DoubleRatchetOverhead = 120 + csidh.PublicKeySize
 )
