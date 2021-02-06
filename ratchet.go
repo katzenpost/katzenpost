@@ -5,7 +5,8 @@
 // David's latest changes turn the ratchet into a computationally expensive
 // PQ hybrid ratchet wherein there's an ECDH and a CSIDH ratchet which
 // both progress together. Both of these ratchets feed their computed
-// shared secrets into the KDF ratchet.
+// shared secrets into the KDF ratchet via the root KDF chain. More clever
+// designs and feedback encouraged.
 package ratchet
 
 import (
