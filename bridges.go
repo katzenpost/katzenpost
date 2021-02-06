@@ -65,6 +65,6 @@ func setupQmlBridges() {
 	})
 	accountBridge.ConnectLoadAvatar(func(nickname string, iu string) {
 		fmt.Println("Loading avatar:", iu)
-		contactListModel.updateAvatar("test", iu)
+		contactListModel.updateAvatar(nickname, iu)
 	})
 }
