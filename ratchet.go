@@ -21,8 +21,6 @@ import (
 	"github.com/katzenpost/core/utils"
 )
 
-const ()
-
 var (
 	ErrDuplicateOrDelayed                     = errors.New("Ratchet: duplicate message or message delayed longer than tolerance")
 	ErrHandshakeAlreadyComplete               = errors.New("Ratchet: handshake already complete")
@@ -44,19 +42,16 @@ var (
 	ErrKeyExchangeKeysNotIsomorphicallyEqual  = errors.New("Ratchet: key exchange and identity public keys must be isomorphically equal")
 	ErrFailedToLoadPQRatchet                  = errors.New("Ratchet: failed to load PQ Ratchet from state")
 	ErrImportPQDh0                            = errors.New("Ratchet: failed to import PQ DH0 from exchange blob")
-	ErrPQDh0SharedSecret                      = errors.New("Ratchet: failed to compute shared secret from PQDH0")
-	ErrPQRatchetPrivateExport                 = errors.New("Ratchet: failed to export SendPQRatchetPrivate")
-	ErrPQRatchetPublicExport                  = errors.New("Ratchet: failed to export RecvPQRatchetPublic")
-	ErrPQPrivate0Export                       = errors.New("Ratchet: PQPrivate0 failed to export")
-	ErrPQPrivate1Export                       = errors.New("Ratchet: PQPrivate1 failed to export")
-	ErrPQRatchetEncrypt                       = errors.New("Ratchet: PQ Ratchet failed on encrypt")
-	ErrPQRatchetDecrypt                       = errors.New("Ratchet: PQ Ratchet failed on decrypt")
-	ErrImportPQDh1                            = errors.New("Ratchet: failed to import PQDh1")
-)
+	ErrCSIDHSharedSecret                      = errors.New("Ratchet: failed to compute shared secret from PQDH0")
+	ErrCSIDHPrivateExport                     = errors.New("Ratchet: CSIDH: failed to export private key")
+	ErrCSIDHPrivateImport                     = errors.New("Ratchet: CSIDH: failed to import private key")
+	ErrCSIDHPublicExport                      = errors.New("Ratchet: CSIDH: failed to export public key")
+	ErrCSIDHPublicImport                      = errors.New("Ratchet: CSIDH: failed to import public key")
+	ErrCSIDHInvalidPublicKey                  = errors.New("Ratchet: CSIDH public key validation failure")
 
-// These constants are used as the label argument to deriveKey to derive
-// independent keys from a master key.
-var (
+	// These constants are used as the label argument to deriveKey to derive
+	// independent keys from a master key.
+
 	chainKeyLabel      = []byte("chain key")
 	headerKeyLabel     = []byte("header key")
 	nextHeaderKeyLabel = []byte("next header key")
@@ -274,14 +269,14 @@ func newRatchetFromState(rand io.Reader, s *state) (*Ratchet, error) {
 		r.sendPQRatchetPrivate = new(csidh.PrivateKey)
 		ok := r.sendPQRatchetPrivate.Import(s.SendPQRatchetPrivate)
 		if !ok {
-			return nil, ErrFailedToLoadPQRatchet
+			return nil, ErrCSIDHPrivateImport
 		}
 	}
 	if s.RecvPQRatchetPublic != nil {
 		r.recvPQRatchetPublic = new(csidh.PublicKey)
 		ok := r.recvPQRatchetPublic.Import(s.RecvPQRatchetPublic)
 		if !ok {
-			return nil, ErrFailedToLoadPQRatchet
+			return nil, ErrCSIDHPublicImport
 		}
 	}
 
@@ -393,12 +388,12 @@ func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
 	kx.PQDh0 = make([]byte, csidh.PublicKeySize)
 	ok := pqpub0.Export(kx.PQDh0)
 	if !ok {
-		return nil, errors.New("failed to export pqpub0")
+		return nil, ErrCSIDHPublicExport
 	}
 	kx.PQDh1 = make([]byte, csidh.PublicKeySize)
 	ok = pqpub1.Export(kx.PQDh1)
 	if !ok {
-		return nil, errors.New("failed to export pqpub1")
+		return nil, ErrCSIDHPublicExport
 	}
 
 	serialized, err := cbor.Marshal(kx)
@@ -470,11 +465,11 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	theirPQPublicKey0 := new(csidh.PublicKey)
 	ok := theirPQPublicKey0.Import(kx.PQDh0)
 	if !ok {
-		return ErrImportPQDh0
+		return ErrCSIDHPublicImport
 	}
 	ok = csidh.DeriveSecret(pqSharedSecret, theirPQPublicKey0, r.kxPQPrivate0, r.rand)
 	if !ok {
-		return ErrPQDh0SharedSecret
+		return ErrCSIDHSharedSecret
 	}
 
 	h := hmac.New(sha3.New256, append(sharedKey.Bytes(), pqSharedSecret[:]...))
@@ -491,7 +486,7 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 		r.recvRatchetPublic.Freeze()
 		ok = r.recvPQRatchetPublic.Import(kx.PQDh1)
 		if !ok {
-			return ErrImportPQDh1
+			return ErrCSIDHPublicImport
 		}
 	} else {
 		deriveKey(r.sendHeaderKey, headerKeyLabel, h)
@@ -538,7 +533,7 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 		pqSharedKey := memguard.NewBuffer(csidh.SharedSecretSize)
 		ok := csidh.DeriveSecret(pqSharedKey.ByteArray64(), r.recvPQRatchetPublic, r.sendPQRatchetPrivate, r.rand)
 		if !ok {
-			return nil, ErrPQRatchetEncrypt
+			return nil, ErrCSIDHSharedSecret
 		}
 
 		sha := sha3.New256()
@@ -569,7 +564,7 @@ func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 	sendPQRatchetPublicBytes := make([]byte, csidh.PublicKeySize)
 	ok := sendPQRatchetPublic.Export(sendPQRatchetPublicBytes)
 	if !ok {
-		return nil, ErrPQRatchetEncrypt
+		return nil, ErrCSIDHPublicExport
 	}
 
 	var header [headerSize]byte
@@ -798,11 +793,11 @@ func (r *Ratchet) Decrypt(ciphertext []byte) ([]byte, error) {
 	theirPQRatchetPublic.Import(header[PQRatchetPublicKeyInHeaderOffset : PQRatchetPublicKeyInHeaderOffset+csidh.PublicKeySize])
 	ok = csidh.Validate(theirPQRatchetPublic, r.rand)
 	if !ok {
-		return nil, ErrPQRatchetDecrypt
+		return nil, ErrCSIDHInvalidPublicKey
 	}
 	ok = csidh.DeriveSecret(pqSharedKey.ByteArray64(), theirPQRatchetPublic, r.sendPQRatchetPrivate, r.rand)
 	if !ok {
-		return nil, ErrPQRatchetDecrypt
+		return nil, ErrCSIDHSharedSecret
 	}
 
 	sha := sha3.New256()
