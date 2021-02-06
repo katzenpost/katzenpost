@@ -1,5 +1,11 @@
-// Package ratchet implements the axolotl ratchet, by Trevor Perrin. See
-// https://github.com/trevp/axolotl/wiki.
+// Package ratchet originally written by AGL to implement the axolotl ratchet
+// (designed by Trevor Perrin) for the Pond messaging system but then
+// modified for a Katzenpost decryption mix network messaging system.
+// Improvements herein made by Masala, Sofia Celli and David Stainton.
+// David's latest changes turn the ratchet into a computationally expensive
+// PQ hybrid ratchet wherein there's an ECDH and a CSIDH ratchet which
+// both progress together. Both of these ratchets feed their computed
+// shared secrets into the KDF ratchet.
 package ratchet
 
 import (
@@ -172,14 +178,14 @@ type Ratchet struct {
 	// Chain keys are used for forward secrecy updating.
 	sendChainKey, recvChainKey *memguard.LockedBuffer // 32 bytes long
 
-	// Ratchet counts apply to both DH and PQ KEX Ratchets
+	// Ratchet counts apply to both ECDH and CSIDH Ratchets
 	sendCount, recvCount uint32
 	prevSendCount        uint32
 
 	// DH Ratchet keys
 	sendRatchetPrivate, recvRatchetPublic *memguard.LockedBuffer // 32 bytes long
 
-	// PQ KEX Ratchet keys
+	// CSIDH Ratchet keys
 	sendPQRatchetPrivate *csidh.PrivateKey
 	recvPQRatchetPublic  *csidh.PublicKey
 
@@ -264,7 +270,7 @@ func newRatchetFromState(rand io.Reader, s *state) (*Ratchet, error) {
 	if s.RecvRatchetPublic != nil {
 		r.recvRatchetPublic = memguard.NewBufferFromBytes(s.RecvRatchetPublic)
 	}
-	// PQ KEX Ratchet
+	// CSIDH Ratchet
 	if s.SendPQRatchetPrivate != nil {
 		r.sendPQRatchetPrivate = new(csidh.PrivateKey)
 		ok := r.sendPQRatchetPrivate.Import(s.SendPQRatchetPrivate)
@@ -287,7 +293,7 @@ func newRatchetFromState(rand io.Reader, s *state) (*Ratchet, error) {
 		r.kxPrivate0 = memguard.NewBufferFromBytes(s.Private0)
 		r.kxPrivate1 = memguard.NewBufferFromBytes(s.Private1)
 
-		// PQ KEX keys
+		// CSIDH keys
 		ok := r.kxPQPrivate0.Import(s.PQPrivate0)
 		if !ok {
 			return nil, ErrFailedToLoadPQRatchet
@@ -357,7 +363,7 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 	r.sendRatchetPrivate = memguard.NewBuffer(keySize)
 	r.recvRatchetPublic = memguard.NewBuffer(keySize)
 
-	// PQ KEX Ratchet keys
+	// CSIDH Ratchet keys
 	r.sendPQRatchetPrivate = new(csidh.PrivateKey)
 	r.recvPQRatchetPublic = new(csidh.PublicKey)
 
