@@ -9,9 +9,13 @@
 Double Ratchet Library
 ======================
 
-This library is a fork of agl's double ratchet in his pond messaging system.
+This library is a fork of agl's double ratchet in his pond messaging system https://github.com/agl/pond/.
 We have made several changes in this fork:
 
+* "post-quantum hybrid ratchet"; CSIDH and ECDH ratchets progress together and both computed shared
+  secrets are feed into the root KDF chain
+* uses memguard to protect and wipe the memory used to store cryptographic
+  key material
 * serialization in CBOR instead of protobufs
 * this library takes ownership of all key material used
 * added methods to perform the complete key exchange
@@ -31,10 +35,7 @@ Contact
 Disclaimer
 ==========
 
-I am not certain to the degree agl's ratchet was audited however
-I shall state here that my modifications to this code has NOT been audited
-for security vulnerabilities. Therefore this library should be not considered
-correct or safe to use. Proceed with caution.
+This code has not be audited for security or logic errors. Proceed with caution.
 
 License
 =======
