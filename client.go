@@ -589,7 +589,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 		}
 		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.ratchetMutex.Lock()
-		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
+		err = contact.ratchet.ProcessKeyExchange(exchange.KeyExchange)
 		contact.ratchetMutex.Unlock()
 		if err != nil {
 			err = fmt.Errorf("Reunion double ratchet key exchange %v failure: %s", update.ExchangeID, err)
@@ -673,7 +673,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 			return
 		}
 		contact.ratchetMutex.Lock()
-		err = contact.ratchet.ProcessKeyExchange(exchange.SignedKeyExchange)
+		err = contact.ratchet.ProcessKeyExchange(exchange.KeyExchange)
 		contact.ratchetMutex.Unlock()
 		if err != nil {
 			err = fmt.Errorf("Double ratchet key exchange failure: %s", err)
@@ -742,7 +742,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
-	ciphertext := contact.ratchet.Encrypt(nil, payload[:])
+	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])
+	if err != nil {
+		c.log.Errorf("failed to encrypt: %s", err)
+		return
+	}
 	contact.ratchetMutex.Unlock()
 
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
