@@ -287,19 +287,24 @@ func newRatchetFromState(rand io.Reader, s *state) (*Ratchet, error) {
 		}
 	}
 
-	if len(s.Private0) > 0 {
-		// key exchange has not completed yet.
-
-		// DH keys
+	// DH keys
+	if s.Private0 != nil && len(s.Private0) > 0 {
 		r.kxPrivate0 = memguard.NewBufferFromBytes(s.Private0)
+	}
+	if s.Private1 != nil && len(s.Private1) > 0 {
 		r.kxPrivate1 = memguard.NewBufferFromBytes(s.Private1)
-
-		// CSIDH keys
+	}
+	// CSIDH keys
+	if s.PQPrivate0 != nil && len(s.PQPrivate0) > 0 {
+		r.kxPQPrivate0 = new(csidh.PrivateKey)
 		ok := r.kxPQPrivate0.Import(s.PQPrivate0)
 		if !ok {
 			return nil, ErrFailedToLoadPQRatchet
 		}
-		ok = r.kxPQPrivate1.Import(s.PQPrivate1)
+	}
+	if s.PQPrivate1 != nil && len(s.PQPrivate1) > 0 {
+		r.kxPQPrivate1 = new(csidh.PrivateKey)
+		ok := r.kxPQPrivate1.Import(s.PQPrivate1)
 		if !ok {
 			return nil, ErrFailedToLoadPQRatchet
 		}
