@@ -375,7 +375,6 @@ func (c *connection) onTCPConn(conn net.Conn) {
 }
 
 func (c *connection) onWireConn(w *wire.Session) {
-	pollInterval := c.c.GetPollInterval()
 	c.onConnStatusChange(nil)
 
 	var wireErr error
@@ -537,9 +536,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
-				c.log.Debugf("pollInterval is :%d", pollInterval)
 			}
-			pollInterval = c.c.GetPollInterval()
+			fetchDelay = c.c.GetPollInterval()
 			continue
 		}
 
