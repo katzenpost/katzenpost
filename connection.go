@@ -539,7 +539,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				nrReqs++
 				c.log.Debugf("pollInterval is :%d", pollInterval)
 			}
-			fetchDelay = pollInterval
+			pollInterval = c.c.GetPollInterval()
 			continue
 		}
 
