@@ -449,7 +449,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 		} else {
 			fetchDelay = 0
 		}
-		c.log.Debugf("fetchDelay %d", fetchDelay)
 	}
 	var seq uint32
 	checkSeq := func(cmdSeq uint32) error {
@@ -465,7 +464,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 		selectAt = time.Now()
 		select {
 		case <-time.After(fetchDelay):
-			c.log.Debugf("<-time.After(fetchDelay) %d", fetchDelay)
 			doFetch = true
 		case <-c.fetchCh:
 			doFetch = true
