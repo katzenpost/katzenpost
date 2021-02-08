@@ -324,6 +324,9 @@ func (c *connection) doConnect(dialCtx context.Context) {
 
 			// Re-iterate through the address/ports on a sucessful connect.
 			c.log.Debugf("Connection terminated, will reconnect.")
+
+			// Emit a ConnectError when disconnected.
+			c.onConnStatusChange(ErrNotConnected)
 			break
 		}
 	}
