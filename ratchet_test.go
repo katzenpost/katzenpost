@@ -307,3 +307,27 @@ func Test_serialize_savedkeys(t *testing.T) {
 	result, err = l.Decrypt(encrypted1)
 	require.NoError(t, err)
 }
+
+func Test_RatchetDuplicateMessage(t *testing.T) {
+	a, b := pairedRatchet(t)
+	msg1 := []byte("test message 1")
+	msg2 := []byte("test message 2")
+	msg3 := []byte("test message 3")
+	encrypted1, err := a.Encrypt(nil, msg1)
+	require.NoError(t, err)
+	encrypted2, err := a.Encrypt(nil, msg2)
+	require.NoError(t, err)
+	encrypted3, err := a.Encrypt(nil, msg3)
+	require.NoError(t, err)
+	result, err := b.Decrypt(encrypted2)
+	require.NoError(t, err)
+	require.Equal(t, msg2, result)
+	result, err = b.Decrypt(encrypted2)
+	require.Error(t, ErrDuplicateOrDelayed)
+	result, err = b.Decrypt(encrypted1)
+	require.NoError(t, err)
+	require.Equal(t, msg1, result)
+	result, err = b.Decrypt(encrypted3)
+	require.NoError(t, err)
+	require.Equal(t, msg3, result)
+}
