@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/katzenpost/authority v0.0.14
 	github.com/katzenpost/core v0.0.12
-	github.com/katzenpost/minclient v0.0.10
+	github.com/katzenpost/minclient v0.0.11
 	github.com/katzenpost/registration_client v0.0.2
 	github.com/katzenpost/server v0.0.17 // indirect
 	github.com/stretchr/testify v1.4.0
