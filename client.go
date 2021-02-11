@@ -143,7 +143,6 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		logBackend:          logBackend,
 	}
 	for _, contact := range state.Contacts {
-		contact.ratchetMutex = new(sync.Mutex)
 		c.contacts[contact.id] = contact
 		c.contactNicknames[contact.Nickname] = contact
 	}
@@ -488,16 +487,17 @@ func (c *Client) marshal() ([]byte, error) {
 	for _, contact := range c.contacts {
 		contacts = append(contacts, contact)
 	}
+	c.conversationsMutex.Lock()
 	s := &State{
 		SpoolReadDescriptor: c.spoolReadDescriptor,
 		Contacts:            contacts,
 		LinkKey:             c.linkKey,
 		User:                c.user,
 		Provider:            c.client.Provider(),
-		Conversations:       c.GetAllConversations(),
+		Conversations:       c.conversations,
 	}
-	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
+	// XXX: shouldn't we also obtain the ratchet locks as well?
 	return cbor.Marshal(s)
 }
 
@@ -745,6 +745,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
+		contact.ratchetMutex.Unlock()
 		return
 	}
 	contact.ratchetMutex.Unlock()
@@ -1013,12 +1014,12 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		c.log.Debugf("Message decrypted for %s: %x", nickname, convoMesgID)
 		c.conversationsMutex.Lock()
-		defer c.conversationsMutex.Unlock()
 		_, ok := c.conversations[nickname]
 		if !ok {
 			c.conversations[nickname] = make(map[MessageID]*Message)
 		}
 		c.conversations[nickname][convoMesgID] = &message
+		c.conversationsMutex.Unlock()
 
 		c.eventCh.In() <- &MessageReceivedEvent{
 			Nickname:  nickname,
