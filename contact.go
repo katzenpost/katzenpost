@@ -155,7 +155,10 @@ func (c *Contact) ID() uint64 {
 // MarshalBinary does what you expect and returns
 // a serialized Contact.
 func (c *Contact) MarshalBinary() ([]byte, error) {
+	// obtain the ratchet mutex first...
+	c.ratchetMutex.Lock()
 	ratchetBlob, err := c.ratchet.Save()
+	c.ratchetMutex.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -197,6 +200,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.pandaResult = s.PandaResult
 	c.reunionKeyExchange = s.ReunionKeyExchange
 	c.reunionResult = s.ReunionResult
+	c.ratchetMutex = new(sync.Mutex)
 	c.ratchet = r
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 	c.outbound = s.Outbound
@@ -205,5 +209,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 }
 
 func (c *Contact) Destroy() {
+	c.ratchetMutex.Lock()
 	ratchet.DestroyRatchet(c.ratchet)
+	c.ratchetMutex.Unlock()
 }
