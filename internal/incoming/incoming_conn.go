@@ -62,6 +62,8 @@ type incomingConn struct {
 	fromClient    bool
 	fromMix       bool
 	canSend       bool
+
+	closeConnectionCh chan bool
 }
 
 var (
@@ -171,6 +173,10 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return isValid
 }
 
+func (c *incomingConn) Close() {
+	c.closeConnectionCh <- true
+}
+
 func (c *incomingConn) worker() {
 
 	defer func() {
@@ -276,6 +282,9 @@ func (c *incomingConn) worker() {
 				return
 			}
 			continue
+		case <-c.closeConnectionCh:
+			c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+			return
 		case rawCmd, ok = <-commandCh:
 			if !ok {
 				return
@@ -482,11 +491,12 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 
 func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 	c := &incomingConn{
-		l:             l,
-		c:             conn,
-		id:            atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
-		sendTokenLast: monotime.Now(),
-		maxSendTokens: 4, // Reasonable burst to avoid some unnecessary rate limiting.
+		l:                 l,
+		c:                 conn,
+		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
+		sendTokenLast:     monotime.Now(),
+		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
+		closeConnectionCh: make(chan bool),
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 

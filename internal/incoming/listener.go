@@ -160,8 +160,7 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 		if !a.PublicKey.Equal(b.PublicKey) {
 			return nil
 		}
-		cc.c.Close()
-		l.onClosedConn(cc)
+		cc.Close()
 	}
 
 	return nil
