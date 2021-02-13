@@ -155,10 +155,10 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 		}
 
 		if !bytes.Equal(a.AdditionalData, b.AdditionalData) {
-			return nil
+			continue
 		}
 		if !a.PublicKey.Equal(b.PublicKey) {
-			return nil
+			continue
 		}
 		cc.Close()
 	}
