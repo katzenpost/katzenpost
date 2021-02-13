@@ -146,7 +146,7 @@ func (s *Session) handshake() error {
 		s.authenticationKey.Reset() // Don't need this anymore, and s has a copy.
 		atomic.CompareAndSwapUint32(&s.state, stateInit, stateInvalid)
 	}()
-	prologue := []byte{0x01} // Prologue indicates version 1. Version 0 uses NewHope Simple not Kyber.
+	prologue := []byte{0x02} // Prologue indicates version 2.
 
 	// Convert to the noise library's idea of a X25519 key.
 	dhKey := noise.DHKey{
@@ -171,11 +171,10 @@ func (s *Session) handshake() error {
 	const (
 		prologueLen = 1
 		keyLen      = 32
-		sendALen    = 1600
-		sendBLen    = 1568
-		msg1Len     = prologueLen + sendALen                 // -> (prologue), e, e1
-		msg2Len     = 1680 + authLen                         // <- e, ee, ekem1, s, es, (auth)
-		msg3Len     = (macLen + keyLen) + (macLen + authLen) // -> s, se, (auth)
+		kyberLen    = 1568                                                            // Length of Kyber1024 public key and KEM ciphertext.
+		msg1Len     = prologueLen + kyberLen + keyLen                                 // -> (prologue), e, e1
+		msg2Len     = keyLen + macLen + macLen + kyberLen + keyLen + macLen + authLen // <- e, ee, ekem1, s, es, (auth)
+		msg3Len     = (macLen + keyLen) + (macLen + authLen)                          // -> s, se, (auth)
 	)
 
 	if s.isInitiator {
