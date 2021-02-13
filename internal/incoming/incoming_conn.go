@@ -219,15 +219,11 @@ func (c *incomingConn) worker() {
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
-	// this only really matters for user sessions.  The easiest thing to do
-	// is "oldest connection wins" since that doesn't require one connection
-	// closing another.
-	//
-	// TODO: Newest connection wins is more annoying to implement, but better
-	// behavior.
+	// this only really matters for user sessions. Newest connection wins.
 	for _, s := range c.l.glue.Listeners() {
-		if !s.IsConnUnique(c) {
-			c.log.Errorf("Connection with credentials already exists.")
+		err := s.CloseOldConns(c)
+		if err != nil {
+			c.log.Errorf("Closing new connection because something is broken: " + err.Error())
 			return
 		}
 	}

@@ -94,7 +94,7 @@ type Connector interface {
 
 type Listener interface {
 	Halt()
-	IsConnUnique(interface{}) bool
+	CloseOldConns(interface{}) error
 	OnNewSendRatePerMinute(uint64)
 	OnNewSendBurst(uint64)
 }
