@@ -127,7 +127,7 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	l.conns.Remove(c.e)
 }
 
-func (l *listener) IsConnUnique(ptr interface{}) bool {
+func (l *listener) CloseOldConns(ptr interface{}) error {
 	c := ptr.(*incomingConn)
 
 	l.Lock()
@@ -136,7 +136,7 @@ func (l *listener) IsConnUnique(ptr interface{}) bool {
 	a, err := c.w.PeerCredentials()
 	if err != nil {
 		l.log.Errorf("Session fail: %s", err)
-		return false
+		return err
 	}
 
 	for e := l.conns.Front(); e != nil; e = e.Next() {
@@ -151,18 +151,20 @@ func (l *listener) IsConnUnique(ptr interface{}) bool {
 		b, err := cc.w.PeerCredentials()
 		if err != nil {
 			l.log.Errorf("Session fail: %s", err)
-			return false
+			return nil
 		}
 
-		if bytes.Equal(a.AdditionalData, b.AdditionalData) {
-			return false
+		if !bytes.Equal(a.AdditionalData, b.AdditionalData) {
+			return nil
 		}
-		if a.PublicKey.Equal(b.PublicKey) {
-			return false
+		if !a.PublicKey.Equal(b.PublicKey) {
+			return nil
 		}
+		cc.c.Close()
+		l.onClosedConn(cc)
 	}
 
-	return true
+	return nil
 }
 
 // New creates a new listener.
