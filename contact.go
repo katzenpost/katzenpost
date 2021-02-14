@@ -24,6 +24,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/client"
+	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/memspool/client"
@@ -118,6 +119,7 @@ type Contact struct {
 	// be sent
 	outbound *Queue
 	rtx      *time.Timer
+	ackID    [cConstants.MessageIDLength]byte
 }
 
 // NewContact creates a new Contact or returns an error.
