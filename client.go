@@ -857,6 +857,8 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 				if contact.rtx != nil {
 					contact.rtx.Stop()
 				}
+				// keep track of the MessageID that has not been ACK'd yet
+				contact.ackID = *sentEvent.MessageID
 				contact.rtx = time.AfterFunc(sentEvent.ReplyETA*2, func() {
 					c.opCh <- &opRetransmit{contact: contact}
 				})
@@ -894,15 +896,21 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
 				// cancel retransmission timer
 				if contact, ok := c.contactNicknames[tp.Nickname]; ok {
-					// cancel the retransmission timer
-					if contact.rtx != nil {
-						contact.rtx.Stop()
+					if contact.ackID != *replyEvent.MessageID {
+						// spurious ACK
+						c.log.Debugf("Dropping spurious ACK for %x", *replyEvent.MessageID)
+						return
 					}
 					if _, err := contact.outbound.Pop(); err != nil {
 						// duplicate ACK?
-						c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x",
-							contact.Nickname, *replyEvent.MessageID)
+						c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x %s",
+							contact.Nickname, *replyEvent.MessageID, err)
+						return // do not send an extra MessageDeliveredEvent!
 					} else {
+						// cancel the retransmission timer
+						if contact.rtx != nil {
+							contact.rtx.Stop()
+						}
 						// try to send the next message, if one exists
 						defer c.sendMessage(contact)
 					}
