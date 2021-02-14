@@ -150,8 +150,7 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 		// Compare both by AdditionalData and PublicKey.
 		b, err := cc.w.PeerCredentials()
 		if err != nil {
-			l.log.Errorf("Session fail: %s", err)
-			return nil
+			continue
 		}
 
 		if !bytes.Equal(a.AdditionalData, b.AdditionalData) {
