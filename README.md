@@ -14,14 +14,14 @@ A chat client using catshadow.
 Make sure you have a working Go environment (Go 1.11 or higher is required).
 See the [install instructions](http://golang.org/doc/install.html).
 
-#### Installing golang (Debian example)
+#### Installing golang (Debian Bullseye example)
 
     apt-get install golang git ca-certificates
     export GOPATH=$HOME/go
 
 You will also need Qt5 and its development headers installed.
 
-#### Dependencies (Ubuntu example)
+#### Dependencies (Debian Bullseye example)
 
     apt-get --no-install-recommends install build-essential libglib2.0-dev libglu1-mesa-dev libpulse-dev
     apt-get --no-install-recommends install libqt*5-dev qt*5-dev qt*5-doc-html qml-module-qtquick*
@@ -36,7 +36,7 @@ You will also need Qt5 and its development headers installed.
     go mod vendor
     $(go env GOPATH)/bin/qtdeploy build desktop
 
-Note that you may also need to export the QT_VERSION of your systems Qt5 libraries, for example on debian testing the packaged version is 5.15.2.
+Note that you may also need to export the QT_VERSION of your systems Qt5 libraries, for example on Debian Bullseye the packaged version is 5.15.2.
 
     export QT_VERSION=5.15.2
 
