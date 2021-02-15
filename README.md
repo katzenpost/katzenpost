@@ -14,6 +14,11 @@ A chat client using catshadow.
 Make sure you have a working Go environment (Go 1.11 or higher is required).
 See the [install instructions](http://golang.org/doc/install.html).
 
+#### Installing golang (Debian example)
+
+    apt-get install golang git ca-certificates
+    export GOPATH=$HOME/go
+
 You will also need Qt5 and its development headers installed.
 
 #### Dependencies (Ubuntu example)
