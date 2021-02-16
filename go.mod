@@ -5,9 +5,9 @@ go 1.12
 require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/fxamacker/cbor/v2 v2.2.0
-	github.com/katzenpost/client v0.0.20
+	github.com/katzenpost/client v0.0.21
 	github.com/katzenpost/core v0.0.12
-	github.com/katzenpost/doubleratchet v0.0.10
+	github.com/katzenpost/doubleratchet v0.0.11
 	github.com/katzenpost/memspool v0.0.14
 	github.com/katzenpost/panda v0.0.14
 	github.com/katzenpost/reunion v0.0.5
