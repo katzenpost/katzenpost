@@ -27,10 +27,11 @@ var (
 	config Config
 
 	generate         = flag.Bool("g", false, "Generate the state file and then run client.")
-	clientConfigFile = flag.String("f", "katzenpost.toml", "Path to the client config file.")
+	clientConfigFile = flag.String("f", "", "Path to the client config file.")
 	stateFile        = flag.String("s", "catshadow_statefile", "The catshadow state file path.")
 
 	catShadowClient   *catshadow.Client
+	catshadowCfg      *catconfig.Config
 	contactListModel  *ContactListModel
 	conversationModel *ConversationModel
 )
@@ -173,11 +174,20 @@ func main() {
 	contactListModel = NewContactListModel(nil)
 	conversationModel = NewConversationModel(nil)
 
-	// Load catshadow config file.
-	catshadowCfg, err := catconfig.LoadFile(*clientConfigFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *clientConfigFile, err)
-		os.Exit(-1)
+	// Load catshadow config file if specified or use baked-in defaults
+	if len(*clientConfigFile) != 0 {
+		catshadowCfg, err = catconfig.LoadFile(*clientConfigFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load config file '%v': %v\n", *clientConfigFile, err)
+			os.Exit(-1)
+		}
+	} else {
+		// use the baked in configuration defaults if a configuration is not specified
+		catshadowCfg, err = getDefaultConfig()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load config defaults: %v\n", err)
+			os.Exit(-1)
+		}
 	}
 
 	// Decrypt and load the catshadow state file.
@@ -221,4 +231,53 @@ func main() {
 	config.FirstRun = false
 
 	SaveConfig(configFile, config)
+}
+
+func getDefaultConfig() (*catconfig.Config, error) {
+	cfgString := `
+[UpstreamProxy]
+  Type = "socks5"
+  Network = "tcp"
+  Address = "127.0.0.1:9050"
+
+[Logging]
+  Disable = false
+  Level = "DEBUG"
+  File = ""
+
+[ClientLogging]
+  Disable = false
+  Level = "NOTICE"
+  File = ""
+
+[VotingAuthority]
+[[VotingAuthority.Peers]]
+  Addresses = ["n5axysudjvjjkpy4r7hur7qfgybfaiwrfz2mqwkvnyylqxinldtao2ad.onion:30000"]
+  IdentityPublicKey = "EmUWxb6ocBBXhxlrAKgxVd/6tyIDVK/8pIY/nZrqSDQ="
+  LinkPublicKey = "Mcfs706pyzBIvEj+k5t2L9t9x+LplOR4wz3RiVrgoVU="
+
+[[VotingAuthority.Peers]]
+  Addresses = ["mj5ouhyjvokgvbcp56lh56plxvzh4wcrq3fadpqf6ewdqmuy7pr3n6qd.onion:30000"]
+  IdentityPublicKey = "vdOAeoRtWKFDw+W4k3sNN1EMT9ZsaHHmuCHOEKSg1aA="
+  LinkPublicKey = "VNmU4g1hXBS7BQ1RJYMGNjNg4fIZbCimppeJ1XwrqX4="
+
+[[VotingAuthority.Peers]]
+  Addresses = ["pz6obnsyh7vmpmtmrsam443jh4gkei77q3y66ty3fd6h6wjdvcmu6pid.onion:30000"]
+  IdentityPublicKey = "bFgvws69dJrc3ACKXN5aCJKLHjkN7D8DA2HDKkhSNIk="
+  LinkPublicKey = "p1JekMh8uCPDsRSP5Uc59DJvEGMmA/B0mcMCXx1WEkk="
+
+[Debug]
+  CaseSensitiveUserIdentifiers = false
+  PollingInterval = 500
+  PreferedTransports = ["onion"]
+
+[Panda]
+  Receiver = "+panda"
+  Provider = "provider1"
+  BlobSize = 1000
+
+[Reunion]
+  Enable = false
+`
+	return catconfig.Load([]byte(cfgString))
 }
