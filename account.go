@@ -52,7 +52,7 @@ func loadConversation(client *catshadow.Client, contact string) {
 	sort.Sort(msgs)
 
 	for _, m := range msgs {
-		conversationModel.AddMessage(m)
+		conversationModel.AppendMessage(m)
 	}
 }
 
@@ -98,5 +98,5 @@ func sendMessage(client *catshadow.Client, nickname string, message string) {
 	m.Message = message
 	m.Timestamp = time.Now()
 	m.Outbound = true
-	conversationModel.AddMessage(m)
+	conversationModel.AppendMessage(m)
 }

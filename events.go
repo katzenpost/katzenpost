@@ -68,7 +68,7 @@ func handleEvent(ev interface{}, conversationModel *ConversationModel, contactLi
 		m.Avatar = "" // FIXME: add avatar
 		m.Message = string(event.Message)
 		m.Timestamp = event.Timestamp
-		conversationModel.AddMessage(m)
+		conversationModel.AppendMessage(m)
 
 	default:
 		// This case indicates a programming BUG!

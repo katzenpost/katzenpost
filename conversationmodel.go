@@ -60,7 +60,7 @@ func (m *ConversationModel) data(index *core.QModelIndex, role int) *core.QVaria
 		return core.NewQVariant()
 	}
 
-	var p = m.Messages()[len(m.Messages())-1-index.Row()]
+	var p = m.Messages()[index.Row()]
 	if p == nil {
 		return core.NewQVariant()
 	}

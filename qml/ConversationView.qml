@@ -38,9 +38,14 @@ Page {
             Layout.margins: pane.leftPadding + messageField.leftPadding
             displayMarginBeginning: 40
             displayMarginEnd: 40
-            verticalLayoutDirection: ListView.BottomToTop
+            verticalLayoutDirection: ListView.TopToBottom
             spacing: 12
             model: accountBridge.conversationModel
+            onCountChanged: {
+                var newIndex = count - 1
+                positionViewAtEnd()
+                currentIndex = newIndex
+            }
 
             delegate: Column {
                 anchors.right: model.outbound ? parent.right : undefined
