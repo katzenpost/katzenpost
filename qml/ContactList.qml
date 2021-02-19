@@ -115,8 +115,7 @@ ListView {
 
         onAccepted: {
             for (var i = 0; i < imageFileDialog.fileUrls.length; i++) {
-                var nickname = model.data(model.index(index, 0), Qt.UserRole)
-
+                var nickname = contactList.model.data(contactList.model.index(contactList.index, 0), Qt.UserRole)
                 accountBridge.loadAvatar(nickname, imageFileDialog.fileUrls[i])
             }
         }
