@@ -53,6 +53,17 @@ ListView {
                         imageFileDialog.open()
                     }
                 }
+                MenuItem {
+                    text: "Remove Contact"
+                    onTriggered: {
+                        // XXX: prompt for confirmation dialogue
+                        var nickname = contactList.data(contactList.index(index,0), Qt.UserRole)
+                        var result = accountBridge.removeContact(nickname)
+                        if (!result) {
+                            //  emit an err
+                        }
+                    }
+                }
             }
         }
 
