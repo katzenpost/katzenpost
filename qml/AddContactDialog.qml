@@ -66,6 +66,13 @@ Popup {
                             echoMode: TextInput.Password
                             placeholderText: qsTr("Passphrase")
                             Layout.fillWidth: true
+                            Keys.onReturnPressed: {
+                                if (!authButton.enabled) {
+                                    return
+                               }
+                               authButton.clicked()
+                               event.accepted = true
+                            }
                         }
 
                         Button {
