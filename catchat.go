@@ -26,7 +26,6 @@ const (
 var (
 	config Config
 
-	generate         = flag.Bool("g", false, "Generate the state file and then run client.")
 	clientConfigFile = flag.String("f", "", "Path to the client config file.")
 	stateFile        = flag.String("s", "catshadow_statefile", "The catshadow state file path.")
 
@@ -66,11 +65,10 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 	if err != nil {
 		panic(err)
 	}
-	if *generate {
-		if _, err := os.Stat(*stateFile); !os.IsNotExist(err) {
-			panic("cannot generate state file, already exists")
-		}
 
+	// automatically create a statefile if one does not already exist
+	// TODO: pick a sensible location for a default statefile other than cwd
+	if _, err := os.Stat(*stateFile); os.IsNotExist(err) {
 		cfg, linkKey := client.AutoRegisterRandomClient(cfg)
 		c, err := client.New(cfg)
 		if err != nil {
