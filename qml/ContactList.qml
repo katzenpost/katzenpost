@@ -16,6 +16,10 @@ ListView {
         var nickname = model.data(model.index(currentIndex, 0), Qt.UserRole)
         swipe.currentIndex = 1
         conversationView.messageTextField.forceActiveFocus()
+        if (!nickname) { // if the last contact was removed
+            swipe.currentIndex = 0
+            return;
+        }
         accountBridge.loadConversation(nickname)
     }
 
