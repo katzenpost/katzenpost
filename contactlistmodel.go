@@ -72,7 +72,7 @@ func (m *ContactListModel) data(index *core.QModelIndex, role int) *core.QVarian
 		return core.NewQVariant()
 	}
 
-	var p = m.Contacts()[len(m.Contacts())-1-index.Row()]
+	var p = m.Contacts()[index.Row()]
 	if p == nil {
 		return core.NewQVariant()
 	}
@@ -129,20 +129,19 @@ func (m *ContactListModel) clear() {
 
 func (m *ContactListModel) addContact(p *Contact) {
 	m.BeginInsertRows(core.NewQModelIndex(), 0, 0)
-	m.SetContacts(append(m.Contacts(), p))
+	m.SetContacts(append([]*Contact{p}, m.Contacts()...))
 	m.EndInsertRows()
 }
 
 func (m *ContactListModel) appendContact(p *Contact) {
 	m.BeginInsertRows(core.NewQModelIndex(), len(m.Contacts()), len(m.Contacts()))
-	m.SetContacts(append([]*Contact{p}, m.Contacts()...))
+	m.SetContacts(append(m.Contacts(), p))
 	m.EndInsertRows()
 }
 
 func (m *ContactListModel) removeContact(row int) {
-	trow := len(m.Contacts()) - 1 - row
 	m.BeginRemoveRows(core.NewQModelIndex(), row, row)
-	m.SetContacts(append(m.Contacts()[:trow], m.Contacts()[trow+1:]...))
+	m.SetContacts(append(m.Contacts()[:row], m.Contacts()[row+1:]...))
 	m.EndRemoveRows()
 }
 
