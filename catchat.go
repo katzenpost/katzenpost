@@ -16,7 +16,6 @@ import (
 	"github.com/therecipe/qt/gui"
 	"github.com/therecipe/qt/qml"
 	"github.com/therecipe/qt/quickcontrols2"
-	"golang.org/x/crypto/ssh/terminal"
 )
 
 const (
@@ -29,7 +28,7 @@ var (
 	clientConfigFile = flag.String("f", "", "Path to the client config file.")
 	stateFile        = flag.String("s", "catshadow_statefile", "The catshadow state file path.")
 
-	catShadowClient   *catshadow.Client
+	catshadowClient   *catshadow.Client
 	catshadowCfg      *catconfig.Config
 	contactListModel  *ContactListModel
 	conversationModel *ConversationModel
@@ -59,11 +58,22 @@ func runApp(config Config) {
 }
 
 func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
+	// XXX: if the catshadowClient already exists, shut it down
+	// FIXME: figure out a better way to toggle connected/disconnected
+	// states and allow to retry attempts on a timeout or other failure.
+	if catshadowClient != nil {
+		catshadowClient.Shutdown()
+		contactListModel.clear()
+		conversationModel.clear()
+	}
+	accountBridge.SetStatus("Connecting...")
 	var stateWorker *catshadow.StateWriter
 	var state *catshadow.State
 	cfg, err := catshadowCfg.ClientConfig()
 	if err != nil {
-		panic(err)
+		accountBridge.SetError(err.Error())
+		accountBridge.SetStatus("Disconnected")
+		return
 	}
 
 	// automatically create a statefile if one does not already exist
@@ -72,26 +82,40 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 		cfg, linkKey := client.AutoRegisterRandomClient(cfg)
 		c, err := client.New(cfg)
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			// UX only receives connection events from the catshadow client
+			accountBridge.SetStatus("Disconnected")
+			return
 		}
 
 		// Create statefile.
 		stateWorker, err = catshadow.NewStateWriter(c.GetLogger("catshadow_state"), *stateFile, passphrase)
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			accountBridge.SetStatus("Disconnected")
+			c.Shutdown()
+			return
 		}
 		// Start the stateworker
 		stateWorker.Start()
 		fmt.Println("creating remote message receiver spool")
 		backendLog, err := catshadowCfg.InitLogBackend()
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			accountBridge.SetStatus("Disconnected")
+			stateWorker.Halt()
+			c.Shutdown()
+			return
 		}
 
 		user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
-		catShadowClient, err = catshadow.NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
+		catshadowClient, err = catshadow.NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			accountBridge.SetStatus("Disconnected")
+			stateWorker.Halt()
+			c.Shutdown()
+			return
 		}
 		fmt.Println("catshadow client successfully created")
 	} else {
@@ -100,11 +124,15 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 		// Load previous state to setup our current client state.
 		backendLog, err := catshadowCfg.InitLogBackend()
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			accountBridge.SetStatus("Disconnected")
+			return
 		}
 		stateWorker, state, err = catshadow.LoadStateWriter(backendLog.GetLogger("state_worker"), *stateFile, passphrase)
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			accountBridge.SetStatus("Disconnected")
+			return
 		}
 		// Start the stateworker
 		stateWorker.Start()
@@ -116,22 +144,29 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte) {
 		// Run a Client.
 		c, err := client.New(cfg)
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			accountBridge.SetStatus("Disconnected")
+			stateWorker.Halt()
+			return
 		}
 
 		// Make a catshadow Client.
-		catShadowClient, err = catshadow.New(backendLog, c, stateWorker, state)
+		catshadowClient, err = catshadow.New(backendLog, c, stateWorker, state)
 		if err != nil {
-			panic(err)
+			accountBridge.SetError(err.Error())
+			accountBridge.SetStatus("Disconnected")
+			c.Shutdown()
+			stateWorker.Halt()
+			return
 		}
 	}
 
 	// Start catshadow client.
-	catShadowClient.Start()
+	catshadowClient.Start()
 
-	go eventLoop(catShadowClient.EventSink, conversationModel, contactListModel)
+	go eventLoop(catshadowClient.EventSink, conversationModel, contactListModel)
 
-	contacts := catShadowClient.GetContacts()
+	contacts := catshadowClient.GetContacts()
 	loadContactList(contactListModel, contacts)
 }
 
@@ -188,16 +223,6 @@ func main() {
 		}
 	}
 
-	// Decrypt and load the catshadow state file.
-	fmt.Print("Enter statefile decryption passphrase: ")
-	passphrase, err := terminal.ReadPassword(int(syscall.Stdin))
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println()
-
-	go setupCatShadow(catshadowCfg, passphrase)
-
 	// Start graphical user interface.
 	setupQmlBridges()
 
@@ -216,7 +241,7 @@ func main() {
 	runApp(config)
 
 	// Shutdown client after graphical user interface is halted.
-	catShadowClient.Shutdown()
+	catshadowClient.Shutdown()
 
 	// Save Qt user interface config on clean shutdown.
 	config.Theme = configBridge.Theme()

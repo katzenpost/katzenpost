@@ -21,6 +21,7 @@ type AccountBridge struct {
 	_ func(contact string)                          `slot:"loadConversation"`
 	_ func(recipient string, message string)        `slot:"sendMessage"`
 	_ func(contact string, url string)              `slot:"loadAvatar"`
+	_ func(passphrase string)                       `slot:"loadCatshadow"`
 
 	_ *core.QAbstractListModel `property:"contactListModel"`
 	_ *core.QAbstractListModel `property:"conversationModel"`
@@ -52,19 +53,20 @@ func setupQmlBridges() {
 	accountBridge = NewAccountBridge(nil)
 	configBridge = NewConfigBridge(nil)
 
-	accountBridge.SetStatus("Connecting...")
-
 	accountBridge.ConnectAddContact(func(passphrase string, nickname string) bool {
-		return addContact(catShadowClient, nickname, passphrase)
+		return addContact(catshadowClient, nickname, passphrase)
 	})
 	accountBridge.ConnectLoadConversation(func(nickname string) {
-		loadConversation(catShadowClient, nickname)
+		loadConversation(catshadowClient, nickname)
 	})
 	accountBridge.ConnectSendMessage(func(recipient string, message string) {
-		sendMessage(catShadowClient, recipient, message)
+		sendMessage(catshadowClient, recipient, message)
 	})
 	accountBridge.ConnectLoadAvatar(func(nickname string, iu string) {
 		fmt.Println("Loading avatar:", iu)
 		contactListModel.updateAvatar(nickname, iu)
+	})
+	accountBridge.ConnectLoadCatshadow(func(password string) {
+		go setupCatShadow(catshadowCfg, []byte(password))
 	})
 }

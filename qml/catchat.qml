@@ -28,9 +28,7 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        if (settings.firstRun) {
-            // connectDialog.open()
-        }
+	connectDialog.open()
     }
     onClosing: function() {
         console.log("Closing mainWindow")
@@ -47,6 +45,14 @@ ApplicationWindow {
             y: mainWindow.height / 2 - height / 2 - mainWindow.header.height
             width: 340
             height: 340
+        }
+
+        ConnectDialog {
+            id: connectDialog
+            x: mainWindow.width / 2 - width / 2
+            y: mainWindow.height / 2 - height / 2 - mainWindow.header.height
+            width: 340
+            height: 500
         }
 
         AddContactDialog {
@@ -205,7 +211,7 @@ ApplicationWindow {
                 x: parent.width - width
                 transformOrigin: Menu.TopRight
 
-/*
+
                 MenuItem {
                     text: qsTr("Connect")
                     onTriggered: function() {
@@ -213,7 +219,7 @@ ApplicationWindow {
                         connectDialog.open()
                     }
                 }
-*/
+
                 MenuItem {
                     text: qsTr("Settings")
                     onTriggered: settingsDialog.open()
