@@ -125,20 +125,19 @@ func (m *ConversationModel) clear() {
 
 func (m *ConversationModel) addMessage(p *Message) {
 	m.BeginInsertRows(core.NewQModelIndex(), 0, 0)
-	m.SetMessages(append(m.Messages(), p))
+	m.SetMessages(append([]*Message{p}, m.Messages()...))
 	m.EndInsertRows()
 }
 
 func (m *ConversationModel) appendMessage(p *Message) {
 	m.BeginInsertRows(core.NewQModelIndex(), len(m.Messages()), len(m.Messages()))
-	m.SetMessages(append([]*Message{p}, m.Messages()...))
+	m.SetMessages(append(m.Messages(), p))
 	m.EndInsertRows()
 }
 
 func (m *ConversationModel) removeMessage(row int) {
-	trow := len(m.Messages()) - 1 - row
 	m.BeginRemoveRows(core.NewQModelIndex(), row, row)
-	m.SetMessages(append(m.Messages()[:trow], m.Messages()[trow+1:]...))
+	m.SetMessages(append(m.Messages()[:row], m.Messages()[row+1:]...))
 	m.EndRemoveRows()
 }
 
