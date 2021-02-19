@@ -57,7 +57,8 @@ ListView {
                     text: "Remove Contact"
                     onTriggered: {
                         // XXX: prompt for confirmation dialogue
-                        var nickname = contactList.data(contactList.index(index,0), Qt.UserRole)
+                        var idx = contactList.model.index(index, 0)
+                        var nickname = contactList.model.data(idx, Qt.UserRole)
                         var result = accountBridge.removeContact(nickname)
                         if (!result) {
                             //  emit an err
