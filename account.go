@@ -58,6 +58,13 @@ func loadConversation(client *catshadow.Client, contact string) {
 
 // addContact adds a contact to the contact list
 func addContact(client *catshadow.Client, nickname string, passphrase string) bool {
+	for _, v := range contactListModel.Contacts() {
+		if v.Nickname == nickname {
+			// name already taken
+			return false
+		}
+	}
+
 	client.NewContact(nickname, []byte(passphrase))
 
 	var c = NewContact(nil)
