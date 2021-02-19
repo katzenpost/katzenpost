@@ -75,6 +75,18 @@ func addContact(client *catshadow.Client, nickname string, passphrase string) bo
 	return true
 }
 
+// removeContact removes a contact from the contact list
+func removeContact(client *catshadow.Client, nickname string) bool {
+	for i, v := range contactListModel.Contacts() {
+		if v.Nickname == nickname {
+			client.RemoveContact(nickname)
+			contactListModel.RemoveContact(i)
+			return true
+		}
+	}
+	return false
+}
+
 // sendMessage sends a message to a contact
 func sendMessage(client *catshadow.Client, nickname string, message string) {
 	id := client.SendMessage(nickname, []byte(message))

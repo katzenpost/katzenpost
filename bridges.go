@@ -18,6 +18,7 @@ type AccountBridge struct {
 	_ bool   `property:"keyExchanged"`
 
 	_ func(passphrase string, nickname string) bool `slot:"addContact"`
+	_ func(contact string) bool                     `slot:"removeContact"`
 	_ func(contact string)                          `slot:"loadConversation"`
 	_ func(recipient string, message string)        `slot:"sendMessage"`
 	_ func(contact string, url string)              `slot:"loadAvatar"`
@@ -55,6 +56,9 @@ func setupQmlBridges() {
 
 	accountBridge.ConnectAddContact(func(passphrase string, nickname string) bool {
 		return addContact(catshadowClient, nickname, passphrase)
+	})
+	accountBridge.ConnectRemoveContact(func(nickname string) bool {
+		return removeContact(catshadowClient, nickname)
 	})
 	accountBridge.ConnectLoadConversation(func(nickname string) {
 		loadConversation(catshadowClient, nickname)
