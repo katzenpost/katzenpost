@@ -46,6 +46,7 @@ import (
 
 var (
 	errTrialDecryptionFailed = errors.New("Trial Decryption Failed")
+	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
 )
 
 // Client is the mixnet client which interacts with other clients
@@ -960,6 +961,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
+				c.save()
 			default:
 				panic("received spool response for MessageID not requested yet")
 			}
@@ -1003,8 +1005,15 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			// message decrypted successfully
 			decrypted = true
 			nickname = contact.Nickname
+			if len(plaintext) < 4 {
+				// short plaintext received
+				return errInvalidPlaintextLength
+			}
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			message.Plaintext = plaintext[4 : 4+payloadLen]
+			if payloadLen + 4 != uint32(len(plaintext)) {
+				return errInvalidPlaintextLength
+			}
+			message.Plaintext = plaintext[4 : payloadLen]
 			message.Timestamp = time.Now()
 			message.Outbound = false
 			break
@@ -1028,6 +1037,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 		c.conversations[nickname][convoMesgID] = &message
 		c.conversationsMutex.Unlock()
+		c.save()
 
 		c.eventCh.In() <- &MessageReceivedEvent{
 			Nickname:  nickname,
