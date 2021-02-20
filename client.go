@@ -700,6 +700,10 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
+	if len(message) + 4 > DoubleRatchetPayloadLength {
+		c.fatalErrCh <- fmt.Errorf("Message too large to transmit")
+		return MessageID{}
+	}
 	convoMesgID := MessageID{}
 	_, err := rand.Reader.Read(convoMesgID[:])
 	if err != nil {
@@ -740,7 +744,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	payload := [DoubleRatchetPayloadLength]byte{}
-	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
+	payloadLen := len(message)
+	if payloadLen > DoubleRatchetPayloadLength - 4 {
+		payloadLen = DoubleRatchetPayloadLength - 4
+	}
+	binary.BigEndian.PutUint32(payload[:4], uint32(payloadLen))
 	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])
@@ -957,7 +965,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)
 				default:
 					// received an error, likely due to retransmission
-					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
+					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x, err: %s", *replyEvent.MessageID, err.Error())
 				}
 				// in all other cases, advance the spool read descriptor
 				c.spoolReadDescriptor.IncrementOffset()
@@ -1010,10 +1018,10 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 				return errInvalidPlaintextLength
 			}
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			if payloadLen + 4 != uint32(len(plaintext)) {
+			if payloadLen + 4 > uint32(len(plaintext)) {
 				return errInvalidPlaintextLength
 			}
-			message.Plaintext = plaintext[4 : payloadLen]
+			message.Plaintext = plaintext[4 : 4 + payloadLen]
 			message.Timestamp = time.Now()
 			message.Outbound = false
 			break
