@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -45,7 +46,7 @@ import (
 )
 
 var (
-	errTrialDecryptionFailed = errors.New("Trial Decryption Failed")
+	errTrialDecryptionFailed  = errors.New("Trial Decryption Failed")
 	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
 )
 
@@ -358,6 +359,26 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 		}
 	}
 	return err
+}
+
+func (c *Client) doGetConversation(nickname string, responseChan chan Messages) {
+	var msg Messages
+
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	cc, ok := c.conversations[nickname]
+	if !ok {
+		close(responseChan)
+		return
+	}
+	for _, m := range cc {
+		msg = append(msg, m)
+	}
+	// do not block the worker
+	go func() {
+		sort.Sort(msg)
+		responseChan <- msg
+	}()
 }
 
 func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
@@ -700,7 +721,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
-	if len(message) + 4 > DoubleRatchetPayloadLength {
+	if len(message)+4 > DoubleRatchetPayloadLength {
 		c.fatalErrCh <- fmt.Errorf("Message too large to transmit")
 		return MessageID{}
 	}
@@ -745,7 +766,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 
 	payload := [DoubleRatchetPayloadLength]byte{}
 	payloadLen := len(message)
-	if payloadLen > DoubleRatchetPayloadLength - 4 {
+	if payloadLen > DoubleRatchetPayloadLength-4 {
 		payloadLen = DoubleRatchetPayloadLength - 4
 	}
 	binary.BigEndian.PutUint32(payload[:4], uint32(payloadLen))
@@ -874,6 +895,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			}
 
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
+			c.setMessageSent(tp.Nickname, tp.MessageID)
 			c.eventCh.In() <- &MessageSentEvent{
 				Nickname:  tp.Nickname,
 				MessageID: tp.MessageID,
@@ -927,6 +949,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					panic("contact is missing")
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
+				c.setMessageDelivered(tp.Nickname, tp.MessageID)
 				c.eventCh.In() <- &MessageDeliveredEvent{
 					Nickname:  tp.Nickname,
 					MessageID: tp.MessageID,
@@ -981,16 +1004,32 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 	}
 }
 
+// GetConversation returns a map of messages between a contact
 func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations[nickname]
 }
 
+// GetConversation returns a map of all the maps of messages between a contact
 func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations
+}
+
+// GetSortedConversation returns Messages (a slice of *Message, sorted by Timestamp)
+func (c *Client) GetSortedConversation(nickname string) Messages {
+	getConversationOp := opGetConversation{
+		name:         nickname,
+		responseChan: make(chan Messages),
+	}
+	c.opCh <- &getConversationOp
+	m, ok := <-getConversationOp.responseChan
+	if !ok {
+		return nil
+	}
+	return m
 }
 
 func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) error {
@@ -1018,10 +1057,10 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 				return errInvalidPlaintextLength
 			}
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			if payloadLen + 4 > uint32(len(plaintext)) {
+			if payloadLen+4 > uint32(len(plaintext)) {
 				return errInvalidPlaintextLength
 			}
-			message.Plaintext = plaintext[4 : 4 + payloadLen]
+			message.Plaintext = plaintext[4 : 4+payloadLen]
 			message.Timestamp = time.Now()
 			message.Outbound = false
 			break
@@ -1056,4 +1095,32 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
 	return errTrialDecryptionFailed
+}
+
+// setMessageSent sets Message MessageID Sent = true and returns true on success
+func (c *Client) setMessageSent(nickname string, msgId MessageID) bool {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	if ch, ok := c.conversations[nickname]; ok {
+		if m, ok := ch[msgId]; ok {
+			m.Sent = true
+			return true
+		}
+	}
+
+	return false
+}
+
+// setMessageDelivered sets Message MessageID Delivered = true and returns true on success
+func (c *Client) setMessageDelivered(nickname string, msgId MessageID) bool {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	if ch, ok := c.conversations[nickname]; ok {
+		if m, ok := ch[msgId]; ok {
+			m.Delivered = true
+			return true
+		}
+	}
+
+	return false
 }

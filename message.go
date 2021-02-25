@@ -18,10 +18,40 @@
 
 package catshadow
 
+import (
+	"time"
+)
+
 type SentMessageDescriptor struct {
 	// Nickname is the contact nickname to whom a message was sent.
 	Nickname string
 
 	// MessageID is the key in the conversation map referencing a specific message.
 	MessageID MessageID
+}
+
+// Message encapsulates message that is sent or received.
+type Message struct {
+	Plaintext []byte
+	Timestamp time.Time
+	Outbound  bool
+	Sent      bool
+	Delivered bool
+}
+
+type Messages []*Message
+
+// Len implements sort.Interface.
+func (d Messages) Len() int {
+	return len(d)
+}
+
+// Swap is part of sort.Interface.
+func (d Messages) Swap(i, j int) {
+	d[i], d[j] = d[j], d[i]
+}
+
+// Less is part of sort.Interface.
+func (d Messages) Less(i, j int) bool {
+	return d[i].Timestamp.Before(d[j].Timestamp)
 }

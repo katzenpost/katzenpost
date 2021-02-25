@@ -93,6 +93,8 @@ func (c *Client) worker() {
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
 				op.responseChan <- c.contactNicknames
+			case *opGetConversation:
+				c.doGetConversation(op.name, op.responseChan)
 			case *opRetransmit:
 				c.log.Debugf("RETRANSMISSION for %s", op.contact.Nickname)
 				c.sendMessage(op.contact)
