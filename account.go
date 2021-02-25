@@ -3,6 +3,7 @@ package main
 import (
 	"sort"
 	"time"
+	"fmt"
 
 	"github.com/katzenpost/catshadow"
 )
@@ -89,6 +90,10 @@ func removeContact(client *catshadow.Client, nickname string) bool {
 
 // sendMessage sends a message to a contact
 func sendMessage(client *catshadow.Client, nickname string, message string) {
+	if len(message) + 4 > catshadow.DoubleRatchetPayloadLength {
+		accountBridge.SetError(fmt.Sprintf("Message not sent: Maximum length is %d", catshadow.DoubleRatchetPayloadLength -4))
+		return
+	}
 	id := client.SendMessage(nickname, []byte(message))
 
 	var m = NewMessage(nil)
