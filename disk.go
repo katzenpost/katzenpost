@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/core/crypto/ecdh"
@@ -39,13 +38,6 @@ const (
 	keySize   = 32
 	nonceSize = 24
 )
-
-// Message encapsulates message that is sent or received.
-type Message struct {
-	Plaintext []byte
-	Timestamp time.Time
-	Outbound  bool
-}
 
 // State is the struct type representing the Client's state
 // which is encrypted and persisted to disk.

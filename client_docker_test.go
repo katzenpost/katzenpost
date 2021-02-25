@@ -406,6 +406,13 @@ and can readily scale to millions of users.
 		alice.log.Debugf("%d outbound %v message:\n%s\n", i, mesg.Outbound, mesg.Plaintext)
 	}
 
+	// Test sorted conversation and message delivery status
+	aliceSortedConvesation := alice.GetSortedConversation("bob")
+	for _, msg := range aliceSortedConvesation {
+		require.True(msg.Sent)
+		require.True(msg.Delivered)
+	}
+
 	bob.log.Debug("LOADING BOB'S CONVERSATION")
 	bobConvesation := bob.GetConversation("alice")
 	for i, mesg := range bobConvesation {
