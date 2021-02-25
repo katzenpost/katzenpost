@@ -95,6 +95,8 @@ github.com/katzenpost/catshadow v0.0.32 h1:/3ptBUrhxf6z9QzD59A+pVsh9D6m63BmL7pR8
 github.com/katzenpost/catshadow v0.0.32/go.mod h1:sPy1XUxUEIhDpqR+YzmqEfzunRhgjx8+AlhQQUOtY3c=
 github.com/katzenpost/catshadow v0.0.35 h1:U7febDWlAjAtoioGB8G9x7+fdCkn31ES7411dLjsHio=
 github.com/katzenpost/catshadow v0.0.35/go.mod h1:vGplLU1xSD8qawzhmxuzzgt4yNcsEvPfAa6wk7DcM9g=
+github.com/katzenpost/catshadow v0.0.36 h1:+/XWjF1rcG3LeWz4pR4JNzzqWazYhPfroJDI4l71Qf0=
+github.com/katzenpost/catshadow v0.0.36/go.mod h1:vGplLU1xSD8qawzhmxuzzgt4yNcsEvPfAa6wk7DcM9g=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
