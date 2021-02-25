@@ -92,7 +92,10 @@ func (c *Client) worker() {
 			case *opSendMessage:
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
-				op.responseChan <- c.contactNicknames
+				//  do not block worker
+				go func() {
+					op.responseChan <- c.contactNicknames
+				}()
 			case *opGetConversation:
 				c.doGetConversation(op.name, op.responseChan)
 			case *opRetransmit:
