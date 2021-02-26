@@ -112,7 +112,7 @@ func (s *Session) sendDropDecoy() {
 		s.fatalErrCh <- errors.New("failure to get loop service")
 		return
 	}
-	payload := [constants.UserForwardPayloadLength]byte{}
+	payload := make([]byte, constants.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err = io.ReadFull(rand.Reader, id[:])
 	if err != nil {
@@ -137,7 +137,7 @@ func (s *Session) sendLoopDecoy() {
 		s.fatalErrCh <- errors.New("failure to get loop service")
 		return
 	}
-	payload := [constants.UserForwardPayloadLength]byte{}
+	payload := make([]byte, constants.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err = io.ReadFull(rand.Reader, id[:])
 	if err != nil {
@@ -161,7 +161,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 	if len(message) > constants.UserForwardPayloadLength-4 {
 		return nil, fmt.Errorf("invalid message size: %v", len(message))
 	}
-	payload := [constants.UserForwardPayloadLength]byte{}
+	payload := make([]byte, constants.UserForwardPayloadLength)
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
 	id := [cConstants.MessageIDLength]byte{}
