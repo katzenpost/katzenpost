@@ -45,7 +45,7 @@ import (
 )
 
 var (
-	errTrialDecryptionFailed = errors.New("Trial Decryption Failed")
+	errTrialDecryptionFailed  = errors.New("Trial Decryption Failed")
 	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
 )
 
@@ -700,7 +700,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
-	if len(message) + 4 > DoubleRatchetPayloadLength {
+	if len(message)+4 > DoubleRatchetPayloadLength {
 		c.fatalErrCh <- fmt.Errorf("Message too large to transmit")
 		return MessageID{}
 	}
@@ -743,9 +743,9 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		return
 	}
 
-	payload := [DoubleRatchetPayloadLength]byte{}
+	payload := make([]byte, DoubleRatchetPayloadLength)
 	payloadLen := len(message)
-	if payloadLen > DoubleRatchetPayloadLength - 4 {
+	if payloadLen > DoubleRatchetPayloadLength-4 {
 		payloadLen = DoubleRatchetPayloadLength - 4
 	}
 	binary.BigEndian.PutUint32(payload[:4], uint32(payloadLen))
@@ -1018,10 +1018,10 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 				return errInvalidPlaintextLength
 			}
 			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			if payloadLen + 4 > uint32(len(plaintext)) {
+			if payloadLen+4 > uint32(len(plaintext)) {
 				return errInvalidPlaintextLength
 			}
-			message.Plaintext = plaintext[4 : 4 + payloadLen]
+			message.Plaintext = plaintext[4 : 4+payloadLen]
 			message.Timestamp = time.Now()
 			message.Outbound = false
 			break
