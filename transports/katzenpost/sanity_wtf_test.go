@@ -34,13 +34,13 @@ func TestSerializationSanity(t *testing.T) {
 	serialized, err := cbor.Marshal(reply)
 	require.NoError(err)
 
-	payload := [constants.UserForwardPayloadLength]byte{}
-	copy(payload[:], serialized)
+	payload := make([]byte, constants.UserForwardPayloadLength)
+	copy(payload, serialized)
 
 	response := cborplugin.Response{
 		Payload: make([]byte, 0),
 	}
-	err = cbor.Unmarshal(payload[:], &response)
+	err = cbor.Unmarshal(payload, &response)
 	require.NoError(err)
 
 	t.Logf("%s", response.Payload)
