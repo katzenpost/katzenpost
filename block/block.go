@@ -29,21 +29,25 @@ import (
 	"github.com/katzenpost/noise"
 )
 
-const (
-	// MessageIDLength is the length of a message ID in bytes.
-	MessageIDLength = 16
-
+var (
 	// BlockCiphertextLength is the length of a BlockCiphertext in bytes.
 	BlockCiphertextLength = constants.UserForwardPayloadLength
 
 	// BlockPayloadLength is the maximum user payload length in a Block.
 	BlockPayloadLength = BlockCiphertextLength - (blockCiphertextOverhead + blockOverhead)
 
+	blockLength = blockOverhead + BlockPayloadLength
+)
+
+const (
+	// MessageIDLength is the length of a message ID in bytes.
+	MessageIDLength = 16
+
 	blockCiphertextOverhead = keyLength + macLength + keyLength + macLength // e, es, s, ss
 	blockOverhead           = MessageIDLength + 2 + 2 + 4
-	blockLength             = blockOverhead + BlockPayloadLength
-	keyLength               = 32
-	macLength               = 16
+
+	keyLength = 32
+	macLength = 16
 
 	totalBlocksOffset = MessageIDLength
 	blockIDOffset     = totalBlocksOffset + 2
@@ -97,7 +101,7 @@ func (b *Block) FromBytes(buf []byte) error {
 	if b.BlockID >= b.TotalBlocks {
 		return fmt.Errorf("block: BlockID (%v) >= TotalBlocks (%v)", b.BlockID, b.TotalBlocks)
 	}
-	if b.BlockLength > BlockPayloadLength {
+	if b.BlockLength > uint32(BlockPayloadLength) {
 		return fmt.Errorf("block: payload oversized: %v", len(b.Payload))
 	}
 	// XXX: Should this reject undersized non-terminal blocks?
