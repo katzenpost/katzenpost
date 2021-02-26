@@ -45,9 +45,6 @@ const (
 	// from the spool command CBOR encoding.
 	QueryOverhead = 171
 
-	// SpoolPayloadLength is the length of the spool append message payload.
-	SpoolPayloadLength = (constants.UserForwardPayloadLength - 4) - QueryOverhead
-
 	// CreateSpoolCommand is the identity of the create spool command.
 	CreateSpoolCommand = 0
 
@@ -66,6 +63,9 @@ const (
 	// StatusOK is a status string indicating there was no error on the spool operation.
 	StatusOK = "OK"
 )
+
+// SpoolPayloadLength is the length of the spool append message payload.
+var SpoolPayloadLength = (constants.UserForwardPayloadLength - 4) - QueryOverhead
 
 type SpoolRequest struct {
 	Command byte
