@@ -67,9 +67,7 @@ func TestBuildCommandVectors(t *testing.T) {
 	retrieveMessage := &RetrieveMessage{Sequence: retrieveMessageSeq}
 
 	const (
-		// All packet lengths are currently normalized.
-		expectedLen = cmdOverhead + messageEmptyLength
-		hint        = 0x17
+		hint = 0x17
 	)
 
 	var emptyMsgSeq uint32 = 9876

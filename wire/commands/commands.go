@@ -27,15 +27,18 @@ import (
 	"github.com/katzenpost/core/utils"
 )
 
+var (
+	messageMsgPaddingLength = sphinxConstants.SURBIDLength + constants.SphinxPlaintextHeaderLength + sphinx.SURBLength + sphinx.PayloadTagLength
+	messageEmptyLength      = messageACKLength + sphinx.PayloadTagLength + constants.ForwardPayloadLength
+	messageACKLength        = messageBaseLength + sphinxConstants.SURBIDLength
+	messageMsgLength        = messageBaseLength + messageMsgPaddingLength
+)
+
 const (
 	cmdOverhead = 1 + 1 + 4
 
-	retreiveMessageLength   = 4
-	messageBaseLength       = 1 + 1 + 4
-	messageACKLength        = messageBaseLength + sphinxConstants.SURBIDLength
-	messageMsgLength        = messageBaseLength + messageMsgPaddingLength
-	messageMsgPaddingLength = sphinxConstants.SURBIDLength + constants.SphinxPlaintextHeaderLength + sphinx.SURBLength + sphinx.PayloadTagLength
-	messageEmptyLength      = messageACKLength + sphinx.PayloadTagLength + constants.ForwardPayloadLength
+	retreiveMessageLength = 4
+	messageBaseLength     = 1 + 1 + 4
 
 	getConsensusLength  = 8
 	consensusBaseLength = 1
@@ -493,7 +496,7 @@ func (c *MessageACK) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+messageACKLength, cmdOverhead+messageACKLength+sphinx.PayloadTagLength+constants.ForwardPayloadLength)
 
 	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], messageACKLength+uint32(len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(messageACKLength+len(c.Payload)))
 	out[6] = byte(messageTypeACK)
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
@@ -517,7 +520,7 @@ func (c *Message) ToBytes() []byte {
 
 	out := make([]byte, cmdOverhead+messageMsgLength+len(c.Payload))
 	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], messageMsgLength+uint32(len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(messageMsgLength+len(c.Payload)))
 	out[6] = byte(messageTypeMessage)
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
@@ -535,7 +538,7 @@ func (c *MessageEmpty) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+messageEmptyLength)
 
 	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], messageEmptyLength)
+	binary.BigEndian.PutUint32(out[2:6], uint32(messageEmptyLength))
 	out[6] = byte(messageTypeEmpty)
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	return out
