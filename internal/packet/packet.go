@@ -216,8 +216,9 @@ func newRedundantError(cmd commands.RoutingCommand) error {
 }
 
 func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
+
+	var hdrLength = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
 	const (
-		hdrLength    = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
 		flagsPadding = 0
 		flagsSURB    = 1
 		reserved     = 0
@@ -258,13 +259,13 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	}
 
 	// Pad out payloads to the full packet size.
-	var respPayload [constants.ForwardPayloadLength]byte
+	respPayload := make([]byte, constants.ForwardPayloadLength)
 	switch {
 	case len(payload) == 0:
 	case len(payload) > constants.ForwardPayloadLength:
 		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
 	default:
-		copy(respPayload[:], payload)
+		copy(respPayload, payload)
 	}
 
 	// Build a response packet using a SURB.
@@ -274,7 +275,7 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	// based on hardware acceleration considerations.  However the forward
 	// packet processing doesn't constantly utilize the AES-NI units due
 	// to the non-AEZ components of a Sphinx Unwrap operation.
-	rawRespPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, respPayload[:])
+	rawRespPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, respPayload)
 	if err != nil {
 		return nil, err
 	}
