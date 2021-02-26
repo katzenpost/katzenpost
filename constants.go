@@ -25,10 +25,10 @@ import (
 	"github.com/katzenpost/memspool/common"
 )
 
-const (
-	// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
-	DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
+// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
+var DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
 
+const (
 	// MessageExpirationDuration is the duration of time after which messages will be removed.
 	MessageExpirationDuration = 168 * time.Hour
 
