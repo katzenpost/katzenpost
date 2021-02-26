@@ -86,11 +86,11 @@ func TestRetrieveMessage(t *testing.T) {
 }
 
 func TestMessage(t *testing.T) {
+	// All packet lengths are currently normalized.
+	var expectedLen = cmdOverhead + messageEmptyLength
 	const (
-		// All packet lengths are currently normalized.
-		expectedLen = cmdOverhead + messageEmptyLength
-		hint        = 0x17
-		seq         = 0xa5a5a5a5
+		hint = 0x17
+		seq  = 0xa5a5a5a5
 	)
 
 	require := require.New(t)
