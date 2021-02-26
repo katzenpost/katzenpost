@@ -298,7 +298,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 		}
 
 		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
-			var zeroBytes [constants.UserForwardPayloadLength]byte
+			zeroBytes := make([]byte, constants.UserForwardPayloadLength)
 			payload := make([]byte, 2, 2+sphinx.SURBLength+constants.UserForwardPayloadLength)
 			payload[0] = 1 // Packet has a SURB.
 
@@ -307,7 +307,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 				d.log.Debugf("Failed to generate SURB: %v", err)
 			}
 			payload = append(payload, surb...)
-			payload = append(payload, zeroBytes[:]...)
+			payload = append(payload, zeroBytes...)
 
 			// TODO: This should probably also store path information,
 			// so that it's possible to figure out which links/nodes
@@ -338,7 +338,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 }
 
 func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
-	var payload [2 + sphinx.SURBLength + constants.UserForwardPayloadLength]byte
+	payload := make([]byte, 2+sphinx.SURBLength+constants.UserForwardPayloadLength)
 
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
@@ -350,7 +350,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 		}
 
 		if then.Sub(now) < epochtime.Period*2 {
-			pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload[:])
+			pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
 				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
 				return
