@@ -56,7 +56,14 @@ var (
 	lastMessages = make(map[string]*catshadow.Message)
 
 	// theme
-	th = material.NewTheme(gofont.Collection())
+	th = func() *material.Theme {
+		th := material.NewTheme(gofont.Collection())
+		th.Bg = rgb(0x0)
+		th.Fg = rgb(0xFFFFFFFF)
+		th.ContrastBg = rgb(0x22222222)
+		th.ContrastFg = rgb(0x33333333)
+		return th
+	}()
 
 	// status vars
 	loggedIn  bool
@@ -506,15 +513,20 @@ func (p *signInPage) Start(stop <-chan struct{}) {
 
 func (p *signInPage) Layout(gtx layout.Context) layout.Dimensions {
 	p.password.Focus()
-	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
-		layout.Flexed(1, func(gtx C) D {
-			return material.Button(th, p.submit, "MEOW").Layout(gtx)
-		}),
-		layout.Flexed(1, func(gtx C) D {
-			fill{rgb(0xefefef)}.Layout(gtx)
-			return layout.Center.Layout(gtx, material.Editor(th, p.password, "Enter your password").Layout)
-		}),
-	)
+	bg := Background{
+		Color: th.Bg,
+		Inset: layout.Inset{},
+	}
+	return bg.Layout(gtx, func(gtx C) D {
+		return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween,  Alignment: layout.End}.Layout(gtx,
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Editor(th, p.password, "Enter your password").Layout)
+			}),
+			layout.Rigid(func(gtx C) D {
+				return material.Button(th, p.submit, "MEOW").Layout(gtx)
+			}),
+		)
+	})
 }
 
 type SignInEvent struct {
@@ -561,14 +573,14 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 	contacts := getSortedContacts()
 	// xxx do not request this every frame...
 	bg := Background{
-		Color: th.ContrastBg,
-		Inset: layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)},
+		Color: th.Bg,
+		Inset: layout.Inset{},
 	}
 	return bg.Layout(gtx, func(gtx C) D {
 		// returns a flex consisting of the contacts list and add contact button
-		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
+		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
 			layout.Flexed(1, func(gtx C) D {
-				gtx.Constraints.Min.X = gtx.Px(unit.Dp(200))
+				gtx.Constraints.Min.X = gtx.Px(unit.Dp(300))
 				// the contactList
 				return contactList.Layout(gtx, len(contacts), func(gtx C, i int) layout.Dimensions {
 					msgs := catshadowClient.GetSortedConversation(contacts[i])
@@ -594,7 +606,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 									return cc.Layout(gtx, func(gtx C) D {
 										sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
 										gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-										return fill{th.Bg}.Layout(gtx)
+										return fill{th.ContrastBg}.Layout(gtx)
 									})
 								}), // end contact icon
 								// contact name and last message
@@ -622,7 +634,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 			}),
 			// addContact
 			layout.Rigid(func(gtx C) D {
-				return layout.Center.Layout(gtx, material.Button(th, p.addContact, "Add Contact").Layout)
+				return material.Button(th, p.addContact, "Add Contact").Layout(gtx)
 			}),
 		)
 	})
@@ -670,11 +682,16 @@ type AddContactPage struct {
 
 // Layout returns a simple centered layout prompting user for contact nickname and secret
 func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
-	return layout.Center.Layout(gtx, func(gtx C) D {
-		return layout.Flex{Alignment: layout.Middle, Axis: layout.Vertical}.Layout(gtx,
-			layout.Rigid(func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.nickname, "nickname").Layout) }),
-			layout.Rigid(func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.secret, "secret").Layout) }),
-			layout.Rigid(func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.submit, "MEOW").Layout) }),
+	bg := Background{
+		Color:  th.Bg,
+		Inset:  layout.Inset{},
+	}
+
+	return bg.Layout(gtx, func(gtx C) D {
+		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
+			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.nickname, "nickname").Layout) }),
+			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.secret, "secret").Layout) }),
+			layout.Rigid(func(gtx C) D { return material.Button(th, p.submit, "MEOW").Layout(gtx) }),
 		)
 	})
 }
@@ -829,36 +846,43 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 	messages := catshadowClient.GetSortedConversation(c.nickname)
 	c.compose.Focus()
 	bgl := Background{
-		Color: th.ContrastBg,
-		Inset: layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)},
+		Color: th.Bg,
+		Inset: layout.Inset{Top: unit.Dp(0), Bottom: unit.Dp(0), Left: unit.Dp(0), Right: unit.Dp(0)},
 	}
 
-	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceAround, Alignment: layout.Baseline}.Layout(gtx,
+	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
-			in := layout.UniformInset(unit.Dp(8))
-			return in.Layout(gtx, func(gtx C) D { return layout.Center.Layout(gtx, material.Caption(th, c.nickname).Layout) })
+			return bgl.Layout(gtx, func(gtx C) D { return layout.Center.Layout(gtx, material.Caption(th, c.nickname).Layout) })
 		}),
-		layout.Flexed(3, func(gtx C) D {
+		layout.Flexed(2, func(gtx C) D {
 			return bgl.Layout(gtx, func(ctx C) D {
+				if len(messages) == 0 {
+					return fill{th.Bg}.Layout(ctx)
+				}
 				return messageList.Layout(gtx, len(messages), func(gtx C, i int) layout.Dimensions {
-					bg := Background{
+					bgSender := Background{
+						Color:  th.ContrastBg,
+						Inset:  layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(12)},
+						Radius: unit.Dp(10),
+					}
+					bgReceiver := Background{
 						Color:  th.ContrastFg,
-						Inset:  layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)},
+						Inset:  layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(8)},
 						Radius: unit.Dp(10),
 					}
 					if messages[i].Outbound {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
-							layout.Flexed(1, fill{th.Fg}.Layout),
-							layout.Flexed(1, func(gtx C) D {
-								return bg.Layout(gtx, material.Body2(th, string(messages[i].Plaintext)).Layout)
+							layout.Flexed(1, fill{th.Bg}.Layout),
+							layout.Flexed(5, func(gtx C) D {
+								return bgSender.Layout(gtx, material.Body2(th, string(messages[i].Plaintext)).Layout)
 							}),
 						)
 					} else {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
-							layout.Flexed(1, func(gtx C) D {
-								return bg.Layout(gtx, material.Body2(th, string(messages[i].Plaintext)).Layout)
+							layout.Flexed(5, func(gtx C) D {
+								return bgReceiver.Layout(gtx, material.Body2(th, string(messages[i].Plaintext)).Layout)
 							}),
-							layout.Flexed(1, fill{th.Fg}.Layout),
+							layout.Flexed(1, fill{th.Bg}.Layout),
 						)
 					}
 				})
@@ -866,8 +890,8 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(func(gtx C) D {
 			bg := Background{
-				Color: th.ContrastFg,
-				Inset: layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(20), Left: unit.Dp(12), Right: unit.Dp(12)},
+				Color: th.ContrastBg,
+				Inset: layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(0), Left: unit.Dp(12), Right: unit.Dp(12)},
 			}
 			return bg.Layout(gtx, material.Editor(th, c.compose, ">").Layout)
 		}),
