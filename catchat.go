@@ -499,7 +499,6 @@ func (a *App) run() error {
 				}
 			}
 		}
-		a.w.Invalidate()
 	}
 }
 
