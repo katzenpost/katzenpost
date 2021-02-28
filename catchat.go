@@ -842,6 +842,7 @@ func uiMain() {
 
 		if catshadowClient != nil {
 			catshadowClient.Shutdown()
+			catshadowClient.Wait()
 		}
 		os.Exit(0)
 	}()
