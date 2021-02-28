@@ -888,7 +888,12 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
 							layout.Flexed(1, fill{th.Bg}.Layout),
 							layout.Flexed(5, func(gtx C) D {
-								return bgSender.Layout(gtx, material.Body2(th, string(messages[i].Plaintext)).Layout)
+								return bgSender.Layout(gtx, func(gtx C) D {
+									return layout.Flex{Axis: layout.Vertical, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
+										layout.Rigid(material.Body2(th, string(messages[i].Plaintext)).Layout),
+										layout.Rigid(material.Body2(th, messages[i].Timestamp.Round(time.Minute).String()).Layout),
+									)
+								})
 							}),
 						)
 					} else {
