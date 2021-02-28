@@ -584,9 +584,9 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 				return contactList.Layout(gtx, len(contacts), func(gtx C, i int) layout.Dimensions {
 					msgs := catshadowClient.GetSortedConversation(contacts[i])
 
-					lastMsg := ""
+					var lastMsg *catshadow.Message
 					if len(msgs) > 0 {
-						lastMsg = string(msgs[len(msgs)-1].Plaintext)
+						lastMsg = msgs[len(msgs)-1]
 					}
 
 					if _, ok := p.contactClicks[contacts[i]]; !ok {
@@ -619,12 +619,27 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 										// last message
 										layout.Rigid(func(gtx C) D {
 											in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-											return in.Layout(gtx, func(gtx C) D {
-												// TODO: set the color based on sent or received
-												return material.Body2(th, lastMsg).Layout(gtx)
-											})
+											if lastMsg != nil {
+												return in.Layout(gtx, func(gtx C) D {
+													// TODO: set the color based on sent or received
+													return material.Body2(th, string(lastMsg.Plaintext)).Layout(gtx)
+												})
+											} else {
+												return fill{th.Bg}.Layout(gtx)
+											}
 										}),
 									)
+								}),
+								layout.Rigid(func(gtx C) D{
+									in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+									return in.Layout(gtx, func(gtx C) D {
+										if lastMsg != nil {
+											messageAge := time.Now().Sub(lastMsg.Timestamp)
+											messageAge = messageAge.Round(time.Minute)
+											return material.Body2(th, messageAge.String()).Layout(gtx)
+										}
+										return fill{th.Bg}.Layout(gtx)
+									})
 								}),
 							)
 						})
