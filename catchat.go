@@ -414,7 +414,7 @@ func (a *App) update(gtx layout.Context) {
 		case BackEvent:
 			a.stack.Pop()
 		case signInStarted:
-			a.stack.Push(newConnectingPage(e.result))
+			a.stack.Clear(newConnectingPage(e.result))
 			a.w.Invalidate()
 		case connectError:
 			panic(e.err)
