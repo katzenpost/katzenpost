@@ -856,6 +856,34 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 	return nil
 }
 
+func layoutMessage(gtx C, msg *catshadow.Message) D {
+	ts := msg.Timestamp.Round(5*time.Minute).Format(time.RFC822)
+
+	status = ""
+	if msg.Outbound == true {
+		status = "queued"
+		if msg.Sent {
+			status = "sent"
+		}
+		if msg.Delivered {
+			status = "delivered"
+		}
+	}
+
+	return layout.Flex{Axis: layout.Vertical, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
+		layout.Rigid(material.Body1(th, string(msg.Plaintext)).Layout),
+		layout.Rigid(func(gtx C) D {
+			in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+			return in.Layout(gtx, func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
+					layout.Rigid(material.Body2(th, ts).Layout),
+					layout.Rigid(material.Body2(th, status).Layout),
+				)
+			})
+		}),
+	)
+}
+
 func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 	messages := catshadowClient.GetSortedConversation(c.nickname)
 	c.compose.Focus()
@@ -889,17 +917,16 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 							layout.Flexed(1, fill{th.Bg}.Layout),
 							layout.Flexed(5, func(gtx C) D {
 								return bgSender.Layout(gtx, func(gtx C) D {
-									return layout.Flex{Axis: layout.Vertical, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
-										layout.Rigid(material.Body2(th, string(messages[i].Plaintext)).Layout),
-										layout.Rigid(material.Body2(th, messages[i].Timestamp.Round(time.Minute).String()).Layout),
-									)
+									return layoutMessage(gtx, messages[i])
 								})
 							}),
 						)
 					} else {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
 							layout.Flexed(5, func(gtx C) D {
-								return bgReceiver.Layout(gtx, material.Body2(th, string(messages[i].Plaintext)).Layout)
+								return bgReceiver.Layout(gtx, func(gtx C) D {
+									return layoutMessage(gtx, messages[i])
+								})
 							}),
 							layout.Flexed(1, fill{th.Bg}.Layout),
 						)
