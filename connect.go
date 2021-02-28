@@ -29,16 +29,12 @@ type connectSuccess struct {
 }
 
 func (p *connectingPage) Event(gtx layout.Context) interface{} {
-	select {
-	case r := <-p.result:
-		switch r := r.(type) {
-		case error:
-			return connectError{err: r}
-		case nil:
-			return connectSuccess{}
-		}
-		return nil
-	default:
+	r := <-p.result
+	switch r := r.(type) {
+	case error:
+		return connectError{err: r}
+	case nil:
+		return connectSuccess{}
 	}
 	return nil
 }
