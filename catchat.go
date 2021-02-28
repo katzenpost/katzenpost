@@ -106,38 +106,8 @@ func (a *App) run() error {
 		}
 		select {
 		case e := <-clientSink:
-			switch event := e.(type) {
-			case *client.ConnectionStatusEvent:
-				if event.IsConnected {
-					status = "Connected"
-					// emit some notification event
-				} else {
-					status = "Disconnected"
-				}
-				if event.Err != nil {
-					// emit some error efvent
-				}
-			case *catshadow.KeyExchangeCompletedEvent:
-
-				// emit some notification event
-				//event.Nickname, event.Err
-				if event.Err != nil {
-					// add to notify queue?
-				}
-				status = fmt.Sprintf("Key Exchanged with %s", event.Nickname)
-			case *catshadow.MessageSentEvent:
-				msgs := catshadowClient.GetConversation(event.Nickname)
-				if m, ok := msgs[event.MessageID]; ok {
-					lastMessages[event.Nickname] = m // shouldn't this be updated earlier?
-				}
-			case *catshadow.MessageNotSentEvent:
-				// message failed to send, notify
-			case *catshadow.MessageDeliveredEvent:
-				a.w.Invalidate()
-				// the status will be updated next frame
-			case *catshadow.MessageReceivedEvent:
-				a.w.Invalidate()
-				status = fmt.Sprintf("Message received from  %s", event.Nickname)
+			if err := a.handleCatshadowEvent(e); err != nil {
+				return err
 			}
 		case e := <-a.w.Events():
 			switch e := e.(type) {
@@ -267,4 +237,38 @@ func getDefaultConfig() (*catconfig.Config, error) {
   Enable = false
 `
 	return catconfig.Load([]byte(cfgString))
+}
+
+func (a *App) handleCatshadowEvent(e interface{}) error {
+	switch event := e.(type) {
+	case *client.ConnectionStatusEvent:
+		if event.IsConnected {
+			// emit some notification event
+		} else {
+			// update connected state
+		}
+		if event.Err != nil {
+			return event.Err
+		}
+	case *catshadow.KeyExchangeCompletedEvent:
+		// emit some notification event
+		//event.Nickname, event.Err
+		if event.Err != nil {
+			// add to notify queue?
+		}
+	case *catshadow.MessageSentEvent:
+		msgs := catshadowClient.GetConversation(event.Nickname)
+		if m, ok := msgs[event.MessageID]; ok {
+			lastMessages[event.Nickname] = m // shouldn't this be updated earlier?
+		}
+	case *catshadow.MessageNotSentEvent:
+		// message failed to send, notify
+	case *catshadow.MessageDeliveredEvent:
+		a.w.Invalidate()
+		// the status will be updated next frame
+	case *catshadow.MessageReceivedEvent:
+		a.w.Invalidate()
+		status = fmt.Sprintf("Message received from  %s", event.Nickname)
+	}
+	return nil
 }
