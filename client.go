@@ -741,6 +741,15 @@ func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 }
 
 func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message []byte) {
+	contact, ok := c.contactNicknames[nickname]
+	if !ok {
+		c.log.Errorf("contact %s not found", nickname)
+		return
+	}
+	if contact.IsPending {
+		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
+		return
+	}
 	outMessage := Message{
 		Plaintext: message,
 		Timestamp: time.Now(),
@@ -754,15 +763,6 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	c.conversations[nickname][convoMesgID] = &outMessage
 	c.conversationsMutex.Unlock()
 
-	contact, ok := c.contactNicknames[nickname]
-	if !ok {
-		c.log.Errorf("contact %s not found", nickname)
-		return
-	}
-	if contact.IsPending {
-		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
-		return
-	}
 
 	payload := [DoubleRatchetPayloadLength]byte{}
 	payloadLen := len(message)
