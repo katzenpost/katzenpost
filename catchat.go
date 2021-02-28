@@ -3,34 +3,25 @@ package main
 import (
 	"flag"
 	"fmt"
-	"image"
-	"math"
 	"os"
 	"sort"
 	"syscall"
-	"time"
 
 	"github.com/katzenpost/catshadow"
 	catconfig "github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
 	clientConfig "github.com/katzenpost/client/config"
+	"time"
 
 	"gioui.org/app"
-	"image/color"
-	//"gioui.org/io/event" // XXX what is here
 	"gioui.org/font/gofont"
-	//"gioui.org/io/key"
-	//"gioui.org/io/pointer"
-	"gioui.org/f32"
 	"gioui.org/io/key"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
-	"gioui.org/op/clip"
-	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
-	"gioui.org/widget/material" // XXX what is here
+	"gioui.org/widget/material"
 )
 
 const (
@@ -48,11 +39,6 @@ var (
 
 	minPasswordLen = 5 // XXX pick something reasonable
 
-	// disconnect, etc widget
-	networkActionsBtn = new(widget.Clickable)
-
-	// ui layout elements
-	chatWho      string
 	lastMessages = make(map[string]*catshadow.Message)
 
 	// theme
@@ -65,10 +51,6 @@ var (
 		return th
 	}()
 
-	// status vars
-	loggedIn  bool
-	connected bool
-	errStatus string
 	status    string
 
 	// persistent views (maintain state between frames)
@@ -173,220 +155,6 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 	result <- nil
 }
 
-type pageStack struct {
-	pages    []Page
-	stopChan chan<- struct{}
-}
-
-type Page interface {
-	Start(stop <-chan struct{})
-	Event(gtx layout.Context) interface{}
-	Layout(gtx layout.Context) layout.Dimensions
-}
-
-type Background struct {
-	Color  color.NRGBA
-	Radius unit.Value
-	Inset  layout.Inset
-}
-
-type clipCircle struct {
-}
-
-func (cc *clipCircle) Layout(gtx layout.Context, w layout.Widget) layout.Dimensions {
-	macro := op.Record(gtx.Ops)
-	dims := w(gtx)
-	call := macro.Stop()
-	max := dims.Size.X
-	if dy := dims.Size.Y; dy > max {
-		max = dy
-	}
-	szf := float32(max)
-	rr := szf * .5
-	defer op.Save(gtx.Ops).Load()
-	clip.RRect{
-		Rect: f32.Rectangle{Max: f32.Point{X: szf, Y: szf}},
-		NE:   rr, NW: rr, SE: rr, SW: rr,
-	}.Add(gtx.Ops)
-	call.Add(gtx.Ops)
-	return dims
-}
-
-func (b *Background) Layout(gtx layout.Context, w layout.Widget) layout.Dimensions {
-	macro := op.Record(gtx.Ops)
-	dims := b.Inset.Layout(gtx, w)
-	call := macro.Stop()
-	defer op.Save(gtx.Ops).Load()
-	size := dims.Size
-	width, height := float32(size.X), float32(size.Y)
-	if r := float32(gtx.Px(b.Radius)); r > 0 {
-		if r > width/2 {
-			r = width / 2
-		}
-		if r > height/2 {
-			r = height / 2
-		}
-		clip.RRect{
-			Rect: f32.Rectangle{Max: f32.Point{
-				X: width, Y: height,
-			}}, NW: r, NE: r, SW: r, SE: r,
-		}.Add(gtx.Ops)
-	}
-	paint.FillShape(gtx.Ops, b.Color, clip.Rect(image.Rectangle{Max: size}).Op())
-	call.Add(gtx.Ops)
-	return dims
-}
-
-type Transition struct {
-	prev, page Page
-	reverse    bool
-	time       time.Time
-}
-
-type BackEvent struct{}
-
-type fill struct {
-	color color.NRGBA
-}
-
-type icon struct {
-	src  []byte
-	size unit.Value
-
-	// Cached values.
-	op      paint.ImageOp
-	imgSize int
-}
-
-func rgb(c uint32) color.NRGBA {
-	return argb((0xff << 24) | c)
-}
-
-func argb(c uint32) color.NRGBA {
-	return color.NRGBA{A: uint8(c >> 24), R: uint8(c >> 16), G: uint8(c >> 8), B: uint8(c)}
-}
-
-func (f fill) Layout(gtx layout.Context) layout.Dimensions {
-	cs := gtx.Constraints
-	d := cs.Min
-	paint.FillShape(gtx.Ops, f.color, clip.Rect(image.Rectangle{Max: d}).Op())
-	return layout.Dimensions{Size: d, Baseline: d.Y}
-}
-
-func (t *Transition) Start(stop <-chan struct{}) {
-	t.page.Start(stop)
-}
-
-func (t *Transition) Event(gtx layout.Context) interface{} {
-	return t.page.Event(gtx)
-}
-
-func (t *Transition) Layout(gtx layout.Context) layout.Dimensions {
-	defer op.Save(gtx.Ops).Load()
-	prev, page := t.prev, t.page
-	if prev != nil {
-		if t.reverse {
-			prev, page = page, prev
-		}
-		now := gtx.Now
-		if t.time.IsZero() {
-			t.time = now
-		}
-		prev.Layout(gtx)
-		cs := gtx.Constraints
-		size := layout.FPt(cs.Max)
-		max := float32(math.Sqrt(float64(size.X*size.X + size.Y*size.Y)))
-		progress := float32(now.Sub(t.time).Seconds()) * 3
-		progress = progress * progress // Accelerate
-		if progress >= 1 {
-			// Stop animation when complete.
-			t.prev = nil
-		}
-		if t.reverse {
-			progress = 1 - progress
-		}
-		diameter := progress * max
-		radius := diameter / 2
-		op.InvalidateOp{}.Add(gtx.Ops)
-		center := size.Mul(.5)
-		clipCenter := f32.Point{X: diameter / 2, Y: diameter / 2}
-		off := f32.Affine2D{}.Offset(center.Sub(clipCenter))
-		op.Affine(off).Add(gtx.Ops)
-		clip.RRect{
-			Rect: f32.Rectangle{Max: f32.Point{X: diameter, Y: diameter}},
-			NE:   radius, NW: radius, SE: radius, SW: radius,
-		}.Add(gtx.Ops)
-		op.Affine(off.Invert()).Add(gtx.Ops)
-		fill{rgb(0xffffff)}.Layout(gtx)
-	}
-	return page.Layout(gtx)
-}
-
-func (s *pageStack) Len() int {
-	return len(s.pages)
-}
-
-func (s *pageStack) Current() Page {
-	return s.pages[len(s.pages)-1]
-}
-
-func (s *pageStack) Pop() {
-	s.stop()
-	i := len(s.pages) - 1
-	prev := s.pages[i]
-	s.pages[i] = nil
-	s.pages = s.pages[:i]
-	if len(s.pages) > 0 {
-		s.pages[i-1] = &Transition{
-			reverse: true,
-			prev:    prev,
-			page:    s.Current(),
-		}
-		s.start()
-	}
-}
-
-func (s *pageStack) start() {
-	stop := make(chan struct{})
-	s.stopChan = stop
-	s.Current().Start(stop)
-}
-
-func (s *pageStack) Swap(p Page) {
-	prev := s.pages[len(s.pages)-1]
-	s.pages[len(s.pages)-1] = &Transition{
-		prev: prev,
-		page: p,
-	}
-	s.start()
-}
-
-func (s *pageStack) Push(p Page) {
-	if s.stopChan != nil {
-		s.stop()
-	}
-	if len(s.pages) > 0 {
-		p = &Transition{
-			prev: s.Current(),
-			page: p,
-		}
-	}
-	s.pages = append(s.pages, p)
-	s.start()
-}
-
-func (s *pageStack) stop() {
-	close(s.stopChan)
-	s.stopChan = nil
-}
-
-func (s *pageStack) Clear(p Page) {
-	for len(s.pages) > 0 {
-		s.Pop()
-	}
-	s.Push(p)
-}
-
 type App struct {
 	w      *app.Window
 	ops    *op.Ops
@@ -396,7 +164,7 @@ type App struct {
 
 func newApp(w *app.Window) *App {
 	a := &App{
-		w: w,
+		w:   w,
 		ops: &op.Ops{},
 	}
 	return a
@@ -447,15 +215,12 @@ func (a *App) run() error {
 			switch event := e.(type) {
 			case *client.ConnectionStatusEvent:
 				if event.IsConnected {
-					connected = true
 					status = "Connected"
 					// emit some notification event
 				} else {
-					connected = false
 					status = "Disconnected"
 				}
 				if event.Err != nil {
-					errStatus = event.Err.Error()
 					// emit some error efvent
 				}
 			case *catshadow.KeyExchangeCompletedEvent:
@@ -463,7 +228,6 @@ func (a *App) run() error {
 				// emit some notification event
 				//event.Nickname, event.Err
 				if event.Err != nil {
-					errStatus = fmt.Sprintf("Key exchange failure with %s, %s", event.Nickname, event.Err.Error())
 					// add to notify queue?
 				}
 				status = fmt.Sprintf("Key Exchanged with %s", event.Nickname)
@@ -474,7 +238,6 @@ func (a *App) run() error {
 				}
 			case *catshadow.MessageNotSentEvent:
 				// message failed to send, notify
-				errStatus = fmt.Sprintf("Message not sent to %s", event.Nickname)
 			case *catshadow.MessageDeliveredEvent:
 				a.w.Invalidate()
 				// the status will be updated next frame
@@ -511,294 +274,6 @@ func (a *App) run() error {
 	}
 }
 
-type signInPage struct {
-	password *widget.Editor
-	submit   *widget.Clickable
-	result   chan interface {}
-	connecting bool
-}
-
-func (p *signInPage) Start(stop <-chan struct{}) {
-}
-
-func (p *signInPage) Layout(gtx layout.Context) layout.Dimensions {
-	p.password.Focus()
-	bg := Background{
-		Color: th.Bg,
-		Inset: layout.Inset{},
-	}
-	return bg.Layout(gtx, func(gtx C) D {
-		return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween,  Alignment: layout.End}.Layout(gtx,
-			layout.Flexed(1, func(gtx C) D {
-				return layout.Center.Layout(gtx, material.Editor(th, p.password, "Enter your password").Layout)
-			}),
-			layout.Rigid(func(gtx C) D {
-				return material.Button(th, p.submit, "MEOW").Layout(gtx)
-			}),
-		)
-	})
-}
-
-type signInStarted struct {
-	result chan interface{}
-}
-
-func (p *signInPage) Event(gtx layout.Context) interface{} {
-	for _, ev := range p.password.Events() {
-		switch ev.(type) {
-		case widget.SubmitEvent:
-			p.submit.Click()
-		}
-	}
-
-	if p.submit.Clicked() {
-		p.connecting = true
-		pw := p.password.Text()
-		p.password.SetText("")
-		if len(pw) != 0 && len(pw) < minPasswordLen {
-		} else {
-			go setupCatShadow(catshadowCfg, []byte(pw), p.result)
-			return signInStarted{result: p.result}
-		}
-	}
-	return nil
-}
-
-func newSignInPage() *signInPage {
-	return &signInPage{
-		password: &widget.Editor{SingleLine: true, Mask: '*', Submit: true},
-		submit:   &widget.Clickable{},
-		result:  make(chan interface{}),
-	}
-}
-
-type connectingPage struct {
-	result chan interface {}
-}
-
-func (p *connectingPage) Layout(gtx layout.Context) layout.Dimensions {
-	bg := Background{
-		Color: th.Bg,
-		Inset: layout.Inset{},
-	}
-
-	return bg.Layout(gtx, func(gtx C) D { return layout.Center.Layout(gtx, material.Caption(th, "Stand by... connecting").Layout) })
-}
-
-func (p *connectingPage) Start(stop <-chan struct{}) {
-}
-
-type connectError struct {
-	err error
-}
-
-type connectSuccess struct {
-}
-
-func (p *connectingPage) Event(gtx layout.Context) interface{} {
-	r := <-p.result
-	switch r := r.(type) {
-	case error:
-		return connectError{err: r}
-	case nil:
-		return connectSuccess{}
-	}
-	return nil
-}
-
-func newConnectingPage(result chan interface{}) *connectingPage {
-	p := new(connectingPage)
-	p.result = result
-	return p
-}
-
-type HomePage struct {
-	addContact    *widget.Clickable
-	contactClicks map[string]*widget.Clickable
-}
-
-type AddContactClick struct{}
-
-func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
-	contacts := getSortedContacts()
-	// xxx do not request this every frame...
-	bg := Background{
-		Color: th.Bg,
-		Inset: layout.Inset{},
-	}
-	return bg.Layout(gtx, func(gtx C) D {
-		// returns a flex consisting of the contacts list and add contact button
-		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
-			layout.Flexed(1, func(gtx C) D {
-				gtx.Constraints.Min.X = gtx.Px(unit.Dp(300))
-				// the contactList
-				return contactList.Layout(gtx, len(contacts), func(gtx C, i int) layout.Dimensions {
-					msgs := catshadowClient.GetSortedConversation(contacts[i])
-
-					var lastMsg *catshadow.Message
-					if len(msgs) > 0 {
-						lastMsg = msgs[len(msgs)-1]
-					}
-
-					if _, ok := p.contactClicks[contacts[i]]; !ok {
-						p.contactClicks[contacts[i]] = new(widget.Clickable)
-					}
-					// make the item a clickable
-					return material.Clickable(gtx, p.contactClicks[contacts[i]], func(gtx C) D {
-						// inset each contact Flex
-						in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-						return in.Layout(gtx, func(gtx C) D {
-							// returns Flex of contact icon, contact name, and last message received or sent
-							return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
-								// contact icon
-								layout.Rigid(func(gtx C) D {
-									cc := clipCircle{}
-									return cc.Layout(gtx, func(gtx C) D {
-										sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
-										gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-										return fill{th.ContrastBg}.Layout(gtx)
-									})
-								}), // end contact icon
-								// contact name and last message
-								layout.Flexed(1, func(gtx C) D {
-									return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
-										// contact name
-										layout.Rigid(func(gtx C) D {
-											in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-											return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
-										}),
-										// last message
-										layout.Rigid(func(gtx C) D {
-											in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-											if lastMsg != nil {
-												return in.Layout(gtx, func(gtx C) D {
-													// TODO: set the color based on sent or received
-													return material.Body2(th, string(lastMsg.Plaintext)).Layout(gtx)
-												})
-											} else {
-												return fill{th.Bg}.Layout(gtx)
-											}
-										}),
-									)
-								}),
-								layout.Rigid(func(gtx C) D{
-									in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-									return in.Layout(gtx, func(gtx C) D {
-										if lastMsg != nil {
-											messageAge := time.Now().Sub(lastMsg.Timestamp)
-											messageAge = messageAge.Round(time.Minute)
-											return material.Body2(th, messageAge.String()).Layout(gtx)
-										}
-										return fill{th.Bg}.Layout(gtx)
-									})
-								}),
-							)
-						})
-					})
-				})
-			}),
-			// addContact
-			layout.Rigid(func(gtx C) D {
-				return material.Button(th, p.addContact, "Add Contact").Layout(gtx)
-			}),
-		)
-	})
-}
-
-// ChooseContactClick is the event that indicates which contact was selected
-type ChooseContactClick struct {
-	nickname string
-}
-
-// Event returns a ChooseContactClick event when a contact is chosen
-func (p *HomePage) Event(gtx layout.Context) interface{} {
-	if p.addContact.Clicked() {
-		return AddContactClick{}
-	}
-	for nickname, click := range p.contactClicks {
-		if click.Clicked() {
-			return ChooseContactClick{nickname: nickname}
-		}
-	}
-	return nil
-}
-
-func (p *HomePage) Start(stop <-chan struct{}) {
-}
-
-func newHomePage() *HomePage {
-	return &HomePage{
-		addContact:    &widget.Clickable{},
-		contactClicks: make(map[string]*widget.Clickable),
-	}
-}
-
-// AddContactComplete is emitted when catshadow.NewContact has been called
-type AddContactComplete struct {
-	nickname string
-}
-
-// AddContactPage is the page for adding a new contact
-type AddContactPage struct {
-	nickname *widget.Editor
-	secret   *widget.Editor
-	submit   *widget.Clickable
-}
-
-// Layout returns a simple centered layout prompting user for contact nickname and secret
-func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
-	bg := Background{
-		Color:  th.Bg,
-		Inset:  layout.Inset{},
-	}
-
-	return bg.Layout(gtx, func(gtx C) D {
-		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.nickname, "nickname").Layout) }),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.secret, "secret").Layout) }),
-			layout.Rigid(func(gtx C) D { return material.Button(th, p.submit, "MEOW").Layout(gtx) }),
-		)
-	})
-}
-
-// Event catches the widget submit events and calls catshadow.NewContact
-func (p *AddContactPage) Event(gtx layout.Context) interface{} {
-	for _, ev := range p.nickname.Events() {
-		switch ev.(type) {
-		case widget.SubmitEvent:
-			p.secret.Focus()
-		}
-	}
-	for _, ev := range p.secret.Events() {
-		switch ev.(type) {
-		case widget.SubmitEvent:
-			p.submit.Click()
-		}
-	}
-	if p.submit.Clicked() {
-		if len(p.secret.Text()) < minPasswordLen {
-			p.secret.SetText("")
-			p.secret.Focus()
-			return nil
-		}
-		catshadowClient.NewContact(p.nickname.Text(), []byte(p.secret.Text()))
-		return AddContactComplete{nickname: p.nickname.Text()}
-	}
-	return nil
-}
-
-func (p *AddContactPage) Start(stop <-chan struct{}) {
-}
-
-func newAddContactPage() *AddContactPage {
-	p := &AddContactPage{}
-	p.nickname = &widget.Editor{SingleLine: true, Submit: true}
-	p.nickname.Focus()
-	p.secret = &widget.Editor{SingleLine: true, Submit: true, Mask: '*'}
-	p.submit = &widget.Clickable{}
-	return p
-}
-
 func main() {
 	flag.Parse()
 
@@ -830,7 +305,7 @@ func main() {
 func uiMain() {
 	go func() {
 		w := app.NewWindow(
-			app.Size(unit.Dp(400), unit.Dp(800)),
+			app.Size(unit.Dp(400), unit.Dp(400)),
 			app.Title("Catchat"),
 		)
 		if err := newApp(w).run(); err != nil {
@@ -909,9 +384,9 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 }
 
 func layoutMessage(gtx C, msg *catshadow.Message) D {
-	ts := msg.Timestamp.Round(5*time.Minute).Format(time.RFC822)
+	ts := msg.Timestamp.Round(1 * time.Minute).Format(time.RFC822)
 
-	status = ""
+	status := ""
 	if msg.Outbound == true {
 		status = "queued"
 		if msg.Sent {
