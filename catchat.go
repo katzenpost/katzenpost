@@ -27,7 +27,6 @@ const (
 )
 
 var (
-	config Config
 
 	clientConfigFile = flag.String("f", "", "Path to the client config file.")
 	stateFile        = flag.String("s", "catshadow_statefile", "The catshadow state file path.")
