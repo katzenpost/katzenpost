@@ -10,6 +10,11 @@ import (
 	"gioui.org/widget/material"
 )
 
+var (
+	messageList  = &layout.List{Axis: layout.Vertical, ScrollToEnd: true}
+	messageField = &widget.Editor{SingleLine: true}
+)
+
 type conversationPage struct {
 	nickname string
 	compose  *widget.Editor

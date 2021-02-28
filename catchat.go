@@ -18,7 +18,6 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/unit"
-	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
 
@@ -27,7 +26,6 @@ const (
 )
 
 var (
-
 	clientConfigFile = flag.String("f", "", "Path to the client config file.")
 	stateFile        = flag.String("s", "catshadow_statefile", "The catshadow state file path.")
 
@@ -49,11 +47,6 @@ var (
 	}()
 
 	status string
-
-	// persistent views (maintain state between frames)
-	contactList  = &layout.List{Axis: layout.Vertical, ScrollToEnd: false}
-	messageList  = &layout.List{Axis: layout.Vertical, ScrollToEnd: true}
-	messageField = &widget.Editor{SingleLine: true}
 )
 
 type App struct {

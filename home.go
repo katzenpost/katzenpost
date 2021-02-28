@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+var (
+	contactList = &layout.List{Axis: layout.Vertical, ScrollToEnd: false}
+)
+
 type HomePage struct {
 	addContact    *widget.Clickable
 	contactClicks map[string]*widget.Clickable
