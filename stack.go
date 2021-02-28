@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: Unlicense OR MIT
+/*
+these methods were implemented by Elias Naur <mail@eliasnaur.com>
+for the scatter.im project https://git.sr.ht/~eliasnaur/scatter
+*/
 package main
 
 import (
