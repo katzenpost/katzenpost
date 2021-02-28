@@ -413,8 +413,14 @@ func (a *App) update(gtx layout.Context) {
 		switch e := e.(type) {
 		case BackEvent:
 			a.stack.Pop()
-		case SignInEvent:
+		case signInStarted:
+			a.stack.Push(newConnectingPage(e.result))
+			a.w.Invalidate()
+		case connectError:
+			panic(e.err)
+		case connectSuccess:
 			a.stack.Clear(newHomePage())
+			a.w.Invalidate()
 		case AddContactClick:
 			a.stack.Push(newAddContactPage())
 			a.w.Invalidate()
@@ -508,6 +514,8 @@ func (a *App) run() error {
 type signInPage struct {
 	password *widget.Editor
 	submit   *widget.Clickable
+	result   chan interface {}
+	connecting bool
 }
 
 func (p *signInPage) Start(stop <-chan struct{}) {
@@ -531,7 +539,8 @@ func (p *signInPage) Layout(gtx layout.Context) layout.Dimensions {
 	})
 }
 
-type SignInEvent struct {
+type signInStarted struct {
+	result chan interface{}
 }
 
 func (p *signInPage) Event(gtx layout.Context) interface{} {
@@ -543,15 +552,13 @@ func (p *signInPage) Event(gtx layout.Context) interface{} {
 	}
 
 	if p.submit.Clicked() {
+		p.connecting = true
 		pw := p.password.Text()
 		p.password.SetText("")
 		if len(pw) != 0 && len(pw) < minPasswordLen {
 		} else {
-			started := make(chan interface{})
-			go setupCatShadow(catshadowCfg, []byte(pw), started)
-			// blocks UX
-			<-started
-			return SignInEvent{}
+			go setupCatShadow(catshadowCfg, []byte(pw), p.result)
+			return signInStarted{result: p.result}
 		}
 	}
 	return nil
@@ -561,7 +568,51 @@ func newSignInPage() *signInPage {
 	return &signInPage{
 		password: &widget.Editor{SingleLine: true, Mask: '*', Submit: true},
 		submit:   &widget.Clickable{},
+		result:  make(chan interface{}),
 	}
+}
+
+type connectingPage struct {
+	result chan interface {}
+}
+
+func (p *connectingPage) Layout(gtx layout.Context) layout.Dimensions {
+	bg := Background{
+		Color: th.Bg,
+		Inset: layout.Inset{},
+	}
+
+	return bg.Layout(gtx, func(gtx C) D { return layout.Center.Layout(gtx, material.Caption(th, "Stand by... connecting").Layout) })
+}
+
+func (p *connectingPage) Start(stop <-chan struct{}) {
+}
+
+type connectError struct {
+	err error
+}
+
+type connectSuccess struct {
+}
+
+func (p *connectingPage) Event(gtx layout.Context) interface{} {
+	select {
+	case r := <-p.result:
+		switch r := r.(type) {
+		case error:
+			return connectError{err: r}
+		case nil:
+			return connectSuccess{}
+		}
+	default:
+	}
+	return nil
+}
+
+func newConnectingPage(result chan interface{}) *connectingPage {
+	p := new(connectingPage)
+	p.result = result
+	return p
 }
 
 type HomePage struct {
