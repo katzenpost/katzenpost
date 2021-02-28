@@ -417,7 +417,7 @@ func (a *App) update(gtx layout.Context) {
 			a.stack.Clear(newConnectingPage(e.result))
 			a.w.Invalidate()
 		case connectError:
-			panic(e.err)
+			a.stack.Clear(newSignInPage())
 		case connectSuccess:
 			a.stack.Clear(newHomePage())
 			a.w.Invalidate()
@@ -596,15 +596,12 @@ type connectSuccess struct {
 }
 
 func (p *connectingPage) Event(gtx layout.Context) interface{} {
-	select {
-	case r := <-p.result:
-		switch r := r.(type) {
-		case error:
-			return connectError{err: r}
-		case nil:
-			return connectSuccess{}
-		}
-	default:
+	r := <-p.result
+	switch r := r.(type) {
+	case error:
+		return connectError{err: r}
+	case nil:
+		return connectSuccess{}
 	}
 	return nil
 }
