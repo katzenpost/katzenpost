@@ -431,7 +431,6 @@ func (a *App) update(gtx layout.Context) {
 }
 
 func (a *App) run() error {
-	var ops op.Ops
 	var clientSink chan interface{}
 	for {
 		if a.client != nil {
@@ -490,7 +489,7 @@ func (a *App) run() error {
 			case system.DestroyEvent:
 				return e.Err
 			case system.FrameEvent:
-				gtx := layout.NewContext(&ops, e)
+				gtx := layout.NewContext(a.ops, e)
 				a.Layout(gtx)
 				e.Frame(gtx.Ops)
 			case system.StageEvent:
