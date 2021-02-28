@@ -469,8 +469,10 @@ func (a *App) run() error {
 				// message failed to send, notify
 				errStatus = fmt.Sprintf("Message not sent to %s", event.Nickname)
 			case *catshadow.MessageDeliveredEvent:
+				a.w.Invalidate()
 				// the status will be updated next frame
 			case *catshadow.MessageReceivedEvent:
+				a.w.Invalidate()
 				status = fmt.Sprintf("Message received from  %s", event.Nickname)
 			}
 		case e := <-a.w.Events():
@@ -885,6 +887,7 @@ func layoutMessage(gtx C, msg *catshadow.Message) D {
 }
 
 func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
+	contact := catshadowClient.GetContacts()[c.nickname]
 	messages := catshadowClient.GetSortedConversation(c.nickname)
 	c.compose.Focus()
 	bgl := Background{
@@ -938,6 +941,9 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 			bg := Background{
 				Color: th.ContrastBg,
 				Inset: layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(0), Left: unit.Dp(12), Right: unit.Dp(12)},
+			}
+			if contact.IsPending {
+				return bg.Layout(gtx, material.Caption(th, "Contact pending key exchange").Layout)
 			}
 			return bg.Layout(gtx, material.Editor(th, c.compose, ">").Layout)
 		}),
