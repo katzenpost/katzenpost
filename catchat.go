@@ -389,6 +389,7 @@ func (s *pageStack) Clear(p Page) {
 
 type App struct {
 	w      *app.Window
+	ops    *op.Ops
 	client *catshadow.Client
 	stack  pageStack
 }
@@ -396,6 +397,7 @@ type App struct {
 func newApp(w *app.Window) *App {
 	a := &App{
 		w: w,
+		ops: &op.Ops{},
 	}
 	return a
 }
