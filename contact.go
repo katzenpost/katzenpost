@@ -4,6 +4,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"sort"
 )
 
 // AddContactComplete is emitted when catshadow.NewContact has been called
@@ -70,4 +71,29 @@ func newAddContactPage() *AddContactPage {
 	p.secret = &widget.Editor{SingleLine: true, Submit: true, Mask: '*'}
 	p.submit = &widget.Clickable{}
 	return p
+}
+
+type sortedContacts []string
+
+func (s sortedContacts) Less(i, j int) bool {
+	return s[i] < s[j]
+}
+func (s sortedContacts) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+func (s sortedContacts) Len() int {
+	return len(s)
+}
+
+func getSortedContacts() (contacts sortedContacts) {
+	if catshadowClient == nil {
+		return
+	}
+
+	// returns map[string]*Contact
+	for nick, _ := range catshadowClient.GetContacts() {
+		contacts = append(contacts, nick)
+	}
+	sort.Sort(contacts)
+	return
 }
