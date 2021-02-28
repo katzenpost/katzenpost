@@ -755,14 +755,6 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		Timestamp: time.Now(),
 		Outbound:  true,
 	}
-	c.conversationsMutex.Lock()
-	_, ok := c.conversations[nickname]
-	if !ok {
-		c.conversations[nickname] = make(map[MessageID]*Message)
-	}
-	c.conversations[nickname][convoMesgID] = &outMessage
-	c.conversationsMutex.Unlock()
-
 
 	payload := [DoubleRatchetPayloadLength]byte{}
 	payloadLen := len(message)
@@ -798,6 +790,15 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		c.log.Debugf("Failed to enqueue message!")
 		return
 	}
+
+	// update the conversation history
+	c.conversationsMutex.Lock()
+	_, ok = c.conversations[nickname]
+	if !ok {
+		c.conversations[nickname] = make(map[MessageID]*Message)
+	}
+	c.conversations[nickname][convoMesgID] = &outMessage
+	c.conversationsMutex.Unlock()
 	c.save()
 }
 
