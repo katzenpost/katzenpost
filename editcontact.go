@@ -8,6 +8,7 @@ import (
 // EditContactPage is the page for adding a new contact
 type EditContactPage struct {
 	nickname string
+	back	 *widget.Clickable
 	avatar *widget.Clickable
 	clear  *widget.Clickable
 	expiry *widget.Clickable
@@ -25,13 +26,17 @@ func (p *EditContactPage) Layout(gtx layout.Context) layout.Dimensions {
 
 	return bg.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
+			layout.Rigid(func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
+					layout.Rigid(material.Button(th, p.back, "<").Layout),
+					layout.Flexed(9, fill{th.Bg}.Layout))
+			}),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.avatar, "Choose avatar").Layout) }),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.clear, "Clear message history").Layout) }),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.expiry, "Set message lifetime").Layout) }),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.rename, "Rename contact").Layout) }),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.remove, "Remove contact").Layout) }),
-		)
-	})
+			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.remove, "Remove contact").Layout) }))
+		})
 }
 
 type EditContactComplete struct {
@@ -39,6 +44,9 @@ type EditContactComplete struct {
 }
 // Event catches the widget submit events and calls catshadow.NewContact
 func (p *EditContactPage) Event(gtx layout.Context) interface{} {
+	if p.back.Clicked() {
+		return BackEvent{}
+	}
 	if p.avatar.Clicked() {
 		// TODO. avatar selection
 	}
@@ -65,6 +73,7 @@ func (p *EditContactPage) Start(stop <-chan struct{}) {
 func newEditContactPage(contact string) *EditContactPage {
 	p := &EditContactPage{}
 	p.nickname = contact
+	p.back   = &widget.Clickable{}
 	p.avatar = &widget.Clickable{}
 	p.clear  = &widget.Clickable{}
 	p.expiry = &widget.Clickable{}
