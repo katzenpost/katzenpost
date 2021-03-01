@@ -42,7 +42,7 @@ var (
 		th.Bg = rgb(0x0)
 		th.Fg = rgb(0xFFFFFFFF)
 		th.ContrastBg = rgb(0x22222222)
-		th.ContrastFg = rgb(0x33333333)
+		th.ContrastFg = rgb(0x77777777)
 		return th
 	}()
 
