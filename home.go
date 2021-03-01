@@ -2,6 +2,7 @@ package main
 
 import (
 	"gioui.org/layout"
+	"gioui.org/io/pointer"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -16,7 +17,7 @@ var (
 
 type HomePage struct {
 	addContact    *widget.Clickable
-	contactClicks map[string]*widget.Clickable
+	contactClicks map[string]*Click
 }
 
 type AddContactClick struct{}
@@ -42,60 +43,64 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 						lastMsg = msgs[len(msgs)-1]
 					}
 
-					if _, ok := p.contactClicks[contacts[i]]; !ok {
-						p.contactClicks[contacts[i]] = new(widget.Clickable)
-					}
-					// make the item a clickable
-					return material.Clickable(gtx, p.contactClicks[contacts[i]], func(gtx C) D {
-						// inset each contact Flex
-						in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-						return in.Layout(gtx, func(gtx C) D {
-							// returns Flex of contact icon, contact name, and last message received or sent
-							return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
-								// contact icon
-								layout.Rigid(func(gtx C) D {
-									cc := clipCircle{}
-									return cc.Layout(gtx, func(gtx C) D {
-										sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
-										gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-										return fill{th.ContrastBg}.Layout(gtx)
-									})
-								}), // end contact icon
-								// contact name and last message
-								layout.Flexed(1, func(gtx C) D {
-									return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
-										// contact name
-										layout.Rigid(func(gtx C) D {
-											in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-											return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
-										}),
-										// last message
-										layout.Rigid(func(gtx C) D {
-											in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-											if lastMsg != nil {
-												return in.Layout(gtx, func(gtx C) D {
-													// TODO: set the color based on sent or received
-													return material.Body2(th, string(lastMsg.Plaintext)).Layout(gtx)
-												})
-											} else {
-												return fill{th.Bg}.Layout(gtx)
-											}
-										}),
-									)
-								}),
-								layout.Rigid(func(gtx C) D {
-									in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-									return in.Layout(gtx, func(gtx C) D {
+					// inset each contact Flex
+					in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+					return in.Layout(gtx, func(gtx C) D {
+						// returns Flex of contact icon, contact name, and last message received or sent
+						if _, ok := p.contactClicks[contacts[i]]; !ok {
+							c := new(Click)
+							p.contactClicks[contacts[i]] = c
+						}
+
+
+						dims := layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
+							// contact icon
+							layout.Rigid(func(gtx C) D {
+								cc := clipCircle{}
+								return cc.Layout(gtx, func(gtx C) D {
+									sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
+									gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
+									return fill{th.ContrastBg}.Layout(gtx)
+								})
+							}), // end contact icon
+							// contact name and last message
+							layout.Flexed(1, func(gtx C) D {
+								return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
+									// contact name
+									layout.Rigid(func(gtx C) D {
+										in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+										return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
+									}),
+									// last message
+									layout.Rigid(func(gtx C) D {
+										in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
 										if lastMsg != nil {
-											messageAge := time.Now().Sub(lastMsg.Timestamp)
-											messageAge = messageAge.Round(time.Minute)
-											return material.Body2(th, messageAge.String()).Layout(gtx)
+											return in.Layout(gtx, func(gtx C) D {
+												// TODO: set the color based on sent or received
+												return material.Body2(th, string(lastMsg.Plaintext)).Layout(gtx)
+											})
+										} else {
+											return fill{th.Bg}.Layout(gtx)
 										}
-										return fill{th.Bg}.Layout(gtx)
-									})
-								}),
-							)
-						})
+									}),
+								)
+							}),
+							layout.Rigid(func(gtx C) D {
+								in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+								return in.Layout(gtx, func(gtx C) D {
+									if lastMsg != nil {
+										messageAge := time.Now().Sub(lastMsg.Timestamp)
+										messageAge = messageAge.Round(time.Minute)
+										return material.Body2(th, messageAge.String()).Layout(gtx)
+									}
+									return fill{th.Bg}.Layout(gtx)
+								})
+							}),
+						)
+						a := pointer.Rect(image.Rectangle{Max: dims.Size})
+						a.Add(gtx.Ops)
+						p.contactClicks[contacts[i]].Add(gtx.Ops)
+						return dims
 					})
 				})
 			}),
@@ -114,12 +119,22 @@ type ChooseContactClick struct {
 
 // Event returns a ChooseContactClick event when a contact is chosen
 func (p *HomePage) Event(gtx layout.Context) interface{} {
+	// listen for pointer right click events on the addContact widget
 	if p.addContact.Clicked() {
 		return AddContactClick{}
 	}
 	for nickname, click := range p.contactClicks {
-		if click.Clicked() {
-			return ChooseContactClick{nickname: nickname}
+		for _, e := range click.Events(gtx.Queue) {
+			if e.Type == TypeClick {
+				if e.Buttons.Contain(pointer.ButtonLeft) {
+					// do the left button click thing
+					return ChooseContactClick{nickname: nickname}
+				}
+				if e.Buttons.Contain(pointer.ButtonRight) {
+					return ChooseContactClick{nickname: nickname}
+					// do the right button click thing
+				}
+			}
 		}
 	}
 	return nil
@@ -131,6 +146,6 @@ func (p *HomePage) Start(stop <-chan struct{}) {
 func newHomePage() *HomePage {
 	return &HomePage{
 		addContact:    &widget.Clickable{},
-		contactClicks: make(map[string]*widget.Clickable),
+		contactClicks: make(map[string]*Click),
 	}
 }
