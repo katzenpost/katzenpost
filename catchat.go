@@ -82,18 +82,13 @@ func (a *App) update(gtx layout.Context) {
 			a.stack.Clear(newSignInPage())
 		case connectSuccess:
 			a.stack.Clear(newHomePage())
-			a.w.Invalidate()
 		case AddContactClick:
 			a.stack.Push(newAddContactPage())
-			a.w.Invalidate()
 		case AddContactComplete:
 			a.stack.Pop()
-			a.w.Invalidate()
 		case ChooseContactClick:
 			a.stack.Push(newConversationPage(e.nickname))
-			a.w.Invalidate()
 		case MessageSent:
-			a.w.Invalidate()
 		}
 	}
 }
