@@ -20,6 +20,7 @@ type conversationPage struct {
 	edit     *widget.Clickable
 	compose  *widget.Editor
 	send     *widget.Clickable
+	back	 *widget.Clickable
 }
 
 func (c *conversationPage) Start(stop <-chan struct{}) {
@@ -50,6 +51,9 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 	}
 	if c.edit.Clicked() {
 		return EditContact{nickname: c.nickname}
+	}
+	if c.back.Clicked() {
+		return BackEvent{}
 	}
 
 	return nil
@@ -95,8 +99,13 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
 			return bgl.Layout(gtx, func(gtx C) D {
-				return material.Button(th, c.edit, c.nickname).Layout(gtx)
-			})
+				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
+					layout.Rigid(material.Button(th, c.back, "<").Layout),
+					layout.Flexed(1, fill{th.Bg}.Layout),
+					layout.Rigid(material.Button(th, c.edit, c.nickname).Layout),
+					layout.Flexed(1, fill{th.Bg}.Layout),
+				)},
+			)
 		}),
 		layout.Flexed(2, func(gtx C) D {
 			return bgl.Layout(gtx, func(ctx C) D {
@@ -152,6 +161,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 func newConversationPage(nickname string) *conversationPage {
 	return &conversationPage{nickname: nickname,
 		compose: &widget.Editor{SingleLine: true, Submit: true},
+		back:    &widget.Clickable{},
 		send:    &widget.Clickable{},
 		edit:    &widget.Clickable{}}
 }
