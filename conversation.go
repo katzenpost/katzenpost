@@ -17,6 +17,7 @@ var (
 
 type conversationPage struct {
 	nickname string
+	edit     *widget.Clickable
 	compose  *widget.Editor
 	send     *widget.Clickable
 }
@@ -27,6 +28,10 @@ func (c *conversationPage) Start(stop <-chan struct{}) {
 type MessageSent struct {
 	nickname string
 	msgId    catshadow.MessageID
+}
+
+type EditContact struct {
+	nickname string
 }
 
 func (c *conversationPage) Event(gtx layout.Context) interface{} {
@@ -42,6 +47,9 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 		c.compose.SetText("")
 		msgId := catshadowClient.SendMessage(c.nickname, []byte(msg))
 		return MessageSent{nickname: c.nickname, msgId: msgId}
+	}
+	if c.edit.Clicked() {
+		return EditContact{nickname: c.nickname}
 	}
 
 	return nil
@@ -86,7 +94,9 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 
 	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
-			return bgl.Layout(gtx, func(gtx C) D { return layout.Center.Layout(gtx, material.Caption(th, c.nickname).Layout) })
+			return bgl.Layout(gtx, func(gtx C) D {
+				return material.Button(th, c.edit, c.nickname).Layout(gtx)
+			})
 		}),
 		layout.Flexed(2, func(gtx C) D {
 			return bgl.Layout(gtx, func(ctx C) D {
@@ -142,5 +152,6 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 func newConversationPage(nickname string) *conversationPage {
 	return &conversationPage{nickname: nickname,
 		compose: &widget.Editor{SingleLine: true, Submit: true},
-		send:    &widget.Clickable{}}
+		send:    &widget.Clickable{},
+		edit:    &widget.Clickable{}}
 }

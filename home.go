@@ -131,7 +131,7 @@ func (p *HomePage) Event(gtx layout.Context) interface{} {
 					return ChooseContactClick{nickname: nickname}
 				}
 				if e.Buttons.Contain(pointer.ButtonRight) {
-					return ChooseContactClick{nickname: nickname}
+					return EditContact{nickname: nickname}
 					// do the right button click thing
 				}
 			}

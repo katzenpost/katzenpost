@@ -88,6 +88,10 @@ func (a *App) update(gtx layout.Context) {
 			a.stack.Pop()
 		case ChooseContactClick:
 			a.stack.Push(newConversationPage(e.nickname))
+		case EditContact:
+			a.stack.Push(newEditContactPage(e.nickname))
+		case EditContactComplete:
+			a.stack.Clear(newHomePage())
 		case MessageSent:
 		}
 	}
