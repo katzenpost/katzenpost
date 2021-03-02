@@ -3,6 +3,7 @@ package main
 import (
 	"gioui.org/layout"
 	"gioui.org/widget/material"
+	"github.com/katzenpost/catshadow"
 )
 
 type connectingPage struct {
@@ -26,6 +27,7 @@ type connectError struct {
 }
 
 type connectSuccess struct {
+	client *catshadow.Client
 }
 
 func (p *connectingPage) Event(gtx layout.Context) interface{} {
@@ -33,8 +35,8 @@ func (p *connectingPage) Event(gtx layout.Context) interface{} {
 	switch r := r.(type) {
 	case error:
 		return connectError{err: r}
-	case nil:
-		return connectSuccess{}
+	case *catshadow.Client:
+		return connectSuccess{client: r}
 	}
 	return nil
 }

@@ -103,5 +103,5 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 
 	// Start catshadow client.
 	catshadowClient.Start()
-	result <- nil
+	result <- catshadowClient
 }
