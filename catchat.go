@@ -290,9 +290,7 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		}
 	//case *catshadow.MessageDeliveredEvent:
 	case *catshadow.MessageReceivedEvent:
-		if n, err := a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname )); err == nil {
-			go func() {<-time.After(30*time.Second);n.Cancel()}()
-		}
+		a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname ))
 		a.w.Invalidate()
 	}
 	return nil
