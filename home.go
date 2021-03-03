@@ -65,12 +65,24 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 							}), // end contact icon
 							// contact name and last message
 							layout.Flexed(1, func(gtx C) D {
-								return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween}.Layout(gtx,
-									// contact name
+								return layout.Flex{Axis: layout.Vertical, Alignment:layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
 									layout.Rigid(func(gtx C) D {
-										in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-										return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
-									}),
+										return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
+										// contact name
+										layout.Rigid(func(gtx C) D {
+											in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+											return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
+										}),
+										layout.Rigid(func(gtx C) D {
+											// timestamp
+											if lastMsg != nil {
+												messageAge := time.Now().Sub(lastMsg.Timestamp)
+												messageAge = messageAge.Round(time.Minute)
+												return material.Body2(th, messageAge.String()).Layout(gtx)
+											}
+											return fill{th.Bg}.Layout(gtx)
+										}),
+									)}),
 									// last message
 									layout.Rigid(func(gtx C) D {
 										in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
@@ -84,17 +96,6 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 										}
 									}),
 								)
-							}),
-							layout.Rigid(func(gtx C) D {
-								in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-								return in.Layout(gtx, func(gtx C) D {
-									if lastMsg != nil {
-										messageAge := time.Now().Sub(lastMsg.Timestamp)
-										messageAge = messageAge.Round(time.Minute)
-										return material.Body2(th, messageAge.String()).Layout(gtx)
-									}
-									return fill{th.Bg}.Layout(gtx)
-								})
 							}),
 						)
 						a := pointer.Rect(image.Rectangle{Max: dims.Size})
