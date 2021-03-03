@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -104,40 +105,34 @@ func (a *App) update(gtx layout.Context) {
 }
 
 func (a *App) run() error {
-	var clientSink chan interface{}
+
 	for {
 		if a.client != nil {
-			clientSink = a.client.EventSink
+			break
 		}
+		e := <-a.w.Events()
+		if err := a.handleGioEvents(e); err != nil {
+			return err
+		}
+	}
+	defer func() {
+		if a.client != nil {
+			a.client.Shutdown()
+			a.client.Wait()
+		}
+	}()
+
+	for {
 		select {
-		case e := <-clientSink:
+		case e := <-a.client.EventSink:
 			if err := a.handleCatshadowEvent(e); err != nil {
 				return err
 			}
+		case <-a.client.HaltCh():
+			return errors.New("client halted unexpectedly")
 		case e := <-a.w.Events():
-			switch e := e.(type) {
-			case key.Event:
-				switch e.Name {
-				case key.NameEscape:
-					if a.stack.Len() > 1 {
-						a.stack.Pop()
-						a.w.Invalidate()
-					}
-				}
-			case system.DestroyEvent:
-				return e.Err
-			case system.FrameEvent:
-				gtx := layout.NewContext(a.ops, e)
-				a.Layout(gtx)
-				e.Frame(gtx.Ops)
-			case system.StageEvent:
-				fmt.Printf("StageEvent received with stage: %v", e.Stage)
-				fmt.Printf("system.StageRunning: %v", system.StageRunning)
-				if e.Stage >= system.StageRunning {
-					if a.stack.Len() == 0 {
-						a.stack.Push(newSignInPage())
-					}
-				}
+			if err := a.handleGioEvents(e); err != nil {
+				return err
 			}
 		}
 	}
@@ -179,11 +174,6 @@ func uiMain() {
 		)
 		if err := newApp(w).run(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed: %v\n", err)
-		}
-
-		if catshadowClient != nil {
-			catshadowClient.Shutdown()
-			catshadowClient.Wait()
 		}
 		os.Exit(0)
 	}()
@@ -292,6 +282,34 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 	case *catshadow.MessageReceivedEvent:
 		a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname ))
 		a.w.Invalidate()
+	}
+	return nil
+}
+
+func (a *App) handleGioEvents(e interface{}) error {
+	switch e := e.(type) {
+	case key.Event:
+		switch e.Name {
+		case key.NameEscape:
+			if a.stack.Len() > 1 {
+				a.stack.Pop()
+				a.w.Invalidate()
+			}
+		}
+	case system.DestroyEvent:
+		return errors.New("system.DestroyEvent receieved")
+	case system.FrameEvent:
+		gtx := layout.NewContext(a.ops, e)
+		a.Layout(gtx)
+		e.Frame(gtx.Ops)
+	case system.StageEvent:
+		fmt.Printf("StageEvent received with stage: %v", e.Stage)
+		fmt.Printf("system.StageRunning: %v", system.StageRunning)
+		if e.Stage >= system.StageRunning {
+			if a.stack.Len() == 0 {
+				a.stack.Push(newSignInPage())
+			}
+		}
 	}
 	return nil
 }
