@@ -21,7 +21,7 @@ See the [install instructions](http://golang.org/doc/install.html).
 
 #### Dependencies (Debian Bullseye example)
 
-    apt-get --no-install-recommends install build-essential libgles2 libgles2-mesa-dev libglib2.0-dev libxkbcommon-dev libxkbcommon-x11-dev libglu1-mesa-dev libxcursor-dev
+    apt-get --no-install-recommends install build-essential libgles2 libgles2-mesa-dev libglib2.0-dev libxkbcommon-dev libxkbcommon-x11-dev libglu1-mesa-dev libxcursor-dev libwayland-dev libx11-xcb-dev
 
 #### Building catchat
 
