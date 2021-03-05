@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -10,6 +11,7 @@ type signInPage struct {
 	password   *widget.Editor
 	submit     *widget.Clickable
 	result     chan interface{}
+	errMsg     string
 	connecting bool
 }
 
@@ -25,6 +27,9 @@ func (p *signInPage) Layout(gtx layout.Context) layout.Dimensions {
 	return bg.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.End}.Layout(gtx,
 			layout.Flexed(1, func(gtx C) D {
+				if p.errMsg != "" {
+					return layout.Center.Layout(gtx, material.Editor(th, p.password, p.errMsg).Layout)
+				}
 				return layout.Center.Layout(gtx, material.Editor(th, p.password, "Enter your password").Layout)
 			}),
 			layout.Rigid(func(gtx C) D {
@@ -51,6 +56,7 @@ func (p *signInPage) Event(gtx layout.Context) interface{} {
 		pw := p.password.Text()
 		p.password.SetText("")
 		if len(pw) != 0 && len(pw) < minPasswordLen {
+			p.errMsg = fmt.Sprintf("Password must be minimum %d characters long", minPasswordLen)
 		} else {
 			go setupCatShadow(catshadowCfg, []byte(pw), p.result)
 			return signInStarted{result: p.result}
