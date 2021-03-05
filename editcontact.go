@@ -1,19 +1,20 @@
 package main
-import (
 
-	"gioui.org/widget"
+import (
 	"gioui.org/layout"
+	"gioui.org/widget"
 	"gioui.org/widget/material"
 )
+
 // EditContactPage is the page for adding a new contact
 type EditContactPage struct {
 	nickname string
-	back	 *widget.Clickable
-	avatar *widget.Clickable
-	clear  *widget.Clickable
-	expiry *widget.Clickable
-	rename *widget.Clickable
-	remove *widget.Clickable
+	back     *widget.Clickable
+	avatar   *widget.Clickable
+	clear    *widget.Clickable
+	expiry   *widget.Clickable
+	rename   *widget.Clickable
+	remove   *widget.Clickable
 	//avatar // select an avatar image
 }
 
@@ -32,16 +33,25 @@ func (p *EditContactPage) Layout(gtx layout.Context) layout.Dimensions {
 					layout.Flexed(9, fill{th.Bg}.Layout))
 			}),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.avatar, "Choose avatar").Layout) }),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.clear, "Clear message history").Layout) }),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.expiry, "Set message lifetime").Layout) }),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.rename, "Rename contact").Layout) }),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.remove, "Remove contact").Layout) }))
-		})
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Button(th, p.clear, "Clear message history").Layout)
+			}),
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Button(th, p.expiry, "Set message lifetime").Layout)
+			}),
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Button(th, p.rename, "Rename contact").Layout)
+			}),
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Button(th, p.remove, "Remove contact").Layout)
+			}))
+	})
 }
 
 type EditContactComplete struct {
 	nickname string
 }
+
 // Event catches the widget submit events and calls catshadow.NewContact
 func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 	if p.back.Clicked() {
@@ -73,13 +83,11 @@ func (p *EditContactPage) Start(stop <-chan struct{}) {
 func newEditContactPage(contact string) *EditContactPage {
 	p := &EditContactPage{}
 	p.nickname = contact
-	p.back   = &widget.Clickable{}
+	p.back = &widget.Clickable{}
 	p.avatar = &widget.Clickable{}
-	p.clear  = &widget.Clickable{}
+	p.clear = &widget.Clickable{}
 	p.expiry = &widget.Clickable{}
 	p.rename = &widget.Clickable{}
 	p.remove = &widget.Clickable{}
 	return p
 }
-
-

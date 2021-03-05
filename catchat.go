@@ -240,14 +240,14 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		if event.IsConnected {
 			go func() {
 				if n, err := a.no.CreateNotification("Connected", "Catchat has connected"); err == nil {
-					<-time.After(30*time.Second)
+					<-time.After(30 * time.Second)
 					n.Cancel()
 				}
 			}()
 		} else {
 			go func() {
 				if n, err := a.no.CreateNotification("Disconnected", "Catchat has disconnected"); err == nil {
-					<-time.After(30*time.Second)
+					<-time.After(30 * time.Second)
 					n.Cancel()
 				}
 			}()
@@ -255,7 +255,7 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		if event.Err != nil {
 			go func() {
 				if n, err := a.no.CreateNotification("Error", fmt.Sprintf("Catchat halting: %s", event.Err)); err == nil {
-					<-time.After(30*time.Second)
+					<-time.After(30 * time.Second)
 					n.Cancel()
 				}
 			}()
@@ -266,21 +266,21 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		//event.Nickname, event.Err
 		if event.Err != nil {
 			if n, err := a.no.CreateNotification("Key Exchange", fmt.Sprintf("Failed: %s", event.Err)); err == nil {
-				go func() {<-time.After(30*time.Second);n.Cancel()}()
+				go func() { <-time.After(30 * time.Second); n.Cancel() }()
 			}
 		} else {
 			if n, err := a.no.CreateNotification("Key Exchange", fmt.Sprintf("Completed: %s", event.Nickname)); err == nil {
-				go func() {<-time.After(30*time.Second);n.Cancel()}()
+				go func() { <-time.After(30 * time.Second); n.Cancel() }()
 			}
 		}
 	//case *catshadow.MessageSentEvent:
 	case *catshadow.MessageNotSentEvent:
 		if n, err := a.no.CreateNotification("Message Not Sent", fmt.Sprintf("Failed to send message to %s", event.Nickname)); err == nil {
-			go func() {<-time.After(30*time.Second);n.Cancel()}()
+			go func() { <-time.After(30 * time.Second); n.Cancel() }()
 		}
 	//case *catshadow.MessageDeliveredEvent:
 	case *catshadow.MessageReceivedEvent:
-		a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname ))
+		a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
 		a.w.Invalidate()
 	}
 	return nil

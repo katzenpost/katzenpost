@@ -20,7 +20,7 @@ type conversationPage struct {
 	edit     *widget.Clickable
 	compose  *widget.Editor
 	send     *widget.Clickable
-	back	 *widget.Clickable
+	back     *widget.Clickable
 }
 
 func (c *conversationPage) Start(stop <-chan struct{}) {
@@ -104,7 +104,8 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 					layout.Flexed(1, fill{th.Bg}.Layout),
 					layout.Rigid(material.Button(th, c.edit, c.nickname).Layout),
 					layout.Flexed(1, fill{th.Bg}.Layout),
-				)},
+				)
+			},
 			)
 		}),
 		layout.Flexed(2, func(gtx C) D {
