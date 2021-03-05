@@ -1,8 +1,8 @@
 package main
 
 import (
-	"gioui.org/layout"
 	"gioui.org/io/pointer"
+	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -32,6 +32,11 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 	return bg.Layout(gtx, func(gtx C) D {
 		// returns a flex consisting of the contacts list and add contact button
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
+			// addContact
+			layout.Rigid(func(gtx C) D {
+				return material.Button(th, p.addContact, "Add Contact").Layout(gtx)
+			}),
+
 			layout.Flexed(1, func(gtx C) D {
 				gtx.Constraints.Min.X = gtx.Px(unit.Dp(300))
 				// the contactList
@@ -52,7 +57,6 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 							p.contactClicks[contacts[i]] = c
 						}
 
-
 						dims := layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
 							// contact icon
 							layout.Rigid(func(gtx C) D {
@@ -65,24 +69,25 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 							}), // end contact icon
 							// contact name and last message
 							layout.Flexed(1, func(gtx C) D {
-								return layout.Flex{Axis: layout.Vertical, Alignment:layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
+								return layout.Flex{Axis: layout.Vertical, Alignment: layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
 									layout.Rigid(func(gtx C) D {
 										return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
-										// contact name
-										layout.Rigid(func(gtx C) D {
-											in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-											return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
-										}),
-										layout.Rigid(func(gtx C) D {
-											// timestamp
-											if lastMsg != nil {
-												messageAge := time.Now().Sub(lastMsg.Timestamp)
-												messageAge = messageAge.Round(time.Minute)
-												return material.Body2(th, messageAge.String()).Layout(gtx)
-											}
-											return fill{th.Bg}.Layout(gtx)
-										}),
-									)}),
+											// contact name
+											layout.Rigid(func(gtx C) D {
+												in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+												return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
+											}),
+											layout.Rigid(func(gtx C) D {
+												// timestamp
+												if lastMsg != nil {
+													messageAge := time.Now().Sub(lastMsg.Timestamp)
+													messageAge = messageAge.Round(time.Minute)
+													return material.Body2(th, messageAge.String()).Layout(gtx)
+												}
+												return fill{th.Bg}.Layout(gtx)
+											}),
+										)
+									}),
 									// last message
 									layout.Rigid(func(gtx C) D {
 										in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
@@ -104,10 +109,6 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 						return dims
 					})
 				})
-			}),
-			// addContact
-			layout.Rigid(func(gtx C) D {
-				return material.Button(th, p.addContact, "Add Contact").Layout(gtx)
 			}),
 		)
 	})
