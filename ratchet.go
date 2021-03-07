@@ -479,6 +479,10 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	if !ok {
 		return ErrCSIDHPublicImport
 	}
+	ok = csidh.Validate(theirPQPublicKey0, r.rand)
+	if !ok {
+		return ErrCSIDHInvalidPublicKey
+	}
 	ok = csidh.DeriveSecret(pqSharedSecret, theirPQPublicKey0, r.kxPQPrivate0, r.rand)
 	if !ok {
 		return ErrCSIDHSharedSecret
@@ -499,6 +503,10 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 		ok = r.recvPQRatchetPublic.Import(kx.PQDh1)
 		if !ok {
 			return ErrCSIDHPublicImport
+		}
+		ok = csidh.Validate(r.recvPQRatchetPublic, r.rand)
+		if !ok {
+			return ErrCSIDHInvalidPublicKey
 		}
 	} else {
 		deriveKey(r.sendHeaderKey, headerKeyLabel, h)
