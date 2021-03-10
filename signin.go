@@ -8,6 +8,7 @@ import (
 )
 
 type signInPage struct {
+	a          *App
 	password   *widget.Editor
 	submit     *widget.Clickable
 	result     chan interface{}
@@ -58,17 +59,22 @@ func (p *signInPage) Event(gtx layout.Context) interface{} {
 		if len(pw) != 0 && len(pw) < minPasswordLen {
 			p.errMsg = fmt.Sprintf("Password must be minimum %d characters long", minPasswordLen)
 		} else {
-			go setupCatShadow(catshadowCfg, []byte(pw), p.result)
+			go func() {
+				setupCatShadow(catshadowCfg, []byte(pw), p.result)
+				// invalidate the window upon return
+				p.a.w.Invalidate()
+			}()
 			return signInStarted{result: p.result}
 		}
 	}
 	return nil
 }
 
-func newSignInPage() *signInPage {
+func newSignInPage(a *App) *signInPage {
 	return &signInPage{
+		a:        a,
 		password: &widget.Editor{SingleLine: true, Mask: '*', Submit: true},
 		submit:   &widget.Clickable{},
-		result:   make(chan interface{}),
+		result:   make(chan interface{}, 1),
 	}
 }

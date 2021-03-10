@@ -83,9 +83,8 @@ func (a *App) update(gtx layout.Context) {
 			a.stack.Pop()
 		case signInStarted:
 			a.stack.Clear(newConnectingPage(e.result))
-			a.w.Invalidate()
 		case connectError:
-			a.stack.Clear(newSignInPage())
+			a.stack.Clear(newSignInPage(a))
 		case connectSuccess:
 			a.client = e.client
 			a.stack.Clear(newHomePage())
@@ -307,7 +306,7 @@ func (a *App) handleGioEvents(e interface{}) error {
 		fmt.Printf("system.StageRunning: %v", system.StageRunning)
 		if e.Stage >= system.StageRunning {
 			if a.stack.Len() == 0 {
-				a.stack.Push(newSignInPage())
+				a.stack.Push(newSignInPage(a))
 			}
 		}
 	}
