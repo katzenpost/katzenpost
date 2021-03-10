@@ -1,0 +1,63 @@
+FROM golang:buster AS builder
+
+LABEL authors="Masala: masala@riseup.net"
+
+# Install build requirements and JDK
+RUN apt update \
+&& apt install --no-install-recommends -y git make ca-certificates \
+openjdk-11-jdk build-essential libgles2 libgles2-mesa-dev libglib2.0-dev \
+libxkbcommon-dev libxkbcommon-x11-dev libglu1-mesa-dev libxcursor-dev \
+libwayland-dev libx11-xcb-dev unzip \
+&& update-ca-certificates
+
+ENV ANDROID_HOME /opt/android-sdk
+ENV ANDROID_NDK_ROOT /opt/android-ndk
+ENV NDK_VERSION r21e
+ENV NDK_ZIP android-ndk-${NDK_VERSION}-linux-x86_64.zip
+ENV NDK_SHA1SUM c3ebc83c96a4d7f539bd72c241b2be9dcd29bda9
+ENV TOOLS_ZIP commandlinetools-linux-6858069_latest.zip
+ENV TOOLS_SHA256SUM 87f6dcf41d4e642e37ba03cb2e387a542aa0bd73cb689a9e7152aad40a6e7a08
+ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk-amd64
+ENV PATH $JAVA_HOME/bin:${PATH}
+
+# Android command-line tools
+RUN mkdir -p ${ANDROID_HOME}/cmdline-tools \
+&& mkdir -p /opt/tmp \
+&& cd /opt/tmp \
+&& wget https://dl.google.com/android/repository/${TOOLS_ZIP} \
+&& echo -n "${TOOLS_SHA256SUM}  ${TOOLS_ZIP}" | sha256sum -c - \
+&& unzip -q ${TOOLS_ZIP} \
+# Needs to be extracted into 'latest' path
+&& mv cmdline-tools ${ANDROID_HOME}/cmdline-tools/latest \
+&& rm ${TOOLS_ZIP}
+
+# Android NDK
+RUN cd /opt \
+&& wget https://dl.google.com/android/repository/${NDK_ZIP} \
+&& echo -n "${NDK_SHA1SUM}  ${NDK_ZIP}" | sha1sum -c - \
+&& unzip -q ${NDK_ZIP} && mv ./android-ndk-${NDK_VERSION} ${ANDROID_NDK_ROOT} \
+&& rm ${NDK_ZIP}
+
+# Update PATH
+ENV PATH ${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/latest/bin:${PATH}
+ENV ANDROID_SDK_ROOT ${ANDROID_HOME}
+
+# Install the android platform-tools
+RUN yes | sdkmanager --licenses \
+&& touch /root/.android/repositories.cfg \
+&& yes | sdkmanager "platform-tools" \
+&& yes | sdkmanager "build-tools;30.0.3" \
+#&& yes | sdkmanager "ndk-bundle" \
+&& yes | sdkmanager "platforms;android-30"
+
+# install gogio
+RUN go get -u -v gioui.org/cmd/gogio
+
+# Set the working directory for the container
+WORKDIR /go/catchat
+COPY . .
+RUN go mod verify
+RUN go build
+# Doesn't seem that the csidh implementation supports armv7
+# ../pkg/mod/github.com/henrydcase/nobs@v0.0.0-20201003222708-8474981cfcd3/dh/csidh/csidh.go:88:4: undefined: mul512
+CMD gogio -arch arm64,amd64 -x -target android .
