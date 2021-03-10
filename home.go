@@ -128,11 +128,11 @@ func (p *HomePage) Event(gtx layout.Context) interface{} {
 	for nickname, click := range p.contactClicks {
 		for _, e := range click.Events(gtx.Queue) {
 			if e.Type == TypeClick {
-				if e.Buttons.Contain(pointer.ButtonLeft) {
+				if e.Buttons.Contain(pointer.ButtonPrimary) {
 					// do the left button click thing
 					return ChooseContactClick{nickname: nickname}
 				}
-				if e.Buttons.Contain(pointer.ButtonRight) {
+				if e.Buttons.Contain(pointer.ButtonSecondary) {
 					return EditContact{nickname: nickname}
 					// do the right button click thing
 				}
