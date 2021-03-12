@@ -27,17 +27,20 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 		return
 	}
 
-	// automatically create a statefile if one does not already exist
-	// TODO: pick a sensible location for a default statefile other than cwd
-	if _, err := os.Stat(*stateFile); os.IsNotExist(err) {
-		// choose our app's DataDir
-		dir, err := app.DataDir()
-		if err != nil {
-			result <- err
-			return
-		}
+	// obtain the default data location
+	dir, err := app.DataDir()
+	if err != nil {
+		result <- err
+		return
+	}
 
+	// if the statefile doesn't exist, try the default system path
+	if _, err := os.Stat(*stateFile); os.IsNotExist(err) {
 		*stateFile = filepath.Join(dir, *stateFile)
+	}
+
+	// automatically create a statefile if one does not already exist
+	if _, err := os.Stat(*stateFile); os.IsNotExist(err) {
 
 		cfg, linkKey := client.AutoRegisterRandomClient(cfg)
 		c, err := client.New(cfg)
