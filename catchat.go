@@ -297,6 +297,17 @@ func (a *App) handleGioEvents(e interface{}) error {
 				a.w.Invalidate()
 			}
 		}
+	case system.CommandEvent:
+		switch e.Type {
+		case system.CommandBack:
+			// does not appear to work on android
+			if a.stack.Len() > 1 {
+				a.stack.Pop()
+				a.w.Invalidate()
+			} else {
+				// close app?
+			}
+		}
 	case system.DestroyEvent:
 		return errors.New("system.DestroyEvent receieved")
 	case system.FrameEvent:
