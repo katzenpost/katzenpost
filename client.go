@@ -107,7 +107,6 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 	if err != nil {
 		return nil, err
 	}
-	c.save()
 	err = c.CreateRemoteSpool()
 	if err != nil {
 		return nil, err
