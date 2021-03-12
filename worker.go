@@ -89,6 +89,11 @@ func (c *Client) worker() {
 				}
 			case *opRemoveContact:
 				c.doContactRemoval(op.name)
+			case *opRenameContact:
+				err := c.doContactRename(op.oldname, op.newname)
+				go func() {
+					op.responseChan <- err
+				}()
 			case *opSendMessage:
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:

@@ -27,6 +27,12 @@ type opRemoveContact struct {
 	name string
 }
 
+type opRenameContact struct {
+	oldname      string
+	newname      string
+	responseChan chan error
+}
+
 type opSendMessage struct {
 	id      MessageID
 	name    string
