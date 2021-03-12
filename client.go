@@ -478,6 +478,17 @@ func (c *Client) RemoveContact(nickname string) {
 	}
 }
 
+// RenameContact changes the name of a contact
+func (c *Client) RenameContact(oldname, newname string) error {
+	renameContactOp := &opRenameContact{
+		oldname:      oldname,
+		newname:      newname,
+		responseChan: make(chan error),
+	}
+	c.opCh <- renameContactOp
+	return <-renameContactOp.responseChan
+}
+
 func (c *Client) doContactRemoval(nickname string) {
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
@@ -497,6 +508,25 @@ func (c *Client) doContactRemoval(nickname string) {
 	}
 	c.conversationsMutex.Unlock()
 	c.save()
+}
+
+func (c *Client) doContactRename(oldname, newname string) error {
+	// check to see if oldname exists and newname does not exist
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	contact, ok := c.contactNicknames[oldname]
+	if !ok {
+		return errors.New("Contact not found")
+	}
+	if _, ok := c.contactNicknames[newname]; ok {
+		return errors.New("Contact already exists")
+	}
+	contact.Nickname = newname
+	c.contactNicknames[newname] = contact
+	c.conversations[newname] = c.conversations[oldname]
+	delete(c.conversations, oldname)
+	delete(c.contactNicknames, oldname)
+	return nil
 }
 
 func (c *Client) save() {
