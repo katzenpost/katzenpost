@@ -15,6 +15,7 @@ type AddContactComplete struct {
 // AddContactPage is the page for adding a new contact
 type AddContactPage struct {
 	nickname *widget.Editor
+	back     *widget.Clickable
 	secret   *widget.Editor
 	submit   *widget.Clickable
 }
@@ -28,6 +29,11 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 
 	return bg.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
+			layout.Rigid(func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
+					layout.Rigid(material.Button(th, p.back, "<").Layout),
+					layout.Flexed(9, fill{th.Bg}.Layout))
+			}),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.nickname, "nickname").Layout) }),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.secret, "secret").Layout) }),
 			layout.Rigid(func(gtx C) D { return material.Button(th, p.submit, "MEOW").Layout(gtx) }),
@@ -37,6 +43,9 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 
 // Event catches the widget submit events and calls catshadow.NewContact
 func (p *AddContactPage) Event(gtx layout.Context) interface{} {
+	if p.back.Clicked() {
+		return BackEvent{}
+	}
 	for _, ev := range p.nickname.Events() {
 		switch ev.(type) {
 		case widget.SubmitEvent:
@@ -68,6 +77,7 @@ func newAddContactPage() *AddContactPage {
 	p := &AddContactPage{}
 	p.nickname = &widget.Editor{SingleLine: true, Submit: true}
 	p.nickname.Focus()
+	p.back = &widget.Clickable{}
 	p.secret = &widget.Editor{SingleLine: true, Submit: true, Mask: '*'}
 	p.submit = &widget.Clickable{}
 	return p
