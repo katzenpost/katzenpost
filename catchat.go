@@ -276,6 +276,8 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		}
 	case *catshadow.MessageReceivedEvent:
 		a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
+	case *catshadow.MessageSentEvent:
+	case *catshadow.MessageDeliveredEvent:
 	default:
 		// do not invalidate window for events we do not care about
 		return nil
