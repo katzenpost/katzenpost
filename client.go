@@ -491,6 +491,11 @@ func (c *Client) doContactRemoval(nickname string) {
 	}
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
+	c.conversationsMutex.Lock()
+	if _, ok = c.conversations[nickname]; ok {
+		delete(c.conversations, nickname)
+	}
+	c.conversationsMutex.Unlock()
 	c.save()
 }
 
