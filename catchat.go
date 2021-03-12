@@ -261,8 +261,6 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 			return event.Err
 		}
 	case *catshadow.KeyExchangeCompletedEvent:
-		// emit some notification event
-		//event.Nickname, event.Err
 		if event.Err != nil {
 			if n, err := a.no.CreateNotification("Key Exchange", fmt.Sprintf("Failed: %s", event.Err)); err == nil {
 				go func() { <-time.After(30 * time.Second); n.Cancel() }()
@@ -272,16 +270,18 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 				go func() { <-time.After(30 * time.Second); n.Cancel() }()
 			}
 		}
-	//case *catshadow.MessageSentEvent:
 	case *catshadow.MessageNotSentEvent:
 		if n, err := a.no.CreateNotification("Message Not Sent", fmt.Sprintf("Failed to send message to %s", event.Nickname)); err == nil {
 			go func() { <-time.After(30 * time.Second); n.Cancel() }()
 		}
-	//case *catshadow.MessageDeliveredEvent:
 	case *catshadow.MessageReceivedEvent:
 		a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
-		a.w.Invalidate()
+	default:
+		// do not invalidate window for events we do not care about
+		return nil
 	}
+	// redraw the screen when an event we care about is received
+	a.w.Invalidate()
 	return nil
 }
 
