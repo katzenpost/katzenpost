@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 
+	"gioui.org/app"
 	"github.com/katzenpost/catshadow"
 	catconfig "github.com/katzenpost/catshadow/config"
 	"github.com/katzenpost/client"
 	clientConfig "github.com/katzenpost/client/config"
+	"path/filepath"
 )
 
 func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result chan interface{}) {
@@ -28,6 +30,15 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 	// automatically create a statefile if one does not already exist
 	// TODO: pick a sensible location for a default statefile other than cwd
 	if _, err := os.Stat(*stateFile); os.IsNotExist(err) {
+		// choose our app's DataDir
+		dir, err := app.DataDir()
+		if err != nil {
+			result <- err
+			return
+		}
+
+		*stateFile = filepath.Join(dir, *stateFile)
+
 		cfg, linkKey := client.AutoRegisterRandomClient(cfg)
 		c, err := client.New(cfg)
 		if err != nil {
