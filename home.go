@@ -8,6 +8,7 @@ import (
 	"gioui.org/widget/material"
 	"github.com/katzenpost/catshadow"
 	"image"
+	"runtime"
 	"time"
 )
 
@@ -135,6 +136,10 @@ func (p *HomePage) Event(gtx layout.Context) interface{} {
 				if e.Buttons.Contain(pointer.ButtonSecondary) {
 					return EditContact{nickname: nickname}
 					// do the right button click thing
+				}
+				// does not set buttons? but why?
+				if runtime.GOOS == "android" {
+					return ChooseContactClick{nickname: nickname}
 				}
 			}
 		}
