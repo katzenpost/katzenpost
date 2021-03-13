@@ -21,7 +21,12 @@ See the [install instructions](http://golang.org/doc/install.html).
 
 #### Dependencies (Debian Bullseye example)
 
-    apt-get --no-install-recommends install build-essential libgles2 libgles2-mesa-dev libglib2.0-dev libxkbcommon-dev libxkbcommon-x11-dev libglu1-mesa-dev libxcursor-dev libwayland-dev libx11-xcb-dev
+    apt install --no-install-recommends build-essential libgles2 libgles2-mesa-dev libglib2.0-dev libxkbcommon-dev libxkbcommon-x11-dev libglu1-mesa-dev libxcursor-dev libwayland-dev libx11-xcb-dev
+
+# Cross-compilation dependencies for the arm64 architecture
+
+dpkg --add-architecture arm64 && apt update
+apt install --no-install-recommends crossbuild-essential-arm64 libgles2:arm64 libgles2-mesa-dev:arm64 libglib2.0-dev:arm64 libxkbcommon-dev libxkbcommon-x11-dev:arm64 libglu1-mesa-dev:arm64 libxcursor-dev:arm64 libwayland-dev:arm64 libx11-xcb-dev:arm64
 
 #### Building catchat
 
@@ -29,26 +34,9 @@ See the [install instructions](http://golang.org/doc/install.html).
     cd $(go env GOPATH)/src/github.com/katzenpost/catchat
     go build
 
-## Testing catchat
+#### Building for arm64
 
-You can test catchat with a local mixnet. The recommended way to do
-this is to first run a docker based mixnet locally, see here:
-
-https://github.com/katzenpost/docker
-
-
-Once you get your mixnet running give it a couple of minutes to get fully connected
-so that it will route your messages. After that you can start catchat locally.
-
-    cd $(go env GOPATH)/src/github.com/katzenpost/catchat
-    ./deploy/linux/catchat -f ../catshadow/testdata/catshadow.toml -s bob.state -g
-
-As you can see here, this last command uses the catshadow configuration file from the
-catshadow git repo. Please aquire the catshadow repo so that you can use this configuration
-file which will work with the docker mixnet you are running:
-
-https://github.com/katzenpost/catshadow
-
+CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build
 
 ## Run it
 
