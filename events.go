@@ -40,6 +40,9 @@ type MessageNotSentEvent struct {
 
 	// MessageID is the key in the conversation map referencing a specific message.
 	MessageID MessageID
+
+	// Err is an error with reason for failure
+	Err error
 }
 
 // MessageSentEvent is an event signaling that the message
