@@ -468,7 +468,7 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 	return nil
 }
 
-// XXX do we even need this method?
+// GetContacts returns the contacts map.
 func (c *Client) GetContacts() map[string]*Contact {
 	getContactsOp := opGetContacts{
 		responseChan: make(chan map[string]*Contact),
@@ -487,7 +487,7 @@ func (c *Client) RemoveContact(nickname string) error {
 	return <-removeContactOp.responseChan
 }
 
-// RenameContact changes the name of a contact
+// RenameContact changes the name of a contact.
 func (c *Client) RenameContact(oldname, newname string) error {
 	renameContactOp := &opRenameContact{
 		oldname:      oldname,
