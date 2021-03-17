@@ -24,7 +24,8 @@ type opAddContact struct {
 }
 
 type opRemoveContact struct {
-	name string
+	name         string
+	responseChan chan error
 }
 
 type opRenameContact struct {

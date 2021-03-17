@@ -478,10 +478,13 @@ func (c *Client) GetContacts() map[string]*Contact {
 }
 
 // RemoveContact removes a contact from the Client's state.
-func (c *Client) RemoveContact(nickname string) {
-	c.opCh <- &opRemoveContact{
-		name: nickname,
+func (c *Client) RemoveContact(nickname string) error {
+	removeContactOp := &opRemoveContact{
+		name:         nickname,
+		responseChan: make(chan error),
 	}
+	c.opCh <- removeContactOp
+	return <-removeContactOp.responseChan
 }
 
 // RenameContact changes the name of a contact
@@ -495,11 +498,10 @@ func (c *Client) RenameContact(oldname, newname string) error {
 	return <-renameContactOp.responseChan
 }
 
-func (c *Client) doContactRemoval(nickname string) {
+func (c *Client) doContactRemoval(nickname string) error {
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
-		c.log.Errorf("contact removal failed, %s not found in contacts", nickname)
-		return
+		return errContactNotFound
 	}
 	if contact.IsPending {
 		if contact.pandaShutdownChan != nil {
@@ -514,6 +516,7 @@ func (c *Client) doContactRemoval(nickname string) {
 	}
 	c.conversationsMutex.Unlock()
 	c.save()
+	return nil
 }
 
 func (c *Client) doContactRename(oldname, newname string) error {
