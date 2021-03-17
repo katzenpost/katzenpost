@@ -88,7 +88,10 @@ func (c *Client) worker() {
 					c.log.Errorf("create contact failure: %s", err.Error())
 				}
 			case *opRemoveContact:
-				c.doContactRemoval(op.name)
+				err := c.doContactRemoval(op.name)
+				go func() {
+					op.responseChan <- err
+				}()
 			case *opRenameContact:
 				err := c.doContactRename(op.oldname, op.newname)
 				go func() {
