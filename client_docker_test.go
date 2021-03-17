@@ -23,9 +23,6 @@ package catshadow
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/katzenpost/catshadow/config"
@@ -48,20 +45,6 @@ func getClientState(c *Client) *State {
 		Provider:            c.client.Provider(),
 		Conversations:       c.GetAllConversations(),
 	}
-}
-
-func createRandomStateFile(t *testing.T) string {
-	require := require.New(t)
-
-	tmpDir, err := ioutil.TempDir("", "catshadow_test")
-	require.NoError(err)
-	id := [6]byte{}
-	_, err = rand.Reader.Read(id[:])
-	require.NoError(err)
-	stateFile := filepath.Join(tmpDir, fmt.Sprintf("%x.catshadow.state", id))
-	_, err = os.Stat(stateFile)
-	require.True(os.IsNotExist(err))
-	return stateFile
 }
 
 func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion bool) *Client {

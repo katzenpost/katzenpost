@@ -48,6 +48,7 @@ import (
 var (
 	errTrialDecryptionFailed  = errors.New("Trial Decryption Failed")
 	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
+	errBlobNotFound           = errors.New("Blob not found in store")
 )
 
 // Client is the mixnet client which interacts with other clients
@@ -68,6 +69,7 @@ type Client struct {
 	stateWorker         *StateWriter
 	linkKey             *ecdh.PrivateKey
 	user                string
+	blob                map[string][]byte
 	contacts            map[uint64]*Contact
 	contactNicknames    map[string]*Contact
 	spoolReadDescriptor *memspoolclient.SpoolReadDescriptor
@@ -97,6 +99,7 @@ type queuedSpoolCommand struct {
 // the previously saved state for an existing Client.
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
+		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
 		User:          user,
@@ -136,6 +139,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		linkKey:             state.LinkKey,
 		user:                state.User,
 		conversations:       state.Conversations,
+		blob:                state.Blob,
 		conversationsMutex:  new(sync.Mutex),
 		stateWorker:         stateWorker,
 		client:              mixnetClient,
@@ -551,6 +555,7 @@ func (c *Client) marshal() ([]byte, error) {
 		User:                c.user,
 		Provider:            c.client.Provider(),
 		Conversations:       c.conversations,
+		Blob:                c.blob,
 	}
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
@@ -1158,4 +1163,31 @@ func (c *Client) setMessageDelivered(nickname string, msgId MessageID) bool {
 	}
 
 	return false
+}
+
+// AddBlob adds a []byte blob identified by id string to the clients storage
+func (c *Client) AddBlob(id string, blob []byte) error {
+	c.blob[id] = blob
+	c.save()
+	return nil
+}
+
+// AddBlob removes the blob identified by id string or error
+func (c *Client) DeleteBlob(id string) error {
+	_, ok := c.blob[id]
+	if !ok {
+		return errBlobNotFound
+	}
+	delete(c.blob, id)
+	c.save()
+	return nil
+}
+
+// GetBlob returns the blob identified by id string or error
+func (c *Client) GetBlob(id string) ([]byte, error) {
+	b, ok := c.blob[id]
+	if !ok {
+		return nil, errBlobNotFound
+	}
+	return b, nil
 }
