@@ -48,6 +48,7 @@ type State struct {
 	Provider            string
 	LinkKey             *ecdh.PrivateKey
 	Conversations       map[string]map[MessageID]*Message
+	Blob                map[string][]byte
 }
 
 // StateWriter takes ownership of the Client's encrypted statefile
