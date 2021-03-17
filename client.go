@@ -48,6 +48,8 @@ import (
 var (
 	errTrialDecryptionFailed  = errors.New("Trial Decryption Failed")
 	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
+	errContactNotFound        = errors.New("Contact not found")
+	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
 	errBlobNotFound           = errors.New("Blob not found in store")
 )
 
@@ -783,10 +785,20 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
 		c.log.Errorf("contact %s not found", nickname)
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       errContactNotFound,
+		}
 		return
 	}
 	if contact.IsPending {
 		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       errPendingKeyExchange,
+		}
 		return
 	}
 	outMessage := Message{
@@ -807,6 +819,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
 		return
 	}
 	contact.ratchetMutex.Unlock()
@@ -814,6 +831,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
 		return
 	}
 
@@ -827,6 +849,11 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	if err := contact.outbound.Push(item); err != nil {
 		c.log.Debugf("Failed to enqueue message!")
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
 		return
 	}
 
@@ -918,6 +945,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 					c.eventCh.In() <- &MessageNotSentEvent{
 						Nickname:  tp.Nickname,
 						MessageID: tp.MessageID,
+						Err:       sentEvent.Err,
 					}
 					c.opCh <- &opRetransmit{contact: contact}
 					return
