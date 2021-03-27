@@ -52,6 +52,10 @@ type EditContactComplete struct {
 	nickname string
 }
 
+type RenameContact struct {
+	nickname string
+}
+
 // Event catches the widget submit events and calls catshadow.NewContact
 func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 	if p.back.Clicked() {
@@ -67,7 +71,7 @@ func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 		// TODO: add message expiry configuration to catshadow
 	}
 	if p.rename.Clicked() {
-		// TODO: add contact renaming to catshadow
+		return RenameContact{nickname: p.nickname}
 	}
 	if p.remove.Clicked() {
 		// TODO: confirmation dialog

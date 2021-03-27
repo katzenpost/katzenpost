@@ -94,6 +94,8 @@ func (a *App) update(gtx layout.Context) {
 			a.stack.Pop()
 		case ChooseContactClick:
 			a.stack.Push(newConversationPage(e.nickname))
+		case RenameContact:
+			a.stack.Push(newRenameContactPage(e.nickname))
 		case EditContact:
 			a.stack.Push(newEditContactPage(e.nickname))
 		case EditContactComplete:
