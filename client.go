@@ -937,7 +937,7 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			// since the retransmission occurs per contact
 			// set a timer on the contact
 			if contact, ok := c.contactNicknames[tp.Nickname]; !ok {
-				panic("contact not found")
+				return
 			} else {
 				if sentEvent.Err != nil {
 					c.log.Debugf("message send for %s failed with err: %s", tp.Nickname, sentEvent.Err)
@@ -1017,7 +1017,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 						defer c.sendMessage(contact)
 					}
 				} else {
-					panic("contact is missing")
+					return
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.setMessageDelivered(tp.Nickname, tp.MessageID)
