@@ -87,7 +87,25 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 		ProviderKeyPin: registrationProvider.IdentityKey,
 	}
 
-	u, err := url.Parse(registrationProvider.RegistrationHTTPAddresses[0])
+	// try to pick a registration address using a prefered transport
+	var addr string
+	loop0:
+	for _, t := range cfg.Debug.PreferedTransports {
+		for _, v := range registrationProvider.RegistrationHTTPAddresses {
+			if u, err := url.Parse(v); err == nil {
+				if strings.HasSuffix(u.Hostname(), string(t)) {
+					addr = v
+					break loop0
+				}
+			}
+		}
+	}
+	// default if there was no transport found with the prefered transport
+	if addr == "" {
+		addr = registrationProvider.RegistrationHTTPAddresses[0]
+	}
+
+	u, err := url.Parse(addr)
 	if err != nil {
 		panic(err)
 	}
