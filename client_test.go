@@ -86,6 +86,7 @@ func TestBlobStorage(t *testing.T) {
 		log:                logBackend.GetLogger("foo"),
 		contacts:           make(map[uint64]*Contact),
 		conversationsMutex: new(sync.Mutex),
+		blobMutex:          new(sync.Mutex),
 		stateWorker:        stateWorker,
 	}
 	require.NoError(err)
