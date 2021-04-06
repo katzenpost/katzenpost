@@ -27,6 +27,8 @@ github.com/awnumar/memcall v0.0.0-20191004114545-73db50fd9f80 h1:8kObYoBO4LNmQ+f
 github.com/awnumar/memcall v0.0.0-20191004114545-73db50fd9f80/go.mod h1:S911igBPR9CThzd/hYQQmTc9SWNu3ZHIlCGaWsWsoJo=
 github.com/awnumar/memguard v0.22.2 h1:tMxcq1WamhG13gigK8Yaj9i/CHNUO3fFlpS9ABBQAxw=
 github.com/awnumar/memguard v0.22.2/go.mod h1:33OwJBHC+T4eEfFcDrQb78TMlBMBvcOPCXWU9xE34gM=
+github.com/benc-uk/gofract v0.0.0-20200624074122-f2d59d20813c h1:Stym0YddksQbHkyan7d37Yx1RHL1gHfyXtsRfMl6JWk=
+github.com/benc-uk/gofract v0.0.0-20200624074122-f2d59d20813c/go.mod h1:5ak157Nk6g5Gi17ojxjXkiEv98yFaDESAQA3IJ65aKQ=
 github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973/go.mod h1:Dwedo/Wpr24TaqPxmxbtue+5NUziq4I4S80YR8gNf3Q=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
