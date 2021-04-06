@@ -77,6 +77,7 @@ type Client struct {
 	spoolReadDescriptor *memspoolclient.SpoolReadDescriptor
 	conversations       map[string]map[MessageID]*Message
 	conversationsMutex  *sync.Mutex
+	blobMutex           *sync.Mutex
 
 	client  *client.Client
 	session *client.Session
@@ -127,6 +128,9 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	if err != nil {
 		return nil, err
 	}
+	if state.Blob == nil {
+		state.Blob = make(map[string][]byte)
+	}
 	c := &Client{
 		eventCh:             channels.NewInfiniteChannel(),
 		EventSink:           make(chan interface{}),
@@ -142,6 +146,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		user:                state.User,
 		conversations:       state.Conversations,
 		blob:                state.Blob,
+		blobMutex:           new(sync.Mutex),
 		conversationsMutex:  new(sync.Mutex),
 		stateWorker:         stateWorker,
 		client:              mixnetClient,
@@ -533,6 +538,13 @@ func (c *Client) doContactRename(oldname, newname string) error {
 	contact.Nickname = newname
 	c.contactNicknames[newname] = contact
 	c.conversations[newname] = c.conversations[oldname]
+	c.blobMutex.Lock()
+	if b, ok := c.blob["avatar://"+oldname]; ok {
+		c.blob["avatar://"+newname] = b
+		delete(c.blob, "avatar://"+oldname, b)
+	}
+	c.blobMutex.Unlock()
+
 	delete(c.conversations, oldname)
 	delete(c.contactNicknames, oldname)
 	return nil
@@ -1198,13 +1210,18 @@ func (c *Client) setMessageDelivered(nickname string, msgId MessageID) bool {
 
 // AddBlob adds a []byte blob identified by id string to the clients storage
 func (c *Client) AddBlob(id string, blob []byte) error {
+	// if Client was constructed from an old state file, blob is nil
+	c.blobMutex.Lock()
 	c.blob[id] = blob
+	c.blobMutex.Unlock()
 	c.save()
 	return nil
 }
 
-// AddBlob removes the blob identified by id string or error
+// DeleteBlob removes the blob identified by id string or error
 func (c *Client) DeleteBlob(id string) error {
+	c.blobMutex.Lock()
+	defer c.blobMutex.Unlock()
 	_, ok := c.blob[id]
 	if !ok {
 		return errBlobNotFound
@@ -1216,6 +1233,8 @@ func (c *Client) DeleteBlob(id string) error {
 
 // GetBlob returns the blob identified by id string or error
 func (c *Client) GetBlob(id string) ([]byte, error) {
+	c.blobMutex.Lock()
+	defer c.blobMutex.Unlock()
 	b, ok := c.blob[id]
 	if !ok {
 		return nil, errBlobNotFound
