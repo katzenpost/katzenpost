@@ -516,12 +516,7 @@ func (c *Client) doContactRemoval(nickname string) error {
 	}
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
-	c.conversationsMutex.Lock()
-	if _, ok = c.conversations[nickname]; ok {
-		delete(c.conversations, nickname)
-	}
-	c.conversationsMutex.Unlock()
-	c.save()
+	c.WipeConversation(nickname) // calls c.save()
 	return nil
 }
 
@@ -1098,6 +1093,7 @@ func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
 // WipeConversation removes all messages between a contact
 func (c *Client) WipeConversation(nickname string) {
 	c.conversationsMutex.Lock()
+	defer c.save()
 	defer c.conversationsMutex.Unlock()
 
 	if _, ok := c.conversations[nickname]; !ok {
