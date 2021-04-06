@@ -63,7 +63,8 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	cfg, err := catshadowCfg.ClientConfig()
 	require.NoError(err)
 
-	cfg, linkKey := client.AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
 	require.NoError(err)
