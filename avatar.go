@@ -27,6 +27,7 @@ type AvatarPicker struct {
 	nickname string
 	path     string
 	back     *widget.Clickable
+	clear    *widget.Clickable
 	up       *widget.Clickable
 	clicks   map[string]*Click
 }
@@ -34,6 +35,11 @@ type AvatarPicker struct {
 // AvatarSelected is the event that indicates a chosen avatar image
 type AvatarSelected struct {
 	nickname, path string
+}
+
+// AvatarCleared is the event that indicates avatars must be redrawn
+type AvatarCleared struct {
+	nickname string
 }
 
 // Layout displays a file chooser for supported image types
@@ -50,6 +56,7 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline}.Layout(gtx,
 					layout.Rigid(material.Button(th, p.back, "<").Layout),
 					layout.Rigid(material.Button(th, p.up, "..").Layout),
+					layout.Rigid(material.Button(th, p.clear, "Random").Layout),
 					layout.Flexed(1, material.Body1(th, p.path).Layout),
 				)
 			}),
@@ -125,6 +132,10 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 func (p *AvatarPicker) Event(gtx C) interface{} {
+	if p.clear.Clicked() {
+		clearAvatar(p.nickname)
+		return AvatarCleared{nickname: p.nickname}
+	}
 	if p.up.Clicked() {
 		if u, err := filepath.Abs(filepath.Join(p.path, "..")); err == nil {
 			p.path = u
@@ -163,6 +174,7 @@ func newAvatarPicker(nickname string) *AvatarPicker {
 	return &AvatarPicker{up: &widget.Clickable{},
 		nickname: nickname,
 		back:     &widget.Clickable{},
+		clear:    &widget.Clickable{},
 		clicks:   make(map[string]*Click),
 		path:     cwd}
 }
@@ -171,6 +183,10 @@ func scale(src image.Image, rect image.Rectangle, scale draw.Scaler) image.Image
 	dst := image.NewRGBA(rect)
 	scale.Scale(dst, rect, src, src.Bounds(), draw.Over, nil)
 	return dst
+}
+
+func clearAvatar(nickname string) {
+	catshadowClient.DeleteBlob("avatar://"+nickname)
 }
 
 func setAvatar(nickname, path string) {
