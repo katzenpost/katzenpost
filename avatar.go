@@ -50,11 +50,7 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline}.Layout(gtx,
 					layout.Rigid(material.Button(th, p.back, "<").Layout),
 					layout.Rigid(material.Button(th, p.up, "..").Layout),
-				)
-			}),
-			layout.Rigid(func(gtx C) D {
-				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
-					layout.Flexed(1, material.Caption(th, p.path).Layout),
+					layout.Flexed(1, material.Body1(th, p.path).Layout),
 				)
 			}),
 
@@ -88,7 +84,10 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 							c := new(Click)
 							p.clicks[fn.Name()] = c
 						}
-						dims := material.Body2(th, fn.Name()).Layout(gtx)
+						in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+						dims := in.Layout(gtx, func (gtx C) D {
+							return material.Body1(th, fn.Name()).Layout(gtx)
+						})
 						a := pointer.Rect(image.Rectangle{Max: dims.Size})
 						a.Add(gtx.Ops)
 						p.clicks[fn.Name()].Add(gtx.Ops)
