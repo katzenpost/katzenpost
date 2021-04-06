@@ -69,7 +69,9 @@ func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 		return ChooseAvatar{nickname: p.nickname}
 	}
 	if p.clear.Clicked() {
-		// TODO: add clear history method to catshadow
+		// TODO: confirmation dialog
+		catshadowClient.WipeConversation(p.nickname)
+		return EditContactComplete{nickname: p.nickname}
 	}
 	if p.expiry.Clicked() {
 		// TODO: add message expiry configuration to catshadow
