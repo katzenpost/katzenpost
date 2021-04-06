@@ -39,7 +39,9 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
+
 	client, err := New(cfg)
 	require.NoError(err)
 
@@ -58,7 +60,8 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
@@ -82,7 +85,8 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
@@ -107,7 +111,8 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
@@ -155,7 +160,8 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
@@ -204,7 +210,8 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
@@ -235,7 +242,8 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
