@@ -23,6 +23,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/awnumar/memguard"
 	"sort"
 	"sync"
 	"time"
@@ -555,7 +556,7 @@ func (c *Client) save() {
 	c.stateWorker.stateCh <- serialized
 }
 
-func (c *Client) marshal() ([]byte, error) {
+func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	contacts := []*Contact{}
 	for _, contact := range c.contacts {
 		contacts = append(contacts, contact)
@@ -572,7 +573,10 @@ func (c *Client) marshal() ([]byte, error) {
 	}
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
-	return cbor.Marshal(s)
+	ms := memguard.NewStream()
+	e := cbor.NewEncoder(ms)
+	e.Encode(s)
+	return ms.Flush()
 }
 
 func (c *Client) stopContactTimers() {
