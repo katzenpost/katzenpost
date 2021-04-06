@@ -52,6 +52,10 @@ type EditContactComplete struct {
 	nickname string
 }
 
+type ChooseAvatar struct {
+	nickname string
+}
+
 type RenameContact struct {
 	nickname string
 }
@@ -62,7 +66,7 @@ func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 		return BackEvent{}
 	}
 	if p.avatar.Clicked() {
-		// TODO. avatar selection
+		return ChooseAvatar{nickname: p.nickname}
 	}
 	if p.clear.Clicked() {
 		// TODO: add clear history method to catshadow

@@ -31,8 +31,8 @@ var (
 	clientConfigFile = flag.String("f", "", "Path to the client config file.")
 	stateFile        = flag.String("s", "catshadow_statefile", "The catshadow state file path.")
 
-	catshadowClient *catshadow.Client
 	catshadowCfg    *catconfig.Config
+	catshadowClient *catshadow.Client
 
 	minPasswordLen = 5 // XXX pick something reasonable
 
@@ -94,12 +94,17 @@ func (a *App) update(gtx layout.Context) {
 			a.stack.Pop()
 		case ChooseContactClick:
 			a.stack.Push(newConversationPage(e.nickname))
+		case ChooseAvatar:
+			a.stack.Push(newAvatarPicker(e.nickname))
 		case RenameContact:
 			a.stack.Push(newRenameContactPage(e.nickname))
 		case EditContact:
 			a.stack.Push(newEditContactPage(e.nickname))
 		case EditContactComplete:
 			a.stack.Clear(newHomePage())
+		case AvatarSelected:
+			a.stack.Pop()
+			go setAvatar(e.nickname, e.path)
 		case MessageSent:
 		}
 	}

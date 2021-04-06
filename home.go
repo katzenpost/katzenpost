@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
+	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -65,6 +67,15 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 								return cc.Layout(gtx, func(gtx C) D {
 									sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
 									gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
+									// get avatar
+									if b, err := catshadowClient.GetBlob("avatar://" + contacts[i]); err == nil {
+										if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
+											scale := float32(sz.X) / float32(m.Bounds().Size().X)
+											return widget.Image{Scale: scale, Src: paint.NewImageOp(m)}.Layout(gtx)
+										} else {
+											panic(err)
+										}
+									}
 									return fill{th.ContrastBg}.Layout(gtx)
 								})
 							}), // end contact icon
