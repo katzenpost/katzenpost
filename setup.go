@@ -105,6 +105,11 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 			return
 		}
 
+		// patch/update statefile for missing entries
+		if state.Blob == nil {
+			state.Blob = make(map[string][]byte)
+		}
+
 		// Make a catshadow Client.
 		catshadowClient, err = catshadow.New(backendLog, c, stateWorker, state)
 		if err != nil {
