@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/worker"
 	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/memspool/client"
@@ -541,7 +542,7 @@ func (c *Client) doContactRename(oldname, newname string) error {
 	c.blobMutex.Lock()
 	if b, ok := c.blob["avatar://"+oldname]; ok {
 		c.blob["avatar://"+newname] = b
-		delete(c.blob, "avatar://"+oldname, b)
+		delete(c.blob, "avatar://"+oldname)
 	}
 	c.blobMutex.Unlock()
 
@@ -1092,6 +1093,26 @@ func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	return c.conversations[nickname]
+}
+
+// WipeConversation removes all messages between a contact
+func (c *Client) WipeConversation(nickname string) {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+
+	if _, ok := c.conversations[nickname]; !ok {
+		return
+	}
+
+	for k, m := range c.conversations[nickname] {
+		utils.ExplicitBzero(m.Plaintext)
+		m.Timestamp = time.Time{}
+		m.Outbound = false
+		m.Sent = false
+		m.Delivered = false
+		delete(c.conversations[nickname], k)
+	}
+	delete(c.conversations, nickname)
 }
 
 // GetConversation returns a map of all the maps of messages between a contact
