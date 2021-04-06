@@ -42,24 +42,24 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
-func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
+func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
 	// Retrieve a copy of the PKI consensus document.
 	logFilePath := ""
 	backendLog, err := log.New(logFilePath, "DEBUG", false)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
 	proxyCfg := cfg.UpstreamProxyConfig()
 	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
 	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
 	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
 	defer cancel()
 	doc, _, err := pkiClient.Get(ctx, currentEpoch)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
 
 	// Pick a registration Provider.
@@ -70,7 +70,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 		}
 	}
 	if len(registerProviders) == 0 {
-		panic("zero registration Providers found in the consensus")
+		return nil, nil, errors.New("zero registration Providers found in the consensus")
 	}
 	mrand.Seed(time.Now().UTC().UnixNano())
 	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
@@ -79,7 +79,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 	fmt.Println("registering client with mixnet Provider")
 	linkKey, err := ecdh.NewKeypair(rand.Reader)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
 	account := &config.Account{
 		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
@@ -107,7 +107,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 
 	u, err := url.Parse(addr)
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
 	cfgRegistration := &config.Registration{
 		Address: u.Host,
@@ -122,9 +122,9 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 	cfg.Registration = cfgRegistration
 	err = RegisterClient(cfg, linkKey.PublicKey())
 	if err != nil {
-		panic(err)
+		return nil, nil, err
 	}
-	return cfg, linkKey
+	return cfg, linkKey, nil
 }
 
 func RegisterClient(cfg *config.Config, linkKey *ecdh.PublicKey) error {
