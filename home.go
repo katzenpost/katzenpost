@@ -20,6 +20,7 @@ var (
 
 type HomePage struct {
 	addContact    *widget.Clickable
+	av            map[string]*widget.Image
 	contactClicks map[string]*Click
 }
 
@@ -67,11 +68,15 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 								return cc.Layout(gtx, func(gtx C) D {
 									sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
 									gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-									// get avatar
+									if cachedAv, ok := p.av[contacts[i]]; ok {
+										return cachedAv.Layout(gtx)
+									}
 									if b, err := catshadowClient.GetBlob("avatar://" + contacts[i]); err == nil {
 										if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
 											scale := float32(sz.X) / float32(m.Bounds().Size().X)
-											return widget.Image{Scale: scale, Src: paint.NewImageOp(m)}.Layout(gtx)
+											av := &widget.Image{Scale: scale, Src: paint.NewImageOp(m)}
+											p.av[contacts[i]] = av
+											return av.Layout(gtx)
 										} else {
 											panic(err)
 										}
@@ -165,5 +170,6 @@ func newHomePage() *HomePage {
 	return &HomePage{
 		addContact:    &widget.Clickable{},
 		contactClicks: make(map[string]*Click),
+		av:            make(map[string]*widget.Image),
 	}
 }
