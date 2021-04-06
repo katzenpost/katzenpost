@@ -53,7 +53,6 @@ type App struct {
 	w      *app.Window
 	ops    *op.Ops
 	no     *notify.Manager
-	client *catshadow.Client
 	stack  pageStack
 }
 
@@ -86,7 +85,6 @@ func (a *App) update(gtx layout.Context) {
 		case connectError:
 			a.stack.Clear(newSignInPage(a))
 		case connectSuccess:
-			a.client = e.client
 			a.stack.Clear(newHomePage())
 		case AddContactClick:
 			a.stack.Push(newAddContactPage())
@@ -113,7 +111,7 @@ func (a *App) update(gtx layout.Context) {
 func (a *App) run() error {
 
 	for {
-		if a.client != nil {
+		if catshadowClient != nil {
 			break
 		}
 		e := <-a.w.Events()
@@ -122,19 +120,19 @@ func (a *App) run() error {
 		}
 	}
 	defer func() {
-		if a.client != nil {
-			a.client.Shutdown()
-			a.client.Wait()
+		if catshadowClient != nil {
+			catshadowClient.Shutdown()
+			catshadowClient.Wait()
 		}
 	}()
 
 	for {
 		select {
-		case e := <-a.client.EventSink:
+		case e := <-catshadowClient.EventSink:
 			if err := a.handleCatshadowEvent(e); err != nil {
 				return err
 			}
-		case <-a.client.HaltCh():
+		case <-catshadowClient.HaltCh():
 			return errors.New("client halted unexpectedly")
 		case e := <-a.w.Events():
 			if err := a.handleGioEvents(e); err != nil {
