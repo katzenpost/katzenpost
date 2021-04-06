@@ -101,8 +101,10 @@ func (a *App) update(gtx layout.Context) {
 		case EditContactComplete:
 			a.stack.Clear(newHomePage())
 		case AvatarSelected:
-			a.stack.Pop()
-			go setAvatar(e.nickname, e.path)
+			go func() {
+				setAvatar(e.nickname, e.path)
+				a.stack.Clear(newHomePage())
+			}()
 		case MessageSent:
 		}
 	}
