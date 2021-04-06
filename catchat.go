@@ -50,10 +50,10 @@ var (
 )
 
 type App struct {
-	w      *app.Window
-	ops    *op.Ops
-	no     *notify.Manager
-	stack  pageStack
+	w     *app.Window
+	ops   *op.Ops
+	no    *notify.Manager
+	stack pageStack
 }
 
 func newApp(w *app.Window) *App {
