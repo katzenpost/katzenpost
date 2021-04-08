@@ -112,15 +112,6 @@ func (p *pki) worker() {
 		timer.Stop()
 	}()
 
-	pkiCtx, cancelFn := context.WithCancel(context.Background())
-	go func() {
-		select {
-		case <-p.HaltCh():
-			cancelFn()
-		case <-pkiCtx.Done():
-		}
-	}()
-
 	var lastCallbackEpoch uint64
 	for {
 		timerFired := false
@@ -158,6 +149,15 @@ func (p *pki) worker() {
 				p.log.Debugf("Skipping fetch for epoch %v: %v", epoch, err)
 				continue
 			}
+
+			pkiCtx, cancelFn := context.WithCancel(context.Background())
+			go func() {
+				select {
+				case <-p.HaltCh():
+					cancelFn()
+				case <-pkiCtx.Done():
+				}
+			}()
 
 			d, err := p.getDocument(pkiCtx, epoch)
 			if err != nil {
