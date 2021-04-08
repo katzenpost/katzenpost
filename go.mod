@@ -7,10 +7,10 @@ require (
 	github.com/awnumar/memguard v0.22.2
 	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20191204073434-41b24f726a2c
-	github.com/katzenpost/client v0.0.22-0.20210226022911-83f0cac10304
-	github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515
+	github.com/katzenpost/client v0.0.24
+	github.com/katzenpost/core v0.0.14
 	github.com/katzenpost/registration_client v0.0.3
-	github.com/katzenpost/server v0.0.18-0.20210226021137-4a0b16e51420
+	github.com/katzenpost/server v0.0.18
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
