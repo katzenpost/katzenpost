@@ -22,6 +22,8 @@ github.com/katzenpost/core v0.0.12 h1:rT4aKCyITD7GvEhEL1P8i8atr1/W3XvZYPfnQN+kLp
 github.com/katzenpost/core v0.0.12/go.mod h1:VI2dGivI7H+dk6XDNjeO3s3naJqSnlLfvBwn+VzJ6gE=
 github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515 h1:mitQKmkvmyqoWZmD1ErfKGc44iJ/UQGh1dXOsyOqxa8=
 github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515/go.mod h1:RjyD4DLQr+P5FnP6iiZUTgvalZwT7NyawXwYzn32eYQ=
+github.com/katzenpost/core v0.0.14 h1:8n30pGlm6cXa1PjU+HBv8nARFh67UmX/eYkHnbcBfgs=
+github.com/katzenpost/core v0.0.14/go.mod h1:RjyD4DLQr+P5FnP6iiZUTgvalZwT7NyawXwYzn32eYQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f/go.mod h1:xA8+73aJ0TU2W701F6Ac7LL8jiUuv6me5pO+/nIuaCM=
 github.com/katzenpost/noise v0.0.0-20190907211420-4c2fa3a5d7a1 h1:bD6fNKhG5mnTWpxscA9mrCV94ZsqYj4VUEwrjingfbM=
