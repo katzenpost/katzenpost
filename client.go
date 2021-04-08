@@ -822,7 +822,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		Outbound:  true,
 	}
 
-	payload := [DoubleRatchetPayloadLength]byte{}
+	payload := make([]byte, DoubleRatchetPayloadLength)
 	payloadLen := len(message)
 	if payloadLen > DoubleRatchetPayloadLength-4 {
 		payloadLen = DoubleRatchetPayloadLength - 4
