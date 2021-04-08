@@ -98,6 +98,8 @@ github.com/katzenpost/server v0.0.16 h1:0IRF+Fo3IcMfBBMOqMw+W2mY5rmzGUsz7KW32HnN
 github.com/katzenpost/server v0.0.16/go.mod h1:HUBjgkCGQUOzI9cPmmiZ2r4/Dd1/2/rtlOqKrzlktzo=
 github.com/katzenpost/server v0.0.17 h1:8mESjsPOStns4WSxwhep0XsR/SCpZu2P13n/MVzECAs=
 github.com/katzenpost/server v0.0.17/go.mod h1:AeteZwJWHzOs/4odKJXB1bfOiGyqsFmQkQCspRm/RSc=
+github.com/katzenpost/server v0.0.18-0.20210226021137-4a0b16e51420 h1:PRNBdEZcVdgWN88dG7eY0rdJorYK02VhtKIkMkn+5yA=
+github.com/katzenpost/server v0.0.18-0.20210226021137-4a0b16e51420/go.mod h1:0lON0uLMwQwmm/vNd7H30Y2hG4J192pmjMZZihtDxwU=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
