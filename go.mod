@@ -4,11 +4,11 @@ go 1.13
 
 require (
 	github.com/BurntSushi/toml v0.3.1
-	github.com/katzenpost/authority v0.0.15-0.20210226020614-ca0ba0c3f63f
-	github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515
-	github.com/katzenpost/minclient v0.0.12-0.20210226021907-00f075bb4e43
+	github.com/katzenpost/authority v0.0.15
+	github.com/katzenpost/core v0.0.14
+	github.com/katzenpost/minclient v0.0.13
 	github.com/katzenpost/registration_client v0.0.2
-	github.com/katzenpost/server v0.0.17 // indirect
+	github.com/katzenpost/server v0.0.18 // indirect
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/net v0.0.0-20200501053045-e0ff5e5a1de5
 	golang.org/x/text v0.3.2
