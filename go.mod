@@ -12,8 +12,8 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/katzenpost/authority v0.0.15-0.20210226020614-ca0ba0c3f63f
-	github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515
+	github.com/katzenpost/authority v0.0.15
+	github.com/katzenpost/core v0.0.14
 	github.com/katzenpost/noise v0.0.2 // indirect
 	github.com/prometheus/client_golang v1.6.0
 	github.com/stretchr/testify v1.4.0
