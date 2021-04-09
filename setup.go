@@ -34,14 +34,29 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 		return
 	}
 
-	// if the statefile doesn't exist, try the default system path
+	// dir does not appear to point to ~/.config/catchat but rather ~/.config on linux?
+	// create directory for application data
+	datadir := filepath.Join(dir, dataDirName)
+	_, err = os.Stat(datadir)
+	if os.IsNotExist(err) {
+		// create the application data directory
+		err := os.Mkdir(datadir, os.ModeDir|os.FileMode(0700))
+		if err != nil {
+			result <- err
+			return
+		}
+	}
+
+	// if the statefile doesn't exist, try the default datadir
+	var statefile string
 	if _, err := os.Stat(*stateFile); os.IsNotExist(err) {
-		*stateFile = filepath.Join(dir, *stateFile)
+		statefile = filepath.Join(datadir, *stateFile)
+	} else {
+		statefile = *stateFile
 	}
 
 	// automatically create a statefile if one does not already exist
-	if _, err := os.Stat(*stateFile); os.IsNotExist(err) {
-
+	if _, err := os.Stat(statefile); os.IsNotExist(err) {
 		cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)
 		if err != nil {
 			result <- err
@@ -55,7 +70,7 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 		}
 
 		// Create statefile.
-		stateWorker, err = catshadow.NewStateWriter(c.GetLogger("catshadow_state"), *stateFile, passphrase)
+		stateWorker, err = catshadow.NewStateWriter(c.GetLogger("catshadow_state"), statefile, passphrase)
 		if err != nil {
 			result <- err
 			c.Shutdown()
@@ -94,7 +109,7 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 			result <- err
 			return
 		}
-		stateWorker, state, err = catshadow.LoadStateWriter(backendLog.GetLogger("state_worker"), *stateFile, passphrase)
+		stateWorker, state, err = catshadow.LoadStateWriter(backendLog.GetLogger("state_worker"), statefile, passphrase)
 		if err != nil {
 			result <- err
 			return
