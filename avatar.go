@@ -85,7 +85,7 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 							p.clicks[fn.Name()] = c
 						}
 						in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-						dims := in.Layout(gtx, func (gtx C) D {
+						dims := in.Layout(gtx, func(gtx C) D {
 							return material.Body1(th, fn.Name()).Layout(gtx)
 						})
 						a := pointer.Rect(image.Rectangle{Max: dims.Size})
