@@ -263,12 +263,11 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		}
 		if event.Err != nil {
 			go func() {
-				if n, err := a.no.CreateNotification("Error", fmt.Sprintf("Catchat halting: %s", event.Err)); err == nil {
+				if n, err := a.no.CreateNotification("Error", fmt.Sprintf("Catchat error: %s", event.Err)); err == nil {
 					<-time.After(30 * time.Second)
 					n.Cancel()
 				}
 			}()
-			return event.Err
 		}
 	case *catshadow.KeyExchangeCompletedEvent:
 		if event.Err != nil {
