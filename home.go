@@ -3,17 +3,17 @@ package main
 import (
 	"bytes"
 	"gioui.org/io/pointer"
-	"math/rand"
-	"image/png"
 	"gioui.org/layout"
-	"github.com/benc-uk/gofract/pkg/fractals"
-	"github.com/benc-uk/gofract/pkg/colors"
 	"gioui.org/op/paint"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/benc-uk/gofract/pkg/colors"
+	"github.com/benc-uk/gofract/pkg/fractals"
 	"github.com/katzenpost/catshadow"
 	"image"
+	"image/png"
+	"math/rand"
 	"runtime"
 	"time"
 )
@@ -144,19 +144,19 @@ func (p *HomePage) layoutAvatar(gtx C, nickname string) D {
 		// generate an avatar
 		// complexPair JuliaSeed
 		f := fractals.Fractal{FractType: "julia",
-				Center: fractals.ComplexPair{rand.Float64(), rand.Float64()},
-				//Center: fractals.ComplexPair{-0.6, 0.0},
-				MagFactor: 1.0,
-				MaxIter: 90,
-				W: 3.0,
-				H: 2.0,
-				ImgWidth: sz.X,
-				JuliaSeed: fractals.ComplexPair{rand.Float64(),rand.Float64()},
-				//JuliaSeed: fractals.ComplexPair{0.355, 0.355},
-				InnerColor: "#000000",
-				FullScreen: false,
-				ColorRepeats: 2.0,
-			}
+			Center: fractals.ComplexPair{rand.Float64(), rand.Float64()},
+			//Center: fractals.ComplexPair{-0.6, 0.0},
+			MagFactor: 1.0,
+			MaxIter:   90,
+			W:         3.0,
+			H:         2.0,
+			ImgWidth:  sz.X,
+			JuliaSeed: fractals.ComplexPair{rand.Float64(), rand.Float64()},
+			//JuliaSeed: fractals.ComplexPair{0.355, 0.355},
+			InnerColor:   "#000000",
+			FullScreen:   false,
+			ColorRepeats: 2.0,
+		}
 
 		i := image.NewRGBA(image.Rectangle{Max: sz})
 		palette := colors.GradientTable{}
