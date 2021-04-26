@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"os"
 
 	"gioui.org/app"
@@ -11,6 +12,16 @@ import (
 	clientConfig "github.com/katzenpost/client/config"
 	"path/filepath"
 )
+
+// checks to see if the local system has a listener on port 9050
+func hasTor() bool {
+	c, err := net.Dial("tcp", "127.0.0.1:9050")
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
+}
 
 func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result chan interface{}) {
 	// XXX: if the catshadowClient already exists, shut it down

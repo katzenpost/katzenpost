@@ -165,7 +165,12 @@ func main() {
 		}
 	} else {
 		// use the baked in configuration defaults if a configuration is not specified
-		catshadowCfg, err = getDefaultConfig()
+		if hasTor() {
+			catshadowCfg, err = getDefaultConfig()
+		} else {
+			catshadowCfg, err = getConfigNoTor()
+		}
+
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to load config defaults: %v\n", err)
 			os.Exit(-1)
@@ -193,6 +198,50 @@ type (
 	C = layout.Context
 	D = layout.Dimensions
 )
+
+func getConfigNoTor() (*catconfig.Config, error) {
+	cfgString := `
+[UpstreamProxy]
+  Type = "none"
+
+[Logging]
+  Disable = false
+  Level = "DEBUG"
+  File = ""
+
+[ClientLogging]
+  Disable = false
+  Level = "NOTICE"
+  File = ""
+
+[VotingAuthority]
+[[VotingAuthority.Peers]]
+  Addresses = ["37.218.241.202:30000"]
+  IdentityPublicKey = "EmUWxb6ocBBXhxlrAKgxVd/6tyIDVK/8pIY/nZrqSDQ="
+  LinkPublicKey = "Mcfs706pyzBIvEj+k5t2L9t9x+LplOR4wz3RiVrgoVU="
+
+[[VotingAuthority.Peers]]
+  Addresses = ["37.218.245.95:30000"]
+  IdentityPublicKey = "vdOAeoRtWKFDw+W4k3sNN1EMT9ZsaHHmuCHOEKSg1aA="
+  LinkPublicKey = "VNmU4g1hXBS7BQ1RJYMGNjNg4fIZbCimppeJ1XwrqX4="
+
+[[VotingAuthority.Peers]]
+  Addresses = ["37.218.245.228:30000"]
+  IdentityPublicKey = "bFgvws69dJrc3ACKXN5aCJKLHjkN7D8DA2HDKkhSNIk="
+  LinkPublicKey = "p1JekMh8uCPDsRSP5Uc59DJvEGMmA/B0mcMCXx1WEkk="
+
+[Debug]
+
+[Panda]
+  Receiver = "+panda"
+  Provider = "provider1"
+  BlobSize = 1000
+
+[Reunion]
+  Enable = false
+ `
+	return catconfig.Load([]byte(cfgString))
+}
 
 func getDefaultConfig() (*catconfig.Config, error) {
 	cfgString := `
