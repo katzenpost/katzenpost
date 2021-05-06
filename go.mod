@@ -7,7 +7,6 @@ require (
 	git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6
 	github.com/fxamacker/cbor/v2 v2.2.0
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
-	github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f // indirect
 	github.com/katzenpost/noise v0.0.2
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
