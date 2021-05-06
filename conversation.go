@@ -124,20 +124,30 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 						Inset:  layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(8)},
 						Radius: unit.Dp(10),
 					}
+					inbetween := layout.Inset{Top: unit.Dp(2)}
+					if i > 0 {
+						if messages[i - 1].Outbound != messages[i].Outbound {
+							inbetween = layout.Inset{Top: unit.Dp(8)}
+						}
+					}
 					if messages[i].Outbound {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
 							layout.Flexed(1, fill{th.Bg}.Layout),
 							layout.Flexed(5, func(gtx C) D {
-								return bgSender.Layout(gtx, func(gtx C) D {
-									return layoutMessage(gtx, messages[i])
+								return inbetween.Layout(gtx, func(gtx C) D {
+									return bgSender.Layout(gtx, func(gtx C) D {
+										return layoutMessage(gtx, messages[i])
+									})
 								})
 							}),
 						)
 					} else {
 						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
 							layout.Flexed(5, func(gtx C) D {
-								return bgReceiver.Layout(gtx, func(gtx C) D {
-									return layoutMessage(gtx, messages[i])
+								return inbetween.Layout(gtx, func(gtx C) D {
+									return bgReceiver.Layout(gtx, func(gtx C) D {
+										return layoutMessage(gtx, messages[i])
+									})
 								})
 							}),
 							layout.Flexed(1, fill{th.Bg}.Layout),

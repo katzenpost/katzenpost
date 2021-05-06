@@ -8,8 +8,12 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/benc-uk/gofract/pkg/colors"
+	"github.com/benc-uk/gofract/pkg/fractals"
 	"github.com/katzenpost/catshadow"
 	"image"
+	"image/png"
+	"math/rand"
 	"runtime"
 	"time"
 )
@@ -62,26 +66,13 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 						}
 
 						dims := layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
-							// contact icon
+							// contact avatar
 							layout.Rigid(func(gtx C) D {
 								cc := clipCircle{}
 								return cc.Layout(gtx, func(gtx C) D {
 									sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
 									gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-									if cachedAv, ok := p.av[contacts[i]]; ok {
-										return cachedAv.Layout(gtx)
-									}
-									if b, err := catshadowClient.GetBlob("avatar://" + contacts[i]); err == nil {
-										if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
-											scale := float32(sz.X) / float32(m.Bounds().Size().X)
-											av := &widget.Image{Scale: scale, Src: paint.NewImageOp(m)}
-											p.av[contacts[i]] = av
-											return av.Layout(gtx)
-										} else {
-											panic(err)
-										}
-									}
-									return fill{th.ContrastBg}.Layout(gtx)
+									return p.layoutAvatar(gtx, contacts[i])
 								})
 							}), // end contact icon
 							// contact name and last message
@@ -128,6 +119,57 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 				})
 			}),
 		)
+	})
+}
+
+func (p *HomePage) layoutAvatar(gtx C, nickname string) D {
+	cc := clipCircle{}
+	return cc.Layout(gtx, func(gtx C) D {
+		sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
+		gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
+		if cachedAv, ok := p.av[nickname]; ok {
+			return cachedAv.Layout(gtx)
+		}
+		// render the saved avatar image, if present
+		if b, err := catshadowClient.GetBlob("avatar://" + nickname); err == nil {
+			if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
+				scale := float32(sz.X) / float32(m.Bounds().Size().X)
+				av := &widget.Image{Scale: scale, Src: paint.NewImageOp(m)}
+				p.av[nickname] = av
+				return av.Layout(gtx)
+			} else {
+				panic(err)
+			}
+		}
+		// generate an avatar
+		// complexPair JuliaSeed
+		f := fractals.Fractal{FractType: "julia",
+			Center: fractals.ComplexPair{rand.Float64(), rand.Float64()},
+			//Center: fractals.ComplexPair{-0.6, 0.0},
+			MagFactor: 1.0,
+			MaxIter:   90,
+			W:         3.0,
+			H:         2.0,
+			ImgWidth:  sz.X,
+			JuliaSeed: fractals.ComplexPair{rand.Float64(), rand.Float64()},
+			//JuliaSeed: fractals.ComplexPair{0.355, 0.355},
+			InnerColor:   "#000000",
+			FullScreen:   false,
+			ColorRepeats: 2.0,
+		}
+
+		i := image.NewRGBA(image.Rectangle{Max: sz})
+		palette := colors.GradientTable{}
+		palette.Randomise()
+		f.Render(i, palette)
+		b := &bytes.Buffer{}
+		if err := png.Encode(b, i); err == nil {
+			catshadowClient.AddBlob("avatar://"+nickname, b.Bytes())
+		}
+		scale := 1.0
+		av := &widget.Image{Scale: float32(scale), Src: paint.NewImageOp(i)}
+		p.av[nickname] = av
+		return av.Layout(gtx)
 	})
 }
 
