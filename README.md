@@ -38,6 +38,10 @@ apt install --no-install-recommends crossbuild-essential-arm64 libgles2:arm64 li
 
 CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build
 
+#### Building for android
+
+gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
+
 ## Run it
 
     Usage of ./deploy/linux/catchat:
