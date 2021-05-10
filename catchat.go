@@ -231,6 +231,7 @@ func getConfigNoTor() (*catconfig.Config, error) {
   LinkPublicKey = "p1JekMh8uCPDsRSP5Uc59DJvEGMmA/B0mcMCXx1WEkk="
 
 [Debug]
+  DisableDecoyTraffic = false
 
 [Panda]
   Receiver = "+panda"
@@ -278,6 +279,7 @@ func getDefaultConfig() (*catconfig.Config, error) {
 
 [Debug]
   CaseSensitiveUserIdentifiers = false
+  DisableDecoyTraffic = false
   PollingInterval = 500
   PreferedTransports = ["onion"]
 
