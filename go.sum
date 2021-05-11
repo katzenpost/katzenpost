@@ -80,6 +80,8 @@ github.com/katzenpost/chacha20poly1305 v0.0.0-20191204073434-41b24f726a2c h1:U6A
 github.com/katzenpost/chacha20poly1305 v0.0.0-20191204073434-41b24f726a2c/go.mod h1:XeiiK6+o8EgPsG5oq3cr9yZUfEu6GyU5IA0MePXDnqY=
 github.com/katzenpost/client v0.0.24 h1:WSRzFnfBQd2D1hwBX57jrzH7WQc36XZa8p85dfmqU5M=
 github.com/katzenpost/client v0.0.24/go.mod h1:NE9AuOJ7BVSlPjLImCjWdnCgtnwBPh2DRLOUamkm3B4=
+github.com/katzenpost/client v0.0.25 h1:e5tP+eFv6EI39A0t5Fc1pVzItk8AvBWkJpxVIXrbtHk=
+github.com/katzenpost/client v0.0.25/go.mod h1:NE9AuOJ7BVSlPjLImCjWdnCgtnwBPh2DRLOUamkm3B4=
 github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515 h1:mitQKmkvmyqoWZmD1ErfKGc44iJ/UQGh1dXOsyOqxa8=
 github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515/go.mod h1:RjyD4DLQr+P5FnP6iiZUTgvalZwT7NyawXwYzn32eYQ=
 github.com/katzenpost/core v0.0.14 h1:8n30pGlm6cXa1PjU+HBv8nARFh67UmX/eYkHnbcBfgs=
