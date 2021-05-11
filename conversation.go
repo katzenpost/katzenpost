@@ -4,6 +4,10 @@ import (
 	"github.com/katzenpost/catshadow"
 	"time"
 
+	"gioui.org/io/clipboard"
+	"gioui.org/io/pointer"
+	"image"
+
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -16,11 +20,16 @@ var (
 )
 
 type conversationPage struct {
-	nickname string
-	edit     *widget.Clickable
-	compose  *widget.Editor
-	send     *widget.Clickable
-	back     *widget.Clickable
+	nickname       string
+	edit           *widget.Clickable
+	compose        *widget.Editor
+	send           *widget.Clickable
+	back           *widget.Clickable
+	cancel         *Click
+	msgcopy        *widget.Clickable
+	msgdetails     *widget.Clickable
+	messageClicked *catshadow.Message
+	messageClicks  map[*catshadow.Message]*Click
 }
 
 func (c *conversationPage) Start(stop <-chan struct{}) {
@@ -54,6 +63,28 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 	}
 	if c.back.Clicked() {
 		return BackEvent{}
+	}
+	if c.msgcopy.Clicked() {
+		clipboard.WriteOp{Text: string(c.messageClicked.Plaintext)}.Add(gtx.Ops)
+		c.messageClicked = nil
+		return nil
+	}
+	if c.msgdetails.Clicked() {
+		c.messageClicked = nil // not implemented
+	}
+
+	for msg, click := range c.messageClicks {
+		for _, e := range click.Events(gtx.Queue) {
+			if e.Type == TypeClick {
+				c.messageClicked = msg
+			}
+		}
+	}
+
+	for _, e := range c.cancel.Events(gtx.Queue) {
+		if e.Type == TypeClick {
+			c.messageClicked = nil
+		}
 	}
 
 	return nil
@@ -113,7 +144,12 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 				if len(messages) == 0 {
 					return fill{th.Bg}.Layout(ctx)
 				}
-				return messageList.Layout(gtx, len(messages), func(gtx C, i int) layout.Dimensions {
+
+				dims := messageList.Layout(gtx, len(messages), func(gtx C, i int) layout.Dimensions {
+					if _, ok := c.messageClicks[messages[i]]; !ok {
+						c.messageClicks[messages[i]] = new(Click)
+					}
+
 					bgSender := Background{
 						Color:  th.ContrastBg,
 						Inset:  layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(8), Right: unit.Dp(12)},
@@ -126,12 +162,13 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 					}
 					inbetween := layout.Inset{Top: unit.Dp(2)}
 					if i > 0 {
-						if messages[i - 1].Outbound != messages[i].Outbound {
+						if messages[i-1].Outbound != messages[i].Outbound {
 							inbetween = layout.Inset{Top: unit.Dp(8)}
 						}
 					}
+					var dims D
 					if messages[i].Outbound {
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
+						dims = layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
 							layout.Flexed(1, fill{th.Bg}.Layout),
 							layout.Flexed(5, func(gtx C) D {
 								return inbetween.Layout(gtx, func(gtx C) D {
@@ -142,7 +179,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 							}),
 						)
 					} else {
-						return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
+						dims = layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
 							layout.Flexed(5, func(gtx C) D {
 								return inbetween.Layout(gtx, func(gtx C) D {
 									return bgReceiver.Layout(gtx, func(gtx C) D {
@@ -153,7 +190,18 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 							layout.Flexed(1, fill{th.Bg}.Layout),
 						)
 					}
+					a := pointer.Rect(image.Rectangle{Max: dims.Size})
+					a.Add(gtx.Ops)
+					c.messageClicks[messages[i]].Add(gtx.Ops)
+					return dims
+
 				})
+				if c.messageClicked != nil {
+					a := pointer.Rect(image.Rectangle{Max: dims.Size})
+					a.Add(gtx.Ops)
+					c.cancel.Add(gtx.Ops)
+				}
+				return dims
 			})
 		}),
 		layout.Rigid(func(gtx C) D {
@@ -164,6 +212,17 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 			if contact.IsPending {
 				return bg.Layout(gtx, material.Caption(th, "Contact pending key exchange").Layout)
 			}
+			// return the menu laid out for message actions
+			if c.messageClicked != nil {
+				return bg.Layout(gtx, func(gtx C) D {
+					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
+						layout.Rigid(material.Button(th, c.msgcopy, "copy").Layout),
+						layout.Flexed(1, fill{th.Bg}.Layout),
+						layout.Rigid(material.Button(th, c.msgdetails, "details").Layout),
+					)
+				})
+			}
+
 			return bg.Layout(gtx, material.Editor(th, c.compose, ">").Layout)
 		}),
 	)
@@ -171,8 +230,12 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 
 func newConversationPage(nickname string) *conversationPage {
 	return &conversationPage{nickname: nickname,
-		compose: &widget.Editor{SingleLine: true, Submit: true},
-		back:    &widget.Clickable{},
-		send:    &widget.Clickable{},
-		edit:    &widget.Clickable{}}
+		compose:       &widget.Editor{SingleLine: false, Submit: true},
+		messageClicks: make(map[*catshadow.Message]*Click),
+		back:          &widget.Clickable{},
+		msgcopy:       &widget.Clickable{},
+		msgdetails:    &widget.Clickable{},
+		cancel:        new(Click),
+		send:          &widget.Clickable{},
+		edit:          &widget.Clickable{}}
 }
