@@ -6,7 +6,7 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/fxamacker/cbor/v2 v2.2.0
-	github.com/katzenpost/client v0.0.24
+	github.com/katzenpost/client v0.0.25
 	github.com/katzenpost/core v0.0.14
 	github.com/katzenpost/doubleratchet v0.0.12
 	github.com/katzenpost/memspool v0.0.15
