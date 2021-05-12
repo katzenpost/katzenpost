@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/katzenpost/client/utils"
 	"io"
 	"time"
 
@@ -105,24 +106,18 @@ func (s *Session) doSend(msg *Message) {
 	}
 }
 
-func (s *Session) sendDropDecoy() {
-	s.log.Info("sending drop decoy")
-	serviceDesc, err := s.GetService(cConstants.LoopService)
-	if err != nil {
-		s.fatalErrCh <- errors.New("failure to get loop service")
-		return
-	}
+func (s *Session) sendDropDecoy(loopSvc *utils.ServiceDescriptor) {
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
-	_, err = io.ReadFull(rand.Reader, id[:])
+	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {
 		s.fatalErrCh <- errors.New("failure to generate message ID for drop decoy")
 		return
 	}
 	msg := &Message{
 		ID:        &id,
-		Recipient: serviceDesc.Name,
-		Provider:  serviceDesc.Provider,
+		Recipient: loopSvc.Name,
+		Provider:  loopSvc.Provider,
 		Payload:   payload[:],
 		WithSURB:  false,
 		IsDecoy:   true,
@@ -130,24 +125,19 @@ func (s *Session) sendDropDecoy() {
 	s.doSend(msg)
 }
 
-func (s *Session) sendLoopDecoy() {
+func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
 	s.log.Info("sending loop decoy")
-	serviceDesc, err := s.GetService(cConstants.LoopService)
-	if err != nil {
-		s.fatalErrCh <- errors.New("failure to get loop service")
-		return
-	}
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
-	_, err = io.ReadFull(rand.Reader, id[:])
+	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {
 		s.fatalErrCh <- errors.New("failure to generate message ID for loop decoy")
 		return
 	}
 	msg := &Message{
 		ID:        &id,
-		Recipient: serviceDesc.Name,
-		Provider:  serviceDesc.Provider,
+		Recipient: loopSvc.Name,
+		Provider:  loopSvc.Provider,
 		Payload:   payload[:],
 		WithSURB:  true,
 		IsDecoy:   true,
