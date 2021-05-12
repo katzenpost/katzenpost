@@ -22,8 +22,11 @@ import (
 	"time"
 
 	"github.com/katzenpost/client/constants"
+	cConstants "github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/utils"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/pki"
+	mrand "math/rand"
 )
 
 type workerOp interface{}
@@ -68,6 +71,16 @@ func (s *Session) worker() {
 		return
 	}
 
+	// get the initial loop services if decoy traffic is enabled
+	var loopServices []utils.ServiceDescriptor
+	if !s.cfg.Debug.DisableDecoyTraffic {
+		loopServices = utils.FindServices(cConstants.LoopService, doc)
+		if len(loopServices) == 0 {
+			s.fatalErrCh <- errors.New("failure to get loop service")
+			return
+		}
+	}
+
 	// LambdaP timer setup
 	lambdaP := doc.LambdaP
 	lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
@@ -106,7 +119,9 @@ func (s *Session) worker() {
 		var lambdaPFired bool
 		var lambdaLFired bool
 		var lambdaDFired bool
+		var loopSvc *utils.ServiceDescriptor
 		var qo workerOp
+
 		select {
 		case <-s.HaltCh():
 			s.log.Debugf("Session worker terminating gracefully.")
@@ -131,23 +146,37 @@ func (s *Session) worker() {
 				if err != nil {
 					s.fatalErrCh <- err
 				}
+
 				doc = op.doc
 				s.setPollIntervalFromDoc(doc)
 				lambdaP = doc.LambdaP
 				lambdaL = doc.LambdaL
 				lambdaD = doc.LambdaD
+
+				// update the loop service descriptors
+				loopServices = utils.FindServices(cConstants.LoopService, doc)
+				if len(loopServices) == 0 {
+					s.fatalErrCh <- errors.New("failure to get loop service")
+					return
+				}
+
 				mustResetAllTimers = true
 			default:
 				s.log.Warningf("BUG: Worker received nonsensical op: %T", op)
 			} // end of switch
 		} else {
 			if isConnected {
+				// select a loop service endpoint
+				if !s.cfg.Debug.DisableDecoyTraffic {
+					loopSvc = &loopServices[mrand.Intn(len(loopServices))]
+				}
 				if lambdaPFired {
-					s.sendFromQueueOrDecoy()
+					s.sendFromQueueOrDecoy(loopSvc)
 				} else if lambdaLFired && !s.cfg.Debug.DisableDecoyTraffic {
-					s.sendLoopDecoy()
+					s.sendLoopDecoy(loopSvc)
 				} else if lambdaDFired && !s.cfg.Debug.DisableDecoyTraffic {
-					s.sendDropDecoy()
+					loopSvc = &loopServices[mrand.Intn(len(loopServices))]
+					s.sendDropDecoy(loopSvc)
 				}
 			}
 		}
@@ -195,14 +224,14 @@ func (s *Session) worker() {
 	// NOTREACHED
 }
 
-func (s *Session) sendFromQueueOrDecoy() {
+func (s *Session) sendFromQueueOrDecoy(loopSvc *utils.ServiceDescriptor) {
 	// Attempt to send user data first, if any exists.
 	// Otherwise send a drop decoy message.
 	_, err := s.egressQueue.Peek()
 	if err == nil {
 		s.sendNext()
 	} else if !s.cfg.Debug.DisableDecoyTraffic {
-		s.sendDropDecoy()
+		s.sendDropDecoy(loopSvc)
 	}
 }
 
