@@ -215,6 +215,7 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
 				s.fatalErrCh <- fmt.Errorf("aborting, PKI doc is not valid for our decoy traffic use case: %v", err)
 				return err
 			}
+			s.setPollIntervalFromDoc(op.doc)
 			return nil
 		default:
 			continue
@@ -314,10 +315,6 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
 	s.hasPKIDoc = true
-	slopFactor := 0.8
-	pollProviderMsec := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
-	s.log.Debugf("onDocument(): setting PollInterval to %s", pollProviderMsec)
-	s.minclient.SetPollInterval(pollProviderMsec)
 	s.opCh <- opNewDocument{
 		doc: doc,
 	}
