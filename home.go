@@ -16,6 +16,7 @@ import (
 	"image/png"
 	"math/rand"
 	"runtime"
+	"strings"
 	"time"
 )
 
@@ -89,9 +90,8 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 											layout.Rigid(func(gtx C) D {
 												// timestamp
 												if lastMsg != nil {
-													messageAge := time.Now().Sub(lastMsg.Timestamp)
-													//													messageAge = messageAge.Round(time.Minute)
-													return material.Body2(th, durafmt.ParseShort(messageAge).String()).Layout(gtx)
+													messageAge := strings.Replace(durafmt.Parse(time.Now().Sub(lastMsg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
+													return material.Body2(th, messageAge).Layout(gtx)
 												}
 												return fill{th.Bg}.Layout(gtx)
 											}),
