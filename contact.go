@@ -78,7 +78,7 @@ func newAddContactPage() *AddContactPage {
 	p.nickname = &widget.Editor{SingleLine: true, Submit: true}
 	p.nickname.Focus()
 	p.back = &widget.Clickable{}
-	p.secret = &widget.Editor{SingleLine: true, Submit: true, Mask: '*'}
+	p.secret = &widget.Editor{SingleLine: true, Submit: true}
 	p.submit = &widget.Clickable{}
 	return p
 }
