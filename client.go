@@ -1183,9 +1183,10 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		c.log.Debugf("Message decrypted for %s: %x", nickname, convoMesgID)
 		c.conversationsMutex.Lock()
 		_, ok := c.conversations[nickname]
-		if !ok {
+		if !ok || c.conversations[nickname] == nil {
 			c.conversations[nickname] = make(map[MessageID]*Message)
 		}
+
 		c.conversations[nickname][convoMesgID] = &message
 		c.conversationsMutex.Unlock()
 		c.save()
