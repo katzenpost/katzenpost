@@ -34,7 +34,7 @@ func (p *EditContactPage) Layout(gtx layout.Context) layout.Dimensions {
 			}),
 			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.avatar, "Choose avatar").Layout) }),
 			layout.Flexed(1, func(gtx C) D {
-				return layout.Center.Layout(gtx, material.Button(th, p.clear, "Clear message history").Layout)
+				return layout.Center.Layout(gtx, material.Button(th, p.clear, "Clear history").Layout)
 			}),
 			//layout.Flexed(1, func(gtx C) D {
 			//	return layout.Center.Layout(gtx, material.Button(th, p.expiry, "Set message lifetime").Layout)

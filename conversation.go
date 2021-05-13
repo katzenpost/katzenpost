@@ -55,9 +55,14 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 		}
 	}
 	if c.send.Clicked() {
-		msg := c.compose.Text()
+		msg := []byte(c.compose.Text())
 		c.compose.SetText("")
-		msgId := catshadowClient.SendMessage(c.nickname, []byte(msg))
+		// truncate messages
+		// TODO: this should split messages and return the set of message IDs sent
+		if len(msg)+4> catshadow.DoubleRatchetPayloadLength {
+			msg = msg[:catshadow.DoubleRatchetPayloadLength-4]
+		}
+		msgId := catshadowClient.SendMessage(c.nickname, msg)
 		return MessageSent{nickname: c.nickname, msgId: msgId}
 	}
 	if c.edit.Clicked() {
