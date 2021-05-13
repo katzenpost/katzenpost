@@ -109,11 +109,11 @@ func layoutMessage(gtx C, msg *catshadow.Message) D {
 	return layout.Flex{Axis: layout.Vertical, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
 		layout.Rigid(material.Body1(th, string(msg.Plaintext)).Layout),
 		layout.Rigid(func(gtx C) D {
-			in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+			in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(0), Left: unit.Dp(8), Right: unit.Dp(8)}
 			return in.Layout(gtx, func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
-					layout.Rigid(material.Body2(th, age).Layout),
-					layout.Rigid(material.Body2(th, status).Layout),
+					layout.Rigid(material.Caption(th, age).Layout),
+					layout.Rigid(material.Caption(th, status).Layout),
 				)
 			})
 		}),
