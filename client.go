@@ -778,7 +778,6 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 	if len(message)+4 > DoubleRatchetPayloadLength {
-		c.fatalErrCh <- fmt.Errorf("Message too large to transmit")
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}
