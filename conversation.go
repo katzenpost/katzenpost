@@ -59,7 +59,7 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 		c.compose.SetText("")
 		// truncate messages
 		// TODO: this should split messages and return the set of message IDs sent
-		if len(msg)+4> catshadow.DoubleRatchetPayloadLength {
+		if len(msg)+4 > catshadow.DoubleRatchetPayloadLength {
 			msg = msg[:catshadow.DoubleRatchetPayloadLength-4]
 		}
 		msgId := catshadowClient.SendMessage(c.nickname, msg)
@@ -222,11 +222,17 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 			// return the menu laid out for message actions
 			if c.messageClicked != nil {
 				return bg.Layout(gtx, func(gtx C) D {
+					tsStr := c.messageClicked.Timestamp.Truncate(time.Minute).Format(time.RFC822)
+					if c.messageClicked.Outbound {
+						tsStr = "Sent " + tsStr
+					} else {
+						tsStr = "Received " + tsStr
+					}
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
 						layout.Rigid(material.Button(th, c.msgcopy, "copy").Layout),
 						layout.Flexed(1, fill{th.Bg}.Layout),
 						// this timestamp could move to details when that is implemented
-						layout.Rigid(material.Caption(th, c.messageClicked.Timestamp.Truncate(time.Minute).Format(time.RFC822)).Layout),
+						layout.Rigid(material.Caption(th, tsStr).Layout),
 						layout.Rigid(material.Button(th, c.msgdetails, "details").Layout),
 					)
 				})
