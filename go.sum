@@ -92,6 +92,8 @@ github.com/hajimehoshi/ebiten v1.9.3/go.mod h1:XxiJ4Eltvb1KmcD0i6F81eIB1asJhK47y
 github.com/hajimehoshi/go-mp3 v0.2.0/go.mod h1:4i+c5pDNKDrxl1iu9iG90/+fhP37lio6gNhjCx9WBJw=
 github.com/hajimehoshi/oto v0.1.1/go.mod h1:hUiLWeBQnbDu4pZsAhOnGqMI1ZGibS6e2qhQdfpwz04=
 github.com/hajimehoshi/oto v0.3.3/go.mod h1:e9eTLBB9iZto045HLbzfHJIc+jP3xaKrjZTghvb6fdM=
+github.com/hako/durafmt v0.0.0-20210316092057-3a2c319c1acd h1:FsX+T6wA8spPe4c1K9vi7T0LvNCO1TTqiL8u7Wok2hw=
+github.com/hako/durafmt v0.0.0-20210316092057-3a2c319c1acd/go.mod h1:VzxiSdG6j1pi7rwGm/xYI5RbtpBgM8sARDXlvEvxlu0=
 github.com/henrydcase/nobs v0.0.0-20201003222708-8474981cfcd3 h1:ZWKpU/lwLCuhbL84lZkBI66ZTJVW+XCzwPiQAWdEBkk=
 github.com/henrydcase/nobs v0.0.0-20201003222708-8474981cfcd3/go.mod h1:+liTPsuK0xSOSyNKhVz4h7Khig8zW4NcvxdVbzS0Jyw=
 github.com/jackc/pgx v3.6.2+incompatible h1:2zP5OD7kiyR3xzRYMhOcXVvkDZsImVXfj+yIyTQf3/o=

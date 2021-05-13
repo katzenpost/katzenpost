@@ -10,6 +10,7 @@ import (
 	"gioui.org/widget/material"
 	"github.com/benc-uk/gofract/pkg/colors"
 	"github.com/benc-uk/gofract/pkg/fractals"
+	"github.com/hako/durafmt"
 	"github.com/katzenpost/catshadow"
 	"image"
 	"image/png"
@@ -89,8 +90,8 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 												// timestamp
 												if lastMsg != nil {
 													messageAge := time.Now().Sub(lastMsg.Timestamp)
-													messageAge = messageAge.Round(time.Minute)
-													return material.Body2(th, messageAge.String()).Layout(gtx)
+													//													messageAge = messageAge.Round(time.Minute)
+													return material.Body2(th, durafmt.ParseShort(messageAge).String()).Layout(gtx)
 												}
 												return fill{th.Bg}.Layout(gtx)
 											}),

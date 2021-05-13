@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/hako/durafmt"
 	"github.com/katzenpost/catshadow"
 	"time"
 
@@ -91,7 +92,7 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 }
 
 func layoutMessage(gtx C, msg *catshadow.Message) D {
-	ts := msg.Timestamp.Round(1 * time.Minute).Format(time.RFC822)
+	age := durafmt.ParseShort(time.Now().Sub(msg.Timestamp)).String()
 
 	status := ""
 	if msg.Outbound == true {
@@ -110,7 +111,7 @@ func layoutMessage(gtx C, msg *catshadow.Message) D {
 			in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
 			return in.Layout(gtx, func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
-					layout.Rigid(material.Body2(th, ts).Layout),
+					layout.Rigid(material.Body2(th, age).Layout),
 					layout.Rigid(material.Body2(th, status).Layout),
 				)
 			})
