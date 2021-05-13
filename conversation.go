@@ -225,6 +225,8 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
 						layout.Rigid(material.Button(th, c.msgcopy, "copy").Layout),
 						layout.Flexed(1, fill{th.Bg}.Layout),
+						// this timestamp could move to details when that is implemented
+						layout.Rigid(material.Caption(th, c.messageClicked.Timestamp.Truncate(time.Minute).Format(time.RFC822)).Layout),
 						layout.Rigid(material.Button(th, c.msgdetails, "details").Layout),
 					)
 				})
