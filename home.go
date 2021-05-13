@@ -90,7 +90,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 											layout.Rigid(func(gtx C) D {
 												// timestamp
 												if lastMsg != nil {
-													messageAge := strings.Replace(durafmt.Parse(time.Now().Sub(lastMsg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
+													messageAge := strings.Replace(durafmt.ParseShort(time.Now().Sub(lastMsg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
 													return material.Body2(th, messageAge).Layout(gtx)
 												}
 												return fill{th.Bg}.Layout(gtx)

@@ -93,7 +93,7 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 }
 
 func layoutMessage(gtx C, msg *catshadow.Message) D {
-	age := strings.Replace(durafmt.Parse(time.Now().Sub(msg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
+	age := strings.Replace(durafmt.ParseShort(time.Now().Sub(msg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
 
 	status := ""
 	if msg.Outbound == true {
