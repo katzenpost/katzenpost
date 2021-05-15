@@ -97,8 +97,7 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 	return nil
 }
 
-func layoutMessage(gtx C, msg *catshadow.Message) D {
-	age := strings.Replace(durafmt.ParseShort(time.Now().Sub(msg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
+func layoutMessage(gtx C, msg *catshadow.Message, isSelected bool) D {
 
 	status := ""
 	if msg.Outbound == true {
@@ -116,8 +115,17 @@ func layoutMessage(gtx C, msg *catshadow.Message) D {
 		layout.Rigid(func(gtx C) D {
 			in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(0), Left: unit.Dp(8), Right: unit.Dp(8)}
 			return in.Layout(gtx, func(gtx C) D {
+				timeLabel := strings.Replace(durafmt.ParseShort(time.Now().Sub(msg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
+				if isSelected {
+					timeLabel = msg.Timestamp.Truncate(time.Minute).Format(time.RFC822)
+					if msg.Outbound {
+						timeLabel = "Sent: " + timeLabel
+					} else {
+						timeLabel = "Received: " + timeLabel
+					}
+				}
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.End, Spacing: layout.SpaceBetween}.Layout(gtx,
-					layout.Rigid(material.Caption(th, age).Layout),
+					layout.Rigid(material.Caption(th, timeLabel).Layout),
 					layout.Rigid(material.Caption(th, status).Layout),
 				)
 			})
@@ -174,13 +182,14 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 						}
 					}
 					var dims D
+					isSelected := messages[i] == c.messageClicked
 					if messages[i].Outbound {
 						dims = layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline, Spacing: layout.SpaceAround}.Layout(gtx,
 							layout.Flexed(1, fill{th.Bg}.Layout),
 							layout.Flexed(5, func(gtx C) D {
 								return inbetween.Layout(gtx, func(gtx C) D {
 									return bgSender.Layout(gtx, func(gtx C) D {
-										return layoutMessage(gtx, messages[i])
+										return layoutMessage(gtx, messages[i], isSelected)
 									})
 								})
 							}),
@@ -190,7 +199,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 							layout.Flexed(5, func(gtx C) D {
 								return inbetween.Layout(gtx, func(gtx C) D {
 									return bgReceiver.Layout(gtx, func(gtx C) D {
-										return layoutMessage(gtx, messages[i])
+										return layoutMessage(gtx, messages[i], isSelected)
 									})
 								})
 							}),
@@ -222,17 +231,9 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 			// return the menu laid out for message actions
 			if c.messageClicked != nil {
 				return bg.Layout(gtx, func(gtx C) D {
-					tsStr := c.messageClicked.Timestamp.Truncate(time.Minute).Format(time.RFC822)
-					if c.messageClicked.Outbound {
-						tsStr = "Sent " + tsStr
-					} else {
-						tsStr = "Received " + tsStr
-					}
 					return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
 						layout.Rigid(material.Button(th, c.msgcopy, "copy").Layout),
 						layout.Flexed(1, fill{th.Bg}.Layout),
-						// this timestamp could move to details when that is implemented
-						layout.Rigid(material.Caption(th, tsStr).Layout),
 						layout.Rigid(material.Button(th, c.msgdetails, "details").Layout),
 					)
 				})
