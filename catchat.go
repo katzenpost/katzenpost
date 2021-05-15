@@ -57,6 +57,7 @@ type App struct {
 	ops   *op.Ops
 	no    *notify.Manager
 	stack pageStack
+	focus bool
 }
 
 func newApp(w *app.Window) *App {
@@ -337,22 +338,23 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 			go func() { <-time.After(30 * time.Second); n.Cancel() }()
 		}
 	case *catshadow.MessageReceivedEvent:
+		// do not notify for the focused conversation
 		p := a.stack.Current()
-
 		switch p := p.(type) {
 		case *conversationPage:
-			if p.nickname == event.Nickname {
-				break
+			if p.nickname == event.Nickname && a.focus {
+				a.w.Invalidate()
+				return nil
 			}
-		default:
-			n, err := a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
-			if err != nil {
-				if o, ok := notifications[event.Nickname]; ok {
-					// cancel old notification before replacing with a new one
-					o.Cancel()
-				}
-				notifications[event.Nickname] = n
+		}
+		// emit a notification in all other cases
+		n, err := a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
+		if err != nil {
+			if o, ok := notifications[event.Nickname]; ok {
+				// cancel old notification before replacing with a new one
+				o.Cancel()
 			}
+			notifications[event.Nickname] = n
 		}
 	case *catshadow.MessageSentEvent:
 	case *catshadow.MessageDeliveredEvent:
@@ -375,6 +377,8 @@ func (a *App) handleGioEvents(e interface{}) error {
 				a.w.Invalidate()
 			}
 		}
+	case key.FocusEvent:
+		a.focus = e.Focus
 	case system.CommandEvent:
 		switch e.Type {
 		case system.CommandBack:
