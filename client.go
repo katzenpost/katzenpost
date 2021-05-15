@@ -171,6 +171,12 @@ func (c *Client) Start() {
 	c.Go(c.worker)
 	c.restartContactExchanges()
 	c.restartSending()
+	for nickname, contact := range c.GetContacts() {
+		msgs := c.GetSortedConversation(nickname)
+		if len(msgs) > 0 {
+			contact.LastMessage = msgs[len(msgs)-1]
+		}
+	}
 	// Start the fatal error watcher.
 	go func() {
 		err, ok := <-c.fatalErrCh
@@ -272,9 +278,12 @@ func (c *Client) eventSinkWorker() {
 func (c *Client) garbageCollectConversations() {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
-	for _, messages := range c.conversations {
+	for nickname, messages := range c.conversations {
 		for mesgID, message := range messages {
 			if time.Now().After(message.Timestamp.Add(MessageExpirationDuration)) {
+				if c.contactNicknames[nickname].LastMessage == message {
+					c.contactNicknames[nickname].LastMessage = nil
+				}
 				delete(messages, mesgID)
 			}
 		}
@@ -878,6 +887,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		c.conversations[nickname] = make(map[MessageID]*Message)
 	}
 	c.conversations[nickname][convoMesgID] = &outMessage
+	c.contactNicknames[nickname].LastMessage = &outMessage
 	c.conversationsMutex.Unlock()
 	c.save()
 }
@@ -1112,6 +1122,7 @@ func (c *Client) WipeConversation(nickname string) {
 		delete(c.conversations[nickname], k)
 	}
 	delete(c.conversations, nickname)
+	c.contactNicknames[nickname].LastMessage = nil
 }
 
 // GetConversation returns a map of all the maps of messages between a contact
@@ -1187,6 +1198,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		}
 
 		c.conversations[nickname][convoMesgID] = &message
+		c.contactNicknames[nickname].LastMessage = &message
 		c.conversationsMutex.Unlock()
 		c.save()
 

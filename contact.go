@@ -120,6 +120,8 @@ type Contact struct {
 	outbound *Queue
 	rtx      *time.Timer
 	ackID    [cConstants.MessageIDLength]byte
+
+	LastMessage *Message
 }
 
 // NewContact creates a new Contact or returns an error.
