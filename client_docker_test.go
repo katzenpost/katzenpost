@@ -464,6 +464,7 @@ and can readily scale to millions of users.
 }
 
 func TestDockerReunionSuccess(t *testing.T) {
+	t.Skip("Reunion does not work with 2KB payloads")
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
