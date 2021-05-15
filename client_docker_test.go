@@ -757,9 +757,9 @@ loop7:
 		}
 	}
 
-	// verify that b2 has received 2 messages
+	// verify that b2 has sent 1 message and received 2 messages
 	c = b.GetConversation("a")
-	require.Equal(len(c), 2)
+	require.Equal(len(c), 3)
 
 	// clear conversation history
 	b.WipeConversation("a")
