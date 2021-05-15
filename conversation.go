@@ -103,10 +103,10 @@ func layoutMessage(gtx C, msg *catshadow.Message, isSelected bool) D {
 	if msg.Outbound == true {
 		status = "queued"
 		if msg.Sent {
-			status = "sent"
+			status = "sending"
 		}
 		if msg.Delivered {
-			status = "delivered"
+			status = "sent"
 		}
 	}
 
