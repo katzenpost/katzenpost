@@ -58,7 +58,7 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 		msg := []byte(c.compose.Text())
 		c.compose.SetText("")
 		if len(msg) == 0 {
-			return MessageSent{}
+			return nil
 		}
 		// truncate messages
 		// TODO: this should split messages and return the set of message IDs sent
