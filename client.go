@@ -1122,7 +1122,10 @@ func (c *Client) WipeConversation(nickname string) {
 		delete(c.conversations[nickname], k)
 	}
 	delete(c.conversations, nickname)
-	c.contactNicknames[nickname].LastMessage = nil
+
+	if contact, ok := c.contactNicknames[nickname]; ok {
+		contact.LastMessage = nil
+	}
 }
 
 // GetConversation returns a map of all the maps of messages between a contact
