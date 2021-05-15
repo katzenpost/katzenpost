@@ -11,7 +11,6 @@ import (
 	"github.com/benc-uk/gofract/pkg/colors"
 	"github.com/benc-uk/gofract/pkg/fractals"
 	"github.com/hako/durafmt"
-	"github.com/katzenpost/catshadow"
 	"image"
 	"image/png"
 	"math/rand"
@@ -51,20 +50,15 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min.X = gtx.Px(unit.Dp(300))
 				// the contactList
 				return contactList.Layout(gtx, len(contacts), func(gtx C, i int) layout.Dimensions {
-					msgs := catshadowClient.GetSortedConversation(contacts[i])
-
-					var lastMsg *catshadow.Message
-					if len(msgs) > 0 {
-						lastMsg = msgs[len(msgs)-1]
-					}
+					lastMsg := contacts[i].LastMessage
 
 					// inset each contact Flex
 					in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
 					return in.Layout(gtx, func(gtx C) D {
 						// returns Flex of contact icon, contact name, and last message received or sent
-						if _, ok := p.contactClicks[contacts[i]]; !ok {
+						if _, ok := p.contactClicks[contacts[i].Nickname]; !ok {
 							c := new(Click)
-							p.contactClicks[contacts[i]] = c
+							p.contactClicks[contacts[i].Nickname] = c
 						}
 
 						dims := layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
@@ -74,7 +68,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 								return cc.Layout(gtx, func(gtx C) D {
 									sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
 									gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-									return p.layoutAvatar(gtx, contacts[i])
+									return p.layoutAvatar(gtx, contacts[i].Nickname)
 								})
 							}), // end contact icon
 							// contact name and last message
@@ -85,7 +79,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 											// contact name
 											layout.Rigid(func(gtx C) D {
 												in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-												return in.Layout(gtx, material.Caption(th, contacts[i]).Layout)
+												return in.Layout(gtx, material.Caption(th, contacts[i].Nickname).Layout)
 											}),
 											layout.Rigid(func(gtx C) D {
 												// timestamp
@@ -114,7 +108,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 						)
 						a := pointer.Rect(image.Rectangle{Max: dims.Size})
 						a.Add(gtx.Ops)
-						p.contactClicks[contacts[i]].Add(gtx.Ops)
+						p.contactClicks[contacts[i].Nickname].Add(gtx.Ops)
 						return dims
 					})
 				})

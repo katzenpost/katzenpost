@@ -4,6 +4,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"github.com/katzenpost/catshadow"
 	"sort"
 )
 
@@ -83,10 +84,20 @@ func newAddContactPage() *AddContactPage {
 	return p
 }
 
-type sortedContacts []string
+type sortedContacts []*catshadow.Contact
 
 func (s sortedContacts) Less(i, j int) bool {
-	return s[i] < s[j]
+	// sorts contacts with messages most-recent-first, followed by contacts
+	// without messages alphabetically
+	if s[i].LastMessage == nil && s[j].LastMessage == nil {
+		return s[i].Nickname < s[j].Nickname
+	} else if s[i].LastMessage == nil {
+		return false
+	} else if s[j].LastMessage == nil {
+		return true
+	} else {
+		return s[i].LastMessage.Timestamp.After(s[j].LastMessage.Timestamp)
+	}
 }
 func (s sortedContacts) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
@@ -101,8 +112,8 @@ func getSortedContacts() (contacts sortedContacts) {
 	}
 
 	// returns map[string]*Contact
-	for nick, _ := range catshadowClient.GetContacts() {
-		contacts = append(contacts, nick)
+	for _, contact := range catshadowClient.GetContacts() {
+		contacts = append(contacts, contact)
 	}
 	sort.Sort(contacts)
 	return
