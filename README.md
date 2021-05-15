@@ -45,20 +45,22 @@ See the [install instructions](http://golang.org/doc/install.html).
 
 #### Building for arm64
 
-CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build
+    CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build
 
 #### Building for android
 
-Note that you will need to have the android NDK and SDK installed and the appropriate environment variables exported.
+Note that you will need to have the android NDK and SDK installed and the
+appropriate environment variables exported.
+
 See the Dockerfile.android in this repository to set up a build environment if you wish.
 
 First, get and install the gogio tool:
 
-go get -v gioui.org/cmd/gogio@4b377aa896373062db0f9d289d0111a29e8fa4b0
+    go get -v gioui.org/cmd/gogio@4b377aa896373062db0f9d289d0111a29e8fa4b0
 
 And then build the apk:
 
-gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
+    gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
 
 ## Run it
 
@@ -67,6 +69,5 @@ gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -versi
          Path to the client config file. (default to baked-in testnet configuration)
       -s string
          The catshadow state file path. (default "catshadow_statefile")
-
 
 ![catchat Screenshot](/assets/screenshot.png)
