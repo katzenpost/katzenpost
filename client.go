@@ -487,7 +487,7 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 // GetContacts returns the contacts map.
 func (c *Client) GetContacts() map[string]*Contact {
 	getContactsOp := opGetContacts{
-		responseChan: make(chan map[string]*Contact),
+		responseChan: make(chan map[string]*Contact, 1),
 	}
 	c.opCh <- &getContactsOp
 	return <-getContactsOp.responseChan
@@ -497,7 +497,7 @@ func (c *Client) GetContacts() map[string]*Contact {
 func (c *Client) RemoveContact(nickname string) error {
 	removeContactOp := &opRemoveContact{
 		name:         nickname,
-		responseChan: make(chan error),
+		responseChan: make(chan error, 1),
 	}
 	c.opCh <- removeContactOp
 	return <-removeContactOp.responseChan
@@ -508,7 +508,7 @@ func (c *Client) RenameContact(oldname, newname string) error {
 	renameContactOp := &opRenameContact{
 		oldname:      oldname,
 		newname:      newname,
-		responseChan: make(chan error),
+		responseChan: make(chan error, 1),
 	}
 	c.opCh <- renameContactOp
 	return <-renameContactOp.responseChan
@@ -1139,7 +1139,7 @@ func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
 func (c *Client) GetSortedConversation(nickname string) Messages {
 	getConversationOp := opGetConversation{
 		name:         nickname,
-		responseChan: make(chan Messages),
+		responseChan: make(chan Messages, 1),
 	}
 	c.opCh <- &getConversationOp
 	m, ok := <-getConversationOp.responseChan
