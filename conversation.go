@@ -57,6 +57,9 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 	if c.send.Clicked() {
 		msg := []byte(c.compose.Text())
 		c.compose.SetText("")
+		if len(msg) == 0 {
+			return MessageSent{}
+		}
 		// truncate messages
 		// TODO: this should split messages and return the set of message IDs sent
 		if len(msg)+4 > catshadow.DoubleRatchetPayloadLength {
