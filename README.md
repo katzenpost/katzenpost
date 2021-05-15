@@ -11,12 +11,14 @@ A chat client using catshadow.
 
 ### From Source
 
-Make sure you have a working Go environment (Go 1.11 or higher is required).
+Make sure you have a working Go environment (Go 1.14 or higher is required; on
+Debian buster the backports repository can be used).
+
 See the [install instructions](http://golang.org/doc/install.html).
 
 #### Installing golang (Debian Bullseye example)
 
-    apt-get install golang git ca-certificates
+    apt install golang git ca-certificates
     export GOPATH=$HOME/go
 
 #### Dependencies (Debian Bullseye example)
@@ -25,10 +27,17 @@ See the [install instructions](http://golang.org/doc/install.html).
 
 # Cross-compilation dependencies for the arm64 architecture
 
-dpkg --add-architecture arm64 && apt update
-apt install --no-install-recommends crossbuild-essential-arm64 libgles2:arm64 libgles2-mesa-dev:arm64 libglib2.0-dev:arm64 libxkbcommon-dev libxkbcommon-x11-dev:arm64 libglu1-mesa-dev:arm64 libxcursor-dev:arm64 libwayland-dev:arm64 libx11-xcb-dev:arm64
+    dpkg --add-architecture arm64 && apt update
+    apt install --no-install-recommends crossbuild-essential-arm64 libgles2:arm64 libgles2-mesa-dev:arm64 libglib2.0-dev:arm64 libxkbcommon-dev libxkbcommon-x11-dev:arm64 libglu1-mesa-dev:arm64 libxcursor-dev:arm64 libwayland-dev:arm64 libx11-xcb-dev:arm64
 
-#### Building catchat
+#### Building catchat WIP gioui branch
+
+    git clone https://github.com/katzenpost/catchat
+    cd catchat
+    git checkout wip_gioui_interface
+    go build
+
+#### Building catchat, default branch
 
     go get -d -u -v github.com/katzenpost/catchat
     cd $(go env GOPATH)/src/github.com/katzenpost/catchat

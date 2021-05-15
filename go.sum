@@ -111,6 +111,8 @@ github.com/katzenpost/catshadow v0.0.42 h1:K34p1zoCscnwhzW39UvtzL91qMmXkmuANT3ju
 github.com/katzenpost/catshadow v0.0.42/go.mod h1:/ClNaW5hEW1gc8QxowJIuLgEOZXJ0v9MTNr1mGy/IKo=
 github.com/katzenpost/catshadow v0.0.43 h1:mI4i+pOp42cwmEz+/LJYixiXN5OTOVIczeO4R+MjHis=
 github.com/katzenpost/catshadow v0.0.43/go.mod h1:daNHf3Lpo+1Z7fXAoEXssxdjrHpeOZ4pgacWbJKEM0s=
+github.com/katzenpost/catshadow v0.0.44 h1:mcU1iu1L1TglVMLGpHm5vzA+x+3SA3pVuvSM3tOxH30=
+github.com/katzenpost/catshadow v0.0.44/go.mod h1:daNHf3Lpo+1Z7fXAoEXssxdjrHpeOZ4pgacWbJKEM0s=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
