@@ -37,6 +37,8 @@ var (
 
 	minPasswordLen = 5 // XXX pick something reasonable
 
+	notifications = make(map[string]*notify.Notification)
+
 	// theme
 	th = func() *material.Theme {
 		th := material.NewTheme(gofont.Collection())
@@ -335,7 +337,23 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 			go func() { <-time.After(30 * time.Second); n.Cancel() }()
 		}
 	case *catshadow.MessageReceivedEvent:
-		a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
+		p := a.stack.Current()
+
+		switch p := p.(type) {
+		case *conversationPage:
+			if p.nickname == event.Nickname {
+				break
+			}
+		default:
+			n, err := a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
+			if err != nil {
+				if o, ok := notifications[event.Nickname]; ok {
+					// cancel old notification before replacing with a new one
+					o.Cancel()
+				}
+				notifications[event.Nickname] = n
+			}
+		}
 	case *catshadow.MessageSentEvent:
 	case *catshadow.MessageDeliveredEvent:
 	default:

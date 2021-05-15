@@ -7,8 +7,6 @@ package main
 
 import (
 	"image"
-	"math"
-	"time"
 
 	"gioui.org/f32"
 	"gioui.org/layout"
@@ -83,12 +81,6 @@ func (b *Background) Layout(gtx layout.Context, w layout.Widget) layout.Dimensio
 	return dims
 }
 
-type Transition struct {
-	prev, page Page
-	reverse    bool
-	time       time.Time
-}
-
 type BackEvent struct{}
 
 type fill struct {
@@ -119,55 +111,6 @@ func (f fill) Layout(gtx layout.Context) layout.Dimensions {
 	return layout.Dimensions{Size: d, Baseline: d.Y}
 }
 
-func (t *Transition) Start(stop <-chan struct{}) {
-	t.page.Start(stop)
-}
-
-func (t *Transition) Event(gtx layout.Context) interface{} {
-	return t.page.Event(gtx)
-}
-
-func (t *Transition) Layout(gtx layout.Context) layout.Dimensions {
-	defer op.Save(gtx.Ops).Load()
-	prev, page := t.prev, t.page
-	if prev != nil {
-		if t.reverse {
-			prev, page = page, prev
-		}
-		now := gtx.Now
-		if t.time.IsZero() {
-			t.time = now
-		}
-		prev.Layout(gtx)
-		cs := gtx.Constraints
-		size := layout.FPt(cs.Max)
-		max := float32(math.Sqrt(float64(size.X*size.X + size.Y*size.Y)))
-		progress := float32(now.Sub(t.time).Seconds()) * 3
-		progress = progress * progress // Accelerate
-		if progress >= 1 {
-			// Stop animation when complete.
-			t.prev = nil
-		}
-		if t.reverse {
-			progress = 1 - progress
-		}
-		diameter := progress * max
-		radius := diameter / 2
-		op.InvalidateOp{}.Add(gtx.Ops)
-		center := size.Mul(.5)
-		clipCenter := f32.Point{X: diameter / 2, Y: diameter / 2}
-		off := f32.Affine2D{}.Offset(center.Sub(clipCenter))
-		op.Affine(off).Add(gtx.Ops)
-		clip.RRect{
-			Rect: f32.Rectangle{Max: f32.Point{X: diameter, Y: diameter}},
-			NE:   radius, NW: radius, SE: radius, SW: radius,
-		}.Add(gtx.Ops)
-		op.Affine(off.Invert()).Add(gtx.Ops)
-		fill{rgb(0xffffff)}.Layout(gtx)
-	}
-	return page.Layout(gtx)
-}
-
 func (s *pageStack) Len() int {
 	return len(s.pages)
 }
@@ -177,18 +120,13 @@ func (s *pageStack) Current() Page {
 }
 
 func (s *pageStack) Pop() {
-	s.stop()
-	i := len(s.pages) - 1
-	prev := s.pages[i]
-	s.pages[i] = nil
-	s.pages = s.pages[:i]
 	if len(s.pages) > 0 {
-		s.pages[i-1] = &Transition{
-			reverse: true,
-			prev:    prev,
-			page:    s.Current(),
+		if s.stopChan != nil {
+			s.stop()
 		}
-		s.start()
+		i := len(s.pages) - 1
+		s.pages[i] = nil
+		s.pages = s.pages[:i]
 	}
 }
 
@@ -198,24 +136,9 @@ func (s *pageStack) start() {
 	s.Current().Start(stop)
 }
 
-func (s *pageStack) Swap(p Page) {
-	prev := s.pages[len(s.pages)-1]
-	s.pages[len(s.pages)-1] = &Transition{
-		prev: prev,
-		page: p,
-	}
-	s.start()
-}
-
 func (s *pageStack) Push(p Page) {
 	if s.stopChan != nil {
 		s.stop()
-	}
-	if len(s.pages) > 0 {
-		p = &Transition{
-			prev: s.Current(),
-			page: p,
-		}
 	}
 	s.pages = append(s.pages, p)
 	s.start()
