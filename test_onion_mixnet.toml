@@ -31,6 +31,7 @@
   LinkPublicKey = "p1JekMh8uCPDsRSP5Uc59DJvEGMmA/B0mcMCXx1WEkk="
 
 [Debug]
+  DisableDecoyTraffic = false
   CaseSensitiveUserIdentifiers = false
   PollingInterval = 500
   PreferedTransports = ["onion"]
