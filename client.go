@@ -1104,13 +1104,22 @@ func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
 }
 
 // WipeConversation removes all messages between a contact
-func (c *Client) WipeConversation(nickname string) {
+func (c *Client) WipeConversation(nickname string) error {
+	wipeConversationOp := opWipeConversation{
+		name:         nickname,
+		responseChan: make(chan error, 1),
+	}
+	c.opCh <- &wipeConversationOp
+	return <-wipeConversationOp.responseChan
+}
+
+func (c *Client) doWipeConversation(nickname string) error {
 	c.conversationsMutex.Lock()
 	defer c.save()
 	defer c.conversationsMutex.Unlock()
 
 	if _, ok := c.conversations[nickname]; !ok {
-		return
+		return errContactNotFound
 	}
 
 	for k, m := range c.conversations[nickname] {
@@ -1126,6 +1135,7 @@ func (c *Client) WipeConversation(nickname string) {
 	if contact, ok := c.contactNicknames[nickname]; ok {
 		contact.LastMessage = nil
 	}
+	return nil
 }
 
 // GetConversation returns a map of all the maps of messages between a contact

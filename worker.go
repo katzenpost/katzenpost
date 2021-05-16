@@ -109,6 +109,8 @@ func (c *Client) worker() {
 			case *opRetransmit:
 				c.log.Debugf("RETRANSMISSION for %s", op.contact.Nickname)
 				c.sendMessage(op.contact)
+			case *opWipeConversation:
+				op.responseChan <-c.doWipeConversation(op.name)
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}

@@ -52,3 +52,8 @@ type opGetConversation struct {
 type opRetransmit struct {
 	contact *Contact
 }
+
+type opWipeConversation struct {
+	name         string
+	responseChan chan error
+}
