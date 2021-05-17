@@ -1013,6 +1013,8 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 						defer c.sendMessage(contact)
 					}
 				} else {
+					// XXX: FIXME: a renamed contact doesn't match here...
+					c.log.Warning("MessageDelivered for missing/renamed contact?", tp.Nickname)
 					return
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
