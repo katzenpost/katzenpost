@@ -77,9 +77,9 @@ func (r *rescheduler) Push(i Item) error {
 }
 
 func (s *Session) doRetransmit(msg *Message) {
-	s.log.Debugf("doRetransmit for %x", *msg.ID)
 	msg.Retransmissions++
-	s.log.Debugf("retransmissions: %d", msg.Retransmissions)
+	msgIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(msg.ID[:]))
+	s.log.Debugf("doRetransmit: %d for %s", msg.Retransmissions, msgIdStr)
 	s.doSend(msg)
 }
 
