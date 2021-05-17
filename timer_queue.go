@@ -144,6 +144,7 @@ func (a *TimerQueue) worker() {
 		a.Unlock()
 		select {
 		case <-a.HaltCh():
+			a.Signal()
 			return
 		case <-c:
 			a.forward()
