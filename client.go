@@ -588,14 +588,6 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	return ms.Flush()
 }
 
-func (c *Client) stopContactTimers() {
-	for _, contact := range c.contacts {
-		if contact.rtx != nil {
-			contact.rtx.Stop()
-		}
-	}
-}
-
 func (c *Client) haltKeyExchanges() {
 	for _, contact := range c.contacts {
 		if contact.IsPending {
@@ -901,7 +893,7 @@ func (c *Client) sendMessage(contact *Contact) {
 	}
 
 	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
-	mesgID, err := c.session.SendUnreliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
+	mesgID, err := c.session.SendReliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
@@ -962,28 +954,15 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 			} else {
 				if sentEvent.Err != nil {
 					c.log.Debugf("message send for %s failed with err: %s", tp.Nickname, sentEvent.Err)
-					// XXX: need to do something to resume transmission...
-					if contact.rtx != nil {
-						contact.rtx.Stop()
-					}
 					c.eventCh.In() <- &MessageNotSentEvent{
 						Nickname:  tp.Nickname,
 						MessageID: tp.MessageID,
 						Err:       sentEvent.Err,
 					}
-					c.opCh <- &opRetransmit{contact: contact}
 					return
-				}
-
-				c.log.Debugf("Sending new msg and resetting timer")
-				if contact.rtx != nil {
-					contact.rtx.Stop()
 				}
 				// keep track of the MessageID that has not been ACK'd yet
 				contact.ackID = *sentEvent.MessageID
-				contact.rtx = time.AfterFunc(sentEvent.ReplyETA*2, func() {
-					c.opCh <- &opRetransmit{contact: contact}
-				})
 			}
 
 			c.log.Debugf("MessageSentEvent for %x", *sentEvent.MessageID)
@@ -1030,10 +1009,6 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 							contact.Nickname, *replyEvent.MessageID, err)
 						return // do not send an extra MessageDeliveredEvent!
 					} else {
-						// cancel the retransmission timer
-						if contact.rtx != nil {
-							contact.rtx.Stop()
-						}
 						// try to send the next message, if one exists
 						defer c.sendMessage(contact)
 					}
