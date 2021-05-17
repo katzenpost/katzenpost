@@ -526,7 +526,7 @@ func (c *Client) doContactRemoval(nickname string) error {
 	}
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
-	c.WipeConversation(nickname) // calls c.save()
+	c.doWipeConversation(nickname) // calls c.save()
 	return nil
 }
 
