@@ -1193,7 +1193,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			break
 		default:
 			// every other type of error indicates an invalid message
-			c.log.Debugf("Decryption err: %s", err.Error())
+			c.log.Debugf("Decryption err for %s: %s", contact.Nickname, err.Error())
 			return err
 		}
 	}
