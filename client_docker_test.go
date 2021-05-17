@@ -30,6 +30,9 @@ import (
 	cConfig "github.com/katzenpost/client/config"
 	"github.com/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
+	"net/http"
+	_ "net/http/pprof"
+	"runtime"
 )
 
 func getClientState(c *Client) *State {
@@ -769,4 +772,12 @@ loop7:
 
 	a.Shutdown()
 	b.Shutdown()
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:8080", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }
