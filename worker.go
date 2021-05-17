@@ -65,7 +65,6 @@ func (c *Client) worker() {
 		select {
 		case <-c.HaltCh():
 			c.log.Debug("Terminating gracefully.")
-			c.stopContactTimers()
 			c.haltKeyExchanges()
 			c.save()
 			return
@@ -97,9 +96,6 @@ func (c *Client) worker() {
 				op.responseChan <-c.contactNicknames
 			case *opGetConversation:
 				c.doGetConversation(op.name, op.responseChan)
-			case *opRetransmit:
-				c.log.Debugf("RETRANSMISSION for %s", op.contact.Nickname)
-				c.sendMessage(op.contact)
 			case *opWipeConversation:
 				op.responseChan <-c.doWipeConversation(op.name)
 			default:
