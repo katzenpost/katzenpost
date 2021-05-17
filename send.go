@@ -70,7 +70,7 @@ func (r *rescheduler) Push(i Item) error {
 	m := i.(*Message)
 	if _, ok := r.s.surbIDMap.Load(*m.SURBID); ok {
 		// still waiting for a SURB-ACK that hasn't arrived
-		r.s.surbIDMap.Delete(m.SURBID)
+		r.s.surbIDMap.Delete(*m.SURBID)
 		r.s.opCh <- opRetransmit{msg :m}
 	}
 	return nil
