@@ -65,6 +65,12 @@ type Message struct {
 
 	// Priority controls the dwell time in the current AQM.
 	QueuePriority uint64
+
+	// Reliable indicate whether automatic retransmissions should be used.
+	Reliable bool
+
+	// Retransmissions counts the number of times the message has been retransmitted.
+	Retransmissions uint32
 }
 
 func (m *Message) Priority() uint64 {

@@ -89,7 +89,7 @@ func TestTimerQueueRemove(t *testing.T) {
 
 		m.SentAt = time.Now()
 		m.ReplyETA = 100 * time.Millisecond
-		m.QueuePriority = uint64(m.SentAt.UnixNano()) + uint64(m.ReplyETA)
+		m.QueuePriority = uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
 		_, err := io.ReadFull(rand.Reader, m.ID[:])
 		assert.NoError(err)
 		a.Push(m)

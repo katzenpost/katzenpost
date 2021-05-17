@@ -62,6 +62,7 @@ type Session struct {
 	hasPKIDoc bool
 
 	egressQueue EgressQueue
+	rescheduler *rescheduler
 
 	surbIDMap        sync.Map // [sConstants.SURBIDLength]byte -> *Message
 	sentWaitChanMap  sync.Map // MessageID -> chan *Message
@@ -108,6 +109,8 @@ func NewSession(
 		opCh:        make(chan workerOp, 8),
 		egressQueue: new(Queue),
 	}
+	// Configure the rescheduler instance
+	s.rescheduler = NewRescheduler(s)
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
 		User:                cfg.Account.User,

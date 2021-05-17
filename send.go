@@ -52,6 +52,37 @@ func (s *Session) sendNext() {
 	}
 }
 
+func NewRescheduler(s *Session) *rescheduler {
+	r := &rescheduler{s: s}
+	s.log.Debugf("Creating TimerQueue")
+	r.timerQ = NewTimerQueue(r)
+	return r
+}
+
+type rescheduler struct {
+	s *Session
+	timerQ *TimerQueue
+}
+
+func (r *rescheduler) Push(i Item) error {
+	// rescheduler checks whether a message was ACK'd when the timerQ fires
+	// and if it has not, reschedules the message for transmission again
+	m := i.(*Message)
+	if _, ok := r.s.surbIDMap.Load(*m.SURBID); ok {
+		// still waiting for a SURB-ACK that hasn't arrived
+		r.s.surbIDMap.Delete(m.SURBID)
+		r.s.opCh <- opRetransmit{msg :m}
+	}
+	return nil
+}
+
+func (s *Session) doRetransmit(msg *Message) {
+	s.log.Debugf("doRetransmit for %s", msg)
+	msg.Retransmissions++
+	s.log.Debugf("retransmissions: %d", msg.Retransmissions)
+	s.doSend(msg)
+}
+
 func (s *Session) doSend(msg *Message) {
 	surbID := [sConstants.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
@@ -62,6 +93,7 @@ func (s *Session) doSend(msg *Message) {
 	key := []byte{}
 	var eta time.Duration
 	if msg.WithSURB {
+		msg.SURBID = &surbID
 		idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 		s.log.Debugf("doSend with SURB ID %x", idStr)
 		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
@@ -78,9 +110,15 @@ func (s *Session) doSend(msg *Message) {
 	if msg.WithSURB {
 		if err == nil {
 			s.log.Debugf("doSend setting ReplyETA to %v", eta)
-			msg.ReplyETA = eta
+			// increase the timeout for each retransmission
+			msg.ReplyETA = eta * (1 + time.Duration(msg.Retransmissions))
 			msg.Key = key
 			s.surbIDMap.Store(surbID, msg)
+			if msg.Reliable {
+				s.log.Debugf("Sending reliable message with retransmissions")
+				msg.QueuePriority = uint64(msg.SentAt.Add(msg.ReplyETA).UnixNano())
+				s.rescheduler.timerQ.Push(msg)
+			}
 		}
 		// write to waiting channel or close channel if message failed to send
 		if msg.IsBlocking {
@@ -168,6 +206,20 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 		IsBlocking: isBlocking,
 	}
 	return &msg, nil
+}
+
+// SendReliableMessage asynchronously sends messages with automatic retransmissiosn.
+func (s *Session) SendReliableMessage(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
+	msg, err := s.composeMessage(recipient, provider, message, false)
+	if err != nil {
+		return nil, err
+	}
+	msg.Reliable = true
+	err = s.egressQueue.Push(msg)
+	if err != nil {
+		return nil, err
+	}
+	return msg.ID, nil
 }
 
 // SendUnreliableMessage asynchronously sends message without any automatic retransmissions.
