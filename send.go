@@ -60,7 +60,7 @@ func NewRescheduler(s *Session) *rescheduler {
 }
 
 type rescheduler struct {
-	s *Session
+	s      *Session
 	timerQ *TimerQueue
 }
 
@@ -71,7 +71,7 @@ func (r *rescheduler) Push(i Item) error {
 	if _, ok := r.s.surbIDMap.Load(*m.SURBID); ok {
 		// still waiting for a SURB-ACK that hasn't arrived
 		r.s.surbIDMap.Delete(*m.SURBID)
-		r.s.opCh <- opRetransmit{msg :m}
+		r.s.opCh <- opRetransmit{msg: m}
 	}
 	return nil
 }
