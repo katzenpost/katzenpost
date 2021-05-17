@@ -92,13 +92,14 @@ func (s *Session) doSend(msg *Message) {
 	}
 	key := []byte{}
 	var eta time.Duration
+	msgIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(msg.ID[:]))
 	if msg.WithSURB {
 		msg.SURBID = &surbID
-		idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
-		s.log.Debugf("doSend with SURB ID %x", idStr)
+		surbIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
+		s.log.Debugf("doSend %s with SURB ID %s", msgIdStr, surbIdStr)
 		key, eta, err = s.minclient.SendCiphertext(msg.Recipient, msg.Provider, &surbID, msg.Payload)
 	} else {
-		s.log.Debugf("doSend without SURB")
+		s.log.Debugf("doSend %s without SURB", msgIdStr)
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
 	}
 
