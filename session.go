@@ -281,6 +281,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	s.surbIDMap.Delete(*surbID)
 	msg := rawMessage.(*Message)
+	s.rescheduler.timerQ.Remove(msg)
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("Discarding SURB Reply, decryption failure: %s", err)
