@@ -75,6 +75,10 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	require.NoError(err)
 	require.True(utils.CtIsZero(reply))
 
+	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
+	require.NoError(err)
+	require.True(utils.CtIsZero(reply))
+
 	client.Shutdown()
 	client.Wait()
 }
@@ -98,6 +102,10 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	require.NoError(err)
 
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
+	require.NoError(err)
+	require.True(utils.CtIsZero(reply))
+
+	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
 	require.True(utils.CtIsZero(reply))
 
