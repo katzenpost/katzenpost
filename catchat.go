@@ -91,7 +91,7 @@ func (a *App) update(gtx layout.Context) {
 		case connectSuccess:
 			a.stack.Clear(newHomePage())
 		case ShowSettingsClick:
-			fmt.Println("TODO show Settings view")
+			a.stack.Push(newSettingsPage())
 		case AddContactClick:
 			a.stack.Push(newAddContactPage())
 		case AddContactComplete:
