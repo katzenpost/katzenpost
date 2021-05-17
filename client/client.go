@@ -70,7 +70,7 @@ func (p *Panda) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, er
 		enc := codec.NewEncoderBytes(&rawRequest, &p.jsonHandle)
 		enc.Encode(request)
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
-		reply, err := p.session.BlockingSendUnreliableMessage(p.recipient, p.provider, rawRequest)
+		reply, err := p.session.BlockingSendReliableMessage(p.recipient, p.provider, rawRequest)
 		if err != nil {
 			// do not abort loop on dropped messages
 			continue
