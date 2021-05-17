@@ -131,7 +131,12 @@ func (s *Session) doSend(msg *Message) {
 			}
 			sentWaitChan := sentWaitChanRaw.(chan *Message)
 			if err == nil {
-				sentWaitChan <- msg
+				// do not block writing to the receiver if this is a retransmission
+				select {
+				case sentWaitChan <- msg:
+				default:
+				}
+
 			} else {
 				close(sentWaitChan)
 			}
