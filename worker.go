@@ -39,6 +39,10 @@ type opNewDocument struct {
 	doc *pki.Document
 }
 
+type opRetransmit struct {
+	msg *Message
+}
+
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 	isConnected := op.isConnected
 	if isConnected {
@@ -137,6 +141,8 @@ func (s *Session) worker() {
 
 		if qo != nil {
 			switch op := qo.(type) {
+			case opRetransmit:
+				s.doRetransmit(op.msg)
 			case opConnStatusChanged:
 				newConnectedStatus := s.connStatusChange(op)
 				isConnected = newConnectedStatus
