@@ -307,8 +307,7 @@ func (s *Session) BlockingSendReliableMessage(recipient, provider string, messag
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	// these timeouts are often far too aggressive
-	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
+	case <-time.After(cConstants.RoundTripTimeSlop):
 		return nil, ErrReplyTimeout
 	}
 	// unreachable
