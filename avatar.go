@@ -51,16 +51,23 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 
 	return bg.Layout(gtx, func(gtx C) D {
 		return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
-			// back button and cwd ..
+			// back to Edit Contact
 			layout.Rigid(func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline}.Layout(gtx,
 					layout.Rigid(material.Button(th, p.back, "<").Layout),
+					layout.Flexed(1, fill{th.Bg}.Layout),
+					layout.Rigid(material.H6(th, "Choose Avatar").Layout),
+					layout.Flexed(1, fill{th.Bg}.Layout),
+				)
+			}),
+			// cwd and buttons
+			layout.Rigid(func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Baseline}.Layout(gtx,
 					layout.Rigid(material.Button(th, p.up, "..").Layout),
 					layout.Rigid(material.Button(th, p.clear, "Random").Layout),
 					layout.Flexed(1, material.Body1(th, p.path).Layout),
 				)
 			}),
-
 			// list contents
 			layout.Flexed(1, func(gtx C) D {
 				// get contents of directory at cwd

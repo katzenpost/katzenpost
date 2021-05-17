@@ -30,20 +30,25 @@ func (p *EditContactPage) Layout(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
 					layout.Rigid(material.Button(th, p.back, "<").Layout),
-					layout.Flexed(9, fill{th.Bg}.Layout))
+					layout.Flexed(1, fill{th.Bg}.Layout),
+					layout.Rigid(material.H6(th, "Edit Contact").Layout),
+					layout.Flexed(1, fill{th.Bg}.Layout))
 			}),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Button(th, p.avatar, "Choose avatar").Layout) }),
 			layout.Flexed(1, func(gtx C) D {
-				return layout.Center.Layout(gtx, material.Button(th, p.clear, "Clear history").Layout)
+				return layout.Center.Layout(gtx, material.Button(th, p.avatar, "Choose Avatar").Layout)
+			}),
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Button(th, p.clear, "Clear History").Layout)
 			}),
 			//layout.Flexed(1, func(gtx C) D {
 			//	return layout.Center.Layout(gtx, material.Button(th, p.expiry, "Set message lifetime").Layout)
 			//}),
+			//
 			layout.Flexed(1, func(gtx C) D {
-				return layout.Center.Layout(gtx, material.Button(th, p.rename, "Rename contact").Layout)
+				return layout.Center.Layout(gtx, material.Button(th, p.rename, "Rename Contact").Layout)
 			}),
 			layout.Flexed(1, func(gtx C) D {
-				return layout.Center.Layout(gtx, material.Button(th, p.remove, "Remove contact").Layout)
+				return layout.Center.Layout(gtx, material.Button(th, p.remove, "Delete Contact").Layout)
 			}))
 	})
 }

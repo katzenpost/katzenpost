@@ -33,11 +33,19 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
 					layout.Rigid(material.Button(th, p.back, "<").Layout),
-					layout.Flexed(9, fill{th.Bg}.Layout))
+					layout.Flexed(1, fill{th.Bg}.Layout),
+					layout.Rigid(material.H6(th, "Add Contact").Layout),
+					layout.Flexed(1, fill{th.Bg}.Layout))
 			}),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.nickname, "nickname").Layout) }),
-			layout.Flexed(1, func(gtx C) D { return layout.Center.Layout(gtx, material.Editor(th, p.secret, "secret").Layout) }),
-			layout.Rigid(func(gtx C) D { return material.Button(th, p.submit, "MEOW").Layout(gtx) }),
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Editor(th, p.nickname, "Nickname").Layout)
+			}),
+			layout.Flexed(1, func(gtx C) D {
+				return layout.Center.Layout(gtx, material.Editor(th, p.secret, "Secret").Layout)
+			}),
+			layout.Rigid(func(gtx C) D {
+				return material.Button(th, p.submit, "MEOW").Layout(gtx)
+			}),
 		)
 	})
 }
