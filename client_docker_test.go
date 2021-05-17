@@ -122,7 +122,7 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	desc, err := clientSession.GetService("loop")
 	require.NoError(err)
 
-	msgID, err := clientSession.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
+	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
 	t.Logf("sent message ID %x", msgID)
 
@@ -172,7 +172,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	desc, err := clientSession.GetService("loop")
 	require.NoError(err)
 
-	msgID, err := clientSession.SendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
+	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
 	t.Logf("sent message ID %x", msgID)
 
