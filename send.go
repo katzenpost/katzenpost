@@ -116,7 +116,8 @@ func (s *Session) doSend(msg *Message) {
 			s.surbIDMap.Store(surbID, msg)
 			if msg.Reliable {
 				s.log.Debugf("Sending reliable message with retransmissions")
-				msg.QueuePriority = uint64(msg.SentAt.Add(msg.ReplyETA).Add(cConstants.RoundTripTimeSlop).UnixNano())
+				timeSlop := eta // add a round-trip worth of delay before timing out
+				msg.QueuePriority = uint64(msg.SentAt.Add(msg.ReplyETA).Add(timeSlop).UnixNano())
 				s.rescheduler.timerQ.Push(msg)
 			}
 		}
