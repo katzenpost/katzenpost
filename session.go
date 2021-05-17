@@ -341,6 +341,7 @@ func (s *Session) GetPandaConfig() *config.Panda {
 
 func (s *Session) Shutdown() {
 	s.Halt()
+	s.rescheduler.timerQ.Halt()
 	s.minclient.Shutdown()
 	s.minclient.Wait()
 }
