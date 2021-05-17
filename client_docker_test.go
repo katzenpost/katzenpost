@@ -279,7 +279,10 @@ func TestDockerSendReceive(t *testing.T) {
 	bobDeliveredChan := make(chan bool)
 	go func() {
 		for {
-			ev := <-bob.EventSink
+			ev, ok := <-bob.EventSink
+			if !ok {
+				return
+			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				require.Nil(event.Err)
@@ -305,7 +308,10 @@ func TestDockerSendReceive(t *testing.T) {
 	aliceDeliveredChan := make(chan bool)
 	go func() {
 		for {
-			ev := <-alice.EventSink
+			ev, ok := <-alice.EventSink
+			if !ok {
+				return
+			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				require.Nil(event.Err)
@@ -329,7 +335,10 @@ func TestDockerSendReceive(t *testing.T) {
 	malDeliveredChan := make(chan bool)
 	go func() {
 		for {
-			ev := <-mal.EventSink
+			ev, ok := <-mal.EventSink
+			if !ok {
+				return
+			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
 				require.Nil(event.Err)
