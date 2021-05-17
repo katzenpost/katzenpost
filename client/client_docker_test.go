@@ -35,7 +35,8 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := cc.AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := cc.AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
@@ -55,7 +56,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	message := []byte("hello there")
 	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message)
 	require.NoError(err)
-	rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
+	rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
 	require.NoError(err)
 	response, err := common.SpoolResponseFromBytes(rawResponse)
 	require.NoError(err)
@@ -66,7 +67,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	// read from a spool (should find our original message)
 	readCmd, err := common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
 	require.NoError(err)
-	rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, readCmd)
+	rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, readCmd)
 	require.NoError(err)
 	response, err = common.SpoolResponseFromBytes(rawResponse)
 	require.NoError(err)
@@ -77,7 +78,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	// purge a spool
 	purgeCmd, err := common.PurgeSpool(spoolReadDescriptor.ID, spoolReadDescriptor.PrivateKey)
 	require.NoError(err)
-	rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, purgeCmd)
+	rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, purgeCmd)
 	require.NoError(err)
 	response, err = common.SpoolResponseFromBytes(rawResponse)
 	require.NoError(err)
@@ -86,7 +87,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	// read from a spool (should be empty?)
 	readCmd, err = common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
 	require.NoError(err)
-	rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, readCmd)
+	rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, readCmd)
 	response, err = common.SpoolResponseFromBytes(rawResponse)
 	require.NoError(err)
 	require.False(response.IsOK())
@@ -103,7 +104,8 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey := cc.AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := cc.AutoRegisterRandomClient(cfg)
+	require.NoError(err)
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
@@ -121,11 +123,11 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	messageID := uint32(1) // where do we learn messageID?
 	for i := 0; i < 20; i += 1 {
 		// append to a spool
-		var message [common.SpoolPayloadLength]byte
+		message := make([]byte, common.SpoolPayloadLength)
 		rand.Reader.Read(message[:])
 		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:])
 		require.NoError(err)
-		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
+		rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
 		require.NoError(err)
 		response, err := common.SpoolResponseFromBytes(rawResponse)
 		require.NoError(err)
@@ -134,7 +136,7 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 		// read from a spool (should find our original message)
 		readCmd, err := common.ReadFromSpool(spoolReadDescriptor.ID, messageID, spoolReadDescriptor.PrivateKey)
 		require.NoError(err)
-		rawResponse, err = s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, readCmd)
+		rawResponse, err = s.BlockingSendReliableMessage(desc.Name, desc.Provider, readCmd)
 		require.NoError(err)
 		response, err = common.SpoolResponseFromBytes(rawResponse)
 		require.NoError(err)
