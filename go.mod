@@ -10,7 +10,7 @@ require (
 	github.com/katzenpost/core v0.0.14
 	github.com/katzenpost/doubleratchet v0.0.12
 	github.com/katzenpost/memspool v0.0.16
-	github.com/katzenpost/panda v0.0.16
+	github.com/katzenpost/panda v0.0.17
 	github.com/katzenpost/registration_client v0.0.4-0.20210226024718-1307e869a568 // indirect
 	github.com/katzenpost/reunion v0.0.6
 	github.com/stretchr/testify v1.4.0
