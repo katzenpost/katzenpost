@@ -18,6 +18,7 @@ package client
 
 import (
 	"io"
+	mrand "math/rand"
 	"testing"
 	"time"
 
@@ -104,16 +105,61 @@ func TestTimerQueueRemove(t *testing.T) {
 	<-time.After(2 * time.Second)
 
 	j := 0
+	var last uint64
 	for {
-		_, err := q.Pop()
+		n, err := q.Pop()
 		if err == ErrQueueEmpty {
 			break
 		}
+		assert.True(n.(*Message).QueuePriority > last)
+		last = n.(*Message).QueuePriority
 		j++
 	}
 	t.Logf("Popped %d messages", j)
 
 	// verify that half of the messages were sent to q
 	assert.Equal(5, j)
+	a.Halt()
+}
+
+func TestTimerQueueOrder(t *testing.T) {
+	assert := assert.New(t)
+
+	// create a Queue for forwarded messages
+	q := new(Queue)
+
+	a := NewTimerQueue(q)
+
+	r := mrand.New(mrand.NewSource(0))
+
+	// enqueue 10 messages, and call TimerQueue.Remove() on half of them before their timers expire
+	for i := 0; i < 10; i++ {
+		m := &Message{}
+		m.ID = new([16]byte)
+		m.SentAt = time.Now()
+		m.ReplyETA = time.Duration(int(time.Millisecond) * r.Intn(100))
+		m.QueuePriority = uint64((m.SentAt.Add(m.ReplyETA)).UnixNano())
+		m.ID[0] = uint8(i)
+		t.Logf("Inserting: %x : %d", m.ID[0], m.QueuePriority)
+		a.Push(m)
+		<-time.After(10 * time.Millisecond)
+	}
+
+	t.Logf("\n")
+	<-time.After(1 * time.Second)
+	j := 0
+	var last uint64
+	last = 0xEFFFFFFF
+	for {
+		n, err := q.Pop()
+		if err == ErrQueueEmpty {
+			break
+		}
+		t.Logf("Popping:   %x : %d", n.(*Message).ID[0], n.(*Message).QueuePriority)
+		assert.True(n.(*Message).QueuePriority > last)
+		last = n.(*Message).QueuePriority
+		j++
+	}
+	t.Logf("Popped %d messages", j)
 	a.Halt()
 }
