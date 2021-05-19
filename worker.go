@@ -181,7 +181,6 @@ func (s *Session) worker() {
 				} else if lambdaLFired && !s.cfg.Debug.DisableDecoyTraffic {
 					s.sendLoopDecoy(loopSvc)
 				} else if lambdaDFired && !s.cfg.Debug.DisableDecoyTraffic {
-					loopSvc = &loopServices[mrand.Intn(len(loopServices))]
 					s.sendDropDecoy(loopSvc)
 				}
 			}
