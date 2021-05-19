@@ -281,7 +281,6 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	s.surbIDMap.Delete(*surbID)
 	msg := rawMessage.(*Message)
-	s.rescheduler.timerQ.Remove(msg)
 	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("Discarding SURB Reply, decryption failure: %s", err)
@@ -295,7 +294,12 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		s.decrementDecoyLoopTally()
 		return nil
 	}
-
+	if msg.Reliable {
+		err := s.rescheduler.timerQ.Remove(msg)
+		if err != nil {
+			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
+		}
+	}
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
 		if !ok {
