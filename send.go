@@ -126,7 +126,6 @@ func (s *Session) doSend(msg *Message) {
 		if msg.IsBlocking {
 			sentWaitChanRaw, ok := s.sentWaitChanMap.Load(*msg.ID)
 			if !ok {
-				s.fatalErrCh <- fmt.Errorf("impossible failure, sentWaitChan not found for message ID %x", *msg.ID)
 				return
 			}
 			sentWaitChan := sentWaitChanRaw.(chan *Message)
