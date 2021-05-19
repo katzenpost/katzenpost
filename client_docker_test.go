@@ -301,3 +301,56 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	client.Shutdown()
 	client.Wait()
 }
+
+func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	require.NoError(err)
+	client, err := New(cfg)
+	require.NoError(err)
+
+	clientSession, err := client.NewSession(linkKey)
+	require.NoError(err)
+
+	desc, err := clientSession.GetService("loop")
+	require.NoError(err)
+
+	for i := 0; i < 10; i++ {
+		msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
+		require.NoError(err)
+		t.Logf("sent message ID %x", msgID)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer t.Logf("receiver returned")
+			for eventRaw := range clientSession.EventSink {
+				switch event := eventRaw.(type) {
+				case *MessageSentEvent:
+					if bytes.Equal(msgID[:], event.MessageID[:]) {
+						require.NoError(event.Err)
+						t.Logf("message ID %x sent", msgID)
+					}
+				case *MessageReplyEvent:
+					if bytes.Equal(msgID[:], event.MessageID[:]) {
+						require.NoError(event.Err)
+						t.Logf("message ID %x reply received", msgID)
+						require.True(utils.CtIsZero(event.Payload))
+						wg.Done()
+						return
+					}
+				default:
+					continue
+				}
+			}
+		}()
+		wg.Wait()
+	}
+
+	client.Shutdown()
+	client.Wait()
+}
