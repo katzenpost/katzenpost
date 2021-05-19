@@ -6,11 +6,11 @@ require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/fxamacker/cbor/v2 v2.2.0
-	github.com/katzenpost/client v0.0.28
+	github.com/katzenpost/client v0.0.29
 	github.com/katzenpost/core v0.0.14
 	github.com/katzenpost/doubleratchet v0.0.12
-	github.com/katzenpost/memspool v0.0.16
-	github.com/katzenpost/panda v0.0.17
+	github.com/katzenpost/memspool v0.0.17
+	github.com/katzenpost/panda v0.0.18
 	github.com/katzenpost/registration_client v0.0.4-0.20210226024718-1307e869a568 // indirect
 	github.com/katzenpost/reunion v0.0.6
 	github.com/stretchr/testify v1.4.0
