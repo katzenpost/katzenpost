@@ -487,10 +487,10 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 
 // GetContacts returns the contacts map.
 func (c *Client) GetContacts() map[string]*Contact {
-	getContactsOp := opGetContacts{
+	getContactsOp := &opGetContacts{
 		responseChan: make(chan map[string]*Contact, 1),
 	}
-	c.opCh <- &getContactsOp
+	c.opCh <- getContactsOp
 	return <-getContactsOp.responseChan
 }
 
