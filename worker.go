@@ -87,19 +87,19 @@ func (c *Client) worker() {
 					c.log.Errorf("create contact failure: %s", err.Error())
 				}
 			case *opRemoveContact:
-				op.responseChan <-c.doContactRemoval(op.name)
+				op.responseChan <- c.doContactRemoval(op.name)
 			case *opRenameContact:
-				op.responseChan <-c.doContactRename(op.oldname, op.newname)
+				op.responseChan <- c.doContactRename(op.oldname, op.newname)
 			case *opRestartSending:
 				c.sendMessage(op.contact)
 			case *opSendMessage:
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
-				op.responseChan <-c.contactNicknames
+				op.responseChan <- c.contactNicknames
 			case *opGetConversation:
 				c.doGetConversation(op.name, op.responseChan)
 			case *opWipeConversation:
-				op.responseChan <-c.doWipeConversation(op.name)
+				op.responseChan <- c.doWipeConversation(op.name)
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}
