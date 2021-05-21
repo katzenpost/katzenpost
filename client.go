@@ -250,7 +250,7 @@ func (c *Client) restartSending() {
 		if !contact.IsPending {
 			if _, err := contact.outbound.Peek(); err == nil {
 				// prod worker to start draining contact outbound queue
-				c.opCh <- &opRetransmit{contact: contact}
+				c.opCh <- &opRestartSending{contact: contact}
 			}
 		}
 	}

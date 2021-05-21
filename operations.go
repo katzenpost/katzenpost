@@ -49,7 +49,7 @@ type opGetConversation struct {
 	responseChan chan Messages
 }
 
-type opRetransmit struct {
+type opRestartSending struct {
 	contact *Contact
 }
 

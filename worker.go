@@ -90,6 +90,8 @@ func (c *Client) worker() {
 				op.responseChan <-c.doContactRemoval(op.name)
 			case *opRenameContact:
 				op.responseChan <-c.doContactRename(op.oldname, op.newname)
+			case *opRestartSending:
+				c.sendMessage(op.contact)
 			case *opSendMessage:
 				c.doSendMessage(op.id, op.name, op.payload)
 			case *opGetContacts:
