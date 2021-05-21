@@ -166,6 +166,16 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 // Start starts the client worker goroutine and the
 // read-inbox worker goroutine.
 func (c *Client) Start() {
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-c.fatalErrCh
+		if !ok {
+			return
+		}
+		c.log.Warningf("Shutting down due to error: %v", err)
+		c.Shutdown()
+	}()
+
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
@@ -177,15 +187,6 @@ func (c *Client) Start() {
 			contact.LastMessage = msgs[len(msgs)-1]
 		}
 	}
-	// Start the fatal error watcher.
-	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
-		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
-	}()
 	// Shutdown if the client halts for some reason
 	go func() {
 		c.client.Wait()
