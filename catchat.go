@@ -148,6 +148,9 @@ func (a *App) run() error {
 			if err := a.handleGioEvents(e); err != nil {
 				return err
 			}
+		case <-time.After(1*time.Minute):
+			// redraw the screen to update the message timestamps once per minute
+			a.w.Invalidate()
 		}
 	}
 }
