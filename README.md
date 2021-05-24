@@ -62,6 +62,11 @@ And then build the apk:
 
     gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
 
+To use the Docker environment you can do:
+
+    docker build --no-cache -t katzenpost/android_build -f Dockerfile.android .
+    docker run -v "$(pwd)":/go/build/ katzenpost/android_build gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
+
 ## Run it
 
     Usage of ./deploy/linux/catchat:
