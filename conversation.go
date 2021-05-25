@@ -246,7 +246,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 				})
 			}
 
-			return bg.Layout(gtx, material.Editor(th, c.compose, ">").Layout)
+			return bg.Layout(gtx, material.Editor(th, c.compose, "").Layout)
 		}),
 	)
 }
