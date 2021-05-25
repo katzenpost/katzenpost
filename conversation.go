@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/hako/durafmt"
 	"github.com/katzenpost/catshadow"
+	"runtime"
 	"strings"
 	"time"
 
@@ -269,8 +270,13 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 func newConversationPage(nickname string) *conversationPage {
+	ed := &widget.Editor{SingleLine: false, Submit: true}
+	if runtime.GOOS == "android" {
+		ed.Submit = false
+	}
+
 	return &conversationPage{nickname: nickname,
-		compose:       &widget.Editor{SingleLine: false, Submit: true},
+		compose:       ed,
 		messageClicks: make(map[*catshadow.Message]*Click),
 		back:          &widget.Clickable{},
 		msgcopy:       &widget.Clickable{},

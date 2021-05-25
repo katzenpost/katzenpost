@@ -5,6 +5,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"runtime"
 )
 
 type signInPage struct {
@@ -71,9 +72,15 @@ func (p *signInPage) Event(gtx layout.Context) interface{} {
 }
 
 func newSignInPage(a *App) *signInPage {
+	pw := &widget.Editor{SingleLine: true, Mask: '*', Submit: true}
+
+	if runtime.GOOS == "android" {
+		pw.Submit = false
+	}
+
 	return &signInPage{
 		a:        a,
-		password: &widget.Editor{SingleLine: true, Mask: '*', Submit: true},
+		password: pw,
 		submit:   &widget.Clickable{},
 		result:   make(chan interface{}, 1),
 	}

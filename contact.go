@@ -5,6 +5,7 @@ import (
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/katzenpost/catshadow"
+	"runtime"
 	"sort"
 )
 
@@ -88,6 +89,9 @@ func newAddContactPage() *AddContactPage {
 	p.nickname.Focus()
 	p.back = &widget.Clickable{}
 	p.secret = &widget.Editor{SingleLine: true, Submit: true}
+	if runtime.GOOS == "android" {
+		p.secret.Submit = false
+	}
 	p.submit = &widget.Clickable{}
 	return p
 }
