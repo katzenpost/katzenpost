@@ -1,7 +1,7 @@
 name: build
 on: [push, pull_request]
 jobs:
-  build_linux_desktop:
+  build_and_release:
     strategy:
       matrix:
         go-version: [1.15.x]
@@ -24,20 +24,25 @@ jobs:
       - name: Build
         run: go build
 
-  build_android:
-    strategy:
-      matrix:
-        go-version: [1.15.x]
-        os: [ubuntu-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Install Go
-        uses: actions/setup-go@v1
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          go-version: ${{ matrix.go-version }}
+          tag_name: ${{ github.ref }}
+          release_name: Testing ${{ github.ref }}
+          prerelease: true
 
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: Upload catchat x86_64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./catchat
+          asset_name: catchat-linux
+          asset_content_type: application/binary
 
       - name: Build android_build docker image
         run: |
@@ -46,3 +51,13 @@ jobs:
       - name: Build catchat apk
         run: |
           docker run -v "$(pwd)":/go/build/ katzenpost/android_build gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
+
+      - name: Upload catchat android apk
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./catchat.apk
+          asset_name: catchat.apk
+          asset_content_type: application/binary
