@@ -245,8 +245,25 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 					)
 				})
 			}
+			bgSender := Background{
+				Color:  th.ContrastBg,
+				Inset:  layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)},
+				Radius: unit.Dp(10),
+			}
+			bgl := Background{
+				Color: th.Bg,
+				Inset: layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(0), Left: unit.Dp(0), Right: unit.Dp(0)},
+			}
 
-			return bg.Layout(gtx, material.Editor(th, c.compose, "").Layout)
+			return bgl.Layout(gtx, func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
+					layout.Flexed(1, fill{th.Bg}.Layout),
+					layout.Flexed(5, func(gtx C) D { return bgSender.Layout(gtx, material.Editor(th, c.compose, "").Layout) }),
+					layout.Rigid(func(gtx C) D {
+						return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, material.Button(th, c.send, ">").Layout)
+					}),
+				)
+			})
 		}),
 	)
 }
