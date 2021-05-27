@@ -11,6 +11,7 @@ import (
 	"github.com/benc-uk/gofract/pkg/colors"
 	"github.com/benc-uk/gofract/pkg/fractals"
 	"github.com/hako/durafmt"
+	"golang.org/x/exp/shiny/materialdesign/icons"
 	"image"
 	"image/png"
 	"math/rand"
@@ -20,7 +21,9 @@ import (
 )
 
 var (
-	contactList = &layout.List{Axis: layout.Vertical, ScrollToEnd: false}
+	contactList       = &layout.List{Axis: layout.Vertical, ScrollToEnd: false}
+	settingsIcon, _   = widget.NewIcon(icons.ActionSettings)
+	addContactIcon, _ = widget.NewIcon(icons.SocialPersonAdd)
 )
 
 type HomePage struct {
@@ -49,8 +52,8 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 					gtx,
 					layout.Rigid(material.H6(th, "Home").Layout),
 					layout.Flexed(1, fill{th.Bg}.Layout),
-					layout.Rigid(material.Button(th, p.addContact, "Add Contact").Layout),
-					layout.Rigid(material.Button(th, p.showSettings, "Settings").Layout),
+					layout.Rigid(material.IconButton(th, p.showSettings, settingsIcon).Layout),
+					layout.Rigid(material.IconButton(th, p.addContact, addContactIcon).Layout),
 				)
 			}),
 
