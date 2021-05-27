@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
@@ -11,6 +12,7 @@ import (
 	"github.com/benc-uk/gofract/pkg/colors"
 	"github.com/benc-uk/gofract/pkg/fractals"
 	"github.com/hako/durafmt"
+	"github.com/katzenpost/catchat/assets"
 	"golang.org/x/exp/shiny/materialdesign/icons"
 	"image"
 	"image/png"
@@ -24,6 +26,7 @@ var (
 	contactList       = &layout.List{Axis: layout.Vertical, ScrollToEnd: false}
 	settingsIcon, _   = widget.NewIcon(icons.ActionSettings)
 	addContactIcon, _ = widget.NewIcon(icons.SocialPersonAdd)
+	logo              = getLogo()
 )
 
 type HomePage struct {
@@ -48,9 +51,9 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
 			// topbar: Name, Add Contact, Settings
 			layout.Rigid(func(gtx C) D {
-				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(
+				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(
 					gtx,
-					layout.Rigid(material.H6(th, "Home").Layout),
+					layout.Rigid(layoutLogo),
 					layout.Flexed(1, fill{th.Bg}.Layout),
 					layout.Rigid(material.IconButton(th, p.showSettings, settingsIcon).Layout),
 					layout.Rigid(material.IconButton(th, p.addContact, addContactIcon).Layout),
@@ -121,6 +124,27 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 				})
 			}),
 		)
+	})
+}
+
+func getLogo() *widget.Image {
+	d, err := base64.StdEncoding.DecodeString(assets.Logob64)
+	if err != nil {
+		return nil
+	}
+	if m, _, err := image.Decode(bytes.NewReader(d)); err == nil {
+		return &widget.Image{Scale: 1.0, Src: paint.NewImageOp(m)}
+	}
+	return nil
+}
+
+func layoutLogo(gtx C) D {
+	in := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}
+	return in.Layout(gtx, func(gtx C) D {
+		cc := clipCircle{}
+		return cc.Layout(gtx, func(gtx C) D {
+			return logo.Layout(gtx)
+		})
 	})
 }
 
