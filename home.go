@@ -28,6 +28,7 @@ var (
 	settingsIcon, _   = widget.NewIcon(icons.ActionSettings)
 	addContactIcon, _ = widget.NewIcon(icons.SocialPersonAdd)
 	logo              = getLogo()
+	units, _          = durafmt.UnitsCoder{PluralSep: ":", UnitsSep: ","}.Decode("y:y,w:w,d:d,h:h,m:m,s:s,ms:ms,us:us")
 )
 
 type HomePage struct {
@@ -95,7 +96,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 											layout.Rigid(func(gtx C) D {
 												// timestamp
 												if lastMsg != nil {
-													messageAge := strings.Replace(durafmt.ParseShort(time.Now().Sub(lastMsg.Timestamp).Truncate(time.Minute)).String(), "0 seconds", "now", 1)
+													messageAge := strings.Replace(durafmt.ParseShort(time.Now().Sub(lastMsg.Timestamp).Truncate(time.Minute)).Format(units), "0 s", "now", 1)
 													return material.Caption(th, messageAge).Layout(gtx)
 												}
 												return fill{th.Bg}.Layout(gtx)
