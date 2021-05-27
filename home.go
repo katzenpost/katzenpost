@@ -6,6 +6,7 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
+	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
@@ -88,8 +89,8 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 										return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
 											// contact name
 											layout.Rigid(func(gtx C) D {
-												in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
-												return in.Layout(gtx, material.Caption(th, contacts[i].Nickname).Layout)
+												in := layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
+												return in.Layout(gtx, ContactStyle(th, contacts[i].Nickname).Layout)
 											}),
 											layout.Rigid(func(gtx C) D {
 												// timestamp
@@ -103,7 +104,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 									}),
 									// last message
 									layout.Rigid(func(gtx C) D {
-										in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
+										in := layout.Inset{Top: unit.Dp(4), Bottom: unit.Dp(4), Left: unit.Dp(12), Right: unit.Dp(12)}
 										if lastMsg != nil {
 											return in.Layout(gtx, func(gtx C) D {
 												// TODO: set the color based on sent or received
@@ -241,4 +242,10 @@ func newHomePage() *HomePage {
 		contactClicks: make(map[string]*Click),
 		av:            make(map[string]*widget.Image),
 	}
+}
+
+func ContactStyle(th *material.Theme, txt string) material.LabelStyle {
+	l := material.Label(th, th.TextSize, txt)
+	l.Font.Weight = text.Bold
+	return l
 }
