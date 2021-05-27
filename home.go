@@ -141,10 +141,7 @@ func getLogo() *widget.Image {
 func layoutLogo(gtx C) D {
 	in := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}
 	return in.Layout(gtx, func(gtx C) D {
-		cc := clipCircle{}
-		return cc.Layout(gtx, func(gtx C) D {
-			return logo.Layout(gtx)
-		})
+		return logo.Layout(gtx)
 	})
 }
 
