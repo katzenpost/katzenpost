@@ -73,13 +73,8 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 						dims := layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceEvenly}.Layout(gtx,
 							// contact avatar
 							layout.Rigid(func(gtx C) D {
-								cc := clipCircle{}
-								return cc.Layout(gtx, func(gtx C) D {
-									sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
-									gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-									return p.layoutAvatar(gtx, contacts[i].Nickname)
-								})
-							}), // end contact icon
+								return p.layoutAvatar(gtx, contacts[i].Nickname)
+							}),
 							// contact name and last message
 							layout.Flexed(1, func(gtx C) D {
 								return layout.Flex{Axis: layout.Vertical, Alignment: layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
