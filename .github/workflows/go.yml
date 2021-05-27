@@ -30,7 +30,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
+          tag_name: test_${{ github.ref }}
           release_name: Testing ${{ github.ref }}
           prerelease: true
 
