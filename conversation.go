@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"gioui.org/op/paint"
 	"github.com/hako/durafmt"
 	"github.com/katzenpost/catshadow"
+	"golang.org/x/exp/shiny/materialdesign/icons"
 	"runtime"
 	"strings"
 	"time"
@@ -20,10 +23,12 @@ import (
 var (
 	messageList  = &layout.List{Axis: layout.Vertical, ScrollToEnd: true}
 	messageField = &widget.Editor{SingleLine: true}
+	backIcon, _  = widget.NewIcon(icons.NavigationChevronLeft)
 )
 
 type conversationPage struct {
 	nickname       string
+	avatar         *widget.Image
 	edit           *widget.Clickable
 	compose        *widget.Editor
 	send           *widget.Clickable
@@ -153,10 +158,10 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx C) D {
 			return bgl.Layout(gtx, func(gtx C) D {
-				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
-					layout.Rigid(material.Button(th, c.back, "<").Layout),
-					layout.Flexed(1, fill{th.Bg}.Layout),
-					layout.Rigid(material.Button(th, c.edit, c.nickname).Layout),
+				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(material.IconButton(th, c.back, backIcon).Layout),
+					layout.Rigid(c.layoutAvatar),
+					layout.Rigid(material.Caption(th, c.nickname).Layout),
 					layout.Flexed(1, fill{th.Bg}.Layout),
 				)
 			},
@@ -267,6 +272,29 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 			})
 		}),
 	)
+}
+func (p *conversationPage) layoutAvatar(gtx C) D {
+	in := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}
+	cc := clipCircle{}
+	return in.Layout(gtx, func(gtx C) D {
+		return cc.Layout(gtx, func(gtx C) D {
+			sz := image.Point{X: gtx.Px(unit.Dp(48)), Y: gtx.Px(unit.Dp(48))}
+			//sz := image.Point{X: gtx.Px(unit.Dp(34)), Y: gtx.Px(unit.Dp(34))}
+			gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
+			if p.avatar != nil {
+				return p.avatar.Layout(gtx)
+			}
+			// render the saved avatar image, if present
+			if b, err := catshadowClient.GetBlob("avatar://" + p.nickname); err == nil {
+				if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
+					scale := float32(sz.X) / float32(m.Bounds().Size().X)
+					p.avatar = &widget.Image{Scale: scale, Src: paint.NewImageOp(m)}
+					return p.avatar.Layout(gtx)
+				}
+			}
+			return layout.Dimensions{}
+		})
+	})
 }
 
 func newConversationPage(nickname string) *conversationPage {
