@@ -29,7 +29,7 @@ var (
 type conversationPage struct {
 	nickname       string
 	avatar         *widget.Image
-	edit           *widget.Clickable
+	edit           *Click
 	compose        *widget.Editor
 	send           *widget.Clickable
 	back           *widget.Clickable
@@ -74,8 +74,10 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 		msgId := catshadowClient.SendMessage(c.nickname, msg)
 		return MessageSent{nickname: c.nickname, msgId: msgId}
 	}
-	if c.edit.Clicked() {
-		return EditContact{nickname: c.nickname}
+	for _, e := range c.edit.Events(gtx.Queue) {
+		if e.Type == TypeClick {
+			return EditContact{nickname: c.nickname}
+		}
 	}
 	if c.back.Clicked() {
 		return BackEvent{}
@@ -277,7 +279,7 @@ func (p *conversationPage) layoutAvatar(gtx C) D {
 	in := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}
 	cc := clipCircle{}
 	return in.Layout(gtx, func(gtx C) D {
-		return cc.Layout(gtx, func(gtx C) D {
+		dims := cc.Layout(gtx, func(gtx C) D {
 			sz := image.Point{X: gtx.Px(unit.Dp(48)), Y: gtx.Px(unit.Dp(48))}
 			//sz := image.Point{X: gtx.Px(unit.Dp(34)), Y: gtx.Px(unit.Dp(34))}
 			gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
@@ -294,6 +296,10 @@ func (p *conversationPage) layoutAvatar(gtx C) D {
 			}
 			return layout.Dimensions{}
 		})
+		a := pointer.Rect(image.Rectangle{Max: dims.Size})
+		a.Add(gtx.Ops)
+		p.edit.Add(gtx.Ops)
+		return dims
 	})
 }
 
@@ -311,5 +317,6 @@ func newConversationPage(nickname string) *conversationPage {
 		msgdetails:    &widget.Clickable{},
 		cancel:        new(Click),
 		send:          &widget.Clickable{},
-		edit:          &widget.Clickable{}}
+		edit:          new(Click),
+	}
 }
