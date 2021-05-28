@@ -85,6 +85,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 							}),
 							// contact name and last message
 							layout.Flexed(1, func(gtx C) D {
+								gtx.Constraints.Max.Y = gtx.Px(unit.Dp(96))
 								return layout.Flex{Axis: layout.Vertical, Alignment: layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
 									layout.Rigid(func(gtx C) D {
 										return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Start, Spacing: layout.SpaceBetween}.Layout(gtx,
