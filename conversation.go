@@ -151,7 +151,6 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 		delete(notifications, c.nickname)
 	}
 	messages := catshadowClient.GetSortedConversation(c.nickname)
-	c.compose.Focus()
 	bgl := Background{
 		Color: th.Bg,
 		Inset: layout.Inset{Top: unit.Dp(0), Bottom: unit.Dp(0), Left: unit.Dp(0), Right: unit.Dp(0)},
