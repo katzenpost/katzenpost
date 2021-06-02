@@ -13,6 +13,11 @@
 # Builds
 deploy/
 vendor/
+catchat
+
+# Android
+catchat.apk
+sign.keystore
 
 # state files
 *.state

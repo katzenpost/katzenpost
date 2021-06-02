@@ -58,14 +58,26 @@ First, get and install the gogio tool:
 
     go get -v gioui.org/cmd/gogio@4b377aa896373062db0f9d289d0111a29e8fa4b0
 
-And then build the apk:
+Generate an Android signing key so you can update your app later:
 
-    gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
+    keytool -genkey -keystore sign.keystore -storepass android -alias android -keyalg RSA -keysize 2048 -validity 10000 -noprompt -dname CN=android
+
+And then build the Android APK:
+
+    gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 -signkey sign.keystore -signpass android  .
 
 To use the Docker environment you can do:
 
     docker build --no-cache -t katzenpost/android_build -f Dockerfile.android .
     docker run -v "$(pwd)":/go/build/ katzenpost/android_build gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
+
+To install on an Android device using `adb` run the following
+
+    adb install catchat.apk 
+
+Between versions you might need to install uninstall a previous build
+
+    adb uninstall org.mixnetworks.catchat
 
 ## Run it
 
