@@ -57,8 +57,8 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 					gtx,
 					layout.Rigid(layoutLogo),
 					layout.Flexed(1, fill{th.Bg}.Layout),
-					layout.Rigid(material.IconButton(th, p.showSettings, settingsIcon).Layout),
-					layout.Rigid(material.IconButton(th, p.addContact, addContactIcon).Layout),
+					layout.Rigid(button(th, p.showSettings, settingsIcon).Layout),
+					layout.Rigid(button(th, p.addContact, addContactIcon).Layout),
 				)
 			}),
 

@@ -77,12 +77,14 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 					}),
 					layout.Flexed(1, func(gtx C) D {
 						return layout.Center.Layout(gtx, p.layoutAvatar)
-					}))
+					}),
+				)
 			}),
 			// secret entry and QR image
 			layout.Flexed(1, func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Flexed(1, func(gtx C) D {
+						// vertical secret and copy/paste controls beneath
 						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 							// secret string
 							layout.Flexed(1, func(gtx C) D {
@@ -94,19 +96,21 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 							// copy/paste
 							layout.Rigid(func(gtx C) D {
 								return layout.Center.Layout(gtx, func(gtx C) D {
-									return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
-										layout.Rigid(material.IconButton(th, p.copy, copyIcon).Layout),
-										layout.Rigid(material.IconButton(th, p.paste, pasteIcon).Layout),
-										layout.Rigid(material.IconButton(th, p.submit, submitIcon).Layout),
-										layout.Rigid(material.IconButton(th, p.cancel, cancelIcon).Layout),
+									return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.End}.Layout(gtx,
+										layout.Flexed(1, button(th, p.copy, copyIcon).Layout),
+										layout.Flexed(1, button(th, p.paste, pasteIcon).Layout),
+										layout.Flexed(1, button(th, p.submit, submitIcon).Layout),
+										layout.Flexed(1, button(th, p.cancel, cancelIcon).Layout),
 									)
 								})
 							}),
 						)
 					}),
+					// the image widget of qrcode
 					layout.Flexed(1, func(gtx C) D {
 						return layout.Center.Layout(gtx, p.layoutQr)
-					}))
+					}),
+				)
 			}),
 		)
 	})
@@ -228,8 +232,8 @@ func (p *AddContactPage) fractal(sz image.Point) *fractals.Fractal {
 		Center:       fractals.ComplexPair{p.x, p.y},
 		MagFactor:    1.0,
 		MaxIter:      90,
-		W:            3.0,
-		H:            2.0,
+		W:            1.0,
+		H:            1.0,
 		ImgWidth:     sz.X,
 		JuliaSeed:    fractals.ComplexPair{p.xx, p.yy},
 		InnerColor:   "#000000",
@@ -238,21 +242,25 @@ func (p *AddContactPage) fractal(sz image.Point) *fractals.Fractal {
 }
 
 func (p *AddContactPage) layoutQr(gtx C) D {
-	in := layout.Inset{Left: unit.Dp(0), Right: unit.Dp(0)}
+	in := layout.Inset{}
 	dims := in.Layout(gtx, func(gtx C) D {
-		y := gtx.Constraints.Max.Y / 2
-		sz := image.Point{X: y, Y: y}
+		x := gtx.Constraints.Max.X
+		y := gtx.Constraints.Max.Y
+		if x > y {
+			x = y
+		}
 
+		sz := image.Point{X: x, Y: x}
 		gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-		qr, err := qrcode.New(p.secret.Text(), qrcode.Medium)
+		qr, err := qrcode.New(p.secret.Text(), qrcode.High)
 		if err != nil {
 			return layout.Center.Layout(gtx, material.Caption(th, "QR").Layout)
 		}
-		i := qr.Image(-10)
+		qr.BackgroundColor = th.Bg
+		qr.ForegroundColor = th.Fg
 
-		size := i.Bounds().Size()
-		scale := float32(gtx.Constraints.Max.X) / float32(size.X)
-		return widget.Image{Scale: float32(scale), Src: paint.NewImageOp(i)}.Layout(gtx)
+		i := qr.Image(x)
+		return widget.Image{Fit: widget.ScaleDown, Src: paint.NewImageOp(i)}.Layout(gtx)
 
 	})
 	a := pointer.Rect(image.Rectangle{Max: dims.Size})
@@ -262,21 +270,24 @@ func (p *AddContactPage) layoutQr(gtx C) D {
 
 }
 func (p *AddContactPage) layoutAvatar(gtx C) D {
-	scale := 1.0
-	in := layout.Inset{Left: unit.Dp(0), Right: unit.Dp(0)}
+	in := layout.Inset{}
 	cc := clipCircle{}
 
 	return in.Layout(gtx, func(gtx C) D {
 		dims := cc.Layout(gtx, func(gtx C) D {
-			y := gtx.Constraints.Max.Y / 2
-			sz := image.Point{X: y, Y: y}
+			x := gtx.Constraints.Max.X
+			y := gtx.Constraints.Max.Y
+			if x > y {
+				x = y
+			}
+			sz := image.Point{X: x, Y: x}
 
 			gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
 			f := p.fractal(sz)
 
 			i := image.NewRGBA(image.Rectangle{Max: sz})
 			f.Render(i, p.palette)
-			return widget.Image{Scale: float32(scale), Src: paint.NewImageOp(i)}.Layout(gtx)
+			return widget.Image{Scale: float32(1), Src: paint.NewImageOp(i)}.Layout(gtx)
 
 		})
 		a := pointer.Rect(image.Rectangle{Max: dims.Size})
@@ -319,4 +330,15 @@ func getSortedContacts() (contacts sortedContacts) {
 	}
 	sort.Sort(contacts)
 	return
+}
+
+func button(th *material.Theme, button *widget.Clickable, icon *widget.Icon) material.IconButtonStyle {
+	return material.IconButtonStyle{
+		Background: th.Palette.Bg,
+		Color:      th.Palette.ContrastFg,
+		Icon:       icon,
+		Size:       unit.Dp(20),
+		Inset:      layout.UniformInset(unit.Dp(8)),
+		Button:     button,
+	}
 }

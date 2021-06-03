@@ -160,7 +160,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx C) D {
 			return bgl.Layout(gtx, func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
-					layout.Rigid(material.IconButton(th, c.back, backIcon).Layout),
+					layout.Rigid(button(th, c.back, backIcon).Layout),
 					layout.Rigid(c.layoutAvatar),
 					layout.Rigid(material.Caption(th, c.nickname).Layout),
 					layout.Flexed(1, fill{th.Bg}.Layout),
