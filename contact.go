@@ -64,7 +64,7 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical, Alignment: layout.End}.Layout(gtx,
 			layout.Rigid(func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
-					layout.Rigid(material.Button(th, p.back, "<").Layout),
+					layout.Rigid(button(th, p.back, backIcon).Layout),
 					layout.Flexed(1, fill{th.Bg}.Layout),
 					layout.Rigid(material.H6(th, "Add Contact").Layout),
 					layout.Flexed(1, fill{th.Bg}.Layout))
