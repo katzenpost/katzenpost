@@ -2,14 +2,17 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
 	"gioui.org/widget"
 	"github.com/benc-uk/gofract/pkg/colors"
 	"github.com/benc-uk/gofract/pkg/fractals"
+	"github.com/katzenpost/core/crypto/rand"
+	qrcode "github.com/skip2/go-qrcode"
 	"image"
 	"image/png"
-	"math/rand"
+	mrand "math/rand"
 	//"gioui.org/io/clipboard"
 	"gioui.org/io/pointer"
 	"gioui.org/unit"
@@ -31,8 +34,10 @@ type AddContactPage struct {
 	palette   colors.GradientTable
 	back      *widget.Clickable
 	newAvatar *Click
+	newQr     *Click
 	secret    *widget.Editor
 	submit    *widget.Clickable
+	qr        *widget.Image
 	x, y      float64
 	xx, yy    float64
 }
@@ -63,7 +68,13 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 					}))
 			}),
 			layout.Flexed(1, func(gtx C) D {
-				return layout.Center.Layout(gtx, material.Editor(th, p.secret, "Secret").Layout)
+				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
+					layout.Flexed(1, func(gtx C) D {
+						return layout.Center.Layout(gtx, material.Editor(th, p.secret, "Secret").Layout)
+					}),
+					layout.Flexed(1, func(gtx C) D {
+						return layout.Center.Layout(gtx, p.layoutQr)
+					}))
 			}),
 			layout.Rigid(func(gtx C) D {
 				return material.Button(th, p.submit, "MEOW").Layout(gtx)
@@ -83,13 +94,23 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 			p.secret.Focus()
 		}
 	}
+
+	for _, e := range p.newQr.Events(gtx.Queue) {
+		if e.Type == TypeClick {
+			p.qr = nil
+			b := make([]byte, 32)
+			rand.Reader.Read(b)
+			p.secret.SetText(base64.StdEncoding.EncodeToString(b))
+		}
+	}
+
 	for _, e := range p.newAvatar.Events(gtx.Queue) {
 		if e.Type == TypeClick {
 			p.avatar = nil
-			p.xx = rand.Float64()
-			p.x = rand.Float64()
-			p.y = rand.Float64()
-			p.yy = rand.Float64()
+			p.xx = mrand.Float64()
+			p.x = mrand.Float64()
+			p.y = mrand.Float64()
+			p.yy = mrand.Float64()
 		}
 	}
 
@@ -129,11 +150,12 @@ func newAddContactPage() *AddContactPage {
 	p.nickname.Focus()
 	p.back = &widget.Clickable{}
 
-	p.xx = rand.Float64()
-	p.yy = rand.Float64()
+	p.xx = mrand.Float64()
+	p.yy = mrand.Float64()
 	p.palette = colors.GradientTable{}
 	p.palette.Randomise()
 	p.newAvatar = new(Click)
+	p.newQr = new(Click)
 	p.secret = &widget.Editor{SingleLine: true, Submit: true}
 	if runtime.GOOS == "android" {
 		p.secret.Submit = false
@@ -156,6 +178,30 @@ func (p *AddContactPage) fractal(sz image.Point) *fractals.Fractal {
 		ColorRepeats: 2.0}
 }
 
+func (p *AddContactPage) layoutQr(gtx C) D {
+	in := layout.Inset{Left: unit.Dp(0), Right: unit.Dp(0)}
+	dims := in.Layout(gtx, func(gtx C) D {
+		y := gtx.Constraints.Max.Y / 2
+		sz := image.Point{X: y, Y: y}
+
+		gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
+		qr, err := qrcode.New(p.secret.Text(), qrcode.Medium)
+		if err != nil {
+			return layout.Dimensions{}
+		}
+		i := qr.Image(-10)
+
+		size := i.Bounds().Size()
+		scale := float32(gtx.Constraints.Max.X) / float32(size.X)
+		return widget.Image{Scale: float32(scale), Src: paint.NewImageOp(i)}.Layout(gtx)
+
+	})
+	a := pointer.Rect(image.Rectangle{Max: dims.Size})
+	a.Add(gtx.Ops)
+	p.newQr.Add(gtx.Ops)
+	return dims
+
+}
 func (p *AddContactPage) layoutAvatar(gtx C) D {
 	scale := 1.0
 	in := layout.Inset{Left: unit.Dp(0), Right: unit.Dp(0)}
