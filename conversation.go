@@ -24,6 +24,7 @@ var (
 	messageList  = &layout.List{Axis: layout.Vertical, ScrollToEnd: true}
 	messageField = &widget.Editor{SingleLine: true}
 	backIcon, _  = widget.NewIcon(icons.NavigationChevronLeft)
+	sendIcon, _  = widget.NewIcon(icons.NavigationChevronRight)
 )
 
 type conversationPage struct {
@@ -267,7 +268,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 					layout.Flexed(1, fill{th.Bg}.Layout),
 					layout.Flexed(5, func(gtx C) D { return bgSender.Layout(gtx, material.Editor(th, c.compose, "").Layout) }),
 					layout.Rigid(func(gtx C) D {
-						return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, material.Button(th, c.send, ">").Layout)
+						return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, button(th, c.send, sendIcon).Layout)
 					}),
 				)
 			})
@@ -308,7 +309,7 @@ func newConversationPage(nickname string) *conversationPage {
 		ed.Submit = false
 	}
 
-	return &conversationPage{nickname: nickname,
+	p := &conversationPage{nickname: nickname,
 		compose:       ed,
 		messageClicks: make(map[*catshadow.Message]*Click),
 		back:          &widget.Clickable{},
@@ -318,4 +319,6 @@ func newConversationPage(nickname string) *conversationPage {
 		send:          &widget.Clickable{},
 		edit:          new(Click),
 	}
+	p.compose.Focus()
+	return p
 }
