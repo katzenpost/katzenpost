@@ -3,21 +3,22 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"gioui.org/io/clipboard"
+	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
+	"gioui.org/unit"
 	"gioui.org/widget"
+	"gioui.org/widget/material"
 	"github.com/benc-uk/gofract/pkg/colors"
 	"github.com/benc-uk/gofract/pkg/fractals"
+	"github.com/katzenpost/catshadow"
 	"github.com/katzenpost/core/crypto/rand"
 	qrcode "github.com/skip2/go-qrcode"
+	"golang.org/x/exp/shiny/materialdesign/icons"
 	"image"
 	"image/png"
 	mrand "math/rand"
-	//"gioui.org/io/clipboard"
-	"gioui.org/io/pointer"
-	"gioui.org/unit"
-	"gioui.org/widget/material"
-	"github.com/katzenpost/catshadow"
 	"runtime"
 	"sort"
 )
@@ -27,16 +28,26 @@ type AddContactComplete struct {
 	nickname string
 }
 
+var (
+	copyIcon, _   = widget.NewIcon(icons.ContentContentCopy)
+	pasteIcon, _  = widget.NewIcon(icons.ContentContentPaste)
+	submitIcon, _ = widget.NewIcon(icons.NavigationCheck)
+	cancelIcon, _ = widget.NewIcon(icons.NavigationCancel)
+)
+
 // AddContactPage is the page for adding a new contact
 type AddContactPage struct {
 	nickname  *widget.Editor
 	avatar    *widget.Image
 	palette   colors.GradientTable
+	copy      *widget.Clickable
+	paste     *widget.Clickable
 	back      *widget.Clickable
 	newAvatar *Click
 	newQr     *Click
 	secret    *widget.Editor
 	submit    *widget.Clickable
+	cancel    *widget.Clickable
 	qr        *widget.Image
 	x, y      float64
 	xx, yy    float64
@@ -58,6 +69,7 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(material.H6(th, "Add Contact").Layout),
 					layout.Flexed(1, fill{th.Bg}.Layout))
 			}),
+			// Nickname and Avatar image
 			layout.Flexed(1, func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Flexed(1, func(gtx C) D {
@@ -67,17 +79,34 @@ func (p *AddContactPage) Layout(gtx layout.Context) layout.Dimensions {
 						return layout.Center.Layout(gtx, p.layoutAvatar)
 					}))
 			}),
+			// secret entry and QR image
 			layout.Flexed(1, func(gtx C) D {
 				return layout.Flex{Axis: layout.Horizontal}.Layout(gtx,
 					layout.Flexed(1, func(gtx C) D {
-						return layout.Center.Layout(gtx, material.Editor(th, p.secret, "Secret").Layout)
+						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+							// secret string
+							layout.Flexed(1, func(gtx C) D {
+								in := layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8), Top: unit.Dp(8), Bottom: unit.Dp(8)}
+								return in.Layout(gtx, func(gtx C) D {
+									return layout.Center.Layout(gtx, material.Editor(th, p.secret, "Secret").Layout)
+								})
+							}),
+							// copy/paste
+							layout.Rigid(func(gtx C) D {
+								return layout.Center.Layout(gtx, func(gtx C) D {
+									return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
+										layout.Rigid(material.IconButton(th, p.copy, copyIcon).Layout),
+										layout.Rigid(material.IconButton(th, p.paste, pasteIcon).Layout),
+										layout.Rigid(material.IconButton(th, p.submit, submitIcon).Layout),
+										layout.Rigid(material.IconButton(th, p.cancel, cancelIcon).Layout),
+									)
+								})
+							}),
+						)
 					}),
 					layout.Flexed(1, func(gtx C) D {
 						return layout.Center.Layout(gtx, p.layoutQr)
 					}))
-			}),
-			layout.Rigid(func(gtx C) D {
-				return material.Button(th, p.submit, "MEOW").Layout(gtx)
 			}),
 		)
 	})
@@ -104,9 +133,24 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 		}
 	}
 
+	if p.copy.Clicked() {
+		clipboard.WriteOp{Text: p.secret.Text()}.Add(gtx.Ops)
+		return nil
+	}
+
+	if p.paste.Clicked() {
+		clipboard.ReadOp{Tag: p}.Add(gtx.Ops)
+	}
+
+	for _, e := range gtx.Events(p) {
+		ce := e.(clipboard.Event)
+		p.secret.SetText(ce.Text)
+	}
+
 	for _, e := range p.newAvatar.Events(gtx.Queue) {
 		if e.Type == TypeClick {
 			p.avatar = nil
+			p.palette.Randomise()
 			p.xx = mrand.Float64()
 			p.x = mrand.Float64()
 			p.y = mrand.Float64()
@@ -120,12 +164,21 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 			p.submit.Click()
 		}
 	}
+	if p.cancel.Clicked() {
+		return BackEvent{}
+	}
 	if p.submit.Clicked() {
 		if len(p.secret.Text()) < minPasswordLen {
 			p.secret.SetText("")
 			p.secret.Focus()
 			return nil
 		}
+
+		if len(p.nickname.Text()) == 0 {
+			p.nickname.Focus()
+			return nil
+		}
+
 		catshadowClient.NewContact(p.nickname.Text(), []byte(p.secret.Text()))
 		b := &bytes.Buffer{}
 		sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
@@ -147,20 +200,26 @@ func (p *AddContactPage) Start(stop <-chan struct{}) {
 func newAddContactPage() *AddContactPage {
 	p := &AddContactPage{}
 	p.nickname = &widget.Editor{SingleLine: true, Submit: true}
-	p.nickname.Focus()
-	p.back = &widget.Clickable{}
+	p.secret = &widget.Editor{SingleLine: false, Submit: true}
+	if runtime.GOOS == "android" {
+		p.secret.Submit = false
+	}
 
+	// avatar parameters
 	p.xx = mrand.Float64()
 	p.yy = mrand.Float64()
 	p.palette = colors.GradientTable{}
 	p.palette.Randomise()
+
 	p.newAvatar = new(Click)
 	p.newQr = new(Click)
-	p.secret = &widget.Editor{SingleLine: true, Submit: true}
-	if runtime.GOOS == "android" {
-		p.secret.Submit = false
-	}
+	p.back = &widget.Clickable{}
+	p.copy = &widget.Clickable{}
+	p.paste = &widget.Clickable{}
 	p.submit = &widget.Clickable{}
+	p.cancel = &widget.Clickable{}
+
+	p.nickname.Focus()
 	return p
 }
 
@@ -187,7 +246,7 @@ func (p *AddContactPage) layoutQr(gtx C) D {
 		gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
 		qr, err := qrcode.New(p.secret.Text(), qrcode.Medium)
 		if err != nil {
-			return layout.Dimensions{}
+			return layout.Center.Layout(gtx, material.Caption(th, "QR").Layout)
 		}
 		i := qr.Image(-10)
 
@@ -213,16 +272,11 @@ func (p *AddContactPage) layoutAvatar(gtx C) D {
 			sz := image.Point{X: y, Y: y}
 
 			gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
-			if p.avatar != nil {
-				return p.avatar.Layout(gtx)
-			}
 			f := p.fractal(sz)
 
 			i := image.NewRGBA(image.Rectangle{Max: sz})
-			p.palette.Randomise()
 			f.Render(i, p.palette)
-			p.avatar = &widget.Image{Scale: float32(scale), Src: paint.NewImageOp(i)}
-			return p.avatar.Layout(gtx)
+			return widget.Image{Scale: float32(scale), Src: paint.NewImageOp(i)}.Layout(gtx)
 
 		})
 		a := pointer.Rect(image.Rectangle{Max: dims.Size})
