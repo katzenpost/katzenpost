@@ -8,6 +8,7 @@ import (
 
 // EditContactPage is the page for adding a new contact
 type EditContactPage struct {
+	a        *App
 	nickname string
 	back     *widget.Clickable
 	avatar   *widget.Clickable
@@ -75,7 +76,7 @@ func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 	}
 	if p.clear.Clicked() {
 		// TODO: confirmation dialog
-		catshadowClient.WipeConversation(p.nickname)
+		p.a.c.WipeConversation(p.nickname)
 		return EditContactComplete{nickname: p.nickname}
 	}
 	if p.expiry.Clicked() {
@@ -86,7 +87,7 @@ func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 	}
 	if p.remove.Clicked() {
 		// TODO: confirmation dialog
-		catshadowClient.RemoveContact(p.nickname)
+		p.a.c.RemoveContact(p.nickname)
 		return EditContactComplete{nickname: p.nickname}
 	}
 	return nil
@@ -95,14 +96,11 @@ func (p *EditContactPage) Event(gtx layout.Context) interface{} {
 func (p *EditContactPage) Start(stop <-chan struct{}) {
 }
 
-func newEditContactPage(contact string) *EditContactPage {
-	p := &EditContactPage{}
-	p.nickname = contact
-	p.back = &widget.Clickable{}
-	p.avatar = &widget.Clickable{}
-	p.clear = &widget.Clickable{}
-	p.expiry = &widget.Clickable{}
-	p.rename = &widget.Clickable{}
-	p.remove = &widget.Clickable{}
+func newEditContactPage(a *App, contact string) *EditContactPage {
+	p := &EditContactPage{a: a, nickname: contact, back: &widget.Clickable{},
+		avatar: &widget.Clickable{}, clear: &widget.Clickable{},
+		expiry: &widget.Clickable{}, rename: &widget.Clickable{},
+		remove: &widget.Clickable{},
+	}
 	return p
 }

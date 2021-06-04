@@ -32,8 +32,7 @@ var (
 	clientConfigFile = flag.String("f", "", "Path to the client config file.")
 	stateFile        = flag.String("s", "catshadow_statefile", "Path to the client state file.")
 
-	catshadowCfg    *catconfig.Config
-	catshadowClient *catshadow.Client
+	catshadowCfg *catconfig.Config
 
 	minPasswordLen = 5 // XXX pick something reasonable
 
@@ -56,6 +55,7 @@ type App struct {
 	w     *app.Window
 	ops   *op.Ops
 	no    *notify.Manager
+	c     *catshadow.Client
 	stack pageStack
 	focus bool
 }
@@ -85,33 +85,35 @@ func (a *App) update(gtx layout.Context) {
 		case BackEvent:
 			a.stack.Pop()
 		case signInStarted:
-			a.stack.Clear(newConnectingPage(e.result))
+			p := newConnectingPage(e.result)
+			a.stack.Clear(p)
 		case connectError:
 			a.stack.Clear(newSignInPage(a))
 		case connectSuccess:
-			a.stack.Clear(newHomePage())
+			a.c = e.client
+			a.stack.Clear(newHomePage(a))
 		case ShowSettingsClick:
 			a.stack.Push(newSettingsPage())
 		case AddContactClick:
-			a.stack.Push(newAddContactPage())
+			a.stack.Push(newAddContactPage(a))
 		case AddContactComplete:
 			a.stack.Pop()
 		case ChooseContactClick:
-			a.stack.Push(newConversationPage(e.nickname))
+			a.stack.Push(newConversationPage(a, e.nickname))
 		case ChooseAvatar:
-			a.stack.Push(newAvatarPicker(e.nickname))
+			a.stack.Push(newAvatarPicker(a, e.nickname))
 		case RenameContact:
-			a.stack.Push(newRenameContactPage(e.nickname))
+			a.stack.Push(newRenameContactPage(a, e.nickname))
 		case EditContact:
-			a.stack.Push(newEditContactPage(e.nickname))
+			a.stack.Push(newEditContactPage(a, e.nickname))
 		case EditContactComplete:
-			a.stack.Clear(newHomePage())
+			a.stack.Clear(newHomePage(a))
 		case AvatarCleared:
-			a.stack.Clear(newHomePage())
+			a.stack.Clear(newHomePage(a))
 		case AvatarSelected:
 			go func() {
-				setAvatar(e.nickname, e.path)
-				a.stack.Clear(newHomePage())
+				a.setAvatar(e.nickname, e.path)
+				a.stack.Clear(newHomePage(a))
 			}()
 		case MessageSent:
 		}
@@ -119,9 +121,9 @@ func (a *App) update(gtx layout.Context) {
 }
 
 func (a *App) run() error {
-
+	// only read window events until client is established
 	for {
-		if catshadowClient != nil {
+		if a.c != nil {
 			break
 		}
 		e := <-a.w.Events()
@@ -130,19 +132,20 @@ func (a *App) run() error {
 		}
 	}
 	defer func() {
-		if catshadowClient != nil {
-			catshadowClient.Shutdown()
-			catshadowClient.Wait()
+		if a.c != nil {
+			a.c.Shutdown()
+			a.c.Wait()
 		}
 	}()
 
+	// select from all event sources
 	for {
 		select {
-		case e := <-catshadowClient.EventSink:
+		case e := <-a.c.EventSink:
 			if err := a.handleCatshadowEvent(e); err != nil {
 				return err
 			}
-		case <-catshadowClient.HaltCh():
+		case <-a.c.HaltCh():
 			return errors.New("client halted unexpectedly")
 		case e := <-a.w.Events():
 			if err := a.handleGioEvents(e); err != nil {

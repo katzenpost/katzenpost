@@ -24,6 +24,7 @@ var (
 )
 
 type AvatarPicker struct {
+	a        *App
 	nickname string
 	path     string
 	back     *widget.Clickable
@@ -140,7 +141,7 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 
 func (p *AvatarPicker) Event(gtx C) interface{} {
 	if p.clear.Clicked() {
-		clearAvatar(p.nickname)
+		p.a.clearAvatar(p.nickname)
 		return AvatarCleared{nickname: p.nickname}
 	}
 	if p.up.Clicked() {
@@ -176,9 +177,10 @@ func (p *AvatarPicker) Event(gtx C) interface{} {
 func (p *AvatarPicker) Start(stop <-chan struct{}) {
 }
 
-func newAvatarPicker(nickname string) *AvatarPicker {
+func newAvatarPicker(a *App, nickname string) *AvatarPicker {
 	cwd, _ := app.DataDir() // XXX: select media/storage on android
 	return &AvatarPicker{up: &widget.Clickable{},
+		a:        a,
 		nickname: nickname,
 		back:     &widget.Clickable{},
 		clear:    &widget.Clickable{},
@@ -192,11 +194,11 @@ func scale(src image.Image, rect image.Rectangle, scale draw.Scaler) image.Image
 	return dst
 }
 
-func clearAvatar(nickname string) {
-	catshadowClient.DeleteBlob("avatar://" + nickname)
+func (a *App) clearAvatar(nickname string) {
+	a.c.DeleteBlob("avatar://" + nickname)
 }
 
-func setAvatar(nickname, path string) {
+func (a *App) setAvatar(nickname, path string) {
 	if b, err := ioutil.ReadFile(path); err == nil {
 		// scale file
 		if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
@@ -204,7 +206,7 @@ func setAvatar(nickname, path string) {
 			resized := scale(m, avatarSz, draw.ApproxBiLinear)
 			b := &bytes.Buffer{}
 			if err := png.Encode(b, resized); err == nil {
-				catshadowClient.AddBlob("avatar://"+nickname, b.Bytes())
+				a.c.AddBlob("avatar://"+nickname, b.Bytes())
 			}
 		}
 	} else {

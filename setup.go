@@ -27,9 +27,6 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 	// XXX: if the catshadowClient already exists, shut it down
 	// FIXME: figure out a better way to toggle connected/disconnected
 	// states and allow to retry attempts on a timeout or other failure.
-	if catshadowClient != nil {
-		catshadowClient.Shutdown()
-	}
 	var stateWorker *catshadow.StateWriter
 	var state *catshadow.State
 	cfg, err := catshadowCfg.ClientConfig()
@@ -66,6 +63,7 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 		statefile = *stateFile
 	}
 
+	var catshadowClient *catshadow.Client
 	// automatically create a statefile if one does not already exist
 	if _, err := os.Stat(statefile); os.IsNotExist(err) {
 		cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)

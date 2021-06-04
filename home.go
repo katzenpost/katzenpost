@@ -32,6 +32,7 @@ var (
 )
 
 type HomePage struct {
+	a             *App
 	addContact    *widget.Clickable
 	showSettings  *widget.Clickable
 	av            map[string]*widget.Image
@@ -42,7 +43,7 @@ type AddContactClick struct{}
 type ShowSettingsClick struct{}
 
 func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
-	contacts := getSortedContacts()
+	contacts := getSortedContacts(p.a)
 	// xxx do not request this every frame...
 	bg := Background{
 		Color: th.Bg,
@@ -157,7 +158,7 @@ func (p *HomePage) layoutAvatar(gtx C, nickname string) D {
 			return cachedAv.Layout(gtx)
 		}
 		// render the saved avatar image, if present
-		if b, err := catshadowClient.GetBlob("avatar://" + nickname); err == nil {
+		if b, err := p.a.c.GetBlob("avatar://" + nickname); err == nil {
 			if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
 				scale := float32(sz.X) / float32(m.Bounds().Size().X)
 				av := &widget.Image{Scale: scale, Src: paint.NewImageOp(m)}
@@ -190,7 +191,7 @@ func (p *HomePage) layoutAvatar(gtx C, nickname string) D {
 		f.Render(i, palette)
 		b := &bytes.Buffer{}
 		if err := png.Encode(b, i); err == nil {
-			catshadowClient.AddBlob("avatar://"+nickname, b.Bytes())
+			p.a.c.AddBlob("avatar://"+nickname, b.Bytes())
 		}
 		scale := 1.0
 		av := &widget.Image{Scale: float32(scale), Src: paint.NewImageOp(i)}
@@ -237,8 +238,9 @@ func (p *HomePage) Event(gtx layout.Context) interface{} {
 func (p *HomePage) Start(stop <-chan struct{}) {
 }
 
-func newHomePage() *HomePage {
+func newHomePage(a *App) *HomePage {
 	return &HomePage{
+		a:             a,
 		addContact:    &widget.Clickable{},
 		showSettings:  &widget.Clickable{},
 		contactClicks: make(map[string]*Click),

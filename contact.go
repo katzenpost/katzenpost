@@ -37,6 +37,7 @@ var (
 
 // AddContactPage is the page for adding a new contact
 type AddContactPage struct {
+	a         *App
 	nickname  *widget.Editor
 	avatar    *widget.Image
 	palette   colors.GradientTable
@@ -183,7 +184,7 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 			return nil
 		}
 
-		catshadowClient.NewContact(p.nickname.Text(), []byte(p.secret.Text()))
+		p.a.c.NewContact(p.nickname.Text(), []byte(p.secret.Text()))
 		b := &bytes.Buffer{}
 		sz := image.Point{X: gtx.Px(unit.Dp(96)), Y: gtx.Px(unit.Dp(96))}
 		i := image.NewRGBA(image.Rectangle{Max: sz})
@@ -191,7 +192,7 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 		f.Render(i, p.palette)
 
 		if err := png.Encode(b, i); err == nil {
-			catshadowClient.AddBlob("avatar://"+p.nickname.Text(), b.Bytes())
+			p.a.c.AddBlob("avatar://"+p.nickname.Text(), b.Bytes())
 		}
 		return AddContactComplete{nickname: p.nickname.Text()}
 	}
@@ -201,8 +202,9 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 func (p *AddContactPage) Start(stop <-chan struct{}) {
 }
 
-func newAddContactPage() *AddContactPage {
+func newAddContactPage(a *App) *AddContactPage {
 	p := &AddContactPage{}
+	p.a = a
 	p.nickname = &widget.Editor{SingleLine: true, Submit: true}
 	p.secret = &widget.Editor{SingleLine: false, Submit: true}
 	if runtime.GOOS == "android" {
@@ -319,13 +321,13 @@ func (s sortedContacts) Len() int {
 	return len(s)
 }
 
-func getSortedContacts() (contacts sortedContacts) {
-	if catshadowClient == nil {
+func getSortedContacts(a *App) (contacts sortedContacts) {
+	if a.c == nil {
 		return
 	}
 
 	// returns map[string]*Contact
-	for _, contact := range catshadowClient.GetContacts() {
+	for _, contact := range a.c.GetContacts() {
 		contacts = append(contacts, contact)
 	}
 	sort.Sort(contacts)

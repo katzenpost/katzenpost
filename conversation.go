@@ -28,6 +28,7 @@ var (
 )
 
 type conversationPage struct {
+	a              *App
 	nickname       string
 	avatar         *widget.Image
 	edit           *Click
@@ -72,7 +73,7 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 		if len(msg)+4 > catshadow.DoubleRatchetPayloadLength {
 			msg = msg[:catshadow.DoubleRatchetPayloadLength-4]
 		}
-		msgId := catshadowClient.SendMessage(c.nickname, msg)
+		msgId := c.a.c.SendMessage(c.nickname, msg)
 		return MessageSent{nickname: c.nickname, msgId: msgId}
 	}
 	for _, e := range c.edit.Events(gtx.Queue) {
@@ -146,12 +147,12 @@ func layoutMessage(gtx C, msg *catshadow.Message, isSelected bool) D {
 }
 
 func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
-	contact := catshadowClient.GetContacts()[c.nickname]
+	contact := c.a.c.GetContacts()[c.nickname]
 	if n, ok := notifications[c.nickname]; ok {
 		n.Cancel()
 		delete(notifications, c.nickname)
 	}
-	messages := catshadowClient.GetSortedConversation(c.nickname)
+	messages := c.a.c.GetSortedConversation(c.nickname)
 	bgl := Background{
 		Color: th.Bg,
 		Inset: layout.Inset{Top: unit.Dp(0), Bottom: unit.Dp(0), Left: unit.Dp(0), Right: unit.Dp(0)},
@@ -287,7 +288,7 @@ func (p *conversationPage) layoutAvatar(gtx C) D {
 				return p.avatar.Layout(gtx)
 			}
 			// render the saved avatar image, if present
-			if b, err := catshadowClient.GetBlob("avatar://" + p.nickname); err == nil {
+			if b, err := p.a.c.GetBlob("avatar://" + p.nickname); err == nil {
 				if m, _, err := image.Decode(bytes.NewReader(b)); err == nil {
 					scale := float32(sz.X) / float32(m.Bounds().Size().X)
 					p.avatar = &widget.Image{Scale: scale, Src: paint.NewImageOp(m)}
@@ -303,13 +304,13 @@ func (p *conversationPage) layoutAvatar(gtx C) D {
 	})
 }
 
-func newConversationPage(nickname string) *conversationPage {
+func newConversationPage(a *App, nickname string) *conversationPage {
 	ed := &widget.Editor{SingleLine: false, Submit: true}
 	if runtime.GOOS == "android" {
 		ed.Submit = false
 	}
 
-	p := &conversationPage{nickname: nickname,
+	p := &conversationPage{a: a, nickname: nickname,
 		compose:       ed,
 		messageClicks: make(map[*catshadow.Message]*Click),
 		back:          &widget.Clickable{},

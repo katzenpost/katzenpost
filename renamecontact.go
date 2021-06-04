@@ -8,6 +8,7 @@ import (
 
 // RenameContactPage is the page for renaming a contact
 type RenameContactPage struct {
+	a           *App
 	nickname    string
 	newnickname *widget.Editor
 	back        *widget.Clickable
@@ -50,7 +51,7 @@ func (p *RenameContactPage) Event(gtx layout.Context) interface{} {
 		}
 	}
 	if p.submit.Clicked() {
-		err := catshadowClient.RenameContact(p.nickname, p.newnickname.Text())
+		err := p.a.c.RenameContact(p.nickname, p.newnickname.Text())
 		if err == nil {
 			return EditContactComplete{}
 		}
@@ -62,8 +63,8 @@ func (p *RenameContactPage) Event(gtx layout.Context) interface{} {
 func (p *RenameContactPage) Start(stop <-chan struct{}) {
 }
 
-func newRenameContactPage(nickname string) *RenameContactPage {
-	p := &RenameContactPage{nickname: nickname}
+func newRenameContactPage(a *App, nickname string) *RenameContactPage {
+	p := &RenameContactPage{a: a, nickname: nickname}
 	p.newnickname = &widget.Editor{SingleLine: true, Submit: true}
 	p.newnickname.Focus()
 	p.back = &widget.Clickable{}
