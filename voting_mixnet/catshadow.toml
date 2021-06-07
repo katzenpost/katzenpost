@@ -5,7 +5,12 @@
 [Logging]
   Disable = false
   Level = "DEBUG"
-  File = "/tmp/my_catshadow.log"
+  File = ""
+
+[ClientLogging]
+  Disable = false
+  Level = "NOTICE"
+  File = ""
 
 [VotingAuthority]
     [[VotingAuthority.Peers]]
@@ -23,12 +28,15 @@
       LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
       IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
 
-
 [Debug]
+  DisableDecoyTraffic = true
   CaseSensitiveUserIdentifiers = false
-  PollingInterval = 1
+  PollingInterval = 50
 
 [Panda]
   Receiver = "+panda"
   Provider = "provider1"
   BlobSize = 1000
+
+[Reunion]
+   Enable = false
