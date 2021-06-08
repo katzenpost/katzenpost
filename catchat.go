@@ -196,6 +196,8 @@ func uiMain() {
 		w := app.NewWindow(
 			app.Size(unit.Dp(400), unit.Dp(400)),
 			app.Title("Catchat"),
+			app.NavigationColor(rgb(0x0)),
+			app.StatusColor(rgb(0x0)),
 		)
 		if err := newApp(w).run(); err != nil {
 			fmt.Fprintf(os.Stderr, "Failed: %v\n", err)

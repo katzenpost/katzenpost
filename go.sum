@@ -3,6 +3,8 @@ dmitri.shuralyov.com/gpu/mtl v0.0.0-20201218220906-28db891af037/go.mod h1:H6x//7
 gioui.org v0.0.0-20210116085804-99bfa6a33cdf/go.mod h1:Y+uS7hHMvku1Q+ooaoq6fYD5B2LGoT8JtFgvmYmRzTw=
 gioui.org v0.0.0-20210402191542-ce7f0da06ee3 h1:mdcDnj73Zif9+Uj9xkOtq8TTDVPWW7eWbeXNIu0Fsos=
 gioui.org v0.0.0-20210402191542-ce7f0da06ee3/go.mod h1:RSH6KIUZ0p2xy5zHDxgAM4zumjgTw83q2ge/PI+yyw8=
+gioui.org v0.0.0-20210607154342-910fa30edf05 h1:cLk/pUsqyb69fDyXKIkuQqTD6rpQpcouyfNyP23ru04=
+gioui.org v0.0.0-20210607154342-910fa30edf05/go.mod h1:RSH6KIUZ0p2xy5zHDxgAM4zumjgTw83q2ge/PI+yyw8=
 gioui.org/x v0.0.0-20210517022954-24857b8d9729 h1:qnCEJj7KbU5FzITkeNSzUqZxAd5t+R5nHUI+NHojfVI=
 gioui.org/x v0.0.0-20210517022954-24857b8d9729/go.mod h1:qsAS5EBzGhn3sJ98FJdA+ae+E5/DgmxjySERjjR1Zvg=
 gioui.org/x/notify v0.0.0-20210226015410-958111222865 h1:SglQPVlSSQhGzC2lhP5SktgdaEkdO96bPtCgIRIGqMI=

@@ -20,7 +20,7 @@ ENV TOOLS_ZIP commandlinetools-linux-6858069_latest.zip
 ENV TOOLS_SHA256SUM 87f6dcf41d4e642e37ba03cb2e387a542aa0bd73cb689a9e7152aad40a6e7a08
 ENV JAVA_HOME /usr/lib/jvm/java-11-openjdk-amd64
 ENV PATH $JAVA_HOME/bin:${PATH}
-ENV ANDROID_ABI android-29
+ENV ANDROID_ABI android-30
 
 # Android command-line tools
 RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools \
@@ -53,7 +53,7 @@ RUN yes | sdkmanager --licenses \
 
 # install gogio
 # XXX: verify that this command uses pinned version in go.mod
-RUN go get -v gioui.org/cmd/gogio@4b377aa89637
+RUN go get -v gioui.org/cmd/gogio@910fa30edf05
 
 # Set the working directory for the container
 WORKDIR /go/build
