@@ -148,6 +148,8 @@ func (s *state) fsm() <-chan time.Time {
 
 	switch s.state {
 	case stateBootstrap:
+		s.genesisEpoch = 0
+		s.priorSRV = make([][]byte, 0)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > mixPublishDeadline {
@@ -210,8 +212,6 @@ func (s *state) fsm() <-chan time.Time {
 		} else {
 			// failed to make consensus. try to join next round.
 			s.state = stateBootstrap
-			s.genesisEpoch = 0 // reset genesis
-			s.priorSRV = make([][]byte, 0)
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
 		}
