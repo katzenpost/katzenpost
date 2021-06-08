@@ -387,15 +387,13 @@ func (a *App) handleGioEvents(e interface{}) error {
 		}
 	case key.FocusEvent:
 		a.focus = e.Focus
-	case system.CommandEvent:
+	case *system.CommandEvent:
 		switch e.Type {
 		case system.CommandBack:
-			// does not appear to work on android
 			if a.stack.Len() > 1 {
 				a.stack.Pop()
+				e.Cancel = true
 				a.w.Invalidate()
-			} else {
-				// close app?
 			}
 		}
 	case system.DestroyEvent:
