@@ -601,7 +601,10 @@ func (s *state) restorePersistence() error {
 						d := new(document)
 						d.doc = doc
 						d.raw = rawDoc
+
+						s.Lock()
 						s.documents[epoch] = d
+						s.Unlock()
 					}
 				}
 
@@ -634,6 +637,7 @@ func (s *state) restorePersistence() error {
 						continue
 					}
 
+					s.Lock()
 					m, ok := s.descriptors[epoch]
 					if !ok {
 						m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
@@ -644,6 +648,7 @@ func (s *state) restorePersistence() error {
 					d.desc = desc
 					d.raw = rawDesc
 					m[desc.IdentityKey.ByteArray()] = d
+					s.Unlock()
 
 					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
 				}
