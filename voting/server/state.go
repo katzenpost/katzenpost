@@ -61,10 +61,10 @@ const (
 )
 
 var (
-	mixPublishDeadline       = epochtime.Period / 2
-	authorityVoteDeadline    = mixPublishDeadline + epochtime.Period/8
-	authorityRevealDeadline  = authorityVoteDeadline + epochtime.Period/8
-	publishConsensusDeadline = authorityRevealDeadline + epochtime.Period/8
+	MixPublishDeadline       = epochtime.Period / 4
+	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
+	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
+	PublishConsensusDeadline = AuthorityRevealDeadline + epochtime.Period/8
 	errGone                  = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet                = errors.New("authority: Document is not ready yet")
 	weekOfEpochs             = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
@@ -152,14 +152,14 @@ func (s *state) fsm() <-chan time.Time {
 		s.priorSRV = make([][]byte, 0)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
-		if elapsed > mixPublishDeadline {
+		if elapsed > MixPublishDeadline {
 			s.log.Debugf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
 		} else {
 			s.votingEpoch = epoch + 1
-			sleep = mixPublishDeadline - elapsed
+			sleep = MixPublishDeadline - elapsed
 			s.state = stateAcceptDescriptor
 		}
 		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
@@ -186,12 +186,12 @@ func (s *state) fsm() <-chan time.Time {
 			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
 			s.vote(s.votingEpoch)
 			s.state = stateAcceptVote
-			sleep = authorityVoteDeadline - elapsed
+			sleep = AuthorityVoteDeadline - elapsed
 		}
 	case stateAcceptVote:
 		s.reveal(s.votingEpoch)
 		s.state = stateAcceptReveal
-		sleep = authorityRevealDeadline - elapsed
+		sleep = AuthorityRevealDeadline - elapsed
 	case stateAcceptReveal:
 		// we have collect all of the reveal values
 		// now we compute the shared random value
@@ -201,13 +201,13 @@ func (s *state) fsm() <-chan time.Time {
 			s.tabulate(s.votingEpoch)
 		}
 		s.state = stateAcceptSignature
-		sleep = publishConsensusDeadline - elapsed
+		sleep = PublishConsensusDeadline - elapsed
 	case stateAcceptSignature:
 		s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
 		s.consense(s.votingEpoch)
 		if _, ok := s.documents[s.votingEpoch]; ok {
 			s.state = stateAcceptDescriptor
-			sleep = mixPublishDeadline + nextEpoch
+			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
 		} else {
 			// failed to make consensus. try to join next round.
@@ -1409,10 +1409,10 @@ func newState(s *Server) (*state, error) {
 	// set voting schedule at runtime
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
-	st.log.Debugf("State initialized with mixPublishDeadline: %s", mixPublishDeadline)
-	st.log.Debugf("State initialized with authorityVoteDeadline: %s", authorityVoteDeadline)
-	st.log.Debugf("State initialized with authorityRevealDeadline: %s", authorityRevealDeadline)
-	st.log.Debugf("State initialized with publishConsensusDeadline: %s", publishConsensusDeadline)
+	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
+	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
+	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
+	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
 	st.verifiers = make([]cert.Verifier, len(s.cfg.Authorities)+1)
 	for i, auth := range s.cfg.Authorities {
 		st.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
