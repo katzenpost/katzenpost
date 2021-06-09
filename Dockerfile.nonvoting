@@ -1,4 +1,4 @@
-FROM golang:alpine AS builder
+FROM golang:alpine3.12 AS builder
 
 LABEL authors="Christian Muehlhaeuser: muesli@gmail.com"
 
@@ -18,7 +18,7 @@ WORKDIR /go/authority
 COPY . .
 RUN cd cmd/nonvoting && go build -ldflags "-X github.com/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/server/internal/pki.WarpedEpoch=${warped}"
 
-FROM alpine
+FROM alpine:3.12
 
 RUN apk update && \
     apk add --no-cache ca-certificates tzdata && \
