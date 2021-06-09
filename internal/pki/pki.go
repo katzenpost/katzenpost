@@ -49,8 +49,9 @@ var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = 1 * time.Minute
 	WarpedEpoch          = "false"
-	nextFetchTill        = epochtime.Period/8
-	pkiEarlyConnectSlack = epochtime.Period / 6
+	nextFetchTill        = 3*epochtime.Period / 8
+	pkiEarlyConnectSlack = epochtime.Period / 8
+	PublishDeadline      = epochtime.Period / 4
 )
 
 type pki struct {
@@ -339,7 +340,6 @@ func (p *pki) pruneDocuments() {
 }
 
 func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
-	publishDeadline := epochtime.Period / 2
 
 	epoch, _, till := epochtime.Now()
 	doPublishEpoch := uint64(0)
@@ -350,7 +350,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		doPublishEpoch = epoch
 	case epoch:
 		// Check the deadline for the next publication time.
-		if till > publishDeadline {
+		if till > PublishDeadline {
 			p.log.Debugf("Within the publication time for epoch: %v", epoch+1)
 			doPublishEpoch = epoch + 1
 			break
