@@ -84,7 +84,7 @@ func (k *Transport) CurrentEpochs() ([]uint64, error) {
 // Query sends the command to the destination Reunion DB service
 // over a Katzenpost mix network.
 func (k *Transport) Query(command commands.Command) (commands.Command, error) {
-	reply, err := k.Session.BlockingSendUnreliableMessage(k.Recipient, k.Provider, command.ToBytes())
+	reply, err := k.Session.BlockingSendReliableMessage(k.Recipient, k.Provider, command.ToBytes())
 	if err != nil {
 		return nil, err
 	}
