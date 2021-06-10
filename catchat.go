@@ -358,8 +358,7 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 			}
 		}
 		// emit a notification in all other cases
-		n, err := a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname))
-		if err != nil {
+		if n, err := a.no.CreateNotification("Message Received", fmt.Sprintf("Message Received from %s", event.Nickname)); err == nil {
 			if o, ok := notifications[event.Nickname]; ok {
 				// cancel old notification before replacing with a new one
 				o.Cancel()
