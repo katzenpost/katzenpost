@@ -59,17 +59,29 @@ First, get and install the gogio tool:
     go get -v gioui.org/cmd/gogio@4b377aa896373062db0f9d289d0111a29e8fa4b0
 
 Generate an Android signing key so you can update your app later:
+(keytool is provided by the openjdk package: apt install openjdk-11-jdk, or use within the docker container)
 
-    keytool -genkey -keystore sign.keystore -storepass android -alias android -keyalg RSA -keysize 2048 -validity 10000 -noprompt -dname CN=android
+    keytool -genkey -keystore sign.keystore -storepass YOURPASSWORD -alias android -keyalg RSA -keysize 2048 -validity 10000 -noprompt -dname CN=android
 
 And then build the Android APK:
 
-    gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 -signkey sign.keystore -signpass android  .
+    gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 -signkey sign.keystore -signpass YOURPASSWORD .
 
-To use the Docker environment you can do:
+To create the Docker build environment:
 
     docker build --no-cache -t katzenpost/android_build -f Dockerfile.android .
-    docker run -v "$(pwd)":/go/build/ katzenpost/android_build gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 .
+
+Optional: Before using the build environment, you can `go mod vendor` to copy
+dependencies into a local path (`./vendor`).  This will allow you to use go.mod
+replace directives and copy cached go modules so that they will be available in
+the docker container. This will speed up builds and enable you to make local
+changes to test on android. Do not forget to update or remove the vendor path.
+
+To run the build, execute the following command while in this project root:
+
+    docker run -v "$(pwd)":/go/build/ katzenpost/android_build gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 -signey sign.keystore -signpass YOURPASSWORD .
+
+Note that the contents of the local directory are copied into the docker environment - so your signing keystore ought to be in this path as well.
 
 To install on an Android device using `adb` run the following
 
