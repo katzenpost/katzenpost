@@ -9,6 +9,8 @@ gioui.org/x v0.0.0-20210517022954-24857b8d9729 h1:qnCEJj7KbU5FzITkeNSzUqZxAd5t+R
 gioui.org/x v0.0.0-20210517022954-24857b8d9729/go.mod h1:qsAS5EBzGhn3sJ98FJdA+ae+E5/DgmxjySERjjR1Zvg=
 gioui.org/x/notify v0.0.0-20210226015410-958111222865 h1:SglQPVlSSQhGzC2lhP5SktgdaEkdO96bPtCgIRIGqMI=
 gioui.org/x/notify v0.0.0-20210226015410-958111222865/go.mod h1:dkKYIeTwSxJG3MbNiA8nQ9CYu5wzWDIIeZ7eGRChECo=
+gioui.org/x/notify v0.0.0-20210602142902-98819c83723b h1:vD8voZTSM5O1WEOE6eeperIEaQRQ4OqyyvCaEbC23ss=
+gioui.org/x/notify v0.0.0-20210602142902-98819c83723b/go.mod h1:dkKYIeTwSxJG3MbNiA8nQ9CYu5wzWDIIeZ7eGRChECo=
 git.schwanenlied.me/yawning/aez.git v0.0.0-20180408160647-ec7426b44926 h1:z1JlywFx2QW25Z4P9fzORXaxf35ph/ZrhZINmfnDt10=
 git.schwanenlied.me/yawning/aez.git v0.0.0-20180408160647-ec7426b44926/go.mod h1:sXNmB4ljkeRBT0xvmbMGP7ldvC2C2CIUXBlqIO8XGc4=
 git.schwanenlied.me/yawning/avl.git v0.0.0-20180224045358-04c7c776e391 h1:2gwxqmSIgUzY8o2d9ojieh+8tu4q5euHp9/VcNdRAJI=
