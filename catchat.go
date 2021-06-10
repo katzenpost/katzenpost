@@ -25,6 +25,7 @@ import (
 
 const (
 	initialPKIConsensusTimeout = 45 * time.Second
+	notificationTimeout        = 30 * time.Second
 )
 
 var (
@@ -314,14 +315,14 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		if event.IsConnected {
 			go func() {
 				if n, err := a.no.CreateNotification("Connected", "Catchat has connected"); err == nil {
-					<-time.After(30 * time.Second)
+					<-time.After(notificationTimeout)
 					n.Cancel()
 				}
 			}()
 		} else {
 			go func() {
 				if n, err := a.no.CreateNotification("Disconnected", "Catchat has disconnected"); err == nil {
-					<-time.After(30 * time.Second)
+					<-time.After(notificationTimeout)
 					n.Cancel()
 				}
 			}()
@@ -329,7 +330,7 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 		if event.Err != nil {
 			go func() {
 				if n, err := a.no.CreateNotification("Error", fmt.Sprintf("Catchat error: %s", event.Err)); err == nil {
-					<-time.After(30 * time.Second)
+					<-time.After(notificationTimeout)
 					n.Cancel()
 				}
 			}()
@@ -337,16 +338,16 @@ func (a *App) handleCatshadowEvent(e interface{}) error {
 	case *catshadow.KeyExchangeCompletedEvent:
 		if event.Err != nil {
 			if n, err := a.no.CreateNotification("Key Exchange", fmt.Sprintf("Failed: %s", event.Err)); err == nil {
-				go func() { <-time.After(30 * time.Second); n.Cancel() }()
+				go func() { <-time.After(notificationTimeout); n.Cancel() }()
 			}
 		} else {
 			if n, err := a.no.CreateNotification("Key Exchange", fmt.Sprintf("Completed: %s", event.Nickname)); err == nil {
-				go func() { <-time.After(30 * time.Second); n.Cancel() }()
+				go func() { <-time.After(notificationTimeout); n.Cancel() }()
 			}
 		}
 	case *catshadow.MessageNotSentEvent:
 		if n, err := a.no.CreateNotification("Message Not Sent", fmt.Sprintf("Failed to send message to %s", event.Nickname)); err == nil {
-			go func() { <-time.After(30 * time.Second); n.Cancel() }()
+			go func() { <-time.After(notificationTimeout); n.Cancel() }()
 		}
 	case *catshadow.MessageReceivedEvent:
 		// do not notify for the focused conversation
