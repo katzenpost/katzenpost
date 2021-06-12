@@ -67,6 +67,7 @@ var (
 	PublishConsensusDeadline = AuthorityRevealDeadline + epochtime.Period/8
 	errGone                  = errors.New("authority: Requested epoch will never get a Document")
 	errNotYet                = errors.New("authority: Document is not ready yet")
+	errInvalidTopology       = errors.New("authority: Invalid Topology")
 	weekOfEpochs             = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
 )
 
@@ -301,15 +302,20 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 
 	// Assign nodes to layers.
 	var topology [][][]byte
-	// TODO: We could re-use a prior topology for a configurable number of epochs
 
-	// We prefer to not randomize the topology if there is an existing topology to avoid
-	// partitioning the client anonymity set when messages from an earlier epoch are
-	// differentiable as such because of topology violations in the present epoch.
-	if d, ok := s.documents[s.votingEpoch-1]; ok {
-		topology = s.generateTopology(nodes, d.doc, srv)
+	// if a static topology is specified, generate a fixed topology
+	if s.s.cfg.Topology != nil {
+		topology = s.generateFixedTopology(nodes, srv)
 	} else {
-		topology = s.generateRandomTopology(nodes, srv)
+		// We prefer to not randomize the topology if there is an existing topology to avoid
+		// partitioning the client anonymity set when messages from an earlier epoch are
+		// differentiable as such because of topology violations in the present epoch.
+
+		if d, ok := s.documents[s.votingEpoch-1]; ok {
+			topology = s.generateTopology(nodes, d.doc, srv)
+		} else {
+			topology = s.generateRandomTopology(nodes, srv)
+		}
 	}
 
 	// Build the Document.
@@ -870,6 +876,12 @@ func (s *state) tabulate(epoch uint64) {
 	s.log.Debug("Mixes tallied, now making a document")
 	doc := s.getDocument(mixes, params, srv)
 
+	// verify that the topology constraints are satisfied after producing a candidate consensus
+	if err := s.verifyTopology(doc.Topology); err != nil {
+		s.log.Warningf("No consensus for epoch %v, aborting!, %v", epoch, err)
+		return
+	}
+
 	// Serialize and sign the Document.
 	signed, err := s11n.SignDocument(s.s.identityKey, doc)
 	if err != nil {
@@ -962,6 +974,32 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 		layer = layer % len(topology)
 	}
 
+	return topology
+}
+
+// generateFixedTopology returns an array of layers, which are an array of raw descriptors
+// topology is represented as an array of arrays where the contents are the raw descriptors
+// because a mix that does not submit a descriptor must not be in the consensus, the topology section must be populated at runtime and checked for sanity before a consensus is made
+func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byte {
+	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
+	// collect all of the identity keys from the current set of descriptors
+	for _, v := range nodes {
+		id := v.desc.IdentityKey.ByteArray()
+		nodeMap[id] = v
+	}
+
+	// range over the keys in the configuration file and collect the descriptors for each layer
+	topology := make([][][]byte, len(s.s.cfg.Topology.Layers))
+	for strata, layer := range s.s.cfg.Topology.Layers {
+		for _, node := range layer.Nodes {
+			id := node.IdentityKey.ByteArray()
+
+			// if the listed node is in the current descriptor set, place it in the layer
+			if n, ok := nodeMap[id]; ok {
+				topology[strata] = append(topology[strata], n.raw)
+			}
+		}
+	}
 	return topology
 }
 
@@ -1518,4 +1556,18 @@ func sortNodesByPublicKey(nodes []*descriptor) {
 func sha256b64(raw []byte) string {
 	var hash = sha3.Sum256(raw)
 	return base64.StdEncoding.EncodeToString(hash[:])
+}
+
+// validate the topology
+func (s *state) verifyTopology(topology [][][]byte) error {
+	if len(topology) < s.s.cfg.Debug.Layers {
+		return errInvalidTopology
+	}
+
+	for strata, _ := range topology {
+		if len(topology[strata]) < s.s.cfg.Debug.MinNodesPerLayer {
+			return errInvalidTopology
+		}
+	}
+	return nil
 }
