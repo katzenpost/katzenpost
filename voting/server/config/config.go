@@ -351,6 +351,15 @@ type Config struct {
 
 	Mixes     []*Node
 	Providers []*Node
+	Topology  *Topology
+}
+
+type Layer struct {
+	Nodes []Node
+}
+
+type Topology struct {
+	Layers []Layer
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
