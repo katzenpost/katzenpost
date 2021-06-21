@@ -38,6 +38,7 @@ type conversationPage struct {
 	back           *widget.Clickable
 	cancel         *gesture.Click
 	msgcopy        *widget.Clickable
+	msgpaste       *LongPress
 	msgdetails     *widget.Clickable
 	messageClicked *catshadow.Message
 	messageClicks  map[*catshadow.Message]*gesture.Click
@@ -63,6 +64,26 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 			c.send.Click()
 		}
 	}
+	for _, ev := range c.msgpaste.Events(gtx.Queue) {
+		switch ev.Type {
+		case LongPressed:
+			clipboard.ReadOp{Tag: c}.Add(gtx.Ops)
+		default:
+			// return focus to the editor
+			c.compose.Focus()
+		}
+	}
+	for _, e := range gtx.Events(c) {
+		ce := e.(clipboard.Event)
+		if c.compose.SelectionLen() > 0 {
+			c.compose.Delete(1) // deletes the selection as a single rune
+		}
+		start, _ := c.compose.Selection()
+		txt := c.compose.Text()
+		c.compose.SetText(txt[:start] + ce.Text + txt[start:])
+		c.compose.Focus()
+	}
+
 	if c.send.Clicked() {
 		msg := []byte(c.compose.Text())
 		c.compose.SetText("")
@@ -266,9 +287,16 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 			}
 
 			return bgl.Layout(gtx, func(gtx C) D {
-				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Baseline}.Layout(gtx,
+				return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
 					layout.Flexed(1, fill{th.Bg}.Layout),
-					layout.Flexed(5, func(gtx C) D { return bgSender.Layout(gtx, material.Editor(th, c.compose, "").Layout) }),
+					layout.Flexed(5, func(gtx C) D {
+						dims := bgSender.Layout(gtx, material.Editor(th, c.compose, "").Layout)
+						pointer.PassOp{Pass: true}.Add(gtx.Ops)
+						a := pointer.Rect(image.Rectangle{Max: dims.Size})
+						a.Add(gtx.Ops)
+						c.msgpaste.Add(gtx.Ops)
+						return dims
+					}),
 					layout.Rigid(func(gtx C) D {
 						return layout.Inset{Left: unit.Dp(8), Right: unit.Dp(8)}.Layout(gtx, button(th, c.send, sendIcon).Layout)
 					}),
@@ -277,6 +305,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 		}),
 	)
 }
+
 func (p *conversationPage) layoutAvatar(gtx C) D {
 	in := layout.Inset{Left: unit.Dp(12), Right: unit.Dp(12)}
 	cc := clipCircle{}
@@ -316,6 +345,7 @@ func newConversationPage(a *App, nickname string) *conversationPage {
 		messageClicks: make(map[*catshadow.Message]*gesture.Click),
 		back:          &widget.Clickable{},
 		msgcopy:       &widget.Clickable{},
+		msgpaste:      NewLongPress(a.w.Invalidate, 800*time.Millisecond),
 		msgdetails:    &widget.Clickable{},
 		cancel:        new(gesture.Click),
 		send:          &widget.Clickable{},
