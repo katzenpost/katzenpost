@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"gioui.org/app"
+	"gioui.org/gesture"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
@@ -30,7 +31,7 @@ type AvatarPicker struct {
 	back     *widget.Clickable
 	clear    *widget.Clickable
 	up       *widget.Clickable
-	clicks   map[string]*Click
+	clicks   map[string]*gesture.Click
 }
 
 // AvatarSelected is the event that indicates a chosen avatar image
@@ -96,7 +97,7 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 					if fn.IsDir() {
 						// is a directory, attach clickable that will update the path if clicked...
 						if _, ok := p.clicks[fn.Name()]; !ok {
-							c := new(Click)
+							c := new(gesture.Click)
 							p.clicks[fn.Name()] = c
 						}
 						in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(8), Left: unit.Dp(12), Right: unit.Dp(12)}
@@ -122,7 +123,7 @@ func (p *AvatarPicker) Layout(gtx layout.Context) layout.Dimensions {
 									a := pointer.Rect(image.Rectangle{Max: dims.Size})
 									a.Add(gtx.Ops)
 									if _, ok := p.clicks[fn.Name()]; !ok {
-										c := new(Click)
+										c := new(gesture.Click)
 										p.clicks[fn.Name()] = c
 									}
 									p.clicks[fn.Name()].Add(gtx.Ops)
@@ -156,7 +157,7 @@ func (p *AvatarPicker) Event(gtx C) interface{} {
 
 	for filename, click := range p.clicks {
 		for _, e := range click.Events(gtx.Queue) {
-			if e.Type == TypeClick {
+			if e.Type == gesture.TypeClick {
 				// if it is a directory path - change the path
 				// if it is a file path, return the file selection event
 				if u, err := filepath.Abs(filepath.Join(p.path, filename)); err == nil {
@@ -184,7 +185,7 @@ func newAvatarPicker(a *App, nickname string) *AvatarPicker {
 		nickname: nickname,
 		back:     &widget.Clickable{},
 		clear:    &widget.Clickable{},
-		clicks:   make(map[string]*Click),
+		clicks:   make(map[string]*gesture.Click),
 		path:     cwd}
 }
 

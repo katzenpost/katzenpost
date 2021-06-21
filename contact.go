@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"gioui.org/gesture"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
@@ -44,8 +45,8 @@ type AddContactPage struct {
 	copy      *widget.Clickable
 	paste     *widget.Clickable
 	back      *widget.Clickable
-	newAvatar *Click
-	newQr     *Click
+	newAvatar *gesture.Click
+	newQr     *gesture.Click
 	secret    *widget.Editor
 	submit    *widget.Clickable
 	cancel    *widget.Clickable
@@ -130,7 +131,7 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 	}
 
 	for _, e := range p.newQr.Events(gtx.Queue) {
-		if e.Type == TypeClick {
+		if e.Type == gesture.TypeClick {
 			p.qr = nil
 			b := make([]byte, 32)
 			rand.Reader.Read(b)
@@ -153,7 +154,7 @@ func (p *AddContactPage) Event(gtx layout.Context) interface{} {
 	}
 
 	for _, e := range p.newAvatar.Events(gtx.Queue) {
-		if e.Type == TypeClick {
+		if e.Type == gesture.TypeClick {
 			p.avatar = nil
 			p.palette.Randomise()
 			p.xx = mrand.Float64()
@@ -217,8 +218,8 @@ func newAddContactPage(a *App) *AddContactPage {
 	p.palette = colors.GradientTable{}
 	p.palette.Randomise()
 
-	p.newAvatar = new(Click)
-	p.newQr = new(Click)
+	p.newAvatar = new(gesture.Click)
+	p.newQr = new(gesture.Click)
 	p.back = &widget.Clickable{}
 	p.copy = &widget.Clickable{}
 	p.paste = &widget.Clickable{}

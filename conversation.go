@@ -14,6 +14,7 @@ import (
 	"gioui.org/io/pointer"
 	"image"
 
+	"gioui.org/gesture"
 	"gioui.org/layout"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -31,15 +32,15 @@ type conversationPage struct {
 	a              *App
 	nickname       string
 	avatar         *widget.Image
-	edit           *Click
+	edit           *gesture.Click
 	compose        *widget.Editor
 	send           *widget.Clickable
 	back           *widget.Clickable
-	cancel         *Click
+	cancel         *gesture.Click
 	msgcopy        *widget.Clickable
 	msgdetails     *widget.Clickable
 	messageClicked *catshadow.Message
-	messageClicks  map[*catshadow.Message]*Click
+	messageClicks  map[*catshadow.Message]*gesture.Click
 }
 
 func (c *conversationPage) Start(stop <-chan struct{}) {
@@ -77,7 +78,7 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 		return MessageSent{nickname: c.nickname, msgId: msgId}
 	}
 	for _, e := range c.edit.Events(gtx.Queue) {
-		if e.Type == TypeClick {
+		if e.Type == gesture.TypeClick {
 			return EditContact{nickname: c.nickname}
 		}
 	}
@@ -95,14 +96,14 @@ func (c *conversationPage) Event(gtx layout.Context) interface{} {
 
 	for msg, click := range c.messageClicks {
 		for _, e := range click.Events(gtx.Queue) {
-			if e.Type == TypeClick {
+			if e.Type == gesture.TypeClick {
 				c.messageClicked = msg
 			}
 		}
 	}
 
 	for _, e := range c.cancel.Events(gtx.Queue) {
-		if e.Type == TypeClick {
+		if e.Type == gesture.TypeClick {
 			c.messageClicked = nil
 		}
 	}
@@ -178,7 +179,7 @@ func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 
 				dims := messageList.Layout(gtx, len(messages), func(gtx C, i int) layout.Dimensions {
 					if _, ok := c.messageClicks[messages[i]]; !ok {
-						c.messageClicks[messages[i]] = new(Click)
+						c.messageClicks[messages[i]] = new(gesture.Click)
 					}
 
 					bgSender := Background{
@@ -312,13 +313,13 @@ func newConversationPage(a *App, nickname string) *conversationPage {
 
 	p := &conversationPage{a: a, nickname: nickname,
 		compose:       ed,
-		messageClicks: make(map[*catshadow.Message]*Click),
+		messageClicks: make(map[*catshadow.Message]*gesture.Click),
 		back:          &widget.Clickable{},
 		msgcopy:       &widget.Clickable{},
 		msgdetails:    &widget.Clickable{},
-		cancel:        new(Click),
+		cancel:        new(gesture.Click),
 		send:          &widget.Clickable{},
-		edit:          new(Click),
+		edit:          new(gesture.Click),
 	}
 	p.compose.Focus()
 	return p

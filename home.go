@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/base64"
+	"gioui.org/gesture"
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op/paint"
@@ -18,7 +19,6 @@ import (
 	"image"
 	"image/png"
 	"math/rand"
-	"runtime"
 	"strings"
 	"time"
 )
@@ -36,7 +36,7 @@ type HomePage struct {
 	addContact    *widget.Clickable
 	showSettings  *widget.Clickable
 	av            map[string]*widget.Image
-	contactClicks map[string]*Click
+	contactClicks map[string]*gesture.Click
 }
 
 type AddContactClick struct{}
@@ -75,7 +75,7 @@ func (p *HomePage) Layout(gtx layout.Context) layout.Dimensions {
 					return in.Layout(gtx, func(gtx C) D {
 						// returns Flex of contact icon, contact name, and last message received or sent
 						if _, ok := p.contactClicks[contacts[i].Nickname]; !ok {
-							c := new(Click)
+							c := new(gesture.Click)
 							p.contactClicks[contacts[i].Nickname] = c
 						}
 
@@ -216,19 +216,8 @@ func (p *HomePage) Event(gtx layout.Context) interface{} {
 	}
 	for nickname, click := range p.contactClicks {
 		for _, e := range click.Events(gtx.Queue) {
-			if e.Type == TypeClick {
-				if e.Buttons.Contain(pointer.ButtonPrimary) {
-					// do the left button click thing
-					return ChooseContactClick{nickname: nickname}
-				}
-				if e.Buttons.Contain(pointer.ButtonSecondary) {
-					return EditContact{nickname: nickname}
-					// do the right button click thing
-				}
-				// does not set buttons? but why?
-				if runtime.GOOS == "android" {
-					return ChooseContactClick{nickname: nickname}
-				}
+			if e.Type == gesture.TypeClick {
+				return ChooseContactClick{nickname: nickname}
 			}
 		}
 	}
@@ -243,7 +232,7 @@ func newHomePage(a *App) *HomePage {
 		a:             a,
 		addContact:    &widget.Clickable{},
 		showSettings:  &widget.Clickable{},
-		contactClicks: make(map[string]*Click),
+		contactClicks: make(map[string]*gesture.Click),
 		av:            make(map[string]*widget.Image),
 	}
 }
