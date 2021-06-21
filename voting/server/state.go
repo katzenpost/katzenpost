@@ -185,12 +185,15 @@ func (s *state) fsm() <-chan time.Time {
 
 		if !s.voted(s.votingEpoch) {
 			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
-			s.vote(s.votingEpoch)
+			if signed, err := s.vote(s.votingEpoch); err == nil {
+				s.sendVoteToAuthorities(signed.raw, s.votingEpoch)
+			}
 			s.state = stateAcceptVote
 			sleep = AuthorityVoteDeadline - elapsed
 		}
 	case stateAcceptVote:
-		s.reveal(s.votingEpoch)
+		signed := s.reveal(s.votingEpoch)
+		go s.sendRevealToAuthorities(signed, epoch)
 		s.state = stateAcceptReveal
 		sleep = AuthorityRevealDeadline - elapsed
 	case stateAcceptReveal:
@@ -199,7 +202,9 @@ func (s *state) fsm() <-chan time.Time {
 		// and produce a consensus from votes
 		if !s.isTabulated(s.votingEpoch) {
 			s.log.Debugf("Tabulating for epoch %v", s.votingEpoch)
-			s.tabulate(s.votingEpoch)
+			if signed, err := s.tabulate(s.votingEpoch); err == nil {
+				s.sendVoteToAuthorities([]byte(signed), epoch)
+			}
 		}
 		s.state = stateAcceptSignature
 		sleep = PublishConsensusDeadline - elapsed
@@ -224,7 +229,7 @@ func (s *state) fsm() <-chan time.Time {
 	return time.After(sleep)
 }
 
-func (s *state) consense(epoch uint64) {
+func (s *state) consense(epoch uint64) *document {
 	// if we have a document, see if the other signatures make a consensus
 	// if we do not make a consensus with our document iterate over the
 	// other documents and see if the signatures make a consensus
@@ -232,7 +237,7 @@ func (s *state) consense(epoch uint64) {
 	certificates, ok := s.certificates[epoch]
 	if !ok {
 		s.log.Errorf("No certificates for epoch %d", epoch)
-		return
+		return nil
 	}
 
 	for pk, c := range certificates {
@@ -267,12 +272,12 @@ func (s *state) consense(epoch uint64) {
 					id := base64.StdEncoding.EncodeToString(g.Identity())
 					s.log.Noticef("Consensus signed by %s", id)
 				}
-				return
+				return s.documents[epoch]
 			}
 		}
 	}
 	s.log.Errorf("No consensus found for epoch %d", epoch)
-	return
+	return nil
 }
 
 func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
@@ -401,7 +406,7 @@ func (s *SharedRandom) Reveal() []byte {
 	return s.reveal
 }
 
-func (s *state) reveal(epoch uint64) {
+func (s *state) reveal(epoch uint64) []byte {
 	if reveal, ok := s.reveals[epoch][s.identityPubKey()]; ok {
 		// Reveals are only valid until the end of voting round
 		_, _, till := epochtime.Now()
@@ -410,11 +415,12 @@ func (s *state) reveal(epoch uint64) {
 		if err != nil {
 			s.s.fatalErrCh <- err
 		}
-		go s.sendRevealToAuthorities(signed, epoch)
+		return signed
 	}
+	return nil
 }
 
-func (s *state) vote(epoch uint64) {
+func (s *state) vote(epoch uint64) (*document, error) {
 	descriptors := []*descriptor{}
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
@@ -423,6 +429,7 @@ func (s *state) vote(epoch uint64) {
 	commit, err := srv.Commit(epoch)
 	if err != nil {
 		s.s.fatalErrCh <- err
+		return nil, err
 	}
 
 	// save our own reveal
@@ -436,7 +443,7 @@ func (s *state) vote(epoch uint64) {
 		s.log.Errorf("failure: reveal already present, this should never happen.")
 		err := errors.New("failure: reveal already present, this should never happen")
 		s.s.fatalErrCh <- err
-		return
+		return nil, err
 	}
 
 	// vote topology is irrelevent.
@@ -447,7 +454,7 @@ func (s *state) vote(epoch uint64) {
 	if signedVote == nil {
 		err := errors.New("failure: signing vote failed")
 		s.s.fatalErrCh <- err
-		return
+		return nil, err
 	}
 
 	// save our own vote
@@ -461,9 +468,9 @@ func (s *state) vote(epoch uint64) {
 		s.log.Errorf("failure: vote already present, this should never happen.")
 		err := errors.New("failure: vote already present, this should never happen")
 		s.s.fatalErrCh <- err
-		return
+		return nil, err
 	}
-	s.sendVoteToAuthorities(signedVote.raw, epoch)
+	return signedVote, nil
 }
 
 func (s *state) sign(doc *s11n.Document) *document {
@@ -850,13 +857,13 @@ func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 	return srv.Sum(nil), nil
 }
 
-func (s *state) tabulate(epoch uint64) {
+func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	s.log.Noticef("Generating Consensus Document for epoch %v.", epoch)
 	// generate the shared random value or fail
 	srv, err := s.computeSharedRandom(epoch)
 	if err != nil {
 		s.log.Warningf("No shared random for epoch %v, aborting!, %v", epoch, err)
-		return
+		return nil, err
 	}
 
 	// if there are no prior SRV values, copy the current srv twice
@@ -871,7 +878,7 @@ func (s *state) tabulate(epoch uint64) {
 	mixes, params, err := s.tallyVotes(epoch)
 	if err != nil {
 		s.log.Warningf("No consensus for epoch %v, aborting!, %v", epoch, err)
-		return
+		return nil, err
 	}
 	s.log.Debug("Mixes tallied, now making a document")
 	doc := s.getDocument(mixes, params, srv)
@@ -879,14 +886,14 @@ func (s *state) tabulate(epoch uint64) {
 	// verify that the topology constraints are satisfied after producing a candidate consensus
 	if err := s.verifyTopology(doc.Topology); err != nil {
 		s.log.Warningf("No consensus for epoch %v, aborting!, %v", epoch, err)
-		return
+		return nil, err
 	}
 
 	// Serialize and sign the Document.
 	signed, err := s11n.SignDocument(s.s.identityKey, doc)
 	if err != nil {
 		s.log.Debugf("SignDocument failed with err: %v", err)
-		return
+		return nil, err
 	}
 	// Save our certificate
 	if _, ok := s.certificates[epoch]; !ok {
@@ -897,8 +904,7 @@ func (s *state) tabulate(epoch uint64) {
 		s.log.Debugf("Document for epoch %v saved: %s", epoch, raw)
 		s.log.Debugf("sha256(certified): %s", sha256b64(raw))
 	}
-	// send our vote to the other authorities!
-	s.sendVoteToAuthorities([]byte(signed), epoch)
+	return signed, nil
 }
 
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv []byte) [][][]byte {
@@ -1500,7 +1506,6 @@ func newState(s *Server) (*state, error) {
 
 	// Set the initial state to bootstrap
 	st.state = stateBootstrap
-	st.Go(st.worker)
 	return st, nil
 }
 

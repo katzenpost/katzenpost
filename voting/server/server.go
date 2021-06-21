@@ -264,6 +264,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.state, err = newState(s); err != nil {
 		return nil, err
 	}
+	s.state.Go(s.state.worker)
 
 	// Start up the listeners.
 	for _, v := range s.cfg.Authority.Addresses {
