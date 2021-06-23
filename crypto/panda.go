@@ -42,6 +42,7 @@ type KeyExchange struct {
 	status       panda_proto.KeyExchange_Status
 	meetingPlace MeetingPlace
 	sharedSecret []byte
+	sharedRandom []byte
 	serialised   []byte
 	kxBytes      []byte
 
@@ -51,17 +52,21 @@ type KeyExchange struct {
 	message1, message2      []byte
 }
 
-func NewKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPlace, sharedSecret []byte, kxBytes []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan chan struct{}) (*KeyExchange, error) {
+func NewKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPlace, sharedRandom []byte, sharedSecret []byte, kxBytes []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan chan struct{}) (*KeyExchange, error) {
 	if 24 /* nonce */ +4 /* length */ +len(kxBytes)+secretbox.Overhead > meetingPlace.Padding() {
 		return nil, errors.New("panda: key exchange too large for meeting place")
 	}
 
+	if len(sharedRandom) != 32 {
+		return nil, errors.New("panda: SharedRandomValue is not 32 bytes long")
+	}
 	kx := &KeyExchange{
 		rand:         rand,
 		log:          log,
 		meetingPlace: meetingPlace,
 		status:       panda_proto.KeyExchange_INIT,
 		sharedSecret: sharedSecret,
+		sharedRandom: sharedRandom,
 		kxBytes:      kxBytes,
 		contactID:    contactID,
 		pandaChan:    pandaChan,
@@ -92,6 +97,7 @@ func UnmarshalKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace Meet
 		meetingPlace: meetingPlace,
 		status:       p.GetStatus(),
 		sharedSecret: p.SharedSecret,
+		sharedRandom: p.SharedRandom,
 		serialised:   serialised,
 		kxBytes:      p.KeyExchangeBytes,
 		message1:     p.Message1,
@@ -122,6 +128,7 @@ func (kx *KeyExchange) updateSerialised() error {
 	p := &panda_proto.KeyExchange{
 		Status:           kx.status.Enum(),
 		SharedSecret:     kx.sharedSecret,
+		SharedRandom:     kx.sharedRandom,
 		KeyExchangeBytes: kx.kxBytes,
 	}
 	if kx.status != panda_proto.KeyExchange_INIT {
@@ -236,7 +243,7 @@ func (kx *KeyExchange) Run() {
 }
 
 func (kx *KeyExchange) derivePassword() error {
-	data := argon2.Key(kx.sharedSecret, nil, 3, 32*1024, 4, 32*3)
+	data := argon2.Key(kx.sharedSecret, kx.sharedRandom, 3, 32*1024, 4, 32*3)
 	copy(kx.key[:], data)
 	copy(kx.meeting1[:], data[32:])
 	copy(kx.meeting2[:], data[64:])

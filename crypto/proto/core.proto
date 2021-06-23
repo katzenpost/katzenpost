@@ -1,5 +1,6 @@
 syntax = "proto2";
 package panda;
+option go_package = "github.com/katzenpost/panda";
 
 // These protobufs are used for serialising a pending key exchange.
 
@@ -19,4 +20,5 @@ message KeyExchange {
 	optional bytes message1 = 8;
 	optional bytes message2 = 9;
 	optional bytes shared_key = 10;
+	optional bytes shared_random = 11;
 }
