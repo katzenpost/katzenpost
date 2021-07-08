@@ -87,16 +87,24 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		epoch:  epoch,
 		doneCh: make(chan interface{}),
 	}
-	c.fetchQueue <- op
-	v := <-op.doneCh
-	switch r := v.(type) {
-	case error:
-		return nil, nil, r
-	case *cacheEntry:
-		// Worker will handle the LRU.
-		return r.doc, r.raw, nil
-	default:
-		return nil, nil, fmt.Errorf("BUG: pkiclient: worker returned nonsensical result: %+v", r)
+	select {
+	case c.fetchQueue <- op:
+	case <-c.HaltCh():
+		return nil, nil, errHalted
+	}
+	select {
+	case v := <-op.doneCh:
+		switch r := v.(type) {
+		case error:
+			return nil, nil, r
+		case *cacheEntry:
+			// Worker will handle the LRU.
+			return r.doc, r.raw, nil
+		default:
+			return nil, nil, fmt.Errorf("BUG: pkiclient: worker returned nonsensical result: %+v", r)
+		}
+	case <-c.HaltCh():
+		return nil, nil, errHalted
 	}
 }
 
