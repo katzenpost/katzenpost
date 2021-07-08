@@ -158,8 +158,12 @@ func (c *Client) worker() {
 		// The fetch may have been in progress while the op was sitting in
 		// queue, check again.
 		if d := c.cacheGet(op.epoch); d != nil {
-			op.doneCh <- d
-			continue
+			select {
+			case <-c.HaltCh():
+				return
+			case op.doneCh <- d:
+				continue
+			}
 		}
 
 		// Slow path, have to call into the PKI client.
@@ -168,12 +172,20 @@ func (c *Client) worker() {
 		// most common client use cases, this shouldn't matter much.
 		d, raw, err := c.impl.Get(op.ctx, op.epoch)
 		if err != nil {
-			op.doneCh <- err
-			continue
+			select {
+			case <-c.HaltCh():
+				return
+			case op.doneCh <- err:
+				continue
+			}
 		}
 		e := &cacheEntry{doc: d, raw: raw}
 		c.insertLRU(e)
-		op.doneCh <- e
+		select {
+		case <-c.HaltCh():
+			return
+		case op.doneCh <- e:
+		}
 	}
 }
 
