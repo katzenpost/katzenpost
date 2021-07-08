@@ -66,8 +66,8 @@ github.com/katzenpost/authority v0.0.15/go.mod h1:uq3MaTcKzkuTMDaI+tMwvwqgbjVpOV
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
-github.com/katzenpost/client v0.0.33 h1:fLhMyUq8dO285nNXvEBbzcfFQnLNm4Kznf+zabSYi5A=
-github.com/katzenpost/client v0.0.33/go.mod h1:yVHTE03u/kIpIeHF6WN30L/AV4havKQ6/2XEpbZ/EJo=
+github.com/katzenpost/client v0.0.34 h1:h2X9sZuqoASSn5oeaXlBaiimv3Nhthc3TA4LBo+HguE=
+github.com/katzenpost/client v0.0.34/go.mod h1:ogkDKHcDphSKNz8QT1O7l9KHDiwSkdjDC+/DuTQ37RI=
 github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515 h1:mitQKmkvmyqoWZmD1ErfKGc44iJ/UQGh1dXOsyOqxa8=
 github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515/go.mod h1:RjyD4DLQr+P5FnP6iiZUTgvalZwT7NyawXwYzn32eYQ=
 github.com/katzenpost/core v0.0.14 h1:8n30pGlm6cXa1PjU+HBv8nARFh67UmX/eYkHnbcBfgs=
@@ -80,10 +80,8 @@ github.com/katzenpost/noise v0.0.2 h1:5ljIHIlgf/XL0kFKijcq5pUBrYJUpmDYmk2zWDanqy
 github.com/katzenpost/noise v0.0.2/go.mod h1:L6ioEZo4vpnAgdh4x8qenV7T0/k8mltat1EjxQO0TNA=
 github.com/katzenpost/registration_client v0.0.2 h1:FQZumdHWggQ+W2lIch6TOQnuhJuBP9tNn6A1IqHALDU=
 github.com/katzenpost/registration_client v0.0.2/go.mod h1:WaK2S0QiXYY3z/ZWVsFeX03qdrvde81IVjQqp8XQUiE=
-github.com/katzenpost/server v0.0.18 h1:7nk375Kjyb4tSE43T+dBmZ20ZEDeIN6YZt/RJyGr62I=
-github.com/katzenpost/server v0.0.18/go.mod h1:sLE/gTMzcuw+ITFwRNSuHIMf7hVgPruyBC6A1sHWXFs=
-github.com/katzenpost/server v0.0.20 h1:nabITXQ9SuygIVwZ8CEciwPDTIe24Bq9rwuLRepVK/Y=
-github.com/katzenpost/server v0.0.20/go.mod h1:sLE/gTMzcuw+ITFwRNSuHIMf7hVgPruyBC6A1sHWXFs=
+github.com/katzenpost/server v0.0.21 h1:2VhnRDkU5tRTrL9ydHkSqwOd0gfh0KJOmz6Kac1Qs7k=
+github.com/katzenpost/server v0.0.21/go.mod h1:sLE/gTMzcuw+ITFwRNSuHIMf7hVgPruyBC6A1sHWXFs=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
