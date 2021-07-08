@@ -1075,13 +1075,6 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 	}
 }
 
-// GetConversation returns a map of messages between a contact
-func (c *Client) GetConversation(nickname string) map[MessageID]*Message {
-	c.conversationsMutex.Lock()
-	defer c.conversationsMutex.Unlock()
-	return c.conversations[nickname]
-}
-
 // WipeConversation removes all messages between a contact
 func (c *Client) WipeConversation(nickname string) error {
 	wipeConversationOp := opWipeConversation{
@@ -1115,13 +1108,6 @@ func (c *Client) doWipeConversation(nickname string) error {
 		contact.LastMessage = nil
 	}
 	return nil
-}
-
-// GetConversation returns a map of all the maps of messages between a contact
-func (c *Client) GetAllConversations() map[string]map[MessageID]*Message {
-	c.conversationsMutex.Lock()
-	defer c.conversationsMutex.Unlock()
-	return c.conversations
 }
 
 // GetSortedConversation returns Messages (a slice of *Message, sorted by Timestamp)
