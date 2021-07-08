@@ -1020,6 +1020,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.setMessageDelivered(tp.Nickname, tp.MessageID)
+				c.save()
 				c.eventCh.In() <- &MessageDeliveredEvent{
 					Nickname:  tp.Nickname,
 					MessageID: tp.MessageID,
