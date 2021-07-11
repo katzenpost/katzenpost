@@ -107,7 +107,7 @@ func TestSerialise(t *testing.T) {
 	require.NoError(err)
 }
 
-func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
+func getKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) (*KeyExchange, error) {
 
 	shutdownChan := make(chan struct{})
 	go func() {
@@ -130,10 +130,15 @@ func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, sr
 	if err != nil {
 		resultChan <- err
 	}
-	kx.log = log
-	kx.Run()
-	if err != nil {
-		resultChan <- err
+	return kx, err
+}
+
+func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
+	kx, err := getKX(resultChan, log, mp, srv, secret, message)
+	if err == nil {
+		kx.Run()
+	} else {
+		panic(err)
 	}
 }
 
@@ -152,6 +157,42 @@ func TestKeyExchange(t *testing.T) {
 
 	go runKX(a, logBackend.GetLogger("a_kx"), mp, srv, secret, msg1)
 	go runKX(b, logBackend.GetLogger("b_kx"), mp, srv, secret, msg2)
+
+	result := <-a
+	reply, ok := result.([]byte)
+	require.True(ok)
+	require.Equal(reply, msg2)
+
+	result = <-b
+	reply, ok = result.([]byte)
+	require.True(ok)
+	require.Equal(reply, msg1)
+}
+
+func TestUpdateSRV(t *testing.T) {
+	require := require.New(t)
+
+	a, b := make(chan interface{}), make(chan interface{})
+	mp := NewSimpleMeetingPlace()
+	secret := []byte("foo")
+	srv1 := []byte("this should be 32 bytes long....")
+	srv2 := []byte("yet one more 32 byte long string")
+	msg1 := []byte("test1")
+	msg2 := []byte("test2")
+
+	logBackend, err := log.New("", "debug", false)
+	require.NoError(err)
+
+	kx1, err := getKX(a, logBackend.GetLogger("a_kx"), mp, srv1, secret, msg1)
+	require.NoError(err)
+	go kx1.Run()
+	go runKX(b, logBackend.GetLogger("b_kx"), mp, srv2, secret, msg2)
+
+	// stop the exchange, update the srv, and restart the exchange
+	var foo struct{}
+	kx1.shutdownChan <- foo
+	kx1.SetSharedRandom(srv2)
+	go kx1.Run()
 
 	result := <-a
 	reply, ok := result.([]byte)

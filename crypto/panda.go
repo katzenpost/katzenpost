@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -161,6 +162,19 @@ func (kx *KeyExchange) shouldStop() bool {
 	}
 
 	// unreachable
+}
+
+// SetSharedRandom updates the KeyExchange SharedRandom and resets the protocol state back to KeyExchange_INIT.
+// The caller MUST halt an running KeyExchange before calling SetSharedRandom.
+func (kx *KeyExchange) SetSharedRandom(srv []byte) {
+	kx.Lock()
+	defer kx.Unlock()
+
+	if bytes.Equal(kx.sharedRandom, srv) {
+		return
+	}
+	kx.sharedRandom = srv
+	kx.status = panda_proto.KeyExchange_INIT
 }
 
 func (kx *KeyExchange) Run() {
