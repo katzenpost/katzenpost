@@ -239,6 +239,10 @@ func (c *Client) restartContactExchanges() {
 				if err != nil {
 					panic(err)
 				}
+				// update sharedrandom
+				doc := c.session.CurrentDocument()
+				sharedRandom := doc.PriorSharedRandom[0]
+				kx.SetSharedRandom(sharedRandom)
 				go kx.Run()
 			}
 		}
@@ -408,8 +412,11 @@ func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	pandaCfg := c.session.GetPandaConfig()
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
 	meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
+	// get the current document and shared random
+	doc := c.session.CurrentDocument()
+	sharedRandom := doc.PriorSharedRandom[0]
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
-	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
+	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
 	if err != nil {
 		return err
 	}
