@@ -171,8 +171,10 @@ func layoutMessage(gtx C, msg *catshadow.Message, isSelected bool) D {
 func (c *conversationPage) Layout(gtx layout.Context) layout.Dimensions {
 	contact := c.a.c.GetContacts()[c.nickname]
 	if n, ok := notifications[c.nickname]; ok {
-		n.Cancel()
-		delete(notifications, c.nickname)
+		if c.a.focus {
+			n.Cancel()
+			delete(notifications, c.nickname)
+		}
 	}
 	messages := c.a.c.GetSortedConversation(c.nickname)
 	bgl := Background{
