@@ -127,9 +127,18 @@ func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
 	if err != nil {
 		return err
 	}
+	err = out.Sync()
+	if err != nil {
+		return err
+	}
 	if err := os.Rename(outFn, backupFn); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	// TODO Here (and below) there should be a write barrier on the dirent
+	// updates, ie dirfd.Sync(), but that requires opening the state
+	// directory with e.g. open("mydir", O_DIRECTORY|blabla)
+	// which I didn't know how to do in Golang.
+	// We should also use OpenAt, RenameAt etc relative to this dirfd.
 	if err := os.Rename(tmpFn, outFn); err != nil {
 		return err
 	}
