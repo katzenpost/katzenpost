@@ -63,6 +63,13 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 		statefile = *stateFile
 	}
 
+	// initialize logging
+	backendLog, err := catshadowCfg.InitLogBackend()
+	if err != nil {
+		result <- err
+		return
+	}
+
 	var catshadowClient *catshadow.Client
 	// automatically create a statefile if one does not already exist
 	if _, err := os.Stat(statefile); os.IsNotExist(err) {
@@ -87,15 +94,9 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 		}
 		// Start the stateworker
 		stateWorker.Start()
-		fmt.Println("creating remote message receiver spool")
-		backendLog, err := catshadowCfg.InitLogBackend()
-		if err != nil {
-			result <- err
-			stateWorker.Halt()
-			c.Shutdown()
-			return
-		}
 
+		// create ephemeral spool
+		fmt.Println("creating remote message receiver spool")
 		user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
 		catshadowClient, err = catshadow.NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
 		if err != nil {
@@ -106,29 +107,37 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 		}
 		fmt.Println("catshadow client successfully created")
 	} else {
-		cfg, _, err := client.AutoRegisterRandomClient(cfg)
-		if err != nil {
-			result <- err
-			return
-		}
-
 		// Load previous state to setup our current client state.
-		backendLog, err := catshadowCfg.InitLogBackend()
-		if err != nil {
-			result <- err
-			return
-		}
 		stateWorker, state, err = catshadow.LoadStateWriter(backendLog.GetLogger("state_worker"), statefile, passphrase)
 		if err != nil {
 			result <- err
 			return
 		}
-		// Start the stateworker
-		stateWorker.Start()
+
+		/*
+		// TODO: IFF "new network identity" is selected, create a new linkKey
+		// it might be better to rotate linkKey only on a new network connection
+		// rather than on every reconnection
+		cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)
+		if err != nil {
+			result <- err
+			return
+		}
+
+		// update the saved state with the new linkKey and provider
+		state.LinkKey = linkKey
+		state.User = cfg.Account.User
+		state.Provider = cfg.Account.Provider
+		*/
+
+		// configure Account from the statefile
 		cfg.Account = &clientConfig.Account{
 			User:     state.User,
 			Provider: state.Provider,
 		}
+
+		// Start the stateworker
+		stateWorker.Start()
 
 		// Run a Client.
 		c, err := client.New(cfg)
@@ -136,11 +145,6 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 			stateWorker.Halt()
 			result <- err
 			return
-		}
-
-		// patch/update statefile for missing entries
-		if state.Blob == nil {
-			state.Blob = make(map[string][]byte)
 		}
 
 		// Make a catshadow Client.
