@@ -24,9 +24,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	sha512 "crypto/sha512"
 	bolt "github.com/coreos/bbolt"
 	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/memspool/common"
 	"gopkg.in/op/go-logging.v1"
@@ -255,11 +255,9 @@ func (m *MemSpoolMap) CreateSpool(publicKey *eddsa.PublicKey, signature []byte) 
 		return nil, errors.New("Spool creation failed, invalid signature")
 	}
 	spoolID := [common.SpoolIDSize]byte{}
-	_, err := rand.Reader.Read(spoolID[:])
-	if err != nil {
-		return nil, err
-	}
-	err = m.addSpoolToMap(publicKey, &spoolID)
+	spoolhash := sha512.Sum512_256(publicKey.Bytes())
+	copy(spoolID[:], spoolhash[:common.SpoolIDSize])
+	err := m.addSpoolToMap(publicKey, &spoolID)
 	if err != nil {
 		return nil, err
 	}
