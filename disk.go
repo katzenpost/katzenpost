@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
@@ -134,15 +135,21 @@ func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
 	if err := os.Rename(outFn, backupFn); err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	// TODO Here (and below) there should be a write barrier on the dirent
-	// updates, ie dirfd.Sync(), but that requires opening the state
-	// directory with e.g. open("mydir", O_DIRECTORY|blabla)
-	// which I didn't know how to do in Golang.
-	// We should also use OpenAt, RenameAt etc relative to this dirfd.
+	dirFn := filepath.Dir(stateFile)
+	dir, err := os.Open(dirFn)
+	if err != nil {
+		return err
+	}
+	if err := dir.Sync(); err != nil {
+		return err
+	}
 	if err := os.Rename(tmpFn, outFn); err != nil {
 		return err
 	}
-	return nil
+	if err := dir.Sync(); err != nil {
+		return err
+	}
+	return dir.Close()
 }
 
 // LoadStateWriter decrypts the given stateFile and returns the State
