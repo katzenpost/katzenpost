@@ -591,7 +591,8 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	defer c.conversationsMutex.Unlock()
 	// XXX: shouldn't we also obtain the ratchet locks as well?
 	ms := memguard.NewStream()
-	e := cbor.NewEncoder(ms)
+	em, _ := cbor.EncOptions{Time: cbor.TimeUnixDynamic}.EncMode()
+	e := em.NewEncoder(ms)
 	e.Encode(s)
 	return ms.Flush()
 }
