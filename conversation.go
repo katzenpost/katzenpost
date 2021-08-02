@@ -150,7 +150,7 @@ func layoutMessage(gtx C, msg *catshadow.Message, isSelected bool) D {
 		layout.Rigid(func(gtx C) D {
 			in := layout.Inset{Top: unit.Dp(8), Bottom: unit.Dp(0), Left: unit.Dp(8), Right: unit.Dp(8)}
 			return in.Layout(gtx, func(gtx C) D {
-				timeLabel := strings.Replace(durafmt.ParseShort(time.Now().Sub(msg.Timestamp).Truncate(time.Minute)).Format(units), "0 s", "now", 1)
+				timeLabel := strings.Replace(durafmt.ParseShort(time.Now().Round(0).Sub(msg.Timestamp).Truncate(time.Minute)).Format(units), "0 s", "now", 1)
 				if isSelected {
 					timeLabel = msg.Timestamp.Truncate(time.Minute).Format(time.RFC822)
 					if msg.Outbound {
