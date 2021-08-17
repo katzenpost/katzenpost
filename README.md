@@ -79,7 +79,7 @@ changes to test on android. Do not forget to update or remove the vendor path.
 
 To run the build, execute the following command while in this project root:
 
-    docker run -v "$(pwd)":/go/build/ katzenpost/android_build gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 -signey sign.keystore -signpass YOURPASSWORD .
+    docker run -v "$(pwd)":/go/build/ katzenpost/android_build gogio -arch arm64,amd64 -x -target android -appid org.mixnetworks.catchat -version 1 -signkey sign.keystore -signpass YOURPASSWORD .
 
 Note that the contents of the local directory are copied into the docker environment - so your signing keystore ought to be in this path as well.
 
