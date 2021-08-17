@@ -116,8 +116,8 @@ github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7V
 github.com/katzenpost/authority v0.0.15-0.20210226020614-ca0ba0c3f63f/go.mod h1:O5rW7x7ErC/bewDlU7iB4qisoZx9LdLnCLid3qAFBHI=
 github.com/katzenpost/authority v0.0.15 h1:UV5ib+KpZ6QE6Wt3EWulQ6yt1hroQSKTWuvpyEp+iXY=
 github.com/katzenpost/authority v0.0.15/go.mod h1:uq3MaTcKzkuTMDaI+tMwvwqgbjVpOVg9EGQuc4F8hEs=
-github.com/katzenpost/catshadow v0.0.49 h1:I4CKc2ZrkQxrgoAeEqMZMffnnyjYMX28dlUqjZ6QOHg=
-github.com/katzenpost/catshadow v0.0.49/go.mod h1:OnJc359x08hA4IJpIomaW9SyP0D0QsIzwRgzqiNLj9E=
+github.com/katzenpost/catshadow v0.0.50 h1:qYOjW9FkFj68tNmWFuT9u+e2xt6NUC+bp5nMDnLGbx8=
+github.com/katzenpost/catshadow v0.0.50/go.mod h1:OnJc359x08hA4IJpIomaW9SyP0D0QsIzwRgzqiNLj9E=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
