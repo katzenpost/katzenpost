@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"syscall"
 
 	"github.com/katzenpost/catshadow"
@@ -21,6 +22,8 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget/material"
 	"gioui.org/x/notify"
+	"net/http"
+	_ "net/http/pprof"
 )
 
 const (
@@ -226,7 +229,7 @@ func getConfigNoTor() (*catconfig.Config, error) {
 
 [ClientLogging]
   Disable = false
-  Level = "NOTICE"
+  Level = "DEBUG"
   File = ""
 
 [VotingAuthority]
@@ -273,7 +276,7 @@ func getDefaultConfig() (*catconfig.Config, error) {
 
 [ClientLogging]
   Disable = false
-  Level = "NOTICE"
+  Level = "DEBUG"
   File = ""
 
 [VotingAuthority]
@@ -417,4 +420,12 @@ func (a *App) handleGioEvents(e interface{}) error {
 		}
 	}
 	return nil
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:8080", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }
