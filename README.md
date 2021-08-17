@@ -47,6 +47,13 @@ See the [install instructions](http://golang.org/doc/install.html).
 
     CC=aarch64-linux-gnu-gcc CGO_ENABLED=1 GOOS=linux GOARCH=arm64 go build
 
+#### Building with docker
+
+Clone the repo as above, and then:
+
+    docker build --no-cache -t katzenpost/build -f Dockerfile .
+    docker run --rm -v "$(pwd)":/go/catchat/ katzenpost/build go build
+
 #### Building for android
 
 Note that you will need to have the android NDK and SDK installed and the
