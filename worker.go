@@ -120,6 +120,7 @@ func (c *Client) worker() {
 					c.log.Debug("ConnectionStatusEvent: Connected: Setting readInboxTimer to %s", readInboxInterval)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
+					c.restartSending()
 					c.eventCh.In() <- event
 					continue
 				}
