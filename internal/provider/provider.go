@@ -30,14 +30,16 @@ import (
 
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/core/epochtime"
 	"github.com/katzenpost/core/monotime"
 	"github.com/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/thwack"
 	"github.com/katzenpost/core/utils"
 	"github.com/katzenpost/core/wire"
 	"github.com/katzenpost/core/worker"
 	"github.com/katzenpost/server/config"
+
+	sConstants "github.com/katzenpost/core/sphinx/constants"
 	internalConstants "github.com/katzenpost/server/internal/constants"
 	"github.com/katzenpost/server/internal/debug"
 	"github.com/katzenpost/server/internal/glue"
@@ -205,6 +207,32 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 	return b, nil
 }
 
+func (p *provider) connectedClients() ([][]byte, error) {
+	identities := make([][]byte, 0)
+	for _, listener := range p.glue.Listeners() {
+		listenerIdentities, err := listener.GetConnIdentities()
+		if err != nil {
+			return nil, err
+		}
+		identities = append(identities, listenerIdentities...)
+	}
+	return identities, nil
+}
+
+func (p *provider) gcEphemeralClients() {
+	p.log.Debug("garbage collecting expired ephemeral clients")
+	connectedClients, err := p.connectedClients()
+	if err != nil {
+		p.log.Errorf("wtf: %s", err)
+		return
+	}
+	err = p.Spool().VacuumExpired(p.UserDB(), connectedClients)
+	if err != nil {
+		p.log.Errorf("wtf: %s", err)
+		return
+	}
+}
+
 func (p *provider) worker() {
 
 	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
@@ -213,12 +241,25 @@ func (p *provider) worker() {
 
 	ch := p.ch.Out()
 
+	// Here we optionally set this GC timer. If unset the
+	// channel remains nil and has no effect on the select
+	// statement below. If set then the timer will periodically
+	// write to the channel triggering our GC routine.
+	var gcEphemeralClientGCTickerChan <-chan time.Time
+	if p.glue.Config().Provider.EnableEphemeralClients {
+		ticker := time.NewTicker(epochtime.Period)
+		gcEphemeralClientGCTickerChan = ticker.C
+		defer ticker.Stop()
+	}
+
 	for {
 		var pkt *packet.Packet
 		select {
 		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
 			return
+		case <-gcEphemeralClientGCTickerChan:
+			p.gcEphemeralClients()
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
@@ -403,6 +444,15 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 	}
 
 	return c.WriteReply(thwack.StatusOk)
+}
+
+func (p *provider) removeEphemeralUser(user []byte) {
+	if err := p.userDB.Remove(user); err != nil {
+		p.log.Errorf("Failed to remove user '%v': %v", user, err)
+	}
+	if err := p.spool.Remove(user); err != nil {
+		p.log.Errorf("Failed to remove spool '%v': %v", user, err)
+	}
 }
 
 func (p *provider) onRemoveUserIdentity(c *thwack.Conn, l string) error {

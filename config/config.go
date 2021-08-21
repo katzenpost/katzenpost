@@ -331,6 +331,11 @@ func (lCfg *Logging) validate() error {
 
 // Provider is the Katzenpost provider configuration.
 type Provider struct {
+	// EnableEphemeralhClients is set to true in order to
+	// allow ephemeral clients to be created when the Provider
+	// first receives a given user identity string.
+	EnableEphemeralClients bool
+
 	// EnableUserRegistrationHTTP is set to true if the
 	// User Registration HTTP service listener is enabled.
 	EnableUserRegistrationHTTP bool
