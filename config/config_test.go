@@ -40,8 +40,8 @@ IsProvider = true
 [Provider]
   BinaryRecipients = true
   [[Provider.Kaetzchen]]
-    Capability = "loop"
-    Endpoint = "+loop"
+    Capability = "echo"
+    Endpoint = "+echo"
   [[Provider.Kaetzchen]]
     Capability = "meow"
 	Endpoint = "+meow"
@@ -76,8 +76,8 @@ IsProvider = true
 [Provider]
   BinaryRecipients = true
   [[Provider.Kaetzchen]]
-    Capability = "loop"
-    Endpoint = "+loop"
+    Capability = "echo"
+    Endpoint = "+echo"
   [[Provider.Kaetzchen]]
     Capability = "meow"
 	Endpoint = "+meow"
@@ -101,8 +101,8 @@ IsProvider = true
 [Provider]
   BinaryRecipients = true
   [[Provider.Kaetzchen]]
-    Capability = "loop"
-    Endpoint = "+loop"
+    Capability = "echo"
+    Endpoint = "+echo"
   [[Provider.Kaetzchen]]
     Capability = "meow"
 	Endpoint = "+meow"
