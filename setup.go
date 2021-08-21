@@ -114,21 +114,19 @@ func setupCatShadow(catshadowCfg *catconfig.Config, passphrase []byte, result ch
 			return
 		}
 
-		/*
-		// TODO: IFF "new network identity" is selected, create a new linkKey
-		// it might be better to rotate linkKey only on a new network connection
-		// rather than on every reconnection
-		cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)
-		if err != nil {
-			result <- err
-			return
-		}
+		if *registerNew {
+			// create a new linkKey
+			cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)
+			if err != nil {
+				result <- err
+				return
+			}
 
-		// update the saved state with the new linkKey and provider
-		state.LinkKey = linkKey
-		state.User = cfg.Account.User
-		state.Provider = cfg.Account.Provider
-		*/
+			// update the saved state with the new linkKey and provider
+			state.LinkKey = linkKey
+			state.User = cfg.Account.User
+			state.Provider = cfg.Account.Provider
+		}
 
 		// configure Account from the statefile
 		cfg.Account = &clientConfig.Account{

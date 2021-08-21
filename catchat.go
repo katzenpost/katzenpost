@@ -34,6 +34,7 @@ const (
 var (
 	dataDirName      = "catshadow"
 	clientConfigFile = flag.String("f", "", "Path to the client config file.")
+	registerNew      = flag.Bool("r", false, "Register a new identity.")
 	stateFile        = flag.String("s", "catshadow_statefile", "Path to the client state file.")
 
 	catshadowCfg *catconfig.Config
