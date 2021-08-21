@@ -20,6 +20,7 @@ package incoming
 import (
 	"bytes"
 	"container/list"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -125,6 +126,31 @@ func (l *listener) onClosedConn(c *incomingConn) {
 		l.closeAllWg.Done()
 	}()
 	l.conns.Remove(c.e)
+}
+
+// GetConnIdentities returns a slice of byte slices each corresponding
+// to a currently connected client identity.
+func (l *listener) GetConnIdentities() ([][]byte, error) {
+	l.Lock()
+	defer l.Unlock()
+
+	identities := make([][]byte, 0)
+	for e := l.conns.Front(); e != nil; e = e.Next() {
+		cc := e.Value.(*incomingConn)
+
+		// Skip checking against pre-handshake conns.
+		if cc.w == nil || !cc.isInitialized {
+			continue
+		}
+
+		b, err := cc.w.PeerCredentials()
+		if err != nil {
+			l.log.Errorf("Session fail: %s", err)
+			return nil, errors.New("strange failure to retrieve session identity")
+		}
+		identities = append(identities, b.AdditionalData)
+	}
+	return identities, nil
 }
 
 func (l *listener) CloseOldConns(ptr interface{}) error {

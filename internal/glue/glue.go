@@ -95,6 +95,7 @@ type Connector interface {
 type Listener interface {
 	Halt()
 	CloseOldConns(interface{}) error
+	GetConnIdentities() ([][]byte, error)
 	OnNewSendRatePerMinute(uint64)
 	OnNewSendBurst(uint64)
 }

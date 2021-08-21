@@ -338,6 +338,11 @@ func (s *pgxSpool) Remove(u []byte) error {
 	return s.pgx.doUserDelete(u)
 }
 
+func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities [][]byte) error {
+	panic("failure! VacuumExpired not implemented for pgxSpool :(")
+	return nil // XXX *le sigh* implement me
+}
+
 func (s *pgxSpool) Vacuum(udb userdb.UserDB) error {
 	// This never needs to happen iff the database is acting as both the
 	// UserDB and spool.

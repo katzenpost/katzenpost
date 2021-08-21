@@ -20,7 +20,9 @@ package boltspool
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"time"
 
 	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/core/constants"
@@ -31,9 +33,10 @@ import (
 )
 
 const (
-	usersBucket = "users"
-	msgKey      = "message"
-	surbIDKey   = "surbID"
+	usersBucket     = "users"
+	msgKey          = "message"
+	surbIDKey       = "surbID"
+	receivedTimeKey = "receivedTime"
 )
 
 type boltSpool struct {
@@ -97,6 +100,12 @@ func (s *boltSpool) doStore(u []byte, id *[sConstants.SURBIDLength]byte, msg []b
 		if id != nil {
 			mBkt.Put([]byte(surbIDKey), id[:])
 		}
+
+		// Store the received time.
+		var tmp [8]byte
+		binary.BigEndian.PutUint64(tmp[:], uint64(time.Now().Unix()))
+		mBkt.Put([]byte(receivedTimeKey), tmp[:])
+
 		return nil
 	})
 }
@@ -194,6 +203,41 @@ func (s *boltSpool) Remove(u []byte) error {
 		}
 
 		return uBkt.DeleteBucket(u)
+	})
+}
+
+func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities [][]byte) error {
+	ignoreMap := make(map[[sConstants.RecipientIDLength]byte]interface{})
+	for _, ignore := range ignoreIdentities {
+		key := [sConstants.RecipientIDLength]byte{}
+		copy(key[:], ignore)
+		ignoreMap[key] = struct{}{}
+	}
+	return s.db.Update(func(tx *bolt.Tx) error {
+		uBkt := tx.Bucket([]byte(usersBucket))
+		usersCursor := uBkt.Cursor()
+		for identity, _ := usersCursor.First(); identity != nil; identity, _ = usersCursor.Next() {
+			key := [sConstants.RecipientIDLength]byte{}
+			copy(key[:], identity)
+			if _, ok := ignoreMap[key]; ok {
+				continue
+			}
+			userSpoolBkt := uBkt.Bucket(identity)
+			userSpoolCur := userSpoolBkt.Cursor()
+			mKey, _ := userSpoolCur.First()
+			mBkt := userSpoolBkt.Bucket(mKey)
+			rawTimeStamp := mBkt.Get([]byte(receivedTimeKey))
+			if rawTimeStamp == nil {
+				return errors.New("strange failure to retrieve message received time stamp")
+			}
+			lastReceived := binary.BigEndian.Uint64(rawTimeStamp)
+			if time.Unix(int64(lastReceived), 0).Before(time.Now().Add(-time.Duration(2 * time.Hour))) {
+				// ignore possible errors from the follow two database operations
+				_ = udb.Remove(identity)
+				_ = uBkt.DeleteBucket(identity)
+			}
+		}
+		return nil
 	})
 }
 
