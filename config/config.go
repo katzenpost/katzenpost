@@ -374,6 +374,11 @@ type Provider struct {
 	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
 	// for this provider.
 	CBORPluginKaetzchen []*CBORPluginKaetzchen
+
+	// TrustOnFirstUse indicates whether or not to trust client's wire protocol keys
+	// on first use. If set to true then first seen keys cause an entry in the userDB
+	// to be created. It will later be garbage collected.
+	TrustOnFirstUse bool
 }
 
 // SQLDB is the SQL database backend configuration.

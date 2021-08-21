@@ -776,7 +776,11 @@ func New(glue glue.Glue) (glue.Provider, error) {
 
 	switch cfg.Provider.UserDB.Backend {
 	case config.BackendBolt:
-		p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
+		if cfg.Provider.TrustOnFirstUse {
+			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB, boltuserdb.WithTrustOnFirstUse())
+		} else {
+			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
+		}
 	case config.BackendExtern:
 		p.userDB, err = externuserdb.New(cfg.Provider.UserDB.Extern.ProviderURL)
 	case config.BackendSQL:

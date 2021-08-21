@@ -23,9 +23,9 @@ import (
 	"fmt"
 	"sync"
 
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/server/userdb"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (
@@ -33,11 +33,21 @@ const (
 	identitiesBucket = "identities"
 )
 
+type BoltUserDBOption func(*boltUserDB)
+
+func WithTrustOnFirstUse() BoltUserDBOption {
+	return func(db *boltUserDB) {
+		db.trustOnFirstUse = true
+	}
+}
+
 type boltUserDB struct {
 	sync.RWMutex
 
 	db        *bolt.DB
 	userCache map[[userdb.MaxUsernameSize]byte]bool
+
+	trustOnFirstUse bool
 }
 
 func (d *boltUserDB) Exists(u []byte) bool {
@@ -61,17 +71,27 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	// Query the database to see if the user is present, and if the public
 	// keys match.
 	isValid := false
+	tofuUser := false
 	if err := d.db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(usersBucket))
 
 		// If the user exists in the `users` bucket, then compare public keys.
 		rawPubKey := bkt.Get(u)
-		if rawPubKey != nil {
+		if rawPubKey == nil {
+			if d.trustOnFirstUse == true {
+				tofuUser = true
+			}
+		} else {
 			isValid = subtle.ConstantTimeCompare(rawPubKey, k.Bytes()) == 1
 		}
 		return nil
 	}); err != nil {
 		return false
+	}
+	if tofuUser {
+		if err := d.Add(u, k, true); err != nil {
+			return false
+		}
 	}
 	return isValid
 }
@@ -206,7 +226,7 @@ func (d *boltUserDB) Close() {
 }
 
 // New creates (or loads) a user database with the given file name f.
-func New(f string) (userdb.UserDB, error) {
+func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 	const (
 		metadataBucket = "metadata"
 		versionKey     = "version"
@@ -215,6 +235,11 @@ func New(f string) (userdb.UserDB, error) {
 	var err error
 
 	d := new(boltUserDB)
+
+	for _, opt := range opts {
+		opt(d)
+	}
+
 	d.db, err = bolt.Open(f, 0600, nil)
 	if err != nil {
 		return nil, err
