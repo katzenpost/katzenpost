@@ -93,7 +93,7 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 			return false
 		}
 	}
-	return isValid
+	return true
 }
 
 func (d *boltUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
