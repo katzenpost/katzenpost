@@ -14,14 +14,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package cborplugin is a plugin system allowing mix network services
-// to be added in any language. It communicates queries and responses to and from
-// the mix server using CBOR over HTTP over UNIX domain socket. Beyond that,
-// a client supplied SURB is used to route the response back to the client
-// as described in our Kaetzchen specification document:
-//
-// https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
-//
 package cborplugin
 
 import (
@@ -86,7 +78,7 @@ func (s *Server) serviceConnection() error {
 		default:
 		}
 
-		var request PluginCommand
+		var request Command
 		err := readCommand(s.conn, request)
 		if err != nil {
 			return err

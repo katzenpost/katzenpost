@@ -14,14 +14,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package cborplugin is a plugin system allowing mix network services
-// to be added in any language. It communicates queries and responses to and from
-// the mix server using CBOR over HTTP over UNIX domain socket. Beyond that,
-// a client supplied SURB is used to route the response back to the client
-// as described in our Kaetzchen specification document:
-//
-// https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
-//
 package cborplugin
 
 import (
@@ -31,7 +23,6 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/core/log"
@@ -43,22 +34,31 @@ type Client struct {
 
 	logBackend *log.Backend
 	log        *logging.Logger
-	conn       net.Conn
-	cmd        *exec.Cmd
+
 	socketPath string
+	cmd        *exec.Cmd
+	conn       net.Conn
+
 	endpoint   string
 	capability string
 	params     *Parameters
+
+	readCh  chan Command
+	writeCh chan Command
+
+	commandBuilder CommandBuilder
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func NewClient(command, capability, endpoint string, logBackend *log.Backend) *Client {
+func NewClient(logBackend *log.Backend, commandBuilder CommandBuilder, name, capability, endpoint string) *Client {
 	return &Client{
 		capability: capability,
 		endpoint:   endpoint,
 		logBackend: logBackend,
-		log:        logBackend.GetLogger(command),
+		log:        logBackend.GetLogger(name),
+		readCh:     make(chan Command),
+		writeCh:    make(chan Command),
 	}
 }
 
@@ -70,7 +70,9 @@ func (c *Client) Start(command string, args []string) error {
 	if err != nil {
 		return err
 	}
-	c.Go(c.worker)
+	c.Go(c.reaper)
+	c.Go(c.reader)
+	c.Go(c.writer)
 	return nil
 }
 
@@ -83,7 +85,7 @@ func (c *Client) dialSocket(socketPath string) error {
 	return nil
 }
 
-func (c *Client) worker() {
+func (c *Client) reaper() {
 	<-c.HaltCh()
 	c.cmd.Process.Signal(syscall.SIGTERM)
 	err := c.cmd.Wait()
@@ -136,72 +138,51 @@ func (c *Client) launch(command string, args []string) error {
 	return nil
 }
 
-func (c *Client) readResponse() ([]byte, error) {
-	response := new(Response)
-	err := readCommand(c.conn, response)
+func (c *Client) readCommand() (Command, error) {
+	cmd := c.commandBuilder.Build()
+	err := readCommand(c.conn, cmd)
 	if err != nil {
 		return nil, err
 	}
 
-	return response.Payload, nil
+	return cmd, nil
 }
 
-func (c *Client) writeRequest(request PluginCommand) error {
-	return writeCommand(c.conn, request)
+func (c *Client) writeCommand(cmd Command) error {
+	return writeCommand(c.conn, cmd)
 }
 
-// OnRequest send a query request to plugin using length prefix CBOR over Unix domain socket.
-func (c *Client) OnRequest(request PluginCommand) ([]byte, error) {
-	if err := c.writeRequest(request); err != nil {
-		return nil, err
+func (c *Client) reader() {
+	for {
+		cmd, err := c.readCommand()
+		if err != nil {
+			panic(err) // XXX
+		}
+		select {
+		case <-c.HaltCh():
+			return
+		case c.readCh <- cmd:
+		}
 	}
 
-	response, err := c.readResponse()
-	if err != nil {
-		return nil, err
+}
+
+func (c *Client) writer() {
+	for {
+		select {
+		case <-c.HaltCh():
+			return
+		case cmd := <-c.writeCh:
+			err := c.writeCommand(cmd)
+			if err != nil {
+				panic(err) // XXX
+			}
+		}
 	}
-	return response, nil
 }
 
 // Capability are used in Mix Descriptor publication to give
 // service clients more information about the service.
 func (c *Client) Capability() string {
 	return c.capability
-}
-
-// GetParameters are used in Mix Descriptor publication to give
-// service clients more information about the service. Not
-// plugins will need to use this feature.
-func (c *Client) GetParameters() (*Parameters, error) {
-	// get plugin parameters if any
-	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
-
-	request := &Request{
-		GetParameters: true,
-	}
-	err := c.writeRequest(request)
-	if err != nil {
-		c.log.Debugf("sending of getParameters failure: %s", err)
-		c.Halt()
-		return nil, err
-	}
-
-	response, err := c.readResponse()
-	if err != nil {
-		return nil, err
-	}
-
-	responseParams := make(Parameters)
-	err = cbor.Unmarshal(response, responseParams)
-	if err != nil {
-		c.log.Debugf("decode failure: %s", err)
-		return nil, err
-	}
-	// XXX: why does this happen?
-	if responseParams == nil {
-		c.log.Debugf("no parameters set for %s", c.capability)
-		responseParams = make(Parameters)
-	}
-	responseParams["endpoint"] = c.endpoint
-	return &responseParams, nil
 }

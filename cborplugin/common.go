@@ -14,14 +14,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package cborplugin is a plugin system allowing mix network services
-// to be added in any language. It communicates queries and responses to and from
-// the mix server using CBOR over HTTP over UNIX domain socket. Beyond that,
-// a client supplied SURB is used to route the response back to the client
-// as described in our Kaetzchen specification document:
-//
-// https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
-//
 package cborplugin
 
 import (
@@ -32,12 +24,16 @@ import (
 )
 
 type Plugin interface {
-	OnRequest(PluginCommand) (PluginCommand, error)
+	OnRequest(Command) (Command, error)
 }
 
-type PluginCommand interface {
+type Command interface {
 	MarshalCBOR() (data []byte, err error)
 	UnmarshalCBOR(data []byte) error
+}
+
+type CommandBuilder interface {
+	Build() Command
 }
 
 type Request struct {
@@ -74,7 +70,19 @@ func (r *Response) MarshalCBOR() (data []byte, err error) {
 // https://github.com/katzenpost/core/blob/master/pki/pki.go
 type Parameters map[string]string
 
-func readCommand(conn net.Conn, command PluginCommand) error {
+func (p *Parameters) UnmarshalCBOR(data []byte) error {
+	return cbor.Unmarshal(data, p)
+}
+
+func (p *Parameters) MarshalCBOR() (data []byte, err error) {
+	return cbor.Marshal(p)
+}
+
+func (p *Parameters) SetEndpoint(endpoint string) {
+	map[string]string(*p)["endpoint"] = endpoint
+}
+
+func readCommand(conn net.Conn, command Command) error {
 	rawLen := make([]byte, 2)
 	_, err := conn.Read(rawLen)
 	if err != nil {
@@ -95,7 +103,7 @@ func readCommand(conn net.Conn, command PluginCommand) error {
 	return nil
 }
 
-func writeCommand(conn net.Conn, command PluginCommand) error {
+func writeCommand(conn net.Conn, command Command) error {
 	serialized, err := cbor.Marshal(command)
 	if err != nil {
 		return err
