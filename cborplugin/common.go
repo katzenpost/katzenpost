@@ -21,65 +21,130 @@ import (
 
 	"encoding/binary"
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/core/worker"
 )
 
-type Plugin interface {
-	OnRequest(Command) (Command, error)
+type ServerPlugin interface {
+	OnCommand(Command) (Command, error)
+	RegisterConsumer(*Server)
+}
+
+type ClientPlugin interface {
+	OnCommand(interface{}) (Command, error)
+	RegisterConsumer(*Client)
 }
 
 type Command interface {
-	MarshalCBOR() (data []byte, err error)
-	UnmarshalCBOR(data []byte) error
+	Marshal() ([]byte, error)
+	Unmarshal(b []byte) error
 }
 
 type CommandBuilder interface {
 	Build() Command
 }
 
-type Request struct {
-	GetParameters bool
-	Payload       []byte
+type CommandIO struct {
+	worker.Worker
+
+	log      *logging.Logger
+	conn     net.Conn
+	listener net.Listener
+
+	readCh  chan Command
+	writeCh chan Command
+
+	commandBuilder CommandBuilder
 }
 
-func (r *Request) MarshalCBOR() (data []byte, err error) {
-	return cbor.Marshal(r)
+func NewCommandIO(log *logging.Logger) *CommandIO {
+	return &CommandIO{
+		log:     log,
+		readCh:  make(chan Command),
+		writeCh: make(chan Command),
+	}
 }
 
-func (r *Request) UnmarshalCBOR(data []byte) error {
-	return cbor.Unmarshal(data, r)
+func (c *CommandIO) Start(initiator bool, socketFile string, commandBuilder CommandBuilder) {
+	c.commandBuilder = commandBuilder
+
+	if initiator {
+		err := c.dial(socketFile)
+		if err != nil {
+			panic(err)
+		}
+		c.Go(c.reader)
+		c.Go(c.writer)
+	} else {
+		c.log.Debugf("listening to unix domain socket file: %s", socketFile)
+		var err error
+		c.listener, err = net.Listen("unix", socketFile)
+		if err != nil {
+			c.log.Fatal("listen error:", err)
+		}
+	}
 }
 
-// Response is the response received after sending a Request to the plugin.
-type Response struct {
-	Payload []byte
+func (c *CommandIO) Accept() {
+	var err error
+	c.conn, err = c.listener.Accept()
+	if err != nil {
+		c.log.Fatal("accept error:", err)
+		return
+	}
+
+	c.Go(c.reader)
+	c.Go(c.writer)
 }
 
-func (r *Response) UnmarshalCBOR(data []byte) error {
-	return cbor.Unmarshal(data, r)
+func (c *CommandIO) dial(socketFile string) error {
+	c.log.Debugf("dialing unix domain socket file: %s", socketFile)
+	var err error
+	c.conn, err = net.Dial("unix", socketFile)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (r *Response) MarshalCBOR() (data []byte, err error) {
-	return cbor.Marshal(r)
+func (c *CommandIO) ReadChan() chan Command {
+	return c.readCh
 }
 
-// Parameters is an optional mapping that plugins can publish, these get
-// advertised to clients in the MixDescriptor.
-// The output of GetParameters() ends up being published in a map
-// associating with the service names to service parameters map.
-// This information is part of the Mix Descriptor which is defined here:
-// https://github.com/katzenpost/core/blob/master/pki/pki.go
-type Parameters map[string]string
-
-func (p *Parameters) UnmarshalCBOR(data []byte) error {
-	return cbor.Unmarshal(data, p)
+func (c *CommandIO) WriteChan() chan Command {
+	return c.writeCh
 }
 
-func (p *Parameters) MarshalCBOR() (data []byte, err error) {
-	return cbor.Marshal(p)
+func (c *CommandIO) reader() {
+	for {
+		cmd := c.commandBuilder.Build()
+		err := readCommand(c.conn, cmd)
+		if err != nil {
+			panic(err) // XXX
+		}
+		select {
+		case <-c.HaltCh():
+			return
+		case c.readCh <- cmd:
+		}
+	}
+
 }
 
-func (p *Parameters) SetEndpoint(endpoint string) {
-	map[string]string(*p)["endpoint"] = endpoint
+func (c *CommandIO) writer() {
+	for {
+		select {
+		case <-c.HaltCh():
+			return
+		case cmd := <-c.writeCh:
+			err := writeCommand(c.conn, cmd)
+			if err != nil {
+				panic(err) // XXX
+			}
+		}
+	}
 }
 
 func readCommand(conn net.Conn, command Command) error {
@@ -95,7 +160,7 @@ func readCommand(conn net.Conn, command Command) error {
 	if err != nil {
 		return err
 	}
-	err = command.UnmarshalCBOR(rawCommand)
+	err = cbor.Unmarshal(rawCommand, command)
 	if err != nil {
 		return err
 	}
@@ -109,11 +174,11 @@ func writeCommand(conn net.Conn, command Command) error {
 		return err
 	}
 
-	output := make([]byte, len(serialized)+2)
+	output := make([]byte, 0, len(serialized)+2)
 	tmp := make([]byte, 2)
 	binary.BigEndian.PutUint16(tmp, uint16(len(serialized)))
-	copy(output, tmp)
-	copy(output[2:], serialized)
+	output = append(output, tmp...)
+	output = append(output, serialized...)
 	_, err = conn.Write(output)
 	if err != nil {
 		return err

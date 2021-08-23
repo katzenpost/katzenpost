@@ -32,33 +32,25 @@ import (
 type Client struct {
 	worker.Worker
 
+	socket CommandIO
+
 	logBackend *log.Backend
 	log        *logging.Logger
 
-	socketPath string
+	socketFile string
 	cmd        *exec.Cmd
 	conn       net.Conn
-
-	endpoint   string
-	capability string
-	params     *Parameters
-
-	readCh  chan Command
-	writeCh chan Command
 
 	commandBuilder CommandBuilder
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func NewClient(logBackend *log.Backend, commandBuilder CommandBuilder, name, capability, endpoint string) *Client {
+func NewClient(logBackend *log.Backend, commandBuilder CommandBuilder) *Client {
 	return &Client{
-		capability: capability,
-		endpoint:   endpoint,
+		socket:     CommandIO{},
 		logBackend: logBackend,
-		log:        logBackend.GetLogger(name),
-		readCh:     make(chan Command),
-		writeCh:    make(chan Command),
+		log:        logBackend.GetLogger("client"),
 	}
 }
 
@@ -71,17 +63,7 @@ func (c *Client) Start(command string, args []string) error {
 		return err
 	}
 	c.Go(c.reaper)
-	c.Go(c.reader)
-	c.Go(c.writer)
-	return nil
-}
-
-func (c *Client) dialSocket(socketPath string) error {
-	var err error
-	c.conn, err = net.Dial("unix", socketPath)
-	if err != nil {
-		return err
-	}
+	c.socket.Start(true, c.socketFile, c.commandBuilder)
 	return nil
 }
 
@@ -130,59 +112,7 @@ func (c *Client) launch(command string, args []string) error {
 	// read and decode plugin stdout
 	stdoutScanner := bufio.NewScanner(stdout)
 	stdoutScanner.Scan()
-	c.socketPath = stdoutScanner.Text()
-	c.log.Debugf("plugin socket path:'%s'\n", c.socketPath)
-	c.dialSocket(c.socketPath)
-
-	c.log.Debug("finished launching plugin.")
+	c.socketFile = stdoutScanner.Text()
+	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
 	return nil
-}
-
-func (c *Client) readCommand() (Command, error) {
-	cmd := c.commandBuilder.Build()
-	err := readCommand(c.conn, cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	return cmd, nil
-}
-
-func (c *Client) writeCommand(cmd Command) error {
-	return writeCommand(c.conn, cmd)
-}
-
-func (c *Client) reader() {
-	for {
-		cmd, err := c.readCommand()
-		if err != nil {
-			panic(err) // XXX
-		}
-		select {
-		case <-c.HaltCh():
-			return
-		case c.readCh <- cmd:
-		}
-	}
-
-}
-
-func (c *Client) writer() {
-	for {
-		select {
-		case <-c.HaltCh():
-			return
-		case cmd := <-c.writeCh:
-			err := c.writeCommand(cmd)
-			if err != nil {
-				panic(err) // XXX
-			}
-		}
-	}
-}
-
-// Capability are used in Mix Descriptor publication to give
-// service clients more information about the service.
-func (c *Client) Capability() string {
-	return c.capability
 }

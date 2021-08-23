@@ -11,5 +11,6 @@ require (
 	github.com/stretchr/testify v1.4.0
 	github.com/ugorji/go/codec v1.1.7
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 )

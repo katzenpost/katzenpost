@@ -24,76 +24,64 @@ import (
 	"github.com/katzenpost/core/worker"
 )
 
+// Server is used to construct plugins, which are programs which
+// listen on a unix domain socket for connections from the Provider/mix server.
 type Server struct {
 	worker.Worker
 
-	log        *logging.Logger
-	conn       net.Conn
-	socketFile string
-	plugin     Plugin
+	socket         *CommandIO
+	log            *logging.Logger
+	conn           net.Conn
+	socketFile     string
+	plugin         ServerPlugin
+	commandBuilder CommandBuilder
 }
 
-func NewServer(log *logging.Logger, socketFile string, plugin Plugin) *Server {
+func NewServer(log *logging.Logger, socketFile string, commandBuilder CommandBuilder, plugin ServerPlugin) *Server {
 	s := &Server{
-		log:        log,
-		socketFile: socketFile,
-		plugin:     plugin,
+		log:            log,
+		socketFile:     socketFile,
+		plugin:         plugin,
+		commandBuilder: commandBuilder,
+		socket:         NewCommandIO(log),
 	}
-	s.Go(s.worker)
+	s.plugin.RegisterConsumer(s)
+	s.socket.Start(false, s.socketFile, s.commandBuilder)
 	return s
 }
 
-func (s *Server) worker() {
-	l, err := net.Listen("unix", s.socketFile)
-	if err != nil {
-		s.log.Fatal("listen error:", err)
-	}
-	defer l.Close()
+func (s *Server) Accept() {
+	s.socket.Accept()
+	s.Go(s.worker)
+}
 
+func (s *Server) worker() {
 	for {
+		s.log.Debug("server_worker")
 		select {
 		case <-s.HaltCh():
 			return
-		default:
-		}
-		s.conn, err = l.Accept()
-		if err != nil {
-			s.log.Fatal("accept error:", err)
-			return
-		}
-
-		err := s.serviceConnection()
-		if err != nil {
-			s.log.Fatal("accept error:", err)
-			return
+		case cmd := <-s.socket.ReadChan():
+			reply, err := s.plugin.OnCommand(cmd)
+			if err != nil {
+				panic(err)
+			}
+			if reply == nil {
+				continue
+			}
+			select {
+			case <-s.HaltCh():
+				return
+			case s.socket.WriteChan() <- reply:
+			}
 		}
 	}
 }
 
-func (s *Server) serviceConnection() error {
-	for {
-		select {
-		case <-s.HaltCh():
-			return nil
-		default:
-		}
-
-		var request Command
-		err := readCommand(s.conn, request)
-		if err != nil {
-			return err
-		}
-
-		response, err := s.plugin.OnRequest(request)
-		if err != nil {
-			return err
-		}
-
-		err = writeCommand(s.conn, response)
-		if err != nil {
-			return err
-		}
+func (s *Server) Write(cmd Command) {
+	select {
+	case <-s.HaltCh():
+		return
+	case s.socket.WriteChan() <- cmd:
 	}
-
-	return nil
 }
