@@ -116,3 +116,11 @@ func (c *Client) launch(command string, args []string) error {
 	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
 	return nil
 }
+
+func (c *Client) ReadChan() chan Command {
+	return c.socket.ReadChan()
+}
+
+func (c *Client) WriteChan() chan Command {
+	return c.socket.WriteChan()
+}
