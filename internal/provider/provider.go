@@ -267,6 +267,19 @@ func (p *provider) worker() {
 			continue
 		}
 
+		if p.cborPluginKaetzchenWorker2.IsKaetzchen(pkt.Recipient.ID) {
+			if pkt.IsSURBReply() {
+				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
+				packetsDropped.Inc()
+				pkt.Dispose()
+			} else {
+				// Note that we pass ownership of pkt to p.kaetzchenWorker
+				// which will take care to dispose of it.
+				p.cborPluginKaetzchenWorker2.OnKaetzchen(pkt)
+			}
+			continue
+		}
+
 		// Post-process the recipient.
 		recipient, err := p.fixupRecipient(pkt.Recipient.ID[:])
 		if err != nil {

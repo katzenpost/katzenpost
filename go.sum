@@ -122,6 +122,8 @@ github.com/katzenpost/core v0.0.15-0.20210825215817-67a2695bfb80 h1:1tz8iOMmPaNK
 github.com/katzenpost/core v0.0.15-0.20210825215817-67a2695bfb80/go.mod h1:vqbKUKkQR3iAsD0r1/Bkc9XGPcW4rLs8BSx44FZ9ptw=
 github.com/katzenpost/core v0.0.15-0.20210826021432-c51ee63299d0 h1:QpSb/2w1AA81Olnri3wmg4zHa7jZldq7DHry3GQd+mQ=
 github.com/katzenpost/core v0.0.15-0.20210826021432-c51ee63299d0/go.mod h1:vqbKUKkQR3iAsD0r1/Bkc9XGPcW4rLs8BSx44FZ9ptw=
+github.com/katzenpost/core v0.0.15-0.20210826024828-a7d9c41e0495 h1:doZa627JQ+t9kRtGK5yLjyvGfNhsZkRm9n8OlybBbyI=
+github.com/katzenpost/core v0.0.15-0.20210826024828-a7d9c41e0495/go.mod h1:vqbKUKkQR3iAsD0r1/Bkc9XGPcW4rLs8BSx44FZ9ptw=
 github.com/katzenpost/doubleratchet v0.0.0/go.mod h1:wf2vPnyq/j7WDVi03YshRCZc207N3srd0yEENp7qyww=
 github.com/katzenpost/kimchi v0.0.0-20190919180141-c3fbd2593e78/go.mod h1:WUe/MpQRPZ9uHm/LMF9qsHfuBoYF207b2vyXWsLA75M=
 github.com/katzenpost/kimchi v0.0.0-20190923104312-3f798235dc4f/go.mod h1:h1u/GqNvbeLjRfQQlsjkmlzFzi88X8OsFgrYcE8ufyw=
