@@ -154,10 +154,9 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 		map1, map2, map3,
 	}
 
-	currentSet := setsToMerge[0]
 	merged := make(map[kaetzchen.PluginName]kaetzchen.PluginParameters)
 
-	for {
+	for _, currentSet := range setsToMerge {
 		for k, v := range currentSet {
 			if _, ok := merged[k]; ok {
 				p.log.Debug("WARNING: duplicate plugin entries")
