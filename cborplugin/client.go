@@ -42,15 +42,20 @@ type Client struct {
 	conn       net.Conn
 
 	commandBuilder CommandBuilder
+
+	capability string
+	endpoint   string
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func NewClient(logBackend *log.Backend, commandBuilder CommandBuilder) *Client {
+func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder) *Client {
 	return &Client{
 		socket:     CommandIO{},
 		logBackend: logBackend,
 		log:        logBackend.GetLogger("client"),
+		capability: capability,
+		endpoint:   endpoint,
 	}
 }
 
@@ -126,12 +131,11 @@ func (c *Client) WriteChan() chan Command {
 }
 
 func (c *Client) Capability() string {
-	// TODO(david): fix me
-	return ""
+	return c.capability
 }
 
 func (c *Client) GetParameters() *map[string]interface{} {
 	responseParams := new(map[string]interface{})
-	// TODO(david): fix me
+	responseParams["endpoint"] = c.endpoint
 	return responseParams
 }
