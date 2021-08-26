@@ -73,8 +73,9 @@ type provider struct {
 	userDB userdb.UserDB
 	spool  spool.Spool
 
-	kaetzchenWorker           *kaetzchen.KaetzchenWorker
-	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
+	kaetzchenWorker            *kaetzchen.KaetzchenWorker
+	cborPluginKaetzchenWorker  *kaetzchen.CBORPluginWorker
+	cborPluginKaetzchenWorker2 *kaetzchen.CBORPluginWorker2
 
 	httpServers []*http.Server
 }
@@ -101,6 +102,7 @@ func (p *provider) Halt() {
 	p.ch.Close()
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
+	p.cborPluginKaetzchenWorker2.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -145,22 +147,27 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
 	map2 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
-	if map1 == nil && map2 != nil {
-		return map2, nil
-	}
-	if map1 != nil && map2 == nil {
-		return map1, nil
-	}
+	map3 := p.cborPluginKaetzchenWorker2.KaetzchenForPKI()
+
 	// merge sets, panic on duplicate
-	for k, v := range map2 {
-		_, ok := map1[k]
-		if ok {
-			p.log.Debug("WARNING: duplicate plugin entries")
-			panic("WARNING: duplicate plugin entries")
-		}
-		map1[k] = v
+	setsToMerge := []map[kaetzchen.PluginName]kaetzchen.PluginParameters{
+		map1, map2, map3,
 	}
-	return map1, nil
+
+	currentSet := setsToMerge[0]
+	merged := make(map[kaetzchen.PluginName]kaetzchen.PluginParameters)
+
+	for {
+		for k, v := range currentSet {
+			if _, ok := merged[k]; ok {
+				p.log.Debug("WARNING: duplicate plugin entries")
+				panic("WARNING: duplicate plugin entries")
+			}
+			merged[k] = v
+		}
+	}
+
+	return merged, nil
 }
 
 func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
@@ -746,12 +753,17 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
+	cborPluginWorker2, err := kaetzchen.NewCBORPluginWorker2(glue)
+	if err != nil {
+		return nil, err
+	}
 	p := &provider{
-		glue:                      glue,
-		log:                       glue.LogBackend().GetLogger("provider"),
-		ch:                        channels.NewInfiniteChannel(),
-		kaetzchenWorker:           kaetzchenWorker,
-		cborPluginKaetzchenWorker: cborPluginWorker,
+		glue:                       glue,
+		log:                        glue.LogBackend().GetLogger("provider"),
+		ch:                         channels.NewInfiniteChannel(),
+		kaetzchenWorker:            kaetzchenWorker,
+		cborPluginKaetzchenWorker:  cborPluginWorker,
+		cborPluginKaetzchenWorker2: cborPluginWorker2,
 	}
 
 	cfg := glue.Config()
