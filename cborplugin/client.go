@@ -27,6 +27,7 @@ import (
 
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/cborplugin"
 )
 
 type Client struct {
@@ -123,4 +124,15 @@ func (c *Client) ReadChan() chan Command {
 
 func (c *Client) WriteChan() chan Command {
 	return c.socket.WriteChan()
+}
+
+func (c *Client) Capability() string {
+	// TODO(david): fix me
+	return ""
+}
+
+func (c *Client) GetParameters() *cborplugin.Parameters {
+	responseParams := new(cborplugin.Parameters)
+	// TODO(david): fix me
+	return responseParams
 }
