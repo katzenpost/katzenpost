@@ -27,7 +27,6 @@ import (
 
 	"github.com/katzenpost/core/log"
 	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/server/cborplugin"
 )
 
 type Client struct {
@@ -131,8 +130,8 @@ func (c *Client) Capability() string {
 	return ""
 }
 
-func (c *Client) GetParameters() *cborplugin.Parameters {
-	responseParams := new(cborplugin.Parameters)
+func (c *Client) GetParameters() *map[string]interface{} {
+	responseParams := new(map[string]interface{})
 	// TODO(david): fix me
 	return responseParams
 }
