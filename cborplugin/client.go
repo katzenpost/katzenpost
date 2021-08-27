@@ -32,7 +32,7 @@ import (
 type Client struct {
 	worker.Worker
 
-	socket CommandIO
+	socket *CommandIO
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -49,13 +49,12 @@ type Client struct {
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder) *Client {
+func NewClient(logBackend *log.Backend, commandBuilder CommandBuilder) *Client {
 	return &Client{
-		socket:     CommandIO{},
-		logBackend: logBackend,
-		log:        logBackend.GetLogger("client"),
-		capability: capability,
-		endpoint:   endpoint,
+		socket:         NewCommandIO(logBackend.GetLogger("client_socket")),
+		logBackend:     logBackend,
+		log:            logBackend.GetLogger("client"),
+		commandBuilder: commandBuilder,
 	}
 }
 
@@ -128,14 +127,4 @@ func (c *Client) ReadChan() chan Command {
 
 func (c *Client) WriteChan() chan Command {
 	return c.socket.WriteChan()
-}
-
-func (c *Client) Capability() string {
-	return c.capability
-}
-
-func (c *Client) GetParameters() *map[string]interface{} {
-	responseParams := new(map[string]interface{})
-	responseParams["endpoint"] = c.endpoint
-	return responseParams
 }
