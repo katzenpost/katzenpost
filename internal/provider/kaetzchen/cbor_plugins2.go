@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/core/monotime"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/server/cborplugin2"
 	"github.com/katzenpost/server/internal/glue"
 	"github.com/katzenpost/server/internal/packet"
 )
@@ -83,7 +84,7 @@ type CBORPluginWorker2 struct {
 
 	haltOnce    sync.Once
 	pluginChans PluginChans
-	clients     []*cborplugin.Client
+	clients     []*cborplugin2.Client
 }
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
