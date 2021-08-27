@@ -235,7 +235,7 @@ func NewCBORPluginWorker2(glue glue.Glue) (*CBORPluginWorker2, error) {
 
 	capaMap := make(map[string]bool)
 
-	for _, pluginConf := range glue.Config().Provider.CBORPluginKaetzchen {
+	for _, pluginConf := range glue.Config().Provider.CBORPluginKaetzchen2 {
 		kaetzchenWorker.log.Noticef("Configuring plugin handler for %s", pluginConf.Capability)
 
 		// Ensure no duplicates.

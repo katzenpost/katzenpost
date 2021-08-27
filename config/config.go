@@ -374,6 +374,10 @@ type Provider struct {
 	// CBORPluginKaetzchen is the list of configured external CBOR Kaetzchen plugins
 	// for this provider.
 	CBORPluginKaetzchen []*CBORPluginKaetzchen
+
+	// CBORPluginKaetzchen2 is the list of configured external CBOR Kaetzchen plugins
+	// for this provider.
+	CBORPluginKaetzchen2 []*CBORPluginKaetzchen
 }
 
 // SQLDB is the SQL database backend configuration.
