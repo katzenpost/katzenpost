@@ -97,7 +97,7 @@ func (k *CBORPluginWorker2) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh.In() <- pkt
 }
 
-func (k *CBORPluginWorker2) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
+func (k *CBORPluginWorker2) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient *cborplugin2.Client) {
 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
@@ -140,7 +140,7 @@ func (k *CBORPluginWorker2) haltAllClients() {
 	}
 }
 
-func (k *CBORPluginWorker2) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin.Client) {
+func (k *CBORPluginWorker2) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin2.Client) {
 	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
@@ -216,9 +216,9 @@ func (k *CBORPluginWorker2) IsKaetzchen(recipient [sConstants.RecipientIDLength]
 	return ok
 }
 
-func (k *CBORPluginWorker2) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
+func (k *CBORPluginWorker2) launch(command, capability, endpoint string, args []string) (*cborplugin2.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.NewClient(k.glue.LogBackend(), &requestFactory{})
+	plugin := cborplugin2.NewClient(k.glue.LogBackend(), capability, endpoint, &requestFactory{})
 	err := plugin.Start(command, args)
 	return plugin, err
 }
@@ -230,7 +230,7 @@ func NewCBORPluginWorker2(glue glue.Glue) (*CBORPluginWorker2, error) {
 		glue:        glue,
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),
-		clients:     make([]*cborplugin.Client, 0),
+		clients:     make([]*cborplugin2.Client, 0),
 	}
 
 	capaMap := make(map[string]bool)
