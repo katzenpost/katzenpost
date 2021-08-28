@@ -95,7 +95,7 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 		return false
 	}
 	if tofuUser {
-		if err := d.Add(u, k, true); err != nil {
+		if err := d.Add(u, k, false); err != nil {
 			return false
 		}
 	}
