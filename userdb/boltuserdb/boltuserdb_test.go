@@ -67,7 +67,7 @@ func doTestCreate(t *testing.T) {
 		assert.True(d.IsValid([]byte(u), k), "IsValid('%s', k)", u)
 	}
 	assert.False(d.Exists([]byte("malory")), "Exists('malory')")
-	assert.False(d.IsValid([]byte("malory"), testUsers["alice"]), "IsValid('malory', k)")
+	assert.True(d.IsValid([]byte("malory"), testUsers["alice"]), "IsValid('malory', k)")
 }
 
 func doTestLoad(t *testing.T) {
@@ -83,7 +83,7 @@ func doTestLoad(t *testing.T) {
 		assert.True(d.IsValid([]byte(u), k), "IsValid('%s', k)", u)
 	}
 	assert.False(d.Exists([]byte("malory")), "Exists('malory')")
-	assert.False(d.IsValid([]byte("malory"), testUsers["alice"]), "IsValid('malory', k)")
+	assert.True(d.IsValid([]byte("malory"), testUsers["alice"]), "IsValid('malory', k)")
 
 	err = d.Add([]byte("alice"), testUsers["alice"], false)
 	assert.Error(err, "Add('alice', k, false)")
