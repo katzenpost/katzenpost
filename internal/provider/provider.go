@@ -270,6 +270,13 @@ func (p *provider) worker() {
 			}
 		}
 
+		if pkt.Recipient == nil {
+			p.log.Debugf("Recipient is nil, dropping packet %v", pkt.ID)
+			packetsDropped.Inc()
+			pkt.Dispose()
+			continue
+		}
+
 		// Kaetzchen endpoints are published in the PKI and are never
 		// user-facing, so omit the recipient-post processing.  If clients
 		// are written under the assumption that Kaetzchen addresses are
