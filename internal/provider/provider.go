@@ -262,12 +262,17 @@ func (p *provider) worker() {
 			p.gcEphemeralClients()
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
+
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				packetsDropped.Inc()
 				pkt.Dispose()
 				continue
 			}
+		}
+
+		if pkt == nil {
+			continue
 		}
 
 		if pkt.Recipient == nil {
