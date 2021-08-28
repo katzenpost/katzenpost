@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
-
-	"github.com/katzenpost/core/log"
 
 	"github.com/fxamacker/cbor/v2"
 	corecborplugin "github.com/katzenpost/core/cborplugin"
+	"github.com/katzenpost/core/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -76,7 +76,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	logBackend, err := log.New("", "DEBUG", false)
+	// Log to a file.
+	logFile := path.Join(logDir, fmt.Sprintf("echo.%d.log", os.Getpid()))
+	logBackend, err := log.New(logFile, "DEBUG", false)
+	if err != nil {
+		panic(err)
+	}
 	serverLog := logBackend.GetLogger("server")
 
 	// start service
