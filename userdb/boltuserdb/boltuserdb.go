@@ -20,6 +20,7 @@ package boltuserdb
 
 import (
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -83,6 +84,11 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 			}
 		} else {
 			isValid = subtle.ConstantTimeCompare(rawPubKey, k.Bytes()) == 1
+			if isValid {
+				return nil
+			} else {
+				return errors.New("public keys don't match")
+			}
 		}
 		return nil
 	}); err != nil {
