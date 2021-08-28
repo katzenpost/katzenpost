@@ -27,7 +27,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	corecborplugin "github.com/katzenpost/core/cborplugin"
-	//"github.com/katzenpost/server/cborplugin"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -97,6 +96,7 @@ func main() {
 
 	})
 	err = g.Wait()
+	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
 	os.Remove(socketFile)
