@@ -235,6 +235,10 @@ func (p *provider) worker() {
 			}
 		}
 
+		if pkt == nil {
+			continue
+		}
+
 		// Kaetzchen endpoints are published in the PKI and are never
 		// user-facing, so omit the recipient-post processing.  If clients
 		// are written under the assumption that Kaetzchen addresses are
