@@ -4,8 +4,9 @@ go 1.13
 
 require (
 	github.com/BurntSushi/toml v0.3.1
+	github.com/fxamacker/cbor/v2 v2.3.0 // indirect
 	github.com/katzenpost/authority v0.0.15
-	github.com/katzenpost/core v0.0.14
+	github.com/katzenpost/core v0.0.15-0.20210827005929-27dfbc0c71d9
 	github.com/katzenpost/minclient v0.0.14
 	github.com/katzenpost/registration_client v0.0.2
 	github.com/katzenpost/server v0.0.21 // indirect

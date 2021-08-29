@@ -26,6 +26,7 @@ import (
 	"time"
 
 	cConstants "github.com/katzenpost/client/constants"
+	"github.com/katzenpost/client/events"
 	"github.com/katzenpost/core/constants"
 	"github.com/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/core/sphinx/constants"
@@ -142,7 +143,7 @@ func (s *Session) doSend(msg *Message) {
 			return
 		}
 	}
-	s.eventCh.In() <- &MessageSentEvent{
+	s.eventCh.In() <- &events.MessageSentEvent{
 		MessageID: msg.ID,
 		Err:       err,
 		SentAt:    msg.SentAt,

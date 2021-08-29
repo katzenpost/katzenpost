@@ -89,7 +89,7 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 
 	// try to pick a registration address using a prefered transport
 	var addr string
-	loop0:
+loop0:
 	for _, t := range cfg.Debug.PreferedTransports {
 		for _, v := range registrationProvider.RegistrationHTTPAddresses {
 			if u, err := url.Parse(v); err == nil {
