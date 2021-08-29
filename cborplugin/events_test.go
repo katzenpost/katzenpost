@@ -1,5 +1,5 @@
-// session.go - mixnet client session
-// Copyright (C) 2018  David Stainton.
+// events_test.go - cbor plugin events test
+// Copyright (C) 2021  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,26 +14,29 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package client
+package cborplugin
 
 import (
-	"fmt"
+	"testing"
 
-	"github.com/katzenpost/client/cborplugin"
+	"github.com/katzenpost/client/events"
+	"github.com/stretchr/testify/require"
 )
 
-func (s *Session) startPlugins() {
-	for _, pluginConf := range s.cfg.CBORPlugin {
-		args := []string{}
-		if len(pluginConf.Config) > 0 {
-			for key, val := range pluginConf.Config {
-				args = append(args, fmt.Sprintf("-%s", key), val.(string))
-			}
-		}
-		plugin := cborplugin.New(s, s.logBackend)
-		err := plugin.Start(pluginConf.Command, args)
-		if err != nil {
-			s.log.Fatal(err)
-		}
+func TestEvent(t *testing.T) {
+	e := &Event{
+		ConnectionStatusEvent: &events.ConnectionStatusEvent{
+			IsConnected: true,
+		},
 	}
+
+	b, err := e.Marshal()
+	require.NoError(t, err)
+
+	n := &Event{}
+	err = n.Unmarshal(b)
+	require.NoError(t, err)
+
+	require.True(t, e.ConnectionStatusEvent.IsConnected)
+	require.True(t, n.ConnectionStatusEvent.IsConnected)
 }

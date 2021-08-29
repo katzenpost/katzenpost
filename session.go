@@ -74,7 +74,7 @@ type Session struct {
 
 	decoyLoopTally uint64
 
-	plugin *cborplugin.Client
+	plugins *cborplugin.Plugins
 }
 
 // New establishes a session with provider using key.
@@ -152,7 +152,7 @@ func NewSession(
 	}
 	s.Go(s.worker)
 
-	s.startPlugins()
+	s.plugins = cborplugin.NewPlugins(s, s.logBackend, s.cfg.CBORPlugin)
 
 	return s, nil
 }
@@ -170,8 +170,13 @@ func (s *Session) eventSinkWorker() {
 				s.log.Debugf("Event sink worker terminating gracefully.")
 				return
 			}
-			// FIXME(david): send another copy of the event off to
-			// the plugins.
+
+			select {
+			case s.plugins.EventSink() <- e.(events.Event):
+			case <-s.HaltCh():
+				s.log.Debugf("Event sink worker terminating gracefully.")
+				return
+			}
 		}
 	}
 }

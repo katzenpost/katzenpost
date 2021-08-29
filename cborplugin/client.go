@@ -45,6 +45,7 @@ type Client struct {
 	cborplugin.Client
 
 	session Session
+	plugins *Plugins
 
 	log        *logging.Logger
 	ctx        context.Context
@@ -54,13 +55,15 @@ type Client struct {
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func New(session Session, logBackend *log.Backend) *Client {
+func New(plugins *Plugins, session Session, logBackend *log.Backend) *Client {
 	ctx := context.Background()
 	ctx, cancelFunc := context.WithCancel(ctx)
 
 	group, _ := errgroup.WithContext(ctx)
 	c := &Client{
-		Client:     *(cborplugin.NewClient(logBackend, &EventBuilder{})),
+		Client:     *(cborplugin.NewClient(logBackend, &CommandBuilder{})),
+		plugins:    plugins,
+		session:    session,
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
 		group:      group,
@@ -110,12 +113,12 @@ func (c *Client) processCommand(command *Command) {
 			c.log.Error(err.Error())
 		}
 
-		// TODO(david): Use the message id to route this message's reply to this plugin.
-
 		err = c.session.SendMessage(command.SendMessage.Recipient, command.SendMessage.Provider, command.SendMessage.Payload, id)
 		if err != nil {
 			c.log.Error(err.Error())
 		}
+
+		c.plugins.ReplyToSentMessage(&id, c)
 
 		return
 	}

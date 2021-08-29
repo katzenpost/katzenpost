@@ -47,8 +47,8 @@ func (c *Command) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, c)
 }
 
-type CommandFactory struct{}
+type CommandBuilder struct{}
 
-func (p *CommandFactory) Build() cborplugin.Command {
+func (p *CommandBuilder) Build() cborplugin.Command {
 	return new(Command)
 }
