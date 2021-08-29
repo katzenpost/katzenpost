@@ -170,6 +170,8 @@ func (s *Session) eventSinkWorker() {
 				s.log.Debugf("Event sink worker terminating gracefully.")
 				return
 			}
+			// FIXME(david): send another copy of the event off to
+			// the plugins.
 		}
 	}
 }

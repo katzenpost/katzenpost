@@ -25,18 +25,110 @@
 package cborplugin
 
 import (
+	"context"
+	"io"
+
+	"golang.org/x/sync/errgroup"
+	"gopkg.in/op/go-logging.v1"
+
+	cConstants "github.com/katzenpost/client/constants"
 	"github.com/katzenpost/core/cborplugin"
+	"github.com/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/core/log"
 )
 
+type Session interface {
+	SendMessage(recipient, provider string, message []byte, ID [cConstants.MessageIDLength]byte) error
+}
+
 type Client struct {
 	cborplugin.Client
+
+	session Session
+
+	log        *logging.Logger
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	group      *errgroup.Group
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func New(logBackend *log.Backend, commandBuilder cborplugin.CommandBuilder) *Client {
-	return &Client{
-		Client: *(cborplugin.NewClient(logBackend, commandBuilder)),
+func New(session Session, logBackend *log.Backend) *Client {
+	ctx := context.Background()
+	ctx, cancelFunc := context.WithCancel(ctx)
+
+	group, _ := errgroup.WithContext(ctx)
+	c := &Client{
+		Client:     *(cborplugin.NewClient(logBackend, &EventBuilder{})),
+		ctx:        ctx,
+		cancelFunc: cancelFunc,
+		group:      group,
+		log:        logBackend.GetLogger("client"),
+	}
+	c.group.Go(c.worker)
+	return c
+}
+
+func (c *Client) worker() error {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return nil
+		case cmd := <-c.ReadChan():
+			command, ok := cmd.(*Command)
+			if !ok {
+				c.log.Error("failure to type assert command received from plugin")
+				continue
+			}
+			c.processCommand(command)
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) Halt() {
+	c.cancelFunc()
+	c.group.Wait()
+}
+
+func (c *Client) processCommand(command *Command) {
+	if command.SendMessage != nil && command.CreateRemoteSpool != nil {
+		c.log.Error("only one command at a time")
+		return
+	}
+	if command.SendMessage == nil && command.CreateRemoteSpool == nil {
+		c.log.Error("at least one command is required")
+		return
+	}
+
+	if command.SendMessage != nil {
+		id := [cConstants.MessageIDLength]byte{}
+		_, err := io.ReadFull(rand.Reader, id[:])
+		if err != nil {
+			c.log.Error(err.Error())
+		}
+
+		// TODO(david): Use the message id to route this message's reply to this plugin.
+
+		err = c.session.SendMessage(command.SendMessage.Recipient, command.SendMessage.Provider, command.SendMessage.Payload, id)
+		if err != nil {
+			c.log.Error(err.Error())
+		}
+
+		return
+	}
+
+	/*
+		type CreateRemoteSpool struct {
+			Recipient string
+			Provider  string
+			SpoolID   []byte
+		}
+	*/
+	if command.CreateRemoteSpool != nil {
+		panic("CreateRemoteSpool not yet implemented")
+		return
 	}
 }

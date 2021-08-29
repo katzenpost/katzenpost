@@ -191,7 +191,7 @@ func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
 	s.doSend(msg)
 }
 
-func (s *Session) composeMessage(recipient, provider string, message []byte, isBlocking bool) (*Message, error) {
+func (s *Session) composeMessage(recipient, provider string, message []byte, isBlocking bool, messageID *[cConstants.MessageIDLength]byte) (*Message, error) {
 	s.log.Debug("SendMessage")
 	if len(message) > constants.UserForwardPayloadLength-4 {
 		return nil, fmt.Errorf("invalid message size: %v", len(message))
@@ -199,10 +199,15 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
 	copy(payload[4:], message)
+
 	id := [cConstants.MessageIDLength]byte{}
-	_, err := io.ReadFull(rand.Reader, id[:])
-	if err != nil {
-		return nil, err
+	if messageID == nil {
+		_, err := io.ReadFull(rand.Reader, id[:])
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		id = *messageID
 	}
 	var msg = Message{
 		ID:         &id,
@@ -217,7 +222,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 
 // SendReliableMessage asynchronously sends messages with automatic retransmissiosn.
 func (s *Session) SendReliableMessage(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
-	msg, err := s.composeMessage(recipient, provider, message, false)
+	msg, err := s.composeMessage(recipient, provider, message, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -231,7 +236,7 @@ func (s *Session) SendReliableMessage(recipient, provider string, message []byte
 
 // SendUnreliableMessage asynchronously sends message without any automatic retransmissions.
 func (s *Session) SendUnreliableMessage(recipient, provider string, message []byte) (*[cConstants.MessageIDLength]byte, error) {
-	msg, err := s.composeMessage(recipient, provider, message, false)
+	msg, err := s.composeMessage(recipient, provider, message, false, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -242,8 +247,21 @@ func (s *Session) SendUnreliableMessage(recipient, provider string, message []by
 	return msg.ID, nil
 }
 
+// SendMessage asynchronously sends message without any automatic retransmissions.
+func (s *Session) SendMessage(recipient, provider string, message []byte, ID [cConstants.MessageIDLength]byte) error {
+	msg, err := s.composeMessage(recipient, provider, message, false, &ID)
+	if err != nil {
+		return err
+	}
+	err = s.egressQueue.Push(msg)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, message []byte) ([]byte, error) {
-	msg, err := s.composeMessage(recipient, provider, message, true)
+	msg, err := s.composeMessage(recipient, provider, message, true, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +299,7 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 
 // BlockingSendReliableMessage sends a message with automatic message retransmission enabled
 func (s *Session) BlockingSendReliableMessage(recipient, provider string, message []byte) ([]byte, error) {
-	msg, err := s.composeMessage(recipient, provider, message, true)
+	msg, err := s.composeMessage(recipient, provider, message, true, nil)
 	if err != nil {
 		return nil, err
 	}

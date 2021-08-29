@@ -23,7 +23,6 @@ import (
 )
 
 func (s *Session) startPlugins() {
-	eventBuilder := &cborplugin.EventBuilder{}
 	for _, pluginConf := range s.cfg.CBORPlugin {
 		args := []string{}
 		if len(pluginConf.Config) > 0 {
@@ -31,7 +30,7 @@ func (s *Session) startPlugins() {
 				args = append(args, fmt.Sprintf("-%s", key), val.(string))
 			}
 		}
-		plugin := cborplugin.New(s.logBackend, eventBuilder)
+		plugin := cborplugin.New(s, s.logBackend)
 		err := plugin.Start(pluginConf.Command, args)
 		if err != nil {
 			s.log.Fatal(err)
