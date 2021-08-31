@@ -65,6 +65,19 @@ type MessageDeliveredEvent struct {
 	MessageID MessageID
 }
 
+// MessageNotDeliveredEvent is an event signaling that the message
+// has NOT been delivered to the remote spool, with Err.
+type MessageNotDeliveredEvent struct {
+	// Nickname is the nickname of the recipient of our delivered message.
+	Nickname string
+
+	// MessageID is the key in the conversation map referencing a specific message.
+	MessageID MessageID
+
+	// Err is an error with reason for failure
+	Err error
+}
+
 // MessageReceivedEvent is the event signaling that a message was received.
 type MessageReceivedEvent struct {
 	// Nickname is the nickname from whom we received a message.
