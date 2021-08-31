@@ -997,9 +997,21 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				return
 			}
 			if !spoolResponse.IsOK() {
+				// ignore not found errors when trying to fetch new messages from the inbox
+				if spoolResponse.SpoolID == c.spoolReadDescriptor.ID &&
+					spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset {
+					return
+				}
+
+				// otherwise log an error and emit an event
 				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
-				// XXX: should emit an event to the client ? eg spool write failure
+
+				c.eventCh.In() <- &MessageNotDeliveredEvent{
+					Nickname:  tp.Nickname,
+					MessageID: tp.MessageID,
+					Err:       spoolResponse.StatusAsError(),
+				}
 				return
 			}
 			if tp.Nickname != c.user {
