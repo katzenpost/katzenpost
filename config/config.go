@@ -77,6 +77,8 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
+	ControlSocketFile string
+
 	DisableDecoyTraffic bool
 
 	// SessionDialTimeout is the number of seconds that a session dial
@@ -113,28 +115,6 @@ func (d *Debug) fixup() {
 	if d.SessionDialTimeout == 0 {
 		d.SessionDialTimeout = defaultSessionDialTimeout
 	}
-}
-
-// CBORPluginKaetzchen is a Provider auto-responder agent.
-type CBORPlugin struct {
-	// Config is the extra per agent arguments to be passed to the agent's
-	// initialization routine.
-	Config map[string]interface{}
-
-	// Command is the full file path to the external plugin program
-	// that implements this Kaetzchen service.
-	Command string
-
-	// Disable disabled a configured agent.
-	Disable bool
-}
-
-func (kCfg *CBORPlugin) validate() error {
-	if kCfg.Command == "" {
-		return fmt.Errorf("config: Kaetzchen: Command is invalid")
-	}
-
-	return nil
 }
 
 // NonvotingAuthority is a non-voting authority configuration.
@@ -333,7 +313,6 @@ type Config struct {
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
-	CBORPlugin         []*CBORPlugin
 	NonvotingAuthority *NonvotingAuthority
 	VotingAuthority    *VotingAuthority
 	Account            *Account

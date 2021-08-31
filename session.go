@@ -74,7 +74,7 @@ type Session struct {
 
 	decoyLoopTally uint64
 
-	plugins *cborplugin.Plugins
+	cborServer *cborplugin.Server
 }
 
 // New establishes a session with provider using key.
@@ -152,8 +152,11 @@ func NewSession(
 	}
 	s.Go(s.worker)
 
-	s.plugins = cborplugin.NewPlugins(s, s.logBackend, s.cfg.CBORPlugin)
-
+	if s.cfg.Debug.ControlSocketFile == "" {
+		s.log.Info("Debug.ControlSocketFile is unset, not starting control port listener")
+	} else {
+		s.cborServer = cborplugin.NewServer(s.logBackend, s.cfg.Debug.ControlSocketFile, s)
+	}
 	return s, nil
 }
 
@@ -172,7 +175,7 @@ func (s *Session) eventSinkWorker() {
 			}
 
 			select {
-			case s.plugins.EventSink() <- e.(events.Event):
+			case s.cborServer.EventSink() <- e.(events.Event):
 			case <-s.HaltCh():
 				s.log.Debugf("Event sink worker terminating gracefully.")
 				return
