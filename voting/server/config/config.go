@@ -354,10 +354,12 @@ type Config struct {
 	Topology  *Topology
 }
 
+// Layer holds a slice of Nodes
 type Layer struct {
 	Nodes []Node
 }
 
+// Topology contains a slice of Layers, each containing a slice of Nodes
 type Topology struct {
 	Layers []Layer
 }

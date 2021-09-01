@@ -186,6 +186,31 @@ func TestVote(t *testing.T) {
 		port++
 	}
 
+	// generate a Topology section
+	topology := config.Topology{Layers: make([]config.Layer,3)}
+	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
+						 config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
+	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
+						 config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
+	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()},
+						 config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()}}
+
+
+	// generate a conflicting Topology
+	// generate a Topology section
+	topology2 := config.Topology{Layers: make([]config.Layer,3)}
+	topology2.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
+						  config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
+	topology2.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
+						  config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
+	topology2.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()},
+						  config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()}}
+
+	// one auth uses the conflicting topology, so we shall expect consensus with 2/3
+	authCfgs[0].Topology = &topology
+	authCfgs[1].Topology = &topology2
+	authCfgs[2].Topology = &topology
+
 	// generate providers
 	for i := 0; i < m; i++ {
 		c, err := genProviderConfig(fmt.Sprintf("provider-%d", i), votingPKI, port)
