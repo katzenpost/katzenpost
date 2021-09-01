@@ -8,11 +8,11 @@
 
   # Addresses are the IP address/port combinations that the authority will bind
   # to for incoming connections.
-  Addresses = [ "172.28.1.10:21483", "[2001:DB8::1]:29483" ]
+  Addresses = [ "127.0.0.1:21483", "[::1]:29483" ]
 
   # DataDir is the absolute path to the server's state files.
   # Must have 700 permissions.
-  DataDir = "/var/lib/katzenpost-authority"
+  DataDir = "/tmp/katzenpost-authority"
 
 #[[Authorities]]
 #   IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
@@ -28,6 +28,8 @@
    IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
    LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
    Addresses = [ "172.28.1.9:23483" ]
+[Debug]
+  MinNodesPerLayer = 1
 
 #
 # The Logging section controls the logging.
@@ -124,9 +126,14 @@
 # Topology defines the layers of mix nodes
 [Topology]
 # Layer 1
-#[[Topology.Layers]]
+[[Topology.Layers]]
+# An node in Layer 1
+[[Topology.Layers.Nodes]]
+  # IdentityKey is the mix's EdDSA signing key, in either Base16 OR Base64
+  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
+# Another node... etc
 #[[Topology.Layers.Nodes]]
-#  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
+#  IdentityKey = ""
 
  # Layer 2
 [[Topology.Layers]]
