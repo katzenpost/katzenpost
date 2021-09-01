@@ -193,7 +193,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 	case stateAcceptVote:
 		signed := s.reveal(s.votingEpoch)
-		go s.sendRevealToAuthorities(signed, epoch)
+		go s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.state = stateAcceptReveal
 		sleep = AuthorityRevealDeadline - elapsed
 	case stateAcceptReveal:
@@ -203,7 +203,7 @@ func (s *state) fsm() <-chan time.Time {
 		if !s.isTabulated(s.votingEpoch) {
 			s.log.Debugf("Tabulating for epoch %v", s.votingEpoch)
 			if signed, err := s.tabulate(s.votingEpoch); err == nil {
-				s.sendVoteToAuthorities([]byte(signed), epoch)
+				s.sendVoteToAuthorities([]byte(signed), s.votingEpoch)
 			}
 		}
 		s.state = stateAcceptSignature
@@ -670,7 +670,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 	// Lock is held (called from the onWakeup hook).
 
-	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", s.votingEpoch)
+	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", epoch)
 
 	for _, peer := range s.s.cfg.Authorities {
 		go s.sendVoteToPeer(peer, vote, epoch)
