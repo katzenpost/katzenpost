@@ -13,11 +13,15 @@ github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSs
 github.com/flynn/noise v0.0.0-20180327030543-2492fe189ae6/go.mod h1:1i71OnUq3iUe1ma7Lr6yG6/rjvM3emb6yoL7xLFzcVQ=
 github.com/fxamacker/cbor/v2 v2.2.0 h1:6eXqdDDe588rSYAi1HfZKbx6YYQO4mxQ9eC6xYpU/JQ=
 github.com/fxamacker/cbor/v2 v2.2.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
+github.com/fxamacker/cbor/v2 v2.3.0 h1:aM45YGMctNakddNNAezPxDUpv38j44Abh+hifNuqXik=
+github.com/fxamacker/cbor/v2 v2.3.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
 github.com/katzenpost/chacha20 v0.0.0-20190907175341-fad9676fa4d8/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/core v0.0.14 h1:8n30pGlm6cXa1PjU+HBv8nARFh67UmX/eYkHnbcBfgs=
 github.com/katzenpost/core v0.0.14/go.mod h1:RjyD4DLQr+P5FnP6iiZUTgvalZwT7NyawXwYzn32eYQ=
+github.com/katzenpost/core v0.0.15 h1:RfisRrcJsb5+EOJv7gvDCidb8pw8EBVkID71pMX851s=
+github.com/katzenpost/core v0.0.15/go.mod h1:chl2hVUV5Y+XpD4F3fVm6PmzK166AV+fbicwhzqXnZE=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f h1:z9M4KJAJr0wGl5QzSMf7Cy5W+yeeO8UeZ8YjBs5uZoQ=
 github.com/katzenpost/newhope v0.0.0-20190907181500-0c77ddcb510f/go.mod h1:xA8+73aJ0TU2W701F6Ac7LL8jiUuv6me5pO+/nIuaCM=
 github.com/katzenpost/noise v0.0.2 h1:5ljIHIlgf/XL0kFKijcq5pUBrYJUpmDYmk2zWDanqy0=
