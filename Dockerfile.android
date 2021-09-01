@@ -53,7 +53,7 @@ RUN yes | sdkmanager --licenses \
 
 # install gogio
 # XXX: verify that this command uses pinned version in go.mod
-RUN go get -v gioui.org/cmd/gogio@910fa30edf05
+RUN go get -v gioui.org/cmd/gogio
 
 # Set the working directory for the container
 WORKDIR /go/build
