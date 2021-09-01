@@ -39,6 +39,7 @@ github.com/flynn/noise v0.0.0-20180327030543-2492fe189ae6/go.mod h1:1i71OnUq3iUe
 github.com/fsnotify/fsnotify v1.4.7/go.mod h1:jwhsz4b93w/PPRr/qN1Yymfu8t87LnFCMoQvtojpjFo=
 github.com/fxamacker/cbor/v2 v2.2.0 h1:6eXqdDDe588rSYAi1HfZKbx6YYQO4mxQ9eC6xYpU/JQ=
 github.com/fxamacker/cbor/v2 v2.2.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
+github.com/fxamacker/cbor/v2 v2.3.0/go.mod h1:TA1xS00nchWmaBnEIxPSE5oHLuJBAVvqrtAnWBwBCVo=
 github.com/go-kit/kit v0.8.0/go.mod h1:xBxKIO96dXMWWy0MnWVtmwkA9/13aqxPnvrjFYMA2as=
 github.com/go-kit/kit v0.9.0/go.mod h1:xBxKIO96dXMWWy0MnWVtmwkA9/13aqxPnvrjFYMA2as=
 github.com/go-logfmt/logfmt v0.3.0/go.mod h1:Qt1PoO58o5twSAckw1HlFXLmHsOX5/0LbT9GBnD5lWE=
@@ -116,6 +117,8 @@ github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515 h1:mitQKmkvmyqo
 github.com/katzenpost/core v0.0.14-0.20210226013342-52e24c97d515/go.mod h1:RjyD4DLQr+P5FnP6iiZUTgvalZwT7NyawXwYzn32eYQ=
 github.com/katzenpost/core v0.0.14 h1:8n30pGlm6cXa1PjU+HBv8nARFh67UmX/eYkHnbcBfgs=
 github.com/katzenpost/core v0.0.14/go.mod h1:RjyD4DLQr+P5FnP6iiZUTgvalZwT7NyawXwYzn32eYQ=
+github.com/katzenpost/core v0.0.15 h1:RfisRrcJsb5+EOJv7gvDCidb8pw8EBVkID71pMX851s=
+github.com/katzenpost/core v0.0.15/go.mod h1:chl2hVUV5Y+XpD4F3fVm6PmzK166AV+fbicwhzqXnZE=
 github.com/katzenpost/doubleratchet v0.0.0/go.mod h1:wf2vPnyq/j7WDVi03YshRCZc207N3srd0yEENp7qyww=
 github.com/katzenpost/kimchi v0.0.0-20190919180141-c3fbd2593e78/go.mod h1:WUe/MpQRPZ9uHm/LMF9qsHfuBoYF207b2vyXWsLA75M=
 github.com/katzenpost/kimchi v0.0.0-20190923104312-3f798235dc4f/go.mod h1:h1u/GqNvbeLjRfQQlsjkmlzFzi88X8OsFgrYcE8ufyw=
