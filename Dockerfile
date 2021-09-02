@@ -1,4 +1,4 @@
-FROM golang:alpine AS builder
+FROM golang:buster AS builder
 
 LABEL authors="Christian Muehlhaeuser: muesli@gmail.com"
 
@@ -7,11 +7,6 @@ ARG warped=false
 
 ENV ldflags="-X github.com/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
-# Install git & make
-# Git is required for fetching the dependencies
-RUN apk update && \
-    apk add --no-cache git make ca-certificates && \
-    update-ca-certificates
 
 # Set the working directory for the container
 WORKDIR /go/server
@@ -24,11 +19,8 @@ RUN cd /go ; git clone https://github.com/katzenpost/reunion ; cd reunion ; cd s
 RUN cd /go ; git clone https://github.com/katzenpost/panda ; cd panda/server/cmd/panda_server ; go build -ldflags "$ldflags"
 RUN cd /go ; git clone https://github.com/katzenpost/server_plugins ; cd server_plugins/cbor_plugins/echo-go ; go build -o echo_server -ldflags "$ldflags"
 
-FROM alpine
+FROM debian:buster
 
-RUN apk update && \
-    apk add --no-cache ca-certificates tzdata && \
-    update-ca-certificates
 
 COPY --from=builder /go/server/cmd/server/server /go/bin/server
 COPY --from=builder /go/memspool/server/cmd/memspool/memspool /go/bin/memspool
