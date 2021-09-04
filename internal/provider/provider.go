@@ -260,6 +260,7 @@ func (p *provider) worker() {
 			return
 		case <-gcEphemeralClientGCTickerChan:
 			p.gcEphemeralClients()
+			continue
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
 
@@ -269,17 +270,6 @@ func (p *provider) worker() {
 				pkt.Dispose()
 				continue
 			}
-		}
-
-		if pkt == nil {
-			continue
-		}
-
-		if pkt.Recipient == nil {
-			p.log.Debugf("Recipient is nil, dropping packet %v", pkt.ID)
-			packetsDropped.Inc()
-			pkt.Dispose()
-			continue
 		}
 
 		// Kaetzchen endpoints are published in the PKI and are never
