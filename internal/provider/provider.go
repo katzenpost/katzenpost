@@ -73,9 +73,8 @@ type provider struct {
 	userDB userdb.UserDB
 	spool  spool.Spool
 
-	kaetzchenWorker            *kaetzchen.KaetzchenWorker
-	cborPluginKaetzchenWorker  *kaetzchen.CBORPluginWorker
-	cborPluginKaetzchenWorker2 *kaetzchen.CBORPluginWorker2
+	kaetzchenWorker           *kaetzchen.KaetzchenWorker
+	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
 
 	httpServers []*http.Server
 }
@@ -102,7 +101,6 @@ func (p *provider) Halt() {
 	p.ch.Close()
 	p.kaetzchenWorker.Halt()
 	p.cborPluginKaetzchenWorker.Halt()
-	p.cborPluginKaetzchenWorker2.Halt()
 	if p.userDB != nil {
 		p.userDB.Close()
 		p.userDB = nil
@@ -147,11 +145,10 @@ func (p *provider) OnPacket(pkt *packet.Packet) {
 func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
 	map1 := p.kaetzchenWorker.KaetzchenForPKI()
 	map2 := p.cborPluginKaetzchenWorker.KaetzchenForPKI()
-	map3 := p.cborPluginKaetzchenWorker2.KaetzchenForPKI()
 
 	// merge sets, panic on duplicate
 	setsToMerge := []map[kaetzchen.PluginName]kaetzchen.PluginParameters{
-		map1, map2, map3,
+		map1, map2,
 	}
 
 	merged := make(map[kaetzchen.PluginName]kaetzchen.PluginParameters)
@@ -267,19 +264,6 @@ func (p *provider) worker() {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
 				// which will take care to dispose of it.
 				p.cborPluginKaetzchenWorker.OnKaetzchen(pkt)
-			}
-			continue
-		}
-
-		if p.cborPluginKaetzchenWorker2.IsKaetzchen(pkt.Recipient.ID) {
-			if pkt.IsSURBReply() {
-				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				packetsDropped.Inc()
-				pkt.Dispose()
-			} else {
-				// Note that we pass ownership of pkt to p.kaetzchenWorker
-				// which will take care to dispose of it.
-				p.cborPluginKaetzchenWorker2.OnKaetzchen(pkt)
 			}
 			continue
 		}
@@ -769,17 +753,12 @@ func New(glue glue.Glue) (glue.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	cborPluginWorker2, err := kaetzchen.NewCBORPluginWorker2(glue)
-	if err != nil {
-		return nil, err
-	}
 	p := &provider{
-		glue:                       glue,
-		log:                        glue.LogBackend().GetLogger("provider"),
-		ch:                         channels.NewInfiniteChannel(),
-		kaetzchenWorker:            kaetzchenWorker,
-		cborPluginKaetzchenWorker:  cborPluginWorker,
-		cborPluginKaetzchenWorker2: cborPluginWorker2,
+		glue:                      glue,
+		log:                       glue.LogBackend().GetLogger("provider"),
+		ch:                        channels.NewInfiniteChannel(),
+		kaetzchenWorker:           kaetzchenWorker,
+		cborPluginKaetzchenWorker: cborPluginWorker,
 	}
 
 	cfg := glue.Config()

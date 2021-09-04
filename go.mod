@@ -10,10 +10,10 @@ require (
 	github.com/coreos/bbolt v1.3.3
 	github.com/dchest/siphash v1.2.1 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/fxamacker/cbor/v2 v2.2.0
+	github.com/fxamacker/cbor/v2 v2.3.0
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/authority v0.0.15
-	github.com/katzenpost/core v0.0.15-0.20210827005929-27dfbc0c71d9
+	github.com/katzenpost/core v0.0.15
 	github.com/katzenpost/noise v0.0.2 // indirect
 	github.com/prometheus/client_golang v1.6.0
 	github.com/stretchr/testify v1.4.0
