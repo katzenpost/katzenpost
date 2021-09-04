@@ -81,6 +81,8 @@ func (d *boltUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 		if rawPubKey == nil {
 			if d.trustOnFirstUse == true {
 				tofuUser = true
+			} else {
+				return errors.New("user does not exist")
 			}
 		} else {
 			isValid = subtle.ConstantTimeCompare(rawPubKey, k.Bytes()) == 1
