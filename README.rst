@@ -1,7 +1,4 @@
 
-.. image:: https://travis-ci.org/katzenpost/core.svg?branch=master
-  :target: https://travis-ci.org/katzenpost/core
-
 .. image:: https://godoc.org/github.com/katzenpost/katzenpost/core?status.svg
   :target: https://godoc.org/github.com/katzenpost/katzenpost/core
 
