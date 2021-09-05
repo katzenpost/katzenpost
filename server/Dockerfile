@@ -1,32 +1,33 @@
-FROM golang:buster AS builder
+FROM katzenpost/deps AS builder
 
-LABEL authors="Christian Muehlhaeuser: muesli@gmail.com"
+# note: this Dockerfile is intended to be built from a build context that
+# includes the parent directory. eg, from the katzenpost repo, run this:
+# docker build -f server/Dockerfile --no-cache -t katzenpost/server .
 
 # Can pass --build-arg warped=true to decrease epoch period
 ARG warped=false
 
-ENV ldflags="-X github.com/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+ENV ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
 
 # Set the working directory for the container
-WORKDIR /go/server
+WORKDIR /go/katzenpost
 
 # Build the binary
-COPY . .
-RUN cd cmd/server && go build -ldflags "$ldflags"
-RUN cd /go ; git clone https://github.com/katzenpost/memspool ; cd memspool/server/cmd/memspool ;  go build -ldflags "$ldflags"
-RUN cd /go ; git clone https://github.com/katzenpost/reunion ; cd reunion ; cd servers/reunion_katzenpost_server ; go build -ldflags "$ldflags"
-RUN cd /go ; git clone https://github.com/katzenpost/panda ; cd panda/server/cmd/panda_server ; go build -ldflags "$ldflags"
-RUN cd /go ; git clone https://github.com/katzenpost/server_plugins ; cd server_plugins/cbor_plugins/echo-go ; go build -o echo_server -ldflags "$ldflags"
+RUN cd server/cmd/server && go build -ldflags "$ldflags"
+RUN cd /go/katzenpost/memspool/server/cmd/memspool ; go build -ldflags "$ldflags"
+RUN cd /go/katzenpost/reunion/servers/reunion_katzenpost_server ; go build -ldflags "$ldflags"
+RUN cd /go/katzenpost/panda/server/cmd/panda_server ; go build -ldflags "$ldflags"
+RUN cd /go/katzenpost/server_plugins/cbor_plugins/echo-go ; go build -o echo_server -ldflags "$ldflags"
 
 FROM debian:buster
 
 
-COPY --from=builder /go/server/cmd/server/server /go/bin/server
-COPY --from=builder /go/memspool/server/cmd/memspool/memspool /go/bin/memspool
-COPY --from=builder /go/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /go/bin/reunion_katzenpost_server
-COPY --from=builder /go/panda/server/cmd/panda_server/panda_server /go/bin/panda_server
-COPY --from=builder /go/server_plugins/cbor_plugins/echo-go/echo_server /go/bin/echo_server
+COPY --from=builder /go/katzenpost/server/cmd/server/server /go/bin/server
+COPY --from=builder /go/katzenpost/memspool/server/cmd/memspool/memspool /go/bin/memspool
+COPY --from=builder /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /go/bin/reunion_katzenpost_server
+COPY --from=builder /go/katzenpost/panda/server/cmd/panda_server/panda_server /go/bin/panda_server
+COPY --from=builder /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /go/bin/echo_server
 
 # Expose the application port
 # EXPOSE 8181
