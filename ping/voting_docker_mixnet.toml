@@ -1,0 +1,28 @@
+
+[UpstreamProxy]
+  Type = "none"
+
+[Logging]
+  Disable = false
+  Level = "DEBUG"
+  File = "/tmp/ping.log"
+
+[VotingAuthority]
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:21483"]
+      LinkPublicKey = "I49V1w7OJ/Kcw7YbEvo+92akE9cYLGeXRBg6KE/sYS8="
+      IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:22483"]
+      LinkPublicKey = "fZcGD+uPm18BYuDKXS3eozp9+i2hW2SWgnuapP0ftgE="
+      IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:23483"]
+      LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
+      IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+
+[Debug]
+  PollingInterval = 10
+  
