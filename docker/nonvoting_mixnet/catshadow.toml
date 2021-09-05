@@ -9,7 +9,7 @@
 
 [ClientLogging]
   Disable = false
-  Level = "NOTICE"
+  Level = "DEBUG"
   File = ""
 
 [NonvotingAuthority]

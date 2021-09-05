@@ -12,9 +12,10 @@ docker-compose situation is not meant for production use.
 1. build the mix server docker image
 ::
 
-   git clone https://github.com/katzenpost/katzenpost/server.git
-   cd server
-   docker build --no-cache -t katzenpost/server .
+   git clone https://github.com/katzenpost/katzenpost.git
+   cd katzenpost
+   docker build -f docker/Dockerfile.deps --no-cache -t katzenpost/deps .
+   docker build -f server/Dockerfile --no-cache -t katzenpost/server .
 
 
 2. build the authority docker image
@@ -22,27 +23,25 @@ docker-compose situation is not meant for production use.
 voting authority
 ::
 
-   git clone https://github.com/katzenpost/katzenpost/authority.git
-   cd authority
-   docker build -f Dockerfile.voting --no-cache -t katzenpost/voting_authority .
+   docker build -f authority/Dockerfile.voting --no-cache -t katzenpost/voting_authority .
 
 nonvoting authority
 ::
 
-   git clone https://github.com/katzenpost/katzenpost/authority.git
-   cd authority
-   docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
+   docker build -f authority/Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
 
 
 **NOTE** katzenpost expects its configuration files to be readable by the owner only. Fix the permissions by running the fix_perms.sh script in git root:
 ::
 
+    cd docker
    ./fix_perms.sh
 
 
-3. run docker-compose from this repository and cd into one of the folders depending on your usecase (control-c to exit)
+3. cd into `voting_mixnet` (or `nonvoting_mixnet`) and run `docker-compose up` (control-c to exit)
 ::
 
+   cd voting_mixnet
    docker-compose up
 
 
