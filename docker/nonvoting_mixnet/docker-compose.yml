@@ -1,0 +1,94 @@
+version: "2"
+
+services:
+  provider1:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/provider1:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    ports:
+      - "127.0.0.1:59484:59484"
+      - "127.0.0.1:36968:36968"
+    depends_on:
+      - auth
+    networks:
+      nonvoting_test_net:
+        ipv4_address: 172.28.1.3
+
+  provider2:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/provider2:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    ports:
+      - "127.0.0.1:29484:29484"
+      - "127.0.0.1:36967:36967"
+    depends_on:
+      - auth
+      - provider1
+    networks:
+      nonvoting_test_net:
+        ipv4_address: 172.28.1.4
+
+  mix1:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/mix1:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    depends_on:
+      - auth
+      - provider1
+      - provider2
+    networks:
+      nonvoting_test_net:
+        ipv4_address: 172.28.1.5
+
+  mix2:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/mix2:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    depends_on:
+      - auth
+      - provider1
+      - provider2
+    networks:
+      nonvoting_test_net:
+        ipv4_address: 172.28.1.6
+
+  mix3:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./conf/mix3:/conf
+    command: /go/bin/server -f /conf/katzenpost.toml
+    depends_on:
+      - auth
+      - provider1
+      - provider2
+    networks:
+      nonvoting_test_net:
+        ipv4_address: 172.28.1.7
+
+  auth:
+    restart: unless-stopped
+    image: katzenpost/nonvoting_authority
+    volumes:
+      - ./conf/auth:/conf
+    command: /go/bin/nonvoting -f /conf/authority.toml
+    ports:
+      - "127.0.0.1:29483:29483"
+    networks:
+      nonvoting_test_net:
+        ipv4_address: 172.28.1.2
+
+networks:
+  nonvoting_test_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16

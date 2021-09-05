@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2020, David Stainton <dawuud@riseup.net>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+image: "golang:1.13"
+
+before_script:
+  - mkdir -p /go/src/github.com/katzenpost
+  - cp -r /builds/katzenpost/* /go/src/github.com/katzenpost/
+  - cd /go/src/github.com/katzenpost
+  - git clone https://github.com/katzenpost/memspool
+  - git clone https://github.com/katzenpost/panda
+  - cd /go/src/github.com/katzenpost/memspool/server/cmd/memspool
+  - go install
+  - cd /go/src/github.com/katzenpost/panda/server/cmd/panda_server
+  - go install
+  - cd /builds/katzenpost/catshadow/
+
+test-catshadow:
+  script:
+    - mkdir -p coverage
+    - go test -v -coverprofile cover.out -covermode atomic -coverpkg ./... -race ./...
+    - go tool cover -html=cover.out -o coverage/coverage.html
+  artifacts:
+    paths:
+      - coverage/

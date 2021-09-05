@@ -1,0 +1,3 @@
+[submodule "docs"]
+	path = website/docs
+	url = git@github.com:katzenpost/docs.git
