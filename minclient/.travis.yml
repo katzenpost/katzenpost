@@ -1,0 +1,15 @@
+language: go
+
+go:
+  - "1.12"
+
+env:
+  global:
+    GO111MODULE=on
+
+install:
+  - git config --global http.https://gopkg.in.followRedirects true
+  - go get -u -v -t ./...
+
+script:
+  - go test -v ./...

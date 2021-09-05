@@ -1,0 +1,17 @@
+image: "golang:1.13"
+
+before_script:
+  - mkdir -p /go/src/github.com/katzenpost
+  - cp -r /builds/katzenpost/* /go/src/github.com/katzenpost/
+  - cd /go/src/github.com/katzenpost/panda
+  - go get -v -t ./...
+  - cd /builds/katzenpost/panda/
+
+test-panda:
+  script:
+    - mkdir -p coverage
+    - go test -v -cover -coverprofile cover.out -covermode atomic -race ./...
+    - go tool cover -html=cover.out -o coverage/coverage.html
+  artifacts:
+    paths:
+      - coverage/
