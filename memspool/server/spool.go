@@ -25,7 +25,7 @@ import (
 	"time"
 
 	sha512 "crypto/sha512"
-	bolt "github.com/coreos/bbolt"
+	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/memspool/common"
