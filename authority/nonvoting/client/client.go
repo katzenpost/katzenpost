@@ -24,14 +24,14 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/wire"
-	"github.com/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/authority/internal/s11n"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
 )
 

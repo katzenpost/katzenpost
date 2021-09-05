@@ -25,8 +25,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/katzenpost/client"
-	"github.com/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/reunion/commands"
 )
 
 // Transport is used by Reunion protocol

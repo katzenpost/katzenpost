@@ -3,8 +3,8 @@
 .. image:: https://travis-ci.org/katzenpost/registration_client.svg?branch=master
   :target: https://travis-ci.org/katzenpost/registration_client
 
-.. image:: https://godoc.org/github.com/katzenpost/registration_client?status.svg
-  :target: https://godoc.org/github.com/katzenpost/registration_client
+.. image:: https://godoc.org/github.com/katzenpost/katzenpost/registration_client?status.svg
+  :target: https://godoc.org/github.com/katzenpost/katzenpost/registration_client
 
 Client Registration Library
 ===========================

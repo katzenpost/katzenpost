@@ -12,7 +12,7 @@ docker-compose situation is not meant for production use.
 1. build the mix server docker image
 ::
 
-   git clone https://github.com/katzenpost/server.git
+   git clone https://github.com/katzenpost/katzenpost/server.git
    cd server
    docker build --no-cache -t katzenpost/server .
 
@@ -22,14 +22,14 @@ docker-compose situation is not meant for production use.
 voting authority
 ::
 
-   git clone https://github.com/katzenpost/authority.git
+   git clone https://github.com/katzenpost/katzenpost/authority.git
    cd authority
    docker build -f Dockerfile.voting --no-cache -t katzenpost/voting_authority .
 
 nonvoting authority
 ::
 
-   git clone https://github.com/katzenpost/authority.git
+   git clone https://github.com/katzenpost/katzenpost/authority.git
    cd authority
    docker build -f Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
 

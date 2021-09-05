@@ -24,8 +24,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 )
 
 // LayerProvider is the Layer that providers list in their MixDescriptors.

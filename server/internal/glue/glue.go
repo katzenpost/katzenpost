@@ -19,19 +19,19 @@
 package glue
 
 import (
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/thwack"
-	"github.com/katzenpost/core/wire"
-	"github.com/katzenpost/server/config"
-	"github.com/katzenpost/server/internal/mixkey"
-	"github.com/katzenpost/server/internal/packet"
-	"github.com/katzenpost/server/internal/pkicache"
-	"github.com/katzenpost/server/spool"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/thwack"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/server/config"
+	"github.com/katzenpost/katzenpost/server/internal/mixkey"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/server/internal/pkicache"
+	"github.com/katzenpost/katzenpost/server/spool"
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 // Glue is the structure that binds the internal components together.

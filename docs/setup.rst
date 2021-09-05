@@ -18,7 +18,7 @@ Build Software
 
 Take a look at our docker repo. This will explain how to configure and run a katzenpost mixnet.
 
-* https://github.com/katzenpost/docker
+* https://github.com/katzenpost/katzenpost/docker
 
 A Katzenpost mix network has two binary programs, a :term:`PKI` and a
 :term:`Mix`/:term:`Provider`.
@@ -30,9 +30,9 @@ https://golang.org/doc/install
 
 Follow the build instructions for each Katzenpost component repo.
 
-* https://github.com/katzenpost/server
+* https://github.com/katzenpost/katzenpost/server
 
-* https://github.com/katzenpost/authority
+* https://github.com/katzenpost/katzenpost/authority
 
 The produced binaries are statically linked, so you can build the
 authority and the server code on one machine, and then distribute

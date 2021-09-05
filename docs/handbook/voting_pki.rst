@@ -13,14 +13,14 @@ inspired by the Tor's and Mixminion's Directory Authority.
 For more details about the design of the Katzenpost voting PKI
 you should see our specification document:
 
-* https://github.com/katzenpost/docs/blob/master/specs/pki.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst
 
 
 As with Katzenpost clients and mixes, this authority server uses our
 post quantum cryptographic noise based wire protocol as described
 in the specification document:
 
-* https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/wire-protocol.rst
 
 Each authority's configuration has the public link layer key
 of each of it's peers for authenticating the wire protocol connection.
@@ -36,7 +36,7 @@ Install
 
 See the authority readme:
 
-* https://github.com/katzenpost/authority
+* https://github.com/katzenpost/katzenpost/authority
 
 
 CLI usage of The Voting Directory Authority
@@ -58,7 +58,7 @@ Configuring The Voting Directory Authority
 
 A sample configuration file can be found in our docker repository, here:
 
-* https://github.com/katzenpost/docker
+* https://github.com/katzenpost/katzenpost/docker
 
 
 Authority section

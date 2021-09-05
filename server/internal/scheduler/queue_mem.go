@@ -21,11 +21,11 @@ import (
 	mRand "math/rand"
 	"time"
 
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/monotime"
-	"github.com/katzenpost/core/queue"
-	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/queue"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
 

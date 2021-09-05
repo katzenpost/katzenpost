@@ -3,8 +3,8 @@
 Reunion
 =======
 
-.. image:: https://godoc.org/github.com/katzenpost/reunion?status.svg
-  :target: https://godoc.org/github.com/katzenpost/reunion
+.. image:: https://godoc.org/github.com/katzenpost/katzenpost/reunion?status.svg
+  :target: https://godoc.org/github.com/katzenpost/katzenpost/reunion
 
 .. image:: https://api.codacy.com/project/badge/Grade/fa6651c5ed42478ca07c330faf5001c6
   :target: https://www.codacy.com/gh/katzenpost/reunion?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=katzenpost/reunion&amp;utm_campaign=Badge_Grade
@@ -55,8 +55,8 @@ Cryptographic Primitives
 * chacha20+poly1305 aead: https://git.schwanenlied.me/yawning/chacha20poly1305
 * argon2id: https://godoc.org/golang.org/x/crypto/argon2
 * hkdf: https://godoc.org/golang.org/x/crypto/hkdf
-* curve25519: https://github.com/katzenpost/core/blob/master/crypto/ecdh/ecdh.go
-* elligator: https://github.com/katzenpost/core/blob/master/crypto/extra25519/extra25519.go
+* curve25519: https://github.com/katzenpost/katzenpost/blob/master/core/crypto/ecdh/ecdh.go
+* elligator: https://github.com/katzenpost/katzenpost/blob/master/core/crypto/extra25519/extra25519.go
 
 
 disclaimer

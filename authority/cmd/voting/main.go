@@ -23,8 +23,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/katzenpost/authority/voting/server"
-	"github.com/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/authority/voting/server"
+	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 )
 
 func main() {

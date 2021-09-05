@@ -20,7 +20,7 @@
 // a client supplied SURB is used to route the response back to the client
 // as described in our Kaetzchen specification document:
 //
-// https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
+// https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst
 //
 package cborplugin
 
@@ -36,8 +36,8 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -58,13 +58,13 @@ type Response struct {
 // The output of GetParameters() ends up being published in a map
 // associating with the service names to service parameters map.
 // This information is part of the Mix Descriptor which is defined here:
-// https://github.com/katzenpost/core/blob/master/pki/pki.go
+// https://github.com/katzenpost/katzenpost/blob/master/core/pki/pki.go
 type Parameters map[string]string
 
 // ServicePlugin is the interface that we expose for external
 // plugins to implement. This is similar to the internal Kaetzchen
 // interface defined in:
-// github.com/katzenpost/server/internal/provider/kaetzchen/kaetzchen.go
+// github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen/kaetzchen.go
 type ServicePlugin interface {
 	// OnRequest is the method that is called when the Provider receives
 	// a request designed for a particular agent. The caller will handle

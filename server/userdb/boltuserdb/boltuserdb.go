@@ -24,8 +24,8 @@ import (
 	"sync"
 
 	bolt "go.etcd.io/bbolt"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 const (

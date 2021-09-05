@@ -20,17 +20,17 @@ package catshadow
 
 import (
 	"fmt"
-	cConfig "github.com/katzenpost/client/config"
-	"github.com/katzenpost/core/crypto/ecdh"
+	cConfig "github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/catshadow/config"
-	"github.com/katzenpost/client"
-	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/catshadow/config"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 )
 

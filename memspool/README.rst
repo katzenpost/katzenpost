@@ -3,8 +3,8 @@
 .. image:: https://travis-ci.org/katzenpost/memspool.svg?branch=master
   :target: https://travis-ci.org/katzenpost/memspool
 
-.. image:: https://godoc.org/github.com/katzenpost/memspool?status.svg
-  :target: https://godoc.org/github.com/katzenpost/memspool
+.. image:: https://godoc.org/github.com/katzenpost/katzenpost/memspool?status.svg
+  :target: https://godoc.org/github.com/katzenpost/katzenpost/memspool
 
 
 Memspool

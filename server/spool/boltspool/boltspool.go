@@ -23,11 +23,11 @@ import (
 	"fmt"
 
 	bolt "go.etcd.io/bbolt"
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/server/spool"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/server/spool"
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 const (

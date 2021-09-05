@@ -18,7 +18,7 @@
 package client
 
 import (
-	"github.com/katzenpost/reunion/crypto"
+	"github.com/katzenpost/katzenpost/reunion/crypto"
 	"github.com/ugorji/go/codec"
 )
 

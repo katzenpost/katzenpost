@@ -21,8 +21,8 @@ package userdb
 import (
 	"errors"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // MaxUsernameSize is the maximum username length in bytes.

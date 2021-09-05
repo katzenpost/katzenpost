@@ -27,8 +27,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/noise"
 )
 

@@ -26,12 +26,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
-	cpki "github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/wire"
-	"github.com/katzenpost/core/wire/commands"
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
 )
 

@@ -25,15 +25,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/katzenpost/client"
-	"github.com/katzenpost/client/config"
-	clientConfig "github.com/katzenpost/client/config"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/pki"
-	registration "github.com/katzenpost/registration_client"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
+	clientConfig "github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
+	registration "github.com/katzenpost/katzenpost/registration_client"
 )
 
 const (

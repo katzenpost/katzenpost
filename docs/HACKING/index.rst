@@ -103,7 +103,7 @@ development workflow
    ::
 
       cd $GOPATH/src/github.com/katzenpost/
-      git clone https://github.com/katzenpost/server.git
+      git clone https://github.com/katzenpost/katzenpost/server.git
       cd server
       git checkout master
 
@@ -112,19 +112,19 @@ development workflow
 4. Track a new dependency with go-modules:
    ::
 
-      cd $GOPATH/src/github.com/katzenpost/server/
+      cd $GOPATH/src/github.com/katzenpost/katzenpost/server/
       go get github.com/foo/bar@v1.2.3
 
    Or perhaps you'd like to build with the master branch of such a dependency:
    ::
 
-      cd $GOPATH/src/github.com/katzenpost/server/
+      cd $GOPATH/src/github.com/katzenpost/katzenpost/server/
       go get github.com/foo/bar@master
 
 5. Build the binary.
    ::
 
-      cd $GOPATH/src/github.com/katzenpost/server/cmd/server
+      cd $GOPATH/src/github.com/katzenpost/katzenpost/server/cmd/server
       go build
 
 
@@ -146,7 +146,7 @@ Internet. Struct types which act as worker goroutines MUST be a
 composite struct type with the Worker type which is defined in our
 "core" repository here:
 
-* https://github.com/katzenpost/core/blob/master/worker/worker.go
+* https://github.com/katzenpost/katzenpost/blob/master/core/worker/worker.go
 
 Correctly implementing a composite Worker type means that your
 code uses the Worker's Go method to spawn new goroutines and will

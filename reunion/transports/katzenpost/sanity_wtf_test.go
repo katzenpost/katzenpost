@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/stretchr/testify/require"
 )
 

@@ -20,7 +20,7 @@ import (
 	"crypto/hmac"
 	"hash"
 
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 func hkdfExpand(hashFn func() hash.Hash, prk []byte, info []byte, l int) []byte {

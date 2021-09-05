@@ -23,11 +23,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/epochtime"
-	"github.com/katzenpost/reunion/epochtime/katzenpost"
-	"github.com/katzenpost/reunion/server"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/epochtime"
+	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
+	"github.com/katzenpost/katzenpost/reunion/server"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 )

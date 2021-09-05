@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"time"
 
-	cConstants "github.com/katzenpost/client/constants"
-	"github.com/katzenpost/core/pki"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/pki"
 )
 
 // Event is the generic event sent over the event listener channel.

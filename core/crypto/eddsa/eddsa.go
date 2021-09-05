@@ -29,9 +29,9 @@ import (
 	"os"
 
 	"crypto/ed25519"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/extra25519"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/extra25519"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (

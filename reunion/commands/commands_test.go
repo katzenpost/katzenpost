@@ -21,7 +21,7 @@ import (
 	"crypto/sha256"
 	"testing"
 
-	"github.com/katzenpost/reunion/crypto"
+	"github.com/katzenpost/katzenpost/reunion/crypto"
 	"github.com/stretchr/testify/require"
 )
 

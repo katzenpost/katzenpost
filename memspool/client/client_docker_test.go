@@ -22,10 +22,10 @@ import (
 	"bytes"
 	"testing"
 
-	cc "github.com/katzenpost/client"
-	"github.com/katzenpost/client/config"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/memspool/common"
+	cc "github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/memspool/common"
 	"github.com/stretchr/testify/require"
 )
 

@@ -25,10 +25,10 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
-	"github.com/katzenpost/core/monotime"
-	"github.com/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
 

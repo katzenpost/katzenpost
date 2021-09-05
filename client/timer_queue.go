@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/core/queue"
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/core/queue"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 type Item interface {

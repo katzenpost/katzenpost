@@ -24,10 +24,10 @@ import (
 	"fmt"
 	"math/rand"
 
-	"github.com/katzenpost/client"
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/crypto"
-	"github.com/katzenpost/reunion/server"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/crypto"
+	"github.com/katzenpost/katzenpost/reunion/server"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )

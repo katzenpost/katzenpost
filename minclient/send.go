@@ -20,13 +20,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
-	cpki "github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/sphinx/path"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 // SendSphinxPacket sends the given Sphinx packet.

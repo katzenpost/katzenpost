@@ -29,9 +29,9 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/memspool/common"
-	"github.com/katzenpost/memspool/server"
-	"github.com/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/memspool/common"
+	"github.com/katzenpost/katzenpost/memspool/server"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/op/go-logging.v1"
 )
 

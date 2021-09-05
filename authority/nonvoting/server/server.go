@@ -29,11 +29,11 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/katzenpost/authority/nonvoting/server/config"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	"gopkg.in/op/go-logging.v1"
 )
 

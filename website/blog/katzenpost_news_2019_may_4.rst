@@ -18,7 +18,7 @@ partners because recipients retreive their messages from a remote
 spool using a Sphinx SURB based protocol. [SPHINX]_  [SPHINXSPEC]_
 
 Naming things is tricky. I had to call it something:
-https://github.com/katzenpost/catshadow
+https://github.com/katzenpost/katzenpost/catshadow
 
 This messaging system is inspired by agl's pond, obviously.
 See agl's pond here: https://github.com/agl/pond
@@ -27,11 +27,11 @@ I forked agl's Double Ratchet from pond:
 https://github.com/katzenpost/doubleratchet
 
 Also forked agl's PANDA:
-https://github.com/katzenpost/panda
+https://github.com/katzenpost/katzenpost/panda
 
 Communication partners use a remote spool service which is now, memspool
 but later it will be a replicating CRDT:
-https://github.com/katzenpost/memspool
+https://github.com/katzenpost/katzenpost/memspool
 
 In order to exchange double ratchet keys and spool identities to form
 a bidirectional cryptographic channel, clients make use of the PANDA
@@ -82,4 +82,4 @@ David
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst>.

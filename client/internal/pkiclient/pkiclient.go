@@ -24,9 +24,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 var (

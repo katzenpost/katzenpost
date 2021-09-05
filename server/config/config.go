@@ -32,11 +32,11 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )

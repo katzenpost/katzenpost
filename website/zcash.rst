@@ -9,10 +9,10 @@ be linked with your transaction on the Zcash blockchain.
 
 Our server side plugin system allows you to add mix network services. We've
 detailed the design of these auto-responder Provider-side plugins here:
-https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst
 
 Here I've written "echo" service plugins for you to learn from in golang and Rust:
-https://github.com/katzenpost/server_plugins
+https://github.com/katzenpost/katzenpost/server_plugins
 
 You could easily write plugin for Katzenpost that allows you to submit crypto currency
 transactions but I've already written such a plugin and I called it "currency":

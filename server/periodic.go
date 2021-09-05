@@ -19,7 +19,7 @@ package server
 import (
 	"time"
 
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 type periodicTimer struct {

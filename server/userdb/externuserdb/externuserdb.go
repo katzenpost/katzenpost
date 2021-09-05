@@ -24,8 +24,8 @@ import (
 	"net/url"
 
 	"encoding/hex"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/ugorji/go/codec"
 )
 

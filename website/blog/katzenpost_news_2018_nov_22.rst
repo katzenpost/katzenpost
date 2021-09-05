@@ -34,10 +34,10 @@ Our recent accomplishments include:
   cryptographic algorithmic agility.
 
 specification:
-https://github.com/katzenpost/docs/blob/master/specs/certificate.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/certificate.rst
 
 golang implementation:
-https://github.com/katzenpost/core/tree/master/crypto/cert
+https://github.com/katzenpost/katzenpost/tree/master/core/crypto/cert
 
 
 * Our mix server now has a language agnostic plugin system for adding
@@ -50,49 +50,49 @@ https://github.com/katzenpost/core/tree/master/crypto/cert
   and response protocols that use SURBs to send the replies.
 
 Here's the mix server documentation for this new feature:
-https://github.com/katzenpost/docs/blob/master/handbook/mix_server.rst#external-kaetzchen-plugin-configuration
+https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/mix_server.rst#external-kaetzchen-plugin-configuration
 
 Here's the Kaetzchen specification document which explains a bit how this
 plugin system works although it doesn't discuss implementation details:
-https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst
 
 This repository contains an "echo service" written in Rust, Golang and Python.
 Also it contains a plugin to perform crypto currency submissions, the idea being
 that mixnets can be used to transport a transaction blob to a Provider service
 which then submits the transaction to the database, the blockchain or whatever:
 
-https://github.com/katzenpost/server_plugins
+https://github.com/katzenpost/katzenpost/server_plugins
 
 
 * we now have a set of incomplete Katzenpost Handbook documents:
 
-https://github.com/katzenpost/docs/blob/master/handbook/index.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/index.rst
 
 Mailproxy Client Daemon
-https://github.com/katzenpost/docs/blob/master/handbook/mailproxy.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/mailproxy.rst
 
 Katzenpost Mix Server Infrastructure
-https://github.com/katzenpost/docs/blob/master/handbook/mix_server.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/mix_server.rst
 
 Katzenpost Mix Network Public Key Infrastructure
-https://github.com/katzenpost/docs/blob/master/handbook/nonvoting_pki.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/nonvoting_pki.rst
 
 Torification of Katzenpost
-https://github.com/katzenpost/docs/blob/master/handbook/tor.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/tor.rst
 
 Katzenpost Voting Directory Authority
-https://github.com/katzenpost/docs/blob/master/handbook/voting_pki.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/voting_pki.rst
 
 
 * we now have a HACKING guide for new Katzenpost developers:
 
-https://github.com/katzenpost/docs/blob/master/HACKING/index.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/HACKING/index.rst
 
 
 * we now have a release process and some binary releases:
 
-https://github.com/katzenpost/docs/blob/master/release_checklist.rst
-https://github.com/katzenpost/docs/blob/master/releases.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/release_checklist.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/releases.rst
 https://github.com/katzenpost/daemons/releases
 
 
@@ -109,7 +109,7 @@ Thus, we were fortunate to receive their advice anyway.
 
 Our specification document is rather still rather incomplete unfortunately:
 
-https://github.com/katzenpost/docs/blob/master/specs/pki.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst
 
 Masala has done most of the development work and together we fixed
 some bugs in the implementation. The design of our PKI is a synthesis
@@ -150,7 +150,7 @@ for both the Directory authority and mix servers.
 
 * I added a prototype mixnet client and server for supporting Adam Langely's PANDA protocol:
 
-https://github.com/katzenpost/panda
+https://github.com/katzenpost/katzenpost/panda
 
 PANDA was used in Pond, and Pond has sadly been abandoned by it's creator.
 I would like there to be many useful mixnet clients, including a kind of

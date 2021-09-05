@@ -23,12 +23,12 @@ import (
 	mRand "math/rand"
 	"time"
 
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 const maxAttempts = 3

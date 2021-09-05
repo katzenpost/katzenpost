@@ -19,8 +19,8 @@ package client
 import (
 	"time"
 
-	cConstants "github.com/katzenpost/client/constants"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // Message is a message reference which is used to match future

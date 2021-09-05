@@ -24,10 +24,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
 )

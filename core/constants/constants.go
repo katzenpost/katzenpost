@@ -17,7 +17,7 @@
 // Package constants contains the constants for Katzenpost.
 package constants
 
-import "github.com/katzenpost/core/sphinx"
+import "github.com/katzenpost/katzenpost/core/sphinx"
 
 var (
 	// PacketLength is the length of a Sphinx Packet in bytes.

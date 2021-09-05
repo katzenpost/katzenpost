@@ -20,12 +20,12 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/wire"
-	"github.com/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/authority/internal/s11n"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
 func (s *Server) onConn(conn net.Conn) {

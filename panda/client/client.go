@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/client"
-	"github.com/katzenpost/panda/common"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/panda/common"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )

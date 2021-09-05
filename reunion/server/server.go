@@ -23,10 +23,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/epochtime"
 	"gopkg.in/op/go-logging.v1"
 )
 

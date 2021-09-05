@@ -22,10 +22,10 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/noise"
 )
 

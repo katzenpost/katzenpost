@@ -1,7 +1,7 @@
 package client
 
 import (
-	"github.com/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )

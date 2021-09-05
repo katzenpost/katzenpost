@@ -4,7 +4,7 @@ Catshadow
 
 Our premiere mix network client, catshadow is a work-in-progress:
 
-https://github.com/katzenpost/catshadow
+https://github.com/katzenpost/katzenpost/catshadow
 
 Catshadow provides mutual location hiding properties between
 communication partners. Clients make use of the PANDA (Phrase

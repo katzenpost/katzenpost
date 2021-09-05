@@ -25,9 +25,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/server/internal/constants"
-	"github.com/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/server/internal/constants"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"gopkg.in/op/go-logging.v1"
 )
 

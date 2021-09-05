@@ -13,7 +13,7 @@ Hi,
 
 I wrote some notes about making mixnet components in Rust that are binary
 compatible with existing Katzenpost components.
-( https://github.com/katzenpost/docs/blob/master/drafts/priority_tasks.rst#rustification )
+( https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/priority_tasks.rst#rustification )
 
 Rustification
 =============

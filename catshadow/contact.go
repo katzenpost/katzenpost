@@ -22,11 +22,11 @@ import (
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/client"
-	cConstants "github.com/katzenpost/client/constants"
-	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/client"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	ratchet "github.com/katzenpost/doubleratchet"
-	memspoolClient "github.com/katzenpost/memspool/client"
+	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
 
 type contactExchange struct {

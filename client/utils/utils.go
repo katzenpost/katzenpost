@@ -17,7 +17,7 @@
 package utils
 
 import (
-	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/pki"
 )
 
 // ServiceDescriptor describe a mixnet Provider-side service.

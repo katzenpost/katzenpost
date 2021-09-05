@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/commands"
 )
 
 // Transport is used by Reunion protocol

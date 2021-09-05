@@ -28,10 +28,10 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/epochtime/katzenpost"
-	"github.com/katzenpost/reunion/server"
-	"github.com/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
+	"github.com/katzenpost/katzenpost/reunion/server"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/op/go-logging.v1"
 )
 

@@ -20,7 +20,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/constants"
 )
 
 // ErrQueueFull is the error issued when the queue is full.

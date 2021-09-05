@@ -22,12 +22,12 @@ import (
 	"errors"
 	"io"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/sphinx/internal/crypto"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (

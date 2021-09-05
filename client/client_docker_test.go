@@ -25,11 +25,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/client/config"
-	"github.com/katzenpost/client/constants"
-	"github.com/katzenpost/core/crypto/rand"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/stretchr/testify/require"
 )
 

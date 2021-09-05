@@ -225,4 +225,4 @@ Appendix A.2 Informative References
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.

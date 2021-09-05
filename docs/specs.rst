@@ -3,7 +3,7 @@ Specifications
 
 .. note::
 
-    The canonical versions of the specifications live in RFC plaintext format at <https://github.com/katzenpost/docs/tree/master/specs>. Pull requests to fix formatting welcome!
+    The canonical versions of the specifications live in RFC plaintext format at <https://github.com/katzenpost/katzenpost/tree/master/docs/specs>. Pull requests to fix formatting welcome!
 
 .. toctree::
    :glob:

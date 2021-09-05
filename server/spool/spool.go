@@ -19,8 +19,8 @@
 package spool
 
 import (
-	"github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 // Spool is the interface provided by all user messgage spool implementations.

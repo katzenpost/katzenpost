@@ -24,8 +24,8 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/katzenpost/server"
-	"github.com/katzenpost/server/config"
+	"github.com/katzenpost/katzenpost/server"
+	"github.com/katzenpost/katzenpost/server/config"
 )
 
 func main() {

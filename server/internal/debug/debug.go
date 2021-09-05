@@ -19,7 +19,7 @@ package debug
 
 import (
 	"encoding/base64"
-	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // NodeIDToPrintString pretty-prints a node identifier.

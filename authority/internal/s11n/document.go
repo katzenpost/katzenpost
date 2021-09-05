@@ -22,9 +22,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
 )
 

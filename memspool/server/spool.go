@@ -26,9 +26,9 @@ import (
 
 	sha512 "crypto/sha512"
 	bolt "github.com/coreos/bbolt"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/memspool/common"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/memspool/common"
 	"gopkg.in/op/go-logging.v1"
 )
 

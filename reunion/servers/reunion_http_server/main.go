@@ -25,9 +25,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/epochtime/katzenpost"
-	"github.com/katzenpost/reunion/server"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
+	"github.com/katzenpost/katzenpost/reunion/server"
 	"gopkg.in/op/go-logging.v1"
 )
 

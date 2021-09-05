@@ -21,14 +21,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/client/utils"
 	"io"
 	"time"
 
-	cConstants "github.com/katzenpost/client/constants"
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/rand"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 var ErrReplyTimeout = errors.New("failure waiting for reply, timeout reached")

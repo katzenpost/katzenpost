@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/panda/server"
-	"github.com/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/panda/server"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/op/go-logging.v1"
 )
 
