@@ -17,10 +17,10 @@
 package client
 
 import (
-	"github.com/katzenpost/client"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/memspool/common"
+	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
 // SpoolWriteDescriptor describes a remotely writable spool.

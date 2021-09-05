@@ -2,8 +2,8 @@
 .. image:: https://travis-ci.org/katzenpost/catshadow.svg?branch=master
   :target: https://travis-ci.org/katzenpost/catshadow
 
-.. image:: https://godoc.org/github.com/katzenpost/catshadow?status.svg
-  :target: https://godoc.org/github.com/katzenpost/catshadow
+.. image:: https://godoc.org/github.com/katzenpost/katzenpost/catshadow?status.svg
+  :target: https://godoc.org/github.com/katzenpost/katzenpost/catshadow
 
 
 the catshadow client
@@ -43,7 +43,7 @@ optional docker tests
 To run the optional docker tests firstly, see our docker repo
 and start your local dockerized mix network:
 
-https://github.com/katzenpost/docker
+https://github.com/katzenpost/katzenpost/docker
 
 A couple of minutes after startup run the tests like this:
 ::
@@ -123,23 +123,23 @@ the longer design overview
 The design of this messaging is not yet fully specified but is
 partially specified in these specification documents:
 
-* https://github.com/katzenpost/docs/blob/master/drafts/client.rst
-* https://github.com/katzenpost/docs/blob/master/drafts/deaddrop.rst
-* https://github.com/katzenpost/docs/blob/master/drafts/decoy_traffic.rst
-* https://github.com/katzenpost/docs/blob/master/drafts/panda.txt
+* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/client.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/deaddrop.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/decoy_traffic.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/panda.txt
 
 Whereas all those specifications assume the existence of the core
 Katzenpost specifications here which mostly covers the design of
 the server infrastructure:
 
-* https://github.com/katzenpost/docs/blob/master/specs/mixnet.rst
-* https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst
-* https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
-* https://github.com/katzenpost/docs/blob/master/specs/sphinx_replay_detection.rst
-* https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst
-* https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst
-* https://github.com/katzenpost/docs/blob/master/specs/pki.rst
-* https://github.com/katzenpost/docs/blob/master/specs/certificate.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/mixnet.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/wire-protocol.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx_replay_detection.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/certificate.rst
 
 There is an older copy of our core Katzenpost specifications rendered
 in Latex if you prefer to read it that way:
@@ -155,12 +155,12 @@ repositories including my fork of agl's PANDA and agl's Signal Double
 Ratchet:
 
 * https://github.com/katzenpost/doubleratchet
-* https://github.com/katzenpost/panda
+* https://github.com/katzenpost/katzenpost/panda
 * https://github.com/katzenpost/channels
-* https://github.com/katzenpost/memspool
-* https://github.com/katzenpost/client
-* https://github.com/katzenpost/minclient
-* https://github.com/katzenpost/core
+* https://github.com/katzenpost/katzenpost/memspool
+* https://github.com/katzenpost/katzenpost/client
+* https://github.com/katzenpost/katzenpost/minclient
+* https://github.com/katzenpost/katzenpost/core
 
 acknowledgments
 ===============

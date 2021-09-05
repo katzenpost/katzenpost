@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/server/registration"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/server/registration"
 	"golang.org/x/net/proxy"
 )
 

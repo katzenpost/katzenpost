@@ -20,8 +20,8 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/epochtime/katzenpost"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/stretchr/testify/require"
 )
 

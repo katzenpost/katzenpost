@@ -23,7 +23,7 @@ dependencies can do so by looking at these files.
 Core
 ----
 
-github.com/katzenpost/core with license AGPL-3.0
+github.com/katzenpost/katzenpost/core with license AGPL-3.0
 
 The Katzenpost Core library depends on:
 
@@ -86,11 +86,11 @@ depends on:
 Authority
 ---------
 
-github.com/katzenpost/authority with license AGPL-3.0
+github.com/katzenpost/katzenpost/authority with license AGPL-3.0
 
 The Katzenpost Authority depends on:
 
-* github.com/katzenpost/core with license AGPL-3.0
+* github.com/katzenpost/katzenpost/core with license AGPL-3.0
 * github.com/BurntSushi/toml with license MIT
 * github.com/coreos/bbolt with license MIT
 * github.com/stretchr/testify with license MIT
@@ -107,12 +107,12 @@ Forks of external dependencies:
 Server
 ------
 
-github.com/katzenpost/server with license AGPL-3.0
+github.com/katzenpost/katzenpost/server with license AGPL-3.0
 
 Server depends on:
 
-* github.com/katzenpost/core with license AGPL-3.0
-* github.com/katzenpost/authority with license AGPL-3.0  
+* github.com/katzenpost/katzenpost/core with license AGPL-3.0
+* github.com/katzenpost/katzenpost/authority with license AGPL-3.0  
 * git.schwanenlied.me/yawning/aez.git with license CC0 1.0 Universal
 * git.schwanenlied.me/yawning/avl.git with license CC0 1.0 Universal
 * git.schwanenlied.me/yawning/bloom.git with license CC0 1.0 Universal
@@ -130,11 +130,11 @@ Server depends on:
 Minclient
 ---------
 
-github.com/katzenpost/minclient with license AGPL-3.0
+github.com/katzenpost/katzenpost/minclient with license AGPL-3.0
 
 Minclient depends on:
 
-* github.com/katzenpost/core with license AGPL-3.0
+* github.com/katzenpost/katzenpost/core with license AGPL-3.0
 * github.com/stretchr/testify with license MIT
 * gopkg.in/op/go-logging.v1 with license BSD-3-Clause 
 
@@ -146,15 +146,15 @@ Forks of external dependencies:
 Client
 ------
 
-github.com/katzenpost/client with license AGPL-3.0
+github.com/katzenpost/katzenpost/client with license AGPL-3.0
 
 Client depends on:
 
-* github.com/katzenpost/authority with license AGPL-3.0
-* github.com/katzenpost/core with license AGPL-3.0
+* github.com/katzenpost/katzenpost/authority with license AGPL-3.0
+* github.com/katzenpost/katzenpost/core with license AGPL-3.0
 * github.com/katzenpost/kimchi with license AGPL-3.0
-* github.com/katzenpost/minclient with license AGPL-3.0
-* github.com/katzenpost/registration_client with license AGPL-3.0
+* github.com/katzenpost/katzenpost/minclient with license AGPL-3.0
+* github.com/katzenpost/katzenpost/registration_client with license AGPL-3.0
 * github.com/BurntSushi/toml with license MIT
 * github.com/stretchr/testify with license MIT
 * golang.org/x/net with license https://github.com/golang/net/blob/master/LICENSE
@@ -166,15 +166,15 @@ Client depends on:
 Catshadow
 ---------
 
-github.com/katzenpost/catshadow with license AGPL-3.0
+github.com/katzenpost/katzenpost/catshadow with license AGPL-3.0
 
 Client depends on:
 
-* github.com/katzenpost/core with license AGPL-3.0
-* github.com/katzenpost/client with license AGPL-3.0
+* github.com/katzenpost/katzenpost/core with license AGPL-3.0
+* github.com/katzenpost/katzenpost/client with license AGPL-3.0
 * github.com/katzenpost/kimchi with license AGPL-3.0
-* github.com/katzenpost/memspool with license AGPL-3.0
-* github.com/katzenpost/panda with license AGPL-3.0
+* github.com/katzenpost/katzenpost/memspool with license AGPL-3.0
+* github.com/katzenpost/katzenpost/panda with license AGPL-3.0
 * github.com/katzenpost/doubleratchet with license https://github.com/katzenpost/doubleratchet/blob/master/LICENSE
 * github.com/BurntSushi/toml with license MIT
 * github.com/stretchr/testify with license MIT
@@ -185,7 +185,7 @@ Client depends on:
 
 Forks of external dependencies:
 
-* https://github.com/katzenpost/panda/tree/master/crypto with license https://github.com/katzenpost/panda/blob/master/crypto/LICENSE
+* https://github.com/katzenpost/katzenpost/tree/master/panda/crypto with license https://github.com/katzenpost/katzenpost/panda/blob/master/crypto/LICENSE
 
 
 
@@ -198,8 +198,8 @@ depends on:
 
 * QT, the C++ library with license LGPL-3.0 https://doc.qt.io/qt-5/opensourcelicense.html
 * github.com/therecipe/qt/core with license LGPL-3.0
-* github.com/katzenpost/catshadow with license AGPL-3.0
-* github.com/katzenpost/client with license AGPL-3.0
+* github.com/katzenpost/katzenpost/catshadow with license AGPL-3.0
+* github.com/katzenpost/katzenpost/client with license AGPL-3.0
 * github.com/dustin/go-humanize with license MIT
 * github.com/BurntSushi/toml with license MIT
 * github.com/muesli/go-app-paths with license MIT
@@ -223,14 +223,14 @@ depends on:
 Memspool
 --------
 
-https://github.com/katzenpost/memspool with license AGPL-3.0
+https://github.com/katzenpost/katzenpost/memspool with license AGPL-3.0
 
 depends on:
 
-* github.com/katzenpost/client with license AGPL-3.0
-* github.com/katzenpost/core with license AGPL-3.0
+* github.com/katzenpost/katzenpost/client with license AGPL-3.0
+* github.com/katzenpost/katzenpost/core with license AGPL-3.0
 * github.com/katzenpost/kimchi with license AGPL-3.0
-* github.com/katzenpost/server with license AGPL-3.0
+* github.com/katzenpost/katzenpost/server with license AGPL-3.0
 * github.com/coreos/bbolt with license MIT
 * github.com/stretchr/testify with license MIT
 * github.com/ugorji/go/codec with license MIT
@@ -241,12 +241,12 @@ depends on:
 Registration Client
 -------------------
 
-https://github.com/katzenpost/registration_client with license AGPL-3.0
+https://github.com/katzenpost/katzenpost/registration_client with license AGPL-3.0
 
 This component will hopefully go away soon but we include it for completeness.
 
 depends on:
 
-* github.com/katzenpost/core with license AGPL-3.0
-* github.com/katzenpost/server with license AGPL-3.0
+* github.com/katzenpost/katzenpost/core with license AGPL-3.0
+* github.com/katzenpost/katzenpost/server with license AGPL-3.0
 * golang.org/x/net with license https://github.com/golang/net/blob/master/LICENSE

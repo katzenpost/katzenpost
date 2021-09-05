@@ -26,9 +26,9 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"golang.org/x/net/idna"
 )
 

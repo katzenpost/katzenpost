@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/stretchr/testify/assert"
 )
 

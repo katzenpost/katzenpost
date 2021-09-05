@@ -112,7 +112,7 @@ or SPHINCS+. [SPHINCS256]_
 3. Golang API
 =============
 
-* https://godoc.org/github.com/katzenpost/core/crypto/cert
+* https://godoc.org/github.com/katzenpost/katzenpost/core/crypto/cert
 
 Our golang implementation is agnostic to the specific cryptographic
 signature scheme which is used. Cert can handle single and multiple
@@ -142,7 +142,7 @@ Appendix A.1 Normative References
 
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst>.
 
 .. [RFC7049]   C. Bormannm, P. Hoffman, "Concise Binary Object Representation (CBOR)",
                Internet Engineering Task Force (IETF), October 2013,
@@ -182,6 +182,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzenCert,
    title = {Certificate Format Specification},
    author = {David Stainton},
-   url = {https://github.com/katzenpost/docs/blob/master/specs/certificate.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/certificate.rst},
    year = {2018}
    }

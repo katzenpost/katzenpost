@@ -18,7 +18,7 @@ package crypto
 
 import (
 	"github.com/awnumar/memguard"
-	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"

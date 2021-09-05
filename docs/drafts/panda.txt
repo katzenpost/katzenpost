@@ -244,4 +244,4 @@ Appendix A.2 Informative References
 
    [KATZKEYSERVER]   Angel, Y., Diaz, C., Pollan, R., kwadronaut, mo, Kaneko, K., Stainton, D.,
                      "Katzenpost Key Discovery Extension", February 2018,
-                     <https://github.com/katzenpost/docs/blob/master/drafts/keyserver.rst>.
+                     <https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/keyserver.rst>.

@@ -7,7 +7,7 @@ package extra25519
 import (
 	"crypto/sha512"
 
-	"github.com/katzenpost/core/crypto/edwards25519"
+	"github.com/katzenpost/katzenpost/core/crypto/edwards25519"
 )
 
 // PrivateKeyToCurve25519 converts an ed25519 private key into a corresponding

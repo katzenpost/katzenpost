@@ -27,9 +27,9 @@ disclosure and active confirmation attacks.
 Although far from complete, we added some design considerations to the
 following draft specification documents:
 
-https://github.com/katzenpost/docs/blob/master/drafts/client.rst
-https://github.com/katzenpost/docs/blob/master/drafts/deaddrop.rst
-https://github.com/katzenpost/docs/blob/master/drafts/decoy_traffic.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/client.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/deaddrop.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/decoy_traffic.rst
 
 The new Katzenpost mixnet design will work as follows:
 
@@ -91,12 +91,12 @@ it can send one reponse using that SURB.
 I've provided some "echo" service plugins as examples of how to write plugins
 for Katzenpost in our server_plugins repo:
 
-https://github.com/katzenpost/server_plugins
+https://github.com/katzenpost/katzenpost/server_plugins
 
 HOWEVER, we have for over a year supported BTC and Zcash cryptocurrency submitions
 via the "currency" plugin, here:
 
-https://github.com/katzenpost/server_plugins/tree/master/grpc_plugins/currency
+https://github.com/katzenpost/katzenpost/tree/master/server_plugins/grpc_plugins/currency
 
 Other areas of improvement include fixing some bugs in the Voting
 Authority server and changing our PKI document to include all the

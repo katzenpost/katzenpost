@@ -14,7 +14,7 @@ Install
 
 See the mix server readme:
 
-* https://github.com/katzenpost/server
+* https://github.com/katzenpost/katzenpost/server
 
 
 Configuration
@@ -22,7 +22,7 @@ Configuration
 
 A sample configuration file can be found in our docker repository, here:
 
-* https://github.com/katzenpost/docker
+* https://github.com/katzenpost/katzenpost/docker
 
 
 ``server`` Commandline Usage
@@ -334,7 +334,7 @@ Here's a configuration example for the external currency service
     f = "/home/user/test_mixnet/currency_zec/curreny.toml"
 
 We've written echo services in golang and rust as an example here:
-https://github.com/katzenpost/server_plugins
+https://github.com/katzenpost/katzenpost/server_plugins
 
 
 Provider User Database Configuration
@@ -463,7 +463,7 @@ Setup the Postgres SQL database backend:
      psql -U provider --password -d katzenpost -h 127.0.0.1 -f create_database-postgresql.sql
 
    That sql script is located in our ``server`` git repository, here:
-   https://github.com/katzenpost/server/blob/master/internal/sqldb/create_database-postgresql.sql
+   https://github.com/katzenpost/katzenpost/blob/master/server/internal/sqldb/create_database-postgresql.sql
 
 2. Start the Katzenpost server.
 

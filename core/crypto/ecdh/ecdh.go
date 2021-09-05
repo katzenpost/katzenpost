@@ -28,7 +28,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/utils"
 	"golang.org/x/crypto/curve25519"
 )
 

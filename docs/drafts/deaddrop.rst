@@ -268,14 +268,14 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst>.
 
 .. [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -294,7 +294,7 @@ Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst>.
 
 .. [MIXMINION]  Danezis, G., Dingledine, R., Mathewsom, N.,
                 "Mixminion: Design of a Type III Anonymous Remailer Protocol"

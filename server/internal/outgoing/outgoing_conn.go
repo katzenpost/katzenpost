@@ -26,13 +26,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/monotime"
-	cpki "github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/wire"
-	"github.com/katzenpost/core/wire/commands"
-	"github.com/katzenpost/server/internal/constants"
-	"github.com/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/monotime"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/constants"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
 

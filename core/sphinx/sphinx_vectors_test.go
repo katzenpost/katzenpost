@@ -22,9 +22,9 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 	"github.com/ugorji/go/codec"
 )

@@ -22,13 +22,13 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx"
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/utils"
-	"github.com/katzenpost/server/spool"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/server/spool"
+	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
 const (

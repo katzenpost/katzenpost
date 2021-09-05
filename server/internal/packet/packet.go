@@ -23,10 +23,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/sphinx"
-	"github.com/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 var (

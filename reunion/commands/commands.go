@@ -23,7 +23,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/katzenpost/reunion/crypto"
+	"github.com/katzenpost/katzenpost/reunion/crypto"
 )
 
 var errInvalidCommand = errors.New("invalid reunion protocol command")

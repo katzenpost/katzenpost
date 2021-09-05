@@ -17,14 +17,14 @@
 package scheduler
 
 import (
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/thwack"
-	"github.com/katzenpost/server/config"
-	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/thwack"
+	"github.com/katzenpost/katzenpost/server/config"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/stretchr/testify/require"
 	"testing"
 	"time"

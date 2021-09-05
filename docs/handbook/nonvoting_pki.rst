@@ -32,7 +32,7 @@ Install
 
 See the authority readme:
 
-* https://github.com/katzenpost/authority
+* https://github.com/katzenpost/katzenpost/authority
 
 
 Configuration
@@ -40,7 +40,7 @@ Configuration
 
 A sample configuration file can be found in our docker repository, here:
 
-* https://github.com/katzenpost/docker
+* https://github.com/katzenpost/katzenpost/docker
 
 
 CLI usage of The Non-voting Directory Authority

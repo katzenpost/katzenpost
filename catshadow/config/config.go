@@ -26,8 +26,8 @@ import (
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
-	"github.com/katzenpost/client/config"
-	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/log"
 )
 
 // Config is the top level catshadow configuration.

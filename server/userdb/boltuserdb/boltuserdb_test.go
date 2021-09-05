@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

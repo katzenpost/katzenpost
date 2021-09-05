@@ -22,8 +22,8 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/stretchr/testify/assert"
 	"github.com/ugorji/go/codec"
 )

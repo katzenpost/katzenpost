@@ -21,7 +21,7 @@ because Dr. Peter Schwabe says it's a good idea. It also greatly simplifies
 rustification. Before this development task begins the specification document
 should reflect the necessary changes:
 
-* https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/specs/wire-protocol.rst
 
 
 Key Agility
@@ -33,14 +33,14 @@ The two primary reasons for key agility are recovery from a known key compromise
 and as a prerequisite for usage with a hardware security module.
 
 Early unfinished key agility draft specification document:
-* https://github.com/katzenpost/docs/blob/master/drafts/key_agility.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/key_agility.rst
 
 
 Client Library
 --------------
 
 Early unfinished draft specification document:
-* https://github.com/katzenpost/docs/blob/master/drafts/client.rst
+* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/client.rst
 
 After this draft specification document is completed additional composable
 libraries should be designed which have more sophisticated encryption as

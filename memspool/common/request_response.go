@@ -20,8 +20,8 @@ import (
 	"errors"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 )
 
 const (

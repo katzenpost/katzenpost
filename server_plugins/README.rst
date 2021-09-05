@@ -6,7 +6,7 @@ Server plugins are used to extend the functionality of Providers
 as described in:
 
 **"Katzenpost Provider-side Autoresponder Extension"**
-https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst
 
 Kaetzchen services are essentially simple Request/Response services
 where the response is sent back to the client using a SURB.
@@ -14,7 +14,7 @@ This repository contains optional plugins for the Katzenpost mix server.
 
 See the handbook to learn how to configure external plugins:
 
-* https://github.com/katzenpost/docs/blob/master/handbook/mix_server.rst#external-kaetzchen-plugin-configuration
+* https://github.com/katzenpost/katzenpost/blob/master/docs/handbook/mix_server.rst#external-kaetzchen-plugin-configuration
 
 
 Status

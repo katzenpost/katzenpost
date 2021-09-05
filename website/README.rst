@@ -8,7 +8,7 @@ Download
 
 ::
 
-    git clone https://github.com/katzenpost/website.git
+    git clone https://github.com/katzenpost/katzenpost/website.git
     cd website/docs
     git pull # update submodule
     cd ..

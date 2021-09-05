@@ -22,7 +22,7 @@ import (
 	"time"
 
 	ratchet "github.com/katzenpost/doubleratchet"
-	"github.com/katzenpost/memspool/common"
+	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
 // DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.

@@ -23,9 +23,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/core/constants"
-	"github.com/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

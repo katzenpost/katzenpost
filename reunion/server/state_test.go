@@ -19,8 +19,8 @@ package server
 import (
 	"testing"
 
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/stretchr/testify/require"
 )
 

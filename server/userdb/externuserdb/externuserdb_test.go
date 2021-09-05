@@ -24,7 +24,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 )
 
 func TestExists(t *testing.T) {

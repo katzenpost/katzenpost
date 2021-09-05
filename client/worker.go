@@ -21,11 +21,11 @@ import (
 	"math"
 	"time"
 
-	"github.com/katzenpost/client/constants"
-	cConstants "github.com/katzenpost/client/constants"
-	"github.com/katzenpost/client/utils"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/client/constants"
+	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/pki"
 	mrand "math/rand"
 )
 

@@ -1243,6 +1243,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{SphinxSpec,
    title = {Sphinx Mix Network Cryptographic Packet Format Specification},
    author = {Yawning Angel and George Danezis and Claudia Diaz and Ania Piotrowska and David Stainton},
-   url = {https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst},
    year = {2017}
    }

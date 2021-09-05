@@ -3,15 +3,15 @@
 .. image:: https://travis-ci.org/katzenpost/authority.svg?branch=master
   :target: https://travis-ci.org/katzenpost/authority
 
-.. image:: https://godoc.org/github.com/katzenpost/authority?status.svg
-  :target: https://godoc.org/github.com/katzenpost/authority
+.. image:: https://godoc.org/github.com/katzenpost/katzenpost/authority?status.svg
+  :target: https://godoc.org/github.com/katzenpost/katzenpost/authority
 
 
 Katzenpost Directory Authority
 ==============================
 
 Katzenpost has two directory authority servers; a voting and nonvoting server.
-The voting server's design is specified in the **"Katzenpost Mix Network Public Key Infrastructure Specification"** https://github.com/katzenpost/docs/blob/master/specs/pki.rst
+The voting server's design is specified in the **"Katzenpost Mix Network Public Key Infrastructure Specification"** https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst
 
 
 Building

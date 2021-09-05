@@ -27,7 +27,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/op/go-logging"
 	"github.com/ugorji/go/codec"
 )

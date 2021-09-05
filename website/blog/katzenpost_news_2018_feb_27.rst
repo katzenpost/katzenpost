@@ -42,7 +42,7 @@ Mathewson sent us a six page review of our spec and Yawning sent a two
 page reply; both of these e-mails contain lots of design details and
 have been useful in our editing of the spec thus far:
 
-https://github.com/katzenpost/docs/blob/master/specs/pki.txt
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.txt
 
 Additionally since the Athens hackfest I, masala and Yawning have made
 changes so that interaction with the nonvoting PKI to NOT use HTTP but
@@ -51,7 +51,7 @@ Post Quantum hybrid key exchange). The PKI spec has been updated with
 these new changes. If you are curious about our wire protocol you can read
 about it here:
 
-https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.txt
+https://github.com/katzenpost/katzenpost/blob/master/docs/specs/wire-protocol.txt
 
 
 During the Brussels hackfest we:
@@ -78,10 +78,10 @@ During the Brussels hackfest we:
      known as kaetzchen and a keyserver:
 
        * autoresponder protocol known as kaetzchen
-         https://github.com/katzenpost/docs/blob/master/drafts/kaetzchen.txt
+         https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/kaetzchen.txt
 
        * keyserver specification (rough draft)
-         https://github.com/katzenpost/docs/blob/master/drafts/keyserver.txt
+         https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/keyserver.txt
 
    * masala wrote a golang CLI client:
      https://github.com/katzenpost/demotools/tree/master/cliclient
@@ -138,7 +138,7 @@ We patiently await for a response to our query:
 
 Yawning recently implemented the keyserver:
 
-https://github.com/katzenpost/server/blob/master/internal/provider/kaetzchen/keyserver.go
+https://github.com/katzenpost/katzenpost/blob/master/server/internal/provider/kaetzchen/keyserver.go
 
 and the mailproxy client side for interacting with the keyserver:
 
@@ -163,7 +163,7 @@ messages from a remote Provider. The client would never directly
 interact with the remote Provider but instead only uses the mixnet to
 retrieve messages.
 
-https://github.com/katzenpost/docs/blob/master/drafts/deaddrop.txt
+https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/deaddrop.txt
 
 Cheers!
 

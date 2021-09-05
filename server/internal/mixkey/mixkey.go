@@ -30,10 +30,10 @@ import (
 
 	"git.schwanenlied.me/yawning/bloom.git"
 	bolt "go.etcd.io/bbolt"
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 const (

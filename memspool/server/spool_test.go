@@ -20,10 +20,10 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/memspool/common"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/memspool/common"
 	"github.com/stretchr/testify/assert"
 )
 

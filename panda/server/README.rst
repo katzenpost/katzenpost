@@ -12,7 +12,7 @@ facilitates the exchanges of cryphtographic binary blobs between
 clients participating in the PANDA protocol.
 
 See **Katzenpost PANDA Autoresponder Extension** specification document:
-* https://github.com/katzenpost/docs/blob/master/drafts/panda.txt
+* https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/panda.txt
 
 
 Usage

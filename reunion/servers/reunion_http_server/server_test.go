@@ -23,12 +23,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/reunion/client"
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/crypto"
-	"github.com/katzenpost/reunion/epochtime/katzenpost"
-	"github.com/katzenpost/reunion/transports/http"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/reunion/client"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/crypto"
+	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
+	"github.com/katzenpost/katzenpost/reunion/transports/http"
 	"github.com/stretchr/testify/require"
 )
 

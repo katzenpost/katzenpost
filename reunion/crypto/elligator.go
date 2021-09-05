@@ -33,8 +33,8 @@ import (
 	"fmt"
 
 	"github.com/awnumar/memguard"
-	"github.com/katzenpost/core/crypto/extra25519"
-	"github.com/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/extra25519"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 )

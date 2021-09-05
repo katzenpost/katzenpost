@@ -287,11 +287,11 @@ Appendix A.1 Normative References
 
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst>.
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst>.
 
 .. [SEDA] Welsh, M., Culler, D., Brewer, E.,
           "SEDA: An Architecture for Well-Conditioned, Scalable Internet Services",
@@ -331,6 +331,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{SphinxReplay,
    title = {Sphinx Packet Replay Detection Specification},
    author = {David Stainton},
-   url = {https://github.com/katzenpost/docs/blob/master/specs/sphinx_replay_detection.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx_replay_detection.rst},
    year = {2019}
    }

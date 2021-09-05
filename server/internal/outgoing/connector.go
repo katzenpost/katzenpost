@@ -21,11 +21,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/server/internal/debug"
-	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/internal/packet"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/server/internal/debug"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
 

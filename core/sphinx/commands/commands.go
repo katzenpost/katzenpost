@@ -22,9 +22,9 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/core/sphinx/internal/crypto"
-	"github.com/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (

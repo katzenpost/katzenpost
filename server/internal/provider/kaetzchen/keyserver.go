@@ -19,9 +19,9 @@ package kaetzchen
 import (
 	"bytes"
 
-	"github.com/katzenpost/server/config"
-	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/server/config"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )

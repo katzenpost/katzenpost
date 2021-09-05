@@ -26,8 +26,8 @@ import (
 	"time"
 
 	bolt "github.com/coreos/bbolt"
-	"github.com/katzenpost/core/worker"
-	"github.com/katzenpost/panda/common"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/panda/common"
 )
 
 const (

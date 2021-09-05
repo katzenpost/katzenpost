@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
 )

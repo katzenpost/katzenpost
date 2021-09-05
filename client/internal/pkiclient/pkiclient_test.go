@@ -3,8 +3,8 @@ package pkiclient
 import (
 	"context"
 	"errors"
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"testing"
 	"time"
 )

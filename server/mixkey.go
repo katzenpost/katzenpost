@@ -22,11 +22,11 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/core/epochtime"
-	"github.com/katzenpost/server/internal/constants"
-	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/internal/mixkey"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/server/internal/constants"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"gopkg.in/op/go-logging.v1"
 )
 

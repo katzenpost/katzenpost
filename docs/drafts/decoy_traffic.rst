@@ -254,7 +254,7 @@ Appendix A.1 Normative References
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
 
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
                   <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
@@ -280,7 +280,7 @@ Appendix A.2 Informative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder Extension", January 2018,
-                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst>.
 
 .. [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
                   Proceedings of the Workshop on Privacy in the Electronic Society, October 2003,

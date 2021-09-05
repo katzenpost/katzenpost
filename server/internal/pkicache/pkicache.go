@@ -21,9 +21,9 @@ package pkicache
 import (
 	"fmt"
 
-	"github.com/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/core/pki"
-	"github.com/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // Entry is a cached PKI Document.

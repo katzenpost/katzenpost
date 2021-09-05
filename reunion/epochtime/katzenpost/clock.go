@@ -20,7 +20,7 @@ package katzenpost
 import (
 	"time"
 
-	"github.com/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
 // Clock provides an implemention of the Reunion EpochClock interface for

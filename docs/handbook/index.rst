@@ -62,9 +62,9 @@ of this repository.
 
 There are two server infrastructure components:
 
-* https://github.com/katzenpost/server
+* https://github.com/katzenpost/katzenpost/server
 
-* https://github.com/katzenpost/authority
+* https://github.com/katzenpost/katzenpost/authority
 
 
 There are several clients. Our latest work-in-progress:
@@ -97,4 +97,4 @@ Notes on Building a Test Mix Network
 
 See our docker repo:
 
-https://github.com/katzenpost/docker
+https://github.com/katzenpost/katzenpost/docker

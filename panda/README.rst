@@ -3,8 +3,8 @@
 .. image:: https://travis-ci.org/katzenpost/panda.svg?branch=master
   :target: https://travis-ci.org/katzenpost/panda
 
-.. image:: https://godoc.org/github.com/katzenpost/panda?status.svg
-  :target: https://godoc.org/github.com/katzenpost/panda
+.. image:: https://godoc.org/github.com/katzenpost/katzenpost/panda?status.svg
+  :target: https://godoc.org/github.com/katzenpost/katzenpost/panda
 
 PANDA Library
 =============

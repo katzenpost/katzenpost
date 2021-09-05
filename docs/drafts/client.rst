@@ -23,7 +23,7 @@ considerations that are not already covered by "Katzenpost Mix Network
 End-to-end Protocol Specification" [KATZMIXE2E]_.  Moreover, the
 existing Katzenpost minimal reference client, minclient, can be found here:
 
-* https://github.com/katzenpost/minclient
+* https://github.com/katzenpost/katzenpost/minclient
 
 Minclient is very low level and, in most cases, should not be used
 directly to compose mixnet client applications. In contrast we shall
@@ -393,7 +393,7 @@ Appendix A.1 Normative References
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
 
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
                   <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
@@ -403,7 +403,7 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/katzenpost/docs/blob/master/specs/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -415,7 +415,7 @@ Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/docs/blob/master/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst>.
 
 .. [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
                Symposium proceedings on Communications architectures and protocols,

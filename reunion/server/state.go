@@ -26,8 +26,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/katzenpost/reunion/commands"
-	"github.com/katzenpost/reunion/epochtime"
+	"github.com/katzenpost/katzenpost/reunion/commands"
+	"github.com/katzenpost/katzenpost/reunion/epochtime"
 	"github.com/ugorji/go/codec"
 )
 

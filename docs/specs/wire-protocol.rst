@@ -363,6 +363,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzMixWire,
    title = {Katzenpost Mix Network Wire Protocol Specification},
    author = {Yawning Angel},
-   url = {https://github.com/katzenpost/docs/blob/master/specs/wire-protocol.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/wire-protocol.rst},
    year = {2017}
    }

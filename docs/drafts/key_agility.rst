@@ -125,7 +125,7 @@ Appendix A.1 Normative References
 
 .. [KATZCERT]  Stainton, D.,
                "Certificate Format Specification", 2018,
-               <https://github.com/katzenpost/docs/blob/master/specs/certificate.rst>.
+               <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/certificate.rst>.
 
 .. [RFC7049]   C. Bormannm, P. Hoffman, "Concise Binary Object Representation (CBOR)",
                Internet Engineering Task Force (IETF), October 2013,
@@ -136,4 +136,4 @@ Appendix A.2 Informative References
 
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/docs/blob/master/specs/pki.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst>.

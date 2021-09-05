@@ -20,9 +20,9 @@ package sqldb
 import (
 	"fmt"
 
-	"github.com/katzenpost/server/internal/glue"
-	"github.com/katzenpost/server/spool"
-	"github.com/katzenpost/server/userdb"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/spool"
+	"github.com/katzenpost/katzenpost/server/userdb"
 	"gopkg.in/op/go-logging.v1"
 )
 

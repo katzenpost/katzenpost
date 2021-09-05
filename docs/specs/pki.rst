@@ -976,6 +976,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzMixPKI,
    title = {Katzenpost Mix Network Public Key Infrastructure Specification},
    author = {Yawning Angel and Ania Piotrowska and David Stainton},
-   url= {https://github.com/katzenpost/docs/blob/master/specs/pki.rst},
+   url= {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst},
    year = {2017}
    }
