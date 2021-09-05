@@ -3,18 +3,22 @@ module github.com/katzenpost/katzenpost
 go 1.16
 
 require (
+	gioui.org v0.0.0-20210905115819-bde046de5496
+	gioui.org/x v0.0.0-20210816192830-9ea938c228a0
+	gioui.org/x/notify v0.0.0-20210602142902-98819c83723b
 	git.schwanenlied.me/yawning/aez.git v0.0.0-20180408160647-ec7426b44926
 	git.schwanenlied.me/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	git.schwanenlied.me/yawning/bloom.git v0.0.0-20181019144233-44d6c5c71ed1
 	git.schwanenlied.me/yawning/bsaes.git v0.0.0-20190320102049-26d1add596b6
 	github.com/BurntSushi/toml v0.4.1
 	github.com/awnumar/memguard v0.22.2
+	github.com/benc-uk/gofract v0.0.0-20200624074122-f2d59d20813c
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
-	github.com/eapache/queue v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.3.0
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/golang/protobuf v1.5.2
+	github.com/hako/durafmt v0.0.0-20210608085754-5c1018a4e16b
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
@@ -25,10 +29,13 @@ require (
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0 // indirect
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.7.0
 	github.com/ugorji/go/codec v1.2.6
 	go.etcd.io/bbolt v1.3.6
 	golang.org/x/crypto v0.0.0-20210817164053-32db794688a5
+	golang.org/x/exp v0.0.0-20210903233438-a2d0902c3ac7
+	golang.org/x/image v0.0.0-20210628002857-a66eb6448b8d
 	golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f
 	golang.org/x/text v0.3.7
 	google.golang.org/protobuf v1.27.1

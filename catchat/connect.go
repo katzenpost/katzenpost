@@ -3,7 +3,7 @@ package main
 import (
 	"gioui.org/layout"
 	"gioui.org/widget/material"
-	"github.com/katzenpost/catshadow"
+	"github.com/katzenpost/katzenpost/catshadow"
 )
 
 type connectingPage struct {

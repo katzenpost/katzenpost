@@ -14,7 +14,7 @@ import (
 	"github.com/benc-uk/gofract/pkg/colors"
 	"github.com/benc-uk/gofract/pkg/fractals"
 	"github.com/hako/durafmt"
-	"github.com/katzenpost/catchat/assets"
+	"github.com/katzenpost/katzenpost/catchat/assets"
 	"golang.org/x/exp/shiny/materialdesign/icons"
 	"image"
 	"image/png"

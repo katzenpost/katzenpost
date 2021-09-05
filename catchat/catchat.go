@@ -8,9 +8,9 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/katzenpost/catshadow"
-	catconfig "github.com/katzenpost/catshadow/config"
-	"github.com/katzenpost/client"
+	"github.com/katzenpost/katzenpost/catshadow"
+	catconfig "github.com/katzenpost/katzenpost/catshadow/config"
+	"github.com/katzenpost/katzenpost/client"
 	"time"
 
 	"gioui.org/app"

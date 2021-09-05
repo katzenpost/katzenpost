@@ -6,10 +6,10 @@ import (
 	"os"
 
 	"gioui.org/app"
-	"github.com/katzenpost/catshadow"
-	catconfig "github.com/katzenpost/catshadow/config"
-	"github.com/katzenpost/client"
-	clientConfig "github.com/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/catshadow"
+	catconfig "github.com/katzenpost/katzenpost/catshadow/config"
+	"github.com/katzenpost/katzenpost/client"
+	clientConfig "github.com/katzenpost/katzenpost/client/config"
 	"path/filepath"
 )
 

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"gioui.org/op/paint"
 	"github.com/hako/durafmt"
-	"github.com/katzenpost/catshadow"
+	"github.com/katzenpost/katzenpost/catshadow"
 	"golang.org/x/exp/shiny/materialdesign/icons"
 	"runtime"
 	"strings"
