@@ -92,7 +92,7 @@ The Katzenpost Authority depends on:
 
 * github.com/katzenpost/katzenpost/core with license AGPL-3.0
 * github.com/BurntSushi/toml with license MIT
-* github.com/coreos/bbolt with license MIT
+* go.etcd.io/bbolt with license MIT
 * github.com/stretchr/testify with license MIT
 * github.com/ugorji/go/codec with license MIT
 * golang.org/x/crypto with license https://github.com/golang/crypto/blob/master/LICENSE
@@ -117,7 +117,7 @@ Server depends on:
 * git.schwanenlied.me/yawning/avl.git with license CC0 1.0 Universal
 * git.schwanenlied.me/yawning/bloom.git with license CC0 1.0 Universal
 * github.com/BurntSushi/toml with license MIT
-* github.com/coreos/bbolt with license MIT
+* go.etcd.io/bbolt with license MIT
 * github.com/jackc/pgx with license MIT
 * github.com/stretchr/testify with license: MIT
 * github.com/ugorji/go/codec with license MIT
@@ -231,7 +231,7 @@ depends on:
 * github.com/katzenpost/katzenpost/core with license AGPL-3.0
 * github.com/katzenpost/kimchi with license AGPL-3.0
 * github.com/katzenpost/katzenpost/server with license AGPL-3.0
-* github.com/coreos/bbolt with license MIT
+* go.etcd.io/bbolt with license MIT
 * github.com/stretchr/testify with license MIT
 * github.com/ugorji/go/codec with license MIT
 * gopkg.in/op/go-logging.v1 with license BSD-3-Clause
