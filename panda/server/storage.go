@@ -25,9 +25,9 @@ import (
 	"sync"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/panda/common"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (
@@ -286,6 +286,7 @@ func (s *PandaStorage) doPurge() error {
 
 // Shutdown stops the worker thread and sync the db.
 func (s *PandaStorage) Shutdown() {
+	s.doFlush()
 	s.Halt()
 	err := s.db.Sync()
 	if err != nil {
