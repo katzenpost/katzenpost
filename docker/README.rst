@@ -2,19 +2,29 @@
 Katzenpost Mixnet Docker
 ========================
 
-This docker-compose configuration is meant to be used in combination
-with the **server** and **authority** repositories. It is meant for
-testing client and server mix network components as part of the core
-Katzenpost developer work flow. It should be obvious that this
-docker-compose situation is not meant for production use.
+This docker-compose configuration is intended to allow mixnet developers to
+locally run a test network on their development system. It is meant for testing
+client and server mix network components as part of the core Katzenpost
+developer work flow. It should be obvious that this docker-compose situation is
+not meant for production use.
 
 
-1. build the mix server docker image
+1. Run a test network
 ::
 
    git clone https://github.com/katzenpost/katzenpost.git
-   cd katzenpost
-   docker build -f docker/Dockerfile.deps --no-cache -t katzenpost/deps .
+   cd katzenpost/docker
+   make nonvoting-testnet
+   cd nonvoting_authority
+   docker-compose up
+
+If your system configuration requires you to `sudo` to use docker, prefix the
+`make nonvoting-testnet`  and `docker-compose up` commands with `sudo`.
+
+2. Rebuild the mix server docker image
+::
+
+   cd ..
    docker build -f server/Dockerfile --no-cache -t katzenpost/server .
 
 
@@ -50,7 +60,7 @@ nonvoting authority
 remove the state changes on disk by running the following command:
 ::
 
-   git clean -ffdx
+   git clean -f .
 
 
 **NOTE**: If you switch between voting and nonvoting authority mixnets then
