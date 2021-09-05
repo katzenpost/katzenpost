@@ -17,7 +17,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
 	"sync"
@@ -25,70 +24,10 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/reunion/client"
-	"github.com/katzenpost/katzenpost/reunion/commands"
-	"github.com/katzenpost/katzenpost/reunion/crypto"
 	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/transports/http"
 	"github.com/stretchr/testify/require"
 )
-
-func TestHTTPServer1(t *testing.T) {
-	require := require.New(t)
-
-	address := "127.0.0.1:12345"
-	urlPath := "/reunion"
-	logPath := ""
-	logLevel := "DEBUG"
-	clock := new(katzenpost.Clock)
-	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
-	require.NoError(err)
-	stateFile.Close()
-
-	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
-	require.NoError(err)
-
-	epoch, _, _ := clock.Now()
-	url := fmt.Sprintf("http://%s%s", address, urlPath)
-	httpTransport := http.NewTransport(url)
-
-	myT1 := make([]byte, crypto.Type1MessageSize)
-	blurb := []byte("cats and honeybadgers use cryptography for the win twice on sunday")
-	copy(myT1[:len(blurb)], blurb)
-	h := sha256.New()
-	h.Write(myT1)
-	myT1Hash := h.Sum(nil)
-	myT1HashAr := [sha256.Size]byte{}
-	copy(myT1HashAr[:], myT1Hash)
-
-	sendT1Cmd := &commands.SendT1{
-		Epoch:   epoch,
-		Payload: myT1,
-	}
-	rawRequest := sendT1Cmd.ToBytes()
-	sendT1Cmd2, err := commands.FromBytes(rawRequest)
-	require.NoError(err)
-	rawRequest2 := sendT1Cmd2.ToBytes()
-	require.Equal(rawRequest, rawRequest2)
-
-	serverReplyRaw, err := httpTransport.Query(sendT1Cmd)
-	require.NoError(err)
-	require.NotNil(serverReplyRaw)
-
-	response, ok := serverReplyRaw.(*commands.MessageResponse)
-	require.True(ok)
-	require.Equal(response.ErrorCode, uint8(commands.ResponseStatusOK))
-
-	sendFetch := &commands.FetchState{
-		Epoch:  epoch,
-		T1Hash: myT1HashAr,
-	}
-
-	serverReplyRaw, err = httpTransport.Query(sendFetch)
-	require.NoError(err)
-	require.NotNil(serverReplyRaw)
-
-	reunionServer.Halt()
-}
 
 func TestHTTPServer2(t *testing.T) {
 	require := require.New(t)
