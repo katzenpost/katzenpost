@@ -1,34 +1,13 @@
 
+.. image:: https://godoc.org/github.com/katzenpost/katzenpost/core?status.svg
+  :target: https://godoc.org/github.com/katzenpost/katzenpost/core
 
-.. image:: https://travis-ci.org/katzenpost/server.svg?branch=master
-  :target: https://travis-ci.org/katzenpost/server
+Katzenpost monorepo
+===================
 
-.. image:: https://godoc.org/github.com/katzenpost/server?status.svg
-  :target: https://godoc.org/github.com/katzenpost/server
+Visit the project website for more information about Katzenpost.
 
-Katzenpost Mix Server
-=====================
-
-Building
---------
-
-Dependencies pinned using go-modules.
-For more info on go-modules, see: https://github.com/golang/go/wiki/Modules
-
-Build the mix server like this:
-::
-
-  export GO111MODULE=on
-  cd cmd/server
-  go build
-
-
-
-license
-=======
-
-AGPL: see LICENSE file for details.
-
+https://katzenpost.mixnetworks.org/
 
 supported by
 ============
