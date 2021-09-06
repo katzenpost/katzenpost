@@ -2,10 +2,10 @@ warped?=false
 ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
 run-nonvoting-testnet: server nonvoting_authority
-	cd nonvoting_mixnet; docker-compose up
+	./fix_perms.sh; cd nonvoting_mixnet; docker-compose up
 
 run-voting-testnet: server voting_authority
-	cd voting_mixnet; docker-compose up
+	./fix_perms.sh; cd voting_mixnet; docker-compose up
 
 debian_base:
 	if ! docker images|grep katzenpost/debian_base; then \
@@ -46,18 +46,23 @@ nonvoting_authority: deps
 		&& docker rm katzenpost_nonvoting_authority; \
 	fi
 
-clean-local:
+clean-local-images:
 	cd nonvoting_mixnet; docker-compose rm -sf
 	cd voting_mixnet; docker-compose rm -sf
 	docker rm  katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority || true
 	docker rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority || true
 
-clean-images: clean-local
+clean-images: clean-local-images
 	docker rm  katzenpost_debian_base katzenpost_deps || true
 	docker rmi katzenpost/debian_base katzenpost/deps || true
 
+clean-data-dryrun:
+	git clean -n nonvoting_mixnet voting_mixnet
+
 clean-data:
 	git clean -f nonvoting_mixnet voting_mixnet
+
+clean-local: clean-local-images clean-data
 
 clean: clean-images clean-data
 
