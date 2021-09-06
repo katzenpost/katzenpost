@@ -22,6 +22,12 @@ deps: debian_base
 		&& docker rm katzenpost_deps; \
 	fi
 
+update-deps: deps
+	docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_deps -it katzenpost/deps \
+			bash -c 'cd /go/katzenpost; go mod tidy; go mod download' \
+		&& docker commit katzenpost_deps katzenpost/deps \
+		&& docker rm katzenpost_deps
+
 server: deps
 	if ! docker images|grep katzenpost/server; then \
 		docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_server -it katzenpost/deps \
