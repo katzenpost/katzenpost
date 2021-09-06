@@ -319,7 +319,6 @@ func (s *Session) Initialize(conn net.Conn) error {
 		return errInvalidState
 	}
 	s.conn = conn
-
 	if err := s.handshake(); err != nil {
 		return err
 	}
@@ -352,18 +351,26 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	binary.BigEndian.PutUint32(ctHdr[:], uint32(ctLen))
 	toSend := make([]byte, 0, macLen+4+ctLen)
 	s.txKeyMutex.RLock()
-	toSend = s.tx.Encrypt(toSend, nil, ctHdr[:])
+	var err error
+	toSend, err = s.tx.Encrypt(toSend, nil, ctHdr[:])
 	s.txKeyMutex.RUnlock()
+	if err != nil {
+		return err
+	}
 
 	// Build the Ciphertext.
 	s.txKeyMutex.RLock()
-	toSend = s.tx.Encrypt(toSend, nil, pt)
+	toSend, err = s.tx.Encrypt(toSend, nil, pt)
 	s.txKeyMutex.RUnlock()
+	if err != nil {
+		return err
+	}
+
 	s.txKeyMutex.Lock()
 	s.tx.Rekey()
 	s.txKeyMutex.Unlock()
 
-	_, err := s.conn.Write(toSend)
+	_, err = s.conn.Write(toSend)
 	if err != nil {
 		// All write errors are fatal.
 		atomic.StoreUint32(&s.state, stateInvalid)
