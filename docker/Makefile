@@ -1,29 +1,40 @@
 warped?=false
 ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+
+run_nonvoting_mixnet: server nonvoting_authority
+	cd nonvoting_mixnet; docker-compose up
+
+run_voting_mixnet: server voting_authority
+	cd voting_mixnet; docker-compose up
+
 debian_base:
 	if ! docker images|grep katzenpost/debian_base; then \
 		docker run --name katzenpost_debian_base -it golang:buster bash -c 'apt update && apt upgrade -y' \
 		&& docker commit katzenpost_debian_base katzenpost/debian_base \
 		&& docker rm katzenpost_debian_base; \
 	fi
+
 deps: debian_base
 	if ! docker images|grep katzenpost/deps; then \
 		docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_deps -it katzenpost/debian_base bash -c 'cd /go/katzenpost; go mod download' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
 	fi
+
 server: deps
 	if ! docker images|grep katzenpost/server; then \
-		docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_server -it katzenpost/deps bash -c 'cd /go/katzenpost/authority/cmd/voting && go install -ldflags ${ldflags}' \
+		docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_server -it katzenpost/deps bash -c 'cd /go/katzenpost/server; make testnet-build; make testnet-install' \
 		&& docker commit katzenpost_server katzenpost/server \
 		&& docker rm katzenpost_server; \
 	fi
+
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_voting_authority -it katzenpost/deps bash -c 'cd /go/katzenpost/authority/cmd/voting && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
 	fi
+
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_nonvoting_authority -it katzenpost/deps bash -c 'cd /go/katzenpost/authority/cmd/nonvoting && go install -ldflags ${ldflags}' \
@@ -40,8 +51,3 @@ clean-data:
 
 clean: clean-images clean-data
 
-run_nonvoting_mixnet: server nonvoting_authority
-	cd nonvoting_mixnet; docker-compose up
-
-run_voting_mixnet: server voting_authority
-	cd voting_mixnet; docker-compose up
