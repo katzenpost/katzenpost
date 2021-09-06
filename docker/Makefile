@@ -1,10 +1,10 @@
 warped?=false
 ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
-run_nonvoting_mixnet: server nonvoting_authority
+run-nonvoting-testnet: server nonvoting_authority
 	cd nonvoting_mixnet; docker-compose up
 
-run_voting_mixnet: server voting_authority
+run-voting-testnet: server voting_authority
 	cd voting_mixnet; docker-compose up
 
 debian_base:
