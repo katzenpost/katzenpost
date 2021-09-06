@@ -46,9 +46,15 @@ nonvoting_authority: deps
 		&& docker rm katzenpost_nonvoting_authority; \
 	fi
 
-clean-images:
-	docker rm  katzenpost_debian_base katzenpost_deps katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority || true
-	docker rmi katzenpost/debian_base katzenpost/deps katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority || true
+clean-local:
+	cd nonvoting_mixnet; docker-compose rm -sf
+	cd voting_mixnet; docker-compose rm -sf
+	docker rm  katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority || true
+	docker rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority || true
+
+clean-images: clean-local
+	docker rm  katzenpost_debian_base katzenpost_deps || true
+	docker rmi katzenpost/debian_base katzenpost/deps || true
 
 clean-data:
 	git clean -f nonvoting_mixnet voting_mixnet
