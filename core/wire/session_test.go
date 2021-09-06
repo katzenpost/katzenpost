@@ -95,7 +95,7 @@ func TestSessionIntegration(t *testing.T) {
 	// Try handshaking and sending a simple command.
 	connAlice, connBob := net.Pipe()
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 
 	const (
 		testPayload1 = "\"And 'Will to equality' -that itself shall henceforth be the name of virtue; and against everything that has power we will raise our outcry!\""
@@ -127,6 +127,7 @@ func TestSessionIntegration(t *testing.T) {
 		require.NoError(err, "Integration: Alice SendCommand() 2")
 	}(sAlice, connAlice)
 
+	wg.Add(1)
 	go func(s *Session, conn net.Conn) {
 		// Bob's side.
 		defer conn.Close()
@@ -149,6 +150,5 @@ func TestSessionIntegration(t *testing.T) {
 		require.NoError(err, "Integration: Bob RecvCommand() 2")
 		requireSendPktEq(cmd, []byte(testPayload2))
 	}(sBob, connBob)
-
 	wg.Wait()
 }
