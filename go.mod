@@ -20,7 +20,7 @@ require (
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20191204073434-41b24f726a2c
 	github.com/katzenpost/doubleratchet v0.0.13
-	github.com/katzenpost/noise v0.0.3-0.20210906140723-b822b7e98a9f
+	github.com/katzenpost/noise v0.0.3
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/op/go-logging v0.0.0-20160315200505-970db520ece7
 	github.com/prometheus/client_golang v1.11.0
