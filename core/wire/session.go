@@ -352,12 +352,12 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	binary.BigEndian.PutUint32(ctHdr[:], uint32(ctLen))
 	toSend := make([]byte, 0, macLen+4+ctLen)
 	s.txKeyMutex.RLock()
-	toSend = s.tx.Encrypt(toSend, nil, ctHdr[:])
+	toSend, _ = s.tx.Encrypt(toSend, nil, ctHdr[:])
 	s.txKeyMutex.RUnlock()
 
 	// Build the Ciphertext.
 	s.txKeyMutex.RLock()
-	toSend = s.tx.Encrypt(toSend, nil, pt)
+	toSend, _ = s.tx.Encrypt(toSend, nil, pt)
 	s.txKeyMutex.RUnlock()
 	s.txKeyMutex.Lock()
 	s.tx.Rekey()
