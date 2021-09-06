@@ -91,6 +91,8 @@ github.com/katzenpost/doubleratchet v0.0.13 h1:XKm142nPgp9o7QGbJHs8o6udDSAQaaZ1B
 github.com/katzenpost/doubleratchet v0.0.13/go.mod h1:1btKAEHf4Af7xY/SCooy5xMKE8hYWxtfaAdvzMqwGz0=
 github.com/katzenpost/noise v0.0.3-0.20210906140723-b822b7e98a9f h1:4Yat0jYmE+PVDc7sXzfNF9dlaSFX5dRIBQ1JUgW04dQ=
 github.com/katzenpost/noise v0.0.3-0.20210906140723-b822b7e98a9f/go.mod h1:+3UhOI7g4gXPlAdRKdgMKmxZmK/PP1/3sCnX20SA/vQ=
+github.com/katzenpost/noise v0.0.3 h1:bpYnozkk8j0XE1FAX9iRYgKtfIywuAINF+vMdBOidrM=
+github.com/katzenpost/noise v0.0.3/go.mod h1:+3UhOI7g4gXPlAdRKdgMKmxZmK/PP1/3sCnX20SA/vQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.3/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
