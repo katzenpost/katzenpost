@@ -451,15 +451,6 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 	return c.WriteReply(thwack.StatusOk)
 }
 
-func (p *provider) removeEphemeralUser(user []byte) {
-	if err := p.userDB.Remove(user); err != nil {
-		p.log.Errorf("Failed to remove user '%v': %v", user, err)
-	}
-	if err := p.spool.Remove(user); err != nil {
-		p.log.Errorf("Failed to remove spool '%v': %v", user, err)
-	}
-}
-
 func (p *provider) onRemoveUserIdentity(c *thwack.Conn, l string) error {
 	p.Lock()
 	defer p.Unlock()
