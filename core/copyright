@@ -1,0 +1,5 @@
+
+Files: wire/client/client.go, wire/server/server.go, wire/common/common.go
+Copyright:
+  Copyright (C) 2017 David Stainton
+License: AGPL
