@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/katzenpost/katzenpost/client"
@@ -39,7 +40,7 @@ produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `)
 
-func sequential_ping(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int) {
+func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int) {
 	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
 	passed := 0
 	failed := 0
@@ -57,6 +58,10 @@ func sequential_ping(session *client.Session, serviceDesc *utils.ServiceDescript
 		} else {
 			fmt.Printf("~") // Fail, received unexpected payload in reply.
 		}
+
+		// XXX Sometimes it's helpful for debugging purposes to print the reply payload.
+		// fmt.Printf("\n\n Reply payload:`%s` \n\n", reply)
+
 	}
 	fmt.Printf("\n")
 

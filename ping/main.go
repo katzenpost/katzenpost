@@ -73,7 +73,7 @@ func main() {
 		panic(err)
 	}
 
-	ping(session, serviceDesc, count)
+	sequentialPing(session, serviceDesc, count)
 
 	c.Shutdown()
 }
