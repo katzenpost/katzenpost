@@ -338,7 +338,7 @@ func (s *pgxSpool) Remove(u []byte) error {
 	return s.pgx.doUserDelete(u)
 }
 
-func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities [][]byte) error {
+func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sConstants.RecipientIDLength]byte]interface{}) error {
 	panic("failure! VacuumExpired not implemented for pgxSpool :(")
 	return nil // XXX *le sigh* implement me
 }

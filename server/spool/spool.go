@@ -45,7 +45,7 @@ type Spool interface {
 	// VacuumExpired removes expired users from the userdb and then
 	// removes their spools unless the identity is present in the given
 	// ignoreIdentities.
-	VacuumExpired(udb userdb.UserDB, ignoreIdentities [][]byte) error
+	VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[constants.RecipientIDLength]byte]interface{}) error
 
 	// Close closes the Spool instance.
 	Close()
