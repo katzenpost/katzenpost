@@ -207,14 +207,17 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 	return b, nil
 }
 
-func (p *provider) connectedClients() ([][]byte, error) {
-	identities := make([][]byte, 0)
+func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
+	identities := make(map[[sConstants.RecipientIDLength]byte]interface{})
 	for _, listener := range p.glue.Listeners() {
 		listenerIdentities, err := listener.GetConnIdentities()
 		if err != nil {
 			return nil, err
 		}
-		identities = append(identities, listenerIdentities...)
+
+		for id, _ := range listenerIdentities {
+			identities[id] = struct{}{}
+		}
 	}
 	return identities, nil
 }
