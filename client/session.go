@@ -301,6 +301,11 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
 		}
 	}
+
+	// plaintext is length prefixed with a uint32
+	payloadLen := binary.BigEndian.Uint32(plaintext[2 : 2+4])
+	plaintext = plaintext[2+4 : payloadLen]
+
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
 		if !ok {
@@ -310,11 +315,9 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			return nil
 		}
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
-		// plaintext is length prefixed with a uint32
-		offset := binary.BigEndian.Uint32(plaintext[2 : 4+2])
 		// do not block the worker if the receiver timed out!
 		select {
-		case replyWaitChan <- plaintext[2+4 : offset+2+4]:
+		case replyWaitChan <- plaintext:
 		default:
 			s.log.Warningf("Failed to respond to a blocking message")
 			close(replyWaitChan)
@@ -322,7 +325,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	} else {
 		s.eventCh.In() <- &MessageReplyEvent{
 			MessageID: msg.ID,
-			Payload:   plaintext[2:],
+			Payload:   plaintext,
 			Err:       nil,
 		}
 	}
