@@ -19,6 +19,7 @@
 package kaetzchen
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
@@ -254,7 +255,8 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	var resp []byte
 	dst, ok := k.kaetzchen[pkt.Recipient.ID]
 	if ok {
-		resp, err = dst.OnRequest(pkt.ID, ct, surb != nil)
+		ctLen := binary.BigEndian.Uint32(ct[:4])
+		resp, err = dst.OnRequest(pkt.ID, ct[4:4+ctLen], surb != nil)
 	}
 	switch {
 	case err == nil:
