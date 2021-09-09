@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -79,9 +78,8 @@ func requestHandler(panda *server.Panda, response http.ResponseWriter, req *http
 		log.Error(err.Error())
 		panic(err)
 	}
-	pandaRequestLen := binary.BigEndian.Uint32(request.Payload[:4])
 	log.Debug("decoded request")
-	pandaResponse, err := panda.OnRequest(request.ID, request.Payload[4:4+pandaRequestLen], request.HasSURB)
+	pandaResponse, err := panda.OnRequest(request.ID, request.Payload, request.HasSURB)
 	if err != nil {
 		log.Error(err.Error())
 		return
