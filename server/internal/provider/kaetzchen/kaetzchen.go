@@ -254,10 +254,23 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 	var resp []byte
 	dst, ok := k.kaetzchen[pkt.Recipient.ID]
-	if ok {
-		ctLen := binary.BigEndian.Uint32(ct[:4])
-		resp, err = dst.OnRequest(pkt.ID, ct[4:4+ctLen], surb != nil)
+	if !ok {
+		k.log.Error("KaetzchenWorker does not handle the specified recipient")
+		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		k.incrementDropCounter()
+		kaetzchenRequestsDropped.Add(float64(k.getDropCounter()))
+		return
 	}
+	ctLen := binary.BigEndian.Uint32(ct[:4])
+	if ctLen+4 > uint32(len(ct)) {
+		k.log.Error("length prefixing is incorrect in cbor plugin query")
+		k.incrementDropCounter()
+		kaetzchenRequestsDropped.Add(float64(k.getDropCounter()))
+		return
+	}
+
+	resp, err = dst.OnRequest(pkt.ID, ct[4:4+ctLen], surb != nil)
+
 	switch {
 	case err == nil:
 	case err == ErrNoResponse:

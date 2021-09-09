@@ -131,6 +131,12 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		return
 	}
 	ctLen := binary.BigEndian.Uint32(ct[:4])
+	if ctLen+4 > uint32(len(ct)) {
+		k.log.Error("length prefixing is incorrect in cbor plugin query")
+		kaetzchenRequestsDropped.Inc()
+		return
+	}
+
 	resp, err := pluginClient.OnRequest(&cborplugin.Request{
 		ID:      pkt.ID,
 		Payload: ct[4 : 4+ctLen],
