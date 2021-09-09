@@ -19,6 +19,7 @@
 package kaetzchen
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
@@ -129,10 +130,10 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		kaetzchenRequestsDropped.Inc()
 		return
 	}
-
+	ctLen := binary.BigEndian.Uint32(ct[:4])
 	resp, err := pluginClient.OnRequest(&cborplugin.Request{
 		ID:      pkt.ID,
-		Payload: ct,
+		Payload: ct[4 : 4+ctLen],
 		HasSURB: surb != nil,
 	})
 	switch err {
@@ -173,7 +174,7 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 	s := make(ServiceMap)
 	for _, k := range k.clients {
 		capa := k.Capability()
-		if _, ok :=  s[capa]; ok {
+		if _, ok := s[capa]; ok {
 			// skip adding twice
 			continue
 		}
