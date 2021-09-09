@@ -18,6 +18,7 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -309,9 +310,11 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			return nil
 		}
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
+		// plaintext is length prefixed with a uint32
+		offset := binary.BigEndian.Uint32(plaintext[2 : 4+2])
 		// do not block the worker if the receiver timed out!
 		select {
-		case replyWaitChan <- plaintext[2:]:
+		case replyWaitChan <- plaintext[2+4 : offset+2+4]:
 		default:
 			s.log.Warningf("Failed to respond to a blocking message")
 			close(replyWaitChan)
