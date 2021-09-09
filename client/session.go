@@ -304,7 +304,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 	// plaintext is length prefixed with a uint32
 	payloadLen := binary.BigEndian.Uint32(plaintext[2 : 2+4])
-	plaintext = plaintext[2+4 : payloadLen]
+	plaintext = plaintext[2+4 : 2+4+payloadLen]
 
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
