@@ -90,6 +90,8 @@ func requestHandler(response http.ResponseWriter, req *http.Request) {
 	}
 	log.Debug("decoded request")
 
+	log.Debugf("payload: %x", request.Payload)
+
 	// send length prefixed CBOR response
 	reply := cborplugin.Response{
 		Payload: request.Payload,
