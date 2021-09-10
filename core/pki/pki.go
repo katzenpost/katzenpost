@@ -279,10 +279,6 @@ type MixDescriptor struct {
 	// to parameters.
 	Kaetzchen map[string]map[string]interface{} `json:",omitempty"`
 
-	// RegistrationHTTPAddresses is a slice of HTTP URLs used for Provider
-	// user registration. Providers of course may choose to set this to nil.
-	RegistrationHTTPAddresses []string
-
 	// Layer is the topology layer.
 	Layer uint8
 
