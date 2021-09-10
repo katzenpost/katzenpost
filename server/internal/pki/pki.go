@@ -403,6 +403,12 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// Publish RegistrationHTTPAddresses
 		desc.RegistrationHTTPAddresses = p.glue.Provider().AdvertiseRegistrationHTTPAddresses()
+
+		if p.glue.Config().Provider.TrustOnFirstUse && p.glue.Config().Provider.EnableEphemeralClients {
+			desc.AuthenticationType = "Anonymous"
+		} else {
+			desc.AuthenticationType = ""
+		}
 	}
 	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
 

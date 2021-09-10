@@ -42,6 +42,54 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
+// NewEphemeralClient creates a new linkKey and associated account on a
+// provider that suppports TrustOnFirstUse clients.
+func NewEphemeralClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
+	// Retrieve a copy of the PKI consensus document.
+	logFilePath := ""
+	backendLog, err := log.New(logFilePath, "DEBUG", false)
+	if err != nil {
+		return nil, nil, err
+	}
+	proxyCfg := cfg.UpstreamProxyConfig()
+	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
+	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
+	defer cancel()
+	doc, _, err := pkiClient.Get(ctx, currentEpoch)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Pick a Provider that supports TrustOnFirstUse and Ephemeral clients.
+	providers := []*pki.MixDescriptor{}
+	for _, provider := range doc.Providers {
+		if provider.AuthenticationType == "Anonymous" {
+			providers = append(providers, provider)
+		}
+	}
+	if len(providers) == 0 {
+		return nil, nil, errors.New("no Providers supporting ephemeral connections found in the consensus")
+	}
+	mrand.Seed(time.Now().UTC().UnixNano())
+	provider := providers[mrand.Intn(len(providers))]
+
+	fmt.Println("creating new linkKey for provider " + provider.Name)
+	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	cfg.Account = &config.Account{
+		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
+		Provider:       provider.Name,
+		ProviderKeyPin: provider.IdentityKey,
+	}
+	return cfg, linkKey, nil
+}
+
 func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
 	// Retrieve a copy of the PKI consensus document.
 	logFilePath := ""

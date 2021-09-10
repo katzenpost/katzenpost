@@ -288,6 +288,9 @@ type MixDescriptor struct {
 
 	// LoadWeight is the node's load balancing weight (unused).
 	LoadWeight uint8
+
+	// AuthenticationType is the authentication mechanism required
+	AuthenticationType string
 }
 
 // Client is the abstract interface used for PKI interaction.
