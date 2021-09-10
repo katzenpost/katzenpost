@@ -80,6 +80,10 @@ func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 func (s *mockSpool) Remove(u []byte) error { return nil }
 
+func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities [][]byte) error {
+	return nil
+}
+
 func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
 
 func (s *mockSpool) Close() {}
