@@ -336,19 +336,10 @@ type Provider struct {
 	// first receives a given user identity string.
 	EnableEphemeralClients bool
 
-	// EnableUserRegistrationHTTP is set to true if the
-	// User Registration HTTP service listener is enabled.
-	EnableUserRegistrationHTTP bool
-
-	// UserRegistrationHTTPAddresses is quite simply
-	// the set of TCP addresses that the User
-	// Registration HTTP service should listen on
-	// (e.g. "127.0.0.1:36967").
-	UserRegistrationHTTPAddresses []string
-
-	// AdvertiseUserRegistrationHTTPAddresses is the set of HTTP URLs
-	// that shall be advertised in the mixnet PKI document.
-	AdvertiseUserRegistrationHTTPAddresses []string
+	// AltAddresses is the map of extra transports and addresses at which
+	// the Provider is reachable by clients.  The most useful alternative
+	// transport is likely ("tcp") (`core/pki.TransportTCP`).
+	AltAddresses map[string][]string
 
 	// SQLDB is the SQL database backend configuration.
 	SQLDB *SQLDB
@@ -582,20 +573,33 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
-	if pCfg.EnableUserRegistrationHTTP {
-		for _, addr := range pCfg.UserRegistrationHTTPAddresses {
-			h, p, err := net.SplitHostPort(addr)
-			if err != nil {
-				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
+	internalTransports := make(map[string]bool)
+	for _, v := range pki.InternalTransports {
+		internalTransports[strings.ToLower(string(v))] = true
+	}
+
+	for k, v := range pCfg.AltAddresses {
+		kLower := strings.ToLower(k)
+		if internalTransports[kLower] {
+			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
+		}
+		switch pki.Transport(kLower) {
+		case pki.TransportTCP:
+			for _, a := range v {
+				h, p, err := net.SplitHostPort(a)
+				if err != nil {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
+				}
+				if len(h) == 0 {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", a)
+				}
+				if port, err := strconv.ParseUint(p, 10, 16); err != nil {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
+				} else if port == 0 {
+					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", a)
+				}
 			}
-			if len(h) == 0 {
-				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", addr)
-			}
-			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", addr, err)
-			} else if port == 0 {
-				return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", addr)
-			}
+		default:
 		}
 	}
 

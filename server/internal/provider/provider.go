@@ -19,11 +19,8 @@ package provider
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -46,7 +43,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
 	"github.com/katzenpost/katzenpost/server/internal/sqldb"
-	"github.com/katzenpost/katzenpost/server/registration"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/spool/boltspool"
 	"github.com/katzenpost/katzenpost/server/userdb"
@@ -57,11 +53,6 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
-
-type registerIdentityRequest struct {
-	User              string
-	IdentityPublicKey string
-}
 
 type provider struct {
 	sync.Mutex
@@ -77,8 +68,6 @@ type provider struct {
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
-
-	httpServers []*http.Server
 }
 
 var (
@@ -97,7 +86,6 @@ func init() {
 }
 
 func (p *provider) Halt() {
-	p.stopUserRegistrationHTTP()
 	p.Worker.Halt()
 
 	p.ch.Close()
@@ -611,181 +599,6 @@ func (p *provider) onSendBurst(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
 }
 
-func (p *provider) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	if !p.validateRequest(response, request) {
-		return
-	}
-	requestUser := request.FormValue(registration.UserField)
-	if len(requestUser) == 0 {
-		p.log.Error("Provider ServeHTTP register zero user error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	user, err := p.fixupUserNameCase([]byte(requestUser))
-	if err != nil {
-		p.log.Error("Provider ServeHTTP register fixupUserNameCase failure")
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	command := request.FormValue(registration.CommandField)
-	switch command {
-	case registration.RegisterLinkCommand:
-		p.processLinkRegistration(user, response, request)
-		return
-	case registration.RegisterLinkAndIdentityCommand:
-		p.processIdentityRegistration(user, response, request)
-		return
-	default:
-		p.log.Error("Provider ServeHTTP invalid registration type error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	// NOT reached
-}
-
-func (p *provider) validateRequest(response http.ResponseWriter, request *http.Request) bool {
-	if request.URL.Path != registration.URLBase {
-		p.log.Error("Provider ServeHTTP incorrect url error")
-		response.WriteHeader(http.StatusNotFound)
-		return false
-	}
-	if request.Method != http.MethodPost {
-		p.log.Error("Provider ServeHTTP incorrect method error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return false
-	}
-	command := request.FormValue(registration.CommandField)
-	if len(command) == 0 {
-		p.log.Error("Provider ServeHTTP zero reg type error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return false
-	}
-	version := request.FormValue(registration.VersionField)
-	if len(version) == 0 || version != registration.Version {
-		p.log.Error("Provider ServeHTTP register version mismatch error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return false
-	}
-	return true
-}
-
-func (p *provider) processLinkRegistration(user []byte, response http.ResponseWriter, request *http.Request) {
-	requestKey := request.FormValue(registration.LinkKeyField)
-	if len(requestKey) == 0 {
-		p.log.Error("Provider ServeHTTP register zero key error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	pubKey := new(ecdh.PublicKey)
-	if err := pubKey.FromString(requestKey); err != nil {
-		p.log.Errorf("Provider ServeHTTP pub key from string error: %s", err)
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	if err := p.userDB.Add(user, pubKey, false); err != nil {
-		p.log.Errorf("Provider ServeHTTP user Add error: %s", err)
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	p.log.Noticef("HTTP Registration created user with link key: %s", user)
-
-	// Send a response back to the client.
-	message := "OK\n"
-	response.Write([]byte(message))
-}
-
-func (p *provider) processIdentityRegistration(user []byte, response http.ResponseWriter, request *http.Request) {
-	key, _ := p.userDB.Identity(user)
-	if key != nil {
-		p.log.Errorf("Provider ServeHTTP Identity error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// link key
-	rawLinkKey := request.FormValue(registration.LinkKeyField)
-	if len(rawLinkKey) == 0 {
-		p.log.Error("Provider ServeHTTP register zero key error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	linkKey := new(ecdh.PublicKey)
-	if err := linkKey.FromString(rawLinkKey); err != nil {
-		p.log.Errorf("Provider ServeHTTP pub key from string error: %s", err)
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	if err := p.userDB.Add(user, linkKey, false); err != nil {
-		p.log.Errorf("Provider ServeHTTP user Add error: %s", err)
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// identity key
-	rawIdentityKey := request.FormValue(registration.IdentityKeyField)
-	if len(rawIdentityKey) == 0 {
-		p.log.Error("Provider ServeHTTP zero id key error")
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	identityKey := new(ecdh.PublicKey)
-	if err := identityKey.FromString(rawIdentityKey); err != nil {
-		p.log.Errorf("Provider ServeHTTP id key from string error: %s", err)
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	if err := p.userDB.SetIdentity(user, identityKey); err != nil {
-		p.log.Errorf("Provider ServeHTTP SetIdentity error: %s", err)
-		response.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	p.log.Noticef("HTTP Registration created user with link and identity keys: %s", user)
-
-	// Send a response back to the client.
-	message := "OK\n"
-	response.Write([]byte(message))
-}
-
-func (p *provider) stopUserRegistrationHTTP() {
-	if !p.glue.Config().Provider.EnableUserRegistrationHTTP {
-		return
-	}
-	p.log.Info("Stopping User Registration HTTP listener(s).")
-	for _, s := range p.httpServers {
-		if err := s.Shutdown(context.Background()); err != nil {
-			p.log.Errorf("HTTP server Shutdown error: %v", err)
-		}
-	}
-}
-
-func (p *provider) initUserRegistrationHTTP() {
-	p.log.Info("Starting User Registration HTTP listener(s).")
-	p.httpServers = make([]*http.Server, len(p.glue.Config().Provider.UserRegistrationHTTPAddresses))
-	for i, addr := range p.glue.Config().Provider.UserRegistrationHTTPAddresses {
-		s := &http.Server{
-			Addr:     addr,
-			Handler:  p,
-			ErrorLog: p.glue.LogBackend().GetGoLogger("user_registration_http", "info"),
-		}
-		p.httpServers[i] = s
-		go func() {
-			if err := s.ListenAndServe(); err != http.ErrServerClosed {
-				// Error starting or closing listener:
-				p.log.Errorf("HTTP server ListenAndServe: %v", err)
-			}
-		}()
-	}
-}
-
-// AdvertiseRegistrationHTTP returns a slice of URL strings
-// or nil if no advertised HTTP URL was set in the configuration.
-func (p *provider) AdvertiseRegistrationHTTPAddresses() []string {
-	return p.glue.Config().Provider.AdvertiseUserRegistrationHTTPAddresses
-}
-
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.Provider, error) {
 	kaetzchenWorker, err := kaetzchen.New(glue)
@@ -890,11 +703,6 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue.Management().RegisterCommand(cmdUserLink, p.onUserLink)
 		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
 		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
-	}
-
-	// Start the User Registration HTTP service listener(s).
-	if cfg.Provider.EnableUserRegistrationHTTP {
-		p.initUserRegistrationHTTP()
 	}
 
 	// Start the workers.
