@@ -65,9 +65,7 @@
 #
 
 [Provider]
-EnableUserRegistrationHTTP = true
-UserRegistrationHTTPAddresses = ["172.28.1.3:36968"]
-AdvertiseUserRegistrationHTTPAddresses = ["http://127.0.0.1:36968"]
+EnableServiceProvider = true
 
 [[Provider.Kaetzchen]]
     Disable = false
@@ -104,6 +102,16 @@ AdvertiseUserRegistrationHTTPAddresses = ["http://127.0.0.1:36968"]
     [Provider.CBORPluginKaetzchen.Config]
       data_store = "/conf/service_data/memspool.storage"
       log_dir = "/conf/service_logs"
+
+  [[Provider.CBORPluginKaetzchen]]
+    Capability = "reunion"
+    Endpoint = "+reunion"
+    Command = "/go/bin/reunion_katzenpost_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
+      log_level = "DEBUG"
+      log = "/conf/service_logs/reunion.log"
+      s = "/conf/service_data/reunion.storage"
 
 #
 # The Management section specifies the management interface configuration.

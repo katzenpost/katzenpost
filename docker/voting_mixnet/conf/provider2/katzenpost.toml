@@ -65,34 +65,11 @@
 #
 
 [Provider]
+EnableServiceProvider = false
 EnableUserRegistrationHTTP = true
 UserRegistrationHTTPAddresses = ["172.28.1.4:36967"]
 AdvertiseUserRegistrationHTTPAddresses = ["http://127.0.0.1:36967"]
 
-  [[Provider.Kaetzchen]]
-    Capability = "loop"
-    Endpoint = "+loop"
-    Disable = false
-
-   [[Provider.CBORPluginKaetzchen]]
-     Disable = false
-     Capability = "echo"
-     Endpoint = "+echo"
-     Command = "/go/bin/echo_server"
-     MaxConcurrency = 1
-     [Provider.CBORPluginKaetzchen.Config]
-      log_dir = "/conf/service_logs"
-      log_level = "DEBUG"
-
-  [[Provider.CBORPluginKaetzchen]]
-    Capability = "reunion"
-    Endpoint = "+reunion"
-    Command = "/go/bin/reunion_katzenpost_server"
-    MaxConcurrency = 1
-    [Provider.CBORPluginKaetzchen.Config]
-      log_level = "DEBUG"
-      log = "/conf/service_logs/reunion.log"
-      s = "/conf/service_data/reunion.storage"
 #
 # The Management section specifies the management interface configuration.
 #
