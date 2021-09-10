@@ -401,9 +401,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			return err
 		}
 
-		// Publish RegistrationHTTPAddresses
-		desc.RegistrationHTTPAddresses = p.glue.Provider().AdvertiseRegistrationHTTPAddresses()
-
+		// Publish the AuthenticationType
 		if p.glue.Config().Provider.TrustOnFirstUse && p.glue.Config().Provider.EnableEphemeralClients {
 			desc.AuthenticationType = "Anonymous"
 		} else {
