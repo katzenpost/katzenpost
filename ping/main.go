@@ -56,7 +56,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	cfg, linkKey := register(cfg)
+	cfg, linkKey, err := client.NewEphemeralClient(cfg)
+	if err != nil {
+		panic(err)
+	}
 
 	// create a client and connect to the mixnet Provider
 	c, err := client.New(cfg)

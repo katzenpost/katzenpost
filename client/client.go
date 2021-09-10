@@ -22,9 +22,7 @@ import (
 	"errors"
 	"fmt"
 	mrand "math/rand"
-	"net/url"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -34,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	registration "github.com/katzenpost/katzenpost/registration_client"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -42,7 +39,9 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
-func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
+// NewEphemeralClient creates a new linkKey and associated account on a
+// provider that suppports TrustOnFirstUse clients.
+func NewEphemeralClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
 	// Retrieve a copy of the PKI consensus document.
 	logFilePath := ""
 	backendLog, err := log.New(logFilePath, "DEBUG", false)
@@ -62,78 +61,28 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 		return nil, nil, err
 	}
 
-	// Pick a registration Provider.
-	registerProviders := []*pki.MixDescriptor{}
+	// Pick a Provider that supports TrustOnFirstUse
+	providers := []*pki.MixDescriptor{}
 	for _, provider := range doc.Providers {
-		if provider.RegistrationHTTPAddresses != nil {
-			registerProviders = append(registerProviders, provider)
+		if provider.AuthenticationType == pki.TrustOnFirstUseAuth {
+			providers = append(providers, provider)
 		}
 	}
-	if len(registerProviders) == 0 {
-		return nil, nil, errors.New("zero registration Providers found in the consensus")
+	if len(providers) == 0 {
+		return nil, nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
 	}
 	mrand.Seed(time.Now().UTC().UnixNano())
-	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
-
-	// Register with that Provider.
-	fmt.Println("registering client with mixnet Provider")
+	provider := providers[mrand.Intn(len(providers))]
 	linkKey, err := ecdh.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}
-	account := &config.Account{
+	cfg.Account = &config.Account{
 		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
-		Provider:       registrationProvider.Name,
-		ProviderKeyPin: registrationProvider.IdentityKey,
-	}
-
-	// try to pick a registration address using a prefered transport
-	var addr string
-	loop0:
-	for _, t := range cfg.Debug.PreferedTransports {
-		for _, v := range registrationProvider.RegistrationHTTPAddresses {
-			if u, err := url.Parse(v); err == nil {
-				if strings.HasSuffix(u.Hostname(), string(t)) {
-					addr = v
-					break loop0
-				}
-			}
-		}
-	}
-	// default if there was no transport found with the prefered transport
-	if addr == "" {
-		addr = registrationProvider.RegistrationHTTPAddresses[0]
-	}
-
-	u, err := url.Parse(addr)
-	if err != nil {
-		return nil, nil, err
-	}
-	cfgRegistration := &config.Registration{
-		Address: u.Host,
-		Options: &registration.Options{
-			Scheme:       u.Scheme,
-			UseSocks:     strings.HasPrefix(cfg.UpstreamProxy.Type, "socks"),
-			SocksNetwork: cfg.UpstreamProxy.Network,
-			SocksAddress: cfg.UpstreamProxy.Address,
-		},
-	}
-	cfg.Account = account
-	cfg.Registration = cfgRegistration
-	err = RegisterClient(cfg, linkKey.PublicKey())
-	if err != nil {
-		return nil, nil, err
+		Provider:       provider.Name,
+		ProviderKeyPin: provider.IdentityKey,
 	}
 	return cfg, linkKey, nil
-}
-
-func RegisterClient(cfg *config.Config, linkKey *ecdh.PublicKey) error {
-	client, err := registration.New(cfg.Registration.Address, cfg.Registration.Options)
-	if err != nil {
-		return err
-	}
-	err = client.RegisterAccountWithLinkKey(cfg.Account.User, linkKey)
-	return err
 }
 
 // Client handles sending and receiving messages over the mix network

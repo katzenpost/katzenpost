@@ -115,10 +115,6 @@ func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, err
 	return nil, nil
 }
 
-func (p *mockProvider) AdvertiseRegistrationHTTPAddresses() []string {
-	return nil
-}
-
 type mockDecoy struct{}
 
 func (d *mockDecoy) Halt() {}
