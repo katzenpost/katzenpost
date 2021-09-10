@@ -40,13 +40,62 @@ var (
 
 func TestBoltUserDB(t *testing.T) {
 	t.Logf("Temp Dir: %v", tmpDir)
-	if ok := t.Run("create", doTestCreate); ok {
-		t.Run("load", doTestLoad)
-	} else {
-		t.Errorf("create tests failed, skipping load test")
+	defer os.RemoveAll(tmpDir)
+
+	ok := t.Run("createTOFU", doTestCreateWithTOFU)
+	if !ok {
+		t.Errorf("test failed, skipping load test")
+		return
 	}
 
-	os.RemoveAll(tmpDir)
+	ok = t.Run("loadTOFU", doTestLoadTOFU)
+	if !ok {
+		t.Errorf("test failed, skipping load test")
+		return
+	}
+
+	os.RemoveAll(testDBPath)
+
+	ok = t.Run("create", doTestCreate)
+	if !ok {
+		t.Errorf("test failed, skipping load test")
+		return
+	}
+
+	ok = t.Run("load", doTestLoad)
+	if !ok {
+		t.Errorf("test failed, skipping load test")
+		return
+	}
+}
+
+func doTestCreateWithTOFU(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	d, err := New(testDBPath, WithTrustOnFirstUse())
+	require.NoError(err, "New()")
+	defer d.Close()
+
+	for u, k := range testUsers {
+		err = d.Add([]byte(u), k, false)
+		require.NoErrorf(err, "Add(%v, k, false)", u)
+	}
+
+	wrongPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err)
+	wrongPubKey := wrongPrivKey.PublicKey()
+
+	for u, k := range testUsers {
+		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
+		assert.True(d.IsValid([]byte(u), k), "IsValid('%s', k)", u)
+		assert.False(d.IsValid([]byte(u), wrongPubKey))
+	}
+
+	assert.False(d.Exists([]byte("malory_create_tofu")))
+	assert.True(d.IsValid([]byte("malory_create_tofu"), testUsers["alice"]))
+	assert.True(d.Exists([]byte("malory_create_tofu")))
+	assert.False(d.IsValid([]byte("malory_create_tofu"), wrongPubKey))
 }
 
 func doTestCreate(t *testing.T) {
@@ -66,8 +115,33 @@ func doTestCreate(t *testing.T) {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
 		assert.True(d.IsValid([]byte(u), k), "IsValid('%s', k)", u)
 	}
-	assert.False(d.Exists([]byte("malory")), "Exists('malory')")
-	assert.False(d.IsValid([]byte("malory"), testUsers["alice"]), "IsValid('malory', k)")
+	assert.False(d.Exists([]byte("wrong")))
+	assert.False(d.IsValid([]byte("wrong"), testUsers["alice"]))
+}
+
+func doTestLoadTOFU(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+
+	d, err := New(testDBPath, WithTrustOnFirstUse())
+	require.NoError(err, "New() load")
+	defer d.Close()
+
+	wrongPrivKey, err := ecdh.NewKeypair(rand.Reader)
+	require.NoError(err)
+	wrongPubKey := wrongPrivKey.PublicKey()
+
+	for u, k := range testUsers {
+		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
+		assert.True(d.IsValid([]byte(u), k), "IsValid('%s', k)", u)
+		assert.False(d.IsValid([]byte(u), wrongPubKey))
+	}
+	assert.False(d.Exists([]byte("malory_load")))
+	assert.True(d.IsValid([]byte("malory_load"), testUsers["alice"]))
+	assert.False(d.IsValid([]byte("malory_load"), wrongPubKey))
+
+	err = d.Add([]byte("alice"), testUsers["alice"], false)
+	assert.Error(err, "Add('alice', k, false)")
 }
 
 func doTestLoad(t *testing.T) {
@@ -82,8 +156,8 @@ func doTestLoad(t *testing.T) {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
 		assert.True(d.IsValid([]byte(u), k), "IsValid('%s', k)", u)
 	}
-	assert.False(d.Exists([]byte("malory")), "Exists('malory')")
-	assert.False(d.IsValid([]byte("malory"), testUsers["alice"]), "IsValid('malory', k)")
+	assert.False(d.Exists([]byte("verywrongly")))
+	assert.False(d.IsValid([]byte("verywrongly"), testUsers["alice"]))
 
 	err = d.Add([]byte("alice"), testUsers["alice"], false)
 	assert.Error(err, "Add('alice', k, false)")
@@ -96,7 +170,6 @@ func init() {
 		panic(err)
 	}
 	testDBPath = filepath.Join(tmpDir, testDB)
-
 	testUsers = make(map[string]*ecdh.PublicKey)
 	for _, v := range testUsernames {
 		privKey, err := ecdh.NewKeypair(rand.Reader)

@@ -30,14 +30,16 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
+
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	internalConstants "github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -205,6 +207,35 @@ func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
 	return b, nil
 }
 
+func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
+	identities := make(map[[sConstants.RecipientIDLength]byte]interface{})
+	for _, listener := range p.glue.Listeners() {
+		listenerIdentities, err := listener.GetConnIdentities()
+		if err != nil {
+			return nil, err
+		}
+
+		for id, _ := range listenerIdentities {
+			identities[id] = struct{}{}
+		}
+	}
+	return identities, nil
+}
+
+func (p *provider) gcEphemeralClients() {
+	p.log.Debug("garbage collecting expired ephemeral clients")
+	connectedClients, err := p.connectedClients()
+	if err != nil {
+		p.log.Errorf("wtf: %s", err)
+		return
+	}
+	err = p.Spool().VacuumExpired(p.UserDB(), connectedClients)
+	if err != nil {
+		p.log.Errorf("wtf: %s", err)
+		return
+	}
+}
+
 func (p *provider) worker() {
 
 	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
@@ -213,14 +244,29 @@ func (p *provider) worker() {
 
 	ch := p.ch.Out()
 
+	// Here we optionally set this GC timer. If unset the
+	// channel remains nil and has no effect on the select
+	// statement below. If set then the timer will periodically
+	// write to the channel triggering our GC routine.
+	var gcEphemeralClientGCTickerChan <-chan time.Time
+	if p.glue.Config().Provider.EnableEphemeralClients {
+		ticker := time.NewTicker(epochtime.Period)
+		gcEphemeralClientGCTickerChan = ticker.C
+		defer ticker.Stop()
+	}
+
 	for {
 		var pkt *packet.Packet
 		select {
 		case <-p.HaltCh():
 			p.log.Debugf("Terminating gracefully.")
 			return
+		case <-gcEphemeralClientGCTickerChan:
+			p.gcEphemeralClients()
+			continue
 		case e := <-ch:
 			pkt = e.(*packet.Packet)
+
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
 				packetsDropped.Inc()
@@ -780,7 +826,11 @@ func New(glue glue.Glue) (glue.Provider, error) {
 
 	switch cfg.Provider.UserDB.Backend {
 	case config.BackendBolt:
-		p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
+		if cfg.Provider.TrustOnFirstUse {
+			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB, boltuserdb.WithTrustOnFirstUse())
+		} else {
+			p.userDB, err = boltuserdb.New(cfg.Provider.UserDB.Bolt.UserDB)
+		}
 	case config.BackendExtern:
 		p.userDB, err = externuserdb.New(cfg.Provider.UserDB.Extern.ProviderURL)
 	case config.BackendSQL:
