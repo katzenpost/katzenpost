@@ -39,6 +39,12 @@ var (
 	// ErrInvalidPostEpoch is the error returned when the server rejects a
 	// descriptor upload for a given epoch due to time reasons.
 	ErrInvalidPostEpoch = errors.New("pki: post for epoch will never succeeed")
+
+	// TrustOnFirstUseAuth is a MixDescriptor.AuthenticationType
+	TrustOnFirstUseAuth = "tofu"
+
+	// OutOfBandAuth is a MixDescriptor.AuthenticationType
+	OutOfBandAuth = "oob"
 )
 
 // Document is a PKI document.

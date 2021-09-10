@@ -61,20 +61,18 @@ func NewEphemeralClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, e
 		return nil, nil, err
 	}
 
-	// Pick a Provider that supports TrustOnFirstUse and Ephemeral clients.
+	// Pick a Provider that supports TrustOnFirstUse
 	providers := []*pki.MixDescriptor{}
 	for _, provider := range doc.Providers {
-		if provider.AuthenticationType == "Anonymous" {
+		if provider.AuthenticationType == pki.TrustOnFirstUseAuth {
 			providers = append(providers, provider)
 		}
 	}
 	if len(providers) == 0 {
-		return nil, nil, errors.New("no Providers supporting ephemeral connections found in the consensus")
+		return nil, nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
 	}
 	mrand.Seed(time.Now().UTC().UnixNano())
 	provider := providers[mrand.Intn(len(providers))]
-
-	fmt.Println("creating new linkKey for provider " + provider.Name)
 	linkKey, err := ecdh.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, err
