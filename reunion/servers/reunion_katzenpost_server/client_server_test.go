@@ -35,7 +35,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	registration "github.com/katzenpost/katzenpost/registration_client"
 	reunionClient "github.com/katzenpost/katzenpost/reunion/client"
 	catClock "github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
@@ -46,75 +45,13 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
-func register(cfg *config.Config) (*config.Config, *ecdh.PrivateKey) {
-	// Retrieve a copy of the PKI consensus document.
-	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
-	if err != nil {
-		panic(err)
-	}
-	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
-	if err != nil {
-		panic(err)
-	}
-	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
-	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
-	defer cancel()
-	doc, _, err := pkiClient.Get(ctx, currentEpoch)
-	if err != nil {
-		panic(err)
-	}
-
-	// Pick a registration Provider.
-	registerProviders := []*pki.MixDescriptor{}
-	for _, provider := range doc.Providers {
-		if provider.RegistrationHTTPAddresses != nil {
-			registerProviders = append(registerProviders, provider)
-		}
-	}
-	if len(registerProviders) == 0 {
-		panic("zero registration Providers found in the consensus")
-	}
-	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
-
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
-	account := &config.Account{
-		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
-		Provider:       registrationProvider.Name,
-		ProviderKeyPin: registrationProvider.IdentityKey,
-	}
-
-	u, err := url.Parse(registrationProvider.RegistrationHTTPAddresses[0])
-	if err != nil {
-		panic(err)
-	}
-	registration := &config.Registration{
-		Address: u.Host,
-		Options: &registration.Options{
-			Scheme:       u.Scheme,
-			UseSocks:     strings.HasPrefix(cfg.UpstreamProxy.Type, "socks"),
-			SocksNetwork: cfg.UpstreamProxy.Network,
-			SocksAddress: cfg.UpstreamProxy.Address,
-		},
-	}
-	cfg.Account = account
-	cfg.Registration = registration
-	err = client.RegisterClient(cfg, linkKey.PublicKey())
-	if err != nil {
-		panic(err)
-	}
-	return cfg, linkKey
-}
-
 func TestDockerClientExchange1(t *testing.T) {
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
-	cfg, linkKey := register(cfg)
+	cfg, linkKey, err := client.NewEphemeralClient(cfg)
+	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
 	session, err := c.NewSession(linkKey)
@@ -203,7 +140,9 @@ func TestDockerClientExchange2(t *testing.T) {
 
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
-	cfg, linkKey := register(cfg)
+
+	cfg, linkKey, err := client.NewEphemeralClient(cfg)
+	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
 	session, err := c.NewSession(linkKey)
