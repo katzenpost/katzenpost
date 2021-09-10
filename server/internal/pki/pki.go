@@ -403,9 +403,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// Publish the AuthenticationType
 		if p.glue.Config().Provider.TrustOnFirstUse && p.glue.Config().Provider.EnableEphemeralClients {
-			desc.AuthenticationType = "Anonymous"
+			desc.AuthenticationType = cpki.TrustOnFirstUseAuth
 		} else {
-			desc.AuthenticationType = ""
+			desc.AuthenticationType = cpki.OutOfBandAuth
 		}
 	}
 	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
