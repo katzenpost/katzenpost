@@ -141,6 +141,7 @@ func NewSession(
 	// and then set our timers accordingly
 	err = s.awaitFirstPKIDoc(ctx)
 	if err != nil {
+		s.minclient.Shutdown()
 		return nil, err
 	}
 	s.Go(s.worker)
