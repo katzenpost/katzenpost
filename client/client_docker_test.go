@@ -68,7 +68,7 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	session, err := client.NewSession(linkKey)
 	require.NoError(err)
 
-	desc, err := session.GetService("loop")
+	desc, err := session.GetService(constants.LoopService)
 	require.NoError(err)
 
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
@@ -98,7 +98,7 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	session, err := client.NewSession(linkKey)
 	require.NoError(err)
 
-	desc, err := session.GetService("loop")
+	desc, err := session.GetService(constants.LoopService)
 	require.NoError(err)
 
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
@@ -127,7 +127,7 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	clientSession, err := client.NewSession(linkKey)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
@@ -177,7 +177,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	clientSession, err := client.NewSession(linkKey)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
@@ -258,7 +258,7 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	clientSession, err := client.NewSession(linkKey)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	// Send a message to a nonexistent service so that we don't get a reply and thus
@@ -316,7 +316,7 @@ func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
 	clientSession, err := client.NewSession(linkKey)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	for i := 0; i < 10; i++ {
