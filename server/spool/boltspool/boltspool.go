@@ -22,12 +22,12 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (
@@ -97,6 +97,7 @@ func (s *boltSpool) doStore(u []byte, id *[sConstants.SURBIDLength]byte, msg []b
 		if id != nil {
 			mBkt.Put([]byte(surbIDKey), id[:])
 		}
+
 		return nil
 	})
 }
@@ -194,6 +195,23 @@ func (s *boltSpool) Remove(u []byte) error {
 		}
 
 		return uBkt.DeleteBucket(u)
+	})
+}
+
+func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sConstants.RecipientIDLength]byte]interface{}) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		uBkt := tx.Bucket([]byte(usersBucket))
+		usersCursor := uBkt.Cursor()
+		for identity, _ := usersCursor.First(); identity != nil; identity, _ = usersCursor.Next() {
+			key := [sConstants.RecipientIDLength]byte{}
+			copy(key[:], identity)
+			if _, ok := ignoreIdentities[key]; ok {
+				continue
+			}
+			_ = udb.Remove(identity)
+			_ = uBkt.DeleteBucket(identity)
+		}
+		return nil
 	})
 }
 

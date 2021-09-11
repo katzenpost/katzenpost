@@ -35,7 +35,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := cc.AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := cc.NewEphemeralClient(cfg)
 	require.NoError(err)
 	client, err := cc.New(cfg)
 	require.NoError(err)
@@ -104,7 +104,7 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := cc.AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := cc.NewEphemeralClient(cfg)
 	require.NoError(err)
 	client, err := cc.New(cfg)
 	require.NoError(err)

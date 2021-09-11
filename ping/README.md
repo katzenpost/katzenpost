@@ -2,10 +2,7 @@
 mixnet ping tool for testing and debugging
 
 ## Run instructions
-Ensure that you have Go installed and have a katzenpost mixnet instance running. See the [docker](https://github.com/katzenpost/docker) for instructions on how to setup katzenpost using docker.
 ```
-git clone https://github.com/katzenpost/ping.git
-cd ping
 go build
 ```
 You should now have a *ping* executable in the current directory.

@@ -39,7 +39,7 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 
 	client, err := New(cfg)
@@ -60,7 +60,7 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
@@ -89,7 +89,7 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
@@ -119,7 +119,7 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
@@ -168,7 +168,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
@@ -218,7 +218,7 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
@@ -250,7 +250,7 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
@@ -308,7 +308,7 @@ func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	cfg, linkKey, err := NewEphemeralClient(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
