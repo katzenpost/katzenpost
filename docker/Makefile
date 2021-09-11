@@ -22,9 +22,15 @@ deps: debian_base
 		&& docker rm katzenpost_deps; \
 	fi
 
-update-deps: deps
+update-go-mod: deps
 	docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_deps -it katzenpost/deps \
 			bash -c 'cd /go/katzenpost; go mod tidy; go mod download' \
+		&& docker commit katzenpost_deps katzenpost/deps \
+		&& docker rm katzenpost_deps
+
+upgrade-go-mod: deps
+	docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_deps -it katzenpost/deps \
+			bash -c 'cd /go/katzenpost; go get -d -u ./... && go mod tidy' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
@@ -71,4 +77,7 @@ clean-data:
 clean-local: clean-local-images clean-data
 
 clean: clean-images clean-data
+
+shell: deps
+	docker run -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
 
