@@ -7,7 +7,7 @@ Katzenpost Mix Network Specification
 | Ania Piotrowska
 | David Stainton
 
-| Version 0
+| Version 1
 
 .. rubric:: Abstract
 
@@ -580,6 +580,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzMixnet,
    title = {Katzenpost Mix Network Specification},
    author = {Yawning Angel and George Danezis and Claudia Diaz and Ania Piotrowska and David Stainton},
-   url = {https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.rst},
    year = {2017}
    }
