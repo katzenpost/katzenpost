@@ -134,25 +134,28 @@ Here we cannot present the threat model to the higher level mixnet
 protocols. However this low level core mixnet protocol does have
 it's own threat model which we attempt to illucidate here.
 
-We assume that the sender and recipient do know each other's
-addresses. This system guarantees third-party anonymity, meaning
-that no parties other than sender and recipient are able to learn
-that the sender and recipient are communicating. Note that this is
+We assume that the clients only talk to mixnet services. These services
+make use of a client provided delivery token known as a SURB (Single Use Reply Block)
+to send their replies to the client without knowing the client's entry mix.
+This system guarantees third-party anonymity, meaning
+that no parties other than client and the service are able to learn
+that the client and service are communicating. Note that this is
 in contrast with other designs, such as Mixminion, which provide
 sender anonymity towards recipients as well as anonymous replies.
 
-Additionally as all of a given client's messages go through a
-single provider instance, it is assumed that in the absence of
-any specific additional defenses, that the Provider can determine
-the approximate mail volume originating from and destined to a
-given client. We consider the provider follows the protocol
+Mixnet clients will randomly select an entry node to use and may reconnect if
+disconnected for under a duration threshold. The entry mix can determine
+the approximate message volume originating from and destined to a
+given client. We consider the entry mix follows the protocol
 and might be an honest-but-curious adversary.
 
-External local network observers can determine the number of
-Packets traversing their region of the network because at this
-time no decoy traffic has been specified. Global observers will
+External local network observers can not determine the number of
+Packets traversing their region of the network because of the use
+of  decoy traffic sent by the clients. Global observers will
 not be able to de-anonymize packet paths if there are enough
-packets traversing the mix network.
+packets traversing the mix network. Longer term statistical
+disclosure attacks are likely possible in order to link senders
+and receivers.
 
 A malicious mix only has the ability to remember which input
 packets correspond to the output packets. To discover the
@@ -171,20 +174,20 @@ the previous and next layer, and or every participating Provider
 in the case of the mixes in layer 0 or layer N (first and last layer).
 ::
 
-                             Layer 0        Layer 1        Layer 2
-          +----------+      +-------+      +-------+      +-------+
-      +-> | Provider | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+
-      |   +----------+  |   +-------+  |   +-------+  |   +-------+  |
-      |                 |              |              |              |
-      |   +----------+  |   +-------+  |   +-------+  |   +-------+  |
-      +-> | Provider | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+
-      |   +----------+  |   +-------+  |   +-------+  |   +-------+  |
-      |                 |              |              |              |
-      |                 |   +-------+  |   +-------+  |   +-------+  |
-      |                 +-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+
-      |                     +-------+      +-------+      +-------+  |
-      |                                                              |
-      +--------------------------------------------------------------+
+          Layer 0          Layer 1        Layer 2        Layer 3           Layer 4
+       +-----------+      +-------+      +-------+      +-------+      +-------------+
+   +-> | entry mix | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+-> | service mix |
+   |   +-----------+  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   |                  |              |              |              |
+   |   +-----------+  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   +-> | entry mix | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+-> | service mix |
+   |   +-----------+  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   |                  |              |              |              |
+   |                  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   |                  +-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+-> | service mix |
+   |                      +-------+      +-------+      +-------+  |   +-------------+
+   |                                                               |
+   +---------------------------------------------------------------+
 
          Note: Multiple distinct connections are collapsed in the
          figure for sake of brevity/clarity.
@@ -300,7 +303,7 @@ is not as specified in the header.
      a per-hop basis and including an epoch identifier.
 
      I am uncertain as to if the additional complexity is worth it
-     for a situation that can happen for 4 mins out of every 3 hours.
+     for a situation that can happen for a few minutes out of every epoch.
 
 3.3 Sphinx Per-hop Routing Information Extensions
 -------------------------------------------------
