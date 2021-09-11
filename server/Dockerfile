@@ -18,7 +18,6 @@ RUN cd server/cmd/server && go build -ldflags "$ldflags"
 RUN cd /go/katzenpost/memspool/server/cmd/memspool ; go build -ldflags "$ldflags"
 RUN cd /go/katzenpost/reunion/servers/reunion_katzenpost_server ; go build -ldflags "$ldflags"
 RUN cd /go/katzenpost/panda/server/cmd/panda_server ; go build -ldflags "$ldflags"
-RUN cd /go/katzenpost/server_plugins/cbor_plugins/echo-go ; go build -o echo_server -ldflags "$ldflags"
 
 FROM debian:buster
 
@@ -27,7 +26,6 @@ COPY --from=builder /go/katzenpost/server/cmd/server/server /go/bin/server
 COPY --from=builder /go/katzenpost/memspool/server/cmd/memspool/memspool /go/bin/memspool
 COPY --from=builder /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /go/bin/reunion_katzenpost_server
 COPY --from=builder /go/katzenpost/panda/server/cmd/panda_server/panda_server /go/bin/panda_server
-COPY --from=builder /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /go/bin/echo_server
 
 # Expose the application port
 # EXPOSE 8181
