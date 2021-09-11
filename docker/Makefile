@@ -31,7 +31,7 @@ update-deps: deps
 server: deps
 	if ! docker images|grep katzenpost/server; then \
 		docker run -v $(shell readlink -f ..):/go/katzenpost --name katzenpost_server -it katzenpost/deps \
-			bash -c 'cd /go/katzenpost/server; make testnet-build; make testnet-install' \
+			bash -c 'cd /go/katzenpost/server && make warped=${warped} testnet-build testnet-install' \
 		&& docker commit katzenpost_server katzenpost/server \
 		&& docker rm katzenpost_server; \
 	fi
