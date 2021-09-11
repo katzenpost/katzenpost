@@ -46,6 +46,11 @@ type opRetransmit struct {
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 	isConnected := op.isConnected
 	if isConnected {
+		// If we have awoken from suspend and there is no
+		// current consensus, attempt to fetch one immediately.
+		if doc := s.minclient.CurrentDocument(); doc == nil {
+			s.minclient.ForceFetchPKI()
+		}
 		s.onlineAt = time.Now()
 
 		skew := s.minclient.ClockSkew()
