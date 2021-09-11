@@ -43,9 +43,11 @@ func main() {
 	var configFile string
 	var service string
 	var count int
+	var printDiff bool
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.StringVar(&service, "s", "", "service name")
 	flag.IntVar(&count, "n", 5, "count")
+	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
 	flag.Parse()
 
 	if service == "" {
@@ -76,7 +78,7 @@ func main() {
 		panic(err)
 	}
 
-	sequentialPing(session, serviceDesc, count)
+	sequentialPing(session, serviceDesc, count, printDiff)
 
 	c.Shutdown()
 }

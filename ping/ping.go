@@ -40,7 +40,7 @@ produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `)
 
-func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int) {
+func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, printDiff bool) {
 	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
 	passed := 0
 	failed := 0
@@ -57,11 +57,11 @@ func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescripto
 			fmt.Printf("!") // OK, received identical payload in reply.
 		} else {
 			fmt.Printf("~") // Fail, received unexpected payload in reply.
+
+			if printDiff {
+				fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", reply, pingPayload)
+			}
 		}
-
-		// XXX Sometimes it's helpful for debugging purposes to print the reply payload.
-		// fmt.Printf("\n\n Reply payload:`%s` \n\n", reply)
-
 	}
 	fmt.Printf("\n")
 
