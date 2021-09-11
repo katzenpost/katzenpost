@@ -1,57 +1,56 @@
 
-Katzenpost Mixnet Docker
-========================
+Katzenpost Docker test network
+==============================
 
-This docker-compose configuration is meant to be used in combination
-with the **server** and **authority** repositories. It is meant for
-testing client and server mix network components as part of the core
-Katzenpost developer work flow. It should be obvious that this
-docker-compose situation is not meant for production use.
+This docker-compose configuration is intended to allow Katzenpost developers to
+locally run a test network on their development system. It is meant for testing
+client and server mix network components as part of the core Katzenpost
+developer work flow. It should be obvious that this docker-compose situation is
+not meant for production use.
 
-
-1. build the mix server docker image
+1. Run a test network
 ::
 
    git clone https://github.com/katzenpost/katzenpost.git
-   cd katzenpost
-   docker build -f docker/Dockerfile.deps --no-cache -t katzenpost/deps .
-   docker build -f server/Dockerfile --no-cache -t katzenpost/server .
+   cd katzenpost/docker
+   make run-nonvoting-testnet
 
+Note that if your system configuration requires you to ``sudo`` to use docker,
+you will need to prefix all of the ``make`` commands in this directory with
+``sudo``.
 
-2. build the authority docker image
+At this point, you should have a locally running network. You can hit ctrl-C to
+stop it.
 
-voting authority
-::
+While the docker-compose test network is running, you can use the ``make
+dockerdockertest`` targets in the ``client`` and ``catshadow`` directories to
+run their docker tests (also in docker, but without docker-compose managing the
+instance where the tests are running). When running the docker tests, it may be
+desirable to add the ``warped=true`` to the make commands (eg, ``make
+warped=true run-nonvoting-testnet`` here in the docker directory, and ``make
+warped=true dockerdockertest`` in the client directory) to set the WarpedEpoch
+build flag.
 
-   docker build -f authority/Dockerfile.voting --no-cache -t katzenpost/voting_authority .
+You can also connect to the test network with a catshadow client by telling it
+to use the ``docker/nonvoting_mixnet/catshadow.toml`` configuration file.
 
-nonvoting authority
-::
+After stopping the network, you can discard all docker images by running ``make
+clean-images``, and can delete the test network's data with ``make
+clean-data``, or run ``make clean`` to delete both images and data.
 
-   docker build -f authority/Dockerfile.nonvoting --no-cache -t katzenpost/nonvoting_authority .
+The ``make clean-local`` target will delete instance data and images, but
+retain the ``katzenpost/deps`` image which requires network access to rebuild.
+This allows for quick and easy offline development.
 
-
-**NOTE** katzenpost expects its configuration files to be readable by the owner only. Fix the permissions by running the fix_perms.sh script in git root:
-::
-
-    cd docker
-   ./fix_perms.sh
-
-
-3. cd into `voting_mixnet` (or `nonvoting_mixnet`) and run `docker-compose up` (control-c to exit)
-::
-
-   cd voting_mixnet
-   docker-compose up
-
-
+The docker commands in the ``Makefile`` are not as robust as they should be, so
+watch for error messages to see if it becomes necessary to delete stray
+containers which are using the images and preventing them from being deleted.
 
 **NOTE**: between restarting your local docker mixnet you **SHOULD**
 remove the state changes on disk by running the following command:
 ::
 
-   git clean -ffdx
-
+   make clean-data
 
 **NOTE**: If you switch between voting and nonvoting authority mixnets then
 you must run this command after shutting down the old docker composed mixnet:
