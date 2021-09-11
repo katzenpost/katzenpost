@@ -135,13 +135,20 @@ func NewSession(
 
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
+		pkiCacheClient.Halt()
 		return nil, err
 	}
+	// shutdown the pkiCacheClient when minclient halts
+	go func() {
+		s.minclient.Wait()
+		pkiCacheClient.Halt()
+	}()
 
 	// block until we get the first PKI document
 	// and then set our timers accordingly
 	err = s.awaitFirstPKIDoc(ctx)
 	if err != nil {
+		s.Shutdown()
 		return nil, err
 	}
 	s.Go(s.worker)

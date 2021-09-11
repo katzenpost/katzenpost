@@ -253,13 +253,13 @@ discuss built-in internal kaetzchen services. (see next section for
 external kaetzchen plugin system)
 
 Consider the following simple configuration example where we configure
-the loop and keyserver services::
+the echo and keyserver services::
 
   [Provider]
 
     [[Provider.Kaetzchen]]
-      Capability = "loop"
-      Endpoint = "+loop"
+      Capability = "echo"
+      Endpoint = "+echo"
       Disable = false
 
     [[Provider.Kaetzchen]]
@@ -269,7 +269,7 @@ the loop and keyserver services::
 
 The ``Kaetzchen`` field is the list of configured Kaetzchen
 (auto-responder agents) for this provider. In the above example we
-configured two Kaetzchen, keyserver and loop which are required
+configured two Kaetzchen, keyserver and echo which are required
 by the mailproxy client.
 
 Lets review the Kaetzchen configuration parameters:
