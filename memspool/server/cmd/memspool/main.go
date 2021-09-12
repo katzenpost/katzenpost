@@ -27,7 +27,6 @@ import (
 	"path"
 	"path/filepath"
 
-	//"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/memspool/common"
 	"github.com/katzenpost/katzenpost/memspool/server"
@@ -119,6 +118,7 @@ func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 	case *common.SpoolRequest:
 		return server.HandleSpoolRequest(s.m, r, s.log), nil
 	default:
+		s.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")
 	}
 }
