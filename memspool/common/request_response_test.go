@@ -20,7 +20,27 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
+
+func TestCommandSerialization(t *testing.T) {
+	require := require.New(t)
+	pk, err := eddsa.NewKeypair(rand.Reader)
+	signature := pk.Sign(pk.PublicKey().Bytes())
+	require.NoError(err)
+	cmd, err := CreateSpool(pk)
+	require.NoError(err)
+	sr := new(SpoolRequest)
+	sr.Unmarshal(cmd)
+	require.Equal(sr.Command, uint8(CreateSpoolCommand))
+	require.NotNil(sr.Signature)
+	require.Equal(sr.Signature, signature)
+	require.NotNil(sr.PublicKey)
+	require.NotNil(sr.MessageID)
+	require.NotNil(sr.MessageID)
+}
 
 func TestSerializationPaddingSymmetry(t *testing.T) {
 	assert := assert.New(t)
