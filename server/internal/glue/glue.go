@@ -76,7 +76,6 @@ type Provider interface {
 	AuthenticateClient(*wire.PeerCredentials) bool
 	OnPacket(*packet.Packet)
 	KaetzchenForPKI() (map[string]map[string]interface{}, error)
-	AdvertiseRegistrationHTTPAddresses() []string
 }
 
 type Scheduler interface {
@@ -95,6 +94,7 @@ type Connector interface {
 type Listener interface {
 	Halt()
 	CloseOldConns(interface{}) error
+	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
 	OnNewSendRatePerMinute(uint64)
 	OnNewSendBurst(uint64)
 }

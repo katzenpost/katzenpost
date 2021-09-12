@@ -73,8 +73,8 @@ func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	goo := getGlue(logBackend, mockProvider, linkKey, idKey)
 	goo.s.cfg.Provider.CBORPluginKaetzchen = []*config.CBORPluginKaetzchen{
 		&config.CBORPluginKaetzchen{
-			Capability:     "loop",
-			Endpoint:       "loop",
+			Capability:     "echo",
+			Endpoint:       "echo",
 			Config:         map[string]interface{}{},
 			Disable:        false,
 			Command:        "non-existent command",

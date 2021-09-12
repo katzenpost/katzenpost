@@ -339,15 +339,11 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 	doc, err = s11n.VerifyAndParseDocument(r.Payload, good[0])
 	if err != nil {
-		// XXX: somehow this returned a nil doc!
+		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
 	}
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
-	}
-	if err != nil {
-		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
-		return nil, nil, fmt.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 	}
 	return doc, r.Payload, nil
 }

@@ -19,6 +19,7 @@
 package kaetzchen
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
@@ -86,7 +87,7 @@ type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
 
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
-	LoopCapability:      NewLoop,
+	EchoCapability:      NewEcho,
 	keyserverCapability: NewKeyserver,
 }
 
@@ -253,9 +254,23 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 	var resp []byte
 	dst, ok := k.kaetzchen[pkt.Recipient.ID]
-	if ok {
-		resp, err = dst.OnRequest(pkt.ID, ct, surb != nil)
+	if !ok {
+		k.log.Error("KaetzchenWorker does not handle the specified recipient")
+		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		k.incrementDropCounter()
+		kaetzchenRequestsDropped.Add(float64(k.getDropCounter()))
+		return
 	}
+	ctLen := binary.BigEndian.Uint32(ct[:4])
+	if ctLen+4 > uint32(len(ct)) {
+		k.log.Error("length prefixing is incorrect in cbor plugin query")
+		k.incrementDropCounter()
+		kaetzchenRequestsDropped.Add(float64(k.getDropCounter()))
+		return
+	}
+
+	resp, err = dst.OnRequest(pkt.ID, ct[4:4+ctLen], surb != nil)
+
 	switch {
 	case err == nil:
 	case err == ErrNoResponse:
@@ -270,10 +285,15 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
 	if surb != nil {
-		// Prepend the response header.
-		resp = append([]byte{0x01, 0x00}, resp...)
+		// Length prefix encode payload.
+		payload := make([]byte, 4+len(resp))
+		binary.BigEndian.PutUint32(payload[:4], uint32(len(resp)))
+		copy(payload[4:], resp)
 
-		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp)
+		// Prepend the response header.
+		payload = append([]byte{0x01, 0x00}, payload...)
+
+		respPkt, err := packet.NewPacketFromSURB(pkt, surb, payload)
 		if err != nil {
 			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
 			return

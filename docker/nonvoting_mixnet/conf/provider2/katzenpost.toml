@@ -58,24 +58,10 @@
 #
 
 [Provider]
-EnableUserRegistrationHTTP = true
-UserRegistrationHTTPAddresses = ["172.28.1.4:36967"]
-AdvertiseUserRegistrationHTTPAddresses = ["http://127.0.0.1:36967"]
-
   [[Provider.Kaetzchen]]
-    Capability = "loop"
-    Endpoint = "+loop"
+    Capability = "echo"
+    Endpoint = "+echo"
     Disable = false
-
-   [[Provider.CBORPluginKaetzchen]]
-     Disable = false
-     Capability = "echo"
-     Endpoint = "+echo"
-     Command = "/go/bin/echo_server"
-     MaxConcurrency = 1
-     [Provider.CBORPluginKaetzchen.Config]
-      log_dir = "/conf/service_logs"
-      log_level = "DEBUG"
 
    [[Provider.CBORPluginKaetzchen]]
     Capability = "reunion"
