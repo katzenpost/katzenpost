@@ -22,7 +22,7 @@ debian_base:
 		docker run --name katzenpost_debian_base -it golang:buster bash -c 'apt update && apt upgrade -y' \
 		&& docker commit katzenpost_debian_base katzenpost/debian_base \
 		&& docker rm katzenpost_debian_base; \
-	fi
+        fi
 
 deps: debian_base
 	if ! docker images|grep katzenpost/deps; then \
@@ -30,15 +30,15 @@ deps: debian_base
 			bash -c 'cd /go/katzenpost; go mod download' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
-	fi
+        fi
 
-update-go-mod: deps
+go-mod-tidy: deps
 	docker run ${docker_args} --name katzenpost_deps -it katzenpost/deps \
-			bash -c 'cd /go/katzenpost; go mod tidy; go mod download' \
+			bash -c 'cd /go/katzenpost; go mod tidy' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
-upgrade-go-mod: deps
+go-mod-upgrade: deps
 	docker run ${docker_args} --name katzenpost_deps -it katzenpost/deps \
 			bash -c 'cd /go/katzenpost; go get -d -u ./... && go mod tidy' \
 		&& docker commit katzenpost_deps katzenpost/deps \
@@ -50,23 +50,23 @@ server: deps
 			bash -c 'cd /go/katzenpost/server && make warped=${warped} testnet-build testnet-install' \
 		&& docker commit katzenpost_server katzenpost/server \
 		&& docker rm katzenpost_server; \
-	fi
+        fi
 
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run ${docker_args} --name katzenpost_voting_authority -it katzenpost/deps \
-			bash -c 'cd /go/katzenpost/authority/cmd/voting && go install -ldflags ${ldflags}' \
+			bash -c 'cd /go/katzenpost/authority/cmd/voting && go mod verify && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
-	fi
+        fi
 
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run ${docker_args} --name katzenpost_nonvoting_authority -it katzenpost/deps \
-			bash -c 'cd /go/katzenpost/authority/cmd/nonvoting && go install -ldflags ${ldflags}' \
+			bash -c 'cd /go/katzenpost/authority/cmd/nonvoting && go mod verify && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
-	fi
+        fi
 
 clean-local-images:
 	cd nonvoting_mixnet; docker-compose rm -sf
@@ -92,5 +92,5 @@ shell: deps
 	docker run ${docker_args} --rm -it katzenpost/deps bash
 
 rootshell: deps
-	docker run -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
+	docker run --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
 
