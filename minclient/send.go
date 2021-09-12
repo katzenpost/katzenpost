@@ -44,7 +44,7 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 	}
 
 	// Wrap the ciphertext in a BlockSphinxCiphertext.
-	payload := make([]byte, 2+sphinx.SURBLength, 2+sphinx.SURBLength+len(b))
+	payload := make([]byte, sphinx.SURBLength, sphinx.SURBLength+len(b))
 	payload = append(payload, b...)
 
 	for {
@@ -79,8 +79,7 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
 			if surbID != nil {
-				payload := make([]byte, 2, 2+sphinx.SURBLength+len(b))
-				payload[0] = 1 // Packet has a SURB.
+				payload := make([]byte, 0, sphinx.SURBLength+len(b))
 				surb, k, err := sphinx.NewSURB(rand.Reader, revPath)
 				if err != nil {
 					return nil, nil, 0, err
