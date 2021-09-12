@@ -32,13 +32,13 @@ deps: debian_base
 		&& docker rm katzenpost_deps; \
         fi
 
-update-go-mod: deps
+go-mod-tidy: deps
 	docker run ${docker_args} --name katzenpost_deps -it katzenpost/deps \
 			bash -c 'cd /go/katzenpost; go mod tidy; go mod download' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
-upgrade-go-mod: deps
+go-mod-upgrade: deps
 	docker run ${docker_args} --name katzenpost_deps -it katzenpost/deps \
 			bash -c 'cd /go/katzenpost; go get -d -u ./... && go mod tidy' \
 		&& docker commit katzenpost_deps katzenpost/deps \
