@@ -97,7 +97,6 @@ type SpoolResponse struct {
 	MessageID uint32
 	Message   []byte
 	Status    string
-	Padding   []byte
 }
 
 // Marshal implements cborplugin.Command
