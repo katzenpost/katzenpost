@@ -80,8 +80,8 @@ nonvoting_authority: deps
 clean-local-images:
 	cd nonvoting_mixnet; docker-compose rm -sf
 	cd voting_mixnet; docker-compose rm -sf
-	docker rm  katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority || true
-	docker rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority || true
+	docker rm  katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority katzenpost_ping || true
+	docker rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority katzenpost/ping || true
 
 clean-images: clean-local-images
 	docker rm  katzenpost_debian_base katzenpost_deps || true
@@ -97,9 +97,21 @@ clean-local: clean-local-images clean-data
 
 clean: clean-images clean-data
 
+ping: deps
+	if ! docker images|grep katzenpost/ping; then \
+		docker run ${docker_args} --name katzenpost_ping -it katzenpost/deps \
+			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
+		&& docker commit katzenpost_ping katzenpost/ping \
+		&& docker rm katzenpost_ping; \
+        fi
+
+run-ping: ping
+	docker run --network=host ${docker_args} --rm -it katzenpost/ping \
+        /go/bin/ping -c /go/katzenpost/ping/nonvoting_docker_mixnet.toml -s echo
+
 shell: deps
-	docker run ${docker_args} --rm -it katzenpost/deps bash
+	docker run --network=host ${docker_args} --rm -it katzenpost/deps bash
 
 rootshell: deps
-	docker run --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
+	docker run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
 
