@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	messageMsgPaddingLength = sphinxConstants.SURBIDLength + constants.SphinxPlaintextHeaderLength + sphinx.SURBLength + sphinx.PayloadTagLength
+	messageMsgPaddingLength = sphinxConstants.SURBIDLength + sphinx.SURBLength + sphinx.PayloadTagLength
 	messageEmptyLength      = messageACKLength + sphinx.PayloadTagLength + constants.ForwardPayloadLength
 	messageACKLength        = messageBaseLength + sphinxConstants.SURBIDLength
 	messageMsgLength        = messageBaseLength + messageMsgPaddingLength

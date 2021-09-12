@@ -217,7 +217,7 @@ func newRedundantError(cmd commands.RoutingCommand) error {
 
 func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 
-	var hdrLength = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
+	var hdrLength = sphinx.SURBLength
 	const (
 		flagsPadding = 0
 		flagsSURB    = 1
@@ -239,13 +239,7 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	}
 	ct := b[hdrLength:]
 	var surb []byte
-	switch b[0] {
-	case flagsPadding:
-	case flagsSURB:
-		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
-	default:
-		return nil, nil, fmt.Errorf("invalid message flags: 0x%02x", b[0])
-	}
+	surb = b[:hdrLength]
 	if len(ct) != constants.UserForwardPayloadLength {
 		return nil, nil, fmt.Errorf("mis-sized user payload: %v", len(ct))
 	}

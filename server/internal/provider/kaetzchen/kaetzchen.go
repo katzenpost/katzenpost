@@ -285,12 +285,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
 	if surb != nil {
-		// Length prefix encode payload.
-		payload := make([]byte, 4+len(resp))
-		binary.BigEndian.PutUint32(payload[:4], uint32(len(resp)))
-		copy(payload[4:], resp)
-
-		respPkt, err := packet.NewPacketFromSURB(pkt, surb, payload)
+		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp)
 		if err != nil {
 			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
 			return
