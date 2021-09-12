@@ -35,7 +35,7 @@ func TestSerializationPaddingSymmetry(t *testing.T) {
 		MessageID: 0,
 		Message:   []byte("hello123"),
 	}
-	requestRaw, err := request.Encode()
+	requestRaw, err := request.Marshal()
 	assert.NoError(err)
 
 	response := SpoolResponse{
@@ -43,7 +43,7 @@ func TestSerializationPaddingSymmetry(t *testing.T) {
 		Message: []byte("hello123"),
 		Status:  "OK",
 	}
-	responseRaw, err := response.Encode()
+	responseRaw, err := response.Marshal()
 	assert.NoError(err)
 	assert.Equal(len(requestRaw), len(responseRaw))
 

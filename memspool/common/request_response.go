@@ -17,6 +17,7 @@
 package common
 
 import (
+	"encoding/binary"
 	"errors"
 
 	"github.com/fxamacker/cbor/v2"
@@ -80,19 +81,6 @@ type SpoolRequest struct {
 	Message   []byte
 }
 
-func SpoolRequestFromBytes(raw []byte) (SpoolRequest, error) {
-	s := SpoolRequest{}
-	err := cbor.Unmarshal(raw, &s)
-	if err != nil {
-		return s, err
-	}
-	return s, nil
-}
-
-func (s *SpoolRequest) Encode() ([]byte, error) {
-	return cbor.Marshal(s)
-}
-
 // Marshal implements cborplugin.Command
 func (s *SpoolRequest) Marshal() ([]byte, error) {
 	return cbor.Marshal(s)
@@ -122,21 +110,6 @@ func (s *SpoolResponse) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, s)
 }
 
-func SpoolResponseFromBytes(raw []byte) (SpoolResponse, error) {
-	s := SpoolResponse{}
-	err := cbor.Unmarshal(raw, &s)
-	if err != nil {
-		return s, err
-	}
-	return s, nil
-}
-
-func (s *SpoolResponse) Encode() ([]byte, error) {
-	padding := [109]byte{}
-	s.Padding = padding[:]
-	return cbor.Marshal(s)
-}
-
 func (s *SpoolResponse) IsOK() bool {
 	return s.Status == StatusOK
 }
@@ -157,7 +130,7 @@ func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
 		MessageID: 0,
 		Message:   emptyMessage,
 	}
-	return s.Encode()
+	return cbor.Marshal(s)
 }
 
 func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, error) {
@@ -168,7 +141,7 @@ func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, e
 		Signature: signature,
 		SpoolID:   spoolID,
 	}
-	return s.Encode()
+	return cbor.Marshal(s)
 }
 
 func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
@@ -180,7 +153,7 @@ func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
 		SpoolID: spoolID,
 		Message: message[:],
 	}
-	return s.Encode()
+	return cbor.Marshal(s)
 }
 
 func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.PrivateKey) ([]byte, error) {
@@ -192,5 +165,5 @@ func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.P
 		SpoolID:   spoolID,
 		MessageID: messageID,
 	}
-	return s.Encode()
+	return cbor.Marshal(s)
 }

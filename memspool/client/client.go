@@ -17,6 +17,7 @@
 package client
 
 import (
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -84,7 +85,8 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 	if err != nil {
 		return nil, err
 	}
-	spoolResponse, err := common.SpoolResponseFromBytes(reply)
+	spoolResponse := &common.SpoolResponse{}
+	err = cbor.Unmarshal(reply, &spoolResponse)
 	if err != nil {
 		return nil, err
 	}
