@@ -102,8 +102,6 @@ format in the forward Sphinx packet::
    payload format in the SURB generated packet::
 
      struct {
-       uint8_t payload_type; /* Set to 0x01 */
-       uint8_t reserved; /* Set to 0x00 */
        opaque plaintext[];
      } KaetzchenReply;
 
