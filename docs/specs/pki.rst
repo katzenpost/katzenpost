@@ -535,7 +535,8 @@ Katzenpost Mix Network Public Key Infrastructure Specification
        },
        "Addresses": ["IP:Port"],
        "Layer": 0,
-       "LoadWeight":0
+       "LoadWeight":0,
+       "AuthenticationType":""
    }
 
 4.1.1 Scheduling Mix Downtime

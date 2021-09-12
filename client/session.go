@@ -18,6 +18,7 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -134,13 +135,20 @@ func NewSession(
 
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
+		pkiCacheClient.Halt()
 		return nil, err
 	}
+	// shutdown the pkiCacheClient when minclient halts
+	go func() {
+		s.minclient.Wait()
+		pkiCacheClient.Halt()
+	}()
 
 	// block until we get the first PKI document
 	// and then set our timers accordingly
 	err = s.awaitFirstPKIDoc(ctx)
 	if err != nil {
+		s.Shutdown()
 		return nil, err
 	}
 	s.Go(s.worker)
@@ -300,6 +308,11 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
 		}
 	}
+
+	// plaintext is length prefixed with a uint32
+	payloadLen := binary.BigEndian.Uint32(plaintext[2 : 2+4])
+	plaintext = plaintext[2+4 : 2+4+payloadLen]
+
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
 		if !ok {
@@ -311,7 +324,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
 		// do not block the worker if the receiver timed out!
 		select {
-		case replyWaitChan <- plaintext[2:]:
+		case replyWaitChan <- plaintext:
 		default:
 			s.log.Warningf("Failed to respond to a blocking message")
 			close(replyWaitChan)
@@ -319,7 +332,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	} else {
 		s.eventCh.In() <- &MessageReplyEvent{
 			MessageID: msg.ID,
-			Payload:   plaintext[2:],
+			Payload:   plaintext,
 			Err:       nil,
 		}
 	}
@@ -327,7 +340,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 }
 
 func (s *Session) onDocument(doc *pki.Document) {
-	s.log.Debugf("onDocument(): Epoch %v", doc.Epoch)
+	s.log.Debugf("onDocument(): %s", doc)
 	s.hasPKIDoc = true
 	s.opCh <- opNewDocument{
 		doc: doc,

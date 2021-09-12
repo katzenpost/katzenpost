@@ -141,6 +141,16 @@ func (c *Client) ForceFetch() {
 	}
 }
 
+// ForceFetchPKI attempts to force minclient's pkiclient to wake and fetch
+// consensus documents immediately.
+func (c *Client) ForceFetchPKI() {
+	c.log.Debugf("ForceFetchPKI()")
+	select {
+	case c.pki.forceUpdateCh <- true:
+	default:
+	}
+}
+
 func (c *connection) onPKIFetch() {
 	select {
 	case c.pkiFetchCh <- true:
