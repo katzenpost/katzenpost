@@ -55,7 +55,7 @@ server: deps
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run ${docker_args} --name katzenpost_voting_authority -it katzenpost/deps \
-			bash -c 'cd /go/katzenpost/authority/cmd/voting && go install -ldflags ${ldflags}' \
+			bash -c 'cd /go/katzenpost/authority/cmd/voting && go mod verify && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
         fi
@@ -63,7 +63,7 @@ voting_authority: deps
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run ${docker_args} --name katzenpost_nonvoting_authority -it katzenpost/deps \
-			bash -c 'cd /go/katzenpost/authority/cmd/nonvoting && go install -ldflags ${ldflags}' \
+			bash -c 'cd /go/katzenpost/authority/cmd/nonvoting && go mod verify && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
         fi
