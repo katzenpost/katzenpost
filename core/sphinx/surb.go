@@ -149,11 +149,11 @@ func DecryptSURBPayload(payload, keys []byte) ([]byte, error) {
 
 	// Remove length prefix.
 	b = b[PayloadTagLength:]
-	payloadLen := binary.BigEndian.Uint32(b[:4])
-	if payloadLen+4 > uint32(len(payload)) {
+	payloadLen := binary.BigEndian.Uint32(b[:payloadLengthPrefixOverhead])
+	if payloadLen+payloadLengthPrefixOverhead > uint32(len(payload)) {
 		return nil, errLengthPrefix
 	}
-	b = b[4 : 4+payloadLen]
+	b = b[payloadLengthPrefixOverhead : payloadLengthPrefixOverhead+payloadLen]
 
 	return b, nil
 }
