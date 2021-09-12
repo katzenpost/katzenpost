@@ -34,7 +34,7 @@ const (
 	TimeSkewWarnDelta = 2 * time.Minute
 
 	// LoopService is the name of the Katzenpost loop service.
-	LoopService = "loop"
+	LoopService = "echo"
 
 	// GarbageCollectionInterval is the time interval between running our
 	// SURB ID Map garbage collection routine.

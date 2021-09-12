@@ -4,6 +4,7 @@ services:
   provider1:
     restart: unless-stopped
     image: katzenpost/server
+    user: $DOCKER_USER
     volumes:
       - ./conf/provider1:/conf
     command: /go/bin/server -f /conf/katzenpost.toml
@@ -19,6 +20,7 @@ services:
   provider2:
     restart: unless-stopped
     image: katzenpost/server
+    user: $DOCKER_USER
     volumes:
       - ./conf/provider2:/conf
     command: /go/bin/server -f /conf/katzenpost.toml
@@ -35,6 +37,7 @@ services:
   mix1:
     restart: unless-stopped
     image: katzenpost/server
+    user: $DOCKER_USER
     volumes:
       - ./conf/mix1:/conf
     command: /go/bin/server -f /conf/katzenpost.toml
@@ -49,6 +52,7 @@ services:
   mix2:
     restart: unless-stopped
     image: katzenpost/server
+    user: $DOCKER_USER
     volumes:
       - ./conf/mix2:/conf
     command: /go/bin/server -f /conf/katzenpost.toml
@@ -63,6 +67,7 @@ services:
   mix3:
     restart: unless-stopped
     image: katzenpost/server
+    user: $DOCKER_USER
     volumes:
       - ./conf/mix3:/conf
     command: /go/bin/server -f /conf/katzenpost.toml
@@ -77,6 +82,7 @@ services:
   auth:
     restart: unless-stopped
     image: katzenpost/nonvoting_authority
+    user: $DOCKER_USER
     volumes:
       - ./conf/auth:/conf
     command: /go/bin/nonvoting -f /conf/authority.toml

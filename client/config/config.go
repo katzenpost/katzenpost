@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	registration "github.com/katzenpost/katzenpost/registration_client"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -261,19 +260,6 @@ func (accCfg *Account) validate() error {
 	return nil
 }
 
-// Registration is used for the client's Provider account registration.
-type Registration struct {
-	Address string
-	Options *registration.Options
-}
-
-func (r *Registration) validate() error {
-	if r.Address == "" {
-		return errors.New("registration Address cannot be empty")
-	}
-	return nil
-}
-
 // UpstreamProxy is the outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// Type is the proxy type (Eg: "none"," socks5").
@@ -316,7 +302,6 @@ type Config struct {
 	NonvotingAuthority *NonvotingAuthority
 	VotingAuthority    *VotingAuthority
 	Account            *Account
-	Registration       *Registration
 	Panda              *Panda
 	Reunion            *Reunion
 	upstreamProxy      *proxy.Config
@@ -329,7 +314,7 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 }
 
 // FixupAndMinimallyValidate applies defaults to config entries and validates the
-// all but the Account and Registration configuration sections.
+// all but the Account configuration sections.
 func (c *Config) FixupAndMinimallyValidate() error {
 	// Handle missing sections if possible.
 	if c.Logging == nil {
@@ -405,12 +390,6 @@ func (c *Config) FixupAndValidate() error {
 	if err := c.Account.validate(); err != nil {
 		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
 	}
-
-	// Registration
-	if c.Registration == nil {
-		return errors.New("config: error, Registration config section is non-optional")
-	}
-	err = c.Registration.validate()
 	return err
 }
 
