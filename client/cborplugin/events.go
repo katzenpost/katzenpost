@@ -19,8 +19,8 @@ package cborplugin
 import (
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/katzenpost/client/events"
-	"github.com/katzenpost/core/cborplugin"
+	"github.com/katzenpost/katzenpost/client/events"
+	"github.com/katzenpost/katzenpost/core/cborplugin"
 )
 
 type Event struct {

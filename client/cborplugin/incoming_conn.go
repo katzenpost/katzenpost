@@ -33,9 +33,9 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/client/constants"
-	"github.com/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 )
 
 type incomingConn struct {

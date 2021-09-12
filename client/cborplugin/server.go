@@ -32,10 +32,10 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/client/constants"
-	"github.com/katzenpost/client/events"
-	"github.com/katzenpost/core/log"
-	"github.com/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/events"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
 type Session interface {

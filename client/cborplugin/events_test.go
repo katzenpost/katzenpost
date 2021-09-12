@@ -19,7 +19,7 @@ package cborplugin
 import (
 	"testing"
 
-	"github.com/katzenpost/client/events"
+	"github.com/katzenpost/katzenpost/client/events"
 	"github.com/stretchr/testify/require"
 )
 
