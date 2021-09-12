@@ -23,10 +23,6 @@ var (
 	// PacketLength is the length of a Sphinx Packet in bytes.
 	PacketLength = sphinx.HeaderLength + sphinx.PayloadTagLength + ForwardPayloadLength
 
-	// SphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
-	// in bytes.
-	SphinxPlaintextHeaderLength = 1 + 1
-
 	// ForwardPayloadLength is the length of the usable forward payload of a
 	// Sphinx Packet in bytes.  This is named `SURB_PAYLOAD_LENGTH` in the
 	// End to End spec due to packets constructed using a SURB having the
@@ -39,5 +35,5 @@ var (
 	// payload.  The End to End spec calls this `PAYLOAD_LENGTH` but this is
 	// somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
 	// spec.
-	UserForwardPayloadLength = ForwardPayloadLength - (SphinxPlaintextHeaderLength + sphinx.SURBLength)
+	UserForwardPayloadLength = ForwardPayloadLength - sphinx.SURBLength
 )

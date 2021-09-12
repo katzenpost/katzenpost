@@ -196,7 +196,7 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 		} else {
 			pkt, err = NewPacket(rand.Reader, path, payload)
 			require.NoError(err, "NewPacket failed")
-			require.Len(pkt, HeaderLength+PayloadTagLength+len(payload), "Packet Length")
+			require.Len(pkt, HeaderLength+PayloadTagLength+payloadLengthPrefixOverhead+len(payload), "Packet Length")
 		}
 
 		tests[nrHops] = hexSphinxTest{

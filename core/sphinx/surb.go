@@ -17,6 +17,7 @@
 package sphinx
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 
@@ -93,6 +94,10 @@ func NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]b
 	defer utils.ExplicitBzero(sprpIV[:])
 
 	// Assemble the packet.
+	prefix := make([]byte, payloadLengthPrefixOverhead)
+	binary.BigEndian.PutUint32(prefix, uint32(len(payload)))
+	payload = append(prefix, payload...)
+
 	pkt := make([]byte, 0, len(hdr)+PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
 	pkt = append(pkt, zeroBytes[:PayloadTagLength]...)
@@ -142,5 +147,13 @@ func DecryptSURBPayload(payload, keys []byte) ([]byte, error) {
 		return nil, errInvalidTag
 	}
 
-	return b[PayloadTagLength:], nil
+	// Remove length prefix.
+	b = b[PayloadTagLength:]
+	payloadLen := binary.BigEndian.Uint32(b[:4])
+	if payloadLen+4 > uint32(len(payload)) {
+		return nil, errLengthPrefix
+	}
+	b = b[4 : 4+payloadLen]
+
+	return b, nil
 }

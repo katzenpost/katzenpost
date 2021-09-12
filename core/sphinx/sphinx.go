@@ -19,6 +19,7 @@ package sphinx
 
 import (
 	"crypto/subtle"
+	"encoding/binary"
 	"errors"
 	"io"
 
@@ -44,12 +45,15 @@ const (
 
 	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
 	PayloadTagLength = 16
+
+	payloadLengthPrefixOverhead = 4
 )
 
 var (
 	v0AD      = [2]byte{0x00, 0x00}
 	zeroBytes = [perHopRoutingInfoLength]byte{}
 
+	errLengthPrefix     = errors.New("sphinx: incorrect length prefix")
 	errTruncatedPayload = errors.New("sphinx: truncated payload")
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
 )
@@ -220,6 +224,10 @@ func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 	}
 
 	// Assemble the packet.
+	prefix := make([]byte, payloadLengthPrefixOverhead)
+	binary.BigEndian.PutUint32(prefix, uint32(len(payload)))
+	payload = append(prefix, payload...)
+
 	pkt := make([]byte, 0, len(hdr)+PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
 	pkt = append(pkt, zeroBytes[:PayloadTagLength]...)
@@ -348,7 +356,14 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 			if !utils.CtIsZero(payload[:PayloadTagLength]) {
 				return nil, replayTag[:], nil, errInvalidTag
 			}
+
+			// Remove length prefix.
 			payload = payload[PayloadTagLength:]
+			payloadLen := binary.BigEndian.Uint32(payload[:4])
+			if payloadLen+4 > uint32(len(payload)) {
+				return nil, nil, nil, errLengthPrefix
+			}
+			payload = payload[4 : 4+payloadLen]
 		}
 	}
 
