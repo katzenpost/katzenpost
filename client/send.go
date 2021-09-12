@@ -17,7 +17,6 @@
 package client
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -196,8 +195,7 @@ func (s *Session) composeMessage(recipient, provider string, message []byte, isB
 		return nil, fmt.Errorf("invalid message size: %v", len(message))
 	}
 	payload := make([]byte, constants.UserForwardPayloadLength)
-	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
-	copy(payload[4:], message)
+	copy(payload, message)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {

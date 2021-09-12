@@ -19,7 +19,6 @@
 package kaetzchen
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"sync"
@@ -166,16 +165,10 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		kaetzchenRequestsDropped.Inc()
 		return
 	}
-	ctLen := binary.BigEndian.Uint32(ct[:4])
-	if ctLen+4 > uint32(len(ct)) {
-		k.log.Error("length prefixing is incorrect in cbor plugin query")
-		kaetzchenRequestsDropped.Inc()
-		return
-	}
 
 	pluginClient.WriteChan() <- &Request{
 		ID:      pkt.ID,
-		Payload: ct[4 : 4+ctLen],
+		Payload: ct,
 		HasSURB: surb != nil,
 	}
 
@@ -194,15 +187,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
 	if surb != nil {
-		// Length prefix encode payload.
-		payload := make([]byte, 4+len(resp))
-		binary.BigEndian.PutUint32(payload[:4], uint32(len(resp)))
-		copy(payload[4:], resp)
-
-		// Prepend the response header.
-		payload = append([]byte{0x01, 0x00}, payload...)
-
-		respPkt, err := packet.NewPacketFromSURB(pkt, surb, payload)
+		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp)
 		if err != nil {
 			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
 			return
