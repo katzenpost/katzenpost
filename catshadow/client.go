@@ -832,12 +832,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 
 	payload := make([]byte, DoubleRatchetPayloadLength)
-	payloadLen := len(message)
-	if payloadLen > DoubleRatchetPayloadLength-4 {
-		payloadLen = DoubleRatchetPayloadLength - 4
-	}
-	binary.BigEndian.PutUint32(payload[:4], uint32(payloadLen))
-	copy(payload[4:], message)
+	copy(payload, message)
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])
 	if err != nil {
@@ -1050,9 +1045,6 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			}
 
 			// is a valid response to the tip of our spool, so increment the pointer
-			off := binary.BigEndian.Uint32(tp.MessageID[:4])
-
-			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d", spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
 			switch {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
 				return // dup
@@ -1169,11 +1161,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 				// short plaintext received
 				return errInvalidPlaintextLength
 			}
-			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			if payloadLen+4 > uint32(len(plaintext)) {
-				return errInvalidPlaintextLength
-			}
-			message.Plaintext = plaintext[4 : 4+payloadLen]
+			message.Plaintext = plaintext
 			message.Timestamp = time.Now()
 			message.Outbound = false
 			break

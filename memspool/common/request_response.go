@@ -17,7 +17,6 @@
 package common
 
 import (
-	"encoding/binary"
 	"errors"
 
 	"github.com/fxamacker/cbor/v2"
