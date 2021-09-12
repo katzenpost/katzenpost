@@ -77,6 +77,10 @@ func NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]b
 		ivOff  = keyOff + crypto.SPRPKeyLength
 	)
 
+	if len(payload) > ForwardPayloadLength {
+		return nil, nil, errors.New("sphinx: payload is too big")
+	}
+
 	if len(surb) != SURBLength {
 		return nil, nil, errors.New("sphinx: invalid packet, truncated SURB")
 	}

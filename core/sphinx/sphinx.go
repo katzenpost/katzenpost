@@ -46,6 +46,9 @@ const (
 	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
 	PayloadTagLength = 16
 
+	ForwardPayloadLength     = 2 * 1024
+	UserForwardPayloadLength = ForwardPayloadLength - SURBLength
+
 	payloadLengthPrefixOverhead = 4
 )
 
@@ -215,6 +218,9 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 // NewPacket creates a forward Sphinx packet with the provided path and
 // payload, using the provided entropy source.
 func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+	if len(payload) > ForwardPayloadLength {
+		return nil, errors.New("sphinx: payload is too big")
+	}
 	hdr, sprpKeys, err := createHeader(r, path)
 	if err != nil {
 		return nil, err

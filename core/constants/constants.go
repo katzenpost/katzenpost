@@ -29,11 +29,11 @@ var (
 	// SURB's space available for payload.  The Sphinx spec calls this
 	// `PAYLOAD_LENGTH`, since the Sphinx spec is agnostic to how SURBs are
 	// transported.
-	ForwardPayloadLength = 2 * 1024
+	ForwardPayloadLength = sphinx.ForwardPayloadLength
 
 	// UserForwardPayloadLength is the length of user portion of the forward
 	// payload.  The End to End spec calls this `PAYLOAD_LENGTH` but this is
 	// somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
 	// spec.
-	UserForwardPayloadLength = ForwardPayloadLength - sphinx.SURBLength
+	UserForwardPayloadLength = sphinx.UserForwardPayloadLength
 )
