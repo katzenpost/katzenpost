@@ -128,7 +128,7 @@ func CreateSpool(privKey *eddsa.PrivateKey) ([]byte, error) {
 		MessageID: 0,
 		Message:   emptyMessage,
 	}
-	return cbor.Marshal(s)
+	return s.Marshal()
 }
 
 func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, error) {
@@ -139,7 +139,7 @@ func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, e
 		Signature: signature,
 		SpoolID:   spoolID,
 	}
-	return cbor.Marshal(s)
+	return s.Marshal()
 }
 
 func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
@@ -151,7 +151,7 @@ func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
 		SpoolID: spoolID,
 		Message: message[:],
 	}
-	return cbor.Marshal(s)
+	return s.Marshal()
 }
 
 func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.PrivateKey) ([]byte, error) {
@@ -163,5 +163,5 @@ func ReadFromSpool(spoolID [SpoolIDSize]byte, messageID uint32, privKey *eddsa.P
 		SpoolID:   spoolID,
 		MessageID: messageID,
 	}
-	return cbor.Marshal(s)
+	return s.Marshal()
 }
