@@ -19,7 +19,6 @@ package cborplugin
 import (
 	"net"
 
-	"encoding/binary"
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
 
@@ -148,19 +147,9 @@ func (c *CommandIO) writer() {
 }
 
 func readCommand(conn net.Conn, command Command) error {
-	rawLen := make([]byte, 2)
-	_, err := conn.Read(rawLen)
-	if err != nil {
-		return err
-	}
-	commandLen := binary.BigEndian.Uint16(rawLen)
+	dec := cbor.NewDecoder(conn)
+	err := dec.Decode(command)
 
-	rawCommand := make([]byte, commandLen)
-	_, err = conn.Read(rawCommand)
-	if err != nil {
-		return err
-	}
-	err = cbor.Unmarshal(rawCommand, command)
 	if err != nil {
 		return err
 	}
@@ -174,12 +163,7 @@ func writeCommand(conn net.Conn, command Command) error {
 		return err
 	}
 
-	output := make([]byte, 0, len(serialized)+2)
-	tmp := make([]byte, 2)
-	binary.BigEndian.PutUint16(tmp, uint16(len(serialized)))
-	output = append(output, tmp...)
-	output = append(output, serialized...)
-	_, err = conn.Write(output)
+	_, err = conn.Write(serialized)
 	if err != nil {
 		return err
 	}
