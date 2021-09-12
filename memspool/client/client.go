@@ -20,6 +20,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
@@ -81,12 +82,27 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 	if err != nil {
 		return nil, err
 	}
-	reply, err := session.BlockingSendReliableMessage(receiver, provider, createCmd)
+
+	req := &cborplugin.Request{HasSURB: true}
+	req.Payload = createCmd
+
+	rawReq, err := cbor.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	// create a kaetzchen Request
+	reply, err := session.BlockingSendReliableMessage(receiver, provider, rawReq)
+	if err != nil {
+		return nil, err
+	}
+	resp := &cborplugin.Response{}
+	err = cbor.Unmarshal(reply, &resp)
 	if err != nil {
 		return nil, err
 	}
 	spoolResponse := &common.SpoolResponse{}
-	err = cbor.Unmarshal(reply, &spoolResponse)
+	err = spoolResponse.Unmarshal(resp.Payload)
 	if err != nil {
 		return nil, err
 	}
