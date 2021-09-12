@@ -64,6 +64,16 @@
     Disable = false
 
    [[Provider.CBORPluginKaetzchen]]
+     Disable = false
+     Capability = "cborecho"
+     Endpoint = "cborecho"
+     Command = "/go/bin/echo_server"
+     MaxConcurrency = 1
+     [Provider.CBORPluginKaetzchen.Config]
+      log_dir = "/conf/service_logs"
+      log_level = "DEBUG"
+
+   [[Provider.CBORPluginKaetzchen]]
     Capability = "reunion"
     Endpoint = "+reunion"
     Command = "/go/bin/reunion_katzenpost_server"
