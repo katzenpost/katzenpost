@@ -50,7 +50,7 @@ func TestDockerClientExchange1(t *testing.T) {
 
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
-	cfg, linkKey, err := client.NewEphemeralClient(cfg)
+	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
@@ -141,7 +141,7 @@ func TestDockerClientExchange2(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := client.NewEphemeralClient(cfg)
+	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
