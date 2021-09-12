@@ -164,9 +164,6 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cbo
 		binary.BigEndian.PutUint32(payload[:4], uint32(len(resp)))
 		copy(payload[4:], resp)
 
-		// Prepend the response header.
-		payload = append([]byte{0x01, 0x00}, payload...)
-
 		respPkt, err := packet.NewPacketFromSURB(pkt, surb, payload)
 		if err != nil {
 			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
