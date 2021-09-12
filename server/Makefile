@@ -2,6 +2,7 @@ warped?=false
 ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
 testnet-build:
+	go mod verify
 	cd cmd/server ; go build -ldflags ${ldflags}
 	cd ../memspool/server/cmd/memspool ; go build -ldflags ${ldflags}
 	cd ../reunion/servers/reunion_katzenpost_server ; go build -ldflags ${ldflags}
