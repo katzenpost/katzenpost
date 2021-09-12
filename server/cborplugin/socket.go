@@ -158,12 +158,8 @@ func readCommand(conn net.Conn, command Command) error {
 }
 
 func writeCommand(conn net.Conn, command Command) error {
-	serialized, err := cbor.Marshal(command)
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.Write(serialized)
+	enc := cbor.NewEncoder(conn)
+	err := enc.Encode(command)
 	if err != nil {
 		return err
 	}
