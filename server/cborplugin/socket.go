@@ -117,7 +117,7 @@ func (c *CommandIO) WriteChan() chan Command {
 }
 
 func (c *CommandIO) reader() {
-	dec := cbor.NewDecoder(conn)
+	dec := cbor.NewDecoder(c.conn)
 	for {
 		cmd := c.commandBuilder.Build()
 		err := dec.Decode(cmd)
