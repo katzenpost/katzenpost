@@ -92,5 +92,5 @@ shell: deps
 	docker run ${docker_args} --rm -it katzenpost/deps bash
 
 rootshell: deps
-	docker run -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
+	docker run --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
 
