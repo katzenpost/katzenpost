@@ -67,6 +67,7 @@ const (
 // SpoolPayloadLength is the length of the spool append message payload.
 var SpoolPayloadLength = (constants.UserForwardPayloadLength - 4) - QueryOverhead
 
+// SpoolRequest is the message sent to the spool server
 type SpoolRequest struct {
 	Command byte
 
@@ -92,12 +93,33 @@ func (s *SpoolRequest) Encode() ([]byte, error) {
 	return cbor.Marshal(s)
 }
 
+// Marshal implements cborplugin.Command
+func (s *SpoolRequest) Marshal() ([]byte, error) {
+	return cbor.Marshal(s)
+}
+
+// Unmarshal implements cborplugin.Command
+func (s *SpoolRequest) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, s)
+}
+
+// SpoolResponse is the response message from the spool server
 type SpoolResponse struct {
 	SpoolID   [SpoolIDSize]byte
 	MessageID uint32
 	Message   []byte
 	Status    string
 	Padding   []byte
+}
+
+// Marshal implements cborplugin.Command
+func (s *SpoolResponse) Marshal() ([]byte, error) {
+	return cbor.Marshal(s)
+}
+
+// Unmarshal implements cborplugin.Command
+func (s *SpoolResponse) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, s)
 }
 
 func SpoolResponseFromBytes(raw []byte) (SpoolResponse, error) {
