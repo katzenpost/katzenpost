@@ -22,7 +22,7 @@ debian_base:
 		docker run --name katzenpost_debian_base -it golang:buster bash -c 'apt update && apt upgrade -y' \
 		&& docker commit katzenpost_debian_base katzenpost/debian_base \
 		&& docker rm katzenpost_debian_base; \
-	fi
+        fi
 
 deps: debian_base
 	if ! docker images|grep katzenpost/deps; then \
@@ -30,7 +30,7 @@ deps: debian_base
 			bash -c 'cd /go/katzenpost; go mod download' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
-	fi
+        fi
 
 update-go-mod: deps
 	docker run ${docker_args} --name katzenpost_deps -it katzenpost/deps \
@@ -50,7 +50,7 @@ server: deps
 			bash -c 'cd /go/katzenpost/server && make warped=${warped} testnet-build testnet-install' \
 		&& docker commit katzenpost_server katzenpost/server \
 		&& docker rm katzenpost_server; \
-	fi
+        fi
 
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
@@ -58,7 +58,7 @@ voting_authority: deps
 			bash -c 'cd /go/katzenpost/authority/cmd/voting && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
-	fi
+        fi
 
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
@@ -66,7 +66,7 @@ nonvoting_authority: deps
 			bash -c 'cd /go/katzenpost/authority/cmd/nonvoting && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
-	fi
+        fi
 
 clean-local-images:
 	cd nonvoting_mixnet; docker-compose rm -sf
