@@ -117,9 +117,10 @@ func (c *CommandIO) WriteChan() chan Command {
 }
 
 func (c *CommandIO) reader() {
+	dec := cbor.NewDecoder(conn)
 	for {
 		cmd := c.commandBuilder.Build()
-		err := readCommand(c.conn, cmd)
+		err := dec.Decode(cmd)
 		if err != nil {
 			panic(err) // XXX
 		}
@@ -129,40 +130,19 @@ func (c *CommandIO) reader() {
 		case c.readCh <- cmd:
 		}
 	}
-
 }
 
 func (c *CommandIO) writer() {
+	enc := cbor.NewEncoder(c.conn)
 	for {
 		select {
 		case <-c.HaltCh():
 			return
 		case cmd := <-c.writeCh:
-			err := writeCommand(c.conn, cmd)
+			err := enc.Encode(cmd)
 			if err != nil {
 				panic(err) // XXX
 			}
 		}
 	}
-}
-
-func readCommand(conn net.Conn, command Command) error {
-	dec := cbor.NewDecoder(conn)
-	err := dec.Decode(command)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func writeCommand(conn net.Conn, command Command) error {
-	enc := cbor.NewEncoder(conn)
-	err := enc.Encode(command)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
