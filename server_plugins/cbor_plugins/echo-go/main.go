@@ -25,8 +25,8 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	corecborplugin "github.com/katzenpost/core/cborplugin"
-	"github.com/katzenpost/core/log"
+	corecborplugin "github.com/katzenpost/katzenpost/core/cborplugin"
+	"github.com/katzenpost/katzenpost/core/log"
 	"golang.org/x/sync/errgroup"
 )
 
