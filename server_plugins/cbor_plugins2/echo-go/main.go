@@ -78,11 +78,11 @@ func main() {
 
 	// Log to a file.
 	logFile := path.Join(logDir, fmt.Sprintf("echo.%d.log", os.Getpid()))
-	logBackend, err := log.New(logFile, "DEBUG", false)
+	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)
 	}
-	serverLog := logBackend.GetLogger("server")
+	serverLog := logBackend.GetLogger("echo_server")
 
 	// start service
 	tmpDir, err := ioutil.TempDir("", "echo_server")
