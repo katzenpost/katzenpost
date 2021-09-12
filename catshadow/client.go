@@ -991,7 +991,8 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 		defer c.sendMap.Delete(replyEvent.MessageID)
 		switch tp := ev.(type) {
 		case *SentMessageDescriptor:
-			spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
+			spoolResponse := common.SpoolResponse{}
+			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
 			if err != nil {
 				c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
 				return
