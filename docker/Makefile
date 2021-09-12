@@ -34,7 +34,7 @@ deps: debian_base
 
 go-mod-tidy: deps
 	docker run ${docker_args} --name katzenpost_deps -it katzenpost/deps \
-			bash -c 'cd /go/katzenpost; go mod tidy; go mod download' \
+			bash -c 'cd /go/katzenpost; go mod tidy' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
