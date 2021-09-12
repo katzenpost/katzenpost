@@ -25,7 +25,7 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	corecborplugin "github.com/katzenpost/katzenpost/core/cborplugin"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/core/log"
 	"golang.org/x/sync/errgroup"
 )
@@ -44,17 +44,17 @@ func (p *Payload) Unmarshal(b []byte) error {
 
 type payloadFactory struct{}
 
-func (p *payloadFactory) Build() corecborplugin.Command {
+func (p *payloadFactory) Build() cborplugin.Command {
 	return new(Payload)
 }
 
 type Echo struct{}
 
-func (e *Echo) OnCommand(cmd corecborplugin.Command) (corecborplugin.Command, error) {
+func (e *Echo) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	return cmd, nil
 }
 
-func (e *Echo) RegisterConsumer(s *corecborplugin.Server) {
+func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
 	// noop
 }
 
@@ -93,10 +93,10 @@ func main() {
 	commandFactory := new(payloadFactory)
 	echo := new(Echo)
 
-	var server *corecborplugin.Server
+	var server *cborplugin.Server
 	g := new(errgroup.Group)
 	g.Go(func() error {
-		server = corecborplugin.NewServer(serverLog, socketFile, commandFactory, echo)
+		server = cborplugin.NewServer(serverLog, socketFile, commandFactory, echo)
 		return nil
 
 	})
