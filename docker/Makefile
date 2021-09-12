@@ -105,9 +105,15 @@ ping: deps
 		&& docker rm katzenpost_ping; \
         fi
 
+ping-rebuild: deps
+		docker run ${docker_args} --name katzenpost_ping -it katzenpost/deps \
+			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
+		&& docker commit katzenpost_ping katzenpost/ping \
+		&& docker rm katzenpost_ping; \
+
 run-ping: ping
 	docker run --network=host ${docker_args} --rm -it katzenpost/ping \
-        /go/bin/ping -c /go/katzenpost/ping/nonvoting_docker_mixnet.toml -s echo
+        /go/bin/ping -c /go/katzenpost/ping/nonvoting_docker_mixnet.toml -s echo -printDiff
 
 shell: deps
 	docker run --network=host ${docker_args} --rm -it katzenpost/deps bash
