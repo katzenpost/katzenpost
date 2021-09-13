@@ -68,10 +68,10 @@ func (r *Request) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, r)
 }
 
-type requestFactory struct{}
+type responseFactory struct{}
 
-func (p *requestFactory) Build() cborplugin.Command {
-	return new(Request)
+func (p *responseFactory) Build() cborplugin.Command {
+	return new(Response)
 }
 
 // Response is the response received after sending a Request to the plugin.
@@ -229,7 +229,7 @@ func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]by
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &requestFactory{})
+	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &responseFactory{})
 	err := plugin.Start(command, args)
 	return plugin, err
 }
