@@ -165,7 +165,7 @@ func (pkt *Packet) Dispose() {
 func (pkt *Packet) copyToRaw(b []byte) error {
 	if len(b) != constants.PacketLength {
 		// TODO: When we have actual large packets, handle them.
-		return fmt.Errorf("invalid Sphinx packet size: %v", len(b))
+		return fmt.Errorf("invalid Sphinx packet size: %v (should be %v)", len(b), constants.PacketLength)
 	}
 
 	// The common case of standard packet sizes uses a pool allocator

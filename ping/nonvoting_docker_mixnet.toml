@@ -5,7 +5,7 @@
 [Logging]
   Disable = false
   Level = "DEBUG"
-  File = "/tmp/ping.log"
+  File = ""
 
 [NonvotingAuthority]
     Address = "127.0.0.1:29483"
@@ -13,4 +13,5 @@
 
 [Debug]
   PollingInterval = 10
+  DisableDecoyTraffic = true
   

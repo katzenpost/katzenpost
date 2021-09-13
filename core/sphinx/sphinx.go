@@ -46,10 +46,10 @@ const (
 	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
 	PayloadTagLength = 16
 
-	ForwardPayloadLength     = 2 * 1024
-	UserForwardPayloadLength = ForwardPayloadLength - SURBLength
-
 	payloadLengthPrefixOverhead = 4
+
+	ForwardPayloadLength     = 2 * 1024 - payloadLengthPrefixOverhead
+	UserForwardPayloadLength = ForwardPayloadLength - SURBLength
 )
 
 var (
@@ -230,9 +230,11 @@ func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 	}
 
 	// Assemble the packet.
-	prefix := make([]byte, payloadLengthPrefixOverhead)
-	binary.BigEndian.PutUint32(prefix, uint32(len(payload)))
-	payload = append(prefix, payload...)
+//	prefix := make([]byte, payloadLengthPrefixOverhead)
+//	binary.BigEndian.PutUint32(prefix, uint32(len(payload)))
+//	payload = append(prefix, payload...)
+//    padding := make([]byte, ForwardPayloadLength - len(payload))
+//    payload = append(payload, padding...)
 
 	pkt := make([]byte, 0, len(hdr)+PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
