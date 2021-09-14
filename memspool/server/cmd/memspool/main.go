@@ -17,16 +17,16 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/op/go-logging.v1"
-	"bytes"
 	"io/ioutil"
 	"os"
 	"path"
-	"github.com/fxamacker/cbor/v2"
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/log"
