@@ -64,7 +64,8 @@ func (s *Server) worker() {
 		case cmd := <-s.socket.ReadChan():
 			reply, err := s.plugin.OnCommand(cmd)
 			if err != nil {
-				panic(err)
+				s.log.Debugf("plugin returned err: %s", err)
+				continue
 			}
 			if reply == nil {
 				continue
