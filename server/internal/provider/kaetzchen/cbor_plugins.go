@@ -1,4 +1,4 @@
-// cbor_plugins2.go - cbor plugin system for kaetzchen services
+// cbor_plugins.go - cbor plugin system for kaetzchen services
 // Copyright (C) 2021  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
