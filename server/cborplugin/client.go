@@ -31,6 +31,7 @@ import (
 	"os/exec"
 	"syscall"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"gopkg.in/op/go-logging.v1"
@@ -43,9 +44,47 @@ type Request struct {
 	HasSURB bool
 }
 
+// Marshal serializes Request
+func (r *Request) Marshal() ([]byte, error) {
+	return cbor.Marshal(r)
+}
+
+// Unmarshal deserializes Request
+func (r *Request) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, r)
+}
+
+// RequestFactory is a CommandBuilder for Requests
+type RequestFactory struct {
+}
+
+// Build returns a Request
+func (r *RequestFactory) Build() Command {
+	return new(Request)
+}
+
 // Response is the response received after sending a Request to the plugin.
 type Response struct {
 	Payload []byte
+}
+
+// Marshal serializes Response
+func (r *Response) Marshal() ([]byte, error) {
+	return cbor.Marshal(r)
+}
+
+// Unmarshal deserializes Response
+func (r *Response) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, r)
+}
+
+// ResponseFactory is a CommandBuilder for Responses
+type ResponseFactory struct {
+}
+
+// Build returns a Response
+func (r *ResponseFactory) Build() Command {
+	return new(Response)
 }
 
 // Parameters is an optional mapping that plugins can publish, these get

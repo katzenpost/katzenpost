@@ -22,9 +22,11 @@ import (
 	"fmt"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/op/go-logging.v1"
+	"bytes"
 	"io/ioutil"
 	"os"
 	"path"
+	"github.com/fxamacker/cbor/v2"
 	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/log"
@@ -73,8 +75,6 @@ func main() {
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.memspool.socket", os.Getpid()))
 
-	// requestFactory turns CommandIO payloads into SpoolRequests
-	spoolRequests := new(spoolRequestFactory)
 	spoolMap, err := server.NewMemSpoolMap(dataStore, serverLog)
 	if err != nil {
 		panic(err)
@@ -84,7 +84,7 @@ func main() {
 	g := new(errgroup.Group)
 	g.Go(func() error {
 		h := &spoolRequestHandler{m: spoolMap, log: serverLog}
-		server = cborplugin.NewServer(serverLog, socketFile, spoolRequests, h)
+		server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
 		return nil
 	})
 	err = g.Wait()
@@ -99,14 +99,6 @@ func main() {
 	}
 }
 
-// this daemon expects cbor-encoded SpoolRequests via its socket
-type spoolRequestFactory struct {
-}
-
-func (s *spoolRequestFactory) Build() cborplugin.Command {
-	return new(common.SpoolRequest)
-}
-
 type spoolRequestHandler struct {
 	m   *server.MemSpoolMap
 	log *logging.Logger
@@ -115,8 +107,25 @@ type spoolRequestHandler struct {
 // OnCommand processes a SpoolRequest and returns a SpoolResponse
 func (s *spoolRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	switch r := cmd.(type) {
-	case *common.SpoolRequest:
-		return server.HandleSpoolRequest(s.m, r, s.log), nil
+	case *cborplugin.Request:
+		// the padding bytes were not stripped because
+		// without parsing the start of Payload we wont
+		// know how long it is, so we will use a streaming
+		// decoder and simply return the first cbor object
+		// and then discard the decoder and buffer
+		req := &common.SpoolRequest{}
+		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
+		err := dec.Decode(req)
+		if err != nil {
+			return nil, err
+		}
+		resp := server.HandleSpoolRequest(s.m, req, s.log)
+		rawResp, err := resp.Marshal()
+		if err != nil {
+			s.log.Errorf("OnCommand called with invalid request")
+			return nil, err
+		}
+		return &cborplugin.Response{Payload: rawResp}, nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")

@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	cConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -52,40 +52,6 @@ type PluginParameters = map[PluginName]interface{}
 // with plugins. Each plugin can optionally set one or more
 // parameters.
 type ServiceMap = map[PluginName]PluginParameters
-
-// Request is the struct type used in service query requests to plugins.
-type Request struct {
-	ID      uint64
-	Payload []byte
-	HasSURB bool
-}
-
-func (r *Request) Marshal() ([]byte, error) {
-	return cbor.Marshal(r)
-}
-
-func (r *Request) Unmarshal(b []byte) error {
-	return cbor.Unmarshal(b, r)
-}
-
-type responseFactory struct{}
-
-func (p *responseFactory) Build() cborplugin.Command {
-	return new(Response)
-}
-
-// Response is the response received after sending a Request to the plugin.
-type Response struct {
-	Payload []byte
-}
-
-func (r *Response) Marshal() ([]byte, error) {
-	return cbor.Marshal(r)
-}
-
-func (r *Response) Unmarshal(b []byte) error {
-	return cbor.Unmarshal(b, r)
-}
 
 // CBORPluginWorker is similar to Kaetzchen worker but uses
 // CBOR over UNIX domain socket to talk to plugins.
@@ -166,38 +132,40 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		return
 	}
 
-	pluginClient.WriteChan() <- &Request{
+	pluginClient.WriteChan() <- &cborplugin.Request{
 		ID:      pkt.ID,
 		Payload: ct,
 		HasSURB: surb != nil,
 	}
-
-	rawResponse := <-pluginClient.ReadChan()
-	resp, err := rawResponse.Marshal()
-	switch err {
-	case nil:
-	case ErrNoResponse:
-		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
-		kaetzchenRequests.Inc()
-		return
-	default:
-		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, resp)
-		return
-	}
-
-	// Iff there is a SURB, generate a SURB-Reply and schedule.
-	if surb != nil {
-		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp)
-		if err != nil {
-			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
+	cborResponse := <-pluginClient.ReadChan()
+	switch r := cborResponse.(type) {
+	case *cborplugin.Response:
+		if len(r.Payload) > cConstants.UserForwardPayloadLength {
+			// response is probably invalid, so drop it
+			k.log.Errorf("Got response too long: %d > max (%d)",
+			len(r.Payload), cConstants.UserForwardPayloadLength)
+			kaetzchenRequestsDropped.Inc()
 			return
 		}
+		// Iff there is a SURB, generate a SURB-Reply and schedule.
+		if surb != nil {
+			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload)
+			if err != nil {
+				k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
+				return
+			}
 
-		k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
-		k.glue.Scheduler().OnPacket(respPkt)
+			k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
+			k.glue.Scheduler().OnPacket(respPkt)
+			return
+		}
+		k.log.Debugf("No SURB provided: %v", pkt.ID)
+	default:
+		// received some unknown command type
+		k.log.Errorf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, cborResponse)
+		kaetzchenRequestsDropped.Inc()
 		return
 	}
-	k.log.Debugf("No SURB provided: %v", pkt.ID)
 }
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
@@ -229,7 +197,7 @@ func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]by
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &responseFactory{})
+	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
 	err := plugin.Start(command, args)
 	return plugin, err
 }
