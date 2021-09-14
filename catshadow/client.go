@@ -831,10 +831,19 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		Outbound:  true,
 	}
 
+	serialized, err := cbor.Marshal(outMessage)
+	if err != nil {
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
+
+	}
 	payload := make([]byte, DoubleRatchetPayloadLength)
 	copy(payload, message)
 	contact.ratchetMutex.Lock()
-	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])
+	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
