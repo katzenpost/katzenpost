@@ -21,7 +21,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/fxamacker/cbor/v2"
 	mrand "math/rand"
 	"sync"
 	"sync/atomic"
@@ -39,7 +38,6 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -309,11 +307,6 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
 		}
 	}
-	resp := &cborplugin.Response{}
-	err = cbor.Unmarshal(plaintext, &resp)
-	if err != nil {
-		return err
-	}
 
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
@@ -326,7 +319,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		replyWaitChan := replyWaitChanRaw.(chan []byte)
 		// do not block the worker if the receiver timed out!
 		select {
-		case replyWaitChan <- resp.Payload:
+		case replyWaitChan <- plaintext:
 		default:
 			s.log.Warningf("Failed to respond to a blocking message")
 			close(replyWaitChan)
@@ -334,7 +327,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	} else {
 		s.eventCh.In() <- &MessageReplyEvent{
 			MessageID: msg.ID,
-			Payload:   resp.Payload,
+			Payload:   plaintext,
 			Err:       nil,
 		}
 	}
