@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
@@ -36,7 +37,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
-	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
@@ -840,8 +840,6 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		}
 
 	}
-	payload := make([]byte, DoubleRatchetPayloadLength)
-	copy(payload, message)
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
 	if err != nil {
@@ -1170,8 +1168,13 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 				// short plaintext received
 				return errInvalidPlaintextLength
 			}
-			message.Plaintext = plaintext
-			message.Timestamp = time.Now()
+
+			// if the message is a cbor-encoded Message, extract the fields
+			err := cbor.Unmarshal(plaintext, &message)
+			if err != nil {
+				message.Plaintext = plaintext
+				message.Timestamp = time.Now()
+			}
 			message.Outbound = false
 			break
 		default:
