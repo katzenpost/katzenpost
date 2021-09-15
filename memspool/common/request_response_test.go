@@ -19,7 +19,6 @@ package common
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -39,33 +38,4 @@ func TestCommandSerialization(t *testing.T) {
 	require.Equal(sr.Signature, signature)
 	require.NotNil(sr.PublicKey)
 	require.NotNil(sr.MessageID)
-}
-
-func TestSerializationPaddingSymmetry(t *testing.T) {
-	assert := assert.New(t)
-	sig := [64]byte{}
-	spoolID := [SpoolIDSize]byte{}
-	publicKey := [32]byte{}
-	request := SpoolRequest{
-		Command:   1,
-		SpoolID:   spoolID,
-		Signature: sig[:],
-		PublicKey: publicKey[:],
-		MessageID: 0,
-		Message:   []byte("hello123"),
-	}
-	requestRaw, err := request.Marshal()
-	assert.NoError(err)
-
-	response := SpoolResponse{
-		SpoolID: spoolID,
-		Message: []byte("hello123"),
-		Status:  "OK",
-	}
-	responseRaw, err := response.Marshal()
-	assert.NoError(err)
-	assert.Equal(len(requestRaw), len(responseRaw))
-
-	t.Logf("request overhead is %d", (len(requestRaw) - len(request.Message)))
-	t.Logf("response overhead is %d", (len(responseRaw) - len(response.Message)))
 }
