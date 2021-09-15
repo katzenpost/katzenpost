@@ -39,7 +39,6 @@ func TestCommandSerialization(t *testing.T) {
 	require.Equal(sr.Signature, signature)
 	require.NotNil(sr.PublicKey)
 	require.NotNil(sr.MessageID)
-	require.NotNil(sr.MessageID)
 }
 
 func TestSerializationPaddingSymmetry(t *testing.T) {
