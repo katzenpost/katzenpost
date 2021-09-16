@@ -22,10 +22,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 
-	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -39,7 +37,6 @@ func parametersHandler(clock *katzenpost.Clock) cborplugin.Parameters {
 }
 
 func main() {
-	logDir := flag.String("log_dir", "", "logging directory")
 	logPath := flag.String("log", "", "Log file path. Default STDOUT.")
 	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	stateFilePath := flag.String("s", "statefile", "State file path.")
@@ -49,26 +46,6 @@ func main() {
 	if *epochClockName != "katzenpost" {
 		panic("Thus far only the Katzenpost epoch clock is supported in this server implementation.")
 	}
-
-	// Ensure that the log directory exists.
-	s, err := os.Stat(*logDir)
-	if os.IsNotExist(err) {
-		fmt.Printf("Log directory '%s' doesn't exist.", *logDir)
-		os.Exit(1)
-	}
-	if !s.IsDir() {
-		fmt.Println("Log directory must actually be a directory.")
-		os.Exit(1)
-	}
-
-	// Log to a file
-	logFile := path.Join(*logDir, fmt.Sprintf("panda.%d.log", os.Getpid()))
-	logBackend, err := log.New(logFile, *logLevel, false)
-	if err != nil {
-		panic(err)
-	}
-	serverLog := logBackend.GetLogger("reunion_server")
-	serverLog.Info("reunion server started")
 
 	// start service
 	tmpDir, err := ioutil.TempDir("", "reunion_server")
@@ -85,7 +62,7 @@ func main() {
 	var server *cborplugin.Server
 	g := new(errgroup.Group)
 	g.Go(func() error {
-		server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), reunionServer)
+		server = cborplugin.NewServer(reunionServer.GetNewLogger("reunion_cbor_listener"), socketFile, new(cborplugin.RequestFactory), reunionServer)
 		return nil
 	})
 	err = g.Wait()
