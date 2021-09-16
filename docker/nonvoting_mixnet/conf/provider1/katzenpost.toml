@@ -61,10 +61,14 @@
 EnableEphemeralClients = true
 TrustOnFirstUse = true
 
-[[Provider.Kaetzchen]]
-    Disable = false
+   [[Provider.CBORPluginKaetzchen]]
     Capability = "echo"
-    Endpoint = "+echo"
+    Endpoint = "echo"
+    Command = "/go/bin/echo_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
+      log_level = "DEBUG"
+      log_dir = "/conf/service_logs"
 
    [[Provider.CBORPluginKaetzchen]]
      Disable = false
