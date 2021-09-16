@@ -838,7 +838,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 			MessageID: convoMesgID,
 			Err:       err,
 		}
-
+		return
 	}
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
