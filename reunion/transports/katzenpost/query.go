@@ -19,7 +19,6 @@
 package katzenpost
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"strconv"
@@ -91,10 +90,9 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	if reply == nil {
 		return nil, errors.New("error, reply is nil")
 	}
-	replyLen := binary.BigEndian.Uint32(reply[:4])
-	cmd, err := commands.FromBytes(reply[4 : 4+replyLen])
+	cmd, err := commands.FromBytes(reply)
 	if err != nil {
-		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode command in reply len %d, %s", replyLen, err.Error())
+		return nil, fmt.Errorf("Katzenpost Transport Query failure, cannot decode command in reply, %s", err.Error())
 	}
 	return cmd, nil
 }
