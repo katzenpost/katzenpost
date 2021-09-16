@@ -164,13 +164,7 @@ func TestMessageResponseCommand2(t *testing.T) {
 	b := cmd.ToBytes()
 	require.Equal(len(b), messageResponseLength)
 
-	zeros := [51]byte{}
-	b = append(b, zeros[:]...)
-
 	c, err := FromBytes(b)
-	require.Error(err)
-
-	c, err = FromBytes(b[:messageResponseLength])
 	require.NoError(err)
 
 	require.IsType(cmd, c)

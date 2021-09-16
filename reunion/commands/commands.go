@@ -80,13 +80,13 @@ func (s *FetchState) ToBytes() []byte {
 }
 
 func fetchStateFromBytes(b []byte) (Command, error) {
-	if len(b) != fetchStateLength {
+	if len(b) < fetchStateLength {
 		return nil, errInvalidCommand
 	}
 	s := new(FetchState)
 	s.Epoch = binary.BigEndian.Uint64(b[1:9])
 	t1Hash := [sha256.Size]byte{}
-	copy(t1Hash[:], b[9:])
+	copy(t1Hash[:], b[9:fetchStateLength])
 	s.T1Hash = t1Hash
 	return s, nil
 }
@@ -120,6 +120,9 @@ func (s *StateResponse) ToBytes() []byte {
 }
 
 func stateResponseFromBytes(b []byte) (Command, error) {
+	if len(b) < stateResponseLength {
+		return nil, errInvalidCommand
+	}
 	s := new(StateResponse)
 	s.ErrorCode = b[1]
 	if b[2] == 1 {
@@ -130,7 +133,7 @@ func stateResponseFromBytes(b []byte) (Command, error) {
 		return nil, errInvalidCommand
 	}
 	s.LeftOverChunksHint = binary.BigEndian.Uint32(b[3:7])
-	s.Payload = b[7:]
+	s.Payload = b[7:stateResponseLength] // crypto.PayloadSize
 	return s, nil
 }
 
@@ -153,12 +156,12 @@ func (s *SendT1) ToBytes() []byte {
 }
 
 func sendT1FromBytes(b []byte) (Command, error) {
-	if len(b) != sendT1Length {
+	if len(b) < sendT1Length {
 		return nil, errInvalidCommand
 	}
 	s := new(SendT1)
 	s.Epoch = binary.BigEndian.Uint64(b[1:9])
-	s.Payload = b[9:]
+	s.Payload = b[9:sendT1Length]
 	return s, nil
 }
 
@@ -189,7 +192,7 @@ func (s *SendT2) ToBytes() []byte {
 }
 
 func sendT2FromBytes(b []byte) (Command, error) {
-	if len(b) != sendT2Length {
+	if len(b) < sendT2Length {
 		return nil, errInvalidCommand
 	}
 	s := new(SendT2)
@@ -200,7 +203,7 @@ func sendT2FromBytes(b []byte) (Command, error) {
 	dsthash := [sha256.Size]byte{}
 	copy(dsthash[:], b[9+sha256.Size:9+sha256.Size+sha256.Size])
 	s.DstT1Hash = dsthash
-	s.Payload = b[9+sha256.Size+sha256.Size:]
+	s.Payload = b[9+sha256.Size+sha256.Size:sendT2Length]
 	return s, nil
 }
 
@@ -227,11 +230,14 @@ func (s *SendT3) ToBytes() []byte {
 	copy(out[9:], s.SrcT1Hash[:])
 	copy(out[9+sha256.Size:], s.DstT1Hash[:])
 	out = append(out, s.Payload...)
+	if len(out) > sendT3Length {
+		panic("wtf")
+	}
 	return out
 }
 
 func sendT3FromBytes(b []byte) (Command, error) {
-	if len(b) != sendT3Length {
+	if len(b) < sendT3Length {
 		return nil, errInvalidCommand
 	}
 	s := new(SendT3)
@@ -251,7 +257,7 @@ func sendT3FromBytes(b []byte) (Command, error) {
 	copy(dsthash[:], b[head:tail])
 	s.DstT1Hash = dsthash
 
-	s.Payload = b[tail:]
+	s.Payload = b[tail:sendT3Length]
 	return s, nil
 }
 
@@ -271,7 +277,7 @@ func (s *MessageResponse) ToBytes() []byte {
 }
 
 func messageResponseFromBytes(b []byte) (Command, error) {
-	if len(b) != messageResponseLength {
+	if len(b) < messageResponseLength {
 		return nil, errInvalidCommand
 	}
 	s := new(MessageResponse)
