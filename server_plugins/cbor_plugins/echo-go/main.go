@@ -17,6 +17,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -25,9 +26,10 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"github.com/katzenpost/katzenpost/core/log"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
 type Payload struct {
@@ -51,7 +53,12 @@ func (p *payloadFactory) Build() cborplugin.Command {
 type Echo struct{}
 
 func (e *Echo) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
-	return cmd, nil
+	switch r := cmd.(type) {
+	case *cborplugin.Request:
+		return &cborplugin.Response{Payload: r.Payload}, nil
+	default:
+		return nil, errors.New("echo-plugin: Invalid Command type")
+	}
 }
 
 func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
