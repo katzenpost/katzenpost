@@ -28,13 +28,10 @@ import (
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/crypto"
 	"github.com/katzenpost/katzenpost/reunion/server"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 )
 
 var (
-	cborHandle = new(codec.CborHandle)
-
 	// InvalidResponseErr is an error used to indicate
 	// that an invalid response from the Reunion server was received.
 	InvalidResponseErr = errors.New("invalid response received from Reunion DB")

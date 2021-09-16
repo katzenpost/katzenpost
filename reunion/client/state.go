@@ -18,8 +18,8 @@
 package client
 
 import (
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/reunion/crypto"
-	"github.com/ugorji/go/codec"
 )
 
 type serializableExchange struct {
@@ -39,12 +39,9 @@ type serializableExchange struct {
 }
 
 func (s *serializableExchange) Unmarshal(data []byte) error {
-	err := codec.NewDecoderBytes(data, cborHandle).Decode(s)
-	return err
+	return cbor.Unmarshal(data, s)
 }
 
 func (s *serializableExchange) Marshal() ([]byte, error) {
-	serialized := make([]byte, 0)
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	return serialized, err
+	return cbor.Marshal(s)
 }
