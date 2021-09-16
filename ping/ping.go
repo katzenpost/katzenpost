@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/katzenpost/katzenpost/client"
@@ -42,17 +43,25 @@ and can readily scale to millions of users.
 
 func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, printDiff bool) {
 	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
+
+	prefix := make([]byte, 2)
+	binary.BigEndian.PutUint16(prefix, uint16(len(pingPayload)))
+	payload := append(prefix, pingPayload...)
+
 	passed := 0
 	failed := 0
 	for i := 0; i < count; i++ {
-		reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, pingPayload)
+
+		reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, payload)
 		if err != nil {
 			failed++
 			fmt.Printf(".") // Fail, did not receive a reply.
 			continue
 		}
 
-		if bytes.Equal(reply, pingPayload) {
+		lenPrefix := binary.BigEndian.Uint16(reply)
+
+		if bytes.Equal(reply[2:2+lenPrefix], pingPayload) {
 			passed++
 			fmt.Printf("!") // OK, received identical payload in reply.
 		} else {
