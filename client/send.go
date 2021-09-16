@@ -191,8 +191,8 @@ func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
 
 func (s *Session) composeMessage(recipient, provider string, message []byte, isBlocking bool) (*Message, error) {
 	s.log.Debug("SendMessage")
-	if len(message) > constants.UserForwardPayloadLength-4 {
-		return nil, fmt.Errorf("invalid message size: %v", len(message))
+	if len(message) > constants.UserForwardPayloadLength {
+		return nil, fmt.Errorf("message too large: %v > %v", len(message), constants.UserForwardPayloadLength)
 	}
 	payload := make([]byte, constants.UserForwardPayloadLength)
 	copy(payload, message)
