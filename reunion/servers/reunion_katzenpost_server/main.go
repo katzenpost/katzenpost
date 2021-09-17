@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"golang.org/x/sync/errgroup"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -60,12 +59,7 @@ func main() {
 	}
 
 	var server *cborplugin.Server
-	g := new(errgroup.Group)
-	g.Go(func() error {
-		server = cborplugin.NewServer(reunionServer.GetNewLogger("reunion_cbor_listener"), socketFile, new(cborplugin.RequestFactory), reunionServer)
-		return nil
-	})
-	err = g.Wait()
+	server = cborplugin.NewServer(reunionServer.GetNewLogger("reunion_cbor_listener"), socketFile, new(cborplugin.RequestFactory), reunionServer)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()

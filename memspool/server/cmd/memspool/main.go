@@ -22,7 +22,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/fxamacker/cbor/v2"
-	"golang.org/x/sync/errgroup"
 	"gopkg.in/op/go-logging.v1"
 	"io/ioutil"
 	"os"
@@ -81,13 +80,8 @@ func main() {
 	}
 
 	var server *cborplugin.Server
-	g := new(errgroup.Group)
-	g.Go(func() error {
-		h := &spoolRequestHandler{m: spoolMap, log: serverLog}
-		server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
-		return nil
-	})
-	err = g.Wait()
+	h := &spoolRequestHandler{m: spoolMap, log: serverLog}
+	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
