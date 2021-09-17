@@ -20,7 +20,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"golang.org/x/sync/errgroup"
 	"io/ioutil"
 	"os"
 	"path"
@@ -93,13 +92,8 @@ func main() {
 	}
 
 	var server *cborplugin.Server
-	g := new(errgroup.Group)
-	g.Go(func() error {
-		h := &pandaRequestHandler{p: panda, log: serverLog}
-		server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
-		return nil
-	})
-	err = g.Wait()
+	h := &pandaRequestHandler{p: panda, log: serverLog}
+	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()

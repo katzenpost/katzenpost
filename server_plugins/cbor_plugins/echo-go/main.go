@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -101,13 +100,7 @@ func main() {
 	echo := new(Echo)
 
 	var server *cborplugin.Server
-	g := new(errgroup.Group)
-	g.Go(func() error {
-		server = cborplugin.NewServer(serverLog, socketFile, commandFactory, echo)
-		return nil
-
-	})
-	err = g.Wait()
+	server = cborplugin.NewServer(serverLog, socketFile, commandFactory, echo)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
