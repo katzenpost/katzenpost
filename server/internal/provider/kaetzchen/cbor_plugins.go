@@ -125,7 +125,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	payload, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		kaetzchenRequestsDropped.Inc()
@@ -134,7 +134,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 
 	pluginClient.WriteChan() <- &cborplugin.Request{
 		ID:      pkt.ID,
-		Payload: ct,
+		Payload: payload,
 		HasSURB: surb != nil,
 	}
 	cborResponse := <-pluginClient.ReadChan()
