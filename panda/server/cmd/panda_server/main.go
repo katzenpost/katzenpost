@@ -94,14 +94,11 @@ func main() {
 	var server *cborplugin.Server
 	h := &pandaRequestHandler{p: panda, log: serverLog}
 	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
+	// emit socketFile to stdout, because this tells the mix server where to connect
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
 	os.Remove(socketFile)
-
-	if err != nil {
-		panic(err)
-	}
 }
 
 type pandaRequestHandler struct {
