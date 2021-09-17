@@ -243,7 +243,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	payload, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		k.incrementDropCounter()
@@ -261,7 +261,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 		return
 	}
 
-	resp, err = dst.OnRequest(pkt.ID, ct, surb != nil)
+	resp, err = dst.OnRequest(pkt.ID, payload, surb != nil)
 
 	switch {
 	case err == nil:
