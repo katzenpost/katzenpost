@@ -29,8 +29,10 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/client/cborplugin"
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/events"
 	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/katzenpost/core/constants"

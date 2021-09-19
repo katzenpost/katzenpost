@@ -24,6 +24,7 @@ import (
 	"time"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/events"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
