@@ -58,7 +58,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	cfg, linkKey, err := client.NewEphemeralClient(cfg)
+	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
 	if err != nil {
 		panic(err)
 	}

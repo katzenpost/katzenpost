@@ -39,12 +39,23 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
-// NewEphemeralClient creates a new linkKey and associated account on a
+// Client handles sending and receiving messages over the mix network
+type Client struct {
+	cfg        *config.Config
+	logBackend *log.Backend
+	log        *logging.Logger
+	fatalErrCh chan error
+	haltedCh   chan interface{}
+	haltOnce   *sync.Once
+
+	session *Session
+}
+
+// NewEphemeralClientConfig creates a new linkKey and associated account on a
 // provider that suppports TrustOnFirstUse clients.
-func NewEphemeralClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
+func NewEphemeralClientConfig(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
 	// Retrieve a copy of the PKI consensus document.
-	logFilePath := ""
-	backendLog, err := log.New(logFilePath, "DEBUG", false)
+	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -85,16 +96,30 @@ func NewEphemeralClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, e
 	return cfg, linkKey, nil
 }
 
-// Client handles sending and receiving messages over the mix network
-type Client struct {
-	cfg        *config.Config
-	logBackend *log.Backend
-	log        *logging.Logger
-	fatalErrCh chan error
-	haltedCh   chan interface{}
-	haltOnce   *sync.Once
+// New creates a new Client with the provided configuration.
+func New(cfg *config.Config) (*Client, error) {
+	c := new(Client)
+	c.cfg = cfg
+	c.fatalErrCh = make(chan error)
+	c.haltedCh = make(chan interface{})
+	c.haltOnce = new(sync.Once)
 
-	session *Session
+	if err := c.initLogging(); err != nil {
+		return nil, err
+	}
+
+	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
+
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-c.fatalErrCh
+		if !ok {
+			return
+		}
+		c.log.Warningf("Shutting down due to error: %v", err)
+		c.Shutdown()
+	}()
+	return c, nil
 }
 
 func (c *Client) Provider() string {
@@ -153,30 +178,4 @@ func (c *Client) NewSession(linkKey *ecdh.PrivateKey) (*Session, error) {
 	defer cancel()
 	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey)
 	return c.session, err
-}
-
-// New creates a new Client with the provided configuration.
-func New(cfg *config.Config) (*Client, error) {
-	c := new(Client)
-	c.cfg = cfg
-	c.fatalErrCh = make(chan error)
-	c.haltedCh = make(chan interface{})
-	c.haltOnce = new(sync.Once)
-
-	if err := c.initLogging(); err != nil {
-		return nil, err
-	}
-
-	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
-
-	// Start the fatal error watcher.
-	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
-		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
-	}()
-	return c, nil
 }
