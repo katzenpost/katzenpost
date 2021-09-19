@@ -22,10 +22,10 @@ import (
 	"sync"
 
 	"github.com/fxamacker/cbor/v2"
+	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
 

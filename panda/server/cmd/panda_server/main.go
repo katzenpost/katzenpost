@@ -1,107 +1,36 @@
+// main.go - panda service using cbor plugin system
+// Copyright (C) 2019  David Stainton.
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"net"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/panda/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/op/go-logging.v1"
 )
-
-var log = logging.MustGetLogger("panda")
-var logFormat = logging.MustStringFormatter(
-	"%{level:.4s} %{id:03x} %{message}",
-)
-
-func stringToLogLevel(level string) (logging.Level, error) {
-	switch level {
-	case "DEBUG":
-		return logging.DEBUG, nil
-	case "INFO":
-		return logging.INFO, nil
-	case "NOTICE":
-		return logging.NOTICE, nil
-	case "WARNING":
-		return logging.WARNING, nil
-	case "ERROR":
-		return logging.ERROR, nil
-	case "CRITICAL":
-		return logging.CRITICAL, nil
-	}
-	return -1, fmt.Errorf("invalid logging level %s", level)
-}
-
-func setupLoggerBackend(level logging.Level, writer io.Writer) logging.LeveledBackend {
-	format := logFormat
-	backend := logging.NewLogBackend(writer, "", 0)
-	formatter := logging.NewBackendFormatter(backend, format)
-	leveler := logging.AddModuleLevel(formatter)
-	leveler.SetLevel(level, "panda")
-	return leveler
-}
-
-func parametersHandler(response http.ResponseWriter, req *http.Request) {
-	params := new(cborplugin.Parameters)
-	serialized, err := cbor.Marshal(params)
-	if err != nil {
-		panic(err)
-	}
-	_, err = response.Write(serialized)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func requestHandler(panda *server.Panda, response http.ResponseWriter, req *http.Request) {
-	log.Debug("request handler")
-	request := cborplugin.Request{
-		Payload: make([]byte, 0),
-	}
-	buf, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		log.Error(err.Error())
-		panic(err)
-	}
-	req.Body.Close()
-	err = cbor.Unmarshal(buf, &request)
-	if err != nil {
-		log.Error(err.Error())
-		panic(err)
-	}
-	log.Debug("decoded request")
-	pandaResponse, err := panda.OnRequest(request.ID, request.Payload, request.HasSURB)
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
-
-	// send length prefixed CBOR response
-	reply := cborplugin.Response{
-		Payload: pandaResponse,
-	}
-	serialized, err := cbor.Marshal(reply)
-	if err != nil {
-		log.Error(err.Error())
-		panic(err)
-	}
-	log.Debugf("serialized response is len %d", len(serialized))
-	_, err = response.Write(serialized)
-	if err != nil {
-		log.Error(err.Error())
-		panic(err)
-	}
-	log.Debug("sent response")
-}
 
 func main() {
 	var logLevel string
@@ -118,14 +47,16 @@ func main() {
 
 	flag.Parse()
 
-	level, err := stringToLogLevel(logLevel)
+	dwellDuration, err := time.ParseDuration(dwellTime)
 	if err != nil {
-		fmt.Println("Invalid logging-level specified.")
-		os.Exit(1)
+		panic(err)
+	}
+	writeBackDuration, err := time.ParseDuration(writeBackInterval)
+	if err != nil {
+		panic(err)
 	}
 	if fileStore == "" {
-		fmt.Println("Invalid fileStore specified.")
-		os.Exit(1)
+		panic("Invalid fileStore specified.")
 	}
 
 	// Ensure that the log directory exists.
@@ -141,45 +72,63 @@ func main() {
 
 	// Log to a file.
 	logFile := path.Join(logDir, fmt.Sprintf("panda.%d.log", os.Getpid()))
-	f, err := os.Create(logFile)
-	logBackend := setupLoggerBackend(level, f)
-	log.SetBackend(logBackend)
-	log.Info("panda server started")
-
-	dwellDuration, err := time.ParseDuration(dwellTime)
-	if err != nil {
-		fmt.Println("failure to parse duration string")
-		os.Exit(1)
-	}
-	writeBackDuration, err := time.ParseDuration(writeBackInterval)
-	if err != nil {
-		fmt.Println("failure to parse duration string")
-		os.Exit(1)
-	}
-
-	panda, err := server.New(log, fileStore, dwellDuration, writeBackDuration)
+	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)
 	}
-	_requestHandler := func(response http.ResponseWriter, request *http.Request) {
-		requestHandler(panda, response, request)
-	}
+	serverLog := logBackend.GetLogger("panda_server")
+	serverLog.Info("panda server started")
 
-	server := http.Server{}
+	// start service
 	tmpDir, err := ioutil.TempDir("", "panda_server")
 	if err != nil {
 		panic(err)
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.panda.socket", os.Getpid()))
-	unixListener, err := net.Listen("unix", socketFile)
+
+	panda, err := server.New(serverLog, fileStore, dwellDuration, writeBackDuration)
 	if err != nil {
 		panic(err)
 	}
 
-	http.HandleFunc("/request", _requestHandler)
-	http.HandleFunc("/parameters", parametersHandler)
-
+	var server *cborplugin.Server
+	h := &pandaRequestHandler{p: panda, log: serverLog}
+	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), h)
 	fmt.Printf("%s\n", socketFile)
-	defer os.Remove(socketFile)
-	server.Serve(unixListener)
+	server.Accept()
+	server.Wait()
+	os.Remove(socketFile)
+
+	if err != nil {
+		panic(err)
+	}
+}
+
+type pandaRequestHandler struct {
+	p   *server.Panda
+	log *logging.Logger
+}
+
+// OnCommand processes a SpoolRequest and returns a SpoolResponse
+func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+	switch r := cmd.(type) {
+	case *cborplugin.Request:
+		// the padding bytes were not stripped because
+		// without parsing the start of Payload we wont
+		// know how long it is, so we will use a streaming
+		// decoder and simply return the first cbor object
+		// and then discard the decoder and buffer
+		pandaResponse, err := s.p.OnRequest(r.ID, r.Payload, r.HasSURB)
+		if err != nil {
+			s.log.Errorf("OnCommand called with invalid request")
+			return nil, err
+		}
+		return &cborplugin.Response{Payload: pandaResponse}, nil
+	default:
+		s.log.Errorf("OnCommand called with unknown Command type")
+		return nil, errors.New("Invalid Command type")
+	}
+}
+
+func (s *pandaRequestHandler) RegisterConsumer(svr *cborplugin.Server) {
 }

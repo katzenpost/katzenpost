@@ -80,11 +80,14 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 	if err != nil {
 		return nil, err
 	}
+
+	// create a kaetzchen Request
 	reply, err := session.BlockingSendReliableMessage(receiver, provider, createCmd)
 	if err != nil {
 		return nil, err
 	}
-	spoolResponse, err := common.SpoolResponseFromBytes(reply)
+	spoolResponse := &common.SpoolResponse{}
+	err = spoolResponse.Unmarshal(reply)
 	if err != nil {
 		return nil, err
 	}

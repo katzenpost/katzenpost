@@ -17,98 +17,51 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
-	"net"
-	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 
+	"github.com/fxamacker/cbor/v2"
+
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"github.com/op/go-logging"
-	"github.com/ugorji/go/codec"
 )
 
-var log = logging.MustGetLogger("echo")
-var logFormat = logging.MustStringFormatter(
-	"%{level:.4s} %{id:03x} %{message}",
-)
-
-func stringToLogLevel(level string) (logging.Level, error) {
-	switch level {
-	case "DEBUG":
-		return logging.DEBUG, nil
-	case "INFO":
-		return logging.INFO, nil
-	case "NOTICE":
-		return logging.NOTICE, nil
-	case "WARNING":
-		return logging.WARNING, nil
-	case "ERROR":
-		return logging.ERROR, nil
-	case "CRITICAL":
-		return logging.CRITICAL, nil
-	}
-	return -1, fmt.Errorf("invalid logging level %s", level)
+type Payload struct {
+	Payload []byte
 }
 
-func setupLoggerBackend(level logging.Level, writer io.Writer) logging.LeveledBackend {
-	format := logFormat
-	backend := logging.NewLogBackend(writer, "", 0)
-	formatter := logging.NewBackendFormatter(backend, format)
-	leveler := logging.AddModuleLevel(formatter)
-	leveler.SetLevel(level, "echo")
-	return leveler
+func (p *Payload) Marshal() ([]byte, error) {
+	return cbor.Marshal(p)
 }
 
-func parametersHandler(response http.ResponseWriter, req *http.Request) {
-	params := new(cborplugin.Parameters)
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, new(codec.CborHandle))
-	if err := enc.Encode(params); err != nil {
-		panic(err)
-	}
-	_, err := response.Write(serialized)
-	if err != nil {
-		panic(err)
+func (p *Payload) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, p)
+}
+
+type payloadFactory struct{}
+
+func (p *payloadFactory) Build() cborplugin.Command {
+	return new(Payload)
+}
+
+type Echo struct{}
+
+func (e *Echo) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+	switch r := cmd.(type) {
+	case *cborplugin.Request:
+		return &cborplugin.Response{Payload: r.Payload}, nil
+	default:
+		return nil, errors.New("echo-plugin: Invalid Command type")
 	}
 }
 
-func requestHandler(response http.ResponseWriter, req *http.Request) {
-	log.Debug("request handler")
-	cborHandle := new(codec.CborHandle)
-	request := cborplugin.Request{
-		Payload: make([]byte, 0),
-	}
-	err := codec.NewDecoder(req.Body, new(codec.CborHandle)).Decode(&request)
-	if err != nil {
-		log.Error(err)
-		panic(err)
-	}
-	log.Debug("decoded request")
-
-	log.Debugf("payload: %x", request.Payload)
-
-	// send length prefixed CBOR response
-	reply := cborplugin.Response{
-		Payload: request.Payload,
-	}
-	var serialized []byte
-	enc := codec.NewEncoderBytes(&serialized, cborHandle)
-	if err := enc.Encode(reply); err != nil {
-		log.Error(err)
-		panic(err)
-	}
-	log.Debugf("serialized response is len %d", len(serialized))
-	_, err = response.Write(serialized)
-	if err != nil {
-		log.Error(err)
-		panic(err)
-	}
-	log.Debug("sent response")
+func (e *Echo) RegisterConsumer(s *cborplugin.Server) {
+	// noop
 }
 
 func main() {
@@ -117,12 +70,6 @@ func main() {
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	flag.Parse()
-
-	level, err := stringToLogLevel(logLevel)
-	if err != nil {
-		fmt.Println("Invalid logging-level specified.")
-		os.Exit(1)
-	}
 
 	// Ensure that the log directory exists.
 	s, err := os.Stat(logDir)
@@ -137,26 +84,25 @@ func main() {
 
 	// Log to a file.
 	logFile := path.Join(logDir, fmt.Sprintf("echo.%d.log", os.Getpid()))
-	f, err := os.Create(logFile)
-	logBackend := setupLoggerBackend(level, f)
-	log.SetBackend(logBackend)
+	logBackend, err := log.New(logFile, logLevel, false)
+	if err != nil {
+		panic(err)
+	}
+	serverLog := logBackend.GetLogger("echo_server")
 
 	// start service
-	server := http.Server{}
-
 	tmpDir, err := ioutil.TempDir("", "echo_server")
 	if err != nil {
 		panic(err)
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.echo.socket", os.Getpid()))
+	commandFactory := new(payloadFactory)
+	echo := new(Echo)
 
-	unixListener, err := net.Listen("unix", socketFile)
-	if err != nil {
-		panic(err)
-	}
-	http.HandleFunc("/request", requestHandler)
-	http.HandleFunc("/parameters", parametersHandler)
+	var server *cborplugin.Server
+	server = cborplugin.NewServer(serverLog, socketFile, commandFactory, echo)
 	fmt.Printf("%s\n", socketFile)
-	server.Serve(unixListener)
+	server.Accept()
+	server.Wait()
 	os.Remove(socketFile)
 }

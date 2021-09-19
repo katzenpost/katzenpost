@@ -17,90 +17,27 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 
-	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/server"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"gopkg.in/op/go-logging.v1"
 )
 
-func parametersHandler(response http.ResponseWriter, req *http.Request, clock *katzenpost.Clock) {
+func parametersHandler(clock *katzenpost.Clock) cborplugin.Parameters {
 	params := make(cborplugin.Parameters)
 	epoch, _, _ := clock.Now()
 	params["epoch"] = fmt.Sprintf("[%d, %d, %d]", epoch-1, epoch, epoch+1)
-	serialized, err := cbor.Marshal(params)
-	if err != nil {
-		panic(err)
-	}
-	_, err = response.Write(serialized)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func requestHandler(log *logging.Logger, server *server.Server, response http.ResponseWriter, req *http.Request) {
-	requestBuffer := bytes.NewBuffer([]byte{})
-	_, err := requestBuffer.ReadFrom(req.Body)
-	if err != nil {
-		log.Errorf("bytes.Buffer ReadFrom error: %s", err.Error())
-		return
-	}
-	requestSlice := requestBuffer.Bytes()
-	request := cborplugin.Request{
-		Payload: make([]byte, 0),
-	}
-	err = cbor.Unmarshal(requestSlice, &request)
-	if err != nil {
-		log.Errorf("query command must be of type cborplugin.Request: %s", err.Error())
-		return
-	}
-	cmd, err := commands.FromBytes(request.Payload)
-	if err != nil {
-		log.Errorf("invalid Reunion query command found in request Payload len %d: %s", len(request.Payload), err.Error())
-		return
-	}
-	replyCmd, err := server.ProcessQuery(cmd)
-	if err != nil {
-		log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
-		// XXX: this is also triggered by an expired epoch... and does not return error to client
-		replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
-	}
-
-	rawReply := replyCmd.ToBytes()
-	log.Debugf("after server.ProcessQuery, reply command len %d", len(rawReply))
-	reply := cborplugin.Response{
-		Payload: rawReply,
-	}
-	serialized, err := cbor.Marshal(reply)
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
-
-	log.Debugf("serialized response is len %d", len(serialized))
-
-	_, err = response.Write(serialized)
-	if err != nil {
-		log.Error(err.Error())
-		return
-	}
-	log.Debug("sent response")
+	return params
 }
 
 func main() {
-	var logLevel string
 	logPath := flag.String("log", "", "Log file path. Default STDOUT.")
-	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	stateFilePath := flag.String("s", "statefile", "State file path.")
 	epochClockName := flag.String("epochClock", "katzenpost", "The epoch-clock to use.")
 	flag.Parse()
@@ -110,37 +47,25 @@ func main() {
 	}
 
 	// start service
-	httpServer := http.Server{}
-
 	tmpDir, err := ioutil.TempDir("", "reunion_server")
 	if err != nil {
 		panic(err)
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.reunion.socket", os.Getpid()))
+	reunionServer, err := server.NewServer(new(katzenpost.Clock), *stateFilePath, *logPath, *logLevel)
 
-	unixListener, err := net.Listen("unix", socketFile)
 	if err != nil {
 		panic(err)
 	}
 
-	// XXX make a reunionServer.
-	clock := new(katzenpost.Clock)
-	reunionServer, err := server.NewServer(clock, *stateFilePath, *logPath, logLevel)
-	if err != nil {
-		panic(err)
-	}
-	httpLog := reunionServer.GetNewLogger("reunion_http_server")
-
-	httpLog.Debug("Starting up...")
-	_requestHandler := func(response http.ResponseWriter, request *http.Request) {
-		requestHandler(httpLog, reunionServer, response, request)
-	}
-	_parametersHandler := func(response http.ResponseWriter, request *http.Request) {
-		parametersHandler(response, request, clock)
-	}
-	http.HandleFunc("/request", _requestHandler)
-	http.HandleFunc("/parameters", _parametersHandler)
+	var server *cborplugin.Server
+	server = cborplugin.NewServer(reunionServer.GetNewLogger("reunion_cbor_listener"), socketFile, new(cborplugin.RequestFactory), reunionServer)
 	fmt.Printf("%s\n", socketFile)
-	httpServer.Serve(unixListener)
+	server.Accept()
+	server.Wait()
 	os.Remove(socketFile)
+
+	if err != nil {
+		panic(err)
+	}
 }
