@@ -136,18 +136,6 @@ func (c *incomingConn) processCommand(rawCommand Command) {
 
 		return
 	}
-
-	/*
-		type CreateRemoteSpool struct {
-			Recipient string
-			Provider  string
-			SpoolID   []byte
-		}
-	*/
-	if command.CreateRemoteSpool != nil {
-		panic("CreateRemoteSpool not yet implemented")
-		return
-	}
 }
 
 func readCommand(conn net.Conn, command Command) error {
