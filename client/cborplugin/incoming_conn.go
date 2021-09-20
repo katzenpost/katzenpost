@@ -47,8 +47,6 @@ type incomingConn struct {
 	server  *Server
 	session Session
 
-	commandBuilder CommandBuilder
-
 	closeConnectionCh chan bool
 }
 
@@ -60,8 +58,6 @@ func newIncomingConn(logBackend *log.Backend, s *Server, conn net.Conn, session 
 		closeConnectionCh: make(chan bool),
 		encoder:           cbor.NewEncoder(conn),
 		decoder:           cbor.NewDecoder(conn),
-
-		commandBuilder: new(ControlCommandBuilder),
 	}
 	c.log = logBackend.GetLogger("incoming conn")
 
@@ -92,7 +88,7 @@ func (c *incomingConn) worker() {
 		default:
 		}
 
-		var command Command
+		command := &ControlCommand{}
 		c.decoder.Decode(command)
 		c.processCommand(command)
 	}
@@ -105,12 +101,7 @@ func (c *incomingConn) WriteEvent(event Event) {
 	}
 }
 
-func (c *incomingConn) processCommand(rawCommand Command) {
-	command, ok := rawCommand.(*ControlCommand)
-	if !ok {
-		c.log.Error("invalid command")
-		return
-	}
+func (c *incomingConn) processCommand(command *ControlCommand) {
 	if command.SendMessage != nil && command.CreateRemoteSpool != nil {
 		c.log.Error("only one command at a time")
 		return
@@ -134,5 +125,9 @@ func (c *incomingConn) processCommand(rawCommand Command) {
 
 		c.server.ReplyToSentMessage(&id, c)
 		return
+	}
+
+	if command.CreateRemoteSpool != nil {
+		panic("CreateRemoteSpool command not yet implemented")
 	}
 }
