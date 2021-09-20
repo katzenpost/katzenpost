@@ -16,19 +16,6 @@
 
 package cborplugin
 
-import (
-	"github.com/fxamacker/cbor/v2"
-)
-
-type Command interface {
-	Marshal() ([]byte, error)
-	Unmarshal(b []byte) error
-}
-
-type CommandBuilder interface {
-	Build() Command
-}
-
 type SendMessage struct {
 	Recipient string
 	Provider  string
@@ -44,18 +31,4 @@ type CreateRemoteSpool struct {
 type ControlCommand struct {
 	SendMessage       *SendMessage
 	CreateRemoteSpool *CreateRemoteSpool
-}
-
-func (c *ControlCommand) Marshal() ([]byte, error) {
-	return cbor.Marshal(c)
-}
-
-func (c *ControlCommand) Unmarshal(b []byte) error {
-	return cbor.Unmarshal(b, c)
-}
-
-type ControlCommandBuilder struct{}
-
-func (p *ControlCommandBuilder) Build() Command {
-	return new(ControlCommand)
 }

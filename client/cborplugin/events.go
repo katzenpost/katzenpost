@@ -17,10 +17,7 @@
 package cborplugin
 
 import (
-	"github.com/fxamacker/cbor/v2"
-
 	"github.com/katzenpost/katzenpost/client/events"
-	"github.com/katzenpost/katzenpost/core/cborplugin"
 )
 
 type Event struct {
@@ -29,18 +26,4 @@ type Event struct {
 	MessageSentEvent          *events.MessageSentEvent
 	MessageIDGarbageCollected *events.MessageIDGarbageCollected
 	NewDocumentEvent          *events.NewDocumentEvent
-}
-
-func (c *Event) Marshal() ([]byte, error) {
-	return cbor.Marshal(c)
-}
-
-func (c *Event) Unmarshal(b []byte) error {
-	return cbor.Unmarshal(b, c)
-}
-
-type EventBuilder struct{}
-
-func (p *EventBuilder) Build() cborplugin.Command {
-	return new(Event)
 }
