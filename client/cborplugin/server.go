@@ -113,6 +113,9 @@ func (s *Server) eventWorker() {
 func (s *Server) processEvent(event events.Event) {
 	switch v := event.(type) {
 	case *events.ConnectionStatusEvent:
+		s.sendEvent(Event{
+			ConnectionStatusEvent: v,
+		})
 	case *events.MessageReplyEvent:
 		rawSentMessage, ok := s.replyRoutes.Load(v.MessageID)
 		if !ok {
@@ -125,15 +128,21 @@ func (s *Server) processEvent(event events.Event) {
 			return
 		}
 
-		event := &Event{
+		event := Event{
 			MessageReplyEvent: v,
 		}
-		sentMessage.IncomingConnection.WriteCommand(event)
+		sentMessage.IncomingConnection.WriteEvent(event)
 
 		s.replyRoutes.Delete(v.MessageID)
 	case *events.MessageSentEvent:
+		s.sendEvent(Event{
+			MessageSentEvent: v,
+		})
 	case *events.MessageIDGarbageCollected:
 	case *events.NewDocumentEvent:
+		s.sendEvent(Event{
+			NewDocumentEvent: v,
+		})
 	default:
 		s.log.Error("Plugins: received invalid event type")
 		return
@@ -184,4 +193,17 @@ func (s *Server) ReplyToSentMessage(id *[constants.MessageIDLength]byte, incomin
 		IncomingConnection: incomingConn,
 	}
 	s.replyRoutes.Store(id, &sentMessage)
+}
+
+func (s *Server) sendEvent(event Event) {
+	s.Lock()
+	defer s.Unlock()
+
+	for e := s.conns.Front(); e != nil; e = e.Next() {
+		conn, ok := e.Value.(*incomingConn)
+		if !ok {
+			panic("wtf")
+		}
+		conn.WriteEvent(event)
+	}
 }

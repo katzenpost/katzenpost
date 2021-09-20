@@ -26,7 +26,6 @@ package cborplugin
 
 import (
 	"container/list"
-	"encoding/binary"
 	"io"
 	"net"
 
@@ -39,9 +38,11 @@ import (
 )
 
 type incomingConn struct {
-	log  *logging.Logger
-	conn net.Conn
-	e    *list.Element
+	log     *logging.Logger
+	conn    net.Conn
+	e       *list.Element
+	encoder *cbor.Encoder
+	decoder *cbor.Decoder
 
 	server  *Server
 	session Session
@@ -57,6 +58,8 @@ func newIncomingConn(logBackend *log.Backend, s *Server, conn net.Conn, session 
 		conn:              conn,
 		session:           session,
 		closeConnectionCh: make(chan bool),
+		encoder:           cbor.NewEncoder(conn),
+		decoder:           cbor.NewDecoder(conn),
 
 		commandBuilder: new(ControlCommandBuilder),
 	}
@@ -89,19 +92,16 @@ func (c *incomingConn) worker() {
 		default:
 		}
 
-		cmd := c.commandBuilder.Build()
-		err := readCommand(c.conn, cmd)
-		if err != nil {
-			c.log.Error(err.Error())
-		}
-		c.processCommand(cmd)
+		var command Command
+		c.decoder.Decode(command)
+		c.processCommand(command)
 	}
 }
 
-func (c *incomingConn) WriteCommand(cmd Command) {
-	err := writeCommand(c.conn, cmd)
+func (c *incomingConn) WriteEvent(event Event) {
+	err := c.encoder.Encode(event)
 	if err != nil {
-		c.log.Error(err.Error())
+		c.log.Errorf("WriteEvent failure: %s", err)
 	}
 }
 
@@ -133,47 +133,6 @@ func (c *incomingConn) processCommand(rawCommand Command) {
 		}
 
 		c.server.ReplyToSentMessage(&id, c)
-
 		return
 	}
-}
-
-func readCommand(conn net.Conn, command Command) error {
-	rawLen := make([]byte, 2)
-	_, err := conn.Read(rawLen)
-	if err != nil {
-		return err
-	}
-	commandLen := binary.BigEndian.Uint16(rawLen)
-
-	rawCommand := make([]byte, commandLen)
-	_, err = conn.Read(rawCommand)
-	if err != nil {
-		return err
-	}
-	err = cbor.Unmarshal(rawCommand, command)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func writeCommand(conn net.Conn, command Command) error {
-	serialized, err := cbor.Marshal(command)
-	if err != nil {
-		return err
-	}
-
-	output := make([]byte, 0, len(serialized)+2)
-	tmp := make([]byte, 2)
-	binary.BigEndian.PutUint16(tmp, uint16(len(serialized)))
-	output = append(output, tmp...)
-	output = append(output, serialized...)
-	_, err = conn.Write(output)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
