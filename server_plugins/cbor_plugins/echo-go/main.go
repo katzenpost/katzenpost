@@ -25,29 +25,9 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/fxamacker/cbor/v2"
-
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
-
-type Payload struct {
-	Payload []byte
-}
-
-func (p *Payload) Marshal() ([]byte, error) {
-	return cbor.Marshal(p)
-}
-
-func (p *Payload) Unmarshal(b []byte) error {
-	return cbor.Unmarshal(b, p)
-}
-
-type payloadFactory struct{}
-
-func (p *payloadFactory) Build() cborplugin.Command {
-	return new(Payload)
-}
 
 type Echo struct{}
 
@@ -96,11 +76,10 @@ func main() {
 		panic(err)
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.echo.socket", os.Getpid()))
-	commandFactory := new(payloadFactory)
 	echo := new(Echo)
 
 	var server *cborplugin.Server
-	server = cborplugin.NewServer(serverLog, socketFile, commandFactory, echo)
+	server = cborplugin.NewServer(serverLog, socketFile, new(cborplugin.RequestFactory), echo)
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
