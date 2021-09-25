@@ -18,14 +18,15 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"fmt"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-var pingPayload = []byte(`Data encryption is used widely to protect the content of Internet
+var basePayload = []byte(`Data encryption is used widely to protect the content of Internet
 communications and enables the myriad of activities that are popular today,
 from online banking to chatting with loved ones. However, encryption is not
 sufficient to protect the meta-data associated with the communications.
@@ -44,31 +45,49 @@ and can readily scale to millions of users.
 func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, printDiff bool) {
 	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
 
-	prefix := make([]byte, 2)
-	binary.BigEndian.PutUint16(prefix, uint16(len(pingPayload)))
-	payload := append(prefix, pingPayload...)
-
 	passed := 0
 	failed := 0
 	for i := 0; i < count; i++ {
 
-		reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, payload)
+		var nonce [32]byte
+
+		_, err := rand.Reader.Read(nonce[:])
+
+		if err != nil {
+			panic(err)
+		}
+
+		pingPayload := append(nonce[:], basePayload...)
+
+		cborPayload, err := cbor.Marshal(pingPayload)
+		if err != nil {
+			fmt.Printf("Failed to marshal: %v\n", err)
+			panic(err)
+		}
+
+		reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, cborPayload)
 		if err != nil {
 			failed++
 			fmt.Printf(".") // Fail, did not receive a reply.
 			continue
 		}
 
-		lenPrefix := binary.BigEndian.Uint16(reply)
+		var replyPayload []byte
 
-		if bytes.Equal(reply[2:2+lenPrefix], pingPayload) {
+		err = cbor.Unmarshal(reply, &replyPayload)
+		if err != nil {
+			fmt.Printf("Failed to unmarshal: %s\n", err)
+			panic(err)
+		}
+
+		if bytes.Equal(replyPayload, pingPayload) {
 			passed++
 			fmt.Printf("!") // OK, received identical payload in reply.
 		} else {
 			fmt.Printf("~") // Fail, received unexpected payload in reply.
 
 			if printDiff {
-				fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", reply, pingPayload)
+				fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
 			}
 		}
 	}
