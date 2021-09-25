@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
@@ -36,7 +37,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
-	ratchet "github.com/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
@@ -831,15 +831,17 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		Outbound:  true,
 	}
 
-	payload := make([]byte, DoubleRatchetPayloadLength)
-	payloadLen := len(message)
-	if payloadLen > DoubleRatchetPayloadLength-4 {
-		payloadLen = DoubleRatchetPayloadLength - 4
+	serialized, err := cbor.Marshal(outMessage)
+	if err != nil {
+		c.eventCh.In() <- &MessageNotSentEvent{
+			Nickname:  nickname,
+			MessageID: convoMesgID,
+			Err:       err,
+		}
+		return
 	}
-	binary.BigEndian.PutUint32(payload[:4], uint32(payloadLen))
-	copy(payload[4:], message)
 	contact.ratchetMutex.Lock()
-	ciphertext, err := contact.ratchet.Encrypt(nil, payload[:])
+	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
 	if err != nil {
 		c.log.Errorf("failed to encrypt: %s", err)
 		contact.ratchetMutex.Unlock()
@@ -991,7 +993,8 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 		defer c.sendMap.Delete(replyEvent.MessageID)
 		switch tp := ev.(type) {
 		case *SentMessageDescriptor:
-			spoolResponse, err := common.SpoolResponseFromBytes(replyEvent.Payload)
+			spoolResponse := common.SpoolResponse{}
+			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
 			if err != nil {
 				c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
 				return
@@ -1049,9 +1052,6 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			}
 
 			// is a valid response to the tip of our spool, so increment the pointer
-			off := binary.BigEndian.Uint32(tp.MessageID[:4])
-
-			c.log.Debugf("Got a valid spool response: %d, status: %s, len %d in response to: %d", spoolResponse.MessageID, spoolResponse.Status, len(spoolResponse.Message), off)
 			switch {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
 				return // dup
@@ -1164,16 +1164,29 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			// message decrypted successfully
 			decrypted = true
 			nickname = contact.Nickname
-			if len(plaintext) < 4 {
-				// short plaintext received
-				return errInvalidPlaintextLength
+
+			// if the message is a cbor-encoded Message, extract the fields
+			err := cbor.Unmarshal(plaintext, &message)
+			if err != nil {
+				// FIXME: sometime soon, we should remove this
+				// backwards-compatibility code path which allows receiving
+				// messages that were sent and spooled prior to the cbor
+				// message upgrade.
+
+				if len(plaintext) < 4 {
+						// short plaintext received
+						return errInvalidPlaintextLength
+				}
+
+				payloadLen := binary.BigEndian.Uint32(plaintext[:4])
+				if payloadLen+4 > uint32(len(plaintext)) {
+					return errInvalidPlaintextLength
+				}
+
+				message.Plaintext = plaintext[4 : 4+payloadLen]
+				message.Timestamp = time.Now()
+
 			}
-			payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-			if payloadLen+4 > uint32(len(plaintext)) {
-				return errInvalidPlaintextLength
-			}
-			message.Plaintext = plaintext[4 : 4+payloadLen]
-			message.Timestamp = time.Now()
 			message.Outbound = false
 			break
 		default:
