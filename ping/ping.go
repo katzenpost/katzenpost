@@ -19,6 +19,8 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"sync"
+	"sync/atomic"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
@@ -45,8 +47,10 @@ and can readily scale to millions of users.
 func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, printDiff bool) {
 	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
 
-	passed := 0
-	failed := 0
+	wg := new(sync.WaitGroup)
+
+	var passed, failed uint64
+
 	for i := 0; i < count; i++ {
 
 		var nonce [32]byte
@@ -65,32 +69,41 @@ func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescripto
 			panic(err)
 		}
 
-		reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, cborPayload)
-		if err != nil {
-			failed++
-			fmt.Printf(".") // Fail, did not receive a reply.
-			continue
-		}
 
-		var replyPayload []byte
+		// make new goroutine for each ping to send them in parallel
+		wg.Add(1)
+		go func () {
 
-		err = cbor.Unmarshal(reply, &replyPayload)
-		if err != nil {
-			fmt.Printf("Failed to unmarshal: %s\n", err)
-			panic(err)
-		}
-
-		if bytes.Equal(replyPayload, pingPayload) {
-			passed++
-			fmt.Printf("!") // OK, received identical payload in reply.
-		} else {
-			fmt.Printf("~") // Fail, received unexpected payload in reply.
-
-			if printDiff {
-				fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
+			defer wg.Done()
+			reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, cborPayload)
+			if err != nil {
+				atomic.AddUint64(&failed, 1)
+				fmt.Printf("%v", err)
+				fmt.Printf(".") // Fail, did not receive a reply.
+				return
 			}
-		}
+
+			var replyPayload []byte
+
+			err = cbor.Unmarshal(reply, &replyPayload)
+			if err != nil {
+				fmt.Printf("Failed to unmarshal: %s\n", err)
+				panic(err)
+			}
+
+			if bytes.Equal(replyPayload, pingPayload) {
+				atomic.AddUint64(&passed, 1)
+				fmt.Printf("!") // OK, received identical payload in reply.
+			} else {
+				fmt.Printf("~") // Fail, received unexpected payload in reply.
+
+				if printDiff {
+					fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
+				}
+			}
+		}()
 	}
+	wg.Wait()
 	fmt.Printf("\n")
 
 	percent := (float64(passed) * float64(100)) / float64(count)
