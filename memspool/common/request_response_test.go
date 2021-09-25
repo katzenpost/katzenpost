@@ -19,34 +19,23 @@ package common
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-func TestSerializationPaddingSymmetry(t *testing.T) {
-	assert := assert.New(t)
-	sig := [64]byte{}
-	spoolID := [SpoolIDSize]byte{}
-	publicKey := [32]byte{}
-	request := SpoolRequest{
-		Command:   1,
-		SpoolID:   spoolID,
-		Signature: sig[:],
-		PublicKey: publicKey[:],
-		MessageID: 0,
-		Message:   []byte("hello123"),
-	}
-	requestRaw, err := request.Encode()
-	assert.NoError(err)
-
-	response := SpoolResponse{
-		SpoolID: spoolID,
-		Message: []byte("hello123"),
-		Status:  "OK",
-	}
-	responseRaw, err := response.Encode()
-	assert.NoError(err)
-	assert.Equal(len(requestRaw), len(responseRaw))
-
-	t.Logf("request overhead is %d", (len(requestRaw) - len(request.Message)))
-	t.Logf("response overhead is %d", (len(responseRaw) - len(response.Message)))
+func TestCommandSerialization(t *testing.T) {
+	require := require.New(t)
+	pk, err := eddsa.NewKeypair(rand.Reader)
+	signature := pk.Sign(pk.PublicKey().Bytes())
+	require.NoError(err)
+	cmd, err := CreateSpool(pk)
+	require.NoError(err)
+	sr := new(SpoolRequest)
+	sr.Unmarshal(cmd)
+	require.Equal(sr.Command, uint8(CreateSpoolCommand))
+	require.NotNil(sr.Signature)
+	require.Equal(sr.Signature, signature)
+	require.NotNil(sr.PublicKey)
+	require.NotNil(sr.MessageID)
 }

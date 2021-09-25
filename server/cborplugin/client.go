@@ -1,5 +1,5 @@
-// client.go - client of cbor plugin system for kaetzchen services
-// Copyright (C) 2018  David Stainton.
+// client.go - client of new cbor plugin system for kaetzchen services
+// Copyright (C) 2021  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -16,7 +16,7 @@
 
 // Package cborplugin is a plugin system allowing mix network services
 // to be added in any language. It communicates queries and responses to and from
-// the mix server using CBOR over HTTP over UNIX domain socket. Beyond that,
+// the mix server using CBOR over UNIX domain socket. Beyond that,
 // a client supplied SURB is used to route the response back to the client
 // as described in our Kaetzchen specification document:
 //
@@ -26,14 +26,10 @@ package cborplugin
 
 import (
 	"bufio"
-	"bytes"
-	"context"
 	"io"
 	"net"
-	"net/http"
 	"os/exec"
 	"syscall"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -48,9 +44,47 @@ type Request struct {
 	HasSURB bool
 }
 
+// Marshal serializes Request
+func (r *Request) Marshal() ([]byte, error) {
+	return cbor.Marshal(r)
+}
+
+// Unmarshal deserializes Request
+func (r *Request) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, r)
+}
+
+// RequestFactory is a CommandBuilder for Requests
+type RequestFactory struct {
+}
+
+// Build returns a Request
+func (r *RequestFactory) Build() Command {
+	return new(Request)
+}
+
 // Response is the response received after sending a Request to the plugin.
 type Response struct {
 	Payload []byte
+}
+
+// Marshal serializes Response
+func (r *Response) Marshal() ([]byte, error) {
+	return cbor.Marshal(r)
+}
+
+// Unmarshal deserializes Response
+func (r *Response) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, r)
+}
+
+// ResponseFactory is a CommandBuilder for Responses
+type ResponseFactory struct {
+}
+
+// Build returns a Response
+func (r *ResponseFactory) Build() Command {
+	return new(Response)
 }
 
 // Parameters is an optional mapping that plugins can publish, these get
@@ -88,29 +122,47 @@ type ServicePlugin interface {
 // has a Halt method. Client implements this interface
 // and proxies data between this mix server and the
 // external plugin program.
+
 type Client struct {
 	worker.Worker
 
+	socket *CommandIO
+
 	logBackend *log.Backend
 	log        *logging.Logger
-	httpClient *http.Client
+
+	socketFile string
 	cmd        *exec.Cmd
-	socketPath string
-	endpoint   string
+	conn       net.Conn
+
+	commandBuilder CommandBuilder
+
 	capability string
-	params     *Parameters
+	endpoint   string
 }
 
 // New creates a new plugin client instance which represents the single execution
 // of the external plugin program.
-func New(command, capability, endpoint string, logBackend *log.Backend) *Client {
+
+func NewClient(logBackend *log.Backend, capability, endpoint string, commandBuilder CommandBuilder) *Client {
 	return &Client{
-		capability: capability,
-		endpoint:   endpoint,
-		logBackend: logBackend,
-		log:        logBackend.GetLogger(command),
-		httpClient: nil,
+		socket:         NewCommandIO(logBackend.GetLogger("client_socket")),
+		logBackend:     logBackend,
+		log:            logBackend.GetLogger("client"),
+		commandBuilder: commandBuilder,
+		capability:     capability,
+		endpoint:       endpoint,
 	}
+}
+
+func (c *Client) Capability() string {
+	return c.capability
+}
+
+func (c *Client) GetParameters() *map[string]interface{} {
+	responseParams := make(map[string]interface{})
+	responseParams["endpoint"] = c.endpoint
+	return &responseParams
 }
 
 // Start execs the plugin and starts a worker thread to listen
@@ -121,27 +173,17 @@ func (c *Client) Start(command string, args []string) error {
 	if err != nil {
 		return err
 	}
-	c.Go(c.worker)
+	c.Go(c.reaper)
+	c.socket.Start(true, c.socketFile, c.commandBuilder)
 	return nil
 }
 
-func (c *Client) worker() {
+func (c *Client) reaper() {
 	<-c.HaltCh()
 	c.cmd.Process.Signal(syscall.SIGTERM)
 	err := c.cmd.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
-	}
-}
-
-func (c *Client) setupHTTPClient(socketPath string) {
-	c.httpClient = &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-				return new(net.Dialer).DialContext(ctx, "unix", socketPath)
-			},
-		},
 	}
 }
 
@@ -181,65 +223,15 @@ func (c *Client) launch(command string, args []string) error {
 	// read and decode plugin stdout
 	stdoutScanner := bufio.NewScanner(stdout)
 	stdoutScanner.Scan()
-	c.socketPath = stdoutScanner.Text()
-	c.log.Debugf("plugin socket path:'%s'\n", c.socketPath)
-	c.setupHTTPClient(c.socketPath)
-
-	c.log.Debug("finished launching plugin.")
+	c.socketFile = stdoutScanner.Text()
+	c.log.Debugf("plugin socket path:'%s'\n", c.socketFile)
 	return nil
 }
 
-// OnRequest send a query request to plugin using CBOR + HTTP over Unix domain socket.
-func (c *Client) OnRequest(request *Request) ([]byte, error) {
-	serialized, err := cbor.Marshal(request)
-	if err != nil {
-		return nil, err
-	}
-
-	rawResponse, err := c.httpClient.Post("http://unix/request", "application/octet-stream", bytes.NewReader(serialized))
-	if err != nil {
-		return nil, err
-	}
-	response := new(Response)
-	decoder := cbor.NewDecoder(rawResponse.Body)
-	err = decoder.Decode(&response)
-	if err != nil {
-		return nil, err
-	}
-	return response.Payload, nil
+func (c *Client) ReadChan() chan Command {
+	return c.socket.ReadChan()
 }
 
-// Capability are used in Mix Descriptor publication to give
-// service clients more information about the service. Not
-// plugins will need to use this feature.
-func (c *Client) Capability() string {
-	return c.capability
-}
-
-// GetParameters are used in Mix Descriptor publication to give
-// service clients more information about the service. Not
-// plugins will need to use this feature.
-func (c *Client) GetParameters() *Parameters {
-	// get plugin parameters if any
-	c.log.Debug("requesting plugin Parameters for Mix Descriptor publication...")
-	rawResponse, err := c.httpClient.Post("http://unix/parameters", "application/octet-stream", http.NoBody)
-	if err != nil {
-		c.log.Debugf("post failure: %s", err)
-		c.Halt()
-		return nil
-	}
-	responseParams := make(Parameters)
-	decoder := cbor.NewDecoder(rawResponse.Body)
-	err = decoder.Decode(&responseParams)
-	if err != nil {
-		c.log.Debugf("decode failure: %s", err)
-		return nil
-	}
-	// XXX: why does this happen?
-	if responseParams == nil {
-		c.log.Debugf("no parameters set for %s", c.capability)
-		responseParams = make(Parameters)
-	}
-	responseParams["endpoint"] = c.endpoint
-	return &responseParams
+func (c *Client) WriteChan() chan Command {
+	return c.socket.WriteChan()
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/epochtime"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -185,6 +186,38 @@ func (s *Server) sendT3(sendT3 *commands.SendT3) (*commands.MessageResponse, err
 		ErrorCode: commands.ResponseStatusOK,
 	}
 	return response, nil
+}
+
+// RegisterConsumers implemenets cborplugin.PluginClient
+func (s *Server) RegisterConsumer(*cborplugin.Server) {
+	return
+}
+
+// OnCommand implemenets cborplugin.PluginClient
+func (s *Server) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+	switch r := cmd.(type) {
+	case *cborplugin.Request:
+		cmd, err := commands.FromBytes(r.Payload)
+		var replyCmd commands.Command
+		if err != nil {
+			replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
+			s.log.Errorf("invalid Reunion query command found in request Payload len %d: %s", len(r.Payload), err.Error())
+			return nil, err
+		}
+		replyCmd, err = s.ProcessQuery(cmd)
+		if err != nil {
+			s.log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
+			// XXX: this is also triggered by an expired epoch... and does not return error to client
+			replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
+		}
+
+		rawReply := replyCmd.ToBytes()
+		reply := &cborplugin.Response{Payload: rawReply}
+		return reply, nil
+	default:
+		s.log.Errorf("OnCommand called with unknown Command type")
+		return nil, errors.New("Invalid Command type")
+	}
 }
 
 // ProcessQuery processes the given query command and returns a response command or an error.
