@@ -19,9 +19,12 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"sync"
+	"sync/atomic"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
@@ -42,56 +45,86 @@ produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `)
 
-func sequentialPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, printDiff bool) {
-	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
+func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, printDiff bool) bool {
+	var nonce [32]byte
 
-	passed := 0
-	failed := 0
+	_, err := rand.Reader.Read(nonce[:])
+
+	if err != nil {
+		panic(err)
+	}
+
+	pingPayload := append(nonce[:], basePayload...)
+
+	cborPayload, err := cbor.Marshal(pingPayload)
+	if err != nil {
+		fmt.Printf("Failed to marshal: %v\n", err)
+		panic(err)
+	}
+
+	reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, cborPayload)
+
+	if err != nil {
+		fmt.Printf("\nerror: %v\n", err)
+		fmt.Printf(".") // Fail, did not receive a reply.
+		return false
+	}
+
+	var replyPayload []byte
+
+	err = cbor.Unmarshal(reply, &replyPayload)
+	if err != nil {
+		fmt.Printf("Failed to unmarshal: %s\n", err)
+		panic(err)
+	}
+
+	if bytes.Equal(replyPayload, pingPayload) {
+		// OK, received identical payload in reply.
+		return true
+	} else {
+		// Fail, received unexpected payload in reply.
+
+		if printDiff {
+			fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
+		}
+		return false
+	}
+}
+
+func sendPings(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, concurrency int, printDiff bool) {
+	if concurrency > constants.MaxEgressQueueSize {
+		fmt.Printf("error: concurrency cannot be greater than MaxEgressQueueSize (%d)\n", constants.MaxEgressQueueSize)
+		return
+	}
+	fmt.Printf("Sending %d Sphinx packets to %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
+
+	var passed, failed uint64
+
+	wg := new(sync.WaitGroup)
+	sem := make(chan struct{}, concurrency)
+
 	for i := 0; i < count; i++ {
 
-		var nonce [32]byte
+		sem <- struct{}{}
 
-		_, err := rand.Reader.Read(nonce[:])
+		wg.Add(1)
 
-		if err != nil {
-			panic(err)
-		}
-
-		pingPayload := append(nonce[:], basePayload...)
-
-		cborPayload, err := cbor.Marshal(pingPayload)
-		if err != nil {
-			fmt.Printf("Failed to marshal: %v\n", err)
-			panic(err)
-		}
-
-		reply, err := session.BlockingSendUnreliableMessage(serviceDesc.Name, serviceDesc.Provider, cborPayload)
-		if err != nil {
-			failed++
-			fmt.Printf(".") // Fail, did not receive a reply.
-			continue
-		}
-
-		var replyPayload []byte
-
-		err = cbor.Unmarshal(reply, &replyPayload)
-		if err != nil {
-			fmt.Printf("Failed to unmarshal: %s\n", err)
-			panic(err)
-		}
-
-		if bytes.Equal(replyPayload, pingPayload) {
-			passed++
-			fmt.Printf("!") // OK, received identical payload in reply.
-		} else {
-			fmt.Printf("~") // Fail, received unexpected payload in reply.
-
-			if printDiff {
-				fmt.Printf("\nReply payload: %x\nOriginal payload: %x\n", replyPayload, pingPayload)
+		// make new goroutine for each ping to send them in parallel
+		go func() {
+			if sendPing(session, serviceDesc, printDiff) {
+				fmt.Printf("!")
+				atomic.AddUint64(&passed, 1)
+			} else {
+				fmt.Printf("~")
+				atomic.AddUint64(&failed, 1)
 			}
-		}
+			wg.Done()
+			<-sem
+		}()
 	}
 	fmt.Printf("\n")
+
+	wg.Wait()
 
 	percent := (float64(passed) * float64(100)) / float64(count)
 	fmt.Printf("Success rate is %f percent %d/%d)\n", percent, passed, count)
