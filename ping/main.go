@@ -43,10 +43,12 @@ func main() {
 	var configFile string
 	var service string
 	var count int
+	var concurrency int
 	var printDiff bool
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.StringVar(&service, "s", "", "service name")
 	flag.IntVar(&count, "n", 5, "count")
+	flag.IntVar(&concurrency, "C", 1, "concurrency")
 	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
 	flag.Parse()
 
@@ -78,7 +80,7 @@ func main() {
 		panic(err)
 	}
 
-	sequentialPing(session, serviceDesc, count, printDiff)
+	sendPings(session, serviceDesc, count, concurrency, printDiff)
 
 	c.Shutdown()
 }
