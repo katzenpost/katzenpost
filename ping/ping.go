@@ -24,6 +24,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
@@ -91,7 +92,11 @@ func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, pri
 }
 
 func sendPings(session *client.Session, serviceDesc *utils.ServiceDescriptor, count int, concurrency int, printDiff bool) {
-	fmt.Printf("Sending %d Sphinx packet payloads to: %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
+	if concurrency > constants.MaxEgressQueueSize {
+		fmt.Printf("error: concurrency cannot be greater than MaxEgressQueueSize (%d)\n", constants.MaxEgressQueueSize)
+		return
+	}
+	fmt.Printf("Sending %d Sphinx packets to %s@%s\n", count, serviceDesc.Name, serviceDesc.Provider)
 
 	var passed, failed uint64
 
