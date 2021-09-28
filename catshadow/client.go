@@ -936,7 +936,7 @@ func (c *Client) sendReadInbox() {
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname: c.user, MessageID: a})
+	c.sendMap.Store(*mesgID, &ReadMessageDescriptor{MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
@@ -948,16 +948,14 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
 		switch tp := orig.(type) {
-		case *SentMessageDescriptor:
-			if tp.Nickname == c.user { // ack for readInbox
-				if sentEvent.Err != nil {
-					c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
-				} else {
-					c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
-				}
-				return
+		case *ReadMessageDescriptor:
+			if sentEvent.Err != nil {
+				c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
+			} else {
+				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
 			}
-
+			return
+		case *SentMessageDescriptor:
 			// since the retransmission occurs per contact
 			// set a timer on the contact
 			if contact, ok := c.contactNicknames[tp.Nickname]; !ok {
@@ -993,64 +991,62 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 		defer c.sendMap.Delete(replyEvent.MessageID)
 		switch tp := ev.(type) {
 		case *SentMessageDescriptor:
+			// Deserialize spoolresponse
 			spoolResponse := common.SpoolResponse{}
 			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
 			if err != nil {
-				c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
+				c.log.Errorf("Could not deserialize SpoolResponse to message ID %d: %s", tp.MessageID, err)
+				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+					Err: errors.New("Invalid spool response: %s", err),
+				}
 				return
 			}
-			if !spoolResponse.IsOK() {
-				// ignore not found errors when trying to fetch new messages from the inbox
-				if spoolResponse.SpoolID == c.spoolReadDescriptor.ID &&
-					spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset {
-					return
-				}
 
-				// otherwise log an error and emit an event
+			if !spoolResponse.IsOK() {
 				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 
-				c.eventCh.In() <- &MessageNotDeliveredEvent{
-					Nickname:  tp.Nickname,
-					MessageID: tp.MessageID,
-					Err:       spoolResponse.StatusAsError(),
+				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+					Err: spoolResponse.StatusAsError(),
 				}
 				return
 			}
-			if tp.Nickname != c.user {
-				// Is a Message Delivery acknowledgement for a spool write
-				c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
-				// cancel retransmission timer
-				if contact, ok := c.contactNicknames[tp.Nickname]; ok {
-					if contact.ackID != *replyEvent.MessageID {
-						// spurious ACK
-						c.log.Debugf("Dropping spurious ACK for %x", *replyEvent.MessageID)
-						return
-					}
-					if _, err := contact.outbound.Pop(); err != nil {
-						// duplicate ACK?
-						c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x %s",
-							contact.Nickname, *replyEvent.MessageID, err)
-						return // do not send an extra MessageDeliveredEvent!
-					} else {
-						// try to send the next message, if one exists
-						defer c.sendMessage(contact)
-					}
-				} else {
-					// XXX: FIXME: a renamed contact doesn't match here...
-					c.log.Warning("MessageDelivered for missing/renamed contact?", tp.Nickname)
+			c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
+			if contact, ok := c.contactNicknames[tp.Nickname]; ok {
+				if contact.ackID != *replyEvent.MessageID {
+					// spurious ACK
+					c.log.Debugf("Dropping spurious ACK for %x", *replyEvent.MessageID)
 					return
+				}
+				if _, err := contact.outbound.Pop(); err != nil {
+					// duplicate ACK?
+					c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x %s",
+						contact.Nickname, *replyEvent.MessageID, err)
+					return // do not send an extra MessageDeliveredEvent!
+				} else {
+					// try to send the next message, if one exists
+					defer c.sendMessage(contact)
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.setMessageDelivered(tp.Nickname, tp.MessageID)
 				c.save()
-				c.eventCh.In() <- &MessageDeliveredEvent{
-					Nickname:  tp.Nickname,
-					MessageID: tp.MessageID,
-				}
+				c.eventCh.In() <- &MessageDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID}
 				return
 			}
+		case *ReadMessageDescriptor:
+			// Deserialize spoolresponse
+			spoolResponse := common.SpoolResponse{}
+			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
+			if err != nil {
+				c.log.Errorf("Could not deserialize SpoolResponse to ReadInbox ID %d: %s", tp.MessageID, err)
+				return
+			}
+			if !spoolResponse.IsOK() {
+				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
+					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 
+				return
+			}
 			// is a valid response to the tip of our spool, so increment the pointer
 			switch {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
