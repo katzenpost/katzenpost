@@ -78,6 +78,16 @@
       log = "/conf/service_logs/reunion.log"
       s = "/conf/service_data/reunion.storage"
 
+  [[Provider.CBORPluginKaetzchen]]
+    Disable = false
+    Capability = "map"
+    Endpoint = "+map"
+    Command = "/go/bin/map"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
+      db = "/conf/service_data/map.storage"
+      log_dir = "/conf/service_logs"
+
 #
 # The Management section specifies the management interface configuration.
 #
