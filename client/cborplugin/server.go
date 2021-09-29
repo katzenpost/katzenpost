@@ -63,17 +63,21 @@ type Server struct {
 	closeAllWg sync.WaitGroup
 	closeAllCh chan interface{}
 
+	connectionStatusLock *sync.RWMutex
+	isConnected          bool
+
 	session Session
 }
 
 func NewServer(logBackend *log.Backend, socketFile string, session Session) *Server {
 	s := &Server{
-		logBackend:  logBackend,
-		log:         logBackend.GetLogger("server"),
-		session:     session,
-		eventsInCh:  make(chan events.Event),
-		replyRoutes: new(sync.Map),
-		closeAllCh:  make(chan interface{}),
+		logBackend:           logBackend,
+		log:                  logBackend.GetLogger("server"),
+		session:              session,
+		eventsInCh:           make(chan events.Event),
+		replyRoutes:          new(sync.Map),
+		closeAllCh:           make(chan interface{}),
+		connectionStatusLock: new(sync.RWMutex),
 	}
 
 	s.log.Debugf("listening to unix domain socket file: %s", socketFile)
@@ -147,6 +151,20 @@ func (s *Server) processEvent(event events.Event) {
 		s.log.Error("Plugins: received invalid event type")
 		return
 	}
+}
+
+func (s *Server) SetConnectionStatus(isConnected bool) {
+	s.connectionStatusLock.Lock()
+	defer s.connectionStatusLock.Unlock()
+
+	s.isConnected = isConnected
+}
+
+func (s *Server) ConnectionStatus() bool {
+	s.connectionStatusLock.RLock()
+	defer s.connectionStatusLock.RUnlock()
+
+	return s.isConnected
 }
 
 func (s *Server) connectionWorker() {

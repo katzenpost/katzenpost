@@ -66,6 +66,11 @@ func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 			s.log.Debugf("Clock skew vs provider: %v", skew)
 		}
 	}
+
+	if s.cborServer != nil {
+		s.cborServer.SetConnectionStatus(isConnected)
+	}
+
 	return isConnected
 }
 

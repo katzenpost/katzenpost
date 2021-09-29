@@ -28,7 +28,10 @@ type CreateRemoteSpool struct {
 	SpoolID   []byte
 }
 
+type ConnectionStatus struct{}
+
 type ControlCommand struct {
 	SendMessage       *SendMessage
 	CreateRemoteSpool *CreateRemoteSpool
+	ConnectionStatus  *ConnectionStatus
 }

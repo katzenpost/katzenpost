@@ -33,6 +33,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/events"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 )
@@ -102,16 +103,8 @@ func (c *incomingConn) WriteEvent(event Event) {
 }
 
 func (c *incomingConn) processCommand(command *ControlCommand) {
-	if command.SendMessage != nil && command.CreateRemoteSpool != nil {
-		c.log.Error("only one command at a time")
-		return
-	}
-	if command.SendMessage == nil && command.CreateRemoteSpool == nil {
-		c.log.Error("at least one command is required")
-		return
-	}
-
-	if command.SendMessage != nil {
+	switch {
+	case command.SendMessage != nil:
 		id := [constants.MessageIDLength]byte{}
 		_, err := io.ReadFull(rand.Reader, id[:])
 		if err != nil {
@@ -125,9 +118,16 @@ func (c *incomingConn) processCommand(command *ControlCommand) {
 
 		c.server.ReplyToSentMessage(&id, c)
 		return
-	}
-
-	if command.CreateRemoteSpool != nil {
+	case command.CreateRemoteSpool != nil:
 		panic("CreateRemoteSpool command not yet implemented")
+	case command.ConnectionStatus != nil:
+		c.WriteEvent(Event{
+			ConnectionStatusEvent: &events.ConnectionStatusEvent{
+				IsConnected: c.server.ConnectionStatus(),
+			},
+		})
+	default:
+		c.log.Error("one command is required")
+		return
 	}
 }
