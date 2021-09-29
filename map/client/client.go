@@ -116,6 +116,7 @@ func (c* Client) Put(ID common.MessageID, payload []byte) error {
 	return err
 }
 
+// Get requests ID from the chosen storage node and returns a payload or error
 func (c* Client) Get(ID common.MessageID) ([]byte, error) {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
@@ -181,15 +182,94 @@ type Encryptor interface {
 
 // SimpleStream implements a forward stream with no acknowledgements or reliability
 type SimpleStream struct {
+	rand DeterministicRandReader
+	head *block // read pointer to the current block 
+	seek int // pointer inside current block payload
+	blocks []*block // blocks contain chunked streamed data
 }
 
 // Read implements Stream.Read
 func (s *SimpleStream) Read(buf []byte) (int, error) {
-	return 0, errors.New("NotImplemented")
+	switch len(s.blocks) {
+	case 0:
+		return 0, errors.New("ReadOnEmpty")
+	}
+
+
+	for ;; {
+		b := buf[n:] // b is pointer to position in output
+		switch l := len(s.head.Payload[s.seek:]) {
+		case l > len(b):
+			nn := copy(b, s.head.Payload[s.seek:])
+			n += nn
+			s.seek += nn
+			return n, nil
+		case l < len(b):
+			n += copy(b, s.head.Payload[s.seek:])
+			s.seek = 0
+			if len(s.blocks) > 1 {
+				s.blocks = s.blocks[1:]
+				s.head = s.blocks[0]
+				mm := copy(b[l:], s.head.Payload[s.seek:])
+				s.seek += mm
+				n += mm
+				continue
+			} else {
+				// XXX no more blocks... 
+				return n, errors.New("ReadShort")
+			}
+		case l == len(b):
+			n += copy(b, s.head.Payload[s.seek:])
+			return n, nil
+		}
+	}
+	copy(buf, s.head.Payload[s.seek:])
+
+	// fill buf with the contents of s.blocks
+	for n:=0; n < len(buf); n++ {
+		// read bytes from the current block until end is reached
+		// XXX: aren't there ioutils methods we can use here...????
+		if s.seek < len(s.head.Payload) {
+			buf[n] = s.head.Payload[s.seek]
+			copy(buf, s.head.Payload[s.seek:])
+			s.seek++
+			continue
+		} else {
+			// read from next block, and drop the consumed block
+			if len(s.blocks) > 1 {
+				s.blocks = s.blocks[1:]
+				s.head = s.blocks[0]
+				s.seek = 1 // buf[s.seek]; s.seek++
+				buf[n] = s.head.Payload[0]
+				continue
+			}
+			return n, errors.New("ReadShort")
+		}
+	}
 }
 
 // Write implements Stream.Write
 func (s *SimpleStream) Write(buf []byte) (int, error) {
+	// XXX: wtf
+	//tail := 0
+	//blocks := [][]byte
+	//for ;len(buf[tail:]) > block_size {
+	//	b := block{}
+	//	b.payload = buf[tail:block_size]
+	//	chunk := buf[tail:block_size]
+	//	tail += block_size
+	//	blocks = append(blocks, chunk)
+	//}
+	//// pad trailing bytes
+	//if buf[tail:]>0 {
+	//	// last
+	//	chunk := buf[tail:]
+	//	b := block{}
+	//	b.payload = make([]byte, block_size)
+	//	copy(b.payload, buf[tail:])
+	//	blocks = append(blocks, b)
+	//}
+
 	return 0, errors.New("NotImplemented")
 }
 
