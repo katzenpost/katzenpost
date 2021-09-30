@@ -76,6 +76,8 @@ func (lCfg *Logging) validate() error {
 
 // Debug is the debug configuration.
 type Debug struct {
+	ControlSocketFile string
+
 	DisableDecoyTraffic bool
 
 	// SessionDialTimeout is the number of seconds that a session dial

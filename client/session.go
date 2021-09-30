@@ -26,8 +26,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/client/cborplugin"
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/client/events"
 	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/katzenpost/core/constants"
@@ -38,24 +43,23 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
-	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // Session is the struct type that keeps state for a given session.
 type Session struct {
 	worker.Worker
 
-	cfg       *config.Config
-	pkiClient pki.Client
-	minclient *minclient.Client
-	log       *logging.Logger
+	cfg        *config.Config
+	pkiClient  pki.Client
+	minclient  *minclient.Client
+	log        *logging.Logger
+	logBackend *log.Backend
 
 	fatalErrCh chan error
 	opCh       chan workerOp
 
 	eventCh   channels.Channel
-	EventSink chan Event
+	EventSink chan events.Event
 
 	linkKey   *ecdh.PrivateKey
 	onlineAt  time.Time
@@ -69,6 +73,8 @@ type Session struct {
 	replyWaitChanMap sync.Map // MessageID -> chan []byte
 
 	decoyLoopTally uint64
+
+	cborServer *cborplugin.Server
 }
 
 // New establishes a session with provider using key.
@@ -103,9 +109,10 @@ func NewSession(
 		linkKey:     linkKey,
 		pkiClient:   pkiClient,
 		log:         clientLog,
+		logBackend:  logBackend,
 		fatalErrCh:  fatalErrCh,
 		eventCh:     channels.NewInfiniteChannel(),
-		EventSink:   make(chan Event),
+		EventSink:   make(chan events.Event),
 		opCh:        make(chan workerOp, 8),
 		egressQueue: new(Queue),
 	}
@@ -151,6 +158,12 @@ func NewSession(
 		return nil, err
 	}
 	s.Go(s.worker)
+
+	if s.cfg.Debug.ControlSocketFile == "" {
+		s.log.Info("Debug.ControlSocketFile is unset, not starting control port listener")
+	} else {
+		s.cborServer = cborplugin.NewServer(s.logBackend, s.cfg.Debug.ControlSocketFile, s)
+	}
 	return s, nil
 }
 
@@ -162,7 +175,14 @@ func (s *Session) eventSinkWorker() {
 			return
 		case e := <-s.eventCh.Out():
 			select {
-			case s.EventSink <- e.(Event):
+			case s.EventSink <- e.(events.Event):
+			case <-s.HaltCh():
+				s.log.Debugf("Event sink worker terminating gracefully.")
+				return
+			}
+
+			select {
+			case s.cborServer.EventSink() <- e.(events.Event):
 			case <-s.HaltCh():
 				s.log.Debugf("Event sink worker terminating gracefully.")
 				return
@@ -195,7 +215,7 @@ func (s *Session) garbageCollect() {
 		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
 			s.surbIDMap.Delete(surbID)
-			s.eventCh.In() <- &MessageIDGarbageCollected{
+			s.eventCh.In() <- &events.MessageIDGarbageCollected{
 				MessageID: message.ID,
 			}
 		}
@@ -252,7 +272,7 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 // upon connection change status to the Provider
 func (s *Session) onConnection(err error) {
 	s.log.Debugf("onConnection %v", err)
-	s.eventCh.In() <- &ConnectionStatusEvent{
+	s.eventCh.In() <- &events.ConnectionStatusEvent{
 		IsConnected: err == nil,
 		Err:         err,
 	}
@@ -325,7 +345,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 			close(replyWaitChan)
 		}
 	} else {
-		s.eventCh.In() <- &MessageReplyEvent{
+		s.eventCh.In() <- &events.MessageReplyEvent{
 			MessageID: msg.ID,
 			Payload:   plaintext,
 			Err:       nil,
@@ -340,7 +360,7 @@ func (s *Session) onDocument(doc *pki.Document) {
 	s.opCh <- opNewDocument{
 		doc: doc,
 	}
-	s.eventCh.In() <- &NewDocumentEvent{
+	s.eventCh.In() <- &events.NewDocumentEvent{
 		Document: doc,
 	}
 }
