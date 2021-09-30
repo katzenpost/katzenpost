@@ -118,7 +118,14 @@ func (c *incomingConn) processCommand(command *ControlCommand) {
 
 		c.server.ReplyToSentMessage(&id, c)
 		return
+	case command.GetConsensus != nil:
+		c.WriteEvent(Event{
+			NewDocumentEvent: &events.NewDocumentEvent{
+				Document: c.server.consensus(),
+			},
+		})
 	case command.CreateRemoteSpool != nil:
+		// XXX FIX ME
 		panic("CreateRemoteSpool command not yet implemented")
 	case command.ConnectionStatus != nil:
 		c.WriteEvent(Event{

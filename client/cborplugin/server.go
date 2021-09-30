@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/events"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -66,6 +67,9 @@ type Server struct {
 	connectionStatusLock *sync.RWMutex
 	isConnected          bool
 
+	consensusDoc  *pki.Document
+	consensusLock *sync.RWMutex
+
 	session Session
 }
 
@@ -78,6 +82,7 @@ func NewServer(logBackend *log.Backend, socketFile string, session Session) *Ser
 		replyRoutes:          new(sync.Map),
 		closeAllCh:           make(chan interface{}),
 		connectionStatusLock: new(sync.RWMutex),
+		consensusLock:        new(sync.RWMutex),
 	}
 
 	s.log.Debugf("listening to unix domain socket file: %s", socketFile)
@@ -147,10 +152,23 @@ func (s *Server) processEvent(event events.Event) {
 		s.sendEvent(Event{
 			NewDocumentEvent: v,
 		})
+		s.setConsensus(v.Document)
 	default:
 		s.log.Error("Plugins: received invalid event type")
 		return
 	}
+}
+
+func (s *Server) setConsensus(consensus *pki.Document) {
+	s.consensusLock.Lock()
+	defer s.consensusLock.Unlock()
+	s.consensusDoc = consensus
+}
+
+func (s *Server) consensus() *pki.Document {
+	s.consensusLock.RLock()
+	defer s.consensusLock.RUnlock()
+	return s.consensusDoc
 }
 
 func (s *Server) SetConnectionStatus(isConnected bool) {

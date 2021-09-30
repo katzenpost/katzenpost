@@ -30,8 +30,11 @@ type CreateRemoteSpool struct {
 
 type ConnectionStatus struct{}
 
+type GetConsensus struct{}
+
 type ControlCommand struct {
 	SendMessage       *SendMessage
 	CreateRemoteSpool *CreateRemoteSpool
 	ConnectionStatus  *ConnectionStatus
+	GetConsensus      *GetConsensus
 }
