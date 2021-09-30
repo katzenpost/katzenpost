@@ -125,8 +125,23 @@ func (c *incomingConn) processCommand(command *ControlCommand) {
 			},
 		})
 	case command.CreateRemoteSpool != nil:
-		// XXX FIX ME
-		panic("CreateRemoteSpool command not yet implemented")
+		spoolService, err := c.session.GetService("spool")
+		if err != nil {
+			c.log.Error(err.Error())
+			continue
+		}
+
+		spoolReadDescriptor, err := memspoolclient.NewSpoolReadDescriptor(spoolService.Name, spoolService.Provider, c.session)
+		if err != nil {
+			c.log.Error(err.Error())
+			continue
+		}
+
+		c.WriteEvent(Event{
+			SpoolCreated: &SpoolCreated{
+				SpoolReadDescriptor: spoolReadDescriptor,
+			},
+		})
 	case command.ConnectionStatus != nil:
 		c.WriteEvent(Event{
 			ConnectionStatusEvent: &events.ConnectionStatusEvent{

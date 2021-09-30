@@ -69,6 +69,18 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 	}
 }
 
+func CreateRandomSpool(session *client.Session) (*SpoolReadDescriptor, error) {
+	spoolService, err := session.GetService("spool")
+	if err != nil {
+		return nil, err
+	}
+	spoolReadDescriptor, err := NewSpoolReadDescriptor(spoolService.Name, spoolService.Provider, session)
+	if err != nil {
+		return nil, err
+	}
+	return spoolReadDescriptor, nil
+}
+
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
 func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) (*SpoolReadDescriptor, error) {

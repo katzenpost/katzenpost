@@ -26,4 +26,9 @@ type Event struct {
 	MessageSentEvent          *events.MessageSentEvent
 	MessageIDGarbageCollected *events.MessageIDGarbageCollected
 	NewDocumentEvent          *events.NewDocumentEvent
+	SpoolCreated              *SpoolCreated
+}
+
+type SpoolCreated struct {
+	SpoolReadDescriptor *SpoolReadDescriptor
 }
