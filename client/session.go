@@ -146,11 +146,6 @@ func NewSession(
 
 	// block until we get the first PKI document
 	// and then set our timers accordingly
-	err = s.awaitFirstPKIDoc(ctx)
-	if err != nil {
-		s.Shutdown()
-		return nil, err
-	}
 	s.Go(s.worker)
 	return s, nil
 }
