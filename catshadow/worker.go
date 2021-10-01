@@ -45,21 +45,13 @@ func getReadInboxInterval(lambdaP float64, lambdaPMaxDelay uint64) time.Duration
 func (c *Client) worker() {
 	const maxDuration = time.Duration(math.MaxInt64)
 
-	// Retreive cached PKI doc.
-	doc := c.GetSession().CurrentDocument()
-	if doc == nil {
-		c.fatalErrCh <- errors.New("aborting, PKI doc is nil")
-		return
-	}
-
-	readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
-	readInboxTimer := time.NewTimer(readInboxInterval)
+	readInboxTimer := time.NewTimer(maxDuration)
 	defer readInboxTimer.Stop()
 
 	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
 	defer gcMessagestimer.Stop()
 
-	isConnected := true
+	isConnected := false
 	for {
 		var qo interface{}
 		select {
@@ -75,7 +67,7 @@ func (c *Client) worker() {
 			if isConnected {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
-				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				readInboxInterval := c.getReadInboxInterval()
 				c.log.Debug("<-readInboxTimer.C: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 			}
@@ -116,7 +108,7 @@ func (c *Client) worker() {
 			case *client.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
-					readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+					readInboxInterval := c.getReadInboxInterval()
 					c.log.Debug("ConnectionStatusEvent: Connected: Setting readInboxTimer to %s", readInboxInterval)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
@@ -137,8 +129,9 @@ func (c *Client) worker() {
 				c.handleReply(event)
 				continue
 			case *client.NewDocumentEvent:
-				doc = event.Document
-				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				doc := event.Document
+				c.getReadInboxInterval = func() time.Duration { return getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay) }
+				readInboxInterval := c.getReadInboxInterval()
 				c.log.Debug("NewDocumentEvent: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 				continue

@@ -66,6 +66,7 @@ type Client struct {
 	pandaChan   chan panda.PandaUpdate
 	reunionChan chan rClient.ReunionUpdate
 	fatalErrCh  chan error
+	getReadInboxInterval func() time.Duration
 
 	// messageID -> *SentMessageDescriptor
 	sendMap *sync.Map
