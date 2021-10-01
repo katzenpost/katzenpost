@@ -126,10 +126,6 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
 func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
-	session, err := mixnetClient.NewSession(state.LinkKey)
-	if err != nil {
-		return nil, err
-	}
 	if state.Blob == nil {
 		state.Blob = make(map[string][]byte)
 	}
@@ -152,7 +148,6 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		conversationsMutex:  new(sync.Mutex),
 		stateWorker:         stateWorker,
 		client:              mixnetClient,
-		session:             session,
 		log:                 logBackend.GetLogger("catshadow"),
 		logBackend:          logBackend,
 	}
@@ -161,6 +156,22 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		c.contactNicknames[contact.Nickname] = contact
 	}
 	return c, nil
+}
+
+func (c *Client) GetSession() *client.Session {
+	if c.session != nil {
+		return c.session
+	} else {
+		// blocks until created?
+		c.log.Debugf("NewSession(%s)", c.linkKey.PublicKey())
+		s, err := c.client.NewSession(c.linkKey)
+		if err != nil {
+			c.fatalErrCh <- err
+			panic(err)
+		}
+		c.session = s
+		return s
+	}
 }
 
 // Start starts the client worker goroutine and the
@@ -197,8 +208,8 @@ func (c *Client) Start() {
 
 // restart contact exchanges
 func (c *Client) restartContactExchanges() {
-	pandaCfg := c.session.GetPandaConfig()
-	reunionCfg := c.session.GetReunionConfig()
+	pandaCfg := c.GetSession().GetPandaConfig()
+	reunionCfg := c.GetSession().GetReunionConfig()
 	for _, contact := range c.contacts {
 		if contact.IsPending {
 			if reunionCfg != nil && reunionCfg.Enable == true {
@@ -233,14 +244,14 @@ func (c *Client) restartContactExchanges() {
 				}
 			} else if pandaCfg != nil {
 				logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-				meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+				meetingPlace := pclient.New(pandaCfg.BlobSize, c.GetSession(), logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
 				logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 				kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 				if err != nil {
 					panic(err)
 				}
 				// update sharedrandom
-				doc := c.session.CurrentDocument()
+				doc := c.GetSession().CurrentDocument()
 				sharedRandom := doc.PriorSharedRandom[0]
 				kx.SetSharedRandom(sharedRandom)
 				go kx.Run()
@@ -299,14 +310,14 @@ func (c *Client) garbageCollectConversations() {
 // destined to this Client. This method blocks until the reply from
 // the remote spool service is received or the round trip timeout is reached.
 func (c *Client) CreateRemoteSpool() error {
-	desc, err := c.session.GetService(common.SpoolServiceName)
+	desc, err := c.GetSession().GetService(common.SpoolServiceName)
 	if err != nil {
 		return err
 	}
 	if c.spoolReadDescriptor == nil {
 		// Be warned that the call to NewSpoolReadDescriptor blocks until the reply
 		// is received or the round trip timeout is reached.
-		c.spoolReadDescriptor, err = memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
+		c.spoolReadDescriptor, err = memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.GetSession())
 		if err != nil {
 			return err
 		}
@@ -351,7 +362,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.session)
+	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.GetSession())
 	if err != nil {
 		return err
 	}
@@ -409,11 +420,11 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 
 func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	// Use PANDA
-	pandaCfg := c.session.GetPandaConfig()
+	pandaCfg := c.GetSession().GetPandaConfig()
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-	meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
+	meetingPlace := pclient.New(pandaCfg.BlobSize, c.GetSession(), logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
 	// get the current document and shared random
-	doc := c.session.CurrentDocument()
+	doc := c.GetSession().CurrentDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
@@ -431,7 +442,7 @@ func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 
 func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	// Get consensus
-	doc := c.session.CurrentDocument()
+	doc := c.GetSession().CurrentDocument()
 	if doc == nil {
 		return nil, errors.New("No current document, wtf")
 	}
@@ -442,7 +453,7 @@ func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 		if r, ok := p.Kaetzchen["reunion"]; ok {
 			if ep, ok := r["endpoint"]; ok {
 				ep := ep.(string)
-				trans := &rTrans.Transport{Session: c.session, Recipient: ep, Provider: p.Name}
+				trans := &rTrans.Transport{Session: c.GetSession(), Recipient: ep, Provider: p.Name}
 				c.log.Debugf("Adding transport %v", trans)
 				transports = append(transports, trans)
 			} else {
@@ -712,14 +723,14 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 	case update.Err != nil:
 		// restart the handshake with the current state if the error is due to SURB-ACK timeout
 		if update.Err == client.ErrReplyTimeout {
-			pandaCfg := c.session.GetPandaConfig()
+			pandaCfg := c.GetSession().GetPandaConfig()
 			if pandaCfg == nil {
 				panic("panda failed, must have a panda service configured")
 			}
 
 			c.log.Error("PANDA handshake for client %s timed-out; restarting exchange", contact.Nickname)
 			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-			meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+			meetingPlace := pclient.New(pandaCfg.BlobSize, c.GetSession(), logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
 			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 			if err != nil {
@@ -904,7 +915,7 @@ func (c *Client) sendMessage(contact *Contact) {
 	}
 
 	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
-	mesgID, err := c.session.SendReliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
+	mesgID, err := c.GetSession().SendReliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
@@ -928,7 +939,7 @@ func (c *Client) sendReadInbox() {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
+	mesgID, err := c.GetSession().SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
 	if err != nil {
 		c.log.Error("failed to send inbox retrieval message")
 		return
