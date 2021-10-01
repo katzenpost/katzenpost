@@ -46,7 +46,7 @@ func (c *Client) worker() {
 	const maxDuration = time.Duration(math.MaxInt64)
 
 	// Retreive cached PKI doc.
-	doc := c.session.CurrentDocument()
+	doc := c.GetSession().CurrentDocument()
 	if doc == nil {
 		c.fatalErrCh <- errors.New("aborting, PKI doc is nil")
 		return
@@ -109,7 +109,7 @@ func (c *Client) worker() {
 		case update := <-c.reunionChan:
 			c.processReunionUpdate(&update)
 			continue
-		case rawClientEvent := <-c.session.EventSink:
+		case rawClientEvent := <-c.GetSession().EventSink:
 			switch event := rawClientEvent.(type) {
 			case *client.MessageIDGarbageCollected:
 				c.garbageCollectSendMap(event)
