@@ -62,7 +62,7 @@ type Session struct {
 	hasPKIDoc bool
 
 	egressQueue EgressQueue
-	rescheduler *rescheduler
+	timerQ *TimerQueue
 
 	surbIDMap        sync.Map // [sConstants.SURBIDLength]byte -> *Message
 	sentWaitChanMap  sync.Map // MessageID -> chan *Message
@@ -109,8 +109,8 @@ func NewSession(
 		opCh:        make(chan workerOp, 8),
 		egressQueue: new(Queue),
 	}
-	// Configure the rescheduler instance
-	s.rescheduler = NewRescheduler(s)
+	// Configure the timerQ instance
+	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
 		User:                cfg.Account.User,
@@ -129,6 +129,7 @@ func NewSession(
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
+	s.timerQ.Go(s.timerQ.worker)
 	s.Go(s.eventSinkWorker)
 	s.Go(s.garbageCollectionWorker)
 
@@ -302,7 +303,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		return nil
 	}
 	if msg.Reliable {
-		err := s.rescheduler.timerQ.Remove(msg)
+		err := s.timerQ.Remove(msg)
 		if err != nil {
 			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
 		}
@@ -357,9 +358,24 @@ func (s *Session) GetPandaConfig() *config.Panda {
 	return s.cfg.Panda
 }
 
+func (s *Session) Push(i Item) error {
+	// Push checks whether a message was ACK'd already and if it has
+	// not, reschedules the message for transmission again
+	m, ok := i.(*Message)
+	if !ok {
+		return errors.New("Not Implemented for non-Message types")
+	}
+	if _, ok := s.surbIDMap.Load(*m.SURBID); ok {
+		// still waiting for a SURB-ACK that hasn't arrived
+		s.surbIDMap.Delete(*m.SURBID)
+		s.opCh <- opRetransmit{msg: m}
+	}
+	return nil
+}
+
 func (s *Session) Shutdown() {
 	s.Halt()
-	s.rescheduler.timerQ.Halt()
+	s.timerQ.Halt()
 	s.minclient.Shutdown()
 	s.minclient.Wait()
 }
