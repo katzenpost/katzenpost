@@ -31,6 +31,7 @@ func TestNewTimerQueue(t *testing.T) {
 	q := new(Queue)
 
 	a := NewTimerQueue(q)
+	a.Go(a.worker)
 	a.Halt()
 }
 
@@ -41,6 +42,7 @@ func TestTimerQueuePush(t *testing.T) {
 	q := new(Queue)
 
 	a := NewTimerQueue(q)
+	a.Go(a.worker)
 
 	// enqueue 10 messages
 	for i := 0; i < 10; i++ {
@@ -82,6 +84,7 @@ func TestTimerQueueRemove(t *testing.T) {
 	q := new(Queue)
 
 	a := NewTimerQueue(q)
+	a.Go(a.worker)
 
 	// enqueue 10 messages, and call TimerQueue.Remove() on half of them before their timers expire
 	for i := 0; i < 10; i++ {
@@ -129,6 +132,7 @@ func TestTimerQueueOrder(t *testing.T) {
 	q := new(Queue)
 
 	a := NewTimerQueue(q)
+	a.Go(a.worker)
 
 	r := mrand.New(mrand.NewSource(0))
 
