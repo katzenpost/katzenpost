@@ -20,7 +20,6 @@ package catshadow
 
 import (
 	"fmt"
-	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"io/ioutil"
 	"os"
@@ -53,25 +52,12 @@ func TestBlobStorage(t *testing.T) {
 	linkKey, err := ecdh.NewKeypair(rand.Reader)
 	require.NoError(err)
 
-	state := &State{
-		Blob:          make(map[string][]byte),
-		Contacts:      make([]*Contact, 0),
-		Conversations: make(map[string]map[MessageID]*Message),
-		User:          "foo",
-		Provider:      "bar",
-		LinkKey:       linkKey,
-	}
-
 	aliceState := createRandomStateFile(t)
 	passphrase := []byte("")
 	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
 	cfg, err := catshadowCfg.ClientConfig()
 	require.NoError(err)
-	cfg.Account = &cConfig.Account{
-		User:     state.User,
-		Provider: state.Provider,
-	}
 
 	c, err := client.New(cfg)
 	require.NoError(err)
@@ -83,6 +69,7 @@ func TestBlobStorage(t *testing.T) {
 	cs := &Client{blob: make(map[string][]byte),
 		logBackend:         logBackend,
 		client:             c,
+		linkKey:            linkKey,
 		log:                logBackend.GetLogger("foo"),
 		contacts:           make(map[uint64]*Contact),
 		conversationsMutex: new(sync.Mutex),
