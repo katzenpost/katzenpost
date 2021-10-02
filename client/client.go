@@ -20,7 +20,6 @@ package client
 import (
 	"context"
 	"errors"
-	"fmt"
 	mrand "math/rand"
 	"path/filepath"
 	"sync"
@@ -114,10 +113,6 @@ func New(cfg *config.Config) (*Client, error) {
 		c.Shutdown()
 	}()
 	return c, nil
-}
-
-func (c *Client) Provider() string {
-	return c.cfg.Account.Provider
 }
 
 func (c *Client) initLogging() error {

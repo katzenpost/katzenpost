@@ -49,6 +49,7 @@ type Session struct {
 	cfg       *config.Config
 	pkiClient pki.Client
 	minclient *minclient.Client
+	provider  *pki.MixDescriptor
 	log       *logging.Logger
 
 	fatalErrCh chan error
@@ -116,9 +117,9 @@ func NewSession(
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
-		User:                cfg.Account.User,
-		Provider:            cfg.Account.Provider,
-		ProviderKeyPin:      cfg.Account.ProviderKeyPin,
+		User:                s.linkKey.PublicKey().String(),
+		Provider:            s.provider.Name,
+		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiCacheClient,
