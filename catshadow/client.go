@@ -109,7 +109,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
 	}
-	c, err := New(logBackend, mixnetClient, stateWorker, state)
+	c, err := New(logBackend, mixnetClient, stateWorker, state, linkKey)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
-func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
+func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State, linkKey *ecdh.PrivateKey) (*Client, error) {
 	if state.Blob == nil {
 		state.Blob = make(map[string][]byte)
 	}
@@ -138,7 +138,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		contacts:            make(map[uint64]*Contact),
 		contactNicknames:    make(map[string]*Contact),
 		spoolReadDescriptor: state.SpoolReadDescriptor,
-		linkKey:             state.LinkKey,
+		linkKey:             linkKey,
 		conversations:       state.Conversations,
 		blob:                state.Blob,
 		blobMutex:           new(sync.Mutex),

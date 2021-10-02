@@ -79,8 +79,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	backendLog, err := catshadowCfg.InitLogBackend()
 	require.NoError(err)
 
-	user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
+	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, linkKey)
 	require.NoError(err)
 
 	// Start catshadow client.
