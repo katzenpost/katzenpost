@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
@@ -83,6 +84,7 @@ type Client struct {
 
 	client  *client.Client
 	session *client.Session
+	providers []*pki.MixDescriptor
 
 	log        *logging.Logger
 	logBackend *log.Backend
