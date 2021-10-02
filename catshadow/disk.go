@@ -27,8 +27,8 @@ import (
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/memspool/client"
 	"golang.org/x/crypto/argon2"
@@ -46,7 +46,7 @@ const (
 type State struct {
 	SpoolReadDescriptor *client.SpoolReadDescriptor
 	Contacts            []*Contact
-	Providers           []*MixDescriptor
+	Providers           []*pki.MixDescriptor
 	Conversations       map[string]map[MessageID]*Message
 	Blob                map[string][]byte
 }
