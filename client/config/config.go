@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/mail"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -32,8 +31,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"golang.org/x/net/idna"
-	"golang.org/x/text/secure/precis"
 )
 
 const (
