@@ -39,13 +39,13 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey)
+	session, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	<-session.EventSink
@@ -60,12 +60,12 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey)
+	session, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	desc, err := session.GetService(constants.LoopService)
@@ -89,13 +89,13 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey)
+	session, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	desc, err := session.GetService(constants.LoopService)
@@ -119,12 +119,12 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	desc, err := clientSession.GetService(constants.LoopService)
@@ -168,13 +168,13 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	desc, err := clientSession.GetService(constants.LoopService)
@@ -218,12 +218,12 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	msgID := [constants.MessageIDLength]byte{}
@@ -250,12 +250,12 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	desc, err := clientSession.GetService(constants.LoopService)
@@ -308,12 +308,12 @@ func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := NewEphemeralClientConfig(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	desc, err := clientSession.GetService(constants.LoopService)
