@@ -1003,7 +1003,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 			if err != nil {
 				c.log.Errorf("Could not deserialize SpoolResponse to message ID %d: %s", tp.MessageID, err)
 				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
-					Err: errors.New("Invalid spool response: %s", err),
+					Err: fmt.Errorf("Invalid spool response: %s", err),
 				}
 				return
 			}
