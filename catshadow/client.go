@@ -167,6 +167,8 @@ func (c *Client) GetSession() *client.Session {
 			panic(err)
 		}
 		c.session = s
+		c.restartContactExchanges()
+		c.restartSending()
 		return s
 	}
 }
@@ -187,8 +189,6 @@ func (c *Client) Start() {
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-	c.restartContactExchanges()
-	c.restartSending()
 	for nickname, contact := range c.GetContacts() {
 		msgs := c.GetSortedConversation(nickname)
 		if len(msgs) > 0 {
