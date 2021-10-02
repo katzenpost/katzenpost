@@ -29,7 +29,6 @@ import (
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -73,11 +72,11 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	client.Shutdown()
 	client.Wait()
@@ -103,11 +102,11 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	client.Shutdown()
 	client.Wait()
@@ -147,7 +146,7 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 			case *MessageReplyEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
-					require.True(utils.CtIsZero(event.Payload))
+					require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
 					wg.Done()
 					return
 				}
@@ -197,7 +196,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 			case *MessageReplyEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
-					require.True(utils.CtIsZero(event.Payload))
+					require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
 					wg.Done()
 					return
 				}
@@ -339,7 +338,7 @@ func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
 					if bytes.Equal(msgID[:], event.MessageID[:]) {
 						require.NoError(event.Err)
 						t.Logf("message ID %x reply received", msgID)
-						require.True(utils.CtIsZero(event.Payload))
+						require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
 						wg.Done()
 						return
 					}
