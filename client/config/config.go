@@ -86,10 +86,6 @@ type Debug struct {
 	// we are willing to wait for the retreival of the PKI document.
 	InitialMaxPKIRetrievalDelay int
 
-	// CaseSensitiveUserIdentifiers disables the forced lower casing of
-	// the Account `User` field.
-	CaseSensitiveUserIdentifiers bool
-
 	// PollingInterval is the interval in seconds that will be used to
 	// poll the receive queue.  By default this is 10 seconds.  Reducing
 	// the value too far WILL result in unnecessary Provider load, and
@@ -213,51 +209,6 @@ func (p *Panda) validate() error {
 	return nil
 }
 
-// Account is a provider account configuration.
-type Account struct {
-	// User is the account user name.
-	User string
-
-	// Provider is the provider identifier used by this account.
-	Provider string
-
-	// ProviderKeyPin is the optional pinned provider signing key.
-	ProviderKeyPin *eddsa.PublicKey
-}
-
-func (accCfg *Account) fixup(cfg *Config) error {
-	var err error
-	if !cfg.Debug.CaseSensitiveUserIdentifiers {
-		accCfg.User, err = precis.UsernameCaseMapped.String(accCfg.User)
-	} else {
-		accCfg.User, err = precis.UsernameCasePreserved.String(accCfg.User)
-	}
-	if err != nil {
-		return err
-	}
-
-	accCfg.Provider, err = idna.Lookup.ToASCII(accCfg.Provider)
-	return err
-}
-
-func (accCfg *Account) toEmailAddr() (string, error) {
-	addr := fmt.Sprintf("%s@%s", accCfg.User, accCfg.Provider)
-	if _, err := mail.ParseAddress(addr); err != nil {
-		return "", fmt.Errorf("error User/Provider does not form a valid e-mail address: %v", err)
-	}
-	return addr, nil
-}
-
-func (accCfg *Account) validate() error {
-	if accCfg.User == "" {
-		return errors.New("user is missing")
-	}
-	if accCfg.Provider == "" {
-		return errors.New("provider is missing")
-	}
-	return nil
-}
-
 // UpstreamProxy is the outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// Type is the proxy type (Eg: "none"," socks5").
@@ -299,7 +250,6 @@ type Config struct {
 	Debug              *Debug
 	NonvotingAuthority *NonvotingAuthority
 	VotingAuthority    *VotingAuthority
-	Account            *Account
 	Panda              *Panda
 	Reunion            *Reunion
 	upstreamProxy      *proxy.Config
@@ -311,9 +261,9 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 	return c.upstreamProxy
 }
 
-// FixupAndMinimallyValidate applies defaults to config entries and validates the
-// all but the Account configuration sections.
-func (c *Config) FixupAndMinimallyValidate() error {
+// FixupAndValidate applies defaults to config entries and validates the
+// configuration sections.
+func (c *Config) FixupAndValidate() error {
 	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
@@ -368,29 +318,6 @@ func (c *Config) FixupAndMinimallyValidate() error {
 	return nil
 }
 
-// FixupAndValidate applies defaults to config entries and validates the
-// supplied configuration.  Most people should call one of the Load variants
-// instead.
-func (c *Config) FixupAndValidate() error {
-	err := c.FixupAndMinimallyValidate()
-	if err != nil {
-		return err
-	}
-
-	// Account
-	if err := c.Account.fixup(c); err != nil {
-		return fmt.Errorf("config: Account is invalid (User): %v", err)
-	}
-	addr, err := c.Account.toEmailAddr()
-	if err != nil {
-		return fmt.Errorf("config: Account is invalid (Identifier): %v", err)
-	}
-	if err := c.Account.validate(); err != nil {
-		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
-	}
-	return err
-}
-
 // Load parses and validates the provided buffer b as a config file body and
 // returns the Config.
 func Load(b []byte) (*Config, error) {
@@ -402,7 +329,7 @@ func Load(b []byte) (*Config, error) {
 	if undecoded := md.Undecoded(); len(undecoded) != 0 {
 		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
-	if err := cfg.FixupAndMinimallyValidate(); err != nil {
+	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil

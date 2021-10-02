@@ -51,9 +51,8 @@ type Client struct {
 	session *Session
 }
 
-// NewEphemeralClientConfig creates a new linkKey and associated account on a
-// provider that suppports TrustOnFirstUse clients.
-func NewEphemeralClientConfig(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
+// NewEphemeralClientConfig fetches a consensus and chooses a provider that suppports TrustOnFirstUse clients.
+func NewEphemeralClientConfig(cfg *config.Config) (*pki.MixDescriptor, *ecdh.PrivateKey, error) {
 	// Retrieve a copy of the PKI consensus document.
 	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
 	if err != nil {
@@ -88,12 +87,7 @@ func NewEphemeralClientConfig(cfg *config.Config) (*config.Config, *ecdh.Private
 	if err != nil {
 		return nil, nil, err
 	}
-	cfg.Account = &config.Account{
-		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
-		Provider:       provider.Name,
-		ProviderKeyPin: provider.IdentityKey,
-	}
-	return cfg, linkKey, nil
+	return provider, linkKey, nil
 }
 
 // New creates a new Client with the provided configuration.
@@ -171,11 +165,11 @@ func (c *Client) halt() {
 }
 
 // NewSession creates and returns a new session or an error.
-func (c *Client) NewSession(linkKey *ecdh.PrivateKey) (*Session, error) {
+func (c *Client) NewSession(linkKey *ecdh.PrivateKey, provider *pki.MixDescriptor) (*Session, error) {
 	var err error
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey)
+	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
 	return c.session, err
 }
