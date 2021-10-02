@@ -75,6 +75,7 @@ func (s *Session) worker() {
 
 	// get the initial loop services if decoy traffic is enabled
 	var (
+		doc *pki.Document
 		loopServices []utils.ServiceDescriptor
 		lambdaP float64
 		lambdaL float64
@@ -134,7 +135,7 @@ func (s *Session) worker() {
 					s.fatalErrCh <- err
 				}
 
-				doc := op.doc
+				doc = op.doc
 				s.setPollIntervalFromDoc(doc)
 				lambdaP = doc.LambdaP
 				lambdaL = doc.LambdaL
@@ -166,7 +167,7 @@ func (s *Session) worker() {
 				}
 			}
 		}
-		if isConnected {
+		if isConnected && doc != nil {
 			lambdaPMsec = uint64(rand.Exp(mRng, lambdaP))
 			if lambdaPMsec > lambdaPMaxDelay {
 				lambdaPMsec = lambdaPMaxDelay

@@ -148,10 +148,28 @@ func NewSession(
 		pkiCacheClient.Halt()
 	}()
 
-	// block until we get the first PKI document
-	// and then set our timers accordingly
+	// start the worker
 	s.Go(s.worker)
+
+	// wait for pki fetch to complete
+	s.waitForDocument()
 	return s, nil
+}
+
+func (s *Session) waitForDocument() *pki.Document {
+	for {
+		select {
+		case ev := <-s.EventSink:
+			switch e := ev.(type) {
+			case *NewDocumentEvent:
+				return e.Document
+			default:
+				// ignores other events
+			}
+		case <-s.HaltCh():
+			return nil
+		}
+	}
 }
 
 func (s *Session) eventSinkWorker() {
