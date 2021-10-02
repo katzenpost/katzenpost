@@ -73,7 +73,6 @@ type Client struct {
 
 	stateWorker         *StateWriter
 	linkKey             *ecdh.PrivateKey
-	user                string
 	blob                map[string][]byte
 	contacts            map[uint64]*Contact
 	contactNicknames    map[string]*Contact

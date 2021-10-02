@@ -44,7 +44,6 @@ func getClientState(c *Client) *State {
 		SpoolReadDescriptor: c.spoolReadDescriptor,
 		Contacts:            contacts,
 		LinkKey:             c.linkKey,
-		User:                c.user,
 		Provider:            c.client.Provider(),
 		Conversations:       c.conversations,
 	}
@@ -104,16 +103,12 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	key := stretchKey(passphrase)
 	state, err := decryptStateFile(stateFile, key)
 	require.NoError(err)
-	cfg.Account = &cConfig.Account{
-		User:     state.User,
-		Provider: state.Provider,
-	}
 
 	logBackend, err := catshadowCfg.InitLogBackend()
 	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
-	stateWorker, state, err = LoadStateWriter(c.GetLogger(cfg.Account.User+" "+"catshadow_state"), stateFile, passphrase)
+	stateWorker, state, err = LoadStateWriter(c.GetLogger(stateFile), stateFile, passphrase)
 	require.NoError(err)
 
 	catShadowClient, err = New(logBackend, c, stateWorker, state)
