@@ -78,7 +78,8 @@ func NewSession(
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
-	linkKey *ecdh.PrivateKey) (*Session, error) {
+	linkKey *ecdh.PrivateKey,
+	provider *pki.MixDescriptor) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups
@@ -96,11 +97,13 @@ func NewSession(
 	}
 	pkiCacheClient := pkiclient.New(pkiClient2)
 
-	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", cfg.Account.User, cfg.Account.Provider))
+
+	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", linkKey.PublicKey(), provider.Name))
 
 	s := &Session{
 		cfg:         cfg,
 		linkKey:     linkKey,
+		provider:    provider,
 		pkiClient:   pkiClient,
 		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
