@@ -103,14 +103,11 @@ type queuedSpoolCommand struct {
 // this remote spool and this state is preserved in the encrypted statefile, of course.
 // This constructor of Client is used when creating a new Client as opposed to loading
 // the previously saved state for an existing Client.
-func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
+func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, linkKey *ecdh.PrivateKey) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
-		User:          user,
-		Provider:      mixnetClient.Provider(),
-		LinkKey:       linkKey,
 	}
 	c, err := New(logBackend, mixnetClient, stateWorker, state)
 	if err != nil {
@@ -142,7 +139,6 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		contactNicknames:    make(map[string]*Contact),
 		spoolReadDescriptor: state.SpoolReadDescriptor,
 		linkKey:             state.LinkKey,
-		user:                state.User,
 		conversations:       state.Conversations,
 		blob:                state.Blob,
 		blobMutex:           new(sync.Mutex),
@@ -594,10 +590,8 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	s := &State{
 		SpoolReadDescriptor: c.spoolReadDescriptor,
 		Contacts:            contacts,
-		LinkKey:             c.linkKey,
-		User:                c.user,
-		Provider:            c.client.Provider(),
 		Conversations:       c.conversations,
+		Providers:           c.providers,
 		Blob:                c.blob,
 	}
 	defer c.conversationsMutex.Unlock()

@@ -46,9 +46,7 @@ const (
 type State struct {
 	SpoolReadDescriptor *client.SpoolReadDescriptor
 	Contacts            []*Contact
-	User                string
-	Provider            string
-	LinkKey             *ecdh.PrivateKey
+	Providers           []*MixDescriptor
 	Conversations       map[string]map[MessageID]*Message
 	Blob                map[string][]byte
 }
