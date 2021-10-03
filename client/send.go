@@ -55,7 +55,7 @@ func (s *Session) doRetransmit(msg *Message) {
 	msg.Retransmissions++
 	msgIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(msg.ID[:]))
 	s.log.Debugf("doRetransmit: %d for %s", msg.Retransmissions, msgIdStr)
-	s.doSend(msg)
+	s.egressQueue.Push(msg)
 }
 
 func (s *Session) doSend(msg *Message) {
