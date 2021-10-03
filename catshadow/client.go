@@ -42,6 +42,7 @@ import (
 	"github.com/katzenpost/katzenpost/memspool/common"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
+	pCommon "github.com/katzenpost/katzenpost/panda/common"
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
 	"gopkg.in/eapache/channels.v1"
@@ -418,9 +419,9 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 
 func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	// Use PANDA
-	pandaCfg := c.GetSession().GetPandaConfig()
+	p := c.GetSession().GetService(pCommon.PandaCapability)
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-	meetingPlace := pclient.New(pandaCfg.BlobSize, c.GetSession(), logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
+	meetingPlace := pclient.New(PandaBlobSize, c.GetSession(), logPandaClient, p.Name, p.Provider)
 	// get the current document and shared random
 	doc := c.GetSession().CurrentDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
