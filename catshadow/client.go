@@ -32,6 +32,7 @@ import (
 	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -55,6 +56,7 @@ var (
 	errContactNotFound        = errors.New("Contact not found")
 	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
 	errBlobNotFound           = errors.New("Blob not found in store")
+	pandaBlobSize             = constants.ForwardPayloadLength
 )
 
 // Client is the mixnet client which interacts with other clients
@@ -163,13 +165,14 @@ func (c *Client) GetSession() *client.Session {
 	} else {
 		// blocks until created?
 		c.log.Debugf("NewSession(%s)", c.linkKey.PublicKey())
-		s, err := c.client.NewSession(c.linkKey)
+		s, err := c.client.NewSession(c.linkKey, c.providers[0]) // XXX: pick a random provider!
 		if err != nil {
 			c.fatalErrCh <- err
 			panic(err)
 		}
 		c.session = s
-		c.restartContactExchanges()
+		c.restartPANDAExchanges()
+		c.restartReunionExchanges()
 		c.restartSending()
 		return s
 	}
@@ -204,61 +207,70 @@ func (c *Client) Start() {
 	}()
 
 }
-
-// restart contact exchanges
-func (c *Client) restartContactExchanges() {
-	pandaCfg := c.GetSession().GetPandaConfig()
-	reunionCfg := c.GetSession().GetReunionConfig()
+// restart reunion exchanges
+func (c *Client) restartReunionExchanges() {
+	transports, err := c.getReunionTransports()
+	if err != nil {
+		c.log.Warningf("Reunion configured, but no transports found")
+		return
+	}
 	for _, contact := range c.contacts {
 		if contact.IsPending {
-			if reunionCfg != nil && reunionCfg.Enable == true {
-				transports, err := c.getReunionTransports() // could put outside this loop
-				if err != nil {
-					// XXX: handle with a UI notification
-					c.log.Warningf("Reunion configured, but no transports found")
-					break
-				}
-				for eid, ex := range contact.reunionKeyExchange {
-					// see if the transport still exists in current transports
-					m := false
-					for _, tr := range transports {
-						if tr.Recipient == ex.recipient && tr.Provider == ex.provider {
-							m = true
-							lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
-							dblog := c.logBackend.GetLogger(lstr)
-							exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan)
-							if err != nil {
-								c.log.Warningf("Reunion failed: %v", err)
-							} else {
-								go exchange.Run()
-								break
-							}
+			for eid, ex := range contact.reunionKeyExchange {
+				// see if the transport still exists in current transports
+				m := false
+				for _, tr := range transports {
+					if tr.Recipient == ex.recipient && tr.Provider == ex.provider {
+						m = true
+						lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
+						dblog := c.logBackend.GetLogger(lstr)
+						exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan)
+						if err != nil {
+							c.log.Warningf("Reunion failed: %v", err)
+						} else {
+							c.Go(exchange.Run)
+							break
 						}
 					}
-					// transport not found
-					if m == false {
-						c.log.Warningf("Reunion transport %s@%s no longer exists!", ex.recipient, ex.provider)
-						delete(contact.reunionKeyExchange, eid)
-					}
 				}
-			} else if pandaCfg != nil {
-				logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-				meetingPlace := pclient.New(pandaCfg.BlobSize, c.GetSession(), logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
-				logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
-				kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
-				if err != nil {
-					panic(err)
+				// transport not found
+				if m == false {
+					c.log.Warningf("Reunion transport %s@%s no longer exists!", ex.recipient, ex.provider)
+					delete(contact.reunionKeyExchange, eid)
 				}
-				// update sharedrandom
-				doc := c.GetSession().CurrentDocument()
-				sharedRandom := doc.PriorSharedRandom[0]
-				kx.SetSharedRandom(sharedRandom)
-				go kx.Run()
 			}
 		}
 	}
 }
 
+// restart PANDA exchanges
+func (c *Client) restartPANDAExchanges() {
+	for _, contact := range c.contacts {
+		if contact.IsPending {
+			// Use PANDA
+			p, err := c.GetSession().GetService(pCommon.PandaCapability)
+			if err != nil {
+				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
+				continue
+			}
+			logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
+			meetingPlace := pclient.New(pandaBlobSize, c.GetSession(), logPandaClient, p.Name, p.Provider)
+			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
+			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
+			if err != nil {
+				c.log.Errorf("Failed to UnmarshalKeyExchange for %s: %s", contact.Nickname, err)
+				continue
+			}
+			// update sharedrandom
+			doc := c.GetSession().CurrentDocument()
+			sharedRandom := doc.PriorSharedRandom[0]
+			kx.SetSharedRandom(sharedRandom)
+			c.Go(kx.Run)
+		}
+	}
+}
+
+// restart sending messages
 func (c *Client) restartSending() {
 	for _, contact := range c.contacts {
 		if !contact.IsPending {
@@ -368,31 +380,16 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	c.contacts[contact.ID()] = contact
 	c.contactNicknames[contact.Nickname] = contact
 
-	// Use PANDA or Reunion
-	pandaCfg := c.session.GetPandaConfig()
-	reunionCfg := c.session.GetReunionConfig()
+	err = c.doPANDAExchange(contact, sharedSecret)
+	if err != nil {
+		c.log.Notice("PANDA Failure for %v: %v", contact, err)
+	}
 
-	switch {
-	case reunionCfg != nil && pandaCfg != nil:
-		// both reunion and panda have a configuration entry, and reunion is enabled
-		if reunionCfg.Enable == true {
-			return errors.New("One of Reunion OR Panda must be configured, not both")
-		}
-		fallthrough
-	case pandaCfg != nil:
-		err = c.doPANDAExchange(contact, sharedSecret)
-		if err != nil {
-			c.log.Notice("PANDA Failure for %v: %v", contact, err)
-			return err
-		}
-	case reunionCfg != nil:
-		contact.reunionKeyExchange = make(map[uint64]boundExchange)
-		contact.reunionResult = make(map[uint64]string)
-		err = c.doReunion(contact, sharedSecret)
-		if err != nil {
-			c.log.Notice("Reunion Failure for %v: %v", contact, err)
-			return err
-		}
+	contact.reunionKeyExchange = make(map[uint64]boundExchange)
+	contact.reunionResult = make(map[uint64]string)
+	err = c.doReunion(contact, sharedSecret)
+	if err != nil {
+		c.log.Notice("Reunion Failure for %v: %v", contact, err)
 	}
 	return err
 }
@@ -419,9 +416,14 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 
 func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	// Use PANDA
-	p := c.GetSession().GetService(pCommon.PandaCapability)
+	p, err := c.GetSession().GetService(pCommon.PandaCapability)
+	if err != nil {
+		c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
+		return err
+	}
+
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-	meetingPlace := pclient.New(PandaBlobSize, c.GetSession(), logPandaClient, p.Name, p.Provider)
+	meetingPlace := pclient.New(pandaBlobSize, c.GetSession(), logPandaClient, p.Name, p.Provider)
 	// get the current document and shared random
 	doc := c.GetSession().CurrentDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
@@ -720,20 +722,21 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 	case update.Err != nil:
 		// restart the handshake with the current state if the error is due to SURB-ACK timeout
 		if update.Err == client.ErrReplyTimeout {
-			pandaCfg := c.GetSession().GetPandaConfig()
-			if pandaCfg == nil {
-				panic("panda failed, must have a panda service configured")
-			}
-
 			c.log.Error("PANDA handshake for client %s timed-out; restarting exchange", contact.Nickname)
 			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-			meetingPlace := pclient.New(pandaCfg.BlobSize, c.GetSession(), logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+			p, err := c.GetSession().GetService(pCommon.PandaCapability)
+			if err != nil {
+				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
+			}
+
+			meetingPlace := pclient.New(pandaBlobSize, c.GetSession(), logPandaMeeting, p.Name, p.Provider)
 			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 			if err != nil {
-				panic(err)
+				c.log.Errorf("Failed to UnmarshalKeyExchange for %s: %s", contact.Nickname, err)
+				return
 			}
-			go kx.Run()
+			c.Go(kx.Run)
 		}
 		contact.pandaResult = update.Err.Error()
 		contact.pandaShutdownChan = nil
