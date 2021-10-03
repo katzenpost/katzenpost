@@ -172,40 +172,6 @@ func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, e
 	return nil, errors.New("no Authority found")
 }
 
-// Reunion is the Reunion configuration needed by clients
-// in order to use the Reunion service
-type Reunion struct {
-	// Enable indicates that the reunion protocol should be used
-	Enable bool
-}
-
-func (r *Reunion) validate() error {
-	// stub for future options, e.g. alternate clocks, etc
-	return nil
-}
-
-// Panda is the PANDA configuration needed by clients
-// in order to use the PANDA service
-type Panda struct {
-	// Receiver is the recipient ID that shall receive the Sphinx packets destined
-	// for this PANDA service.
-	Receiver string
-	// Provider is the Provider on this mix network which is hosting this PANDA service.
-	Provider string
-	// BlobSize is the size of the PANDA blobs that clients will use.
-	BlobSize int
-}
-
-func (p *Panda) validate() error {
-	if p.Receiver == "" {
-		return errors.New("receiver is missing")
-	}
-	if p.Provider == "" {
-		return errors.New("provider is missing")
-	}
-	return nil
-}
-
 // UpstreamProxy is the outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// Type is the proxy type (Eg: "none"," socks5").
@@ -247,8 +213,6 @@ type Config struct {
 	Debug              *Debug
 	NonvotingAuthority *NonvotingAuthority
 	VotingAuthority    *VotingAuthority
-	Panda              *Panda
-	Reunion            *Reunion
 	upstreamProxy      *proxy.Config
 }
 
@@ -294,22 +258,6 @@ func (c *Config) FixupAndValidate() error {
 		}
 	default:
 		return fmt.Errorf("config: Authority configuration is invalid")
-	}
-
-	// Panda is optional
-	if c.Panda != nil {
-		err := c.Panda.validate()
-		if err != nil {
-			return fmt.Errorf("config: Panda config is invalid: %v", err)
-		}
-	}
-
-	// Reunion is optional
-	if c.Reunion != nil {
-		err := c.Reunion.validate()
-		if err != nil {
-			return fmt.Errorf("config: Reunion config is invalid: %v", err)
-		}
 	}
 
 	return nil
