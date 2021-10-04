@@ -21,7 +21,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	mrand "math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -97,7 +97,6 @@ func NewSession(
 		return nil, err
 	}
 	pkiCacheClient := pkiclient.New(pkiClient2)
-
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", linkKey.PublicKey(), provider.Name))
 
@@ -263,7 +262,7 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 	if len(serviceDescriptors) == 0 {
 		return nil, errors.New("error, GetService failure, service not found in pki doc")
 	}
-	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
+	return &serviceDescriptors[rand.NewMath().Intn(len(serviceDescriptors))], nil
 }
 
 // OnConnection will be called by the minclient api
