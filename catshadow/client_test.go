@@ -20,7 +20,6 @@ package catshadow
 
 import (
 	"fmt"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -49,8 +48,6 @@ func createRandomStateFile(t *testing.T) string {
 
 func TestBlobStorage(t *testing.T) {
 	require := require.New(t)
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
 
 	aliceState := createRandomStateFile(t)
 	passphrase := []byte("")
@@ -69,7 +66,6 @@ func TestBlobStorage(t *testing.T) {
 	cs := &Client{blob: make(map[string][]byte),
 		logBackend:         logBackend,
 		client:             c,
-		linkKey:            linkKey,
 		log:                logBackend.GetLogger("foo"),
 		contacts:           make(map[uint64]*Contact),
 		conversationsMutex: new(sync.Mutex),

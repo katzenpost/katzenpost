@@ -22,12 +22,10 @@ package catshadow
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/catshadow/config"
 	"github.com/katzenpost/katzenpost/client"
-	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 	"net/http"
@@ -43,8 +41,6 @@ func getClientState(c *Client) *State {
 	return &State{
 		SpoolReadDescriptor: c.spoolReadDescriptor,
 		Contacts:            contacts,
-		LinkKey:             c.linkKey,
-		Provider:            c.client.Provider(),
 		Conversations:       c.conversations,
 	}
 }
@@ -59,8 +55,6 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	cfg, err := catshadowCfg.ClientConfig()
 	require.NoError(err)
 
-	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
 	require.NoError(err)
@@ -71,8 +65,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	stateWorker.Start()
 	backendLog, err := catshadowCfg.InitLogBackend()
 	require.NoError(err)
-
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, linkKey)
+	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker)
 	require.NoError(err)
 
 	// Start catshadow client.

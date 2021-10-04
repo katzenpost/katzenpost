@@ -32,7 +32,6 @@ import (
 	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -75,7 +74,6 @@ type Client struct {
 	sendMap *sync.Map
 
 	stateWorker         *StateWriter
-	linkKey             *ecdh.PrivateKey
 	blob                map[string][]byte
 	contacts            map[uint64]*Contact
 	contactNicknames    map[string]*Contact
@@ -106,13 +104,13 @@ type queuedSpoolCommand struct {
 // this remote spool and this state is preserved in the encrypted statefile, of course.
 // This constructor of Client is used when creating a new Client as opposed to loading
 // the previously saved state for an existing Client.
-func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, linkKey *ecdh.PrivateKey) (*Client, error) {
+func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
 	}
-	c, err := New(logBackend, mixnetClient, stateWorker, state, linkKey)
+	c, err := New(logBackend, mixnetClient, stateWorker, state)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +124,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
-func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State, linkKey *ecdh.PrivateKey) (*Client, error) {
+func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
 	if state.Blob == nil {
 		state.Blob = make(map[string][]byte)
 	}
@@ -141,7 +139,6 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		contacts:            make(map[uint64]*Contact),
 		contactNicknames:    make(map[string]*Contact),
 		spoolReadDescriptor: state.SpoolReadDescriptor,
-		linkKey:             linkKey,
 		conversations:       state.Conversations,
 		blob:                state.Blob,
 		blobMutex:           new(sync.Mutex),
@@ -162,12 +159,10 @@ func (c *Client) GetSession() *client.Session {
 	if c.session != nil {
 		return c.session
 	} else {
-		// blocks until created?
-		c.log.Debugf("NewSession(%s)", c.linkKey.PublicKey())
-		s, err := c.client.NewSession(c.linkKey, c.providers[0]) // XXX: pick a random provider!
+		// blocks until created
+		s, err := c.client.NewTOFUSession()
 		if err != nil {
 			c.fatalErrCh <- err
-			panic(err)
 		}
 		c.session = s
 		c.restartPANDAExchanges()
