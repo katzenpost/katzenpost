@@ -38,8 +38,6 @@ type Config struct {
 	Debug              *config.Debug
 	NonvotingAuthority *config.NonvotingAuthority
 	VotingAuthority    *config.VotingAuthority
-	Panda              *config.Panda
-	Reunion            *config.Reunion
 }
 
 func (c *Config) ClientConfig() (*config.Config, error) {
@@ -49,10 +47,8 @@ func (c *Config) ClientConfig() (*config.Config, error) {
 		Debug:              c.Debug,
 		NonvotingAuthority: c.NonvotingAuthority,
 		VotingAuthority:    c.VotingAuthority,
-		Panda:              c.Panda,
-		Reunion:            c.Reunion,
 	}
-	err := cfg.FixupAndMinimallyValidate()
+	err := cfg.FixupAndValidate()
 	if err != nil {
 		return nil, err
 	}
