@@ -20,7 +20,6 @@ package client
 import (
 	"context"
 	"errors"
-	mrand "math/rand"
 	"path/filepath"
 	"sync"
 	"time"
@@ -50,8 +49,13 @@ type Client struct {
 	session *Session
 }
 
-// NewEphemeralClientConfig fetches a consensus and chooses a provider that suppports TrustOnFirstUse clients.
-func NewEphemeralClientConfig(cfg *config.Config) (*pki.MixDescriptor, *ecdh.PrivateKey, error) {
+// GetConfig returns the client configuration
+func (c *Client) GetConfig() *config.Config {
+	return c.cfg
+}
+
+// PKIBootstrap returns a pkiClient and fetches a consensus.
+func PKIBootstrap(cfg *config.Config) (*pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
 	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
 	if err != nil {
@@ -69,7 +73,11 @@ func NewEphemeralClientConfig(cfg *config.Config) (*pki.MixDescriptor, *ecdh.Pri
 	if err != nil {
 		return nil, nil, err
 	}
+	return &pkiClient, doc, nil
+}
 
+// SelectProvider returns a provider descriptor or error.
+func SelectProvider(doc *pki.Document) (*pki.MixDescriptor, error) {
 	// Pick a Provider that supports TrustOnFirstUse
 	providers := []*pki.MixDescriptor{}
 	for _, provider := range doc.Providers {
@@ -78,15 +86,10 @@ func NewEphemeralClientConfig(cfg *config.Config) (*pki.MixDescriptor, *ecdh.Pri
 		}
 	}
 	if len(providers) == 0 {
-		return nil, nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
+		return nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
 	}
-	mrand.Seed(time.Now().UTC().UnixNano())
-	provider := providers[mrand.Intn(len(providers))]
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	return provider, linkKey, nil
+	provider := providers[rand.NewMath().Intn(len(providers))]
+	return provider, nil
 }
 
 // New creates a new Client with the provided configuration.
@@ -159,12 +162,33 @@ func (c *Client) halt() {
 	close(c.haltedCh)
 }
 
-// NewSession creates and returns a new session or an error.
-func (c *Client) NewSession(linkKey *ecdh.PrivateKey, provider *pki.MixDescriptor) (*Session, error) {
-	var err error
+// NewTOFUSession creates and returns a new ephemeral session or an error.
+func (c *Client) NewTOFUSession() (*Session, error) {
+	var (
+		err error
+		doc *pki.Document
+		provider *pki.MixDescriptor
+		linkKey *ecdh.PrivateKey
+	)
+
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+
+	// fetch a pki.Document
+	if _, doc, err = PKIBootstrap(c.cfg); err != nil {
+		return nil, err
+	}
+	// choose a provider
+	if provider, err = SelectProvider(doc); err != nil {
+		return nil, err
+	}
+
+	// generate a linkKey
+	if linkKey, err = ecdh.NewKeypair(rand.Reader); err != nil {
+		return nil, err
+	}
+
 	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
 	return c.session, err
 }
