@@ -49,5 +49,4 @@
 
 [Debug]
   DisableDecoyTraffic = false
-  CaseSensitiveUserIdentifiers = false
   PollingInterval = 50
