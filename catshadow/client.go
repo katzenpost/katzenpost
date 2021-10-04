@@ -32,7 +32,6 @@ import (
 	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -56,7 +55,7 @@ var (
 	errContactNotFound        = errors.New("Contact not found")
 	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
 	errBlobNotFound           = errors.New("Blob not found in store")
-	pandaBlobSize             = constants.ForwardPayloadLength
+	pandaBlobSize             = 1000
 )
 
 // Client is the mixnet client which interacts with other clients
