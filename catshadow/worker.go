@@ -47,6 +47,7 @@ func (c *Client) worker() {
 
 	readInboxTimer := time.NewTimer(maxDuration)
 	defer readInboxTimer.Stop()
+	c.getReadInboxInterval = func() time.Duration { return maxDuration } // replaced in onDocument
 
 	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
 	defer gcMessagestimer.Stop()
