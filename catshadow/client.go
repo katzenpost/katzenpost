@@ -125,6 +125,13 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
 func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
+	if state == nil {
+		state = &State{
+			Blob:          make(map[string][]byte),
+			Contacts:      make([]*Contact, 0),
+			Conversations: make(map[string]map[MessageID]*Message),
+		}
+	}
 	if state.Blob == nil {
 		state.Blob = make(map[string][]byte)
 	}
