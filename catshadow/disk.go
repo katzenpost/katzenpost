@@ -41,6 +41,10 @@ const (
 	nonceSize = 24
 )
 
+var (
+	DecryptStateFailed = errors.New("failed to decrypted statefile")
+)
+
 // State is the struct type representing the Client's state
 // which is encrypted and persisted to disk.
 type State struct {
@@ -82,7 +86,7 @@ func decryptState(ciphertext []byte, key *[32]byte) ([]byte, error) {
 	ciphertext = ciphertext[nonceSize:]
 	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, key)
 	if !ok {
-		return nil, errors.New("failed to decrypted statefile")
+		return nil, DecryptStateFailed
 	}
 	return plaintext, nil
 }
