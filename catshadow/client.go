@@ -383,6 +383,9 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
+	if c.spoolReadDescriptor == nil {
+		return fmt.Errorf("Cannot add a contact before a spool has been created, sorry")
+	}
 	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.GetSession())
 	if err != nil {
 		return err
