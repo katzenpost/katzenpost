@@ -102,7 +102,7 @@ func (c *Client) worker() {
 		case update := <-c.reunionChan:
 			c.processReunionUpdate(&update)
 			continue
-		case rawClientEvent := <-c.GetSession().EventSink:
+		case rawClientEvent := <-c.GetSink():
 			switch event := rawClientEvent.(type) {
 			case *client.MessageIDGarbageCollected:
 				c.garbageCollectSendMap(event)
