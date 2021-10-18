@@ -162,6 +162,15 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	return c, nil
 }
 
+func (c *Client) GetSink() chan client.Event {
+	s := c.GetSession()
+	if s != nil {
+		return s.EventSink
+	} else {
+		return nil
+	}
+}
+
 func (c *Client) GetSession() *client.Session {
 	if c.session != nil {
 		return c.session
@@ -169,7 +178,7 @@ func (c *Client) GetSession() *client.Session {
 		// blocks until created
 		s, err := c.client.NewTOFUSession()
 		if err != nil {
-			c.fatalErrCh <- err
+			return nil
 		}
 		c.session = s
 		c.restartPANDAExchanges()
