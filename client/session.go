@@ -254,6 +254,9 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
 // GetService returns a randomly selected service
 // matching the specified service name
 func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, error) {
+	if s.minclient == nil {
+		return nil, errors.New("minclient is nil")
+	}
 	doc := s.minclient.CurrentDocument()
 	if doc == nil {
 		return nil, errors.New("pki doc is nil")
