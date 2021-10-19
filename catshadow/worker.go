@@ -74,6 +74,10 @@ func (c *Client) worker() {
 			}
 		case qo = <-c.opCh:
 			switch op := qo.(type) {
+			case *opOnline:
+				op.responseChan <- c.goOnline()
+			case *opOffline:
+				op.responseChan <- c.goOffline()
 			case *opAddContact:
 				err := c.createContact(op.name, op.sharedSecret)
 				if err != nil {
@@ -102,7 +106,7 @@ func (c *Client) worker() {
 		case update := <-c.reunionChan:
 			c.processReunionUpdate(&update)
 			continue
-		case rawClientEvent := <-c.GetSink():
+		case rawClientEvent := <-c.sessionEvents():
 			switch event := rawClientEvent.(type) {
 			case *client.MessageIDGarbageCollected:
 				c.garbageCollectSendMap(event)
