@@ -82,6 +82,7 @@ type Client struct {
 	conversationsMutex  *sync.Mutex
 	blobMutex           *sync.Mutex
 
+	online bool
 	client  *client.Client
 	session *client.Session
 	providers []*pki.MixDescriptor
@@ -162,13 +163,15 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 	return c, nil
 }
 
-func (c *Client) GetSink() chan client.Event {
-	s := c.GetSession()
-	if s != nil {
-		return s.EventSink
-	} else {
-		return nil
+// sessionEvents() is called by the worker routine. It returns
+// events from the established session or nil, if the client is in offline mode
+func (c *Client) sessionEvents() chan client.Event {
+	if c.online {
+		if s := c.GetSession(); s != nil {
+			return s.EventSink
+		}
 	}
+	return nil
 }
 
 func (c *Client) GetSession() *client.Session {
@@ -1304,4 +1307,41 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 		return nil, errBlobNotFound
 	}
 	return b, nil
+}
+
+// Online() brings catshadow online or returns an error
+func (c* Client) Online() error {
+	// XXX: block until connection or error ?
+	r := make(chan error)
+	c.opCh <- opOnline{responseChan: r}
+	return <-r
+}
+
+// goOnline is called by worker routine when a goOnline is received
+func (c* Client) goOnline() error {
+	if c.online {
+		return errors.New("Already Connected")
+	}
+	s, err := c.client.NewTOFUSession()
+	if err != nil {
+		return err
+	}
+	c.session = s
+	c.online = true
+	return nil
+}
+
+// Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
+func (c* Client) Offline() error {
+	// TODO: implement some safe shutdown where necessary
+	r := make(chan error)
+	c.opCh <- &opOffline{r}
+	return <-r
+}
+
+// goOffline is called by worker routine when a goOffline is received
+func (c* Client) goOffline() error {
+	c.session.Shutdown()
+	c.online = false
+	return nil
 }
