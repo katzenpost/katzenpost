@@ -357,6 +357,10 @@ func (s *Session) GetPandaConfig() *config.Panda {
 	return s.cfg.Panda
 }
 
+func (s *Session) ForceFetchPKI() {
+	s.minclient.ForceFetchPKI()
+}
+
 func (s *Session) Shutdown() {
 	s.Halt()
 	s.rescheduler.timerQ.Halt()

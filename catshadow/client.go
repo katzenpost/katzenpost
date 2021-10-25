@@ -39,6 +39,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
+	"github.com/katzenpost/katzenpost/minclient"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
@@ -929,8 +930,13 @@ func (c *Client) sendReadInbox() {
 		return
 	}
 	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
-	if err != nil {
-		c.log.Error("failed to send inbox retrieval message")
+	switch err.(type) {
+	case *minclient.PKIError:
+		c.session.ForceFetchPKI()
+		return
+	case nil:
+	default:
+		c.log.Errorf("sendReadInbox failure: %v", err)
 		return
 	}
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
