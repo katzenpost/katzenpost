@@ -71,6 +71,9 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	// Start catshadow client.
 	catShadowClient.Start()
 
+	// Bring catshadow online
+	catShadowClient.Online()
+
 	return catShadowClient
 }
 
@@ -104,6 +107,9 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	// Start catshadow client.
 	stateWorker.Start()
 	catShadowClient.Start()
+
+	// Bring catshadow online
+	catShadowClient.Online()
 
 	return catShadowClient
 }
