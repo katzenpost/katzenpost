@@ -1313,7 +1313,7 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 func (c* Client) Online() error {
 	// XXX: block until connection or error ?
 	r := make(chan error)
-	c.opCh <- opOnline{responseChan: r}
+	c.opCh <- &opOnline{responseChan: r}
 	return <-r
 }
 
@@ -1335,7 +1335,7 @@ func (c* Client) goOnline() error {
 func (c* Client) Offline() error {
 	// TODO: implement some safe shutdown where necessary
 	r := make(chan error)
-	c.opCh <- &opOffline{r}
+	c.opCh <- &opOffline{responseChan: r}
 	return <-r
 }
 
