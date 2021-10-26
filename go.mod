@@ -14,7 +14,7 @@ require (
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
-	github.com/katzenpost/chacha20poly1305 v0.0.0-20211025084354-9e54eaacaaf0
+	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/doubleratchet v0.0.13
 	github.com/katzenpost/noise v0.0.3
 	github.com/lib/pq v1.10.3 // indirect
