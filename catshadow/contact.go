@@ -23,7 +23,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	ratchet "github.com/katzenpost/doubleratchet"
-	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
@@ -62,6 +61,7 @@ type serializedContact struct {
 	ReunionResult        map[uint64]string
 	Ratchet              []byte
 	Outbound             *Queue
+	SharedSecret         []byte
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 }
 
@@ -113,6 +113,9 @@ type Contact struct {
 	// which we must write to in order to send this contact a message.
 	spoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
 
+	// sharedSecret is the passphrase used to add the contact.
+	sharedSecret []byte
+
 	// outbound is a queue of messages waiting to be sent for this client
 	// messages must be acknowledged in order before another message will
 	// be sent
@@ -123,7 +126,7 @@ type Contact struct {
 }
 
 // NewContact creates a new Contact or returns an error.
-func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.SpoolReadDescriptor, session *client.Session) (*Contact, error) {
+func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.SpoolReadDescriptor, secret []byte) (*Contact, error) {
 	ratchet, err := ratchet.InitRatchet(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -143,6 +146,7 @@ func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.
 		IsPending:         true,
 		ratchet:           ratchet,
 		ratchetMutex:      new(sync.Mutex),
+		sharedSecret:      secret,
 		keyExchange:       exchange,
 		pandaShutdownChan: make(chan struct{}),
 		outbound:          new(Queue),
@@ -174,6 +178,7 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		ReunionKeyExchange:   c.reunionKeyExchange,
 		ReunionResult:        c.reunionResult,
 		Ratchet:              ratchetBlob,
+		SharedSecret:         c.sharedSecret,
 		SpoolWriteDescriptor: c.spoolWriteDescriptor,
 		Outbound:             c.outbound,
 	}
@@ -204,6 +209,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.reunionResult = s.ReunionResult
 	c.ratchetMutex = new(sync.Mutex)
 	c.ratchet = r
+	c.sharedSecret = s.SharedSecret
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 	c.outbound = s.Outbound
 
