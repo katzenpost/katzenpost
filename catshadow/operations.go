@@ -18,6 +18,14 @@
 
 package catshadow
 
+type opOnline struct {
+	responseChan chan error
+}
+
+type opOffline struct {
+	responseChan chan error
+}
+
 type opAddContact struct {
 	name         string
 	sharedSecret []byte

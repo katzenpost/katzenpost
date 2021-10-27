@@ -27,8 +27,8 @@ import (
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/memspool/client"
 	"golang.org/x/crypto/argon2"
@@ -41,14 +41,16 @@ const (
 	nonceSize = 24
 )
 
+var (
+	DecryptStateFailed = errors.New("failed to decrypted statefile")
+)
+
 // State is the struct type representing the Client's state
 // which is encrypted and persisted to disk.
 type State struct {
 	SpoolReadDescriptor *client.SpoolReadDescriptor
 	Contacts            []*Contact
-	User                string
-	Provider            string
-	LinkKey             *ecdh.PrivateKey
+	Providers           []*pki.MixDescriptor
 	Conversations       map[string]map[MessageID]*Message
 	Blob                map[string][]byte
 }
@@ -84,7 +86,7 @@ func decryptState(ciphertext []byte, key *[32]byte) ([]byte, error) {
 	ciphertext = ciphertext[nonceSize:]
 	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, key)
 	if !ok {
-		return nil, errors.New("failed to decrypted statefile")
+		return nil, DecryptStateFailed
 	}
 	return plaintext, nil
 }

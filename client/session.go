@@ -21,7 +21,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	mrand "math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -49,6 +49,7 @@ type Session struct {
 	cfg       *config.Config
 	pkiClient pki.Client
 	minclient *minclient.Client
+	provider  *pki.MixDescriptor
 	log       *logging.Logger
 
 	fatalErrCh chan error
@@ -62,7 +63,7 @@ type Session struct {
 	hasPKIDoc bool
 
 	egressQueue EgressQueue
-	rescheduler *rescheduler
+	timerQ *TimerQueue
 
 	surbIDMap        sync.Map // [sConstants.SURBIDLength]byte -> *Message
 	sentWaitChanMap  sync.Map // MessageID -> chan *Message
@@ -78,7 +79,8 @@ func NewSession(
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
-	linkKey *ecdh.PrivateKey) (*Session, error) {
+	linkKey *ecdh.PrivateKey,
+	provider *pki.MixDescriptor) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups
@@ -96,11 +98,12 @@ func NewSession(
 	}
 	pkiCacheClient := pkiclient.New(pkiClient2)
 
-	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", cfg.Account.User, cfg.Account.Provider))
+	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", linkKey.PublicKey(), provider.Name))
 
 	s := &Session{
 		cfg:         cfg,
 		linkKey:     linkKey,
+		provider:    provider,
 		pkiClient:   pkiClient,
 		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
@@ -109,13 +112,13 @@ func NewSession(
 		opCh:        make(chan workerOp, 8),
 		egressQueue: new(Queue),
 	}
-	// Configure the rescheduler instance
-	s.rescheduler = NewRescheduler(s)
+	// Configure the timerQ instance
+	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
 	clientCfg := &minclient.ClientConfig{
-		User:                cfg.Account.User,
-		Provider:            cfg.Account.Provider,
-		ProviderKeyPin:      cfg.Account.ProviderKeyPin,
+		User:                s.linkKey.PublicKey().String(),
+		Provider:            s.provider.Name,
+		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiCacheClient,
@@ -129,6 +132,7 @@ func NewSession(
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
+	s.timerQ.Go(s.timerQ.worker)
 	s.Go(s.eventSinkWorker)
 	s.Go(s.garbageCollectionWorker)
 
@@ -143,15 +147,28 @@ func NewSession(
 		pkiCacheClient.Halt()
 	}()
 
-	// block until we get the first PKI document
-	// and then set our timers accordingly
-	err = s.awaitFirstPKIDoc(ctx)
-	if err != nil {
-		s.Shutdown()
-		return nil, err
-	}
+	// start the worker
 	s.Go(s.worker)
+
+	// wait for pki fetch to complete
+	s.waitForDocument()
 	return s, nil
+}
+
+func (s *Session) waitForDocument() *pki.Document {
+	for {
+		select {
+		case ev := <-s.EventSink:
+			switch e := ev.(type) {
+			case *NewDocumentEvent:
+				return e.Document
+			default:
+				// ignores other events
+			}
+		case <-s.HaltCh():
+			return nil
+		}
+	}
 }
 
 func (s *Session) eventSinkWorker() {
@@ -237,6 +254,9 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
 // GetService returns a randomly selected service
 // matching the specified service name
 func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, error) {
+	if s.minclient == nil {
+		return nil, errors.New("minclient is nil")
+	}
 	doc := s.minclient.CurrentDocument()
 	if doc == nil {
 		return nil, errors.New("pki doc is nil")
@@ -245,7 +265,7 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 	if len(serviceDescriptors) == 0 {
 		return nil, errors.New("error, GetService failure, service not found in pki doc")
 	}
-	return &serviceDescriptors[mrand.Intn(len(serviceDescriptors))], nil
+	return &serviceDescriptors[rand.NewMath().Intn(len(serviceDescriptors))], nil
 }
 
 // OnConnection will be called by the minclient api
@@ -302,7 +322,7 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		return nil
 	}
 	if msg.Reliable {
-		err := s.rescheduler.timerQ.Remove(msg)
+		err := s.timerQ.Remove(msg)
 		if err != nil {
 			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
 		}
@@ -349,12 +369,19 @@ func (s *Session) CurrentDocument() *pki.Document {
 	return s.minclient.CurrentDocument()
 }
 
-func (s *Session) GetReunionConfig() *config.Reunion {
-	return s.cfg.Reunion
-}
-
-func (s *Session) GetPandaConfig() *config.Panda {
-	return s.cfg.Panda
+func (s *Session) Push(i Item) error {
+	// Push checks whether a message was ACK'd already and if it has
+	// not, reschedules the message for transmission again
+	m, ok := i.(*Message)
+	if !ok {
+		return errors.New("Not Implemented for non-Message types")
+	}
+	if _, ok := s.surbIDMap.Load(*m.SURBID); ok {
+		// still waiting for a SURB-ACK that hasn't arrived
+		s.surbIDMap.Delete(*m.SURBID)
+		s.opCh <- opRetransmit{msg: m}
+	}
+	return nil
 }
 
 func (s *Session) ForceFetchPKI() {
@@ -363,7 +390,7 @@ func (s *Session) ForceFetchPKI() {
 
 func (s *Session) Shutdown() {
 	s.Halt()
-	s.rescheduler.timerQ.Halt()
+	s.timerQ.Halt()
 	s.minclient.Shutdown()
 	s.minclient.Wait()
 }
