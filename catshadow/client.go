@@ -255,25 +255,11 @@ func (c *Client) restartReunionExchanges() {
 func (c *Client) restartPANDAExchanges() {
 	for _, contact := range c.contacts {
 		if contact.IsPending {
-			// Use PANDA
-			p, err := c.session.GetService(pCommon.PandaCapability)
+			err := c.doPANDAExchange(contact)
 			if err != nil {
-				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
+				c.log.Errorf("Failed to resume key exchange for %s: %s", contact.Nickname, err)
 				continue
 			}
-			logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-			meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaClient, p.Name, p.Provider)
-			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
-			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
-			if err != nil {
-				c.log.Errorf("Failed to UnmarshalKeyExchange for %s: %s", contact.Nickname, err)
-				continue
-			}
-			// update sharedrandom
-			doc := c.session.CurrentDocument()
-			sharedRandom := doc.PriorSharedRandom[0]
-			kx.SetSharedRandom(sharedRandom)
-			c.Go(kx.Run)
 		}
 	}
 }
@@ -384,23 +370,26 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if c.spoolReadDescriptor == nil {
 		return fmt.Errorf("Cannot add a contact before a spool has been created, sorry")
 	}
-	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.session)
+	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, sharedSecret)
 	if err != nil {
 		return err
 	}
 	c.contacts[contact.ID()] = contact
 	c.contactNicknames[contact.Nickname] = contact
 
-	err = c.doPANDAExchange(contact, sharedSecret)
-	if err != nil {
-		c.log.Notice("PANDA Failure for %v: %v", contact, err)
-	}
+	if c.online {
+		err = c.doPANDAExchange(contact)
+		if err != nil {
+			c.log.Notice("PANDA Failure for %v: %v", contact, err)
+		}
 
-	contact.reunionKeyExchange = make(map[uint64]boundExchange)
-	contact.reunionResult = make(map[uint64]string)
-	err = c.doReunion(contact, sharedSecret)
-	if err != nil {
-		c.log.Notice("Reunion Failure for %v: %v", contact, err)
+		contact.reunionKeyExchange = make(map[uint64]boundExchange)
+		contact.reunionResult = make(map[uint64]string)
+		err = c.doReunion(contact)
+		if err != nil {
+			c.log.Notice("Reunion Failure for %v: %v", contact, err)
+		}
+		return err
 	}
 	return err
 }
@@ -425,7 +414,7 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 	}()
 }
 
-func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
+func (c *Client) doPANDAExchange(contact *Contact) error {
 	// Use PANDA
 	p, err := c.session.GetService(pCommon.PandaCapability)
 	if err != nil {
@@ -439,9 +428,20 @@ func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	doc := c.session.CurrentDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
-	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
-	if err != nil {
-		return err
+
+	var kx *panda.KeyExchange
+	if contact.pandaKeyExchange != nil {
+		kx, err = panda.UnmarshalKeyExchange(rand.Reader, kxLog, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
+		if err != nil {
+			return err
+		}
+		kx.SetSharedRandom(sharedRandom)
+		contact.pandaKeyExchange = kx.Marshal()
+	} else {
+		kx, err = panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, contact.sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
+		if err != nil {
+			return err
+		}
 	}
 	contact.pandaKeyExchange = kx.Marshal()
 	contact.keyExchange = nil
@@ -479,7 +479,7 @@ func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	return nil, errors.New("Found no reunion transports")
 }
 
-func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
+func (c *Client) doReunion(contact *Contact) error {
 	c.log.Info("DoReunion called")
 	rtransports, err := c.getReunionTransports()
 	if err != nil {
@@ -501,7 +501,7 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 			for _, epoch := range epochs {
 				lstr := fmt.Sprintf("reunion with %s at %s@%s:%d", contact.Nickname, tr.Recipient, tr.Provider, epoch)
 				dblog := c.logBackend.GetLogger(lstr)
-				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), sharedSecret, srv, epoch, c.reunionChan)
+				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), contact.sharedSecret, srv, epoch, c.reunionChan)
 				if err != nil {
 					return err
 				}
@@ -800,6 +800,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.IsPending = false
 		c.log.Info("Double ratchet key exchange completed!")
+		contact.sharedSecret = nil
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 		}
