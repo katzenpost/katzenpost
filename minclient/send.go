@@ -136,17 +136,17 @@ func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBID
 	// Get the current PKI document.
 	doc := c.CurrentDocument()
 	if doc == nil {
-		return nil, time.Time{}, fmt.Errorf("minclient: no PKI document for current epoch")
+		return nil, time.Time{}, newPKIError("minclient: no PKI document for current epoch")
 	}
 
 	// Get the descriptors.
 	src, err := doc.GetProvider(srcProvider)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("minclient: failed to find source Provider: %v", err)
+		return nil, time.Time{}, newPKIError("minclient: failed to find source Provider: %v", err)
 	}
 	dst, err := doc.GetProvider(dstProvider)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("minclient: failed to find destination Provider: %v", err)
+		return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
 	}
 
 	p, t, err := path.New(c.rng, doc, []byte(recipient), src, dst, surbID, baseTime, true, isForward)
