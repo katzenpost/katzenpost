@@ -1347,9 +1347,6 @@ func (c *Client) goOnline() error {
 	}
 	c.session = s
 	c.online = true
-	c.restartPANDAExchanges()
-	c.restartReunionExchanges()
-	c.restartSending()
 	return nil
 }
 

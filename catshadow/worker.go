@@ -120,13 +120,16 @@ func (c *Client) worker() {
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
 					c.restartSending()
+					c.restartPANDAExchanges()
+					c.restartReunionExchanges()
 					c.eventCh.In() <- event
 					continue
 				}
 				isConnected = event.IsConnected
 				if !isConnected {
-					c.log.Debug("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s", maxDuration)
+					c.log.Debug("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s and halting key exchanges", maxDuration)
 					readInboxTimer.Reset(maxDuration)
+					c.haltKeyExchanges()
 				}
 				c.eventCh.In() <- event
 			case *client.MessageSentEvent:
