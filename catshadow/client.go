@@ -104,11 +104,12 @@ type queuedSpoolCommand struct {
 	ID       MessageID
 }
 
-// NewClientAndRemoteSpool creates a new Client and creates a new remote spool
-// for collecting messages destined to this Client. The Client is associated with
-// this remote spool and this state is preserved in the encrypted statefile, of course.
-// This constructor of Client is used when creating a new Client as opposed to loading
-// the previously saved state for an existing Client.
+// NewClientAndRemoteSpool creates and connects a new Client and creates a new
+// remote spool for collecting messages destined to this Client. The Client is
+// associated with this remote spool and this state is preserved in the
+// encrypted statefile, of course.  This constructor of Client is used when
+// creating a new Client as opposed to loading the previously saved state for
+// an existing Client.
 func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
@@ -116,6 +117,11 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		Conversations: make(map[string]map[MessageID]*Message),
 	}
 	c, err := New(logBackend, mixnetClient, stateWorker, state)
+	if err != nil {
+		return nil, err
+	}
+	c.Start()
+	err = c.Online()
 	if err != nil {
 		return nil, err
 	}

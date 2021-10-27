@@ -68,12 +68,6 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker)
 	require.NoError(err)
 
-	// Start catshadow client.
-	catShadowClient.Start()
-
-	// Bring catshadow online
-	catShadowClient.Online()
-
 	return catShadowClient
 }
 
