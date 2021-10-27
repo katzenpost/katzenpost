@@ -41,8 +41,8 @@ import (
 	"github.com/katzenpost/katzenpost/memspool/common"
 	"github.com/katzenpost/katzenpost/minclient"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
-	panda "github.com/katzenpost/katzenpost/panda/crypto"
 	pCommon "github.com/katzenpost/katzenpost/panda/common"
+	panda "github.com/katzenpost/katzenpost/panda/crypto"
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
 	"gopkg.in/eapache/channels.v1"
@@ -63,12 +63,12 @@ var (
 type Client struct {
 	worker.Worker
 
-	eventCh     channels.Channel
-	EventSink   chan interface{}
-	opCh        chan interface{}
-	pandaChan   chan panda.PandaUpdate
-	reunionChan chan rClient.ReunionUpdate
-	fatalErrCh  chan error
+	eventCh              channels.Channel
+	EventSink            chan interface{}
+	opCh                 chan interface{}
+	pandaChan            chan panda.PandaUpdate
+	reunionChan          chan rClient.ReunionUpdate
+	fatalErrCh           chan error
 	getReadInboxInterval func() time.Duration
 
 	// messageID -> *SentMessageDescriptor
@@ -82,10 +82,13 @@ type Client struct {
 	conversations       map[string]map[MessageID]*Message
 	conversationsMutex  *sync.Mutex
 	blobMutex           *sync.Mutex
+	connMutex           *sync.RWMutex
 
-	online bool
-	client  *client.Client
-	session *client.Session
+	online     bool
+	connecting bool
+
+	client    *client.Client
+	session   *client.Session
 	providers []*pki.MixDescriptor
 
 	log        *logging.Logger
@@ -152,6 +155,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		blob:                state.Blob,
 		blobMutex:           new(sync.Mutex),
 		conversationsMutex:  new(sync.Mutex),
+		connMutex:           new(sync.RWMutex),
 		stateWorker:         stateWorker,
 		client:              mixnetClient,
 		log:                 logBackend.GetLogger("catshadow"),
@@ -167,29 +171,12 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 // sessionEvents() is called by the worker routine. It returns
 // events from the established session or nil, if the client is in offline mode
 func (c *Client) sessionEvents() chan client.Event {
-	if c.online {
-		if s := c.GetSession(); s != nil {
-			return s.EventSink
-		}
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+	if c.session != nil {
+		return c.session.EventSink
 	}
 	return nil
-}
-
-func (c *Client) GetSession() *client.Session {
-	if c.session != nil {
-		return c.session
-	} else {
-		// blocks until created
-		s, err := c.client.NewTOFUSession()
-		if err != nil {
-			return nil
-		}
-		c.session = s
-		c.restartPANDAExchanges()
-		c.restartReunionExchanges()
-		c.restartSending()
-		return s
-	}
 }
 
 // Start starts the client worker goroutine and the
@@ -221,6 +208,7 @@ func (c *Client) Start() {
 	}()
 
 }
+
 // restart reunion exchanges
 func (c *Client) restartReunionExchanges() {
 	transports, err := c.getReunionTransports()
@@ -262,13 +250,13 @@ func (c *Client) restartPANDAExchanges() {
 	for _, contact := range c.contacts {
 		if contact.IsPending {
 			// Use PANDA
-			p, err := c.GetSession().GetService(pCommon.PandaCapability)
+			p, err := c.session.GetService(pCommon.PandaCapability)
 			if err != nil {
 				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
 				continue
 			}
 			logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-			meetingPlace := pclient.New(pandaBlobSize, c.GetSession(), logPandaClient, p.Name, p.Provider)
+			meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaClient, p.Name, p.Provider)
 			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 			if err != nil {
@@ -276,7 +264,7 @@ func (c *Client) restartPANDAExchanges() {
 				continue
 			}
 			// update sharedrandom
-			doc := c.GetSession().CurrentDocument()
+			doc := c.session.CurrentDocument()
 			sharedRandom := doc.PriorSharedRandom[0]
 			kx.SetSharedRandom(sharedRandom)
 			c.Go(kx.Run)
@@ -335,14 +323,14 @@ func (c *Client) garbageCollectConversations() {
 // destined to this Client. This method blocks until the reply from
 // the remote spool service is received or the round trip timeout is reached.
 func (c *Client) CreateRemoteSpool() error {
-	desc, err := c.GetSession().GetService(common.SpoolServiceName)
+	desc, err := c.session.GetService(common.SpoolServiceName)
 	if err != nil {
 		return err
 	}
 	if c.spoolReadDescriptor == nil {
 		// Be warned that the call to NewSpoolReadDescriptor blocks until the reply
 		// is received or the round trip timeout is reached.
-		c.spoolReadDescriptor, err = memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.GetSession())
+		c.spoolReadDescriptor, err = memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
 		if err != nil {
 			return err
 		}
@@ -390,7 +378,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if c.spoolReadDescriptor == nil {
 		return fmt.Errorf("Cannot add a contact before a spool has been created, sorry")
 	}
-	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.GetSession())
+	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.session)
 	if err != nil {
 		return err
 	}
@@ -433,16 +421,16 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 
 func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 	// Use PANDA
-	p, err := c.GetSession().GetService(pCommon.PandaCapability)
+	p, err := c.session.GetService(pCommon.PandaCapability)
 	if err != nil {
 		c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
 		return err
 	}
 
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-	meetingPlace := pclient.New(pandaBlobSize, c.GetSession(), logPandaClient, p.Name, p.Provider)
+	meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaClient, p.Name, p.Provider)
 	// get the current document and shared random
-	doc := c.GetSession().CurrentDocument()
+	doc := c.session.CurrentDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
@@ -460,7 +448,7 @@ func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
 
 func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	// Get consensus
-	doc := c.GetSession().CurrentDocument()
+	doc := c.session.CurrentDocument()
 	if doc == nil {
 		return nil, errors.New("No current document, wtf")
 	}
@@ -471,7 +459,7 @@ func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 		if r, ok := p.Kaetzchen["reunion"]; ok {
 			if ep, ok := r["endpoint"]; ok {
 				ep := ep.(string)
-				trans := &rTrans.Transport{Session: c.GetSession(), Recipient: ep, Provider: p.Name}
+				trans := &rTrans.Transport{Session: c.session, Recipient: ep, Provider: p.Name}
 				c.log.Debugf("Adding transport %v", trans)
 				transports = append(transports, trans)
 			} else {
@@ -741,12 +729,12 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		if update.Err == client.ErrReplyTimeout {
 			c.log.Error("PANDA handshake for client %s timed-out; restarting exchange", contact.Nickname)
 			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-			p, err := c.GetSession().GetService(pCommon.PandaCapability)
+			p, err := c.session.GetService(pCommon.PandaCapability)
 			if err != nil {
 				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
 			}
 
-			meetingPlace := pclient.New(pandaBlobSize, c.GetSession(), logPandaMeeting, p.Name, p.Provider)
+			meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaMeeting, p.Name, p.Provider)
 			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 			if err != nil {
@@ -934,7 +922,7 @@ func (c *Client) sendMessage(contact *Contact) {
 	}
 
 	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
-	mesgID, err := c.GetSession().SendReliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
+	mesgID, err := c.session.SendReliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
@@ -958,7 +946,7 @@ func (c *Client) sendReadInbox() {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	mesgID, err := c.GetSession().SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
+	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
 	switch err.(type) {
 	case *minclient.PKIError:
 		c.session.ForceFetchPKI()
@@ -1205,8 +1193,8 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 				// message upgrade.
 
 				if len(plaintext) < 4 {
-						// short plaintext received
-						return errInvalidPlaintextLength
+					// short plaintext received
+					return errInvalidPlaintextLength
 				}
 
 				payloadLen := binary.BigEndian.Uint32(plaintext[:4])
@@ -1318,38 +1306,68 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 }
 
 // Online() brings catshadow online or returns an error
-func (c* Client) Online() error {
+func (c *Client) Online() error {
 	// XXX: block until connection or error ?
-	r := make(chan error)
+	r := make(chan error, 1)
 	c.opCh <- &opOnline{responseChan: r}
 	return <-r
 }
 
-// goOnline is called by worker routine when a goOnline is received
-func (c* Client) goOnline() error {
-	if c.online {
+// goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
+func (c *Client) goOnline() error {
+	c.connMutex.RLock()
+	if c.online || c.connecting || c.session != nil {
+		c.connMutex.RUnlock()
 		return errors.New("Already Connected")
 	}
+	c.connMutex.RUnlock()
+
+	// set connecting status
+	c.connMutex.Lock()
+	c.connecting = true
+	c.connMutex.Unlock()
+
+	// try to connect
 	s, err := c.client.NewTOFUSession()
+
+	// re-obtain lock
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	c.connecting = false
 	if err != nil {
+		c.online = false
 		return err
 	}
 	c.session = s
 	c.online = true
+	c.restartPANDAExchanges()
+	c.restartReunionExchanges()
+	c.restartSending()
 	return nil
 }
 
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
-func (c* Client) Offline() error {
+func (c *Client) Offline() error {
 	// TODO: implement some safe shutdown where necessary
-	r := make(chan error)
+	r := make(chan error, 1)
 	c.opCh <- &opOffline{responseChan: r}
 	return <-r
 }
 
 // goOffline is called by worker routine when a goOffline is received
-func (c* Client) goOffline() error {
+func (c *Client) goOffline() error {
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	if c.connecting {
+		return errors.New("Offline() does not cancel Online()")
+	}
+
+	if !c.online || c.session == nil {
+		return errors.New("Already Offline")
+	}
+
 	c.session.Shutdown()
 	c.online = false
+	c.session = nil
 	return nil
 }
