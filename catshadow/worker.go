@@ -80,6 +80,7 @@ func (c *Client) worker() {
 			case *opOffline:
 				op.responseChan <- c.goOffline()
 				isConnected = false
+				c.haltKeyExchanges()
 			case *opAddContact:
 				err := c.createContact(op.name, op.sharedSecret)
 				if err != nil {

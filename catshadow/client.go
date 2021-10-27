@@ -624,6 +624,7 @@ func (c *Client) haltKeyExchanges() {
 			c.log.Debugf("Halting pending key exchange for '%s' contact.", contact.Nickname)
 			if contact.pandaShutdownChan != nil {
 				close(contact.pandaShutdownChan)
+				contact.pandaShutdownChan = nil
 			}
 		}
 	}
