@@ -384,6 +384,10 @@ func (s *Session) Push(i Item) error {
 	return nil
 }
 
+func (s *Session) ForceFetchPKI() {
+	s.minclient.ForceFetchPKI()
+}
+
 func (s *Session) Shutdown() {
 	s.Halt()
 	s.timerQ.Halt()

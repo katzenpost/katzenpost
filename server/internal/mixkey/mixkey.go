@@ -28,7 +28,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"git.schwanenlied.me/yawning/bloom.git"
+	"github.com/yawning/bloom"
 	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
