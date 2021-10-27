@@ -32,15 +32,16 @@ import (
 	ratchet "github.com/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
 	"github.com/katzenpost/katzenpost/minclient"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
+	pCommon "github.com/katzenpost/katzenpost/panda/common"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
@@ -54,6 +55,7 @@ var (
 	errContactNotFound        = errors.New("Contact not found")
 	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
 	errBlobNotFound           = errors.New("Blob not found in store")
+	pandaBlobSize             = 1000
 )
 
 // Client is the mixnet client which interacts with other clients
@@ -61,19 +63,18 @@ var (
 type Client struct {
 	worker.Worker
 
-	eventCh     channels.Channel
-	EventSink   chan interface{}
-	opCh        chan interface{}
-	pandaChan   chan panda.PandaUpdate
-	reunionChan chan rClient.ReunionUpdate
-	fatalErrCh  chan error
+	eventCh              channels.Channel
+	EventSink            chan interface{}
+	opCh                 chan interface{}
+	pandaChan            chan panda.PandaUpdate
+	reunionChan          chan rClient.ReunionUpdate
+	fatalErrCh           chan error
+	getReadInboxInterval func() time.Duration
 
 	// messageID -> *SentMessageDescriptor
 	sendMap *sync.Map
 
 	stateWorker         *StateWriter
-	linkKey             *ecdh.PrivateKey
-	user                string
 	blob                map[string][]byte
 	contacts            map[uint64]*Contact
 	contactNicknames    map[string]*Contact
@@ -81,9 +82,14 @@ type Client struct {
 	conversations       map[string]map[MessageID]*Message
 	conversationsMutex  *sync.Mutex
 	blobMutex           *sync.Mutex
+	connMutex           *sync.RWMutex
 
-	client  *client.Client
-	session *client.Session
+	online     bool
+	connecting bool
+
+	client    *client.Client
+	session   *client.Session
+	providers []*pki.MixDescriptor
 
 	log        *logging.Logger
 	logBackend *log.Backend
@@ -98,21 +104,24 @@ type queuedSpoolCommand struct {
 	ID       MessageID
 }
 
-// NewClientAndRemoteSpool creates a new Client and creates a new remote spool
-// for collecting messages destined to this Client. The Client is associated with
-// this remote spool and this state is preserved in the encrypted statefile, of course.
-// This constructor of Client is used when creating a new Client as opposed to loading
-// the previously saved state for an existing Client.
-func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, user string, linkKey *ecdh.PrivateKey) (*Client, error) {
+// NewClientAndRemoteSpool creates and connects a new Client and creates a new
+// remote spool for collecting messages destined to this Client. The Client is
+// associated with this remote spool and this state is preserved in the
+// encrypted statefile, of course.  This constructor of Client is used when
+// creating a new Client as opposed to loading the previously saved state for
+// an existing Client.
+func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
-		User:          user,
-		Provider:      mixnetClient.Provider(),
-		LinkKey:       linkKey,
 	}
 	c, err := New(logBackend, mixnetClient, stateWorker, state)
+	if err != nil {
+		return nil, err
+	}
+	c.Start()
+	err = c.Online()
 	if err != nil {
 		return nil, err
 	}
@@ -127,9 +136,12 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
 func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
-	session, err := mixnetClient.NewSession(state.LinkKey)
-	if err != nil {
-		return nil, err
+	if state == nil {
+		state = &State{
+			Blob:          make(map[string][]byte),
+			Contacts:      make([]*Contact, 0),
+			Conversations: make(map[string]map[MessageID]*Message),
+		}
 	}
 	if state.Blob == nil {
 		state.Blob = make(map[string][]byte)
@@ -145,15 +157,13 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		contacts:            make(map[uint64]*Contact),
 		contactNicknames:    make(map[string]*Contact),
 		spoolReadDescriptor: state.SpoolReadDescriptor,
-		linkKey:             state.LinkKey,
-		user:                state.User,
 		conversations:       state.Conversations,
 		blob:                state.Blob,
 		blobMutex:           new(sync.Mutex),
 		conversationsMutex:  new(sync.Mutex),
+		connMutex:           new(sync.RWMutex),
 		stateWorker:         stateWorker,
 		client:              mixnetClient,
-		session:             session,
 		log:                 logBackend.GetLogger("catshadow"),
 		logBackend:          logBackend,
 	}
@@ -162,6 +172,17 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		c.contactNicknames[contact.Nickname] = contact
 	}
 	return c, nil
+}
+
+// sessionEvents() is called by the worker routine. It returns
+// events from the established session or nil, if the client is in offline mode
+func (c *Client) sessionEvents() chan client.Event {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+	if c.session != nil {
+		return c.session.EventSink
+	}
+	return nil
 }
 
 // Start starts the client worker goroutine and the
@@ -180,8 +201,6 @@ func (c *Client) Start() {
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-	c.restartContactExchanges()
-	c.restartSending()
 	for nickname, contact := range c.GetContacts() {
 		msgs := c.GetSortedConversation(nickname)
 		if len(msgs) > 0 {
@@ -196,60 +215,56 @@ func (c *Client) Start() {
 
 }
 
-// restart contact exchanges
-func (c *Client) restartContactExchanges() {
-	pandaCfg := c.session.GetPandaConfig()
-	reunionCfg := c.session.GetReunionConfig()
+// restart reunion exchanges
+func (c *Client) restartReunionExchanges() {
+	transports, err := c.getReunionTransports()
+	if err != nil {
+		c.log.Warningf("Reunion configured, but no transports found")
+		return
+	}
 	for _, contact := range c.contacts {
 		if contact.IsPending {
-			if reunionCfg != nil && reunionCfg.Enable == true {
-				transports, err := c.getReunionTransports() // could put outside this loop
-				if err != nil {
-					// XXX: handle with a UI notification
-					c.log.Warningf("Reunion configured, but no transports found")
-					break
-				}
-				for eid, ex := range contact.reunionKeyExchange {
-					// see if the transport still exists in current transports
-					m := false
-					for _, tr := range transports {
-						if tr.Recipient == ex.recipient && tr.Provider == ex.provider {
-							m = true
-							lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
-							dblog := c.logBackend.GetLogger(lstr)
-							exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan)
-							if err != nil {
-								c.log.Warningf("Reunion failed: %v", err)
-							} else {
-								go exchange.Run()
-								break
-							}
+			for eid, ex := range contact.reunionKeyExchange {
+				// see if the transport still exists in current transports
+				m := false
+				for _, tr := range transports {
+					if tr.Recipient == ex.recipient && tr.Provider == ex.provider {
+						m = true
+						lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
+						dblog := c.logBackend.GetLogger(lstr)
+						exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan)
+						if err != nil {
+							c.log.Warningf("Reunion failed: %v", err)
+						} else {
+							c.Go(exchange.Run)
+							break
 						}
 					}
-					// transport not found
-					if m == false {
-						c.log.Warningf("Reunion transport %s@%s no longer exists!", ex.recipient, ex.provider)
-						delete(contact.reunionKeyExchange, eid)
-					}
 				}
-			} else if pandaCfg != nil {
-				logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-				meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
-				logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
-				kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
-				if err != nil {
-					panic(err)
+				// transport not found
+				if m == false {
+					c.log.Warningf("Reunion transport %s@%s no longer exists!", ex.recipient, ex.provider)
+					delete(contact.reunionKeyExchange, eid)
 				}
-				// update sharedrandom
-				doc := c.session.CurrentDocument()
-				sharedRandom := doc.PriorSharedRandom[0]
-				kx.SetSharedRandom(sharedRandom)
-				go kx.Run()
 			}
 		}
 	}
 }
 
+// restart PANDA exchanges
+func (c *Client) restartPANDAExchanges() {
+	for _, contact := range c.contacts {
+		if contact.IsPending {
+			err := c.doPANDAExchange(contact)
+			if err != nil {
+				c.log.Errorf("Failed to resume key exchange for %s: %s", contact.Nickname, err)
+				continue
+			}
+		}
+	}
+}
+
+// restart sending messages
 func (c *Client) restartSending() {
 	for _, contact := range c.contacts {
 		if !contact.IsPending {
@@ -352,38 +367,29 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, c.session)
+	if c.spoolReadDescriptor == nil {
+		return fmt.Errorf("Cannot add a contact before a spool has been created, sorry")
+	}
+	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, sharedSecret)
 	if err != nil {
 		return err
 	}
 	c.contacts[contact.ID()] = contact
 	c.contactNicknames[contact.Nickname] = contact
 
-	// Use PANDA or Reunion
-	pandaCfg := c.session.GetPandaConfig()
-	reunionCfg := c.session.GetReunionConfig()
-
-	switch {
-	case reunionCfg != nil && pandaCfg != nil:
-		// both reunion and panda have a configuration entry, and reunion is enabled
-		if reunionCfg.Enable == true {
-			return errors.New("One of Reunion OR Panda must be configured, not both")
-		}
-		fallthrough
-	case pandaCfg != nil:
-		err = c.doPANDAExchange(contact, sharedSecret)
+	if c.online {
+		err = c.doPANDAExchange(contact)
 		if err != nil {
 			c.log.Notice("PANDA Failure for %v: %v", contact, err)
-			return err
 		}
-	case reunionCfg != nil:
+
 		contact.reunionKeyExchange = make(map[uint64]boundExchange)
 		contact.reunionResult = make(map[uint64]string)
-		err = c.doReunion(contact, sharedSecret)
+		err = c.doReunion(contact)
 		if err != nil {
 			c.log.Notice("Reunion Failure for %v: %v", contact, err)
-			return err
 		}
+		return err
 	}
 	return err
 }
@@ -408,18 +414,34 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 	}()
 }
 
-func (c *Client) doPANDAExchange(contact *Contact, sharedSecret []byte) error {
+func (c *Client) doPANDAExchange(contact *Contact) error {
 	// Use PANDA
-	pandaCfg := c.session.GetPandaConfig()
+	p, err := c.session.GetService(pCommon.PandaCapability)
+	if err != nil {
+		c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
+		return err
+	}
+
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-	meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaClient, pandaCfg.Receiver, pandaCfg.Provider)
+	meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaClient, p.Name, p.Provider)
 	// get the current document and shared random
 	doc := c.session.CurrentDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
-	kx, err := panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
-	if err != nil {
-		return err
+
+	var kx *panda.KeyExchange
+	if contact.pandaKeyExchange != nil {
+		kx, err = panda.UnmarshalKeyExchange(rand.Reader, kxLog, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
+		if err != nil {
+			return err
+		}
+		kx.SetSharedRandom(sharedRandom)
+		contact.pandaKeyExchange = kx.Marshal()
+	} else {
+		kx, err = panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, contact.sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
+		if err != nil {
+			return err
+		}
 	}
 	contact.pandaKeyExchange = kx.Marshal()
 	contact.keyExchange = nil
@@ -457,7 +479,7 @@ func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	return nil, errors.New("Found no reunion transports")
 }
 
-func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
+func (c *Client) doReunion(contact *Contact) error {
 	c.log.Info("DoReunion called")
 	rtransports, err := c.getReunionTransports()
 	if err != nil {
@@ -479,7 +501,7 @@ func (c *Client) doReunion(contact *Contact, sharedSecret []byte) error {
 			for _, epoch := range epochs {
 				lstr := fmt.Sprintf("reunion with %s at %s@%s:%d", contact.Nickname, tr.Recipient, tr.Provider, epoch)
 				dblog := c.logBackend.GetLogger(lstr)
-				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), sharedSecret, srv, epoch, c.reunionChan)
+				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), contact.sharedSecret, srv, epoch, c.reunionChan)
 				if err != nil {
 					return err
 				}
@@ -583,10 +605,8 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 	s := &State{
 		SpoolReadDescriptor: c.spoolReadDescriptor,
 		Contacts:            contacts,
-		LinkKey:             c.linkKey,
-		User:                c.user,
-		Provider:            c.client.Provider(),
 		Conversations:       c.conversations,
+		Providers:           c.providers,
 		Blob:                c.blob,
 	}
 	defer c.conversationsMutex.Unlock()
@@ -713,20 +733,21 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 	case update.Err != nil:
 		// restart the handshake with the current state if the error is due to SURB-ACK timeout
 		if update.Err == client.ErrReplyTimeout {
-			pandaCfg := c.session.GetPandaConfig()
-			if pandaCfg == nil {
-				panic("panda failed, must have a panda service configured")
-			}
-
 			c.log.Error("PANDA handshake for client %s timed-out; restarting exchange", contact.Nickname)
 			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-			meetingPlace := pclient.New(pandaCfg.BlobSize, c.session, logPandaMeeting, pandaCfg.Receiver, pandaCfg.Provider)
+			p, err := c.session.GetService(pCommon.PandaCapability)
+			if err != nil {
+				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
+			}
+
+			meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaMeeting, p.Name, p.Provider)
 			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 			if err != nil {
-				panic(err)
+				c.log.Errorf("Failed to UnmarshalKeyExchange for %s: %s", contact.Nickname, err)
+				return
 			}
-			go kx.Run()
+			c.Go(kx.Run)
 		}
 		contact.pandaResult = update.Err.Error()
 		contact.pandaShutdownChan = nil
@@ -779,6 +800,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		contact.spoolWriteDescriptor = exchange.SpoolWriteDescriptor
 		contact.IsPending = false
 		c.log.Info("Double ratchet key exchange completed!")
+		contact.sharedSecret = nil
 		c.eventCh.In() <- &KeyExchangeCompletedEvent{
 			Nickname: contact.Nickname,
 		}
@@ -872,7 +894,9 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		Command:  appendCmd, ID: convoMesgID}
 	if _, err := contact.outbound.Peek(); err == ErrQueueEmpty {
 		// no messages already queued, so call sendMessage immediately
-		defer c.sendMessage(contact)
+		if c.online {
+			defer c.sendMessage(contact)
+		}
 	}
 	if err := contact.outbound.Push(item); err != nil {
 		c.log.Debugf("Failed to enqueue message!")
@@ -942,7 +966,7 @@ func (c *Client) sendReadInbox() {
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(*mesgID, &SentMessageDescriptor{Nickname: c.user, MessageID: a})
+	c.sendMap.Store(*mesgID, &ReadMessageDescriptor{MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
@@ -954,16 +978,14 @@ func (c *Client) handleSent(sentEvent *client.MessageSentEvent) {
 	orig, ok := c.sendMap.Load(*sentEvent.MessageID)
 	if ok {
 		switch tp := orig.(type) {
-		case *SentMessageDescriptor:
-			if tp.Nickname == c.user { // ack for readInbox
-				if sentEvent.Err != nil {
-					c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
-				} else {
-					c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
-				}
-				return
+		case *ReadMessageDescriptor:
+			if sentEvent.Err != nil {
+				c.log.Debugf("readInbox command %x failed with %s", *sentEvent.MessageID, sentEvent.Err)
+			} else {
+				c.log.Debugf("readInbox command %x sent", *sentEvent.MessageID)
 			}
-
+			return
+		case *SentMessageDescriptor:
 			// since the retransmission occurs per contact
 			// set a timer on the contact
 			if contact, ok := c.contactNicknames[tp.Nickname]; !ok {
@@ -999,64 +1021,62 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 		defer c.sendMap.Delete(replyEvent.MessageID)
 		switch tp := ev.(type) {
 		case *SentMessageDescriptor:
+			// Deserialize spoolresponse
 			spoolResponse := common.SpoolResponse{}
 			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
 			if err != nil {
-				c.fatalErrCh <- fmt.Errorf("BUG, invalid spool response, error is %s", err)
+				c.log.Errorf("Could not deserialize SpoolResponse to message ID %d: %s", tp.MessageID, err)
+				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+					Err: fmt.Errorf("Invalid spool response: %s", err),
+				}
 				return
 			}
-			if !spoolResponse.IsOK() {
-				// ignore not found errors when trying to fetch new messages from the inbox
-				if spoolResponse.SpoolID == c.spoolReadDescriptor.ID &&
-					spoolResponse.MessageID == c.spoolReadDescriptor.ReadOffset {
-					return
-				}
 
-				// otherwise log an error and emit an event
+			if !spoolResponse.IsOK() {
 				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
 					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 
-				c.eventCh.In() <- &MessageNotDeliveredEvent{
-					Nickname:  tp.Nickname,
-					MessageID: tp.MessageID,
-					Err:       spoolResponse.StatusAsError(),
+				c.eventCh.In() <- &MessageNotDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID,
+					Err: spoolResponse.StatusAsError(),
 				}
 				return
 			}
-			if tp.Nickname != c.user {
-				// Is a Message Delivery acknowledgement for a spool write
-				c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
-				// cancel retransmission timer
-				if contact, ok := c.contactNicknames[tp.Nickname]; ok {
-					if contact.ackID != *replyEvent.MessageID {
-						// spurious ACK
-						c.log.Debugf("Dropping spurious ACK for %x", *replyEvent.MessageID)
-						return
-					}
-					if _, err := contact.outbound.Pop(); err != nil {
-						// duplicate ACK?
-						c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x %s",
-							contact.Nickname, *replyEvent.MessageID, err)
-						return // do not send an extra MessageDeliveredEvent!
-					} else {
-						// try to send the next message, if one exists
-						defer c.sendMessage(contact)
-					}
-				} else {
-					// XXX: FIXME: a renamed contact doesn't match here...
-					c.log.Warning("MessageDelivered for missing/renamed contact?", tp.Nickname)
+			c.log.Debugf("MessageDeliveredEvent for %s MessageID %x", tp.Nickname, *replyEvent.MessageID)
+			if contact, ok := c.contactNicknames[tp.Nickname]; ok {
+				if contact.ackID != *replyEvent.MessageID {
+					// spurious ACK
+					c.log.Debugf("Dropping spurious ACK for %x", *replyEvent.MessageID)
 					return
+				}
+				if _, err := contact.outbound.Pop(); err != nil {
+					// duplicate ACK?
+					c.log.Debugf("Maybe duplicate ACK received for %s with MessageID %x %s",
+						contact.Nickname, *replyEvent.MessageID, err)
+					return // do not send an extra MessageDeliveredEvent!
+				} else {
+					// try to send the next message, if one exists
+					defer c.sendMessage(contact)
 				}
 				c.log.Debugf("Sending MessageDeliveredEvent for %s", tp.Nickname)
 				c.setMessageDelivered(tp.Nickname, tp.MessageID)
 				c.save()
-				c.eventCh.In() <- &MessageDeliveredEvent{
-					Nickname:  tp.Nickname,
-					MessageID: tp.MessageID,
-				}
+				c.eventCh.In() <- &MessageDeliveredEvent{Nickname: tp.Nickname, MessageID: tp.MessageID}
 				return
 			}
+		case *ReadMessageDescriptor:
+			// Deserialize spoolresponse
+			spoolResponse := common.SpoolResponse{}
+			err := cbor.Unmarshal(replyEvent.Payload, &spoolResponse)
+			if err != nil {
+				c.log.Errorf("Could not deserialize SpoolResponse to ReadInbox ID %d: %s", tp.MessageID, err)
+				return
+			}
+			if !spoolResponse.IsOK() {
+				c.log.Errorf("Spool response ID %d status error: %s for SpoolID %x",
+					spoolResponse.MessageID, spoolResponse.Status, spoolResponse.SpoolID)
 
+				return
+			}
 			// is a valid response to the tip of our spool, so increment the pointer
 			switch {
 			case spoolResponse.MessageID < c.spoolReadDescriptor.ReadOffset:
@@ -1180,8 +1200,8 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 				// message upgrade.
 
 				if len(plaintext) < 4 {
-						// short plaintext received
-						return errInvalidPlaintextLength
+					// short plaintext received
+					return errInvalidPlaintextLength
 				}
 
 				payloadLen := binary.BigEndian.Uint32(plaintext[:4])
@@ -1290,4 +1310,71 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 		return nil, errBlobNotFound
 	}
 	return b, nil
+}
+
+// Online() brings catshadow online or returns an error
+func (c *Client) Online() error {
+	// XXX: block until connection or error ?
+	r := make(chan error, 1)
+	c.opCh <- &opOnline{responseChan: r}
+	return <-r
+}
+
+// goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
+func (c *Client) goOnline() error {
+	c.connMutex.RLock()
+	if c.online || c.connecting || c.session != nil {
+		c.connMutex.RUnlock()
+		return errors.New("Already Connected")
+	}
+	c.connMutex.RUnlock()
+
+	// set connecting status
+	c.connMutex.Lock()
+	c.connecting = true
+	c.connMutex.Unlock()
+
+	// try to connect
+	s, err := c.client.NewTOFUSession()
+
+	// re-obtain lock
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	c.connecting = false
+	if err != nil {
+		c.online = false
+		return err
+	}
+	c.session = s
+	c.online = true
+	c.restartPANDAExchanges()
+	c.restartReunionExchanges()
+	c.restartSending()
+	return nil
+}
+
+// Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
+func (c *Client) Offline() error {
+	// TODO: implement some safe shutdown where necessary
+	r := make(chan error, 1)
+	c.opCh <- &opOffline{responseChan: r}
+	return <-r
+}
+
+// goOffline is called by worker routine when a goOffline is received
+func (c *Client) goOffline() error {
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	if c.connecting {
+		return errors.New("Offline() does not cancel Online()")
+	}
+
+	if !c.online || c.session == nil {
+		return errors.New("Already Offline")
+	}
+
+	c.session.Shutdown()
+	c.online = false
+	c.session = nil
+	return nil
 }

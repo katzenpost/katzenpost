@@ -49,13 +49,4 @@
 
 [Debug]
   DisableDecoyTraffic = false
-  CaseSensitiveUserIdentifiers = false
   PollingInterval = 50
-
-[Panda]
-  Receiver = "+panda"
-  Provider = "provider1"
-  BlobSize = 1000
-
-[Reunion]
-   Enable = false
