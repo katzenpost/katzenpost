@@ -17,7 +17,7 @@
 package crypto
 
 import (
-	"git.schwanenlied.me/yawning/aez.git"
+	"gitlab.com/yawning/aez.git"
 	"github.com/awnumar/memguard"
 )
 
