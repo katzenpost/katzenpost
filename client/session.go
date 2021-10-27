@@ -149,9 +149,6 @@ func NewSession(
 
 	// start the worker
 	s.Go(s.worker)
-
-	// wait for pki fetch to complete
-	s.waitForDocument()
 	return s, nil
 }
 
