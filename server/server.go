@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"git.schwanenlied.me/yawning/aez.git"
+	"gitlab.com/yawning/aez.git"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
