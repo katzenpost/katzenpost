@@ -899,7 +899,9 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		Command:  appendCmd, ID: convoMesgID}
 	if _, err := contact.outbound.Peek(); err == ErrQueueEmpty {
 		// no messages already queued, so call sendMessage immediately
-		defer c.sendMessage(contact)
+		if c.online {
+			defer c.sendMessage(contact)
+		}
 	}
 	if err := contact.outbound.Push(item); err != nil {
 		c.log.Debugf("Failed to enqueue message!")
