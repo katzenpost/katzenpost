@@ -1,2 +1,5 @@
+*.db
+*.log
+*.storage
 *.swp
 *~
