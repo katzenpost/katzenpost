@@ -926,7 +926,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 	// layer assignment to minimise network churn.
 	// The srv is used, when available, to ensure the ordering of new nodes
 	// is deterministic between authorities
-	rng, err := NewDeterministicRandReader(srv[:])
+	rng, err := rand.NewDeterministicRandReader(srv[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
 		s.s.fatalErrCh <- err
@@ -1021,7 +1021,7 @@ func (s *state) generateRandomTopology(nodes []*descriptor, srv []byte) [][][]by
 		s.log.Errorf("srv: %s", srv)
 		s.s.fatalErrCh <- err
 	}
-	rng, err := NewDeterministicRandReader(srv[:])
+	rng, err := rand.NewDeterministicRandReader(srv[:])
 	if err != nil {
 		s.log.Errorf("DeterministicRandReader() failed to initialize: %v", err)
 		s.s.fatalErrCh <- err
