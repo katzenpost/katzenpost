@@ -24,9 +24,10 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/catshadow/config"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	_ "net/http/pprof"
@@ -48,12 +49,10 @@ func getClientState(c *Client) *State {
 func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	require := require.New(t)
 
-	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
 	var stateWorker *StateWriter
 	var catShadowClient *Client
-	cfg, err := catshadowCfg.ClientConfig()
-	require.NoError(err)
 
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
@@ -63,7 +62,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	require.NoError(err)
 	// must start stateWorker BEFORE calling NewClientAndRemoteSpool
 	stateWorker.Start()
-	backendLog, err := catshadowCfg.InitLogBackend()
+	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
 	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker)
 	require.NoError(err)
@@ -75,20 +74,17 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	require := require.New(t)
 
 	// Load catshadow config file.
-	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
 	var stateWorker *StateWriter
 	var catShadowClient *Client
-
-	cfg, err := catshadowCfg.ClientConfig()
-	require.NoError(err)
 
 	passphrase := []byte("")
 	key := stretchKey(passphrase)
 	state, err := decryptStateFile(stateFile, key)
 	require.NoError(err)
 
-	logBackend, err := catshadowCfg.InitLogBackend()
+	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)

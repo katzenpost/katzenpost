@@ -17,11 +17,6 @@
 [UpstreamProxy]
   Type = "none"
 
-[ClientLogging]
-  Disable = false
-  Level = "NOTICE"
-  File = ""
-
 [Logging]
   Disable = false
   Level = "DEBUG"

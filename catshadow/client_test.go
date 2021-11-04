@@ -26,9 +26,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/catshadow/config"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -51,9 +52,7 @@ func TestBlobStorage(t *testing.T) {
 
 	aliceState := createRandomStateFile(t)
 	passphrase := []byte("")
-	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(err)
-	cfg, err := catshadowCfg.ClientConfig()
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
 
 	c, err := client.New(cfg)
@@ -61,7 +60,7 @@ func TestBlobStorage(t *testing.T) {
 	stateWorker, err := NewStateWriter(c.GetLogger("catshadow_state"), aliceState, passphrase)
 	require.NoError(err)
 	stateWorker.Start()
-	logBackend, err := catshadowCfg.InitLogBackend()
+	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
 	cs := &Client{blob: make(map[string][]byte),
 		logBackend:         logBackend,
