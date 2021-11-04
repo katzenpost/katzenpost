@@ -327,6 +327,10 @@ func (c *Client) doCreateRemoteSpool(responseChan chan error) {
 		responseChan <- errors.New("Already have a remote spool")
 		return
 	}
+	if !c.online {
+		responseChan <- errors.New("Client is not online")
+		return
+	}
 	desc, err := c.session.GetService(common.SpoolServiceName)
 	if err != nil {
 		responseChan <- err
@@ -1356,14 +1360,17 @@ func (c *Client) goOnline() error {
 
 	// re-obtain lock
 	c.connMutex.Lock()
-	defer c.connMutex.Unlock()
 	c.connecting = false
 	if err != nil {
 		c.online = false
+		c.connMutex.Unlock()
 		return err
 	}
 	c.session = s
 	c.online = true
+	c.connMutex.Unlock()
+	// wait for pki document to arrive
+	s.WaitForDocument()
 	return nil
 }
 
