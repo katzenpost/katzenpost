@@ -81,6 +81,15 @@ func (c *Client) worker() {
 				op.responseChan <- c.goOffline()
 				isConnected = false
 				c.haltKeyExchanges()
+			case *opCreateSpool:
+				c.doCreateRemoteSpool(op.responseChan)
+			case *opUpdateSpool:
+				if op.descriptor != nil {
+					c.spoolReadDescriptor = op.descriptor
+					op.responseChan <- nil
+				} else {
+					op.responseChan <- errors.New("Nil spool descriptor")
+				}
 			case *opAddContact:
 				err := c.createContact(op.name, op.sharedSecret)
 				if err != nil {

@@ -315,20 +315,36 @@ func (c *Client) garbageCollectConversations() {
 // destined to this Client. This method blocks until the reply from
 // the remote spool service is received or the round trip timeout is reached.
 func (c *Client) CreateRemoteSpool() error {
+	createSpoolOp := &opCreateSpool{
+		responseChan: make(chan error, 1),
+	}
+	c.opCh <- createSpoolOp
+	return <-createSpoolOp.responseChan
+}
+
+func (c *Client) doCreateRemoteSpool(responseChan chan error) {
+	if c.spoolReadDescriptor != nil {
+		responseChan <- errors.New("Already have a remote spool")
+		return
+	}
 	desc, err := c.session.GetService(common.SpoolServiceName)
 	if err != nil {
-		return err
+		responseChan <- err
+		return
 	}
-	if c.spoolReadDescriptor == nil {
-		// Be warned that the call to NewSpoolReadDescriptor blocks until the reply
-		// is received or the round trip timeout is reached.
-		c.spoolReadDescriptor, err = memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
+	go func() {
+		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
+		// another workerOp to save the spool descriptor.
+		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
 		if err != nil {
-			return err
+			responseChan <- err
 		}
-		c.log.Debug("remote reader spool created successfully")
-	}
-	return nil
+		// pass the original caller responseChan
+		select {
+		case <-c.HaltCh():
+		case c.opCh <- &opUpdateSpool{descriptor: spool, responseChan: responseChan}:
+		}
+	}()
 }
 
 // NewContact adds a new contact to the Client's state. This starts
