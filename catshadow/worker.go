@@ -86,6 +86,7 @@ func (c *Client) worker() {
 			case *opUpdateSpool:
 				if op.descriptor != nil {
 					c.spoolReadDescriptor = op.descriptor
+					c.save()
 					op.responseChan <- nil
 				} else {
 					op.responseChan <- errors.New("Nil spool descriptor")

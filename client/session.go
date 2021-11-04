@@ -61,6 +61,7 @@ type Session struct {
 	linkKey   *ecdh.PrivateKey
 	onlineAt  time.Time
 	hasPKIDoc bool
+	newPKIDoc chan bool
 
 	egressQueue EgressQueue
 	timerQ *TimerQueue
@@ -108,6 +109,7 @@ func NewSession(
 		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
 		eventCh:     channels.NewInfiniteChannel(),
+		newPKIDoc:   make(chan bool),
 		EventSink:   make(chan Event),
 		opCh:        make(chan workerOp, 8),
 		egressQueue: new(Queue),
@@ -149,22 +151,15 @@ func NewSession(
 
 	// start the worker
 	s.Go(s.worker)
+
 	return s, nil
 }
 
-func (s *Session) waitForDocument() *pki.Document {
-	for {
-		select {
-		case ev := <-s.EventSink:
-			switch e := ev.(type) {
-			case *NewDocumentEvent:
-				return e.Document
-			default:
-				// ignores other events
-			}
-		case <-s.HaltCh():
-			return nil
-		}
+// WaitForDocument blocks until a pki fetch has completed
+func (s *Session) WaitForDocument() {
+	select {
+	case <-s.newPKIDoc:
+	case <-s.HaltCh():
 	}
 }
 
@@ -359,6 +354,11 @@ func (s *Session) onDocument(doc *pki.Document) {
 	}
 	s.eventCh.In() <- &NewDocumentEvent{
 		Document: doc,
+	}
+	select {
+	case <-s.HaltCh():
+	case s.newPKIDoc <- true:
+	default:
 	}
 }
 
