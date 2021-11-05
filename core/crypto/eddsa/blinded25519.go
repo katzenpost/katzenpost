@@ -116,15 +116,11 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) []byte {
 	return signature
 }
 
-func hash_factor_inplace(factor []byte) {
-	h := sha512.Sum512_256(factor)
-	copy(factor, h[:])
-	// needs to be clamped for scalar multiplication,
-	// but Scalar.SetBytesWithClamping takes care of that.
-}
-
 func (secret *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
-	hash_factor_inplace(factor)
+	// changes the *value* of the slice factor, which points at new bytes
+	// and does not modify the caller's copy of factor.
+	sum := sha512.Sum512_256(factor)
+	factor = sum[:]
 	factor_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(factor)
 	if err != nil {
 		// This only happens if factor is not 32 bytes.
@@ -173,8 +169,8 @@ func (k *BlindedPrivateKey) KeyType() string {
 
 func (mypub *PublicKey) Blind(factor []byte) *PublicKey {
 	// out <- factor*pkA + zero*Basepoint
-
-	hash_factor_inplace(factor)
+	sum := sha512.Sum512_256(factor)
+	factor = sum[:]
 	factor_sc, _ := new(edwards25519.Scalar).SetBytesWithClamping(factor)
 	out, _ := new(edwards25519.Point).SetBytes(mypub.Bytes())
 	newkey := new(PublicKey)
