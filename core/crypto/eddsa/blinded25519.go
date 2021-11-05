@@ -69,8 +69,13 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) []byte {
 	// secret/private scalar directly as expandedSecretKey
 	// instead of deriving from hash each time.
 	// It is a bit unfortunate that this needs to be here...
+	blindedSecretKey := [ed25519.PrivateKeySize]byte{}
+	copy(blindedSecretKey[:], privateKey.blinded[:32])
 	expandedSecretKey := new(edwards25519.Scalar)
-	expandedSecretKey.SetUniformBytes(privateKey.blinded[:32])
+	_, err := expandedSecretKey.SetUniformBytes(blindedSecretKey[:])
+	if err != nil {
+		panic(err)
+	}
 
 	// secret_salt <- sha512(private)
 	digest1 := sha512.Sum512(privateKey.blinded[:32])
