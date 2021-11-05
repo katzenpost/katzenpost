@@ -337,10 +337,6 @@ type Provider struct {
 	// but not be used as an entry node.
 	EnableServiceProvider bool
 
-	// EnableUserRegistrationHTTP is set to true if the
-	// User Registration HTTP service listener is enabled.
-	EnableUserRegistrationHTTP bool
-
 	// EnableEphemeralhClients is set to true in order to
 	// allow ephemeral clients to be created when the Provider
 	// first receives a given user identity string.
