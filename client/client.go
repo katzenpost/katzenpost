@@ -165,10 +165,10 @@ func (c *Client) halt() {
 // NewTOFUSession creates and returns a new ephemeral session or an error.
 func (c *Client) NewTOFUSession() (*Session, error) {
 	var (
-		err error
-		doc *pki.Document
+		err      error
+		doc      *pki.Document
 		provider *pki.MixDescriptor
-		linkKey *ecdh.PrivateKey
+		linkKey  *ecdh.PrivateKey
 	)
 
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second

@@ -75,17 +75,17 @@ func (s *Session) worker() {
 
 	// get the initial loop services if decoy traffic is enabled
 	var (
-		doc *pki.Document
-		loopServices []utils.ServiceDescriptor
-		lambdaP float64
-		lambdaL float64
-		lambdaD float64
-		lambdaPMsec uint64
-		lambdaLMsec uint64
-		lambdaDMsec uint64
-		lambdaPTimer = time.NewTimer(maxDuration)
-		lambdaLTimer = time.NewTimer(maxDuration)
-		lambdaDTimer = time.NewTimer(maxDuration)
+		doc             *pki.Document
+		loopServices    []utils.ServiceDescriptor
+		lambdaP         float64
+		lambdaL         float64
+		lambdaD         float64
+		lambdaPMsec     uint64
+		lambdaLMsec     uint64
+		lambdaDMsec     uint64
+		lambdaPTimer    = time.NewTimer(maxDuration)
+		lambdaLTimer    = time.NewTimer(maxDuration)
+		lambdaDTimer    = time.NewTimer(maxDuration)
 		lambdaPInterval = time.Duration(maxDuration)
 		lambdaLInterval = time.Duration(maxDuration)
 		lambdaDInterval = time.Duration(maxDuration)

@@ -64,7 +64,7 @@ type Session struct {
 	newPKIDoc chan bool
 
 	egressQueue EgressQueue
-	timerQ *TimerQueue
+	timerQ      *TimerQueue
 
 	surbIDMap        sync.Map // [sConstants.SURBIDLength]byte -> *Message
 	sentWaitChanMap  sync.Map // MessageID -> chan *Message
