@@ -74,7 +74,7 @@
     Capability = "echo"
     Endpoint = "+echo"
 
-  [Provider.CBORPluginKaetzchen]]
+  [[Provider.CBORPluginKaetzchen]]
     Disable = false
     Capability = "panda"
     Endpoint = "+panda"
