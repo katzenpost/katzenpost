@@ -22,13 +22,12 @@ package catshadow
 
 import (
 	"bytes"
-	"fmt"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/catshadow/config"
 	"github.com/katzenpost/katzenpost/client"
-	cConfig "github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 	"net/http"
 	_ "net/http/pprof"
@@ -43,31 +42,18 @@ func getClientState(c *Client) *State {
 	return &State{
 		SpoolReadDescriptor: c.spoolReadDescriptor,
 		Contacts:            contacts,
-		LinkKey:             c.linkKey,
-		User:                c.user,
-		Provider:            c.client.Provider(),
 		Conversations:       c.conversations,
 	}
 }
 
-func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion bool) *Client {
+func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	require := require.New(t)
 
-	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
-	if useReunion {
-		catshadowCfg.Panda = nil
-		catshadowCfg.Reunion.Enable = true
-	} else {
-		catshadowCfg.Reunion.Enable = false
-	}
 	var stateWorker *StateWriter
 	var catShadowClient *Client
-	cfg, err := catshadowCfg.ClientConfig()
-	require.NoError(err)
 
-	cfg, linkKey, err := client.AutoRegisterRandomClient(cfg)
-	require.NoError(err)
 	//cfg.Logging.Level = "INFO" // client verbosity reductionism
 	c, err := client.New(cfg)
 	require.NoError(err)
@@ -76,15 +62,10 @@ func createCatshadowClientWithState(t *testing.T, stateFile string, useReunion b
 	require.NoError(err)
 	// must start stateWorker BEFORE calling NewClientAndRemoteSpool
 	stateWorker.Start()
-	backendLog, err := catshadowCfg.InitLogBackend()
+	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
-
-	user := fmt.Sprintf("%x", linkKey.PublicKey().Bytes())
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker, user, linkKey)
+	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker)
 	require.NoError(err)
-
-	// Start catshadow client.
-	catShadowClient.Start()
 
 	return catShadowClient
 }
@@ -93,28 +74,21 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	require := require.New(t)
 
 	// Load catshadow config file.
-	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
 	var stateWorker *StateWriter
 	var catShadowClient *Client
-
-	cfg, err := catshadowCfg.ClientConfig()
-	require.NoError(err)
 
 	passphrase := []byte("")
 	key := stretchKey(passphrase)
 	state, err := decryptStateFile(stateFile, key)
 	require.NoError(err)
-	cfg.Account = &cConfig.Account{
-		User:     state.User,
-		Provider: state.Provider,
-	}
 
-	logBackend, err := catshadowCfg.InitLogBackend()
+	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
-	stateWorker, state, err = LoadStateWriter(c.GetLogger(cfg.Account.User+" "+"catshadow_state"), stateFile, passphrase)
+	stateWorker, state, err = LoadStateWriter(c.GetLogger(stateFile), stateFile, passphrase)
 	require.NoError(err)
 
 	catShadowClient, err = New(logBackend, c, stateWorker, state)
@@ -124,6 +98,9 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	stateWorker.Start()
 	catShadowClient.Start()
 
+	// Bring catshadow online
+	catShadowClient.Online()
+
 	return catShadowClient
 }
 
@@ -131,9 +108,9 @@ func TestDockerPandaSuccess(t *testing.T) {
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceState, false)
+	alice := createCatshadowClientWithState(t, aliceState)
 	bobState := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobState, false)
+	bob := createCatshadowClientWithState(t, bobState)
 
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
@@ -174,9 +151,9 @@ func TestDockerPandaTagContendedError(t *testing.T) {
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceStateFilePath, false)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath)
 	bobStateFilePath := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobStateFilePath, false)
+	bob := createCatshadowClientWithState(t, bobStateFilePath)
 
 	sharedSecret := []byte("twas brillig and the slithy toves")
 	randBytes := [8]byte{}
@@ -215,9 +192,9 @@ loop2:
 	// second phase of test, use same panda shared secret
 	// in order to test that it invokes a tag contended error
 	adaState := createRandomStateFile(t)
-	ada := createCatshadowClientWithState(t, adaState, false)
+	ada := createCatshadowClientWithState(t, adaState)
 	jeffState := createRandomStateFile(t)
-	jeff := createCatshadowClientWithState(t, jeffState, false)
+	jeff := createCatshadowClientWithState(t, jeffState)
 
 	ada.NewContact("jeff", sharedSecret)
 	jeff.NewContact("ada", sharedSecret)
@@ -252,11 +229,11 @@ func TestDockerSendReceive(t *testing.T) {
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceStateFilePath, false)
+	alice := createCatshadowClientWithState(t, aliceStateFilePath)
 	bobStateFilePath := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobStateFilePath, false)
+	bob := createCatshadowClientWithState(t, bobStateFilePath)
 	malStateFilePath := createRandomStateFile(t)
-	mal := createCatshadowClientWithState(t, malStateFilePath, false)
+	mal := createCatshadowClientWithState(t, malStateFilePath)
 
 	sharedSecret := []byte(`oxcart pillage village bicycle gravity socks`)
 	sharedSecret2 := make([]byte, len(sharedSecret))
@@ -480,10 +457,10 @@ func TestDockerReunionSuccess(t *testing.T) {
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
-	alice := createCatshadowClientWithState(t, aliceState, true)
+	alice := createCatshadowClientWithState(t, aliceState)
 
 	bobState := createRandomStateFile(t)
-	bob := createCatshadowClientWithState(t, bobState, true)
+	bob := createCatshadowClientWithState(t, bobState)
 
 	sharedSecret := []byte("There is a certain kind of small town that grows like a boil on the ass of every Army base in the world.")
 	randBytes := [8]byte{}
@@ -553,8 +530,8 @@ loop2:
 func TestDockerAddRemoveContact(t *testing.T) {
 	require := require.New(t)
 
-	a := createCatshadowClientWithState(t, createRandomStateFile(t), false)
-	b := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+	a := createCatshadowClientWithState(t, createRandomStateFile(t))
+	b := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
 	_, err := rand.Reader.Read(s[:])
@@ -651,8 +628,8 @@ loop5:
 func TestDockerRenameContact(t *testing.T) {
 	require := require.New(t)
 
-	a := createCatshadowClientWithState(t, createRandomStateFile(t), false)
-	b := createCatshadowClientWithState(t, createRandomStateFile(t), false)
+	a := createCatshadowClientWithState(t, createRandomStateFile(t))
+	b := createCatshadowClientWithState(t, createRandomStateFile(t))
 
 	s := [8]byte{}
 	_, err := rand.Reader.Read(s[:])

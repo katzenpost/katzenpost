@@ -20,17 +20,16 @@ package catshadow
 
 import (
 	"fmt"
-	cConfig "github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/catshadow/config"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,35 +49,18 @@ func createRandomStateFile(t *testing.T) string {
 
 func TestBlobStorage(t *testing.T) {
 	require := require.New(t)
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	state := &State{
-		Blob:          make(map[string][]byte),
-		Contacts:      make([]*Contact, 0),
-		Conversations: make(map[string]map[MessageID]*Message),
-		User:          "foo",
-		Provider:      "bar",
-		LinkKey:       linkKey,
-	}
 
 	aliceState := createRandomStateFile(t)
 	passphrase := []byte("")
-	catshadowCfg, err := config.LoadFile("testdata/catshadow.toml")
+	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
-	cfg, err := catshadowCfg.ClientConfig()
-	require.NoError(err)
-	cfg.Account = &cConfig.Account{
-		User:     state.User,
-		Provider: state.Provider,
-	}
 
 	c, err := client.New(cfg)
 	require.NoError(err)
 	stateWorker, err := NewStateWriter(c.GetLogger("catshadow_state"), aliceState, passphrase)
 	require.NoError(err)
 	stateWorker.Start()
-	logBackend, err := catshadowCfg.InitLogBackend()
+	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
 	cs := &Client{blob: make(map[string][]byte),
 		logBackend:         logBackend,

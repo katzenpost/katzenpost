@@ -80,6 +80,10 @@ func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 func (s *mockSpool) Remove(u []byte) error { return nil }
 
+func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[64]byte]interface {}) error {
+	return nil
+}
+
 func (s *mockSpool) Vacuum(udb userdb.UserDB) error { return nil }
 
 func (s *mockSpool) Close() {}
@@ -109,10 +113,6 @@ func (p *mockProvider) OnPacket(*packet.Packet) {}
 
 func (p *mockProvider) KaetzchenForPKI() (map[string]map[string]interface{}, error) {
 	return nil, nil
-}
-
-func (p *mockProvider) AdvertiseRegistrationHTTPAddresses() []string {
-	return nil
 }
 
 type mockDecoy struct{}
@@ -243,8 +243,8 @@ func TestKaetzchenWorker(t *testing.T) {
 				Provider: &config.Provider{
 					Kaetzchen: []*config.Kaetzchen{
 						&config.Kaetzchen{
-							Capability: "loop",
-							Endpoint:   "loop",
+							Capability: "echo",
+							Endpoint:   "echo",
 							Config:     map[string]interface{}{},
 							Disable:    false,
 						},

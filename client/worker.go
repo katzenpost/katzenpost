@@ -46,6 +46,11 @@ type opRetransmit struct {
 func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 	isConnected := op.isConnected
 	if isConnected {
+		// If we have awoken from suspend and there is no
+		// current consensus, attempt to fetch one immediately.
+		if doc := s.minclient.CurrentDocument(); doc == nil {
+			s.minclient.ForceFetchPKI()
+		}
 		s.onlineAt = time.Now()
 
 		skew := s.minclient.ClockSkew()
@@ -67,55 +72,32 @@ func (s *Session) connStatusChange(op opConnStatusChanged) bool {
 func (s *Session) worker() {
 	const maxDuration = math.MaxInt64
 	mRng := rand.NewMath()
-	// The PKI doc should be cached since we've
-	// already waited until we received it.
-	doc := s.minclient.CurrentDocument()
-	if doc == nil {
-		s.fatalErrCh <- errors.New("aborting, PKI doc is nil")
-		return
-	}
 
 	// get the initial loop services if decoy traffic is enabled
-	var loopServices []utils.ServiceDescriptor
-	if !s.cfg.Debug.DisableDecoyTraffic {
-		loopServices = utils.FindServices(cConstants.LoopService, doc)
-		if len(loopServices) == 0 {
-			s.fatalErrCh <- errors.New("failure to get loop service")
-			return
-		}
-	}
-
-	// LambdaP timer setup
-	lambdaP := doc.LambdaP
-	lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
-	if lambdaPMsec > doc.LambdaPMaxDelay {
-		lambdaPMsec = doc.LambdaPMaxDelay
-	}
-	lambdaPInterval := time.Duration(lambdaPMsec) * time.Millisecond
-	lambdaPTimer := time.NewTimer(lambdaPInterval)
-	defer lambdaPTimer.Stop()
-
-	// LambdaL timer setup
-	lambdaL := doc.LambdaL
-	lambdaLMsec := uint64(rand.Exp(mRng, lambdaL))
-	if lambdaLMsec > doc.LambdaLMaxDelay {
-		lambdaLMsec = doc.LambdaLMaxDelay
-	}
-	lambdaLInterval := time.Duration(lambdaLMsec) * time.Millisecond
-	lambdaLTimer := time.NewTimer(lambdaLInterval)
-	defer lambdaLTimer.Stop()
-
-	// LambdaD timer setup
-	lambdaD := doc.LambdaD
-	lambdaDMsec := uint64(rand.Exp(mRng, lambdaD))
-	if lambdaDMsec > doc.LambdaDMaxDelay {
-		lambdaDMsec = doc.LambdaDMaxDelay
-	}
-	lambdaDInterval := time.Duration(lambdaDMsec) * time.Millisecond
-	lambdaDTimer := time.NewTimer(lambdaDInterval)
-	defer lambdaDTimer.Stop()
+	var (
+		doc *pki.Document
+		loopServices []utils.ServiceDescriptor
+		lambdaP float64
+		lambdaL float64
+		lambdaD float64
+		lambdaPMsec uint64
+		lambdaLMsec uint64
+		lambdaDMsec uint64
+		lambdaPTimer = time.NewTimer(maxDuration)
+		lambdaLTimer = time.NewTimer(maxDuration)
+		lambdaDTimer = time.NewTimer(maxDuration)
+		lambdaPInterval = time.Duration(maxDuration)
+		lambdaLInterval = time.Duration(maxDuration)
+		lambdaDInterval = time.Duration(maxDuration)
+		lambdaPMaxDelay = uint64(maxDuration)
+		lambdaLMaxDelay = uint64(maxDuration)
+		lambdaDMaxDelay = uint64(maxDuration)
+	)
 
 	defer s.log.Debug("session worker halted")
+	defer lambdaPTimer.Stop()
+	defer lambdaLTimer.Stop()
+	defer lambdaDTimer.Stop()
 
 	isConnected := false
 	mustResetAllTimers := false
@@ -185,20 +167,20 @@ func (s *Session) worker() {
 				}
 			}
 		}
-		if isConnected {
-			lambdaPMsec := uint64(rand.Exp(mRng, lambdaP))
-			if lambdaPMsec > doc.LambdaPMaxDelay {
-				lambdaPMsec = doc.LambdaPMaxDelay
+		if isConnected && doc != nil {
+			lambdaPMsec = uint64(rand.Exp(mRng, lambdaP))
+			if lambdaPMsec > lambdaPMaxDelay {
+				lambdaPMsec = lambdaPMaxDelay
 			}
 			lambdaPInterval = time.Duration(lambdaPMsec) * time.Millisecond
-			lambdaLMsec := uint64(rand.Exp(mRng, lambdaL))
-			if lambdaLMsec > doc.LambdaLMaxDelay {
-				lambdaLMsec = doc.LambdaLMaxDelay
+			lambdaLMsec = uint64(rand.Exp(mRng, lambdaL))
+			if lambdaLMsec > lambdaLMaxDelay {
+				lambdaLMsec = lambdaLMaxDelay
 			}
 			lambdaLInterval = time.Duration(lambdaLMsec) * time.Millisecond
-			lambdaDMsec := uint64(rand.Exp(mRng, lambdaD))
-			if lambdaDMsec > doc.LambdaDMaxDelay {
-				lambdaDMsec = doc.LambdaDMaxDelay
+			lambdaDMsec = uint64(rand.Exp(mRng, lambdaD))
+			if lambdaDMsec > lambdaDMaxDelay {
+				lambdaDMsec = lambdaDMaxDelay
 			}
 			lambdaDInterval = time.Duration(lambdaDMsec) * time.Millisecond
 		} else {

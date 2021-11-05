@@ -1,5 +1,5 @@
 // cbor_plugins.go - cbor plugin system for kaetzchen services
-// Copyright (C) 2018  David Stainton.
+// Copyright (C) 2021  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -24,20 +24,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/monotime"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	cConstants "github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
 // PluginChans maps from Recipient ID to channel.
-type PluginChans = map[[sConstants.RecipientIDLength]byte]*channels.InfiniteChannel
+type PluginChans = map[[constants.RecipientIDLength]byte]*channels.InfiniteChannel
 
 // PluginName is the name of a plugin.
 type PluginName = string
@@ -52,7 +54,7 @@ type PluginParameters = map[PluginName]interface{}
 type ServiceMap = map[PluginName]PluginParameters
 
 // CBORPluginWorker is similar to Kaetzchen worker but uses
-// CBOR over HTTP over UNIX domain socket to talk to plugins.
+// CBOR over UNIX domain socket to talk to plugins.
 type CBORPluginWorker struct {
 	sync.Mutex
 	worker.Worker
@@ -75,7 +77,7 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh.In() <- pkt
 }
 
-func (k *CBORPluginWorker) worker(recipient [sConstants.RecipientIDLength]byte, pluginClient cborplugin.ServicePlugin) {
+func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
 
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
@@ -118,54 +120,52 @@ func (k *CBORPluginWorker) haltAllClients() {
 	}
 }
 
-func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient cborplugin.ServicePlugin) {
+func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin.Client) {
 	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
-	ct, surb, err := packet.ParseForwardPacket(pkt)
+	payload, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
 		kaetzchenRequestsDropped.Inc()
 		return
 	}
 
-	resp, err := pluginClient.OnRequest(&cborplugin.Request{
+	pluginClient.WriteChan() <- &cborplugin.Request{
 		ID:      pkt.ID,
-		Payload: ct,
+		Payload: payload,
 		HasSURB: surb != nil,
-	})
-	switch err {
-	case nil:
-	case ErrNoResponse:
-		k.log.Debugf("Processed Kaetzchen request: %v (No response)", pkt.ID)
-		kaetzchenRequests.Inc()
-		return
-	default:
-		k.log.Debugf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, resp)
-		return
 	}
-	if len(resp) == 0 {
-		k.log.Debugf("No reply from Kaetzchen: %v", pkt.ID)
-		return
-	}
-
-	// Iff there is a SURB, generate a SURB-Reply and schedule.
-	if surb != nil {
-		// Prepend the response header.
-		resp = append([]byte{0x01, 0x00}, resp...)
-
-		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp)
-		if err != nil {
-			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
+	cborResponse := <-pluginClient.ReadChan()
+	switch r := cborResponse.(type) {
+	case *cborplugin.Response:
+		if len(r.Payload) > cConstants.UserForwardPayloadLength {
+			// response is probably invalid, so drop it
+			k.log.Errorf("Got response too long: %d > max (%d)",
+			len(r.Payload), cConstants.UserForwardPayloadLength)
+			kaetzchenRequestsDropped.Inc()
 			return
 		}
+		// Iff there is a SURB, generate a SURB-Reply and schedule.
+		if surb != nil {
+			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload)
+			if err != nil {
+				k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
+				return
+			}
 
-		k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
-		k.glue.Scheduler().OnPacket(respPkt)
+			k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
+			k.glue.Scheduler().OnPacket(respPkt)
+			return
+		}
+		k.log.Debugf("No SURB provided: %v", pkt.ID)
+	default:
+		// received some unknown command type
+		k.log.Errorf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, cborResponse)
+		kaetzchenRequestsDropped.Inc()
 		return
 	}
-	k.log.Debugf("No SURB provided: %v", pkt.ID)
 }
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
@@ -173,7 +173,7 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 	s := make(ServiceMap)
 	for _, k := range k.clients {
 		capa := k.Capability()
-		if _, ok :=  s[capa]; ok {
+		if _, ok := s[capa]; ok {
 			// skip adding twice
 			continue
 		}
@@ -190,14 +190,14 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 }
 
 // IsKaetzchen returns true if the given recipient is one of our workers.
-func (k *CBORPluginWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
+func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChans[recipient]
 	return ok
 }
 
 func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []string) (*cborplugin.Client, error) {
 	k.log.Debugf("Launching plugin: %s", command)
-	plugin := cborplugin.New(command, capability, endpoint, k.glue.LogBackend())
+	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
 	err := plugin.Start(command, args)
 	return plugin, err
 }
@@ -239,42 +239,38 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			return nil, fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not normalized", capa)
 		}
 		rawEp := []byte(pluginConf.Endpoint)
-		if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
+		if len(rawEp) == 0 || len(rawEp) > constants.RecipientIDLength {
 			return nil, fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
 		}
 
 		// Add an infinite channel for this plugin.
-		var endpoint [sConstants.RecipientIDLength]byte
+		var endpoint [constants.RecipientIDLength]byte
 		copy(endpoint[:], rawEp)
 		kaetzchenWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
+		kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s", capa)
 
-		// Start the plugin clients.
-		for i := 0; i < pluginConf.MaxConcurrency; i++ {
-			kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s %d", capa, i)
-
-			var args []string
-			if len(pluginConf.Config) > 0 {
-				args = []string{}
-				for key, val := range pluginConf.Config {
-					args = append(args, fmt.Sprintf("-%s", key), val.(string))
-				}
+		var args []string
+		if len(pluginConf.Config) > 0 {
+			args = []string{}
+			for key, val := range pluginConf.Config {
+				args = append(args, fmt.Sprintf("-%s", key), val.(string))
 			}
-
-			pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
-			if err != nil {
-				kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
-				return nil, err
-			}
-
-			// Accumulate a list of all clients to facilitate clean shutdown.
-			kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
-
-			// Start the workers _after_ we have added all of the entries to pluginChans
-			// otherwise the worker() goroutines race this thread.
-			defer kaetzchenWorker.Go(func() {
-				kaetzchenWorker.worker(endpoint, pluginClient)
-			})
 		}
+
+		pluginClient, err := kaetzchenWorker.launch(pluginConf.Command, pluginConf.Capability, pluginConf.Endpoint, args)
+		if err != nil {
+			kaetzchenWorker.log.Error("Failed to start a plugin client: %s", err)
+			return nil, err
+		}
+
+		// Accumulate a list of all clients to facilitate clean shutdown.
+		kaetzchenWorker.clients = append(kaetzchenWorker.clients, pluginClient)
+
+		// Start the workers _after_ we have added all of the entries to pluginChans
+		// otherwise the worker() goroutines race this thread.
+		defer kaetzchenWorker.Go(func() {
+			kaetzchenWorker.worker(endpoint, pluginClient)
+		})
 
 		capaMap[capa] = true
 	}

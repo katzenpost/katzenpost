@@ -17,7 +17,6 @@
 package client
 
 import (
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -52,35 +51,11 @@ func (s *Session) sendNext() {
 	}
 }
 
-func NewRescheduler(s *Session) *rescheduler {
-	r := &rescheduler{s: s}
-	s.log.Debugf("Creating TimerQueue")
-	r.timerQ = NewTimerQueue(r)
-	return r
-}
-
-type rescheduler struct {
-	s      *Session
-	timerQ *TimerQueue
-}
-
-func (r *rescheduler) Push(i Item) error {
-	// rescheduler checks whether a message was ACK'd when the timerQ fires
-	// and if it has not, reschedules the message for transmission again
-	m := i.(*Message)
-	if _, ok := r.s.surbIDMap.Load(*m.SURBID); ok {
-		// still waiting for a SURB-ACK that hasn't arrived
-		r.s.surbIDMap.Delete(*m.SURBID)
-		r.s.opCh <- opRetransmit{msg: m}
-	}
-	return nil
-}
-
 func (s *Session) doRetransmit(msg *Message) {
 	msg.Retransmissions++
 	msgIdStr := fmt.Sprintf("[%v]", hex.EncodeToString(msg.ID[:]))
 	s.log.Debugf("doRetransmit: %d for %s", msg.Retransmissions, msgIdStr)
-	s.doSend(msg)
+	s.egressQueue.Push(msg)
 }
 
 func (s *Session) doSend(msg *Message) {
@@ -119,7 +94,7 @@ func (s *Session) doSend(msg *Message) {
 				s.log.Debugf("Sending reliable message with retransmissions")
 				timeSlop := eta // add a round-trip worth of delay before timing out
 				msg.QueuePriority = uint64(msg.SentAt.Add(msg.ReplyETA).Add(timeSlop).UnixNano())
-				s.rescheduler.timerQ.Push(msg)
+				s.timerQ.Push(msg)
 			}
 		}
 		// write to waiting channel or close channel if message failed to send
@@ -192,12 +167,11 @@ func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
 
 func (s *Session) composeMessage(recipient, provider string, message []byte, isBlocking bool) (*Message, error) {
 	s.log.Debug("SendMessage")
-	if len(message) > constants.UserForwardPayloadLength-4 {
-		return nil, fmt.Errorf("invalid message size: %v", len(message))
+	if len(message) > constants.UserForwardPayloadLength {
+		return nil, fmt.Errorf("message too large: %v > %v", len(message), constants.UserForwardPayloadLength)
 	}
 	payload := make([]byte, constants.UserForwardPayloadLength)
-	binary.BigEndian.PutUint32(payload[:4], uint32(len(message)))
-	copy(payload[4:], message)
+	copy(payload, message)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {

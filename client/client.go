@@ -20,11 +20,7 @@ package client
 import (
 	"context"
 	"errors"
-	"fmt"
-	mrand "math/rand"
-	"net/url"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -34,7 +30,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	registration "github.com/katzenpost/katzenpost/registration_client"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -42,10 +37,27 @@ const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
-func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.PrivateKey, error) {
+// Client handles sending and receiving messages over the mix network
+type Client struct {
+	cfg        *config.Config
+	logBackend *log.Backend
+	log        *logging.Logger
+	fatalErrCh chan error
+	haltedCh   chan interface{}
+	haltOnce   *sync.Once
+
+	session *Session
+}
+
+// GetConfig returns the client configuration
+func (c *Client) GetConfig() *config.Config {
+	return c.cfg
+}
+
+// PKIBootstrap returns a pkiClient and fetches a consensus.
+func PKIBootstrap(cfg *config.Config) (*pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
-	logFilePath := ""
-	backendLog, err := log.New(logFilePath, "DEBUG", false)
+	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -61,95 +73,49 @@ func AutoRegisterRandomClient(cfg *config.Config) (*config.Config, *ecdh.Private
 	if err != nil {
 		return nil, nil, err
 	}
+	return &pkiClient, doc, nil
+}
 
-	// Pick a registration Provider.
-	registerProviders := []*pki.MixDescriptor{}
+// SelectProvider returns a provider descriptor or error.
+func SelectProvider(doc *pki.Document) (*pki.MixDescriptor, error) {
+	// Pick a Provider that supports TrustOnFirstUse
+	providers := []*pki.MixDescriptor{}
 	for _, provider := range doc.Providers {
-		if provider.RegistrationHTTPAddresses != nil {
-			registerProviders = append(registerProviders, provider)
+		if provider.AuthenticationType == pki.TrustOnFirstUseAuth {
+			providers = append(providers, provider)
 		}
 	}
-	if len(registerProviders) == 0 {
-		return nil, nil, errors.New("zero registration Providers found in the consensus")
+	if len(providers) == 0 {
+		return nil, errors.New("no Providers supporting tofu-authenticated connections found in the consensus")
 	}
-	mrand.Seed(time.Now().UTC().UnixNano())
-	registrationProvider := registerProviders[mrand.Intn(len(registerProviders))]
+	provider := providers[rand.NewMath().Intn(len(providers))]
+	return provider, nil
+}
 
-	// Register with that Provider.
-	fmt.Println("registering client with mixnet Provider")
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	account := &config.Account{
-		User:           fmt.Sprintf("%x", linkKey.PublicKey().Bytes()),
-		Provider:       registrationProvider.Name,
-		ProviderKeyPin: registrationProvider.IdentityKey,
+// New creates a new Client with the provided configuration.
+func New(cfg *config.Config) (*Client, error) {
+	c := new(Client)
+	c.cfg = cfg
+	c.fatalErrCh = make(chan error)
+	c.haltedCh = make(chan interface{})
+	c.haltOnce = new(sync.Once)
+
+	if err := c.initLogging(); err != nil {
+		return nil, err
 	}
 
-	// try to pick a registration address using a prefered transport
-	var addr string
-	loop0:
-	for _, t := range cfg.Debug.PreferedTransports {
-		for _, v := range registrationProvider.RegistrationHTTPAddresses {
-			if u, err := url.Parse(v); err == nil {
-				if strings.HasSuffix(u.Hostname(), string(t)) {
-					addr = v
-					break loop0
-				}
-			}
+	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
+
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-c.fatalErrCh
+		if !ok {
+			return
 		}
-	}
-	// default if there was no transport found with the prefered transport
-	if addr == "" {
-		addr = registrationProvider.RegistrationHTTPAddresses[0]
-	}
-
-	u, err := url.Parse(addr)
-	if err != nil {
-		return nil, nil, err
-	}
-	cfgRegistration := &config.Registration{
-		Address: u.Host,
-		Options: &registration.Options{
-			Scheme:       u.Scheme,
-			UseSocks:     strings.HasPrefix(cfg.UpstreamProxy.Type, "socks"),
-			SocksNetwork: cfg.UpstreamProxy.Network,
-			SocksAddress: cfg.UpstreamProxy.Address,
-		},
-	}
-	cfg.Account = account
-	cfg.Registration = cfgRegistration
-	err = RegisterClient(cfg, linkKey.PublicKey())
-	if err != nil {
-		return nil, nil, err
-	}
-	return cfg, linkKey, nil
-}
-
-func RegisterClient(cfg *config.Config, linkKey *ecdh.PublicKey) error {
-	client, err := registration.New(cfg.Registration.Address, cfg.Registration.Options)
-	if err != nil {
-		return err
-	}
-	err = client.RegisterAccountWithLinkKey(cfg.Account.User, linkKey)
-	return err
-}
-
-// Client handles sending and receiving messages over the mix network
-type Client struct {
-	cfg        *config.Config
-	logBackend *log.Backend
-	log        *logging.Logger
-	fatalErrCh chan error
-	haltedCh   chan interface{}
-	haltOnce   *sync.Once
-
-	session *Session
-}
-
-func (c *Client) Provider() string {
-	return c.cfg.Account.Provider
+		c.log.Warningf("Shutting down due to error: %v", err)
+		c.Shutdown()
+	}()
+	return c, nil
 }
 
 func (c *Client) initLogging() error {
@@ -196,38 +162,33 @@ func (c *Client) halt() {
 	close(c.haltedCh)
 }
 
-// NewSession creates and returns a new session or an error.
-func (c *Client) NewSession(linkKey *ecdh.PrivateKey) (*Session, error) {
-	var err error
+// NewTOFUSession creates and returns a new ephemeral session or an error.
+func (c *Client) NewTOFUSession() (*Session, error) {
+	var (
+		err error
+		doc *pki.Document
+		provider *pki.MixDescriptor
+		linkKey *ecdh.PrivateKey
+	)
+
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey)
-	return c.session, err
-}
 
-// New creates a new Client with the provided configuration.
-func New(cfg *config.Config) (*Client, error) {
-	c := new(Client)
-	c.cfg = cfg
-	c.fatalErrCh = make(chan error)
-	c.haltedCh = make(chan interface{})
-	c.haltOnce = new(sync.Once)
-
-	if err := c.initLogging(); err != nil {
+	// fetch a pki.Document
+	if _, doc, err = PKIBootstrap(c.cfg); err != nil {
+		return nil, err
+	}
+	// choose a provider
+	if provider, err = SelectProvider(doc); err != nil {
 		return nil, err
 	}
 
-	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
+	// generate a linkKey
+	if linkKey, err = ecdh.NewKeypair(rand.Reader); err != nil {
+		return nil, err
+	}
 
-	// Start the fatal error watcher.
-	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
-		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
-	}()
-	return c, nil
+	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	return c.session, err
 }

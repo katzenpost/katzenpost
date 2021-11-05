@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net/mail"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -32,9 +31,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	registration "github.com/katzenpost/katzenpost/registration_client"
-	"golang.org/x/net/idna"
-	"golang.org/x/text/secure/precis"
 )
 
 const (
@@ -86,10 +82,6 @@ type Debug struct {
 	// InitialMaxPKIRetrievalDelay is the initial maximum number of seconds
 	// we are willing to wait for the retreival of the PKI document.
 	InitialMaxPKIRetrievalDelay int
-
-	// CaseSensitiveUserIdentifiers disables the forced lower casing of
-	// the Account `User` field.
-	CaseSensitiveUserIdentifiers bool
 
 	// PollingInterval is the interval in seconds that will be used to
 	// poll the receive queue.  By default this is 10 seconds.  Reducing
@@ -180,98 +172,6 @@ func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, e
 	return nil, errors.New("no Authority found")
 }
 
-// Reunion is the Reunion configuration needed by clients
-// in order to use the Reunion service
-type Reunion struct {
-	// Enable indicates that the reunion protocol should be used
-	Enable bool
-}
-
-func (r *Reunion) validate() error {
-	// stub for future options, e.g. alternate clocks, etc
-	return nil
-}
-
-// Panda is the PANDA configuration needed by clients
-// in order to use the PANDA service
-type Panda struct {
-	// Receiver is the recipient ID that shall receive the Sphinx packets destined
-	// for this PANDA service.
-	Receiver string
-	// Provider is the Provider on this mix network which is hosting this PANDA service.
-	Provider string
-	// BlobSize is the size of the PANDA blobs that clients will use.
-	BlobSize int
-}
-
-func (p *Panda) validate() error {
-	if p.Receiver == "" {
-		return errors.New("receiver is missing")
-	}
-	if p.Provider == "" {
-		return errors.New("provider is missing")
-	}
-	return nil
-}
-
-// Account is a provider account configuration.
-type Account struct {
-	// User is the account user name.
-	User string
-
-	// Provider is the provider identifier used by this account.
-	Provider string
-
-	// ProviderKeyPin is the optional pinned provider signing key.
-	ProviderKeyPin *eddsa.PublicKey
-}
-
-func (accCfg *Account) fixup(cfg *Config) error {
-	var err error
-	if !cfg.Debug.CaseSensitiveUserIdentifiers {
-		accCfg.User, err = precis.UsernameCaseMapped.String(accCfg.User)
-	} else {
-		accCfg.User, err = precis.UsernameCasePreserved.String(accCfg.User)
-	}
-	if err != nil {
-		return err
-	}
-
-	accCfg.Provider, err = idna.Lookup.ToASCII(accCfg.Provider)
-	return err
-}
-
-func (accCfg *Account) toEmailAddr() (string, error) {
-	addr := fmt.Sprintf("%s@%s", accCfg.User, accCfg.Provider)
-	if _, err := mail.ParseAddress(addr); err != nil {
-		return "", fmt.Errorf("error User/Provider does not form a valid e-mail address: %v", err)
-	}
-	return addr, nil
-}
-
-func (accCfg *Account) validate() error {
-	if accCfg.User == "" {
-		return errors.New("user is missing")
-	}
-	if accCfg.Provider == "" {
-		return errors.New("provider is missing")
-	}
-	return nil
-}
-
-// Registration is used for the client's Provider account registration.
-type Registration struct {
-	Address string
-	Options *registration.Options
-}
-
-func (r *Registration) validate() error {
-	if r.Address == "" {
-		return errors.New("registration Address cannot be empty")
-	}
-	return nil
-}
-
 // UpstreamProxy is the outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// Type is the proxy type (Eg: "none"," socks5").
@@ -313,10 +213,6 @@ type Config struct {
 	Debug              *Debug
 	NonvotingAuthority *NonvotingAuthority
 	VotingAuthority    *VotingAuthority
-	Account            *Account
-	Registration       *Registration
-	Panda              *Panda
-	Reunion            *Reunion
 	upstreamProxy      *proxy.Config
 }
 
@@ -326,9 +222,9 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 	return c.upstreamProxy
 }
 
-// FixupAndMinimallyValidate applies defaults to config entries and validates the
-// all but the Account and Registration configuration sections.
-func (c *Config) FixupAndMinimallyValidate() error {
+// FixupAndValidate applies defaults to config entries and validates the
+// configuration sections.
+func (c *Config) FixupAndValidate() error {
 	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
@@ -364,52 +260,7 @@ func (c *Config) FixupAndMinimallyValidate() error {
 		return fmt.Errorf("config: Authority configuration is invalid")
 	}
 
-	// Panda is optional
-	if c.Panda != nil {
-		err := c.Panda.validate()
-		if err != nil {
-			return fmt.Errorf("config: Panda config is invalid: %v", err)
-		}
-	}
-
-	// Reunion is optional
-	if c.Reunion != nil {
-		err := c.Reunion.validate()
-		if err != nil {
-			return fmt.Errorf("config: Reunion config is invalid: %v", err)
-		}
-	}
-
 	return nil
-}
-
-// FixupAndValidate applies defaults to config entries and validates the
-// supplied configuration.  Most people should call one of the Load variants
-// instead.
-func (c *Config) FixupAndValidate() error {
-	err := c.FixupAndMinimallyValidate()
-	if err != nil {
-		return err
-	}
-
-	// Account
-	if err := c.Account.fixup(c); err != nil {
-		return fmt.Errorf("config: Account is invalid (User): %v", err)
-	}
-	addr, err := c.Account.toEmailAddr()
-	if err != nil {
-		return fmt.Errorf("config: Account is invalid (Identifier): %v", err)
-	}
-	if err := c.Account.validate(); err != nil {
-		return fmt.Errorf("config: Account '%v' is invalid: %v", addr, err)
-	}
-
-	// Registration
-	if c.Registration == nil {
-		return errors.New("config: error, Registration config section is non-optional")
-	}
-	err = c.Registration.validate()
-	return err
 }
 
 // Load parses and validates the provided buffer b as a config file body and
@@ -423,7 +274,7 @@ func Load(b []byte) (*Config, error) {
 	if undecoded := md.Undecoded(); len(undecoded) != 0 {
 		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
-	if err := cfg.FixupAndMinimallyValidate(); err != nil {
+	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil

@@ -43,9 +43,13 @@ func main() {
 	var configFile string
 	var service string
 	var count int
+	var concurrency int
+	var printDiff bool
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.StringVar(&service, "s", "", "service name")
 	flag.IntVar(&count, "n", 5, "count")
+	flag.IntVar(&concurrency, "C", 1, "concurrency")
+	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
 	flag.Parse()
 
 	if service == "" {
@@ -56,7 +60,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	cfg, linkKey := register(cfg)
+	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
+	if err != nil {
+		panic(err)
+	}
 
 	// create a client and connect to the mixnet Provider
 	c, err := client.New(cfg)
@@ -73,7 +80,7 @@ func main() {
 		panic(err)
 	}
 
-	sequentialPing(session, serviceDesc, count)
+	sendPings(session, serviceDesc, count, concurrency, printDiff)
 
 	c.Shutdown()
 }

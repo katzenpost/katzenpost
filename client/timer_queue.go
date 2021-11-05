@@ -55,7 +55,6 @@ func NewTimerQueue(nextQueue nqueue) *TimerQueue {
 		priq:  queue.New(),
 	}
 	a.L = new(sync.Mutex)
-	a.Go(a.worker)
 	return a
 }
 

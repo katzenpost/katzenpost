@@ -17,11 +17,6 @@
 [UpstreamProxy]
   Type = "none"
 
-[ClientLogging]
-  Disable = false
-  Level = "NOTICE"
-  File = ""
-
 [Logging]
   Disable = false
   Level = "DEBUG"
@@ -49,13 +44,4 @@
 
 [Debug]
   DisableDecoyTraffic = false
-  CaseSensitiveUserIdentifiers = false
   PollingInterval = 50
-
-[Panda]
-  Receiver = "+panda"
-  Provider = "provider1"
-  BlobSize = 1000
-
-[Reunion]
-   Enable = false

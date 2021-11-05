@@ -58,18 +58,10 @@
 #
 
 [Provider]
-
-  # optional registration HTTP service is turned off by default
-  EnableUserRegistrationHTTP = true
-  UserRegistrationHTTPAddresses = [ "127.0.0.1:8080"]
-  # if you want your HTTP registration address advertised in the PKI doc
-  # enable the following
-  # AdvertiseUserRegistrationHTTPAddresses = [ "127.0.0.1:8080"]
-
   # Here's the example internal Kaetzchen service configs
   [[Provider.Kaetzchen]]
-    Capability = "loop"
-    Endpoint = "+loop"
+    Capability = "echo"
+    Endpoint = "+echo"
     Disable = false
 
   [[Provider.Kaetzchen]]

@@ -58,22 +58,15 @@
 #
 
 [Provider]
-EnableServiceProvider = true
-
-[[Provider.Kaetzchen]]
-    Disable = false
-    Capability = "loop"
-    Endpoint = "+loop"
-
+  EnableServiceProvider = true
    [[Provider.CBORPluginKaetzchen]]
-     Disable = false
-     Capability = "echo"
-     Endpoint = "+echo"
-     Command = "/go/bin/echo_server"
-     MaxConcurrency = 1
-     [Provider.CBORPluginKaetzchen.Config]
-      log_dir = "/conf/service_logs"
+    Capability = "echo"
+    Endpoint = "echo"
+    Command = "/go/bin/echo_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
       log_level = "DEBUG"
+      log_dir = "/conf/service_logs"
 
    [[Provider.CBORPluginKaetzchen]]
      Disable = false

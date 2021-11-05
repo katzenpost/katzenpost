@@ -222,14 +222,6 @@ to deviate from the defaults.
 
 The top-level Provider configuration parameters include:
 
-* ``EnableUserRegistrationHTTP`` if set to ``true`` then the HTTP
-  registration service will be enabled and the
-  ``UserRegistrationHTTPAddresses`` option must also be set.
-
-* ``UserRegistrationHTTPAddresses`` is set to a list of TCP addresses
-  which include the IP address of the interface to listen on and the
-  TCP port.
-
 * ``BinaryRecipients`` if set to ``true`` disables all Provider side
   recipient pre-processing, including removing trailing `NUL` bytes,
   case normalization, and delimiter support.
@@ -245,27 +237,11 @@ The top-level Provider configuration parameters include:
   the Provider is reachable by clients.  The most useful alternative
   transport is likely ("tcp") (`core/pki.TransportTCP`).
 
+* ``EnableEphemeralClients`` if set to ``true`` allows ephemeral clients to be
+  created when the Provider first receives a given user identity string.
 
-Provider HTTP Registration
-``````````````````````````
-
-Here's an example TOML configuration section that demonstrates how to
-configure a HTTP Registration service that facilitates account
-registration::
-
-   [Provider]
-
-     EnableUserRegistrationHTTP = true
-     UserRegistrationHTTPAddresses = [ "127.0.0.1:8080"]
-
-
-**Warning**
-
-This configuration example configures the HTTP registration service to
-listen on the loopback interface on TCP port 8080. There is NO authentication,
-TLS encryption or abuse mitigation at all; this is left as an exercise for
-the discerning systems administrator who can utilize some kind of proxy
-service to mitigate abuse and provide TLS authentication.
+* ``TrustOnFirstUse`` if set to ``true`` the Provider will trust client's wire
+  protocol keys on first use.
 
 
 Kaetzchen Configuration
@@ -277,13 +253,13 @@ discuss built-in internal kaetzchen services. (see next section for
 external kaetzchen plugin system)
 
 Consider the following simple configuration example where we configure
-the loop and keyserver services::
+the echo and keyserver services::
 
   [Provider]
 
     [[Provider.Kaetzchen]]
-      Capability = "loop"
-      Endpoint = "+loop"
+      Capability = "echo"
+      Endpoint = "+echo"
       Disable = false
 
     [[Provider.Kaetzchen]]
@@ -293,7 +269,7 @@ the loop and keyserver services::
 
 The ``Kaetzchen`` field is the list of configured Kaetzchen
 (auto-responder agents) for this provider. In the above example we
-configured two Kaetzchen, keyserver and loop which are required
+configured two Kaetzchen, keyserver and echo which are required
 by the mailproxy client.
 
 Lets review the Kaetzchen configuration parameters:

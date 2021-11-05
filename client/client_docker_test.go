@@ -29,7 +29,6 @@ import (
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -39,13 +38,13 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey)
+	session, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	<-session.EventSink
@@ -60,24 +59,24 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey)
+	session, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
-	desc, err := session.GetService("loop")
+	desc, err := session.GetService(constants.LoopService)
 	require.NoError(err)
 
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	client.Shutdown()
 	client.Wait()
@@ -89,25 +88,25 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey)
+	session, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
-	desc, err := session.GetService("loop")
+	desc, err := session.GetService(constants.LoopService)
 	require.NoError(err)
 
 	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
 	require.NoError(err)
-	require.True(utils.CtIsZero(reply))
+	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
 
 	client.Shutdown()
 	client.Wait()
@@ -119,15 +118,15 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
@@ -147,7 +146,7 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 			case *MessageReplyEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
-					require.True(utils.CtIsZero(event.Payload))
+					require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
 					wg.Done()
 					return
 				}
@@ -168,16 +167,16 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
@@ -197,7 +196,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 			case *MessageReplyEvent:
 				if bytes.Equal(msgID[:], event.MessageID[:]) {
 					require.NoError(event.Err)
-					require.True(utils.CtIsZero(event.Payload))
+					require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
 					wg.Done()
 					return
 				}
@@ -218,12 +217,12 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
 	msgID := [constants.MessageIDLength]byte{}
@@ -250,15 +249,15 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	// Send a message to a nonexistent service so that we don't get a reply and thus
@@ -308,15 +307,15 @@ func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := AutoRegisterRandomClient(cfg)
+	provider, linkKey, err := NewEphemeralClientConfig(cfg)
 	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey)
+	clientSession, err := client.NewSession(linkKey, provider)
 	require.NoError(err)
 
-	desc, err := clientSession.GetService("loop")
+	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
 	for i := 0; i < 10; i++ {
@@ -339,7 +338,7 @@ func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
 					if bytes.Equal(msgID[:], event.MessageID[:]) {
 						require.NoError(event.Err)
 						t.Logf("message ID %x reply received", msgID)
-						require.True(utils.CtIsZero(event.Payload))
+						require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
 						wg.Done()
 						return
 					}

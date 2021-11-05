@@ -22,10 +22,17 @@ import (
 	"time"
 )
 
+// SentMessageDescriptor is used to track Spool Write Responses
 type SentMessageDescriptor struct {
 	// Nickname is the contact nickname to whom a message was sent.
 	Nickname string
 
+	// MessageID is the key in the conversation map referencing a specific message.
+	MessageID MessageID
+}
+
+// ReadMessageDescriptor is used to track Spool Read Responses
+type ReadMessageDescriptor struct {
 	// MessageID is the key in the conversation map referencing a specific message.
 	MessageID MessageID
 }

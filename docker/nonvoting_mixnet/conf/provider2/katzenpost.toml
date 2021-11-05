@@ -58,10 +58,9 @@
 #
 
 [Provider]
-EnableServiceProvider = false
-EnableUserRegistrationHTTP = true
-UserRegistrationHTTPAddresses = ["172.28.1.4:36967"]
-AdvertiseUserRegistrationHTTPAddresses = ["http://127.0.0.1:36967"]
+  EnableServiceProvider = false
+  EnableEphemeralClients = true
+  TrustOnFirstUse = true
 
 #
 # The Management section specifies the management interface configuration.

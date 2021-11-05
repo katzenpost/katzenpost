@@ -18,6 +18,27 @@
 
 package catshadow
 
+import (
+	"github.com/katzenpost/katzenpost/memspool/client"
+)
+
+type opOnline struct {
+	responseChan chan error
+}
+
+type opOffline struct {
+	responseChan chan error
+}
+
+type opCreateSpool struct {
+	responseChan chan error
+}
+
+type opUpdateSpool struct {
+	descriptor   *client.SpoolReadDescriptor
+	responseChan chan error
+}
+
 type opAddContact struct {
 	name         string
 	sharedSecret []byte

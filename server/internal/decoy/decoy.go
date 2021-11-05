@@ -28,7 +28,7 @@ import (
 	"sync"
 	"time"
 
-	"git.schwanenlied.me/yawning/avl.git"
+	"gitlab.com/yawning/avl.git"
 	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -255,7 +255,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	var loopRecip string
 	for _, idx := range d.rng.Perm(len(doc.Providers)) {
 		desc := doc.Providers[idx]
-		params, ok := desc.Kaetzchen[kaetzchen.LoopCapability]
+		params, ok := desc.Kaetzchen[kaetzchen.EchoCapability]
 		if !ok {
 			continue
 		}

@@ -1,4 +1,4 @@
-// loop.go - Loop Kaetzchen.
+// loop.go - Echo Kaetzchen.
 // Copyright (C) 2018  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -22,45 +22,41 @@ import (
 	"gopkg.in/op/go-logging.v1"
 )
 
-// LoopCapability is the standardized capability for the loop/discard service.
-const LoopCapability = "loop"
+// EchoCapability is the standardized capability for the echo service.
+const EchoCapability = "echo"
 
-type kaetzchenLoop struct {
+type kaetzchenEcho struct {
 	log *logging.Logger
 
 	params Parameters
 }
 
-func (k *kaetzchenLoop) Capability() string {
-	return LoopCapability
+func (k *kaetzchenEcho) Capability() string {
+	return EchoCapability
 }
 
-func (k *kaetzchenLoop) Parameters() Parameters {
+func (k *kaetzchenEcho) Parameters() Parameters {
 	return k.params
 }
 
-func (k *kaetzchenLoop) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
+func (k *kaetzchenEcho) OnRequest(id uint64, payload []byte, hasSURB bool) ([]byte, error) {
 	if !hasSURB {
 		return nil, ErrNoResponse
 	}
 
 	k.log.Debugf("Handling request: %v", id)
-
-	// TODO: Should this do anything with the payload, and should this send
-	// a meaningful response?  Maybe a digest of the payload?
-
-	return nil, nil
+	return payload, nil
 }
 
-func (k *kaetzchenLoop) Halt() {
+func (k *kaetzchenEcho) Halt() {
 	// No termination required.
 }
 
-// NewLoop constructs a new Loop Kaetzchen instance, providing the "loop"
+// NewEcho constructs a new Echo Kaetzchen instance, providing the "echo"
 // capability, on the configured endpoint.
-func NewLoop(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
-	k := &kaetzchenLoop{
-		log:    glue.LogBackend().GetLogger("kaetzchen/loop"),
+func NewEcho(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
+	k := &kaetzchenEcho{
+		log:    glue.LogBackend().GetLogger("kaetzchen/echo"),
 		params: make(Parameters),
 	}
 	k.params[ParameterEndpoint] = cfg.Endpoint

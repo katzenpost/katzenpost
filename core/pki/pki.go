@@ -39,6 +39,12 @@ var (
 	// ErrInvalidPostEpoch is the error returned when the server rejects a
 	// descriptor upload for a given epoch due to time reasons.
 	ErrInvalidPostEpoch = errors.New("pki: post for epoch will never succeeed")
+
+	// TrustOnFirstUseAuth is a MixDescriptor.AuthenticationType
+	TrustOnFirstUseAuth = "tofu"
+
+	// OutOfBandAuth is a MixDescriptor.AuthenticationType
+	OutOfBandAuth = "oob"
 )
 
 // Document is a PKI document.
@@ -279,15 +285,14 @@ type MixDescriptor struct {
 	// to parameters.
 	Kaetzchen map[string]map[string]interface{} `json:",omitempty"`
 
-	// RegistrationHTTPAddresses is a slice of HTTP URLs used for Provider
-	// user registration. Providers of course may choose to set this to nil.
-	RegistrationHTTPAddresses []string
-
 	// Layer is the topology layer.
 	Layer uint8
 
 	// LoadWeight is the node's load balancing weight (unused).
 	LoadWeight uint8
+
+	// AuthenticationType is the authentication mechanism required
+	AuthenticationType string
 }
 
 // Client is the abstract interface used for PKI interaction.

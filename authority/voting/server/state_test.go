@@ -409,10 +409,10 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*sConfig.Con
 
 	cfg.Provider = new(sConfig.Provider)
 
-	loopCfg := new(sConfig.Kaetzchen)
-	loopCfg.Capability = "loop"
-	loopCfg.Endpoint = "+loop"
-	cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, loopCfg)
+	echoCfg := new(sConfig.Kaetzchen)
+	echoCfg.Capability = "echo"
+	echoCfg.Endpoint = "+echo"
+	cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
 	err = cfg.FixupAndValidate()
 	if err != nil {
 		return nil, err

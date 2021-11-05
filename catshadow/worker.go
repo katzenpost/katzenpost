@@ -45,21 +45,14 @@ func getReadInboxInterval(lambdaP float64, lambdaPMaxDelay uint64) time.Duration
 func (c *Client) worker() {
 	const maxDuration = time.Duration(math.MaxInt64)
 
-	// Retreive cached PKI doc.
-	doc := c.session.CurrentDocument()
-	if doc == nil {
-		c.fatalErrCh <- errors.New("aborting, PKI doc is nil")
-		return
-	}
-
-	readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
-	readInboxTimer := time.NewTimer(readInboxInterval)
+	readInboxTimer := time.NewTimer(maxDuration)
 	defer readInboxTimer.Stop()
+	c.getReadInboxInterval = func() time.Duration { return maxDuration } // replaced in onDocument
 
 	gcMessagestimer := time.NewTimer(GarbageCollectionInterval)
 	defer gcMessagestimer.Stop()
 
-	isConnected := true
+	isConnected := false
 	for {
 		var qo interface{}
 		select {
@@ -75,12 +68,29 @@ func (c *Client) worker() {
 			if isConnected {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
-				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				readInboxInterval := c.getReadInboxInterval()
 				c.log.Debug("<-readInboxTimer.C: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 			}
 		case qo = <-c.opCh:
 			switch op := qo.(type) {
+			case *opOnline:
+				// this operation is run in another goroutine, and is thread safe
+				go func() { op.responseChan <- c.goOnline() }()
+			case *opOffline:
+				op.responseChan <- c.goOffline()
+				isConnected = false
+				c.haltKeyExchanges()
+			case *opCreateSpool:
+				c.doCreateRemoteSpool(op.responseChan)
+			case *opUpdateSpool:
+				if op.descriptor != nil {
+					c.spoolReadDescriptor = op.descriptor
+					c.save()
+					op.responseChan <- nil
+				} else {
+					op.responseChan <- errors.New("Nil spool descriptor")
+				}
 			case *opAddContact:
 				err := c.createContact(op.name, op.sharedSecret)
 				if err != nil {
@@ -109,25 +119,28 @@ func (c *Client) worker() {
 		case update := <-c.reunionChan:
 			c.processReunionUpdate(&update)
 			continue
-		case rawClientEvent := <-c.session.EventSink:
+		case rawClientEvent := <-c.sessionEvents():
 			switch event := rawClientEvent.(type) {
 			case *client.MessageIDGarbageCollected:
 				c.garbageCollectSendMap(event)
 			case *client.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {
-					readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+					readInboxInterval := c.getReadInboxInterval()
 					c.log.Debug("ConnectionStatusEvent: Connected: Setting readInboxTimer to %s", readInboxInterval)
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
 					c.restartSending()
+					c.restartPANDAExchanges()
+					c.restartReunionExchanges()
 					c.eventCh.In() <- event
 					continue
 				}
 				isConnected = event.IsConnected
 				if !isConnected {
-					c.log.Debug("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s", maxDuration)
+					c.log.Debug("ConnectionStatusEvent: Disconnected: Setting readInboxTimer to %s and halting key exchanges", maxDuration)
 					readInboxTimer.Reset(maxDuration)
+					c.haltKeyExchanges()
 				}
 				c.eventCh.In() <- event
 			case *client.MessageSentEvent:
@@ -137,8 +150,9 @@ func (c *Client) worker() {
 				c.handleReply(event)
 				continue
 			case *client.NewDocumentEvent:
-				doc = event.Document
-				readInboxInterval := getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay)
+				doc := event.Document
+				c.getReadInboxInterval = func() time.Duration { return getReadInboxInterval(doc.LambdaP, doc.LambdaPMaxDelay) }
+				readInboxInterval := c.getReadInboxInterval()
 				c.log.Debug("NewDocumentEvent: Setting readInboxTimer to %s", readInboxInterval)
 				readInboxTimer.Reset(readInboxInterval)
 				continue
