@@ -38,13 +38,10 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
-
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey, provider)
+	session, err := client.NewTOFUSession()
 	require.NoError(err)
 
 	<-session.EventSink
@@ -59,14 +56,13 @@ func TestDockerClientBlockingSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey, provider)
+	session, err := client.NewTOFUSession()
 	require.NoError(err)
 
+	session.WaitForDocument()
 	desc, err := session.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -88,15 +84,14 @@ func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewSession(linkKey, provider)
+	session, err := client.NewTOFUSession()
 	require.NoError(err)
 
+	session.WaitForDocument()
 	desc, err := session.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -118,14 +113,13 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey, provider)
+	clientSession, err := client.NewTOFUSession()
 	require.NoError(err)
 
+	clientSession.WaitForDocument()
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -167,15 +161,14 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	cfg.Debug.DisableDecoyTraffic = false
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey, provider)
+	clientSession, err := client.NewTOFUSession()
 	require.NoError(err)
 
+	clientSession.WaitForDocument()
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -217,12 +210,10 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey, provider)
+	clientSession, err := client.NewTOFUSession()
 	require.NoError(err)
 
 	msgID := [constants.MessageIDLength]byte{}
@@ -249,14 +240,13 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey, provider)
+	clientSession, err := client.NewTOFUSession()
 	require.NoError(err)
 
+	clientSession.WaitForDocument()
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -307,14 +297,13 @@ func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	provider, linkKey, err := NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewSession(linkKey, provider)
+	clientSession, err := client.NewTOFUSession()
 	require.NoError(err)
 
+	clientSession.WaitForDocument()
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
