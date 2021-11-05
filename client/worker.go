@@ -224,11 +224,11 @@ func (s *Session) sendFromQueueOrDecoy(loopSvc *utils.ServiceDescriptor) {
 func (s *Session) isDocValid(doc *pki.Document) error {
 	for _, provider := range doc.Providers {
 		_, ok := provider.Kaetzchen[constants.LoopService]
-		if !ok {
-			return errors.New("found a Provider which does not have the loop service")
+		if ok {
+			return nil
 		}
 	}
-	return nil
+	return errors.New("found a no provider with the loop service")
 }
 
 func (s *Session) setPollIntervalFromDoc(doc *pki.Document) {
