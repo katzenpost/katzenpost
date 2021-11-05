@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/client/constants"
-	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -142,7 +141,7 @@ func (s *Session) worker() {
 				lambdaD = doc.LambdaD
 
 				// update the loop service descriptors
-				loopServices = utils.FindServices(cConstants.LoopService, doc)
+				loopServices = utils.FindServices(constants.LoopService, doc)
 				if len(loopServices) == 0 {
 					s.fatalErrCh <- errors.New("failure to get loop service")
 					return
