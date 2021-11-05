@@ -59,25 +59,25 @@
 
 [Provider]
   EnableServiceProvider = true
-   [[Provider.CBORPluginKaetzchen]]
+  [[Provider.CBORPluginKaetzchen]]
     Capability = "echo"
-    Endpoint = "echo"
+    Endpoint = "+echo"
     Command = "/go/bin/echo_server"
     MaxConcurrency = 1
     [Provider.CBORPluginKaetzchen.Config]
-      log_level = "DEBUG"
-      log_dir = "/conf/service_logs"
+     log_level = "DEBUG"
+     log_dir = "/conf/service_logs"
 
-   [[Provider.CBORPluginKaetzchen]]
-     Disable = false
-     Capability = "panda"
-     Endpoint = "+panda"
-     Command = "/go/bin/panda_server"
-     MaxConcurrency = 1
-     [Provider.CBORPluginKaetzchen.Config]
-      log_dir = "/conf/service_logs"
-      log_level = "DEBUG"
-      fileStore = "/conf/service_data/panda.storage"
+  [[Provider.CBORPluginKaetzchen]]
+    Disable = false
+    Capability = "panda"
+    Endpoint = "+panda"
+    Command = "/go/bin/panda_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
+     log_dir = "/conf/service_logs"
+     log_level = "DEBUG"
+     fileStore = "/conf/service_data/panda.storage"
 
   [[Provider.CBORPluginKaetzchen]]
     Disable = false
@@ -89,7 +89,7 @@
       data_store = "/conf/service_data/memspool.storage"
       log_dir = "/conf/service_logs"
 
-   [[Provider.CBORPluginKaetzchen]]
+  [[Provider.CBORPluginKaetzchen]]
     Capability = "reunion"
     Endpoint = "+reunion"
     Command = "/go/bin/reunion_katzenpost_server"

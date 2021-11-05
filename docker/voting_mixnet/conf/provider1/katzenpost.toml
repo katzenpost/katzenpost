@@ -69,18 +69,18 @@
   EnableEphemeralClients = true
   TrustOnFirstUse = true
 
-[[Provider.Kaetzchen]]
+  [[Provider.Kaetzchen]]
     Disable = false
     Capability = "echo"
     Endpoint = "+echo"
 
-   [[Provider.CBORPluginKaetzchen]]
-     Disable = false
-     Capability = "panda"
-     Endpoint = "+panda"
-     Command = "/go/bin/panda_server"
-     MaxConcurrency = 1
-     [Provider.CBORPluginKaetzchen.Config]
+  [Provider.CBORPluginKaetzchen]]
+    Disable = false
+    Capability = "panda"
+    Endpoint = "+panda"
+    Command = "/go/bin/panda_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
       log_dir = "/conf/service_logs"
       log_level = "DEBUG"
       fileStore = "/conf/service_data/panda.storage"
