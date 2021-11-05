@@ -33,7 +33,7 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	require.NoError(t, err, "NewKeypair(1)")
 	assert.Equal(true, check_public_key(unblinded.PublicKey()))
 
-	factor := [32]byte{}
+	factor := make([]byte, BlindFactorSize)
 	rng.Read(factor[:])
 	f1_blind_secret := unblinded.Blind(factor)
 	f1_blind_public := unblinded.PublicKey().Blind(factor)
@@ -56,8 +56,8 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	f1_derived_public_x := f1_blind_secret_x.PublicKey()
 	assert.Equal(f1_blind_public_x, f1_derived_public_x)
 
-	factor2 := [32]byte{}
-	rng.Read(factor2[:])
+	factor2 := make([]byte, BlindFactorSize)
+	rng.Read(factor2)
 	// we just need to ensure that the factors are different,
 	// ie we could copy factor and xor a byte in the range 1..30
 	// note that factor gets clamped, so we can't use[0] or [31] here

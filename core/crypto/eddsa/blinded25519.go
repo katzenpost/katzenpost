@@ -44,6 +44,10 @@ import (
 	"filippo.io/edwards25519"
 )
 
+const (
+	BlindFactorSize = ed25519.PublicKeySize
+)
+
 type BlindedPrivateKey struct {
 	blinded ed25519.PrivateKey
 }
@@ -58,16 +62,15 @@ func (bpk *BlindedPrivateKey) PublicKey() *PublicKey {
 	return pub
 }
 
-func (privateKey *BlindedPrivateKey) Sign(message []byte) [64]byte {
-	signature := [64]byte{}
+// Sign signs the message msg with the BlindedPrivateKey and returns the signature.
+func (privateKey *BlindedPrivateKey) Sign(message []byte) []byte {
+	signature := make([]byte, ed25519.SignatureSize)
 	// vendored version of ed25519.sign() except it uses the
 	// secret/private scalar directly as expandedSecretKey
 	// instead of deriving from hash each time.
 	// It is a bit unfortunate that this needs to be here...
-	blindedSecretKey := [64]byte{}
-	copy(blindedSecretKey[:], privateKey.blinded[:32])
 	expandedSecretKey := new(edwards25519.Scalar)
-	expandedSecretKey.SetUniformBytes(blindedSecretKey[:])
+	expandedSecretKey.SetUniformBytes(privateKey.blinded[:32])
 
 	// secret_salt <- sha512(private)
 	digest1 := sha512.Sum512(privateKey.blinded[:32])
@@ -86,12 +89,11 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) [64]byte {
 	mdReduced, _ := new(edwards25519.Scalar).SetUniformBytes(messageDigest[:64])
 
 	// R <- messageDigestReduced * B
-	var encodedR [32]byte
-	copy(encodedR[:], new(edwards25519.Point).ScalarBaseMult(mdReduced).Bytes())
+	encodedR := new(edwards25519.Point).ScalarBaseMult(mdReduced).Bytes()
 
 	// hramDigestReduced := sha512(R || public || message) mod L
 	h.Reset()
-	h.Write(encodedR[:])
+	h.Write(encodedR)
 	h.Write(privateKey.blinded[32:])
 	h.Write(message)
 	hramDigest := h.Sum(nil)
@@ -104,21 +106,21 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) [64]byte {
 		expandedSecretKey,
 		mdReduced)
 
-	copy(signature[:], encodedR[:])
+	copy(signature, encodedR)
 	copy(signature[32:], s_new.Bytes())
 	return signature
 }
 
-func hash_factor_inplace(factor *[32]byte) {
-	h := sha512.Sum512_256(factor[:])
-	copy(factor[:], h[:])
+func hash_factor_inplace(factor []byte) {
+	h := sha512.Sum512_256(factor)
+	copy(factor, h[:])
 	// needs to be clamped for scalar multiplication,
 	// but Scalar.SetBytesWithClamping takes care of that.
 }
 
-func (secret *PrivateKey) Blind(factor [32]byte) *BlindedPrivateKey {
-	hash_factor_inplace(&factor)
-	factor_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(factor[:])
+func (secret *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
+	hash_factor_inplace(factor)
+	factor_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(factor)
 	if err != nil {
 		// This only happens if factor is not 32 bytes.
 		panic(err)
@@ -137,14 +139,12 @@ func (secret *PrivateKey) Blind(factor [32]byte) *BlindedPrivateKey {
 	// oo <- factor * bb + 0*B
 	oo_sc := new(edwards25519.Scalar).Multiply(factor_sc, bb_sc)
 
-	newsec := make(ed25519.PrivateKey, 64)
+	newsec := make([]byte, ed25519.PrivateKeySize)
 	copy(newsec[:32], oo_sc.Bytes())
 
 	// calculates and sets the public key corresponding to the
 	// private scalar (used when we have derived a new private scalar)
-	newsec_a := [64]byte{}
-	copy(newsec_a[:], oo_sc.Bytes()[:32])
-	newsec_scalar, _ := new(edwards25519.Scalar).SetUniformBytes(newsec_a[:])
+	newsec_scalar, _ := new(edwards25519.Scalar).SetUniformBytes(newsec)
 	pkxA_n := new(edwards25519.Point).ScalarBaseMult(newsec_scalar)
 	copy(newsec[32:], pkxA_n.Bytes())
 
@@ -153,11 +153,24 @@ func (secret *PrivateKey) Blind(factor [32]byte) *BlindedPrivateKey {
 	return bpk
 }
 
-func (mypub *PublicKey) Blind(factor [32]byte) *PublicKey {
+// Identity returns the key's identity, in this case it's our
+// public key in bytes.
+func (k *BlindedPrivateKey) Identity() []byte {
+	return k.PublicKey().Bytes()
+}
+
+// KeyType returns the key type string,
+// in this case the constant variable
+// whose value is "ed25519".
+func (k *BlindedPrivateKey) KeyType() string {
+	return keyType
+}
+
+func (mypub *PublicKey) Blind(factor []byte) *PublicKey {
 	// out <- factor*pkA + zero*Basepoint
 
-	hash_factor_inplace(&factor)
-	factor_sc, _ := new(edwards25519.Scalar).SetBytesWithClamping(factor[:])
+	hash_factor_inplace(factor)
+	factor_sc, _ := new(edwards25519.Scalar).SetBytesWithClamping(factor)
 	out, _ := new(edwards25519.Point).SetBytes(mypub.Bytes())
 	newkey := new(PublicKey)
 	err := newkey.FromBytes(out.ScalarMult(factor_sc, out).Bytes())
