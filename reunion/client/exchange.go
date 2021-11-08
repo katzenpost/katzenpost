@@ -81,7 +81,7 @@ type Exchange struct {
 	log          *logging.Logger
 	updateChan   chan ReunionUpdate
 	db           server.ReunionDatabase
-	shutdownChan chan interface{}
+	shutdownChan chan struct{}
 
 	status     int
 	contactID  uint64
@@ -121,13 +121,14 @@ func NewExchangeFromSnapshot(
 	serialized []byte,
 	log *logging.Logger,
 	db server.ReunionDatabase,
-	updateChan chan ReunionUpdate) (*Exchange, error) {
+	updateChan chan ReunionUpdate,
+	shutdownChan chan struct{}) (*Exchange, error) {
 
 	ex := &Exchange{
 		log:          log,
 		updateChan:   updateChan,
 		db:           db,
-		shutdownChan: make(chan interface{}),
+		shutdownChan: shutdownChan,
 	}
 	err := ex.Unmarshal(serialized)
 	if err != nil {
@@ -178,7 +179,8 @@ func NewExchange(
 	passphrase []byte,
 	sharedRandomValue []byte,
 	epoch uint64,
-	updateChan chan ReunionUpdate) (*Exchange, error) {
+	updateChan chan ReunionUpdate,
+	shutdownChan chan struct{}) (*Exchange, error) {
 
 	session, err := crypto.NewSession(passphrase, sharedRandomValue, epoch)
 	if err != nil {
@@ -188,7 +190,7 @@ func NewExchange(
 		log:          log,
 		updateChan:   updateChan,
 		db:           db,
-		shutdownChan: make(chan interface{}),
+		shutdownChan: shutdownChan,
 		status:       initialState,
 		contactID:    contactID,
 		ExchangeID:   rand.Uint64(),

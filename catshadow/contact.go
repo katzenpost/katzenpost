@@ -93,6 +93,10 @@ type Contact struct {
 	// key exchange worker goroutine.
 	pandaShutdownChan chan struct{}
 
+	// reunionShutdownChans can be closed to trigger the shutodwn of a Reunion
+	// key exchange worker goroutine.
+	reunionShutdownChan chan struct{}
+
 	// pandaResult contains an error message if the PANDA exchange fails.
 	pandaResult string
 
@@ -126,30 +130,21 @@ type Contact struct {
 }
 
 // NewContact creates a new Contact or returns an error.
-func NewContact(nickname string, id uint64, spoolReadDescriptor *memspoolClient.SpoolReadDescriptor, secret []byte) (*Contact, error) {
+func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
 	ratchet, err := ratchet.InitRatchet(rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-	signedKeyExchange, err := ratchet.CreateKeyExchange()
-	if err != nil {
-		return nil, err
-	}
-	spoolWriteDescriptor := spoolReadDescriptor.GetWriteDescriptor()
-	exchange, err := NewContactExchangeBytes(spoolWriteDescriptor, signedKeyExchange)
-	if err != nil {
-		return nil, err
-	}
 	return &Contact{
-		Nickname:          nickname,
-		id:                id,
-		IsPending:         true,
-		ratchet:           ratchet,
-		ratchetMutex:      new(sync.Mutex),
-		sharedSecret:      secret,
-		keyExchange:       exchange,
-		pandaShutdownChan: make(chan struct{}),
-		outbound:          new(Queue),
+		Nickname:            nickname,
+		id:                  id,
+		IsPending:           true,
+		ratchet:             ratchet,
+		ratchetMutex:        new(sync.Mutex),
+		sharedSecret:        secret,
+		pandaShutdownChan:   make(chan struct{}),
+		reunionShutdownChan: make(chan struct{}),
+		outbound:            new(Queue),
 	}, nil
 }
 
@@ -212,7 +207,10 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.sharedSecret = s.SharedSecret
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 	c.outbound = s.Outbound
-
+	if c.IsPending {
+		c.pandaShutdownChan = make(chan struct{})
+		c.reunionShutdownChan = make(chan struct{})
+	}
 	return nil
 }
 
@@ -220,4 +218,17 @@ func (c *Contact) Destroy() {
 	c.ratchetMutex.Lock()
 	ratchet.DestroyRatchet(c.ratchet)
 	c.ratchetMutex.Unlock()
+}
+
+func (c *Contact) haltKeyExchanges() {
+	if c.IsPending {
+		if c.pandaShutdownChan != nil {
+			close(c.pandaShutdownChan)
+			c.pandaShutdownChan = nil
+		}
+		if c.reunionShutdownChan != nil {
+			close(c.reunionShutdownChan)
+			c.reunionShutdownChan = nil
+		}
+	}
 }

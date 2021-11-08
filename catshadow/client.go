@@ -55,6 +55,8 @@ var (
 	errContactNotFound        = errors.New("Contact not found")
 	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
 	errBlobNotFound           = errors.New("Blob not found in store")
+	errNoSpool                = errors.New("No Spool Found")
+	errAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
 	pandaBlobSize             = 1000
 )
 
@@ -215,6 +217,36 @@ func (c *Client) Start() {
 
 }
 
+func (c *Client) initKeyExchange(contact *Contact) error {
+	if contact.keyExchange != nil {
+		return errAlreadyHaveKeyExchange
+	}
+	signedKeyExchange, err := contact.ratchet.CreateKeyExchange()
+	if err != nil {
+		return err
+	}
+
+	exchange, err := NewContactExchangeBytes(c.spoolReadDescriptor.GetWriteDescriptor(), signedKeyExchange)
+	if err != nil {
+		return err
+	}
+
+	contact.keyExchange = exchange
+	return nil
+}
+
+func (c *Client) restartKeyExchanges() {
+	c.haltKeyExchanges()
+	if !c.online {
+		return
+	}
+	if c.spoolReadDescriptor == nil {
+		return
+	}
+	c.restartPANDAExchanges()
+	c.restartReunionExchanges()
+}
+
 // restart reunion exchanges
 func (c *Client) restartReunionExchanges() {
 	transports, err := c.getReunionTransports()
@@ -224,6 +256,12 @@ func (c *Client) restartReunionExchanges() {
 	}
 	for _, contact := range c.contacts {
 		if contact.IsPending {
+			err := c.initKeyExchange(contact)
+			if err != errAlreadyHaveKeyExchange && err != nil {
+				// skip if a ratchet keyexchange cannot be found or created
+				c.log.Errorf("Failed to resume key exchange for %s: %s", contact.Nickname, err)
+				continue
+			}
 			for eid, ex := range contact.reunionKeyExchange {
 				// see if the transport still exists in current transports
 				m := false
@@ -232,7 +270,7 @@ func (c *Client) restartReunionExchanges() {
 						m = true
 						lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
 						dblog := c.logBackend.GetLogger(lstr)
-						exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan)
+						exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan, contact.reunionShutdownChan)
 						if err != nil {
 							c.log.Warningf("Reunion failed: %v", err)
 						} else {
@@ -255,7 +293,13 @@ func (c *Client) restartReunionExchanges() {
 func (c *Client) restartPANDAExchanges() {
 	for _, contact := range c.contacts {
 		if contact.IsPending {
-			err := c.doPANDAExchange(contact)
+			err := c.initKeyExchange(contact)
+			if err != errAlreadyHaveKeyExchange && err != nil {
+				// skip if a ratchet keyexchange cannot be found or created
+				c.log.Errorf("Failed to resume key exchange for %s: %s", contact.Nickname, err)
+				continue
+			}
+			err = c.doPANDAExchange(contact)
 			if err != nil {
 				c.log.Errorf("Failed to resume key exchange for %s: %s", contact.Nickname, err)
 				continue
@@ -387,24 +431,22 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
 	}
-	if c.spoolReadDescriptor == nil {
-		return fmt.Errorf("Cannot add a contact before a spool has been created, sorry")
-	}
-	contact, err := NewContact(nickname, c.randID(), c.spoolReadDescriptor, sharedSecret)
+	contact, err := NewContact(nickname, c.randID(), sharedSecret)
 	if err != nil {
 		return err
 	}
 	c.contacts[contact.ID()] = contact
 	c.contactNicknames[contact.Nickname] = contact
+	contact.reunionKeyExchange = make(map[uint64]boundExchange)
+	contact.reunionResult = make(map[uint64]string)
 
 	if c.online {
+		c.initKeyExchange(contact)
 		err = c.doPANDAExchange(contact)
 		if err != nil {
 			c.log.Notice("PANDA Failure for %v: %v", contact, err)
 		}
 
-		contact.reunionKeyExchange = make(map[uint64]boundExchange)
-		contact.reunionResult = make(map[uint64]string)
 		err = c.doReunion(contact)
 		if err != nil {
 			c.log.Notice("Reunion Failure for %v: %v", contact, err)
@@ -456,9 +498,12 @@ func (c *Client) doPANDAExchange(contact *Contact) error {
 			return err
 		}
 		kx.SetSharedRandom(sharedRandom)
-		contact.pandaKeyExchange = kx.Marshal()
 	} else {
-		kx, err = panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, contact.sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
+		if c.spoolReadDescriptor == nil {
+			return errNoSpool
+		}
+
+		kx, err = panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, contact.SharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
 		if err != nil {
 			return err
 		}
@@ -521,7 +566,7 @@ func (c *Client) doReunion(contact *Contact) error {
 			for _, epoch := range epochs {
 				lstr := fmt.Sprintf("reunion with %s at %s@%s:%d", contact.Nickname, tr.Recipient, tr.Provider, epoch)
 				dblog := c.logBackend.GetLogger(lstr)
-				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), contact.sharedSecret, srv, epoch, c.reunionChan)
+				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), contact.SharedSecret, srv, epoch, c.reunionChan, contact.reunionShutdownChan)
 				if err != nil {
 					return err
 				}
@@ -570,11 +615,7 @@ func (c *Client) doContactRemoval(nickname string) error {
 	if !ok {
 		return errContactNotFound
 	}
-	if contact.IsPending {
-		if contact.pandaShutdownChan != nil {
-			close(contact.pandaShutdownChan)
-		}
-	}
+	contact.haltKeyExchanges()
 	delete(c.contactNicknames, nickname)
 	delete(c.contacts, contact.id)
 	c.doWipeConversation(nickname) // calls c.save()
@@ -640,13 +681,7 @@ func (c *Client) marshal() (*memguard.LockedBuffer, error) {
 
 func (c *Client) haltKeyExchanges() {
 	for _, contact := range c.contacts {
-		if contact.IsPending {
-			c.log.Debugf("Halting pending key exchange for '%s' contact.", contact.Nickname)
-			if contact.pandaShutdownChan != nil {
-				close(contact.pandaShutdownChan)
-				contact.pandaShutdownChan = nil
-			}
-		}
+		contact.haltKeyExchanges()
 	}
 }
 
