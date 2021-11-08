@@ -88,6 +88,7 @@ func (c *Client) worker() {
 					c.spoolReadDescriptor = op.descriptor
 					c.save()
 					op.responseChan <- nil
+					c.restartKeyExchanges()
 				} else {
 					op.responseChan <- errors.New("Nil spool descriptor")
 				}
@@ -131,8 +132,7 @@ func (c *Client) worker() {
 					readInboxTimer.Reset(readInboxInterval)
 					isConnected = event.IsConnected
 					c.restartSending()
-					c.restartPANDAExchanges()
-					c.restartReunionExchanges()
+					c.restartKeyExchanges()
 					c.eventCh.In() <- event
 					continue
 				}
