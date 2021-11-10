@@ -503,7 +503,7 @@ func (c *Client) doPANDAExchange(contact *Contact) error {
 			return errNoSpool
 		}
 
-		kx, err = panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, contact.SharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
+		kx, err = panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, contact.sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
 		if err != nil {
 			return err
 		}
@@ -566,7 +566,7 @@ func (c *Client) doReunion(contact *Contact) error {
 			for _, epoch := range epochs {
 				lstr := fmt.Sprintf("reunion with %s at %s@%s:%d", contact.Nickname, tr.Recipient, tr.Provider, epoch)
 				dblog := c.logBackend.GetLogger(lstr)
-				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), contact.SharedSecret, srv, epoch, c.reunionChan, contact.reunionShutdownChan)
+				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), contact.sharedSecret, srv, epoch, c.reunionChan, contact.reunionShutdownChan)
 				if err != nil {
 					return err
 				}
