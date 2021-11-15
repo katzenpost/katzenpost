@@ -23,6 +23,7 @@ package catshadow
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
@@ -525,6 +526,29 @@ loop2:
 
 	alice.Shutdown()
 	bob.Shutdown()
+}
+
+func TestDockerChangeExpiration(t *testing.T) {
+	require := require.New(t)
+
+	a := createCatshadowClientWithState(t, createRandomStateFile(t))
+
+	s := [8]byte{}
+	_, err := rand.Reader.Read(s[:])
+	require.NoError(err)
+
+	a.NewContact("b", s[:])
+	exp, err := a.GetExpiration("b")
+	require.NoError(err)
+	require.Equal(exp, MessageExpirationDuration)
+	err = a.ChangeExpiration("b", time.Duration(123))
+	require.NoError(err)
+	exp, err = a.GetExpiration("b")
+	require.NoError(err)
+	require.Equal(exp, time.Duration(123))
+	_, err = a.GetExpiration("c")
+	require.Error(err, errContactNotFound)
+
 }
 
 func TestDockerAddRemoveContact(t *testing.T) {

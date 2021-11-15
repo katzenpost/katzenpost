@@ -20,6 +20,7 @@ package catshadow
 
 import (
 	"sync"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	ratchet "github.com/katzenpost/doubleratchet"
@@ -63,6 +64,7 @@ type serializedContact struct {
 	Outbound             *Queue
 	SharedSecret         []byte
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
+	MessageExpiration    time.Duration
 }
 
 type boundExchange struct {
@@ -127,6 +129,9 @@ type Contact struct {
 	ackID    [cConstants.MessageIDLength]byte
 
 	LastMessage *Message
+
+	// messageExpiration is the duration after which conversation history is cleared
+	messageExpiration time.Duration
 }
 
 // NewContact creates a new Contact or returns an error.
@@ -145,6 +150,7 @@ func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
 		pandaShutdownChan:   make(chan struct{}),
 		reunionShutdownChan: make(chan struct{}),
 		outbound:            new(Queue),
+		messageExpiration:   MessageExpirationDuration,
 	}, nil
 }
 
@@ -176,6 +182,7 @@ func (c *Contact) MarshalBinary() ([]byte, error) {
 		SharedSecret:         c.sharedSecret,
 		SpoolWriteDescriptor: c.spoolWriteDescriptor,
 		Outbound:             c.outbound,
+		MessageExpiration:    c.messageExpiration,
 	}
 	return cbor.Marshal(s)
 }
@@ -207,6 +214,11 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.sharedSecret = s.SharedSecret
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 	c.outbound = s.Outbound
+	c.messageExpiration = s.MessageExpiration
+	if c.messageExpiration == 0 {
+		// if an existing contact does not have this field, set to default.
+		c.messageExpiration = MessageExpirationDuration
+	}
 	if c.IsPending {
 		c.pandaShutdownChan = make(chan struct{})
 		c.reunionShutdownChan = make(chan struct{})

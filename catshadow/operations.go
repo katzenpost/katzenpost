@@ -20,6 +20,7 @@ package catshadow
 
 import (
 	"github.com/katzenpost/katzenpost/memspool/client"
+	"time"
 )
 
 type opOnline struct {
@@ -52,6 +53,17 @@ type opRemoveContact struct {
 type opRenameContact struct {
 	oldname      string
 	newname      string
+	responseChan chan error
+}
+
+type opGetExpiration struct {
+	name         string
+	responseChan chan interface{}
+}
+
+type opChangeExpiration struct {
+	name         string
+	expiration   time.Duration
 	responseChan chan error
 }
 
