@@ -101,6 +101,10 @@ func (c *Client) worker() {
 				op.responseChan <- c.doContactRemoval(op.name)
 			case *opRenameContact:
 				op.responseChan <- c.doContactRename(op.oldname, op.newname)
+			case *opGetExpiration:
+				c.doGetExpiration(op.name, op.responseChan)
+			case *opChangeExpiration:
+				op.responseChan <- c.doChangeExpiration(op.name, op.expiration)
 			case *opRestartSending:
 				c.sendMessage(op.contact)
 			case *opSendMessage:

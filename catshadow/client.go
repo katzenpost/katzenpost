@@ -648,6 +648,60 @@ func (c *Client) doContactRename(oldname, newname string) error {
 	return nil
 }
 
+// GetExpiration returns the message expiration of a contact.
+func (c *Client) GetExpiration(name string) (time.Duration, error) {
+	getExpirationOp := &opGetExpiration{
+		name:         name,
+		responseChan: make(chan interface{}, 1),
+	}
+	c.opCh <- getExpirationOp
+
+	v := <-getExpirationOp.responseChan
+	switch v := v.(type) {
+	case error:
+		return 0, v
+	case time.Duration:
+		return v, nil
+	default:
+		return 0, errors.New("Unknown")
+	}
+}
+
+func (c *Client) doGetExpiration(name string, responseChan chan interface{}) {
+	c.conversationsMutex.Lock()
+	defer c.conversationsMutex.Unlock()
+	if contact, ok := c.contactNicknames[name]; !ok {
+		responseChan <- errContactNotFound
+	} else {
+		responseChan <- contact.messageExpiration
+	}
+}
+
+// ChangeExpiration changes the message history expiration of a contact.
+func (c *Client) ChangeExpiration(name string, expiration time.Duration) error {
+	changeExpirationOp := &opChangeExpiration{
+		name:         name,
+		expiration:   expiration,
+		responseChan: make(chan error, 1),
+	}
+	c.opCh <- changeExpirationOp
+	return <-changeExpirationOp.responseChan
+}
+
+func (c *Client) doChangeExpiration(name string, expiration time.Duration) error {
+	c.conversationsMutex.Lock()
+	if contact, ok := c.contactNicknames[name]; !ok {
+		c.conversationsMutex.Unlock()
+		return errContactNotFound
+	} else {
+		contact.messageExpiration = expiration
+	}
+	c.conversationsMutex.Unlock()
+	c.garbageCollectConversations()
+	c.save()
+	return nil
+}
+
 func (c *Client) save() {
 	c.log.Debug("Saving statefile.")
 	serialized, err := c.marshal()
