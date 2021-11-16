@@ -344,10 +344,11 @@ func (c *Client) garbageCollectConversations() {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	for nickname, messages := range c.conversations {
+		contact := c.contactNicknames[nickname]
 		for mesgID, message := range messages {
-			if time.Now().After(message.Timestamp.Add(MessageExpirationDuration)) {
-				if c.contactNicknames[nickname].LastMessage == message {
-					c.contactNicknames[nickname].LastMessage = nil
+			if time.Now().After(message.Timestamp.Add(contact.messageExpiration)) {
+				if contact.LastMessage == message {
+					contact.LastMessage = nil
 				}
 				delete(messages, mesgID)
 			}
