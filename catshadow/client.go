@@ -345,6 +345,10 @@ func (c *Client) garbageCollectConversations() {
 	defer c.conversationsMutex.Unlock()
 	for nickname, messages := range c.conversations {
 		contact := c.contactNicknames[nickname]
+		// skip contacts with message expiration disabled
+		if contact.messageExpiration == 0 {
+			continue
+		}
 		for mesgID, message := range messages {
 			if time.Now().After(message.Timestamp.Add(contact.messageExpiration)) {
 				if contact.LastMessage == message {
