@@ -215,10 +215,6 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.spoolWriteDescriptor = s.SpoolWriteDescriptor
 	c.outbound = s.Outbound
 	c.messageExpiration = s.MessageExpiration
-	if c.messageExpiration == 0 {
-		// if an existing contact does not have this field, set to default.
-		c.messageExpiration = MessageExpirationDuration
-	}
 	if c.IsPending {
 		c.pandaShutdownChan = make(chan struct{})
 		c.reunionShutdownChan = make(chan struct{})
