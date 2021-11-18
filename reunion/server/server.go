@@ -202,15 +202,14 @@ func (s *Server) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		if err != nil {
 			replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
 			s.log.Errorf("invalid Reunion query command found in request Payload len %d: %s", len(r.Payload), err.Error())
-			return nil, err
+		} else {
+			replyCmd, err = s.ProcessQuery(cmd)
+			if err != nil {
+				s.log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
+				// XXX: this is also triggered by an expired epoch... and does not return error to client
+				replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
+			}
 		}
-		replyCmd, err = s.ProcessQuery(cmd)
-		if err != nil {
-			s.log.Errorf("reunion HTTP server invalid reply command: %s", err.Error())
-			// XXX: this is also triggered by an expired epoch... and does not return error to client
-			replyCmd = &commands.MessageResponse{ErrorCode: commands.ResponseInvalidCommand}
-		}
-
 		rawReply := replyCmd.ToBytes()
 		reply := &cborplugin.Response{Payload: rawReply}
 		return reply, nil

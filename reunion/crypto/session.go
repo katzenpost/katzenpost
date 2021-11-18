@@ -18,13 +18,11 @@ package crypto
 
 import (
 	"github.com/awnumar/memguard"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/hkdf"
 )
-
-var cborHandle = new(codec.CborHandle)
 
 const (
 	type1Message = "type-1"
@@ -281,7 +279,6 @@ func (c *Session) ProcessType3Message(t3, gamma []byte, beta2 *PublicKey) ([]byt
 
 // Marshal serializes the client key material.
 func (c *Session) MarshalBinary() ([]byte, error) {
-	var serialized []byte
 	cc := serializableSession{
 		Epoch:             c.epoch,
 		SharedRandomValue: c.sharedRandomValue,
@@ -291,14 +288,13 @@ func (c *Session) MarshalBinary() ([]byte, error) {
 		SessionKey2:       c.sessionKey2.Bytes(),
 		SharedEpochKey:    c.sharedEpochKey.Bytes(),
 	}
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&cc)
-	return serialized, err
+	return cbor.Marshal(cc)
 }
 
 // Unmarshal deserializes the client key material.
 func (c *Session) UnmarshalBinary(data []byte) error {
 	cc := new(serializableSession)
-	err := codec.NewDecoderBytes(data, cborHandle).Decode(cc)
+	err := cbor.Unmarshal(data, cc)
 	if err != nil {
 		return err
 	}
