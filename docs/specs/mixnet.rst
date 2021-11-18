@@ -7,7 +7,7 @@ Katzenpost Mix Network Specification
 | Ania Piotrowska
 | David Stainton
 
-| Version 0
+| Version 1
 
 .. rubric:: Abstract
 
@@ -21,9 +21,11 @@ Katzenpost Mix Network.
 ===============
 
 This specification provides the design of a mix network meant
-to provide an anonymous messaging service.
+provide an anonymous messaging protocol between clients and
+public mixnet services.
+
 Various system components such as client software, end to end
-reliability protocol, Sphinx cryptographic packet format and wire
+messaging protocols, Sphinx cryptographic packet format and wire
 protocol are described in their own specification documents.
 
 1.1 Terminology
@@ -31,63 +33,62 @@ protocol are described in their own specification documents.
 
 * A ``KiB`` is defined as 1024 8 bit octets.
 
-* ``Mix`` - A server that provides anonymity to clients. This is
-  accomplished by accepting layer-encrypted packets from a
-  Provider or another Mix, decrypting a layer of the
-  encryption, delaying the packet, and transmitting
-  the packet to another Mix or Provider.
+* ``Mixnet`` - A mixnet also known as a mix network is a network of
+  mixes that can be used to build various privacy preserving
+  protocols.
 
-* ``Mixnet`` - A network of mixes.
+* ``Mix`` - A cryptographic router that is used to compose a mixnet.
+  Mixes use a cryptographic operation on messages being routed which
+  provides bitwise unlinkability with respect to input versus output
+  messages.  Katzenpost is a decryption mixnet that uses the Sphinx
+  cryptographic packet format.
 
-* ``Provider`` - A service operated by a third party that Clients
-  communicate directly with to communicate with the Mixnet.
-  It is responsible for Client authentication,
-  forwarding outgoing messages to the Mixnet, and storing incoming
-  messages for the Client. The Provider MUST have the ability to
-  perform cryptographic operations on the relayed packets.
+* ``Node`` - A Mix. Client's are NOT considered nodes in the mix
+  network.  However note that network protocols are often layered; in
+  our design documents we describe "mixnet hidden services" which can
+  be operated by mixnet clients. Therefore if you are using node in
+  some adherence to methematical termonology one could conceivably
+  designate a client as a node. That having been said, it would not be
+  appropriate to the discussion of our core mixnet protocol to refer
+  to the clients as nodes.
 
-* ``Node`` - A Mix or Provider instance.
+* ``Entry mix``, ``Entry node`` - An entry mix is a mix that has some
+  additional features:
+  1. An entry mix is always the first hop in routes where the message originates from a client.
+  2. An entry mix authenticates client's direct connections via the mixnet's wire protocol.
+  3. An entry mix queues reply messages and allows clients to retrieve them later.
+
+* ``Service mix`` - A service mix is a mix that has some additional
+  features:
+  1. A service mix is always the last hop in routes where the message originates from a client.
+  2. A service mix runs mixnet services which use a Sphinx SURB based protocol.
 
 * ``User`` - An agent using the Katzenpost system.
 
 * ``Client`` - Software run by the User on its local device to
-  participate in the Mixnet.
+  participate in the Mixnet. Again let us reiterate that a client
+  is not considered a "node in the network" at the level of analysis
+  where we are discussing the core mixnet protocol in this here document.
 
-* ``Katzenpost`` - A project to design an improved mix service as described
-  in this specification. Also, the name of the reference
-  software to implement this service, currently under
-  development.
-
+* ``Katzenpost`` - A project to design many improved decryption mixnet protocols.
+  
   Classes of traffic - We distinguish the following classes of traffic:
 
-  * ACKs (denoted by the surb_reply Sphinx routing command in the last hop)
+  * SURB Replies (also sometimes referred to as ACKs)
   * Forward messages
 
-  .. note::
+* ``Packet`` - Also known as a Sphinx packet. A nested encrypted packet that,
+  is routed through the mixnet and cryptographically transformed at each hop.
+  The length of the packet is fixed for every class of traffic. Packet payloads
+  encapsulate messages.
 
-     This may be changed after we do our analysis on the stats
-
-* ``Packet`` - A string transmitted anonymously thought the Katzenpost network.
-  The length of the packet is fixed for every class of traffic.
-
-* ``Payload`` - The [xxx] KiB portion of a Packet containing a message,
+* ``Payload`` - The payload, also known as packet payload, is a portion of a Packet containing a message,
   or part of a message, to be delivered anonymously.
-
-  .. note::
-
-     This has to be rephrased after the analysis of the stats.
 
 * ``Message`` - A variable-length sequence of octets sent anonymously
   through the network. Short messages are sent in a single
   packet; long messages are fragmented across multiple
-  packets (see the Katzenpost Mix Network End-to-end
-  Protocol Specification for more information about
-  encoding messages into payloads). 
-
-  .. note:: 
-
-     This has to be rephrased after
-     The analysis of the stats; if we have multiple classes of traffic
+  packets.
 
 * ``MSL`` - Maximum Segment Lifetime, 120 seconds.
 
@@ -101,72 +102,60 @@ document are to be interpreted as described in [RFC2119]_.
 2. System Overview
 ==================
 
-The presented system design is based on [LOOPIX]_. The detailed
-End-to-end specification, describing the operations performed
-by the sender and recipient, as well sender’s Provider and
-recipient’s Provider, are presented in [KATZMIXE2E]_.
+The presented system design is based on [LOOPIX]_.
 Below, we present the system overview.
 
-The Provider ran by each service provider is responsible for
-accepting packets from the client, and forwarding them
-to the mix network, which then relays packets to the recipient's
-Provider. Upon receiving a packet from the mix network, the Provider
-is responsible for signaling that the packet was received by sending
-an acknowledgment, as well as storing the packet until it is retrieved
-by the recipient.
-::
+The entry mixes are responsible for authenticating clients, accepting
+packets from the client, and forwarding them to the mix network, which
+then relays packets to the destination service mix.  Our network
+design uses a strict topology where forward message traverse the
+network from entry mix to service mix. Service mixes can optionally
+reply if the forward message contained a Single Use Reply Block (see
+[SPHINXSPEC]_).
 
-      +--------+     +----------+     +-------------+
-      | Client | <-> |          |     |             |
-      +--------+     |          |     |             |
-                     | Provider | <-> |             |
-      +--------+     |          |     | Mix Network |
-      | Client | <-> |          |     |             |
-      +--------+     +----------+     |             |
-                                      |             |
-      +--------+     +----------+     |             |
-      | Client | <-> | Provider | <-> |             |
-      +--------+     +----------+     +-------------+
-
-Not shown in the diagram is the PKI system that handles the
-distribution of various network wide parameters, and information
-required for each participant to participate in the network such as
-IP address/port combinations that each node can be reached at, and
-cryptographic public keys. The specification for the PKI is beyond
-the scope of this document and is instead covered in [KATZMIXPKI]_.
-
-The Provider and Client behavior is specified in [KATZMIXE2E]_,
-though certain aspects of the Provider behavior are also specified
-here, as Providers are Nodes.
+The PKI system that handles the distribution of various network wide
+parameters, and information required for each participant to
+participate in the network such as IP address/port combinations that
+each node can be reached at, and cryptographic public keys. The
+specification for the PKI is beyond the scope of this document and is
+instead covered in [KATZMIXPKI]_.
 
 The mix network provides neither reliable nor in-order delivery
-semantics. It is up to the applications that make use of the mix
-network to implement additional mechanism if either property is
-desired.
+semantics. The described mix network is neither a user facing
+messaging system nor is it an application. It is intended to be a
+low level protocol which can be composed to form more elaborate
+mixnet protocols with stronger more useful privacy notions.
 
 
 2.1 Threat Model
 -----------------
 
-We assume that the sender and recipient do know each other's
-addresses. This system guarantees third-party anonymity, meaning
-that no parties other than sender and recipient are able to learn
-that the sender and recipient are communicating. Note that this is
+Here we cannot present the threat model to the higher level mixnet
+protocols. However this low level core mixnet protocol does have
+it's own threat model which we attempt to illucidate here.
+
+We assume that the clients only talk to mixnet services. These services
+make use of a client provided delivery token known as a SURB (Single Use Reply Block)
+to send their replies to the client without knowing the client's entry mix.
+This system guarantees third-party anonymity, meaning
+that no parties other than client and the service are able to learn
+that the client and service are communicating. Note that this is
 in contrast with other designs, such as Mixminion, which provide
 sender anonymity towards recipients as well as anonymous replies.
 
-Additionally as all of a given client's messages go through a
-single provider instance, it is assumed that in the absence of
-any specific additional defenses, that the Provider can determine
-the approximate mail volume originating from and destined to a
-given client. We consider the provider follows the protocol
+Mixnet clients will randomly select an entry node to use and may reconnect if
+disconnected for under a duration threshold. The entry mix can determine
+the approximate message volume originating from and destined to a
+given client. We consider the entry mix follows the protocol
 and might be an honest-but-curious adversary.
 
-External local network observers can determine the number of
-Packets traversing their region of the network because at this
-time no decoy traffic has been specified. Global observers will
+External local network observers can not determine the number of
+Packets traversing their region of the network because of the use
+of  decoy traffic sent by the clients. Global observers will
 not be able to de-anonymize packet paths if there are enough
-packets traversing the mix network.
+packets traversing the mix network. Longer term statistical
+disclosure attacks are likely possible in order to link senders
+and receivers.
 
 A malicious mix only has the ability to remember which input
 packets correspond to the output packets. To discover the
@@ -185,20 +174,20 @@ the previous and next layer, and or every participating Provider
 in the case of the mixes in layer 0 or layer N (first and last layer).
 ::
 
-                             Layer 0        Layer 1        Layer 2
-          +----------+      +-------+      +-------+      +-------+
-      +-> | Provider | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+
-      |   +----------+  |   +-------+  |   +-------+  |   +-------+  |
-      |                 |              |              |              |
-      |   +----------+  |   +-------+  |   +-------+  |   +-------+  |
-      +-> | Provider | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+
-      |   +----------+  |   +-------+  |   +-------+  |   +-------+  |
-      |                 |              |              |              |
-      |                 |   +-------+  |   +-------+  |   +-------+  |
-      |                 +-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+
-      |                     +-------+      +-------+      +-------+  |
-      |                                                              |
-      +--------------------------------------------------------------+
+          Layer 0          Layer 1        Layer 2        Layer 3           Layer 4
+       +-----------+      +-------+      +-------+      +-------+      +-------------+
+   +-> | entry mix | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+-> | service mix |
+   |   +-----------+  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   |                  |              |              |              |
+   |   +-----------+  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   +-> | entry mix | -+-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+-> | service mix |
+   |   +-----------+  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   |                  |              |              |              |
+   |                  |   +-------+  |   +-------+  |   +-------+  |   +-------------+
+   |                  +-> |  Mix  | -+-> |  Mix  | -+-> |  Mix  | -+-> | service mix |
+   |                      +-------+      +-------+      +-------+  |   +-------------+
+   |                                                               |
+   +---------------------------------------------------------------+
 
          Note: Multiple distinct connections are collapsed in the
          figure for sake of brevity/clarity.
@@ -314,7 +303,7 @@ is not as specified in the header.
      a per-hop basis and including an epoch identifier.
 
      I am uncertain as to if the additional complexity is worth it
-     for a situation that can happen for 4 mins out of every 3 hours.
+     for a situation that can happen for a few minutes out of every epoch.
 
 3.3 Sphinx Per-hop Routing Information Extensions
 -------------------------------------------------
@@ -594,6 +583,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzMixnet,
    title = {Katzenpost Mix Network Specification},
    author = {Yawning Angel and George Danezis and Claudia Diaz and Ania Piotrowska and David Stainton},
-   url = {https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.rst},
    year = {2017}
    }
