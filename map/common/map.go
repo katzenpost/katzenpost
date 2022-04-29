@@ -1,11 +1,12 @@
 package common
+
 import (
 	"github.com/fxamacker/cbor/v2"
 )
 
 const (
 	// MessageID keys are 32 bytes long and globally unique amongst all clients
-	MessageIDLen = 32
+	MessageIDLen   = 32
 	MapServiceName = "map"
 )
 
@@ -27,6 +28,7 @@ func (m *MapRequest) Unmarshal(b []byte) error {
 }
 
 type MapStatus uint8
+
 const (
 	StatusOK MapStatus = iota
 	StatusNotFound
@@ -34,7 +36,7 @@ const (
 )
 
 type MapResponse struct {
-	Status MapStatus
+	Status  MapStatus
 	Payload []byte
 }
 

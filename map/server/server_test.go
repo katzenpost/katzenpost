@@ -19,8 +19,8 @@ package server
 import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/map/common"
-	"gopkg.in/op/go-logging.v1"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/op/go-logging.v1"
 	"io/ioutil"
 	"os"
 	"path/filepath"

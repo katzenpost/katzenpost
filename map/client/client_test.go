@@ -13,6 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//go:build docker_test
 // +build docker_test
 
 package client
@@ -21,27 +22,27 @@ import (
 	"testing"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/map/common"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateMap(t *testing.T) {
 	require := require.New(t)
 
-        cfg, err := config.LoadFile("testdata/client.toml")
-        require.NoError(err)
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
 
-        cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
-        require.NoError(err)
+	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
+	require.NoError(err)
 
-        client, err := client.New(cfg)
-        require.NoError(err)
+	client, err := client.New(cfg)
+	require.NoError(err)
 
-        session, err := client.NewSession(linkKey)
-        require.NoError(err)
+	session, err := client.NewSession(linkKey)
+	require.NoError(err)
 
 	c, err := NewClient(session)
 	require.NoError(err)
@@ -57,7 +58,7 @@ func TestCreateMap(t *testing.T) {
 	// XXX: we should have a finite number of retransmissions allowed
 	// calls to Put are nonblocking but do retry until the message is written.
 	// so we need to wait long enough for the command to have arrived. ...
-	<-time.After(30*time.Second)
+	<-time.After(30 * time.Second)
 
 	require.NoError(err)
 	resp, err := c.Get(id)

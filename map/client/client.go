@@ -14,18 +14,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-
 package client
 
 import (
-	"github.com/katzenpost/katzenpost/map/common"
 	"crypto/sha256"
-	"github.com/fxamacker/cbor/v2"
-	"sort"
 	"encoding/binary"
 	"errors"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/map/common"
+	"sort"
 )
 
 type Client struct {
@@ -40,26 +39,28 @@ type StorageLocation interface {
 }
 
 type mapStorage struct {
-	secret common.MessageID
-	tid common.MessageID
+	secret         common.MessageID
+	tid            common.MessageID
 	name, provider string
 }
 
-func (m* mapStorage) Secret() common.MessageID {
+func (m *mapStorage) Secret() common.MessageID {
 	return m.secret
 }
-func (m* mapStorage) TID() common.MessageID {
+func (m *mapStorage) TID() common.MessageID {
 	return m.tid
 }
-func (m* mapStorage) Name() string {
+func (m *mapStorage) Name() string {
 	return m.name
 }
-func (m* mapStorage) Provider() string {
+func (m *mapStorage) Provider() string {
 	return m.provider
 }
+
 type DeterministicDescriptorList []utils.ServiceDescriptor
+
 func (d DeterministicDescriptorList) Less(i, j int) bool {
-	return d[i].Name+d[i].Provider <d[j].Name+d[j].Provider
+	return d[i].Name+d[i].Provider < d[j].Name+d[j].Provider
 }
 func (d DeterministicDescriptorList) Len() int {
 	return len(d)
@@ -76,11 +77,11 @@ func deterministicSelect(descs []utils.ServiceDescriptor, slot int) utils.Servic
 }
 
 // GetStorageProvider returns the deterministically selected storage provider given a storage secret ID
-func (c* Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error) {
+func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error) {
 	// doc must be current document!
 	doc := c.Session.CurrentDocument()
 	if doc == nil {
-		return nil, errors.New("No PKI document")// XXX: find correct error
+		return nil, errors.New("No PKI document") // XXX: find correct error
 	}
 	descs := utils.FindServices(common.MapServiceName, doc)
 	if len(descs) == 0 {
@@ -99,7 +100,7 @@ func (c* Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 }
 
 // Put places a value into the store
-func (c* Client) Put(ID common.MessageID, payload []byte) error {
+func (c *Client) Put(ID common.MessageID, payload []byte) error {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
@@ -117,7 +118,7 @@ func (c* Client) Put(ID common.MessageID, payload []byte) error {
 }
 
 // Get requests ID from the chosen storage node and returns a payload or error
-func (c* Client) Get(ID common.MessageID) ([]byte, error) {
+func (c *Client) Get(ID common.MessageID) ([]byte, error) {
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return nil, err
@@ -158,7 +159,7 @@ type Block interface {
 }
 
 type block struct {
-	id common.MessageID
+	id      common.MessageID
 	payload []byte
 }
 
@@ -182,9 +183,9 @@ type Encryptor interface {
 
 // SimpleStream implements a forward stream with no acknowledgements or reliability
 type SimpleStream struct {
-	rand DeterministicRandReader
-	head *block // read pointer to the current block 
-	seek int // pointer inside current block payload
+	rand   DeterministicRandReader
+	head   *block   // read pointer to the current block
+	seek   int      // pointer inside current block payload
 	blocks []*block // blocks contain chunked streamed data
 }
 
@@ -195,10 +196,10 @@ func (s *SimpleStream) Read(buf []byte) (int, error) {
 		return 0, errors.New("ReadOnEmpty")
 	}
 
-
-	for ;; {
+	for {
 		b := buf[n:] // b is pointer to position in output
-		switch l := len(s.head.Payload[s.seek:]) {
+		l := len(s.head.Payload[s.seek:])
+		switch l {
 		case l > len(b):
 			nn := copy(b, s.head.Payload[s.seek:])
 			n += nn
@@ -215,7 +216,7 @@ func (s *SimpleStream) Read(buf []byte) (int, error) {
 				n += mm
 				continue
 			} else {
-				// XXX no more blocks... 
+				// XXX no more blocks...
 				return n, errors.New("ReadShort")
 			}
 		case l == len(b):
@@ -226,7 +227,7 @@ func (s *SimpleStream) Read(buf []byte) (int, error) {
 	copy(buf, s.head.Payload[s.seek:])
 
 	// fill buf with the contents of s.blocks
-	for n:=0; n < len(buf); n++ {
+	for n := 0; n < len(buf); n++ {
 		// read bytes from the current block until end is reached
 		// XXX: aren't there ioutils methods we can use here...????
 		if s.seek < len(s.head.Payload) {
