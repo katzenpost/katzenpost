@@ -18,11 +18,14 @@ package client
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/map/common"
 	"sort"
 )
@@ -112,6 +115,7 @@ func (c *Client) Put(ID common.MessageID, payload []byte) error {
 	if err != nil {
 		return err
 	}
+
 	_, err = c.Session.SendReliableMessage(loc.Name(), loc.Provider(), serialized)
 	// XXX: do we need to track msgId and see if it was delivered or not ???
 	return err
@@ -135,9 +139,12 @@ func (c *Client) Get(ID common.MessageID) ([]byte, error) {
 	}
 	// unwrap the response and return the payload
 	resp := &common.MapResponse{}
-	err = cbor.Unmarshal(r, &resp)
+	err = cbor.Unmarshal(r, resp)
 	if err != nil {
 		return nil, err
+	}
+	if resp.Status == common.StatusNotFound {
+		return nil, errors.New("StatusNoFound")
 	}
 	return resp.Payload, nil
 }
@@ -183,7 +190,7 @@ type Encryptor interface {
 
 // SimpleStream implements a forward stream with no acknowledgements or reliability
 type SimpleStream struct {
-	rand   DeterministicRandReader
+	rand   rand.DeterministicRandReader
 	head   *block   // read pointer to the current block
 	seek   int      // pointer inside current block payload
 	blocks []*block // blocks contain chunked streamed data
@@ -196,22 +203,22 @@ func (s *SimpleStream) Read(buf []byte) (int, error) {
 		return 0, errors.New("ReadOnEmpty")
 	}
 
+	var n int
 	for {
 		b := buf[n:] // b is pointer to position in output
-		l := len(s.head.Payload[s.seek:])
-		switch l {
-		case l > len(b):
-			nn := copy(b, s.head.Payload[s.seek:])
+		l := len(s.head.Payload()[s.seek:])
+		if l > len(b) {
+			nn := copy(b, s.head.Payload()[s.seek:])
 			n += nn
 			s.seek += nn
 			return n, nil
-		case l < len(b):
-			n += copy(b, s.head.Payload[s.seek:])
+		} else if l < len(b) {
+			n += copy(b, s.head.Payload()[s.seek:])
 			s.seek = 0
 			if len(s.blocks) > 1 {
 				s.blocks = s.blocks[1:]
 				s.head = s.blocks[0]
-				mm := copy(b[l:], s.head.Payload[s.seek:])
+				mm := copy(b[l:], s.head.Payload()[s.seek:])
 				s.seek += mm
 				n += mm
 				continue
@@ -219,20 +226,20 @@ func (s *SimpleStream) Read(buf []byte) (int, error) {
 				// XXX no more blocks...
 				return n, errors.New("ReadShort")
 			}
-		case l == len(b):
-			n += copy(b, s.head.Payload[s.seek:])
+		} else if l == len(b) {
+			n += copy(b, s.head.Payload()[s.seek:])
 			return n, nil
 		}
 	}
-	copy(buf, s.head.Payload[s.seek:])
+	copy(buf, s.head.Payload()[s.seek:])
 
 	// fill buf with the contents of s.blocks
 	for n := 0; n < len(buf); n++ {
 		// read bytes from the current block until end is reached
 		// XXX: aren't there ioutils methods we can use here...????
-		if s.seek < len(s.head.Payload) {
-			buf[n] = s.head.Payload[s.seek]
-			copy(buf, s.head.Payload[s.seek:])
+		if s.seek < len(s.head.Payload()) {
+			buf[n] = s.head.Payload()[s.seek]
+			copy(buf, s.head.Payload()[s.seek:])
 			s.seek++
 			continue
 		} else {
@@ -241,12 +248,13 @@ func (s *SimpleStream) Read(buf []byte) (int, error) {
 				s.blocks = s.blocks[1:]
 				s.head = s.blocks[0]
 				s.seek = 1 // buf[s.seek]; s.seek++
-				buf[n] = s.head.Payload[0]
+				buf[n] = s.head.Payload()[0]
 				continue
 			}
 			return n, errors.New("ReadShort")
 		}
 	}
+	return n, nil
 }
 
 // Write implements Stream.Write

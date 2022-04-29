@@ -1,5 +1,5 @@
-// client_test.go - map service client tests
-// Copyright (C) 2021  Masala
+// stream_test.go - map service stream tests
+// Copyright (C) 2022  Masala
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -19,48 +19,68 @@
 package client
 
 import (
-	"testing"
-	"time"
-
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
-func TestCreateMap(t *testing.T) {
+func TestCreateStream(t *testing.T) {
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	client, err := client.New(cfg)
+	cc, err := client.New(cfg)
 	require.NoError(err)
+	require.NotNil(cc)
 
-	session, err := client.NewTOFUSession()
+	session, err := cc.NewTOFUSession()
 	require.NoError(err)
+	require.NotNil(session)
 	session.WaitForDocument()
 
 	c, err := NewClient(session)
 	require.NoError(err)
 	require.NotNil(c)
 
-	// test creating and retrieving an item
+	mysecret := "initiator"
+	theirsecret := "receiver"
 
-	var id common.MessageID
-	_, err = rand.Reader.Read(id[:])
-	require.NoError(err)
-	payload := []byte("wtf man")
-	err = c.Put(id, payload)
-	// XXX: we should have a finite number of retransmissions allowed
-	// calls to Put are nonblocking but do retry until the message is written.
-	// so we need to wait long enough for the command to have arrived. ...
-	<-time.After(30 * time.Second)
+	// our view of stream
+	s := NewStream(c, mysecret, theirsecret)
+	// "other end" of stream
+	r := NewStream(c, theirsecret, mysecret)
 
+	msg := []byte("Hello World")
+	n, err := s.Write(msg)
 	require.NoError(err)
-	resp, err := c.Get(id)
+	require.Equal(n, len(msg))
+
+	yolo := make([]byte, len(msg))
+	for {
+		n, err = r.Read(yolo)
+		if n == len(msg) {
+			break
+		}
+	}
 	require.NoError(err)
-	require.NotNil(resp)
-	require.Equal(payload, resp)
+	require.Equal(n, len(msg))
+	require.Equal(yolo, msg)
+
+	msg = []byte("Goodbye World")
+	n, err = s.Write(msg)
+	require.NoError(err)
+	require.Equal(n, len(msg))
+
+	yolo = make([]byte, len(msg))
+	for {
+		n, err = r.Read(yolo)
+		if n == len(msg) {
+			break
+		}
+	}
+	require.NoError(err)
+	require.Equal(n, len(msg))
+	require.Equal(yolo, msg)
 }
