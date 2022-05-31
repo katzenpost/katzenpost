@@ -5,6 +5,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"io"
+	"bytes"
 	"math/rand"
 	"testing"
 	"testing/quick"
@@ -15,16 +16,14 @@ var identity_element = [32]byte{1, 0}
 func check_public_key(pk *PublicKey) bool {
 	// here we do scalar multiplication with L as the scalar;
 	// the result should be 1 if the public key is valid.
-	var result [32]byte
 	order_64 := [64]byte{0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c,
 		0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10}
 	order_sc, _ := new(edwards25519.Scalar).SetUniformBytes(order_64[:])
 	pkA_n, _ := new(edwards25519.Point).SetBytes(pk.Bytes())
 	pkA_n.ScalarMult(order_sc, pkA_n)
-	copy(result[:], pkA_n.Bytes())
 	// non-constant time comparison, only for use in the test suite:
-	return (identity_element == result)
+	return bytes.Equal(pkA_n.Bytes(), identity_element[:])
 }
 
 func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) bool {
