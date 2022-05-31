@@ -121,7 +121,8 @@ func hash_factor_inplace(factor *[32]byte) {
 	// but Scalar.SetBytesWithClamping takes care of that.
 }
 
-// secret.Blind(factor) is secret*factor using unclamped scalar multiplication.
+// secret.Blind(factor) is secret*hash(factor)
+// using unclamped scalar multiplication.
 // This blinding scheme exploits the equivalence of
 // G*(secret*factor) == (G*secret)*factor
 // e.g. secret.Blind(factor).PublicKey() == secret.PublicKey().Blind(factor)
@@ -165,7 +166,7 @@ func (secret *PrivateKey) Blind(factor [32]byte) *BlindedPrivateKey {
 	return bpk
 }
 
-// given (G*secret == mypub) and (factor), compute mypub*factor to enable
+// given (G*secret == mypub) and (factor), compute mypub*hash(factor) to enable
 // verification of blinded signatures.
 func (mypub *PublicKey) Blind(factor [32]byte) *PublicKey {
 	// out <- factor*pkA + zero*Basepoint
