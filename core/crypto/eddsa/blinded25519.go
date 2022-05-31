@@ -44,10 +44,16 @@ import (
 	"filippo.io/edwards25519"
 )
 
+// A BlindedPrivateKey is derived from a PrivateKey and a "blinding factor"
+// using Blind() such that
+// sk.Blind(factor).PublicKey() == sk.PublicKey().Blind(factor)
+// Note that BPK has a .Sign() method, but unlike PrivateKey it has no
+// conversion functions to x25519.
 type BlindedPrivateKey struct {
 	blinded ed25519.PrivateKey
 }
 
+// Retrieve a copy of the public key corresponding to bpk for use with Verify()
 func (bpk *BlindedPrivateKey) PublicKey() *PublicKey {
 	pub := new(PublicKey)
 	err := pub.FromBytes(bpk.blinded[32:])
@@ -58,12 +64,12 @@ func (bpk *BlindedPrivateKey) PublicKey() *PublicKey {
 	return pub
 }
 
+// vendored version of ed25519.sign() except it uses the
+// secret/private scalar directly as expandedSecretKey
+// instead of deriving from hash each time.
+// It is a bit unfortunate that this needs to be here...
 func (privateKey *BlindedPrivateKey) Sign(message []byte) [64]byte {
 	signature := [64]byte{}
-	// vendored version of ed25519.sign() except it uses the
-	// secret/private scalar directly as expandedSecretKey
-	// instead of deriving from hash each time.
-	// It is a bit unfortunate that this needs to be here...
 	blindedSecretKey := [64]byte{}
 	copy(blindedSecretKey[:], privateKey.blinded[:32])
 	expandedSecretKey := new(edwards25519.Scalar)
@@ -103,7 +109,7 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) [64]byte {
 		expandedSecretKey,
 		mdReduced)
 
-	copy(signature[:], encodedR[:])
+	copy(signature[:], encodedR)
 	copy(signature[32:], s_new.Bytes())
 	return signature
 }
@@ -115,6 +121,13 @@ func hash_factor_inplace(factor *[32]byte) {
 	// but Scalar.SetBytesWithClamping takes care of that.
 }
 
+// secret.Blind(factor) is secret*factor using unclamped scalar multiplication.
+// This blinding scheme exploits the equivalence of
+// G*(secret*factor) == (G*secret)*factor
+// e.g. secret.Blind(factor).PublicKey() == secret.PublicKey().Blind(factor)
+// such that secret.Blind(factor).Sign() can be used to produce signatures
+// that can be verified by someone who knows (factor) and secret.PublicKey(),
+// but remain unlinkable to third-parties who do not.
 func (secret *PrivateKey) Blind(factor [32]byte) *BlindedPrivateKey {
 	hash_factor_inplace(&factor)
 	factor_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(factor[:])
@@ -152,6 +165,8 @@ func (secret *PrivateKey) Blind(factor [32]byte) *BlindedPrivateKey {
 	return bpk
 }
 
+// given (G*secret == mypub) and (factor), compute mypub*factor to enable
+// verification of blinded signatures.
 func (mypub *PublicKey) Blind(factor [32]byte) *PublicKey {
 	// out <- factor*pkA + zero*Basepoint
 
