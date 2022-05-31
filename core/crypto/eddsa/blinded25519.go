@@ -86,8 +86,7 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) [64]byte {
 	mdReduced, _ := new(edwards25519.Scalar).SetUniformBytes(messageDigest[:64])
 
 	// R <- messageDigestReduced * B
-	var encodedR [32]byte
-	copy(encodedR[:], new(edwards25519.Point).ScalarBaseMult(mdReduced).Bytes())
+	encodedR := new(edwards25519.Point).ScalarBaseMult(mdReduced).Bytes()
 
 	// hramDigestReduced := sha512(R || public || message) mod L
 	h.Reset()
