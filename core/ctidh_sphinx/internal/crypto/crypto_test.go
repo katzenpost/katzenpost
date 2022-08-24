@@ -26,6 +26,8 @@ import (
 	"encoding/hex"
 	"testing"
 
+	ctidh "git.xx.network/elixxir/ctidh_cgo"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -193,10 +195,10 @@ func TestSPRP(t *testing.T) {
 func TestKDF(t *testing.T) {
 	assert := assert.New(t)
 
-	var ikm [GroupElementLength]byte
-	okm := hkdfExpand(sha256.New, ikm[:], []byte(kdfInfo), okmLength)
+	ikm := make([]byte, GroupElementLength)
+	okm := hkdfExpand(sha256.New, ikm, []byte(kdfInfo), okmLength)
 
-	k := KDF(&ikm)
+	k := KDF(ikm)
 	require.Equal(t, okm[:MACKeyLength], k.HeaderMAC[:])
 	okm = okm[MACKeyLength:]
 	assert.Equal(okm[:StreamKeyLength], k.HeaderEncryption[:])
@@ -212,31 +214,37 @@ func TestKDF(t *testing.T) {
 	assert.Zero(k.HeaderEncryption)
 	assert.Zero(k.HeaderEncryptionIV)
 	assert.Zero(k.PayloadEncryption)
-	assert.Zero(k.BlindingFactor)
+	zeros := make([]byte, ctidh.PrivateKeySize)
+	require.Equal(t, zeros, k.BlindingFactor)
 }
 
 func TestVectorKDF(t *testing.T) {
 	assert := assert.New(t)
 
-	var ikm [GroupElementLength]byte
-	rawInput, err := hex.DecodeString("9dd74a26535e05ba0ddb62e06ef9b3b29b089707b4652b9172d91e529c938b51")
-	assert.NoError(err)
-	copy(ikm[:], rawInput)
-	k := KDF(&ikm)
+	ikm := make([]byte, GroupElementLength)
 
-	rawHeaderMAC, err := hex.DecodeString("56a3cca100da21fa9823df7884132e89e2155dadbf425e62ba43392c81581a69")
+	rawInput, err := hex.DecodeString("684d39265ab9a2d1dfe00aa455360ad5ed6ff6e6034525d0dd9cdbc38884b47b5b5ae1521b7ffebd1d9141bfe836bcdcbc9fd3285a845566bb23c7e4c0a7e391e9477e322402019247b713a3c15178a421a47ad21b02f767f866d84d2e4f9d9fee7177d04c765639da2ceee7621c3ce87c00ca4af36ab95cc11f4fd0ba8892d8283ec2e30115e680966f3ab1ace74d8df3ce2ae7795e6d52b54ea2c2a8b8607a14ef311f9fda10967dc1daef9784db2af9d9fc0f6b76f422acd9afc055778bc814c5bfbb549be72a3f20ce7bc1269f40384496ba272be34cf0263fb560a83f91a20fe5e6f0442c5f39a3d6fc3a2a28c0e61326e263e061c79a38e6457242d999")
+	assert.NoError(err)
+	copy(ikm, rawInput)
+	k := KDF(ikm)
+
+	rawHeaderMAC, err := hex.DecodeString("6d02c4e427c441dc99aa7ba3b669c3aee049bc785a06de1f4f3d67b78557a6b2")
 	assert.NoError(err)
 	assert.Equal(rawHeaderMAC, k.HeaderMAC[:])
-	rawHeaderEncryption, err := hex.DecodeString("fa4f8808bad302e8247cf71dbaefe3ae")
+
+	rawHeaderEncryption, err := hex.DecodeString("a54c045d73bd14d6451aa0fbbf44bce7")
 	assert.NoError(err)
 	assert.Equal(rawHeaderEncryption, k.HeaderEncryption[:])
-	rawHeaderEncryptionIV, err := hex.DecodeString("3499437e566a8f8cae363b428db7eff9")
+
+	rawHeaderEncryptionIV, err := hex.DecodeString("eb5b5249ea52249834ddf25a2b49e8bd")
 	assert.NoError(err)
 	assert.Equal(rawHeaderEncryptionIV, k.HeaderEncryptionIV[:])
-	rawPayloadEncryption, err := hex.DecodeString("382d5480e7ebc3c001d04a350f6da76882f26dff7fd14e304bce0aa6d464e6e4a440aad784b18c062700c352e7df6c44")
+
+	rawPayloadEncryption, err := hex.DecodeString("be91da7fcbd77ecbe3260ca6736f0facf750e1bf55ec6ecb07de89dc5aa63fc2f775b122e0cbe91ac63cd94fb5a39b55")
 	assert.NoError(err)
 	assert.Equal(rawPayloadEncryption, k.PayloadEncryption[:])
-	rawBlindingFactor, err := hex.DecodeString("22884af95653aef353d3bd3e8b7f9ac2214d4d4f4d726c7bd78553fb60982444")
+
+	rawBlindingFactor, err := hex.DecodeString("49b347333c66afbe5707dae0e979c52fd856378232746863fb1c1c71eeff2c8d47314cf049222f2bae75b733c588c7c9e1ce39e45220851b3c2bc43a9b76fd6dfccf49942e7c7c7fa151f25a083f876f82b19723aaa6df770190f03d09081f0aa134d4481ade2cc02bd4fd2df5f8ab4a0cd2302eb2b43360bfb0b2e1fe9241bbe3cff9416cbb7f7367248ced28350a1d70cd3f96d27ddaf1ae97079796dad2bff54fce8bd1076c7ebf8294392a82f0765ceb31368a46bb05e9df86fcfdb99e1805d4402ed8c9f1c2fd36e11e0f652b1da431b241f56431cd3d00fab84aeef33a92be99e58c157e")
 	assert.NoError(err)
 	assert.Equal(rawBlindingFactor, k.BlindingFactor[:])
 }
