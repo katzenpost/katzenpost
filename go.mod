@@ -3,6 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.16
 
 require (
+	git.xx.network/elixxir/ctidh_cgo v0.0.0-20220824030955-642de59e8f4a
 	github.com/BurntSushi/toml v0.4.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/cockroachdb/apd v1.1.0 // indirect
@@ -20,15 +21,15 @@ require (
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0 // indirect
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.8.0
 	github.com/ugorji/go/codec v1.2.6
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
-	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344 // indirect
+	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
 	go.etcd.io/bbolt v1.3.6
-	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
-	golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f
+	golang.org/x/crypto v0.0.0-20220817201139-bc19a97f63c8
+	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 	golang.org/x/text v0.3.7
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/eapache/channels.v1 v1.1.0
