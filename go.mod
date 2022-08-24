@@ -3,6 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.16
 
 require (
+	git.xx.network/elixxir/ctidh_cgo v0.0.0-20220824195537-8bdbc2bc8d19 // indirect
 	github.com/BurntSushi/toml v0.4.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/cockroachdb/apd v1.1.0 // indirect
@@ -20,7 +21,7 @@ require (
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0 // indirect
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.8.0
 	github.com/ugorji/go/codec v1.2.6
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
 	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344 // indirect

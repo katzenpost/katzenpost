@@ -43,7 +43,12 @@ const (
 	PrivateKeySize = GroupElementLength
 )
 
-var errInvalidKey = errors.New("ecdh: invalid key")
+var (
+	// ErrBlindDataSizeInvalid indicates that the blinding data size was invalid.
+	ErrBlindDataSizeInvalid error = errors.New("ecdh: blinding data size invalid")
+
+	errInvalidKey = errors.New("ecdh: invalid key")
+)
 
 // PublicKey is a ECDH public key.
 type PublicKey struct {
@@ -104,8 +109,14 @@ func (k *PublicKey) Reset() {
 }
 
 // Blind blinds the public key with the provided blinding factor.
-func (k *PublicKey) Blind(blindingFactor *[GroupElementLength]byte) {
-	Exp(&k.pubBytes, &k.pubBytes, blindingFactor)
+func (k *PublicKey) Blind(blindingFactor []byte) error {
+	if len(blindingFactor) != GroupElementLength {
+		return ErrBlindDataSizeInvalid
+	}
+	pubBytes := Exp(k.pubBytes[:], blindingFactor)
+	copy(k.pubBytes[:], pubBytes)
+	utils.ExplicitBzero(pubBytes)
+	return nil
 }
 
 // String returns the public key as a base64 encoded string.
@@ -203,8 +214,8 @@ func (k *PrivateKey) FromBytes(b []byte) error {
 }
 
 // Exp calculates the shared secret with the provided public key.
-func (k *PrivateKey) Exp(sharedSecret *[GroupElementLength]byte, publicKey *PublicKey) {
-	Exp(sharedSecret, &publicKey.pubBytes, &k.privBytes)
+func (k *PrivateKey) Exp(publicKey *PublicKey) []byte {
+	return Exp(publicKey.pubBytes[:], k.privBytes[:])
 }
 
 // Reset clears the PrivateKey structure such that no sensitive data is left
@@ -273,10 +284,20 @@ func Load(privFile, pubFile string, r io.Reader) (*PrivateKey, error) {
 	return k, err
 }
 
-// Exp sets the group element dst to be the result of x^y, over the ECDH
-// group.
-func Exp(dst, x, y *[GroupElementLength]byte) {
-	curve25519.ScalarMult(dst, y, x)
+// Exp returns the group element, the result of x^y, over the ECDH group.
+func Exp(x, y []byte) []byte {
+	var err error
+	if len(x) != GroupElementLength {
+		panic(errInvalidKey)
+	}
+	if len(y) != GroupElementLength {
+		panic(errInvalidKey)
+	}
+	sharedSecret, err := curve25519.X25519(y, x)
+	if err != nil {
+		panic(err)
+	}
+	return sharedSecret
 }
 
 func expG(dst, y *[GroupElementLength]byte) {
