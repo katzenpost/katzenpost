@@ -67,8 +67,7 @@ func (e *EcdhNike) NewKeypair() (nike.PrivateKey, nike.PublicKey) {
 // DeriveSecret derives a shared secret given a private key
 // from one party and a public key from another.
 func (e *EcdhNike) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
-	sharedSecret := [ecdh.PublicKeySize]byte{}
-	privKey.(*ecdh.PrivateKey).Exp(&sharedSecret, pubKey.(*ecdh.PublicKey))
+	sharedSecret := privKey.(*ecdh.PrivateKey).Exp(pubKey.(*ecdh.PublicKey))
 	return sharedSecret[:]
 }
 
@@ -94,7 +93,6 @@ func (e *EcdhNike) Blind(groupMember []byte, blindingFactor []byte) (blindedGrou
 	if len(blindingFactor) != ecdh.PrivateKeySize {
 		return nil, ErrBlindDataSizeInvalid
 	}
-	sharedSecret := []byte{}
-	ecdh.Exp(sharedSecret, groupMember, blindingFactor)
+	sharedSecret := ecdh.Exp(groupMember, blindingFactor)
 	return sharedSecret, nil
 }
