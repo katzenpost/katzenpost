@@ -39,8 +39,7 @@ func newNode(require *require.Assertions) *nodeParams {
 
 	_, err := rand.Read(n.id[:])
 	require.NoError(err, "newNode(): failed to generate ID")
-	n.privateKey, n.publicKey, err = ctidh.GenerateKeyPair()
-	require.NoError(err, "newNode(): NewKeypair() failed")
+	n.privateKey, n.publicKey = ctidh.GenerateKeyPair()
 	return n
 }
 
@@ -121,6 +120,9 @@ func TestForwardSphinx(t *testing.T) {
 
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
+
+				t.Logf("cmd 0: %x", cmds[0])
+				t.Logf("cmd 1: %x", cmds[1])
 
 				nextNode, ok := cmds[1].(*commands.NextNodeHop)
 				require.Truef(ok, "Hop %d: cmds[1] is not a NextNodeHop", i)

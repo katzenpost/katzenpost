@@ -32,10 +32,7 @@ func benchNewNode() *nodeParams {
 	if err != nil {
 		panic("wtf")
 	}
-	n.privateKey, _, err = ctidh.GenerateKeyPair()
-	if err != nil {
-		panic("wtf")
-	}
+	n.privateKey, _ = ctidh.GenerateKeyPair()
 	return n
 }
 
@@ -54,11 +51,7 @@ func benchNewPathVector(nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
 
-		var err error
-		path[i].PublicKey, err = ctidh.DerivePublicKey(nodes[i].privateKey)
-		if err != nil {
-			panic(err)
-		}
+		path[i].PublicKey = ctidh.DerivePublicKey(nodes[i].privateKey)
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)

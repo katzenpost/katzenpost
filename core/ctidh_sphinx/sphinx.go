@@ -101,35 +101,29 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	}
 
 	// Derive the key material for each hop.
-	clientPrivateKey, clientPublicKey, err := ctidh.GenerateKeyPair()
-	if err != nil {
-		return nil, nil, err
-	}
+	clientPrivateKey, clientPublicKey := ctidh.GenerateKeyPair()
 	defer clientPrivateKey.Reset()
 	defer clientPublicKey.Reset()
 
 	var groupElements [constants.NrHops]ctidh.PublicKey
 	var keys [constants.NrHops]*crypto.PacketKeys
 
-	sharedSecret, err := ctidh.DeriveSecret(clientPrivateKey, path[0].PublicKey)
-	if err != nil {
-		panic(err) // TODO: or shall we return an error instead?
-	}
+	sharedSecret := ctidh.DeriveSecret(clientPrivateKey, path[0].PublicKey)
 	defer utils.ExplicitBzero(sharedSecret)
 
 	keys[0] = crypto.KDF(sharedSecret)
 	defer keys[0].Reset()
-	err = groupElements[0].FromBytes(clientPublicKey.Bytes())
+	err := groupElements[0].FromBytes(clientPublicKey.Bytes())
 	if err != nil {
-		panic(err) // TODO: or shall we return an error instead?
+		panic(err)
 	}
 	for i := 1; i < nrHops; i++ {
-		sharedSecret, err = ctidh.DeriveSecret(clientPrivateKey, path[i].PublicKey)
-		if err != nil {
-			panic(err)
-		}
+		sharedSecret = ctidh.DeriveSecret(clientPrivateKey, path[i].PublicKey)
 		for j := 0; j < i; j++ {
-			sharedSecret = ctidh.Blind(sharedSecret, keys[j].BlindingFactor)
+			sharedSecret, err = ctidh.Blind(sharedSecret, keys[j].BlindingFactor)
+			if err != nil {
+				panic(err)
+			}
 		}
 		keys[i] = crypto.KDF(sharedSecret)
 		defer keys[i].Reset()
@@ -271,13 +265,9 @@ func Unwrap(privKey *ctidh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.R
 	// Calculate the hop's shared secret, and replay_tag.
 	var groupElement ctidh.PublicKey
 	var sharedSecret []byte
-	var err error
 	defer utils.ExplicitBzero(sharedSecret)
 	groupElement.FromBytes(pkt[geOff:riOff])
-	sharedSecret, err = ctidh.DeriveSecret(privKey, &groupElement)
-	if err != nil {
-		panic(err)
-	}
+	sharedSecret = ctidh.DeriveSecret(privKey, &groupElement)
 
 	replayTag := crypto.Hash(groupElement.Bytes())
 
