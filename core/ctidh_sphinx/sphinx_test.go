@@ -31,6 +31,7 @@ import (
 type nodeParams struct {
 	id         [constants.NodeIDLength]byte
 	privateKey *ctidh.PrivateKey
+	publicKey  *ctidh.PublicKey
 }
 
 func newNode(require *require.Assertions) *nodeParams {
@@ -38,7 +39,7 @@ func newNode(require *require.Assertions) *nodeParams {
 
 	_, err := rand.Read(n.id[:])
 	require.NoError(err, "newNode(): failed to generate ID")
-	n.privateKey, _, err = ctidh.GenerateKeyPair()
+	n.privateKey, n.publicKey, err = ctidh.GenerateKeyPair()
 	require.NoError(err, "newNode(): NewKeypair() failed")
 	return n
 }
@@ -57,11 +58,7 @@ func newPathVector(require *require.Assertions, nrHops int, isSURB bool) ([]*nod
 	for i := range path {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
-		var err error
-		path[i].PublicKey, err = ctidh.DerivePublicKey(nodes[i].privateKey)
-		if err != nil {
-			panic(err)
-		}
+		path[i].PublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
