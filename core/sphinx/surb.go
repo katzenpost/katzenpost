@@ -26,15 +26,18 @@ import (
 )
 
 const (
-	// SURBLength is the length of a Sphinx SURB in bytes.
-	SURBLength = HeaderLength + constants.NodeIDLength + sprpKeyMaterialLength // 556 bytes.
-
 	sprpKeyMaterialLength = crypto.SPRPKeyLength + crypto.SPRPIVLength
 )
 
+// SURBLength returns the length of a Sphinx SURB in bytes.
+// If the X25519 ECDH NIKE is used then the size is 556 bytes.
+func (s *Sphinx) SURBLength() int {
+	return s.HeaderLength() + constants.NodeIDLength + sprpKeyMaterialLength
+}
+
 // NewSURB creates a new SURB with the provided path using the provided entropy
 // source, and returns the SURB and decrypion keys.
-func NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 	// Create a random SPRP key + iv for the recipient to use to encrypt
 	// the payload when using the SURB.
 	var keyPayload [sprpKeyMaterialLength]byte
@@ -43,7 +46,7 @@ func NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 	}
 	defer utils.ExplicitBzero(keyPayload[:])
 
-	hdr, sprpKeys, err := createHeader(r, path)
+	hdr, sprpKeys, err := s.createHeader(r, path)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -59,7 +62,7 @@ func NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 	k = append(k, keyPayload[:]...)
 
 	// Serialize the SURB into an opaque blob.
-	surb := make([]byte, 0, SURBLength)
+	surb := make([]byte, 0, s.SURBLength())
 	surb = append(surb, hdr...)
 	surb = append(surb, path[0].ID[:]...)
 	surb = append(surb, keyPayload[:]...)
@@ -69,19 +72,19 @@ func NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 
 // NewPacketFromSURB creates a new reply Sphinx packet with the provided SURB
 // and payload, and returns the packet and ID of the first hop.
-func NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]byte, error) {
-	const (
-		idOff  = HeaderLength
+func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]byte, error) {
+	var (
+		idOff  = s.HeaderLength()
 		keyOff = idOff + constants.NodeIDLength
 		ivOff  = keyOff + crypto.SPRPKeyLength
 	)
 
-	if len(surb) != SURBLength {
+	if len(surb) != s.SURBLength() {
 		return nil, nil, errors.New("sphinx: invalid packet, truncated SURB")
 	}
 
 	// Deserialize the SURB.
-	hdr := surb[:HeaderLength]
+	hdr := surb[:s.HeaderLength()]
 	var nodeID [constants.NodeIDLength]byte
 	var sprpKey [crypto.SPRPKeyLength]byte
 	var sprpIV [crypto.SPRPIVLength]byte
@@ -108,7 +111,7 @@ func NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]b
 // DecryptSURBPayload decrypts the provided Sphinx payload generated via a SURB
 // with the provided keys, and returns the plaintext.  The keys are obliterated
 // at the end of this call.
-func DecryptSURBPayload(payload, keys []byte) ([]byte, error) {
+func (s *Sphinx) DecryptSURBPayload(payload, keys []byte) ([]byte, error) {
 	defer utils.ExplicitBzero(keys)
 	nrHops := len(keys) / sprpKeyMaterialLength
 	if len(keys)%sprpKeyMaterialLength != 0 || nrHops < 1 {

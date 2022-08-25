@@ -55,6 +55,11 @@ func (e *EcdhNike) PrivateKeySize() int {
 	return ecdh.PublicKeySize
 }
 
+// NewPublicKey returns a new public key.
+func (e *EcdhNike) NewPublicKey() nike.PublicKey {
+	return new(ecdh.PublicKey)
+}
+
 // NewKeypair returns a newly generated key pair.
 func (e *EcdhNike) NewKeypair() (nike.PrivateKey, nike.PublicKey) {
 	privKey, err := ecdh.NewKeypair(e.rng)

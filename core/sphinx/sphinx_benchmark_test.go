@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -83,21 +84,24 @@ func benchNewPathVector(nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 }
 
 func BenchmarkSphinxUnwrap(b *testing.B) {
+	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
+
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 	nodes, path := benchNewPathVector(constants.NrHops, false)
 	payload := []byte(testPayload)
-	pkt, err := NewPacket(rand.Reader, path, payload)
+
+	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 	if err != nil {
 		panic("wtf")
 	}
-	if len(pkt) != HeaderLength+PayloadTagLength+len(payload) {
+	if len(pkt) != sphinx.HeaderLength()+PayloadTagLength+len(payload) {
 		panic("wtf")
 	}
 
 	for n := 0; n < b.N; n++ {
 		testPacket := make([]byte, len(pkt))
 		copy(testPacket, pkt)
-		_, _, _, err := Unwrap(nodes[0].privateKey, testPacket)
+		_, _, _, err := sphinx.Unwrap(nodes[0].privateKey, testPacket)
 		if err != nil {
 			panic("wtf")
 		}

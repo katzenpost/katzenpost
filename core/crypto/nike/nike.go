@@ -59,6 +59,9 @@ type Nike interface {
 	// NewKeypair returns a newly generated key pair.
 	NewKeypair() (PrivateKey, PublicKey)
 
+	// NewPublicKey returns a new public key.
+	NewPublicKey() PublicKey
+
 	// DeriveSecret derives a shared secret given a private key
 	// from one party and a public key from another.
 	DeriveSecret(PrivateKey, PublicKey) []byte

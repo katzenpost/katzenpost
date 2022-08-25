@@ -21,10 +21,12 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/stretchr/testify/require"
 )
 
 type nodeParams struct {
@@ -86,6 +88,7 @@ func TestForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)
+	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
 
 	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
@@ -95,16 +98,16 @@ func TestForwardSphinx(t *testing.T) {
 
 		// Create the packet.
 		payload := []byte(testPayload)
-		pkt, err := NewPacket(rand.Reader, path, payload)
+		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 		require.NoError(err, "NewPacket failed")
-		require.Len(pkt, HeaderLength+PayloadTagLength+len(payload), "Packet Length")
+		require.Len(pkt, sphinx.HeaderLength()+PayloadTagLength+len(payload), "Packet Length")
 
 		t.Logf("pkt: %s", hex.Dump(pkt))
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
@@ -134,6 +137,7 @@ func TestSURB(t *testing.T) {
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
 	require := require.New(t)
+	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
 
 	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
@@ -142,20 +146,20 @@ func TestSURB(t *testing.T) {
 		nodes, path := newPathVector(require, nrHops, true)
 
 		// Create the SURB.
-		surb, surbKeys, err := NewSURB(rand.Reader, path)
+		surb, surbKeys, err := sphinx.NewSURB(rand.Reader, path)
 		require.NoError(err, "NewSURB failed")
-		require.Equal(SURBLength, len(surb), "SURB length")
+		require.Equal(sphinx.SURBLength(), len(surb), "SURB length")
 
 		// Create a reply packet using the SURB.
 		payload := []byte(testPayload)
-		pkt, firstHop, err := NewPacketFromSURB(surb, payload)
+		pkt, firstHop, err := sphinx.NewPacketFromSURB(surb, payload)
 		require.NoError(err, "NewPacketFromSURB failed")
 		require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
 
 		// Unwrap the packet, valdiating the output.
 		for i := range nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "SURB Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
@@ -163,7 +167,7 @@ func TestSURB(t *testing.T) {
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: recipient mismatch", i)
 				require.EqualValuesf(path[i].Commands[1], cmds[1], "SURB Hop %d: surb_reply mismatch", i)
 
-				b, err = DecryptSURBPayload(b, surbKeys)
+				b, err = sphinx.DecryptSURBPayload(b, surbKeys)
 				require.NoError(err, "DecrytSURBPayload")
 				require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
 				t.Logf("Unwrapped payload: %v", hex.Dump(b))
