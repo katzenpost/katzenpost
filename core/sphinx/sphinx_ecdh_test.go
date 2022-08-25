@@ -23,78 +23,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-type nodeParams struct {
-	id         [constants.NodeIDLength]byte
-	privateKey *ecdh.PrivateKey
-}
-
-func newNode(require *require.Assertions) *nodeParams {
-	n := new(nodeParams)
-
-	_, err := rand.Read(n.id[:])
-	require.NoError(err, "newNode(): failed to generate ID")
-	n.privateKey, err = ecdh.NewKeypair(rand.Reader)
-	require.NoError(err, "newNode(): NewKeypair() failed")
-	return n
-}
-
-func newPathVector(require *require.Assertions, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
-	const delayBase = 0xdeadbabe
-
-	// Generate the keypairs and node identifiers for the "nodes".
-	nodes := make([]*nodeParams, nrHops)
-	for i := range nodes {
-		nodes[i] = newNode(require)
-	}
-
-	// Assemble the path vector.
-	path := make([]*PathHop, nrHops)
-	for i := range path {
-		path[i] = new(PathHop)
-		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].PublicKey = nodes[i].privateKey.PublicKey()
-		if i < nrHops-1 {
-			// Non-terminal hop, add the delay.
-			delay := new(commands.NodeDelay)
-			delay.Delay = delayBase * uint32(i+1)
-			path[i].Commands = append(path[i].Commands, delay)
-		} else {
-			// Terminal hop, add the recipient.
-			recipient := new(commands.Recipient)
-			_, err := rand.Read(recipient.ID[:])
-			require.NoError(err, "failed to generate recipient")
-			path[i].Commands = append(path[i].Commands, recipient)
-
-			// This is a SURB, add a surb_reply.
-			if isSURB {
-				surbReply := new(commands.SURBReply)
-				_, err := rand.Read(surbReply.ID[:])
-				require.NoError(err, "failed to generate surb_reply")
-				path[i].Commands = append(path[i].Commands, surbReply)
-			}
-		}
-	}
-
-	return nodes, path
-}
-
-func TestForwardSphinx(t *testing.T) {
+func TestEcdhForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)
-	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
+	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	sphinx := NewSphinx(mynike)
 
 	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the forward sphinx packet.
-		nodes, path := newPathVector(require, nrHops, false)
+		nodes, path := newNikePathVector(require, mynike, nrHops, false)
 
 		// Create the packet.
 		payload := []byte(testPayload)
@@ -133,17 +78,18 @@ func TestForwardSphinx(t *testing.T) {
 	}
 }
 
-func TestSURB(t *testing.T) {
+func TestEcdhSURB(t *testing.T) {
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
 	require := require.New(t)
-	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
+	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	sphinx := NewSphinx(mynike)
 
 	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the SURB.
-		nodes, path := newPathVector(require, nrHops, true)
+		nodes, path := newNikePathVector(require, mynike, nrHops, true)
 
 		// Create the SURB.
 		surb, surbKeys, err := sphinx.NewSURB(rand.Reader, path)
