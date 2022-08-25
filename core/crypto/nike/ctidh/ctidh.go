@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package ecdh
+package ctidh
 
 import (
 	ctidh "git.xx.network/elixxir/ctidh_cgo"
@@ -24,6 +24,11 @@ import (
 
 // CtidhNike implements the Nike interface using our ctidh module.
 type CtidhNike struct {
+}
+
+// NewCtidhNike returns a new Ctidh Nike.
+func NewCtidhNike() *CtidhNike {
+	return new(CtidhNike)
 }
 
 var _ nike.PrivateKey = (*ctidh.PrivateKey)(nil)
