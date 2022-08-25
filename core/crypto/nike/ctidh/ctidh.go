@@ -42,7 +42,12 @@ func (e *CtidhNike) PublicKeySize() int {
 
 // PrivateKeySize returns the size in bytes of the private key.
 func (e *CtidhNike) PrivateKeySize() int {
-	return ctidh.PublicKeySize
+	return ctidh.PrivateKeySize
+}
+
+// NewPublicKey returns a new public key.
+func (e *CtidhNike) NewPublicKey() nike.PublicKey {
+	return new(ctidh.PublicKey)
 }
 
 // NewKeypair returns a newly generated key pair.

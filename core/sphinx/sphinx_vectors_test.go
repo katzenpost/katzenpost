@@ -26,6 +26,7 @@ import (
 	"github.com/ugorji/go/codec"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -55,12 +56,13 @@ type hexSphinxTest struct {
 
 func TestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
-	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
+	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	sphinx := NewSphinx(mynike)
 
 	withSURB := false
-	hexTests := buildVectorSphinx(t, withSURB, sphinx)
+	hexTests := buildVectorSphinx(t, mynike, withSURB, sphinx)
 	withSURB = true
-	hexTests2 := buildVectorSphinx(t, withSURB, sphinx)
+	hexTests2 := buildVectorSphinx(t, mynike, withSURB, sphinx)
 	hexTests = append(hexTests, hexTests2...)
 
 	serialized := []byte{}
@@ -76,7 +78,8 @@ func TestBuildFileVectorSphinx(t *testing.T) {
 
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
-	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
+	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	sphinx := NewSphinx(mynike)
 
 	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
@@ -150,7 +153,7 @@ func TestVectorSphinx(t *testing.T) {
 	}
 }
 
-func buildVectorSphinx(t *testing.T, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
+func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)
@@ -159,7 +162,7 @@ func buildVectorSphinx(t *testing.T, withSURB bool, sphinx *Sphinx) []hexSphinxT
 	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
 
 		// Generate the "nodes" and path for the forward sphinx packet.
-		nodes, path := newPathVector(require, nrHops, withSURB)
+		nodes, path := newNikePathVector(require, mynike, nrHops, withSURB)
 		hexNodes := make([]hexNodeParams, len(nodes))
 		for i, node := range nodes {
 			hexNodes[i] = hexNodeParams{

@@ -20,6 +20,7 @@ package sphinx
 import (
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
@@ -136,6 +137,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 		for j := 0; j < i; j++ {
 			sharedSecret, err = s.nike.Blind(sharedSecret, keys[j].BlindingFactor)
 			if err != nil {
+				fmt.Printf("s.nike.PrivateKeySize() %d len(BlindingFactor) %d\n", s.nike.PrivateKeySize(), len(keys[j].BlindingFactor))
 				panic(err)
 			}
 		}

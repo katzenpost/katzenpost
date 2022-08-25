@@ -53,7 +53,7 @@ func benchNewPathVector(nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 	for i := range path {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].PublicKey = nodes[i].privateKey.PublicKey()
+		path[i].PublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
