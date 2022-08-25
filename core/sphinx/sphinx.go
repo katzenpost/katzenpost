@@ -22,7 +22,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -54,11 +54,34 @@ var (
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
 )
 
+// Sphinx is a modular implementation of the Sphinx cryptographic packet
+// format that has a pluggable NIKE, non-interactive key exchange.
+type Sphinx struct{}
+
+// NewSURB creates a new SURB with the provided path using the provided entropy
+// source, and returns the SURB and decrypion keys.
+func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+	return nil, nil, nil
+}
+
+// NewPacketFromSURB creates a new reply Sphinx packet with the provided SURB
+// and payload, and returns the packet and ID of the first hop.
+func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]byte, error) {
+	return nil, nil, nil
+}
+
+// DecryptSURBPayload decrypts the provided Sphinx payload generated via a SURB
+// with the provided keys, and returns the plaintext.  The keys are obliterated
+// at the end of this call.
+func (s *Sphinx) DecryptSURBPayload(payload, keys []byte) ([]byte, error) {
+	return nil, nil
+}
+
 // PathHop describes a hop that a Sphinx Packet will traverse, along with
 // all of the per-hop Commands (excluding NextNodeHop).
 type PathHop struct {
 	ID        [constants.NodeIDLength]byte
-	PublicKey *ecdh.PublicKey
+	PublicKey nike.PublicKey
 	Commands  []commands.RoutingCommand
 }
 
@@ -91,37 +114,45 @@ func commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool) ([]byte, e
 	return b, nil
 }
 
-func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
+func createHeader(mynike nike.Nike, r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	nrHops := len(path)
 	if nrHops > constants.NrHops {
 		return nil, nil, errors.New("sphinx: invalid path")
 	}
 
 	// Derive the key material for each hop.
-	keypair, err := ecdh.NewKeypair(r)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer keypair.Reset()
+	clientPrivateKey, clientPublicKey := mynike.NewKeypair()
+	defer clientPrivateKey.Reset()
+	defer clientPublicKey.Reset()
 
-	var groupElements [constants.NrHops]ecdh.PublicKey
+	var groupElements [constants.NrHops]nike.PublicKey
 	var keys [constants.NrHops]*crypto.PacketKeys
 
-	var sharedSecret [crypto.GroupElementLength]byte
-	defer utils.ExplicitBzero(sharedSecret[:])
-	keypair.Exp(&sharedSecret, path[0].PublicKey)
+	sharedSecret := mynike.DeriveSecret(clientPrivateKey, path[0].PublicKey)
+	defer utils.ExplicitBzero(sharedSecret)
+
 	keys[0] = crypto.KDF(&sharedSecret)
 	defer keys[0].Reset()
-	groupElements[0].FromBytes(keypair.PublicKey().Bytes())
+	err := groupElements[0].FromBytes(clientPublicKey.Bytes())
+	if err != nil {
+		panic(err)
+	}
+
 	for i := 1; i < nrHops; i++ {
-		keypair.Exp(&sharedSecret, path[i].PublicKey)
+		sharedSecret = mynike.DeriveSecret(clientPrivateKey, path[i].PublicKey)
 		for j := 0; j < i; j++ {
-			ecdh.Exp(&sharedSecret, &sharedSecret, &keys[j].BlindingFactor)
+			sharedSecret, err = mynike.Blind(sharedSecret, keys[j].BlindingFactor)
+			if err != nil {
+				panic(err)
+			}
 		}
 		keys[i] = crypto.KDF(&sharedSecret)
 		defer keys[i].Reset()
-		keypair.PublicKey().Blind(&keys[i-1].BlindingFactor)
-		groupElements[i].FromBytes(keypair.PublicKey().Bytes())
+		clientPublicKey.Blind(keys[i-1].BlindingFactor)
+		err = groupElements[i].FromBytes(clientPublicKey.Bytes())
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Derive the routing_information keystream and encrypted padding for each
@@ -210,7 +241,7 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 
 // NewPacket creates a forward Sphinx packet with the provided path and
 // payload, using the provided entropy source.
-func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 	hdr, sprpKeys, err := createHeader(r, path)
 	if err != nil {
 		return nil, err
@@ -237,9 +268,9 @@ func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 }
 
 // Unwrap unwraps the provided Sphinx packet pkt in-place, using the provided
-// ECDH private key, and returns the payload (if applicable), replay tag, and
+// NIKE private key, and returns the payload (if applicable), replay tag, and
 // routing info command vector.
-func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
+func (s *Sphinx) Unwrap(privKey *nike.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
 	const (
 		geOff      = 2
 		riOff      = geOff + crypto.GroupElementLength
@@ -256,7 +287,7 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 	}
 
 	// Calculate the hop's shared secret, and replay_tag.
-	var groupElement ecdh.PublicKey
+	var groupElement nike.PublicKey
 	var sharedSecret [crypto.GroupElementLength]byte
 	defer utils.ExplicitBzero(sharedSecret[:])
 	groupElement.FromBytes(pkt[geOff:riOff])
