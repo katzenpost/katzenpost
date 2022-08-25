@@ -27,7 +27,7 @@ import (
 
 	"gitlab.com/yawning/aez.git"
 	"gitlab.com/yawning/bsaes.git"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -53,11 +53,7 @@ const (
 	// SPRPIVLength is the IV size of the SPRP in bytes.
 	SPRPIVLength = StreamIVLength
 
-	// GroupElementLength is the length of a DH group element in bytes.
-	GroupElementLength = ecdh.GroupElementLength
-
-	okmLength = MACKeyLength + StreamKeyLength + StreamIVLength + SPRPKeyLength + GroupElementLength
-	kdfInfo   = "katzenpost-kdf-v0-hkdf-sha256"
+	kdfInfo = "katzenpost-kdf-v0-hkdf-sha256"
 )
 
 type resetable interface {
@@ -149,7 +145,7 @@ type PacketKeys struct {
 	HeaderEncryption   [StreamKeyLength]byte
 	HeaderEncryptionIV [StreamIVLength]byte
 	PayloadEncryption  [SPRPKeyLength]byte
-	BlindingFactor     [GroupElementLength]byte
+	BlindingFactor     []byte
 }
 
 // Reset clears the PacketKeys structure such that no sensitive data is left
@@ -159,11 +155,12 @@ func (k *PacketKeys) Reset() {
 	utils.ExplicitBzero(k.HeaderEncryption[:])
 	utils.ExplicitBzero(k.HeaderEncryptionIV[:])
 	utils.ExplicitBzero(k.PayloadEncryption[:])
-	utils.ExplicitBzero(k.BlindingFactor[:])
+	utils.ExplicitBzero(k.BlindingFactor)
 }
 
 // KDF takes the input key material and returns the Sphinx Packet keys.
-func KDF(ikm *[GroupElementLength]byte) *PacketKeys {
+func KDF(ikm []byte, privateKeySize int) *PacketKeys {
+	okmLength := MACKeyLength + StreamKeyLength + StreamIVLength + SPRPKeyLength + privateKeySize
 	okm := hkdfExpand(sha256.New, ikm[:], []byte(kdfInfo), okmLength)
 	defer utils.ExplicitBzero(okm)
 	ptr := okm
@@ -177,7 +174,8 @@ func KDF(ikm *[GroupElementLength]byte) *PacketKeys {
 	ptr = ptr[StreamIVLength:]
 	copy(k.PayloadEncryption[:], ptr[:SPRPKeyLength])
 	ptr = ptr[SPRPKeyLength:]
-	copy(k.BlindingFactor[:], ptr[:GroupElementLength])
+	k.BlindingFactor = make([]byte, privateKeySize)
+	copy(k.BlindingFactor[:], ptr[:privateKeySize])
 
 	return k
 }
