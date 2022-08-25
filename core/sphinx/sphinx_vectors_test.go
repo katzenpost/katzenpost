@@ -22,11 +22,13 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 	"github.com/ugorji/go/codec"
+
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 const sphinxVectorsFile = "testdata/sphinx_vectors.json"
@@ -53,11 +55,12 @@ type hexSphinxTest struct {
 
 func TestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
+	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
 
 	withSURB := false
-	hexTests := buildVectorSphinx(t, withSURB)
+	hexTests := buildVectorSphinx(t, withSURB, sphinx)
 	withSURB = true
-	hexTests2 := buildVectorSphinx(t, withSURB)
+	hexTests2 := buildVectorSphinx(t, withSURB, sphinx)
 	hexTests = append(hexTests, hexTests2...)
 
 	serialized := []byte{}
@@ -73,6 +76,7 @@ func TestBuildFileVectorSphinx(t *testing.T) {
 
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
+	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
 
 	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
@@ -94,7 +98,7 @@ func TestVectorSphinx(t *testing.T) {
 			require.NoError(err)
 			err = privateKey.FromBytes(rawKey)
 			require.NoError(err)
-			b, _, cmds, err := Unwrap(privateKey, packet)
+			b, _, cmds, err := sphinx.Unwrap(privateKey, packet)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(test.Path)-1 {
@@ -109,7 +113,7 @@ func TestVectorSphinx(t *testing.T) {
 
 					testSurbKeys, err := hex.DecodeString(test.SurbKeys)
 					require.NoError(err, "DecrytSURBPayload")
-					b, err = DecryptSURBPayload(b, testSurbKeys)
+					b, err = sphinx.DecryptSURBPayload(b, testSurbKeys)
 					require.NoError(err)
 					testPayload, err := hex.DecodeString(test.Payload)
 					require.NoError(err)
@@ -146,7 +150,7 @@ func TestVectorSphinx(t *testing.T) {
 	}
 }
 
-func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
+func buildVectorSphinx(t *testing.T, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)
@@ -185,18 +189,18 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 		var err error
 		if withSURB {
 			// Create the SURB.
-			surb, surbKeys, err = NewSURB(rand.Reader, path)
+			surb, surbKeys, err = sphinx.NewSURB(rand.Reader, path)
 			require.NoError(err, "NewSURB failed")
-			require.Equal(SURBLength, len(surb), "SURB length")
+			require.Equal(sphinx.SURBLength(), len(surb), "SURB length")
 
 			// Create a reply packet using the SURB.
-			pkt, firstHop, err = NewPacketFromSURB(surb, payload)
+			pkt, firstHop, err = sphinx.NewPacketFromSURB(surb, payload)
 			require.NoError(err, "NewPacketFromSURB failed")
 			require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
 		} else {
-			pkt, err = NewPacket(rand.Reader, path, payload)
+			pkt, err = sphinx.NewPacket(rand.Reader, path, payload)
 			require.NoError(err, "NewPacket failed")
-			require.Len(pkt, HeaderLength+PayloadTagLength+len(payload), "Packet Length")
+			require.Len(pkt, sphinx.HeaderLength()+PayloadTagLength+len(payload), "Packet Length")
 		}
 
 		tests[nrHops] = hexSphinxTest{
@@ -212,7 +216,7 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 		for i := range nodes {
 
 			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
@@ -221,7 +225,7 @@ func buildVectorSphinx(t *testing.T, withSURB bool) []hexSphinxTest {
 					require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: recipient mismatch", i)
 					require.EqualValuesf(path[i].Commands[1], cmds[1], "SURB Hop %d: surb_reply mismatch", i)
 
-					b, err = DecryptSURBPayload(b, surbKeys)
+					b, err = sphinx.DecryptSURBPayload(b, surbKeys)
 					require.NoError(err, "DecrytSURBPayload")
 					require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
 				} else {
