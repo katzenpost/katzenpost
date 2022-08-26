@@ -84,9 +84,9 @@ func benchNewPathVector(nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 }
 
 func BenchmarkSphinxUnwrap(b *testing.B) {
-	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader))
-
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
+	sphinx := NewSphinx(ecdhnike.NewEcdhNike(rand.Reader), len(testPayload))
+
 	nodes, path := benchNewPathVector(constants.NrHops, false)
 	payload := []byte(testPayload)
 

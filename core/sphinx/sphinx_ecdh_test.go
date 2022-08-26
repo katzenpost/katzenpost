@@ -27,7 +27,7 @@ func TestEcdhForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike)
+	sphinx := NewSphinx(mynike, len(testPayload))
 
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
@@ -36,7 +36,7 @@ func TestEcdhSURB(t *testing.T) {
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike)
+	sphinx := NewSphinx(mynike, len(testPayload))
 
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }
