@@ -54,7 +54,7 @@ type hexSphinxTest struct {
 	SurbKeys string
 }
 
-func TestBuildFileVectorSphinx(t *testing.T) {
+func NoTestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
 	sphinx := NewSphinx(mynike, 103)
