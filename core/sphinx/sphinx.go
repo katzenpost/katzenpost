@@ -56,18 +56,68 @@ var (
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
 )
 
+// Geometry describes the geometry of a Sphinx packet.
+type Geometry struct {
+	// ForwardPayloadLength is the size of the payload.
+	ForwardPayloadLength int
+
+	// UserForwardPayloadLength is the size of the usable payload.
+	UserForwardPayloadLength int
+
+	// HeaderLength is the length of the header.
+	HeaderLength int
+
+	// PayloadTagLength is the length of the payload tag.
+	PayloadTagLength int
+
+	// SURBLength is the length of SURB.
+	SURBLength int
+
+	// SphinxPlaintextHeaderLength is the length of the plaintext header.
+	SphinxPlaintextHeaderLength int
+
+	// SURBIDLength is the length of a SURB ID.
+	SURBIDLength int
+
+	// PacketLength is the length of a packet.
+	PacketLength int
+}
+
 // Sphinx is a modular implementation of the Sphinx cryptographic packet
 // format that has a pluggable NIKE, non-interactive key exchange.
 type Sphinx struct {
 	nike                 nike.Nike
 	forwardPayloadLength int
+	geometry             *Geometry
 }
 
+// NewSphinx creates a new instance of Sphinx.
 func NewSphinx(n nike.Nike, forwardPayloadLength int) *Sphinx {
-	return &Sphinx{
+	s := &Sphinx{
 		nike:                 n,
 		forwardPayloadLength: forwardPayloadLength,
 	}
+	s.Geometry()
+	return s
+}
+
+// Geometry returns a sphinx Geometry type.
+func (s *Sphinx) Geometry() *Geometry {
+	if s.geometry != nil {
+		return s.geometry
+	}
+	g := &Geometry{
+		HeaderLength:                s.HeaderLength(),
+		PacketLength:                s.PacketLength(),
+		SURBLength:                  s.SURBLength(),
+		UserForwardPayloadLength:    s.UserForwardPayloadLength(),
+		ForwardPayloadLength:        s.forwardPayloadLength,
+		PayloadTagLength:            PayloadTagLength,
+		SphinxPlaintextHeaderLength: SphinxPlaintextHeaderLength,
+		SURBIDLength:                constants.SURBIDLength,
+	}
+	s.geometry = g
+	return g
 }
 
 // HeaderLength returns the length of a Sphinx header in bytes.
