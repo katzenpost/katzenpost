@@ -42,6 +42,10 @@ const (
 
 	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
 	PayloadTagLength = 16
+
+	// SphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
+	// in bytes.
+	SphinxPlaintextHeaderLength = 1 + 1
 )
 
 var (
@@ -55,18 +59,40 @@ var (
 // Sphinx is a modular implementation of the Sphinx cryptographic packet
 // format that has a pluggable NIKE, non-interactive key exchange.
 type Sphinx struct {
-	nike nike.Nike
+	nike                 nike.Nike
+	forwardPayloadLength int
 }
 
-func NewSphinx(n nike.Nike) *Sphinx {
+func NewSphinx(n nike.Nike, forwardPayloadLength int) *Sphinx {
 	return &Sphinx{
-		nike: n,
+		nike:                 n,
+		forwardPayloadLength: forwardPayloadLength,
 	}
 }
 
+// HeaderLength returns the length of a Sphinx header in bytes.
 func (s *Sphinx) HeaderLength() int {
 	// 460 bytes with a 32byte public key
 	return adLength + s.nike.PublicKeySize() + routingInfoLength + crypto.MACLength
+}
+
+// PacketLength returns the length of a Sphinx Packet in bytes.
+func (s *Sphinx) PacketLength() int {
+	return s.HeaderLength() + PayloadTagLength + s.forwardPayloadLength
+}
+
+// SURBLength returns the length of a Sphinx SURB in bytes.
+// If the X25519 ECDH NIKE is used then the size is 556 bytes.
+func (s *Sphinx) SURBLength() int {
+	return s.HeaderLength() + constants.NodeIDLength + sprpKeyMaterialLength
+}
+
+// UserForwardPayloadLength returns the length of user portion of the forward
+// payload.  The End to End spec calls this `PAYLOAD_LENGTH` but this is
+// somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
+// spec.
+func (s *Sphinx) UserForwardPayloadLength() int {
+	return s.forwardPayloadLength - (SphinxPlaintextHeaderLength + s.SURBLength())
 }
 
 // PathHop describes a hop that a Sphinx Packet will traverse, along with
@@ -238,6 +264,9 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 // NewPacket creates a forward Sphinx packet with the provided path and
 // payload, using the provided entropy source.
 func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+	if len(payload) != s.forwardPayloadLength {
+		return nil, fmt.Errorf("invalid payload length: %v", len(payload))
+	}
 	hdr, sprpKeys, err := s.createHeader(r, path)
 	if err != nil {
 		return nil, err

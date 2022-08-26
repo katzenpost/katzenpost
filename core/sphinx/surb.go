@@ -29,12 +29,6 @@ const (
 	sprpKeyMaterialLength = crypto.SPRPKeyLength + crypto.SPRPIVLength
 )
 
-// SURBLength returns the length of a Sphinx SURB in bytes.
-// If the X25519 ECDH NIKE is used then the size is 556 bytes.
-func (s *Sphinx) SURBLength() int {
-	return s.HeaderLength() + constants.NodeIDLength + sprpKeyMaterialLength
-}
-
 // NewSURB creates a new SURB with the provided path using the provided entropy
 // source, and returns the SURB and decrypion keys.
 func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {

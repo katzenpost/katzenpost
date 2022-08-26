@@ -57,7 +57,7 @@ type hexSphinxTest struct {
 func TestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike)
+	sphinx := NewSphinx(mynike, 103)
 
 	withSURB := false
 	hexTests := buildVectorSphinx(t, mynike, withSURB, sphinx)
@@ -79,7 +79,7 @@ func TestBuildFileVectorSphinx(t *testing.T) {
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike)
+	sphinx := NewSphinx(mynike, 103)
 
 	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
