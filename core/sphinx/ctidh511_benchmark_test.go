@@ -1,4 +1,7 @@
-// sphinx_ecdh_benchmark_test.go - Sphinx Packet Format benchmarks.
+//go:build ctidh511
+// +build ctidh511
+
+// ctidh511_benchmark_test.go - Sphinx Packet Format benchmarks.
 // Copyright (C) 2022 David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -17,12 +20,11 @@
 package sphinx
 
 import (
-	"crypto/rand"
 	"testing"
 
-	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	ctidhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
 )
 
-func BenchmarkEcdhSphinxUnwrap(b *testing.B) {
-	benchmarkSphinxUnwrap(b, ecdhnike.NewEcdhNike(rand.Reader))
+func BenchmarkCtidh511SphinxUnwrap(b *testing.B) {
+	benchmarkSphinxUnwrap(b, ctidhnike.NewCtidhNike())
 }

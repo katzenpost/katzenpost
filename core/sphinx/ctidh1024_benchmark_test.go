@@ -1,4 +1,7 @@
-// sphinx_ctidh_benchmark_test.go - Sphinx Packet Format benchmarks.
+//go:build ctidh1024
+// +build ctidh1024
+
+// ctidh1024_benchmark_test.go - Sphinx Packet Format benchmarks.
 // Copyright (C) 2022 David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -22,6 +25,6 @@ import (
 	ctidhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
 )
 
-func BenchmarkCtidhSphinxUnwrap(b *testing.B) {
+func BenchmarkCtidh1024SphinxUnwrap(b *testing.B) {
 	benchmarkSphinxUnwrap(b, ctidhnike.NewCtidhNike())
 }
