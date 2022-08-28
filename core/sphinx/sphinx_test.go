@@ -88,7 +88,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.nrHops; nrHops++ {
-		t.Logf("========================================================================Testing %d hop(s).", nrHops)
+		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the forward sphinx packet.
 		nodes, path := newNikePathVector(require, mynike, nrHops, false)
