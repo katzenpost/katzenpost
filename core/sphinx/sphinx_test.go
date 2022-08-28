@@ -87,8 +87,8 @@ func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int
 func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
-	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
-		t.Logf("Testing %d hop(s).", nrHops)
+	for nrHops := 1; nrHops <= sphinx.nrHops; nrHops++ {
+		t.Logf("========================================================================Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the forward sphinx packet.
 		nodes, path := newNikePathVector(require, mynike, nrHops, false)
@@ -133,7 +133,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
-	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
+	for nrHops := 1; nrHops <= sphinx.nrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the SURB.

@@ -22,7 +22,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 /*
@@ -32,9 +31,9 @@ import (
 
 func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Nike) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
-	sphinx := NewSphinx(mynike, len(testPayload))
+	sphinx := NewSphinx(mynike, len(testPayload), 5)
 
-	nodes, path := benchNewPathVector(constants.NrHops, false, mynike)
+	nodes, path := benchNewPathVector(sphinx.nrHops, false, mynike)
 	payload := []byte(testPayload)
 
 	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
