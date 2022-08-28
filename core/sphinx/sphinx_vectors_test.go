@@ -29,7 +29,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 const sphinxVectorsFile = "testdata/sphinx_vectors.json"
@@ -57,7 +56,7 @@ type hexSphinxTest struct {
 func NoTestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike, 103)
+	sphinx := NewSphinx(mynike, 103, 5)
 
 	withSURB := false
 	hexTests := buildVectorSphinx(t, mynike, withSURB, sphinx)
@@ -79,7 +78,7 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike, 103)
+	sphinx := NewSphinx(mynike, 103, 5)
 
 	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
@@ -158,8 +157,8 @@ func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sp
 
 	require := require.New(t)
 
-	tests := make([]hexSphinxTest, constants.NrHops+1)
-	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
+	tests := make([]hexSphinxTest, sphinx.nrHops+1)
+	for nrHops := 1; nrHops <= sphinx.nrHops; nrHops++ {
 
 		// Generate the "nodes" and path for the forward sphinx packet.
 		nodes, path := newNikePathVector(require, mynike, nrHops, withSURB)

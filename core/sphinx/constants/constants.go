@@ -27,7 +27,4 @@ const (
 
 	// SURBIDLength is the SURB identifier length in bytes.
 	SURBIDLength = 16
-
-	// NrHops is the number of hops a packet will traverse.
-	NrHops = 5
 )

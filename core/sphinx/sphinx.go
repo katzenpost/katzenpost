@@ -36,9 +36,7 @@ const (
 	// encounter.  Everything else just has a NextNodeHop + NodeDelay, or a
 	// Recipient, both cases which are shorter.
 	perHopRoutingInfoLength = commands.RecipientLength + commands.SURBReplyLength
-
-	routingInfoLength = perHopRoutingInfoLength * constants.NrHops
-	adLength          = 2
+	adLength                = 2
 
 	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
 	PayloadTagLength = 16
@@ -46,6 +44,15 @@ const (
 	// SphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
 	// in bytes.
 	SphinxPlaintextHeaderLength = 1 + 1
+
+	// NodeIDLength is the node identifier length in bytes.
+	NodeIDLength = 32
+
+	// RecipientIDLength is the recipient identifier length in bytes.
+	RecipientIDLength = 64
+
+	// SURBIDLength is the SURB identifier length in bytes.
+	SURBIDLength = 16
 )
 
 var (
@@ -87,15 +94,17 @@ type Geometry struct {
 // format that has a pluggable NIKE, non-interactive key exchange.
 type Sphinx struct {
 	nike                 nike.Nike
+	nrHops               int
 	forwardPayloadLength int
 	geometry             *Geometry
 }
 
 // NewSphinx creates a new instance of Sphinx.
-func NewSphinx(n nike.Nike, forwardPayloadLength int) *Sphinx {
+func NewSphinx(n nike.Nike, forwardPayloadLength, nrHops int) *Sphinx {
 	s := &Sphinx{
 		nike:                 n,
 		forwardPayloadLength: forwardPayloadLength,
+		nrHops:               nrHops,
 	}
 	s.Geometry()
 	return s
@@ -120,10 +129,14 @@ func (s *Sphinx) Geometry() *Geometry {
 	return g
 }
 
+func (s *Sphinx) routingInfoLength() int {
+	return perHopRoutingInfoLength * s.nrHops
+}
+
 // HeaderLength returns the length of a Sphinx header in bytes.
 func (s *Sphinx) HeaderLength() int {
 	// 460 bytes with a 32byte public key
-	return adLength + s.nike.PublicKeySize() + routingInfoLength + crypto.MACLength
+	return adLength + s.nike.PublicKeySize() + s.routingInfoLength() + crypto.MACLength
 }
 
 // PacketLength returns the length of a Sphinx Packet in bytes.
@@ -184,7 +197,7 @@ func commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool) ([]byte, e
 
 func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	nrHops := len(path)
-	if nrHops > constants.NrHops {
+	if nrHops > s.nrHops {
 		return nil, nil, errors.New("sphinx: invalid path")
 	}
 
@@ -193,8 +206,8 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	defer clientPrivateKey.Reset()
 	defer clientPublicKey.Reset()
 
-	var groupElements [constants.NrHops]nike.PublicKey
-	var keys [constants.NrHops]*crypto.PacketKeys
+	groupElements := make([]nike.PublicKey, s.nrHops)
+	keys := make([]*crypto.PacketKeys, s.nrHops)
 
 	sharedSecret := s.nike.DeriveSecret(clientPrivateKey, path[0].PublicKey)
 	defer utils.ExplicitBzero(sharedSecret)
@@ -229,11 +242,11 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 
 	// Derive the routing_information keystream and encrypted padding for each
 	// hop.
-	var riKeyStream [constants.NrHops][]byte
-	var riPadding [constants.NrHops][]byte
+	riKeyStream := make([][]byte, s.nrHops)
+	riPadding := make([][]byte, s.nrHops)
 
 	for i := 0; i < nrHops; i++ {
-		keyStream := make([]byte, routingInfoLength+perHopRoutingInfoLength)
+		keyStream := make([]byte, s.routingInfoLength()+perHopRoutingInfoLength)
 		defer utils.ExplicitBzero(keyStream)
 
 		s := crypto.NewStream(&keys[i].HeaderEncryption, &keys[i].HeaderEncryptionIV)
@@ -252,7 +265,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	// Create the routing_information block.
 	var mac []byte
 	var routingInfo []byte
-	if skippedHops := constants.NrHops - nrHops; skippedHops > 0 {
+	if skippedHops := s.nrHops - nrHops; skippedHops > 0 {
 		routingInfo = make([]byte, skippedHops*perHopRoutingInfoLength)
 		_, err := io.ReadFull(rand.Reader, routingInfo)
 		if err != nil {
@@ -349,7 +362,7 @@ func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []
 	var (
 		geOff      = 2
 		riOff      = geOff + s.nike.PublicKeySize()
-		macOff     = riOff + routingInfoLength
+		macOff     = riOff + s.routingInfoLength()
 		payloadOff = macOff + crypto.MACLength
 	)
 
@@ -390,8 +403,8 @@ func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []
 
 	// Append padding to preserve length invariance, decrypt the (padded)
 	// routing_info block, and extract the section for the current hop.
-	var b [routingInfoLength + perHopRoutingInfoLength]byte
-	copy(b[:routingInfoLength], pkt[riOff:riOff+routingInfoLength])
+	b := make([]byte, s.routingInfoLength()+perHopRoutingInfoLength)
+	copy(b[:s.routingInfoLength()], pkt[riOff:riOff+s.routingInfoLength()])
 	stream := crypto.NewStream(&keys.HeaderEncryption, &keys.HeaderEncryptionIV)
 	defer stream.Reset()
 	stream.XORKeyStream(b[:], b[:])
