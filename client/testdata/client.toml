@@ -12,4 +12,4 @@
     PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
 
 [Debug]
-  PollingInterval = 1000
+  DisableDecoyTraffic = true
