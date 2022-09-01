@@ -56,7 +56,8 @@ type hexSphinxTest struct {
 func NoTestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike, 103, 5)
+	geo := GeometryFromForwardPayloadLength(mynike, 103, 5)
+	sphinx := NewSphinx(mynike, geo)
 
 	withSURB := false
 	hexTests := buildVectorSphinx(t, mynike, withSURB, sphinx)
@@ -78,7 +79,8 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	sphinx := NewSphinx(mynike, 103, 5)
+	geo := GeometryFromForwardPayloadLength(mynike, 103, 5)
+	sphinx := NewSphinx(mynike, geo)
 
 	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
@@ -157,8 +159,8 @@ func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sp
 
 	require := require.New(t)
 
-	tests := make([]hexSphinxTest, sphinx.nrHops+1)
-	for nrHops := 1; nrHops <= sphinx.nrHops; nrHops++ {
+	tests := make([]hexSphinxTest, sphinx.Geometry().NrHops+1)
+	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 
 		// Generate the "nodes" and path for the forward sphinx packet.
 		nodes, path := newNikePathVector(require, mynike, nrHops, withSURB)
@@ -193,7 +195,7 @@ func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sp
 			// Create the SURB.
 			surb, surbKeys, err = sphinx.NewSURB(rand.Reader, path)
 			require.NoError(err, "NewSURB failed")
-			require.Equal(sphinx.SURBLength(), len(surb), "SURB length")
+			require.Equal(sphinx.Geometry().SURBLength, len(surb), "SURB length")
 
 			// Create a reply packet using the SURB.
 			pkt, firstHop, err = sphinx.NewPacketFromSURB(surb, payload)
@@ -202,7 +204,7 @@ func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sp
 		} else {
 			pkt, err = sphinx.NewPacket(rand.Reader, path, payload)
 			require.NoError(err, "NewPacket failed")
-			require.Len(pkt, sphinx.HeaderLength()+PayloadTagLength+len(payload), "Packet Length")
+			require.Len(pkt, sphinx.Geometry().HeaderLength+PayloadTagLength+len(payload), "Packet Length")
 		}
 
 		tests[nrHops] = hexSphinxTest{
