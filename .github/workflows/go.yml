@@ -1,0 +1,19 @@
+name: build
+on: [push, pull_request]
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [1.17.x]
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Run all package unit tests
+        run: go test -v ./...
