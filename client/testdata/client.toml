@@ -165,4 +165,4 @@ F9mrgVb9WMGRl6XvHQcMFBVa5zLXdUxlRRDSsG9ZdQwrSCz4tPwiMhn+eFSjdOk1
 
 
 [Debug]
-  PollingInterval = 1000
+  DisableDecoyTraffic = true
