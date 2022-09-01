@@ -26,7 +26,8 @@ func TestCtidhForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	mynike := ctidhnike.NewCtidhNike()
-	sphinx := NewSphinx(mynike, len(testPayload), 5)
+	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(mynike, geo)
 
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
@@ -35,7 +36,8 @@ func TestCtidhSURB(t *testing.T) {
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
 	mynike := ctidhnike.NewCtidhNike()
-	sphinx := NewSphinx(mynike, len(testPayload), 5)
+	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(mynike, geo)
 
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }

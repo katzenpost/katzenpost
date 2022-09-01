@@ -56,7 +56,7 @@ func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 	k = append(k, keyPayload[:]...)
 
 	// Serialize the SURB into an opaque blob.
-	surb := make([]byte, 0, s.SURBLength())
+	surb := make([]byte, 0, s.geometry.SURBLength)
 	surb = append(surb, hdr...)
 	surb = append(surb, path[0].ID[:]...)
 	surb = append(surb, keyPayload[:]...)
@@ -68,17 +68,17 @@ func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 // and payload, and returns the packet and ID of the first hop.
 func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]byte, error) {
 	var (
-		idOff  = s.HeaderLength()
+		idOff  = s.geometry.HeaderLength
 		keyOff = idOff + constants.NodeIDLength
 		ivOff  = keyOff + crypto.SPRPKeyLength
 	)
 
-	if len(surb) != s.SURBLength() {
+	if len(surb) != s.geometry.SURBLength {
 		return nil, nil, errors.New("sphinx: invalid packet, truncated SURB")
 	}
 
 	// Deserialize the SURB.
-	hdr := surb[:s.HeaderLength()]
+	hdr := surb[:s.geometry.HeaderLength]
 	var nodeID [constants.NodeIDLength]byte
 	var sprpKey [crypto.SPRPKeyLength]byte
 	var sprpIV [crypto.SPRPIVLength]byte

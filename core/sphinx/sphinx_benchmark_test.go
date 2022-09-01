@@ -31,16 +31,18 @@ import (
 
 func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Nike) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
-	sphinx := NewSphinx(mynike, len(testPayload), 5)
 
-	nodes, path := benchNewPathVector(sphinx.nrHops, false, mynike)
+	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(mynike, geo)
+
+	nodes, path := benchNewPathVector(geo.NrHops, false, mynike)
 	payload := []byte(testPayload)
 
 	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 	if err != nil {
 		panic("wtf")
 	}
-	if len(pkt) != sphinx.HeaderLength()+PayloadTagLength+len(payload) {
+	if len(pkt) != geo.HeaderLength+PayloadTagLength+len(payload) {
 		panic("wtf")
 	}
 

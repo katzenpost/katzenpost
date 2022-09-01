@@ -22,7 +22,7 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/stretchr/testify/assert"
 	"github.com/ugorji/go/codec"
@@ -73,17 +73,29 @@ func TestBuildCommandVectors(t *testing.T) {
 	var emptyMsgSeq uint32 = 9876
 	messageEmpty := &MessageEmpty{Sequence: emptyMsgSeq}
 
-	msgPayload := make([]byte, constants.ForwardPayloadLength)
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := len(payload) + (sphinx.SphinxPlaintextHeaderLength + 556)
+	nrHops := 5
+	s := sphinx.NewSphinx(nike, forwardPayloadLength, nrHops)
+	geo := s.Geometry()
+	cmds := &Commands{
+		geo: geo,
+	}
+
+	msgPayload := make([]byte, cmds.geo.ForwardPayloadLength)
 	_, err := rand.Read(msgPayload)
 	assert.NoError(err)
 	var msgSeq uint32 = 9876
 	message := &Message{
+		cmds: cmds,
+		geo:  geo,
+
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
-		Payload:       msgPayload[:constants.UserForwardPayloadLength],
+		Payload:       msgPayload[:geo.UserForwardPayloadLength],
 	}
 
-	ackPayload := make([]byte, sphinx.PayloadTagLength+constants.ForwardPayloadLength)
+	ackPayload := make([]byte, sphinx.PayloadTagLength+cmds.geo.ForwardPayloadLength)
 	_, err = rand.Read(ackPayload)
 	assert.NoError(err)
 	cmdMessageACK := &MessageACK{
@@ -113,7 +125,7 @@ func TestBuildCommandVectors(t *testing.T) {
 		MessageEmptySeq:    emptyMsgSeq,
 		MessageHint:        hint,
 		MessageSeq:         msgSeq,
-		MessagePayload:     hex.EncodeToString(msgPayload[:constants.UserForwardPayloadLength]),
+		MessagePayload:     hex.EncodeToString(msgPayload[:cmds.geo.UserForwardPayloadLength]),
 		Message:            hex.EncodeToString(message.ToBytes()),
 		MessageAck:         hex.EncodeToString(cmdMessageACK.ToBytes()),
 		MessageAckHint:     hint,
@@ -146,16 +158,24 @@ func TestCommandVectors(t *testing.T) {
 	err = decoder.Decode(&cmdsTest)
 	assert.NoError(err)
 
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	s := sphinx.NewSphinx(nike, forwardPayloadLength, nrHops)
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
 	noOpBytes, err := hex.DecodeString(cmdsTest.NoOp)
 	assert.NoError(err)
-	cmd, err := FromBytes(noOpBytes)
+	cmd, err := cmds.FromBytes(noOpBytes)
 	assert.NoError(err)
 	_, ok := cmd.(*NoOp)
 	assert.True(ok)
 
 	disconnectBytes, err := hex.DecodeString(cmdsTest.Disconnect)
 	assert.NoError(err)
-	cmd, err = FromBytes(disconnectBytes)
+	cmd, err = cmds.FromBytes(disconnectBytes)
 	assert.NoError(err)
 	_, ok = cmd.(*Disconnect)
 	assert.True(ok)

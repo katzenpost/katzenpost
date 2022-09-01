@@ -87,7 +87,7 @@ func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int
 func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
-	for nrHops := 1; nrHops <= sphinx.nrHops; nrHops++ {
+	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the forward sphinx packet.
@@ -97,7 +97,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 		payload := []byte(testPayload)
 		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 		require.NoError(err, "NewPacket failed")
-		require.Len(pkt, sphinx.HeaderLength()+PayloadTagLength+len(payload), "Packet Length")
+		require.Len(pkt, sphinx.Geometry().HeaderLength+PayloadTagLength+len(payload), "Packet Length")
 
 		t.Logf("pkt: %s", hex.Dump(pkt))
 
@@ -133,7 +133,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
-	for nrHops := 1; nrHops <= sphinx.nrHops; nrHops++ {
+	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the SURB.
@@ -142,7 +142,7 @@ func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte
 		// Create the SURB.
 		surb, surbKeys, err := sphinx.NewSURB(rand.Reader, path)
 		require.NoError(err, "NewSURB failed")
-		require.Equal(sphinx.SURBLength(), len(surb), "SURB length")
+		require.Equal(sphinx.Geometry().SURBLength, len(surb), "SURB length")
 
 		// Create a reply packet using the SURB.
 		payload := []byte(testPayload)
