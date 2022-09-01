@@ -60,20 +60,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
-	if err != nil {
-		panic(err)
-	}
 
 	// create a client and connect to the mixnet Provider
 	c, err := client.New(cfg)
 	if err != nil {
 		panic(err)
 	}
-	session, err := c.NewSession(linkKey)
+	session, err := c.NewTOFUSession()
 	if err != nil {
 		panic(err)
 	}
+
+	session.WaitForDocument()
 
 	serviceDesc, err := session.GetService(service)
 	if err != nil {
