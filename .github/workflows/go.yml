@@ -16,4 +16,4 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Run all package unit tests
-        run: go test -v -timeout 0 ./...
+        run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -v -timeout 0 ./..."
