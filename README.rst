@@ -1,3 +1,5 @@
+.. image:: https://github.com/katzenpost/katzenpost/actions/workflows/go.yml/badge.svg?branch=test_add_ci
+  :target: https://github.com/katzenpost/katzenpost/actions
 
 .. image:: https://godoc.org/github.com/katzenpost/katzenpost/core?status.svg
   :target: https://godoc.org/github.com/katzenpost/katzenpost/core
