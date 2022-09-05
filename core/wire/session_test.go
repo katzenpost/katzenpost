@@ -23,10 +23,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gitlab.com/yawning/nyquist.git/kem"
+	"gitlab.com/yawning/nyquist.git/seec"
+
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
 type stubAuthenticator struct {
@@ -37,7 +39,7 @@ func (s *stubAuthenticator) IsPeerValid(peer *PeerCredentials) bool {
 	if subtle.ConstantTimeCompare(s.creds.AdditionalData, peer.AdditionalData) != 1 {
 		return false
 	}
-	if subtle.ConstantTimeCompare(s.creds.PublicKey.Bytes(), peer.PublicKey.Bytes()) != 1 {
+	if subtle.ConstantTimeCompare(s.creds.KEMPublicKey.Bytes(), peer.KEMPublicKey.Bytes()) != 1 {
 		return false
 	}
 
@@ -58,40 +60,46 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Generate the credentials used for authentication.  In a real deployment,
 	// this information is conveyed out of band somehow to the peer a priori.
-	authKeyAlice, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err, "Integration: Alice NewKeypair()")
+	seecGenRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
+	require.NoError(err)
+
+	authKEMKeyAlice, err := kem.Kyber1024.GenerateKeypair(seecGenRand)
+	require.NoError(err)
+
 	credsAlice := &PeerCredentials{
 		AdditionalData: []byte("alice@example.com"),
-		PublicKey:      authKeyAlice.PublicKey(),
+		KEMPublicKey:   authKEMKeyAlice.Public(),
 	}
 
-	authKeyBob, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err, "Integration: Bob NewKeypair()")
+	authKEMKeyBob, err := kem.Kyber1024.GenerateKeypair(seecGenRand)
+	require.NoError(err)
+
 	credsBob := &PeerCredentials{
 		AdditionalData: []byte("katzenpost.example.com"),
-		PublicKey:      authKeyBob.PublicKey(),
+		KEMPublicKey:   authKEMKeyBob.Public(),
 	}
 
 	// Alice's session setup.
 	cfgAlice := &SessionConfig{
-		Authenticator:     &stubAuthenticator{creds: credsBob},
-		AdditionalData:    credsAlice.AdditionalData,
-		AuthenticationKey: authKeyAlice,
-		RandomReader:      rand.Reader,
+		Authenticator:        &stubAuthenticator{creds: credsBob},
+		AdditionalData:       credsAlice.AdditionalData,
+		AuthenticationKEMKey: authKEMKeyAlice,
+		RandomReader:         rand.Reader,
 	}
 	sAlice, err := NewSession(cfgAlice, true)
 	require.NoError(err, "Integration: Alice NewSession()")
 
 	// Bob's session setup.
 	cfgBob := &SessionConfig{
-		Authenticator:     &stubAuthenticator{creds: credsAlice},
-		AdditionalData:    credsBob.AdditionalData,
-		AuthenticationKey: authKeyBob,
-		RandomReader:      rand.Reader,
+		Authenticator:        &stubAuthenticator{creds: credsAlice},
+		AdditionalData:       credsBob.AdditionalData,
+		AuthenticationKEMKey: authKEMKeyBob,
+		RandomReader:         rand.Reader,
 	}
 	sBob, err := NewSession(cfgBob, false)
 	require.NoError(err, "Integration: Bob NewSession()")
 
+	t.Log("before Pipe")
 	// Try handshaking and sending a simple command.
 	connAlice, connBob := net.Pipe()
 	var wg sync.WaitGroup
@@ -108,6 +116,7 @@ func TestSessionIntegration(t *testing.T) {
 		defer s.Close()
 		defer wg.Done()
 
+		t.Log("before Alice Initialize")
 		err := s.Initialize(conn)
 		require.NoError(err, "Integration: Alice Initialize()")
 

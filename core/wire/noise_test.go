@@ -17,12 +17,153 @@
 package wire
 
 import (
-	"crypto/rand"
 	"testing"
 
-	"github.com/katzenpost/noise"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"gitlab.com/yawning/nyquist.git"
+	"gitlab.com/yawning/nyquist.git/cipher"
+	"gitlab.com/yawning/nyquist.git/hash"
+	"gitlab.com/yawning/nyquist.git/kem"
+	"gitlab.com/yawning/nyquist.git/pattern"
+	"gitlab.com/yawning/nyquist.git/seec"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/noise"
 )
+
+func TestNyquistPqNoiseParams2(t *testing.T) {
+	seecGenRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
+	require.NoError(t, err, "seec.GenKeyPRPAES")
+
+	protocol := &nyquist.Protocol{
+		Pattern: pattern.PqXX,
+		KEM:     kem.Kyber1024,
+		Cipher:  cipher.ChaChaPoly,
+		Hash:    hash.BLAKE2s,
+	}
+
+	clientStatic, err := protocol.KEM.GenerateKeypair(seecGenRand)
+	require.NoError(t, err)
+
+	wireVersion := []byte{0x03} // Prologue indicates version 3.
+	maxMsgLen := 1048576
+
+	clientCfg := &nyquist.HandshakeConfig{
+		Protocol:       protocol,
+		Rng:            rand.Reader,
+		Prologue:       wireVersion,
+		MaxMessageSize: maxMsgLen,
+		KEM: &nyquist.KEMConfig{
+			LocalStatic: clientStatic,
+			GenKey:      seec.GenKeyPRPAES,
+		},
+		IsInitiator: true,
+	}
+
+	serverStatic, err := protocol.KEM.GenerateKeypair(seecGenRand)
+	require.NoError(t, err)
+	serverCfg := &nyquist.HandshakeConfig{
+		Protocol:       protocol,
+		Rng:            rand.Reader,
+		Prologue:       wireVersion,
+		MaxMessageSize: maxMsgLen,
+		KEM: &nyquist.KEMConfig{
+			LocalStatic: serverStatic,
+			GenKey:      seec.GenKeyPRPAES,
+		},
+		IsInitiator: false,
+	}
+
+	clientHs, err := nyquist.NewHandshake(clientCfg)
+	require.NoError(t, err)
+	defer clientHs.Reset()
+
+	serverHs, err := nyquist.NewHandshake(serverCfg)
+	require.NoError(t, err)
+	defer serverHs.Reset()
+
+	clientSs := clientHs.SymmetricState()
+	require.NotNil(t, clientSs)
+
+	clientCs := clientSs.CipherState()
+	require.NotNil(t, clientCs)
+
+	const (
+		prologueLen = 1
+		keyLen      = 32
+		// Length of Kyber1024 public key and KEM ciphertext.
+		kyberLen = 1568
+
+		// client
+		// -> (prologue), e
+		msg1Len = prologueLen + kyberLen
+
+		// server
+		// -> ekem, s, (auth)
+		msg2Len = 3168 + authLen
+
+		// client
+		// -> skem, s, (auth)
+		msg3Len = 3184 + authLen
+
+		// server
+		// -> skem
+		msg4Len = 1600
+
+		authLen = 1 + MaxAdditionalDataLength + 4
+	)
+
+	// (client) -> (prologue), e
+	clientMsg1, err := clientHs.WriteMessage(nil, nil)
+	require.NoError(t, err)
+
+	t.Logf("len clientMsg1 %d", len(clientMsg1))
+
+	_, err = serverHs.ReadMessage(nil, clientMsg1)
+	require.NoError(t, err)
+
+	// -> ekem, s, (auth)
+	rawAuth := make([]byte, authLen)
+	serverMsg1, err := serverHs.WriteMessage(nil, rawAuth)
+	require.NoError(t, err)
+
+	t.Logf("len serverMsg1 %d", len(serverMsg1))
+
+	_, err = clientHs.ReadMessage(nil, serverMsg1)
+	require.NoError(t, err)
+
+	// -> skem, s, (auth)
+	clientMsg2, err := clientHs.WriteMessage(nil, rawAuth)
+	require.NoError(t, err)
+
+	t.Logf("len clientMsg2 %d", len(clientMsg2))
+
+	_, err = serverHs.ReadMessage(nil, clientMsg2)
+	require.NoError(t, err)
+
+	// (server) -> skem
+	serverMsg2, err := serverHs.WriteMessage(nil, nil)
+	require.Equal(t, nyquist.ErrDone, err)
+
+	t.Logf("len serverMsg2 %d", len(serverMsg2))
+
+	_, err = clientHs.ReadMessage(nil, serverMsg2)
+	require.Equal(t, nyquist.ErrDone, err)
+
+	clientStatus := clientHs.GetStatus()
+	serverStatus := serverHs.GetStatus()
+
+	require.Equal(t, clientStatus.HandshakeHash, serverStatus.HandshakeHash)
+	require.Equal(t, clientStatus.KEM.LocalEphemeral.Bytes(), serverStatus.KEM.RemoteEphemeral.Bytes())
+	require.Equal(t, clientStatus.KEM.RemoteStatic.Bytes(), serverStatic.Public().Bytes())
+	require.Equal(t, serverStatus.KEM.RemoteStatic.Bytes(), clientStatic.Public().Bytes())
+	// Note: Unlike in normal XX, server does not generate `e`.
+	require.Nil(t, clientStatus.KEM.RemoteEphemeral)
+	require.Nil(t, serverStatus.KEM.LocalEphemeral)
+
+}
 
 func TestNoiseParams1(t *testing.T) {
 	assert := assert.New(t)
