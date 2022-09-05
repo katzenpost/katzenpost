@@ -177,6 +177,7 @@ func (s *Session) handshake() error {
 	if err != nil {
 		return err
 	}
+	defer handshake.Reset()
 	const (
 		prologueLen = 1
 		keyLen      = 32
