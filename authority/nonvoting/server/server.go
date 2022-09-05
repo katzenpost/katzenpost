@@ -216,7 +216,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	}
-	s.linkKey = s.identityKey.ToECDH()
+	s.linkKey = s.cfg.Debug.LinkKey
 	s.log.Noticef("Authority identity public key is: %s", s.identityKey.PublicKey())
 
 	if s.cfg.Debug.GenerateOnly {
