@@ -27,8 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/nyquist/kem"
-	"github.com/katzenpost/nyquist/seec"
 )
 
 type stubAuthenticator struct {
@@ -39,7 +37,7 @@ func (s *stubAuthenticator) IsPeerValid(peer *PeerCredentials) bool {
 	if subtle.ConstantTimeCompare(s.creds.AdditionalData, peer.AdditionalData) != 1 {
 		return false
 	}
-	if subtle.ConstantTimeCompare(s.creds.KEMPublicKey.Bytes(), peer.KEMPublicKey.Bytes()) != 1 {
+	if subtle.ConstantTimeCompare(s.creds.PublicKey.Bytes(), peer.PublicKey.Bytes()) != 1 {
 		return false
 	}
 
@@ -60,23 +58,21 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Generate the credentials used for authentication.  In a real deployment,
 	// this information is conveyed out of band somehow to the peer a priori.
-	seecGenRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
-	require.NoError(err)
-
-	authKEMKeyAlice, err := kem.Kyber768X25519.GenerateKeypair(seecGenRand)
+	scheme := NewScheme()
+	authKEMKeyAlice, err := scheme.GenerateKeypair(rand.Reader)
 	require.NoError(err)
 
 	credsAlice := &PeerCredentials{
 		AdditionalData: []byte("alice@example.com"),
-		KEMPublicKey:   authKEMKeyAlice.Public(),
+		PublicKey:      authKEMKeyAlice.PublicKey(),
 	}
 
-	authKEMKeyBob, err := kem.Kyber768X25519.GenerateKeypair(seecGenRand)
+	authKEMKeyBob, err := scheme.GenerateKeypair(rand.Reader)
 	require.NoError(err)
 
 	credsBob := &PeerCredentials{
 		AdditionalData: []byte("katzenpost.example.com"),
-		KEMPublicKey:   authKEMKeyBob.Public(),
+		PublicKey:      authKEMKeyBob.PublicKey(),
 	}
 
 	// Alice's session setup.
