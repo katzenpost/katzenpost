@@ -548,7 +548,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	if len(cfg.AdditionalData) > MaxAdditionalDataLength {
 		return nil, errors.New("wire/session: oversized AdditionalData")
 	}
-	if cfg.AuthenticationKEMKey == nil {
+	if cfg.AuthenticationKey == nil {
 		return nil, errors.New("wire/session: missing AuthenticationKEMKey")
 	}
 	if cfg.RandomReader == nil {
@@ -570,7 +570,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
 	}
-	s.authenticationKEMKey = cfg.AuthenticationKEMKey.(*privateKey).privateKey
+	s.authenticationKEMKey = cfg.AuthenticationKey.(*privateKey).privateKey
 
 	return s, nil
 }
@@ -586,9 +586,9 @@ type SessionConfig struct {
 	// than or equal to MaxAdditionalDataLength.
 	AdditionalData []byte
 
-	// AuthenticationKEMKey is the static long term authentication key used to
+	// AuthenticationKey is the static long term authentication key used to
 	// authenticate with the remote peer.
-	AuthenticationKEMKey PrivateKey
+	AuthenticationKey PrivateKey
 
 	// RandomReader is a cryptographic entropy source.
 	RandomReader io.Reader

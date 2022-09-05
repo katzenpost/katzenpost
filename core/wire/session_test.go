@@ -77,20 +77,20 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Alice's session setup.
 	cfgAlice := &SessionConfig{
-		Authenticator:        &stubAuthenticator{creds: credsBob},
-		AdditionalData:       credsAlice.AdditionalData,
-		AuthenticationKEMKey: authKEMKeyAlice,
-		RandomReader:         rand.Reader,
+		Authenticator:     &stubAuthenticator{creds: credsBob},
+		AdditionalData:    credsAlice.AdditionalData,
+		AuthenticationKey: authKEMKeyAlice,
+		RandomReader:      rand.Reader,
 	}
 	sAlice, err := NewSession(cfgAlice, true)
 	require.NoError(err, "Integration: Alice NewSession()")
 
 	// Bob's session setup.
 	cfgBob := &SessionConfig{
-		Authenticator:        &stubAuthenticator{creds: credsAlice},
-		AdditionalData:       credsBob.AdditionalData,
-		AuthenticationKEMKey: authKEMKeyBob,
-		RandomReader:         rand.Reader,
+		Authenticator:     &stubAuthenticator{creds: credsAlice},
+		AdditionalData:    credsBob.AdditionalData,
+		AuthenticationKey: authKEMKeyBob,
+		RandomReader:      rand.Reader,
 	}
 	sBob, err := NewSession(cfgBob, false)
 	require.NoError(err, "Integration: Bob NewSession()")
