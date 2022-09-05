@@ -17,19 +17,20 @@ require (
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/doubleratchet v0.0.13
 	github.com/katzenpost/noise v0.0.3
+	github.com/katzenpost/nyquist v0.0.0-20220905145943-9f7e8b431eaf
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/ugorji/go/codec v1.2.6
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
-	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344 // indirect
+	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
 	gitlab.com/yawning/nyquist.git v0.0.0-20210929192828-af6441cddcd7 // indirect
 	go.etcd.io/bbolt v1.3.6
-	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
-	golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f
+	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
+	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 	golang.org/x/text v0.3.7
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/eapache/channels.v1 v1.1.0

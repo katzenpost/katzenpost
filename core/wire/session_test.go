@@ -25,10 +25,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gitlab.com/yawning/nyquist.git/kem"
-	"gitlab.com/yawning/nyquist.git/seec"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/seec"
 )
 
 type stubAuthenticator struct {
@@ -63,7 +63,7 @@ func TestSessionIntegration(t *testing.T) {
 	seecGenRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
 	require.NoError(err)
 
-	authKEMKeyAlice, err := kem.Kyber1024.GenerateKeypair(seecGenRand)
+	authKEMKeyAlice, err := kem.Kyber768X25519.GenerateKeypair(seecGenRand)
 	require.NoError(err)
 
 	credsAlice := &PeerCredentials{
@@ -71,7 +71,7 @@ func TestSessionIntegration(t *testing.T) {
 		KEMPublicKey:   authKEMKeyAlice.Public(),
 	}
 
-	authKEMKeyBob, err := kem.Kyber1024.GenerateKeypair(seecGenRand)
+	authKEMKeyBob, err := kem.Kyber768X25519.GenerateKeypair(seecGenRand)
 	require.NoError(err)
 
 	credsBob := &PeerCredentials{

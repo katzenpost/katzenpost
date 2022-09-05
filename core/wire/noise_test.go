@@ -22,12 +22,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.com/yawning/nyquist.git"
-	"gitlab.com/yawning/nyquist.git/cipher"
-	"gitlab.com/yawning/nyquist.git/hash"
-	"gitlab.com/yawning/nyquist.git/kem"
-	"gitlab.com/yawning/nyquist.git/pattern"
-	"gitlab.com/yawning/nyquist.git/seec"
+	"github.com/katzenpost/nyquist"
+	"github.com/katzenpost/nyquist/cipher"
+	"github.com/katzenpost/nyquist/hash"
+	"github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/pattern"
+	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/noise"
@@ -39,10 +39,13 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
-		KEM:     kem.Kyber1024,
+		KEM:     kem.Kyber768X25519,
 		Cipher:  cipher.ChaChaPoly,
 		Hash:    hash.BLAKE2s,
 	}
+
+	t.Logf("KEM public key size: %d", protocol.KEM.PublicKeySize())
+	t.Logf("KEM ciphertext size: %d", protocol.KEM.CiphertextSize())
 
 	clientStatic, err := protocol.KEM.GenerateKeypair(seecGenRand)
 	require.NoError(t, err)
