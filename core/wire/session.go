@@ -106,7 +106,7 @@ func authenticateMessageFromBytes(b []byte) *authenticateMessage {
 // of PublicKey.
 type PeerCredentials struct {
 	AdditionalData []byte
-	KEMPublicKey   kem.PublicKey
+	PublicKey      PublicKey
 }
 
 // PeerAuthenticator is the interface used to authenticate the remote peer,
@@ -230,7 +230,10 @@ func (s *Session) handshake() error {
 		}
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
-			KEMPublicKey:   peerAuthenticationKEMKey,
+			PublicKey: &publicKey{
+				publicKey: peerAuthenticationKEMKey,
+				KEM:       s.protocol.KEM,
+			},
 		}
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
 			return errAuthenticationFailed
@@ -317,7 +320,10 @@ func (s *Session) handshake() error {
 
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
-			KEMPublicKey:   peerAuthenticationKEMKey,
+			PublicKey: &publicKey{
+				publicKey: peerAuthenticationKEMKey,
+				KEM:       s.protocol.KEM,
+			},
 		}
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
 			return errAuthenticationFailed
@@ -564,7 +570,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
 	}
-	s.authenticationKEMKey = cfg.AuthenticationKEMKey
+	s.authenticationKEMKey = cfg.AuthenticationKEMKey.(*privateKey).privateKey
 
 	return s, nil
 }
@@ -582,7 +588,7 @@ type SessionConfig struct {
 
 	// AuthenticationKEMKey is the static long term authentication key used to
 	// authenticate with the remote peer.
-	AuthenticationKEMKey kem.Keypair
+	AuthenticationKEMKey PrivateKey
 
 	// RandomReader is a cryptographic entropy source.
 	RandomReader io.Reader
