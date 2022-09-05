@@ -27,15 +27,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gitlab.com/yawning/nyquist.git"
-	"gitlab.com/yawning/nyquist.git/cipher"
-	"gitlab.com/yawning/nyquist.git/hash"
-	"gitlab.com/yawning/nyquist.git/kem"
-	"gitlab.com/yawning/nyquist.git/pattern"
-	"gitlab.com/yawning/nyquist.git/seec"
-
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/nyquist"
+	"github.com/katzenpost/nyquist/cipher"
+	"github.com/katzenpost/nyquist/hash"
+	"github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/pattern"
+	"github.com/katzenpost/nyquist/seec"
 )
 
 const (
@@ -178,27 +177,24 @@ func (s *Session) handshake() error {
 		return err
 	}
 	defer handshake.Reset()
-	const (
+	var (
 		prologueLen = 1
-		keyLen      = 32
-		// Length of Kyber1024 public key and KEM ciphertext.
-		kyberLen = 1568
 
 		// client
 		// -> (prologue), e
-		msg1Len = prologueLen + kyberLen
+		msg1Len = prologueLen + s.protocol.KEM.PublicKeySize()
 
 		// server
 		// -> ekem, s, (auth)
-		msg2Len = 3168 + authLen
+		msg2Len = 2368 + authLen
 
 		// client
 		// -> skem, s, (auth)
-		msg3Len = 3184 + authLen
+		msg3Len = 2384 + authLen
 
 		// server
 		// -> skem
-		msg4Len = 1600
+		msg4Len = 1152
 	)
 
 	if s.isInitiator {
@@ -556,7 +552,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     kem.Kyber1024,
+			KEM:     kem.Kyber768X25519,
 			Cipher:  cipher.ChaChaPoly,
 			Hash:    hash.BLAKE2s,
 		},
