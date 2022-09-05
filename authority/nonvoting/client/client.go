@@ -49,6 +49,9 @@ type Config struct {
 	// PublicKey is the authority's public key to use when validating documents.
 	PublicKey *eddsa.PublicKey
 
+	// LinkKey is the client's link layer keypair.
+	LinkKey *ecdh.PrivateKey
+
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
@@ -67,8 +70,6 @@ func (cfg *Config) validate() error {
 type client struct {
 	cfg *Config
 	log *logging.Logger
-
-	serverLinkKey *ecdh.PublicKey
 }
 
 func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
@@ -86,14 +87,10 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	}
 	c.log.Debugf("Signed descriptor: '%v'", signed)
 
-	// Convert the link key to an ECDH keypair.
-	linkKey := signingKey.ToECDH()
-	defer linkKey.Reset()
-
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	conn, s, err := c.initSession(ctx, doneCh, signingKey.PublicKey(), linkKey)
+	conn, s, err := c.initSession(ctx, doneCh, signingKey.PublicKey(), c.cfg.LinkKey)
 	if err != nil {
 		return err
 	}
@@ -132,17 +129,10 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
-	// Generate a random ecdh keypair to use for the link authentication.
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer linkKey.Reset()
-
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	conn, s, err := c.initSession(ctx, doneCh, nil, linkKey)
+	conn, s, err := c.initSession(ctx, doneCh, nil, c.cfg.LinkKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -245,7 +235,7 @@ func (c *client) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Warningf("nonvoting/Client: IsPeerValid(): AD mismatch: %v", hex.EncodeToString(creds.AdditionalData))
 		return false
 	}
-	if !c.serverLinkKey.Equal(creds.PublicKey) {
+	if !c.cfg.LinkKey.PublicKey().Equal(creds.PublicKey) {
 		c.log.Warningf("nonvoting/Client: IsPeerValid(): Public Key mismatch: %v", creds.PublicKey)
 		return false
 	}
@@ -271,7 +261,6 @@ func New(cfg *Config) (pki.Client, error) {
 	c := new(client)
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/nonvoting/client")
-	c.serverLinkKey = cfg.PublicKey.ToECDH()
 
 	return c, nil
 }

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -132,8 +133,8 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		// the node's clock is and the current time.
 	default:
 		// The peer is publishing for an epoch that's invalid.
-		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v'," +
-		" epoch should be around '%v'", rAddr, cmd.Epoch, now)
+		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v',"+
+			" epoch should be around '%v'", rAddr, cmd.Epoch, now)
 		return resp
 	}
 
@@ -179,6 +180,7 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 type wireAuthenticator struct {
 	s               *Server
 	peerIdentityKey *eddsa.PublicKey
+	peerLinkKey     *ecdh.PublicKey
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -204,8 +206,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	linkPk := a.peerIdentityKey.ToECDH()
-	if !linkPk.Equal(creds.PublicKey) {
+	if !a.peerLinkKey.Equal(creds.PublicKey) {
 		a.s.log.Debugf("Rejecting authentication, public key mismatch.")
 		return false
 	}

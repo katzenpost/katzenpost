@@ -26,10 +26,12 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/net/idna"
+
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"golang.org/x/net/idna"
 )
 
 const (
@@ -244,6 +246,9 @@ func (pCfg *Parameters) applyDefaults() {
 type Debug struct {
 	// IdentityKey specifies the identity private key.
 	IdentityKey *eddsa.PrivateKey `toml:"-"`
+
+	// LinkKey specifies the link private key.
+	LinkKey *ecdh.PrivateKey `toml:"-"`
 
 	// Layers is the number of non-provider layers in the network topology.
 	Layers int
