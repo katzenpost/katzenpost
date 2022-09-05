@@ -55,14 +55,14 @@ func (c *Client) GetConfig() *config.Config {
 }
 
 // PKIBootstrap returns a pkiClient and fetches a consensus.
-func PKIBootstrap(cfg *config.Config) (*pki.Client, *pki.Document, error) {
+func PKIBootstrap(cfg *config.Config, linkKey *ecdh.PrivateKey) (*pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
 	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
 	if err != nil {
 		return nil, nil, err
 	}
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
+	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg, linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -176,7 +176,7 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 	defer cancel()
 
 	// fetch a pki.Document
-	if _, doc, err = PKIBootstrap(c.cfg); err != nil {
+	if _, doc, err = PKIBootstrap(c.cfg, linkKey); err != nil {
 		return nil, err
 	}
 	// choose a provider

@@ -28,6 +28,7 @@ import (
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -117,8 +118,9 @@ type NonvotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey *ecdh.PrivateKey) (pki.Client, error) {
 	cfg := &nvClient.Config{
+		LinkKey:       linkKey,
 		LogBackend:    l,
 		Address:       nvACfg.Address,
 		PublicKey:     nvACfg.PublicKey,
@@ -140,8 +142,9 @@ type VotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey *ecdh.PrivateKey) (pki.Client, error) {
 	cfg := &vClient.Config{
+		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext("voting"),
@@ -162,12 +165,12 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey *ecdh.PrivateKey) (pki.Client, error) {
 	switch {
 	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg)
+		return c.NonvotingAuthority.New(l, pCfg, linkKey)
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg)
+		return c.VotingAuthority.New(l, pCfg, linkKey)
 	}
 	return nil, errors.New("no Authority found")
 }
