@@ -26,6 +26,7 @@ require (
 	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344 // indirect
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
+	gitlab.com/yawning/nyquist.git v0.0.0-20210929192828-af6441cddcd7 // indirect
 	go.etcd.io/bbolt v1.3.6
 	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
 	golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f
