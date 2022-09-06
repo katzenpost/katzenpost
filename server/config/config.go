@@ -33,10 +33,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -759,8 +759,9 @@ type Voting struct {
 // AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
 func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
+	scheme := wire.NewScheme()
 	for _, peer := range peers {
-		linkKey := new(ecdh.PublicKey)
+		linkKey := scheme.NewPublicKey()
 		err := linkKey.UnmarshalText([]byte(peer.LinkPublicKey))
 		if err != nil {
 			return nil, err
