@@ -39,7 +39,7 @@ type Glue interface {
 	Config() *config.Config
 	LogBackend() *log.Backend
 	IdentityKey() *eddsa.PrivateKey
-	LinkKey() *ecdh.PrivateKey
+	LinkKey() wire.PrivateKey
 
 	Management() *thwack.Server
 	MixKeys() MixKeys

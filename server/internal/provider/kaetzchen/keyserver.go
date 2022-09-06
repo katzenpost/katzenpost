@@ -92,7 +92,11 @@ func (k *kaetzchenKeyserver) OnRequest(id uint64, payload []byte, hasSURB bool) 
 	switch err {
 	case nil:
 		resp.StatusCode = keyserverStatusOk
-		resp.PublicKey = pubKey.String()
+		pubKey, err := pubKey.MarshalText()
+		if err != nil {
+			panic(err)
+		}
+		resp.PublicKey = string(pubKey)
 	case userdb.ErrNoSuchUser, userdb.ErrNoIdentity:
 		// Treat the user being missing as the user not having an
 		// identity key to make enumeration attacks minutely harder.
