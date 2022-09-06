@@ -62,6 +62,10 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
+
+	// LinkKey is the link key for the client's wire connections.
+	LinkKey *ecdh.PrivateKey
+
 	// LogBackend is the `core/log` Backend instance to use for logging.
 	LogBackend *log.Backend
 
@@ -258,15 +262,12 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	if err != nil {
 		return err
 	}
-	// Convert the link key to an ECDH keypair.
-	linkKey := signingKey.ToECDH()
-	defer linkKey.Reset()
 	// Dispatch the post_descriptor command.
 	cmd := &commands.PostDescriptor{
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, linkKey, signingKey.PublicKey(), cmd)
+	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingKey.PublicKey(), cmd)
 	if err != nil {
 		return err
 	}

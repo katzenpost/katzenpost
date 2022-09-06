@@ -1516,7 +1516,12 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 	_, ok := s.documents[epoch]
 	if !ok {
 		go func() {
-			cfg := &client.Config{s.s.logBackend, s.s.cfg.Authorities, nil}
+			cfg := &client.Config{
+				LinkKey:       s.s.linkKey,
+				LogBackend:    s.s.logBackend,
+				Authorities:   s.s.cfg.Authorities,
+				DialContextFn: nil,
+			}
 			c, err := client.New(cfg)
 			if err != nil {
 				return
