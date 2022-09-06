@@ -266,10 +266,6 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, isAuthority := a.s.state.authorizedAuthorities[pk]
 
 	if isMix || isProvider {
-		if !a.peerLinkKey.Equal(creds.PublicKey) {
-			a.s.log.Warning("Rejecting mix authentication, public key mismatch.")
-			return false
-		}
 		a.isMix = true // Providers and mixes are both mixes. :)
 		return true
 	} else if isAuthority {
