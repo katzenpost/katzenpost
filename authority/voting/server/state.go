@@ -36,7 +36,6 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -93,7 +92,7 @@ type state struct {
 	authorizedMixes       map[[eddsa.PublicKeySize]byte]bool
 	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
 	authorizedAuthorities map[[eddsa.PublicKeySize]byte]bool
-	authorityLinkKeys     map[[eddsa.PublicKeySize]byte]*ecdh.PublicKey
+	authorityLinkKeys     map[[eddsa.PublicKeySize]byte]wire.PublicKey
 
 	documents    map[uint64]*document
 	descriptors  map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
@@ -1481,7 +1480,7 @@ func newState(s *Server) (*state, error) {
 		pk := v.IdentityPublicKey.ByteArray()
 		st.authorizedAuthorities[pk] = true
 	}
-	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]*ecdh.PublicKey)
+	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]wire.PublicKey)
 	for _, v := range st.s.cfg.Authorities {
 		pk := v.IdentityPublicKey.ByteArray()
 		st.authorityLinkKeys[pk] = v.LinkPublicKey
