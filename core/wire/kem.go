@@ -157,6 +157,9 @@ type scheme struct {
 
 var _ Scheme = (*scheme)(nil)
 
+// NewScheme returns an unexported type that implements the above
+// Scheme interface for minimally encapsulating KEM related types
+// for non-cryptographic operations such as serialization and so on.
 func NewScheme() *scheme {
 	return &scheme{
 		KEM: kem.Kyber768X25519,
