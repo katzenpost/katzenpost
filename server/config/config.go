@@ -710,6 +710,9 @@ type Nonvoting struct {
 
 	// PublicKey is the authority's public key in Base64 or Base16 format.
 	PublicKey string
+
+	// LinkPublicKey is the authority's public link key in Base64 or Base16 format.
+	LinkPublicKey string
 }
 
 func (nCfg *Nonvoting) validate() error {

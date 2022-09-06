@@ -49,6 +49,9 @@ type Config struct {
 	// PublicKey is the authority's public key to use when validating documents.
 	PublicKey *eddsa.PublicKey
 
+	// AuthorityLinkKey is the authority's link key used in our noise wire protocol.
+	AuthorityLinkKey *ecdh.PublicKey
+
 	// LinkKey is the client's link layer keypair.
 	LinkKey *ecdh.PrivateKey
 
@@ -70,6 +73,8 @@ func (cfg *Config) validate() error {
 type client struct {
 	cfg *Config
 	log *logging.Logger
+
+	serverLinkKey *ecdh.PublicKey
 }
 
 func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
@@ -235,7 +240,7 @@ func (c *client) IsPeerValid(creds *wire.PeerCredentials) bool {
 		c.log.Warningf("nonvoting/Client: IsPeerValid(): AD mismatch: %v", hex.EncodeToString(creds.AdditionalData))
 		return false
 	}
-	if !c.cfg.LinkKey.PublicKey().Equal(creds.PublicKey) {
+	if !c.serverLinkKey.Equal(creds.PublicKey) {
 		c.log.Warningf("nonvoting/Client: IsPeerValid(): Public Key mismatch: %v", creds.PublicKey)
 		return false
 	}
@@ -261,6 +266,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c := new(client)
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/nonvoting/client")
+	c.serverLinkKey = cfg.AuthorityLinkKey
 
 	return c, nil
 }
