@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,8 +41,9 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDes
 	identityPriv, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err, "eddsa.NewKeypair()")
 	d.IdentityKey = identityPriv.PublicKey()
-	linkPriv, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err, "ecdh.NewKeypair()")
+	scheme := wire.NewScheme()
+	linkPriv, err := scheme.GenerateKeypair(rand.Reader)
+	require.NoError(err)
 	d.LinkKey = linkPriv.PublicKey()
 	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {

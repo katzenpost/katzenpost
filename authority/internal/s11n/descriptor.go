@@ -24,12 +24,16 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ugorji/go/codec"
+	"golang.org/x/net/idna"
+
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/ugorji/go/codec"
-	"golang.org/x/net/idna"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -47,6 +51,63 @@ type nodeDescriptor struct {
 	Version string
 
 	pki.MixDescriptor
+}
+
+type nodeDescriptorIntermediary struct {
+	// Version uniquely identifies the descriptor format as being for the
+	// specified version so that it can be rejected if the format changes.
+	Version string
+
+	// Name is the human readable (descriptive) node identifier.
+	Name string
+
+	// IdentityKey is the node's identity (signing) key.
+	IdentityKey *eddsa.PublicKey
+
+	// LinkKey is the node's wire protocol public key.
+	LinkKey string
+
+	// MixKeys is a map of epochs to Sphinx keys.
+	MixKeys map[uint64]*ecdh.PublicKey
+
+	// Addresses is the map of transport to address combinations that can
+	// be used to reach the node.
+	Addresses map[pki.Transport][]string
+
+	// Kaetzchen is the map of provider autoresponder agents by capability
+	// to parameters.
+	Kaetzchen map[string]map[string]interface{} `json:",omitempty"`
+
+	// Layer is the topology layer.
+	Layer uint8
+
+	// LoadWeight is the node's load balancing weight (unused).
+	LoadWeight uint8
+
+	// AuthenticationType is the authentication mechanism required
+	AuthenticationType string
+}
+
+func (n *nodeDescriptorIntermediary) nodeDescriptor() *nodeDescriptor {
+	m := new(nodeDescriptor)
+	m.Version = n.Version
+	m.Name = n.Name
+	m.IdentityKey = n.IdentityKey
+
+	scheme := wire.NewScheme()
+	m.LinkKey = scheme.NewPublicKey()
+	err := m.LinkKey.UnmarshalText([]byte(n.LinkKey))
+	if err != nil {
+		panic(err)
+	}
+
+	m.MixKeys = n.MixKeys
+	m.Addresses = n.Addresses
+	m.Kaetzchen = n.Kaetzchen
+	m.Layer = n.Layer
+	m.LoadWeight = n.LoadWeight
+	m.AuthenticationType = n.AuthenticationType
+	return m
 }
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
@@ -80,7 +141,7 @@ func GetVerifierFromDescriptor(rawDesc []byte) (cert.Verifier, error) {
 		return nil, err
 	}
 	// Parse the payload.
-	d := new(nodeDescriptor)
+	d := new(nodeDescriptorIntermediary)
 	dec := codec.NewDecoderBytes(payload, jsonHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, err
@@ -101,24 +162,25 @@ func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*
 	// Verify that the descriptor is signed by the verifier.
 	payload, err := cert.Verify(verifier, b)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Verify failed: %s", err.Error())
 	}
 
 	// Parse the payload.
-	d := new(nodeDescriptor)
+	d := new(nodeDescriptorIntermediary)
 	dec := codec.NewDecoderBytes(payload, jsonHandle)
 	if err = dec.Decode(d); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("JSON decoder failure: %s", err.Error())
 	}
 
 	// Ensure the descriptor is well formed.
 	if d.Version != nodeDescriptorVersion {
 		return nil, fmt.Errorf("Invalid Descriptor Version: '%v'", d.Version)
 	}
-	if err = IsDescriptorWellFormed(&d.MixDescriptor, epoch); err != nil {
+	desc := d.nodeDescriptor()
+	if err = IsDescriptorWellFormed(&desc.MixDescriptor, epoch); err != nil {
 		return nil, err
 	}
-	return &d.MixDescriptor, nil
+	return &desc.MixDescriptor, nil
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive

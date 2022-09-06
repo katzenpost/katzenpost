@@ -160,7 +160,8 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 
-		linkKey, err := ecdh.NewKeypair(rand.Reader)
+		scheme := wire.NewScheme()
+		linkKey, err := scheme.GenerateKeypair(rand.Reader)
 		if err != nil {
 			panic(err)
 		}
@@ -313,7 +314,7 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey, wg *sync.WaitGroup) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey *eddsa.PrivateKey, wg *sync.WaitGroup) {
 	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
@@ -380,12 +381,13 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int) (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey, error) {
+func generatePeer(peerNum int) (*config.AuthorityPeer, *eddsa.PrivateKey, wire.PrivateKey, error) {
 	identityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	linkPrivateKey, err := ecdh.NewKeypair(rand.Reader)
+	scheme := wire.NewScheme()
+	linkPrivateKey, err := scheme.GenerateKeypair(rand.Reader)
 	if err != nil {
 		panic(err)
 	}

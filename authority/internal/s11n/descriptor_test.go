@@ -17,14 +17,16 @@
 package s11n
 
 import (
-	"crypto/rand"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const debugTestEpoch = 0x23
@@ -50,8 +52,9 @@ func TestDescriptor(t *testing.T) {
 	identityPriv, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err, "eddsa.NewKeypair()")
 	d.IdentityKey = identityPriv.PublicKey()
-	linkPriv, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err, "ecdh.NewKeypair()")
+	scheme := wire.NewScheme()
+	linkPriv, err := scheme.GenerateKeypair(rand.Reader)
+	require.NoError(err)
 	d.LinkKey = linkPriv.PublicKey()
 	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
@@ -77,7 +80,7 @@ func TestDescriptor(t *testing.T) {
 
 	// Verify and deserialize the signed descriptor.
 	dd, err := VerifyAndParseDescriptor(identityPriv.PublicKey(), signed, debugTestEpoch)
-	require.NoError(err, "VerifyAndParseDescriptor()")
+	require.NoError(err)
 
 	t.Logf("Deserialized descriptor: '%v'", dd)
 
