@@ -15,6 +15,7 @@
 [NonvotingAuthority]
     Address = "127.0.0.1:29483"
     PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+    LinkPublicKey = "LrUot34FzoiSpJkUj50r9O33ChoQodDO6YAdT4kXImw="
 
 [Debug]
   DisableDecoyTraffic = true

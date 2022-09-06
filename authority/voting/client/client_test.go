@@ -159,10 +159,16 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			layer = 0
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
+
+		linkKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			panic(err)
+		}
+
 		mix := &pki.MixDescriptor{
 			Name:        name,
 			IdentityKey: mixIdentityPrivateKey.PublicKey(),
-			LinkKey:     mixIdentityPrivateKey.PublicKey().ToECDH(),
+			LinkKey:     linkKey.PublicKey(),
 			MixKeys:     mixKeys,
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
@@ -379,7 +385,10 @@ func generatePeer(peerNum int) (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	linkPrivateKey := identityPrivateKey.ToECDH()
+	linkPrivateKey, err := ecdh.NewKeypair(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
 	return &config.AuthorityPeer{
 		IdentityPublicKey: identityPrivateKey.PublicKey(),
 		LinkPublicKey:     linkPrivateKey.PublicKey(),

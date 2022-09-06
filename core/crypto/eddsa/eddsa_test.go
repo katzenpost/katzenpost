@@ -67,8 +67,4 @@ func TestEdDSAOps(t *testing.T) {
 	assert.Equal(SignatureSize, len(sig), "Sign() length")
 	assert.True(pubKey.Verify(sig, msg), "Verify(sig, msg)")
 	assert.False(pubKey.Verify(sig, msg[:16]), "Verify(sig, msg[:16])")
-
-	dhPrivKey := privKey.ToECDH()
-	dhPubKey := privKey.PublicKey().ToECDH()
-	assert.True(dhPrivKey.PublicKey().Equal(dhPubKey), "ToECDH() basic sanity")
 }

@@ -21,7 +21,17 @@ package server
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	_ "net/http/pprof"
+	"path/filepath"
+	"runtime"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	bolt "go.etcd.io/bbolt"
+	"golang.org/x/crypto/sha3"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -32,15 +42,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	bolt "go.etcd.io/bbolt"
-	"golang.org/x/crypto/sha3"
-	"io/ioutil"
-	"net/http"
-	_ "net/http/pprof"
-	"path/filepath"
-	"runtime"
 )
 
 func TestSharedRandomVerify(t *testing.T) {
@@ -161,7 +162,7 @@ func TestVote(t *testing.T) {
 		idKey, err := peer.Debug.IdentityKey.PublicKey().MarshalText()
 		require.NoError(err)
 
-		linkKey, err := peer.Debug.IdentityKey.PublicKey().ToECDH().MarshalText()
+		linkKey, err := peer.Debug.LinkKey.PublicKey().MarshalText()
 		require.NoError(err)
 		p := &sConfig.Peer{Addresses: peer.Authority.Addresses,
 			IdentityPublicKey: string(idKey),
@@ -187,24 +188,23 @@ func TestVote(t *testing.T) {
 	}
 
 	// generate a Topology section
-	topology := config.Topology{Layers: make([]config.Layer,3)}
-	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
-	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
-	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()}}
-
+	topology := config.Topology{Layers: make([]config.Layer, 3)}
+	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[0].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[1].Debug.IdentityKey.PublicKey()}}
+	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[2].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[3].Debug.IdentityKey.PublicKey()}}
+	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[4].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[5].Debug.IdentityKey.PublicKey()}}
 
 	// generate a conflicting Topology
 	// generate a Topology section
-	topology2 := config.Topology{Layers: make([]config.Layer,3)}
-	topology2.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
-	topology2.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
-	topology2.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()}}
+	topology2 := config.Topology{Layers: make([]config.Layer, 3)}
+	topology2.Layers[0].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[0].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[1].Debug.IdentityKey.PublicKey()}}
+	topology2.Layers[1].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[2].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[3].Debug.IdentityKey.PublicKey()}}
+	topology2.Layers[2].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[5].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[4].Debug.IdentityKey.PublicKey()}}
 
 	// one auth uses the conflicting topology, so we shall expect consensus with 2/3
 	authCfgs[0].Topology = &topology
@@ -230,16 +230,21 @@ func TestVote(t *testing.T) {
 			l = 255
 		}
 
+		linkKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			panic(err)
+		}
+
 		desc := &pki.MixDescriptor{
 			Name:        mixCfg.Server.Identifier,
 			IdentityKey: mixCfg.Debug.IdentityKey.PublicKey(),
-			LinkKey:     mixCfg.Debug.IdentityKey.PublicKey().ToECDH(),
+			LinkKey:     linkKey.PublicKey(),
 			MixKeys:     mkeys,
 			Layer:       l,
 			Addresses:   addr,
 		}
 
-		err := s11n.IsDescriptorWellFormed(desc, votingEpoch)
+		err = s11n.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
 		// Make a serialized + signed + serialized descriptor.
 		signed, err := s11n.SignDescriptor(mixCfg.Debug.IdentityKey, desc)
@@ -346,7 +351,12 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		if err != nil {
 			return nil, err
 		}
+		linkKey, err := ecdh.NewKeypair(rand.Reader)
+		if err != nil {
+			return nil, err
+		}
 		cfg.Debug = &config.Debug{
+			LinkKey:          linkKey,
 			IdentityKey:      idKey,
 			Layers:           3,
 			MinNodesPerLayer: 1,
@@ -355,7 +365,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		configs = append(configs, cfg)
 		authorityPeer := &config.AuthorityPeer{
 			IdentityPublicKey: cfg.Debug.IdentityKey.PublicKey(),
-			LinkPublicKey:     cfg.Debug.IdentityKey.PublicKey().ToECDH(),
+			LinkPublicKey:     cfg.Debug.LinkKey.PublicKey(),
 			Addresses:         cfg.Authority.Addresses,
 		}
 		peersMap[cfg.Debug.IdentityKey.PublicKey().ByteArray()] = authorityPeer
