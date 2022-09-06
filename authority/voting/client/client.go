@@ -27,7 +27,6 @@ import (
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -42,7 +41,7 @@ var defaultDialer = &net.Dialer{}
 // authorityAuthenticator implements the PeerAuthenticator interface
 type authorityAuthenticator struct {
 	IdentityPublicKey *eddsa.PublicKey
-	LinkPublicKey     *ecdh.PublicKey
+	LinkPublicKey     wire.PublicKey
 	log               *logging.Logger
 }
 
@@ -64,7 +63,7 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 type Config struct {
 
 	// LinkKey is the link key for the client's wire connections.
-	LinkKey *ecdh.PrivateKey
+	LinkKey wire.PrivateKey
 
 	// LogBackend is the `core/log` Backend instance to use for logging.
 	LogBackend *log.Backend
@@ -117,7 +116,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -200,7 +199,7 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
@@ -223,7 +222,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.Private
 	return responses, nil
 }
 
-func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.PrivateKey, cmd commands.Command) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -298,7 +297,8 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
 	// Generate a random ecdh keypair to use for the link authentication.
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	scheme := wire.NewScheme()
+	linkKey, err := scheme.GenerateKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}

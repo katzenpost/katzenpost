@@ -30,10 +30,10 @@ import (
 	"sync"
 
 	"github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -48,7 +48,7 @@ type Server struct {
 	cfg *config.Config
 
 	identityKey *eddsa.PrivateKey
-	linkKey     *ecdh.PrivateKey
+	linkKey     wire.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -213,7 +213,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
-	if s.linkKey, err = ecdh.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
+	scheme := wire.NewScheme()
+	if s.linkKey, err = scheme.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link: %v", err)
 		return nil, err
 	}

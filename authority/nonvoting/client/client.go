@@ -25,7 +25,6 @@ import (
 	"net"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -50,10 +49,10 @@ type Config struct {
 	PublicKey *eddsa.PublicKey
 
 	// AuthorityLinkKey is the authority's link key used in our noise wire protocol.
-	AuthorityLinkKey *ecdh.PublicKey
+	AuthorityLinkKey wire.PublicKey
 
 	// LinkKey is the client's link layer keypair.
-	LinkKey *ecdh.PrivateKey
+	LinkKey wire.PrivateKey
 
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
@@ -74,7 +73,7 @@ type client struct {
 	cfg *Config
 	log *logging.Logger
 
-	serverLinkKey *ecdh.PublicKey
+	serverLinkKey wire.PublicKey
 }
 
 func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
@@ -183,7 +182,7 @@ func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
 	return s11n.VerifyAndParseDocument(raw, c.cfg.PublicKey)
 }
 
-func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey *eddsa.PublicKey, linkKey *ecdh.PrivateKey) (net.Conn, *wire.Session, error) {
+func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey *eddsa.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {
 	// Connect to the peer.
 	dialFn := c.cfg.DialContextFn
 	if dialFn == nil {

@@ -26,10 +26,10 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
 )
 
@@ -251,7 +251,7 @@ type Debug struct {
 	IdentityKey *eddsa.PrivateKey `toml:"-"`
 
 	// LinkKey specifies the link layer private key.
-	LinkKey *ecdh.PrivateKey `toml:"-"`
+	LinkKey wire.PrivateKey `toml:"-"`
 
 	// Layers is the number of non-provider layers in the network topology.
 	Layers int
@@ -288,7 +288,7 @@ type AuthorityPeer struct {
 	// IdentityPublicKey is the peer's identity signing key.
 	IdentityPublicKey *eddsa.PublicKey
 	// LinkPublicKey is the peer's public link layer key.
-	LinkPublicKey *ecdh.PublicKey
+	LinkPublicKey wire.PublicKey
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string

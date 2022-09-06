@@ -19,6 +19,9 @@ package wire
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -33,6 +36,10 @@ import (
 // PublicKey is an interface used to abstract away the
 // details of the KEM Public Key being used in the wire package.
 type PublicKey interface {
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
+	encoding.TextMarshaler
+	encoding.TextUnmarshaler
 
 	// ToPEMFile writes out the PublicKey to a PEM file at path f.
 	ToPEMFile(f string) error
@@ -71,6 +78,9 @@ type PrivateKey interface {
 
 // Scheme provides a minimal abstraction around our KEM Scheme.
 type Scheme interface {
+
+	// NewPublicKey returns a new public key.
+	NewPublicKey() PublicKey
 
 	// GenerateKeypair generates a new KEM keypair using the provided
 	// entropy source.
@@ -120,6 +130,26 @@ func (p *publicKey) Bytes() []byte {
 	return p.publicKey.Bytes()
 }
 
+func (p *publicKey) MarshalBinary() (data []byte, err error) {
+	return p.Bytes(), nil
+}
+
+func (p *publicKey) UnmarshalBinary(data []byte) error {
+	return p.FromBytes(data)
+}
+
+func (p *publicKey) MarshalText() (text []byte, err error) {
+	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+}
+
+func (p *publicKey) UnmarshalText(text []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(text))
+	if err != nil {
+		return err
+	}
+	return p.FromBytes(raw)
+}
+
 type privateKey struct {
 	privateKey kem.Keypair
 	KEM        kem.KEM
@@ -164,6 +194,14 @@ func NewScheme() *scheme {
 	return &scheme{
 		KEM: kem.Kyber768X25519,
 	}
+}
+
+func (s *scheme) NewPublicKey() PublicKey {
+	privKey, err := s.GenerateKeypair(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	return privKey.PublicKey()
 }
 
 func (s *scheme) GenerateKeypair(r io.Reader) (PrivateKey, error) {
