@@ -115,16 +115,20 @@ type NonvotingAuthority struct {
 
 	// PublicKey is the authority's public key.
 	PublicKey *eddsa.PublicKey
+
+	// LinkPublicKey is the authority's link public key.
+	LinkPublicKey *ecdh.PublicKey
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
 func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey *ecdh.PrivateKey) (pki.Client, error) {
 	cfg := &nvClient.Config{
-		LinkKey:       linkKey,
-		LogBackend:    l,
-		Address:       nvACfg.Address,
-		PublicKey:     nvACfg.PublicKey,
-		DialContextFn: pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.String()),
+		AuthorityLinkKey: nvACfg.LinkPublicKey,
+		LinkKey:          linkKey,
+		LogBackend:       l,
+		Address:          nvACfg.Address,
+		PublicKey:        nvACfg.PublicKey,
+		DialContextFn:    pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.String()),
 	}
 	return nvClient.New(cfg)
 }
@@ -143,6 +147,7 @@ type VotingAuthority struct {
 
 // New constructs a pki.Client with the specified non-voting authority config.
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey *ecdh.PrivateKey) (pki.Client, error) {
+
 	cfg := &vClient.Config{
 		LinkKey:       linkKey,
 		LogBackend:    l,
@@ -150,6 +155,8 @@ func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey *e
 		DialContextFn: pCfg.ToDialContext("voting"),
 	}
 	return vClient.New(cfg)
+
+	return nil, errors.New("voting authority client unable to start")
 }
 
 func (vACfg *VotingAuthority) validate() error {

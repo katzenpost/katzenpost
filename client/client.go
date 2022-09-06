@@ -175,17 +175,17 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	// generate a linkKey
+	if linkKey, err = ecdh.NewKeypair(rand.Reader); err != nil {
+		return nil, err
+	}
+
 	// fetch a pki.Document
 	if _, doc, err = PKIBootstrap(c.cfg, linkKey); err != nil {
 		return nil, err
 	}
 	// choose a provider
 	if provider, err = SelectProvider(doc); err != nil {
-		return nil, err
-	}
-
-	// generate a linkKey
-	if linkKey, err = ecdh.NewKeypair(rand.Reader); err != nil {
 		return nil, err
 	}
 
