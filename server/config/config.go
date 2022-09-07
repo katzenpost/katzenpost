@@ -681,7 +681,7 @@ type PKI struct {
 	Voting    *Voting
 }
 
-func (pCfg *PKI) validate() error {
+func (pCfg *PKI) validate(datadir string) error {
 	nrCfg := 0
 	if pCfg.Nonvoting != nil && pCfg.Voting != nil {
 		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
@@ -692,7 +692,7 @@ func (pCfg *PKI) validate() error {
 		}
 		nrCfg++
 	} else {
-		if err := pCfg.Voting.validate(); err != nil {
+		if err := pCfg.Voting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
@@ -735,7 +735,7 @@ type Peer struct {
 	LinkPublicKeyPem  string
 }
 
-func (p *Peer) validate() error {
+func (p *Peer) validate(datadir string) error {
 	for _, address := range p.Addresses {
 		if err := utils.EnsureAddrIPPort(address); err != nil {
 			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
@@ -747,7 +747,7 @@ func (p *Peer) validate() error {
 	}
 	scheme := wire.NewScheme()
 	linkPubKey := scheme.NewPublicKey()
-	err := linkPubKey.FromPEMFile(p.LinkPublicKeyPem)
+	err := linkPubKey.FromPEMFile(filepath.Join(datadir, p.LinkPublicKeyPem))
 	if err != nil {
 		return fmt.Errorf("Voting Peer: Invalid Link PublicKey PEM file: %v", err)
 	}
@@ -784,9 +784,9 @@ func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.Authority
 	return authPeers, nil
 }
 
-func (vCfg *Voting) validate() error {
+func (vCfg *Voting) validate(datadir string) error {
 	for _, peer := range vCfg.Peers {
-		err := peer.validate()
+		err := peer.validate(datadir)
 		if err != nil {
 			return err
 		}
@@ -857,7 +857,7 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.Server.validate(); err != nil {
 		return err
 	}
-	if err := cfg.PKI.validate(); err != nil {
+	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
 	}
 	if cfg.Server.IsProvider {
