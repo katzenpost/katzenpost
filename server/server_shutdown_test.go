@@ -19,10 +19,12 @@ package server
 
 import (
 	"io/ioutil"
+	"path/filepath"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/stretchr/testify/assert"
 )
@@ -32,6 +34,12 @@ func TestServerStartShutdown(t *testing.T) {
 
 	dir, err := ioutil.TempDir("", "server_data_dir")
 	assert.NoError(err)
+
+	authLinkPubKeyPem := filepath.Join(dir, "auth_link_pub_key.pem")
+	scheme := wire.NewScheme()
+	authLinkPrivKey, err := scheme.GenerateKeypair(rand.Reader)
+	assert.NoError(err)
+	authLinkPrivKey.PublicKey().ToPEMFile(authLinkPubKeyPem)
 
 	authkey, err := eddsa.NewKeypair(rand.Reader)
 	assert.NoError(err)
@@ -56,8 +64,9 @@ func TestServerStartShutdown(t *testing.T) {
 		Provider: nil,
 		PKI: &config.PKI{
 			Nonvoting: &config.Nonvoting{
-				Address:   "127.0.0.1:3321",
-				PublicKey: authKeyStr,
+				Address:          "127.0.0.1:3321",
+				PublicKey:        authKeyStr,
+				LinkPublicKeyPem: authLinkPubKeyPem,
 			},
 		},
 		Management: &config.Management{
