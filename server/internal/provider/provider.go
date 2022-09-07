@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -395,8 +394,8 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	}
 
 	// Deserialize the public key.
-	var pubKey ecdh.PublicKey
-	if err := pubKey.FromString(sp[2]); err != nil {
+	pubKey := wire.NewScheme().NewPublicKey()
+	if err := pubKey.UnmarshalText([]byte(sp[2])); err != nil {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
@@ -407,7 +406,7 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid user: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
-	if err = p.userDB.Add(u, &pubKey, isUpdate); err != nil {
+	if err = p.userDB.Add(u, pubKey, isUpdate); err != nil {
 		c.Log().Errorf("Failed to add/update user: %v", err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
@@ -477,14 +476,13 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 	p.Lock()
 	defer p.Unlock()
 
-	var pubKey *ecdh.PublicKey
+	pubKey := wire.NewScheme().NewPublicKey()
 
 	sp := strings.Split(l, " ")
 	switch len(sp) {
 	case 2:
 	case 3:
-		pubKey = new(ecdh.PublicKey)
-		if err := pubKey.FromString(sp[2]); err != nil {
+		if err := pubKey.UnmarshalText([]byte(sp[2])); err != nil {
 			c.Log().Errorf("SET_USER_IDENTITY invalid public key: %v", err)
 			return c.WriteReply(thwack.StatusSyntaxError)
 		}

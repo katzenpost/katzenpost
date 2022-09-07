@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -49,7 +48,7 @@ type ClientConfig struct {
 	ProviderKeyPin *eddsa.PublicKey
 
 	// LinkKey is the user's ECDH link authentication private key.
-	LinkKey *ecdh.PrivateKey
+	LinkKey wire.PrivateKey
 
 	// LogBackend is the logging backend to use for client logging.
 	LogBackend *log.Backend

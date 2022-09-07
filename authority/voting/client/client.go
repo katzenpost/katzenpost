@@ -89,7 +89,7 @@ func (cfg *Config) validate() error {
 		if v.IdentityPublicKey == nil {
 			return fmt.Errorf("voting/client: Identity PublicKey is mandatory")
 		}
-		if v.LinkPublicKey == nil {
+		if v.LinkPublicKey == "" {
 			return fmt.Errorf("voting/client: Link PublicKey is mandatory")
 		}
 	}
@@ -152,10 +152,15 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	if signingKey != nil {
 		ad = signingKey.Bytes()
 	}
+	linkPublicKey := wire.NewScheme().NewPublicKey()
+	err = linkPublicKey.UnmarshalText([]byte(peer.LinkPublicKey))
+	if err != nil {
+		return nil, err
+	}
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
-		LinkPublicKey:     peer.LinkPublicKey,
+		LinkPublicKey:     linkPublicKey,
 		log:               p.log,
 	}
 

@@ -24,13 +24,12 @@ import (
 	"path/filepath"
 	"sync"
 
-	"gitlab.com/yawning/aez.git"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/cryptoworker"
 	"github.com/katzenpost/katzenpost/server/internal/decoy"
@@ -41,6 +40,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pki"
 	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"gitlab.com/yawning/aez.git"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -54,7 +54,7 @@ type Server struct {
 	cfg *config.Config
 
 	identityKey *eddsa.PrivateKey
-	linkKey     *ecdh.PrivateKey
+	linkKey     wire.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -260,7 +260,8 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
 	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
-	if s.linkKey, err = ecdh.Load(linkKeyFile, "", rand.Reader); err != nil {
+	scheme := wire.NewScheme()
+	if s.linkKey, err = scheme.Load(linkKeyFile, "", rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
 		return nil, err
 	}
@@ -407,7 +408,7 @@ func (g *serverGlue) IdentityKey() *eddsa.PrivateKey {
 	return g.s.identityKey
 }
 
-func (g *serverGlue) LinkKey() *ecdh.PrivateKey {
+func (g *serverGlue) LinkKey() wire.PrivateKey {
 	return g.s.linkKey
 }
 
