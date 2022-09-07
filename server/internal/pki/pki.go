@@ -701,7 +701,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
 		}
 		authPubKey := wire.NewScheme().NewPublicKey()
-		err = authPubKey.UnmarshalText([]byte(glue.Config().PKI.Nonvoting.LinkPublicKey))
+		err = authPubKey.FromPEMFile(glue.Config().PKI.Nonvoting.LinkPublicKeyPem)
 		if err != nil {
 			return nil, err
 		}
