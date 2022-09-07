@@ -19,15 +19,15 @@ package kaetzchen
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/stretchr/testify/require"
 )
 
-func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey *ecdh.PrivateKey, idKey *eddsa.PrivateKey) *mockGlue {
+func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey wire.PrivateKey, idKey *eddsa.PrivateKey) *mockGlue {
 	goo := &mockGlue{
 		s: &mockServer{
 			logBackend: logBackend,
@@ -59,10 +59,11 @@ func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)
 
-	userKey, err := ecdh.NewKeypair(rand.Reader)
+	scheme := wire.NewScheme()
+	userKey, err := scheme.GenerateKeypair(rand.Reader)
 	require.NoError(err)
 
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	linkKey, err := scheme.GenerateKeypair(rand.Reader)
 	require.NoError(err)
 
 	mockProvider := &mockProvider{
