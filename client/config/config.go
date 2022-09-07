@@ -155,9 +155,10 @@ type VotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 
 	cfg := &vClient.Config{
+		DataDir:       datadir,
 		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
@@ -186,7 +187,7 @@ func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.P
 	case c.NonvotingAuthority != nil:
 		return c.NonvotingAuthority.New(l, pCfg, linkKey, datadir)
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey)
+		return c.VotingAuthority.New(l, pCfg, linkKey, datadir)
 	}
 	return nil, errors.New("no Authority found")
 }

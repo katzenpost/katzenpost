@@ -1,4 +1,6 @@
 
+DataDir = "./testdata/"
+
 [UpstreamProxy]
   Type = "none"
 
