@@ -1481,9 +1481,15 @@ func newState(s *Server) (*state, error) {
 		st.authorizedAuthorities[pk] = true
 	}
 	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]wire.PublicKey)
+	scheme := wire.NewScheme()
 	for _, v := range st.s.cfg.Authorities {
+		linkPubKey := scheme.NewPublicKey()
+		err := linkPubKey.UnmarshalText([]byte(v.LinkPublicKey))
+		if err != nil {
+			return nil, err
+		}
 		pk := v.IdentityPublicKey.ByteArray()
-		st.authorityLinkKeys[pk] = v.LinkPublicKey
+		st.authorityLinkKeys[pk] = linkPubKey
 	}
 
 	st.documents = make(map[uint64]*document)

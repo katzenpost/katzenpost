@@ -773,7 +773,7 @@ func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 		}
 		authPeer := &config.AuthorityPeer{
 			IdentityPublicKey: identityKey,
-			LinkPublicKey:     linkKey,
+			LinkPublicKey:     peer.LinkPublicKey,
 			Addresses:         peer.Addresses,
 		}
 		authPeers = append(authPeers, authPeer)

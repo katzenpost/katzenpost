@@ -26,11 +26,12 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/net/idna"
+
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
-	"golang.org/x/net/idna"
 )
 
 const (
@@ -247,12 +248,6 @@ func (pCfg *Parameters) applyDefaults() {
 
 // Debug is the authority debug configuration.
 type Debug struct {
-	// IdentityKey specifies the identity private key.
-	IdentityKey *eddsa.PrivateKey `toml:"-"`
-
-	// LinkKey specifies the link layer private key.
-	LinkKey wire.PrivateKey `toml:"-"`
-
 	// Layers is the number of non-provider layers in the network topology.
 	Layers int
 
@@ -288,7 +283,7 @@ type AuthorityPeer struct {
 	// IdentityPublicKey is the peer's identity signing key.
 	IdentityPublicKey *eddsa.PublicKey
 	// LinkPublicKey is the peer's public link layer key.
-	LinkPublicKey wire.PublicKey
+	LinkPublicKey string
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
@@ -304,10 +299,12 @@ func (a *AuthorityPeer) Validate() error {
 	if a.IdentityPublicKey == nil {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Identity Key", a)
 	}
-	if a.LinkPublicKey == nil {
+	if a.LinkPublicKey == "" {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key", a)
 	}
-	return nil
+	scheme := wire.NewScheme()
+	pubKey := scheme.NewPublicKey()
+	return pubKey.UnmarshalText([]byte(a.LinkPublicKey))
 }
 
 // Node is an authority mix node or provider entry.
