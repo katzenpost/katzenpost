@@ -22,6 +22,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -381,19 +383,19 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int) (*config.AuthorityPeer, *eddsa.PrivateKey, wire.PrivateKey, error) {
+func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, *eddsa.PrivateKey, wire.PrivateKey, error) {
 	identityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	scheme := wire.NewScheme()
-	linkPrivateKey, err := scheme.GenerateKeypair(rand.Reader)
+	linkPrivateKey, err := scheme.Load(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)), filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), rand.Reader)
 	if err != nil {
 		panic(err)
 	}
 	return &config.AuthorityPeer{
 		IdentityPublicKey: identityPrivateKey.PublicKey(),
-		LinkPublicKey:     linkPrivateKey.PublicKey(),
+		LinkPublicKeyPem:  filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)),
 		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}, identityPrivateKey, linkPrivateKey, nil
 }
@@ -405,9 +407,12 @@ func TestClient(t *testing.T) {
 	require.NoError(err)
 	dialer := newMockDialer(logBackend)
 	peers := []*config.AuthorityPeer{}
+
+	datadir := os.TempDir()
+
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
+		peer, idPrivKey, linkPrivKey, err := generatePeer(i, datadir)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)
