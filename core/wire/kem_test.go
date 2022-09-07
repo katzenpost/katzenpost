@@ -18,6 +18,8 @@
 package wire
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -26,8 +28,9 @@ import (
 )
 
 func TestKEMPEM(t *testing.T) {
-	privFile := "client_priv_key.pem"
-	pubFile := "client_pub_key.pem"
+	dir := os.TempDir()
+	privFile := filepath.Join(dir, "client_priv_key.pem")
+	pubFile := filepath.Join(dir, "client_pub_key.pem")
 	privKey, err := NewScheme().Load(privFile, pubFile, rand.Reader)
 	require.NoError(t, err)
 
@@ -35,8 +38,4 @@ func TestKEMPEM(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, privKey.Bytes(), privKey2.Bytes())
-
-	pubFile2 := "client_pub_key2.pem"
-	err = privKey2.PublicKey().ToPEMFile(pubFile2)
-	require.NoError(t, err)
 }
