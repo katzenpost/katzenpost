@@ -32,14 +32,15 @@ import (
 func TestServerStartShutdown(t *testing.T) {
 	assert := assert.New(t)
 
-	dir, err := ioutil.TempDir("", "server_data_dir")
+	datadir, err := ioutil.TempDir("", "server_data_dir")
 	assert.NoError(err)
 
-	authLinkPubKeyPem := filepath.Join(dir, "auth_link_pub_key.pem")
+	authLinkPubKeyPem := "auth_link_pub_key.pem"
+
 	scheme := wire.NewScheme()
 	authLinkPrivKey, err := scheme.GenerateKeypair(rand.Reader)
 	assert.NoError(err)
-	authLinkPrivKey.PublicKey().ToPEMFile(authLinkPubKeyPem)
+	authLinkPrivKey.PublicKey().ToPEMFile(filepath.Join(datadir, authLinkPubKeyPem))
 
 	authkey, err := eddsa.NewKeypair(rand.Reader)
 	assert.NoError(err)
@@ -53,7 +54,7 @@ func TestServerStartShutdown(t *testing.T) {
 		Server: &config.Server{
 			Identifier: "testserver",
 			Addresses:  []string{"127.0.0.1:1234"},
-			DataDir:    dir,
+			DataDir:    datadir,
 			IsProvider: false,
 		},
 		Logging: &config.Logging{
