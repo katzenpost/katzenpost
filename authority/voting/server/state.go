@@ -1484,7 +1484,7 @@ func newState(s *Server) (*state, error) {
 	scheme := wire.NewScheme()
 	for _, v := range st.s.cfg.Authorities {
 		linkPubKey := scheme.NewPublicKey()
-		err := linkPubKey.FromPEMFile(v.LinkPublicKeyPem)
+		err := linkPubKey.FromPEMFile(filepath.Join(s.cfg.Authority.DataDir, v.LinkPublicKeyPem))
 		if err != nil {
 			return nil, err
 		}
