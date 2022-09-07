@@ -66,11 +66,12 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
 	session, err := c.NewTOFUSession()
 	if err != nil {
 		panic(err)
 	}
+
+	session.WaitForDocument()
 
 	serviceDesc, err := session.GetService(service)
 	if err != nil {
