@@ -121,6 +121,10 @@ func NewSession(
 	if err != nil {
 		panic(err)
 	}
+	if len(linkKeyText) > 64 {
+		linkKeyText = linkKeyText[:64]
+	}
+
 	clientCfg := &minclient.ClientConfig{
 		User:                string(linkKeyText),
 		Provider:            s.provider.Name,

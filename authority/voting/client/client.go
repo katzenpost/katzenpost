@@ -25,6 +25,8 @@ import (
 	"net"
 	"path/filepath"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
@@ -34,7 +36,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -53,8 +54,8 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData[:])
 		return false
 	}
-	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %v != %v", a.LinkPublicKey, creds.PublicKey)
+	if !bytes.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
+		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %x != %x", a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes())
 		return false
 	}
 	return true
