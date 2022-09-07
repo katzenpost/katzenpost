@@ -732,7 +732,7 @@ func (nCfg *Nonvoting) validate() error {
 type Peer struct {
 	Addresses         []string
 	IdentityPublicKey string
-	LinkPublicKey     string
+	LinkPublicKeyPem  string
 }
 
 func (p *Peer) validate() error {
@@ -745,8 +745,11 @@ func (p *Peer) validate() error {
 	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
 		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
 	}
-	if err := pubKey.FromString(p.LinkPublicKey); err != nil {
-		return fmt.Errorf("Voting Peer: Invalid LinkPublicKey: %v", err)
+	scheme := wire.NewScheme()
+	linkPubKey := scheme.NewPublicKey()
+	err := linkPubKey.FromPEMFile(p.LinkPublicKeyPem)
+	if err != nil {
+		return fmt.Errorf("Voting Peer: Invalid Link PublicKey PEM file: %v", err)
 	}
 	return nil
 }
@@ -762,7 +765,7 @@ func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 	scheme := wire.NewScheme()
 	for _, peer := range peers {
 		linkKey := scheme.NewPublicKey()
-		err := linkKey.UnmarshalText([]byte(peer.LinkPublicKey))
+		err := linkKey.FromPEMFile(peer.LinkPublicKeyPem)
 		if err != nil {
 			return nil, err
 		}
@@ -773,7 +776,7 @@ func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 		}
 		authPeer := &config.AuthorityPeer{
 			IdentityPublicKey: identityKey,
-			LinkPublicKey:     peer.LinkPublicKey,
+			LinkPublicKeyPem:  peer.LinkPublicKeyPem,
 			Addresses:         peer.Addresses,
 		}
 		authPeers = append(authPeers, authPeer)
