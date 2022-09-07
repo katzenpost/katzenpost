@@ -282,15 +282,16 @@ func (dCfg *Debug) applyDefaults() {
 type AuthorityPeer struct {
 	// IdentityPublicKey is the peer's identity signing key.
 	IdentityPublicKey *eddsa.PublicKey
-	// LinkPublicKey is the peer's public link layer key.
-	LinkPublicKey string
+	// LinkPublicKeyPem is the filename containing the PEM file
+	// of the peer's public link layer key.
+	LinkPublicKeyPem string
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
 }
 
 // Validate parses and checks the AuthorityPeer configuration.
-func (a *AuthorityPeer) Validate() error {
+func (a *AuthorityPeer) Validate(datadir string) error {
 	for _, v := range a.Addresses {
 		if err := utils.EnsureAddrIPPort(v); err != nil {
 			return fmt.Errorf("config: AuthorityPeer: Address '%v' is invalid: %v", v, err)
@@ -299,12 +300,13 @@ func (a *AuthorityPeer) Validate() error {
 	if a.IdentityPublicKey == nil {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Identity Key", a)
 	}
-	if a.LinkPublicKey == "" {
-		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key", a)
+	if a.LinkPublicKeyPem == "" {
+		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key PEM filename", a)
 	}
+
 	scheme := wire.NewScheme()
-	pubKey := scheme.NewPublicKey()
-	return pubKey.UnmarshalText([]byte(a.LinkPublicKey))
+	peerLinkKey := scheme.NewPublicKey()
+	return peerLinkKey.FromPEMFile(filepath.Join(datadir, a.LinkPublicKeyPem))
 }
 
 // Node is an authority mix node or provider entry.
@@ -421,6 +423,13 @@ func (cfg *Config) FixupAndValidate() error {
 			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKey)
 		}
 		pkMap[tmp] = v
+	}
+
+	for _, auth := range cfg.Authorities {
+		err := auth.Validate(cfg.Authority.DataDir)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -44,6 +44,9 @@ type PublicKey interface {
 	// ToPEMFile writes out the PublicKey to a PEM file at path f.
 	ToPEMFile(f string) error
 
+	// FromPEMFile reads the PublicKey from the PEM file at path f.
+	FromPEMFile(f string) error
+
 	// Reset clears the PublicKey structure such that no sensitive data is left
 	// in memory.
 	Reset()
@@ -98,11 +101,28 @@ type publicKey struct {
 	KEM       kem.KEM
 }
 
+func (p *publicKey) FromPEMFile(f string) error {
+	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
+
+	buf, err := ioutil.ReadFile(f)
+	if err != nil {
+		return err
+	}
+	blk, _ := pem.Decode(buf)
+	if blk == nil {
+		return fmt.Errorf("failed to decode PEM file %v", f)
+	}
+	if blk.Type != keyType {
+		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
+	}
+	return p.FromBytes(blk.Bytes)
+}
+
 func (p *publicKey) ToPEMFile(f string) error {
 	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
 
 	if utils.CtIsZero(p.Bytes()) {
-		return fmt.Errorf("core/wire: attempted to serialize scrubbed key")
+		return fmt.Errorf("attempted to serialize scrubbed key")
 	}
 	blk := &pem.Block{
 		Type:  keyType,

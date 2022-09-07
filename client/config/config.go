@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
 	nvClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -164,7 +165,7 @@ func (vACfg *VotingAuthority) validate() error {
 		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
+		if peer.IdentityPublicKey == nil || peer.LinkPublicKeyPem == "" || len(peer.Addresses) == 0 {
 			return errors.New("invalid voting authority peer")
 		}
 	}
