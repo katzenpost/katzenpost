@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -117,14 +118,21 @@ type NonvotingAuthority struct {
 	// PublicKey is the authority's public key.
 	PublicKey *eddsa.PublicKey
 
-	// LinkPublicKey is the authority's link public key.
-	LinkPublicKey wire.PublicKey
+	// LinkPublicKeyPem is the absolute file path to the
+	// authority's link public key.
+	LinkPublicKeyPem string
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+	scheme := wire.NewScheme()
+	authLinkKey := scheme.NewPublicKey()
+	err := authLinkKey.FromPEMFile(filepath.Join(datadir, nvACfg.LinkPublicKeyPem))
+	if err != nil {
+		return nil, err
+	}
 	cfg := &nvClient.Config{
-		AuthorityLinkKey: nvACfg.LinkPublicKey,
+		AuthorityLinkKey: authLinkKey,
 		LinkKey:          linkKey,
 		LogBackend:       l,
 		Address:          nvACfg.Address,
@@ -146,7 +154,7 @@ type VotingAuthority struct {
 	Peers []*vServerConfig.AuthorityPeer
 }
 
-// New constructs a pki.Client with the specified non-voting authority config.
+// New constructs a pki.Client with the specified voting authority config.
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 
 	cfg := &vClient.Config{
@@ -173,10 +181,10 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	switch {
 	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg, linkKey)
+		return c.NonvotingAuthority.New(l, pCfg, linkKey, datadir)
 	case c.VotingAuthority != nil:
 		return c.VotingAuthority.New(l, pCfg, linkKey)
 	}
@@ -219,6 +227,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
+	DataDir            string
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug

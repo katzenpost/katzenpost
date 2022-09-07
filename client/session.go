@@ -87,13 +87,13 @@ func NewSession(
 	// create a pkiclient for our own client lookups
 	// AND create a pkiclient for minclient's use
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey)
+	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
 
 	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey)
+	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
