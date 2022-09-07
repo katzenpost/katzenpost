@@ -20,8 +20,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	cConstants "github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -37,7 +38,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
-	"github.com/stretchr/testify/require"
 )
 
 type mockUserDB struct {
@@ -48,17 +48,17 @@ func (u *mockUserDB) Exists([]byte) bool {
 	return true
 }
 
-func (u *mockUserDB) IsValid([]byte, *ecdh.PublicKey) bool { return true }
+func (u *mockUserDB) IsValid([]byte, wire.PublicKey) bool { return true }
 
-func (u *mockUserDB) Add([]byte, *ecdh.PublicKey, bool) error { return nil }
+func (u *mockUserDB) Add([]byte, wire.PublicKey, bool) error { return nil }
 
-func (u *mockUserDB) SetIdentity([]byte, *ecdh.PublicKey) error { return nil }
+func (u *mockUserDB) SetIdentity([]byte, wire.PublicKey) error { return nil }
 
-func (u *mockUserDB) Link([]byte) (*ecdh.PublicKey, error) {
+func (u *mockUserDB) Link([]byte) (wire.PublicKey, error) {
 	return nil, nil
 }
 
-func (u *mockUserDB) Identity([]byte) (*ecdh.PublicKey, error) {
+func (u *mockUserDB) Identity([]byte) (wire.PublicKey, error) {
 	return u.provider.userKey, nil
 }
 
@@ -80,7 +80,7 @@ func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 func (s *mockSpool) Remove(u []byte) error { return nil }
 
-func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[64]byte]interface {}) error {
+func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[64]byte]interface{}) error {
 	return nil
 }
 
@@ -90,7 +90,7 @@ func (s *mockSpool) Close() {}
 
 type mockProvider struct {
 	userName string
-	userKey  *ecdh.PublicKey
+	userKey  wire.PublicKey
 }
 
 func (p *mockProvider) Halt() {}
@@ -127,7 +127,7 @@ type mockServer struct {
 	cfg         *config.Config
 	logBackend  *log.Backend
 	identityKey *eddsa.PrivateKey
-	linkKey     *ecdh.PrivateKey
+	linkKey     wire.PrivateKey
 	management  *thwack.Server
 	mixKeys     glue.MixKeys
 	pki         glue.PKI
@@ -153,7 +153,7 @@ func (g *mockGlue) IdentityKey() *eddsa.PrivateKey {
 	return g.s.identityKey
 }
 
-func (g *mockGlue) LinkKey() *ecdh.PrivateKey {
+func (g *mockGlue) LinkKey() wire.PrivateKey {
 	return g.s.linkKey
 }
 
@@ -221,10 +221,11 @@ func TestKaetzchenWorker(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)
 
-	userKey, err := ecdh.NewKeypair(rand.Reader)
+	scheme := wire.NewScheme()
+	userKey, err := scheme.GenerateKeypair(rand.Reader)
 	require.NoError(err)
 
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	linkKey, err := scheme.GenerateKeypair(rand.Reader)
 	require.NoError(err)
 
 	mockProvider := &mockProvider{
