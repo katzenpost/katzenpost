@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -62,6 +63,10 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 // Config is a voting authority pki.Client instance.
 type Config struct {
 
+	// DataDir is the absolute path to the directory
+	// containing Authority link pub key PEM files.
+	DataDir string
+
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey wire.PrivateKey
 
@@ -91,13 +96,6 @@ func (cfg *Config) validate() error {
 		}
 		if v.LinkPublicKeyPem == "" {
 			return fmt.Errorf("voting/client: Link PublicKey is mandatory")
-		}
-
-		scheme := wire.NewScheme()
-		peerLinkKey := scheme.NewPublicKey()
-		err := peerLinkKey.FromPEMFile(v.LinkPublicKeyPem)
-		if err != nil {
-			return err
 		}
 	}
 	return nil
@@ -162,7 +160,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	scheme := wire.NewScheme()
 	linkPublicKey := scheme.NewPublicKey()
-	err = linkPublicKey.FromPEMFile(peer.LinkPublicKeyPem)
+	err = linkPublicKey.FromPEMFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
 	if err != nil {
 		return nil, err
 	}

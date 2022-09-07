@@ -760,12 +760,12 @@ type Voting struct {
 }
 
 // AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
-func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
+func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
 	scheme := wire.NewScheme()
 	for _, peer := range peers {
 		linkKey := scheme.NewPublicKey()
-		err := linkKey.FromPEMFile(peer.LinkPublicKeyPem)
+		err := linkKey.FromPEMFile(filepath.Join(datadir, peer.LinkPublicKeyPem))
 		if err != nil {
 			return nil, err
 		}

@@ -717,7 +717,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, err
 		}
 	} else {
-		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers)
+		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers, glue.Config().Server.DataDir)
 		if err != nil {
 			return nil, err
 		}
