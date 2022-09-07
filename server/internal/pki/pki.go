@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -701,7 +702,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
 		}
 		authPubKey := wire.NewScheme().NewPublicKey()
-		err = authPubKey.FromPEMFile(glue.Config().PKI.Nonvoting.LinkPublicKeyPem)
+		err = authPubKey.FromPEMFile(filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem))
 		if err != nil {
 			return nil, err
 		}
