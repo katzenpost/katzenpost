@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -236,6 +237,7 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 type wireAuthenticator struct {
 	s               *Server
 	peerIdentityKey *eddsa.PublicKey
+	peerLinkKey     *ecdh.PublicKey
 	isClient        bool
 	isMix           bool
 	isAuthority     bool
@@ -264,11 +266,6 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	_, isAuthority := a.s.state.authorizedAuthorities[pk]
 
 	if isMix || isProvider {
-		linkPk := a.peerIdentityKey.ToECDH()
-		if !linkPk.Equal(creds.PublicKey) {
-			a.s.log.Warning("Rejecting mix authentication, public key mismatch.")
-			return false
-		}
 		a.isMix = true // Providers and mixes are both mixes. :)
 		return true
 	} else if isAuthority {

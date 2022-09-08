@@ -30,12 +30,12 @@ import (
 	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	coreConstants "github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
 	"gopkg.in/eapache/channels.v1"
@@ -58,7 +58,7 @@ type Session struct {
 	eventCh   channels.Channel
 	EventSink chan Event
 
-	linkKey   *ecdh.PrivateKey
+	linkKey   wire.PrivateKey
 	onlineAt  time.Time
 	hasPKIDoc bool
 	newPKIDoc chan bool
@@ -80,20 +80,20 @@ func NewSession(
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
-	linkKey *ecdh.PrivateKey,
+	linkKey wire.PrivateKey,
 	provider *pki.MixDescriptor) (*Session, error) {
 	var err error
 
 	// create a pkiclient for our own client lookups
 	// AND create a pkiclient for minclient's use
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg)
+	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
 
 	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg)
+	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -117,8 +117,16 @@ func NewSession(
 	// Configure the timerQ instance
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
+	linkKeyText, err := s.linkKey.PublicKey().MarshalText()
+	if err != nil {
+		panic(err)
+	}
+	if len(linkKeyText) > 64 {
+		linkKeyText = linkKeyText[:64]
+	}
+
 	clientCfg := &minclient.ClientConfig{
-		User:                s.linkKey.PublicKey().String(),
+		User:                string(linkKeyText),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,

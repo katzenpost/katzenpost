@@ -21,9 +21,11 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
 	nvClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -31,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -114,15 +117,27 @@ type NonvotingAuthority struct {
 
 	// PublicKey is the authority's public key.
 	PublicKey *eddsa.PublicKey
+
+	// LinkPublicKeyPem is the absolute file path to the
+	// authority's link public key.
+	LinkPublicKeyPem string
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+	scheme := wire.NewScheme()
+	authLinkKey := scheme.NewPublicKey()
+	err := authLinkKey.FromPEMFile(filepath.Join(datadir, nvACfg.LinkPublicKeyPem))
+	if err != nil {
+		return nil, err
+	}
 	cfg := &nvClient.Config{
-		LogBackend:    l,
-		Address:       nvACfg.Address,
-		PublicKey:     nvACfg.PublicKey,
-		DialContextFn: pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.String()),
+		AuthorityLinkKey: authLinkKey,
+		LinkKey:          linkKey,
+		LogBackend:       l,
+		Address:          nvACfg.Address,
+		PublicKey:        nvACfg.PublicKey,
+		DialContextFn:    pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.String()),
 	}
 	return nvClient.New(cfg)
 }
@@ -139,14 +154,19 @@ type VotingAuthority struct {
 	Peers []*vServerConfig.AuthorityPeer
 }
 
-// New constructs a pki.Client with the specified non-voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+// New constructs a pki.Client with the specified voting authority config.
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+
 	cfg := &vClient.Config{
+		DataDir:       datadir,
+		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext("voting"),
 	}
 	return vClient.New(cfg)
+
+	return nil, errors.New("voting authority client unable to start")
 }
 
 func (vACfg *VotingAuthority) validate() error {
@@ -154,7 +174,7 @@ func (vACfg *VotingAuthority) validate() error {
 		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
+		if peer.IdentityPublicKey == nil || peer.LinkPublicKeyPem == "" || len(peer.Addresses) == 0 {
 			return errors.New("invalid voting authority peer")
 		}
 	}
@@ -162,12 +182,12 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	switch {
 	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg)
+		return c.NonvotingAuthority.New(l, pCfg, linkKey, datadir)
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg)
+		return c.VotingAuthority.New(l, pCfg, linkKey, datadir)
 	}
 	return nil, errors.New("no Authority found")
 }
@@ -208,6 +228,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
+	DataDir            string
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,7 +50,7 @@ var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = 1 * time.Minute
 	WarpedEpoch          = "false"
-	nextFetchTill        = 3*epochtime.Period / 8
+	nextFetchTill        = 3 * epochtime.Period / 8
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = epochtime.Period / 4
 )
@@ -700,21 +701,30 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		if err = authPk.FromString(glue.Config().PKI.Nonvoting.PublicKey); err != nil {
 			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
 		}
+		authPubKey := wire.NewScheme().NewPublicKey()
+		err = authPubKey.FromPEMFile(filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem))
+		if err != nil {
+			return nil, err
+		}
 		pkiCfg := &nClient.Config{
-			LogBackend: glue.LogBackend(),
-			Address:    glue.Config().PKI.Nonvoting.Address,
-			PublicKey:  authPk,
+			AuthorityLinkKey: authPubKey,
+			LinkKey:          glue.LinkKey(),
+			LogBackend:       glue.LogBackend(),
+			Address:          glue.Config().PKI.Nonvoting.Address,
+			PublicKey:        authPk,
 		}
 		p.impl, err = nClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers)
+		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers, glue.Config().Server.DataDir)
 		if err != nil {
 			return nil, err
 		}
 		pkiCfg := &vClient.Config{
+			DataDir:     glue.Config().Server.DataDir,
+			LinkKey:     glue.LinkKey(),
 			LogBackend:  glue.LogBackend(),
 			Authorities: authorities,
 		}

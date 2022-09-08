@@ -25,7 +25,6 @@ import (
 	"net"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -49,6 +48,12 @@ type Config struct {
 	// PublicKey is the authority's public key to use when validating documents.
 	PublicKey *eddsa.PublicKey
 
+	// AuthorityLinkKey is the authority's link key used in our noise wire protocol.
+	AuthorityLinkKey wire.PublicKey
+
+	// LinkKey is the client's link layer keypair.
+	LinkKey wire.PrivateKey
+
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
@@ -68,7 +73,7 @@ type client struct {
 	cfg *Config
 	log *logging.Logger
 
-	serverLinkKey *ecdh.PublicKey
+	serverLinkKey wire.PublicKey
 }
 
 func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
@@ -86,14 +91,10 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	}
 	c.log.Debugf("Signed descriptor: '%v'", signed)
 
-	// Convert the link key to an ECDH keypair.
-	linkKey := signingKey.ToECDH()
-	defer linkKey.Reset()
-
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	conn, s, err := c.initSession(ctx, doneCh, signingKey.PublicKey(), linkKey)
+	conn, s, err := c.initSession(ctx, doneCh, signingKey.PublicKey(), c.cfg.LinkKey)
 	if err != nil {
 		return err
 	}
@@ -132,17 +133,10 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
-	// Generate a random ecdh keypair to use for the link authentication.
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer linkKey.Reset()
-
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	conn, s, err := c.initSession(ctx, doneCh, nil, linkKey)
+	conn, s, err := c.initSession(ctx, doneCh, nil, c.cfg.LinkKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -188,7 +182,7 @@ func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
 	return s11n.VerifyAndParseDocument(raw, c.cfg.PublicKey)
 }
 
-func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey *eddsa.PublicKey, linkKey *ecdh.PrivateKey) (net.Conn, *wire.Session, error) {
+func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey *eddsa.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {
 	// Connect to the peer.
 	dialFn := c.cfg.DialContextFn
 	if dialFn == nil {
@@ -271,7 +265,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c := new(client)
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/nonvoting/client")
-	c.serverLinkKey = cfg.PublicKey.ToECDH()
+	c.serverLinkKey = cfg.AuthorityLinkKey
 
 	return c, nil
 }

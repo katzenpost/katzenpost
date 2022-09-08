@@ -29,8 +29,6 @@ import (
 	"os"
 
 	"crypto/ed25519"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/extra25519"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -142,18 +140,6 @@ func (k *PublicKey) ToPEMFile(f string) error {
 	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
-// ToECDH converts the PublicKey to the corresponding ecdh.PublicKey.
-func (k *PublicKey) ToECDH() *ecdh.PublicKey {
-	var dhBytes, dsaBytes [32]byte
-	copy(dsaBytes[:], k.Bytes())
-	defer utils.ExplicitBzero(dsaBytes[:])
-	extra25519.PublicKeyToCurve25519(&dhBytes, &dsaBytes)
-	defer utils.ExplicitBzero(dhBytes[:])
-	r := new(ecdh.PublicKey)
-	r.FromBytes(dhBytes[:])
-	return r
-}
-
 // Reset clears the PublicKey structure such that no sensitive data is left in
 // memory.  PublicKeys, despite being public may be considered sensitive in
 // certain contexts (eg: if used once in path selection).
@@ -234,21 +220,6 @@ func (k *PrivateKey) Identity() []byte {
 // whose value is "ed25519".
 func (k *PrivateKey) KeyType() string {
 	return keyType
-}
-
-// ToECDH converts the PrivateKey to the corresponding ecdh.PrivateKey.
-func (k *PrivateKey) ToECDH() *ecdh.PrivateKey {
-	var dsaBytes [64]byte
-	defer utils.ExplicitBzero(dsaBytes[:])
-	copy(dsaBytes[:], k.Bytes())
-
-	var dhBytes [32]byte
-	extra25519.PrivateKeyToCurve25519(&dhBytes, &dsaBytes)
-	defer utils.ExplicitBzero(dhBytes[:])
-
-	r := new(ecdh.PrivateKey)
-	r.FromBytes(dhBytes[:])
-	return r
 }
 
 // Reset clears the PrivateKey structure such that no sensitive data is left

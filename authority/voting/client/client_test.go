@@ -22,6 +22,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -159,10 +161,17 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			layer = 0
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
+
+		scheme := wire.NewScheme()
+		linkKey, err := scheme.GenerateKeypair(rand.Reader)
+		if err != nil {
+			panic(err)
+		}
+
 		mix := &pki.MixDescriptor{
 			Name:        name,
 			IdentityKey: mixIdentityPrivateKey.PublicKey(),
-			LinkKey:     mixIdentityPrivateKey.PublicKey().ToECDH(),
+			LinkKey:     linkKey.PublicKey(),
 			MixKeys:     mixKeys,
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
@@ -307,7 +316,7 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey *ecdh.PrivateKey, identityPrivateKey *eddsa.PrivateKey, wg *sync.WaitGroup) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey *eddsa.PrivateKey, wg *sync.WaitGroup) {
 	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
@@ -374,15 +383,19 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int) (*config.AuthorityPeer, *eddsa.PrivateKey, *ecdh.PrivateKey, error) {
+func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, *eddsa.PrivateKey, wire.PrivateKey, error) {
 	identityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	linkPrivateKey := identityPrivateKey.ToECDH()
+	scheme := wire.NewScheme()
+	linkPrivateKey, err := scheme.Load(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)), filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
 	return &config.AuthorityPeer{
 		IdentityPublicKey: identityPrivateKey.PublicKey(),
-		LinkPublicKey:     linkPrivateKey.PublicKey(),
+		LinkPublicKeyPem:  filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)),
 		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}, identityPrivateKey, linkPrivateKey, nil
 }
@@ -394,9 +407,12 @@ func TestClient(t *testing.T) {
 	require.NoError(err)
 	dialer := newMockDialer(logBackend)
 	peers := []*config.AuthorityPeer{}
+
+	datadir := os.TempDir()
+
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, linkPrivKey, err := generatePeer(i)
+		peer, idPrivKey, linkPrivKey, err := generatePeer(i, datadir)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)

@@ -25,11 +25,11 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -55,14 +55,14 @@ func (c *Client) GetConfig() *config.Config {
 }
 
 // PKIBootstrap returns a pkiClient and fetches a consensus.
-func PKIBootstrap(cfg *config.Config) (*pki.Client, *pki.Document, error) {
+func PKIBootstrap(cfg *config.Config, linkKey wire.PrivateKey) (*pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
 	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
 	if err != nil {
 		return nil, nil, err
 	}
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg)
+	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg, linkKey, cfg.DataDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -168,24 +168,24 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 		err      error
 		doc      *pki.Document
 		provider *pki.MixDescriptor
-		linkKey  *ecdh.PrivateKey
+		linkKey  wire.PrivateKey
 	)
 
 	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
+	// generate a linkKey
+	if linkKey, err = wire.NewScheme().GenerateKeypair(rand.Reader); err != nil {
+		return nil, err
+	}
+
 	// fetch a pki.Document
-	if _, doc, err = PKIBootstrap(c.cfg); err != nil {
+	if _, doc, err = PKIBootstrap(c.cfg, linkKey); err != nil {
 		return nil, err
 	}
 	// choose a provider
 	if provider, err = SelectProvider(doc); err != nil {
-		return nil, err
-	}
-
-	// generate a linkKey
-	if linkKey, err = ecdh.NewKeypair(rand.Reader); err != nil {
 		return nil, err
 	}
 
