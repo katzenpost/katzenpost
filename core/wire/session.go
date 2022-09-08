@@ -27,9 +27,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/noise"
+	"github.com/katzenpost/nyquist"
+	"github.com/katzenpost/nyquist/cipher"
+	"github.com/katzenpost/nyquist/hash"
+	"github.com/katzenpost/nyquist/kem"
+	"github.com/katzenpost/nyquist/pattern"
+	"github.com/katzenpost/nyquist/seec"
 )
 
 const (
@@ -40,6 +45,10 @@ const (
 	maxMsgLen = 1048576
 	macLen    = 16
 	authLen   = 1 + MaxAdditionalDataLength + 4
+)
+
+var (
+	prologue = []byte{0x03} // Prologue indicates version 3.
 )
 
 const (
@@ -97,7 +106,7 @@ func authenticateMessageFromBytes(b []byte) *authenticateMessage {
 // of PublicKey.
 type PeerCredentials struct {
 	AdditionalData []byte
-	PublicKey      *ecdh.PublicKey
+	PublicKey      PublicKey
 }
 
 // PeerAuthenticator is the interface used to authenticate the remote peer,
@@ -126,12 +135,15 @@ type Session struct {
 	peerCredentials *PeerCredentials
 	authenticator   PeerAuthenticator
 
-	additionalData    []byte
-	authenticationKey *ecdh.PrivateKey
+	additionalData       []byte
+	authenticationKEMKey kem.Keypair
 
 	randReader io.Reader
-	tx         *noise.CipherState
-	rx         *noise.CipherState
+
+	protocol *nyquist.Protocol
+
+	tx *nyquist.CipherState
+	rx *nyquist.CipherState
 
 	rxKeyMutex *sync.RWMutex
 	txKeyMutex *sync.RWMutex
@@ -143,45 +155,53 @@ type Session struct {
 
 func (s *Session) handshake() error {
 	defer func() {
-		s.authenticationKey.Reset() // Don't need this anymore, and s has a copy.
+		// FIXME: add Reset method
+		//s.authenticationKEMKey.Reset()
 		atomic.CompareAndSwapUint32(&s.state, stateInit, stateInvalid)
 	}()
-	prologue := []byte{0x02} // Prologue indicates version 2.
 
-	// Convert to the noise library's idea of a X25519 key.
-	dhKey := noise.DHKey{
-		Private: s.authenticationKey.Bytes(),
-		Public:  s.authenticationKey.PublicKey().Bytes(),
+	cfg := &nyquist.HandshakeConfig{
+		Protocol:       s.protocol,
+		Rng:            rand.Reader,
+		Prologue:       prologue,
+		MaxMessageSize: maxMsgLen,
+		KEM: &nyquist.KEMConfig{
+			LocalStatic: s.authenticationKEMKey,
+			GenKey:      seec.GenKeyPRPAES,
+		},
+		IsInitiator: s.isInitiator,
 	}
 
-	// Initialize the Noise library.
-	cs := noise.NewCipherSuiteHFS(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b, noise.HFSKyber)
-	hs, err := noise.NewHandshakeState(noise.Config{
-		CipherSuite:   cs,
-		Random:        s.randReader,
-		Pattern:       noise.HandshakeXXhfs,
-		Initiator:     s.isInitiator,
-		StaticKeypair: dhKey,
-		Prologue:      prologue,
-		MaxMsgLen:     maxMsgLen,
-	})
+	handshake, err := nyquist.NewHandshake(cfg)
 	if err != nil {
 		return err
 	}
-	const (
+	defer handshake.Reset()
+	var (
 		prologueLen = 1
-		keyLen      = 32
-		kyberLen    = 1568                                                            // Length of Kyber1024 public key and KEM ciphertext.
-		msg1Len     = prologueLen + kyberLen + keyLen                                 // -> (prologue), e, e1
-		msg2Len     = keyLen + macLen + macLen + kyberLen + keyLen + macLen + authLen // <- e, ee, ekem1, s, es, (auth)
-		msg3Len     = (macLen + keyLen) + (macLen + authLen)                          // -> s, se, (auth)
+
+		// client
+		// -> (prologue), e
+		msg1Len = prologueLen + s.protocol.KEM.PublicKeySize()
+
+		// server
+		// -> ekem, s, (auth)
+		msg2Len = 2368 + authLen
+
+		// client
+		// -> skem, s, (auth)
+		msg3Len = 2384 + authLen
+
+		// server
+		// -> skem
+		msg4Len = 1152
 	)
 
 	if s.isInitiator {
-		// -> (prologue), e, e1
+		// -> (prologue), e
 		msg1 := make([]byte, 0, msg1Len)
 		msg1 = append(msg1, prologue...)
-		msg1, _, _, err = hs.WriteMessage(msg1, nil)
+		msg1, err = handshake.WriteMessage(msg1, nil)
 		if err != nil {
 			return err
 		}
@@ -189,27 +209,31 @@ func (s *Session) handshake() error {
 			return err
 		}
 
-		// <- e, ee, ekem1, s, es, (auth)
+		// -> ekem, s, (auth)
 		msg2 := make([]byte, msg2Len)
 		if _, err = io.ReadFull(s.conn, msg2); err != nil {
 			return err
 		}
+
 		now := time.Now()
 		rawAuth := make([]byte, 0, authLen)
-		rawAuth, _, _, err = hs.ReadMessage(rawAuth, msg2)
+		rawAuth, err = handshake.ReadMessage(rawAuth, msg2)
 		if err != nil {
 			return err
 		}
 		peerAuth := authenticateMessageFromBytes(rawAuth)
 
 		// Authenticate the peer.
-		peerAuthenticationKey := new(ecdh.PublicKey)
-		if err = peerAuthenticationKey.FromBytes(hs.PeerStatic()); err != nil {
+		peerAuthenticationKEMKey, err := s.protocol.KEM.ParsePublicKey(handshake.GetStatus().KEM.RemoteStatic.Bytes())
+		if err != nil {
 			return err
 		}
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
-			PublicKey:      peerAuthenticationKey,
+			PublicKey: &publicKey{
+				publicKey: peerAuthenticationKEMKey,
+				KEM:       s.protocol.KEM,
+			},
 		}
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
 			return errAuthenticationFailed
@@ -219,20 +243,35 @@ func (s *Session) handshake() error {
 		peerClock := time.Unix(int64(peerAuth.unixTime), 0)
 		s.clockSkew = now.Sub(peerClock)
 
-		// -> s, se, (auth)
+		// -> skem, s, (auth)
 		ourAuth := &authenticateMessage{ad: s.additionalData}
 		rawAuth = make([]byte, 0, authLen)
 		rawAuth = ourAuth.ToBytes(rawAuth)
 		msg3 := make([]byte, 0, msg3Len)
-		msg3, s.tx, s.rx, err = hs.WriteMessage(msg3, rawAuth)
+		msg3, err = handshake.WriteMessage(msg3, rawAuth)
 		if err != nil {
 			return err
 		}
 		if _, err = s.conn.Write(msg3); err != nil {
 			return err
 		}
+
+		// -> skem
+		msg4 := make([]byte, msg4Len)
+		if _, err = io.ReadFull(s.conn, msg4); err != nil {
+			return err
+		}
+		_, err = handshake.ReadMessage(nil, msg4)
+		switch err {
+		case nyquist.ErrDone:
+			// happy path
+		case nil:
+			return errors.New("wire/session: weird handshake failure")
+		default:
+			return err
+		}
 	} else {
-		// -> (prologue), e, e1
+		// -> (prologue), e
 		msg1 := make([]byte, msg1Len)
 		if _, err = io.ReadFull(s.conn, msg1); err != nil {
 			return err
@@ -241,11 +280,11 @@ func (s *Session) handshake() error {
 			return errors.New("wire/session: unsupported protocol version")
 		}
 		msg1 = msg1[1:]
-		if _, _, _, err = hs.ReadMessage(nil, msg1); err != nil {
+		if _, err = handshake.ReadMessage(nil, msg1); err != nil {
 			return err
 		}
 
-		// <- e, ee, ekem1, s, es, (auth)
+		// -> ekem, s, (auth)
 		ourAuth := &authenticateMessage{
 			ad:       s.additionalData,
 			unixTime: uint32(time.Now().Unix()), // XXX: Add noise.
@@ -253,7 +292,7 @@ func (s *Session) handshake() error {
 		rawAuth := make([]byte, 0, authLen)
 		rawAuth = ourAuth.ToBytes(rawAuth)
 		msg2 := make([]byte, 0, msg2Len)
-		msg2, _, _, err = hs.WriteMessage(msg2, rawAuth)
+		msg2, err = handshake.WriteMessage(msg2, rawAuth)
 		if err != nil {
 			return err
 		}
@@ -261,32 +300,59 @@ func (s *Session) handshake() error {
 			return err
 		}
 
-		// -> s, se, (auth)
+		// -> skem, s, (auth)
 		msg3 := make([]byte, msg3Len)
 		rawAuth = make([]byte, 0, authLen)
 		if _, err = io.ReadFull(s.conn, msg3); err != nil {
 			return err
 		}
-		rawAuth, s.rx, s.tx, err = hs.ReadMessage(rawAuth, msg3)
+		rawAuth, err = handshake.ReadMessage(rawAuth, msg3)
 		if err != nil {
 			return err
 		}
 		peerAuth := authenticateMessageFromBytes(rawAuth)
 
 		// Authenticate the peer.
-		peerAuthenticationKey := new(ecdh.PublicKey)
-		if err = peerAuthenticationKey.FromBytes(hs.PeerStatic()); err != nil {
+		peerAuthenticationKEMKey, err := s.protocol.KEM.ParsePublicKey(handshake.GetStatus().KEM.RemoteStatic.Bytes())
+		if err != nil {
 			return err
 		}
+
 		s.peerCredentials = &PeerCredentials{
 			AdditionalData: peerAuth.ad,
-			PublicKey:      peerAuthenticationKey,
+			PublicKey: &publicKey{
+				publicKey: peerAuthenticationKEMKey,
+				KEM:       s.protocol.KEM,
+			},
 		}
 		if !s.authenticator.IsPeerValid(s.peerCredentials) {
 			return errAuthenticationFailed
 		}
+
+		// -> skem
+		msg4 := make([]byte, 0, msg4Len)
+		msg4, err = handshake.WriteMessage(msg4, nil)
+
+		switch err {
+		case nyquist.ErrDone:
+			// happy path
+		case nil:
+			return errors.New("wire/session: weird handshake failure")
+		default:
+			return err
+		}
+
+		if _, err = s.conn.Write(msg4); err != nil {
+			return err
+		}
 	}
 
+	status := handshake.GetStatus()
+	if s.isInitiator {
+		s.tx, s.rx = status.CipherStates[0], status.CipherStates[1]
+	} else {
+		s.rx, s.tx = status.CipherStates[0], status.CipherStates[1]
+	}
 	atomic.StoreUint32(&s.state, stateEstablished)
 	return nil
 }
@@ -352,7 +418,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 	toSend := make([]byte, 0, macLen+4+ctLen)
 	s.txKeyMutex.RLock()
 	var err error
-	toSend, err = s.tx.Encrypt(toSend, nil, ctHdr[:])
+	toSend, err = s.tx.EncryptWithAd(toSend, nil, ctHdr[:])
 	s.txKeyMutex.RUnlock()
 	if err != nil {
 		return err
@@ -360,7 +426,7 @@ func (s *Session) SendCommand(cmd commands.Command) error {
 
 	// Build the Ciphertext.
 	s.txKeyMutex.RLock()
-	toSend, err = s.tx.Encrypt(toSend, nil, pt)
+	toSend, err = s.tx.EncryptWithAd(toSend, nil, pt)
 	s.txKeyMutex.RUnlock()
 	if err != nil {
 		return err
@@ -399,7 +465,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, err
 	}
 	s.rxKeyMutex.RLock()
-	ctHdr, err := s.rx.Decrypt(nil, nil, ctHdrCt[:])
+	ctHdr, err := s.rx.DecryptWithAd(nil, nil, ctHdrCt[:])
 	s.rxKeyMutex.RUnlock()
 	if err != nil {
 		return nil, err
@@ -415,7 +481,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 		return nil, err
 	}
 	s.rxKeyMutex.RLock()
-	pt, err := s.rx.Decrypt(nil, nil, ct)
+	pt, err := s.rx.DecryptWithAd(nil, nil, ct)
 	s.rxKeyMutex.RUnlock()
 	if err != nil {
 		return nil, err
@@ -443,7 +509,8 @@ func (s *Session) Close() {
 		s.rx.Rekey()
 		s.rxKeyMutex.Unlock()
 	}
-	s.authenticationKey.Reset()
+	// FIXME
+	//s.authenticationKEMKey.Reset()
 	if s.conn != nil {
 		s.conn.Close()
 	}
@@ -482,25 +549,28 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		return nil, errors.New("wire/session: oversized AdditionalData")
 	}
 	if cfg.AuthenticationKey == nil {
-		return nil, errors.New("wire/session: missing AuthenticationKey")
+		return nil, errors.New("wire/session: missing AuthenticationKEMKey")
 	}
 	if cfg.RandomReader == nil {
 		return nil, errors.New("wire/session: missing RandomReader")
 	}
 
 	s := &Session{
-		authenticator:     cfg.Authenticator,
-		additionalData:    cfg.AdditionalData,
-		authenticationKey: new(ecdh.PrivateKey),
-		randReader:        cfg.RandomReader,
-		isInitiator:       isInitiator,
-		state:             stateInit,
-		rxKeyMutex:        new(sync.RWMutex),
-		txKeyMutex:        new(sync.RWMutex),
+		protocol: &nyquist.Protocol{
+			Pattern: pattern.PqXX,
+			KEM:     NewScheme().KEM,
+			Cipher:  cipher.ChaChaPoly,
+			Hash:    hash.BLAKE2s,
+		},
+		authenticator:  cfg.Authenticator,
+		additionalData: cfg.AdditionalData,
+		randReader:     cfg.RandomReader,
+		isInitiator:    isInitiator,
+		state:          stateInit,
+		rxKeyMutex:     new(sync.RWMutex),
+		txKeyMutex:     new(sync.RWMutex),
 	}
-	if err := s.authenticationKey.FromBytes(cfg.AuthenticationKey.Bytes()); err != nil {
-		panic("wire/session: BUG: failed to copy authentication key: " + err.Error())
-	}
+	s.authenticationKEMKey = cfg.AuthenticationKey.(*privateKey).privateKey
 
 	return s, nil
 }
@@ -518,7 +588,7 @@ type SessionConfig struct {
 
 	// AuthenticationKey is the static long term authentication key used to
 	// authenticate with the remote peer.
-	AuthenticationKey *ecdh.PrivateKey
+	AuthenticationKey PrivateKey
 
 	// RandomReader is a cryptographic entropy source.
 	RandomReader io.Reader

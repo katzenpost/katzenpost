@@ -15,17 +15,17 @@
 
 [[Authorities]]
    IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
-   LinkPublicKey = "I49V1w7OJ/Kcw7YbEvo+92akE9cYLGeXRBg6KE/sYS8="
+   LinkPublicKeyPem = "auth1_link_pub_key.pem"
    Addresses = [ "172.28.1.10:21483" ]
 
 #[[Authorities]]
 #   IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
-#   LinkPublicKey = "fZcGD+uPm18BYuDKXS3eozp9+i2hW2SWgnuapP0ftgE="
+#   LinkPublicKeyPem = "auth2_link_pub_key.pem"
 #   Addresses = [ "172.28.1.8:22483" ]
 
 [[Authorities]]
    IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
-   LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
+   LinkPublicKeyPem = "auth3_link_pub_key.pem"
    Addresses = [ "172.28.1.9:23483" ]
 
 

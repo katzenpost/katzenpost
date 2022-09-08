@@ -26,6 +26,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // LayerProvider is the Layer that providers list in their MixDescriptors.
@@ -272,7 +273,7 @@ type MixDescriptor struct {
 	IdentityKey *eddsa.PublicKey
 
 	// LinkKey is the node's wire protocol public key.
-	LinkKey *ecdh.PublicKey
+	LinkKey wire.PublicKey
 
 	// MixKeys is a map of epochs to Sphinx keys.
 	MixKeys map[uint64]*ecdh.PublicKey

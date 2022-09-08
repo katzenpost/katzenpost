@@ -36,7 +36,6 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -93,7 +92,7 @@ type state struct {
 	authorizedMixes       map[[eddsa.PublicKeySize]byte]bool
 	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
 	authorizedAuthorities map[[eddsa.PublicKeySize]byte]bool
-	authorityLinkKeys     map[[eddsa.PublicKeySize]byte]*ecdh.PublicKey
+	authorityLinkKeys     map[[eddsa.PublicKeySize]byte]wire.PublicKey
 
 	documents    map[uint64]*document
 	descriptors  map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
@@ -1481,10 +1480,16 @@ func newState(s *Server) (*state, error) {
 		pk := v.IdentityPublicKey.ByteArray()
 		st.authorizedAuthorities[pk] = true
 	}
-	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]*ecdh.PublicKey)
+	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]wire.PublicKey)
+	scheme := wire.NewScheme()
 	for _, v := range st.s.cfg.Authorities {
+		linkPubKey := scheme.NewPublicKey()
+		err := linkPubKey.FromPEMFile(filepath.Join(s.cfg.Authority.DataDir, v.LinkPublicKeyPem))
+		if err != nil {
+			return nil, err
+		}
 		pk := v.IdentityPublicKey.ByteArray()
-		st.authorityLinkKeys[pk] = v.LinkPublicKey
+		st.authorityLinkKeys[pk] = linkPubKey
 	}
 
 	st.documents = make(map[uint64]*document)
@@ -1516,7 +1521,13 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 	_, ok := s.documents[epoch]
 	if !ok {
 		go func() {
-			cfg := &client.Config{s.s.logBackend, s.s.cfg.Authorities, nil}
+			cfg := &client.Config{
+				LinkKey:       s.s.linkKey,
+				LogBackend:    s.s.logBackend,
+				Authorities:   s.s.cfg.Authorities,
+				DialContextFn: nil,
+				DataDir:       s.s.cfg.Authority.DataDir,
+			}
 			c, err := client.New(cfg)
 			if err != nil {
 				return

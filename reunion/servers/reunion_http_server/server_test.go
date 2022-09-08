@@ -54,6 +54,7 @@ func TestHTTPServer2(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
+	shutdownChan := make(chan struct{})
 
 	srv := []byte{1, 2, 3}
 	passphrase := []byte("blah blah motorcycle pencil sharpening gas tank")
@@ -81,7 +82,7 @@ func TestHTTPServer2(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := client.NewExchange(alicePayload, aliceExchangelog, httpTransport, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := client.NewExchange(alicePayload, aliceExchangelog, httpTransport, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// bob client
@@ -103,13 +104,14 @@ func TestHTTPServer2(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := client.NewExchange(bobPayload, bobExchangelog, httpTransport, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	bobExchange, err := client.NewExchange(bobPayload, bobExchangelog, httpTransport, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	go aliceExchange.Run()
 	go bobExchange.Run()
 
 	wg.Wait()
+	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)
@@ -142,6 +144,7 @@ func TestHTTPServer3(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
+	shutdownChan := make(chan struct{})
 
 	srv := []byte{1, 2, 3}
 	passphrase1 := []byte("blah blah motorcycle pencil sharpening gas tank")
@@ -172,7 +175,7 @@ func TestHTTPServer3(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := client.NewExchange(alicePayload, aliceExchangelog, httpTransport, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := client.NewExchange(alicePayload, aliceExchangelog, httpTransport, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// bob client
@@ -194,7 +197,7 @@ func TestHTTPServer3(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := client.NewExchange(bobPayload, bobExchangelog, httpTransport, bobContactID, passphrase1, srv, epoch, bobUpdateCh)
+	bobExchange, err := client.NewExchange(bobPayload, bobExchangelog, httpTransport, bobContactID, passphrase1, srv, epoch, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// NSA client
@@ -216,7 +219,7 @@ func TestHTTPServer3(t *testing.T) {
 		}
 	}()
 
-	nsaExchange, err := client.NewExchange(nsaPayload, nsaExchangelog, httpTransport, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh)
+	nsaExchange, err := client.NewExchange(nsaPayload, nsaExchangelog, httpTransport, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// GCHQ client
@@ -238,7 +241,7 @@ func TestHTTPServer3(t *testing.T) {
 		}
 	}()
 
-	gchqExchange, err := client.NewExchange(gchqPayload, gchqExchangelog, httpTransport, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh)
+	gchqExchange, err := client.NewExchange(gchqPayload, gchqExchangelog, httpTransport, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	go aliceExchange.Run()
@@ -247,6 +250,7 @@ func TestHTTPServer3(t *testing.T) {
 	go gchqExchange.Run()
 
 	wg.Wait()
+	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)

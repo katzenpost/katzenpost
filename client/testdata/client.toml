@@ -1,4 +1,6 @@
 
+DataDir = "./testdata/"
+
 [UpstreamProxy]
   Type = "none"
 
@@ -7,9 +9,27 @@
   Level = "DEBUG"
   File = ""
 
-[NonvotingAuthority]
-    Address = "127.0.0.1:29483"
-    PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+#[NonvotingAuthority]
+#    Address = "127.0.0.1:29483"
+#    PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+#    LinkPublicKeyPem = "auth1_link_pub_key.pem"
+
+[VotingAuthority]
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:21483"]
+      LinkPublicKeyPem = "auth1_link_pub_key.pem"
+      IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:22483"]
+      LinkPublicKeyPem = "auth2_link_pub_key.pem"
+      IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:23483"]
+      LinkPublicKeyPem = "auth3_link_pub_key.pem"
+      IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+
 
 [Debug]
   PollingInterval = 1000

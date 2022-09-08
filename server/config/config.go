@@ -33,10 +33,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -681,7 +681,7 @@ type PKI struct {
 	Voting    *Voting
 }
 
-func (pCfg *PKI) validate() error {
+func (pCfg *PKI) validate(datadir string) error {
 	nrCfg := 0
 	if pCfg.Nonvoting != nil && pCfg.Voting != nil {
 		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
@@ -692,7 +692,7 @@ func (pCfg *PKI) validate() error {
 		}
 		nrCfg++
 	} else {
-		if err := pCfg.Voting.validate(); err != nil {
+		if err := pCfg.Voting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
@@ -710,6 +710,9 @@ type Nonvoting struct {
 
 	// PublicKey is the authority's public key in Base64 or Base16 format.
 	PublicKey string
+
+	// LinkPublicKeyPem is the authority's public link key PEM file.
+	LinkPublicKeyPem string
 }
 
 func (nCfg *Nonvoting) validate() error {
@@ -729,10 +732,10 @@ func (nCfg *Nonvoting) validate() error {
 type Peer struct {
 	Addresses         []string
 	IdentityPublicKey string
-	LinkPublicKey     string
+	LinkPublicKeyPem  string
 }
 
-func (p *Peer) validate() error {
+func (p *Peer) validate(datadir string) error {
 	for _, address := range p.Addresses {
 		if err := utils.EnsureAddrIPPort(address); err != nil {
 			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
@@ -742,8 +745,11 @@ func (p *Peer) validate() error {
 	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
 		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
 	}
-	if err := pubKey.FromString(p.LinkPublicKey); err != nil {
-		return fmt.Errorf("Voting Peer: Invalid LinkPublicKey: %v", err)
+	scheme := wire.NewScheme()
+	linkPubKey := scheme.NewPublicKey()
+	err := linkPubKey.FromPEMFile(filepath.Join(datadir, p.LinkPublicKeyPem))
+	if err != nil {
+		return fmt.Errorf("Voting Peer: Invalid Link PublicKey PEM file: %v", err)
 	}
 	return nil
 }
@@ -754,11 +760,12 @@ type Voting struct {
 }
 
 // AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
-func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
+func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
+	scheme := wire.NewScheme()
 	for _, peer := range peers {
-		linkKey := new(ecdh.PublicKey)
-		err := linkKey.UnmarshalText([]byte(peer.LinkPublicKey))
+		linkKey := scheme.NewPublicKey()
+		err := linkKey.FromPEMFile(filepath.Join(datadir, peer.LinkPublicKeyPem))
 		if err != nil {
 			return nil, err
 		}
@@ -769,7 +776,7 @@ func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 		}
 		authPeer := &config.AuthorityPeer{
 			IdentityPublicKey: identityKey,
-			LinkPublicKey:     linkKey,
+			LinkPublicKeyPem:  peer.LinkPublicKeyPem,
 			Addresses:         peer.Addresses,
 		}
 		authPeers = append(authPeers, authPeer)
@@ -777,9 +784,9 @@ func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
 	return authPeers, nil
 }
 
-func (vCfg *Voting) validate() error {
+func (vCfg *Voting) validate(datadir string) error {
 	for _, peer := range vCfg.Peers {
-		err := peer.validate()
+		err := peer.validate(datadir)
 		if err != nil {
 			return err
 		}
@@ -850,7 +857,7 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.Server.validate(); err != nil {
 		return err
 	}
-	if err := cfg.PKI.validate(); err != nil {
+	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
 	}
 	if cfg.Server.IsProvider {

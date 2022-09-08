@@ -32,6 +32,8 @@
     # PublicKey is the directory authority's public key in Base64 or Base16 format.
     PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
 
+    LinkPublicKeyPem = "auth_link_pub_key.pem"
+
 #
 # The Logging section controls the logging.
 #

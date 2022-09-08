@@ -23,18 +23,19 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"path/filepath"
+
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -42,7 +43,7 @@ var defaultDialer = &net.Dialer{}
 // authorityAuthenticator implements the PeerAuthenticator interface
 type authorityAuthenticator struct {
 	IdentityPublicKey *eddsa.PublicKey
-	LinkPublicKey     *ecdh.PublicKey
+	LinkPublicKey     wire.PublicKey
 	log               *logging.Logger
 }
 
@@ -53,8 +54,8 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData[:])
 		return false
 	}
-	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %v != %v", a.LinkPublicKey, creds.PublicKey)
+	if !bytes.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
+		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %x != %x", a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes())
 		return false
 	}
 	return true
@@ -62,6 +63,14 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
+
+	// DataDir is the absolute path to the directory
+	// containing Authority link pub key PEM files.
+	DataDir string
+
+	// LinkKey is the link key for the client's wire connections.
+	LinkKey wire.PrivateKey
+
 	// LogBackend is the `core/log` Backend instance to use for logging.
 	LogBackend *log.Backend
 
@@ -86,7 +95,7 @@ func (cfg *Config) validate() error {
 		if v.IdentityPublicKey == nil {
 			return fmt.Errorf("voting/client: Identity PublicKey is mandatory")
 		}
-		if v.LinkPublicKey == nil {
+		if v.LinkPublicKeyPem == "" {
 			return fmt.Errorf("voting/client: Link PublicKey is mandatory")
 		}
 	}
@@ -113,7 +122,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -150,9 +159,16 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = signingKey.Bytes()
 	}
 
+	scheme := wire.NewScheme()
+	linkPublicKey := scheme.NewPublicKey()
+	err = linkPublicKey.FromPEMFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
+	if err != nil {
+		return nil, err
+	}
+
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
-		LinkPublicKey:     peer.LinkPublicKey,
+		LinkPublicKey:     linkPublicKey,
 		log:               p.log,
 	}
 
@@ -196,7 +212,7 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
@@ -219,7 +235,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.Private
 	return responses, nil
 }
 
-func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.PrivateKey, cmd commands.Command) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -258,15 +274,12 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	if err != nil {
 		return err
 	}
-	// Convert the link key to an ECDH keypair.
-	linkKey := signingKey.ToECDH()
-	defer linkKey.Reset()
 	// Dispatch the post_descriptor command.
 	cmd := &commands.PostDescriptor{
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, linkKey, signingKey.PublicKey(), cmd)
+	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingKey.PublicKey(), cmd)
 	if err != nil {
 		return err
 	}
@@ -297,7 +310,8 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
 	// Generate a random ecdh keypair to use for the link authentication.
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
+	scheme := wire.NewScheme()
+	linkKey, err := scheme.GenerateKeypair(rand.Reader)
 	if err != nil {
 		return nil, nil, err
 	}

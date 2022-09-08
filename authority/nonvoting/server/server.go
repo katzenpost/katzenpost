@@ -30,10 +30,10 @@ import (
 	"sync"
 
 	"github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -48,7 +48,7 @@ type Server struct {
 	cfg *config.Config
 
 	identityKey *eddsa.PrivateKey
-	linkKey     *ecdh.PrivateKey
+	linkKey     wire.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -204,19 +204,21 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Initialize the authority identity key.
 	var err error
-	if s.cfg.Debug.IdentityKey != nil {
-		s.log.Warning("IdentityKey should NOT be used for production deployments.")
-		s.identityKey = new(eddsa.PrivateKey)
-		s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
-	} else {
-		identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
-		identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
-		if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-			s.log.Errorf("Failed to initialize identity: %v", err)
-			return nil, err
-		}
+	identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
+	if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
+		s.log.Errorf("Failed to initialize identity: %v", err)
+		return nil, err
 	}
-	s.linkKey = s.identityKey.ToECDH()
+
+	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
+	scheme := wire.NewScheme()
+	if s.linkKey, err = scheme.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
+		s.log.Errorf("Failed to initialize link: %v", err)
+		return nil, err
+	}
+
 	s.log.Noticef("Authority identity public key is: %s", s.identityKey.PublicKey())
 
 	if s.cfg.Debug.GenerateOnly {
