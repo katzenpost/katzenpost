@@ -89,10 +89,10 @@ func (e *CtidhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 //
 // See also PublicKey's Blind method.
 func (e *CtidhNike) Blind(groupMember []byte, blindingFactor []byte) []byte {
-	blindFactorAsPubkey := ctidh.NewEmptyPublicKey()
-	err := blindFactorAsPubkey.FromBytes(blindingFactor)
+	pubkey := ctidh.NewEmptyPublicKey()
+	err := pubkey.FromBytes(groupMember)
 	if err != nil {
 		panic(err)
 	}
-	return ctidh.Blind(groupMember, blindFactorAsPubkey).Bytes()
+	return ctidh.Blind(blindingFactor, pubkey).Bytes()
 }
