@@ -55,9 +55,20 @@ func (e *EcdhNike) PrivateKeySize() int {
 	return ecdh.PublicKeySize
 }
 
-// NewPublicKey returns a new public key.
-func (e *EcdhNike) NewPublicKey() nike.PublicKey {
+// NewEmptyPublicKey returns an uninitialized
+// PublicKey which is suitable to be loaded
+// via some serialization format via FromBytes
+// or FromPEMFile methods.
+func (e *EcdhNike) NewEmptyPublicKey() nike.PublicKey {
 	return new(ecdh.PublicKey)
+}
+
+// NewEmptyPrivateKey returns an uninitialized
+// PrivateKey which is suitable to be loaded
+// via some serialization format via FromBytes
+// or FromPEMFile methods.
+func (e *EcdhNike) NewEmptyPrivateKey() nike.PrivateKey {
+	return new(ecdh.PrivateKey)
 }
 
 // NewKeypair returns a newly generated key pair.
@@ -91,13 +102,13 @@ func (e *EcdhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 // * blindingFactor must be the size of a private key.
 //
 // See also PublicKey's Blind method.
-func (e *EcdhNike) Blind(groupMember []byte, blindingFactor []byte) (blindedGroupMember []byte, err error) {
+func (e *EcdhNike) Blind(groupMember []byte, blindingFactor []byte) []byte {
 	if len(groupMember) != ecdh.PublicKeySize {
-		return nil, ErrBlindDataSizeInvalid
+		panic(ErrBlindDataSizeInvalid)
 	}
 	if len(blindingFactor) != ecdh.PrivateKeySize {
-		return nil, ErrBlindDataSizeInvalid
+		panic(ErrBlindDataSizeInvalid)
 	}
 	sharedSecret := ecdh.Exp(groupMember, blindingFactor)
-	return sharedSecret, nil
+	return sharedSecret
 }
