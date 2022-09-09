@@ -1,6 +1,8 @@
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 git.xx.network/elixxir/ctidh_cgo v0.0.0-20220824195537-8bdbc2bc8d19 h1:U91Gdw90v5zCWyZ+IWBgf2JYjtjhJFB+0Ku+j5KE5S0=
 git.xx.network/elixxir/ctidh_cgo v0.0.0-20220824195537-8bdbc2bc8d19/go.mod h1:Mu7cP9WTzeUikr/qjF0Ll8aSw6FSk13hVpLWodSxnZY=
+git.xx.network/elixxir/ctidh_cgo v0.0.0-20220908145931-6ec4831f902c h1:cT4/hVOSOwj3PBBN9c9Br66zVyjLj5+v9uhuzQ7Kie4=
+git.xx.network/elixxir/ctidh_cgo v0.0.0-20220908145931-6ec4831f902c/go.mod h1:Mu7cP9WTzeUikr/qjF0Ll8aSw6FSk13hVpLWodSxnZY=
 github.com/BurntSushi/toml v0.4.1 h1:GaI7EiDXDRfa8VshkTj7Fym7ha+y8/XxIgD2okUIjLw=
 github.com/BurntSushi/toml v0.4.1/go.mod h1:CxXYINrC8qIiEnFrOxCa7Jy5BFHlXnUU2pbicEuybxQ=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
