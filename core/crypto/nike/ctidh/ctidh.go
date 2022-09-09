@@ -45,9 +45,20 @@ func (e *CtidhNike) PrivateKeySize() int {
 	return ctidh.PrivateKeySize
 }
 
-// NewPublicKey returns a new public key.
-func (e *CtidhNike) NewPublicKey() nike.PublicKey {
-	return new(ctidh.PublicKey)
+// NewEmptyPublicKey returns an uninitialized
+// PublicKey which is suitable to be loaded
+// via some serialization format via FromBytes
+// or FromPEMFile methods.
+func (e *CtidhNike) NewEmptyPublicKey() nike.PublicKey {
+	return ctidh.NewEmptyPublicKey()
+}
+
+// NewEmptyPrivateKey returns an uninitialized
+// PrivateKey which is suitable to be loaded
+// via some serialization format via FromBytes
+// or FromPEMFile methods.
+func (e *CtidhNike) NewEmptyPrivateKey() nike.PrivateKey {
+	return ctidh.NewEmptyPrivateKey()
 }
 
 // NewKeypair returns a newly generated key pair.
@@ -77,6 +88,11 @@ func (e *CtidhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 // * blindingFactor must be the size of a private key.
 //
 // See also PublicKey's Blind method.
-func (e *CtidhNike) Blind(groupMember []byte, blindingFactor []byte) ([]byte, error) {
-	return ctidh.Blind(groupMember, blindingFactor)
+func (e *CtidhNike) Blind(groupMember []byte, blindingFactor []byte) []byte {
+	blindFactorAsPubkey := ctidh.NewEmptyPublicKey()
+	err := blindFactorAsPubkey.FromBytes(blindingFactor)
+	if err != nil {
+		panic(err)
+	}
+	return ctidh.Blind(groupMember, blindFactorAsPubkey).Bytes()
 }
