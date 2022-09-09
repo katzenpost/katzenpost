@@ -257,7 +257,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	keys[0] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 	defer keys[0].Reset()
 
-	groupElements[0] = s.nike.NewPublicKey()
+	groupElements[0] = s.nike.NewEmptyPublicKey()
 	err := groupElements[0].FromBytes(clientPublicKey.Bytes())
 	if err != nil {
 		panic(err)
@@ -266,16 +266,12 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	for i := 1; i < nrHops; i++ {
 		sharedSecret = s.nike.DeriveSecret(clientPrivateKey, path[i].PublicKey)
 		for j := 0; j < i; j++ {
-			sharedSecret, err = s.nike.Blind(sharedSecret, keys[j].BlindingFactor)
-			if err != nil {
-				fmt.Printf("s.nike.PrivateKeySize() %d len(BlindingFactor) %d\n", s.nike.PrivateKeySize(), len(keys[j].BlindingFactor))
-				panic(err)
-			}
+			sharedSecret = s.nike.Blind(sharedSecret, keys[j].BlindingFactor)
 		}
 		keys[i] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 		defer keys[i].Reset()
 		clientPublicKey.Blind(keys[i-1].BlindingFactor)
-		groupElements[i] = s.nike.NewPublicKey()
+		groupElements[i] = s.nike.NewEmptyPublicKey()
 		err = groupElements[i].FromBytes(clientPublicKey.Bytes())
 		if err != nil {
 			panic(err)
@@ -418,7 +414,7 @@ func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []
 	}
 
 	// Calculate the hop's shared secret, and replay_tag.
-	groupElement := s.nike.NewPublicKey()
+	groupElement := s.nike.NewEmptyPublicKey()
 	var sharedSecret []byte
 	defer utils.ExplicitBzero(sharedSecret)
 
