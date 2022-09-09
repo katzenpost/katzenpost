@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -66,21 +67,18 @@ var (
 // Geometry describes the geometry of a Sphinx packet.
 type Geometry struct {
 
+	// PacketLength is the length of a packet.
+	PacketLength int
+
 	// NrHops is the number of hops, this indicates the size
 	// of the Sphinx packet header.
 	NrHops int
 
-	// ForwardPayloadLength is the size of the payload.
-	ForwardPayloadLength int
-
-	// UserForwardPayloadLength is the size of the usable payload.
-	UserForwardPayloadLength int
-
 	// HeaderLength is the length of the Sphinx packet header in bytes.
 	HeaderLength int
 
-	// PayloadTagLength is the length of the payload tag.
-	PayloadTagLength int
+	// RoutingInfoLength is the length of the routing info portion of the header.
+	RoutingInfoLength int
 
 	// SURBLength is the length of SURB.
 	SURBLength int
@@ -91,11 +89,29 @@ type Geometry struct {
 	// SURBIDLength is the length of a SURB ID.
 	SURBIDLength int
 
-	// PacketLength is the length of a packet.
-	PacketLength int
+	// PayloadTagLength is the length of the payload tag.
+	PayloadTagLength int
 
-	// RoutingInfoLength is the length of the routing info portion of the header.
-	RoutingInfoLength int
+	// ForwardPayloadLength is the size of the payload.
+	ForwardPayloadLength int
+
+	// UserForwardPayloadLength is the size of the usable payload.
+	UserForwardPayloadLength int
+}
+
+func (g *Geometry) String() string {
+	var b strings.Builder
+	b.WriteString("sphinx_packet_geometry:\n")
+	b.WriteString(fmt.Sprintf("packet size: %d\n", g.PacketLength))
+	b.WriteString(fmt.Sprintf("number of hops: %d\n", g.NrHops))
+	b.WriteString(fmt.Sprintf("header size: %d\n", g.HeaderLength))
+	b.WriteString(fmt.Sprintf("forward payload size: %d\n", g.ForwardPayloadLength))
+	b.WriteString(fmt.Sprintf("user forward payload size: %d\n", g.UserForwardPayloadLength))
+	b.WriteString(fmt.Sprintf("payload tag size: %d\n", g.PayloadTagLength))
+	b.WriteString(fmt.Sprintf("routing info size: %d\n", g.RoutingInfoLength))
+	b.WriteString(fmt.Sprintf("surb size: %d\n", g.SURBLength))
+	b.WriteString(fmt.Sprintf("sphinx plaintext header size: %d\n", g.SphinxPlaintextHeaderLength))
+	return b.String()
 }
 
 type GeometryFactory struct {
@@ -150,6 +166,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 		PayloadTagLength:            PayloadTagLength,
 		SphinxPlaintextHeaderLength: SphinxPlaintextHeaderLength,
 		SURBIDLength:                constants.SURBIDLength,
+		RoutingInfoLength:           f.routingInfoLength(),
 	}
 
 	if withSURB {
@@ -176,6 +193,7 @@ func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHo
 		PayloadTagLength:            PayloadTagLength,
 		SphinxPlaintextHeaderLength: SphinxPlaintextHeaderLength,
 		SURBIDLength:                constants.SURBIDLength,
+		RoutingInfoLength:           f.routingInfoLength(),
 	}
 }
 
@@ -328,6 +346,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 
 		routingInfo = append(riFragment, routingInfo...) // Prepend
 		xorBytes(routingInfo, routingInfo, riKeyStream[i])
+
 		m := crypto.NewMAC(&keys[i].HeaderMAC)
 		defer m.Reset()
 		m.Write(v0AD[:])
