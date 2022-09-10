@@ -26,6 +26,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -75,8 +77,19 @@ func TestSessionIntegration(t *testing.T) {
 		PublicKey:      authKEMKeyBob.PublicKey(),
 	}
 
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	userForwardPayloadLength := 3000
+	withSURB := true
+	nrHops := 5
+	geometry := sphinx.GeometryFromUserForwardPayloadLength(nike,
+		userForwardPayloadLength,
+		withSURB,
+		nrHops,
+	)
+
 	// Alice's session setup.
 	cfgAlice := &SessionConfig{
+		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsBob},
 		AdditionalData:    credsAlice.AdditionalData,
 		AuthenticationKey: authKEMKeyAlice,
@@ -87,6 +100,7 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Bob's session setup.
 	cfgBob := &SessionConfig{
+		Geometry:          geometry,
 		Authenticator:     &stubAuthenticator{creds: credsAlice},
 		AdditionalData:    credsBob.AdditionalData,
 		AuthenticationKey: authKEMKeyBob,
