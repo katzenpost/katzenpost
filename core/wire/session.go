@@ -27,14 +27,16 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/nyquist"
 	"github.com/katzenpost/nyquist/cipher"
 	"github.com/katzenpost/nyquist/hash"
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
 const (
@@ -141,6 +143,7 @@ type Session struct {
 	randReader io.Reader
 
 	protocol *nyquist.Protocol
+	commands *commands.Commands
 
 	tx *nyquist.CipherState
 	rx *nyquist.CipherState
@@ -491,7 +494,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	s.rxKeyMutex.Unlock()
 
 	// Parse and return the command.
-	return commands.FromBytes(pt)
+	return s.commands.FromBytes(pt)
 }
 
 // Close terminates a session.
@@ -542,6 +545,9 @@ func (s *Session) ClockSkew() time.Duration {
 
 // NewSession creates a new Session.
 func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
+	if cfg.Geometry == nil {
+		return nil, errors.New("wire/session: missing sphinx packet geometry")
+	}
 	if cfg.Authenticator == nil {
 		return nil, errors.New("wire/session: missing Authenticator")
 	}
@@ -569,6 +575,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 		state:          stateInit,
 		rxKeyMutex:     new(sync.RWMutex),
 		txKeyMutex:     new(sync.RWMutex),
+		commands:       commands.NewCommands(cfg.Geometry),
 	}
 	s.authenticationKEMKey = cfg.AuthenticationKey.(*privateKey).privateKey
 
@@ -592,4 +599,8 @@ type SessionConfig struct {
 
 	// RandomReader is a cryptographic entropy source.
 	RandomReader io.Reader
+
+	// Geometry is the geometry of the Sphinx cryptographic packets
+	// that we will use with our wire protocol.
+	Geometry *sphinx.Geometry
 }

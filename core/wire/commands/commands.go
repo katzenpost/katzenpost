@@ -156,6 +156,13 @@ type Commands struct {
 	geo *sphinx.Geometry
 }
 
+// NewCommands returns a Commands given a sphinx geometry.
+func NewCommands(geo *sphinx.Geometry) *Commands {
+	return &Commands{
+		geo: geo,
+	}
+}
+
 func (c *Commands) messageMsgLength() int {
 	return messageBaseLength + c.messageMsgPaddingLength()
 }
