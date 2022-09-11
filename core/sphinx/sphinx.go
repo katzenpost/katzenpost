@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -63,6 +64,25 @@ var (
 	errTruncatedPayload = errors.New("sphinx: truncated payload")
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
 )
+
+// DefaultSphinx returns an instance of the default sphinx packet factory.
+func DefaultSphinx() *Sphinx {
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	return NewSphinx(nike, defaultGeometry(nike))
+}
+
+// DefaultGeometry returns the Sphinx geometry we are using right now.
+// In the future there will be two types of Sphinx packets, classical
+// and post-quantum (using CTIDH NIKE).
+func DefaultGeometry() *Geometry {
+	return defaultGeometry(ecdh.NewEcdhNike(rand.Reader))
+}
+
+func defaultGeometry(nike nike.Nike) *Geometry {
+	forwardPayloadLength := 2 * 1024
+	nrHops := 5
+	return GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+}
 
 // Geometry describes the geometry of a Sphinx packet.
 type Geometry struct {
@@ -114,29 +134,29 @@ func (g *Geometry) String() string {
 	return b.String()
 }
 
-type GeometryFactory struct {
+type geometryFactory struct {
 	nike                 nike.Nike
 	nrHops               int
 	forwardPayloadLength int
 }
 
-func (f *GeometryFactory) routingInfoLength() int {
+func (f *geometryFactory) routingInfoLength() int {
 	return perHopRoutingInfoLength * f.nrHops
 }
 
-func (f *GeometryFactory) headerLength() int {
+func (f *geometryFactory) headerLength() int {
 	// 460 bytes with a 32byte public key
 	return adLength + f.nike.PublicKeySize() + f.routingInfoLength() + crypto.MACLength
 }
 
 // PacketLength returns the length of a Sphinx Packet in bytes.
-func (f *GeometryFactory) packetLength() int {
+func (f *geometryFactory) packetLength() int {
 	return f.headerLength() + PayloadTagLength + f.forwardPayloadLength
 }
 
 // surbLength returns the length of a Sphinx SURB in bytes.
 // If the X25519 ECDH NIKE is used then the size is 556 bytes.
-func (f *GeometryFactory) surbLength() int {
+func (f *geometryFactory) surbLength() int {
 	return f.headerLength() + constants.NodeIDLength + sprpKeyMaterialLength
 }
 
@@ -144,16 +164,16 @@ func (f *GeometryFactory) surbLength() int {
 // payload.  The End to End spec calls this `PAYLOAD_LENGTH` but this is
 // somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
 // spec.
-func (f *GeometryFactory) userForwardPayloadLength() int {
+func (f *geometryFactory) userForwardPayloadLength() int {
 	return f.forwardPayloadLength - (SphinxPlaintextHeaderLength + f.surbLength())
 }
 
-func (f *GeometryFactory) deriveForwardPayloadLength(userForwardPayloadLength int) int {
+func (f *geometryFactory) deriveForwardPayloadLength(userForwardPayloadLength int) int {
 	return userForwardPayloadLength + (SphinxPlaintextHeaderLength + f.surbLength())
 }
 
 func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
-	f := &GeometryFactory{
+	f := &geometryFactory{
 		nike:   nike,
 		nrHops: nrHops,
 	}
@@ -178,7 +198,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 }
 
 func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHops int) *Geometry {
-	f := &GeometryFactory{
+	f := &geometryFactory{
 		nike:                 nike,
 		nrHops:               nrHops,
 		forwardPayloadLength: forwardPayloadLength,
