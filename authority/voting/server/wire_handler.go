@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -46,6 +47,10 @@ func (s *Server) onConn(conn net.Conn) {
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
 	cfg := &wire.SessionConfig{
+		// a nil geometry works because we aren't sending or receiving
+		// wire protocol commands Message or MessageACK which are the
+		// only two that actually require the Sphinx Geometry.
+		Geometry:          &sphinx.Geometry{},
 		Authenticator:     auth,
 		AdditionalData:    s.identityKey.PublicKey().Bytes(),
 		AuthenticationKey: s.linkKey,

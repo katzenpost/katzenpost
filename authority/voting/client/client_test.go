@@ -37,7 +37,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -331,13 +330,9 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.Unlock()
 	wg.Done()
 
-	nrHops := 5
-	nike := ecdhnike.NewEcdhNike(rand.Reader)
-	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, 1234, true, nrHops)
-
 	d.waitUntilDialed(address)
 	cfg := &wire.SessionConfig{
-		Geometry:          geo,
+		Geometry:          &sphinx.Geometry{},
 		Authenticator:     d,
 		AdditionalData:    identityPrivateKey.PublicKey().Bytes(),
 		AuthenticationKey: linkPrivateKey,
@@ -427,11 +422,7 @@ func TestClient(t *testing.T) {
 		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, &wg)
 	}
 	wg.Wait()
-	nrHops := 5
-	nike := ecdhnike.NewEcdhNike(rand.Reader)
-	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, 1234, true, nrHops)
 	cfg := &Config{
-		Geometry:      geo,
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
