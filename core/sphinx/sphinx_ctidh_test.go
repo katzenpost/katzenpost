@@ -1,3 +1,4 @@
+// +build ctidh
 // sphinx_ctidh_test.go - Sphinx Packet Format tests.
 // Copyright (C) 2022  David Stainton.
 //
