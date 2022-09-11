@@ -38,6 +38,8 @@ import (
 type Worker struct {
 	worker.Worker
 
+	sphinx *sphinx.Sphinx
+
 	glue glue.Glue
 	log  *logging.Logger
 
@@ -121,7 +123,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 		// TODO/perf: payload is a new heap allocation if it's returned,
 		// though that should only happen if this is a provider.
-		payload, tag, cmds, err := sphinx.Unwrap(k.PrivateKey(), pkt.Raw)
+		payload, tag, cmds, err := w.sphinx.Unwrap(k.PrivateKey(), pkt.Raw)
 		unwrapAt := monotime.Now()
 
 		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt-startAt)
@@ -345,6 +347,7 @@ func New(glue glue.Glue, incomingCh <-chan interface{}, id int) *Worker {
 		mixKeys:    make(map[uint64]*mixkey.MixKey),
 		incomingCh: incomingCh,
 		updateCh:   make(chan bool),
+		sphinx:     sphinx.DefaultSphinx(),
 	}
 
 	w.glue.MixKeys().Shadow(w.mixKeys)

@@ -28,8 +28,6 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/yawning/avl.git"
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
@@ -45,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
 	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/yawning/avl.git"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -63,6 +62,9 @@ type surbCtx struct {
 type decoy struct {
 	worker.Worker
 	sync.Mutex
+
+	sphinx *sphinx.Sphinx
+	geo    *sphinx.Geometry
 
 	glue glue.Glue
 	log  *logging.Logger
@@ -148,7 +150,7 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 		return
 	}
 
-	if _, err := sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
+	if _, err := d.sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
 		d.log.Debugf("Dropping packet: %v (SURB ID: 0x08x%): %v", pkt.ID, id, err)
 		packetsDropped.Inc()
 		return
@@ -298,11 +300,11 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 		}
 
 		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
-			zeroBytes := make([]byte, constants.UserForwardPayloadLength)
-			payload := make([]byte, 2, 2+sphinx.SURBLength+constants.UserForwardPayloadLength)
+			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength)
+			payload := make([]byte, 2, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
 			payload[0] = 1 // Packet has a SURB.
 
-			surb, k, err := sphinx.NewSURB(rand.Reader, revPath)
+			surb, k, err := d.sphinx.NewSURB(rand.Reader, revPath)
 			if err != nil {
 				d.log.Debugf("Failed to generate SURB: %v", err)
 			}
@@ -319,7 +321,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			}
 			d.storeSURBCtx(ctx)
 
-			pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
+			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
 				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
 				return
@@ -338,7 +340,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 }
 
 func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
-	payload := make([]byte, 2+sphinx.SURBLength+constants.UserForwardPayloadLength)
+	payload := make([]byte, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
 
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
@@ -350,7 +352,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 		}
 
 		if then.Sub(now) < epochtime.Period*2 {
-			pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
+			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
 				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
 				return
@@ -482,6 +484,8 @@ func (d *decoy) sweepSURBCtxs() {
 // New constructs a new decoy instance.
 func New(glue glue.Glue) (glue.Decoy, error) {
 	d := &decoy{
+		geo:       sphinx.DefaultGeometry(),
+		sphinx:    sphinx.DefaultSphinx(),
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("decoy"),
 		recipient: make([]byte, sConstants.RecipientIDLength),
