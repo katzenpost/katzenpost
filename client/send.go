@@ -25,7 +25,6 @@ import (
 	"time"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -126,7 +125,7 @@ func (s *Session) doSend(msg *Message) {
 }
 
 func (s *Session) sendDropDecoy(loopSvc *utils.ServiceDescriptor) {
-	payload := make([]byte, constants.UserForwardPayloadLength)
+	payload := make([]byte, s.geo.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {
@@ -146,7 +145,7 @@ func (s *Session) sendDropDecoy(loopSvc *utils.ServiceDescriptor) {
 
 func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
 	s.log.Info("sending loop decoy")
-	payload := make([]byte, constants.UserForwardPayloadLength)
+	payload := make([]byte, s.geo.UserForwardPayloadLength)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])
 	if err != nil {
@@ -167,10 +166,10 @@ func (s *Session) sendLoopDecoy(loopSvc *utils.ServiceDescriptor) {
 
 func (s *Session) composeMessage(recipient, provider string, message []byte, isBlocking bool) (*Message, error) {
 	s.log.Debug("SendMessage")
-	if len(message) > constants.UserForwardPayloadLength {
-		return nil, fmt.Errorf("message too large: %v > %v", len(message), constants.UserForwardPayloadLength)
+	if len(message) > s.geo.UserForwardPayloadLength {
+		return nil, fmt.Errorf("message too large: %v > %v", len(message), s.geo.UserForwardPayloadLength)
 	}
-	payload := make([]byte, constants.UserForwardPayloadLength)
+	payload := make([]byte, s.geo.UserForwardPayloadLength)
 	copy(payload, message)
 	id := [cConstants.MessageIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, id[:])

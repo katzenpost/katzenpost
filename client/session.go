@@ -29,7 +29,6 @@ import (
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
-	coreConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -45,6 +44,9 @@ import (
 // Session is the struct type that keeps state for a given session.
 type Session struct {
 	worker.Worker
+
+	geo    *sphinx.Geometry
+	sphinx *sphinx.Sphinx
 
 	cfg       *config.Config
 	pkiClient pki.Client
@@ -102,6 +104,8 @@ func NewSession(
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", linkKey.PublicKey(), provider.Name))
 
 	s := &Session{
+		geo:         sphinx.DefaultGeometry(),
+		sphinx:      sphinx.DefaultSphinx(),
 		cfg:         cfg,
 		linkKey:     linkKey,
 		provider:    provider,
@@ -308,12 +312,12 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}
 	s.surbIDMap.Delete(*surbID)
 	msg := rawMessage.(*Message)
-	plaintext, err := sphinx.DecryptSURBPayload(ciphertext, msg.Key)
+	plaintext, err := s.sphinx.DecryptSURBPayload(ciphertext, msg.Key)
 	if err != nil {
 		s.log.Infof("Discarding SURB Reply, decryption failure: %s", err)
 		return nil
 	}
-	if len(plaintext) != coreConstants.ForwardPayloadLength {
+	if len(plaintext) != s.geo.ForwardPayloadLength {
 		s.log.Warningf("Discarding SURB %v: Invalid payload size: %v", idStr, len(plaintext))
 		return nil
 	}
