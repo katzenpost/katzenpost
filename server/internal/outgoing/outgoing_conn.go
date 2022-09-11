@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -261,6 +262,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,
 		AdditionalData:    c.co.glue.IdentityKey().PublicKey().Bytes(),
 		AuthenticationKey: c.co.glue.LinkKey(),

@@ -30,8 +30,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	cConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -61,6 +61,7 @@ type CBORPluginWorker struct {
 
 	glue glue.Glue
 	log  *logging.Logger
+	geo  *sphinx.Geometry
 
 	haltOnce    sync.Once
 	pluginChans PluginChans
@@ -140,10 +141,10 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	cborResponse := <-pluginClient.ReadChan()
 	switch r := cborResponse.(type) {
 	case *cborplugin.Response:
-		if len(r.Payload) > cConstants.UserForwardPayloadLength {
+		if len(r.Payload) > k.geo.UserForwardPayloadLength {
 			// response is probably invalid, so drop it
 			k.log.Errorf("Got response too long: %d > max (%d)",
-			len(r.Payload), cConstants.UserForwardPayloadLength)
+				len(r.Payload), k.geo.UserForwardPayloadLength)
 			kaetzchenRequestsDropped.Inc()
 			return
 		}
@@ -206,6 +207,7 @@ func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []s
 func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
 	kaetzchenWorker := CBORPluginWorker{
+		geo:         sphinx.DefaultGeometry(),
 		glue:        glue,
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),

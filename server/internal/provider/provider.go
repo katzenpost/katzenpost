@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -333,7 +332,8 @@ func (p *provider) worker() {
 }
 
 func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
-	if len(pkt.Payload) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
+	geo := sphinx.DefaultGeometry()
+	if len(pkt.Payload) != sphinx.PayloadTagLength+geo.ForwardPayloadLength {
 		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.ID, len(pkt.Payload))
 		return
 	}
