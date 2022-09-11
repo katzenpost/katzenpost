@@ -20,9 +20,10 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
 func TestSerializationSanity(t *testing.T) {
@@ -34,7 +35,7 @@ func TestSerializationSanity(t *testing.T) {
 	serialized, err := cbor.Marshal(reply)
 	require.NoError(err)
 
-	payload := make([]byte, constants.UserForwardPayloadLength)
+	payload := make([]byte, sphinx.DefaultGeometry().UserForwardPayloadLength)
 	copy(payload, serialized)
 
 	response := cborplugin.Response{
