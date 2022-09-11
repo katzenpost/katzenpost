@@ -23,7 +23,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/assert"
@@ -49,15 +48,17 @@ func TestBoltSpool(t *testing.T) {
 
 	t.Logf("TempDir: %v", tmpDir)
 
+	geo := sphinx.DefaultGeometry()
+
 	// Build a test message.
-	testMsg = make([]byte, constants.UserForwardPayloadLength)
+	testMsg = make([]byte, geo.UserForwardPayloadLength)
 	_, err := rand.Read(testMsg)
 	require.NoError(err, "rand.Read(testMsg)")
 
 	// Built a test SURBReply.
 	_, err = rand.Read(testSurbID[:])
 	require.NoError(err, "rand.Read(testSurbID)")
-	testSurbMsg = make([]byte, sphinx.PayloadTagLength+constants.ForwardPayloadLength)
+	testSurbMsg = make([]byte, sphinx.PayloadTagLength+geo.ForwardPayloadLength)
 	_, err = rand.Read(testSurbMsg)
 	require.NoError(err, "rand.Read(testSurbMsg)")
 
