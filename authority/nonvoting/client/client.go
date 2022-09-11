@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
@@ -38,6 +39,7 @@ var defaultDialer = &net.Dialer{}
 
 // Config is a nonvoting authority pki.Client instance.
 type Config struct {
+
 	// LogBackend is the `core/log` Backend instance to use for logging.
 	LogBackend *log.Backend
 
@@ -207,6 +209,7 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 
 	// Initialize the wire protocol session.
 	cfg := &wire.SessionConfig{
+		Geometry:          &sphinx.Geometry{},
 		Authenticator:     c,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
