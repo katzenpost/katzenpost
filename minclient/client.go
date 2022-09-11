@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
@@ -143,6 +144,9 @@ type Client struct {
 	cfg *ClientConfig
 	log *logging.Logger
 
+	geo    *sphinx.Geometry
+	sphinx *sphinx.Sphinx
+
 	rng  *mRand.Rand
 	pki  *pki
 	conn *connection
@@ -188,6 +192,8 @@ func New(cfg *ClientConfig) (*Client, error) {
 	}
 
 	c := new(Client)
+	c.geo = sphinx.DefaultGeometry()
+	c.sphinx = sphinx.DefaultSphinx()
 	c.cfg = cfg
 	c.displayName = fmt.Sprintf("%v@%v", c.cfg.User, c.cfg.Provider)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)

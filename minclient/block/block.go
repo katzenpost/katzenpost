@@ -22,16 +22,16 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/noise"
 )
 
 var (
 	// BlockCiphertextLength is the length of a BlockCiphertext in bytes.
-	BlockCiphertextLength = constants.UserForwardPayloadLength
+	BlockCiphertextLength = sphinx.DefaultGeometry().UserForwardPayloadLength
 
 	// BlockPayloadLength is the maximum user payload length in a Block.
 	BlockPayloadLength = BlockCiphertextLength - (blockCiphertextOverhead + blockOverhead)
