@@ -17,9 +17,9 @@
 package scheduler
 
 import (
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -86,7 +86,10 @@ func TestMemoryQueueBulkEnqueue(t *testing.T) {
 	require.NoError(err)
 	q := newMemoryQueue(g, logger.GetLogger("mq"))
 	pkts := make([]*packet.Packet, 100)
-	payload := make([]byte, constants.PacketLength)
+
+	geo := sphinx.DefaultGeometry()
+
+	payload := make([]byte, geo.PacketLength)
 	for i := 0; i < 100; i++ {
 		// create a set of packets with out-of-order delays
 		pkts[i], err = packet.New(payload)

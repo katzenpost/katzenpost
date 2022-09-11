@@ -22,11 +22,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	cConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -283,37 +283,40 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["test"]
 	require.True(ok)
 
+	geo := sphinx.DefaultGeometry()
+
 	// invalid packet test case
-	payload := make([]byte, cConstants.PacketLength)
+	payload := make([]byte, geo.PacketLength)
 	testPacket, err := packet.New(payload)
 	require.NoError(err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
 	testPacket.DispatchAt = monotime.Now()
-	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength-1) // off by one erroneous size
+
+	testPacket.Payload = make([]byte, geo.ForwardPayloadLength-1) // off by one erroneous size
 	kaetzWorker.OnKaetzchen(testPacket)
 
 	// timeout test case
-	payload = make([]byte, cConstants.PacketLength)
+	payload = make([]byte, geo.PacketLength)
 	testPacket, err = packet.New(payload)
 	require.NoError(err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
 	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
-	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength)
+	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
 	// working test case
-	payload = make([]byte, cConstants.PacketLength)
+	payload = make([]byte, geo.PacketLength)
 	testPacket, err = packet.New(payload)
 	require.NoError(err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
 	testPacket.DispatchAt = monotime.Now()
-	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength)
+	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(testPacket)
 	<-mockService.receivedCh
