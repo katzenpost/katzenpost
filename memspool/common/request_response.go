@@ -20,8 +20,9 @@ import (
 	"errors"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/constants"
+
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 )
 
 const (
@@ -65,7 +66,7 @@ const (
 )
 
 // SpoolPayloadLength is the length of the spool append message payload.
-var SpoolPayloadLength = (constants.UserForwardPayloadLength - 4) - QueryOverhead
+var SpoolPayloadLength = (sphinx.DefaultGeometry().UserForwardPayloadLength - 4) - QueryOverhead
 
 // SpoolRequest is the message sent to the spool server
 type SpoolRequest struct {
