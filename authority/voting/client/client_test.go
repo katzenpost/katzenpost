@@ -28,21 +28,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"github.com/ugorji/go/codec"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/stretchr/testify/require"
-	"github.com/ugorji/go/codec"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type descriptor struct {
@@ -328,8 +331,13 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.Unlock()
 	wg.Done()
 
+	nrHops := 5
+	nike := ecdhnike.NewEcdhNike(rand.Reader)
+	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, 1234, true, nrHops)
+
 	d.waitUntilDialed(address)
 	cfg := &wire.SessionConfig{
+		Geometry:          geo,
 		Authenticator:     d,
 		AdditionalData:    identityPrivateKey.PublicKey().Bytes(),
 		AuthenticationKey: linkPrivateKey,
@@ -419,7 +427,11 @@ func TestClient(t *testing.T) {
 		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, &wg)
 	}
 	wg.Wait()
+	nrHops := 5
+	nike := ecdhnike.NewEcdhNike(rand.Reader)
+	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, 1234, true, nrHops)
 	cfg := &Config{
+		Geometry:      geo,
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,

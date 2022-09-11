@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -64,6 +65,10 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 // Config is a voting authority pki.Client instance.
 type Config struct {
 
+	// Geometry is the geometry of the Sphinx cryptographic packets
+	// that we will use with our wire protocol.
+	Geometry *sphinx.Geometry
+
 	// DataDir is the absolute path to the directory
 	// containing Authority link pub key PEM files.
 	DataDir string
@@ -83,6 +88,9 @@ type Config struct {
 }
 
 func (cfg *Config) validate() error {
+	if cfg.Geometry == nil {
+		return fmt.Errorf("voting/client: Sphinx Geometry is mandatory")
+	}
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("voting/client: LogBackend is mandatory")
 	}
@@ -174,6 +182,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// Initialize the wire protocol session.
 	cfg := &wire.SessionConfig{
+		Geometry:          p.cfg.Geometry,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
