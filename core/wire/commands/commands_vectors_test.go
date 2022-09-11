@@ -30,6 +30,8 @@ import (
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"
 
+const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
+
 type commandsTest struct {
 	NoOp               string
 	Disconnect         string
@@ -60,7 +62,6 @@ func TestBuildCommandVectors(t *testing.T) {
 	noOp := NoOp{}
 	disconnect := &Disconnect{}
 
-	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 	sendPacket := &SendPacket{SphinxPacket: []byte(payload)}
 
 	var retrieveMessageSeq uint32 = 12345
@@ -70,16 +71,20 @@ func TestBuildCommandVectors(t *testing.T) {
 		hint = 0x17
 	)
 
-	var emptyMsgSeq uint32 = 9876
-	messageEmpty := &MessageEmpty{Sequence: emptyMsgSeq}
-
 	nike := ecdh.NewEcdhNike(rand.Reader)
-	forwardPayloadLength := len(payload) + (sphinx.SphinxPlaintextHeaderLength + 556)
+	//forwardPayloadLength := len(payload) + (sphinx.SphinxPlaintextHeaderLength + 556)
 	nrHops := 5
-	s := sphinx.NewSphinx(nike, forwardPayloadLength, nrHops)
-	geo := s.Geometry()
+
+	//geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
 	cmds := &Commands{
 		geo: geo,
+	}
+
+	var emptyMsgSeq uint32 = 9876
+	messageEmpty := &MessageEmpty{
+		cmds:     cmds,
+		Sequence: emptyMsgSeq,
 	}
 
 	msgPayload := make([]byte, cmds.geo.ForwardPayloadLength)
@@ -99,6 +104,7 @@ func TestBuildCommandVectors(t *testing.T) {
 	_, err = rand.Read(ackPayload)
 	assert.NoError(err)
 	cmdMessageACK := &MessageACK{
+		geo:           geo,
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
 		Payload:       ackPayload,
@@ -159,9 +165,12 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
-	forwardPayloadLength := 123
+
 	nrHops := 5
-	s := sphinx.NewSphinx(nike, forwardPayloadLength, nrHops)
+
+	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
+	s := sphinx.NewSphinx(nike, geo)
+
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -196,15 +205,22 @@ func TestCommandVectors(t *testing.T) {
 
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
-	emptyMessage := &MessageEmpty{Sequence: cmdsTest.MessageEmptySeq}
+	emptyMessage := &MessageEmpty{
+		cmds:     cmds,
+		Sequence: cmdsTest.MessageEmptySeq,
+	}
 	emptyMessageCmd := emptyMessage.ToBytes()
 	assert.Equal(emptyMessageCmd, messageEmptyWant)
 
 	messageWant, err := hex.DecodeString(cmdsTest.Message)
 	assert.NoError(err)
+
 	payload, err := hex.DecodeString(cmdsTest.MessagePayload)
 	assert.NoError(err)
+
 	message := &Message{
+		geo:           geo,
+		cmds:          cmds,
 		QueueSizeHint: cmdsTest.MessageHint,
 		Sequence:      cmdsTest.MessageSeq,
 		Payload:       payload,
@@ -217,6 +233,8 @@ func TestCommandVectors(t *testing.T) {
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
 	messageAck := &MessageACK{
+		geo: geo,
+
 		QueueSizeHint: cmdsTest.MessageAckHint,
 		Sequence:      cmdsTest.MessageAckSeq,
 		Payload:       ackPayload,
