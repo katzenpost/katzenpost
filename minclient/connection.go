@@ -353,6 +353,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,
 		AdditionalData:    []byte(c.c.cfg.User),
 		AuthenticationKey: c.c.cfg.LinkKey,
