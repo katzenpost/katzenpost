@@ -18,6 +18,7 @@
 package eddsa
 
 import (
+	"crypto/ed25519"
 	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
@@ -29,8 +30,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"crypto/ed25519"
 	"filippo.io/edwards25519"
+
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -241,6 +242,7 @@ func (k *PrivateKey) ToECDH() *ecdh.PrivateKey {
 	dhBytes[31] |= 64
 	r := new(ecdh.PrivateKey)
 	r.FromBytes(dhBytes[:32])
+	utils.ExplicitBzero(dhBytes[:])
 	return r
 }
 
