@@ -18,6 +18,8 @@
 package eddsa
 
 import (
+	"crypto/ed25519"
+	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
@@ -28,9 +30,9 @@ import (
 	"io/ioutil"
 	"os"
 
-	"crypto/ed25519"
+	"filippo.io/edwards25519"
+
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/extra25519"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -144,13 +146,9 @@ func (k *PublicKey) ToPEMFile(f string) error {
 
 // ToECDH converts the PublicKey to the corresponding ecdh.PublicKey.
 func (k *PublicKey) ToECDH() *ecdh.PublicKey {
-	var dhBytes, dsaBytes [32]byte
-	copy(dsaBytes[:], k.Bytes())
-	defer utils.ExplicitBzero(dsaBytes[:])
-	extra25519.PublicKeyToCurve25519(&dhBytes, &dsaBytes)
-	defer utils.ExplicitBzero(dhBytes[:])
+	ed_pub, _ := new(edwards25519.Point).SetBytes(k.Bytes())
 	r := new(ecdh.PublicKey)
-	r.FromBytes(dhBytes[:])
+	r.FromBytes(ed_pub.BytesMontgomery())
 	return r
 }
 
@@ -238,16 +236,13 @@ func (k *PrivateKey) KeyType() string {
 
 // ToECDH converts the PrivateKey to the corresponding ecdh.PrivateKey.
 func (k *PrivateKey) ToECDH() *ecdh.PrivateKey {
-	var dsaBytes [64]byte
-	defer utils.ExplicitBzero(dsaBytes[:])
-	copy(dsaBytes[:], k.Bytes())
-
-	var dhBytes [32]byte
-	extra25519.PrivateKeyToCurve25519(&dhBytes, &dsaBytes)
-	defer utils.ExplicitBzero(dhBytes[:])
-
+	dhBytes := sha512.Sum512(k.Bytes()[:32])
+	dhBytes[0] &= 248
+	dhBytes[31] &= 127
+	dhBytes[31] |= 64
 	r := new(ecdh.PrivateKey)
-	r.FromBytes(dhBytes[:])
+	r.FromBytes(dhBytes[:32])
+	utils.ExplicitBzero(dhBytes[:])
 	return r
 }
 
