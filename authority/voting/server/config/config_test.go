@@ -59,7 +59,7 @@ func TestParseVotingConfig(t *testing.T) {
 	fn, err := filepath.Abs("../../../cmd/voting/authority.toml.sample")
 	require.NoError(err)
 
-	os.Mkdir("/tmp/katzenpost-authority/", 0777)
+	os.Mkdir("/tmp/katzenpost-authority/", 0770)
 	err = os.WriteFile("/tmp/katzenpost-authority/auth1_link_pub.pem", []byte(linkPubKeyPem), 0666)
 	require.NoError(err)
 	err = os.WriteFile("/tmp/katzenpost-authority/auth2_link_pub.pem", []byte(linkPubKeyPem), 0666)
