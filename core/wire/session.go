@@ -155,8 +155,8 @@ type Session struct {
 
 func (s *Session) handshake() error {
 	defer func() {
-		// FIXME: add Reset method
-		//s.authenticationKEMKey.Reset()
+		// FIXME: add Reset method so that we can reset the KEM keys
+		s.authenticationKEMKey = kem.Keypair(nil)
 		atomic.CompareAndSwapUint32(&s.state, stateInit, stateInvalid)
 	}()
 
@@ -509,8 +509,8 @@ func (s *Session) Close() {
 		s.rx.Rekey()
 		s.rxKeyMutex.Unlock()
 	}
-	// FIXME
-	//s.authenticationKEMKey.Reset()
+	// FIXME: add Reset method so that we can reset the KEM keys
+	s.authenticationKEMKey = kem.Keypair(nil)
 	if s.conn != nil {
 		s.conn.Close()
 	}
