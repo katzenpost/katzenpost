@@ -41,20 +41,24 @@ package eddsa
 import (
 	"crypto/ed25519"
 	"crypto/sha512"
+
 	"filippo.io/edwards25519"
 )
 
 const (
+	// BlindFactorSize is the size in bytes of the blinding factors.
 	BlindFactorSize = ed25519.PublicKeySize
 )
 
+// BlindedPrivateKey encapsulates a blinded PrivateKey.
 type BlindedPrivateKey struct {
 	blinded ed25519.PrivateKey
 }
 
-func (bpk *BlindedPrivateKey) PublicKey() *PublicKey {
+// PublicKey returns a PublicKey.
+func (b *BlindedPrivateKey) PublicKey() *PublicKey {
 	pub := new(PublicKey)
-	err := pub.FromBytes(bpk.blinded[32:])
+	err := pub.FromBytes(b.blinded[32:])
 	if err != nil {
 		// This should not be possible:
 		panic(err)
@@ -63,14 +67,14 @@ func (bpk *BlindedPrivateKey) PublicKey() *PublicKey {
 }
 
 // Sign signs the message msg with the BlindedPrivateKey and returns the signature.
-func (privateKey *BlindedPrivateKey) Sign(message []byte) []byte {
+func (b *BlindedPrivateKey) Sign(message []byte) []byte {
 	signature := make([]byte, ed25519.SignatureSize)
 	// vendored version of ed25519.sign() except it uses the
 	// secret/private scalar directly as expandedSecretKey
 	// instead of deriving from hash each time.
 	// It is a bit unfortunate that this needs to be here...
 	blindedSecretKey := [ed25519.PrivateKeySize]byte{}
-	copy(blindedSecretKey[:], privateKey.blinded[:32])
+	copy(blindedSecretKey[:], b.blinded[:32])
 	expandedSecretKey := new(edwards25519.Scalar)
 	_, err := expandedSecretKey.SetUniformBytes(blindedSecretKey[:])
 	if err != nil {
@@ -78,7 +82,7 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) []byte {
 	}
 
 	// secret_salt <- sha512(private)
-	digest1 := sha512.Sum512(privateKey.blinded[:32])
+	digest1 := sha512.Sum512(b.blinded[:32])
 
 	// very important that nonce is never repeated for different messages;
 	// ensured here by deriving nonce from a hash of the message.
@@ -99,7 +103,7 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) []byte {
 	// hramDigestReduced := sha512(R || public || message) mod L
 	h.Reset()
 	h.Write(encodedR)
-	h.Write(privateKey.blinded[32:])
+	h.Write(b.blinded[32:])
 	h.Write(message)
 	hramDigest := h.Sum(nil)
 	hramDigestReduced, _ := new(edwards25519.Scalar).SetUniformBytes(hramDigest[:])
@@ -116,7 +120,9 @@ func (privateKey *BlindedPrivateKey) Sign(message []byte) []byte {
 	return signature
 }
 
-func (secret *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
+// Blind performs the blinding operation on the private key
+// and returns the BlindedPrivateKey.
+func (k *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
 	// changes the *value* of the slice factor, which points at new bytes
 	// and does not modify the caller's copy of factor.
 	sum := sha512.Sum512_256(factor)
@@ -128,12 +134,12 @@ func (secret *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
 	}
 
 	// Here digest is the actual secret key derived from the seed:
-	digest := sha512.Sum512(secret.Bytes()[:32])
+	digest := sha512.Sum512(k.Bytes()[:32])
 	bb_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(digest[:32])
 
 	// (ab + c) mod l = ScMulAdd(out, a, b, c)
 	// a := factor
-	// b := secret
+	// b := k
 	// c := 0
 	// the (c*B) multiplication here is unfortunate but that was the easiest API
 	// to use in edwards25519, so...
@@ -156,23 +162,25 @@ func (secret *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
 
 // Identity returns the key's identity, in this case it's our
 // public key in bytes.
-func (k *BlindedPrivateKey) Identity() []byte {
-	return k.PublicKey().Bytes()
+func (b *BlindedPrivateKey) Identity() []byte {
+	return b.PublicKey().Bytes()
 }
 
 // KeyType returns the key type string,
 // in this case the constant variable
 // whose value is "ed25519".
-func (k *BlindedPrivateKey) KeyType() string {
+func (b *BlindedPrivateKey) KeyType() string {
 	return keyType
 }
 
-func (mypub *PublicKey) Blind(factor []byte) *PublicKey {
+// Blind performs the blinding operations on the public key
+// and returns the blinded public key.
+func (k *PublicKey) Blind(factor []byte) *PublicKey {
 	// out <- factor*pkA + zero*Basepoint
 	sum := sha512.Sum512_256(factor)
 	factor = sum[:]
 	factor_sc, _ := new(edwards25519.Scalar).SetBytesWithClamping(factor)
-	out, _ := new(edwards25519.Point).SetBytes(mypub.Bytes())
+	out, _ := new(edwards25519.Point).SetBytes(k.Bytes())
 	newkey := new(PublicKey)
 	err := newkey.FromBytes(out.ScalarMult(factor_sc, out).Bytes())
 	if err != nil {
