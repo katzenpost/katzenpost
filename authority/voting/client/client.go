@@ -160,15 +160,15 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	}
 
 	scheme := wire.NewScheme()
-	linkPublicKey := scheme.NewPublicKey()
-	err = linkPublicKey.FromPEMFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
+	peerLinkPublicKey := scheme.NewPublicKey()
+	err = peerLinkPublicKey.FromPEMFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
 	if err != nil {
 		return nil, err
 	}
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
-		LinkPublicKey:     linkPublicKey,
+		LinkPublicKey:     peerLinkPublicKey,
 		log:               p.log,
 	}
 
