@@ -174,7 +174,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// Initialize the wire protocol session.
 	cfg := &wire.SessionConfig{
-		Geometry:          &sphinx.Geometry{},
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,

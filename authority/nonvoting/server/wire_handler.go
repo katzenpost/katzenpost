@@ -46,10 +46,7 @@ func (s *Server) onConn(conn net.Conn) {
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
 	cfg := &wire.SessionConfig{
-		// a nil geometry works because we aren't sending or receiving
-		// wire protocol commands Message or MessageACK which are the
-		// only two that actually require the Sphinx Geometry.
-		Geometry:          &sphinx.Geometry{},
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     auth,
 		AdditionalData:    s.identityKey.PublicKey().Bytes(),
 		AuthenticationKey: s.linkKey,
