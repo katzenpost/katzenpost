@@ -131,7 +131,10 @@ func (p *publicKey) ToPEMFile(f string) error {
 	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
-func (p *publicKey) Reset() {}
+// XXX FIXME
+func (p *publicKey) Reset() {
+	p = nil
+}
 
 func (p *publicKey) Equal(publicKey PublicKey) bool {
 	return bytes.Equal(publicKey.Bytes(), p.Bytes())
@@ -175,7 +178,10 @@ type privateKey struct {
 	KEM        kem.KEM
 }
 
-func (p *privateKey) Reset() {}
+// XXX FIXME
+func (p *privateKey) Reset() {
+	p = nil
+}
 
 func (p *privateKey) PublicKey() PublicKey {
 	return &publicKey{
