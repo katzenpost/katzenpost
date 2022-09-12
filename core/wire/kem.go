@@ -33,6 +33,8 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 )
 
+var defaultScheme *scheme
+
 // PublicKey is an interface used to abstract away the
 // details of the KEM Public Key being used in the wire package.
 type PublicKey interface {
@@ -211,9 +213,7 @@ var _ Scheme = (*scheme)(nil)
 // Scheme interface for minimally encapsulating KEM related types
 // for non-cryptographic operations such as serialization and so on.
 func NewScheme() *scheme {
-	return &scheme{
-		KEM: kem.Kyber768X25519,
-	}
+	return defaultScheme
 }
 
 func (s *scheme) NewPublicKey() PublicKey {
@@ -290,4 +290,10 @@ func (s *scheme) Load(privFile, pubFile string, r io.Reader) (PrivateKey, error)
 		err = privKey.PublicKey().ToPEMFile(pubFile)
 	}
 	return privKey, nil
+}
+
+func init() {
+	defaultScheme = &scheme{
+		KEM: kem.Kyber768X25519,
+	}
 }
