@@ -63,19 +63,21 @@ var (
 
 	errTruncatedPayload = errors.New("sphinx: truncated payload")
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
+
+	defaultSphinx *Sphinx
+	geo           *Geometry
 )
 
 // DefaultSphinx returns an instance of the default sphinx packet factory.
 func DefaultSphinx() *Sphinx {
-	nike := ecdh.NewEcdhNike(rand.Reader)
-	return NewSphinx(nike, defaultGeometry(nike))
+	return defaultSphinx
 }
 
 // DefaultGeometry returns the Sphinx geometry we are using right now.
 // In the future there will be two types of Sphinx packets, classical
 // and post-quantum (using CTIDH NIKE).
 func DefaultGeometry() *Geometry {
-	return defaultGeometry(ecdh.NewEcdhNike(rand.Reader))
+	return geo
 }
 
 func defaultGeometry(nike nike.Nike) *Geometry {
@@ -566,4 +568,10 @@ func xorBytes(dst, a, b []byte) {
 	for i, v := range a {
 		dst[i] = v ^ b[i]
 	}
+}
+
+func init() {
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	geo = defaultGeometry(nike)
+	defaultSphinx = NewSphinx(nike, geo)
 }
