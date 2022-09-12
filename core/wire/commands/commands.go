@@ -502,7 +502,7 @@ func retreiveMessageFromBytes(b []byte) (Command, error) {
 
 // MessageACK is a de-serialized message command containing an ACK.
 type MessageACK struct {
-	geo *sphinx.Geometry
+	Geo *sphinx.Geometry
 
 	QueueSizeHint uint8
 	Sequence      uint32
@@ -512,11 +512,11 @@ type MessageACK struct {
 
 // ToBytes serializes the MessageACK and returns the resulting slice.
 func (c *MessageACK) ToBytes() []byte {
-	if len(c.Payload) != sphinx.PayloadTagLength+c.geo.ForwardPayloadLength {
+	if len(c.Payload) != sphinx.PayloadTagLength+c.Geo.ForwardPayloadLength {
 		panic("wire: invalid MessageACK payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+messageACKLength(), cmdOverhead+messageACKLength()+sphinx.PayloadTagLength+c.geo.ForwardPayloadLength)
+	out := make([]byte, cmdOverhead+messageACKLength(), cmdOverhead+messageACKLength()+sphinx.PayloadTagLength+c.Geo.ForwardPayloadLength)
 
 	out[0] = byte(message)
 	binary.BigEndian.PutUint32(out[2:6], uint32(messageACKLength()+len(c.Payload)))
@@ -530,8 +530,8 @@ func (c *MessageACK) ToBytes() []byte {
 
 // Message is a de-serialized message command containing a message.
 type Message struct {
-	geo  *sphinx.Geometry
-	cmds *Commands
+	Geo  *sphinx.Geometry
+	Cmds *Commands
 
 	QueueSizeHint uint8
 	Sequence      uint32
@@ -540,13 +540,13 @@ type Message struct {
 
 // ToBytes serializes the Message and returns the resulting slice.
 func (c *Message) ToBytes() []byte {
-	if len(c.Payload) != c.geo.UserForwardPayloadLength {
+	if len(c.Payload) != c.Geo.UserForwardPayloadLength {
 		panic("wire: invalid Message payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+c.cmds.messageMsgLength()+len(c.Payload))
+	out := make([]byte, cmdOverhead+c.Cmds.messageMsgLength()+len(c.Payload))
 	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.cmds.messageMsgLength()+len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageMsgLength()+len(c.Payload)))
 	out[6] = byte(messageTypeMessage)
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
@@ -556,17 +556,17 @@ func (c *Message) ToBytes() []byte {
 
 // MessageEmpty is a de-serialized message command signifying a empty queue.
 type MessageEmpty struct {
-	cmds *Commands
+	Cmds *Commands
 
 	Sequence uint32
 }
 
 // ToBytes serializes the MessageEmpty and returns the resulting slice.
 func (c *MessageEmpty) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+c.cmds.messageEmptyLength())
+	out := make([]byte, cmdOverhead+c.Cmds.messageEmptyLength())
 
 	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.cmds.messageEmptyLength()))
+	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageEmptyLength()))
 	out[6] = byte(messageTypeEmpty)
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	return out
