@@ -23,6 +23,7 @@ import (
 	"encoding"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -361,12 +362,18 @@ func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
 func (s *scheme) Load(privFile, pubFile string, r io.Reader) (PrivateKey, error) {
 	keyType := fmt.Sprintf("%s PRIVATE KEY", s.KEM)
 
+	if _, err := os.Stat(privFile); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(pubFile); err == nil {
+			return nil, errors.New("error: public key exists and private key does not exist")
+		}
+	}
+
 	if buf, err := ioutil.ReadFile(privFile); err == nil {
 		defer utils.ExplicitBzero(buf)
 		blk, rest := pem.Decode(buf)
 		defer utils.ExplicitBzero(blk.Bytes)
 		if len(rest) != 0 {
-			return nil, fmt.Errorf("trailing garbage after PEM encoded private key")
+			return nil, errors.New("trailing garbage after PEM encoded private key")
 		}
 		if blk.Type != keyType {
 			return nil, fmt.Errorf("invalid PEM Type: '%v'", blk.Type)
