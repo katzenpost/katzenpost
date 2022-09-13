@@ -108,6 +108,9 @@ type Scheme interface {
 	// UnmarshalTextPublicKey loads a public key from text encoded in base64.
 	UnmarshalTextPublicKey([]byte) (PublicKey, error)
 
+	// UnmarshalBinaryPublicKey loads a public key from byte slice.
+	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
+
 	// GenerateKeypair generates a new KEM keypair using the provided
 	// entropy source.
 	GenerateKeypair(r io.Reader) PrivateKey
@@ -328,6 +331,16 @@ func (s *scheme) UnmarshalTextPrivateKey(b []byte) (PrivateKey, error) {
 		return nil, err
 	}
 	return privKey, nil
+}
+
+func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (PublicKey, error) {
+	privKey := s.GenerateKeypair(rand.Reader)
+	pubKey := privKey.PublicKey()
+	err := pubKey.UnmarshalBinary(b)
+	if err != nil {
+		return nil, err
+	}
+	return pubKey, nil
 }
 
 func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {

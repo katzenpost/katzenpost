@@ -163,10 +163,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		}
 
 		scheme := wire.NewScheme()
-		linkKey, err := scheme.GenerateKeypair(rand.Reader)
-		if err != nil {
-			panic(err)
-		}
+		linkKey := scheme.GenerateKeypair(rand.Reader)
 
 		mix := &pki.MixDescriptor{
 			Name:        name,

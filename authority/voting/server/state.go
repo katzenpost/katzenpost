@@ -1483,8 +1483,7 @@ func newState(s *Server) (*state, error) {
 	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]wire.PublicKey)
 	scheme := wire.NewScheme()
 	for _, v := range st.s.cfg.Authorities {
-		linkPubKey := scheme.NewPublicKey()
-		err := linkPubKey.FromPEMFile(filepath.Join(s.cfg.Authority.DataDir, v.LinkPublicKeyPem))
+		linkPubKey, err := scheme.PublicKeyFromPemFile(filepath.Join(s.cfg.Authority.DataDir, v.LinkPublicKeyPem))
 		if err != nil {
 			return nil, err
 		}
