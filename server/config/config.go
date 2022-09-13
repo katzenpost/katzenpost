@@ -745,9 +745,7 @@ func (p *Peer) validate(datadir string) error {
 	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
 		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
 	}
-	scheme := wire.NewScheme()
-	linkPubKey := scheme.NewPublicKey()
-	err := linkPubKey.FromPEMFile(filepath.Join(datadir, p.LinkPublicKeyPem))
+	_, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(datadir, p.LinkPublicKeyPem))
 	if err != nil {
 		return fmt.Errorf("Voting Peer: Invalid Link PublicKey PEM file: %v", err)
 	}
@@ -762,15 +760,9 @@ type Voting struct {
 // AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
 func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
-	scheme := wire.NewScheme()
 	for _, peer := range peers {
-		linkKey := scheme.NewPublicKey()
-		err := linkKey.FromPEMFile(filepath.Join(datadir, peer.LinkPublicKeyPem))
-		if err != nil {
-			return nil, err
-		}
 		identityKey := new(eddsa.PublicKey)
-		err = identityKey.UnmarshalText([]byte(peer.IdentityPublicKey))
+		err := identityKey.UnmarshalText([]byte(peer.IdentityPublicKey))
 		if err != nil {
 			return nil, err
 		}

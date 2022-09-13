@@ -42,8 +42,7 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDes
 	require.NoError(err, "eddsa.NewKeypair()")
 	d.IdentityKey = identityPriv.PublicKey()
 	scheme := wire.NewScheme()
-	linkPriv, err := scheme.GenerateKeypair(rand.Reader)
-	require.NoError(err)
+	linkPriv := scheme.GenerateKeypair(rand.Reader)
 	d.LinkKey = linkPriv.PublicKey()
 	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {

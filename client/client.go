@@ -176,9 +176,7 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 	defer cancel()
 
 	// generate a linkKey
-	if linkKey, err = wire.NewScheme().GenerateKeypair(rand.Reader); err != nil {
-		return nil, err
-	}
+	linkKey = wire.NewScheme().GenerateKeypair(rand.Reader)
 
 	// fetch a pki.Document
 	if _, doc, err = PKIBootstrap(c.cfg, linkKey); err != nil {

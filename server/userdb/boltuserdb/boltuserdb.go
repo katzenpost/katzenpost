@@ -174,8 +174,9 @@ func (d *boltUserDB) Link(u []byte) (wire.PublicKey, error) {
 		if rawPubKey == nil {
 			return fmt.Errorf("userdb: user %s does not have a link key", u)
 		}
-		pubKey = d.scheme.NewPublicKey()
-		return pubKey.FromBytes(rawPubKey)
+		var err error
+		pubKey, err = d.scheme.UnmarshalTextPublicKey(rawPubKey)
+		return err
 	})
 	return pubKey, err
 }
@@ -198,8 +199,9 @@ func (d *boltUserDB) Identity(u []byte) (wire.PublicKey, error) {
 			return userdb.ErrNoIdentity
 		}
 
-		pubKey = d.scheme.NewPublicKey()
-		return pubKey.FromBytes(rawPubKey)
+		var err error
+		pubKey, err = d.scheme.UnmarshalTextPublicKey(rawPubKey)
+		return err
 	})
 
 	return pubKey, err
