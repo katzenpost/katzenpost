@@ -304,9 +304,9 @@ func (a *AuthorityPeer) Validate(datadir string) error {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key PEM filename", a)
 	}
 
-	scheme := wire.NewScheme()
-	peerLinkKey := scheme.NewPublicKey()
-	return peerLinkKey.FromPEMFile(filepath.Join(datadir, a.LinkPublicKeyPem))
+	_, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(datadir, a.LinkPublicKeyPem))
+
+	return err
 }
 
 // Node is an authority mix node or provider entry.

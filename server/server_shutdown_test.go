@@ -38,8 +38,7 @@ func TestServerStartShutdown(t *testing.T) {
 	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
 	scheme := wire.NewScheme()
-	authLinkPrivKey, err := scheme.GenerateKeypair(rand.Reader)
-	assert.NoError(err)
+	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
 	authLinkPrivKey.PublicKey().ToPEMFile(filepath.Join(datadir, authLinkPubKeyPem))
 
 	authkey, err := eddsa.NewKeypair(rand.Reader)

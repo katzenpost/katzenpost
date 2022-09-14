@@ -218,8 +218,8 @@ func (d *pgxUserDB) getAuthKey(u []byte) wire.PublicKey {
 		return nil
 	}
 
-	pk := wire.NewScheme().NewPublicKey()
-	if err := pk.FromBytes(raw); err != nil {
+	pk, err := wire.NewScheme().UnmarshalBinaryPublicKey(raw)
+	if err != nil {
 		d.pgx.d.log.Warningf("Failed to deserialize authentication key for user '%v': %v", utils.ASCIIBytesToPrintString(u), err)
 		return nil
 	}
@@ -270,8 +270,8 @@ func (d *pgxUserDB) Identity(u []byte) (wire.PublicKey, error) {
 		return nil, userdb.ErrNoIdentity
 	}
 
-	pk := wire.NewScheme().NewPublicKey()
-	if err := pk.FromBytes(raw); err != nil {
+	pk, err := wire.NewScheme().UnmarshalBinaryPublicKey(raw)
+	if err != nil {
 		return nil, err
 	}
 

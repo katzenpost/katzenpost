@@ -135,10 +135,16 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
+	// Generate a random wire keypair to use for the link authentication.
+	scheme := wire.NewScheme()
+	linkKey := scheme.GenerateKeypair(rand.Reader)
+	defer linkKey.Reset()
+
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	conn, s, err := c.initSession(ctx, doneCh, nil, c.cfg.LinkKey)
+
+	conn, s, err := c.initSession(ctx, doneCh, nil, linkKey)
 	if err != nil {
 		return nil, nil, err
 	}

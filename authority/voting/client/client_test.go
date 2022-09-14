@@ -165,10 +165,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		}
 
 		scheme := wire.NewScheme()
-		linkKey, err := scheme.GenerateKeypair(rand.Reader)
-		if err != nil {
-			panic(err)
-		}
+		linkKey := scheme.GenerateKeypair(rand.Reader)
 
 		mix := &pki.MixDescriptor{
 			Name:        name,
@@ -392,15 +389,21 @@ func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, *eddsa.Pr
 		return nil, nil, nil, err
 	}
 	scheme := wire.NewScheme()
-	linkPrivateKey, err := scheme.Load(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)), filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), rand.Reader)
+	linkPrivateKey, err := scheme.Load(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)),
+		filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), rand.Reader)
 	if err != nil {
 		panic(err)
 	}
-	return &config.AuthorityPeer{
+	authPeer := &config.AuthorityPeer{
 		IdentityPublicKey: identityPrivateKey.PublicKey(),
-		LinkPublicKeyPem:  filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)),
+		LinkPublicKeyPem:  fmt.Sprintf("peer%d_link_pub_key.pem", peerNum),
 		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
-	}, identityPrivateKey, linkPrivateKey, nil
+	}
+	err = authPeer.Validate(datadir)
+	if err != nil {
+		panic(err)
+	}
+	return authPeer, identityPrivateKey, linkPrivateKey, nil
 }
 
 func TestClient(t *testing.T) {
@@ -423,6 +426,7 @@ func TestClient(t *testing.T) {
 	}
 	wg.Wait()
 	cfg := &Config{
+		DataDir:       datadir,
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,

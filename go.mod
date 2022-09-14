@@ -4,6 +4,7 @@ go 1.16
 
 require (
 	git.xx.network/elixxir/ctidh_cgo v0.0.0-20220908145931-6ec4831f902c // indirect
+	filippo.io/edwards25519 v1.0.0-rc.1
 	github.com/BurntSushi/toml v0.4.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/cockroachdb/apd v1.1.0 // indirect
@@ -28,7 +29,6 @@ require (
 	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
-	gitlab.com/yawning/nyquist.git v0.0.0-20210929192828-af6441cddcd7 // indirect
 	go.etcd.io/bbolt v1.3.6
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
 	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2

@@ -102,10 +102,7 @@ func (e *externAuth) Identity(u []byte) (wire.PublicKey, error) {
 		if pkhex, ok := response[endpoint]; ok {
 			if decoded, err := hex.DecodeString(pkhex); err == nil {
 				scheme := wire.NewScheme()
-				pk := scheme.NewPublicKey()
-				if err := pk.FromBytes(decoded); err == nil {
-					return pk, nil
-				}
+				return scheme.UnmarshalTextPublicKey(decoded)
 			}
 		}
 	}
