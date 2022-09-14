@@ -18,6 +18,8 @@
 package eddsa
 
 import (
+	"crypto/ed25519"
+	"crypto/sha512"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
@@ -28,7 +30,9 @@ import (
 	"io/ioutil"
 	"os"
 
-	"crypto/ed25519"
+	"filippo.io/edwards25519"
+
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -140,6 +144,14 @@ func (k *PublicKey) ToPEMFile(f string) error {
 	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
+// ToECDH converts the PublicKey to the corresponding ecdh.PublicKey.
+func (k *PublicKey) ToECDH() *ecdh.PublicKey {
+	ed_pub, _ := new(edwards25519.Point).SetBytes(k.Bytes())
+	r := new(ecdh.PublicKey)
+	r.FromBytes(ed_pub.BytesMontgomery())
+	return r
+}
+
 // Reset clears the PublicKey structure such that no sensitive data is left in
 // memory.  PublicKeys, despite being public may be considered sensitive in
 // certain contexts (eg: if used once in path selection).
@@ -220,6 +232,18 @@ func (k *PrivateKey) Identity() []byte {
 // whose value is "ed25519".
 func (k *PrivateKey) KeyType() string {
 	return keyType
+}
+
+// ToECDH converts the PrivateKey to the corresponding ecdh.PrivateKey.
+func (k *PrivateKey) ToECDH() *ecdh.PrivateKey {
+	dhBytes := sha512.Sum512(k.Bytes()[:32])
+	dhBytes[0] &= 248
+	dhBytes[31] &= 127
+	dhBytes[31] |= 64
+	r := new(ecdh.PrivateKey)
+	r.FromBytes(dhBytes[:32])
+	utils.ExplicitBzero(dhBytes[:])
+	return r
 }
 
 // Reset clears the PrivateKey structure such that no sensitive data is left
