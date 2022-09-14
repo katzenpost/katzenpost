@@ -3,8 +3,8 @@ module github.com/katzenpost/katzenpost
 go 1.16
 
 require (
-	git.xx.network/elixxir/ctidh_cgo v0.0.0-20220908145931-6ec4831f902c // indirect
 	filippo.io/edwards25519 v1.0.0-rc.1
+	git.xx.network/elixxir/ctidh_cgo v0.0.0-20220908145931-6ec4831f902c
 	github.com/BurntSushi/toml v0.4.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/cockroachdb/apd v1.1.0 // indirect
