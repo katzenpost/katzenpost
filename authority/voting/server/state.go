@@ -531,6 +531,7 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 	s.s.Add(1)
 	defer s.s.Done()
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     s,
 		AdditionalData:    s.s.identityKey.PublicKey().Bytes(),
 		AuthenticationKey: s.s.linkKey,
@@ -596,6 +597,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 	s.s.Add(1)
 	defer s.s.Done()
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     s,
 		AdditionalData:    s.s.identityKey.PublicKey().Bytes(),
 		AuthenticationKey: s.s.linkKey,
