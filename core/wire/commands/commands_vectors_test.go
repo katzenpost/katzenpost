@@ -83,7 +83,7 @@ func TestBuildCommandVectors(t *testing.T) {
 
 	var emptyMsgSeq uint32 = 9876
 	messageEmpty := &MessageEmpty{
-		cmds:     cmds,
+		Cmds:     cmds,
 		Sequence: emptyMsgSeq,
 	}
 
@@ -92,8 +92,8 @@ func TestBuildCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	var msgSeq uint32 = 9876
 	message := &Message{
-		cmds: cmds,
-		geo:  geo,
+		Cmds: cmds,
+		Geo:  geo,
 
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
@@ -104,7 +104,7 @@ func TestBuildCommandVectors(t *testing.T) {
 	_, err = rand.Read(ackPayload)
 	assert.NoError(err)
 	cmdMessageACK := &MessageACK{
-		geo:           geo,
+		Geo:           geo,
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
 		Payload:       ackPayload,
@@ -206,7 +206,7 @@ func TestCommandVectors(t *testing.T) {
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
 	emptyMessage := &MessageEmpty{
-		cmds:     cmds,
+		Cmds:     cmds,
 		Sequence: cmdsTest.MessageEmptySeq,
 	}
 	emptyMessageCmd := emptyMessage.ToBytes()
@@ -219,8 +219,8 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 
 	message := &Message{
-		geo:           geo,
-		cmds:          cmds,
+		Geo:           geo,
+		Cmds:          cmds,
 		QueueSizeHint: cmdsTest.MessageHint,
 		Sequence:      cmdsTest.MessageSeq,
 		Payload:       payload,
@@ -233,7 +233,7 @@ func TestCommandVectors(t *testing.T) {
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
 	messageAck := &MessageACK{
-		geo: geo,
+		Geo: geo,
 
 		QueueSizeHint: cmdsTest.MessageAckHint,
 		Sequence:      cmdsTest.MessageAckSeq,
