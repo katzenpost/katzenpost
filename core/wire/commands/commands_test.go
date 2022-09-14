@@ -148,7 +148,7 @@ func TestMessage(t *testing.T) {
 
 	// MessageEmpty
 	cmdEmpty := &MessageEmpty{
-		cmds:     cmds,
+		Cmds:     cmds,
 		Sequence: seq,
 	}
 	b := cmdEmpty.ToBytes()
@@ -164,8 +164,8 @@ func TestMessage(t *testing.T) {
 	// Message
 	msgPayload := payload[:cmds.geo.UserForwardPayloadLength]
 	cmdMessage := &Message{
-		geo:  geo,
-		cmds: cmds,
+		Geo:  geo,
+		Cmds: cmds,
 
 		QueueSizeHint: hint,
 		Sequence:      seq,
@@ -192,7 +192,7 @@ func TestMessage(t *testing.T) {
 	require.NoError(err, "MessageACK: Failed to generate ID")
 
 	cmdMessageACK := &MessageACK{
-		geo: geo,
+		Geo: geo,
 
 		QueueSizeHint: hint,
 		Sequence:      seq,
