@@ -59,18 +59,6 @@ type Nike interface {
 	// NewKeypair returns a newly generated key pair.
 	NewKeypair() (PrivateKey, PublicKey)
 
-	// NewEmptyPublicKey returns an uninitialized
-	// PublicKey which is suitable to be loaded
-	// via some serialization format via FromBytes
-	// or FromPEMFile methods.
-	NewEmptyPublicKey() PublicKey
-
-	// NewEmptyPrivateKey returns an uninitialized
-	// PrivateKey which is suitable to be loaded
-	// via some serialization format via FromBytes
-	// or FromPEMFile methods.
-	NewEmptyPrivateKey() PrivateKey
-
 	// DeriveSecret derives a shared secret given a private key
 	// from one party and a public key from another.
 	DeriveSecret(PrivateKey, PublicKey) []byte
@@ -89,4 +77,7 @@ type Nike interface {
 	//
 	// See also PublicKey's Blind method.
 	Blind(groupMember []byte, blindingFactor []byte) (blindedGroupMember []byte)
+
+	// UnmarshalBinaryPublicKey loads a public key from byte slice.
+	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
 }
