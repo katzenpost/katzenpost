@@ -56,7 +56,7 @@ type commandsTest struct {
 	ConsensusErrorCode uint8
 }
 
-func TestBuildCommandVectors(t *testing.T) {
+func NoTestBuildCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
 	noOp := NoOp{}
