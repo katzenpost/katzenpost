@@ -97,7 +97,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 		payload := []byte(testPayload)
 		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 		require.NoError(err, "NewPacket failed")
-		require.Len(pkt, sphinx.Geometry().HeaderLength+PayloadTagLength+len(payload), "Packet Length")
+		require.Len(pkt, sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
 
 		t.Logf("pkt: %s", hex.Dump(pkt))
 

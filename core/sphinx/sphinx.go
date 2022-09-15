@@ -40,21 +40,12 @@ const (
 	perHopRoutingInfoLength = commands.RecipientLength + commands.SURBReplyLength
 	adLength                = 2
 
-	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
-	PayloadTagLength = 16
+	// payloadTagLength is the length of the Sphinx packet payload SPRP tag.
+	payloadTagLength = 16
 
-	// SphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
+	// sphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
 	// in bytes.
-	SphinxPlaintextHeaderLength = 1 + 1
-
-	// NodeIDLength is the node identifier length in bytes.
-	NodeIDLength = 32
-
-	// RecipientIDLength is the recipient identifier length in bytes.
-	RecipientIDLength = 64
-
-	// SURBIDLength is the SURB identifier length in bytes.
-	SURBIDLength = 16
+	sphinxPlaintextHeaderLength = 1 + 1
 )
 
 var (
@@ -119,6 +110,9 @@ type Geometry struct {
 
 	// UserForwardPayloadLength is the size of the usable payload.
 	UserForwardPayloadLength int
+
+	// NodeIDLength is the node identifier length in bytes.
+	NodeIDLength int
 }
 
 func (g *Geometry) String() string {
@@ -153,7 +147,7 @@ func (f *geometryFactory) headerLength() int {
 
 // PacketLength returns the length of a Sphinx Packet in bytes.
 func (f *geometryFactory) packetLength() int {
-	return f.headerLength() + PayloadTagLength + f.forwardPayloadLength
+	return f.headerLength() + payloadTagLength + f.forwardPayloadLength
 }
 
 // surbLength returns the length of a Sphinx SURB in bytes.
@@ -167,11 +161,11 @@ func (f *geometryFactory) surbLength() int {
 // somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
 // spec.
 func (f *geometryFactory) userForwardPayloadLength() int {
-	return f.forwardPayloadLength - (SphinxPlaintextHeaderLength + f.surbLength())
+	return f.forwardPayloadLength - (sphinxPlaintextHeaderLength + f.surbLength())
 }
 
 func (f *geometryFactory) deriveForwardPayloadLength(userForwardPayloadLength int) int {
-	return userForwardPayloadLength + (SphinxPlaintextHeaderLength + f.surbLength())
+	return userForwardPayloadLength + (sphinxPlaintextHeaderLength + f.surbLength())
 }
 
 func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
@@ -185,8 +179,8 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 		PacketLength:                f.packetLength(),
 		SURBLength:                  f.surbLength(),
 		UserForwardPayloadLength:    userForwardPayloadLength,
-		PayloadTagLength:            PayloadTagLength,
-		SphinxPlaintextHeaderLength: SphinxPlaintextHeaderLength,
+		PayloadTagLength:            payloadTagLength,
+		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		SURBIDLength:                constants.SURBIDLength,
 		RoutingInfoLength:           f.routingInfoLength(),
 	}
@@ -212,8 +206,8 @@ func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHo
 		SURBLength:                  f.surbLength(),
 		UserForwardPayloadLength:    f.userForwardPayloadLength(),
 		ForwardPayloadLength:        f.forwardPayloadLength,
-		PayloadTagLength:            PayloadTagLength,
-		SphinxPlaintextHeaderLength: SphinxPlaintextHeaderLength,
+		PayloadTagLength:            payloadTagLength,
+		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		SURBIDLength:                constants.SURBIDLength,
 		RoutingInfoLength:           f.routingInfoLength(),
 	}
@@ -418,9 +412,9 @@ func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte
 	}
 
 	// Assemble the packet.
-	pkt := make([]byte, 0, len(hdr)+PayloadTagLength+len(payload))
+	pkt := make([]byte, 0, len(hdr)+s.geometry.PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
-	pkt = append(pkt, zeroBytes[:PayloadTagLength]...)
+	pkt = append(pkt, zeroBytes[:s.geometry.PayloadTagLength]...)
 	pkt = append(pkt, payload...)
 
 	// Encrypt the payload.
@@ -542,15 +536,15 @@ func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []
 		}
 		payload = nil
 	} else {
-		if len(payload) < PayloadTagLength {
+		if len(payload) < s.geometry.PayloadTagLength {
 			return nil, replayTag[:], nil, errTruncatedPayload
 		}
 		// Validate the payload tag, iff this is not a SURB reply.
 		if surbReply == nil {
-			if !utils.CtIsZero(payload[:PayloadTagLength]) {
+			if !utils.CtIsZero(payload[:s.geometry.PayloadTagLength]) {
 				return nil, replayTag[:], nil, errInvalidTag
 			}
-			payload = payload[PayloadTagLength:]
+			payload = payload[s.geometry.PayloadTagLength:]
 		}
 	}
 

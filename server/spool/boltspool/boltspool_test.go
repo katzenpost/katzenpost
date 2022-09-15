@@ -58,7 +58,7 @@ func TestBoltSpool(t *testing.T) {
 	// Built a test SURBReply.
 	_, err = rand.Read(testSurbID[:])
 	require.NoError(err, "rand.Read(testSurbID)")
-	testSurbMsg = make([]byte, sphinx.PayloadTagLength+geo.ForwardPayloadLength)
+	testSurbMsg = make([]byte, geo.PayloadTagLength+geo.ForwardPayloadLength)
 	_, err = rand.Read(testSurbMsg)
 	require.NoError(err, "rand.Read(testSurbMsg)")
 

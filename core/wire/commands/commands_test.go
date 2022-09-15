@@ -184,7 +184,7 @@ func TestMessage(t *testing.T) {
 	require.Equal(msgPayload, cmdMessage.Payload, "Message: FromBytes() Payload")
 
 	// MessageACK
-	ackPayload := make([]byte, sphinx.PayloadTagLength+cmds.geo.ForwardPayloadLength)
+	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
 	_, err = rand.Reader.Read(ackPayload)
 	require.NoError(err, "Message: failed to generate ACK payload")
 	id := make([]byte, sphinxConstants.SURBIDLength)

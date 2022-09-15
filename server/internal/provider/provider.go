@@ -333,7 +333,7 @@ func (p *provider) worker() {
 
 func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
 	geo := sphinx.DefaultGeometry()
-	if len(pkt.Payload) != sphinx.PayloadTagLength+geo.ForwardPayloadLength {
+	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
 		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.ID, len(pkt.Payload))
 		return
 	}
