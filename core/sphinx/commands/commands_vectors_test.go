@@ -48,8 +48,8 @@ func TestBuildCommandVectors(t *testing.T) {
 		NextHopID:        "d949152fd0e541549225baac771c65f99cbe820afad04fbdd10a4b9ec68eef8a",
 		NextHopMAC:       "1f7b011fe8519cafc77b2a4c2e1e3ab9",
 		NextHopCmdWant:   "01d949152fd0e541549225baac771c65f99cbe820afad04fbdd10a4b9ec68eef8a1f7b011fe8519cafc77b2a4c2e1e3ab9",
-		RecipientID:      "52b0f869d0d49d8eb43e9efec1fb70a093212f0ddd4512471dc4edbf2fc85e31292b0f08a87195deaf57d59a17567da4848e3a0a08bfa6a42c49430d0f3b1e0a",
-		RecipientCmdWant: "0252b0f869d0d49d8eb43e9efec1fb70a093212f0ddd4512471dc4edbf2fc85e31292b0f08a87195deaf57d59a17567da4848e3a0a08bfa6a42c49430d0f3b1e0a",
+		RecipientID:      "ccaf6125a610bd298ab8a15f5e8fef72b46ca7a8db936d6b2400e2742531f80b",
+		RecipientCmdWant: "02ccaf6125a610bd298ab8a15f5e8fef72b46ca7a8db936d6b2400e2742531f80b",
 		SURBReplyID:      "479ed2fe89fb26e2272f2899eb0e2d2f",
 		SURBReplyCmdWant: "03479ed2fe89fb26e2272f2899eb0e2d2f",
 		NodeDelay:        1234,
@@ -62,6 +62,7 @@ func TestBuildCommandVectors(t *testing.T) {
 	enc := codec.NewEncoderBytes(&serialized, handle)
 	err := enc.Encode(cmdsTest)
 	assert.NoError(err)
+
 	//t.Logf("vectors in JSON:\n%s\n", string(serialized))
 }
 
