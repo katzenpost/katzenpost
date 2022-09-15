@@ -204,7 +204,7 @@ func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sp
 		} else {
 			pkt, err = sphinx.NewPacket(rand.Reader, path, payload)
 			require.NoError(err, "NewPacket failed")
-			require.Len(pkt, sphinx.Geometry().HeaderLength+PayloadTagLength+len(payload), "Packet Length")
+			require.Len(pkt, sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
 		}
 
 		tests[nrHops] = hexSphinxTest{

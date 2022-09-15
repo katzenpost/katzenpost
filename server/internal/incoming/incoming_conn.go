@@ -413,7 +413,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		copy(surbCmd.ID[:], surbID)
 		respCmd = surbCmd
 
-		if len(msg) != sphinx.PayloadTagLength+c.geo.ForwardPayloadLength {
+		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
 		}
 	} else if msg != nil {

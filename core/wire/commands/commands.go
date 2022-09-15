@@ -172,11 +172,11 @@ func messageACKLength() int {
 }
 
 func (c *Commands) messageEmptyLength() int {
-	return messageACKLength() + sphinx.PayloadTagLength + c.geo.ForwardPayloadLength
+	return messageACKLength() + c.geo.PayloadTagLength + c.geo.ForwardPayloadLength
 }
 
 func (c *Commands) messageMsgPaddingLength() int {
-	return sphinxConstants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + sphinx.PayloadTagLength
+	return sphinxConstants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
 }
 
 // NoOp is a de-serialized noop command.
@@ -512,11 +512,11 @@ type MessageACK struct {
 
 // ToBytes serializes the MessageACK and returns the resulting slice.
 func (c *MessageACK) ToBytes() []byte {
-	if len(c.Payload) != sphinx.PayloadTagLength+c.Geo.ForwardPayloadLength {
+	if len(c.Payload) != c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength {
 		panic("wire: invalid MessageACK payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+messageACKLength(), cmdOverhead+messageACKLength()+sphinx.PayloadTagLength+c.Geo.ForwardPayloadLength)
+	out := make([]byte, cmdOverhead+messageACKLength(), cmdOverhead+messageACKLength()+c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength)
 
 	out[0] = byte(message)
 	binary.BigEndian.PutUint32(out[2:6], uint32(messageACKLength()+len(c.Payload)))
@@ -585,7 +585,7 @@ func (c *Commands) messageFromBytes(b []byte) (Command, error) {
 
 	switch t {
 	case messageTypeACK:
-		if len(b) != sphinxConstants.SURBIDLength+sphinx.PayloadTagLength+c.geo.ForwardPayloadLength {
+		if len(b) != sphinxConstants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 

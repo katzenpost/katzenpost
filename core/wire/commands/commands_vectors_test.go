@@ -100,7 +100,7 @@ func TestBuildCommandVectors(t *testing.T) {
 		Payload:       msgPayload[:geo.UserForwardPayloadLength],
 	}
 
-	ackPayload := make([]byte, sphinx.PayloadTagLength+cmds.geo.ForwardPayloadLength)
+	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
 	_, err = rand.Read(ackPayload)
 	assert.NoError(err)
 	cmdMessageACK := &MessageACK{

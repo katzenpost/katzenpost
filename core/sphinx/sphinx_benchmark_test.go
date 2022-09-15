@@ -42,7 +42,7 @@ func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Nike) {
 	if err != nil {
 		panic("wtf")
 	}
-	if len(pkt) != geo.HeaderLength+PayloadTagLength+len(payload) {
+	if len(pkt) != geo.HeaderLength+geo.PayloadTagLength+len(payload) {
 		panic("wtf")
 	}
 
