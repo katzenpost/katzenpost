@@ -37,7 +37,7 @@ const (
 	// This is derived off the largest routing info block that we expect to
 	// encounter.  Everything else just has a NextNodeHop + NodeDelay, or a
 	// Recipient, both cases which are shorter.
-	perHopRoutingInfoLength = commands.RecipientLength + commands.SURBReplyLength
+	perHopRoutingInfoLength = commands.NextNodeHopLength + commands.SURBReplyLength
 	adLength                = 2
 
 	// payloadTagLength is the length of the Sphinx packet payload SPRP tag.
