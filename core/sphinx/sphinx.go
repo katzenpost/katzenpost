@@ -297,8 +297,8 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	keys[0] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 	defer keys[0].Reset()
 
-	groupElements[0] = s.nike.NewEmptyPublicKey()
-	err := groupElements[0].FromBytes(clientPublicKey.Bytes())
+	var err error
+	groupElements[0], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 	if err != nil {
 		panic(err)
 	}
@@ -311,8 +311,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 		keys[i] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 		defer keys[i].Reset()
 		clientPublicKey.Blind(keys[i-1].BlindingFactor)
-		groupElements[i] = s.nike.NewEmptyPublicKey()
-		err = groupElements[i].FromBytes(clientPublicKey.Bytes())
+		groupElements[i], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 		if err != nil {
 			panic(err)
 		}
@@ -454,12 +453,11 @@ func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []
 		return nil, nil, nil, errors.New("sphinx: invalid packet, unknown version")
 	}
 
-	// Calculate the hop's shared secret, and replay_tag.
-	groupElement := s.nike.NewEmptyPublicKey()
 	var sharedSecret []byte
 	defer utils.ExplicitBzero(sharedSecret)
 
-	err := groupElement.FromBytes(pkt[geOff:riOff])
+	// Calculate the hop's shared secret, and replay_tag.
+	groupElement, err := s.nike.UnmarshalBinaryPublicKey(pkt[geOff:riOff])
 	if err != nil {
 		panic(err)
 	}

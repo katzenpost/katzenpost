@@ -112,3 +112,13 @@ func (e *EcdhNike) Blind(groupMember []byte, blindingFactor []byte) []byte {
 	sharedSecret := ecdh.Exp(groupMember, blindingFactor)
 	return sharedSecret
 }
+
+// UnmarshalBinaryPublicKey loads a public key from byte slice.
+func (e *EcdhNike) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
+	pubKey := new(ecdh.PublicKey)
+	err := pubKey.FromBytes(b)
+	if err != nil {
+		return nil, err
+	}
+	return pubKey, err
+}
