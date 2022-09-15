@@ -217,3 +217,29 @@ func TestKDF(t *testing.T) {
 	zeros := make([]byte, privateKeySize)
 	require.Equal(t, zeros, k.BlindingFactor)
 }
+
+func TestVectorKDFWithECDHNike(t *testing.T) {
+	assert := assert.New(t)
+
+	ikm := make([]byte, 32)
+	rawInput, err := hex.DecodeString("9dd74a26535e05ba0ddb62e06ef9b3b29b089707b4652b9172d91e529c938b51")
+	assert.NoError(err)
+	copy(ikm[:], rawInput)
+	k := KDF(ikm, 32)
+
+	rawHeaderMAC, err := hex.DecodeString("56a3cca100da21fa9823df7884132e89e2155dadbf425e62ba43392c81581a69")
+	assert.NoError(err)
+	assert.Equal(rawHeaderMAC, k.HeaderMAC[:])
+	rawHeaderEncryption, err := hex.DecodeString("fa4f8808bad302e8247cf71dbaefe3ae")
+	assert.NoError(err)
+	assert.Equal(rawHeaderEncryption, k.HeaderEncryption[:])
+	rawHeaderEncryptionIV, err := hex.DecodeString("3499437e566a8f8cae363b428db7eff9")
+	assert.NoError(err)
+	assert.Equal(rawHeaderEncryptionIV, k.HeaderEncryptionIV[:])
+	rawPayloadEncryption, err := hex.DecodeString("382d5480e7ebc3c001d04a350f6da76882f26dff7fd14e304bce0aa6d464e6e4a440aad784b18c062700c352e7df6c44")
+	assert.NoError(err)
+	assert.Equal(rawPayloadEncryption, k.PayloadEncryption[:])
+	rawBlindingFactor, err := hex.DecodeString("22884af95653aef353d3bd3e8b7f9ac2214d4d4f4d726c7bd78553fb60982444")
+	assert.NoError(err)
+	assert.Equal(rawBlindingFactor, k.BlindingFactor[:])
+}
