@@ -1,5 +1,5 @@
 
-DataDir = "../client/testdata"
+DataDir = "/go/katzenpost/client/testdata"
 
 [UpstreamProxy]
   Type = "none"
