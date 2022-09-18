@@ -25,6 +25,10 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+
+	"github.com/katzenpost/katzenpost/core/crypto/sign/dilithium"
+	"github.com/katzenpost/katzenpost/core/crypto/sign/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/sign/hybrid"
 )
 
 const (
@@ -71,6 +75,9 @@ var (
 
 	// ErrThresholdNotMet indicates that there were not enough valid signatures to meet the threshold.
 	ErrThresholdNotMet = errors.New("threshold failure")
+
+	// Scheme is the signature scheme we are using throughout various components of the network.
+	Scheme = hybrid.NewScheme(eddsa.Scheme, dilithium.Scheme)
 )
 
 // Verifier is used to verify signatures.

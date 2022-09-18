@@ -25,7 +25,7 @@ import (
 	"fmt"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -270,7 +270,7 @@ type MixDescriptor struct {
 	Name string
 
 	// IdentityKey is the node's identity (signing) key.
-	IdentityKey *eddsa.PublicKey
+	IdentityKey sign.PublicKey
 
 	// LinkKey is the node's wire protocol public key.
 	LinkKey wire.PublicKey
@@ -302,7 +302,7 @@ type Client interface {
 	Get(ctx context.Context, epoch uint64) (*Document, []byte, error)
 
 	// Post posts the node's descriptor to the PKI for the provided epoch.
-	Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *MixDescriptor) error
+	Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, d *MixDescriptor) error
 
 	// Deserialize returns PKI document given the raw bytes.
 	Deserialize(raw []byte) (*Document, error)
