@@ -21,9 +21,7 @@
 package dilithium
 
 import (
-	"crypto"
 	"errors"
-	"io"
 
 	"github.com/cloudflare/circl/sign/dilithium"
 
@@ -45,6 +43,11 @@ type scheme struct {
 }
 
 var _ sign.Scheme = (*scheme)(nil)
+
+// Name of the scheme.
+func (s *scheme) Name() string {
+	return "Dilithium2AES"
+}
 
 // NewKeypair returns a newly generated key pair.
 func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
@@ -104,12 +107,6 @@ type privateKey struct {
 	scheme     *scheme
 	privateKey dilithium.PrivateKey
 	publicKey  *publicKey
-}
-
-// Public returns the public key corresponding to the opaque,
-// private key.
-func (p *privateKey) Public() *publicKey {
-	return p.publicKey
 }
 
 func (p *privateKey) Sign(message []byte) []byte {
