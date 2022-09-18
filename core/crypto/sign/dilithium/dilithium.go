@@ -21,6 +21,7 @@
 package dilithium
 
 import (
+	"encoding/base64"
 	"errors"
 
 	"github.com/cloudflare/circl/sign/dilithium"
@@ -166,4 +167,16 @@ func (p *publicKey) FromBytes(b []byte) error {
 	}
 	p.publicKey = p.scheme.mode.PublicKeyFromBytes(b)
 	return nil
+}
+
+func (p *publicKey) MarshalText() (text []byte, err error) {
+	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+}
+
+func (p *publicKey) UnmarshalText(text []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(text))
+	if err != nil {
+		return err
+	}
+	return p.FromBytes(raw)
 }

@@ -30,8 +30,8 @@ import (
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -43,7 +43,7 @@ var defaultDialer = &net.Dialer{}
 
 // authorityAuthenticator implements the PeerAuthenticator interface
 type authorityAuthenticator struct {
-	IdentityPublicKey *eddsa.PublicKey
+	IdentityPublicKey sign.PublicKey
 	LinkPublicKey     wire.PublicKey
 	log               *logging.Logger
 }
@@ -122,7 +122,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -211,7 +211,7 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
@@ -263,7 +263,7 @@ type Client struct {
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
+func (c *Client) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, signingPubKey sign.PublicKey, d *pki.MixDescriptor) error {
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
@@ -278,7 +278,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingKey.PublicKey(), cmd)
+	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPubKey, cmd)
 	if err != nil {
 		return err
 	}

@@ -18,6 +18,7 @@
 package hybrid
 
 import (
+	"encoding/base64"
 	"errors"
 
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
@@ -115,6 +116,15 @@ type privateKey struct {
 	publicKey2 sign.PublicKey
 }
 
+func (p *privateKey) PublicKey() sign.PublicKey {
+	return &publicKey{
+		scheme1:    p.scheme1,
+		scheme2:    p.scheme2,
+		publicKey1: p.publicKey1,
+		publicKey2: p.publicKey2,
+	}
+}
+
 func (p *privateKey) KeyType() string {
 	return p.scheme.Name()
 }
@@ -190,4 +200,16 @@ func (p *publicKey) FromBytes(b []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (p *publicKey) MarshalText() (text []byte, err error) {
+	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+}
+
+func (p *publicKey) UnmarshalText(text []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(text))
+	if err != nil {
+		return err
+	}
+	return p.FromBytes(raw)
 }

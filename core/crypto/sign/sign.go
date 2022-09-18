@@ -18,6 +18,10 @@
 // and implementations.
 package sign
 
+import (
+	"encoding"
+)
+
 // Key is an interface for types encapsulating key material.
 type Key interface {
 
@@ -50,6 +54,9 @@ type PrivateKey interface {
 // PublicKey is an interface for types encapsulating
 // public key material.
 type PublicKey interface {
+	encoding.TextMarshaler
+	encoding.TextUnmarshaler
+
 	Key
 
 	// Verify checks whether the given signature is valid.

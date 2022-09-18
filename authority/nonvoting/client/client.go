@@ -25,8 +25,8 @@ import (
 	"net"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -48,7 +48,7 @@ type Config struct {
 	Address string
 
 	// PublicKey is the authority's public key to use when validating documents.
-	PublicKey *eddsa.PublicKey
+	PublicKey sign.PublicKey
 
 	// AuthorityLinkKey is the authority's link key used in our noise wire protocol.
 	AuthorityLinkKey wire.PublicKey
@@ -78,8 +78,8 @@ type client struct {
 	serverLinkKey wire.PublicKey
 }
 
-func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
-	c.log.Debugf("Post(ctx, %d, %v, %+v)", epoch, signingKey.PublicKey(), d)
+func (c *client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
+	c.log.Debugf("Post(ctx, %d, %v, %+v)", epoch, signingPublicKey, d)
 
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
@@ -87,7 +87,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	}
 
 	// Make a serialized + signed + serialized descriptor.
-	signed, err := s11n.SignDescriptor(signingKey, d)
+	signed, err := s11n.SignDescriptor(signingPrivateKey, d)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	conn, s, err := c.initSession(ctx, doneCh, signingKey.PublicKey(), c.cfg.LinkKey)
+	conn, s, err := c.initSession(ctx, doneCh, signingPublicKey, c.cfg.LinkKey)
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
 	return s11n.VerifyAndParseDocument(raw, c.cfg.PublicKey)
 }
 
-func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey *eddsa.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {
+func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey sign.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {
 	// Connect to the peer.
 	dialFn := c.cfg.DialContextFn
 	if dialFn == nil {

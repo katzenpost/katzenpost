@@ -30,6 +30,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/ugorji/go/codec"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
@@ -68,7 +69,7 @@ func generateRandomTopology(nodes []*descriptor, layers int) [][][]byte {
 func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][][]byte {
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
-		id := v.desc.IdentityKey.ByteArray()
+		id := blake2b.Sum256(v.desc.IdentityKey.Bytes())
 		nodeMap[id] = v
 	}
 
@@ -91,7 +92,7 @@ func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][
 				break
 			}
 
-			id := nodes[idx].IdentityKey.ByteArray()
+			id := blake2b.Sum256(nodes[idx].IdentityKey.Bytes())
 			if n, ok := nodeMap[id]; ok {
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,

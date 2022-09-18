@@ -17,6 +17,7 @@
 package server
 
 import (
+	"crypto/hmac"
 	"net"
 	"time"
 
@@ -205,7 +206,7 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Ensure that the descriptor is signed by the peer that is posting.
-	if !desc.IdentityKey.Equal(pubKey) {
+	if !hmac.Equal(desc.IdentityKey.Bytes(), pubKey.Bytes()) {
 		s.log.Errorf("Peer %v: Identity key '%v' is not link key '%v'.", rAddr, desc.IdentityKey, pubKey)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp

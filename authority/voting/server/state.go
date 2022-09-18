@@ -32,6 +32,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -914,7 +916,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
-		id := v.desc.IdentityKey.ByteArray()
+		id := blake2b.Sum256(v.desc.IdentityKey.Bytes())
 		nodeMap[id] = v
 	}
 
@@ -945,7 +947,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 				break
 			}
 
-			id := nodes[idx].IdentityKey.ByteArray()
+			id := blake2b.Sum256(nodes[idx].IdentityKey.Bytes())
 			if n, ok := nodeMap[id]; ok {
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,
@@ -992,7 +994,7 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byt
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	// collect all of the identity keys from the current set of descriptors
 	for _, v := range nodes {
-		id := v.desc.IdentityKey.ByteArray()
+		id := blake2b.Sum256(v.desc.IdentityKey.Bytes())
 		nodeMap[id] = v
 	}
 
@@ -1075,7 +1077,7 @@ func (s *state) pruneDocuments() {
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
-	pk := desc.IdentityKey.ByteArray()
+	pk := blake2b.Sum256(desc.IdentityKey.Bytes())
 
 	switch desc.Layer {
 	case 0:
@@ -1241,7 +1243,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	defer s.Unlock()
 
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := desc.IdentityKey.ByteArray()
+	pk := blake2b.Sum256(desc.IdentityKey.Bytes())
 
 	// Get the public key -> descriptor map for the epoch.
 	m, ok := s.descriptors[epoch]
@@ -1429,7 +1431,7 @@ func (s *state) restorePersistence() error {
 					d := new(descriptor)
 					d.desc = desc
 					d.raw = rawDesc
-					m[desc.IdentityKey.ByteArray()] = d
+					m[blake2b.Sum256(desc.IdentityKey.Bytes())] = d
 
 					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
 				}
@@ -1565,7 +1567,7 @@ func epochFromBytes(b []byte) uint64 {
 
 func sortNodesByPublicKey(nodes []*descriptor) {
 	dTos := func(d *descriptor) string {
-		pk := d.desc.IdentityKey.ByteArray()
+		pk := blake2b.Sum256(d.desc.IdentityKey.Bytes())
 		return string(pk[:])
 	}
 	sort.Slice(nodes, func(i, j int) bool { return dTos(nodes[i]) < dTos(nodes[j]) })

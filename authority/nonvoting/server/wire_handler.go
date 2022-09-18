@@ -17,6 +17,7 @@
 package server
 
 import (
+	"crypto/hmac"
 	"net"
 	"time"
 
@@ -147,7 +148,7 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Ensure that the descriptor is signed by the peer that is posting.
-	if !desc.IdentityKey.Equal(pubKey) {
+	if !hmac.Equal(desc.IdentityKey.Bytes(), pubKey.Bytes()) {
 		s.log.Errorf("Peer %v: Identity key '%v' is not link key '%v'.", rAddr, desc.IdentityKey, pubKey)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
@@ -200,8 +201,11 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	pk := a.peerIdentityKey.ByteArray()
-	if !(a.s.state.authorizedMixes[pk] || a.s.state.authorizedProviders[pk] != "") {
+	pk, err := a.peerIdentityKey.MarshalText()
+	if err != nil {
+		panic(err)
+	}
+	if !(a.s.state.authorizedMixes[string(pk)] || a.s.state.authorizedProviders[string(pk)] != "") {
 		a.s.log.Debugf("Rejecting authentication, not a valid mix/provider.")
 		return false
 	}

@@ -20,22 +20,25 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"golang.org/x/crypto/sha3"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sync"
 	"time"
-	"io"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	bolt "go.etcd.io/bbolt"
+	"golang.org/x/crypto/blake2b"
+	"golang.org/x/crypto/sha3"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
-	bolt "go.etcd.io/bbolt"
-	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 )
 
 const (
@@ -44,11 +47,11 @@ const (
 )
 
 var (
-	MixPublishDeadline = epochtime.Period /4
-	errGone   = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet = errors.New("authority: Document is not ready yet")
-	weekOfEpochs = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
-	WarpedEpoch string
+	MixPublishDeadline = epochtime.Period / 4
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	weekOfEpochs       = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
+	WarpedEpoch        string
 )
 
 type descriptor struct {
@@ -70,16 +73,16 @@ type state struct {
 
 	db *bolt.DB
 
-	authorizedMixes     map[[eddsa.PublicKeySize]byte]bool
-	authorizedProviders map[[eddsa.PublicKeySize]byte]string
+	authorizedMixes     map[string]bool
+	authorizedProviders map[string]string
 
 	documents   map[uint64]*document
-	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
-	priorSRV     [][]byte
+	descriptors map[uint64]map[string]*descriptor
+	priorSRV    [][]byte
 
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
-	genesisEpoch uint64
+	genesisEpoch   uint64
 }
 
 func (s *state) Halt() {
@@ -145,8 +148,8 @@ func (s *state) onWakeup() {
 			s.log.Debugf("All descriptors uploaded, bootstrapping document")
 			s.generateDocument(epoch)
 		} else {
-			s.log.Debugf("We are in bootstrapping state for current epoch %v but only have " +
-			"%d descriptors out of %d authorized nodes", epoch, len(m), nrBootstrapDescs)
+			s.log.Debugf("We are in bootstrapping state for current epoch %v but only have "+
+				"%d descriptors out of %d authorized nodes", epoch, len(m), nrBootstrapDescs)
 		}
 	}
 
@@ -164,7 +167,7 @@ func (s *state) onWakeup() {
 	s.pruneDocuments()
 }
 
-func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor) bool {
+func (s *state) hasEnoughDescriptors(m map[string]*descriptor) bool {
 	// A Document will be generated iff there are at least:
 	//
 	//  * Debug.Layers * Debug.MinNodesPerLayer nodes.
@@ -319,7 +322,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
-		id := v.desc.IdentityKey.ByteArray()
+		id := blake2b.Sum256(v.desc.IdentityKey.Bytes())
 		nodeMap[id] = v
 	}
 
@@ -342,7 +345,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 				break
 			}
 
-			id := nodes[idx].IdentityKey.ByteArray()
+			id := blake2b.Sum256(nodes[idx].IdentityKey.Bytes())
 			if n, ok := nodeMap[id]; ok {
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,
@@ -426,7 +429,8 @@ func (s *state) pruneDocuments() {
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
-	pk := desc.IdentityKey.ByteArray()
+	textbyte, _ := desc.IdentityKey.MarshalText()
+	pk := string(textbyte)
 
 	switch desc.Layer {
 	case 0:
@@ -444,7 +448,8 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := desc.IdentityKey.ByteArray()
+	textbyte, _ := desc.IdentityKey.MarshalText()
+	pk := string(textbyte)
 
 	s.Lock()
 	defer s.Unlock()
@@ -452,7 +457,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Get the public key -> descriptor map for the epoch.
 	m, ok := s.descriptors[epoch]
 	if !ok {
-		m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+		m = make(map[string]*descriptor)
 		s.descriptors[epoch] = m
 	}
 
@@ -482,7 +487,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		if err != nil {
 			return err
 		}
-		eBkt.Put(pk[:], rawDesc)
+		eBkt.Put([]byte(pk), rawDesc)
 		return nil
 	}); err != nil {
 		// Persistence failures are FATAL.
@@ -521,7 +526,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		// Check to see if we are doing a bootstrap, and it's possible that
 		// we may decide to publish a document at some point ignoring the
 		// standard schedule.
-		if now == s.bootstrapEpoch || now - 1 == s.bootstrapEpoch {
+		if now == s.bootstrapEpoch || now-1 == s.bootstrapEpoch {
 			return nil, errNotYet
 		}
 
@@ -616,8 +621,7 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
-					verifier := new(eddsa.PublicKey)
-					err := verifier.FromBytes(pk)
+					verifier, err := cert.Scheme.UnmarshalBinaryPublicKey(pk)
 					if err != nil {
 						s.log.Errorf("Failed to load verifier key: %v", err)
 						continue
@@ -640,14 +644,18 @@ func (s *state) restorePersistence() error {
 					s.Lock()
 					m, ok := s.descriptors[epoch]
 					if !ok {
-						m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+						m = make(map[string]*descriptor)
 						s.descriptors[epoch] = m
 					}
 
 					d := new(descriptor)
 					d.desc = desc
 					d.raw = rawDesc
-					m[desc.IdentityKey.ByteArray()] = d
+					key, err := desc.IdentityKey.MarshalText()
+					if err != nil {
+						panic(err)
+					}
+					m[string(key)] = d
 					s.Unlock()
 
 					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
@@ -673,19 +681,25 @@ func newState(s *Server) (*state, error) {
 	st.updateCh = make(chan interface{}, 1) // Buffered!
 
 	// Initialize the authorized peer tables.
-	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
+	st.authorizedMixes = make(map[string]bool)
 	for _, v := range st.s.cfg.Mixes {
-		pk := v.IdentityKey.ByteArray()
-		st.authorizedMixes[pk] = true
+		pk, err := v.IdentityKey.MarshalText()
+		if err != nil {
+			panic(err)
+		}
+		st.authorizedMixes[string(pk)] = true
 	}
-	st.authorizedProviders = make(map[[eddsa.PublicKeySize]byte]string)
+	st.authorizedProviders = make(map[string]string)
 	for _, v := range st.s.cfg.Providers {
-		pk := v.IdentityKey.ByteArray()
-		st.authorizedProviders[pk] = v.Identifier
+		pk, err := v.IdentityKey.MarshalText()
+		if err != nil {
+			panic(err)
+		}
+		st.authorizedProviders[string(pk)] = v.Identifier
 	}
 
 	st.documents = make(map[uint64]*document)
-	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
+	st.descriptors = make(map[uint64]map[string]*descriptor)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
