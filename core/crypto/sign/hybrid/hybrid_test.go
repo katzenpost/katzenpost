@@ -41,3 +41,22 @@ func TestHybridSignatureScheme(t *testing.T) {
 
 	require.True(t, ok)
 }
+
+func TestTripleHybridSignatureScheme(t *testing.T) {
+	scheme1 := NewScheme(eddsa.Scheme, dilithium.Scheme)
+	scheme2 := eddsa.Scheme
+	scheme := NewScheme(scheme1, scheme2)
+
+	t.Logf("scheme name: %s", scheme.Name())
+	t.Logf("signature size: %d", scheme.SignatureSize())
+	t.Logf("public key size: %d", scheme.PublicKeySize())
+	t.Logf("private key size: %d", scheme.PrivateKeySize())
+
+	message := []byte("hello world")
+
+	privKey, pubKey := scheme.NewKeypair()
+	signature := privKey.Sign(message)
+	ok := pubKey.Verify(signature, message)
+
+	require.True(t, ok)
+}
