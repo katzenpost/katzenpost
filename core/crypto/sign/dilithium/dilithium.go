@@ -109,6 +109,10 @@ type privateKey struct {
 	publicKey  *publicKey
 }
 
+func (p *privateKey) KeyType() string {
+	return p.scheme.Name()
+}
+
 func (p *privateKey) Sign(message []byte) []byte {
 	return p.scheme.mode.Sign(p.privateKey, message)
 }
@@ -116,6 +120,10 @@ func (p *privateKey) Sign(message []byte) []byte {
 func (p *privateKey) Reset() {
 	// XXX FIXME
 	p.privateKey = nil
+}
+
+func (p *privateKey) Identity() []byte {
+	return p.Bytes()
 }
 
 func (p *privateKey) Bytes() []byte {
@@ -142,6 +150,10 @@ func (p *publicKey) Verify(signature, message []byte) bool {
 func (p *publicKey) Reset() {
 	// XXX FIXME
 	p.publicKey = nil
+}
+
+func (p *publicKey) Identity() []byte {
+	return p.Bytes()
 }
 
 func (p *publicKey) Bytes() []byte {

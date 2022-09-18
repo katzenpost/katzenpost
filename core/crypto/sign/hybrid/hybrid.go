@@ -53,10 +53,13 @@ func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
 	privKey1, pubKey1 := s.scheme1.NewKeypair()
 	privKey2, pubKey2 := s.scheme2.NewKeypair()
 	return &privateKey{
+			scheme:      s,
 			scheme1:     s.scheme1,
 			scheme2:     s.scheme2,
 			privateKey1: privKey1,
 			privateKey2: privKey2,
+			publicKey1:  pubKey1,
+			publicKey2:  pubKey2,
 		}, &publicKey{
 			scheme1:    s.scheme1,
 			scheme2:    s.scheme2,
@@ -101,11 +104,19 @@ func (s *scheme) PrivateKeySize() int {
 }
 
 type privateKey struct {
+	scheme  sign.Scheme
 	scheme1 sign.Scheme
 	scheme2 sign.Scheme
 
 	privateKey1 sign.PrivateKey
 	privateKey2 sign.PrivateKey
+
+	publicKey1 sign.PublicKey
+	publicKey2 sign.PublicKey
+}
+
+func (p *privateKey) KeyType() string {
+	return p.scheme.Name()
 }
 
 func (p *privateKey) Sign(message []byte) []byte {
@@ -114,6 +125,10 @@ func (p *privateKey) Sign(message []byte) []byte {
 }
 
 func (p *privateKey) Reset() {}
+
+func (p *privateKey) Identity() []byte {
+	return append(p.publicKey1.Bytes(), p.publicKey2.Bytes()...)
+}
 
 func (p *privateKey) Bytes() []byte {
 	return append(p.privateKey1.Bytes(), p.privateKey2.Bytes()...)
@@ -155,6 +170,10 @@ func (p *publicKey) Verify(signature, message []byte) bool {
 func (p *publicKey) Reset() {
 	p.publicKey1.Reset()
 	p.publicKey2.Reset()
+}
+
+func (p *publicKey) Identity() []byte {
+	return append(p.publicKey1.Bytes(), p.publicKey2.Bytes()...)
 }
 
 func (p *publicKey) Bytes() []byte {
