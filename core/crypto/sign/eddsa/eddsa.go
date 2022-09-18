@@ -74,3 +74,8 @@ func (s *scheme) PublicKeySize() int {
 func (s *scheme) PrivateKeySize() int {
 	return eddsa.PrivateKeySize
 }
+
+// Name of the scheme.
+func (s *scheme) Name() string {
+	return "ED25519"
+}

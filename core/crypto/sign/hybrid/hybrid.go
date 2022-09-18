@@ -1,5 +1,4 @@
-// dilithium.go - Implements interface wrapper around dilithium2-AES from NIST round 3
-// as an implementation of our signature scheme interfaces.
+// hybrid.go - Generic hybrid signature scheme.
 //
 // Copyright (C) 2022  David Stainton.
 //
@@ -16,16 +15,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package dilithium implements dilithium2-AES from NIST round 3
-// as an implementation of our signature scheme interfaces.
-package dilithium
+package hybrid
 
 import (
 	"errors"
 
-	"github.com/cloudflare/circl/sign/dilithium"
-
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 )
 
@@ -34,124 +28,147 @@ var (
 	ErrPublicKeySize  = errors.New("byte slice length must match PublicKeySize")
 )
 
-var Scheme = &scheme{
-	mode: dilithium.Mode2AES,
-}
-
 type scheme struct {
-	mode dilithium.Mode
+	scheme1 sign.Scheme
+	scheme2 sign.Scheme
 }
 
 var _ sign.Scheme = (*scheme)(nil)
 
+// NewScheme create a new hybrid signature scheme.
+func NewScheme(a, b sign.Scheme) sign.Scheme {
+	return &scheme{
+		scheme1: a,
+		scheme2: b,
+	}
+}
+
 // Name of the scheme.
 func (s *scheme) Name() string {
-	return "Dilithium2AES"
+	return s.scheme1.Name() + "_" + s.scheme2.Name()
 }
 
 // NewKeypair returns a newly generated key pair.
 func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
-	pubKey, privKey, err := s.mode.GenerateKey(rand.Reader)
-	if err != nil {
-		panic(err)
-	}
+	privKey1, pubKey1 := s.scheme1.NewKeypair()
+	privKey2, pubKey2 := s.scheme2.NewKeypair()
 	return &privateKey{
-			scheme:     s,
-			privateKey: privKey,
+			scheme1:     s.scheme1,
+			scheme2:     s.scheme2,
+			privateKey1: privKey1,
+			privateKey2: privKey2,
 		}, &publicKey{
-			scheme:    s,
-			publicKey: pubKey,
+			scheme1:    s.scheme1,
+			scheme2:    s.scheme2,
+			publicKey1: pubKey1,
+			publicKey2: pubKey2,
 		}
 }
 
 // UnmarshalBinaryPublicKey loads a public key from byte slice.
 func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (sign.PublicKey, error) {
-	if len(b) != s.PublicKeySize() {
-		return nil, ErrPublicKeySize
-	}
-	pubKey := &publicKey{
-		scheme:    s,
-		publicKey: s.mode.PublicKeyFromBytes(b),
+	_, pubKey := s.NewKeypair()
+	err := pubKey.FromBytes(b)
+	if err != nil {
+		return nil, err
 	}
 	return pubKey, nil
 }
 
 // UnmarshalBinaryPrivateKey loads a private key from byte slice.
 func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (sign.PrivateKey, error) {
-	if len(b) != s.PrivateKeySize() {
-		return nil, ErrPrivateKeySize
-	}
-	privKey := &privateKey{
-		scheme:     s,
-		privateKey: s.mode.PrivateKeyFromBytes(b),
+	privKey, _ := s.NewKeypair()
+	err := privKey.FromBytes(b)
+	if err != nil {
+		return nil, err
 	}
 	return privKey, nil
 }
 
 // SignatureSize returns the size in bytes of the signature.
 func (s *scheme) SignatureSize() int {
-	return s.mode.SignatureSize()
+	return s.scheme1.SignatureSize() + s.scheme2.SignatureSize()
 }
 
 // PublicKeySize returns the size of a packed PublicKey
 func (s *scheme) PublicKeySize() int {
-	return s.mode.PublicKeySize()
+	return s.scheme1.PublicKeySize() + s.scheme2.PublicKeySize()
 }
 
 // PrivateKeySize returns the size of a packed PrivateKey
 func (s *scheme) PrivateKeySize() int {
-	return s.mode.PrivateKeySize()
+	return s.scheme1.PrivateKeySize() + s.scheme2.PrivateKeySize()
 }
 
 type privateKey struct {
-	scheme     *scheme
-	privateKey dilithium.PrivateKey
-	publicKey  *publicKey
+	scheme1 sign.Scheme
+	scheme2 sign.Scheme
+
+	privateKey1 sign.PrivateKey
+	privateKey2 sign.PrivateKey
 }
 
 func (p *privateKey) Sign(message []byte) []byte {
-	return p.scheme.mode.Sign(p.privateKey, message)
+	return append(p.privateKey1.Sign(message),
+		p.privateKey2.Sign(message)...)
 }
 
-func (p *privateKey) Reset() {
-	// XXX FIXME
-	p.privateKey = nil
-}
+func (p *privateKey) Reset() {}
 
 func (p *privateKey) Bytes() []byte {
-	return p.privateKey.Bytes()
+	return append(p.privateKey1.Bytes(), p.privateKey2.Bytes()...)
 }
 
 func (p *privateKey) FromBytes(b []byte) error {
-	if len(b) != p.scheme.PrivateKeySize() {
+	if len(b) != p.scheme1.PrivateKeySize()+p.scheme2.PrivateKeySize() {
 		return ErrPrivateKeySize
 	}
-	p.privateKey = p.scheme.mode.PrivateKeyFromBytes(b)
+	err := p.privateKey1.FromBytes(b[:p.scheme1.PrivateKeySize()])
+	if err != nil {
+		return err
+	}
+	err = p.privateKey2.FromBytes(b[p.scheme1.PrivateKeySize():])
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 type publicKey struct {
-	scheme    *scheme
-	publicKey dilithium.PublicKey
+	scheme1 sign.Scheme
+	scheme2 sign.Scheme
+
+	publicKey1 sign.PublicKey
+	publicKey2 sign.PublicKey
 }
 
 func (p *publicKey) Verify(signature, message []byte) bool {
-	return p.scheme.mode.Verify(p.publicKey, message, signature)
+	if p.publicKey1.Verify(signature[:p.scheme1.SignatureSize()], message) == false {
+		return false
+	}
+	if p.publicKey2.Verify(signature[p.scheme1.SignatureSize():], message) == false {
+		return false
+	}
+	return true
 }
 
 func (p *publicKey) Reset() {
-	// XXX FIXME
-	p.publicKey = nil
+	p.publicKey1.Reset()
+	p.publicKey2.Reset()
 }
 
 func (p *publicKey) Bytes() []byte {
-	return p.publicKey.Bytes()
+	return append(p.publicKey1.Bytes(), p.publicKey2.Bytes()...)
 }
 
 func (p *publicKey) FromBytes(b []byte) error {
-	if len(b) != p.scheme.PublicKeySize() {
-		return ErrPublicKeySize
+	err := p.publicKey1.FromBytes(b[:p.scheme1.PublicKeySize()])
+	if err != nil {
+		return err
 	}
-	p.publicKey = p.scheme.mode.PublicKeyFromBytes(b)
+	err = p.publicKey2.FromBytes(b[p.scheme1.PublicKeySize():])
+	if err != nil {
+		return err
+	}
 	return nil
 }

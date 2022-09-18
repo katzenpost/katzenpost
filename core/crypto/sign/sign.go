@@ -46,7 +46,7 @@ type PublicKey interface {
 	Key
 
 	// Verify checks whether the given signature is valid.
-	Verify(message, signature []byte) bool
+	Verify(signature, message []byte) bool
 }
 
 // Scheme is our signature scheme.
@@ -60,6 +60,9 @@ type Scheme interface {
 
 	// UnmarshalBinaryPrivateKey loads a private key from byte slice.
 	UnmarshalBinaryPrivateKey([]byte) (PrivateKey, error)
+
+	// Name of the scheme.
+	Name() string
 
 	// SignatureSize returns the size in bytes of the signature.
 	SignatureSize() int
