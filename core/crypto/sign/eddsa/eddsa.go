@@ -89,6 +89,10 @@ type privateKey struct {
 	privateKey *eddsa.PrivateKey
 }
 
+func (p *privateKey) KeyType() string {
+	return "ED25519 PRIVATE KEY"
+}
+
 func (p *privateKey) PublicKey() sign.PublicKey {
 	return &publicKey{
 		publicKey: p.privateKey.PublicKey(),
@@ -97,10 +101,6 @@ func (p *privateKey) PublicKey() sign.PublicKey {
 
 func (p *privateKey) Sign(message []byte) (signature []byte) {
 	return p.privateKey.Sign(message)
-}
-
-func (p *privateKey) KeyType() string {
-	return p.privateKey.KeyType()
 }
 
 func (p *privateKey) Reset() {
@@ -121,6 +121,10 @@ func (p *privateKey) Identity() []byte {
 
 type publicKey struct {
 	publicKey *eddsa.PublicKey
+}
+
+func (p *publicKey) KeyType() string {
+	return "ED25519 PUBLIC KEY"
 }
 
 func (p *publicKey) Sum256() [32]byte {

@@ -118,6 +118,10 @@ type privateKey struct {
 	publicKey2 sign.PublicKey
 }
 
+func (p *privateKey) KeyType() string {
+	return "ED25519 PRIVATE KEY"
+}
+
 func (p *privateKey) PublicKey() sign.PublicKey {
 	return &publicKey{
 		scheme1:    p.scheme1,
@@ -125,10 +129,6 @@ func (p *privateKey) PublicKey() sign.PublicKey {
 		publicKey1: p.publicKey1,
 		publicKey2: p.publicKey2,
 	}
-}
-
-func (p *privateKey) KeyType() string {
-	return p.scheme.Name()
 }
 
 func (p *privateKey) Sign(message []byte) []byte {
@@ -167,6 +167,10 @@ type publicKey struct {
 
 	publicKey1 sign.PublicKey
 	publicKey2 sign.PublicKey
+}
+
+func (p *publicKey) KeyType() string {
+	return "ED25519 PUBLIC KEY"
 }
 
 func (p *publicKey) Sum256() [32]byte {

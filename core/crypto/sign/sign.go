@@ -21,6 +21,9 @@ package sign
 // Key is an interface for types encapsulating key material.
 type Key interface {
 
+	// KeyType is a string indicating the key type.
+	KeyType() string
+
 	// Reset resets the key material to all zeros.
 	Reset()
 
@@ -45,9 +48,6 @@ type PrivateKey interface {
 
 	// Sign signs the given message and returns the signature.
 	Sign(message []byte) (signature []byte)
-
-	// KeyType is a string indicating the private key type.
-	KeyType() string
 }
 
 // PublicKey is an interface for types encapsulating
