@@ -21,6 +21,8 @@ import (
 	"crypto/hmac"
 	"errors"
 
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 )
 
@@ -165,6 +167,10 @@ type publicKey struct {
 
 	publicKey1 sign.PublicKey
 	publicKey2 sign.PublicKey
+}
+
+func (p *publicKey) Sum256() [32]byte {
+	return blake2b.Sum256(p.Bytes())
 }
 
 func (p *publicKey) Equal(pubKey sign.PublicKey) bool {
