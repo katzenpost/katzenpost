@@ -20,7 +20,8 @@ import (
 	"encoding/binary"
 	"errors"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -38,10 +39,8 @@ const (
 	postDescriptorStatusLength = 1
 	postDescriptorLength       = 8
 
-	voteOverhead     = 8 + eddsa.PublicKeySize
 	voteStatusLength = 1
 
-	revealOverhead     = 8 + eddsa.PublicKeySize
 	revealStatusLength = 1
 
 	messageTypeMessage messageType = 0
@@ -137,7 +136,13 @@ const (
 	RevealTooLate = 12
 )
 
-var errInvalidCommand = errors.New("wire: invalid wire protocol command")
+var (
+	errInvalidCommand = errors.New("wire: invalid wire protocol command")
+
+	voteOverhead = 8 + cert.Scheme.PublicKeySize()
+
+	revealOverhead = 8 + cert.Scheme.PublicKeySize()
+)
 
 type (
 	commandID   byte
@@ -216,14 +221,14 @@ func getConsensusFromBytes(b []byte) (Command, error) {
 // GetVote is a de-serialized get_vote command.
 type GetVote struct {
 	Epoch     uint64
-	PublicKey *eddsa.PublicKey
+	PublicKey sign.PublicKey
 }
 
 // ToBytes serializes the GetVote and returns the resulting slice.
 func (v *GetVote) ToBytes() []byte {
 	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead)
 	out[0] = byte(getVote)
-	binary.BigEndian.PutUint32(out[2:6], voteOverhead)
+	binary.BigEndian.PutUint32(out[2:6], uint32(voteOverhead))
 	binary.BigEndian.PutUint64(out[6:14], v.Epoch)
 	out = append(out, v.PublicKey.Bytes()...)
 	return out
@@ -235,8 +240,8 @@ func getVoteFromBytes(b []byte) (Command, error) {
 	}
 	r := new(GetVote)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	r.PublicKey = new(eddsa.PublicKey)
-	err := r.PublicKey.FromBytes(b[8:40])
+	var err error
+	r.PublicKey, err = cert.Scheme.UnmarshalBinaryPublicKey(b[8 : cert.Scheme.PublicKeySize()+8])
 	if err != nil {
 		return nil, err
 	}
@@ -330,7 +335,7 @@ func (c *PostDescriptorStatus) ToBytes() []byte {
 // Reveal is a de-serialized reveal command exchanged by authorities.
 type Reveal struct {
 	Epoch     uint64
-	PublicKey *eddsa.PublicKey
+	PublicKey sign.PublicKey
 	Payload   []byte
 }
 
@@ -341,7 +346,7 @@ func (r *Reveal) ToBytes() []byte {
 	// out[1] reserved
 	binary.BigEndian.PutUint32(out[2:6], uint32(revealOverhead+len(r.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], r.Epoch)
-	copy(out[14:14+eddsa.PublicKeySize], r.PublicKey.Bytes())
+	copy(out[14:14+cert.Scheme.PublicKeySize()], r.PublicKey.Bytes())
 	out = append(out, r.Payload...)
 	return out
 }
@@ -353,8 +358,8 @@ func revealFromBytes(b []byte) (Command, error) {
 
 	r := new(Reveal)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	r.PublicKey = new(eddsa.PublicKey)
-	err := r.PublicKey.FromBytes(b[8:40])
+	var err error
+	r.PublicKey, err = cert.Scheme.UnmarshalBinaryPublicKey(b[8 : 8+cert.Scheme.PublicKeySize()])
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +395,7 @@ func (r *RevealStatus) ToBytes() []byte {
 // Vote is a vote which is exchanged by Directory Authorities.
 type Vote struct {
 	Epoch     uint64
-	PublicKey *eddsa.PublicKey
+	PublicKey sign.PublicKey
 	Payload   []byte
 }
 
@@ -400,8 +405,8 @@ func voteFromBytes(b []byte) (Command, error) {
 		return nil, errInvalidCommand
 	}
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	r.PublicKey = new(eddsa.PublicKey)
-	err := r.PublicKey.FromBytes(b[8:40])
+	var err error
+	r.PublicKey, err = cert.Scheme.UnmarshalBinaryPublicKey(b[8 : 8+cert.Scheme.PublicKeySize()])
 	if err != nil {
 		return nil, err
 	}

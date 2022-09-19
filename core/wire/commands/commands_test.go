@@ -19,12 +19,13 @@ package commands
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNoOp(t *testing.T) {
@@ -332,8 +333,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 
 func TestGetVote(t *testing.T) {
 	require := require.New(t)
-	alice, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err, "GetVote: NewKeypair() failed")
+	alice, _ := cert.Scheme.NewKeypair()
 
 	cmd := &GetVote{
 		Epoch:     123,
@@ -361,8 +361,7 @@ func TestGetVote(t *testing.T) {
 func TestVote(t *testing.T) {
 	require := require.New(t)
 
-	alice, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err, "wtf")
+	alice, _ := cert.Scheme.NewKeypair()
 	cmd := &Vote{
 		Epoch:     3141,
 		PublicKey: alice.PublicKey(),
@@ -421,8 +420,7 @@ func TestVoteStatus(t *testing.T) {
 func TestReveal(t *testing.T) {
 	require := require.New(t)
 
-	alice, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err, "wtf")
+	alice, _ := cert.Scheme.NewKeypair()
 	digest := make([]byte, 32)
 	for i := 0; i < 32; i++ {
 		digest[i] = uint8(i)
