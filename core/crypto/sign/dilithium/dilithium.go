@@ -111,12 +111,12 @@ type privateKey struct {
 	publicKey  *publicKey
 }
 
-func (p *privateKey) PublicKey() sign.PublicKey {
-	return p.publicKey
+func (p *privateKey) KeyType() string {
+	return "ED25519 PRIVATE KEY"
 }
 
-func (p *privateKey) KeyType() string {
-	return p.scheme.Name()
+func (p *privateKey) PublicKey() sign.PublicKey {
+	return p.publicKey
 }
 
 func (p *privateKey) Sign(message []byte) []byte {
@@ -147,6 +147,10 @@ func (p *privateKey) FromBytes(b []byte) error {
 type publicKey struct {
 	scheme    *scheme
 	publicKey dilithium.PublicKey
+}
+
+func (p *publicKey) KeyType() string {
+	return "ED25519 PUBLIC KEY"
 }
 
 func (p *publicKey) Sum256() [32]byte {
