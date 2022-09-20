@@ -20,6 +20,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -30,8 +31,9 @@ import (
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -43,7 +45,7 @@ var defaultDialer = &net.Dialer{}
 
 // authorityAuthenticator implements the PeerAuthenticator interface
 type authorityAuthenticator struct {
-	IdentityPublicKey *eddsa.PublicKey
+	IdentityPublicKey sign.PublicKey
 	LinkPublicKey     wire.PublicKey
 	log               *logging.Logger
 }
@@ -51,7 +53,7 @@ type authorityAuthenticator struct {
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if !bytes.Equal(a.IdentityPublicKey.Bytes(), creds.AdditionalData) {
+	if !hmac.Equal(a.IdentityPublicKey.Bytes(), creds.AdditionalData) {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData[:])
 		return false
 	}
@@ -92,7 +94,7 @@ func (cfg *Config) validate() error {
 				return errors.New("voting/client: Invalid Address: zero length")
 			}
 		}
-		if v.IdentityPublicKey == nil {
+		if v.IdentityPublicKeyPem == "" {
 			return fmt.Errorf("voting/client: Identity PublicKey is mandatory")
 		}
 		if v.LinkPublicKeyPem == "" {
@@ -122,7 +124,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -164,8 +166,14 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		return nil, err
 	}
 
+	_, peerIdPublicKey := cert.Scheme.NewKeypair()
+	err = pem.FromFile(filepath.Join(p.cfg.DataDir, peer.IdentityPublicKeyPem), peerIdPublicKey)
+	if err != nil {
+		return nil, err
+	}
+
 	peerAuthenticator := &authorityAuthenticator{
-		IdentityPublicKey: peer.IdentityPublicKey,
+		IdentityPublicKey: peerIdPublicKey,
 		LinkPublicKey:     peerLinkPublicKey,
 		log:               p.log,
 	}
@@ -211,14 +219,14 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
 	for _, peer := range p.cfg.Authorities {
 		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority peer %s", peer.IdentityPublicKey)
+			p.log.Noticef("pki/voting/client: failure to connect to Authority peer %s", peer.IdentityPublicKeyPem)
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)
@@ -263,7 +271,7 @@ type Client struct {
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
+func (c *Client) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, d *pki.MixDescriptor) error {
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
@@ -386,7 +394,12 @@ func New(cfg *Config) (pki.Client, error) {
 	c.pool = newConnector(cfg)
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
-		c.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+		_, authIdPublicKey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(filepath.Join(c.cfg.DataDir, auth.IdentityPublicKeyPem), authIdPublicKey)
+		if err != nil {
+			return nil, err
+		}
+		c.verifiers[i] = cert.Verifier(authIdPublicKey)
 	}
 	c.threshold = len(c.verifiers)/2 + 1
 	return c, nil

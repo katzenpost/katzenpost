@@ -32,11 +32,14 @@ import (
 	"sync"
 	"time"
 
+	bolt "go.etcd.io/bbolt"
+	"golang.org/x/crypto/sha3"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -45,9 +48,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	bolt "go.etcd.io/bbolt"
-	"golang.org/x/crypto/sha3"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const (
@@ -58,6 +58,8 @@ const (
 	stateAcceptReveal     = "accept_reveal"
 	stateAcceptSignature  = "accept_signature"
 	stateBootstrap        = "bootstrap"
+
+	publicKeyHashSize = 32
 )
 
 var (
@@ -90,17 +92,17 @@ type state struct {
 
 	db *bolt.DB
 
-	authorizedMixes       map[[eddsa.PublicKeySize]byte]bool
-	authorizedProviders   map[[eddsa.PublicKeySize]byte]string
-	authorizedAuthorities map[[eddsa.PublicKeySize]byte]bool
-	authorityLinkKeys     map[[eddsa.PublicKeySize]byte]wire.PublicKey
+	authorizedMixes       map[[publicKeyHashSize]byte]bool
+	authorizedProviders   map[[publicKeyHashSize]byte]string
+	authorizedAuthorities map[[publicKeyHashSize]byte]bool
+	authorityLinkKeys     map[[publicKeyHashSize]byte]wire.PublicKey
 
 	documents    map[uint64]*document
-	descriptors  map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
-	votes        map[uint64]map[[eddsa.PublicKeySize]byte]*document
+	descriptors  map[uint64]map[[publicKeyHashSize]byte]*descriptor
+	votes        map[uint64]map[[publicKeyHashSize]byte]*document
 	priorSRV     [][]byte
-	reveals      map[uint64]map[[eddsa.PublicKeySize]byte][]byte
-	certificates map[uint64]map[[eddsa.PublicKeySize]byte][]byte
+	reveals      map[uint64]map[[publicKeyHashSize]byte][]byte
+	certificates map[uint64]map[[publicKeyHashSize]byte][]byte
 
 	updateCh chan interface{}
 
@@ -245,8 +247,11 @@ func (s *state) consense(epoch uint64) *document {
 			if pk == jk {
 				continue // skip adding own signature
 			}
-			kjk := new(eddsa.PublicKey)
-			kjk.FromBytes(jk[:])
+
+			kjk, err := cert.Scheme.UnmarshalBinaryPublicKey(jk[:])
+			if err != nil {
+				panic(err)
+			}
 			if ds, err := cert.GetSignature(jk[:], d); err == nil {
 				if sc, err := cert.AddSignature(kjk, *ds, c); err == nil {
 					c = sc
@@ -280,7 +285,7 @@ func (s *state) consense(epoch uint64) *document {
 	return nil
 }
 
-func (s *state) identityPubKey() [eddsa.PublicKeySize]byte {
+func (s *state) identityPubKey() [publicKeyHashSize]byte {
 	return s.s.identityKey.PublicKey().ByteArray()
 }
 
@@ -434,7 +439,7 @@ func (s *state) vote(epoch uint64) (*document, error) {
 
 	// save our own reveal
 	if _, ok := s.reveals[epoch]; !ok {
-		s.reveals[epoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
+		s.reveals[epoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
 	if _, ok := s.reveals[epoch][s.identityPubKey()]; !ok {
 		s.reveals[epoch][s.identityPubKey()] = srv.Reveal()
@@ -459,7 +464,7 @@ func (s *state) vote(epoch uint64) (*document, error) {
 
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
-		s.votes[epoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*document)
 	}
 	if _, ok := s.votes[epoch][s.identityPubKey()]; !ok {
 		s.votes[epoch][s.identityPubKey()] = signedVote
@@ -497,7 +502,7 @@ func (s *state) sign(doc *s11n.Document) *document {
 	}
 }
 
-func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor) bool {
+func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*descriptor) bool {
 	// A Document will be generated iff there are at least:
 	//
 	//  * Debug.Layers * Debug.MinNodesPerLayer nodes.
@@ -647,7 +652,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 // for our link layer wire protocol as specified by
 // the PeerAuthenticator interface in core/wire/session.go
 func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
-	var ad [eddsa.PublicKeySize]byte
+	var ad [publicKeyHashSize]byte
 	copy(ad[:], creds.AdditionalData)
 	_, ok := s.authorizedAuthorities[ad]
 	if ok {
@@ -716,8 +721,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			continue
 		}
 
-		ed := new(eddsa.PublicKey)
-		ed.FromBytes(pk[:])
+		ed, err := cert.Scheme.UnmarshalBinaryPublicKey(pk[:])
+		if err != nil {
+			panic(err)
+		}
 		vote, err := s11n.FromPayload(ed, voteDoc.raw)
 		if err != nil {
 			s.log.Errorf("Skipping vote from Authority that failed to decode?! %v", err)
@@ -812,7 +819,7 @@ func (s *state) isTabulated(epoch uint64) bool {
 func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 
 	type Reveal struct {
-		PublicKey [eddsa.PublicKeySize]byte
+		PublicKey [publicKeyHashSize]byte
 		Digest    []byte
 	}
 
@@ -899,7 +906,7 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	}
 	// Save our certificate
 	if _, ok := s.certificates[epoch]; !ok {
-		s.certificates[epoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
+		s.certificates[epoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
 	s.certificates[epoch][s.identityPubKey()] = signed
 	if raw, err := cert.GetCertified(signed); err == nil {
@@ -914,7 +921,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
-		id := v.desc.IdentityKey.ByteArray()
+		id := v.desc.IdentityKey.Sum256()
 		nodeMap[id] = v
 	}
 
@@ -945,7 +952,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 				break
 			}
 
-			id := nodes[idx].IdentityKey.ByteArray()
+			id := nodes[idx].IdentityKey.Sum256()
 			if n, ok := nodeMap[id]; ok {
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,
@@ -992,7 +999,7 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byt
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	// collect all of the identity keys from the current set of descriptors
 	for _, v := range nodes {
-		id := v.desc.IdentityKey.ByteArray()
+		id := v.desc.IdentityKey.Sum256()
 		nodeMap[id] = v
 	}
 
@@ -1000,7 +1007,7 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byt
 	topology := make([][][]byte, len(s.s.cfg.Topology.Layers))
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
-			id := node.IdentityKey.ByteArray()
+			id := node.IdentityKey.Sum256()
 
 			// if the listed node is in the current descriptor set, place it in the layer
 			if n, ok := nodeMap[id]; ok {
@@ -1075,7 +1082,7 @@ func (s *state) pruneDocuments() {
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
-	pk := desc.IdentityKey.ByteArray()
+	pk := desc.IdentityKey.Sum256()
 
 	switch desc.Layer {
 	case 0:
@@ -1090,14 +1097,16 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 		return false
 	}
 }
+
 func (s *state) dupSig(vote commands.Vote) bool {
-	if _, ok := s.certificates[s.votingEpoch][vote.PublicKey.ByteArray()]; ok {
+	if _, ok := s.certificates[s.votingEpoch][vote.PublicKey.Sum256()]; ok {
 		return true
 	}
 	return false
 }
+
 func (s *state) dupVote(vote commands.Vote) bool {
-	if _, ok := s.votes[s.votingEpoch][vote.PublicKey.ByteArray()]; ok {
+	if _, ok := s.votes[s.votingEpoch][vote.PublicKey.Sum256()]; ok {
 		return true
 	}
 	return false
@@ -1109,7 +1118,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	resp := commands.RevealStatus{}
 
 	// if not authorized
-	_, ok := s.authorizedAuthorities[reveal.PublicKey.ByteArray()]
+	_, ok := s.authorizedAuthorities[reveal.PublicKey.Sum256()]
 	if !ok {
 		s.log.Error("Voter not white-listed.")
 		resp.ErrorCode = commands.RevealNotAuthorized
@@ -1147,7 +1156,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	}
 
 	// haven't received a vote from this peer yet for this epoch
-	if _, ok := s.votes[s.votingEpoch][reveal.PublicKey.ByteArray()]; !ok {
+	if _, ok := s.votes[s.votingEpoch][reveal.PublicKey.Sum256()]; !ok {
 		s.log.Error("Reveal received before peer's vote?.")
 		resp.ErrorCode = commands.RevealTooEarly
 		return &resp
@@ -1155,18 +1164,18 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 
 	// the first reveal received this round
 	if _, ok := s.reveals[s.votingEpoch]; !ok {
-		s.reveals[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
+		s.reveals[s.votingEpoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
 
 	// already received a reveal for this round
-	if _, ok := s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()]; ok {
+	if _, ok := s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()]; ok {
 		s.log.Error("Another Reveal received from peer's vote?.")
 		resp.ErrorCode = commands.RevealAlreadyReceived
 		return &resp
 	}
 
 	s.log.Debug("Reveal OK.")
-	s.reveals[s.votingEpoch][reveal.PublicKey.ByteArray()] = certified
+	s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()] = certified
 	resp.ErrorCode = commands.RevealOk
 	return &resp
 }
@@ -1186,7 +1195,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		resp.ErrorCode = commands.VoteTooLate
 		return &resp
 	}
-	_, ok := s.authorizedAuthorities[vote.PublicKey.ByteArray()]
+	_, ok := s.authorizedAuthorities[vote.PublicKey.Sum256()]
 	if !ok {
 		s.log.Error("Voter not white-listed.")
 		resp.ErrorCode = commands.VoteNotAuthorized
@@ -1202,15 +1211,15 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 
 	// haven't received a vote yet for this epoch
 	if _, ok := s.votes[s.votingEpoch]; !ok {
-		s.votes[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
+		s.votes[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*document)
 	}
 	// haven't received a certificate yet for this epoch
 	if _, ok := s.certificates[s.votingEpoch]; !ok {
-		s.certificates[s.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
+		s.certificates[s.votingEpoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
 	// peer has not yet voted for this epoch
 	if !s.dupVote(*vote) {
-		s.votes[s.votingEpoch][vote.PublicKey.ByteArray()] = &document{
+		s.votes[s.votingEpoch][vote.PublicKey.Sum256()] = &document{
 			raw: vote.Payload,
 			doc: doc,
 		}
@@ -1219,7 +1228,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
-			s.certificates[s.votingEpoch][vote.PublicKey.ByteArray()] = vote.Payload
+			s.certificates[s.votingEpoch][vote.PublicKey.Sum256()] = vote.Payload
 			if raw, err := cert.GetCertified(vote.Payload); err == nil {
 				s.log.Debugf("Certificate for epoch %v saved: %s", vote.Epoch, raw)
 				s.log.Debugf("sha256(certified): %s", sha256b64(raw))
@@ -1241,12 +1250,12 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	defer s.Unlock()
 
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := desc.IdentityKey.ByteArray()
+	pk := desc.IdentityKey.Sum256()
 
 	// Get the public key -> descriptor map for the epoch.
 	m, ok := s.descriptors[epoch]
 	if !ok {
-		m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+		m = make(map[[publicKeyHashSize]byte]*descriptor)
 		s.descriptors[epoch] = m
 	}
 
@@ -1422,14 +1431,14 @@ func (s *state) restorePersistence() error {
 
 					m, ok := s.descriptors[epoch]
 					if !ok {
-						m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+						m = make(map[[publicKeyHashSize]byte]*descriptor)
 						s.descriptors[epoch] = m
 					}
 
 					d := new(descriptor)
 					d.desc = desc
 					d.raw = rawDesc
-					m[desc.IdentityKey.ByteArray()] = d
+					m[desc.IdentityKey.Sum256()] = d
 
 					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
 				}
@@ -1468,37 +1477,37 @@ func newState(s *Server) (*state, error) {
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
-	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
+	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
-		pk := v.IdentityKey.ByteArray()
+		pk := v.IdentityKey.Sum256()
 		st.authorizedMixes[pk] = true
 	}
-	st.authorizedProviders = make(map[[eddsa.PublicKeySize]byte]string)
+	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
-		pk := v.IdentityKey.ByteArray()
+		pk := v.IdentityKey.Sum256()
 		st.authorizedProviders[pk] = v.Identifier
 	}
-	st.authorizedAuthorities = make(map[[eddsa.PublicKeySize]byte]bool)
+	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
-		pk := v.IdentityPublicKey.ByteArray()
+		pk := v.IdentityPublicKey.Sum256()
 		st.authorizedAuthorities[pk] = true
 	}
-	st.authorityLinkKeys = make(map[[eddsa.PublicKeySize]byte]wire.PublicKey)
+	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
 	scheme := wire.NewScheme()
 	for _, v := range st.s.cfg.Authorities {
 		linkPubKey, err := scheme.PublicKeyFromPemFile(filepath.Join(s.cfg.Authority.DataDir, v.LinkPublicKeyPem))
 		if err != nil {
 			return nil, err
 		}
-		pk := v.IdentityPublicKey.ByteArray()
+		pk := v.IdentityPublicKey.Sum256()
 		st.authorityLinkKeys[pk] = linkPubKey
 	}
 
 	st.documents = make(map[uint64]*document)
-	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
-	st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
-	st.certificates = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
-	st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
+	st.descriptors = make(map[uint64]map[[publicKeyHashSize]byte]*descriptor)
+	st.votes = make(map[uint64]map[[publicKeyHashSize]byte]*document)
+	st.certificates = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
+	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
@@ -1565,7 +1574,7 @@ func epochFromBytes(b []byte) uint64 {
 
 func sortNodesByPublicKey(nodes []*descriptor) {
 	dTos := func(d *descriptor) string {
-		pk := d.desc.IdentityKey.ByteArray()
+		pk := d.desc.IdentityKey.Sum256()
 		return string(pk[:])
 	}
 	sort.Slice(nodes, func(i, j int) bool { return dTos(nodes[i]) < dTos(nodes[j]) })

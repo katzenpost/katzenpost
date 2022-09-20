@@ -20,12 +20,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"golang.org/x/crypto/sha3"
 	"fmt"
+	"golang.org/x/crypto/sha3"
+	"io"
 	"path/filepath"
 	"sync"
 	"time"
-	"io"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
@@ -44,11 +44,11 @@ const (
 )
 
 var (
-	MixPublishDeadline = epochtime.Period /4
-	errGone   = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet = errors.New("authority: Document is not ready yet")
-	weekOfEpochs = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
-	WarpedEpoch string
+	MixPublishDeadline = epochtime.Period / 4
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	weekOfEpochs       = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
+	WarpedEpoch        string
 )
 
 type descriptor struct {
@@ -75,11 +75,11 @@ type state struct {
 
 	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
-	priorSRV     [][]byte
+	priorSRV    [][]byte
 
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
-	genesisEpoch uint64
+	genesisEpoch   uint64
 }
 
 func (s *state) Halt() {
@@ -145,8 +145,8 @@ func (s *state) onWakeup() {
 			s.log.Debugf("All descriptors uploaded, bootstrapping document")
 			s.generateDocument(epoch)
 		} else {
-			s.log.Debugf("We are in bootstrapping state for current epoch %v but only have " +
-			"%d descriptors out of %d authorized nodes", epoch, len(m), nrBootstrapDescs)
+			s.log.Debugf("We are in bootstrapping state for current epoch %v but only have "+
+				"%d descriptors out of %d authorized nodes", epoch, len(m), nrBootstrapDescs)
 		}
 	}
 
@@ -319,7 +319,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
-		id := v.desc.IdentityKey.ByteArray()
+		id := v.desc.IdentityKey.Sum256()
 		nodeMap[id] = v
 	}
 
@@ -342,7 +342,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]
 				break
 			}
 
-			id := nodes[idx].IdentityKey.ByteArray()
+			id := nodes[idx].IdentityKey.Sum256()
 			if n, ok := nodeMap[id]; ok {
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,
@@ -426,7 +426,7 @@ func (s *state) pruneDocuments() {
 }
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
-	pk := desc.IdentityKey.ByteArray()
+	pk := desc.IdentityKey.Sum256()
 
 	switch desc.Layer {
 	case 0:
@@ -444,7 +444,7 @@ func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
 	// Note: Caller ensures that the epoch is the current epoch +- 1.
-	pk := desc.IdentityKey.ByteArray()
+	pk := desc.IdentityKey.Sum256()
 
 	s.Lock()
 	defer s.Unlock()
@@ -521,7 +521,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		// Check to see if we are doing a bootstrap, and it's possible that
 		// we may decide to publish a document at some point ignoring the
 		// standard schedule.
-		if now == s.bootstrapEpoch || now - 1 == s.bootstrapEpoch {
+		if now == s.bootstrapEpoch || now-1 == s.bootstrapEpoch {
 			return nil, errNotYet
 		}
 
@@ -647,7 +647,7 @@ func (s *state) restorePersistence() error {
 					d := new(descriptor)
 					d.desc = desc
 					d.raw = rawDesc
-					m[desc.IdentityKey.ByteArray()] = d
+					m[desc.IdentityKey.Sum256()] = d
 					s.Unlock()
 
 					s.log.Debugf("Restored descriptor for epoch %v: %+v", epoch, desc)
@@ -675,12 +675,12 @@ func newState(s *Server) (*state, error) {
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
-		pk := v.IdentityKey.ByteArray()
+		pk := v.IdentityKey.Sum256()
 		st.authorizedMixes[pk] = true
 	}
 	st.authorizedProviders = make(map[[eddsa.PublicKeySize]byte]string)
 	for _, v := range st.s.cfg.Providers {
-		pk := v.IdentityKey.ByteArray()
+		pk := v.IdentityKey.Sum256()
 		st.authorizedProviders[pk] = v.Identifier
 	}
 

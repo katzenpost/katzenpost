@@ -28,7 +28,8 @@ import (
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -57,6 +58,8 @@ const (
 	defaultLambdaDMaxPercentile = 0.99999
 	defaultLambdaM              = 0.00025
 	defaultLambdaMMaxPercentile = 0.99999
+
+	publicKeyHashSize = 32
 )
 
 var defaultLogging = Logging{
@@ -280,8 +283,9 @@ func (dCfg *Debug) applyDefaults() {
 // AuthorityPeer is the connecting information
 // and identity key for the Authority peers
 type AuthorityPeer struct {
-	// IdentityPublicKey is the peer's identity signing key.
-	IdentityPublicKey *eddsa.PublicKey
+	// IdentityPublicKeyPem is the filename containing the PEM file
+	// of the peer's identity signing key.
+	IdentityPublicKeyPem string
 	// LinkPublicKeyPem is the filename containing the PEM file
 	// of the peer's public link layer key.
 	LinkPublicKeyPem string
@@ -297,14 +301,21 @@ func (a *AuthorityPeer) Validate(datadir string) error {
 			return fmt.Errorf("config: AuthorityPeer: Address '%v' is invalid: %v", v, err)
 		}
 	}
-	if a.IdentityPublicKey == nil {
+	if a.IdentityPublicKeyPem == "" {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Identity Key", a)
 	}
+
+	_, pubKey := cert.Scheme.NewKeypair()
+	err := pem.FromFile(filepath.Join(datadir, a.IdentityPublicKeyPem), pubKey)
+	if err != nil {
+		return err
+	}
+
 	if a.LinkPublicKeyPem == "" {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key PEM filename", a)
 	}
 
-	_, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(datadir, a.LinkPublicKeyPem))
+	_, err = wire.NewScheme().PublicKeyFromPemFile(filepath.Join(datadir, a.LinkPublicKeyPem))
 
 	return err
 }
@@ -315,8 +326,8 @@ type Node struct {
 	// the node is a Provider.
 	Identifier string
 
-	// IdentityKey is the node's identity signing key.
-	IdentityKey *eddsa.PublicKey
+	// IdentityKeyPem is the node's identity signing key.
+	IdentityKeyPem string
 }
 
 func (n *Node) validate(isProvider bool) error {
@@ -334,8 +345,8 @@ func (n *Node) validate(isProvider bool) error {
 	} else if n.Identifier != "" {
 		return fmt.Errorf("config: %v: Node has Identifier set", section)
 	}
-	if n.IdentityKey == nil {
-		return fmt.Errorf("config: %v: Node is missing IdentityKey", section)
+	if n.IdentityKeyPem == "" {
+		return fmt.Errorf("config: %v: Node is missing IdentityKeyPem", section)
 	}
 	return nil
 }
@@ -415,12 +426,17 @@ func (cfg *Config) FixupAndValidate() error {
 		idMap[v.Identifier] = v
 		allNodes = append(allNodes, v)
 	}
-	pkMap := make(map[[eddsa.PublicKeySize]byte]*Node)
+	_, identityKey := cert.Scheme.NewKeypair()
+	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
-		var tmp [eddsa.PublicKeySize]byte
-		copy(tmp[:], v.IdentityKey.Bytes())
+		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityKeyPem), identityKey)
+		if err != nil {
+			return err
+		}
+
+		tmp := identityKey.Sum256()
 		if _, ok := pkMap[tmp]; ok {
-			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKey)
+			return fmt.Errorf("config: Nodes: IdentityKeyPem '%v' is present more than once", v.IdentityKeyPem)
 		}
 		pkMap[tmp] = v
 	}

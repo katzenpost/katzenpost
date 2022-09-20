@@ -22,8 +22,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -49,8 +49,7 @@ func TestDescriptor(t *testing.T) {
 	}
 	d.Layer = pki.LayerProvider
 	d.LoadWeight = 23
-	identityPriv, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err, "eddsa.NewKeypair()")
+	identityPriv, _ := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPriv.PublicKey()
 	scheme := wire.NewScheme()
 	linkPriv := scheme.GenerateKeypair(rand.Reader)

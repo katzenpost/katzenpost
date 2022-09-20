@@ -28,8 +28,8 @@ import (
 	"github.com/BurntSushi/toml"
 	"golang.org/x/net/idna"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -56,6 +56,8 @@ const (
 	defaultLambdaDMaxPercentile = 0.99999
 	defaultLambdaM              = 0.00025
 	defaultLambdaMMaxPercentile = 0.99999
+
+	publicKeyHashSize = 32 // blake2b.Sum256
 )
 
 var defaultLogging = Logging{
@@ -279,7 +281,7 @@ type Node struct {
 	Identifier string
 
 	// IdentityKey is the node's identity signing key.
-	IdentityKey *eddsa.PublicKey
+	IdentityKey sign.PublicKey
 }
 
 func (n *Node) validate(isProvider bool) error {
@@ -366,9 +368,9 @@ func (cfg *Config) FixupAndValidate() error {
 		idMap[v.Identifier] = v
 		allNodes = append(allNodes, v)
 	}
-	pkMap := make(map[[eddsa.PublicKeySize]byte]*Node)
+	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
-		var tmp [eddsa.PublicKeySize]byte
+		var tmp [publicKeyHashSize]byte
 		copy(tmp[:], v.IdentityKey.Bytes())
 		if _, ok := pkMap[tmp]; ok {
 			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKey)

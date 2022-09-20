@@ -28,8 +28,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
@@ -44,7 +44,7 @@ type Server struct {
 
 	cfg *config.Config
 
-	identityKey *eddsa.PrivateKey
+	identityKey sign.PrivateKey
 	linkKey     wire.PrivateKey
 
 	logBackend *log.Backend
@@ -101,7 +101,7 @@ func (s *Server) initLogging() error {
 }
 
 // IdentityKey returns the running Server's identity public key.
-func (s *Server) IdentityKey() *eddsa.PublicKey {
+func (s *Server) IdentityKey() sign.PublicKey {
 	return s.identityKey.PublicKey()
 }
 
