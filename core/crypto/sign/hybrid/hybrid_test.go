@@ -26,6 +26,25 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign/eddsa"
 )
 
+func TestHybridSignatureSchemeTextUnmarshaler(t *testing.T) {
+	scheme := NewScheme(eddsa.Scheme, dilithium.Scheme)
+	message := []byte("hello world")
+	privKey, pubKey := scheme.NewKeypair()
+
+	pubKeyText, err := pubKey.MarshalText()
+	require.NoError(t, err)
+
+	pubKey2, err := scheme.UnmarshalTextPublicKey(pubKeyText)
+	require.NoError(t, err)
+
+	signature := privKey.Sign(message)
+	ok := pubKey.Verify(signature, message)
+	require.True(t, ok)
+
+	ok = pubKey2.Verify(signature, message)
+	require.True(t, ok)
+}
+
 func TestHybridSignatureScheme(t *testing.T) {
 	scheme := NewScheme(eddsa.Scheme, dilithium.Scheme)
 	t.Logf("scheme name: %s", scheme.Name())

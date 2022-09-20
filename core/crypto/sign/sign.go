@@ -18,6 +18,10 @@
 // and implementations.
 package sign
 
+import (
+	"encoding"
+)
+
 // Key is an interface for types encapsulating key material.
 type Key interface {
 
@@ -53,6 +57,9 @@ type PrivateKey interface {
 // PublicKey is an interface for types encapsulating
 // public key material.
 type PublicKey interface {
+	encoding.TextMarshaler
+	encoding.TextUnmarshaler
+
 	Key
 
 	// Equal deterministically compares the two keys and returns true
@@ -77,6 +84,9 @@ type Scheme interface {
 
 	// UnmarshalBinaryPrivateKey loads a private key from byte slice.
 	UnmarshalBinaryPrivateKey([]byte) (PrivateKey, error)
+
+	// UnmarshalTextPublicKey loads a public key from byte slice.
+	UnmarshalTextPublicKey([]byte) (PublicKey, error)
 
 	// Name of the scheme.
 	Name() string

@@ -33,3 +33,47 @@ func TestDilithiumSignatureScheme(t *testing.T) {
 	ok := pubKey.Verify(signature, message)
 	require.True(t, ok)
 }
+
+func TestDilithiumBytes(t *testing.T) {
+	privKey, pubKey := Scheme.NewKeypair()
+	message := []byte("hello world")
+	signature := privKey.Sign(message)
+	pubKeyBytes := pubKey.Bytes()
+	_, pubKey2 := Scheme.NewKeypair()
+	err := pubKey2.FromBytes(pubKeyBytes)
+	require.NoError(t, err)
+	pubKeyBytes2 := pubKey2.Bytes()
+	require.Equal(t, pubKeyBytes, pubKeyBytes2)
+	ok := pubKey2.Verify(signature, message)
+	require.True(t, ok)
+}
+
+func TestDilithiumTextMarshaler(t *testing.T) {
+	privKey, pubKey := Scheme.NewKeypair()
+	message := []byte("hello world")
+	signature := privKey.Sign(message)
+
+	pubKeyText, err := pubKey.MarshalText()
+	require.NoError(t, err)
+
+	_, pubKey2 := Scheme.NewKeypair()
+	err = pubKey2.UnmarshalText(pubKeyText)
+	require.NoError(t, err)
+	require.Equal(t, pubKey2.Bytes(), pubKey.Bytes())
+	ok := pubKey2.Verify(signature, message)
+	require.True(t, ok)
+
+	pubKey3, err := Scheme.UnmarshalTextPublicKey(pubKeyText)
+	require.NoError(t, err)
+	require.NotNil(t, pubKey3)
+
+	_, err = pubKey3.MarshalText()
+	require.NoError(t, err)
+
+	ok = pubKey.Verify(signature, message)
+	require.True(t, ok)
+
+	ok = pubKey3.Verify(signature, message)
+	require.True(t, ok)
+
+}

@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHybridSignatureScheme(t *testing.T) {
+func TestEddsaScheme(t *testing.T) {
 	message := []byte("hello world")
 	privKey, pubKey := Scheme.NewKeypair()
 	signature := privKey.Sign(message)
@@ -31,4 +31,22 @@ func TestHybridSignatureScheme(t *testing.T) {
 	ok := pubKey.Verify(signature, message)
 	require.True(t, ok)
 
+}
+
+func TestEddsaSchemeTextUnmarshaler(t *testing.T) {
+	message := []byte("hello world")
+	privKey, pubKey := Scheme.NewKeypair()
+
+	pubKeyText, err := pubKey.MarshalText()
+	require.NoError(t, err)
+
+	pubKey2, err := Scheme.UnmarshalTextPublicKey(pubKeyText)
+	require.NoError(t, err)
+
+	signature := privKey.Sign(message)
+	ok := pubKey.Verify(signature, message)
+	require.True(t, ok)
+
+	ok = pubKey2.Verify(signature, message)
+	require.True(t, ok)
 }
