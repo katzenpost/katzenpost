@@ -29,7 +29,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -62,7 +61,7 @@ type nodeDescriptorIntermediary struct {
 	Name string
 
 	// IdentityKey is the node's identity (signing) key.
-	IdentityKey *eddsa.PublicKey
+	IdentityKey string
 
 	// LinkKey is the node's wire protocol public key.
 	LinkKey string
@@ -92,9 +91,13 @@ func (n *nodeDescriptorIntermediary) nodeDescriptor() *nodeDescriptor {
 	m := new(nodeDescriptor)
 	m.Version = n.Version
 	m.Name = n.Name
-	m.IdentityKey = n.IdentityKey
-
 	var err error
+
+	m.IdentityKey, err = cert.Scheme.UnmarshalTextPublicKey([]byte(n.IdentityKey))
+	if err != nil {
+		panic(err)
+	}
+
 	m.LinkKey, err = wire.NewScheme().UnmarshalTextPublicKey([]byte(n.LinkKey))
 	if err != nil {
 		panic(err)
@@ -145,7 +148,12 @@ func GetVerifierFromDescriptor(rawDesc []byte) (cert.Verifier, error) {
 	if err = dec.Decode(d); err != nil {
 		return nil, err
 	}
-	return d.IdentityKey, nil
+
+	idPubKey, err := cert.Scheme.UnmarshalTextPublicKey([]byte(d.IdentityKey))
+	if err != nil {
+		return nil, err
+	}
+	return idPubKey, nil
 }
 
 // VerifyAndParseDescriptor verifies the signature and deserializes the

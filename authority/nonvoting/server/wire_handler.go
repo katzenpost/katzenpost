@@ -21,8 +21,9 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -120,7 +121,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	return resp
 }
 
-func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKey *eddsa.PublicKey) commands.Command {
+func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKey sign.PublicKey) commands.Command {
 	resp := &commands.PostDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
@@ -180,7 +181,7 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 
 type wireAuthenticator struct {
 	s               *Server
-	peerIdentityKey *eddsa.PublicKey
+	peerIdentityKey sign.PublicKey
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -188,19 +189,20 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	switch len(creds.AdditionalData) {
 	case 0:
 		return true
-	case eddsa.PublicKeySize:
+	case cert.Scheme.PublicKeySize():
 	default:
 		a.s.log.Debugf("Rejecting authentication, invalid AD size.")
 		return false
 	}
 
-	a.peerIdentityKey = new(eddsa.PublicKey)
-	if err := a.peerIdentityKey.FromBytes(creds.AdditionalData); err != nil {
+	var err error
+	a.peerIdentityKey, err = cert.Scheme.UnmarshalBinaryPublicKey(creds.AdditionalData)
+	if err != nil {
 		a.s.log.Debugf("Rejecting authentication, invalid AD: %v", err)
 		return false
 	}
 
-	pk := a.peerIdentityKey.ByteArray()
+	pk := a.peerIdentityKey.Sum256()
 	if !(a.s.state.authorizedMixes[pk] || a.s.state.authorizedProviders[pk] != "") {
 		a.s.log.Debugf("Rejecting authentication, not a valid mix/provider.")
 		return false

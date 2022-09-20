@@ -15,17 +15,17 @@
   DataDir = "/tmp/katzenpost-authority"
 
 #[[Authorities]]
-#   IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+#   IdentityPublicKeyPem = "auth1_id_pub.pem"
 #   LinkPublicKeyPem = "auth1_link_pub.pem"
 #   Addresses = [ "172.28.1.10:21483" ]
 
 [[Authorities]]
-   IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+   IdentityPublicKeyPem = "auth2_id_pub.pem"
    LinkPublicKeyPem = "auth2_link_pub.pem"
    Addresses = [ "172.28.1.8:22483" ]
 
 [[Authorities]]
-   IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+   IdentityPublicKeyPem = "auth3_id_pub.pem"
    LinkPublicKeyPem = "auth3_link_pub.pem"
    Addresses = [ "172.28.1.9:23483" ]
 [Debug]
@@ -113,34 +113,26 @@
 #
 
 [[Providers]]
-  # Identifier is the human readable provider identifier, such as a FQDN.
   Identifier = "provider2"
-  # IdentityKey is the provider's EdDSA signing key, in either Base16 OR Base64
-  # format.
-  IdentityKey = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
+  IdentityKeyPem = "provider2_id_pub.pem"
 
 [[Providers]]
   Identifier = "provider1"
-  IdentityKey = "2krwfNDfbakZCSTUUZYKXwdduzlEgS9Jfwm7eyZ0sCg="
+  IdentityKeyPem = "provider1_id_pub.pem"
 
 # Topology defines the layers of mix nodes
 [Topology]
 # Layer 1
 [[Topology.Layers]]
-# An node in Layer 1
 [[Topology.Layers.Nodes]]
-  # IdentityKey is the mix's EdDSA signing key, in either Base16 OR Base64
-  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
-# Another node... etc
-#[[Topology.Layers.Nodes]]
-#  IdentityKey = ""
+  IdentityKeyPem = "mix1_id_pub.pem"
 
- # Layer 2
+# Layer 2
 [[Topology.Layers]]
 [[Topology.Layers.Nodes]]
-  IdentityKey = "1x8tq04hY+i83o9Yn2nrfTkFj4jXIMWCWilR7fgrWyM="
+  IdentityKeyPem = "mix2_id_pub.pem"
 
 # Layer 3
 [[Topology.Layers]]
 [[Topology.Layers.Nodes]]
-  IdentityKey = "La2FnsbKoU8dzQhfN4zkxSYn6T7LRWmFn0JgtlEklQw="
+  IdentityKeyPem = "mix3_id_pub.pem"

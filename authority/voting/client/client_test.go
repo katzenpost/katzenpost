@@ -36,8 +36,9 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -68,7 +69,7 @@ func generateRandomTopology(nodes []*descriptor, layers int) [][][]byte {
 func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][][]byte {
 	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
 	for _, v := range nodeList {
-		id := v.desc.IdentityKey.ByteArray()
+		id := v.desc.IdentityKey.Sum256()
 		nodeMap[id] = v
 	}
 
@@ -91,7 +92,7 @@ func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][
 				break
 			}
 
-			id := nodes[idx].IdentityKey.ByteArray()
+			id := nodes[idx].IdentityKey.Sum256()
 			if n, ok := nodeMap[id]; ok {
 				// There is a new descriptor with the same identity key,
 				// as an existing descriptor in the previous document,
@@ -146,10 +147,7 @@ func generateMixKeys(epoch uint64) (map[uint64]*ecdh.PublicKey, error) {
 func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error) {
 	mixes := []*descriptor{}
 	for i := 0; i < num; i++ {
-		mixIdentityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
-		if err != nil {
-			return nil, err
-		}
+		mixIdentityPrivateKey, _ := cert.Scheme.NewKeypair()
 		mixKeys, err := generateMixKeys(epoch)
 		if err != nil {
 			return nil, err
@@ -226,7 +224,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 }
 
 // multiSignTestDocument signs and serializes the document with the provided signing key.
-func multiSignTestDocument(signingKeys []*eddsa.PrivateKey, d *s11n.Document) ([]byte, error) {
+func multiSignTestDocument(signingKeys []sign.PrivateKey, d *s11n.Document) ([]byte, error) {
 	jsonHandle := new(codec.JsonHandle)
 	jsonHandle.Canonical = true
 	jsonHandle.IntegerAsString = 'A'
@@ -252,7 +250,7 @@ func multiSignTestDocument(signingKeys []*eddsa.PrivateKey, d *s11n.Document) ([
 	return signed, nil
 }
 
-func generateDoc(epoch uint64, signingKeys []*eddsa.PrivateKey) ([]byte, error) {
+func generateDoc(epoch uint64, signingKeys []sign.PrivateKey) ([]byte, error) {
 	// XXX
 	numMixes := len(signingKeys) - 2
 	numProviders := 2
@@ -271,7 +269,7 @@ type conn struct {
 	serverConn net.Conn
 	clientConn net.Conn
 	dialCh     chan interface{}
-	signingKey *eddsa.PrivateKey
+	signingKey sign.PrivateKey
 }
 
 type mockDialer struct {
@@ -315,7 +313,7 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey *eddsa.PrivateKey, wg *sync.WaitGroup) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey sign.PrivateKey, wg *sync.WaitGroup) {
 	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
@@ -355,7 +353,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	}
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
-		signingKeys := []*eddsa.PrivateKey{}
+		signingKeys := []sign.PrivateKey{}
 		for _, v := range d.netMap {
 			signingKeys = append(signingKeys, v.signingKey)
 		}
@@ -383,11 +381,14 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, *eddsa.PrivateKey, wire.PrivateKey, error) {
-	identityPrivateKey, err := eddsa.NewKeypair(rand.Reader)
+func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.PrivateKey, wire.PrivateKey, error) {
+	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
+	identityPublicKeyPem := filepath.Join(datadir, fmt.Sprintf("peer%d_id_pub_key.pem", peerNum))
+	err := pem.ToFile(identityPublicKeyPem, identityPublicKey)
 	if err != nil {
-		return nil, nil, nil, err
+		panic(err)
 	}
+
 	scheme := wire.NewScheme()
 	linkPrivateKey, err := scheme.Load(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)),
 		filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), rand.Reader)
@@ -395,9 +396,9 @@ func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, *eddsa.Pr
 		panic(err)
 	}
 	authPeer := &config.AuthorityPeer{
-		IdentityPublicKey: identityPrivateKey.PublicKey(),
-		LinkPublicKeyPem:  fmt.Sprintf("peer%d_link_pub_key.pem", peerNum),
-		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
+		IdentityPublicKeyPem: fmt.Sprintf("peer%d_id_pub_key.pem", peerNum),
+		LinkPublicKeyPem:     fmt.Sprintf("peer%d_link_pub_key.pem", peerNum),
+		Addresses:            []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}
 	err = authPeer.Validate(datadir)
 	if err != nil {
