@@ -19,6 +19,7 @@ package hybrid
 
 import (
 	"crypto/hmac"
+	"encoding/base64"
 	"errors"
 
 	"golang.org/x/crypto/blake2b"
@@ -89,6 +90,15 @@ func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (sign.PrivateKey, error) {
 		return nil, err
 	}
 	return privKey, nil
+}
+
+func (s *scheme) UnmarshalTextPublicKey(text []byte) (sign.PublicKey, error) {
+	_, pubKey := s.NewKeypair()
+	err := pubKey.UnmarshalText(text)
+	if err != nil {
+		return nil, err
+	}
+	return pubKey, err
 }
 
 // SignatureSize returns the size in bytes of the signature.
@@ -214,4 +224,16 @@ func (p *publicKey) FromBytes(b []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (p *publicKey) MarshalText() (text []byte, err error) {
+	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+}
+
+func (p *publicKey) UnmarshalText(text []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(text))
+	if err != nil {
+		return err
+	}
+	return p.FromBytes(raw)
 }
