@@ -1494,7 +1494,8 @@ func newState(s *Server) (*state, error) {
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(v.IdentityKeyPem, identityPublicKey)
+		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem)
+		err := pem.FromFile(pemFilePath, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
@@ -1505,7 +1506,8 @@ func newState(s *Server) (*state, error) {
 	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(v.IdentityKeyPem, identityPublicKey)
+		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem)
+		err := pem.FromFile(pemFilePath, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
@@ -1516,7 +1518,8 @@ func newState(s *Server) (*state, error) {
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+		err := pem.FromFile(pemFilePath, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
@@ -1533,7 +1536,8 @@ func newState(s *Server) (*state, error) {
 		}
 
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err = pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+		err = pem.FromFile(pemFilePath, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
