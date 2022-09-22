@@ -17,13 +17,17 @@
 package kaetzchen
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -126,7 +130,7 @@ func (d *mockDecoy) OnPacket(*packet.Packet) {}
 type mockServer struct {
 	cfg         *config.Config
 	logBackend  *log.Backend
-	identityKey *eddsa.PrivateKey
+	identityKey sign.PrivateKey
 	linkKey     wire.PrivateKey
 	management  *thwack.Server
 	mixKeys     glue.MixKeys
@@ -149,7 +153,7 @@ func (g *mockGlue) LogBackend() *log.Backend {
 	return g.s.logBackend
 }
 
-func (g *mockGlue) IdentityKey() *eddsa.PrivateKey {
+func (g *mockGlue) IdentityKey() sign.PrivateKey {
 	return g.s.identityKey
 }
 
@@ -213,13 +217,18 @@ func (m *MockKaetzchen) OnRequest(id uint64, payload []byte, hasSURB bool) ([]by
 func (m *MockKaetzchen) Halt() {}
 
 func TestKaetzchenWorker(t *testing.T) {
-	require := require.New(t)
 
-	idKey, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err)
+	datadir := os.TempDir()
+
+	idKey, idPubKey := cert.Scheme.NewKeypair()
+	err := pem.ToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
+	require.NoError(t, err)
+
+	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	require.NoError(t, err)
 
 	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(err)
+	require.NoError(t, err)
 
 	scheme := wire.NewScheme()
 	userKey := scheme.GenerateKeypair(rand.Reader)
@@ -252,7 +261,6 @@ func TestKaetzchenWorker(t *testing.T) {
 				Management: &config.Management{},
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
-					IdentityKey:         idKey,
 					KaetzchenDelay:      300,
 				},
 			},
@@ -260,7 +268,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	}
 
 	kaetzWorker, err := New(goo)
-	require.NoError(err)
+	require.NoError(t, err)
 
 	params := make(Parameters)
 	params[ParameterEndpoint] = "+test"
@@ -274,18 +282,18 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	recipient := [sConstants.RecipientIDLength]byte{}
 	copy(recipient[:], []byte("+test"))
-	require.True(kaetzWorker.IsKaetzchen(recipient))
+	require.True(t, kaetzWorker.IsKaetzchen(recipient))
 
 	pkiMap := kaetzWorker.KaetzchenForPKI()
 	_, ok := pkiMap["test"]
-	require.True(ok)
+	require.True(t, ok)
 
 	geo := sphinx.DefaultGeometry()
 
 	// invalid packet test case
 	payload := make([]byte, geo.PacketLength)
 	testPacket, err := packet.New(payload)
-	require.NoError(err)
+	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
@@ -297,7 +305,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	// timeout test case
 	payload = make([]byte, geo.PacketLength)
 	testPacket, err = packet.New(payload)
-	require.NoError(err)
+	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
@@ -308,7 +316,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	// working test case
 	payload = make([]byte, geo.PacketLength)
 	testPacket, err = packet.New(payload)
-	require.NoError(err)
+	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
@@ -321,7 +329,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	// test that we dropped two packets from the timeout and
 	// invalid packet test casses
 	time.Sleep(time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
-	require.Equal(uint64(2), kaetzWorker.getDropCounter())
+	require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
 
 	kaetzWorker.Halt()
 }

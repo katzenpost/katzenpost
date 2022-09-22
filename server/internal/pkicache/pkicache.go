@@ -21,7 +21,7 @@ package pkicache
 import (
 	"fmt"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
@@ -137,7 +137,7 @@ func (e *Entry) outgoingLayer() uint8 {
 }
 
 // New constructs a new Entry from a given document.
-func New(d *pki.Document, identityKey *eddsa.PublicKey, isProvider bool) (*Entry, error) {
+func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, error) {
 	e := new(Entry)
 	e.doc = d
 	e.incoming = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
@@ -169,7 +169,7 @@ func New(d *pki.Document, identityKey *eddsa.PublicKey, isProvider bool) (*Entry
 		for _, v := range nodes {
 			// The concrete PKI implementation is responsible for ensuring
 			// that documents only contain one descriptor per identity key.
-			nodeID := v.IdentityKey.ByteArray()
+			nodeID := v.IdentityKey.Sum256()
 			m[nodeID] = v
 		}
 	}

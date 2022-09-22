@@ -28,6 +28,8 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -200,13 +202,35 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the authority identity key.
-	var err error
 	identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
-	if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-		s.log.Errorf("Failed to initialize identity key: %v", err)
-		return nil, err
+
+	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
+	err := pem.FromFile(identityPrivateKeyFile, identityPrivateKey)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = pem.ToFile(identityPrivateKeyFile, identityPrivateKey)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
+
+	err = pem.FromFile(identityPublicKeyFile, identityPublicKey)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			err = pem.ToFile(identityPublicKeyFile, identityPublicKey)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
+	}
+
+	s.identityKey = identityPrivateKey
 
 	scheme := wire.NewScheme()
 	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")

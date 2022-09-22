@@ -98,15 +98,15 @@
   # mix1
   # IdentityKey is the node's EdDSA signing key, in either Base16 OR Base64
   # format.
-  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
+  IdentityKeyPem = "mix1_id_pub.pem"
 
 [[Mixes]]
   # mix2
-  IdentityKey = "1x8tq04hY+i83o9Yn2nrfTkFj4jXIMWCWilR7fgrWyM="
+  IdentityKeyPem = "mix2_id_pub.pem"
 
 [[Mixes]]
   # mix3
-  IdentityKey = "La2FnsbKoU8dzQhfN4zkxSYn6T7LRWmFn0JgtlEklQw="
+  IdentityKeyPem = "mix3_id_pub.pem"
 
 #
 # The Providers array defines the list of white-listed Provider nodes.

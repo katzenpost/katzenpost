@@ -30,8 +30,9 @@ import (
 
 	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -625,7 +626,7 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 		}
 
 		for _, v := range d.Outgoing() {
-			nodeID := v.IdentityKey.ByteArray()
+			nodeID := v.IdentityKey.Sum256()
 
 			// Ignore nodes from past epochs that are not listed in the
 			// current document.
@@ -697,9 +698,10 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	if glue.Config().PKI.Nonvoting != nil {
-		authPk := new(eddsa.PublicKey)
-		if err = authPk.FromString(glue.Config().PKI.Nonvoting.PublicKey); err != nil {
-			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
+		_, authPk := cert.Scheme.NewKeypair()
+		err := pem.FromFile(glue.Config().PKI.Nonvoting.PublicKeyPem, authPk)
+		if err != nil {
+			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public identity key from PEM file: %v", err)
 		}
 		authPubKey, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem))
 		if err != nil {

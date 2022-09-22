@@ -20,7 +20,7 @@ package glue
 
 import (
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -38,7 +38,7 @@ import (
 type Glue interface {
 	Config() *config.Config
 	LogBackend() *log.Backend
-	IdentityKey() *eddsa.PrivateKey
+	IdentityKey() sign.PrivateKey
 	LinkKey() wire.PrivateKey
 
 	Management() *thwack.Server
