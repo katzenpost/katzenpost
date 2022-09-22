@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -305,19 +304,11 @@ func (a *AuthorityPeer) Validate(datadir string) error {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Identity Key", a)
 	}
 
-	_, pubKey := cert.Scheme.NewKeypair()
-	err := pem.FromFile(filepath.Join(datadir, a.IdentityPublicKeyPem), pubKey)
-	if err != nil {
-		return err
-	}
-
 	if a.LinkPublicKeyPem == "" {
 		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key PEM filename", a)
 	}
 
-	_, err = wire.NewScheme().PublicKeyFromPemFile(filepath.Join(datadir, a.LinkPublicKeyPem))
-
-	return err
+	return nil
 }
 
 // Node is an authority mix node or provider entry.
