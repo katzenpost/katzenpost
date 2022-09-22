@@ -30,7 +30,7 @@ import (
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -116,7 +116,7 @@ type NonvotingAuthority struct {
 	Address string
 
 	// PublicKey is the authority's public key.
-	PublicKey *eddsa.PublicKey
+	PublicKey sign.PublicKey
 
 	// LinkPublicKeyPem is the absolute file path to the
 	// authority's link public key.
@@ -136,7 +136,7 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKe
 		LogBackend:       l,
 		Address:          nvACfg.Address,
 		PublicKey:        nvACfg.PublicKey,
-		DialContextFn:    pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.String()),
+		DialContextFn:    pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.KeyType()),
 	}
 	return nvClient.New(cfg)
 }
@@ -173,7 +173,7 @@ func (vACfg *VotingAuthority) validate() error {
 		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKey == nil || peer.LinkPublicKeyPem == "" || len(peer.Addresses) == 0 {
+		if peer.IdentityPublicKeyPem == "" || peer.LinkPublicKeyPem == "" || len(peer.Addresses) == 0 {
 			return errors.New("invalid voting authority peer")
 		}
 	}
