@@ -14,17 +14,17 @@
   DataDir = "/conf/authority_data"
 
 #[[Authorities]]
-#   IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+#   IdentityPublicKeyPem = "auth1_id_pub_key.pem"
 #   LinkPublicKeyPem = "auth1_link_pub_key.pem"
 #   Addresses = [ "172.28.1.10:21483" ]
 
 [[Authorities]]
-   IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+   IdentityPublicKeyPem = "auth2_id_pub_key.pem"
    LinkPublicKeyPem = "auth2_link_pub_key.pem"
    Addresses = [ "172.28.1.8:22483" ]
 
 [[Authorities]]
-   IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+   IdentityPublicKeyPem = "auth3_id_pub_key.pem"
    LinkPublicKeyPem = "auth3_link_pub_key.pem"
    Addresses = [ "172.28.1.9:23483" ]
 
@@ -73,15 +73,15 @@
 
 [[Mixes]]
   # mix1
-  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
+  IdentityKeyPem = "mix1_id_pub_key.pem"
 
 [[Mixes]]
   # mix2
-  IdentityKey = "1x8tq04hY+i83o9Yn2nrfTkFj4jXIMWCWilR7fgrWyM="
+  IdentityKeyPem = "mix2_id_pub_key.pem"  
 
 [[Mixes]]
   # mix3
-  IdentityKey = "La2FnsbKoU8dzQhfN4zkxSYn6T7LRWmFn0JgtlEklQw="
+  IdentityKeyPem = "mix3_id_pub_key.pem"  
 
 #
 # The Providers array defines the list of white-listed Provider nodes.
@@ -89,9 +89,9 @@
 
 [[Providers]]
   Identifier = "provider2"
-  IdentityKey = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
+  IdentityKeyPem = "provider2_id_pub_key.pem"
 
 [[Providers]]
   Identifier = "provider1"
-  IdentityKey = "2krwfNDfbakZCSTUUZYKXwdduzlEgS9Jfwm7eyZ0sCg="
+  IdentityKeyPem = "provider1_id_pub_key.pem"  
 
