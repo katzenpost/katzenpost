@@ -16,17 +16,17 @@
     [[VotingAuthority.Peers]]
       Addresses = ["127.0.0.1:21483"]
       LinkPublicKeyPem = "auth1_link_pub_key.pem"
-      IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+      IdentityPublicKeyPem = "auth1_id_pub_key.pem"
 
     [[VotingAuthority.Peers]]
       Addresses = ["127.0.0.1:22483"]
       LinkPublicKeyPem = "auth2_link_pub_key.pem"
-      IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+      IdentityPublicKeyPem = "auth2_id_pub_key.pem"
 
     [[VotingAuthority.Peers]]
       Addresses = ["127.0.0.1:23483"]
       LinkPublicKeyPem = "auth3_link_pub_key.pem"
-      IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+      IdentityPublicKeyPem = "auth3_id_pub_key.pem"
 
 [Debug]
   DisableDecoyTraffic = true
