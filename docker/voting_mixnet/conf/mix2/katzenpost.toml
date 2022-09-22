@@ -25,17 +25,17 @@
   [PKI.Voting]
   [[PKI.Voting.Peers]]
     Addresses = ["172.28.1.10:21483"]
-    IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
+    IdentityPublicKeyPem = "auth1_id_pub_key.pem"
     LinkPublicKeyPem = "auth1_link_pub_key.pem"
 
   [[PKI.Voting.Peers]]
     Addresses = ["172.28.1.8:22483"]
-    IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
+    IdentityPublicKeyPem = "auth2_id_pub_key.pem"
     LinkPublicKeyPem = "auth2_link_pub_key.pem"
 
   [[PKI.Voting.Peers]]
     Addresses = ["172.28.1.9:23483"]
-    IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
+    IdentityPublicKeyPem = "auth3_id_pub_key.pem"
     LinkPublicKeyPem = "auth3_link_pub_key.pem"
 
 
