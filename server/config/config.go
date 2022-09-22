@@ -741,7 +741,7 @@ type Voting struct {
 func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
 	for _, peer := range peers {
-		identityKey, _ := cert.Scheme.NewKeypair()
+		_, identityKey := cert.Scheme.NewKeypair()
 		err := pem.FromFile(filepath.Join(datadir, peer.IdentityPublicKeyPem), identityKey)
 		if err != nil {
 			return nil, err
