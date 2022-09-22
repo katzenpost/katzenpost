@@ -25,8 +25,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -43,10 +43,10 @@ type ClientConfig struct {
 	// Provider is the provider identifier to connect to.
 	Provider string
 
-	// ProviderKeyPin is the optional pinned provider EdDSA signing key.
+	// ProviderKeyPin is the optional pinned provider signing key.
 	// If specified, the client will refuse to accept provider descriptors
 	// in PKI documents unless they are signed by the pinned key.
-	ProviderKeyPin *eddsa.PublicKey
+	ProviderKeyPin sign.PublicKey
 
 	// LinkKey is the user's ECDH link authentication private key.
 	LinkKey wire.PrivateKey
