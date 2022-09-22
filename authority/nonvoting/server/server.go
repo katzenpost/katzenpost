@@ -29,12 +29,15 @@ import (
 	"path/filepath"
 	"sync"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -47,7 +50,7 @@ type Server struct {
 
 	cfg *config.Config
 
-	identityKey *eddsa.PrivateKey
+	identityKey sign.PrivateKey
 	linkKey     wire.PrivateKey
 
 	logBackend *log.Backend
@@ -104,7 +107,7 @@ func (s *Server) initLogging() error {
 }
 
 // IdentityKey returns the running Server's identity public key.
-func (s *Server) IdentityKey() *eddsa.PublicKey {
+func (s *Server) IdentityKey() sign.PublicKey {
 	return s.identityKey.PublicKey()
 }
 
@@ -206,10 +209,28 @@ func New(cfg *config.Config) (*Server, error) {
 	var err error
 	identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
-	if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-		s.log.Errorf("Failed to initialize identity: %v", err)
-		return nil, err
+
+	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
+
+	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err := pem.FromFile(identityPrivateKeyFile, identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err := pem.ToFile(identityPrivateKeyFile, identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.ToFile(identityPublicKeyFile, identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
+
+	s.identityKey = identityPrivateKey
 
 	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
