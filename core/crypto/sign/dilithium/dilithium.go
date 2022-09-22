@@ -122,7 +122,7 @@ type privateKey struct {
 }
 
 func (p *privateKey) KeyType() string {
-	return "ED25519 PRIVATE KEY"
+	return "Dilithium2AES PRIVATE KEY"
 }
 
 func (p *privateKey) PublicKey() sign.PublicKey {
@@ -160,7 +160,7 @@ type publicKey struct {
 }
 
 func (p *publicKey) KeyType() string {
-	return "ED25519 PUBLIC KEY"
+	return "Dilithium2AES PUBLIC KEY"
 }
 
 func (p *publicKey) Sum256() [32]byte {

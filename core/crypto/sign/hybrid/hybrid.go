@@ -21,6 +21,7 @@ import (
 	"crypto/hmac"
 	"encoding/base64"
 	"errors"
+	"fmt"
 
 	"golang.org/x/crypto/blake2b"
 
@@ -129,7 +130,7 @@ type privateKey struct {
 }
 
 func (p *privateKey) KeyType() string {
-	return "ED25519 PRIVATE KEY"
+	return fmt.Sprintf("%s_%s PRIVATE KEY", p.scheme1.Name(), p.scheme2.Name())
 }
 
 func (p *privateKey) PublicKey() sign.PublicKey {
@@ -180,7 +181,7 @@ type publicKey struct {
 }
 
 func (p *publicKey) KeyType() string {
-	return "ED25519 PUBLIC KEY"
+	return fmt.Sprintf("%s_%s PUBLIC KEY", p.scheme1.Name(), p.scheme2.Name())
 }
 
 func (p *publicKey) Sum256() [32]byte {
