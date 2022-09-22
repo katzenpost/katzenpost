@@ -46,10 +46,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
+	keyHash := s.identityKey.PublicKey().Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     auth,
-		AdditionalData:    s.identityKey.PublicKey().Bytes(),
+		AdditionalData:    keyHash[:],
 		AuthenticationKey: s.linkKey,
 		RandomReader:      rand.Reader,
 	}
@@ -202,7 +203,9 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	pk := a.peerIdentityKey.Sum256()
+	pk := [sign.PublicKeyHashSize]byte{}
+	copy(pk[:], creds.AdditionalData[:sign.PublicKeyHashSize])
+
 	if !(a.s.state.authorizedMixes[pk] || a.s.state.authorizedProviders[pk] != "") {
 		a.s.log.Debugf("Rejecting authentication, not a valid mix/provider.")
 		return false

@@ -146,7 +146,7 @@ func (co *connector) spawnNewConns() {
 }
 
 func (co *connector) onNewConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.ByteArray()
+	nodeID := c.dst.IdentityKey.Sum256()
 
 	co.closeAllWg.Add(1)
 	co.Lock()
@@ -162,7 +162,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 }
 
 func (co *connector) onClosedConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.ByteArray()
+	nodeID := c.dst.IdentityKey.Sum256()
 
 	co.Lock()
 	defer func() {

@@ -22,6 +22,10 @@ import (
 	"encoding"
 )
 
+// PublicKeyHashSize indicates the hash size returned
+// from the PublicKey's Sum256 method.
+const PublicKeyHashSize = 32
+
 // Key is an interface for types encapsulating key material.
 type Key interface {
 

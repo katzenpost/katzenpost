@@ -32,8 +32,7 @@
     Address = "192.0.2.2:2323"
 
     # PublicKey is the directory authority's public key in Base64 or Base16 format.
-    PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
-    # PublicKey = "900895721381C0756D28954524BB1D090F54C8DD9295F84B1D8A93F1E3C17AD8"
+    PublicKeyPem = "auth_pub_key.pem"
 
 #
 # The Logging section controls the logging.

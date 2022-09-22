@@ -33,10 +33,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -167,9 +167,6 @@ func (sCfg *Server) validate() error {
 
 // Debug is the Katzenpost server debug configuration.
 type Debug struct {
-	// IdentityKey specifies the identity private key.
-	IdentityKey *eddsa.PrivateKey `toml:"-"`
-
 	// NumSphinxWorkers specifies the number of worker instances to use for
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
@@ -245,11 +242,6 @@ type Debug struct {
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
-}
-
-// IsUnsafe returns true iff any debug options that destroy security are set.
-func (dCfg *Debug) IsUnsafe() bool {
-	return dCfg.IdentityKey != nil
 }
 
 func (dCfg *Debug) applyDefaults() {
@@ -687,7 +679,7 @@ func (pCfg *PKI) validate(datadir string) error {
 		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
 	}
 	if pCfg.Nonvoting != nil {
-		if err := pCfg.Nonvoting.validate(); err != nil {
+		if err := pCfg.Nonvoting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
@@ -708,21 +700,16 @@ type Nonvoting struct {
 	// Address is the authority's IP/port combination.
 	Address string
 
-	// PublicKey is the authority's public key in Base64 or Base16 format.
-	PublicKey string
+	// PublicKeyPem is the authority's Identity key PEM filepath.
+	PublicKeyPem string
 
-	// LinkPublicKeyPem is the authority's public link key PEM file.
+	// LinkPublicKeyPem is the authority's public link key PEM filepath.
 	LinkPublicKeyPem string
 }
 
-func (nCfg *Nonvoting) validate() error {
+func (nCfg *Nonvoting) validate(datadir string) error {
 	if err := utils.EnsureAddrIPPort(nCfg.Address); err != nil {
 		return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
-	}
-
-	var pubKey eddsa.PublicKey
-	if err := pubKey.FromString(nCfg.PublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
 	}
 
 	return nil
@@ -730,9 +717,9 @@ func (nCfg *Nonvoting) validate() error {
 
 // Peer is a voting peer.
 type Peer struct {
-	Addresses         []string
-	IdentityPublicKey string
-	LinkPublicKeyPem  string
+	Addresses            []string
+	IdentityPublicKeyPem string
+	LinkPublicKeyPem     string
 }
 
 func (p *Peer) validate(datadir string) error {
@@ -741,14 +728,7 @@ func (p *Peer) validate(datadir string) error {
 			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
 		}
 	}
-	var pubKey eddsa.PublicKey
-	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
-		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
-	}
-	_, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(datadir, p.LinkPublicKeyPem))
-	if err != nil {
-		return fmt.Errorf("Voting Peer: Invalid Link PublicKey PEM file: %v", err)
-	}
+
 	return nil
 }
 
@@ -761,15 +741,15 @@ type Voting struct {
 func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
 	for _, peer := range peers {
-		identityKey := new(eddsa.PublicKey)
-		err := identityKey.UnmarshalText([]byte(peer.IdentityPublicKey))
+		identityKey, _ := cert.Scheme.NewKeypair()
+		err := pem.FromFile(filepath.Join(datadir, peer.IdentityPublicKeyPem), identityKey)
 		if err != nil {
 			return nil, err
 		}
 		authPeer := &config.AuthorityPeer{
-			IdentityPublicKey: identityKey,
-			LinkPublicKeyPem:  peer.LinkPublicKeyPem,
-			Addresses:         peer.Addresses,
+			IdentityPublicKeyPem: peer.IdentityPublicKeyPem,
+			LinkPublicKeyPem:     peer.LinkPublicKeyPem,
+			Addresses:            peer.Addresses,
 		}
 		authPeers = append(authPeers, authPeer)
 	}

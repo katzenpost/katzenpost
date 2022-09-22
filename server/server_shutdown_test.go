@@ -22,11 +22,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestServerStartShutdown(t *testing.T) {
@@ -41,13 +44,19 @@ func TestServerStartShutdown(t *testing.T) {
 	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
 	authLinkPrivKey.PublicKey().ToPEMFile(filepath.Join(datadir, authLinkPubKeyPem))
 
-	authkey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	authKeyStr := authkey.PublicKey().String()
-	assert.NoError(err)
+	_, authPubkey := cert.Scheme.NewKeypair()
 
-	mixIdKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	authIDPubKeyPem := "auth_id_pub_key.pem"
+	authkeyPath := filepath.Join(datadir, authIDPubKeyPem)
+
+	err = pem.ToFile(authkeyPath, authPubkey)
+	require.NoError(t, err)
+
+	mixIdPrivateKey, mixIdPublicKey := cert.Scheme.NewKeypair()
+	err = pem.ToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	require.NoError(t, err)
+	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
+	require.NoError(t, err)
 
 	cfg := config.Config{
 		Server: &config.Server{
@@ -65,7 +74,7 @@ func TestServerStartShutdown(t *testing.T) {
 		PKI: &config.PKI{
 			Nonvoting: &config.Nonvoting{
 				Address:          "127.0.0.1:3321",
-				PublicKey:        authKeyStr,
+				PublicKeyPem:     authIDPubKeyPem,
 				LinkPublicKeyPem: authLinkPubKeyPem,
 			},
 		},
@@ -74,7 +83,6 @@ func TestServerStartShutdown(t *testing.T) {
 			Path:   "",
 		},
 		Debug: &config.Debug{
-			IdentityKey:                  mixIdKey,
 			NumSphinxWorkers:             1,
 			NumProviderWorkers:           0,
 			NumKaetzchenWorkers:          1,

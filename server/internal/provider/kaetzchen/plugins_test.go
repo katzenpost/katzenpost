@@ -19,15 +19,16 @@ package kaetzchen
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/stretchr/testify/require"
 )
 
-func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey wire.PrivateKey, idKey *eddsa.PrivateKey) *mockGlue {
+func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey wire.PrivateKey, idKey sign.PrivateKey) *mockGlue {
 	goo := &mockGlue{
 		s: &mockServer{
 			logBackend: logBackend,
@@ -41,7 +42,6 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey wire.Priva
 				Management: &config.Management{},
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
-					IdentityKey:         idKey,
 					KaetzchenDelay:      300,
 				},
 			},
@@ -53,8 +53,7 @@ func getGlue(logBackend *log.Backend, provider *mockProvider, linkKey wire.Priva
 func TestCBORInvalidCommandWithPluginKaetzchenWorker(t *testing.T) {
 	require := require.New(t)
 
-	idKey, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err)
+	idKey, _ := cert.Scheme.NewKeypair()
 
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)

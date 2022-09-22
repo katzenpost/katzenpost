@@ -22,8 +22,8 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -109,7 +109,7 @@ func (s *Server) onClient(rAddr net.Addr, cmd commands.Command) commands.Command
 	return resp
 }
 
-func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKey *eddsa.PublicKey) commands.Command {
+func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKey sign.PublicKey) commands.Command {
 	s.log.Debug("onMix")
 	var resp commands.Command
 	switch c := cmd.(type) {
@@ -174,7 +174,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	return resp
 }
 
-func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKey *eddsa.PublicKey) commands.Command {
+func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKey sign.PublicKey) commands.Command {
 	resp := &commands.PostDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
@@ -238,7 +238,7 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 
 type wireAuthenticator struct {
 	s               *Server
-	peerIdentityKey *eddsa.PublicKey
+	peerIdentityKey sign.PublicKey
 	peerLinkKey     *ecdh.PublicKey
 	isClient        bool
 	isMix           bool
@@ -250,19 +250,15 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case 0:
 		a.isClient = true
 		return true
-	case eddsa.PublicKeySize:
+	case sign.PublicKeyHashSize:
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
 		return false
 	}
 
-	a.peerIdentityKey = new(eddsa.PublicKey)
-	if err := a.peerIdentityKey.FromBytes(creds.AdditionalData); err != nil {
-		a.s.log.Warningf("Rejecting authentication, invalid AD: %v", err)
-		return false
-	}
+	pk := [sign.PublicKeyHashSize]byte{}
+	copy(pk[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 
-	pk := a.peerIdentityKey.ByteArray()
 	_, isMix := a.s.state.authorizedMixes[pk]
 	_, isProvider := a.s.state.authorizedProviders[pk]
 	_, isAuthority := a.s.state.authorizedAuthorities[pk]

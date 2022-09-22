@@ -17,7 +17,7 @@
 package scheduler
 
 import (
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -49,7 +49,7 @@ func (m *mockGlue) Decoy() glue.Decoy {
 	var d glue.Decoy
 	return d
 }
-func (m *mockGlue) IdentityKey() *eddsa.PrivateKey {
+func (m *mockGlue) IdentityKey() sign.PrivateKey {
 	return nil
 }
 func (m *mockGlue) LinkKey() wire.PrivateKey {

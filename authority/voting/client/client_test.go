@@ -326,10 +326,11 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	wg.Done()
 
 	d.waitUntilDialed(address)
+	identityHash := identityPrivateKey.PublicKey().Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          &sphinx.Geometry{},
 		Authenticator:     d,
-		AdditionalData:    identityPrivateKey.PublicKey().Bytes(),
+		AdditionalData:    identityHash[:],
 		AuthenticationKey: linkPrivateKey,
 		RandomReader:      rand.Reader,
 	}

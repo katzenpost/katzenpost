@@ -40,6 +40,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -286,7 +287,7 @@ func (s *state) consense(epoch uint64) *document {
 }
 
 func (s *state) identityPubKey() [publicKeyHashSize]byte {
-	return s.s.identityKey.PublicKey().ByteArray()
+	return s.s.identityKey.PublicKey().Sum256()
 }
 
 func (s *state) voted(epoch uint64) bool {
@@ -536,10 +537,11 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 	defer conn.Close()
 	s.s.Add(1)
 	defer s.s.Done()
+	identityHash := s.s.identityKey.PublicKey().Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     s,
-		AdditionalData:    s.s.identityKey.PublicKey().Bytes(),
+		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
@@ -1007,7 +1009,13 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byt
 	topology := make([][][]byte, len(s.s.cfg.Topology.Layers))
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
-			id := node.IdentityKey.Sum256()
+
+			_, identityKey := cert.Scheme.NewKeypair()
+			err := pem.FromFile(node.IdentityKeyPem, identityKey)
+			if err != nil {
+				panic(err)
+			}
+			id := identityKey.Sum256()
 
 			// if the listed node is in the current descriptor set, place it in the layer
 			if n, ok := nodeMap[id]; ok {
@@ -1470,7 +1478,12 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
 	st.verifiers = make([]cert.Verifier, len(s.cfg.Authorities)+1)
 	for i, auth := range s.cfg.Authorities {
-		st.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+		_, identityPublicKey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(auth.IdentityPublicKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
+		}
+		st.verifiers[i] = cert.Verifier(identityPublicKey)
 	}
 	st.verifiers[len(s.cfg.Authorities)] = cert.Verifier(s.IdentityKey())
 	st.threshold = len(st.verifiers)/2 + 1
@@ -1479,17 +1492,35 @@ func newState(s *Server) (*state, error) {
 	// Initialize the authorized peer tables.
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
-		pk := v.IdentityKey.Sum256()
+		_, identityPublicKey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(v.IdentityKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
+		}
+
+		pk := identityPublicKey.Sum256()
 		st.authorizedMixes[pk] = true
 	}
 	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
-		pk := v.IdentityKey.Sum256()
+		_, identityPublicKey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(v.IdentityKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
+		}
+
+		pk := identityPublicKey.Sum256()
 		st.authorizedProviders[pk] = v.Identifier
 	}
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
-		pk := v.IdentityPublicKey.Sum256()
+		_, identityPublicKey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
+		}
+
+		pk := identityPublicKey.Sum256()
 		st.authorizedAuthorities[pk] = true
 	}
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
@@ -1499,7 +1530,14 @@ func newState(s *Server) (*state, error) {
 		if err != nil {
 			return nil, err
 		}
-		pk := v.IdentityPublicKey.Sum256()
+
+		_, identityPublicKey := cert.Scheme.NewKeypair()
+		err = pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
+		}
+
+		pk := identityPublicKey.Sum256()
 		st.authorityLinkKeys[pk] = linkPubKey
 	}
 

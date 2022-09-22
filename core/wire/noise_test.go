@@ -93,28 +93,7 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 	clientCs := clientSs.CipherState()
 	require.NotNil(t, clientCs)
 
-	const (
-		prologueLen = 1
-		keyLen      = 32
-		// Length of Kyber1024 public key and KEM ciphertext.
-		kyberLen = 1568
-
-		// client
-		// -> (prologue), e
-		msg1Len = prologueLen + kyberLen
-
-		// server
-		// -> ekem, s, (auth)
-		msg2Len = 3168 + authLen
-
-		// client
-		// -> skem, s, (auth)
-		msg3Len = 3184 + authLen
-
-		// server
-		// -> skem
-		msg4Len = 1600
-
+	var (
 		authLen = 1 + MaxAdditionalDataLength + 4
 	)
 

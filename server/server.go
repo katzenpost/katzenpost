@@ -24,8 +24,14 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"gitlab.com/yawning/aez.git"
+	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -40,9 +46,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pki"
 	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
-	"gitlab.com/yawning/aez.git"
-	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -53,7 +56,7 @@ var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 type Server struct {
 	cfg *config.Config
 
-	identityKey *eddsa.PrivateKey
+	identityKey sign.PrivateKey
 	linkKey     wire.PrivateKey
 
 	logBackend *log.Backend
@@ -101,7 +104,7 @@ func (s *Server) reshadowCryptoWorkers() {
 }
 
 // IdentityKey returns the running server's identity public key.
-func (s *Server) IdentityKey() *eddsa.PublicKey {
+func (s *Server) IdentityKey() sign.PublicKey {
 	return s.identityKey.PublicKey()
 }
 
@@ -231,9 +234,6 @@ func New(cfg *config.Config) (*Server, error) {
 	instrument.Init()
 
 	s.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
-	if s.cfg.Debug.IsUnsafe() {
-		s.log.Warning("Unsafe Debug configuration options are set.")
-	}
 	if s.cfg.Logging.Level == "DEBUG" {
 		s.log.Warning("Unsafe Debug logging is enabled.")
 	}
@@ -245,19 +245,32 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
 
 	// Initialize the server identity and link keys.
-	var err error
-	if s.cfg.Debug.IdentityKey != nil {
-		s.log.Warning("IdentityKey should NOT be used for production deployments.")
-		s.identityKey = new(eddsa.PrivateKey)
-		s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
-	} else {
-		identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
-		identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
-		if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-			s.log.Errorf("Failed to initialize identity: %v", err)
+	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+
+	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
+
+	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err := pem.FromFile(identityPrivateKeyFile, identityPrivateKey)
+		if err != nil {
 			return nil, err
 		}
+	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err := pem.ToFile(identityPrivateKeyFile, identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.ToFile(identityPublicKeyFile, identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
+
+	s.identityKey = identityPrivateKey
+
+	var err error
 	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
 	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	scheme := wire.NewScheme()
@@ -404,7 +417,7 @@ func (g *serverGlue) LogBackend() *log.Backend {
 	return g.s.logBackend
 }
 
-func (g *serverGlue) IdentityKey() *eddsa.PrivateKey {
+func (g *serverGlue) IdentityKey() sign.PrivateKey {
 	return g.s.identityKey
 }
 

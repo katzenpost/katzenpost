@@ -18,8 +18,8 @@
 package client
 
 import (
-	"bytes"
 	"context"
+	"crypto/hmac"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -209,8 +209,9 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 	}()
 
 	var ad []byte
+	keyHash := signingKey.Sum256()
 	if signingKey != nil {
-		ad = signingKey.Bytes()
+		ad = keyHash[:]
 	}
 
 	// Initialize the wire protocol session.
@@ -244,7 +245,8 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 }
 
 func (c *client) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if !bytes.Equal(c.cfg.PublicKey.Bytes(), creds.AdditionalData) {
+	keyHash := c.cfg.PublicKey.Sum256()
+	if !hmac.Equal(keyHash[:], creds.AdditionalData[:sign.PublicKeyHashSize]) {
 		c.log.Warningf("nonvoting/Client: IsPeerValid(): AD mismatch: %v", hex.EncodeToString(creds.AdditionalData))
 		return false
 	}

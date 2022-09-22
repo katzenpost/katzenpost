@@ -18,6 +18,8 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,11 +32,11 @@ func TestConfig(t *testing.T) {
 	require.Error(err, "no Load() with nil config")
 	require.EqualError(err, "No nil buffer as config file")
 
-	const basicConfig = `# A basic configuration example.
+	basicConfig := `# A basic configuration example.
 [server]
 Identifier = "katzenpost.example.com"
 Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
-DataDir = "/var/lib/katzenpost"
+DataDir = "%s"
 IsProvider = true
 
 [Provider]
@@ -53,14 +55,16 @@ Level = "DEBUG"
 [PKI]
 [PKI.Nonvoting]
 Address = "127.0.0.1:6999"
-PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+PublicKeyPem = "id_pub_key.pem"
 `
 
-	cfg, err := Load([]byte(basicConfig))
+	config := fmt.Sprintf(basicConfig, os.TempDir())
+
+	cfg, err := Load([]byte(config))
 	require.NoError(err, "Load() with basic config")
 
-	jCfg, _ := json.Marshal(cfg)
-	t.Logf("cfg: %v", string(jCfg))
+	_, err = json.Marshal(cfg)
+	require.NoError(err)
 }
 
 func TestIncompleteConfig(t *testing.T) {
@@ -114,7 +118,7 @@ Level = "DEBUG"
 [PKI]
 [PKI.Nonvoting]
 Address = "127.0.0.1:6999"
-PublicKey = "kAiVchOBwHVtKJVFJLsdCQ9UyN2SlfhLHYqT8ePBetg="
+PublicKeyPem = "auth_id_pub_key.pem"
 `
 
 	_, err = Load([]byte(incompleteServerConfig))
