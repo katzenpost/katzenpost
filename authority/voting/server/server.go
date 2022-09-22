@@ -206,28 +206,23 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
 
 	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
-	err := pem.FromFile(identityPrivateKeyFile, identityPrivateKey)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			err = pem.ToFile(identityPrivateKeyFile, identityPrivateKey)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
-	}
 
-	err = pem.FromFile(identityPublicKeyFile, identityPublicKey)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			err = pem.ToFile(identityPublicKeyFile, identityPublicKey)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err := pem.FromFile(identityPrivateKeyFile, identityPrivateKey)
+		if err != nil {
 			return nil, err
 		}
+	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err := pem.ToFile(identityPrivateKeyFile, identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.ToFile(identityPublicKeyFile, identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
 	s.identityKey = identityPrivateKey
@@ -235,6 +230,9 @@ func New(cfg *config.Config) (*Server, error) {
 	scheme := wire.NewScheme()
 	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
+
+	var err error
+
 	if s.linkKey, err = scheme.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
 		return nil, err
