@@ -699,11 +699,15 @@ func New(glue glue.Glue) (glue.PKI, error) {
 
 	if glue.Config().PKI.Nonvoting != nil {
 		_, authPk := cert.Scheme.NewKeypair()
-		err := pem.FromFile(glue.Config().PKI.Nonvoting.PublicKeyPem, authPk)
+		identityKeyPemFile := filepath.Join(glue.Config().Server.DataDir,
+			glue.Config().PKI.Nonvoting.PublicKeyPem)
+		err := pem.FromFile(identityKeyPemFile, authPk)
 		if err != nil {
 			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public identity key from PEM file: %v", err)
 		}
-		authPubKey, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem))
+
+		wirePemFile := filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem)
+		authPubKey, err := wire.NewScheme().PublicKeyFromPemFile(wirePemFile)
 		if err != nil {
 			return nil, err
 		}
