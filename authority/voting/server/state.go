@@ -604,10 +604,11 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 	defer conn.Close()
 	s.s.Add(1)
 	defer s.s.Done()
+	identityHash := s.s.identityKey.PublicKey().Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     s,
-		AdditionalData:    s.s.identityKey.PublicKey().Bytes(),
+		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}

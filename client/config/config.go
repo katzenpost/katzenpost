@@ -30,7 +30,8 @@ import (
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -115,8 +116,8 @@ type NonvotingAuthority struct {
 	// Address is the IP address/port combination of the authority.
 	Address string
 
-	// PublicKey is the authority's public key.
-	PublicKey sign.PublicKey
+	// IdentityPublicKeyPem is the authority's identity public key pem filepath.
+	IdentityPublicKeyPem string
 
 	// LinkPublicKeyPem is the absolute file path to the
 	// authority's link public key.
@@ -130,20 +131,24 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKe
 	if err != nil {
 		return nil, err
 	}
+
+	_, identityPublicKey := cert.Scheme.NewKeypair()
+	err = pem.FromFile(filepath.Join(datadir, nvACfg.IdentityPublicKeyPem), identityPublicKey)
+
 	cfg := &nvClient.Config{
 		AuthorityLinkKey: authLinkKey,
 		LinkKey:          linkKey,
 		LogBackend:       l,
 		Address:          nvACfg.Address,
-		PublicKey:        nvACfg.PublicKey,
-		DialContextFn:    pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.KeyType()),
+		PublicKey:        identityPublicKey,
+		DialContextFn:    pCfg.ToDialContext("nonvoting:" + identityPublicKey.KeyType()),
 	}
 	return nvClient.New(cfg)
 }
 
 func (nvACfg *NonvotingAuthority) validate() error {
-	if nvACfg.PublicKey == nil {
-		return errors.New("error PublicKey is missing")
+	if nvACfg.IdentityPublicKeyPem == "" {
+		return errors.New("error IdentityPublicKeyPem is missing")
 	}
 	return nil
 }
@@ -164,8 +169,6 @@ func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wi
 		DialContextFn: pCfg.ToDialContext("voting"),
 	}
 	return vClient.New(cfg)
-
-	return nil, errors.New("voting authority client unable to start")
 }
 
 func (vACfg *VotingAuthority) validate() error {

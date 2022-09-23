@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"gitlab.com/yawning/aez.git"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
@@ -271,14 +272,16 @@ func New(cfg *config.Config) (*Server, error) {
 	s.identityKey = identityPrivateKey
 
 	var err error
-	s.log.Noticef("Server identity public key is: %s", s.identityKey.PublicKey())
+	idPubKeyHash := s.identityKey.PublicKey().Sum256()
+	s.log.Noticef("Server identity public key is: %x", idPubKeyHash[:])
 	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	scheme := wire.NewScheme()
 	if s.linkKey, err = scheme.Load(linkKeyFile, "", rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
 		return nil, err
 	}
-	s.log.Noticef("Server link public key is: %s", s.linkKey.PublicKey())
+	linkPubKeyHash := blake2b.Sum256(s.linkKey.PublicKey().Bytes())
+	s.log.Noticef("Server link public key is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly

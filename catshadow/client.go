@@ -29,7 +29,11 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"gopkg.in/eapache/channels.v1"
+	"gopkg.in/op/go-logging.v1"
+
 	ratchet "github.com/katzenpost/doubleratchet"
+
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -45,8 +49,6 @@ import (
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
-	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var (
