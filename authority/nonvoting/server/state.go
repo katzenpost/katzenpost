@@ -28,8 +28,10 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -70,11 +72,11 @@ type state struct {
 
 	db *bolt.DB
 
-	authorizedMixes     map[[eddsa.PublicKeySize]byte]bool
-	authorizedProviders map[[eddsa.PublicKeySize]byte]string
+	authorizedMixes     map[[sign.PublicKeyHashSize]byte]bool
+	authorizedProviders map[[sign.PublicKeyHashSize]byte]string
 
 	documents   map[uint64]*document
-	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
+	descriptors map[uint64]map[[sign.PublicKeyHashSize]byte]*descriptor
 	priorSRV    [][]byte
 
 	updateCh       chan interface{}
@@ -164,7 +166,7 @@ func (s *state) onWakeup() {
 	s.pruneDocuments()
 }
 
-func (s *state) hasEnoughDescriptors(m map[[eddsa.PublicKeySize]byte]*descriptor) bool {
+func (s *state) hasEnoughDescriptors(m map[[sign.PublicKeyHashSize]byte]*descriptor) bool {
 	// A Document will be generated iff there are at least:
 	//
 	//  * Debug.Layers * Debug.MinNodesPerLayer nodes.
@@ -452,7 +454,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Get the public key -> descriptor map for the epoch.
 	m, ok := s.descriptors[epoch]
 	if !ok {
-		m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+		m = make(map[[sign.PublicKeyHashSize]byte]*descriptor)
 		s.descriptors[epoch] = m
 	}
 
@@ -616,7 +618,7 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
-					verifier := new(eddsa.PublicKey)
+					_, verifier := cert.Scheme.NewKeypair()
 					err := verifier.FromBytes(pk)
 					if err != nil {
 						s.log.Errorf("Failed to load verifier key: %v", err)
@@ -640,7 +642,7 @@ func (s *state) restorePersistence() error {
 					s.Lock()
 					m, ok := s.descriptors[epoch]
 					if !ok {
-						m = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+						m = make(map[[sign.PublicKeyHashSize]byte]*descriptor)
 						s.descriptors[epoch] = m
 					}
 
@@ -673,19 +675,29 @@ func newState(s *Server) (*state, error) {
 	st.updateCh = make(chan interface{}, 1) // Buffered!
 
 	// Initialize the authorized peer tables.
-	st.authorizedMixes = make(map[[eddsa.PublicKeySize]byte]bool)
+	st.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
-		pk := v.IdentityKey.Sum256()
+		_, idKey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem), idKey)
+		if err != nil {
+			return nil, err
+		}
+		pk := idKey.Sum256()
 		st.authorizedMixes[pk] = true
 	}
-	st.authorizedProviders = make(map[[eddsa.PublicKeySize]byte]string)
+	st.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
-		pk := v.IdentityKey.Sum256()
+		_, idKey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem), idKey)
+		if err != nil {
+			return nil, err
+		}
+		pk := idKey.Sum256()
 		st.authorizedProviders[pk] = v.Identifier
 	}
 
 	st.documents = make(map[uint64]*document)
-	st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
+	st.descriptors = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*descriptor)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)

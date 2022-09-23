@@ -208,8 +208,8 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 	}()
 
 	var ad []byte
-	keyHash := signingKey.Sum256()
 	if signingKey != nil {
+		keyHash := signingKey.Sum256()
 		ad = keyHash[:]
 	}
 

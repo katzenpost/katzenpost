@@ -240,7 +240,8 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	s.log.Noticef("Authority identity public key is: %s", s.identityKey.PublicKey())
+	idKeyHash := s.identityKey.PublicKey().Sum256()
+	s.log.Noticef("Authority identity public key is: %x", idKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
