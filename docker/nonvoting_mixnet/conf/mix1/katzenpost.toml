@@ -25,13 +25,8 @@
 
   # Nonvoting is a simple non-voting PKI for test deployments.
   [PKI.Nonvoting]
-
-    # Address is the IP address/port combination of the directory authority.
     Address = "172.28.1.2:29483"
-
-    # PublicKey is the directory authority's public key in Base64 or Base16 format.
-    PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
-
+    PublicKeyPem = "auth_id_pub_key.pem"
     LinkPublicKeyPem = "auth_link_pub_key.pem"
 
 #
