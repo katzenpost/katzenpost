@@ -156,8 +156,9 @@ func (c *outgoingConn) worker() {
 		}
 	}()
 
+	identityHash := c.dst.IdentityKey.Bytes()
 	dialCheckCreds := wire.PeerCredentials{
-		AdditionalData: c.dst.IdentityKey.Bytes(),
+		AdditionalData: identityHash[:],
 		PublicKey:      c.dst.LinkKey,
 	}
 
@@ -261,10 +262,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
+	identityHash := c.co.glue.IdentityKey().PublicKey().Bytes()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,
-		AdditionalData:    c.co.glue.IdentityKey().PublicKey().Bytes(),
+		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.co.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}

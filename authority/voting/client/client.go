@@ -55,7 +55,7 @@ type authorityAuthenticator struct {
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	identityHash := a.IdentityPublicKey.Sum256()
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize]) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData[:])
+		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 		return false
 	}
 	if !bytes.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
@@ -157,11 +157,6 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 	}()
 
-	var ad []byte
-	if signingKey != nil {
-		ad = signingKey.Bytes()
-	}
-
 	peerLinkPublicKey, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
 	if err != nil {
 		return nil, err
@@ -180,6 +175,11 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	}
 
 	// Initialize the wire protocol session.
+	var ad []byte
+	if signingKey != nil {
+		keyHash := signingKey.Sum256()
+		ad = keyHash[:]
+	}
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     peerAuthenticator,

@@ -186,10 +186,11 @@ func (c *incomingConn) worker() {
 	}()
 
 	// Allocate the session struct.
+	identityHash := c.l.glue.IdentityKey().PublicKey().Bytes()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,
-		AdditionalData:    c.l.glue.IdentityKey().PublicKey().Bytes(),
+		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.l.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}

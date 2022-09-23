@@ -17,14 +17,16 @@
 package minclient
 
 import (
-	"bytes"
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -33,7 +35,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var (
@@ -649,7 +650,8 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	if !bytes.Equal(c.descriptor.IdentityKey.Bytes(), creds.AdditionalData) {
+	identityHash := c.descriptor.IdentityKey.Sum256()
+	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}
 	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {

@@ -17,6 +17,7 @@
 package server
 
 import (
+	"crypto/hmac"
 	"net"
 	"time"
 
@@ -46,10 +47,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
+	keyHash := s.identityKey.PublicKey().Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     auth,
-		AdditionalData:    s.identityKey.PublicKey().Bytes(),
+		AdditionalData:    keyHash[:],
 		AuthenticationKey: s.linkKey,
 		RandomReader:      rand.Reader,
 	}
@@ -80,7 +82,7 @@ func (s *Server) onConn(conn net.Conn) {
 	if auth.isClient {
 		resp = s.onClient(rAddr, cmd)
 	} else if auth.isMix {
-		resp = s.onMix(rAddr, cmd, auth.peerIdentityKey)
+		resp = s.onMix(rAddr, cmd, auth.peerIdentityKeyHash)
 	} else if auth.isAuthority {
 		resp = s.onAuthority(rAddr, cmd)
 	} else {
@@ -109,14 +111,14 @@ func (s *Server) onClient(rAddr net.Addr, cmd commands.Command) commands.Command
 	return resp
 }
 
-func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKey sign.PublicKey) commands.Command {
+func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
 	s.log.Debug("onMix")
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.PostDescriptor:
-		resp = s.onPostDescriptor(rAddr, c, peerIdentityKey)
+		resp = s.onPostDescriptor(rAddr, c, peerIdentityKeyHash)
 	default:
 		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
 		return nil
@@ -174,7 +176,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	return resp
 }
 
-func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKey sign.PublicKey) commands.Command {
+func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKeyHash []byte) commands.Command {
 	resp := &commands.PostDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
@@ -205,8 +207,9 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Ensure that the descriptor is signed by the peer that is posting.
-	if !desc.IdentityKey.Equal(pubKey) {
-		s.log.Errorf("Peer %v: Identity key '%v' is not link key '%v'.", rAddr, desc.IdentityKey, pubKey)
+	identityKeyHash := desc.IdentityKey.Sum256()
+	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
+		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, desc.IdentityKey, pubKeyHash)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -237,12 +240,12 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 }
 
 type wireAuthenticator struct {
-	s               *Server
-	peerIdentityKey sign.PublicKey
-	peerLinkKey     *ecdh.PublicKey
-	isClient        bool
-	isMix           bool
-	isAuthority     bool
+	s                   *Server
+	peerLinkKey         *ecdh.PublicKey
+	peerIdentityKeyHash []byte
+	isClient            bool
+	isMix               bool
+	isAuthority         bool
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -255,6 +258,8 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
 		return false
 	}
+
+	a.peerIdentityKeyHash = creds.AdditionalData
 
 	pk := [sign.PublicKeyHashSize]byte{}
 	copy(pk[:], creds.AdditionalData[:sign.PublicKeyHashSize])

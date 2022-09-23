@@ -94,7 +94,7 @@ func FromFile(f string, key KeyMaterial) error {
 
 	buf, err := os.ReadFile(f)
 	if err != nil {
-		return err
+		return fmt.Errorf("pem.FromFile error: %s", err)
 	}
 	blk, _ := pem.Decode(buf)
 	if blk == nil {
