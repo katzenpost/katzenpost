@@ -246,7 +246,7 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 func (c *client) IsPeerValid(creds *wire.PeerCredentials) bool {
 	keyHash := c.cfg.PublicKey.Sum256()
 	if !hmac.Equal(keyHash[:], creds.AdditionalData[:sign.PublicKeyHashSize]) {
-		c.log.Warningf("nonvoting/Client: IsPeerValid(): AD mismatch: %x != %x", creds.AdditionalData, keyHash[:])
+		c.log.Warningf("nonvoting/Client: IsPeerValid(): AD mismatch: got %x != want %x", creds.AdditionalData, keyHash[:])
 		return false
 	}
 	if !c.serverLinkKey.Equal(creds.PublicKey) {
