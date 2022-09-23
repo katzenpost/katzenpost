@@ -136,12 +136,12 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKe
 	err = pem.FromFile(filepath.Join(datadir, nvACfg.IdentityPublicKeyPem), identityPublicKey)
 
 	cfg := &nvClient.Config{
-		AuthorityLinkKey: authLinkKey,
-		LinkKey:          linkKey,
-		LogBackend:       l,
-		Address:          nvACfg.Address,
-		PublicKey:        identityPublicKey,
-		DialContextFn:    pCfg.ToDialContext("nonvoting:" + identityPublicKey.KeyType()),
+		AuthorityLinkKey:     authLinkKey,
+		LinkKey:              linkKey,
+		LogBackend:           l,
+		Address:              nvACfg.Address,
+		AuthorityIdentityKey: identityPublicKey,
+		DialContextFn:        pCfg.ToDialContext("nonvoting:" + identityPublicKey.KeyType()),
 	}
 	return nvClient.New(cfg)
 }

@@ -712,11 +712,11 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, err
 		}
 		pkiCfg := &nClient.Config{
-			AuthorityLinkKey: authPubKey,
-			LinkKey:          glue.LinkKey(),
-			LogBackend:       glue.LogBackend(),
-			Address:          glue.Config().PKI.Nonvoting.Address,
-			PublicKey:        authPk,
+			AuthorityLinkKey:     authPubKey,
+			LinkKey:              glue.LinkKey(),
+			LogBackend:           glue.LogBackend(),
+			Address:              glue.Config().PKI.Nonvoting.Address,
+			AuthorityIdentityKey: authPk,
 		}
 		p.impl, err = nClient.New(pkiCfg)
 		if err != nil {
