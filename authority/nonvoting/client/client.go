@@ -47,7 +47,7 @@ type Config struct {
 	Address string
 
 	// PublicKey is the authority's public key to use when validating documents.
-	PublicKey sign.PublicKey
+	AuthorityIdentityKey sign.PublicKey
 
 	// AuthorityLinkKey is the authority's link key used in our noise wire protocol.
 	AuthorityLinkKey wire.PublicKey
@@ -64,8 +64,8 @@ func (cfg *Config) validate() error {
 	if cfg.LogBackend == nil {
 		return fmt.Errorf("nonvoting/client: LogBackend is mandatory")
 	}
-	if cfg.PublicKey == nil {
-		return fmt.Errorf("nonvoting/client: PublicKey is mandatory")
+	if cfg.AuthorityIdentityKey == nil {
+		return fmt.Errorf("nonvoting/client: AuthorityIdentityKeyPublicKey is mandatory")
 	}
 	return nil
 }
@@ -173,7 +173,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 
 	// Validate the document.
-	doc, err := s11n.VerifyAndParseDocument(r.Payload, c.cfg.PublicKey)
+	doc, err := s11n.VerifyAndParseDocument(r.Payload, c.cfg.AuthorityIdentityKey)
 	if err != nil {
 		return nil, nil, err
 	} else if doc.Epoch != epoch {
@@ -186,7 +186,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 }
 
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
-	return s11n.VerifyAndParseDocument(raw, c.cfg.PublicKey)
+	return s11n.VerifyAndParseDocument(raw, c.cfg.AuthorityIdentityKey)
 }
 
 func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey sign.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {
@@ -244,7 +244,7 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 }
 
 func (c *client) IsPeerValid(creds *wire.PeerCredentials) bool {
-	keyHash := c.cfg.PublicKey.Sum256()
+	keyHash := c.cfg.AuthorityIdentityKey.Sum256()
 	if !hmac.Equal(keyHash[:], creds.AdditionalData[:sign.PublicKeyHashSize]) {
 		c.log.Warningf("nonvoting/Client: IsPeerValid(): AD mismatch: got %x != want %x", creds.AdditionalData, keyHash[:])
 		return false
