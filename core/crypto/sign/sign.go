@@ -51,9 +51,6 @@ type Key interface {
 type PrivateKey interface {
 	Key
 
-	// PublicKey returns the PublicKey corresponding to the PrivateKey.
-	PublicKey() PublicKey
-
 	// Sign signs the given message and returns the signature.
 	Sign(message []byte) (signature []byte)
 }

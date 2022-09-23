@@ -52,6 +52,11 @@ func (m *mockGlue) Decoy() glue.Decoy {
 func (m *mockGlue) IdentityKey() sign.PrivateKey {
 	return nil
 }
+
+func (m *mockGlue) IdentityPublicKey() sign.PublicKey {
+	return nil
+}
+
 func (m *mockGlue) LinkKey() wire.PrivateKey {
 	return nil
 }

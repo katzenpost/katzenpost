@@ -39,6 +39,7 @@ type Glue interface {
 	Config() *config.Config
 	LogBackend() *log.Backend
 	IdentityKey() sign.PrivateKey
+	IdentityPublicKey() sign.PublicKey
 	LinkKey() wire.PrivateKey
 
 	Management() *thwack.Server

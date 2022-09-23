@@ -272,13 +272,13 @@ type Client struct {
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *Client) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, d *pki.MixDescriptor) error {
+func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
 	// Make a serialized + signed + serialized descriptor.
-	signed, err := s11n.SignDescriptor(signingKey, d)
+	signed, err := s11n.SignDescriptor(signingPrivateKey, d)
 	if err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingKey sign.Private
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingKey.PublicKey(), cmd)
+	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
 	if err != nil {
 		return err
 	}

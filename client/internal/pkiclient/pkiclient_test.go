@@ -17,7 +17,7 @@ var (
 type mockPKI struct {
 }
 
-func (m mockPKI) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, d *pki.MixDescriptor) error {
+func (m mockPKI) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
 	return errNotImplemented
 }
 

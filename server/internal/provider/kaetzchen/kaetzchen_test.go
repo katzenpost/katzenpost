@@ -128,17 +128,18 @@ func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 func (d *mockDecoy) OnPacket(*packet.Packet) {}
 
 type mockServer struct {
-	cfg         *config.Config
-	logBackend  *log.Backend
-	identityKey sign.PrivateKey
-	linkKey     wire.PrivateKey
-	management  *thwack.Server
-	mixKeys     glue.MixKeys
-	pki         glue.PKI
-	provider    glue.Provider
-	scheduler   glue.Scheduler
-	connector   glue.Connector
-	listeners   []glue.Listener
+	cfg               *config.Config
+	logBackend        *log.Backend
+	identityKey       sign.PrivateKey
+	identityPublicKey sign.PublicKey
+	linkKey           wire.PrivateKey
+	management        *thwack.Server
+	mixKeys           glue.MixKeys
+	pki               glue.PKI
+	provider          glue.Provider
+	scheduler         glue.Scheduler
+	connector         glue.Connector
+	listeners         []glue.Listener
 }
 
 type mockGlue struct {
@@ -155,6 +156,10 @@ func (g *mockGlue) LogBackend() *log.Backend {
 
 func (g *mockGlue) IdentityKey() sign.PrivateKey {
 	return g.s.identityKey
+}
+
+func (g *mockGlue) IdentityPublicKey() sign.PublicKey {
+	return g.s.identityPublicKey
 }
 
 func (g *mockGlue) LinkKey() wire.PrivateKey {

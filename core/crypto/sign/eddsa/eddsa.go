@@ -105,12 +105,6 @@ func (p *privateKey) KeyType() string {
 	return "ED25519 PRIVATE KEY"
 }
 
-func (p *privateKey) PublicKey() sign.PublicKey {
-	return &publicKey{
-		publicKey: p.privateKey.PublicKey(),
-	}
-}
-
 func (p *privateKey) Sign(message []byte) (signature []byte) {
 	return p.privateKey.Sign(message)
 }

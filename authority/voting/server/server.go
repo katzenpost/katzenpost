@@ -46,8 +46,9 @@ type Server struct {
 
 	cfg *config.Config
 
-	identityKey sign.PrivateKey
-	linkKey     wire.PrivateKey
+	identityPrivateKey sign.PrivateKey
+	identityPublicKey  sign.PublicKey
+	linkKey            wire.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -104,7 +105,7 @@ func (s *Server) initLogging() error {
 
 // IdentityKey returns the running Server's identity public key.
 func (s *Server) IdentityKey() sign.PublicKey {
-	return s.identityKey.PublicKey()
+	return s.identityPublicKey
 }
 
 // RotateLog rotates the log file
@@ -172,7 +173,8 @@ func (s *Server) halt() {
 		s.state = nil
 	}
 
-	s.identityKey.Reset()
+	s.identityPublicKey.Reset()
+	s.identityPrivateKey.Reset()
 	s.linkKey.Reset()
 	close(s.fatalErrCh)
 
@@ -205,19 +207,23 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
 
-	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
-
+	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
+	var err error
 	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.FromFile(identityPrivateKeyFile, identityPrivateKey)
+		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
 	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.ToFile(identityPrivateKeyFile, identityPrivateKey)
+		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(identityPublicKeyFile, identityPublicKey)
+		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -225,20 +231,16 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	s.identityKey = identityPrivateKey
-
 	scheme := wire.NewScheme()
 	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
-
-	var err error
 
 	if s.linkKey, err = scheme.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
 		s.log.Errorf("Failed to initialize link key: %v", err)
 		return nil, err
 	}
 
-	idKeyHash := s.identityKey.PublicKey().Sum256()
+	idKeyHash := s.identityPublicKey.Sum256()
 	s.log.Noticef("Authority identity public key hash is: %x", idKeyHash[:])
 	s.log.Noticef("Authority link public key is: %x", s.linkKey.PublicKey().Bytes())
 

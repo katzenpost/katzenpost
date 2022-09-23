@@ -77,8 +77,8 @@ type client struct {
 	serverLinkKey wire.PublicKey
 }
 
-func (c *client) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, d *pki.MixDescriptor) error {
-	c.log.Debugf("Post(ctx, %d, %v, %+v)", epoch, signingKey.PublicKey(), d)
+func (c *client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
+	c.log.Debugf("Post(ctx, %d, %v, %+v)", epoch, signingPublicKey, d)
 
 	// Ensure that the descriptor we are about to post is well formed.
 	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
@@ -86,7 +86,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey sign.Private
 	}
 
 	// Make a serialized + signed + serialized descriptor.
-	signed, err := s11n.SignDescriptor(signingKey, d)
+	signed, err := s11n.SignDescriptor(signingPrivateKey, d)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingKey sign.Private
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})
 	defer close(doneCh)
-	conn, s, err := c.initSession(ctx, doneCh, signingKey.PublicKey(), c.cfg.LinkKey)
+	conn, s, err := c.initSession(ctx, doneCh, signingPublicKey, c.cfg.LinkKey)
 	if err != nil {
 		return err
 	}

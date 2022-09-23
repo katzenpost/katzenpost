@@ -147,7 +147,7 @@ func generateMixKeys(epoch uint64) (map[uint64]*ecdh.PublicKey, error) {
 func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error) {
 	mixes := []*descriptor{}
 	for i := 0; i < num; i++ {
-		mixIdentityPrivateKey, _ := cert.Scheme.NewKeypair()
+		mixIdentityPrivateKey, mixIdentityPublicKey := cert.Scheme.NewKeypair()
 		mixKeys, err := generateMixKeys(epoch)
 		if err != nil {
 			return nil, err
@@ -167,7 +167,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 
 		mix := &pki.MixDescriptor{
 			Name:        name,
-			IdentityKey: mixIdentityPrivateKey.PublicKey(),
+			IdentityKey: mixIdentityPublicKey,
 			LinkKey:     linkKey.PublicKey(),
 			MixKeys:     mixKeys,
 			Addresses: map[pki.Transport][]string{
@@ -313,7 +313,7 @@ func (d *mockDialer) waitUntilDialed(address string) {
 	<-dc
 }
 
-func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey sign.PrivateKey, wg *sync.WaitGroup) {
+func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey sign.PrivateKey, identityPublicKey sign.PublicKey, wg *sync.WaitGroup) {
 	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
@@ -326,7 +326,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	wg.Done()
 
 	d.waitUntilDialed(address)
-	identityHash := identityPrivateKey.PublicKey().Sum256()
+	identityHash := identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          &sphinx.Geometry{},
 		Authenticator:     d,
@@ -382,7 +382,7 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.PrivateKey, wire.PrivateKey, error) {
+func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
 	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
 	identityPublicKeyPem := filepath.Join(datadir, fmt.Sprintf("peer%d_id_pub_key.pem", peerNum))
 	err := pem.ToFile(identityPublicKeyPem, identityPublicKey)
@@ -405,7 +405,7 @@ func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.Priv
 	if err != nil {
 		panic(err)
 	}
-	return authPeer, identityPrivateKey, linkPrivateKey, nil
+	return authPeer, identityPrivateKey, identityPublicKey, linkPrivateKey, nil
 }
 
 func TestClient(t *testing.T) {
@@ -420,11 +420,11 @@ func TestClient(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, linkPrivKey, err := generatePeer(i, datadir)
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i, datadir)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)
-		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, &wg)
+		go dialer.mockServer(peer.Addresses[0], linkPrivKey, idPrivKey, idPubKey, &wg)
 	}
 	wg.Wait()
 	cfg := &Config{

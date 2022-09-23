@@ -262,7 +262,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
-	identityHash := c.co.glue.IdentityKey().PublicKey().Bytes()
+	identityHash := c.co.glue.IdentityPublicKey().Bytes()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,

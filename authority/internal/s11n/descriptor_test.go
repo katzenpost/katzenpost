@@ -49,8 +49,8 @@ func TestDescriptor(t *testing.T) {
 	}
 	d.Layer = pki.LayerProvider
 	d.LoadWeight = 23
-	identityPriv, _ := cert.Scheme.NewKeypair()
-	d.IdentityKey = identityPriv.PublicKey()
+	identityPriv, identityPub := cert.Scheme.NewKeypair()
+	d.IdentityKey = identityPub
 	scheme := wire.NewScheme()
 	linkPriv := scheme.GenerateKeypair(rand.Reader)
 	d.LinkKey = linkPriv.PublicKey()
@@ -77,7 +77,7 @@ func TestDescriptor(t *testing.T) {
 	t.Logf("signed descriptor: '%v'", signed)
 
 	// Verify and deserialize the signed descriptor.
-	dd, err := VerifyAndParseDescriptor(identityPriv.PublicKey(), signed, debugTestEpoch)
+	dd, err := VerifyAndParseDescriptor(identityPub, signed, debugTestEpoch)
 	require.NoError(err)
 
 	t.Logf("Deserialized descriptor: '%v'", dd)

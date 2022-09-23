@@ -287,7 +287,7 @@ func (s *state) consense(epoch uint64) *document {
 }
 
 func (s *state) identityPubKey() [publicKeyHashSize]byte {
-	return s.s.identityKey.PublicKey().Sum256()
+	return s.s.identityPublicKey.Sum256()
 }
 
 func (s *state) voted(epoch uint64) bool {
@@ -417,7 +417,7 @@ func (s *state) reveal(epoch uint64) []byte {
 		// Reveals are only valid until the end of voting round
 		_, _, till := epochtime.Now()
 		revealExpiration := time.Now().Add(till).Unix()
-		signed, err := cert.Sign(s.s.identityKey, reveal, revealExpiration)
+		signed, err := cert.Sign(s.s.identityPrivateKey, reveal, revealExpiration)
 		if err != nil {
 			s.s.fatalErrCh <- err
 		}
@@ -481,7 +481,7 @@ func (s *state) vote(epoch uint64) (*document, error) {
 
 func (s *state) sign(doc *s11n.Document) *document {
 	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityKey, doc)
+	signed, err := s11n.SignDocument(s.s.identityPrivateKey, doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -490,7 +490,7 @@ func (s *state) sign(doc *s11n.Document) *document {
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityPublicKey)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -537,7 +537,7 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 	defer conn.Close()
 	s.s.Add(1)
 	defer s.s.Done()
-	identityHash := s.s.identityKey.PublicKey().Sum256()
+	identityHash := s.s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     s,
@@ -604,7 +604,7 @@ func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch ui
 	defer conn.Close()
 	s.s.Add(1)
 	defer s.s.Done()
-	identityHash := s.s.identityKey.PublicKey().Sum256()
+	identityHash := s.s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     s,
@@ -902,7 +902,7 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	}
 
 	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityKey, doc)
+	signed, err := s11n.SignDocument(s.s.identityPrivateKey, doc)
 	if err != nil {
 		s.log.Debugf("SignDocument failed with err: %v", err)
 		return nil, err

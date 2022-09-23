@@ -46,7 +46,7 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
-	keyHash := s.identityKey.PublicKey().Sum256()
+	keyHash := s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     auth,
