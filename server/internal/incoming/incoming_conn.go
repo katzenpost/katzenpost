@@ -186,7 +186,7 @@ func (c *incomingConn) worker() {
 	}()
 
 	// Allocate the session struct.
-	identityHash := c.l.glue.IdentityKey().PublicKey().Bytes()
+	identityHash := c.l.glue.IdentityPublicKey().Bytes()
 	cfg := &wire.SessionConfig{
 		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,

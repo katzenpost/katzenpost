@@ -275,7 +275,7 @@ func (s *state) generateDocument(epoch uint64) {
 	doc.PriorSharedRandom = s.priorSRV
 
 	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityKey, doc)
+	signed, err := s11n.SignDocument(s.s.identityPrivateKey, doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -284,7 +284,7 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityKey.PublicKey())
+	pDoc, err := s11n.VerifyAndParseDocument([]byte(signed), s.s.identityPublicKey)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -590,7 +590,7 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
-					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityKey.PublicKey()); err != nil {
+					if doc, err := s11n.VerifyAndParseDocument(rawDoc, s.s.identityPublicKey); err != nil {
 						// This continues because there's no reason not to load
 						// the descriptors as long as they validate, even if
 						// the document fails to load.

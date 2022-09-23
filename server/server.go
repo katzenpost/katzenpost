@@ -57,8 +57,9 @@ var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 type Server struct {
 	cfg *config.Config
 
-	identityKey sign.PrivateKey
-	linkKey     wire.PrivateKey
+	identityPrivateKey sign.PrivateKey
+	identityPublicKey  sign.PublicKey
+	linkKey            wire.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -106,7 +107,7 @@ func (s *Server) reshadowCryptoWorkers() {
 
 // IdentityKey returns the running server's identity public key.
 func (s *Server) IdentityKey() sign.PublicKey {
-	return s.identityKey.PublicKey()
+	return s.identityPublicKey
 }
 
 // RotateLog rotates the log file
@@ -208,7 +209,8 @@ func (s *Server) halt() {
 		s.inboundPackets.Close()
 	}
 	s.linkKey.Reset()
-	s.identityKey.Reset()
+	s.identityPrivateKey.Reset()
+	s.identityPublicKey.Reset()
 	close(s.fatalErrCh)
 
 	s.log.Noticef("Shutdown complete.")
@@ -249,19 +251,23 @@ func New(cfg *config.Config) (*Server, error) {
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
-	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
+	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 
 	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.FromFile(identityPrivateKeyFile, identityPrivateKey)
+		err := pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
 	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.ToFile(identityPrivateKeyFile, identityPrivateKey)
+		err := pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.ToFile(identityPublicKeyFile, identityPublicKey)
+		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -269,10 +275,8 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	s.identityKey = identityPrivateKey
-
 	var err error
-	idPubKeyHash := s.identityKey.PublicKey().Sum256()
+	idPubKeyHash := s.identityPublicKey.Sum256()
 	s.log.Noticef("Server identity public key is: %x", idPubKeyHash[:])
 	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	scheme := wire.NewScheme()
@@ -421,7 +425,11 @@ func (g *serverGlue) LogBackend() *log.Backend {
 }
 
 func (g *serverGlue) IdentityKey() sign.PrivateKey {
-	return g.s.identityKey
+	return g.s.identityPrivateKey
+}
+
+func (g *serverGlue) IdentityPublicKey() sign.PublicKey {
+	return g.s.identityPublicKey
 }
 
 func (g *serverGlue) LinkKey() wire.PrivateKey {

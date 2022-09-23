@@ -109,7 +109,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *Client) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, d *pki.MixDescriptor) error {
+func (c *Client) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
 	return errNotSupported
 }
 

@@ -38,8 +38,8 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDes
 	}
 	d.Layer = uint8(layer)
 	d.LoadWeight = 23
-	identityPriv, _ := cert.Scheme.NewKeypair()
-	d.IdentityKey = identityPriv.PublicKey()
+	identityPriv, identityPub := cert.Scheme.NewKeypair()
+	d.IdentityKey = identityPub
 	scheme := wire.NewScheme()
 	linkPriv := scheme.GenerateKeypair(rand.Reader)
 	d.LinkKey = linkPriv.PublicKey()
@@ -70,7 +70,7 @@ func TestDocument(t *testing.T) {
 	require := require.New(t)
 
 	// Generate a random signing key.
-	k, _ := cert.Scheme.NewKeypair()
+	k, idPub := cert.Scheme.NewKeypair()
 
 	testSendRate := uint64(3)
 	sharedRandomCommit := make([]byte, SharedRandomLength)
@@ -108,7 +108,7 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "SignDocument()")
 
 	// Validate and deserialize.
-	ddoc, err := VerifyAndParseDocument([]byte(signed), k.PublicKey())
+	ddoc, err := VerifyAndParseDocument([]byte(signed), idPub)
 	require.NoError(err, "VerifyAndParseDocument()")
 	require.Equal(doc.Epoch, ddoc.Epoch, "VerifyAndParseDocument(): Epoch")
 	require.Equal(doc.SendRatePerMinute, testSendRate, "VerifyAndParseDocument(): SendRatePerMinute")

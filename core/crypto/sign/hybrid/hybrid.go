@@ -133,15 +133,6 @@ func (p *privateKey) KeyType() string {
 	return fmt.Sprintf("%s_%s PRIVATE KEY", p.scheme1.Name(), p.scheme2.Name())
 }
 
-func (p *privateKey) PublicKey() sign.PublicKey {
-	return &publicKey{
-		scheme1:    p.scheme1,
-		scheme2:    p.scheme2,
-		publicKey1: p.publicKey1,
-		publicKey2: p.publicKey2,
-	}
-}
-
 func (p *privateKey) Sign(message []byte) []byte {
 	return append(p.privateKey1.Sign(message),
 		p.privateKey2.Sign(message)...)
