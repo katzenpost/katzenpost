@@ -729,7 +729,7 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 
 		ed, ok := s.reverseHash[idHash]
 		if !ok {
-			panic(fmt.Sprint("reverse hash map didn't find entry for idHash %x", idHash[:]))
+			panic(fmt.Sprintf("reverse hash map didn't find entry for idHash %x", idHash[:]))
 		}
 
 		vote, err := s11n.FromPayload(ed, voteDoc.raw)
