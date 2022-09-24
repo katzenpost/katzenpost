@@ -19,6 +19,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/gob"
@@ -42,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -93,6 +95,7 @@ type state struct {
 
 	db *bolt.DB
 
+	reverseHash           map[[publicKeyHashSize]byte]sign.PublicKey
 	authorizedMixes       map[[publicKeyHashSize]byte]bool
 	authorizedProviders   map[[publicKeyHashSize]byte]string
 	authorizedAuthorities map[[publicKeyHashSize]byte]bool
@@ -249,9 +252,9 @@ func (s *state) consense(epoch uint64) *document {
 				continue // skip adding own signature
 			}
 
-			kjk, err := cert.Scheme.UnmarshalBinaryPublicKey(jk[:])
-			if err != nil {
-				panic(err)
+			kjk, ok := s.reverseHash[jk]
+			if !ok {
+				panic(fmt.Sprintf("reverse hash key not found %x", jk[:]))
 			}
 			if ds, err := cert.GetSignature(jk[:], d); err == nil {
 				if sc, err := cert.AddSignature(kjk, *ds, c); err == nil {
@@ -286,13 +289,13 @@ func (s *state) consense(epoch uint64) *document {
 	return nil
 }
 
-func (s *state) identityPubKey() [publicKeyHashSize]byte {
+func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
 	return s.s.identityPublicKey.Sum256()
 }
 
 func (s *state) voted(epoch uint64) bool {
 	if _, ok := s.votes[epoch]; ok {
-		if _, ok := s.votes[epoch][s.identityPubKey()]; ok {
+		if _, ok := s.votes[epoch][s.identityPubKeyHash()]; ok {
 			return true
 		}
 	}
@@ -413,7 +416,7 @@ func (s *SharedRandom) Reveal() []byte {
 }
 
 func (s *state) reveal(epoch uint64) []byte {
-	if reveal, ok := s.reveals[epoch][s.identityPubKey()]; ok {
+	if reveal, ok := s.reveals[epoch][s.identityPubKeyHash()]; ok {
 		// Reveals are only valid until the end of voting round
 		_, _, till := epochtime.Now()
 		revealExpiration := time.Now().Add(till).Unix()
@@ -442,8 +445,8 @@ func (s *state) vote(epoch uint64) (*document, error) {
 	if _, ok := s.reveals[epoch]; !ok {
 		s.reveals[epoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
-	if _, ok := s.reveals[epoch][s.identityPubKey()]; !ok {
-		s.reveals[epoch][s.identityPubKey()] = srv.Reveal()
+	if _, ok := s.reveals[epoch][s.identityPubKeyHash()]; !ok {
+		s.reveals[epoch][s.identityPubKeyHash()] = srv.Reveal()
 		// XXX persist reveals to database?
 	} else {
 		s.log.Errorf("failure: reveal already present, this should never happen.")
@@ -467,8 +470,8 @@ func (s *state) vote(epoch uint64) (*document, error) {
 	if _, ok := s.votes[epoch]; !ok {
 		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*document)
 	}
-	if _, ok := s.votes[epoch][s.identityPubKey()]; !ok {
-		s.votes[epoch][s.identityPubKey()] = signedVote
+	if _, ok := s.votes[epoch][s.identityPubKeyHash()]; !ok {
+		s.votes[epoch][s.identityPubKeyHash()] = signedVote
 		// XXX persist votes to database?
 	} else {
 		s.log.Errorf("failure: vote already present, this should never happen.")
@@ -700,34 +703,35 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	nodes := make([]*descriptor, 0)
 	mixTally := make(map[string][]*s11n.Document)
 	mixParams := make(map[string][]*s11n.Document)
-	for pk, voteDoc := range s.votes[epoch] {
+	for idHash, voteDoc := range s.votes[epoch] {
 		srv := new(SharedRandom)
 		// Parse the payload bytes into the s11n.Document
 		// so that we can access the mix descriptors + sigs
 		// The votes have already been validated.
 
-		if _, ok := s.reveals[epoch][pk]; !ok {
-			s.log.Errorf("Skipping vote from Authority %s who failed to reveal", pk)
+		if _, ok := s.reveals[epoch][idHash]; !ok {
+			s.log.Errorf("Skipping vote from Authority %s who failed to reveal", idHash)
 			continue
 		}
 
 		// Epoch is already verified to match the SharedRandomCommit
 		// Verify that the voting peer has participated in commit-and-reveal this epoch.
 		srv.SetCommit(voteDoc.doc.SharedRandomCommit)
-		r := s.reveals[epoch][pk]
+		r := s.reveals[epoch][idHash]
 		if len(r) != s11n.SharedRandomLength {
-			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", pk, len(r), r)
+			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", idHash, len(r), r)
 			continue
 		}
 		if !srv.Verify(r) {
-			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal! %v", pk, r)
+			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal! %v", idHash, r)
 			continue
 		}
 
-		ed, err := cert.Scheme.UnmarshalBinaryPublicKey(pk[:])
-		if err != nil {
-			panic(err)
+		ed, ok := s.reverseHash[idHash]
+		if !ok {
+			panic(fmt.Sprint("reverse hash map didn't find entry for idHash %x", idHash[:]))
 		}
+
 		vote, err := s11n.FromPayload(ed, voteDoc.raw)
 		if err != nil {
 			s.log.Errorf("Skipping vote from Authority that failed to decode?! %v", err)
@@ -911,7 +915,7 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	if _, ok := s.certificates[epoch]; !ok {
 		s.certificates[epoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
-	s.certificates[epoch][s.identityPubKey()] = signed
+	s.certificates[epoch][s.identityPubKeyHash()] = signed
 	if raw, err := cert.GetCertified(signed); err == nil {
 		s.log.Debugf("Document for epoch %v saved: %s", epoch, raw)
 		s.log.Debugf("sha256(certified): %s", sha256b64(raw))
@@ -1428,7 +1432,7 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
 					}
-					if !bytes.Equal(pk, desc.IdentityKey.Bytes()) {
+					if !hmac.Equal(pk, desc.IdentityKey.Bytes()) {
 						s.log.Errorf("Discarding persisted descriptor: key mismatch")
 						continue
 					}
@@ -1492,6 +1496,7 @@ func newState(s *Server) (*state, error) {
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 
 	// Initialize the authorized peer tables.
+	st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
@@ -1503,6 +1508,7 @@ func newState(s *Server) (*state, error) {
 
 		pk := identityPublicKey.Sum256()
 		st.authorizedMixes[pk] = true
+		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
@@ -1515,6 +1521,7 @@ func newState(s *Server) (*state, error) {
 
 		pk := identityPublicKey.Sum256()
 		st.authorizedProviders[pk] = v.Identifier
+		st.reverseHash[pk] = identityPublicKey
 	}
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
@@ -1527,7 +1534,10 @@ func newState(s *Server) (*state, error) {
 
 		pk := identityPublicKey.Sum256()
 		st.authorizedAuthorities[pk] = true
+		st.reverseHash[pk] = identityPublicKey
 	}
+	st.reverseHash[st.s.identityPublicKey.Sum256()] = st.s.identityPublicKey
+
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
 	scheme := wire.NewScheme()
 	for _, v := range st.s.cfg.Authorities {
