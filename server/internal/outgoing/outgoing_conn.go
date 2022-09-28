@@ -156,7 +156,7 @@ func (c *outgoingConn) worker() {
 		}
 	}()
 
-	identityHash := c.dst.IdentityKey.Bytes()
+	identityHash := c.dst.IdentityKey.Sum256()
 	dialCheckCreds := wire.PeerCredentials{
 		AdditionalData: identityHash[:],
 		PublicKey:      c.dst.LinkKey,
