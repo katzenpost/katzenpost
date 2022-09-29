@@ -45,9 +45,9 @@
   MuMaxDelay = 9000
   LambdaP = 0.002
   LambdaPMaxDelay = 10000
-  LambdaL = 0.0005
+  LambdaL = 0.00005
   LambdaLMaxDelay = 10000
-  LambdaD = 0.0005
+  LambdaD = 0.00005
   LambdaDMaxDelay = 30000
   LambdaM = 0.2
   LambdaMMaxDelay = 100
