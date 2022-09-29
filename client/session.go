@@ -101,7 +101,7 @@ func NewSession(
 	}
 	pkiCacheClient := pkiclient.New(pkiClient2)
 
-	clientLog := logBackend.GetLogger(fmt.Sprintf("%s@%s_client", linkKey.PublicKey(), provider.Name))
+	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
 	s := &Session{
 		geo:         sphinx.DefaultGeometry(),
