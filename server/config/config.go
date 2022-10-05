@@ -745,7 +745,7 @@ func (p *Peer) validate(datadir string) error {
 	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
 		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
 	}
-	_, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(datadir, p.LinkPublicKeyPem))
+	_, err := wire.DefaultScheme.PublicKeyFromPemFile(filepath.Join(datadir, p.LinkPublicKeyPem))
 	if err != nil {
 		return fmt.Errorf("Voting Peer: Invalid Link PublicKey PEM file: %v", err)
 	}

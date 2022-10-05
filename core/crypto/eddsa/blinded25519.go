@@ -171,7 +171,7 @@ func (b *BlindedPrivateKey) Identity() []byte {
 // in this case the constant variable
 // whose value is "ed25519".
 func (b *BlindedPrivateKey) KeyType() string {
-	return keyType
+	return "ED25519 BLINDED PRIVATE KEY"
 }
 
 // Blind performs the blinding operations on the public key

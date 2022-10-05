@@ -164,7 +164,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 
-		scheme := wire.NewScheme()
+		scheme := wire.DefaultScheme
 		linkKey := scheme.GenerateKeypair(rand.Reader)
 
 		mix := &pki.MixDescriptor{
@@ -388,12 +388,17 @@ func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, *eddsa.Pr
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	scheme := wire.NewScheme()
-	linkPrivateKey, err := scheme.Load(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)),
-		filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), rand.Reader)
+	scheme := wire.DefaultScheme
+	linkPrivateKey := scheme.GenerateKeypair(rand.Reader)
+	err = scheme.PrivateKeyToPemFile(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)), linkPrivateKey)
 	if err != nil {
 		panic(err)
 	}
+	err = scheme.PublicKeyToPemFile(filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), linkPrivateKey.PublicKey())
+	if err != nil {
+		panic(err)
+	}
+
 	authPeer := &config.AuthorityPeer{
 		IdentityPublicKey: identityPrivateKey.PublicKey(),
 		LinkPublicKeyPem:  fmt.Sprintf("peer%d_link_pub_key.pem", peerNum),

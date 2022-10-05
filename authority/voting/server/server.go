@@ -29,6 +29,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -208,12 +209,36 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, err
 	}
 
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
+
 	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
-	if s.linkKey, err = scheme.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
-		s.log.Errorf("Failed to initialize link key: %v", err)
-		return nil, err
+
+	var linkPrivateKey wire.PrivateKey = nil
+	var linkPublicKey wire.PublicKey = nil
+
+	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, err = scheme.PrivateKeyFromPemFile(linkPrivateKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		linkPublicKey, err = scheme.PublicKeyFromPemFile(linkPublicKeyFile)
+		if err != nil {
+			return nil, err
+		}
+	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey = scheme.GenerateKeypair(rand.Reader)
+		linkPublicKey = linkPrivateKey.PublicKey()
+		err = scheme.PrivateKeyToPemFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = scheme.PublicKeyToPemFile(linkPublicKeyFile, linkPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		panic("Improbable: Only found one link PEM file.")
 	}
 
 	s.log.Noticef("Authority identity public key is: %s", s.identityKey.PublicKey())

@@ -45,8 +45,6 @@ const (
 
 	// SignatureSize is the size of a serialized Signature in bytes (64 bytes).
 	SignatureSize = ed25519.SignatureSize
-
-	keyType = "ed25519"
 )
 
 var errInvalidKey = errors.New("eddsa: invalid key")
@@ -55,6 +53,11 @@ var errInvalidKey = errors.New("eddsa: invalid key")
 type PublicKey struct {
 	pubKey    ed25519.PublicKey
 	b64String string
+}
+
+// KeyType returns the key type string
+func (k *PublicKey) KeyType() string {
+	return "ED25519 PUBLIC KEY"
 }
 
 // InternalPtr returns a pointer to the internal (`golang.org/x/crypto/ed25519`)
@@ -185,6 +188,11 @@ type PrivateKey struct {
 	privKey ed25519.PrivateKey
 }
 
+// KeyType returns the key type string
+func (k *PrivateKey) KeyType() string {
+	return "ED25519 PRIVATE KEY"
+}
+
 // InternalPtr returns a pointer to the internal (`golang.org/x/crypto/ed25519`)
 // data structure.  Most people should not use this.
 func (k *PrivateKey) InternalPtr() *ed25519.PrivateKey {
@@ -225,13 +233,6 @@ func (k *PrivateKey) UnmarshalBinary(data []byte) error {
 // public key in bytes.
 func (k *PrivateKey) Identity() []byte {
 	return k.PublicKey().Bytes()
-}
-
-// KeyType returns the key type string,
-// in this case the constant variable
-// whose value is "ed25519".
-func (k *PrivateKey) KeyType() string {
-	return keyType
 }
 
 // ToECDH converts the PrivateKey to the corresponding ecdh.PrivateKey.
