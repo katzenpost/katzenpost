@@ -27,7 +27,6 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/sha3"
@@ -46,42 +45,41 @@ import (
 )
 
 func TestSharedRandomVerify(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
-	assert.NoError(err, "wtf")
-	assert.True(len(commit) == s11n.SharedRandomLength)
+	require.NoError(err, "wtf")
+	require.True(len(commit) == s11n.SharedRandomLength)
 	srv.SetCommit(commit)
-	assert.True(bytes.Equal(commit, srv.GetCommit()))
+	require.True(bytes.Equal(commit, srv.GetCommit()))
 	t.Logf("commit %v", commit)
-	assert.True(bytes.Equal(commit, srv.GetCommit()))
+	require.True(bytes.Equal(commit, srv.GetCommit()))
 	reveal := srv.Reveal()
 	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
 	t.Logf("reveal %v", reveal)
 	t.Logf("len(reveal): %v", len(reveal))
-	assert.True(len(reveal) == s11n.SharedRandomLength)
-	assert.True(srv.Verify(reveal))
+	require.True(len(reveal) == s11n.SharedRandomLength)
+	require.True(srv.Verify(reveal))
 }
 
 func TestSharedRandomCommit(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
-	assert.NoError(err, "wtf")
-	assert.True(len(commit) == s11n.SharedRandomLength)
+	require.NoError(err, "wtf")
+	require.True(len(commit) == s11n.SharedRandomLength)
 }
 
 func TestSharedRandomSetCommit(t *testing.T) {
-	assert := assert.New(t)
+	require := require.New(t)
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
-	assert.NoError(err, "wtf")
+	require.NoError(err, "wtf")
 	srv.SetCommit(commit)
-	assert.True(bytes.Equal(commit, srv.GetCommit()))
+	require.True(bytes.Equal(commit, srv.GetCommit()))
 }
 
 func TestVote(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
 
 	// instantiate states
@@ -127,7 +125,7 @@ func TestVote(t *testing.T) {
 			for {
 				select {
 				case err := <-s.fatalErrCh:
-					assert.NoError(err)
+					require.NoError(err)
 				case _, ok := <-s.haltedCh:
 					if !ok {
 						return
@@ -266,9 +264,7 @@ func TestVote(t *testing.T) {
 	for _, s := range stateAuthority {
 		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*descriptor)
 		for _, d := range mixDescs {
-			var fu [sign.PublicKeyHashSize]byte
-			copy(fu[:], d.desc.IdentityKey.Bytes())
-			s.descriptors[votingEpoch][fu] = d
+			s.descriptors[votingEpoch][d.desc.IdentityKey.Sum256()] = d
 		}
 	}
 
@@ -313,7 +309,7 @@ func TestVote(t *testing.T) {
 	for i, s := range stateAuthority {
 		s.state = stateAcceptSignature
 		myCertificate, err := s.tabulate(s.votingEpoch)
-		assert.NoError(err)
+		require.NoError(err)
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
@@ -325,14 +321,15 @@ func TestVote(t *testing.T) {
 
 	// save the consensus
 	for _, s := range stateAuthority {
-		s.consense(s.votingEpoch)
+		consensus := s.consense(s.votingEpoch)
+		require.NotNil(consensus)
 	}
 
 	// verify that each authority produced the same output
 	docs := make([][]byte, len(stateAuthority))
 	for i, s := range stateAuthority {
 		d, ok := s.documents[s.votingEpoch]
-		assert.True(ok)
+		require.True(ok)
 		docs[i] = d.raw
 		if i == 0 {
 			continue
