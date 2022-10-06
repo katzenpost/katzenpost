@@ -282,11 +282,11 @@ func (dCfg *Debug) applyDefaults() {
 // AuthorityPeer is the connecting information
 // and identity key for the Authority peers
 type AuthorityPeer struct {
-	// IdentityPublicKeyPem is the filename containing the PEM file
-	// of the peer's identity signing key.
+	// IdentityPublicKeyPem is the full file path and filename
+	// containing the PEM file of the peer's identity signing key.
 	IdentityPublicKeyPem string
-	// LinkPublicKeyPem is the filename containing the PEM file
-	// of the peer's public link layer key.
+	// LinkPublicKeyPem is the full file path and filename
+	// containing the PEM of the peer's public link layer key.
 	LinkPublicKeyPem string
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
@@ -317,8 +317,9 @@ type Node struct {
 	// the node is a Provider.
 	Identifier string
 
-	// IdentityKeyPem is the node's identity signing key.
-	IdentityKeyPem string
+	// IdentityPublicKeyPem is the node's public signing key also known
+	// as the identity key.
+	IdentityPublicKeyPem string
 }
 
 func (n *Node) validate(isProvider bool) error {
@@ -336,8 +337,8 @@ func (n *Node) validate(isProvider bool) error {
 	} else if n.Identifier != "" {
 		return fmt.Errorf("config: %v: Node has Identifier set", section)
 	}
-	if n.IdentityKeyPem == "" {
-		return fmt.Errorf("config: %v: Node is missing IdentityKeyPem", section)
+	if n.IdentityPublicKeyPem == "" {
+		return fmt.Errorf("config: %v: Node is missing IdentityPublicKeyPem", section)
 	}
 	return nil
 }
@@ -420,14 +421,14 @@ func (cfg *Config) FixupAndValidate() error {
 	_, identityKey := cert.Scheme.NewKeypair()
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
-		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityKeyPem), identityKey)
+		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityPublicKeyPem), identityKey)
 		if err != nil {
 			return err
 		}
 
 		tmp := identityKey.Sum256()
 		if _, ok := pkMap[tmp]; ok {
-			return fmt.Errorf("config: Nodes: IdentityKeyPem '%v' is present more than once", v.IdentityKeyPem)
+			return fmt.Errorf("config: Nodes: IdentityPublicKeyPem '%v' is present more than once", v.IdentityPublicKeyPem)
 		}
 		pkMap[tmp] = v
 	}

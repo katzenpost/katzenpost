@@ -98,7 +98,7 @@ func (n *nodeDescriptorIntermediary) nodeDescriptor() *nodeDescriptor {
 		panic(err)
 	}
 
-	m.LinkKey, err = wire.NewScheme().UnmarshalTextPublicKey([]byte(n.LinkKey))
+	m.LinkKey, err = wire.DefaultScheme.UnmarshalTextPublicKey([]byte(n.LinkKey))
 	if err != nil {
 		panic(err)
 	}

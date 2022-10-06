@@ -22,19 +22,17 @@ import (
 	"crypto/rand"
 	"encoding"
 	"encoding/base64"
-	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"os"
 
-	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
 )
 
-var defaultScheme *scheme
+var DefaultScheme = &scheme{
+	KEM: kem.Kyber768X25519,
+}
 
 // PublicKey is an interface used to abstract away the
 // details of the KEM Public Key being used in the wire package.
@@ -44,11 +42,8 @@ type PublicKey interface {
 	encoding.TextMarshaler
 	encoding.TextUnmarshaler
 
-	// ToPEMFile writes out the PublicKey to a PEM file at path f.
-	ToPEMFile(f string) error
-
-	// FromPEMFile reads the PublicKey from the PEM file at path f.
-	FromPEMFile(f string) error
+	// KeyType returns the key type string
+	KeyType() string
 
 	// Reset clears the PublicKey structure such that no sensitive data is left
 	// in memory.
@@ -72,11 +67,8 @@ type PrivateKey interface {
 	encoding.TextMarshaler
 	encoding.TextUnmarshaler
 
-	// ToPEMFile writes out the PrivateKey to a PEM file at path f.
-	ToPEMFile(f string) error
-
-	// FromPEMFile reads the PrivateKey from the PEM file at path f.
-	FromPEMFile(f string) error
+	// KeyType returns the key type string
+	KeyType() string
 
 	// Reset clears the PrivateKey structure such that no sensitive data is left
 	// in memory.
@@ -94,14 +86,21 @@ type PrivateKey interface {
 
 // Scheme provides a minimal abstraction around our KEM Scheme.
 type Scheme interface {
+	// PrivateKeyFromPemFile unmarshals a private key from the PEM file,
+	// specified as file path.
+	PrivateKeyFromPemFile(f string) (PrivateKey, error)
+
+	// PrivateKeyToPemFile writes the given private key to
+	// the specified file path.
+	PrivateKeyToPemFile(f string, privKey PrivateKey) error
 
 	// PublicKeyFromPemFile unmarshals a public key from the PEM file,
 	// specified as file path.
-	PublicKeyFromPemFile(string) (PublicKey, error)
+	PublicKeyFromPemFile(f string) (PublicKey, error)
 
-	// PrivateKeyFromPemFile unmarshals a public key from the PEM file,
-	// specified as file path.
-	PrivateKeyFromPemFile(string) (PrivateKey, error)
+	// PublicKeyToPemFile writes the given public key to
+	// the specified file path.
+	PublicKeyToPemFile(f string, pubKey PublicKey) error
 
 	// UnmarshalTextPrivateKey loads a private from text encoded in base64.
 	UnmarshalTextPrivateKey([]byte) (PrivateKey, error)
@@ -115,12 +114,6 @@ type Scheme interface {
 	// GenerateKeypair generates a new KEM keypair using the provided
 	// entropy source.
 	GenerateKeypair(r io.Reader) PrivateKey
-
-	// Load loads a new PrivateKey from the PEM encoded file privFile, optionally
-	// creating and saving a PrivateKey instead if an entropy source is provided.
-	// If pubFile is specified and a key has been created, the corresponding
-	// PublicKey will be wrtten to pubFile in PEM format.
-	Load(privFile, pubFile string, r io.Reader) (PrivateKey, error)
 }
 
 type publicKey struct {
@@ -128,34 +121,8 @@ type publicKey struct {
 	KEM       kem.KEM
 }
 
-func (p *publicKey) FromPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
-
-	buf, err := ioutil.ReadFile(f)
-	if err != nil {
-		return err
-	}
-	blk, _ := pem.Decode(buf)
-	if blk == nil {
-		return fmt.Errorf("failed to decode PEM file %v", f)
-	}
-	if blk.Type != keyType {
-		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
-	}
-	return p.FromBytes(blk.Bytes)
-}
-
-func (p *publicKey) ToPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
-
-	if utils.CtIsZero(p.Bytes()) {
-		return fmt.Errorf("attempted to serialize scrubbed key")
-	}
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: p.Bytes(),
-	}
-	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+func (p *publicKey) KeyType() string {
+	return fmt.Sprintf("%s PUBLIC KEY", p.KEM)
 }
 
 // XXX FIXME
@@ -205,34 +172,8 @@ type privateKey struct {
 	KEM        kem.KEM
 }
 
-func (p *privateKey) FromPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PRIVATE KEY", p.KEM)
-
-	buf, err := ioutil.ReadFile(f)
-	if err != nil {
-		return err
-	}
-	blk, _ := pem.Decode(buf)
-	if blk == nil {
-		return fmt.Errorf("failed to decode PEM file %v", f)
-	}
-	if blk.Type != keyType {
-		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
-	}
-	return p.FromBytes(blk.Bytes)
-}
-
-func (p *privateKey) ToPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PRIVATE KEY", p.KEM)
-
-	if utils.CtIsZero(p.Bytes()) {
-		return fmt.Errorf("attempted to serialize scrubbed key")
-	}
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: p.Bytes(),
-	}
-	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+func (p *privateKey) KeyType() string {
+	return fmt.Sprintf("%s PRIVATE KEY", p.KEM)
 }
 
 // XXX FIXME
@@ -290,29 +231,30 @@ type scheme struct {
 
 var _ Scheme = (*scheme)(nil)
 
-// NewScheme returns an unexported type that implements the above
-// Scheme interface for minimally encapsulating KEM related types
-// for non-cryptographic operations such as serialization and so on.
-func NewScheme() *scheme {
-	return defaultScheme
-}
-
 func (s *scheme) PrivateKeyFromPemFile(f string) (PrivateKey, error) {
 	privKey := s.GenerateKeypair(rand.Reader)
-	err := privKey.FromPEMFile(f)
+	err := pem.FromFile(f, privKey)
 	if err != nil {
 		return nil, err
 	}
-	return privKey, err
+	return privKey, nil
+}
+
+func (s *scheme) PrivateKeyToPemFile(f string, privKey PrivateKey) error {
+	return pem.ToFile(f, privKey)
 }
 
 func (s *scheme) PublicKeyFromPemFile(f string) (PublicKey, error) {
 	pubKey := s.GenerateKeypair(rand.Reader).PublicKey()
-	err := pubKey.FromPEMFile(f)
+	err := pem.FromFile(f, pubKey)
 	if err != nil {
 		return nil, err
 	}
-	return pubKey, err
+	return pubKey, nil
+}
+
+func (s *scheme) PublicKeyToPemFile(f string, pubKey PublicKey) error {
+	return pem.ToFile(f, pubKey)
 }
 
 func (s *scheme) UnmarshalTextPublicKey(b []byte) (PublicKey, error) {
@@ -356,69 +298,5 @@ func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
 	return &privateKey{
 		KEM:        s.KEM,
 		privateKey: k,
-	}
-}
-
-func (s *scheme) Load(privFile, pubFile string, r io.Reader) (PrivateKey, error) {
-	keyType := fmt.Sprintf("%s PRIVATE KEY", s.KEM)
-
-	if _, err := os.Stat(privFile); errors.Is(err, os.ErrNotExist) {
-		if _, err := os.Stat(pubFile); err == nil {
-			return nil, errors.New("error: public key exists and private key does not exist")
-		}
-	}
-
-	if buf, err := ioutil.ReadFile(privFile); err == nil {
-		defer utils.ExplicitBzero(buf)
-		blk, rest := pem.Decode(buf)
-		defer utils.ExplicitBzero(blk.Bytes)
-		if len(rest) != 0 {
-			return nil, errors.New("trailing garbage after PEM encoded private key")
-		}
-		if blk.Type != keyType {
-			return nil, fmt.Errorf("invalid PEM Type: '%v'", blk.Type)
-		}
-		k, err := s.KEM.ParsePrivateKey(blk.Bytes)
-		if err != nil {
-			return nil, err
-		}
-		return &privateKey{
-			KEM:        s.KEM,
-			privateKey: k,
-		}, nil
-	} else if !os.IsNotExist(err) || r == nil {
-		return nil, err
-	}
-
-	seecGenRand, err := seec.GenKeyPRPAES(r, 256)
-	if err != nil {
-		return nil, err
-	}
-	k, err := s.KEM.GenerateKeypair(seecGenRand)
-	if err != nil {
-		return nil, err
-	}
-
-	privKey := &privateKey{
-		KEM:        s.KEM,
-		privateKey: k,
-	}
-
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: privKey.Bytes(),
-	}
-	if err = ioutil.WriteFile(privFile, pem.EncodeToMemory(blk), 0600); err != nil {
-		return nil, err
-	}
-	if pubFile != "" {
-		err = privKey.PublicKey().ToPEMFile(pubFile)
-	}
-	return privKey, nil
-}
-
-func init() {
-	defaultScheme = &scheme{
-		KEM: kem.Kyber768X25519,
 	}
 }

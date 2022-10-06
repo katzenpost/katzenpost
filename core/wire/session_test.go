@@ -60,7 +60,7 @@ func TestSessionIntegration(t *testing.T) {
 
 	// Generate the credentials used for authentication.  In a real deployment,
 	// this information is conveyed out of band somehow to the peer a priori.
-	scheme := NewScheme()
+	scheme := DefaultScheme
 	authKEMKeyAlice := scheme.GenerateKeypair(rand.Reader)
 
 	credsAlice := &PeerCredentials{
