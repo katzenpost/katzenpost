@@ -98,7 +98,6 @@ func TestVote(t *testing.T) {
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, n)
 	require.NoError(err)
-	states := make([]*state, n)
 
 	reverseHash := make(map[[publicKeyHashSize]byte]sign.PublicKey)
 
@@ -162,7 +161,6 @@ func TestVote(t *testing.T) {
 		// create all the db cruft
 		err = st.restorePersistence()
 		require.NoError(err)
-		states[i] = st
 	}
 
 	// create a voting PKI configuration
@@ -230,8 +228,8 @@ func TestVote(t *testing.T) {
 		reverseHash[idKey.pubKey.Sum256()] = idKey.pubKey
 	}
 
-	for i := 0; i < len(states); i++ {
-		states[i].reverseHash = reverseHash
+	for i := 0; i < len(stateAuthority); i++ {
+		stateAuthority[i].reverseHash = reverseHash
 	}
 
 	// post descriptors from nodes
@@ -276,7 +274,7 @@ func TestVote(t *testing.T) {
 
 	// exchange votes
 	for i, s := range stateAuthority {
-		t.Logf("s.s.IdentityKey: %s", s.s.IdentityKey())
+		//t.Logf("s.s.IdentityKey: %s", s.s.IdentityKey())
 		s.votingEpoch = votingEpoch
 		s.genesisEpoch = s.votingEpoch
 		myVote, err := s.vote(s.votingEpoch)
@@ -339,7 +337,12 @@ func TestVote(t *testing.T) {
 		if i == 0 {
 			continue
 		}
-		require.True(bytes.Equal(docs[i-1], d.raw))
+
+		a := []byte{}
+		b := []byte{}
+		copy(a, docs[i-1])
+		copy(b, d.raw)
+		require.True(bytes.Equal(a, b))
 	}
 }
 
