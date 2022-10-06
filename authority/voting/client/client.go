@@ -157,7 +157,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 	}()
 
-	peerLinkPublicKey, err := wire.NewScheme().PublicKeyFromPemFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
+	peerLinkPublicKey, err := wire.DefaultScheme.PublicKeyFromPemFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +318,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
 	// Generate a random ecdh keypair to use for the link authentication.
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	linkKey := scheme.GenerateKeypair(rand.Reader)
 	defer linkKey.Reset()
 

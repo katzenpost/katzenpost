@@ -1014,9 +1014,8 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byt
 	topology := make([][][]byte, len(s.s.cfg.Topology.Layers))
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
-
 			_, identityKey := cert.Scheme.NewKeypair()
-			err := pem.FromFile(node.IdentityKeyPem, identityKey)
+			err := pem.FromFile(node.IdentityPublicKeyPem, identityKey)
 			if err != nil {
 				panic(err)
 			}
@@ -1484,7 +1483,7 @@ func newState(s *Server) (*state, error) {
 	st.verifiers = make([]cert.Verifier, len(s.cfg.Authorities)+1)
 	for i, auth := range s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFile := filepath.Join(s.cfg.Authority.DataDir, auth.IdentityPublicKeyPem)
+		pemFile := auth.IdentityPublicKeyPem
 		err := pem.FromFile(pemFile, identityPublicKey)
 		if err != nil {
 			panic(err)
@@ -1500,10 +1499,17 @@ func newState(s *Server) (*state, error) {
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem)
-		err := pem.FromFile(pemFilePath, identityPublicKey)
-		if err != nil {
-			panic(err)
+		if filepath.IsAbs(v.IdentityPublicKeyPem) {
+			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+			err := pem.FromFile(pemFilePath, identityPublicKey)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		pk := identityPublicKey.Sum256()
@@ -1513,10 +1519,18 @@ func newState(s *Server) (*state, error) {
 	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem)
-		err := pem.FromFile(pemFilePath, identityPublicKey)
-		if err != nil {
-			panic(err)
+
+		if filepath.IsAbs(v.IdentityPublicKeyPem) {
+			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+			err := pem.FromFile(pemFilePath, identityPublicKey)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		pk := identityPublicKey.Sum256()
@@ -1526,10 +1540,18 @@ func newState(s *Server) (*state, error) {
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
-		err := pem.FromFile(pemFilePath, identityPublicKey)
-		if err != nil {
-			panic(err)
+
+		if filepath.IsAbs(v.IdentityPublicKeyPem) {
+			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+			err := pem.FromFile(pemFilePath, identityPublicKey)
+			if err != nil {
+				panic(err)
+			}
 		}
 
 		pk := identityPublicKey.Sum256()
@@ -1539,7 +1561,7 @@ func newState(s *Server) (*state, error) {
 	st.reverseHash[st.s.identityPublicKey.Sum256()] = st.s.identityPublicKey
 
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	for _, v := range st.s.cfg.Authorities {
 		linkPubKey, err := scheme.PublicKeyFromPemFile(filepath.Join(s.cfg.Authority.DataDir, v.LinkPublicKeyPem))
 		if err != nil {
@@ -1547,7 +1569,7 @@ func newState(s *Server) (*state, error) {
 		}
 
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+		pemFilePath := v.IdentityPublicKeyPem
 		err = pem.FromFile(pemFilePath, identityPublicKey)
 		if err != nil {
 			panic(err)

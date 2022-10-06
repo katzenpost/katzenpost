@@ -565,7 +565,7 @@ func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	s := &Session{
 		protocol: &nyquist.Protocol{
 			Pattern: pattern.PqXX,
-			KEM:     NewScheme().KEM,
+			KEM:     DefaultScheme.KEM,
 			Cipher:  cipher.ChaChaPoly,
 			Hash:    hash.BLAKE2s,
 		},
