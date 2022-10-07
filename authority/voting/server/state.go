@@ -222,7 +222,7 @@ func (s *state) fsm() <-chan time.Time {
 			sleep = MixPublishDeadline + nextEpoch
 			s.votingEpoch++
 		} else {
-			// failed to make consensus. try to join next round.
+			s.log.Debug("failed to make consensus. try to join next round.")
 			s.state = stateBootstrap
 			s.votingEpoch = epoch + 2 // vote on epoch+2 in epoch+1
 			sleep = nextEpoch
