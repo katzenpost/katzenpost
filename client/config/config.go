@@ -126,7 +126,7 @@ type NonvotingAuthority struct {
 
 // New constructs a pki.Client with the specified non-voting authority config.
 func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	authLinkKey, err := scheme.PublicKeyFromPemFile(filepath.Join(datadir, nvACfg.LinkPublicKeyPem))
 	if err != nil {
 		return nil, err

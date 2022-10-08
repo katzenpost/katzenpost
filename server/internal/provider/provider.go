@@ -394,7 +394,7 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	}
 
 	// Deserialize the public key.
-	pubKey, err := wire.NewScheme().UnmarshalTextPublicKey([]byte(sp[2]))
+	pubKey, err := wire.DefaultScheme.UnmarshalTextPublicKey([]byte(sp[2]))
 	if err != nil {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
@@ -483,7 +483,7 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 	switch len(sp) {
 	case 2:
 	case 3:
-		pubKey, err = wire.NewScheme().UnmarshalTextPublicKey([]byte(sp[2]))
+		pubKey, err = wire.DefaultScheme.UnmarshalTextPublicKey([]byte(sp[2]))
 		if err != nil {
 			c.Log().Errorf("SET_USER_IDENTITY invalid public key: %v", err)
 			return c.WriteReply(thwack.StatusSyntaxError)

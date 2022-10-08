@@ -51,7 +51,7 @@ func TestDescriptor(t *testing.T) {
 	d.LoadWeight = 23
 	identityPriv, identityPub := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPub
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	linkPriv := scheme.GenerateKeypair(rand.Reader)
 	d.LinkKey = linkPriv.PublicKey()
 	d.MixKeys = make(map[uint64]*ecdh.PublicKey)

@@ -83,7 +83,7 @@ func doTestCreateWithTOFU(t *testing.T) {
 		require.NoErrorf(err, "Add(%v, k, false)", u)
 	}
 
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	wrongPrivKey := scheme.GenerateKeypair(rand.Reader)
 	wrongPubKey := wrongPrivKey.PublicKey()
 
@@ -128,7 +128,7 @@ func doTestLoadTOFU(t *testing.T) {
 	require.NoError(err, "New() load")
 	defer d.Close()
 
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	wrongPrivKey := scheme.GenerateKeypair(rand.Reader)
 	wrongPubKey := wrongPrivKey.PublicKey()
 
@@ -173,7 +173,7 @@ func init() {
 	testDBPath = filepath.Join(tmpDir, testDB)
 	testUsers = make(map[string]wire.PublicKey)
 	for _, v := range testUsernames {
-		scheme := wire.NewScheme()
+		scheme := wire.DefaultScheme
 		privKey := scheme.GenerateKeypair(rand.Reader)
 		testUsers[v] = privKey.PublicKey()
 	}

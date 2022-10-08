@@ -236,13 +236,61 @@ func New(cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
+	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
+	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
+	}
+
+	scheme := wire.DefaultScheme
 	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
-	scheme := wire.NewScheme()
-	if s.linkKey, err = scheme.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
-		s.log.Errorf("Failed to initialize link: %v", err)
-		return nil, err
+
+	var linkPrivateKey wire.PrivateKey = nil
+	var linkPublicKey wire.PublicKey = nil
+
+	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, err = scheme.PrivateKeyFromPemFile(linkPrivateKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		linkPublicKey, err = scheme.PublicKeyFromPemFile(linkPublicKeyFile)
+		if err != nil {
+			return nil, err
+		}
+	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey = scheme.GenerateKeypair(rand.Reader)
+		linkPublicKey = linkPrivateKey.PublicKey()
+		err = scheme.PrivateKeyToPemFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = scheme.PublicKeyToPemFile(linkPublicKeyFile, linkPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		panic("Improbable: Only found one link PEM file.")
 	}
+
+	s.linkKey = linkPrivateKey
 
 	idKeyHash := s.identityPublicKey.Sum256()
 	s.log.Noticef("Authority identity public key is: %x", idKeyHash[:])

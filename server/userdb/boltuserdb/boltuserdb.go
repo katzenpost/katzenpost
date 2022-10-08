@@ -252,7 +252,7 @@ func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 		opt(d)
 	}
 
-	d.scheme = wire.NewScheme()
+	d.scheme = wire.DefaultScheme
 	d.db, err = bolt.Open(f, 0600, nil)
 	if err != nil {
 		return nil, err
