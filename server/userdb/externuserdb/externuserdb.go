@@ -101,7 +101,7 @@ func (e *externAuth) Identity(u []byte) (wire.PublicKey, error) {
 
 		if pkhex, ok := response[endpoint]; ok {
 			if decoded, err := hex.DecodeString(pkhex); err == nil {
-				scheme := wire.NewScheme()
+				scheme := wire.DefaultScheme
 				return scheme.UnmarshalTextPublicKey(decoded)
 			}
 		}

@@ -235,7 +235,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(t, err)
 
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	userKey := scheme.GenerateKeypair(rand.Reader)
 	linkKey := scheme.GenerateKeypair(rand.Reader)
 

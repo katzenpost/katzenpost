@@ -40,9 +40,10 @@ func TestServerStartShutdown(t *testing.T) {
 
 	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
-	scheme := wire.NewScheme()
+	scheme := wire.DefaultScheme
 	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
-	authLinkPrivKey.PublicKey().ToPEMFile(filepath.Join(datadir, authLinkPubKeyPem))
+	err = scheme.PublicKeyToPemFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPrivKey.PublicKey())
+	require.NoError(t, err)
 
 	_, authPubkey := cert.Scheme.NewKeypair()
 

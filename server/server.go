@@ -278,12 +278,39 @@ func New(cfg *config.Config) (*Server, error) {
 	var err error
 	idPubKeyHash := s.identityPublicKey.Sum256()
 	s.log.Noticef("Server identity public key is: %x", idPubKeyHash[:])
-	linkKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
-	scheme := wire.NewScheme()
-	if s.linkKey, err = scheme.Load(linkKeyFile, "", rand.Reader); err != nil {
-		s.log.Errorf("Failed to initialize link key: %v", err)
-		return nil, err
+	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
+	scheme := wire.DefaultScheme
+
+	var linkPrivateKey wire.PrivateKey = nil
+	var linkPublicKey wire.PublicKey = nil
+
+	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, err = scheme.PrivateKeyFromPemFile(linkPrivateKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		_, err = scheme.PublicKeyFromPemFile(linkPublicKeyFile)
+		if err != nil {
+			return nil, err
+		}
+	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey = scheme.GenerateKeypair(rand.Reader)
+		linkPublicKey = linkPrivateKey.PublicKey()
+		err = scheme.PrivateKeyToPemFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = scheme.PublicKeyToPemFile(linkPublicKeyFile, linkPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		panic("Improbable: Only found one link PEM file.")
 	}
+
+	s.linkKey = linkPrivateKey
+
 	linkPubKeyHash := blake2b.Sum256(s.linkKey.PublicKey().Bytes())
 	s.log.Noticef("Server link public key is: %x", linkPubKeyHash[:])
 

@@ -707,7 +707,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		}
 
 		wirePemFile := filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem)
-		authPubKey, err := wire.NewScheme().PublicKeyFromPemFile(wirePemFile)
+		authPubKey, err := wire.DefaultScheme.PublicKeyFromPemFile(wirePemFile)
 		if err != nil {
 			return nil, err
 		}
