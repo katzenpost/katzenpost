@@ -252,12 +252,12 @@ func (s *state) consense(epoch uint64) *document {
 				continue // skip adding own signature
 			}
 
-			idPubKey, ok := s.reverseHash[jk]
+			kjk, ok := s.reverseHash[jk]
 			if !ok {
 				panic(fmt.Sprintf("reverse hash key not found %x", jk[:]))
 			}
-			if ds, err := cert.GetSignature(idPubKey.Bytes(), d); err == nil {
-				if sc, err := cert.AddSignature(idPubKey, *ds, c); err == nil {
+			if ds, err := cert.GetSignature(kjk.Bytes(), d); err == nil {
+				if sc, err := cert.AddSignature(kjk, *ds, c); err == nil {
 					c = sc
 				}
 			}
@@ -1483,7 +1483,7 @@ func newState(s *Server) (*state, error) {
 	st.verifiers = make([]cert.Verifier, len(s.cfg.Authorities)+1)
 	for i, auth := range s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFile := auth.IdentityPublicKeyPem
+		pemFile := filepath.Join(st.s.cfg.Authority.DataDir, auth.IdentityPublicKeyPem)
 		err := pem.FromFile(pemFile, identityPublicKey)
 		if err != nil {
 			panic(err)
@@ -1569,7 +1569,7 @@ func newState(s *Server) (*state, error) {
 		}
 
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFilePath := v.IdentityPublicKeyPem
+		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
 		err = pem.FromFile(pemFilePath, identityPublicKey)
 		if err != nil {
 			panic(err)
