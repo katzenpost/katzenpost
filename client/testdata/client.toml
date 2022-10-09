@@ -10,26 +10,26 @@ DataDir = "./testdata/"
 #  Level = "DEBUG"
   File = ""
 
-[NonvotingAuthority]
-   Address = "127.0.0.1:29483"
-   IdentityPublicKeyPem = "auth1_id_pub_key.pem"
-   LinkPublicKeyPem = "auth1_link_pub_key.pem"
+# [NonvotingAuthority]
+#    Address = "127.0.0.1:29483"
+#    IdentityPublicKeyPem = "auth1_id_pub_key.pem"
+#    LinkPublicKeyPem = "auth1_link_pub_key.pem"
 
-# [VotingAuthority]
-#    [[VotingAuthority.Peers]]
-#      Addresses = ["127.0.0.1:21483"]
-#      LinkPublicKeyPem = "auth1_link_pub_key.pem"
-#      IdentityPublicKeyPem = "auth1_id_pub_key.pem"
+[VotingAuthority]
+   [[VotingAuthority.Peers]]
+     Addresses = ["127.0.0.1:21483"]
+     LinkPublicKeyPem = "auth1_link_pub_key.pem"
+     IdentityPublicKeyPem = "auth1_id_pub_key.pem"
 
-#     [[VotingAuthority.Peers]]
-#       Addresses = ["127.0.0.1:22483"]
-#       LinkPublicKeyPem = "auth2_link_pub_key.pem"
-#       IdentityPublicKeyPem = "auth2_id_pub_key.pem"
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:22483"]
+      LinkPublicKeyPem = "auth2_link_pub_key.pem"
+      IdentityPublicKeyPem = "auth2_id_pub_key.pem"
 
-#     [[VotingAuthority.Peers]]
-#       Addresses = ["127.0.0.1:23483"]
-#       LinkPublicKeyPem = "auth3_link_pub_key.pem"
-#       IdentityPublicKeyPem = "auth3_id_pub_key.pem"
+    [[VotingAuthority.Peers]]
+      Addresses = ["127.0.0.1:23483"]
+      LinkPublicKeyPem = "auth3_link_pub_key.pem"
+      IdentityPublicKeyPem = "auth3_id_pub_key.pem"
 
 [Debug]
   PollingInterval = 1000
