@@ -73,15 +73,15 @@
 
 [[Mixes]]
   # mix1
-  IdentityKeyPem = "mix1_id_pub_key.pem"
+  IdentityPublicKeyPem = "mix1_id_pub_key.pem"
 
 [[Mixes]]
   # mix2
-  IdentityKeyPem = "mix2_id_pub_key.pem"  
+  IdentityPublicKeyPem = "mix2_id_pub_key.pem"  
 
 [[Mixes]]
   # mix3
-  IdentityKeyPem = "mix3_id_pub_key.pem"  
+  IdentityPublicKeyPem = "mix3_id_pub_key.pem"  
 
 #
 # The Providers array defines the list of white-listed Provider nodes.
@@ -89,9 +89,9 @@
 
 [[Providers]]
   Identifier = "provider2"
-  IdentityKeyPem = "provider2_id_pub_key.pem"
+  IdentityPublicKeyPem = "provider2_id_pub_key.pem"
 
 [[Providers]]
   Identifier = "provider1"
-  IdentityKeyPem = "provider1_id_pub_key.pem"  
+  IdentityPublicKeyPem = "provider1_id_pub_key.pem"  
 
