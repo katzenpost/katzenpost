@@ -252,12 +252,12 @@ func (s *state) consense(epoch uint64) *document {
 				continue // skip adding own signature
 			}
 
-			kjk, ok := s.reverseHash[jk]
+			idPubKey, ok := s.reverseHash[jk]
 			if !ok {
 				panic(fmt.Sprintf("reverse hash key not found %x", jk[:]))
 			}
-			if ds, err := cert.GetSignature(jk[:], d); err == nil {
-				if sc, err := cert.AddSignature(kjk, *ds, c); err == nil {
+			if ds, err := cert.GetSignature(idPubKey.Bytes(), d); err == nil {
+				if sc, err := cert.AddSignature(idPubKey, *ds, c); err == nil {
 					c = sc
 				}
 			}
