@@ -100,7 +100,7 @@ func FromFile(f string, key KeyMaterial) error {
 	if blk == nil {
 		return fmt.Errorf("failed to decode PEM file %v", f)
 	}
-	if blk.Type != keyType {
+	if strings.ToUpper(blk.Type) != keyType {
 		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
 	}
 	return key.FromBytes(blk.Bytes)
