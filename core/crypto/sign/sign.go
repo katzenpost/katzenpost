@@ -40,10 +40,6 @@ type Key interface {
 
 	// FromBytes loads key material from the given byte slice.
 	FromBytes(data []byte) error
-
-	// Identity returns the key's identity, in this case it's our
-	// public key in bytes.
-	Identity() []byte
 }
 
 // PrivateKey is an interface for types encapsulating

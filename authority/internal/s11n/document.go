@@ -248,7 +248,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *pki.Document) error {
-	pks := make(map[string]bool)
+	pks := make(map[[32]byte]bool)
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("Document contains no Topology")
 	}
@@ -260,7 +260,7 @@ func IsDocumentWellFormed(d *pki.Document) error {
 			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 				return err
 			}
-			pk := string(desc.IdentityKey.Identity())
+			pk := desc.IdentityKey.Sum256()
 			if _, ok := pks[pk]; ok {
 				return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 			}
@@ -277,7 +277,7 @@ func IsDocumentWellFormed(d *pki.Document) error {
 		if desc.Layer != pki.LayerProvider {
 			return fmt.Errorf("Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
 		}
-		pk := string(desc.IdentityKey.Identity())
+		pk := desc.IdentityKey.Sum256()
 		if _, ok := pks[pk]; ok {
 			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
 		}
