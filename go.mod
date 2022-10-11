@@ -7,7 +7,7 @@ require (
 	git.xx.network/elixxir/ctidh_cgo v0.0.0-20220908145931-6ec4831f902c
 	github.com/BurntSushi/toml v0.4.1
 	github.com/awnumar/memguard v0.22.2
-	github.com/cloudflare/circl v1.2.1-0.20220831060716-4cf0150356fc // indirect
+	github.com/cloudflare/circl v1.2.1-0.20220831060716-4cf0150356fc
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/dchest/siphash v1.2.2 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
@@ -16,6 +16,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
+	github.com/kasperdi/SPHINCSPLUS-golang v0.0.0-20221011202930-2bb0bb5f6573
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/doubleratchet v0.0.13
