@@ -33,9 +33,9 @@ import (
 	"fmt"
 
 	"github.com/awnumar/memguard"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/crypto/extra25519"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/ugorji/go/codec"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -316,14 +316,12 @@ func (keypair *Keypair) HasElligator() bool {
 // MarshalBinary is an implementation of a method on the
 // BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
 func (keypair *Keypair) MarshalBinary() ([]byte, error) {
-	var serialized []byte
 	k := KeypairSerializable{
 		Public:         keypair.public,
 		Private:        keypair.private,
 		Representative: keypair.representative,
 	}
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(&k)
-	return serialized, err
+	return cbor.Marshal(k)
 }
 
 // UnmarshalBinary is an implementation of a method on the
@@ -338,7 +336,7 @@ func (keypair *Keypair) UnmarshalBinary(data []byte) error {
 	}
 	k.Private.privBuf.Melt()
 	defer k.Private.privBuf.Freeze()
-	err := codec.NewDecoderBytes(data, cborHandle).Decode(k)
+	err := cbor.Unmarshal(data, k)
 	if err != nil {
 		return err
 	}
