@@ -38,7 +38,7 @@ func TestEd25519ExpiredCertificate(t *testing.T) {
 	// expiration six months ago
 	expiration := time.Now().AddDate(0, -6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.Error(err)
 
 	certified, err := Verify(ephemeralPrivKey.PublicKey(), certificate)
@@ -59,7 +59,7 @@ func TestEd25519Certificate(t *testing.T) {
 	expiration := time.Unix(0, 0).AddDate(600, 0, 0).Unix()
 
 	toSign := ephemeralPrivKey.PublicKey().Bytes()
-	certificate, err := Sign(signingPrivKey, toSign, expiration)
+	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), toSign, expiration)
 	assert.NoError(err)
 
 	mesg, err := Verify(signingPrivKey.PublicKey(), certificate)
@@ -79,7 +79,7 @@ func TestEd25519BadCertificate(t *testing.T) {
 	certified := signingPrivKey.PublicKey().Bytes()
 	certified[3] = 235 // modify the signed data so that the Verify will fail
 
-	certificate, err := Sign(signingPrivKey, certified, expiration)
+	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), certified, expiration)
 	assert.NoError(err)
 
 	mesg, err := Verify(signingPrivKey.PublicKey(), certificate)
@@ -99,7 +99,7 @@ func TestEd25519WrongCertificate(t *testing.T) {
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
-	certificate, err := Sign(signingPrivKey, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
 
 	mesg, err := Verify(ephemeralPrivKey.PublicKey(), certificate)
@@ -123,13 +123,13 @@ func TestEd25519MultiSignatureCertificate(t *testing.T) {
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate)
 	assert.NoError(err)
 
 	mesg, err := Verify(signingPrivKey1.PublicKey(), certificate)
@@ -162,29 +162,29 @@ func TestEd25519MultiSignatureOrdering(t *testing.T) {
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
 	// 1
-	certificate1, err := Sign(signingPrivKey1, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate1, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
-	certificate1, err = SignMulti(signingPrivKey2, certificate1)
+	certificate1, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate1)
 	assert.NoError(err)
-	certificate1, err = SignMulti(signingPrivKey3, certificate1)
+	certificate1, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate1)
 	assert.NoError(err)
 
 	// 2
-	certificate2, err := Sign(signingPrivKey1, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate2, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
-	certificate2, err = SignMulti(signingPrivKey3, certificate2)
+	certificate2, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate2)
 	assert.NoError(err)
-	certificate2, err = SignMulti(signingPrivKey2, certificate2)
+	certificate2, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate2)
 	assert.NoError(err)
 
 	assert.Equal(certificate1, certificate2)
 
 	// 3
-	certificate3, err := Sign(signingPrivKey2, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate3, err := Sign(signingPrivKey2, signingPrivKey2.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
-	certificate3, err = SignMulti(signingPrivKey3, certificate3)
+	certificate3, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate3)
 	assert.NoError(err)
-	certificate3, err = SignMulti(signingPrivKey1, certificate3)
+	certificate3, err = SignMulti(signingPrivKey1, signingPrivKey1.PublicKey(), certificate3)
 	assert.NoError(err)
 
 	assert.Equal(certificate3, certificate2)
@@ -206,13 +206,13 @@ func TestEd25519VerifyAll(t *testing.T) {
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate)
 	assert.NoError(err)
 
 	verifiers := []Verifier{signingPrivKey1.PublicKey(), signingPrivKey2.PublicKey(), signingPrivKey2.PublicKey()}
@@ -239,13 +239,13 @@ func TestEd25519VerifyThreshold(t *testing.T) {
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate)
 	assert.NoError(err)
 
 	verifiers := []Verifier{signingPrivKey1.PublicKey(), signingPrivKey2.PublicKey(), signingPrivKey4.PublicKey()}
@@ -281,10 +281,10 @@ func TestEd25519AddSignature(t *testing.T) {
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate2, err := SignMulti(signingPrivKey2, certificate)
+	certificate2, err := SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
 	assert.NoError(err)
 
 	sig, err := GetSignature(signingPrivKey2.Identity(), certificate2)

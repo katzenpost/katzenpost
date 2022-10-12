@@ -76,7 +76,7 @@ func TestEd25519SingleSignatureCertificateVectors(t *testing.T) {
 		assert.NoError(err)
 		signingKey := new(eddsa.PrivateKey)
 		signingKey.FromBytes(signingKeyRaw)
-		certificate, err := Sign(signingKey, toSign, expiration)
+		certificate, err := Sign(signingKey, signingKey.PublicKey(), toSign, expiration)
 		assert.NoError(err)
 		payload, err := hex.DecodeString(test.want.payload)
 		assert.NoError(err)
@@ -149,10 +149,10 @@ func TestEd25519MultipleSignatureCertificateVectors(t *testing.T) {
 
 		toSign, err := hex.DecodeString(test.in.toSign)
 		assert.NoError(err)
-		certificate, err := Sign(sigKeys[0], toSign, expiration)
+		certificate, err := Sign(sigKeys[0], sigKeys[0].PublicKey(), toSign, expiration)
 		assert.NoError(err)
 		for _, signingKey := range sigKeys[1:] {
-			certificate, err = SignMulti(signingKey, certificate)
+			certificate, err = SignMulti(signingKey, signingKey.PublicKey(), certificate)
 			assert.NoError(err)
 		}
 		payload, err := hex.DecodeString(test.want.payload)

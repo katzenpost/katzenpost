@@ -68,6 +68,10 @@ type PublicKey interface {
 
 	// Sum256 returns the Blake2b 256-bit checksum of the key's raw bytes.
 	Sum256() [32]byte
+
+	// Identity returns a byte slice containing the blake2b hash
+	// of the public key material.
+	Identity() []byte
 }
 
 // Scheme is our signature scheme.

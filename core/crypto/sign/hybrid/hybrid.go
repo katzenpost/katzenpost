@@ -140,10 +140,6 @@ func (p *privateKey) Sign(message []byte) []byte {
 
 func (p *privateKey) Reset() {}
 
-func (p *privateKey) Identity() []byte {
-	return append(p.publicKey1.Bytes(), p.publicKey2.Bytes()...)
-}
-
 func (p *privateKey) Bytes() []byte {
 	return append(p.privateKey1.Bytes(), p.privateKey2.Bytes()...)
 }
@@ -199,7 +195,8 @@ func (p *publicKey) Reset() {
 }
 
 func (p *publicKey) Identity() []byte {
-	return append(p.publicKey1.Bytes(), p.publicKey2.Bytes()...)
+	h := p.Sum256()
+	return h[:]
 }
 
 func (p *publicKey) Bytes() []byte {
