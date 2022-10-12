@@ -19,11 +19,11 @@ package sphinx
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"io/ioutil"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ugorji/go/codec"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
@@ -65,11 +65,7 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 	hexTests2 := buildVectorSphinx(t, mynike, withSURB, sphinx)
 	hexTests = append(hexTests, hexTests2...)
 
-	serialized := []byte{}
-	handle := new(codec.JsonHandle)
-	handle.Indent = 4
-	enc := codec.NewEncoderBytes(&serialized, handle)
-	err := enc.Encode(hexTests)
+	serialized, err := json.Marshal(hexTests)
 	require.NoError(err)
 
 	err = ioutil.WriteFile(sphinxVectorsFile, serialized, 0644)
@@ -85,9 +81,8 @@ func TestVectorSphinx(t *testing.T) {
 	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
 
-	decoder := codec.NewDecoderBytes(serialized, new(codec.JsonHandle))
 	tests := []hexSphinxTest{}
-	err = decoder.Decode(&tests)
+	err = json.Unmarshal(serialized, &tests)
 	require.NoError(err)
 
 	for _, test := range tests {
