@@ -21,7 +21,7 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -406,7 +406,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 // LoadFile loads, parses and validates the provided file and returns the
 // Config.
 func LoadFile(f string, forceGenOnly bool) (*Config, error) {
-	b, err := ioutil.ReadFile(f)
+	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}

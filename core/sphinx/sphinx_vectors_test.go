@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
@@ -63,14 +63,14 @@ func TestBuildFileVectorSphinx(t *testing.T) {
 	serialized, err := json.Marshal(hexTests)
 	require.NoError(err)
 
-	err = ioutil.WriteFile(sphinxVectorsFile, serialized, 0644)
+	err = os.WriteFile(sphinxVectorsFile, serialized, 0644)
 	require.NoError(err)
 }
 
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
 
-	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
+	serialized, err := os.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
 
 	tests := []hexSphinxTest{}

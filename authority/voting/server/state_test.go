@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:build test
 // +build test
 
 package server
@@ -21,6 +22,7 @@ package server
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
@@ -144,7 +146,7 @@ func TestVote(t *testing.T) {
 		st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
 		st.reveals[st.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
 		stateAuthority[i] = st
-		tmpDir, err := ioutil.TempDir("", cfg.Authority.Identifier)
+		tmpDir, err := os.MkdirTemp("", cfg.Authority.Identifier)
 		require.NoError(err)
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
@@ -187,24 +189,23 @@ func TestVote(t *testing.T) {
 	}
 
 	// generate a Topology section
-	topology := config.Topology{Layers: make([]config.Layer,3)}
-	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
-	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
-	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()}}
-
+	topology := config.Topology{Layers: make([]config.Layer, 3)}
+	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[0].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[1].Debug.IdentityKey.PublicKey()}}
+	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[2].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[3].Debug.IdentityKey.PublicKey()}}
+	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[4].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[5].Debug.IdentityKey.PublicKey()}}
 
 	// generate a conflicting Topology
 	// generate a Topology section
-	topology2 := config.Topology{Layers: make([]config.Layer,3)}
-	topology2.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
-	topology2.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
-	topology2.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()}}
+	topology2 := config.Topology{Layers: make([]config.Layer, 3)}
+	topology2.Layers[0].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[0].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[1].Debug.IdentityKey.PublicKey()}}
+	topology2.Layers[1].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[2].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[3].Debug.IdentityKey.PublicKey()}}
+	topology2.Layers[2].Nodes = []config.Node{config.Node{IdentityKey: mixCfgs[5].Debug.IdentityKey.PublicKey()},
+		config.Node{IdentityKey: mixCfgs[4].Debug.IdentityKey.PublicKey()}}
 
 	// one auth uses the conflicting topology, so we shall expect consensus with 2/3
 	authCfgs[0].Topology = &topology

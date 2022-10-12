@@ -19,7 +19,7 @@ package commands
 import (
 	"encoding/hex"
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -64,7 +64,7 @@ func TestBuildCommandVectors(t *testing.T) {
 func TestCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
-	serialized, err := ioutil.ReadFile(sphinxCommandsVectorsFile)
+	serialized, err := os.ReadFile(sphinxCommandsVectorsFile)
 	assert.NoError(err)
 	cmdsTest := commandsTest{}
 	err = json.Unmarshal(serialized, &cmdsTest)

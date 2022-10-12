@@ -21,9 +21,8 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"errors"
-	"github.com/fxamacker/cbor/v2"
 	"fmt"
-	"io/ioutil"
+	"github.com/fxamacker/cbor/v2"
 	"os"
 	"sync"
 
@@ -308,7 +307,7 @@ func (s *ReunionStates) GarbageCollectOldEpochs(epochClock epochtime.EpochClock)
 // LoadFromFile loads a ReunionStates from then given file
 // if it exists.
 func (s *ReunionStates) LoadFromFile(filePath string) error {
-	inBytes, err := ioutil.ReadFile(filePath)
+	inBytes, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}

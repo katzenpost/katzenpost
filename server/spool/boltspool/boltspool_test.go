@@ -18,7 +18,6 @@ package boltspool
 
 import (
 	"crypto/rand"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -125,7 +124,7 @@ func doTestLoad(t *testing.T) {
 
 func init() {
 	var err error
-	tmpDir, err = ioutil.TempDir("", "boltspool_tests")
+	tmpDir, err = os.MkdirTemp("", "boltspool_tests")
 	if err != nil {
 		panic(err)
 	}

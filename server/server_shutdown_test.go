@@ -18,7 +18,7 @@
 package server
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
@@ -30,7 +30,7 @@ import (
 func TestServerStartShutdown(t *testing.T) {
 	assert := assert.New(t)
 
-	dir, err := ioutil.TempDir("", "server_data_dir")
+	dir, err := os.MkdirTemp("", "server_data_dir")
 	assert.NoError(err)
 
 	authkey, err := eddsa.NewKeypair(rand.Reader)

@@ -19,7 +19,7 @@ package client
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"sync"
 	"testing"
 
@@ -38,7 +38,7 @@ type MockReunionDB struct {
 }
 
 func NewMockReunionDB(mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
-	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
 	if err != nil {
 		return nil, err
 	}

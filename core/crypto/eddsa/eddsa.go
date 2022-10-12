@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"crypto/ed25519"
@@ -140,7 +139,7 @@ func (k *PublicKey) ToPEMFile(f string) error {
 		Type:  keyType,
 		Bytes: k.Bytes(),
 	}
-	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
 // ToECDH converts the PublicKey to the corresponding ecdh.PublicKey.
@@ -283,7 +282,7 @@ func NewKeypair(r io.Reader) (*PrivateKey, error) {
 func Load(privFile, pubFile string, r io.Reader) (*PrivateKey, error) {
 	const keyType = "ED25519 PRIVATE KEY"
 
-	if buf, err := ioutil.ReadFile(privFile); err == nil {
+	if buf, err := os.ReadFile(privFile); err == nil {
 		defer utils.ExplicitBzero(buf)
 		blk, rest := pem.Decode(buf)
 		defer utils.ExplicitBzero(blk.Bytes)
@@ -307,7 +306,7 @@ func Load(privFile, pubFile string, r io.Reader) (*PrivateKey, error) {
 		Type:  keyType,
 		Bytes: k.Bytes(),
 	}
-	if err = ioutil.WriteFile(privFile, pem.EncodeToMemory(blk), 0600); err != nil {
+	if err = os.WriteFile(privFile, pem.EncodeToMemory(blk), 0600); err != nil {
 		return nil, err
 	}
 	if pubFile != "" {
