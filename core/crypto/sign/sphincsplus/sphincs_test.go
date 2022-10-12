@@ -28,3 +28,18 @@ func TestSerialization(t *testing.T) {
 
 	require.True(t, pubKey2.Verify(sig, message))
 }
+
+func TestSizes(t *testing.T) {
+	privKey, pubKey := Scheme.NewKeypair()
+	message := []byte("i am a message")
+	sig := privKey.Sign(message)
+	require.True(t, pubKey.Verify(sig, message))
+
+	t.Logf("privKey len %d", len(privKey.Bytes()))
+	t.Logf("pubKey len %d", len(pubKey.Bytes()))
+	t.Logf("sig len %d", len(sig))
+
+	require.Equal(t, len(privKey.Bytes()), Scheme.PrivateKeySize())
+	require.Equal(t, len(pubKey.Bytes()), Scheme.PublicKeySize())
+	require.Equal(t, len(sig), Scheme.SignatureSize())
+}
