@@ -26,9 +26,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/katzenpost/katzenpost/core/crypto/sign/dilithium"
 	"github.com/katzenpost/katzenpost/core/crypto/sign/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/sign/hybrid"
+	"github.com/katzenpost/katzenpost/core/crypto/sign/sphincsplus"
 )
 
 const (
@@ -77,7 +77,8 @@ var (
 	ErrThresholdNotMet = errors.New("threshold failure")
 
 	// Scheme is the signature scheme we are using throughout various components of the network.
-	Scheme = hybrid.NewScheme(eddsa.Scheme, dilithium.Scheme)
+	//Scheme = hybrid.NewScheme(eddsa.Scheme, dilithium.Scheme)
+	Scheme = hybrid.NewScheme(eddsa.Scheme, sphincsplus.Scheme)
 )
 
 // Verifier is used to verify signatures.
@@ -93,9 +94,6 @@ type Verifier interface {
 type Signer interface {
 	// Sign signs the message and returns the signature.
 	Sign(msg []byte) []byte
-
-	// Identity returns the Signer identity.
-	Identity() []byte
 
 	// KeyType returns the key type string.
 	KeyType() string
@@ -169,7 +167,7 @@ func (c *certificate) sanityCheck() error {
 
 // Sign uses the given Signer to create a certificate which
 // certifies the given data.
-func Sign(signer Signer, data []byte, expiration int64) ([]byte, error) {
+func Sign(signer Signer, verifier Verifier, data []byte, expiration int64) ([]byte, error) {
 	cert := certificate{
 		Version:    CertVersion,
 		Expiration: expiration,
@@ -186,7 +184,7 @@ func Sign(signer Signer, data []byte, expiration int64) ([]byte, error) {
 	}
 	cert.Signatures = []Signature{
 		Signature{
-			Identity: signer.Identity(),
+			Identity: verifier.Identity(),
 			Payload:  signer.Sign(mesg),
 		},
 	}
@@ -257,7 +255,7 @@ func (d byIdentity) Less(i, j int) bool {
 
 // SignMulti uses the given signer to create a signature
 // and appends it to the certificate and returns it.
-func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
+func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error) {
 	// decode certificate
 	cert := new(certificate)
 	err := cbor.Unmarshal(rawCert, &cert)
@@ -278,7 +276,7 @@ func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
 		return nil, err
 	}
 	signature := Signature{
-		Identity: signer.Identity(),
+		Identity: verifier.Identity(),
 		Payload:  signer.Sign(mesg),
 	}
 

@@ -121,16 +121,17 @@ func (p *privateKey) FromBytes(data []byte) error {
 	return p.privateKey.FromBytes(data)
 }
 
-func (p *privateKey) Identity() []byte {
-	return p.privateKey.Identity()
-}
-
 type publicKey struct {
 	publicKey *eddsa.PublicKey
 }
 
 func (p *publicKey) KeyType() string {
 	return "ED25519 PUBLIC KEY"
+}
+
+func (p *publicKey) Identity() []byte {
+	h := p.Sum256()
+	return h[:]
 }
 
 func (p *publicKey) Sum256() [32]byte {
@@ -155,10 +156,6 @@ func (p *publicKey) Bytes() []byte {
 
 func (p *publicKey) FromBytes(data []byte) error {
 	return p.publicKey.FromBytes(data)
-}
-
-func (p *publicKey) Identity() []byte {
-	return p.publicKey.Identity()
 }
 
 func (p *publicKey) MarshalText() (text []byte, err error) {

@@ -22,20 +22,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/sign/dilithium"
 	"github.com/katzenpost/katzenpost/core/crypto/sign/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/sign/hybrid"
+	"github.com/katzenpost/katzenpost/core/crypto/sign/sphincsplus"
 )
 
 func TestHybridCertificate(t *testing.T) {
-	scheme := hybrid.NewScheme(eddsa.Scheme, dilithium.Scheme)
+	scheme := hybrid.NewScheme(eddsa.Scheme, sphincsplus.Scheme)
 	signingPrivKey, signingPubKey := scheme.NewKeypair()
 
 	// expires 600 years after unix epoch
 	expiration := time.Unix(0, 0).AddDate(600, 0, 0).Unix()
 
 	toSign := []byte("hello this is a message")
-	certificate, err := Sign(signingPrivKey, toSign, expiration)
+	certificate, err := Sign(signingPrivKey, signingPubKey, toSign, expiration)
 	require.NoError(t, err)
 
 	mesg, err := Verify(signingPubKey, certificate)
