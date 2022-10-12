@@ -18,7 +18,7 @@ package main
 
 import (
 	"flag"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,7 +33,7 @@ import (
 
 func httpReunionServerFactory(s *server.Server, log *logging.Logger) func(w http.ResponseWriter, req *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		rawRequest, err := ioutil.ReadAll(req.Body)
+		rawRequest, err := io.ReadAll(req.Body)
 		if err != nil {
 			log.Errorf("reunion HTTP server failed to ReadAll raw command data: %s", err.Error())
 			return

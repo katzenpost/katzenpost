@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -68,7 +68,7 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 	serialized, err := json.Marshal(hexTests)
 	require.NoError(err)
 
-	err = ioutil.WriteFile(sphinxVectorsFile, serialized, 0644)
+	err = os.WriteFile(sphinxVectorsFile, serialized, 0644)
 	require.NoError(err)
 }
 
@@ -78,7 +78,7 @@ func TestVectorSphinx(t *testing.T) {
 	geo := GeometryFromForwardPayloadLength(mynike, 103, 5)
 	sphinx := NewSphinx(mynike, geo)
 
-	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
+	serialized, err := os.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
 
 	tests := []hexSphinxTest{}

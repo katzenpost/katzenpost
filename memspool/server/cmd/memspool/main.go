@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/op/go-logging.v1"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -68,7 +67,7 @@ func main() {
 	serverLog := logBackend.GetLogger("memspool_server")
 
 	// start service
-	tmpDir, err := ioutil.TempDir("", "memspool_server")
+	tmpDir, err := os.MkdirTemp("", "memspool_server")
 	if err != nil {
 		panic(err)
 	}

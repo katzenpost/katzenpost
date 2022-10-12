@@ -17,7 +17,7 @@
 package server
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/reunion/commands"
@@ -30,7 +30,7 @@ func TestServer(t *testing.T) {
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
-	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
 	require.NoError(err)
 	stateFile.Close()
 

@@ -19,7 +19,6 @@ package mixkey
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -117,7 +116,7 @@ func doTestUnlink(t *testing.T) {
 
 func BenchmarkMixKey(b *testing.B) {
 	var err error
-	tmpDir, err = ioutil.TempDir("", "mixkey_benchmarks")
+	tmpDir, err = os.MkdirTemp("", "mixkey_benchmarks")
 	if err != nil {
 		b.Fatalf("Failed to create temp dir: %v", err)
 	}
@@ -182,7 +181,7 @@ func doBenchIsReplayHit(b *testing.B) {
 
 func init() {
 	var err error
-	tmpDir, err = ioutil.TempDir("", "mixkey_tests")
+	tmpDir, err = os.MkdirTemp("", "mixkey_tests")
 	if err != nil {
 		panic(err)
 	}

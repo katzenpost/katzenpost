@@ -21,7 +21,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
@@ -44,7 +44,6 @@ func NewTransport(url string) *Transport {
 	}
 }
 
-
 // CurrentSharedRandoms returns the valid shared randoms the transport provides
 func (k *Transport) CurrentSharedRandoms() ([][]byte, error) {
 	return nil, errors.New("NotImplemented")
@@ -65,7 +64,7 @@ func (k *Transport) Query(command commands.Command) (commands.Command, error) {
 	if err != nil {
 		return nil, fmt.Errorf("HTTPTransport Query error: %s", err.Error())
 	}
-	reply, err := ioutil.ReadAll(response.Body)
+	reply, err := io.ReadAll(response.Body)
 	if err != nil {
 		return nil, fmt.Errorf("HTTPTransport Query error: %s", err.Error())
 	}
