@@ -18,7 +18,6 @@ package boltuserdb
 
 import (
 	"crypto/rand"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -166,7 +165,7 @@ func doTestLoad(t *testing.T) {
 
 func init() {
 	var err error
-	tmpDir, err = ioutil.TempDir("", "boltuserdb_tests")
+	tmpDir, err = os.MkdirTemp("", "boltuserdb_tests")
 	if err != nil {
 		panic(err)
 	}

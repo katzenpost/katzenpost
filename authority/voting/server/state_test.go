@@ -21,9 +21,9 @@ package server
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -145,7 +145,7 @@ func TestVote(t *testing.T) {
 		st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
 		st.reveals[st.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
 		stateAuthority[i] = st
-		tmpDir, err := ioutil.TempDir("", cfg.Authority.Identifier)
+		tmpDir, err := os.MkdirTemp("", cfg.Authority.Identifier)
 		require.NoError(err)
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)

@@ -17,7 +17,7 @@
 package server
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
@@ -55,7 +55,7 @@ func TestMemSpoolMapBasics(t *testing.T) {
 	assert.NoError(err)
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
 
-	fileStore, err := ioutil.TempFile("", "catshadow_test_filestore")
+	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
 	assert.NoError(err)
 
 	logBackend, err := log.New("", "debug", false)
@@ -95,7 +95,7 @@ func TestPersistence(t *testing.T) {
 	privKey, err := eddsa.NewKeypair(rand.NewMath())
 	assert.NoError(err)
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
-	fileStore, err := ioutil.TempFile("", "catshadow_test_filestore")
+	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
 	assert.NoError(err)
 
 	logBackend, err := log.New("", "debug", false)

@@ -21,7 +21,6 @@ package catshadow
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -99,7 +98,7 @@ func stretchKey(passphrase []byte) *[32]byte {
 }
 
 func decryptStateFile(stateFile string, key *[32]byte) (*State, error) {
-	rawFile, err := ioutil.ReadFile(stateFile)
+	rawFile, err := os.ReadFile(stateFile)
 	if err != nil {
 		return nil, err
 	}

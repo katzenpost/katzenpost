@@ -18,7 +18,7 @@
 package server
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -32,7 +32,7 @@ import (
 func TestServerStartShutdown(t *testing.T) {
 	assert := assert.New(t)
 
-	datadir, err := ioutil.TempDir("", "server_data_dir")
+	datadir, err := os.MkdirTemp("", "server_data_dir")
 	assert.NoError(err)
 
 	authLinkPubKeyPem := "auth_link_pub_key.pem"

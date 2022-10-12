@@ -20,7 +20,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
@@ -146,14 +146,14 @@ func NoTestBuildCommandVectors(t *testing.T) {
 
 	serialized, err := json.Marshal(cmdsTest)
 	assert.NoError(err)
-	err = ioutil.WriteFile(wireCommandsVectorsFile, serialized, 0644)
+	err = os.WriteFile(wireCommandsVectorsFile, serialized, 0644)
 	assert.NoError(err)
 }
 
 func TestCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
-	serialized, err := ioutil.ReadFile(wireCommandsVectorsFile)
+	serialized, err := os.ReadFile(wireCommandsVectorsFile)
 	assert.NoError(err)
 	cmdsTest := commandsTest{}
 	err = json.Unmarshal(serialized, &cmdsTest)

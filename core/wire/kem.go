@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -131,7 +130,7 @@ type publicKey struct {
 func (p *publicKey) FromPEMFile(f string) error {
 	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
 
-	buf, err := ioutil.ReadFile(f)
+	buf, err := os.ReadFile(f)
 	if err != nil {
 		return err
 	}
@@ -155,7 +154,7 @@ func (p *publicKey) ToPEMFile(f string) error {
 		Type:  keyType,
 		Bytes: p.Bytes(),
 	}
-	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
 // XXX FIXME
@@ -208,7 +207,7 @@ type privateKey struct {
 func (p *privateKey) FromPEMFile(f string) error {
 	keyType := fmt.Sprintf("%s PRIVATE KEY", p.KEM)
 
-	buf, err := ioutil.ReadFile(f)
+	buf, err := os.ReadFile(f)
 	if err != nil {
 		return err
 	}
@@ -232,7 +231,7 @@ func (p *privateKey) ToPEMFile(f string) error {
 		Type:  keyType,
 		Bytes: p.Bytes(),
 	}
-	return ioutil.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
 // XXX FIXME
@@ -368,7 +367,7 @@ func (s *scheme) Load(privFile, pubFile string, r io.Reader) (PrivateKey, error)
 		}
 	}
 
-	if buf, err := ioutil.ReadFile(privFile); err == nil {
+	if buf, err := os.ReadFile(privFile); err == nil {
 		defer utils.ExplicitBzero(buf)
 		blk, rest := pem.Decode(buf)
 		defer utils.ExplicitBzero(blk.Bytes)
@@ -408,7 +407,7 @@ func (s *scheme) Load(privFile, pubFile string, r io.Reader) (PrivateKey, error)
 		Type:  keyType,
 		Bytes: privKey.Bytes(),
 	}
-	if err = ioutil.WriteFile(privFile, pem.EncodeToMemory(blk), 0600); err != nil {
+	if err = os.WriteFile(privFile, pem.EncodeToMemory(blk), 0600); err != nil {
 		return nil, err
 	}
 	if pubFile != "" {
