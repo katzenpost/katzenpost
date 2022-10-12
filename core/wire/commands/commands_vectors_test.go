@@ -19,13 +19,13 @@ package commands
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"io/ioutil"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/stretchr/testify/assert"
-	"github.com/ugorji/go/codec"
 )
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"
@@ -126,11 +126,7 @@ func TestBuildCommandVectors(t *testing.T) {
 		ConsensusErrorCode: consensus.ErrorCode,
 	}
 
-	serialized := []byte{}
-	handle := new(codec.JsonHandle)
-	handle.Indent = 4
-	enc := codec.NewEncoderBytes(&serialized, handle)
-	err = enc.Encode(cmdsTest)
+	serialized, err := json.Marshal(cmdsTest)
 	assert.NoError(err)
 	err = ioutil.WriteFile(wireCommandsVectorsFile, serialized, 0644)
 	assert.NoError(err)
@@ -141,9 +137,8 @@ func TestCommandVectors(t *testing.T) {
 
 	serialized, err := ioutil.ReadFile(wireCommandsVectorsFile)
 	assert.NoError(err)
-	decoder := codec.NewDecoderBytes(serialized, new(codec.JsonHandle))
 	cmdsTest := commandsTest{}
-	err = decoder.Decode(&cmdsTest)
+	err = json.Unmarshal(serialized, &cmdsTest)
 	assert.NoError(err)
 
 	noOpBytes, err := hex.DecodeString(cmdsTest.NoOp)
