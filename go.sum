@@ -79,8 +79,8 @@ github.com/json-iterator/go v1.1.10/go.mod h1:KdQUCv79m/52Kvf8AW2vK1V8akMuk1QjK/
 github.com/json-iterator/go v1.1.11/go.mod h1:KdQUCv79m/52Kvf8AW2vK1V8akMuk1QjK/uOdHXbAo4=
 github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
 github.com/julienschmidt/httprouter v1.3.0/go.mod h1:JR6WtHb+2LUe8TCKY3cZOxFyyO8IZAc4RVcycCCAKdM=
-github.com/kasperdi/SPHINCSPLUS-golang v0.0.0-20221011202930-2bb0bb5f6573 h1:kYPaGqhLnvlwhWCrcy2jZify9kDxYTwJpX/Bf3gKmuc=
-github.com/kasperdi/SPHINCSPLUS-golang v0.0.0-20221011202930-2bb0bb5f6573/go.mod h1:+SeUKO8dPlXRdYr4SK+UIs8SLz0Dl3ZceKdXGaSFsFY=
+github.com/kasperdi/SPHINCSPLUS-golang v0.0.0-20221012101117-4b9d11022c86 h1:TEGX0J9Qc87LgT81eVuJCi8YQkkkoUxSmYxuKnvJcSQ=
+github.com/kasperdi/SPHINCSPLUS-golang v0.0.0-20221012101117-4b9d11022c86/go.mod h1:BinvSDaWxKiXCYvdCk2PaJe6FlU4QzQhbdV8g57SAxg=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129 h1:BkXIK2/3bAtqFbzea4tMVfhu8BQ9j05yCVy/z8iCz3s=
