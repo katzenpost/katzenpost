@@ -182,6 +182,11 @@ func (p *publicKey) Verify(sig, message []byte) bool {
 	return sphincs.Spx_verify(params, message, signature, p.publicKey)
 }
 
+func (p *publicKey) Identity() []byte {
+	h := p.Sum256()
+	return h[:]
+}
+
 func (p *publicKey) Sum256() [32]byte {
 	return blake2b.Sum256(p.Bytes())
 }
