@@ -34,7 +34,7 @@ var (
 	// Scheme implements our sign.Scheme interface using Sphincs+.
 	Scheme = &scheme{}
 
-	params = parameters.MakeSphincsPlusSHA256256fRobust(false)
+	params = parameters.MakeSphincsPlusSHAKE256256fRobust(false)
 )
 
 type scheme struct{}
@@ -85,15 +85,15 @@ func (s *scheme) Name() string {
 }
 
 func (s *scheme) PrivateKeySize() int {
-	return 1234 // XXX FIXME
+	return 128
 }
 
 func (s *scheme) PublicKeySize() int {
-	return 1234 // XXX FIXME
+	return 64
 }
 
 func (s *scheme) SignatureSize() int {
-	return 1234 // XXX FIXME
+	return 49856
 }
 
 type privateKey struct {
