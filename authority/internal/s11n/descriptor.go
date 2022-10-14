@@ -114,7 +114,7 @@ func (n *nodeDescriptorIntermediary) nodeDescriptor() *nodeDescriptor {
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
-func SignDescriptor(signer cert.Signer, base *pki.MixDescriptor) ([]byte, error) {
+func SignDescriptor(signer cert.Signer, verifier cert.Verifier, base *pki.MixDescriptor) ([]byte, error) {
 	d := new(nodeDescriptor)
 	d.MixDescriptor = *base
 	d.Version = nodeDescriptorVersion
@@ -128,7 +128,7 @@ func SignDescriptor(signer cert.Signer, base *pki.MixDescriptor) ([]byte, error)
 
 	// Sign the descriptor.
 	expiration := time.Now().Add(CertificateExpiration).Unix()
-	signed, err := cert.Sign(signer, payload, expiration)
+	signed, err := cert.Sign(signer, verifier, payload, expiration)
 	if err != nil {
 		return nil, err
 	}
