@@ -77,7 +77,6 @@ var (
 	ErrThresholdNotMet = errors.New("threshold failure")
 
 	// Scheme is the signature scheme we are using throughout various components of the network.
-	//Scheme = hybrid.NewScheme(eddsa.Scheme, dilithium.Scheme)
 	Scheme = hybrid.NewScheme(eddsa.Scheme, sphincsplus.Scheme)
 )
 
@@ -325,6 +324,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 	if err != nil {
 		return nil, err
 	}
+
 	if verifier.Verify(signature.Payload, mesg) {
 		cert.Signatures = append(cert.Signatures, signature)
 		sort.Sort(byIdentity(cert.Signatures))
