@@ -19,7 +19,7 @@ func TestSerialization(t *testing.T) {
 	sig := privKey.Sign(message)
 
 	pubKeyBytes := pubKey.Bytes()
-	pubKey2 := new(publicKey)
+	pubKey2 := newEmptyPublicKey()
 	err := pubKey2.FromBytes(pubKeyBytes)
 	require.NoError(t, err)
 
