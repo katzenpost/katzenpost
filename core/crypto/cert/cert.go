@@ -77,6 +77,11 @@ var (
 	ErrThresholdNotMet = errors.New("threshold failure")
 
 	// Scheme is the signature scheme we are using throughout various components of the network.
+	// Many possibilities:
+	//
+	// Scheme = hybrid.NewScheme(eddsa.Scheme, dilithium.Scheme)
+	// Scheme = sphincsplus.Scheme
+	// Scheme = eddsa.Scheme
 	Scheme = hybrid.NewScheme(eddsa.Scheme, sphincsplus.Scheme)
 )
 
