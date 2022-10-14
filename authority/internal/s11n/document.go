@@ -88,7 +88,7 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signer cert.Signer, d *Document) ([]byte, error) {
+func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -100,11 +100,15 @@ func SignDocument(signer cert.Signer, d *Document) ([]byte, error) {
 
 	// Sign the document.
 	expiration := time.Now().Add(CertificateExpiration).Unix()
-	return cert.Sign(signer, payload, expiration)
+	//return cert.Sign(signer, verifier, payload, expiration)
+
+	sig, err := cert.Sign(signer, verifier, payload, expiration)
+	fmt.Printf("SignDocument sig len %d\n", len(sig))
+	return sig, err
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
-func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, verifiers map[string]cert.Verifier, d *Document) ([]byte, error) {
+func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[string]cert.Verifier, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -116,7 +120,7 @@ func MultiSignDocument(signer cert.Signer, peerSignatures []*cert.Signature, ver
 
 	// Sign the document.
 	expiration := time.Now().Add(3 * epochtime.Period).Unix()
-	signed, err := cert.Sign(signer, payload, expiration)
+	signed, err := cert.Sign(signer, verifier, payload, expiration)
 	if err != nil {
 		return nil, err
 	}
