@@ -49,7 +49,7 @@ func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
 }
 
 func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (sign.PublicKey, error) {
-	pubKey := &publicKey{}
+	pubKey := NewEmptyPublicKey()
 	err := pubKey.FromBytes(b)
 	if err != nil {
 		return nil, err
@@ -59,7 +59,7 @@ func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (sign.PublicKey, error) {
 
 // UnmarshalBinaryPrivateKey loads a private key from byte slice.
 func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (sign.PrivateKey, error) {
-	privKey := &privateKey{}
+	privKey := NewEmptyPrivateKey()
 	err := privKey.FromBytes(b)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (sign.PrivateKey, error) {
 
 // UnmarshalTextPublicKey loads a public key from byte slice.
 func (s *scheme) UnmarshalTextPublicKey(text []byte) (sign.PublicKey, error) {
-	pubKey := new(publicKey)
+	pubKey := NewEmptyPublicKey()
 	err := pubKey.UnmarshalText(text)
 	if err != nil {
 		return nil, err
@@ -98,6 +98,12 @@ type privateKey struct {
 	privateKey *sphincs.PrivateKey
 }
 
+func NewEmptyPrivateKey() *privateKey {
+	return &privateKey{
+		privateKey: new(sphincs.PrivateKey),
+	}
+}
+
 func (p *privateKey) KeyType() string {
 	return "SPHINCS+ PRIVATE KEY"
 }
@@ -122,7 +128,7 @@ type publicKey struct {
 	publicKey *sphincs.PublicKey
 }
 
-func newEmptyPublicKey() *publicKey {
+func NewEmptyPublicKey() *publicKey {
 	return &publicKey{
 		publicKey: new(sphincs.PublicKey),
 	}
