@@ -16,12 +16,12 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/kasperdi/SPHINCSPLUS-golang v0.0.0-20221012101117-4b9d11022c86
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/doubleratchet v0.0.13
 	github.com/katzenpost/noise v0.0.3
 	github.com/katzenpost/nyquist v0.0.0-20220905145943-9f7e8b431eaf
+	github.com/katzenpost/sphincsplus_cgo v0.0.0-20221014003710-d44e69c17af6
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0 // indirect

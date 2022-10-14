@@ -23,26 +23,24 @@ import (
 
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/kasperdi/SPHINCSPLUS-golang/parameters"
-	"github.com/kasperdi/SPHINCSPLUS-golang/sphincs"
+	sphincs "github.com/katzenpost/sphincsplus_cgo"
 
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 var (
 	// Scheme implements our sign.Scheme interface using Sphincs+.
 	Scheme = &scheme{}
-
-	params = parameters.MakeSphincsPlusSHAKE256256fRobust(false)
 )
 
 type scheme struct{}
 
 var _ sign.Scheme = (*scheme)(nil)
+var _ sign.PublicKey = (*publicKey)(nil)
+var _ sign.PrivateKey = (*privateKey)(nil)
 
 func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
-	privKey, pubKey := sphincs.Spx_keygen(params)
+	privKey, pubKey := sphincs.NewKeypair()
 	return &privateKey{
 			privateKey: privKey,
 		}, &publicKey{
@@ -85,19 +83,19 @@ func (s *scheme) Name() string {
 }
 
 func (s *scheme) PrivateKeySize() int {
-	return 128
+	return sphincs.PrivateKeySize
 }
 
 func (s *scheme) PublicKeySize() int {
-	return 64
+	return sphincs.PublicKeySize
 }
 
 func (s *scheme) SignatureSize() int {
-	return 49856
+	return sphincs.SignatureSize
 }
 
 type privateKey struct {
-	privateKey *sphincs.SPHINCS_SK
+	privateKey *sphincs.PrivateKey
 }
 
 func (p *privateKey) KeyType() string {
@@ -105,45 +103,28 @@ func (p *privateKey) KeyType() string {
 }
 
 func (p *privateKey) Reset() {
-	utils.ExplicitBzero(p.privateKey.SKseed)
-	utils.ExplicitBzero(p.privateKey.SKprf)
-	utils.ExplicitBzero(p.privateKey.PKseed)
-	utils.ExplicitBzero(p.privateKey.PKroot)
+	p.privateKey.Reset()
 }
 
 func (p *privateKey) Bytes() []byte {
-	blob, err := p.privateKey.SerializeSK()
-	if err != nil {
-		panic(err)
-	}
-	return blob
+	return p.privateKey.Bytes()
 }
 
 func (p *privateKey) FromBytes(data []byte) error {
-	var err error
-	p.privateKey, err = sphincs.DeserializeSK(params, data)
-	return err
+	return p.privateKey.FromBytes(data)
 }
 
 func (p *privateKey) Sign(message []byte) (sig []byte) {
-	s := sphincs.Spx_sign(params, message, p.privateKey)
-	blob, err := s.SerializeSignature()
-	if err != nil {
-		panic(err)
-	}
-	return blob
+	return p.privateKey.Sign(message)
 }
 
 type publicKey struct {
-	publicKey *sphincs.SPHINCS_PK
+	publicKey *sphincs.PublicKey
 }
 
 func newEmptyPublicKey() *publicKey {
-	pk := new(sphincs.SPHINCS_PK)
-	pk.PKseed = make([]byte, params.N)
-	pk.PKroot = []byte{}
 	return &publicKey{
-		publicKey: pk,
+		publicKey: new(sphincs.PublicKey),
 	}
 }
 
@@ -152,22 +133,15 @@ func (p *publicKey) KeyType() string {
 }
 
 func (p *publicKey) Reset() {
-	utils.ExplicitBzero(p.publicKey.PKseed)
-	utils.ExplicitBzero(p.publicKey.PKroot)
+	p.publicKey.Reset()
 }
 
 func (p *publicKey) Bytes() []byte {
-	blob, err := p.publicKey.SerializePK()
-	if err != nil {
-		panic(err)
-	}
-	return blob
+	return p.publicKey.Bytes()
 }
 
 func (p *publicKey) FromBytes(data []byte) error {
-	var err error
-	p.publicKey, err = sphincs.DeserializePK(params, data)
-	return err
+	return p.publicKey.FromBytes(data)
 }
 
 func (p *publicKey) Equal(pubKey sign.PublicKey) bool {
@@ -175,11 +149,7 @@ func (p *publicKey) Equal(pubKey sign.PublicKey) bool {
 }
 
 func (p *publicKey) Verify(sig, message []byte) bool {
-	signature, err := sphincs.DeserializeSignature(params, sig)
-	if err != nil {
-		panic(err)
-	}
-	return sphincs.Spx_verify(params, message, signature, p.publicKey)
+	return p.publicKey.Verify(sig, message)
 }
 
 func (p *publicKey) Identity() []byte {
