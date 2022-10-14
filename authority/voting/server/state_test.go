@@ -257,7 +257,7 @@ func TestVote(t *testing.T) {
 		err = s11n.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
 		// Make a serialized + signed + serialized descriptor.
-		signed, err := s11n.SignDescriptor(idKeys[i].privKey, desc)
+		signed, err := s11n.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
 		mixDescs = append(mixDescs, &descriptor{raw: signed, desc: desc})
 	}

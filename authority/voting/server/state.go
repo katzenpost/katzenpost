@@ -246,18 +246,18 @@ func (s *state) consense(epoch uint64) *document {
 		return nil
 	}
 
-	for pk, c := range certificates {
-		for jk, d := range certificates {
-			if pk == jk {
+	for pubKeyHash1, c := range certificates {
+		for pubKeyHash2, d := range certificates {
+			if pubKeyHash1 == pubKeyHash2 {
 				continue // skip adding own signature
 			}
 
-			kjk, ok := s.reverseHash[jk]
+			idPubKey, ok := s.reverseHash[pubKeyHash2]
 			if !ok {
-				panic(fmt.Sprintf("reverse hash key not found %x", jk[:]))
+				panic(fmt.Sprintf("reverse hash key not found %x", pubKeyHash2[:]))
 			}
-			if ds, err := cert.GetSignature(kjk.Bytes(), d); err == nil {
-				if sc, err := cert.AddSignature(kjk, *ds, c); err == nil {
+			if ds, err := cert.GetSignature(idPubKey.Identity(), d); err == nil {
+				if sc, err := cert.AddSignature(idPubKey, *ds, c); err == nil {
 					c = sc
 				}
 			}
@@ -420,7 +420,7 @@ func (s *state) reveal(epoch uint64) []byte {
 		// Reveals are only valid until the end of voting round
 		_, _, till := epochtime.Now()
 		revealExpiration := time.Now().Add(till).Unix()
-		signed, err := cert.Sign(s.s.identityPrivateKey, reveal, revealExpiration)
+		signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, revealExpiration)
 		if err != nil {
 			s.s.fatalErrCh <- err
 		}
@@ -484,7 +484,7 @@ func (s *state) vote(epoch uint64) (*document, error) {
 
 func (s *state) sign(doc *s11n.Document) *document {
 	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityPrivateKey, doc)
+	signed, err := s11n.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
@@ -906,7 +906,7 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	}
 
 	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityPrivateKey, doc)
+	signed, err := s11n.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, doc)
 	if err != nil {
 		s.log.Debugf("SignDocument failed with err: %v", err)
 		return nil, err
