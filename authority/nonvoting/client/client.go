@@ -86,7 +86,7 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 	}
 
 	// Make a serialized + signed + serialized descriptor.
-	signed, err := s11n.SignDescriptor(signingPrivateKey, d)
+	signed, err := s11n.SignDescriptor(signingPrivateKey, signingPublicKey, d)
 	if err != nil {
 		return err
 	}
