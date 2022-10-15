@@ -26,7 +26,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/katzenpost/katzenpost/core/crypto/sign/hybrid/ed25519sphincsplus"
+	"github.com/katzenpost/katzenpost/core/crypto/sign/ed25519sphincsplus"
 )
 
 const (
