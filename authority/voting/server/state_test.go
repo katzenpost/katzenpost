@@ -322,9 +322,9 @@ func TestVote(t *testing.T) {
 	}
 
 	// save the consensus
-	for _, s := range stateAuthority {
+	for i, s := range stateAuthority {
 		consensus := s.consense(s.votingEpoch)
-		require.NotNil(consensus)
+		require.NotNil(consensus, "auth-%d failed to generate consensus", i)
 	}
 
 	// verify that each authority produced the same output
