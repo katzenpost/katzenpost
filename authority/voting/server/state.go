@@ -246,36 +246,35 @@ func (s *state) consense(epoch uint64) *document {
 		return nil
 	}
 
-	for pubKeyHash1, c := range certificates {
-		for pubKeyHash2, d := range certificates {
-			if pubKeyHash1 == pubKeyHash2 {
+	for pubKeyHash1, certificate1 := range certificates {
+		for pubKeyHash2, certificate2 := range certificates {
+			if bytes.Equal(pubKeyHash1[:], pubKeyHash2[:]) {
 				continue // skip adding own signature
 			}
-
 			idPubKey, ok := s.reverseHash[pubKeyHash2]
 			if !ok {
 				panic(fmt.Sprintf("reverse hash key not found %x", pubKeyHash2[:]))
 			}
-			if ds, err := cert.GetSignature(idPubKey.Identity(), d); err == nil {
-				if sc, err := cert.AddSignature(idPubKey, *ds, c); err == nil {
-					c = sc
+			if ds, err := cert.GetSignature(idPubKey.Identity(), certificate2); err == nil {
+				if sc, err := cert.AddSignature(idPubKey, *ds, certificate1); err == nil {
+					certificate1 = sc
 				}
 			}
 		}
-		if _, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, c); err == nil {
-			if pDoc, err := s11n.VerifyAndParseDocument(c, good[0]); err == nil {
+		if _, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, certificate1); err == nil {
+			if pDoc, err := s11n.VerifyAndParseDocument(certificate1, good[0]); err == nil {
 
 				// Persist the document to disk.
 				if err := s.db.Update(func(tx *bolt.Tx) error {
 					bkt := tx.Bucket([]byte(documentsBucket))
-					bkt.Put(epochToBytes(epoch), []byte(c))
+					bkt.Put(epochToBytes(epoch), []byte(certificate1))
 					return nil
 				}); err != nil {
 					// Persistence failures are FATAL.
 					s.s.fatalErrCh <- err
 				}
 
-				s.documents[epoch] = &document{doc: pDoc, raw: c}
+				s.documents[epoch] = &document{doc: pDoc, raw: certificate1}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
 				for _, g := range good {
 					id := base64.StdEncoding.EncodeToString(g.Identity())
