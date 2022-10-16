@@ -15,5 +15,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Install Sphincsplus dependency
+         run: bash -c "git clone https://github.com/katzenpost/sphincsplus.git && cd sphincsplus/ref && make libsphincs && sudo make install"
+
       - name: Run all package unit tests
         run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -v -timeout 0 ./..."
