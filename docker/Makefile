@@ -3,7 +3,7 @@ ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user=${uid}:${gid}
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --volume /opt/sphincsplus:/opt/sphincsplus --workdir /go/katzenpost
 
 run-nonvoting-testnet: server nonvoting_authority fix-perms
 	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up
