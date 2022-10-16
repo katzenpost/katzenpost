@@ -100,11 +100,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 
 	// Sign the document.
 	expiration := time.Now().Add(CertificateExpiration).Unix()
-	//return cert.Sign(signer, verifier, payload, expiration)
-
-	sig, err := cert.Sign(signer, verifier, payload, expiration)
-	fmt.Printf("SignDocument sig len %d\n", len(sig))
-	return sig, err
+	return cert.Sign(signer, verifier, payload, expiration)
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
