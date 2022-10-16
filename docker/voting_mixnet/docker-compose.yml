@@ -6,6 +6,7 @@ services:
     image: katzenpost/server
     volumes:
       - ./conf/provider1:/conf
+      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     ports:
       - "127.0.0.1:59484:59484"
@@ -23,6 +24,7 @@ services:
     image: katzenpost/server
     volumes:
       - ./conf/provider2:/conf
+      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     ports:
       - "127.0.0.1:29484:29484"
@@ -41,6 +43,7 @@ services:
     image: katzenpost/server
     volumes:
       - ./conf/mix1:/conf
+      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     depends_on:
       - auth1
@@ -57,6 +60,7 @@ services:
     image: katzenpost/server
     volumes:
       - ./conf/mix2:/conf
+      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     depends_on:
       - auth1
@@ -73,6 +77,7 @@ services:
     image: katzenpost/server
     volumes:
       - ./conf/mix3:/conf
+      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     depends_on:
       - auth1
@@ -89,6 +94,7 @@ services:
     image: katzenpost/voting_authority
     volumes:
       - ./conf/auth1:/conf
+      - /opt/sphincsplus:/opt/sphincsplus      
     command: /go/bin/voting -f /conf/authority.toml
     ports:
       - "127.0.0.1:21483:21483"
@@ -100,6 +106,7 @@ services:
     image: katzenpost/voting_authority
     volumes:
       - ./conf/auth2:/conf
+      - /opt/sphincsplus:/opt/sphincsplus      
     command: /go/bin/voting -f /conf/authority.toml
     ports:
       - "127.0.0.1:22483:22483"
@@ -111,6 +118,7 @@ services:
     image: katzenpost/voting_authority
     volumes:
       - ./conf/auth3:/conf
+      - /opt/sphincsplus:/opt/sphincsplus      
     command: /go/bin/voting -f /conf/authority.toml
     ports:
       - "127.0.0.1:23483:23483"
