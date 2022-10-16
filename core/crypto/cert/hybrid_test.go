@@ -21,14 +21,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/katzenpost/katzenpost/core/crypto/sign/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/sign/hybrid"
-	"github.com/katzenpost/katzenpost/core/crypto/sign/sphincsplus"
 )
 
 func TestHybridCertificate(t *testing.T) {
-	scheme := hybrid.NewScheme(eddsa.Scheme, sphincsplus.Scheme)
+	scheme := Scheme
 	signingPrivKey, signingPubKey := scheme.NewKeypair()
 
 	// expires 600 years after unix epoch
