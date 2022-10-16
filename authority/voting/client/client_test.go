@@ -177,7 +177,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			Layer:      layer,
 			LoadWeight: 0,
 		}
-		signed, err := s11n.SignDescriptor(mixIdentityPrivateKey, mix)
+		signed, err := s11n.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix)
 		if err != nil {
 			return nil, err
 		}
@@ -224,7 +224,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 }
 
 // multiSignTestDocument signs and serializes the document with the provided signing key.
-func multiSignTestDocument(signingKeys []sign.PrivateKey, d *s11n.Document) ([]byte, error) {
+func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.PublicKey, d *s11n.Document) ([]byte, error) {
 	jsonHandle := new(codec.JsonHandle)
 	jsonHandle.Canonical = true
 	jsonHandle.IntegerAsString = 'A'
@@ -240,17 +240,17 @@ func multiSignTestDocument(signingKeys []sign.PrivateKey, d *s11n.Document) ([]b
 
 	// Sign the document.
 	expiration := time.Now().Add(s11n.CertificateExpiration).Unix()
-	signed, err := cert.Sign(signingKeys[0], payload, expiration)
+	signed, err := cert.Sign(signingKeys[0], signingPubKeys[0], payload, expiration)
 	if err != nil {
 		return nil, err
 	}
 	for i := 1; i < len(signingKeys); i++ {
-		signed, err = cert.SignMulti(signingKeys[i], signed)
+		signed, err = cert.SignMulti(signingKeys[i], signingPubKeys[i], signed)
 	}
 	return signed, nil
 }
 
-func generateDoc(epoch uint64, signingKeys []sign.PrivateKey) ([]byte, error) {
+func generateDoc(epoch uint64, signingKeys []sign.PrivateKey, signingPubKeys []sign.PublicKey) ([]byte, error) {
 	// XXX
 	numMixes := len(signingKeys) - 2
 	numProviders := 2
@@ -258,7 +258,7 @@ func generateDoc(epoch uint64, signingKeys []sign.PrivateKey) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	signed, err := multiSignTestDocument(signingKeys, doc)
+	signed, err := multiSignTestDocument(signingKeys, signingPubKeys, doc)
 	if err != nil {
 		return nil, err
 	}
@@ -266,10 +266,11 @@ func generateDoc(epoch uint64, signingKeys []sign.PrivateKey) ([]byte, error) {
 }
 
 type conn struct {
-	serverConn net.Conn
-	clientConn net.Conn
-	dialCh     chan interface{}
-	signingKey sign.PrivateKey
+	serverConn    net.Conn
+	clientConn    net.Conn
+	dialCh        chan interface{}
+	signingKey    sign.PrivateKey
+	signingPubKey sign.PublicKey
 }
 
 type mockDialer struct {
@@ -290,14 +291,14 @@ func newMockDialer(logBackend *log.Backend) *mockDialer {
 }
 
 func (d *mockDialer) dial(ctx context.Context, network string, address string) (net.Conn, error) {
-	d.Lock()
 	defer func() {
 		d.Lock()
-		defer d.Unlock()
 		close(d.netMap[address].dialCh)
+		d.Unlock()
 	}()
-	defer d.Unlock()
 	d.log.Debug("MOCK DIAL %s", address)
+	d.Lock()
+	defer d.Unlock()
 	return d.netMap[address].clientConn, nil
 }
 
@@ -317,10 +318,11 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.Lock()
 	clientConn, serverConn := net.Pipe()
 	d.netMap[address] = &conn{
-		serverConn: serverConn,
-		clientConn: clientConn,
-		dialCh:     make(chan interface{}, 0),
-		signingKey: identityPrivateKey,
+		serverConn:    serverConn,
+		clientConn:    clientConn,
+		dialCh:        make(chan interface{}, 0),
+		signingKey:    identityPrivateKey,
+		signingPubKey: identityPublicKey,
 	}
 	d.Unlock()
 	wg.Done()
@@ -355,10 +357,12 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		signingKeys := []sign.PrivateKey{}
+		signingPubKeys := []sign.PublicKey{}
 		for _, v := range d.netMap {
 			signingKeys = append(signingKeys, v.signingKey)
+			signingPubKeys = append(signingPubKeys, v.signingPubKey)
 		}
-		rawDoc, err := generateDoc(c.Epoch, signingKeys)
+		rawDoc, err := generateDoc(c.Epoch, signingKeys, signingPubKeys)
 		if err != nil {
 			d.log.Errorf("mockServer session generateDoc failure: %s", err)
 			return
