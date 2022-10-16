@@ -60,21 +60,24 @@ func Exists(f string) bool {
 	}
 }
 
-func ToFile(f string, key KeyMaterial) error {
+func ToPEMBytes(key KeyMaterial) []byte {
 	keyType := strings.ToUpper(key.KeyType())
-
 	if utils.CtIsZero(key.Bytes()) {
-		return fmt.Errorf("WriteToPEMFile/%s: attempted to serialize scrubbed key", keyType)
+		panic(fmt.Sprintf("ToPEMString/%s: attempted to serialize scrubbed key", keyType))
 	}
 	blk := &pem.Block{
 		Type:  keyType,
 		Bytes: key.Bytes(),
 	}
+	return pem.EncodeToMemory(blk)
+}
+
+func ToFile(f string, key KeyMaterial) error {
 	out, err := os.OpenFile(f, os.O_WRONLY|os.O_CREATE, 0600)
 	if err != nil {
 		return err
 	}
-	outBuf := pem.EncodeToMemory(blk)
+	outBuf := ToPEMBytes(key)
 	writeCount, err := out.Write(outBuf)
 	if err != nil {
 		return err
@@ -89,19 +92,27 @@ func ToFile(f string, key KeyMaterial) error {
 	return out.Close()
 }
 
-func FromFile(f string, key KeyMaterial) error {
+func FromPEMString(s string, key KeyMaterial) error {
+	return FromPEMBytes([]byte(s), key)
+}
+
+func FromPEMBytes(b []byte, key KeyMaterial) error {
 	keyType := strings.ToUpper(key.KeyType())
 
-	buf, err := os.ReadFile(f)
-	if err != nil {
-		return fmt.Errorf("pem.FromFile error: %s", err)
-	}
-	blk, _ := pem.Decode(buf)
+	blk, _ := pem.Decode(b)
 	if blk == nil {
-		return fmt.Errorf("failed to decode PEM file %v", f)
+		return fmt.Errorf("failed to decode PEM data from %s PEM", keyType)
 	}
 	if strings.ToUpper(blk.Type) != keyType {
 		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
 	}
 	return key.FromBytes(blk.Bytes)
+}
+
+func FromFile(f string, key KeyMaterial) error {
+	buf, err := os.ReadFile(f)
+	if err != nil {
+		return fmt.Errorf("pem.FromFile error: %s", err)
+	}
+	return FromPEMBytes(buf, key)
 }
