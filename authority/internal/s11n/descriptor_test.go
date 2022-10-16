@@ -71,7 +71,7 @@ func TestDescriptor(t *testing.T) {
 	t.Logf("Descriptor: '%v'", d)
 
 	// Sign the descriptor.
-	signed, err := SignDescriptor(identityPriv, d)
+	signed, err := SignDescriptor(identityPriv, identityPub, d)
 	require.NoError(err, "SignDescriptor()")
 
 	t.Logf("signed descriptor: '%v'", signed)

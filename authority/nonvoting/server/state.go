@@ -21,11 +21,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/sha3"
 	"io"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/sha3"
 
 	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
@@ -275,7 +276,7 @@ func (s *state) generateDocument(epoch uint64) {
 	doc.PriorSharedRandom = s.priorSRV
 
 	// Serialize and sign the Document.
-	signed, err := s11n.SignDocument(s.s.identityPrivateKey, doc)
+	signed, err := s11n.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, doc)
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Failed to sign document: %v", err)
