@@ -18,10 +18,10 @@
 package config
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -116,24 +116,26 @@ type NonvotingAuthority struct {
 	// Address is the IP address/port combination of the authority.
 	Address string
 
-	// IdentityPublicKeyPem is the authority's identity public key pem filepath.
+	// IdentityPublicKeyPem is the authority's identity public key pem.
 	IdentityPublicKeyPem string
 
-	// LinkPublicKeyPem is the absolute file path to the
-	// authority's link public key.
+	// LinkPublicKeyPem is the PEM data of the authority's link public key.
 	LinkPublicKeyPem string
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
 func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	scheme := wire.DefaultScheme
-	authLinkKey, err := scheme.PublicKeyFromPemFile(filepath.Join(datadir, nvACfg.LinkPublicKeyPem))
+
+	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
+	authLinkKey := authLinkPrivKey.PublicKey()
+	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
 	if err != nil {
 		return nil, err
 	}
 
 	_, identityPublicKey := cert.Scheme.NewKeypair()
-	err = pem.FromFile(filepath.Join(datadir, nvACfg.IdentityPublicKeyPem), identityPublicKey)
+	pem.FromPEMString(nvACfg.IdentityPublicKeyPem, identityPublicKey)
 
 	cfg := &nvClient.Config{
 		AuthorityLinkKey:     authLinkKey,

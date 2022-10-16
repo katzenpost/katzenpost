@@ -157,20 +157,22 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 	}()
 
-	peerLinkPublicKey, err := wire.DefaultScheme.PublicKeyFromPemFile(filepath.Join(p.cfg.DataDir, peer.LinkPublicKeyPem))
+	peerLinkPrivateKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	pem.FromPEMString(peer.LinkPublicKeyPem, peerLinkPrivateKey.PublicKey())
 	if err != nil {
 		return nil, err
 	}
 
 	_, peerIdPublicKey := cert.Scheme.NewKeypair()
-	err = pem.FromFile(filepath.Join(p.cfg.DataDir, peer.IdentityPublicKeyPem), peerIdPublicKey)
+
+	err = pem.FromPEMString(peer.IdentityPublicKeyPem, peerIdPublicKey)
 	if err != nil {
 		return nil, err
 	}
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peerIdPublicKey,
-		LinkPublicKey:     peerLinkPublicKey,
+		LinkPublicKey:     peerLinkPrivateKey.PublicKey(),
 		log:               p.log,
 	}
 

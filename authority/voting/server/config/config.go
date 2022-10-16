@@ -282,11 +282,10 @@ func (dCfg *Debug) applyDefaults() {
 // AuthorityPeer is the connecting information
 // and identity key for the Authority peers
 type AuthorityPeer struct {
-	// IdentityPublicKeyPem is the full file path and filename
-	// containing the PEM file of the peer's identity signing key.
+	// IdentityPublicKeyPem is a string in PEM format containing
+	// the public identity key key.
 	IdentityPublicKeyPem string
-	// LinkPublicKeyPem is the full file path and filename
-	// containing the PEM of the peer's public link layer key.
+	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
 	LinkPublicKeyPem string
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
