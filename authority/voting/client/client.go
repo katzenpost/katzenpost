@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"path/filepath"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -398,7 +397,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
 		_, authIdPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(c.cfg.DataDir, auth.IdentityPublicKeyPem), authIdPublicKey)
+		err := pem.FromPEMString(auth.IdentityPublicKeyPem, authIdPublicKey)
 		if err != nil {
 			return nil, err
 		}
