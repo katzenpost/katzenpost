@@ -33,8 +33,6 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"golang.org/x/net/idna"
@@ -741,11 +739,6 @@ type Voting struct {
 func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
 	authPeers := []*config.AuthorityPeer{}
 	for _, peer := range peers {
-		_, identityKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(datadir, peer.IdentityPublicKeyPem), identityKey)
-		if err != nil {
-			return nil, err
-		}
 		authPeer := &config.AuthorityPeer{
 			IdentityPublicKeyPem: peer.IdentityPublicKeyPem,
 			LinkPublicKeyPem:     peer.LinkPublicKeyPem,
