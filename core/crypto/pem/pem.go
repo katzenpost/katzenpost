@@ -114,5 +114,9 @@ func FromFile(f string, key KeyMaterial) error {
 	if err != nil {
 		return fmt.Errorf("pem.FromFile error: %s", err)
 	}
-	return FromPEMBytes(buf, key)
+	err = FromPEMBytes(buf, key)
+	if err != nil {
+		return fmt.Errorf("pem.FromFile failed to read from file %s, with buf len %d and err %s", f, len(buf), err)
+	}
+	return nil
 }
