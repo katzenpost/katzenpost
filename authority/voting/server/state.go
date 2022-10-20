@@ -1014,7 +1014,7 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byt
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
 			_, identityKey := cert.Scheme.NewKeypair()
-			err := pem.FromFile(node.IdentityPublicKeyPem, identityKey)
+			err := pem.FromPEMString(node.IdentityPublicKeyPem, identityKey)
 			if err != nil {
 				panic(err)
 			}
@@ -1539,17 +1539,9 @@ func newState(s *Server) (*state, error) {
 	for _, v := range st.s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
 
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
-			err := pem.FromFile(pemFilePath, identityPublicKey)
-			if err != nil {
-				panic(err)
-			}
+		err := pem.FromPEMString(v.IdentityPublicKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
 		}
 
 		pk := identityPublicKey.Sum256()
@@ -1561,14 +1553,15 @@ func newState(s *Server) (*state, error) {
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
 	scheme := wire.DefaultScheme
 	for _, v := range st.s.cfg.Authorities {
-		linkPubKey, err := scheme.PublicKeyFromPemFile(filepath.Join(s.cfg.Authority.DataDir, v.LinkPublicKeyPem))
+		privKey := scheme.GenerateKeypair(rand.Reader)
+		linkPubKey := privKey.PublicKey()
+		err := pem.FromPEMString(v.LinkPublicKeyPem, linkPubKey)
 		if err != nil {
 			return nil, err
 		}
 
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
-		err = pem.FromFile(pemFilePath, identityPublicKey)
+		err = pem.FromPEMString(v.IdentityPublicKeyPem, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
