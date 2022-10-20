@@ -1482,8 +1482,7 @@ func newState(s *Server) (*state, error) {
 	st.verifiers = make([]cert.Verifier, len(s.cfg.Authorities)+1)
 	for i, auth := range s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		pemFile := filepath.Join(st.s.cfg.Authority.DataDir, auth.IdentityPublicKeyPem)
-		err := pem.FromFile(pemFile, identityPublicKey)
+		err := pem.FromPEMString(auth.IdentityPublicKeyPem, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
