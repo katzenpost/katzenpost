@@ -26,7 +26,7 @@
 
 #[[Authorities]]
 #   IdentityPublicKeyPem = "auth3_id_pub_key.pem"
-#   LinkPublicKeyPem = "auth3_id_pub_key.pem"
+#   LinkPublicKeyPem = "auth3_link_pub_key.pem"
 #   Addresses = [ "172.28.1.9:23483" ]
 
 #
