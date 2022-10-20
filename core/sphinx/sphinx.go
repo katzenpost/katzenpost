@@ -24,6 +24,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/cloudflare/circl/kem"
+
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -132,6 +134,7 @@ func (g *Geometry) String() string {
 
 type geometryFactory struct {
 	nike                 nike.Nike
+	kem                  kem.Scheme
 	nrHops               int
 	forwardPayloadLength int
 }
@@ -141,8 +144,20 @@ func (f *geometryFactory) routingInfoLength() int {
 }
 
 func (f *geometryFactory) headerLength() int {
-	// 460 bytes with a 32byte public key
-	return adLength + f.nike.PublicKeySize() + f.routingInfoLength() + crypto.MACLength
+	if f.nike == nil && f.kem == nil {
+		panic("nike and kem can't both be nil")
+	}
+	if f.nike != nil && f.kem != nil {
+		panic("nike and kem can't both be set")
+	}
+	if f.nike != nil {
+		return adLength + f.nike.PublicKeySize() + f.routingInfoLength() + crypto.MACLength
+	}
+	// if kem != nil case:
+	return adLength + f.kem.PublicKeySize() +
+		(f.nrHops * f.kem.CiphertextSize()) +
+		f.routingInfoLength() +
+		crypto.MACLength
 }
 
 // PacketLength returns the length of a Sphinx Packet in bytes.
@@ -217,6 +232,7 @@ func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHo
 // format that has a pluggable NIKE, non-interactive key exchange.
 type Sphinx struct {
 	nike     nike.Nike
+	kem      kem.Scheme
 	geometry *Geometry
 }
 
@@ -237,9 +253,10 @@ func (s *Sphinx) Geometry() *Geometry {
 // PathHop describes a hop that a Sphinx Packet will traverse, along with
 // all of the per-hop Commands (excluding NextNodeHop).
 type PathHop struct {
-	ID        [constants.NodeIDLength]byte
-	PublicKey nike.PublicKey
-	Commands  []commands.RoutingCommand
+	ID            [constants.NodeIDLength]byte
+	NIKEPublicKey nike.PublicKey
+	KEMPublicKey  kem.PublicKey
+	Commands      []commands.RoutingCommand
 }
 
 type sprpKey struct {
@@ -285,7 +302,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	groupElements := make([]nike.PublicKey, s.geometry.NrHops)
 	keys := make([]*crypto.PacketKeys, s.geometry.NrHops)
 
-	sharedSecret := s.nike.DeriveSecret(clientPrivateKey, path[0].PublicKey)
+	sharedSecret := s.nike.DeriveSecret(clientPrivateKey, path[0].NIKEPublicKey)
 	defer utils.ExplicitBzero(sharedSecret)
 
 	keys[0] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
@@ -298,7 +315,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	}
 
 	for i := 1; i < nrHops; i++ {
-		sharedSecret = s.nike.DeriveSecret(clientPrivateKey, path[i].PublicKey)
+		sharedSecret = s.nike.DeriveSecret(clientPrivateKey, path[i].NIKEPublicKey)
 		for j := 0; j < i; j++ {
 			sharedSecret = s.nike.Blind(sharedSecret, keys[j].BlindingFactor)
 		}
