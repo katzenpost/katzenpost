@@ -171,7 +171,7 @@ func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sp
 		for i, hop := range path {
 			hexPath[i] = hexPathHop{
 				ID:        hex.EncodeToString(hop.ID[:]),
-				PublicKey: hex.EncodeToString(hop.PublicKey.Bytes()),
+				PublicKey: hex.EncodeToString(hop.NIKEPublicKey.Bytes()),
 				Commands:  make([]string, len(hop.Commands)),
 			}
 			for j, cmd := range hop.Commands {

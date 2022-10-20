@@ -1,5 +1,5 @@
-// sphinx_test.go - Sphinx Packet Format tests.
-// Copyright (C) 2022  Yawning Angel and David Stainton.
+// kemsphinx_test.go - KEMSphinx tests.
+// Copyright (C) 2022  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -21,36 +21,58 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/cloudflare/circl/kem"
+	"github.com/cloudflare/circl/kem/hybrid"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/stretchr/testify/require"
 )
 
-type nodeParams struct {
+type kemNodeParams struct {
 	id         [constants.NodeIDLength]byte
-	privateKey nike.PrivateKey
-	publicKey  nike.PublicKey
+	privateKey kem.PrivateKey
+	publicKey  kem.PublicKey
 }
 
-func newNikeNode(require *require.Assertions, mynike nike.Nike) *nodeParams {
-	n := new(nodeParams)
+func TestKEMSphinxSimple(t *testing.T) {
+	mykem := hybrid.Kyber768X25519()
+	withSURB := false
+	geo := KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
+	sphinx := NewKEMSphinx(mykem, geo)
+
+	require.NotNil(t, sphinx)
+}
+
+func TestKEMForwardSphinx(t *testing.T) {
+	const testPayload = "Only the mob and the elite can be attracted by the momentum of totalitarianism itself. The masses have to be won by propaganda."
+
+	mykem := hybrid.Kyber768X25519()
+
+	for nrHops := 5; nrHops < 20; nrHops++ {
+		geo := KEMGeometryFromUserForwardPayloadLength(mykem, 512, false, 5)
+		sphinx := NewKEMSphinx(mykem, geo)
+
+		testForwardKEMSphinx(t, mykem, sphinx, []byte(testPayload))
+	}
+}
+
+func newKEMNode(require *require.Assertions, mykem kem.Scheme) *kemNodeParams {
+	n := new(kemNodeParams)
 
 	_, err := rand.Read(n.id[:])
-	require.NoError(err, "newNikeNode(): failed to generate ID")
-	n.privateKey, n.publicKey = mynike.NewKeypair()
-	require.NoError(err, "newNikeNode(): NewKeypair() failed")
+	require.NoError(err)
+	n.publicKey, n.privateKey, err = mykem.GenerateKeyPair()
+	require.NoError(err)
 	return n
 }
 
-func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
+func newKEMPathVector(require *require.Assertions, mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNodeParams, []*PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
-	nodes := make([]*nodeParams, nrHops)
+	nodes := make([]*kemNodeParams, nrHops)
 	for i := range nodes {
-		nodes[i] = newNikeNode(require, mynike)
+		nodes[i] = newKEMNode(require, mykem)
 	}
 
 	// Assemble the path vector.
@@ -58,7 +80,7 @@ func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int
 	for i := range path {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].NIKEPublicKey = nodes[i].publicKey
+		path[i].KEMPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
@@ -84,14 +106,14 @@ func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int
 	return nodes, path
 }
 
-func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
+func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the forward sphinx packet.
-		nodes, path := newNikePathVector(require, mynike, nrHops, false)
+		nodes, path := newKEMPathVector(require, mykem, nrHops, false)
 
 		// Create the packet.
 		payload := []byte(testPayload)
@@ -104,7 +126,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.KEMUnwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
@@ -125,57 +147,6 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 				require.Equalf(path[i+1].ID, nextNode.ID, "Hop %d: NextNodeHop.ID mismatch", i)
 
 				require.Nil(b, "Hop %d: returned payload", i)
-			}
-		}
-	}
-}
-
-func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
-	require := require.New(t)
-
-	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
-		t.Logf("Testing %d hop(s).", nrHops)
-
-		// Generate the "nodes" and path for the SURB.
-		nodes, path := newNikePathVector(require, mynike, nrHops, true)
-
-		// Create the SURB.
-		surb, surbKeys, err := sphinx.NewSURB(rand.Reader, path)
-		require.NoError(err, "NewSURB failed")
-		require.Equal(sphinx.Geometry().SURBLength, len(surb), "SURB length")
-
-		// Create a reply packet using the SURB.
-		payload := []byte(testPayload)
-		pkt, firstHop, err := sphinx.NewPacketFromSURB(surb, payload)
-		require.NoError(err, "NewPacketFromSURB failed")
-		require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
-
-		// Unwrap the packet, valdiating the output.
-		for i := range nodes {
-			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
-			require.NoErrorf(err, "SURB Hop %d: Unwrap failed", i)
-
-			if i == len(path)-1 {
-				require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
-				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: recipient mismatch", i)
-				require.EqualValuesf(path[i].Commands[1], cmds[1], "SURB Hop %d: surb_reply mismatch", i)
-
-				b, err = sphinx.DecryptSURBPayload(b, surbKeys)
-				require.NoError(err, "DecrytSURBPayload")
-				require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
-				t.Logf("Unwrapped payload: %v", hex.Dump(b))
-			} else {
-				t.Logf("Hop %d: Unwrapped pkt: %s", i, hex.Dump(pkt))
-
-				require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
-				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: delay mismatch", i)
-
-				nextNode, ok := cmds[1].(*commands.NextNodeHop)
-				require.Truef(ok, "SURB Hop %d: cmds[1] is not a NextNodeHop", i)
-				require.Equalf(path[i+1].ID, nextNode.ID, "SURB Hop %d: NextNodeHop.ID mismatch", i)
-
-				require.Nil(b, "SURB Hop %d: returned payload", i)
 			}
 		}
 	}

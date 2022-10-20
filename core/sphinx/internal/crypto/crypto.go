@@ -174,8 +174,10 @@ func KDF(ikm []byte, privateKeySize int) *PacketKeys {
 	ptr = ptr[StreamIVLength:]
 	copy(k.PayloadEncryption[:], ptr[:SPRPKeyLength])
 	ptr = ptr[SPRPKeyLength:]
-	k.BlindingFactor = make([]byte, privateKeySize)
-	copy(k.BlindingFactor[:], ptr[:privateKeySize])
+	if privateKeySize != 0 {
+		k.BlindingFactor = make([]byte, privateKeySize)
+		copy(k.BlindingFactor[:], ptr[:privateKeySize])
+	}
 
 	return k
 }
