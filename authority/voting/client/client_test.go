@@ -430,7 +430,7 @@ func TestClient(t *testing.T) {
 	}
 	client, err := New(cfg)
 	require.NoError(err)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	epoch, _, _ := epochtime.Now()
 	doc, rawDoc, err := client.Get(ctx, epoch)
