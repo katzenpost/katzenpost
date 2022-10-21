@@ -193,12 +193,12 @@ func TestVote(t *testing.T) {
 
 	// generate a Topology section
 	topology := config.Topology{Layers: make([]config.Layer, 3)}
-	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[0].identityPublicKeyPem},
-		config.Node{IdentityPublicKeyPem: idKeys[1].identityPublicKeyPem}}
-	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[2].identityPublicKeyPem},
-		config.Node{IdentityPublicKeyPem: idKeys[3].identityPublicKeyPem}}
-	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[4].identityPublicKeyPem},
-		config.Node{IdentityPublicKeyPem: idKeys[5].identityPublicKeyPem}}
+	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[0].pubKey)},
+		config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[1].pubKey)}}
+	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[2].pubKey)},
+		config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[3].pubKey)}}
+	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[4].pubKey)},
+		config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[5].pubKey)}}
 
 	// generate a conflicting Topology
 	// generate a Topology section
@@ -383,12 +383,13 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 			DataDir:    datadir,
 		}
 		lastPort += 1
-		idKey, idPubKey := cert.Scheme.NewKeypair()
 
 		scheme := wire.DefaultScheme
 		linkKey := scheme.GenerateKeypair(rand.Reader)
-		linkPublicKeyPem := filepath.Join(datadir, "link.public.pem")
-		identityPublicKeyPem := filepath.Join(datadir, "identity.public.pem")
+		linkPublicKeyPem := pem.ToPEMString(linkKey.PublicKey())
+
+		idKey, idPubKey := cert.Scheme.NewKeypair()
+		identityPublicKeyPem := pem.ToPEMString(idPubKey)
 
 		myPeerKeys[i] = peerKeys{
 			linkKey:              linkKey,
@@ -397,26 +398,6 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 			identityPublicKeyPem: identityPublicKeyPem,
 			linkPublicKeyPem:     linkPublicKeyPem,
 			datadir:              datadir,
-		}
-
-		err = pem.ToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		err = pem.ToFile(identityPublicKeyPem, idPubKey)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		err = pem.ToFile(linkPublicKeyPem, linkKey.PublicKey())
-		if err != nil {
-			return nil, nil, err
 		}
 
 		cfg.Debug = &config.Debug{
