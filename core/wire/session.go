@@ -44,9 +44,11 @@ const (
 	// sent to the peer as part of the handshake authentication.
 	MaxAdditionalDataLength = 255
 
-	maxMsgLen = 1048576
-	macLen    = 16
-	authLen   = 1 + MaxAdditionalDataLength + 4
+	// raw pki doc with 10 voting authorities is 1195878
+	maxMsgLen = 1300000
+
+	macLen  = 16
+	authLen = 1 + MaxAdditionalDataLength + 4
 )
 
 var (
