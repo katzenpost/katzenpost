@@ -60,6 +60,10 @@ func Exists(f string) bool {
 	}
 }
 
+func ToPEMString(key KeyMaterial) string {
+	return string(ToPEMBytes(key))
+}
+
 func ToPEMBytes(key KeyMaterial) []byte {
 	keyType := strings.ToUpper(key.KeyType())
 	if utils.CtIsZero(key.Bytes()) {

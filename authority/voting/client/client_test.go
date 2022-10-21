@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -388,28 +387,16 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
 	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
-	identityPublicKeyPem := filepath.Join(datadir, fmt.Sprintf("peer%d_id_pub_key.pem", peerNum))
-	err := pem.ToFile(identityPublicKeyPem, identityPublicKey)
-	if err != nil {
-		panic(err)
-	}
 
 	scheme := wire.DefaultScheme
 	linkPrivateKey := scheme.GenerateKeypair(rand.Reader)
-	err = scheme.PrivateKeyToPemFile(filepath.Join(datadir, fmt.Sprintf("peer%d_link_priv_key.pem", peerNum)), linkPrivateKey)
-	if err != nil {
-		panic(err)
-	}
-	err = scheme.PublicKeyToPemFile(filepath.Join(datadir, fmt.Sprintf("peer%d_link_pub_key.pem", peerNum)), linkPrivateKey.PublicKey())
-	if err != nil {
-		panic(err)
-	}
+
 	authPeer := &config.AuthorityPeer{
-		IdentityPublicKeyPem: fmt.Sprintf("peer%d_id_pub_key.pem", peerNum),
-		LinkPublicKeyPem:     fmt.Sprintf("peer%d_link_pub_key.pem", peerNum),
+		IdentityPublicKeyPem: pem.ToPEMString(identityPublicKey),
+		LinkPublicKeyPem:     pem.ToPEMString(linkPrivateKey.PublicKey()),
 		Addresses:            []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}
-	err = authPeer.Validate(datadir)
+	err := authPeer.Validate(datadir)
 	if err != nil {
 		panic(err)
 	}
