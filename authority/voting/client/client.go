@@ -196,6 +196,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	go func() {
 		select {
 		case <-ctx.Done():
+			p.log.Warning("closing connection due to context Done event... most likely a timeout")
 			conn.Close()
 		case <-doneCh:
 		}
@@ -205,7 +206,6 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	if err = s.Initialize(conn); err != nil {
 		return nil, err
 	}
-
 	isOk = true
 
 	return &connection{
@@ -260,6 +260,7 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.Privat
 		return nil, err
 	}
 	resp, err := p.roundTrip(conn.session, cmd)
+
 	return resp, err
 }
 
