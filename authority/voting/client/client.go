@@ -18,7 +18,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"errors"
@@ -57,8 +56,8 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 		return false
 	}
-	if !bytes.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %x != %x", a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes())
+	if !hmac.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
+		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", pem.ToPEMString(a.LinkPublicKey), pem.ToPEMString(creds.PublicKey))
 		return false
 	}
 	return true
@@ -156,8 +155,9 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 	}()
 
-	peerLinkPrivateKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	pem.FromPEMString(peer.LinkPublicKeyPem, peerLinkPrivateKey.PublicKey())
+	noKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	peerLinkPublicKey := noKey.PublicKey()
+	pem.FromPEMString(peer.LinkPublicKeyPem, peerLinkPublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peerIdPublicKey,
-		LinkPublicKey:     peerLinkPrivateKey.PublicKey(),
+		LinkPublicKey:     peerLinkPublicKey,
 		log:               p.log,
 	}
 
