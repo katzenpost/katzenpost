@@ -92,6 +92,7 @@ func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.No
 	// Assemble the packet.
 	pkt := make([]byte, 0, len(hdr)+s.geometry.PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
+	zeroBytes := make([]byte, s.geometry.PerHopRoutingInfoLength)
 	pkt = append(pkt, zeroBytes[:s.geometry.PayloadTagLength]...)
 	pkt = append(pkt, payload...)
 
