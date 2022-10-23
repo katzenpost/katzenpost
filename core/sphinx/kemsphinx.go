@@ -36,6 +36,7 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		kem:    kem,
 		nrHops: nrHops,
 	}
+
 	geo := &Geometry{
 		NrHops:                      nrHops,
 		HeaderLength:                f.headerLength(),
@@ -46,6 +47,7 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		SURBIDLength:                constants.SURBIDLength,
 		RoutingInfoLength:           f.routingInfoLength(),
+		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
 	}
 
 	if withSURB {
@@ -82,6 +84,8 @@ func (s *Sphinx) NewKEMPacket(r io.Reader, path []*PathHop, payload []byte) ([]b
 		defer v.Reset()
 	}
 
+	zeroBytes := make([]byte, s.geometry.PerHopRoutingInfoLength)
+
 	// Assemble the packet.
 	pkt := make([]byte, 0, len(hdr)+s.geometry.PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
@@ -104,9 +108,8 @@ KEM Sphinx header elements:
 
 1. version number (MACed but not encrypted)
 2. one KEM ciphertext for use with the next hop
-3. encrypted KEM ciphtertexts, one for each additional hop
-4. encrypted per routing commands
-5. MAC for this hop (authenticates header fields 1-4)
+3. encrypted per routing commands (containing KEM ciphertexts for each next hop)
+4. MAC for this hop (authenticates header fields 1-4)
 */
 func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	nrHops := len(path)
@@ -115,11 +118,10 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 	}
 
 	// Derive the key material for each hop.
-
 	var err error
 	var sharedSecret []byte
-	kemElements := make([][]byte, s.geometry.NrHops)
-	keys := make([]*crypto.PacketKeys, s.geometry.NrHops)
+	kemElements := make([][]byte, nrHops)
+	keys := make([]*crypto.PacketKeys, nrHops)
 
 	for i := 0; i < nrHops; i++ {
 		kemElements[i], sharedSecret, err = s.kem.Encapsulate(path[i].KEMPublicKey)
@@ -137,18 +139,18 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 
 	// Derive the routing_information keystream and encrypted padding for each
 	// hop.
-	riKeyStream := make([][]byte, s.geometry.NrHops)
-	riPadding := make([][]byte, s.geometry.NrHops)
+	riKeyStream := make([][]byte, nrHops)
+	riPadding := make([][]byte, nrHops)
 
 	for i := 0; i < nrHops; i++ {
-		keyStream := make([]byte, s.geometry.RoutingInfoLength+perHopRoutingInfoLength)
+		keyStream := make([]byte, s.geometry.RoutingInfoLength+s.geometry.PerHopRoutingInfoLength)
 		defer utils.ExplicitBzero(keyStream)
 
-		s := crypto.NewStream(&keys[i].HeaderEncryption, &keys[i].HeaderEncryptionIV)
-		s.KeyStream(keyStream)
-		s.Reset()
+		streamCipher := crypto.NewStream(&keys[i].HeaderEncryption, &keys[i].HeaderEncryptionIV)
+		streamCipher.KeyStream(keyStream)
+		streamCipher.Reset()
 
-		ksLen := len(keyStream) - (i+1)*perHopRoutingInfoLength
+		ksLen := len(keyStream) - (i+1)*s.geometry.PerHopRoutingInfoLength
 		riKeyStream[i] = keyStream[:ksLen]
 		riPadding[i] = keyStream[ksLen:]
 		if i > 0 {
@@ -157,29 +159,21 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 		}
 	}
 
-	// Create the routing_information block and the encrypted KEM block.
+	// Create the routing_information block.
 	var mac []byte
 	var routingInfo []byte
 	if skippedHops := s.geometry.NrHops - nrHops; skippedHops > 0 {
-		routingInfo = make([]byte, skippedHops*perHopRoutingInfoLength)
+		routingInfo = make([]byte, skippedHops*s.geometry.PerHopRoutingInfoLength)
 		_, err := io.ReadFull(rand.Reader, routingInfo)
 		if err != nil {
-			return nil, nil, err
+			panic(err)
 		}
 	}
-
-	var encryptedKEMs []byte
-	if skippedHops := s.geometry.NrHops - nrHops; skippedHops > 0 {
-		encryptedKEMs = make([]byte, skippedHops*s.kem.CiphertextSize())
-		_, err := io.ReadFull(rand.Reader, encryptedKEMs)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
+	zeroBytes := make([]byte, s.geometry.PerHopRoutingInfoLength)
 	for i := nrHops - 1; i >= 0; i-- {
 		isTerminal := i == nrHops-1
-		riFragment, err := commandsToBytes(path[i].Commands, isTerminal)
+
+		riFragment, err := s.commandsToBytes(path[i].Commands, isTerminal)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -188,21 +182,21 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 			copy(nextCmd.ID[:], path[i+1].ID[:])
 			copy(nextCmd.MAC[:], mac)
 			riFragment = nextCmd.ToBytes(riFragment)
-			encryptedKEMs = append(encryptedKEMs, kemElements[i+1]...)
 		}
-		if padLen := perHopRoutingInfoLength - len(riFragment); padLen > 0 {
+		if padLen := s.geometry.PerHopRoutingInfoLength - len(riFragment); padLen > 0 {
 			riFragment = append(riFragment, zeroBytes[:padLen]...)
 		}
-		routingInfo = append(riFragment, routingInfo...) // Prepend
+		if !isTerminal {
+			copy(riFragment[s.geometry.PerHopRoutingInfoLength-s.kem.CiphertextSize():], kemElements[i+1])
+		}
 
+		routingInfo = append(riFragment, routingInfo...) // Prepend
 		xorBytes(routingInfo, routingInfo, riKeyStream[i])
-		xorBytes(encryptedKEMs, encryptedKEMs, riKeyStream[i])
 
 		m := crypto.NewMAC(&keys[i].HeaderMAC)
 		defer m.Reset()
 		m.Write(v0AD[:])
 		m.Write(kemElements[i])
-		m.Write(encryptedKEMs)
 		m.Write(routingInfo)
 		if i > 0 {
 			m.Write(riPadding[i-1])
@@ -215,7 +209,6 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 	hdr := make([]byte, 0, s.geometry.HeaderLength)
 	hdr = append(hdr, v0AD[:]...)
 	hdr = append(hdr, kemElements[0]...)
-	hdr = append(hdr, encryptedKEMs...)
 	hdr = append(hdr, routingInfo...)
 	hdr = append(hdr, mac...)
 
@@ -237,33 +230,31 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 // KEMUnwrap unwraps the provided KEMSphinx packet pkt in-place, using the provided
 // KEM private key, and returns the payload (if applicable), replay tag, and
 // routing info command vector.
-func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
+func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []commands.RoutingCommand, error) {
 	var (
 		geOff      = 2
-		kemsOff    = geOff + s.kem.CiphertextSize()
-		riOff      = kemsOff + (s.kem.CiphertextSize() * (s.geometry.NrHops - 1))
+		riOff      = geOff + s.kem.CiphertextSize()
 		macOff     = riOff + s.geometry.RoutingInfoLength
 		payloadOff = macOff + crypto.MACLength
 	)
 
 	// Do some basic sanity checking, and validate the AD.
 	if len(pkt) < s.geometry.HeaderLength {
-		return nil, nil, nil, errors.New("sphinx: invalid packet, truncated")
+		return nil, nil, errors.New("sphinx: invalid packet, truncated")
 	}
 	if subtle.ConstantTimeCompare(v0AD[:], pkt[:2]) != 1 {
-		return nil, nil, nil, errors.New("sphinx: invalid packet, unknown version")
+		return nil, nil, errors.New("sphinx: invalid packet, unknown version")
 	}
 
 	var sharedSecret []byte
 	defer utils.ExplicitBzero(sharedSecret)
 
-	// Calculate the hop's shared secret, and replay_tag.
-
-	kemCiphertext := pkt[geOff:kemsOff]
+	// Calculate the hop's shared secret.
+	kemCiphertext := pkt[geOff:riOff]
 	sharedSecret, err := privKey.Scheme().Decapsulate(privKey, kemCiphertext)
-
-	// FIXME: do we need this?
-	replayTag := crypto.Hash(kemCiphertext)
+	if err != nil {
+		panic(err)
+	}
 
 	// Derive the various keys required for packet processing.
 	// note we set the private key size to zero because we do not
@@ -278,19 +269,20 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	mac := m.Sum(nil)
 
 	if subtle.ConstantTimeCompare(pkt[macOff:macOff+crypto.MACLength], mac) != 1 {
-		return nil, replayTag[:], nil, errors.New("sphinx: invalid packet, MAC mismatch")
+		return nil, nil, errors.New("sphinx: invalid packet, MAC mismatch")
 	}
 
 	// Append padding to preserve length invariance, decrypt the (padded)
 	// routing_info block, and extract the section for the current hop.
-	b := make([]byte, s.geometry.RoutingInfoLength+perHopRoutingInfoLength)
+	b := make([]byte, s.geometry.RoutingInfoLength+s.geometry.PerHopRoutingInfoLength)
 	copy(b[:s.geometry.RoutingInfoLength], pkt[riOff:riOff+s.geometry.RoutingInfoLength])
 	stream := crypto.NewStream(&keys.HeaderEncryption, &keys.HeaderEncryptionIV)
 	defer stream.Reset()
 	stream.XORKeyStream(b[:], b[:])
 
-	newRoutingInfo := b[perHopRoutingInfoLength:]
-	cmdBuf := b[:perHopRoutingInfoLength]
+	cmdBuf := b[:s.geometry.PerHopRoutingInfoLength-s.kem.CiphertextSize()]
+	kemCiphertext = b[s.geometry.PerHopRoutingInfoLength-s.kem.CiphertextSize() : s.geometry.PerHopRoutingInfoLength]
+	newRoutingInfo := b[s.geometry.PerHopRoutingInfoLength:]
 
 	// Parse the per-hop routing commands.
 	var nextNode *commands.NextNodeHop
@@ -299,11 +291,11 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	for {
 		cmd, rest, err := commands.FromBytes(cmdBuf)
 		if err != nil {
-			return nil, replayTag[:], nil, err
+			return nil, nil, err
 		} else if cmd == nil { // Terminal null command.
 			if rest != nil {
 				// Bug, should NEVER happen.
-				return nil, replayTag[:], nil, errors.New("sphinx: BUG: null cmd had rest")
+				return nil, nil, errors.New("sphinx: BUG: null cmd had rest")
 			}
 			break
 		}
@@ -311,12 +303,12 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 		switch c := cmd.(type) {
 		case *commands.NextNodeHop:
 			if nextNode != nil {
-				return nil, replayTag[:], nil, errors.New("sphinx: invalid packet, > 1 next_node")
+				return nil, nil, errors.New("sphinx: invalid packet, > 1 next_node")
 			}
 			nextNode = c
 		case *commands.SURBReply:
 			if surbReply != nil {
-				return nil, replayTag[:], nil, errors.New("sphinx: invalid packet, > 1 surb_reply")
+				return nil, nil, errors.New("sphinx: invalid packet, > 1 surb_reply")
 			}
 			surbReply = c
 		default:
@@ -335,7 +327,7 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	// Transform the packet for forwarding to the next mix, iff the
 	// routing commands vector included a NextNodeHopCommand.
 	if nextNode != nil {
-		copy(pkt[geOff:kemsOff], pkt[kemsOff:kemsOff+s.kem.CiphertextSize()])
+		copy(pkt[geOff:riOff], kemCiphertext)
 		copy(pkt[riOff:macOff], newRoutingInfo)
 		copy(pkt[macOff:payloadOff], nextNode.MAC[:])
 		if len(payload) > 0 {
@@ -344,16 +336,16 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 		payload = nil
 	} else {
 		if len(payload) < s.geometry.PayloadTagLength {
-			return nil, replayTag[:], nil, errTruncatedPayload
+			return nil, nil, errTruncatedPayload
 		}
 		// Validate the payload tag, iff this is not a SURB reply.
 		if surbReply == nil {
 			if !utils.CtIsZero(payload[:s.geometry.PayloadTagLength]) {
-				return nil, replayTag[:], nil, errInvalidTag
+				return nil, nil, errInvalidTag
 			}
 			payload = payload[s.geometry.PayloadTagLength:]
 		}
 	}
 
-	return payload, replayTag[:], cmds, nil
+	return payload, cmds, nil
 }

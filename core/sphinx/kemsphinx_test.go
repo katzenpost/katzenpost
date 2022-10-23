@@ -48,12 +48,9 @@ func TestKEMForwardSphinx(t *testing.T) {
 
 	mykem := hybrid.Kyber768X25519()
 
-	for nrHops := 5; nrHops < 20; nrHops++ {
-		geo := KEMGeometryFromUserForwardPayloadLength(mykem, 512, false, 5)
-		sphinx := NewKEMSphinx(mykem, geo)
-
-		testForwardKEMSphinx(t, mykem, sphinx, []byte(testPayload))
-	}
+	geo := KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 7)
+	sphinx := NewKEMSphinx(mykem, geo)
+	testForwardKEMSphinx(t, mykem, sphinx, []byte(testPayload))
 }
 
 func newKEMNode(require *require.Assertions, mykem kem.Scheme) *kemNodeParams {
@@ -117,16 +114,15 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 
 		// Create the packet.
 		payload := []byte(testPayload)
-		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
-		require.NoError(err, "NewPacket failed")
+		pkt, err := sphinx.NewKEMPacket(rand.Reader, path, payload)
+		require.NoError(err, "NewKEMPacket failed")
 		require.Len(pkt, sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
 
 		t.Logf("pkt: %s", hex.Dump(pkt))
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
-			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := sphinx.KEMUnwrap(nodes[i].privateKey, pkt)
+			b, cmds, err := sphinx.KEMUnwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
