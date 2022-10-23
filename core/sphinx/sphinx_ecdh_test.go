@@ -23,6 +23,14 @@ import (
 	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 )
 
+func TestEcdhSphinxGeometry(t *testing.T) {
+	withSURB := false
+	geo := GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 5)
+	t.Logf("NIKE Sphinx X25519 5 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 10)
+	t.Logf("NIKE Sphinx X25519 10 hops: HeaderLength = %d", geo.HeaderLength)
+}
+
 func TestEcdhForwardSphinx(t *testing.T) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
