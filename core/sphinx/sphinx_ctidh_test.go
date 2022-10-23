@@ -1,4 +1,6 @@
+//go:build ctidh
 // +build ctidh
+
 // sphinx_ctidh_test.go - Sphinx Packet Format tests.
 // Copyright (C) 2022  David Stainton.
 //
@@ -41,4 +43,12 @@ func TestCtidhSURB(t *testing.T) {
 	sphinx := NewSphinx(mynike, geo)
 
 	testSURB(t, mynike, sphinx, []byte(testPayload))
+}
+
+func TestCTIDHSphinxGeometry(t *testing.T) {
+	withSURB := false
+	geo := GeometryFromUserForwardPayloadLength(ctidhnike.NewCtidhNike(), 512, withSURB, 5)
+	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = GeometryFromUserForwardPayloadLength(ctidhnike.NewCtidhNike(), 512, withSURB, 10)
+	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", geo.HeaderLength)
 }

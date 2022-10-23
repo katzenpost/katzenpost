@@ -23,6 +23,9 @@ import (
 
 	"github.com/cloudflare/circl/kem"
 	"github.com/cloudflare/circl/kem/hybrid"
+	"github.com/cloudflare/circl/kem/kyber/kyber1024"
+	"github.com/cloudflare/circl/kem/kyber/kyber512"
+	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
@@ -40,8 +43,26 @@ func TestKEMSphinxSimple(t *testing.T) {
 	geo := KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
 	sphinx := NewKEMSphinx(mykem, geo)
 	require.NotNil(t, sphinx)
+}
 
+func TestKEMSphinxGeometry(t *testing.T) {
+	withSURB := false
+	geo := KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 5)
+	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber512 10 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 5)
+	t.Logf("KEMSphinx Kyber768 5 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber768 10 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 5)
+	t.Logf("KEMSphinx Kyber1024 5 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber1024 10 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber768X25519 5 hops: HeaderLength = %d", geo.HeaderLength)
+	geo = KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", geo.HeaderLength)
 }
 
 func TestKEMForwardSphinx(t *testing.T) {
