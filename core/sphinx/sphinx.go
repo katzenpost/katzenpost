@@ -53,7 +53,6 @@ var (
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
 
 	defaultSphinx *Sphinx
-	geo           *Geometry
 )
 
 // DefaultSphinx returns an instance of the default sphinx packet factory.
@@ -65,7 +64,7 @@ func DefaultSphinx() *Sphinx {
 // In the future there will be two types of Sphinx packets, classical
 // and post-quantum (using CTIDH NIKE).
 func DefaultGeometry() *Geometry {
-	return geo
+	return defaultGeometry(ecdh.NewEcdhNike(rand.Reader))
 }
 
 func defaultGeometry(nike nike.Nike) *Geometry {
@@ -199,12 +198,20 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 		nrHops: nrHops,
 	}
 
+	forwardPayloadLength := 0
+	if withSURB {
+		forwardPayloadLength = f.deriveForwardPayloadLength(userForwardPayloadLength)
+	} else {
+		forwardPayloadLength = userForwardPayloadLength
+	}
+	f.forwardPayloadLength = forwardPayloadLength // used in f.packetLength
 	geo := &Geometry{
 		NrHops:                      nrHops,
 		HeaderLength:                f.headerLength(),
 		PacketLength:                f.packetLength(),
 		SURBLength:                  f.surbLength(),
 		UserForwardPayloadLength:    userForwardPayloadLength,
+		ForwardPayloadLength:        forwardPayloadLength,
 		PayloadTagLength:            payloadTagLength,
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		SURBIDLength:                constants.SURBIDLength,
@@ -212,11 +219,6 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
 	}
 
-	if withSURB {
-		geo.ForwardPayloadLength = f.deriveForwardPayloadLength(userForwardPayloadLength)
-	} else {
-		geo.ForwardPayloadLength = userForwardPayloadLength
-	}
 	return geo
 }
 
@@ -598,6 +600,6 @@ func xorBytes(dst, a, b []byte) {
 
 func init() {
 	nike := ecdh.NewEcdhNike(rand.Reader)
-	geo = defaultGeometry(nike)
+	geo := defaultGeometry(nike)
 	defaultSphinx = NewSphinx(nike, geo)
 }

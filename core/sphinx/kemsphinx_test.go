@@ -39,8 +39,9 @@ func TestKEMSphinxSimple(t *testing.T) {
 	withSURB := false
 	geo := KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
 	sphinx := NewKEMSphinx(mykem, geo)
-
 	require.NotNil(t, sphinx)
+
+	t.Logf("KEMSphinx Kyber768X25519 5 hops: HeaderLength = %d", geo.HeaderLength)
 }
 
 func TestKEMForwardSphinx(t *testing.T) {
