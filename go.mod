@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1
-	git.xx.network/elixxir/ctidh_cgo v0.0.0-20220908145931-6ec4831f902c
+	git.xx.network/elixxir/ctidh_cgo v0.0.0-20221019215055-572ef9cc61bd
 	github.com/BurntSushi/toml v0.4.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/cloudflare/circl v1.2.1-0.20220831060716-4cf0150356fc // indirect
@@ -31,9 +31,9 @@ require (
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
 	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
 	go.etcd.io/bbolt v1.3.6
-	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa
-	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
-	golang.org/x/text v0.3.7
+	golang.org/x/crypto v0.1.0
+	golang.org/x/net v0.1.0
+	golang.org/x/text v0.4.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/eapache/channels.v1 v1.1.0
 	gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
