@@ -43,9 +43,8 @@ KEM Sphinx header elements:
 
 1. version number (MACed but not encrypted)
 2. one KEM ciphertext for use with the next hop
-3. stream cipher encrypted KEM ciphtertexts, one for each additional hop
-4. encrypted per routing commands
-5. MAC for this hop (authenticates header fields 1 thru 4)
+3. encrypted per routing commands AND KEM ciphtertexts, one for each additional hop
+4. MAC for this hop (authenticates header fields 1 thru 4)
 
 We can say that KEMSphinx differs from NIKE Sphinx by replacing the
 header's group element (e.g. an X25519 public key) field with fields 2
@@ -74,28 +73,23 @@ is a list of PathHop, and indicates the route through the network:
    .. code::
       route_keys = []
       route_kems = []
-      for i := 1; i < num_hops; i++ {
+      for i := 0; i < num_hops; i++ {
               kem_ct, ss := ENCAP(path[i].public_key)
 	      route_kems += kem_ct
 	      route_keys += ss
-      }
-
-      encrypted_kems := []byte{}
-
-      for i := num_hops -1; i >= 0; i-- {
-              encrypted_kem = stream_cipher_encrypt()
-              encrypted_kems += encrypted_kem
-      
       }
       
 2. Derive the routing_information keystream and encrypted
    padding for each hop.
 
    Same as in [SPHINXSPEC]_.
-      
+
 3. Create the routing_information block.
 
-   Same as in [SPHINXSPEC]_.
+Here we modify the Sphinx implementation to pack the next KEM
+ciphertext into each routing information block. Each of these
+blocks is decrypted for each mix mix hop which will decrypt
+the KEM ciphertext for the next hop in the route.
 
 4. Assemble the completed Sphinx Packet Header and Sphinx Packet
    Payload SPRP key vector.
@@ -104,11 +98,21 @@ is a list of PathHop, and indicates the route through the network:
 
        var sphinx_header SphinxHeader
        sphinx_header.additional_data = version
-       sphinx_header.kem_element = kem_ct[0]
-       sphinx_header.encrypted_kems = encrypted_kems
+       sphinx_header.kem_element = route_kems[0]
        sphinx_header.routing_info = routing_info
        sphinx_header.mac = mac
-   
+
+
+2. KEMSphinx Unwrap Operation
+=============================
+
+Most of the design here will be exactly the same as in [SPHINXSPEC]_.
+However there are a few notable differences:
+
+1. The shared secret is derived from the KEM ciphertext instead of a DH.
+2. No deduplication tag is needed or computed.
+3. Next hop's KEM ciphertext stored in the encrypted routing information.
+
 
 Appendix A. References
 ======================
