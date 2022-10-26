@@ -489,7 +489,7 @@ func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []
 	// Calculate the hop's shared secret, and replay_tag.
 	groupElement, err := s.nike.UnmarshalBinaryPublicKey(pkt[geOff:riOff])
 	if err != nil {
-		panic(err)
+		return nil, nil, nil, fmt.Errorf("sphinx: failed to unmarshal group element: %s", err)
 	}
 	sharedSecret = s.nike.DeriveSecret(privKey, groupElement)
 
