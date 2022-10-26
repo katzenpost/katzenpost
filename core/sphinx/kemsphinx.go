@@ -230,7 +230,7 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 // KEMUnwrap unwraps the provided KEMSphinx packet pkt in-place, using the provided
 // KEM private key, and returns the payload (if applicable), replay tag, and
 // routing info command vector.
-func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []commands.RoutingCommand, error) {
+func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
 	var (
 		geOff      = 2
 		riOff      = geOff + s.kem.CiphertextSize()
@@ -240,21 +240,23 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []comman
 
 	// Do some basic sanity checking, and validate the AD.
 	if len(pkt) < s.geometry.HeaderLength {
-		return nil, nil, errors.New("sphinx: invalid packet, truncated")
+		return nil, nil, nil, errors.New("KEMSphinx: invalid packet, truncated")
 	}
 	if subtle.ConstantTimeCompare(v0AD[:], pkt[:2]) != 1 {
-		return nil, nil, errors.New("sphinx: invalid packet, unknown version")
+		return nil, nil, nil, errors.New("KEMSphinx: invalid packet, unknown version")
 	}
 
 	var sharedSecret []byte
 	defer utils.ExplicitBzero(sharedSecret)
 
-	// Calculate the hop's shared secret.
+	// Calculate the hop's shared secret, and replay_tag.
 	kemCiphertext := pkt[geOff:riOff]
 	sharedSecret, err := privKey.Scheme().Decapsulate(privKey, kemCiphertext)
 	if err != nil {
-		panic(err)
+		return nil, nil, nil, fmt.Errorf("KEMSphinx: failed to decrypt KEM: %s", err)
 	}
+
+	replayTag := crypto.Hash(kemCiphertext)
 
 	// Derive the various keys required for packet processing.
 	// note we set the private key size to zero because we do not
@@ -269,7 +271,7 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []comman
 	mac := m.Sum(nil)
 
 	if subtle.ConstantTimeCompare(pkt[macOff:macOff+crypto.MACLength], mac) != 1 {
-		return nil, nil, errors.New("sphinx: invalid packet, MAC mismatch")
+		return nil, replayTag[:], nil, errors.New("KEMSphinx: invalid packet, MAC mismatch")
 	}
 
 	// Append padding to preserve length invariance, decrypt the (padded)
@@ -291,11 +293,11 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []comman
 	for {
 		cmd, rest, err := commands.FromBytes(cmdBuf)
 		if err != nil {
-			return nil, nil, err
+			return nil, replayTag[:], nil, err
 		} else if cmd == nil { // Terminal null command.
 			if rest != nil {
 				// Bug, should NEVER happen.
-				return nil, nil, errors.New("sphinx: BUG: null cmd had rest")
+				return nil, replayTag[:], nil, errors.New("KEMSphinx: BUG: null cmd had rest")
 			}
 			break
 		}
@@ -303,12 +305,12 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []comman
 		switch c := cmd.(type) {
 		case *commands.NextNodeHop:
 			if nextNode != nil {
-				return nil, nil, errors.New("sphinx: invalid packet, > 1 next_node")
+				return nil, replayTag[:], nil, errors.New("KEMSphinx: invalid packet, > 1 next_node")
 			}
 			nextNode = c
 		case *commands.SURBReply:
 			if surbReply != nil {
-				return nil, nil, errors.New("sphinx: invalid packet, > 1 surb_reply")
+				return nil, replayTag[:], nil, errors.New("KEMSphinx: invalid packet, > 1 surb_reply")
 			}
 			surbReply = c
 		default:
@@ -336,16 +338,16 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []comman
 		payload = nil
 	} else {
 		if len(payload) < s.geometry.PayloadTagLength {
-			return nil, nil, errTruncatedPayload
+			return nil, replayTag[:], nil, errTruncatedPayload
 		}
 		// Validate the payload tag, iff this is not a SURB reply.
 		if surbReply == nil {
 			if !utils.CtIsZero(payload[:s.geometry.PayloadTagLength]) {
-				return nil, nil, errInvalidTag
+				return nil, replayTag[:], nil, errInvalidTag
 			}
 			payload = payload[s.geometry.PayloadTagLength:]
 		}
 	}
 
-	return payload, cmds, nil
+	return payload, replayTag[:], cmds, nil
 }

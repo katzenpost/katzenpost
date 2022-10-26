@@ -64,7 +64,7 @@ func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 	for n := 0; n < b.N; n++ {
 		testPacket := make([]byte, len(pkt))
 		copy(testPacket, pkt)
-		_, _, err := sphinx.KEMUnwrap(nodes[0].privateKey, testPacket)
+		_, _, _, err := sphinx.KEMUnwrap(nodes[0].privateKey, testPacket)
 		if err != nil {
 			panic("wtf")
 		}
