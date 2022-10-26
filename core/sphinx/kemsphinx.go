@@ -289,7 +289,10 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	// Parse the per-hop routing commands.
 	var nextNode *commands.NextNodeHop
 	var surbReply *commands.SURBReply
-	cmds := make([]commands.RoutingCommand, 0, 2) // Usually 2, excluding null.
+
+	// There is always 1 or 2 commands in the current
+	// Katzenpost mixnet usage of the Sphinx packet format.
+	cmds := make([]commands.RoutingCommand, 0, 2)
 	for {
 		cmd, rest, err := commands.FromBytes(cmdBuf)
 		if err != nil {
