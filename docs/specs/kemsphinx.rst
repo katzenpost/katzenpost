@@ -18,7 +18,8 @@ route length hiding.
 ===============
 
 We'll express our KEM Sphinx header in pseudo code. The Sphinx body
-will be exactly the same as [SPHINXSPEC]_. Here's our KEM API:
+will be exactly the same as [SPHINXSPEC]_. Our basic KEM API
+has two functions:
 
 * ct, ss = ENCAP(PUB_KEY) - Encapsulate generates a shared
   secret, ss, for the public key and encapsulates it into a ciphertext.
@@ -47,11 +48,9 @@ KEM Sphinx header elements:
 4. MAC for this hop (authenticates header fields 1 thru 4)
 
 We can say that KEMSphinx differs from NIKE Sphinx by replacing the
-header's group element (e.g. an X25519 public key) field with fields 2
-and 3. Thus there are 5 KEM ciphertext slots in a KEMSphinx header
-for a packet that can have a maximum of 5 hops in it's route. However
-packets can have a shorter route than the maximum in which case the
-empty slots must be filled with random bytes.
+header's group element (e.g. an X25519 public key) field with the KEM ciphertext.
+Subsequent KEM ciphertexts for each hop are stored inside the Sphinx header
+"routing information" section.
 
 First we must have a data type to express a mix hop, and we can use
 lists of these hops to express a route:
@@ -59,12 +58,12 @@ lists of these hops to express a route:
    .. code::
 
       type PathHop struct {
-              public_key nike.PublicKey
+              public_key kem.PublicKey
 	      routing_commands Commands
       }
 
 
-Here's how we construct a KEMSphinx packet where `path`
+Here's how we construct a KEMSphinx packet header where `path`
 is a list of PathHop, and indicates the route through the network:
 
 
@@ -82,7 +81,8 @@ is a list of PathHop, and indicates the route through the network:
 2. Derive the routing_information keystream and encrypted
    padding for each hop.
 
-   Same as in [SPHINXSPEC]_.
+   Same as in [SPHINXSPEC]_ except for the fact that each
+   routing info slot is now increased by the size of the KEM ciphertext.
 
 3. Create the routing_information block.
 
@@ -92,7 +92,8 @@ blocks is decrypted for each mix mix hop which will decrypt
 the KEM ciphertext for the next hop in the route.
 
 4. Assemble the completed Sphinx Packet Header and Sphinx Packet
-   Payload SPRP key vector.
+   Payload SPRP key vector. Same as in [SPHINXSPEC]_ except the
+   `kem_element` field is set to the first KEM ciphertext, `route_kems[0]`:
 
     .. code::
 
@@ -110,8 +111,7 @@ Most of the design here will be exactly the same as in [SPHINXSPEC]_.
 However there are a few notable differences:
 
 1. The shared secret is derived from the KEM ciphertext instead of a DH.
-2. No deduplication tag is needed or computed.
-3. Next hop's KEM ciphertext stored in the encrypted routing information.
+2. Next hop's KEM ciphertext stored in the encrypted routing information.
 
 
 Appendix A. References
