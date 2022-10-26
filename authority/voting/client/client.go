@@ -228,7 +228,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateK
 	for _, peer := range p.cfg.Authorities {
 		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority peer %s", peer.IdentityPublicKeyPem)
+			p.log.Noticef("pki/voting/client: failure to connect to Authority peer:\n%s", peer.IdentityPublicKeyPem)
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)

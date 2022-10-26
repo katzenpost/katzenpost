@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/ugorji/go/codec"
@@ -248,7 +249,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *pki.Document) error {
-	pks := make(map[[32]byte]bool)
+	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("Document contains no Topology")
 	}
