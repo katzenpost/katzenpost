@@ -21,7 +21,7 @@ require (
 	github.com/katzenpost/doubleratchet v0.0.13
 	github.com/katzenpost/noise v0.0.3
 	github.com/katzenpost/nyquist v0.0.0-20220905145943-9f7e8b431eaf
-	github.com/katzenpost/sphincsplus_cgo v0.0.0-20221015234524-07c4eed96c97
+	github.com/katzenpost/sphincsplus_cgo v0.0.0-20221027011948-85b875239fa7
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0 // indirect
