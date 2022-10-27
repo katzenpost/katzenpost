@@ -11,6 +11,29 @@ Visit the project website for more information about Katzenpost.
 
 https://katzenpost.mixnetworks.org/
 
+
+Building from Go source
+=======================
+
+Katzenpost now uses hybrid post quantum with classical cryptographic protocols.
+As part of this change in our cryptographic protocols we have added the use
+of Sphincs+, the stateless hash based post quantum signature scheme.
+
+Install this dependency like this:
+
+```
+git clone https://github.com/katzenpost/sphincsplus.git
+cd sphincsplus/ref
+make libsphincsplus.so
+sudo make install # installs into /usr/local
+sudo ldconfig
+```
+
+The Katzenpost fork of the sphincs+ ref code was created so that we could
+make some necessary changes to the Makefile so that it builds .so file
+and installs into `/usr/local`.
+
+
 supported by
 ============
 
