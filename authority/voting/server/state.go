@@ -248,7 +248,7 @@ func (s *state) consense(epoch uint64) *document {
 
 	for pubKeyHash1, certificate1 := range certificates {
 		for pubKeyHash2, certificate2 := range certificates {
-			if bytes.Equal(pubKeyHash1[:], pubKeyHash2[:]) {
+			if hmac.Equal(pubKeyHash1[:], pubKeyHash2[:]) {
 				continue // skip adding own signature
 			}
 			idPubKey, ok := s.reverseHash[pubKeyHash2]
@@ -402,7 +402,7 @@ func (s *SharedRandom) Verify(reveal []byte) bool {
 	epoch := binary.BigEndian.Uint64(reveal[0:8])
 	allegedCommit := sha3.Sum256(reveal)
 	if epoch == s.epoch {
-		if bytes.Equal(s.commit[8:], allegedCommit[:]) {
+		if hmac.Equal(s.commit[8:], allegedCommit[:]) {
 			return true
 		}
 	}
@@ -1277,7 +1277,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		}
 		// If the descriptor changes, then it will be rejected to prevent
 		// nodes from reneging on uploads.
-		if !bytes.Equal(d.raw, rawDesc) {
+		if !hmac.Equal(d.raw, rawDesc) {
 			return fmt.Errorf("state: Node %v: Conflicting descriptor for epoch %v", desc.IdentityKey, epoch)
 		}
 
