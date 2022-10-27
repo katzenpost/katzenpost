@@ -22,13 +22,16 @@ import (
 	"crypto/rand"
 	"encoding"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
+
+	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 var DefaultScheme = &scheme{
@@ -294,7 +297,7 @@ var _ Scheme = (*scheme)(nil)
 
 func (s *scheme) PrivateKeyFromPemFile(f string) (PrivateKey, error) {
 	privKey := s.GenerateKeypair(rand.Reader)
-	err := pem.FromFile(f, privKey)
+	err := cpem.FromFile(f, privKey)
 	if err != nil {
 		return nil, err
 	}
@@ -302,12 +305,12 @@ func (s *scheme) PrivateKeyFromPemFile(f string) (PrivateKey, error) {
 }
 
 func (s *scheme) PrivateKeyToPemFile(f string, privKey PrivateKey) error {
-	return pem.ToFile(f, privKey)
+	return cpem.ToFile(f, privKey)
 }
 
 func (s *scheme) PublicKeyFromPemFile(f string) (PublicKey, error) {
 	pubKey := s.GenerateKeypair(rand.Reader).PublicKey()
-	err := pem.FromFile(f, pubKey)
+	err := cpem.FromFile(f, pubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +318,7 @@ func (s *scheme) PublicKeyFromPemFile(f string) (PublicKey, error) {
 }
 
 func (s *scheme) PublicKeyToPemFile(f string, pubKey PublicKey) error {
-	return pem.ToFile(f, pubKey)
+	return cpem.ToFile(f, pubKey)
 }
 
 func (s *scheme) UnmarshalTextPublicKey(b []byte) (PublicKey, error) {
@@ -359,11 +362,5 @@ func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
 	return &privateKey{
 		KEM:        s.KEM,
 		privateKey: k,
-	}
-}
-
-func init() {
-	defaultScheme = &scheme{
-		KEM: kem.Kyber768X25519,
 	}
 }
