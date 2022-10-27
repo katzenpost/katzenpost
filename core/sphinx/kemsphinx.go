@@ -298,8 +298,11 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 		if err != nil {
 			return nil, replayTag[:], nil, err
 		} else if cmd == nil { // Terminal null command.
-			// Bug, should NEVER happen.
-			return nil, replayTag[:], nil, errors.New("KEMSphinx: BUG: null cmd")
+			if rest != nil {
+				// Bug, should NEVER happen.
+				return nil, replayTag[:], nil, errors.New("KEMSphinx: BUG: null cmd had rest")
+			}
+			break
 		}
 
 		switch c := cmd.(type) {
