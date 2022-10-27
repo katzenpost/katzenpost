@@ -17,7 +17,7 @@
 package server
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -29,7 +29,7 @@ import (
 func TestStorageBasics(t *testing.T) {
 	assert := assert.New(t)
 
-	storeFile, err := ioutil.TempFile("", "pandaStorageBasics")
+	storeFile, err := os.CreateTemp("", "pandaStorageBasics")
 	assert.NoError(err)
 
 	dwellDuration := time.Second * 30
@@ -93,7 +93,7 @@ func TestStorageBasics(t *testing.T) {
 func TestStorageLoadTags(t *testing.T) {
 	assert := assert.New(t)
 
-	storeFile, err := ioutil.TempFile("", "pandaStorageLoadTags")
+	storeFile, err := os.CreateTemp("", "pandaStorageLoadTags")
 	assert.NoError(err)
 
 	dwellDuration := time.Hour * 3
@@ -123,7 +123,7 @@ func TestStorageLoadTags(t *testing.T) {
 func TestStoragePurgeTags(t *testing.T) {
 	assert := assert.New(t)
 
-	storeFile, err := ioutil.TempFile("", "pandaStoragePurgeTags")
+	storeFile, err := os.CreateTemp("", "pandaStoragePurgeTags")
 	assert.NoError(err)
 
 	dwellDuration := time.Second * 30

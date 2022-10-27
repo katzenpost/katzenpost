@@ -22,16 +22,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"github.com/fxamacker/cbor/v2"
 	"os"
 	"sync"
 
 	"github.com/katzenpost/katzenpost/reunion/commands"
 	"github.com/katzenpost/katzenpost/reunion/epochtime"
-	"github.com/ugorji/go/codec"
 )
-
-var cborHandle = new(codec.CborHandle)
 
 // ReunionDatabase is an interface which represents the
 // Reunion DB that protocol clients interact with.
@@ -158,12 +155,7 @@ func (l *LockedList) Marshal() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var serialized []byte
-	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(t)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(t)
 }
 
 // RequestedReunionState is the serialized struct type which is
@@ -178,17 +170,12 @@ type RequestedReunionState struct {
 
 // Marshal returns a CBOR serialization of the state.
 func (s *RequestedReunionState) Marshal() ([]byte, error) {
-	var serialized []byte
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(s)
 }
 
 // Unmarshal deserializes the state CBOR blob.
 func (s *RequestedReunionState) Unmarshal(data []byte) error {
-	return codec.NewDecoderBytes(data, cborHandle).Decode(s)
+	return cbor.Unmarshal(data, s)
 }
 
 // SerializableReunionState represents the ReunionState in
@@ -204,17 +191,12 @@ type SerializableReunionState struct {
 
 // Unmarshal deserializes the state CBOR blob.
 func (s *SerializableReunionState) Unmarshal(data []byte) error {
-	return codec.NewDecoderBytes(data, cborHandle).Decode(s)
+	return cbor.Unmarshal(data, s)
 }
 
 // Marshal returns a CBOR serialization of the state.
 func (s *SerializableReunionState) Marshal() ([]byte, error) {
-	var serialized []byte
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(s)
 }
 
 // SerializableReunionStates represents the serializable
@@ -225,17 +207,12 @@ type SerializableReunionStates struct {
 
 // Unmarshal deserializes the state CBOR blob.
 func (s *SerializableReunionStates) Unmarshal(data []byte) error {
-	return codec.NewDecoderBytes(data, cborHandle).Decode(s)
+	return cbor.Unmarshal(data, s)
 }
 
 // Marshal returns a CBOR serialization of the state.
 func (s *SerializableReunionStates) Marshal() ([]byte, error) {
-	var serialized []byte
-	err := codec.NewEncoderBytes(&serialized, cborHandle).Encode(s)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(s)
 }
 
 // ReunionStates is a type encapsulating sync.Map of uint64 -> *ReunionState.
@@ -255,7 +232,7 @@ func NewReunionStates() *ReunionStates {
 func (s *ReunionStates) Unmarshal(data []byte) error {
 	ss := new(SerializableReunionStates)
 	ss.states = make(map[uint64]*ReunionState)
-	err := codec.NewDecoderBytes(data, cborHandle).Decode(ss)
+	err := cbor.Unmarshal(data, ss)
 	if err != nil {
 		return err
 	}
@@ -267,7 +244,6 @@ func (s *ReunionStates) Unmarshal(data []byte) error {
 
 // Marshal returns a CBOR serialization of the state.
 func (s *ReunionStates) Marshal() ([]byte, error) {
-	var serialized []byte
 	ss := new(SerializableReunionStates)
 	ss.states = make(map[uint64]*ReunionState)
 	var err error
@@ -288,11 +264,7 @@ func (s *ReunionStates) Marshal() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = codec.NewEncoderBytes(&serialized, cborHandle).Encode(ss)
-	if err != nil {
-		return nil, err
-	}
-	return serialized, nil
+	return cbor.Marshal(ss)
 }
 
 // MaybeAddEpochs adds sync.Map entries for the currenlty valid epochs.
@@ -335,7 +307,7 @@ func (s *ReunionStates) GarbageCollectOldEpochs(epochClock epochtime.EpochClock)
 // LoadFromFile loads a ReunionStates from then given file
 // if it exists.
 func (s *ReunionStates) LoadFromFile(filePath string) error {
-	inBytes, err := ioutil.ReadFile(filePath)
+	inBytes, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}
@@ -505,7 +477,7 @@ func (s *ReunionState) Unmarshal(data []byte) error {
 		T1Map:      make(map[[32]byte][]byte),
 		MessageMap: make(map[[32]byte][]*T2T3Message),
 	}
-	err := codec.NewDecoderBytes(data, cborHandle).Decode(&state)
+	err := cbor.Unmarshal(data, &state)
 	if err != nil {
 		return err
 	}

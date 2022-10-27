@@ -18,7 +18,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"sync"
 	"testing"
 
@@ -37,7 +37,7 @@ func TestHTTPServer2(t *testing.T) {
 	logPath := ""
 	logLevel := "DEBUG"
 	clock := new(katzenpost.Clock)
-	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
 	require.NoError(err)
 	stateFile.Close()
 
@@ -127,7 +127,7 @@ func TestHTTPServer3(t *testing.T) {
 	logPath := ""
 	logLevel := "DEBUG"
 	clock := new(katzenpost.Clock)
-	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
 	require.NoError(err)
 	stateFile.Close()
 

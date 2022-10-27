@@ -24,6 +24,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/nyquist/kem"
@@ -125,6 +126,36 @@ func (p *publicKey) KeyType() string {
 	return fmt.Sprintf("%s PUBLIC KEY", p.KEM)
 }
 
+func (p *publicKey) FromPEMFile(f string) error {
+	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
+
+	buf, err := os.ReadFile(f)
+	if err != nil {
+		return err
+	}
+	blk, _ := pem.Decode(buf)
+	if blk == nil {
+		return fmt.Errorf("failed to decode PEM file %v", f)
+	}
+	if blk.Type != keyType {
+		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
+	}
+	return p.FromBytes(blk.Bytes)
+}
+
+func (p *publicKey) ToPEMFile(f string) error {
+	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
+
+	if utils.CtIsZero(p.Bytes()) {
+		return fmt.Errorf("attempted to serialize scrubbed key")
+	}
+	blk := &pem.Block{
+		Type:  keyType,
+		Bytes: p.Bytes(),
+	}
+	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+}
+
 // XXX FIXME
 func (p *publicKey) Reset() {
 	p = nil
@@ -174,6 +205,36 @@ type privateKey struct {
 
 func (p *privateKey) KeyType() string {
 	return fmt.Sprintf("%s PRIVATE KEY", p.KEM)
+}
+
+func (p *privateKey) FromPEMFile(f string) error {
+	keyType := fmt.Sprintf("%s PRIVATE KEY", p.KEM)
+
+	buf, err := os.ReadFile(f)
+	if err != nil {
+		return err
+	}
+	blk, _ := pem.Decode(buf)
+	if blk == nil {
+		return fmt.Errorf("failed to decode PEM file %v", f)
+	}
+	if blk.Type != keyType {
+		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
+	}
+	return p.FromBytes(blk.Bytes)
+}
+
+func (p *privateKey) ToPEMFile(f string) error {
+	keyType := fmt.Sprintf("%s PRIVATE KEY", p.KEM)
+
+	if utils.CtIsZero(p.Bytes()) {
+		return fmt.Errorf("attempted to serialize scrubbed key")
+	}
+	blk := &pem.Block{
+		Type:  keyType,
+		Bytes: p.Bytes(),
+	}
+	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
 }
 
 // XXX FIXME
@@ -298,5 +359,11 @@ func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
 	return &privateKey{
 		KEM:        s.KEM,
 		privateKey: k,
+	}
+}
+
+func init() {
+	defaultScheme = &scheme{
+		KEM: kem.Kyber768X25519,
 	}
 }

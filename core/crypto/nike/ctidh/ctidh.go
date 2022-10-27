@@ -1,4 +1,6 @@
+//go:build ctidh
 // +build ctidh
+
 // ctidh.go - Adapts ctidh module to our NIKE interface.
 // Copyright (C) 2022  David Stainton.
 //
@@ -95,5 +97,18 @@ func (e *CtidhNike) Blind(groupMember []byte, blindingFactor []byte) []byte {
 	if err != nil {
 		panic(err)
 	}
-	return ctidh.Blind(blindingFactor, pubkey).Bytes()
+	blinded, err := ctidh.Blind(blindingFactor, pubkey)
+	if err != nil {
+		panic(err)
+	}
+	return blinded.Bytes()
+}
+
+func (e *CtidhNike) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
+	pubkey := ctidh.NewEmptyPublicKey()
+	err := pubkey.FromBytes(b)
+	if err != nil {
+		return nil, err
+	}
+	return pubkey, nil
 }

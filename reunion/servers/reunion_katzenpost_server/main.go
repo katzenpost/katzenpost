@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -47,7 +46,7 @@ func main() {
 	}
 
 	// start service
-	tmpDir, err := ioutil.TempDir("", "reunion_server")
+	tmpDir, err := os.MkdirTemp("", "reunion_server")
 	if err != nil {
 		panic(err)
 	}

@@ -58,7 +58,7 @@ func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int
 	for i := range path {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].PublicKey = nodes[i].publicKey
+		path[i].NIKEPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
@@ -96,8 +96,8 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 		// Create the packet.
 		payload := []byte(testPayload)
 		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
-		require.NoError(err, "NewPacket failed")
-		require.Len(pkt, sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
+		require.NoError(err)
+		require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 
 		t.Logf("pkt: %s", hex.Dump(pkt))
 
