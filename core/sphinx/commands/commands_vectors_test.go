@@ -18,13 +18,13 @@ package commands
 
 import (
 	"encoding/hex"
-	"io/ioutil"
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/stretchr/testify/assert"
-	"github.com/ugorji/go/codec"
 )
 
 const sphinxCommandsVectorsFile = "testdata/sphinx_commands_vectors.json"
@@ -56,11 +56,7 @@ func TestBuildCommandVectors(t *testing.T) {
 		NodeDelayCmdWant: "80000004d2",
 	}
 
-	serialized := []byte{}
-	handle := new(codec.JsonHandle)
-	handle.Indent = 4
-	enc := codec.NewEncoderBytes(&serialized, handle)
-	err := enc.Encode(cmdsTest)
+	_, err := json.Marshal(cmdsTest)
 	assert.NoError(err)
 
 	//t.Logf("vectors in JSON:\n%s\n", string(serialized))
@@ -69,11 +65,10 @@ func TestBuildCommandVectors(t *testing.T) {
 func TestCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
-	serialized, err := ioutil.ReadFile(sphinxCommandsVectorsFile)
+	serialized, err := os.ReadFile(sphinxCommandsVectorsFile)
 	assert.NoError(err)
-	decoder := codec.NewDecoderBytes(serialized, new(codec.JsonHandle))
 	cmdsTest := commandsTest{}
-	err = decoder.Decode(&cmdsTest)
+	err = json.Unmarshal(serialized, &cmdsTest)
 	assert.NoError(err)
 
 	// NextHop command

@@ -20,7 +20,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -80,7 +79,7 @@ func main() {
 	serverLog.Info("panda server started")
 
 	// start service
-	tmpDir, err := ioutil.TempDir("", "panda_server")
+	tmpDir, err := os.MkdirTemp("", "panda_server")
 	if err != nil {
 		panic(err)
 	}

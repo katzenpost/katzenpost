@@ -20,7 +20,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"path/filepath"
@@ -71,7 +70,7 @@ func main() {
 	serverLog := logBackend.GetLogger("echo_server")
 
 	// start service
-	tmpDir, err := ioutil.TempDir("", "echo_server")
+	tmpDir, err := os.MkdirTemp("", "echo_server")
 	if err != nil {
 		panic(err)
 	}

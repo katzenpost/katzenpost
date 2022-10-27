@@ -19,7 +19,6 @@ package server
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -150,7 +149,7 @@ func TestVote(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := ioutil.TempDir("", cfg.Authority.Identifier)
+		tmpDir, err := os.MkdirTemp("", cfg.Authority.Identifier)
 		require.NoError(err)
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)

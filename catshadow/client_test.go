@@ -20,7 +20,6 @@ package catshadow
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -36,7 +35,7 @@ import (
 func createRandomStateFile(t *testing.T) string {
 	require := require.New(t)
 
-	tmpDir, err := ioutil.TempDir("", "catshadow_test")
+	tmpDir, err := os.MkdirTemp("", "catshadow_test")
 	require.NoError(err)
 	id := [6]byte{}
 	_, err = rand.Reader.Read(id[:])

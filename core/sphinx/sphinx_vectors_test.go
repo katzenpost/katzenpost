@@ -19,11 +19,11 @@ package sphinx
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"io/ioutil"
+	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/ugorji/go/codec"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
@@ -65,14 +65,10 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 	hexTests2 := buildVectorSphinx(t, mynike, withSURB, sphinx)
 	hexTests = append(hexTests, hexTests2...)
 
-	serialized := []byte{}
-	handle := new(codec.JsonHandle)
-	handle.Indent = 4
-	enc := codec.NewEncoderBytes(&serialized, handle)
-	err := enc.Encode(hexTests)
+	serialized, err := json.Marshal(hexTests)
 	require.NoError(err)
 
-	err = ioutil.WriteFile(sphinxVectorsFile, serialized, 0644)
+	err = os.WriteFile(sphinxVectorsFile, serialized, 0644)
 	require.NoError(err)
 }
 
@@ -82,12 +78,11 @@ func TestVectorSphinx(t *testing.T) {
 	geo := GeometryFromForwardPayloadLength(mynike, 103, 5)
 	sphinx := NewSphinx(mynike, geo)
 
-	serialized, err := ioutil.ReadFile(sphinxVectorsFile)
+	serialized, err := os.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
 
-	decoder := codec.NewDecoderBytes(serialized, new(codec.JsonHandle))
 	tests := []hexSphinxTest{}
-	err = decoder.Decode(&tests)
+	err = json.Unmarshal(serialized, &tests)
 	require.NoError(err)
 
 	for _, test := range tests {
@@ -176,7 +171,7 @@ func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sp
 		for i, hop := range path {
 			hexPath[i] = hexPathHop{
 				ID:        hex.EncodeToString(hop.ID[:]),
-				PublicKey: hex.EncodeToString(hop.PublicKey.Bytes()),
+				PublicKey: hex.EncodeToString(hop.NIKEPublicKey.Bytes()),
 				Commands:  make([]string, len(hop.Commands)),
 			}
 			for j, cmd := range hop.Commands {

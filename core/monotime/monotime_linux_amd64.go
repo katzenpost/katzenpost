@@ -24,7 +24,6 @@ import (
 	"debug/elf"
 	"encoding/binary"
 	"errors"
-	"io/ioutil"
 	"os"
 	"unsafe"
 )
@@ -32,7 +31,7 @@ import (
 func getSysinfoEhdr() (uintptr, error) {
 	const AT_SYSINFO_EHDR = 33
 
-	auxv, err := ioutil.ReadFile("/proc/self/auxv")
+	auxv, err := os.ReadFile("/proc/self/auxv")
 	if err != nil {
 		return 0, err
 	}

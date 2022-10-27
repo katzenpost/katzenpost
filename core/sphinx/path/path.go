@@ -61,7 +61,7 @@ selectLoop:
 			if k, ok := desc.MixKeys[epoch]; !ok {
 				continue selectLoop
 			} else {
-				h.PublicKey = k
+				h.NIKEPublicKey = k
 			}
 
 			// All non-terminal hops, and the terminal forward hop iff the
