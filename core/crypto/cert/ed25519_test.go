@@ -1,5 +1,5 @@
 // ed25519_test.go - ed25519 certificate tests.
-// Copyright (C) 2018  David Stainton.
+// Copyright (C) 2022  David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -26,271 +26,251 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestEd25519ExpiredCertificate(t *testing.T) {
+func TestExpiredCertificate(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	scheme := Scheme
+	_, ephemeralPubKey := scheme.NewKeypair()
 
+	signingPrivKey, signingPubKey := scheme.NewKeypair()
 	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
 	assert.NoError(err)
 
 	// expiration six months ago
 	expiration := time.Now().AddDate(0, -6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), expiration)
 	assert.Error(err)
 
-	certified, err := Verify(ephemeralPrivKey.PublicKey(), certificate)
+	certified, err := Verify(ephemeralPubKey, certificate)
 	assert.Error(err)
 	assert.Nil(certified)
 }
 
-func TestEd25519Certificate(t *testing.T) {
+func TestCertificate(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	scheme := Scheme
+	_, ephemeralPubKey := scheme.NewKeypair()
 
-	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey, signingPubKey := scheme.NewKeypair()
 
 	// expires 600 years after unix epoch
 	expiration := time.Unix(0, 0).AddDate(600, 0, 0).Unix()
 
-	toSign := ephemeralPrivKey.PublicKey().Bytes()
-	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), toSign, expiration)
+	toSign := ephemeralPubKey.Bytes()
+	certificate, err := Sign(signingPrivKey, signingPubKey, toSign, expiration)
 	assert.NoError(err)
 
-	mesg, err := Verify(signingPrivKey.PublicKey(), certificate)
+	mesg, err := Verify(signingPubKey, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 	assert.Equal(mesg, toSign)
 }
 
-func TestEd25519BadCertificate(t *testing.T) {
+func TestBadCertificate(t *testing.T) {
 	assert := assert.New(t)
 
-	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
-	certified := signingPrivKey.PublicKey().Bytes()
+	certified := signingPubKey.Bytes()
 	certified[3] = 235 // modify the signed data so that the Verify will fail
 
-	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), certified, expiration)
+	certificate, err := Sign(signingPrivKey, signingPubKey, certified, expiration)
 	assert.NoError(err)
 
-	mesg, err := Verify(signingPrivKey.PublicKey(), certificate)
+	mesg, err := Verify(signingPubKey, certificate)
 	assert.Error(err)
 	assert.Equal(ErrBadSignature, err)
 	assert.Nil(mesg)
 }
 
-func TestEd25519WrongCertificate(t *testing.T) {
+func TestWrongCertificate(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	_, ephemeralPubKey := Scheme.NewKeypair()
 
-	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
-	certificate, err := Sign(signingPrivKey, signingPrivKey.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
 
-	mesg, err := Verify(ephemeralPrivKey.PublicKey(), certificate)
+	mesg, err := Verify(ephemeralPubKey, certificate)
 	assert.Error(err)
 	assert.Nil(mesg)
 }
 
-func TestEd25519MultiSignatureCertificate(t *testing.T) {
+func TestMultiSignatureCertificate(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	_, ephemeralPubKey := Scheme.NewKeypair()
 
-	signingPrivKey1, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey2, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey3, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
+	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
+	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
 	assert.NoError(err)
 
-	mesg, err := Verify(signingPrivKey1.PublicKey(), certificate)
-	assert.NoError(err)
-	assert.NotNil(mesg)
-
-	mesg, err = Verify(signingPrivKey2.PublicKey(), certificate)
+	mesg, err := Verify(signingPubKey1, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 
-	mesg, err = Verify(signingPrivKey3.PublicKey(), certificate)
+	mesg, err = Verify(signingPubKey2, certificate)
+	assert.NoError(err)
+	assert.NotNil(mesg)
+
+	mesg, err = Verify(signingPubKey3, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 }
 
-func TestEd25519MultiSignatureOrdering(t *testing.T) {
+func TestMultiSignatureOrdering(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	_, ephemeralPubKey := Scheme.NewKeypair()
 
-	signingPrivKey1, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey2, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey3, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
+	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
+	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
 	// 1
-	certificate1, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate1, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
-	certificate1, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate1)
+	certificate1, err = SignMulti(signingPrivKey2, signingPubKey2, certificate1)
 	assert.NoError(err)
-	certificate1, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate1)
+	certificate1, err = SignMulti(signingPrivKey3, signingPubKey3, certificate1)
 	assert.NoError(err)
 
 	// 2
-	certificate2, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate2, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
-	certificate2, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate2)
+	certificate2, err = SignMulti(signingPrivKey3, signingPubKey3, certificate2)
 	assert.NoError(err)
-	certificate2, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate2)
+	certificate2, err = SignMulti(signingPrivKey2, signingPubKey2, certificate2)
 	assert.NoError(err)
 
 	assert.Equal(certificate1, certificate2)
 
 	// 3
-	certificate3, err := Sign(signingPrivKey2, signingPrivKey2.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate3, err := Sign(signingPrivKey2, signingPubKey2, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
-	certificate3, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate3)
+	certificate3, err = SignMulti(signingPrivKey3, signingPubKey3, certificate3)
 	assert.NoError(err)
-	certificate3, err = SignMulti(signingPrivKey1, signingPrivKey1.PublicKey(), certificate3)
+	certificate3, err = SignMulti(signingPrivKey1, signingPubKey1, certificate3)
 	assert.NoError(err)
 
 	assert.Equal(certificate3, certificate2)
 }
 
-func TestEd25519VerifyAll(t *testing.T) {
+func TestVerifyAll(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	_, ephemeralPubKey := Scheme.NewKeypair()
 
-	signingPrivKey1, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey2, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey3, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
+	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
+	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
 	assert.NoError(err)
 
-	verifiers := []Verifier{signingPrivKey1.PublicKey(), signingPrivKey2.PublicKey(), signingPrivKey2.PublicKey()}
+	verifiers := []Verifier{signingPubKey1, signingPubKey2, signingPubKey2}
 	mesg, err := VerifyAll(verifiers, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 }
 
-func TestEd25519VerifyThreshold(t *testing.T) {
+func TestVerifyThreshold(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	_, ephemeralPubKey := Scheme.NewKeypair()
 
-	signingPrivKey1, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey2, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey3, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey4, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
+	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
+	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
+	_, signingPubKey4 := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, signingPrivKey3.PublicKey(), certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
 	assert.NoError(err)
 
-	verifiers := []Verifier{signingPrivKey1.PublicKey(), signingPrivKey2.PublicKey(), signingPrivKey4.PublicKey()}
+	verifiers := []Verifier{signingPubKey1, signingPubKey2, signingPubKey4}
 	threshold := 2
 	mesg, good, bad, err := VerifyThreshold(verifiers, threshold, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
-	assert.Equal(bad[0].Identity(), signingPrivKey4.Identity())
+	assert.Equal(bad[0].Sum256(), signingPubKey4.Sum256())
 	hasVerifier := func(verifier Verifier) bool {
 		for _, v := range good {
-			if bytes.Equal(v.Identity(), verifier.Identity()) {
+			a := v.Sum256()
+			b := verifier.Sum256()
+			if bytes.Equal(a[:], b[:]) {
 				return true
 			}
 		}
 		return false
 	}
-	assert.True(hasVerifier(signingPrivKey1.PublicKey()))
-	assert.True(hasVerifier(signingPrivKey2.PublicKey()))
-	assert.False(hasVerifier(signingPrivKey4.PublicKey()))
+	assert.True(hasVerifier(signingPubKey1))
+	assert.True(hasVerifier(signingPubKey2))
+	assert.False(hasVerifier(signingPubKey4))
 }
 
-func TestEd25519AddSignature(t *testing.T) {
+func TestAddSignature(t *testing.T) {
 	assert := assert.New(t)
 
-	ephemeralPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	_, ephemeralPubKey := Scheme.NewKeypair()
 
-	signingPrivKey1, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	signingPrivKey2, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
+	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, signingPrivKey1.PublicKey(), ephemeralPrivKey.PublicKey().Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
 	assert.NoError(err)
 
-	certificate2, err := SignMulti(signingPrivKey2, signingPrivKey2.PublicKey(), certificate)
+	certificate2, err := SignMulti(signingPrivKey2, signingPubKey2, certificate)
 	assert.NoError(err)
 
-	sig, err := GetSignature(signingPrivKey2.Identity(), certificate2)
+	hash := signingPubKey2.Sum256()
+	sig, err := GetSignature(hash[:], certificate2)
 	assert.NoError(err)
 	assert.NotNil(sig)
-	certificate3, err := AddSignature(signingPrivKey2.PublicKey(), *sig, certificate)
+	certificate3, err := AddSignature(signingPubKey2, *sig, certificate)
 	assert.NoError(err)
 
 	assert.Equal(certificate2, certificate3)
