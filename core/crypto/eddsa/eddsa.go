@@ -21,7 +21,6 @@ import (
 	"crypto/ed25519"
 	"crypto/sha512"
 	"crypto/subtle"
-	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/pem"
@@ -242,7 +241,7 @@ func (k *PrivateKey) ToECDH() *ecdh.PrivateKey {
 	dhBytes[31] &= 127
 	dhBytes[31] |= 64
 	r := new(ecdh.PrivateKey)
-	r.FromBytes(dhBytes)
+	r.FromBytes(dhBytes[:32])
 	return r
 }
 
