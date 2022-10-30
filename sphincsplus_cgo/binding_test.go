@@ -16,7 +16,7 @@ func TestSignVerify(t *testing.T) {
 	require.False(t, pubKey2.Verify(sig1, message))
 
 	sig2 := privKey2.Sign(message)
-	require.True(t, pubKey2.Verify(sig1, message))
+	require.True(t, pubKey2.Verify(sig2, message))
 	require.False(t, pubKey1.Verify(sig2, message))
 }
 
