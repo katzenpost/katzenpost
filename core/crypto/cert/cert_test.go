@@ -24,6 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExpiredCertificate(t *testing.T) {
@@ -69,22 +70,23 @@ func TestCertificate(t *testing.T) {
 }
 
 func TestBadCertificate(t *testing.T) {
-	assert := assert.New(t)
 
 	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
-	certified := signingPubKey.Bytes()
-	certified[3] = 235 // modify the signed data so that the Verify will fail
+
+	certified := []byte("hello, i am a message")
 
 	certificate, err := Sign(signingPrivKey, signingPubKey, certified, expiration)
-	assert.NoError(err)
+	require.NoError(t, err)
+
+	certificate[1000] = 235 // modify the signed data so that the Verify will fail
 
 	mesg, err := Verify(signingPubKey, certificate)
-	assert.Error(err)
-	assert.Equal(ErrBadSignature, err)
-	assert.Nil(mesg)
+	require.Error(t, err)
+	require.Equal(t, ErrBadSignature, err)
+	require.Nil(t, mesg)
 }
 
 func TestWrongCertificate(t *testing.T) {
