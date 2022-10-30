@@ -1391,8 +1391,8 @@ func (s *state) restorePersistence() error {
 
 			// Restore the documents and descriptors.
 			for _, epoch := range epochs {
-				k := epochToBytes(epoch)
-				if rawDoc := docsBkt.Get(k); rawDoc != nil {
+				epochBytes := epochToBytes(epoch)
+				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
 					_, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, rawDoc)
 					if err != nil {
 						s.log.Errorf("Failed to verify threshold on restored document")
@@ -1413,7 +1413,7 @@ func (s *state) restorePersistence() error {
 					}
 				}
 
-				eDescsBkt := descsBkt.Bucket(k)
+				eDescsBkt := descsBkt.Bucket(epochBytes)
 				if eDescsBkt == nil {
 					s.log.Debugf("No persisted Descriptors for epoch: %v.", epoch)
 					continue
@@ -1421,6 +1421,9 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
+					if len(wantHash) != 32 {
+						panic("stored hash should be 32 bytes")
+					}
 					verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
 					if err != nil {
 						return err
@@ -1611,7 +1614,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 			if err != nil {
 				return
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
 			defer cancel()
 			doc, rawDoc, err := c.Get(ctx, epoch)
 			if err != nil {
