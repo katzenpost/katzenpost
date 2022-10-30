@@ -19,11 +19,12 @@ Katzenpost now uses hybrid post quantum with classical cryptographic protocols.
 As part of this change in our cryptographic protocols we have added the use
 of Sphincs+, the stateless hash based post quantum signature scheme.
 
+The katzenpost monorepo now has a copy of the sphincsplus git repo in `katzenpost/sphincsplus`.
+
 Install this dependency like this:
 
 ```
-git clone https://github.com/katzenpost/sphincsplus.git
-cd sphincsplus/ref
+cd katzenpost/sphincsplus/ref
 make libsphincsplus.so
 sudo make install # installs into /usr/local
 sudo ldconfig
