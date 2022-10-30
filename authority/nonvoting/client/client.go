@@ -90,7 +90,6 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 	if err != nil {
 		return err
 	}
-	c.log.Debug("Signed descriptor")
 
 	// Initialize the TCP/IP connection, and wire session.
 	doneCh := make(chan interface{})

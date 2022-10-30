@@ -208,7 +208,7 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	pk := [sign.PublicKeyHashSize]byte{}
 	copy(pk[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 
-	if !(a.s.state.authorizedMixes[pk] || a.s.state.authorizedProviders[pk] != "") {
+	if !a.s.state.authorizedMixes[pk] || a.s.state.authorizedProviders[pk] == "" {
 		a.s.log.Debugf("Rejecting authentication, not a valid mix/provider.")
 		return false
 	}
