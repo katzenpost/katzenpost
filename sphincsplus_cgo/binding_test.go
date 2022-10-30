@@ -18,6 +18,10 @@ func TestSignVerify(t *testing.T) {
 	sig2 := privKey2.Sign(message)
 	require.True(t, pubKey2.Verify(sig2, message))
 	require.False(t, pubKey1.Verify(sig2, message))
+
+	// non-determinism
+	sig3 := privKey1.Sign(message)
+	require.NotEqual(t, sig1, sig3)
 }
 
 func TestSerialization(t *testing.T) {
