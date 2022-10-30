@@ -129,11 +129,6 @@ func (p *publicKey) KeyType() string {
 	return "ED25519 PUBLIC KEY"
 }
 
-func (p *publicKey) Identity() []byte {
-	h := p.Sum256()
-	return h[:]
-}
-
 func (p *publicKey) Sum256() [32]byte {
 	return blake2b.Sum256(p.Bytes())
 }
