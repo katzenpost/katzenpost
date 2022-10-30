@@ -84,8 +84,8 @@ type Verifier interface {
 	// Verify verifies a signature.
 	Verify(sig, msg []byte) bool
 
-	// Identity returns the Verifier identity.
-	Identity() []byte
+	// Sum256 returns the Blake2b 256-bit checksum of the key's raw bytes.
+	Sum256() [32]byte
 }
 
 // Signer signs messages.
@@ -100,8 +100,9 @@ type Signer interface {
 // Signature is a cryptographic signature
 // which has an associated signer ID.
 type Signature struct {
-	// Identity is the identity of the signer.
-	Identity []byte
+	// PublicKeySum256 is the 256 bit hash of the public key.
+	PublicKeySum256 [32]byte
+
 	// Payload is the actual signature value.
 	Payload []byte
 }
@@ -182,8 +183,8 @@ func Sign(signer Signer, verifier Verifier, data []byte, expiration int64) ([]by
 	}
 	cert.Signatures = []Signature{
 		Signature{
-			Identity: verifier.Identity(),
-			Payload:  signer.Sign(mesg),
+			PublicKeySum256: verifier.Sum256(),
+			Payload:         signer.Sign(mesg),
 		},
 	}
 	return cbor.Marshal(cert)
@@ -230,7 +231,8 @@ func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
 		return nil, err
 	}
 	for _, s := range cert.Signatures {
-		if hmac.Equal(identity, s.Identity) {
+		hash := s.PublicKeySum256
+		if hmac.Equal(identity, hash[:]) {
 			return &s, nil
 		}
 	}
@@ -248,7 +250,9 @@ func (d byIdentity) Swap(i, j int) {
 }
 
 func (d byIdentity) Less(i, j int) bool {
-	return bytes.Compare(d[i].Identity, d[j].Identity) < 0
+	hash1 := d[i].PublicKeySum256
+	hash2 := d[j].PublicKeySum256
+	return bytes.Compare(hash1[:], hash2[:]) < 0
 }
 
 // SignMulti uses the given signer to create a signature
@@ -274,13 +278,13 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error)
 		return nil, err
 	}
 	signature := Signature{
-		Identity: verifier.Identity(),
-		Payload:  signer.Sign(mesg),
+		PublicKeySum256: verifier.Sum256(),
+		Payload:         signer.Sign(mesg),
 	}
 
 	// dedup
 	for _, sig := range cert.Signatures {
-		if hmac.Equal(sig.Identity, signature.Identity) {
+		if hmac.Equal(sig.PublicKeySum256[:], signature.PublicKeySum256[:]) {
 			return nil, ErrDuplicateSignature
 		}
 	}
@@ -313,7 +317,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 
 	// dedup
 	for _, sig := range cert.Signatures {
-		if hmac.Equal(sig.Identity, signature.Identity) {
+		if hmac.Equal(sig.PublicKeySum256[:], signature.PublicKeySum256[:]) {
 			return nil, ErrDuplicateSignature
 		}
 	}
@@ -353,7 +357,8 @@ func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 	}
 
 	for _, sig := range cert.Signatures {
-		if hmac.Equal(verifier.Identity(), sig.Identity) {
+		hash := verifier.Sum256()
+		if hmac.Equal(hash[:], sig.PublicKeySum256[:]) {
 			mesg, err := cert.message()
 			if err != nil {
 				return nil, err
