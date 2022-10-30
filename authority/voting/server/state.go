@@ -1430,7 +1430,8 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
 					}
-					if !hmac.Equal(pk, desc.IdentityKey.Bytes()) {
+					idHash := desc.IdentityKey.Sum256()
+					if !hmac.Equal(pk, idHash[:]) {
 						s.log.Errorf("Discarding persisted descriptor: key mismatch")
 						continue
 					}
