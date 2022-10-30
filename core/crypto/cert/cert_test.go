@@ -109,8 +109,6 @@ func TestWrongCertificate(t *testing.T) {
 func TestMultiSignatureCertificate(t *testing.T) {
 	assert := assert.New(t)
 
-	_, ephemeralPubKey := Scheme.NewKeypair()
-
 	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
 	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
 	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
@@ -118,7 +116,9 @@ func TestMultiSignatureCertificate(t *testing.T) {
 	// expiration in six months
 	expiration := time.Now().AddDate(0, 6, 0).Unix()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
+	message := []byte("hi. i'm a message.")
+
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, message, expiration)
 	assert.NoError(err)
 
 	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
@@ -138,47 +138,6 @@ func TestMultiSignatureCertificate(t *testing.T) {
 	mesg, err = Verify(signingPubKey3, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
-}
-
-func TestMultiSignatureOrdering(t *testing.T) {
-	assert := assert.New(t)
-
-	_, ephemeralPubKey := Scheme.NewKeypair()
-
-	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
-	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
-	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
-
-	// expiration in six months
-	expiration := time.Now().AddDate(0, 6, 0).Unix()
-
-	// 1
-	certificate1, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
-	assert.NoError(err)
-	certificate1, err = SignMulti(signingPrivKey2, signingPubKey2, certificate1)
-	assert.NoError(err)
-	certificate1, err = SignMulti(signingPrivKey3, signingPubKey3, certificate1)
-	assert.NoError(err)
-
-	// 2
-	certificate2, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
-	assert.NoError(err)
-	certificate2, err = SignMulti(signingPrivKey3, signingPubKey3, certificate2)
-	assert.NoError(err)
-	certificate2, err = SignMulti(signingPrivKey2, signingPubKey2, certificate2)
-	assert.NoError(err)
-
-	assert.Equal(certificate1, certificate2)
-
-	// 3
-	certificate3, err := Sign(signingPrivKey2, signingPubKey2, ephemeralPubKey.Bytes(), expiration)
-	assert.NoError(err)
-	certificate3, err = SignMulti(signingPrivKey3, signingPubKey3, certificate3)
-	assert.NoError(err)
-	certificate3, err = SignMulti(signingPrivKey1, signingPubKey1, certificate3)
-	assert.NoError(err)
-
-	assert.Equal(certificate3, certificate2)
 }
 
 func TestVerifyAll(t *testing.T) {
