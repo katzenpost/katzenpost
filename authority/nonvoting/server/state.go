@@ -18,6 +18,7 @@ package server
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -618,9 +619,9 @@ func (s *state) restorePersistence() error {
 				}
 
 				c := eDescsBkt.Cursor()
-				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
+				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
 					_, verifier := cert.Scheme.NewKeypair()
-					err := verifier.FromBytes(pk)
+					err := verifier.FromBytes(wantHash)
 					if err != nil {
 						s.log.Errorf("Failed to load verifier key: %v", err)
 						continue
@@ -630,7 +631,8 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
 						continue
 					}
-					if !bytes.Equal(pk, desc.IdentityKey.Bytes()) {
+					idHash := desc.IdentityKey.Sum256()
+					if !hmac.Equal(wantHash, idHash[:]) {
 						s.log.Errorf("Discarding persisted descriptor: key mismatch")
 						continue
 					}
