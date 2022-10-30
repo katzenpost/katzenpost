@@ -278,9 +278,7 @@ func (s *state) consense(epoch uint64) *document {
 				s.documents[epoch] = &document{doc: pDoc, raw: certificate1}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
 				for _, g := range good {
-					hash2 := g.Sum256()
-					id := base64.StdEncoding.EncodeToString(hash2[:])
-					s.log.Noticef("Consensus signed by %s", id)
+					s.log.Noticef("Consensus signed by %x", g.Sum256())
 				}
 				return s.documents[epoch]
 			}
