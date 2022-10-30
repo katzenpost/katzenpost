@@ -248,7 +248,8 @@ func (s *state) generateDocument(epoch uint64) {
 	srv := sha3.New256()
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
-	srv.Write(s.s.IdentityKey().Bytes())
+	idHash := s.s.IdentityKey().Sum256()
+	srv.Write(idHash[:])
 	srv.Write(reveal)
 
 	// include last srv as hash input
