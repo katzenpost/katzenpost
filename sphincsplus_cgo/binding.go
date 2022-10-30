@@ -8,6 +8,8 @@ import "C"
 import (
 	"fmt"
 	"unsafe"
+
+	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 var (
@@ -53,7 +55,7 @@ type PublicKey struct {
 
 // Reset overwrites the key with zeros.
 func (p *PublicKey) Reset() {
-	ExplicitBzero(p.publicKey)
+	utils.ExplicitBzero(p.publicKey)
 }
 
 // Verify checks whether the given signature is valid.
@@ -91,7 +93,7 @@ type PrivateKey struct {
 
 // Reset overwrites the key with zeros.
 func (p *PrivateKey) Reset() {
-	ExplicitBzero(p.privateKey)
+	utils.ExplicitBzero(p.privateKey)
 }
 
 // Sign signs the given message and returns the signature.
