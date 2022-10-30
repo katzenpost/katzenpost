@@ -19,6 +19,7 @@ package cert
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"encoding/binary"
 	"errors"
 	"sort"
@@ -229,7 +230,7 @@ func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
 		return nil, err
 	}
 	for _, s := range cert.Signatures {
-		if bytes.Equal(identity, s.Identity) {
+		if hmac.Equal(identity, s.Identity) {
 			return &s, nil
 		}
 	}
@@ -279,7 +280,7 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error)
 
 	// dedup
 	for _, sig := range cert.Signatures {
-		if bytes.Equal(sig.Identity, signature.Identity) || bytes.Equal(sig.Payload, signature.Payload) {
+		if hmac.Equal(sig.Identity, signature.Identity) {
 			return nil, ErrDuplicateSignature
 		}
 	}
@@ -312,7 +313,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 
 	// dedup
 	for _, sig := range cert.Signatures {
-		if bytes.Equal(sig.Identity, signature.Identity) || bytes.Equal(sig.Payload, signature.Payload) {
+		if hmac.Equal(sig.Identity, signature.Identity) {
 			return nil, ErrDuplicateSignature
 		}
 	}
@@ -352,7 +353,7 @@ func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 	}
 
 	for _, sig := range cert.Signatures {
-		if bytes.Equal(verifier.Identity(), sig.Identity) {
+		if hmac.Equal(verifier.Identity(), sig.Identity) {
 			mesg, err := cert.message()
 			if err != nil {
 				return nil, err
