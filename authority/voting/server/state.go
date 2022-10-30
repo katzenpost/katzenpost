@@ -255,7 +255,8 @@ func (s *state) consense(epoch uint64) *document {
 			if !ok {
 				panic(fmt.Sprintf("reverse hash key not found %x", pubKeyHash2[:]))
 			}
-			if ds, err := cert.GetSignature(idPubKey.Identity(), certificate2); err == nil {
+			hash1 := idPubKey.Sum256()
+			if ds, err := cert.GetSignature(hash1[:], certificate2); err == nil {
 				if sc, err := cert.AddSignature(idPubKey, *ds, certificate1); err == nil {
 					certificate1 = sc
 				}
@@ -277,7 +278,8 @@ func (s *state) consense(epoch uint64) *document {
 				s.documents[epoch] = &document{doc: pDoc, raw: certificate1}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
 				for _, g := range good {
-					id := base64.StdEncoding.EncodeToString(g.Identity())
+					hash2 := g.Sum256()
+					id := base64.StdEncoding.EncodeToString(hash2[:])
 					s.log.Noticef("Consensus signed by %s", id)
 				}
 				return s.documents[epoch]
