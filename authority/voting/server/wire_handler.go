@@ -209,14 +209,14 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	// Ensure that the descriptor is signed by the peer that is posting.
 	identityKeyHash := desc.IdentityKey.Sum256()
 	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
-		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, desc.IdentityKey, pubKeyHash)
+		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, desc.IdentityKey.Sum256(), pubKeyHash)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
 
 	// Ensure that the descriptor is from an allowed peer.
 	if !s.state.isDescriptorAuthorized(desc) {
-		s.log.Errorf("Peer %v: Identity key '%v' not authorized", rAddr, desc.IdentityKey)
+		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, desc.IdentityKey.Sum256)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
