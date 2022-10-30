@@ -1420,7 +1420,7 @@ func (s *state) restorePersistence() error {
 				}
 
 				c := eDescsBkt.Cursor()
-				for pk, rawDesc := c.First(); pk != nil; pk, rawDesc = c.Next() {
+				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
 					verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
 					if err != nil {
 						return err
@@ -1431,7 +1431,7 @@ func (s *state) restorePersistence() error {
 						continue
 					}
 					idHash := desc.IdentityKey.Sum256()
-					if !hmac.Equal(pk, idHash[:]) {
+					if !hmac.Equal(wantHash, idHash[:]) {
 						s.log.Errorf("Discarding persisted descriptor: key mismatch")
 						continue
 					}
