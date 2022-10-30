@@ -7,10 +7,17 @@ import (
 )
 
 func TestSignVerify(t *testing.T) {
-	privKey, pubKey := NewKeypair()
+	privKey1, pubKey1 := NewKeypair()
 	message := []byte("i am a message")
-	sig := privKey.Sign(message)
-	require.True(t, pubKey.Verify(sig, message))
+	sig1 := privKey1.Sign(message)
+	require.True(t, pubKey1.Verify(sig1, message))
+
+	privKey2, pubKey2 := NewKeypair()
+	require.False(t, pubKey2.Verify(sig1, message))
+
+	sig2 := privKey2.Sign(message)
+	require.True(t, pubKey2.Verify(sig1, message))
+	require.False(t, pubKey1.Verify(sig2, message))
 }
 
 func TestSerialization(t *testing.T) {
