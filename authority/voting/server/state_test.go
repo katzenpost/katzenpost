@@ -82,8 +82,8 @@ func TestVote(t *testing.T) {
 	require := require.New(t)
 
 	// instantiate states
-	n := 3
-	stateAuthority := make([]*state, n)
+	authNum := 3
+	stateAuthority := make([]*state, authNum)
 	votingEpoch := uint64(42)
 	parameters := &config.Parameters{
 		SendRatePerMinute: 100, Mu: 0.001, MuMaxDelay: 9000,
@@ -93,13 +93,13 @@ func TestVote(t *testing.T) {
 		LambdaM: 0.2, LambdaMMaxDelay: 9000,
 	}
 
-	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, n)
+	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
 	require.NoError(err)
 
 	reverseHash := make(map[[publicKeyHashSize]byte]sign.PublicKey)
 
 	// set up authorities from configuration
-	for i := 0; i < n; i++ {
+	for i := 0; i < authNum; i++ {
 		st := new(state)
 		st.votingEpoch = votingEpoch
 		cfg := authCfgs[i]
@@ -134,7 +134,7 @@ func TestVote(t *testing.T) {
 		}()
 		st.s = s
 		s.logBackend, err = log.New(cfg.Logging.File, s.cfg.Logging.Level, s.cfg.Logging.Disable)
-		st.log = s.logBackend.GetLogger("state")
+		st.log = s.logBackend.GetLogger(fmt.Sprintf("state%d", i))
 		if err == nil {
 			s.log = s.logBackend.GetLogger("authority")
 		}
@@ -176,8 +176,8 @@ func TestVote(t *testing.T) {
 	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Peers: peers}}
 
 	// generate mixes
-	n = 3 * 2 // 3 layer, 2 nodes per layer
-	m := 2    // 2 providers
+	n := 3 * 2 // 3 layer, 2 nodes per layer
+	m := 2     // 2 providers
 	idKeys := make([]*identityKey, 0)
 	mixCfgs := make([]*sConfig.Config, 0)
 	port := uint16(30000)
