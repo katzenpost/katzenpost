@@ -105,7 +105,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
-func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[string]cert.Verifier, d *Document) ([]byte, error) {
+func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -124,7 +124,7 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 
 	// attach peer signatures
 	for _, signature := range peerSignatures {
-		s := string(signature.Identity)
+		s := signature.PublicKeySum256
 		verifier := verifiers[s]
 		signed, err = cert.AddSignature(verifier, *signature, signed)
 		if err != nil {
