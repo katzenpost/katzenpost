@@ -29,7 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
-const debugTestEpoch = 0x23
+const debugTestEpoch = 0xFFFFFFFF
 
 func TestDescriptor(t *testing.T) {
 	assert := assert.New(t)
