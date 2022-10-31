@@ -103,11 +103,10 @@ func TestVote(t *testing.T) {
 		st := new(state)
 		st.votingEpoch = votingEpoch
 		cfg := authCfgs[i]
-		st.verifiers = make([]cert.Verifier, len(cfg.Authorities)+1)
+		st.verifiers = make([]cert.Verifier, len(cfg.Authorities))
 		for i, _ := range cfg.Authorities {
 			st.verifiers[i] = cert.Verifier(peerKeys[i].idPubKey)
 		}
-		st.verifiers[len(cfg.Authorities)] = cert.Verifier(peerKeys[i].idPubKey)
 		st.threshold = len(st.verifiers)/2 + 1
 		st.dissenters = len(cfg.Authorities)/2 - 1
 
