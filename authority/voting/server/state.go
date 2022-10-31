@@ -235,6 +235,17 @@ func (s *state) fsm() <-chan time.Time {
 	return time.After(sleep)
 }
 
+func (s *state) persistDocument(epoch uint64, doc []byte) {
+	if err := s.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(documentsBucket))
+		bkt.Put(epochToBytes(epoch), doc)
+		return nil
+	}); err != nil {
+		// Persistence failures are FATAL.
+		s.s.fatalErrCh <- err
+	}
+}
+
 func (s *state) consense(epoch uint64) *document {
 	// if we have a document, see if the other signatures make a consensus
 	// if we do not make a consensus with our document iterate over the
@@ -255,8 +266,7 @@ func (s *state) consense(epoch uint64) *document {
 			if !ok {
 				panic(fmt.Sprintf("reverse hash key not found %x", pubKeyHash2[:]))
 			}
-			hash1 := idPubKey.Sum256()
-			if ds, err := cert.GetSignature(hash1[:], certificate2); err == nil {
+			if ds, err := cert.GetSignature(pubKeyHash2[:], certificate2); err == nil {
 				if sc, err := cert.AddSignature(idPubKey, *ds, certificate1); err == nil {
 					certificate1 = sc
 				}
@@ -266,14 +276,7 @@ func (s *state) consense(epoch uint64) *document {
 			if pDoc, err := s11n.VerifyAndParseDocument(certificate1, good[0]); err == nil {
 
 				// Persist the document to disk.
-				if err := s.db.Update(func(tx *bolt.Tx) error {
-					bkt := tx.Bucket([]byte(documentsBucket))
-					bkt.Put(epochToBytes(epoch), []byte(certificate1))
-					return nil
-				}); err != nil {
-					// Persistence failures are FATAL.
-					s.s.fatalErrCh <- err
-				}
+				s.persistDocument(epoch, []byte(certificate1))
 
 				s.documents[epoch] = &document{doc: pDoc, raw: certificate1}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
