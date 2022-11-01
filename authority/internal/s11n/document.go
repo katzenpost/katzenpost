@@ -100,7 +100,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 	}
 
 	// Sign the document.
-	expiration := time.Now().Add(CertificateExpiration).Unix()
+	expiration := epochtime.Epoch.Add(time.Duration(d.Epoch+1) * epochtime.Period).Unix()
 	return cert.Sign(signer, verifier, payload, expiration)
 }
 
