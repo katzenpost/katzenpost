@@ -453,20 +453,25 @@ func VerifyThreshold(verifiers []Verifier, threshold int, rawCert []byte) ([]byt
 	}
 	certified := []byte{}
 	count := 0
-	good := []Verifier{}
+	good := make(map[[32]byte]*Verifier)
 	bad := []Verifier{}
-	for _, verifier := range verifiers {
+	for i, verifier := range verifiers {
 		c, err := Verify(verifier, rawCert)
 		if err != nil {
 			bad = append(bad, verifier)
 			continue
 		}
-		good = append(good, verifier)
+		good[verifier.Sum256()] = &verifiers[i]
 		certified = c
 		count++
 	}
-	if count >= threshold {
-		return certified, good, bad, nil
+	var good_out []Verifier
+	for _, v := range good {
+		good_out = append(good_out, *v)
 	}
-	return nil, good, bad, ErrThresholdNotMet
+	if len(good) >= threshold {
+		return certified, good_out, bad, nil
+	}
+
+	return nil, good_out, bad, ErrThresholdNotMet
 }
