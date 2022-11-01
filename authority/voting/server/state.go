@@ -107,12 +107,12 @@ type state struct {
 	priorSRV     [][]byte
 	reveals      map[uint64]map[[publicKeyHashSize]byte][]byte
 	certificates map[uint64]map[[publicKeyHashSize]byte][]byte
+	verifiers    map[[publicKeyHashSize]byte]cert.Verifier
 
 	updateCh chan interface{}
 
 	votingEpoch  uint64
 	genesisEpoch uint64
-	verifiers    []cert.Verifier
 	threshold    int
 	dissenters   int
 	state        string
@@ -272,7 +272,7 @@ func (s *state) consense(epoch uint64) *document {
 				}
 			}
 		}
-		if _, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, certificate1); err == nil {
+		if _, good, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, certificate1); err == nil {
 			if pDoc, err := s11n.VerifyAndParseDocument(certificate1, good[0]); err == nil {
 
 				// Persist the document to disk.
@@ -289,6 +289,16 @@ func (s *state) consense(epoch uint64) *document {
 	}
 	s.log.Errorf("No consensus found for epoch %d", epoch)
 	return nil
+}
+
+func (s *state) getVerifiers() []cert.Verifier {
+	v := make([]cert.Verifier, len(s.verifiers))
+	i := 0
+	for _, val := range s.verifiers {
+		v[i] = val
+		i++
+	}
+	return v
 }
 
 func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
@@ -1396,7 +1406,7 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				epochBytes := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-					_, good, _, err := cert.VerifyThreshold(s.verifiers, s.threshold, rawDoc)
+					_, good, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
 					if err != nil {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
@@ -1486,16 +1496,16 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
-	st.verifiers = make([]cert.Verifier, len(s.cfg.Authorities)+1)
-	for i, auth := range s.cfg.Authorities {
+	st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
+	for _, auth := range s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
 		err := pem.FromPEMString(auth.IdentityPublicKeyPem, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
-		st.verifiers[i] = cert.Verifier(identityPublicKey)
+		st.verifiers[identityPublicKey.Sum256()] = cert.Verifier(identityPublicKey)
 	}
-	st.verifiers[len(s.cfg.Authorities)] = cert.Verifier(s.IdentityKey())
+	st.verifiers[s.IdentityKey().Sum256()] = cert.Verifier(s.IdentityKey())
 	st.threshold = len(st.verifiers)/2 + 1
 	st.dissenters = len(s.cfg.Authorities)/2 - 1
 

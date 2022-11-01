@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -84,7 +85,8 @@ func TestVote(t *testing.T) {
 	// instantiate states
 	authNum := 3
 	stateAuthority := make([]*state, authNum)
-	votingEpoch := uint64(42)
+	votingEpoch, _, _ := epochtime.Now()
+	votingEpoch += 5
 	parameters := &config.Parameters{
 		SendRatePerMinute: 100, Mu: 0.001, MuMaxDelay: 9000,
 		LambdaP: 0.002, LambdaPMaxDelay: 9000,
@@ -103,9 +105,9 @@ func TestVote(t *testing.T) {
 		st := new(state)
 		st.votingEpoch = votingEpoch
 		cfg := authCfgs[i]
-		st.verifiers = make([]cert.Verifier, len(cfg.Authorities))
+		st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
 		for i, _ := range cfg.Authorities {
-			st.verifiers[i] = cert.Verifier(peerKeys[i].idPubKey)
+			st.verifiers[peerKeys[i].idPubKey.Sum256()] = cert.Verifier(peerKeys[i].idPubKey)
 		}
 		st.threshold = len(st.verifiers)/2 + 1
 		st.dissenters = len(cfg.Authorities)/2 - 1
