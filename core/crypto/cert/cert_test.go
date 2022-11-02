@@ -19,10 +19,10 @@ package cert
 import (
 	"bytes"
 	"testing"
-	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -37,10 +37,9 @@ func TestExpiredCertificate(t *testing.T) {
 	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
 	assert.NoError(err)
 
-	// expiration six months ago
-	expiration := time.Now().AddDate(0, -6, 0).Unix()
+	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), current-12)
 	assert.Error(err)
 
 	certified, err := Verify(ephemeralPubKey, certificate)
@@ -56,11 +55,10 @@ func TestCertificate(t *testing.T) {
 
 	signingPrivKey, signingPubKey := scheme.NewKeypair()
 
-	// expires 600 years after unix epoch
-	expiration := time.Unix(0, 0).AddDate(600, 0, 0).Unix()
+	current, _, _ := epochtime.Now()
 
 	toSign := ephemeralPubKey.Bytes()
-	certificate, err := Sign(signingPrivKey, signingPubKey, toSign, expiration)
+	certificate, err := Sign(signingPrivKey, signingPubKey, toSign, current+123)
 	assert.NoError(err)
 
 	mesg, err := Verify(signingPubKey, certificate)
@@ -73,12 +71,11 @@ func TestBadCertificate(t *testing.T) {
 
 	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
-	// expiration in six months
-	expiration := time.Now().AddDate(0, 6, 0).Unix()
+	current, _, _ := epochtime.Now()
 
 	certified := []byte("hello, i am a message")
 
-	certificate, err := Sign(signingPrivKey, signingPubKey, certified, expiration)
+	certificate, err := Sign(signingPrivKey, signingPubKey, certified, current+1)
 	require.NoError(t, err)
 
 	certificate[1000] = 235 // modify the signed data so that the Verify will fail
@@ -93,12 +90,10 @@ func TestWrongCertificate(t *testing.T) {
 	assert := assert.New(t)
 
 	_, ephemeralPubKey := Scheme.NewKeypair()
-
 	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
-	// expiration in six months
-	expiration := time.Now().AddDate(0, 6, 0).Unix()
-	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), expiration)
+	current, _, _ := epochtime.Now()
+	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), current+1)
 	assert.NoError(err)
 
 	mesg, err := Verify(ephemeralPubKey, certificate)
@@ -113,12 +108,11 @@ func TestMultiSignatureCertificate(t *testing.T) {
 	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
 	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
 
-	// expiration in six months
-	expiration := time.Now().AddDate(0, 6, 0).Unix()
+	current, _, _ := epochtime.Now()
 
 	message := []byte("hi. i'm a message.")
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, message, expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, message, current+1)
 	assert.NoError(err)
 
 	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
@@ -149,10 +143,9 @@ func TestVerifyAll(t *testing.T) {
 	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
 	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
 
-	// expiration in six months
-	expiration := time.Now().AddDate(0, 6, 0).Unix()
+	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
 	assert.NoError(err)
 
 	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
@@ -177,10 +170,9 @@ func TestVerifyThreshold(t *testing.T) {
 	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
 	_, signingPubKey4 := Scheme.NewKeypair()
 
-	// expiration in six months
-	expiration := time.Now().AddDate(0, 6, 0).Unix()
+	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
 	assert.NoError(err)
 
 	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
@@ -218,10 +210,9 @@ func TestAddSignature(t *testing.T) {
 	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
 	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
 
-	// expiration in six months
-	expiration := time.Now().AddDate(0, 6, 0).Unix()
+	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), expiration)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
 	assert.NoError(err)
 
 	certificate2, err := SignMulti(signingPrivKey2, signingPubKey2, certificate)
