@@ -28,7 +28,7 @@ fix-perms:
 
 debian_base:
 	if ! docker images|grep katzenpost/debian_base; then \
-		docker run --name katzenpost_debian_base -it golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y' \
+		docker run --volume /usr/local/lib/libsphincsplus.so:/usr/local/lib/libsphincsplus.so --name katzenpost_debian_base -it golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y && ldconfig -v' \
 		&& docker commit katzenpost_debian_base katzenpost/debian_base \
 		&& docker rm katzenpost_debian_base; \
         fi
