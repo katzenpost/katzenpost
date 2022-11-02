@@ -238,8 +238,8 @@ func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.
 	}
 
 	// Sign the document.
-	expiration := time.Now().Add(s11n.CertificateExpiration).Unix()
-	signed, err := cert.Sign(signingKeys[0], signingPubKeys[0], payload, expiration)
+	current, _, _ := epochtime.Now()
+	signed, err := cert.Sign(signingKeys[0], signingPubKeys[0], payload, current+1)
 	if err != nil {
 		return nil, err
 	}

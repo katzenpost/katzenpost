@@ -128,8 +128,7 @@ func SignDescriptor(signer cert.Signer, verifier cert.Verifier, base *pki.MixDes
 
 	// Sign the descriptor.
 	epoch, _, _ := epochtime.Now()
-	expiration := epochtime.Epoch.Add(time.Duration(epoch+1) * epochtime.Period).Unix()
-	signed, err := cert.Sign(signer, verifier, payload, expiration)
+	signed, err := cert.Sign(signer, verifier, payload, epoch+1)
 	if err != nil {
 		return nil, err
 	}
