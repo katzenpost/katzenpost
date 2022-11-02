@@ -3,7 +3,7 @@ ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user=${uid}:${gid}
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --volume /usr/local/lib/libsphincsplus.so:/usr/local/lib/libsphincsplus.so --volume /usr/local/include/sphincsplus:/usr/local/include/sphincsplus --workdir /go/katzenpost
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --volume /usr/local/include/sphincsplus:/usr/local/include/sphincsplus --workdir /go/katzenpost
 
 run-nonvoting-testnet: server nonvoting_authority fix-perms
 	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up
@@ -28,7 +28,7 @@ fix-perms:
 
 debian_base:
 	if ! docker images|grep katzenpost/debian_base; then \
-		docker run --volume /usr/local/lib/libsphincsplus.so:/usr/local/lib/libsphincsplus.so --name katzenpost_debian_base -it golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y && ldconfig -v' \
+		docker run --volume /usr/local/lib/libsphincsplus.so:/libsphincsplus.so --name katzenpost_debian_base -it golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y && cp /libsphincsplus.so /usr/local/lib && ldconfig -v' \
 		&& docker commit katzenpost_debian_base katzenpost/debian_base \
 		&& docker rm katzenpost_debian_base; \
         fi
