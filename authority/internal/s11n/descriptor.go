@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"time"
 
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
@@ -37,11 +36,6 @@ import (
 
 const (
 	nodeDescriptorVersion = "v0"
-)
-
-var (
-	// CertificateExpiration is the time a descriptor certificate will be valid for.
-	CertificateExpiration = (epochtime.Period * 3) + (time.Minute * 10)
 )
 
 type nodeDescriptor struct {
@@ -128,7 +122,7 @@ func SignDescriptor(signer cert.Signer, verifier cert.Verifier, base *pki.MixDes
 
 	// Sign the descriptor.
 	epoch, _, _ := epochtime.Now()
-	signed, err := cert.Sign(signer, verifier, payload, epoch+1)
+	signed, err := cert.Sign(signer, verifier, payload, epoch+2)
 	if err != nil {
 		return nil, err
 	}

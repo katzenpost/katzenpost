@@ -430,10 +430,8 @@ func (s *SharedRandom) Reveal() []byte {
 func (s *state) reveal(epoch uint64) []byte {
 	if reveal, ok := s.reveals[epoch][s.identityPubKeyHash()]; ok {
 		// Reveals are only valid until the end of voting round
-		_, _, till := epochtime.Now()
-		revealExpiration := time.Now().Add(till).Unix()
-		expirationEpoch, _, _ := epochtime.FromUnix(revealExpiration)
-		signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, expirationEpoch)
+		current, _, _ := epochtime.Now()
+		signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, current+2)
 		if err != nil {
 			s.s.fatalErrCh <- err
 		}

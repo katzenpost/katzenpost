@@ -100,7 +100,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 
 	// Sign the document.
 	current, _, _ := epochtime.Now()
-	return cert.Sign(signer, verifier, payload, current+1)
+	return cert.Sign(signer, verifier, payload, current+2)
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
@@ -116,7 +116,7 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 
 	// Sign the document.
 	current, _, _ := epochtime.Now()
-	signed, err := cert.Sign(signer, verifier, payload, current+1)
+	signed, err := cert.Sign(signer, verifier, payload, current+2)
 	if err != nil {
 		return nil, err
 	}
