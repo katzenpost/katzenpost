@@ -10,19 +10,18 @@
 [VotingAuthority]
     [[VotingAuthority.Peers]]
       Addresses = ["127.0.0.1:21483"]
-      LinkPublicKey = "I49V1w7OJ/Kcw7YbEvo+92akE9cYLGeXRBg6KE/sYS8="
+      LinkPublicKeyPem = "auth1_link_pub_key.pem"
       IdentityPublicKey = "xCjlBac+wanLeUQbrNLTwQzFKIwfJqpoKZYfB/hvZHo="
 
     [[VotingAuthority.Peers]]
       Addresses = ["127.0.0.1:22483"]
-      LinkPublicKey = "fZcGD+uPm18BYuDKXS3eozp9+i2hW2SWgnuapP0ftgE="
+      LinkPublicKeyPem = "auth2_link_pub_key.pem"
       IdentityPublicKey = "OAfHeF/U+y7dXWgxSCuPOBIqgBOuIC7JKilZJU/Dt9c="
 
     [[VotingAuthority.Peers]]
       Addresses = ["127.0.0.1:23483"]
-      LinkPublicKey = "jBVovebgazZB38Q3OZzEvLb8UDEUB6sRQZAULDrxKAY="
+      LinkPublicKeyPem = "auth3_link_pub_key.pem"
       IdentityPublicKey = "e8iJCBjepa/Cpmmu5UCcR6BZgYssUTaih9U01ysEK+o="
 
 [Debug]
   PollingInterval = 10
-  
