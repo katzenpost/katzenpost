@@ -20,7 +20,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
@@ -100,8 +99,8 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 	}
 
 	// Sign the document.
-	expiration := epochtime.Epoch.Add(time.Duration(d.Epoch+1) * epochtime.Period).Unix()
-	return cert.Sign(signer, verifier, payload, expiration)
+	current, _, _ := epochtime.Now()
+	return cert.Sign(signer, verifier, payload, current+1)
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
@@ -116,8 +115,8 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	}
 
 	// Sign the document.
-	expiration := time.Now().Add(3 * epochtime.Period).Unix()
-	signed, err := cert.Sign(signer, verifier, payload, expiration)
+	current, _, _ := epochtime.Now()
+	signed, err := cert.Sign(signer, verifier, payload, current+1)
 	if err != nil {
 		return nil, err
 	}
