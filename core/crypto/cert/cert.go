@@ -23,11 +23,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"sort"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/katzenpost/core/crypto/sign/ed25519sphincsplus"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
 const (
@@ -112,8 +112,8 @@ type certificate struct {
 	// Version is the certificate format version.
 	Version uint32
 
-	// Expiration is seconds since Unix epoch.
-	Expiration int64
+	// Expiration is katzenpost epoch id of the expiration.
+	Expiration uint64
 
 	// KeyType indicates the type of key
 	// that is certified by this certificate.
@@ -155,8 +155,8 @@ type certificateWire struct {
 	// Version is the certificate format version.
 	Version uint32
 
-	// Expiration is seconds since Unix epoch.
-	Expiration int64
+	// Expiration is katzenpost epoch id of the expiration.
+	Expiration uint64
 
 	// KeyType indicates the type of key
 	// that is certified by this certificate.
@@ -209,7 +209,8 @@ func (c *certificate) sanityCheck() error {
 	if c.Version != CertVersion {
 		return ErrVersionMismatch
 	}
-	if time.Unix(c.Expiration, 0).Before(time.Now()) {
+	current, _, _ := epochtime.Now()
+	if current >= c.Expiration {
 		return ErrCertificateExpired
 	}
 	if len(c.KeyType) == 0 {
@@ -223,7 +224,7 @@ func (c *certificate) sanityCheck() error {
 
 // Sign uses the given Signer to create a certificate which
 // certifies the given data.
-func Sign(signer Signer, verifier Verifier, data []byte, expiration int64) ([]byte, error) {
+func Sign(signer Signer, verifier Verifier, data []byte, expiration uint64) ([]byte, error) {
 	cert := certificate{
 		Version:    CertVersion,
 		Expiration: expiration,
