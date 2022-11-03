@@ -121,7 +121,7 @@ func (k *CBORPluginWorker) haltAllClients() {
 }
 
 func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin.Client) {
-	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
+	kaetzchenRequestsTimer := prometheus.NewTimer(kaetzchenRequestsDuration)
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 

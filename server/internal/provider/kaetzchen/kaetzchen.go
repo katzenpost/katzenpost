@@ -144,7 +144,6 @@ var (
 			Help:      "Number of total failed kaetzchen requests",
 		},
 	)
-	kaetzchenRequestsTimer *prometheus.Timer
 )
 
 func init() {
@@ -239,7 +238,7 @@ func (k *KaetzchenWorker) worker() {
 }
 
 func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
-	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
+	kaetzchenRequestsTimer := prometheus.NewTimer(kaetzchenRequestsDuration)
 	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
