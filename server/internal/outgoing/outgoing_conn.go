@@ -17,8 +17,8 @@
 package outgoing
 
 import (
-	"bytes"
 	"context"
+	"crypto/hmac"
 	"fmt"
 	"net"
 	"sync/atomic"
@@ -88,7 +88,9 @@ func init() {
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
-	if !bytes.Equal(c.dst.IdentityKey.Bytes(), creds.AdditionalData) {
+
+	idHash := c.dst.IdentityKey.Sum256()
+	if !hmac.Equal(idHash[:], creds.AdditionalData) {
 		return false
 	}
 	if !c.dst.LinkKey.Equal(creds.PublicKey) {
