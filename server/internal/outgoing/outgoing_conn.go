@@ -91,9 +91,11 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 	idHash := c.dst.IdentityKey.Sum256()
 	if !hmac.Equal(idHash[:], creds.AdditionalData) {
+		c.log.Debug("IsPeerValid false, identity hash mismatch")
 		return false
 	}
 	if !c.dst.LinkKey.Equal(creds.PublicKey) {
+		c.log.Debug("IsPeerValid false, link key mismatch")
 		return false
 	}
 
@@ -102,6 +104,9 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	var isValid bool
 	_, c.canSend, isValid = c.co.glue.PKI().AuthenticateConnection(creds, true)
 
+	if !isValid {
+		c.log.Debug("failed to authenticate connect via latest PKI doc")
+	}
 	return isValid
 }
 
