@@ -113,7 +113,7 @@ ping-rebuild: deps
 
 run-ping: ping
 	docker run --network=host ${docker_args} --rm -it katzenpost/ping \
-        /go/bin/ping -c /go/katzenpost/ping/nonvoting_docker_mixnet.toml -s echo -printDiff -n 1
+        /go/bin/ping -c /go/katzenpost/ping/voting_docker_mixnet.toml -s echo -printDiff -n 1
 
 shell: deps
 	docker run --network=host ${docker_args} --rm -it katzenpost/deps bash
