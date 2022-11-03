@@ -125,8 +125,8 @@ func NewSession(
 	if err != nil {
 		panic(err)
 	}
-	if len(linkKeyText) > 64 {
-		linkKeyText = linkKeyText[:64]
+	if len(linkKeyText) > 32 {
+		linkKeyText = linkKeyText[:32]
 	}
 
 	clientCfg := &minclient.ClientConfig{
