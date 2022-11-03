@@ -18,8 +18,8 @@
 package incoming
 
 import (
-	"bytes"
 	"container/list"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -182,7 +182,7 @@ func (l *listener) CloseOldConns(ptr interface{}) error {
 			continue
 		}
 
-		if !bytes.Equal(a.AdditionalData, b.AdditionalData) {
+		if !hmac.Equal(a.AdditionalData, b.AdditionalData) {
 			continue
 		}
 		if !a.PublicKey.Equal(b.PublicKey) {
