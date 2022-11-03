@@ -173,12 +173,25 @@ func (co *connector) onClosedConn(c *outgoingConn) {
 }
 
 func (co *connector) IsValidForwardDest(id *[constants.NodeIDLength]byte) bool {
+
+	co.log.Debug("IsValidForwardDest start")
+
 	// This doesn't need to be super accurate, just enough to prevent packets
 	// destined to la-la land from being scheduled.
 	co.RLock()
 	defer co.RUnlock()
 
+	co.log.Debug("connection table start")
+	for k, v := range co.conns {
+		co.log.Debugf("node_id: %x, node_name: %s", k[:], v.dst.Name)
+	}
+	co.log.Debug("connection table end")
+
 	_, ok := co.conns[*id]
+
+	co.log.Debug("node_id: %x isFound: %v", id[:], ok)
+
+	co.log.Debug("IsValidForwardDest end")
 	return ok
 }
 
