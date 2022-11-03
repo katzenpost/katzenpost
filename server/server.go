@@ -24,7 +24,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"gitlab.com/yawning/aez.git"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -41,6 +40,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pki"
 	"github.com/katzenpost/katzenpost/server/internal/provider"
 	"github.com/katzenpost/katzenpost/server/internal/scheduler"
+	"gitlab.com/yawning/aez.git"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )

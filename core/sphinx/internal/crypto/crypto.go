@@ -25,10 +25,10 @@ import (
 	"crypto/sha512"
 	"hash"
 
-	"gitlab.com/yawning/aez.git"
-	"gitlab.com/yawning/bsaes.git"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"gitlab.com/yawning/aez.git"
+	"gitlab.com/yawning/bsaes.git"
 )
 
 const (

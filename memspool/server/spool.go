@@ -25,10 +25,10 @@ import (
 	"time"
 
 	sha512 "crypto/sha512"
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/memspool/common"
+	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 )
 

@@ -7,7 +7,7 @@ import (
 const rounds = 14
 const keyWords = 8
 const BlockSize = 32
-const blockWords = BlockSize/4
+const blockWords = BlockSize / 4
 
 type Cipher struct {
 	key [blockWords * (rounds + 1)]uint32
@@ -21,22 +21,22 @@ func NewCipher(key *[32]byte) *Cipher {
 	}
 
 	roundConstant := byte(1)
-	for i := keyWords; i < blockWords * (rounds + 1); i++ {
+	for i := keyWords; i < blockWords*(rounds+1); i++ {
 		temp := c.key[i-1]
-		if (i % keyWords == 0) {
+		if i%keyWords == 0 {
 			temp = subByte(rotByte(temp)) ^ (uint32(roundConstant) << 24)
 			roundConstant = xtime(roundConstant)
-		} else if (i % keyWords == 4) {
+		} else if i%keyWords == 4 {
 			temp = subByte(temp)
 		}
-		c.key[i] = c.key[i - keyWords] ^ temp
+		c.key[i] = c.key[i-keyWords] ^ temp
 	}
 
 	return c
 }
 
 func (c *Cipher) Encrypt(dst, src *[32]byte) {
-	var state [4*blockWords]byte
+	var state [4 * blockWords]byte
 	copy(state[:], src[:])
 
 	addKey(&state, c.key[:])
@@ -88,7 +88,7 @@ func (c *Cipher) Encrypt(dst, src *[32]byte) {
 }
 
 func (c *Cipher) Decrypt(dst, src *[32]byte) {
-	var state [4*blockWords]byte
+	var state [4 * blockWords]byte
 	copy(state[:], src[:])
 
 	addKey(&state, c.key[blockWords*rounds:])
@@ -154,7 +154,7 @@ func rotByte(a uint32) uint32 {
 	return (a >> 24) | (a << 8)
 }
 
-func addKey(state *[4*blockWords]byte, key []uint32) {
+func addKey(state *[4 * blockWords]byte, key []uint32) {
 	for i := 0; i < blockWords; i++ {
 		t := binary.BigEndian.Uint32(state[4*i:])
 		t ^= key[i]
@@ -162,10 +162,10 @@ func addKey(state *[4*blockWords]byte, key []uint32) {
 	}
 }
 
-func shiftRow(state *[4*blockWords]byte, row, shift int) {
+func shiftRow(state *[4 * blockWords]byte, row, shift int) {
 	var input [blockWords]byte
 	for i := range input {
-		input[i] = state[row + 4*i]
+		input[i] = state[row+4*i]
 	}
 
 	src := shift
@@ -176,7 +176,7 @@ func shiftRow(state *[4*blockWords]byte, row, shift int) {
 	for i := 0; i < blockWords; i++ {
 		state[dst] = input[src]
 		dst += 4
-		dst %= blockWords*4
+		dst %= blockWords * 4
 		src++
 		src %= blockWords
 	}

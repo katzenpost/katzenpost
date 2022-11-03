@@ -70,7 +70,7 @@ type Document struct {
 
 	SharedRandomCommit []byte
 	SharedRandomValue  []byte
-	PriorSharedRandom [][]byte
+	PriorSharedRandom  [][]byte
 }
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.

@@ -188,7 +188,7 @@ func TestClientServerBasics2(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
-	shutdownChan := make(chan struct {})
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -271,7 +271,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
-	shutdownChan := make(chan struct {})
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -401,7 +401,7 @@ func TestClientServerBasics4(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
-	shutdownChan := make(chan struct {})
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -542,7 +542,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
-	shutdownChan := make(chan struct {})
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()

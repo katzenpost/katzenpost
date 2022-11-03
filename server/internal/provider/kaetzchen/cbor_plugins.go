@@ -29,9 +29,9 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
+	cConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	cConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -143,7 +143,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		if len(r.Payload) > cConstants.UserForwardPayloadLength {
 			// response is probably invalid, so drop it
 			k.log.Errorf("Got response too long: %d > max (%d)",
-			len(r.Payload), cConstants.UserForwardPayloadLength)
+				len(r.Payload), cConstants.UserForwardPayloadLength)
 			kaetzchenRequestsDropped.Inc()
 			return
 		}

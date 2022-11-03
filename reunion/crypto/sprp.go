@@ -17,8 +17,8 @@
 package crypto
 
 import (
-	"gitlab.com/yawning/aez.git"
 	"github.com/awnumar/memguard"
+	"gitlab.com/yawning/aez.git"
 )
 
 const (

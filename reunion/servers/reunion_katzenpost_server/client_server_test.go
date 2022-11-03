@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:build docker_test
 // +build docker_test
 
 package main
@@ -78,7 +79,7 @@ func TestDockerClientExchange1(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	aliceUpdateCh := make(chan reunionClient.ReunionUpdate)
-	shutdownCh := make(chan struct {})
+	shutdownCh := make(chan struct{})
 	go func() {
 		for {
 			update := <-aliceUpdateCh
@@ -172,7 +173,7 @@ func TestDockerClientExchange2(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	aliceUpdateCh := make(chan reunionClient.ReunionUpdate)
-	shutdownCh := make(chan struct {})
+	shutdownCh := make(chan struct{})
 	go func() {
 		for {
 			update := <-aliceUpdateCh

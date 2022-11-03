@@ -49,7 +49,7 @@ var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = 1 * time.Minute
 	WarpedEpoch          = "false"
-	nextFetchTill        = 3*epochtime.Period / 8
+	nextFetchTill        = 3 * epochtime.Period / 8
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = epochtime.Period / 4
 )

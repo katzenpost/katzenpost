@@ -132,8 +132,8 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		// the node's clock is and the current time.
 	default:
 		// The peer is publishing for an epoch that's invalid.
-		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v'," +
-		" epoch should be around '%v'", rAddr, cmd.Epoch, now)
+		s.log.Errorf("Peer %v: Invalid descriptor epoch '%v',"+
+			" epoch should be around '%v'", rAddr, cmd.Epoch, now)
 		return resp
 	}
 

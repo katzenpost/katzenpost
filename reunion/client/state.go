@@ -18,8 +18,8 @@
 package client
 
 import (
-	"github.com/katzenpost/katzenpost/reunion/crypto"
 	"github.com/fxamacker/cbor/v2"
+	"github.com/katzenpost/katzenpost/reunion/crypto"
 )
 
 type serializableExchange struct {

@@ -28,7 +28,6 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/yawning/avl.git"
 	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -45,6 +44,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
 	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/yawning/avl.git"
 	"gopkg.in/op/go-logging.v1"
 )
 

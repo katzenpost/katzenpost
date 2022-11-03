@@ -44,11 +44,11 @@ const (
 )
 
 var (
-	MixPublishDeadline = epochtime.Period /4
-	errGone   = errors.New("authority: Requested epoch will never get a Document")
-	errNotYet = errors.New("authority: Document is not ready yet")
-	weekOfEpochs = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
-	WarpedEpoch string
+	MixPublishDeadline = epochtime.Period / 4
+	errGone            = errors.New("authority: Requested epoch will never get a Document")
+	errNotYet          = errors.New("authority: Document is not ready yet")
+	weekOfEpochs       = uint64(time.Duration(time.Hour*24*7) / epochtime.Period)
+	WarpedEpoch        string
 )
 
 type descriptor struct {
@@ -75,11 +75,11 @@ type state struct {
 
 	documents   map[uint64]*document
 	descriptors map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor
-	priorSRV     [][]byte
+	priorSRV    [][]byte
 
 	updateCh       chan interface{}
 	bootstrapEpoch uint64
-	genesisEpoch uint64
+	genesisEpoch   uint64
 }
 
 func (s *state) Halt() {
@@ -145,8 +145,8 @@ func (s *state) onWakeup() {
 			s.log.Debugf("All descriptors uploaded, bootstrapping document")
 			s.generateDocument(epoch)
 		} else {
-			s.log.Debugf("We are in bootstrapping state for current epoch %v but only have " +
-			"%d descriptors out of %d authorized nodes", epoch, len(m), nrBootstrapDescs)
+			s.log.Debugf("We are in bootstrapping state for current epoch %v but only have "+
+				"%d descriptors out of %d authorized nodes", epoch, len(m), nrBootstrapDescs)
 		}
 	}
 
@@ -521,7 +521,7 @@ func (s *state) documentForEpoch(epoch uint64) ([]byte, error) {
 		// Check to see if we are doing a bootstrap, and it's possible that
 		// we may decide to publish a document at some point ignoring the
 		// standard schedule.
-		if now == s.bootstrapEpoch || now - 1 == s.bootstrapEpoch {
+		if now == s.bootstrapEpoch || now-1 == s.bootstrapEpoch {
 			return nil, errNotYet
 		}
 
