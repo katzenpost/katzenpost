@@ -18,10 +18,8 @@ package client
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
