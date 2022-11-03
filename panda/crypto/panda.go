@@ -153,17 +153,6 @@ func (kx *KeyExchange) updateSerialised() error {
 	return nil
 }
 
-func (kx *KeyExchange) shouldStop() bool {
-	select {
-	case <-kx.shutdownChan:
-		return true
-	default:
-		return false
-	}
-
-	// unreachable
-}
-
 // SetSharedRandom updates the KeyExchange SharedRandom and resets the protocol state back to KeyExchange_INIT.
 // The caller MUST halt an running KeyExchange before calling SetSharedRandom.
 func (kx *KeyExchange) SetSharedRandom(srv []byte) {
@@ -178,19 +167,14 @@ func (kx *KeyExchange) SetSharedRandom(srv []byte) {
 }
 
 func (kx *KeyExchange) Run() {
-	sendPandaUpdate := func() {
-		kx.pandaChan <- PandaUpdate{
-			ID:         kx.contactID,
-			Serialised: kx.Marshal(),
-		}
-	}
 	switch kx.status {
 	case panda_proto.KeyExchange_INIT:
 		if err := kx.derivePassword(); err != nil {
 			kx.log.Error(err.Error())
-			kx.pandaChan <- PandaUpdate{
-				ID:  kx.contactID,
-				Err: err,
+			select {
+			case <-kx.shutdownChan:
+				kx.log.Error(ShutdownErrMessage)
+			case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Err: err}:
 			}
 			return
 		}
@@ -198,25 +182,28 @@ func (kx *KeyExchange) Run() {
 		err := kx.updateSerialised()
 		if err != nil {
 			kx.log.Error(err.Error())
-			kx.pandaChan <- PandaUpdate{
-				ID:  kx.contactID,
-				Err: err,
+			select {
+			case <-kx.shutdownChan:
+				kx.log.Error(ShutdownErrMessage)
+			case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Err: err}:
 			}
 			return
 		}
 		kx.log.Info("password derivation complete.")
-		sendPandaUpdate()
-		if kx.shouldStop() {
+		select {
+		case <-kx.shutdownChan:
 			kx.log.Error(ShutdownErrMessage)
 			return
+		case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Serialised: kx.Marshal()}:
 		}
 		fallthrough
 	case panda_proto.KeyExchange_EXCHANGE1:
 		if err := kx.exchange1(); err != nil {
 			kx.log.Error(err.Error())
-			kx.pandaChan <- PandaUpdate{
-				ID:  kx.contactID,
-				Err: err,
+			select {
+			case <-kx.shutdownChan:
+				kx.log.Error(ShutdownErrMessage)
+			case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Err: err}:
 			}
 			return
 		}
@@ -224,31 +211,36 @@ func (kx *KeyExchange) Run() {
 		err := kx.updateSerialised()
 		if err != nil {
 			kx.log.Error(err.Error())
-			kx.pandaChan <- PandaUpdate{
-				ID:  kx.contactID,
-				Err: err,
+			select {
+			case <-kx.shutdownChan:
+				kx.log.Error(ShutdownErrMessage)
+			case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Err: err}:
 			}
 			return
 		}
 		kx.log.Info("first message exchange complete")
-		sendPandaUpdate()
-		if kx.shouldStop() {
+		select {
+		case <-kx.shutdownChan:
 			kx.log.Error(ShutdownErrMessage)
 			return
+		case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Serialised: kx.Marshal()}:
 		}
 		fallthrough
 	case panda_proto.KeyExchange_EXCHANGE2:
 		reply, err := kx.exchange2()
-		kx.pandaChan <- PandaUpdate{
-			ID:     kx.contactID,
-			Err:    err,
-			Result: reply,
+		select {
+		case <-kx.shutdownChan:
+			kx.log.Error(ShutdownErrMessage)
+		case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Err: err, Result: reply}:
 		}
 		return
 	default:
-		kx.pandaChan <- PandaUpdate{
-			ID:  kx.contactID,
-			Err: errors.New("unknown state"),
+		select {
+		case <-kx.shutdownChan:
+			kx.log.Error(ShutdownErrMessage)
+			return
+
+		case kx.pandaChan <- PandaUpdate{ID: kx.contactID, Err: errors.New("unknown state")}:
 		}
 		return
 	}

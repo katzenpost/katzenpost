@@ -110,10 +110,6 @@ func TestSerialise(t *testing.T) {
 func getKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) (*KeyExchange, error) {
 
 	shutdownChan := make(chan struct{})
-	go func() {
-		<-shutdownChan
-	}()
-
 	pandaChan := make(chan PandaUpdate)
 	go func() {
 		var reply []byte
@@ -185,12 +181,18 @@ func TestUpdateSRV(t *testing.T) {
 
 	kx1, err := getKX(a, logBackend.GetLogger("a_kx"), mp, srv1, secret, msg1)
 	require.NoError(err)
-	go kx1.Run()
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+	go func() {
+		kx1.Run()
+		wg.Done()
+	}()
 	go runKX(b, logBackend.GetLogger("b_kx"), mp, srv2, secret, msg2)
 
 	// stop the exchange, update the srv, and restart the exchange
 	var foo struct{}
 	kx1.shutdownChan <- foo
+	wg.Wait()
 	kx1.SetSharedRandom(srv2)
 	go kx1.Run()
 
@@ -208,23 +210,26 @@ func TestUpdateSRV(t *testing.T) {
 func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
 
 	shutdownChan := make(chan struct{})
-	go func() {
-		<-shutdownChan
-	}()
 	contactID := uint64(123)
 	pandaChan := make(chan PandaUpdate)
 	kx, err := NewKeyExchange(rand.Reader, log, mp, srv, secret, message, contactID, pandaChan, shutdownChan)
+
+	if err != nil {
+		resultChan <- err
+		return
+	}
+	kx.log = log
+	go kx.Run()
 
 	go func() {
 		var reply []byte
 		for {
 			pandaUpdate := <-pandaChan
 			close(shutdownChan)
+			shutdownChan = make(chan struct{})
 			sr := kx.Marshal()
 			kx, err = UnmarshalKeyExchange(rand.Reader, log, mp, sr, contactID, pandaChan, shutdownChan)
 			kx.pandaChan = pandaChan
-			shutdownChan = make(chan struct{})
-
 			kx.shutdownChan = shutdownChan
 			kx.contactID = contactID
 			if err != nil {
@@ -239,16 +244,7 @@ func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp Mee
 			}
 		}
 	}()
-	if err != nil {
-		resultChan <- err
-	}
-	kx.log = log
-	kx.Run()
-	if err != nil {
-		resultChan <- err
-	}
 }
-
 
 func TestKeyExchangeWithSerialization(t *testing.T) {
 	require := require.New(t)
