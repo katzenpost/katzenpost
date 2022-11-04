@@ -18,8 +18,8 @@
 package pki
 
 import (
-	"bytes"
 	"context"
+	"crypto/hmac"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -164,14 +164,15 @@ func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: provider '%v' not found", name)
 }
 
-// GetProviderByKey returns the specific provider descriptor corresponding
-// to the specified IdentityKey.
-func (d *Document) GetProviderByKey(key []byte) (*MixDescriptor, error) {
+// GetProviderByKeyHash returns the specific provider descriptor corresponding
+// to the specified IdentityKey hash.
+func (d *Document) GetProviderByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	for _, v := range d.Providers {
 		if v.IdentityKey == nil {
 			return nil, fmt.Errorf("pki: document contains invalid descriptors")
 		}
-		if bytes.Equal(v.IdentityKey.Bytes(), key) {
+		idKeyHash := v.IdentityKey.Sum256()
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
 			return v, nil
 		}
 	}
@@ -199,14 +200,15 @@ func (d *Document) GetMixesInLayer(layer uint8) ([]*MixDescriptor, error) {
 }
 
 // GetMixByKey returns the specific mix descriptor corresponding
-// to the specified IdentityKey.
-func (d *Document) GetMixByKey(key []byte) (*MixDescriptor, error) {
+// to the specified IdentityKey hash.
+func (d *Document) GetMixByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	for _, l := range d.Topology {
 		for _, v := range l {
 			if v.IdentityKey == nil {
 				return nil, fmt.Errorf("pki: document contains invalid descriptors")
 			}
-			if bytes.Equal(v.IdentityKey.Bytes(), key) {
+			idKeyHash := v.IdentityKey.Sum256()
+			if hmac.Equal(idKeyHash[:], keyhash[:]) {
 				return v, nil
 			}
 		}
@@ -226,13 +228,13 @@ func (d *Document) GetNode(name string) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
-// GetNodeByKey returns the specific descriptor corresponding to the
-// specified IdentityKey.
-func (d *Document) GetNodeByKey(key []byte) (*MixDescriptor, error) {
-	if m, err := d.GetMixByKey(key); err == nil {
+// GetNodeByKeyHash returns the specific descriptor corresponding to the
+// specified IdentityKey hash.
+func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
+	if m, err := d.GetMixByKeyHash(keyhash); err == nil {
 		return m, nil
 	}
-	if m, err := d.GetProviderByKey(key); err == nil {
+	if m, err := d.GetProviderByKeyHash(keyhash); err == nil {
 		return m, nil
 	}
 	return nil, fmt.Errorf("pki: node not found")
