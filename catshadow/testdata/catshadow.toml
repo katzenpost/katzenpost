@@ -14,6 +14,9 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
+
+DataDir = "./testdata/"
+
 [UpstreamProxy]
   Type = "none"
 
@@ -136,9 +139,3 @@ F9mrgVb9WMGRl6XvHQcMFBVa5zLXdUxlRRDSsG9ZdQwrSCz4tPwiMhn+eFSjdOk1
 1vr7lFe3GYwSFA3xy9IDSzyKS2cDWT45FOiiOQqWMBmAI0MEma81dwkTb77a7cd1
 -----END ED25519 SPHINCS+ PUBLIC KEY-----
 """
-
-
-
-[Debug]
-  DisableDecoyTraffic = false
-  PollingInterval = 50
