@@ -1432,7 +1432,7 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-					if len(wantHash) != 32 {
+					if len(wantHash) != publicKeyHashSize {
 						panic("stored hash should be 32 bytes")
 					}
 					verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
