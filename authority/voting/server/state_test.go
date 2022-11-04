@@ -200,20 +200,7 @@ func TestVote(t *testing.T) {
 	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[4].pubKey)},
 		config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[5].pubKey)}}
 
-	// generate a conflicting Topology
 	// generate a Topology section
-	/*
-		topology2 := config.Topology{Layers: make([]config.Layer, 3)}
-		topology2.Layers[0].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[0].identityPublicKeyPem},
-			config.Node{IdentityPublicKeyPem: idKeys[1].identityPublicKeyPem}}
-
-		topology2.Layers[1].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[2].identityPublicKeyPem},
-			config.Node{IdentityPublicKeyPem: idKeys[3].identityPublicKeyPem}}
-		topology2.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[5].identityPublicKeyPem},
-			config.Node{IdentityPublicKeyPem: idKeys[4].identityPublicKeyPem}}
-
-	*/
-	// one auth uses the conflicting topology, so we shall expect consensus with 2/3
 	authCfgs[0].Topology = &topology
 	authCfgs[1].Topology = &topology
 	authCfgs[2].Topology = &topology
@@ -272,7 +259,6 @@ func TestVote(t *testing.T) {
 
 	// exchange votes
 	for i, s := range stateAuthority {
-		//t.Logf("s.s.IdentityKey: %s", s.s.IdentityKey())
 		s.votingEpoch = votingEpoch
 		s.genesisEpoch = s.votingEpoch
 		myVote, err := s.vote(s.votingEpoch)
