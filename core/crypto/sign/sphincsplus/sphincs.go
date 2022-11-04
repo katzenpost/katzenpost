@@ -158,11 +158,6 @@ func (p *publicKey) Verify(sig, message []byte) bool {
 	return p.publicKey.Verify(sig, message)
 }
 
-func (p *publicKey) Identity() []byte {
-	h := p.Sum256()
-	return h[:]
-}
-
 func (p *publicKey) Sum256() [32]byte {
 	return blake2b.Sum256(p.Bytes())
 }
