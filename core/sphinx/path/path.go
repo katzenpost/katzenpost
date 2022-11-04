@@ -167,7 +167,7 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 func ToString(doc *pki.Document, p []*sphinx.PathHop) ([]string, error) {
 	s := make([]string, 0, len(p))
 	for idx, v := range p {
-		desc, err := doc.GetNodeByKey(v.ID[:])
+		desc, err := doc.GetNodeByKeyHash(&v.ID)
 		if err != nil {
 			return nil, err
 		}

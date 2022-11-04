@@ -146,7 +146,8 @@ func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, 
 
 	// Find our descriptor.
 	var err error
-	e.self, err = d.GetNodeByKey(identityKey.Bytes())
+	idKeyHash := identityKey.Sum256()
+	e.self, err = d.GetNodeByKeyHash(&idKeyHash)
 	if err != nil {
 		return nil, err
 	}
