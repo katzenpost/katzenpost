@@ -13,16 +13,6 @@ How to Build
 Step 1
 ------
 
-Get the katzenpost fork of the sphincs+ reference implementation
-(modified the Makefile to build shared object library file):
-
-```
-git clone https://github.com/katzenpost/sphincsplus.git
-```
-
-Step 2
-------
-
 Build the Sphincs+ C shared library file:
 
 ```
@@ -33,23 +23,15 @@ sudo ldconfig
 cd ../..
 ```
 
-Step 3
+Step 2
 ------
 
 If the sphincsplus reference library is properly installed in /usr/local/... then
-running the unit tests should work:
+running the cgo sphincsplus unit tests from this module should work:
 
 ```
 go test -v
 
-```
-
-Include sphincsplug_cgo in your Golang project:
-
-```
-import (
-	sphincs "github.com/katzenpost/sphincsplus_cgo"
-)
 ```
 
 
