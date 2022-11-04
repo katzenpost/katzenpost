@@ -10,7 +10,8 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	sphincs "github.com/katzenpost/sphincsplus_cgo"
+
+	sphincs "github.com/katzenpost/katzenpost/sphincsplus_cgo"
 )
 
 var (
