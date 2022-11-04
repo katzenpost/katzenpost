@@ -74,6 +74,7 @@ type state struct {
 
 	db *bolt.DB
 
+	reverseHash         map[[sign.PublicKeyHashSize]byte]sign.PublicKey
 	authorizedMixes     map[[sign.PublicKeyHashSize]byte]bool
 	authorizedProviders map[[sign.PublicKeyHashSize]byte]string
 
@@ -621,12 +622,9 @@ func (s *state) restorePersistence() error {
 
 				c := eDescsBkt.Cursor()
 				for wantHash, rawDesc := c.First(); wantHash != nil; wantHash, rawDesc = c.Next() {
-					_, verifier := cert.Scheme.NewKeypair()
-					err := verifier.FromBytes(wantHash)
-					if err != nil {
-						s.log.Errorf("Failed to load verifier key: %v", err)
-						continue
-					}
+					hash := [32]byte{}
+					copy(hash[:], wantHash)
+					verifier := s.reverseHash[hash]
 					desc, err := s11n.VerifyAndParseDescriptor(verifier, rawDesc, epoch)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted descriptor: %v", err)
@@ -679,6 +677,7 @@ func newState(s *Server) (*state, error) {
 	st.updateCh = make(chan interface{}, 1) // Buffered!
 
 	// Initialize the authorized peer tables.
+	st.reverseHash = make(map[[sign.PublicKeyHashSize]byte]sign.PublicKey)
 	st.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
 		_, idKey := cert.Scheme.NewKeypair()
@@ -688,6 +687,7 @@ func newState(s *Server) (*state, error) {
 		}
 		pk := idKey.Sum256()
 		st.authorizedMixes[pk] = true
+		st.reverseHash[pk] = idKey
 	}
 	st.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
@@ -698,6 +698,7 @@ func newState(s *Server) (*state, error) {
 		}
 		pk := idKey.Sum256()
 		st.authorizedProviders[pk] = v.Identifier
+		st.reverseHash[pk] = idKey
 	}
 
 	st.documents = make(map[uint64]*document)
