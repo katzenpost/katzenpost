@@ -287,7 +287,7 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else {
-		panic("Improbable: Only found one link PEM file.")
+		panic("Improbable: Only found one link PEM file, expected both Private and Public PEM files.")
 	}
 
 	s.linkKey = linkPrivateKey
