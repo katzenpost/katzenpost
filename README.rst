@@ -23,12 +23,13 @@ The katzenpost monorepo now has a copy of the sphincsplus git repo in `katzenpos
 
 Install this dependency like this:
 
-```
-cd katzenpost/sphincsplus/ref
-make libsphincsplus.so
-sudo make install # installs into /usr/local
-sudo ldconfig
-```
+.. code-block:: bash
+
+  cd katzenpost/sphincsplus/ref
+  make libsphincsplus.so
+  sudo make install # installs into /usr/local
+  sudo ldconfig
+
 
 The Katzenpost fork of the sphincs+ ref code was created so that we could
 make some necessary changes to the Makefile so that it builds .so file
