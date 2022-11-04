@@ -112,7 +112,10 @@ type certificate struct {
 	// Version is the certificate format version.
 	Version uint32
 
-	// Expiration is katzenpost epoch id of the expiration.
+	// Expiration is katzenpost epoch id of the expiration,
+	// where if set to `epoch` then at `epoch-1` the
+	// certificate is valid and at `epoch` or `epoch+n`
+	// the certificate is not valid.
 	Expiration uint64
 
 	// KeyType indicates the type of key
