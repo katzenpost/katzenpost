@@ -40,6 +40,7 @@ func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
 		e: epubKey,
 		s: spubKey,
 	}
+	pubKey.hash = blake2b.Sum256(pubKey.Bytes())
 	return privKey, pubKey
 }
 
@@ -133,8 +134,9 @@ func (p *privateKey) FromBytes(data []byte) error {
 }
 
 type publicKey struct {
-	e *eddsa.PublicKey
-	s *sphincs.PublicKey
+	e    *eddsa.PublicKey
+	s    *sphincs.PublicKey
+	hash [32]byte
 }
 
 func NewEmptyPublicKey() *publicKey {
@@ -149,7 +151,7 @@ func (p *publicKey) KeyType() string {
 }
 
 func (p *publicKey) Sum256() [32]byte {
-	return blake2b.Sum256(p.Bytes())
+	return p.hash
 }
 
 func (p *publicKey) Equal(pubKey sign.PublicKey) bool {
@@ -188,6 +190,7 @@ func (p *publicKey) FromBytes(data []byte) error {
 	if err != nil {
 		return err
 	}
+	p.hash = blake2b.Sum256(p.Bytes())
 	return nil
 }
 
