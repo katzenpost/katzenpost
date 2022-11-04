@@ -36,3 +36,33 @@ func TestToFromPEM(t *testing.T) {
 	require.NoError(t, err)
 
 }
+
+func TestExistsAndNotExists(t *testing.T) {
+	tmpdir, err := os.MkdirTemp("", "TestBothExists")
+	require.NoError(t, err)
+
+	privKey, pubKey := cert.Scheme.NewKeypair()
+
+	pubPem := filepath.Join(tmpdir, "pub.pem")
+	privPem := filepath.Join(tmpdir, "priv.pem")
+
+	err = ToFile(pubPem, pubKey)
+	require.NoError(t, err)
+
+	err = ToFile(privPem, privKey)
+	require.NoError(t, err)
+
+	require.True(t, Exists(pubPem))
+	require.True(t, Exists(privPem))
+
+	require.True(t, BothExists(pubPem, privPem))
+
+	require.False(t, BothExists(pubPem, privPem+"lala"))
+	require.False(t, BothExists(pubPem+"lala", privPem))
+
+	require.False(t, Exists(pubPem+"lala"))
+	require.False(t, Exists(privPem+"lala"))
+
+	require.True(t, BothNotExists(pubPem+"lala", privPem+"lala"))
+	require.False(t, BothNotExists(pubPem+"lala", privPem))
+}
