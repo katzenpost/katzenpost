@@ -7,7 +7,6 @@ services:
     user: $DOCKER_USER
     volumes:
       - ./conf/provider1:/conf
-      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     ports:
       - "127.0.0.1:59484:59484"
@@ -24,7 +23,6 @@ services:
     user: $DOCKER_USER
     volumes:
       - ./conf/provider2:/conf
-      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     ports:
       - "127.0.0.1:29484:29484"
@@ -42,7 +40,6 @@ services:
     user: $DOCKER_USER
     volumes:
       - ./conf/mix1:/conf
-      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     depends_on:
       - auth
@@ -58,7 +55,6 @@ services:
     user: $DOCKER_USER
     volumes:
       - ./conf/mix2:/conf
-      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     depends_on:
       - auth
@@ -74,7 +70,6 @@ services:
     user: $DOCKER_USER
     volumes:
       - ./conf/mix3:/conf
-      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/server -f /conf/katzenpost.toml
     depends_on:
       - auth
@@ -90,7 +85,6 @@ services:
     user: $DOCKER_USER
     volumes:
       - ./conf/auth:/conf
-      - /opt/sphincsplus:/opt/sphincsplus
     command: /go/bin/nonvoting -f /conf/authority.toml
     ports:
       - "127.0.0.1:29483:29483"
