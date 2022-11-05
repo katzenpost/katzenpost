@@ -64,7 +64,7 @@ jobs:
         run: cd client && make dockerdockertest
 
       - name: run memspool end to end tests
-        run: cd memspool/client && make dockerdockertest
+        run: cd memspool && make dockerdockertest
 
       - name: run catshadow end to end tests
         run: cd catshadow && make dockerdockertest
