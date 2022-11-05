@@ -22,6 +22,8 @@ jobs:
       - name: Run all package unit tests
         run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -race -v -timeout 0 ./..."
   test_e2e:
+    env:
+      warped: true
     strategy:
       matrix:
         go-version: [1.17.x]
@@ -39,9 +41,9 @@ jobs:
         run: ./.github/scripts/install_sphincs.sh
         shell: bash
 
-      - name: Build nonvoting authority docker image
+      - name: Build voting authority docker image
         run: |
-          cd docker && make nonvoting_authority
+          cd docker && make voting_authority
 
       - name: Build server docker image
         run: |
