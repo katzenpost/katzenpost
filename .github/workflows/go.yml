@@ -54,7 +54,7 @@ jobs:
 
       - name: Start the mixnet
         run: |
-          cd docker/nonvoting_mixnet && docker-compose --verbose up -d
+          cd docker/voting_mixnet && docker-compose --verbose up -d
 
       - name: Allow mixnet to settle
         run: |
@@ -71,4 +71,4 @@ jobs:
 
       - name: Stop the mixnet
         run: |
-          cd docker/nonvoting_mixnet && docker-compose down
+          cd docker/voting_mixnet && docker-compose down
