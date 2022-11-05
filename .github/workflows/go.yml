@@ -58,7 +58,7 @@ jobs:
 
       - name: Allow mixnet to settle
         run: |
-          sleep 60
+          sleep 180
 
       - name: run client end to end tests
         run: cd client && make dockerdockertest
