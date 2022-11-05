@@ -50,7 +50,7 @@ jobs:
           cd docker && make server
 
       - name: Fix permissions
-        run: chmod -R og-rwx docker/nonvoting_mixnet/conf
+        run: chmod -R og-rwx docker/voting_mixnet/conf
 
       - name: Start the mixnet
         run: |
