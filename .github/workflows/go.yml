@@ -35,6 +35,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Install Sphincsplus dependency
+        run: ./.github/scripts/install_sphincs.sh
+        shell: bash
+
       - name: Build nonvoting authority docker image
         run: |
           cd docker && make nonvoting_authority
