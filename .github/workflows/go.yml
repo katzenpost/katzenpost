@@ -61,13 +61,13 @@ jobs:
           sleep 60
 
       - name: run client end to end tests
-        run: cd client && sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -failfast -tags=docker_test -race -v -run Docker -timeout 60m"
+        run: cd client && make dockerdockertest
 
       - name: run memspool end to end tests
-        run: cd memspool/client && sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker -timeout 60m"
+        run: cd memspool/client && make dockerdockertest
 
       - name: run catshadow end to end tests
-        run: cd catshadow && sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -tags=docker_test -race -v -run Docker -timeout 60m"
+        run: cd catshadow && make dockerdockertest
 
       - name: Stop the mixnet
         run: |
