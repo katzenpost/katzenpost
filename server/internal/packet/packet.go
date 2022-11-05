@@ -239,6 +239,7 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	}
 	ct := b[hdrLength:]
 	var surb []byte
+	// what does the pubsub spec say about the packet format ?
 	switch b[0] {
 	case flagsPadding:
 	case flagsSURB:
@@ -246,10 +247,12 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	default:
 		return nil, nil, fmt.Errorf("invalid message flags: 0x%02x", b[0])
 	}
+	// this is no longer useful
 	if len(ct) != constants.UserForwardPayloadLength {
 		return nil, nil, fmt.Errorf("mis-sized user payload: %v", len(ct))
 	}
 
+	// return set of surbs
 	return ct, surb, nil
 }
 
@@ -288,6 +291,7 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	cmds = append(cmds, nextHopCmd)
 
 	nodeDelayCmd := new(commands.NodeDelay)
+	// XXX why do we re-use fwd pkt.NodeDelay in our response?
 	nodeDelayCmd.Delay = pkt.NodeDelay.Delay
 	cmds = append(cmds, nodeDelayCmd)
 
