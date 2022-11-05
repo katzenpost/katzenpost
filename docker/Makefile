@@ -56,7 +56,7 @@ go-mod-upgrade: deps
 server: deps
 	if ! docker images|grep katzenpost/server; then \
 		docker run ${docker_args} --name katzenpost_server katzenpost/deps \
-			bash -c 'cd server && make warped=${warped} testnet-build testnet-install' \
+			bash -c 'cd server && warped=${warped} make testnet-build testnet-install' \
 		&& docker commit katzenpost_server katzenpost/server \
 		&& docker rm katzenpost_server; \
         fi
