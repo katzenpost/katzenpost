@@ -28,7 +28,7 @@ fix-perms:
 
 debian_base:
 	if ! docker images|grep katzenpost/debian_base; then \
-		docker run --volume /usr/local/lib/libsphincsplus.so:/libsphincsplus.so --volume /usr/local/include/sphincsplus:/sphincsplusinclude --name katzenpost_debian_base -it golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y && cp /libsphincsplus.so /usr/local/lib && ldconfig && cp -a /sphincsplusinclude /usr/local/include/sphincsplus' \
+		docker run --name katzenpost_debian_base -it golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y' \
 		&& docker commit katzenpost_debian_base katzenpost/debian_base \
 		&& docker rm katzenpost_debian_base; \
         fi
@@ -36,7 +36,7 @@ debian_base:
 deps: debian_base
 	if ! docker images|grep katzenpost/deps; then \
 		docker run ${docker_args} --name katzenpost_deps -it katzenpost/debian_base \
-			go mod download \
+			bash -c 'go mod download && cd sphincsplus/ref && make libsphincsplus.a' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
         fi

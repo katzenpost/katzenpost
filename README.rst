@@ -26,14 +26,11 @@ Install this dependency like this:
 .. code-block:: bash
 
   cd katzenpost/sphincsplus/ref
-  make libsphincsplus.so
-  sudo make install # installs into /usr/local
-  sudo ldconfig
+  make libsphincsplus.a
 
 
 The Katzenpost fork of the sphincs+ ref code was created so that we could
-make some necessary changes to the Makefile so that it builds .so file
-and installs into `/usr/local`.
+make some necessary changes to the Makefile.
 
 
 supported by
