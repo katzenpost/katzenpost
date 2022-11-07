@@ -64,9 +64,16 @@ clean:
 	-$(RM) PQCsignKAT_*.rsp
 	-$(RM) PQCsignKAT_*.req
 	-$(RM) libsphincsplus.so
+	-$(RM) libsphincsplus.a
+	-$(RM) *.o
 
 libsphincsplus.so:
 	$(CC) -shared -o libsphincsplus.so $(CFLAGS) $(SOURCES)
+
+libsphincsplus.a: $(SOURCES) $(HEADERS) Makefile
+	$(CC) -c $(CFLAGS) $(SOURCES)
+	ar -rcs libsphincsplus.a $(SOURCES:.c=.o)
+
 
 DESTDIR ?= /usr/local
 install: libsphincsplus.so
