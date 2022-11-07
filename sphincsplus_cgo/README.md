@@ -13,37 +13,20 @@ How to Build
 Step 1
 ------
 
-Build the Sphincs+ C shared library file:
+Build the Sphincs+ C library file:
 
 ```
 cd sphincsplus/ref
-make libsphincsplus.so
-sudo make install
-sudo ldconfig
+make libsphincsplus.a
 cd ../..
 ```
-
-Step 2
-------
-
-If the sphincsplus reference library is properly installed in /usr/local/... then
-running the cgo sphincsplus unit tests from this module should work:
-
-```
-go test -v
-
-```
-
 
 Sphincs+ CGO bindings Tests and Benchmarks
 ==========================================
 
-The the env vars as specified above in the previous section of this readme. Then run:
-
 ```
 go test -v
 ```
-
 
 License
 =======

@@ -1,9 +1,8 @@
 package sphincsplus
 
-// #cgo CFLAGS: -g -I/usr/local/include/sphincsplus
-// #cgo LDFLAGS: -L/usr/local/lib/sphincsplus/ -Wl,-rpath,/usr/local/lib/sphincsplus/ -lsphincsplus
-// #define PARAMS sphincs-shake-256f
-// #include <api.h>
+// #cgo CFLAGS: -g -I../sphincsplus/ref/ -D PARAMS=sphincs-shake-256f
+// #cgo LDFLAGS: -L ../sphincsplus/ref/ -l:libsphincsplus.a
+// #include "api.h"
 import "C"
 import (
 	"fmt"
