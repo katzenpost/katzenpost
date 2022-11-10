@@ -695,6 +695,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 		c.Unlock()
 		return ErrNotConnected
 	}
+	c.Unlock()
 
 	errCh := make(chan error)
 	c.sendCh <- &connSendCtx{
@@ -705,9 +706,6 @@ func (c *connection) sendPacket(pkt []byte) error {
 	}
 	c.log.Debugf("Enqueued packet for send.")
 
-	// Release the lock so this won't deadlock in onConnStatusChange.
-	c.Unlock()
-
 	return <-errCh
 }
 
@@ -717,6 +715,7 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 		c.Unlock()
 		return nil, ErrNotConnected
 	}
+	c.Unlock()
 
 	errCh := make(chan error)
 	replyCh := make(chan interface{})
@@ -728,9 +727,6 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 		},
 	}
 	c.log.Debug("Enqueued GetConsensus command for send.")
-
-	// Release the lock so this won't deadlock in onConnStatusChange.
-	c.Unlock()
 
 	// Ensure the dispatch succeeded.
 	err := <-errCh
@@ -769,7 +765,7 @@ func newConnection(c *Client) *connection {
 	k.pkiFetchCh = make(chan interface{}, 1)
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
-	k.getConsensusCh = make(chan *getConsensusCtx)
+	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k
 }
 
