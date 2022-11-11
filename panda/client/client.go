@@ -67,16 +67,17 @@ func (p *Panda) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, er
 			Message: base64.StdEncoding.EncodeToString(message),
 		}
 		var rawRequest []byte
+		var dec *codec.Decoder
+		response := &common.PandaResponse{}
 		enc := codec.NewEncoderBytes(&rawRequest, &p.jsonHandle)
 		enc.Encode(request)
 		p.log.Debugf("PANDA exchange sending kaetzchen query to %s@%s", p.recipient, p.provider)
 		reply, err := p.session.BlockingSendReliableMessage(p.recipient, p.provider, rawRequest)
 		if err != nil {
-			// do not abort loop on dropped messages
-			continue
+			// do not spin on error and retry connection
+			goto Sleep
 		}
-		response := new(common.PandaResponse)
-		dec := codec.NewDecoderBytes(bytes.TrimRight(reply, "\x00"), &p.jsonHandle)
+		dec = codec.NewDecoderBytes(bytes.TrimRight(reply, "\x00"), &p.jsonHandle)
 		if err := dec.Decode(response); err != nil {
 			p.log.Debugf("Failed to decode PANDA response: (%v)", err)
 			return nil, fmt.Errorf("Failed to decode PANDA response: (%v)", err)
