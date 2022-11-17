@@ -316,7 +316,10 @@ func (c *Client) restartSending() {
 		if !contact.IsPending {
 			if _, err := contact.outbound.Peek(); err == nil {
 				// prod worker to start draining contact outbound queue
-				c.opCh <- &opRestartSending{contact: contact}
+				select {
+				case <-c.HaltCh():
+				case c.opCh <- &opRestartSending{contact: contact}:
+				}
 			}
 		}
 	}
@@ -369,8 +372,17 @@ func (c *Client) CreateRemoteSpool() error {
 	createSpoolOp := &opCreateSpool{
 		responseChan: make(chan error, 1),
 	}
-	c.opCh <- createSpoolOp
-	return <-createSpoolOp.responseChan
+	select {
+	case <-c.HaltCh():
+		return errors.New("Halted")
+	case c.opCh <- createSpoolOp:
+	}
+	select {
+	case <-c.HaltCh():
+		return errors.New("Halted")
+	case r := <-createSpoolOp.responseChan:
+		return r
+	}
 }
 
 func (c *Client) doCreateRemoteSpool(responseChan chan error) {
@@ -392,7 +404,11 @@ func (c *Client) doCreateRemoteSpool(responseChan chan error) {
 		// another workerOp to save the spool descriptor.
 		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
 		if err != nil {
-			responseChan <- err
+			select {
+			case <-c.HaltCh():
+				return
+			case responseChan <- err:
+			}
 		}
 		// pass the original caller responseChan
 		select {
@@ -408,9 +424,12 @@ func (c *Client) doCreateRemoteSpool(responseChan chan error) {
 // progress on the PANDA key exchange can be continued at a later
 // time after program shutdown or restart.
 func (c *Client) NewContact(nickname string, sharedSecret []byte) {
-	c.opCh <- &opAddContact{
+	select {
+	case <- c.HaltCh():
+	case c.opCh <- &opAddContact{
 		name:         nickname,
 		sharedSecret: sharedSecret,
+	}:
 	}
 }
 
@@ -479,7 +498,10 @@ func (c *Client) doGetConversation(nickname string, responseChan chan Messages) 
 	// do not block the worker
 	go func() {
 		sort.Sort(msg)
-		responseChan <- msg
+		select {
+		case <- c.HaltCh():
+		case responseChan <- msg:
+		}
 	}()
 }
 
@@ -592,8 +614,19 @@ func (c *Client) GetContacts() map[string]*Contact {
 	getContactsOp := &opGetContacts{
 		responseChan: make(chan map[string]*Contact, 1),
 	}
-	c.opCh <- getContactsOp
-	return <-getContactsOp.responseChan
+	select {
+	case <-c.HaltCh():
+		return nil
+	case c.opCh <- getContactsOp:
+	}
+	select {
+	case <-c.HaltCh():
+		return nil
+	case r := <-getContactsOp.responseChan:
+		return r
+	}
+	// unreached ?
+	return nil
 }
 
 // RemoveContact removes a contact from the Client's state.
@@ -602,8 +635,18 @@ func (c *Client) RemoveContact(nickname string) error {
 		name:         nickname,
 		responseChan: make(chan error, 1),
 	}
-	c.opCh <- removeContactOp
-	return <-removeContactOp.responseChan
+	select {
+	case <-c.HaltCh():
+	return errors.New("No Response to RemoveContact")
+	case c.opCh <- removeContactOp:
+	}
+	select {
+	case <-c.HaltCh():
+	return errors.New("No Response to RemoveContact")
+	case r := <-removeContactOp.responseChan:
+		return r
+	}
+	return errors.New("No Response to RemoveContact")
 }
 
 // RenameContact changes the name of a contact.
@@ -613,8 +656,18 @@ func (c *Client) RenameContact(oldname, newname string) error {
 		newname:      newname,
 		responseChan: make(chan error, 1),
 	}
-	c.opCh <- renameContactOp
-	return <-renameContactOp.responseChan
+	select {
+	case <-c.HaltCh():
+		return errors.New("No Response to RenameContact")
+	case c.opCh <- renameContactOp:
+	}
+	select {
+	case <-c.HaltCh():
+		return errors.New("No Response to RenameContact")
+	case r := <-renameContactOp.responseChan:
+		return r
+	}
+	return errors.New("No Response to RenameContact")
 }
 
 func (c *Client) doContactRemoval(nickname string) error {
@@ -661,16 +714,23 @@ func (c *Client) GetExpiration(name string) (time.Duration, error) {
 		name:         name,
 		responseChan: make(chan interface{}, 1),
 	}
-	c.opCh <- getExpirationOp
+	select {
+	case <-c.HaltCh():
+	case c.opCh <- getExpirationOp:
+	}
 
-	v := <-getExpirationOp.responseChan
-	switch v := v.(type) {
-	case error:
-		return 0, v
-	case time.Duration:
-		return v, nil
-	default:
-		return 0, errors.New("Unknown")
+	select {
+	case <-c.HaltCh():
+		return 0, errors.New("Halted")
+	case v := <-getExpirationOp.responseChan:
+		switch v := v.(type) {
+		case error:
+			return 0, v
+		case time.Duration:
+			return v, nil
+		default:
+			return 0, errors.New("Unknown")
+		}
 	}
 }
 
@@ -678,9 +738,16 @@ func (c *Client) doGetExpiration(name string, responseChan chan interface{}) {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	if contact, ok := c.contactNicknames[name]; !ok {
-		responseChan <- errContactNotFound
+		select {
+		case <-c.HaltCh():
+		case responseChan <- errContactNotFound:
+		}
+
 	} else {
-		responseChan <- contact.messageExpiration
+		select {
+		case <-c.HaltCh():
+		case responseChan <- contact.messageExpiration:
+		}
 	}
 }
 
@@ -691,8 +758,16 @@ func (c *Client) ChangeExpiration(name string, expiration time.Duration) error {
 		expiration:   expiration,
 		responseChan: make(chan error, 1),
 	}
-	c.opCh <- changeExpirationOp
-	return <-changeExpirationOp.responseChan
+	select {
+	case <-c.HaltCh():
+	case c.opCh <- changeExpirationOp:
+	}
+	select {
+	case <-c.HaltCh():
+	case r := <-changeExpirationOp.responseChan:
+		return r
+	}
+	return errors.New("No Response to ChangeExpiration ")
 }
 
 func (c *Client) doChangeExpiration(name string, expiration time.Duration) error {
@@ -715,7 +790,10 @@ func (c *Client) save() {
 	if err != nil {
 		panic(err)
 	}
-	c.stateWorker.stateCh <- serialized
+	select {
+	case <-c.HaltCh():
+	case c.stateWorker.stateCh <- serialized:
+	}
 }
 
 func (c *Client) marshal() (*memguard.LockedBuffer, error) {
@@ -936,10 +1014,13 @@ func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 		c.fatalErrCh <- err
 	}
 
-	c.opCh <- &opSendMessage{
+	select {
+	case <-c.HaltCh():
+	case c.opCh <- &opSendMessage{
 		id:      convoMesgID,
 		name:    nickname,
 		payload: message,
+	}:
 	}
 
 	return convoMesgID
@@ -1244,8 +1325,16 @@ func (c *Client) WipeConversation(nickname string) error {
 		name:         nickname,
 		responseChan: make(chan error, 1),
 	}
-	c.opCh <- &wipeConversationOp
-	return <-wipeConversationOp.responseChan
+	select {
+	case <-c.HaltCh():
+	case c.opCh <- &wipeConversationOp:
+	}
+	select {
+	case <-c.HaltCh():
+	case r := <-wipeConversationOp.responseChan:
+		return r
+	}
+	return errors.New("Halted")
 }
 
 func (c *Client) doWipeConversation(nickname string) error {
@@ -1279,12 +1368,20 @@ func (c *Client) GetSortedConversation(nickname string) Messages {
 		name:         nickname,
 		responseChan: make(chan Messages, 1),
 	}
-	c.opCh <- &getConversationOp
-	m, ok := <-getConversationOp.responseChan
-	if !ok {
+	select {
+	case c.opCh <- &getConversationOp:
+	case <-c.HaltCh():
 		return nil
 	}
-	return m
+	select {
+	case <-c.HaltCh():
+	case m, ok := <-getConversationOp.responseChan:
+		if !ok {
+			return nil
+		}
+		return m
+	}
+	return nil
 }
 
 func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, ciphertext []byte) error {
@@ -1433,8 +1530,16 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 func (c *Client) Online() error {
 	// XXX: block until connection or error ?
 	r := make(chan error, 1)
-	c.opCh <- &opOnline{responseChan: r}
-	return <-r
+	select {
+	case <-c.HaltCh():
+	case c.opCh <- &opOnline{responseChan: r}:
+	}
+	select {
+	case <-c.HaltCh():
+	case r := <-r:
+		return r
+	}
+	return errors.New("Shutdown")
 }
 
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
@@ -1474,7 +1579,10 @@ func (c *Client) goOnline() error {
 func (c *Client) Offline() error {
 	// TODO: implement some safe shutdown where necessary
 	r := make(chan error, 1)
-	c.opCh <- &opOffline{responseChan: r}
+	select {
+	case c.opCh <- &opOffline{responseChan: r}:
+	case <-c.HaltCh():
+	}
 	return <-r
 }
 
