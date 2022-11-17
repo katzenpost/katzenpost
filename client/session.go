@@ -280,8 +280,9 @@ func (s *Session) onConnection(err error) {
 		IsConnected: err == nil,
 		Err:         err,
 	}
-	s.opCh <- opConnStatusChanged{
-		isConnected: err == nil,
+	select {
+	case <-s.HaltCh():
+	case s.opCh <- opConnStatusChanged{ isConnected: err == nil, }:
 	}
 }
 
@@ -361,8 +362,11 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): %s", doc)
 	s.hasPKIDoc = true
-	s.opCh <- opNewDocument{
+	select {
+	case <-s.HaltCh():
+	case s.opCh <- opNewDocument{
 		doc: doc,
+	}:
 	}
 	s.eventCh.In() <- &NewDocumentEvent{
 		Document: doc,
