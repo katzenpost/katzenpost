@@ -228,6 +228,12 @@ func (c *connection) connectWorker() {
 				timerFired = true
 			}
 		}
+
+		select {
+		case <-c.HaltCh():
+			return
+		default:
+		}
 		if !timerFired && !timer.Stop() {
 			select {
 			case <-c.HaltCh():
