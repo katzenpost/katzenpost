@@ -229,7 +229,11 @@ func (c *connection) connectWorker() {
 			}
 		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-c.HaltCh():
+				return
+			case <-timer.C:
+			}
 		}
 
 		// Query the PKI for the current descriptor.
@@ -239,11 +243,6 @@ func (c *connection) connectWorker() {
 		} else if c.c.cfg.OnConnFn != nil {
 			// Can't connect due to lacking descriptor.
 			c.c.cfg.OnConnFn(err)
-		}
-		select {
-		case <-c.HaltCh():
-			return
-		default:
 		}
 		timer.Reset(pkiFallbackInterval)
 	}
@@ -419,12 +418,17 @@ func (c *connection) onWireConn(w *wire.Session) {
 			rawCmd, err := w.RecvCommand()
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
-				cmdCh <- err
+				select {
+				case <-c.HaltCh():
+				case cmdCh <- err:
+				}
 				return
 			}
 			// XXX: why retryDelay 0?
 			atomic.StoreInt64(&c.retryDelay, 0)
 			select {
+			case <-c.HaltCh():
+				return
 			case cmdCh <- rawCmd:
 			case <-cmdCloseCh:
 				return
@@ -449,7 +453,10 @@ func (c *connection) onWireConn(w *wire.Session) {
 	var consensusCtx *getConsensusCtx
 	defer func() {
 		if consensusCtx != nil {
-			consensusCtx.replyCh <- ErrNotConnected
+			select {
+			case <-c.HaltCh():
+			case consensusCtx.replyCh <- ErrNotConnected:
+			}
 		}
 	}()
 
@@ -698,15 +705,24 @@ func (c *connection) sendPacket(pkt []byte) error {
 	c.Unlock()
 
 	errCh := make(chan error)
-	c.sendCh <- &connSendCtx{
+	select {
+	case c.sendCh <- &connSendCtx{
 		pkt: pkt,
 		doneFn: func(err error) {
 			errCh <- err
 		},
+	}:
+	case <-c.HaltCh():
+		return ErrShutdown
 	}
 	c.log.Debugf("Enqueued packet for send.")
 
-	return <-errCh
+	select {
+	case err := <-errCh:
+		return err
+	case <-c.HaltCh():
+		return ErrShutdown
+	}
 }
 
 func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
@@ -719,24 +735,34 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 
 	errCh := make(chan error)
 	replyCh := make(chan interface{})
-	c.getConsensusCh <- &getConsensusCtx{
+	select {
+	case c.getConsensusCh <- &getConsensusCtx{
 		replyCh: replyCh,
 		epoch:   epoch,
 		doneFn: func(err error) {
 			errCh <- err
 		},
+	}:
+	case <-c.HaltCh():
+		return nil, ErrShutdown
 	}
 	c.log.Debug("Enqueued GetConsensus command for send.")
 
 	// Ensure the dispatch succeeded.
-	err := <-errCh
-	if err != nil {
-		c.log.Debugf("Failed to dispatch GetConsensus: %v", err)
-		return nil, err
+	select {
+	case <-c.HaltCh():
+		return nil, ErrShutdown
+	case err := <-errCh:
+		if err != nil {
+			c.log.Debugf("Failed to dispatch GetConsensus: %v", err)
+			return nil, err
+		}
 	}
 
 	// Wait for the dispatch to complete.
 	select {
+	case <-c.HaltCh():
+		return nil, ErrShutdown
 	case rawResp := <-replyCh:
 		switch resp := rawResp.(type) {
 		case error:
