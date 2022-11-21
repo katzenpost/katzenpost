@@ -101,6 +101,7 @@ type KaetzchenWorker struct {
 
 	dropCounter uint64
 }
+
 func (k *KaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
 	_, ok := k.kaetzchen[recipient]
 	return ok
