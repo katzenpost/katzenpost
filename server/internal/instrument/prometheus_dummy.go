@@ -1,3 +1,4 @@
+//go:build !prometheus
 // +build !prometheus
 
 package instrument
