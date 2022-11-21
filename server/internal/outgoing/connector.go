@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -68,20 +69,20 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 
 	if pkt == nil {
 		co.log.Debug("Dropping packet: packet is nil, wtf")
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
 	}
 	if pkt.NextNodeHop == nil {
 		co.log.Debug("Dropping packet: packet NextNodeHop is nil, wtf")
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
 	}
 	c, ok := co.conns[pkt.NextNodeHop.ID]
 	if !ok {
 		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
 	}
