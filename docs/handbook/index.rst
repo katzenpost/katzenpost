@@ -1,100 +1,91 @@
-
-Katzenpost Handbook
-*******************
-
-| David Stainton
-
-Version 0
-
-.. rubric:: Abstract
-
-Thank you for interest in Katzenpost! This document describes how to
-use and configure the Katzenpost Mix Network software system. The
-target audience for this document is systems administrators. This
-document assumes you are familiar with using unix systems, git
-revision control system and building golang binaries.
-
-.. contents:: :local:
-
+Katzenpost Mix Server Infrastructure
+====================================
 
 Introduction
-============
+------------
 
-Katzenpost can be used as a message oriented transport for a variety
-of applications and is in no way limited to the e-mail use case
-demonstrated by the ``mailproxy`` client/library. Other possible
-applications of Katzenpost include but are not limited to: instant
-messenger applications, crypto currency transaction transport,
-bulletin board systems, file sharing and so forth.
-
-The Katzenpost system has four component categories:
-
-* public key infrastructure
-* mixes
-* Providers
-* clients
-
-Providers has a superset of mixes that fulfill two roles:
-1. The initial hop in the route and therefore as an ingress hop
-   this node authenticates clients and does per client rate limiting.
-2. The terminal hop in the route and therefore can either store and
-   forward or proxy to a ``Kaetzchen`` aka a mixnet service.
+A Katzenpost Provider is strictly a superset of the Katzenpost mix.
+Both of these components are provided for by the ``server`` binary.
+Each Provider and Mix MUST be white-listed by the Directory Authority (PKI)
+in order to participate in the network.
 
 
-This handbook will describe how to use and deploy each of these.
-The build instructions in this handbook assume that you have a proper
-golang environment with at least golang 1.10 or later AND the git
-revision control system commandline installed.
+Configuration
+-------------
 
 
-Building the latest stable version of Katzenpost
-------------------------------------------------
+```
+adduser --disabled-login --disabled-password --system --group --home /var/lib/katzenpost-authority katzenpost-authority
+adduser --disabled-login --disabled-password --system --group --home /var/lib/katzenpost-mixserver katzenpost-mixserver
+cat << EOF > /etc/systemd/system/katzenpost-authority.service
+[Unit]
+Description=Katzenpost Authority
+After=network.target
 
-NOTE: Find out what our latest stable version tag
-by looking at the "releases.rst" file in the top-level
-of this repository.
+[Service]
+Type=simple
+IPAccounting=yes
+User=katzenpost-authority
+WorkingDirectory=/var/lib/katzenpost-authority
+ExecStart=/usr/local/bin/katzenpost-authority -f /etc/katzenpost-authority/authority.toml
+PrivateTmp=yes
+NoNewPrivileges=yes
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+EOF
+cat << EOF > /etc/systemd/system/katzenpost-mixserver.service
+[Unit]
+Description=Katzenpost Mix Server
+After=network.target
+
+[Service]
+IPAccounting=yes
+Type=simple
+User=katzenpost-mixserver
+WorkingDirectory=/var/lib/katzenpost-mixserver
+ExecStart=/usr/local/bin/katzenpost-mixserver -f /etc/katzenpost-mixserver/katzenpost.toml
+PrivateTmp=yes
+NoNewPrivileges=yes
+# RestartSec=5
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+EOF
+chmod 700 /var/lib/katzenpost-mixserver
+chmod 700 /var/lib/katzenpost-authority
+mkdir /etc/katzenpost-mixserver/
+mkdir /etc/katzenpost-authority/
+```
+
+then, build yourself a katzenpost mix and authority binary
 
 
-0. Make sure you have a recent version of Go that supports go modules.
+```
+cd  /home/user/src/katzenpost/server/cmd/server/;
+go build
+cp /home/user/src/katzenpost/server/cmd/server/server /usr/local/bin/katzenpost-mixserver
+cd /home/user/src/katzenpost/authority/cmd/voting
+go build
+cp /home/user/src/katzenpost/authority/cmd/voting/voting /usr/local/bin/katzenpost-authority
+```
 
-1. Follow the build instructions for each Katzenpost component you want to build.
+then restart systemd to see those services:
 
+```
+systemctl daemon-reload
+systemctl start katzenpost-authority
+systemctl start katzenpost-mixnet
+```
 
-There are two server infrastructure components:
+then once it's working, i need to know your public keys
 
-* https://github.com/katzenpost/katzenpost/server
+first start it
 
-* https://github.com/katzenpost/katzenpost/authority
+then, cat /var/lib/katzenpost-mixserver/identity.public.pem and /var/lib/katzenpost-authority/identity.public.pem and /var/lib/katzenpost-authority/link.public.pem
 
+then, i need to add that to my config...
 
-There are several clients. Our latest work-in-progress:
-
-* https://github.com/katzenpost/catchat
-
-The old client from the Panoramix EU 2020 grant deliverable:
-
-* https://github.com/katzenpost/mailproxy
-
-
-Additionally HashCloak makes crypto currency clients that work with Katzenpost:
-
-* https://github.com/hashcloak
-
-The Katzenpost Configuration File Format
-----------------------------------------
-
-Each Katzenpost component has a configuration file in the TOML format.
-This handbook will give you all the details you need to know to configure
-each of these configuration files. To learn more about the TOML format
-see: https://github.com/toml-lang/toml#toml
-
-NOTE: ``#`` may be used at the beginning of a line to denote a comment
-instead of an effective configuration line.
-
-
-Notes on Building a Test Mix Network
-------------------------------------
-
-See our docker repo:
-
-https://github.com/katzenpost/katzenpost/docker
+then we have another authority + mix
