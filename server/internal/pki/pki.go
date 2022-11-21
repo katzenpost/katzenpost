@@ -42,8 +42,8 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
-	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -72,60 +72,11 @@ type pki struct {
 	lastWarnedEpoch    uint64
 }
 
-var (
-	fetchedPKIDocs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "fetched_pki_docs_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of fetch PKI docs per epoch",
-		},
-		[]string{"epoch"},
-	)
-	fetchedPKIDocsDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: constants.Namespace,
-			Name:      "fetched_pki_docs_per_epoch_duration",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Duration of PKI docs fetching requests per epoch",
-		},
-	)
-	failedFetchPKIDocs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "failed_fetch_pki_docs_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of failed PKI docs fetches per epoch",
-		},
-		[]string{"epoch"},
-	)
-	failedPKICacheGeneration = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "failed_pki_cache_generation_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of failed PKI caches generation per epoch",
-		},
-		[]string{"epoch"},
-	)
-	invalidPKICache = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "katzenpost_invalid_pki_cache_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of invalid PKI caches per epoch",
-		},
-		[]string{"epoch"},
-	)
-	fetchedPKIDocsTimer *prometheus.Timer
-)
-
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
 }
 
 func (p *pki) worker() {
-
 	const initialSpawnDelay = 5 * time.Second
 
 	timer := time.NewTimer(initialSpawnDelay)
@@ -179,7 +130,7 @@ func (p *pki) worker() {
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
-			fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
+			instrument.SetFetchedPKIDocsTimer()
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
@@ -195,7 +146,7 @@ func (p *pki) worker() {
 			}
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-				failedFetchPKIDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
+				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
 				if err == cpki.ErrNoDocument {
 					p.setFailedFetch(epoch, err)
 				}
@@ -206,13 +157,13 @@ func (p *pki) worker() {
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
-				failedPKICacheGeneration.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
+				instrument.FailedPKICacheGeneration(fmt.Sprintf("%v", epoch))
 				continue
 			}
 			if err = p.validateCacheEntry(ent); err != nil {
 				p.log.Warningf("Generated PKI cache is invalid: %v", err)
 				p.setFailedFetch(epoch, err)
-				invalidPKICache.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
+				instrument.InvalidPKICache(fmt.Sprintf("%v", epoch))
 				continue
 			}
 
@@ -221,8 +172,8 @@ func (p *pki) worker() {
 			p.docs[epoch] = ent
 			p.Unlock()
 			didUpdate = true
-			fetchedPKIDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)})
-			fetchedPKIDocsTimer.ObserveDuration()
+			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
+			instrument.TimeFetchedPKIDocsDuration()
 		}
 
 		p.pruneFailures()
@@ -778,10 +729,6 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 }
 
 func init() {
-	prometheus.MustRegister(fetchedPKIDocs)
-	prometheus.MustRegister(fetchedPKIDocsDuration)
-	prometheus.MustRegister(failedFetchPKIDocs)
-
 	if WarpedEpoch == "true" {
 		recheckInterval = 5 * time.Second
 	}

@@ -28,9 +28,9 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -47,31 +47,6 @@ type Worker struct {
 
 	incomingCh <-chan interface{}
 	updateCh   chan bool
-}
-
-// Prometheus metrics
-var (
-	packetsReplayed = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "replayed_packets_total",
-			Subsystem: constants.CryptoWorkerSubsystem,
-			Help:      "Number of replayed packets",
-		},
-	)
-	packetsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "dropped_packets_total",
-			Subsystem: constants.CryptoWorkerSubsystem,
-			Help:      "Number of dropped packets",
-		},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(packetsReplayed)
-	prometheus.MustRegister(packetsDropped)
 }
 
 // UpdateMixKeys forces the Worker to re-shadow it's copy of the mix key(s).
@@ -148,7 +123,7 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 			// The packet decrypted successfully, the MAC was valid, and the
 			// tag was seen before, therefore drop the packet as a replay.
 			lastErr = errors.New("crypto: Packet is a replay")
-			packetsReplayed.Inc()
+			instrument.PacketsReplayed()
 			break
 		}
 
@@ -165,7 +140,6 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 }
 
 func (w *Worker) worker() {
-
 	const absoluteMinimumDelay = 1 * time.Millisecond
 
 	isProvider := w.glue.Config().Server.IsProvider
@@ -200,7 +174,7 @@ func (w *Worker) worker() {
 		dwellTime := now - pkt.RecvAt
 		if dwellTime > unwrapSlack {
 			w.log.Debugf("Dropping packet: %v (Spent %v waiting for Unwrap())", pkt.ID, dwellTime)
-			packetsDropped.Inc()
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		} else {
@@ -211,7 +185,7 @@ func (w *Worker) worker() {
 		w.log.Debugf("Attempting to unwrap packet: %v", pkt.ID)
 		if err := w.doUnwrap(pkt); err != nil {
 			w.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
-			packetsDropped.Inc()
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
@@ -222,13 +196,13 @@ func (w *Worker) worker() {
 		if pkt.IsForward() {
 			if pkt.Payload != nil {
 				w.log.Debugf("Dropping packet: %v (Unwrap() returned payload)", pkt.ID)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
 			if pkt.MustTerminate {
 				w.log.Debugf("Dropping packet: %v (Provider received forward packet from mix)", pkt.ID)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -237,7 +211,7 @@ func (w *Worker) worker() {
 			pkt.Delay = time.Duration(pkt.NodeDelay.Delay) * time.Millisecond
 			if pkt.Delay > constants.NumMixKeys*epochtime.Period {
 				w.log.Debugf("Dropping packet: %v (Delay %v is past what is possible)", pkt.ID, pkt.Delay)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -262,7 +236,7 @@ func (w *Worker) worker() {
 					// time appears to be "excessive".  Discard the packet,
 					// the client is doing something non-standard anyway.
 					w.log.Debugf("Dropping packet: %v (Delay 0 queue delay: %v)", pkt.ID, dwellTime)
-					packetsDropped.Inc()
+					instrument.PacketsDropped()
 					pkt.Dispose()
 					continue
 				}
@@ -300,7 +274,7 @@ func (w *Worker) worker() {
 
 			// Mixes will only ever see forward commands.
 			w.log.Debugf("Dropping mix packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			packetsDropped.Inc()
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
@@ -312,7 +286,7 @@ func (w *Worker) worker() {
 
 		if pkt.MustForward {
 			w.log.Debugf("Dropping client packet: %v (Send to local user)", pkt.ID)
-			packetsDropped.Inc()
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
@@ -325,7 +299,7 @@ func (w *Worker) worker() {
 			w.glue.Provider().OnPacket(pkt)
 		} else {
 			w.log.Debugf("Dropping user packet: %v (%v)", pkt.ID, pkt.CmdsToString())
-			packetsDropped.Inc()
+			instrument.PacketsDropped()
 			pkt.Dispose()
 		}
 	}
