@@ -170,7 +170,7 @@ func Init() {
 
 	// Expose registered metrics via HTTP
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(":6543", nil)
+	go http.ListenAndServe("127.0.0.1:6543", nil)
 }
 
 // Incoming increments the counter for incoming requests
