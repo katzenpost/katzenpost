@@ -763,6 +763,9 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 			c.log.Debugf("Failed to dispatch GetConsensus: %v", err)
 			return nil, err
 		}
+	case <-ctx.Done():
+		// Canceled mid-fetch.
+		return nil, errGetConsensusCanceled
 	}
 
 	// Wait for the dispatch to complete.
