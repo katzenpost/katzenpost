@@ -35,13 +35,14 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := cc.NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewSession(linkKey)
+	s, err := client.NewTOFUSession()
+
 	require.NoError(err)
+
+	s.WaitForDocument()
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
@@ -108,13 +109,13 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := cc.NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewSession(linkKey)
+	s, err := client.NewTOFUSession()
 	require.NoError(err)
+
+	s.WaitForDocument()
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
