@@ -24,11 +24,11 @@ import (
 	"path/filepath"
 	"time"
 
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
+	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
 )
 
