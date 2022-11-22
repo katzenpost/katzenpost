@@ -728,7 +728,6 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 	}
 	c.log.Debug("Enqueued GetConsensus command for send.")
 
-
 	// Ensure the dispatch succeeded.
 	err := <-errCh
 	if err != nil {

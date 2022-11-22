@@ -19,22 +19,14 @@
 package main
 
 import (
-	"context"
 	"fmt"
-	mrand "math/rand"
-	"net/url"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/pki"
 	reunionClient "github.com/katzenpost/katzenpost/reunion/client"
 	catClock "github.com/katzenpost/katzenpost/reunion/epochtime/katzenpost"
 	"github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
@@ -50,12 +42,11 @@ func TestDockerClientExchange1(t *testing.T) {
 
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
-	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
-	session, err := c.NewSession(linkKey)
+	session, err := c.NewTOFUSession()
 	require.NoError(err)
+	session.WaitForDocument()
 	serviceDesc, err := session.GetService("reunion")
 	require.NoError(err)
 
@@ -87,6 +78,7 @@ func TestDockerClientExchange1(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	aliceUpdateCh := make(chan reunionClient.ReunionUpdate)
+	shutdownCh := make(chan struct {})
 	go func() {
 		for {
 			update := <-aliceUpdateCh
@@ -98,7 +90,7 @@ func TestDockerClientExchange1(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := reunionClient.NewExchange(alicePayload, aliceExchangelog, transport, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := reunionClient.NewExchange(alicePayload, aliceExchangelog, transport, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownCh)
 	require.NoError(err)
 
 	// bob client
@@ -121,7 +113,7 @@ func TestDockerClientExchange1(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := reunionClient.NewExchange(bobPayload, bobExchangelog, transport, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	bobExchange, err := reunionClient.NewExchange(bobPayload, bobExchangelog, transport, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownCh)
 	require.NoError(err)
 
 	// Run reunion client exchanges.
@@ -141,12 +133,11 @@ func TestDockerClientExchange2(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
 	require.NoError(err)
 
-	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
-	require.NoError(err)
 	c, err := client.New(cfg)
 	require.NoError(err)
-	session, err := c.NewSession(linkKey)
+	session, err := c.NewTOFUSession()
 	require.NoError(err)
+	session.WaitForDocument()
 	serviceDesc, err := session.GetService("reunion")
 	require.NoError(err)
 
@@ -181,6 +172,7 @@ func TestDockerClientExchange2(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	aliceUpdateCh := make(chan reunionClient.ReunionUpdate)
+	shutdownCh := make(chan struct {})
 	go func() {
 		for {
 			update := <-aliceUpdateCh
@@ -192,7 +184,7 @@ func TestDockerClientExchange2(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := reunionClient.NewExchange(alicePayload, aliceExchangelog, transport, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := reunionClient.NewExchange(alicePayload, aliceExchangelog, transport, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh, shutdownCh)
 	require.NoError(err)
 
 	// bob client
@@ -215,7 +207,7 @@ func TestDockerClientExchange2(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := reunionClient.NewExchange(bobPayload, bobExchangelog, transport, bobContactID, passphrase1, srv, epoch, bobUpdateCh)
+	bobExchange, err := reunionClient.NewExchange(bobPayload, bobExchangelog, transport, bobContactID, passphrase1, srv, epoch, bobUpdateCh, shutdownCh)
 	require.NoError(err)
 
 	// NSA client
@@ -238,7 +230,7 @@ func TestDockerClientExchange2(t *testing.T) {
 		}
 	}()
 
-	nsaExchange, err := reunionClient.NewExchange(nsaPayload, nsaExchangelog, transport, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh)
+	nsaExchange, err := reunionClient.NewExchange(nsaPayload, nsaExchangelog, transport, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh, shutdownCh)
 	require.NoError(err)
 
 	// GCHQ client
@@ -261,7 +253,7 @@ func TestDockerClientExchange2(t *testing.T) {
 		}
 	}()
 
-	gchqExchange, err := reunionClient.NewExchange(gchqPayload, gchqExchangelog, transport, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh)
+	gchqExchange, err := reunionClient.NewExchange(gchqPayload, gchqExchangelog, transport, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh, shutdownCh)
 	require.NoError(err)
 
 	// Run reunion client exchanges.
