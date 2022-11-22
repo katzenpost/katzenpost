@@ -27,8 +27,8 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -52,39 +52,6 @@ type scheduler struct {
 	maxDelayCh chan uint64
 }
 
-var (
-	packetsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "dropped_packets_total",
-			Subsystem: constants.SchedulerSubsystem,
-			Help:      "Number of dropped packets",
-		},
-	)
-	mixPacketsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "kaetzchen_mix_packets_dropped_total",
-			Subsystem: constants.SchedulerSubsystem,
-			Help:      "Number of total dropped mixed packets",
-		},
-	)
-	mixQueueSize = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: constants.Namespace,
-			Name:      "mix_queue_size",
-			Subsystem: constants.SchedulerSubsystem,
-			Help:      "Size of the mix queue",
-		},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(packetsDropped)
-	prometheus.MustRegister(mixPacketsDropped)
-	prometheus.MustRegister(mixQueueSize)
-}
-
 func (sch *scheduler) Halt() {
 	sch.Worker.Halt()
 	sch.inCh.Close()
@@ -100,7 +67,6 @@ func (sch *scheduler) OnPacket(pkt *packet.Packet) {
 }
 
 func (sch *scheduler) worker() {
-
 	var absoluteMaxDelay = epochtime.Period * constants.NumMixKeys
 
 	timerSlack := time.Duration(sch.glue.Config().Debug.SchedulerSlack) * time.Millisecond
@@ -139,8 +105,8 @@ func (sch *scheduler) worker() {
 				// Ensure that the packet's delay is not pathologically malformed.
 				if pkt.Delay > maxDelay {
 					sch.log.Debugf("Dropping packet: %v (Delay exceeds max: %v)", pkt.ID, pkt.Delay)
-					packetsDropped.Inc()
-					mixPacketsDropped.Inc()
+					instrument.PacketsDropped()
+					instrument.MixPacketsDropped()
 					pkt.Dispose()
 					continue
 				}
@@ -150,12 +116,12 @@ func (sch *scheduler) worker() {
 				if sch.glue.Connector().IsValidForwardDest(&pkt.NextNodeHop.ID) {
 					sch.log.Debugf("Enqueueing packet: %v delta-t: %v", pkt.ID, pkt.Delay)
 					toEnqueue = append(toEnqueue, pkt)
-					mixQueueSize.Observe(float64(len(toEnqueue)))
+					instrument.MixQueueSize(uint64(len(toEnqueue)))
 				} else {
 					sID := debug.NodeIDToPrintString(&pkt.NextNodeHop.ID)
 					sch.log.Debugf("Dropping packet: %v (Next hop is invalid: %v)", pkt.ID, sID)
-					packetsDropped.Inc()
-					mixPacketsDropped.Inc()
+					instrument.PacketsDropped()
+					instrument.MixPacketsDropped()
 					pkt.Dispose()
 				}
 			}
@@ -221,8 +187,8 @@ func (sch *scheduler) worker() {
 				// ... unless the deadline has been blown by more than the
 				// configured slack time.
 				sch.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-dispatchAt)
-				packetsDropped.Inc()
-				mixPacketsDropped.Inc()
+				instrument.PacketsDropped()
+				instrument.MixPacketsDropped()
 				pkt.Dispose()
 			} else {
 				// Dispatch the packet to the next hop.  Note that the callee
