@@ -88,10 +88,10 @@ clean-images: clean-local-images
 	docker rmi katzenpost/debian_base katzenpost/deps || true
 
 clean-data-dryrun:
-	git clean -n nonvoting_mixnet voting_mixnet
+	git clean -n -x nonvoting_mixnet voting_mixnet
 
 clean-data:
-	git clean -f nonvoting_mixnet voting_mixnet
+	git clean -f -x nonvoting_mixnet voting_mixnet
 
 clean-local: clean-local-images clean-data
 
