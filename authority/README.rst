@@ -23,9 +23,7 @@ For more info about go-modules, see: https://github.com/golang/go/wiki/Modules
 Build the mix server like this:
 ::
 
-  export GO111MODULE=on
-  cd cmd/voting # (or cmd/nonvoting)
-  go build
+  make build-voting # (or make build-nonvoting)
 
 
 license

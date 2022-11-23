@@ -1,3 +1,6 @@
+warped?=false
+ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+
 test:
 	go test -cover -v ./...
 
@@ -19,3 +22,13 @@ coverage-file:
 
 coverage-html:
 	go tool cover -html=coverage.out
+
+build-voting:
+	go mod verify
+	cd ../sphincsplus/ref/ && make && cd ../../authority
+	cd cmd/voting; go build -ldflags ${ldflags}
+
+build-nonvoting:
+	go mod verify
+	cd ../sphincsplus/ref/ && make && cd ../../authority
+	cd cmd/nonvoting; go build -ldflags ${ldflags}
