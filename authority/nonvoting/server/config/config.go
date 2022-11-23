@@ -281,8 +281,8 @@ type Node struct {
 	// the node is a Provider.
 	Identifier string
 
-	// IdentityKeyPem is the node's identity signing key pem file path.
-	IdentityKeyPem string
+	// IdentityPublicKeyPem is the node's identity signing key pem file path.
+	IdentityPublicKeyPem string
 }
 
 func (n *Node) validate(isProvider bool) error {
@@ -300,8 +300,8 @@ func (n *Node) validate(isProvider bool) error {
 	} else if n.Identifier != "" {
 		return fmt.Errorf("config: %v: Node has Identifier set", section)
 	}
-	if n.IdentityKeyPem == "" {
-		return fmt.Errorf("config: %v: Node is missing IdentityKeyPem", section)
+	if n.IdentityPublicKeyPem == "" {
+		return fmt.Errorf("config: %v: Node is missing IdentityPublicKeyPem", section)
 	}
 	return nil
 }
@@ -372,13 +372,13 @@ func (cfg *Config) FixupAndValidate() error {
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
 		_, idkey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityKeyPem), idkey)
+		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityPublicKeyPem), idkey)
 		if err != nil {
 			return err
 		}
 		idKeyHash := idkey.Sum256()
 		if _, ok := pkMap[idKeyHash]; ok {
-			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKeyPem)
+			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityPublicKeyPem)
 		}
 		pkMap[idKeyHash] = v
 	}

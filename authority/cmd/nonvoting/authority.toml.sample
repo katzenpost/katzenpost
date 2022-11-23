@@ -8,7 +8,7 @@
 
   # Addresses are the IP address/port combinations that the authority will bind
   # to for incoming connections.
-  Addresses = [ "172.28.1.2:29483", "[2001:DB8::1]:29483" ]
+  Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
 
   # DataDir is the absolute path to the server's state files.
   # Must have 700 permissions.
@@ -81,15 +81,15 @@
   # IdentityKey is the node's EdDSA signing key, in either Base16 OR Base64
   # format.
   # mix1
-  IdentityKey = "4r9jePAbuzhytcnM3nbD5UQOmzl1X1hI8QOMbhTrg8s="
+  IdentityPublicKeyPem = "mix1_id_pub.pem"
 
 [[Mixes]]
   # mix2
-  IdentityKey = "1x8tq04hY+i83o9Yn2nrfTkFj4jXIMWCWilR7fgrWyM="
+  IdentityPublicKeyPem = "mix2_id_pub.pem"
 
 [[Mixes]]
   # mix3
-  IdentityKey = "La2FnsbKoU8dzQhfN4zkxSYn6T7LRWmFn0JgtlEklQw="
+  IdentityPublicKeyPem = "mix3_id_pub.pem"
 
 #
 # The Providers array defines the list of white-listed Provider nodes.
@@ -100,10 +100,8 @@
   Identifier = "provider2"
   # IdentityKey is the provider's EdDSA signing key, in either Base16 OR Base64
   # format.
-  IdentityKey = "imigzI26tTRXyYLXujLEPI9QrNYOEgC4DElsFdP9acQ="
+  IdentityPublicKeyPem = "provider2_id_pub.pem"
 
 [[Providers]]
   Identifier = "provider1"
-  IdentityKey = "2krwfNDfbakZCSTUUZYKXwdduzlEgS9Jfwm7eyZ0sCg="
-
-
+  IdentityPublicKeyPem = "provider1_id_pub.pem"

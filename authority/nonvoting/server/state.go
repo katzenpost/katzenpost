@@ -681,7 +681,7 @@ func newState(s *Server) (*state, error) {
 	st.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
 		_, idKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem), idKey)
+		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem), idKey)
 		if err != nil {
 			return nil, err
 		}
@@ -692,7 +692,7 @@ func newState(s *Server) (*state, error) {
 	st.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
 		_, idKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem), idKey)
+		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem), idKey)
 		if err != nil {
 			return nil, err
 		}
