@@ -37,6 +37,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"path/filepath"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -103,6 +104,25 @@ func (cfg *Config) validate() error {
 	return nil
 }
 
+// helper to parse PEM encoded data or files
+func (cfg *Config) PubKeyFromPEM(pemthing string, pubKey pem.KeyMaterial) error {
+	if filepath.IsAbs(pemthing) {
+		err := pem.FromFile(pemthing, pubKey)
+		if err == nil {
+			return err
+		}
+	}
+	pemFilePath := filepath.Join(cfg.DataDir, pemthing)
+	err := pem.FromFile(pemFilePath, pubKey)
+	if err != nil {
+		err = pem.FromPEMString(pemthing, pubKey)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type connection struct {
 	conn    net.Conn
 	session *wire.Session
@@ -157,14 +177,14 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	noKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	peerLinkPublicKey := noKey.PublicKey()
-	pem.FromPEMString(peer.LinkPublicKeyPem, peerLinkPublicKey)
+	err = p.cfg.PubKeyFromPEM(peer.LinkPublicKeyPem, peerLinkPublicKey)
 	if err != nil {
 		return nil, err
 	}
 
 	_, peerIdPublicKey := cert.Scheme.NewKeypair()
 
-	err = pem.FromPEMString(peer.IdentityPublicKeyPem, peerIdPublicKey)
+	err = p.cfg.PubKeyFromPEM(peer.IdentityPublicKeyPem, peerIdPublicKey)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +418,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
 		_, authIdPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromPEMString(auth.IdentityPublicKeyPem, authIdPublicKey)
+		err := cfg.PubKeyFromPEM(auth.IdentityPublicKeyPem, authIdPublicKey)
 		if err != nil {
 			return nil, err
 		}

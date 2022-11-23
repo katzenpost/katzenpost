@@ -41,7 +41,6 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -1025,7 +1024,7 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][][]byt
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
 			_, identityKey := cert.Scheme.NewKeypair()
-			err := pem.FromPEMString(node.IdentityPublicKeyPem, identityKey)
+			err := s.s.cfg.PubKeyFromPEM(node.IdentityPublicKeyPem, identityKey)
 			if err != nil {
 				panic(err)
 			}
@@ -1495,9 +1494,10 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
 	st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
+
 	for _, auth := range s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromPEMString(auth.IdentityPublicKeyPem, identityPublicKey)
+		err := s.cfg.PubKeyFromPEM(auth.IdentityPublicKeyPem, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
@@ -1512,17 +1512,9 @@ func newState(s *Server) (*state, error) {
 	st.authorizedMixes = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
-			err := pem.FromFile(pemFilePath, identityPublicKey)
-			if err != nil {
-				panic(err)
-			}
+		err := s.cfg.PubKeyFromPEM(v.IdentityPublicKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
 		}
 
 		pk := identityPublicKey.Sum256()
@@ -1532,59 +1524,37 @@ func newState(s *Server) (*state, error) {
 	st.authorizedProviders = make(map[[publicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-
-		if filepath.IsAbs(v.IdentityPublicKeyPem) {
-			err := pem.FromFile(v.IdentityPublicKeyPem, identityPublicKey)
-			if err != nil {
-				panic(err)
-			}
-		} else {
-			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
-			err := pem.FromFile(pemFilePath, identityPublicKey)
-			if err != nil {
-				panic(err)
-			}
+		err := s.cfg.PubKeyFromPEM(v.IdentityPublicKeyPem, identityPublicKey)
+		if err != nil {
+			panic(err)
 		}
-
 		pk := identityPublicKey.Sum256()
 		st.authorizedProviders[pk] = v.Identifier
 		st.reverseHash[pk] = identityPublicKey
 	}
+	scheme := wire.DefaultScheme
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
+	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
 	for _, v := range st.s.cfg.Authorities {
 		_, identityPublicKey := cert.Scheme.NewKeypair()
-
-		err := pem.FromPEMString(v.IdentityPublicKeyPem, identityPublicKey)
+		err := s.cfg.PubKeyFromPEM(v.IdentityPublicKeyPem, identityPublicKey)
 		if err != nil {
 			panic(err)
 		}
-
 		pk := identityPublicKey.Sum256()
 		st.authorizedAuthorities[pk] = true
 		st.reverseHash[pk] = identityPublicKey
-	}
-	st.reverseHash[st.s.identityPublicKey.Sum256()] = st.s.identityPublicKey
 
-	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
-	scheme := wire.DefaultScheme
-	for _, v := range st.s.cfg.Authorities {
 		privKey := scheme.GenerateKeypair(rand.Reader)
 		linkPubKey := privKey.PublicKey()
-		err := pem.FromPEMString(v.LinkPublicKeyPem, linkPubKey)
-		if err != nil {
-			return nil, err
-		}
-
-		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err = pem.FromPEMString(v.IdentityPublicKeyPem, identityPublicKey)
+		err = s.cfg.PubKeyFromPEM(v.LinkPublicKeyPem, linkPubKey)
 		if err != nil {
 			panic(err)
 		}
-
-		pk := identityPublicKey.Sum256()
 		st.authorityLinkKeys[pk] = linkPubKey
 	}
 
+	st.reverseHash[st.s.identityPublicKey.Sum256()] = st.s.identityPublicKey
 	st.documents = make(map[uint64]*document)
 	st.descriptors = make(map[uint64]map[[publicKeyHashSize]byte]*descriptor)
 	st.votes = make(map[uint64]map[[publicKeyHashSize]byte]*document)

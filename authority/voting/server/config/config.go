@@ -420,7 +420,7 @@ func (cfg *Config) FixupAndValidate() error {
 	_, identityKey := cert.Scheme.NewKeypair()
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
-		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityPublicKeyPem), identityKey)
+		err := cfg.PubKeyFromPEM(v.IdentityPublicKeyPem, identityKey)
 		if err != nil {
 			return err
 		}
@@ -439,6 +439,25 @@ func (cfg *Config) FixupAndValidate() error {
 		}
 	}
 
+	return nil
+}
+
+// helper to parse PEM encoded data or files
+func (cfg *Config) PubKeyFromPEM(pemthing string, pubKey pem.KeyMaterial) error {
+	if filepath.IsAbs(pemthing) {
+		err := pem.FromFile(pemthing, pubKey)
+		if err == nil {
+			return err
+		}
+	}
+	pemFilePath := filepath.Join(cfg.Authority.DataDir, pemthing)
+	err := pem.FromFile(pemFilePath, pubKey)
+	if err != nil {
+		err = pem.FromPEMString(pemthing, pubKey)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

@@ -204,17 +204,17 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the authority identity key.
-	identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
+	identityPrivateKeyFile := "identity.private.pem"
+	identityPublicKeyFile := "identity.public.pem"
 
 	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
 	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+		err = s.cfg.PubKeyFromPEM(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		err = s.cfg.PubKeyFromPEM(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -232,8 +232,8 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	scheme := wire.DefaultScheme
-	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
+	linkPrivateKeyFile := "link.private.pem"
+	linkPublicKeyFile := "link.public.pem"
 
 	var linkPrivateKey wire.PrivateKey = nil
 	var linkPublicKey wire.PublicKey = nil

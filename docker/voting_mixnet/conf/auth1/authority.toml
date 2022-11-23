@@ -171,7 +171,11 @@ J36qY23I6qGScGjq4tPu3w==
 
 [[Mixes]]
   # mix1
-  IdentityPublicKeyPem = "mix1_id_pub_key.pem"
+  IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
+2JQzwEwGBxBkQ0quWab4MD2T3E/WozBsfAMzp9wDLDaSm4jMADucY0gHAxX08iM3
+e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
+-----END ED25519 SPHINCS+ PUBLIC KEY-----
+"""
 
 [[Mixes]]
   # mix2
