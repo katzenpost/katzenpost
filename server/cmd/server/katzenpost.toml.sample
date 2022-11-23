@@ -69,12 +69,12 @@
     Disable = false
 
   # Here's an example external Kaetzchen service plugin config
-  [[Provider.PluginKaetzchen]]
-    Capability = "echo"
-    Endpoint = "+echo"
-    Disable = false
-    Command = "/var/lib/katzenpost/plugins/echo"
-    MaxConcurrency = 3
+  #[[Provider.CBORPluginKaetzchen]]
+  #  Capability = "echo"
+  #  Endpoint = "+echo"
+  #  Disable = false
+  #  Command = "/var/lib/katzenpost/plugins/echo"
+  #  MaxConcurrency = 3
 
   # UserDB is the user database configuration.  If left empty the simple
   # BoltDB backed user database will be used with the default database.
