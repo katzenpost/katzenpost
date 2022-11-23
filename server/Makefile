@@ -15,3 +15,7 @@ testnet-install:
 	cp /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /go/bin/reunion_katzenpost_server
 	cp /go/katzenpost/panda/server/cmd/panda_server/panda_server /go/bin/panda_server
 	cp /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /go/bin/echo_server
+build:
+	go mod verify
+	cd ../sphincsplus/ref/ && make && cd ../../server
+	cd cmd/server ; go build -ldflags ${ldflags}
