@@ -64,7 +64,7 @@ server: deps
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run ${docker_args} --name katzenpost_voting_authority katzenpost/deps \
-			bash -c 'cd authority && make install-voting' \
+			bash -c 'cd authority && warped=${warped} make install-voting' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
         fi
@@ -72,7 +72,7 @@ voting_authority: deps
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run ${docker_args} --name katzenpost_nonvoting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/nonvoting && make install-nonvoting' \
+			bash -c 'cd authority/cmd/nonvoting && warped=${warped} make install-nonvoting' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
         fi
