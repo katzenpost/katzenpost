@@ -28,7 +28,13 @@ build-voting:
 	cd ../sphincsplus/ref/ && make && cd ../../authority
 	cd cmd/voting; go build -ldflags ${ldflags}
 
+install-voting: build-voting
+	cd cmd/voting; go install -ldflags ${ldflags}
+
 build-nonvoting:
 	go mod verify
 	cd ../sphincsplus/ref/ && make && cd ../../authority
 	cd cmd/nonvoting; go build -ldflags ${ldflags}
+
+install-nonvoting:
+	cd cmd/nonvoting; go install -ldflags ${ldflags}

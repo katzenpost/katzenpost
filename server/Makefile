@@ -19,3 +19,6 @@ build:
 	go mod verify
 	cd ../sphincsplus/ref/ && make && cd ../../server
 	cd cmd/server ; go build -ldflags ${ldflags}
+
+install: build
+	cd cmd/server ; go install -ldflags ${ldflags}
