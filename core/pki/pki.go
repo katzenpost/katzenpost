@@ -118,17 +118,6 @@ type Document struct {
 
 // String returns a string representation of a Document.
 func (d *Document) String() string {
-	stringifyDescSlice := func(nodes []*MixDescriptor) string {
-		s := ""
-		for idx, v := range nodes {
-			s += fmt.Sprintf("%+v", v)
-			if idx != len(nodes)-1 {
-				s += ","
-			}
-		}
-		return s
-	}
-
 	srv := base64.StdEncoding.EncodeToString(d.SharedRandomValue)
 	psrv := "["
 	for i, p := range d.PriorSharedRandom {
@@ -139,17 +128,15 @@ func (d *Document) String() string {
 	}
 	psrv += "]"
 
-	s := fmt.Sprintf("&{Epoch:%v GenesisEpoch: %v SendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaD:%v LambdaDMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v SharedRandomValue: %v PriorSharedRandom: %v Topology:", d.Epoch, d.GenesisEpoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaD, d.LambdaDMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
+	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nSendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaD:%v LambdaDMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaD, d.LambdaDMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
 	for l, nodes := range d.Topology {
-		s += fmt.Sprintf("[%v]{", l)
-		s += stringifyDescSlice(nodes)
-		if l != len(nodes)-1 {
-			s += "},"
-		}
+		s += fmt.Sprintf("  [%v]{", l)
+		s += fmt.Sprintf("%v",nodes)
+		s += "}\n"
 	}
 
-	s += "}, Providers:[]{"
-	s += stringifyDescSlice(d.Providers)
+	s += "}\n"
+	s += fmt.Sprintf("Providers:[]{%v}", d.Providers)
 	s += "}}"
 	return s
 }
@@ -296,6 +283,17 @@ type MixDescriptor struct {
 
 	// AuthenticationType is the authentication mechanism required
 	AuthenticationType string
+}
+
+// String returns a human readable MixDescriptor
+func (d *MixDescriptor) String() string {
+	k := ""
+	if len(d.Kaetzchen) > 0 {
+		k = fmt.Sprintf("%v", d.Kaetzchen)
+	}
+		
+	return fmt.Sprintf("{%s %v %v %s}",
+	d.Name, d.Addresses, k, d.AuthenticationType)
 }
 
 // Client is the abstract interface used for PKI interaction.
