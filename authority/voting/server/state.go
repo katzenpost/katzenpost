@@ -471,6 +471,8 @@ func (s *state) vote(epoch uint64) (*document, error) {
 	var zeros [32]byte
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
 	vote.SharedRandomCommit = commit
+
+	// XXX log our vote prettyprint
 	signedVote := s.sign(vote)
 	if signedVote == nil {
 		err := errors.New("failure: signing vote failed")
