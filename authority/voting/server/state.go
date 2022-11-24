@@ -182,9 +182,11 @@ func (s *state) fsm() <-chan time.Time {
 		if s.genesisEpoch == 0 {
 			// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
 			if d, ok := s.documents[s.votingEpoch-1]; ok {
+				s.log.Debugf("Restoring genesisEpoch %d from document cache", d.doc.GenesisEpoch)
 				s.genesisEpoch = d.doc.GenesisEpoch
 				s.priorSRV = d.doc.PriorSharedRandom
 			} else {
+				s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 				s.genesisEpoch = s.votingEpoch
 			}
 		}
@@ -476,6 +478,7 @@ func (s *state) vote(epoch uint64) (*document, error) {
 		return nil, err
 	}
 
+	s.log.Debugf("Ready to send our vote:\n%s", vote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
 		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*document)
@@ -927,7 +930,8 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	}
 	s.certificates[epoch][s.identityPubKeyHash()] = signed
 	if raw, err := cert.GetCertified(signed); err == nil {
-		s.log.Debugf("Document for epoch %v saved", epoch)
+		s.log.Debugf("Ready to send our vote:\n%s", vote)
+		s.log.Debugf("Document for epoch %v:" doc)
 		s.log.Debugf("sha256(certified): %s", sha256b64(raw))
 	}
 	return signed, nil
@@ -1245,11 +1249,12 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 			raw: vote.Payload,
 			doc: doc,
 		}
-		s.log.Debug("Vote OK.")
+		s.log.Debug("Vote OK from:\n%s\n%s", vote.PublicKey, doc)
 		resp.ErrorCode = commands.VoteOk
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
+			s.log.Debug("Consensus from:\n%s\n%s", vote.PublicKey, doc)
 			s.certificates[s.votingEpoch][vote.PublicKey.Sum256()] = vote.Payload
 			if raw, err := cert.GetCertified(vote.Payload); err == nil {
 				s.log.Debugf("Certificate for epoch %v saved", vote.Epoch)
