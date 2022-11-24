@@ -285,15 +285,17 @@ type MixDescriptor struct {
 	AuthenticationType string
 }
 
-// String returns a human readable MixDescriptor
+// String returns a human readable MixDescriptor suitable for terse logging.
 func (d *MixDescriptor) String() string {
-	k := ""
+	kaetzchen := ""
 	if len(d.Kaetzchen) > 0 {
-		k = fmt.Sprintf("%v", d.Kaetzchen)
+		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
 	}
-		
-	return fmt.Sprintf("{%s %v %v %s}",
-	d.Name, d.Addresses, k, d.AuthenticationType)
+	bs := d.IdentityKey.Sum256()
+	identity := base64.StdEncoding.EncodeToString(bs[:])
+	s := fmt.Sprintf("{%s %s %v", d.Name, identity, d.Addresses)
+	s += kaetzchen + d.AuthenticationType + "}"
+	return s
 }
 
 // Client is the abstract interface used for PKI interaction.
