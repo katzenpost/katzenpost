@@ -182,9 +182,11 @@ func (s *state) fsm() <-chan time.Time {
 		if s.genesisEpoch == 0 {
 			// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
 			if d, ok := s.documents[s.votingEpoch-1]; ok {
+				s.log.Debugf("Restoring genesisEpoch %d from document cache", d.doc.GenesisEpoch)
 				s.genesisEpoch = d.doc.GenesisEpoch
 				s.priorSRV = d.doc.PriorSharedRandom
 			} else {
+				s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 				s.genesisEpoch = s.votingEpoch
 			}
 		}
@@ -257,34 +259,65 @@ func (s *state) consense(epoch uint64) *document {
 		return nil
 	}
 
+	// well this isn't going to work then is it?
+	if len(certificates) < s.threshold {
+		s.log.Errorf("No way to make consensus with too few votes!, only %n certificates", len(certificates))
+		return nil
+	}
+
+	// range over the certifcates we have collected and see if we can collect enough signatures to make a consensus
 	for pubKeyHash1, certificate1 := range certificates {
+		b64pk := base64.StdEncoding.EncodeToString(pubKeyHash1[:])
+		s.log.Debugf("Checking certificate: from %s against other certificates", b64pk)
+		s.log.Debugf("sha256(certified): %s", sha256b64(certificate1))
 		for pubKeyHash2, certificate2 := range certificates {
 			if hmac.Equal(pubKeyHash1[:], pubKeyHash2[:]) {
 				continue // skip adding own signature
 			}
 			idPubKey, ok := s.reverseHash[pubKeyHash2]
 			if !ok {
-				panic(fmt.Sprintf("reverse hash key not found %x", pubKeyHash2[:]))
+				// this should never happen as certificates are whitelisted
+				s.log.Errorf("reverse hash key not found %x", pubKeyHash2[:])
+				continue
 			}
+			s.log.Debugf("Checking certificate from %s", sha256b64(idPubKey.Bytes()))
+			s.log.Debugf("sha256(certified): %x", sha256b64(certificate2))
 			if ds, err := cert.GetSignature(pubKeyHash2[:], certificate2); err == nil {
 				if sc, err := cert.AddSignature(idPubKey, *ds, certificate1); err == nil {
+					// addsignature doesn't modify certificate
 					certificate1 = sc
+				} else {
+					s.log.Errorf("Failed to AddSignature on certificate from  %x", sha256b64(s.reverseHash[pubKeyHash2].Bytes()))
 				}
+			} else {
+				s.log.Errorf("Failed to GetSignature from certificate by %x", sha256b64(s.reverseHash[pubKeyHash2].Bytes()))
 			}
 		}
-		if _, good, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, certificate1); err == nil {
+		// now see if we managed to get a threshold number of signatures
+		if _, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, certificate1); err == nil {
+			for _, b := range bad {
+				bs := b.Sum256()
+				id := base64.StdEncoding.EncodeToString(bs[:])
+				s.log.Errorf("VerifyThreshold returned bad Verifiers: %s\n", id)
+			}
 			if pDoc, err := s11n.VerifyAndParseDocument(certificate1, good[0]); err == nil {
 
 				// Persist the document to disk.
 				s.persistDocument(epoch, []byte(certificate1))
-
 				s.documents[epoch] = &document{doc: pDoc, raw: certificate1}
 				s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
 				for _, g := range good {
-					s.log.Noticef("Consensus signed by %x", g.Sum256())
+					bs := g.Sum256()
+					id := base64.StdEncoding.EncodeToString(bs[:])
+					s.log.Noticef("Consensus signed by %s", id)
 				}
 				return s.documents[epoch]
+			} else {
+				// this shouldn't happen unless AddSignature corrupted something
+				s.log.Errorf("VerifyAndParseDocument failed!: %s", err)
 			}
+		} else {
+			s.log.Errorf("VerifyThreshold failed!: %s", err)
 		}
 	}
 	s.log.Errorf("No consensus found for epoch %d", epoch)
@@ -476,6 +509,14 @@ func (s *state) vote(epoch uint64) (*document, error) {
 		return nil, err
 	}
 
+
+	// we need to do this because our stupid duplication of formats everywhere
+	ourvote, err := s11n.VerifyAndParseDocument(signedVote.raw, s.verifiers[s.s.identityPublicKey.Sum256()])
+	if err != nil {
+		panic(err)
+	}
+
+	s.log.Debugf("Ready to send our vote:\n%s", ourvote)
 	// save our own vote
 	if _, ok := s.votes[epoch]; !ok {
 		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*document)
@@ -805,6 +846,8 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			if err != nil {
 				return nil, nil, err
 			}
+
+			// XXX: this should verify that the descriptor is in our whitelist, but it doesn't.
 			nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
 		}
 	}
@@ -927,7 +970,13 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	}
 	s.certificates[epoch][s.identityPubKeyHash()] = signed
 	if raw, err := cert.GetCertified(signed); err == nil {
-		s.log.Debugf("Document for epoch %v saved", epoch)
+
+		// we need to do this because our stupid duplication of formats everywhere
+		ourvote, err := s11n.VerifyAndParseDocument(signed, s.verifiers[s.s.identityPublicKey.Sum256()])
+		if err != nil {
+			panic(err)
+		}
+		s.log.Debugf("Ready to send our vote:\n%s", ourvote)
 		s.log.Debugf("sha256(certified): %s", sha256b64(raw))
 	}
 	return signed, nil
@@ -1245,11 +1294,12 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 			raw: vote.Payload,
 			doc: doc,
 		}
-		s.log.Debug("Vote OK.")
+		s.log.Debug("Vote OK from:\n%x\n%s", vote.PublicKey.Sum256(), doc)
 		resp.ErrorCode = commands.VoteOk
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
+			s.log.Debug("Consensus from:\n%x\n%s", vote.PublicKey.Sum256(), doc)
 			s.certificates[s.votingEpoch][vote.PublicKey.Sum256()] = vote.Payload
 			if raw, err := cert.GetCertified(vote.Payload); err == nil {
 				s.log.Debugf("Certificate for epoch %v saved", vote.Epoch)
