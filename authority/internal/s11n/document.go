@@ -98,7 +98,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 	}
 
 	// Sign the document.
-	return cert.Sign(signer, verifier, payload, d.Epoch+1)
+	return cert.Sign(signer, verifier, payload, d.Epoch+4)
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
@@ -113,7 +113,7 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	}
 
 	// Sign the document.
-	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+1)
+	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+4)
 	if err != nil {
 		return nil, err
 	}
