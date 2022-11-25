@@ -775,21 +775,21 @@ Appendix A.1 Normative References
 
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.rst>.
 
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/pki.rst>.
 
 .. [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/wire-protocol.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx.rst>.
 
 .. [SPHINX]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
              Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
@@ -855,6 +855,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzEndToEnd,
    title = {Katzenpost Mix Network End-to-end Protocol Specification},
    author = {Yawning Angel and George Danezis and Claudia Diaz and Ania Piotrowska and David Stainton},
-   url = {https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst},
    year = {2017}
    }
