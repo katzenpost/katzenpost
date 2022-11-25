@@ -847,8 +847,10 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 				return nil, nil, err
 			}
 
-			// XXX: this should verify that the descriptor is in our whitelist, but it doesn't.
-			nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
+			// only add nodes we have authorized
+			if s.isDescriptorAuthorized(desc) {
+				nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
+			}
 		}
 	}
 	// include parameters that have a threshold of votes
