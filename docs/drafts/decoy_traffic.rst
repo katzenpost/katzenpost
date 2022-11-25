@@ -254,13 +254,13 @@ Appendix A.1 Normative References
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.
 
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
-                  <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
+                  <https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/deaddrop.rst>.
 
 .. [KATZCLIENT] Stainton, D., "Katzenpost client library design specification", February 2019,
-                <https://github.com/Katzenpost/docs/blob/master/drafts/client.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/client.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -276,11 +276,11 @@ Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx.rst>.
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder Extension", January 2018,
-                <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/kaetzchen.rst>.
 
 .. [HEARTBEAT03]  Danezis, G., Sassaman, L., "Heartbeat Traffic to Counter (n-1) Attacks",
                   Proceedings of the Workshop on Privacy in the Electronic Society, October 2003,

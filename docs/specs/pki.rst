@@ -909,14 +909,14 @@ Appendix A.1 Normative References
 
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.rst>.
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.
 
 .. [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/wire-protocol.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -950,7 +950,7 @@ Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx.rst>.
 
 .. [SPHINCS256] Bernstein, D., Hopwood, D., Hulsing, A., Lange, T.,
                 Niederhagen, R., Papachristodoulou, L., Schwabe, P., Wilcox
@@ -989,6 +989,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzMixPKI,
    title = {Katzenpost Mix Network Public Key Infrastructure Specification},
    author = {Yawning Angel and Ania Piotrowska and David Stainton},
-   url= {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst},
+   url= {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/pki.rst},
    year = {2017}
    }
