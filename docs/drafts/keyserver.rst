@@ -218,11 +218,11 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/kaetzchen.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.

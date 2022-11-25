@@ -253,17 +253,17 @@ Appendix A.1 Normative References
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/kaetzchen.rst>.
 
 .. [KATZMIXWIRE] Angel, Y., "Katzenpost Mix Network Wire Protocol Specification", June 2017.
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/wire-protocol.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/wire-protocol.rst>.
 
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.rst>.
 .. [KATZMIXPKI] Angel, Y., Diaz, C., Piotrowska, A., Stainton, D.,
 		"Katzenpost Mix Network PKI Specification", November 2017,
-                <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst>
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/pki.rst>
 
 .. [ZCASHPAYMENTAPI]  <https://github.com/zcash/zcash/blob/master/doc/payment-api.md>.
 
@@ -276,7 +276,7 @@ Appendix A.2 Informative References
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.
 
 .. [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S., Danezis, G.,
                “The Loopix Anonymity System”,

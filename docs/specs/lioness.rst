@@ -291,6 +291,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{LionessSpec,
    title = {The LIONESS Wide-Block-Cipher Specification},
    author = {Yawning Angel},
-   url = {https://github.com/Katzenpost/docs/blob/master/specs/lioness.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/lioness.rst},
    year = {2017}
    }
