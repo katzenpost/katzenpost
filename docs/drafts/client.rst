@@ -389,21 +389,21 @@ Appendix A.1 Normative References
 
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.rst>.
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.
 
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
-                  <https://github.com/Katzenpost/docs/blob/master/drafts/deaddrop.rst>.
+                  <https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/deaddrop.rst>.
 
 .. [KATZDECOY] Stainton, D., "Katzenpost Mix Network Decoy Traffic Specification", February 2019,
-                  <https://github.com/Katzenpost/docs/blob/master/drafts/decoy_traffic.rst>.
+                  <https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/decoy_traffic.rst>.
 
 .. [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/kaetzchen.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -415,7 +415,7 @@ Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx.rst>.
 
 .. [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
                Symposium proceedings on Communications architectures and protocols,
