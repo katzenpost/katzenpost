@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/crypto/blake2b"
 
-	sphincs "github.com/katzenpost/katzenpost/sphincsplus_cgo"
+	sphincs "github.com/katzenpost/katzenpost/sphincsplus/ref"
 
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 )
