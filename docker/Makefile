@@ -37,20 +37,20 @@ debian_base:
 deps: debian_base
 	if ! docker images|grep katzenpost/deps; then \
 		docker run ${docker_args} --name katzenpost_deps katzenpost/debian_base \
-			bash -c 'CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod download && cd sphincsplus/ref && go install' \
+			bash -c 'CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod download && cd sphincsplus/ref && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
         fi
 
 go-mod-tidy: deps
 	docker run ${docker_args} --name katzenpost_deps katzenpost/deps \
-			go mod tidy \
+			bash -c "CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod tidy" \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
 go-mod-upgrade: deps
 	docker run ${docker_args} --name katzenpost_deps katzenpost/deps \
-			bash -c 'go get -d -u ./... && go mod tidy' \
+			bash -c 'CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go get -d -u ./... && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod tidy' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
@@ -65,7 +65,7 @@ server: deps
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run ${docker_args} --name katzenpost_voting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/voting && go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/voting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
         fi
@@ -73,7 +73,7 @@ voting_authority: deps
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run ${docker_args} --name katzenpost_nonvoting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/nonvoting && go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/nonvoting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
         fi
@@ -101,14 +101,14 @@ clean: clean-images clean-data
 ping: deps
 	if ! docker images|grep katzenpost/ping; then \
 		docker run ${docker_args} --name katzenpost_ping katzenpost/deps \
-			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
+			bash -c 'cd ping && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_ping katzenpost/ping \
 		&& docker rm katzenpost_ping; \
         fi
 
 ping-rebuild: deps
 		docker run ${docker_args} --name katzenpost_ping katzenpost/deps \
-			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
+			bash -c 'cd ping && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_ping katzenpost/ping \
 		&& docker rm katzenpost_ping; \
 
