@@ -4,11 +4,11 @@ ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped
 
 testnet-build:
 	go mod verify
-	cd cmd/server ; go build -ldflags ${ldflags}
-	cd ../memspool/server/cmd/memspool ; go build -ldflags ${ldflags}
-	cd ../reunion/servers/reunion_katzenpost_server ; go build -ldflags ${ldflags}
-	cd ../panda/server/cmd/panda_server ; go build -ldflags ${ldflags}
-	cd ../server_plugins/cbor_plugins/echo-go ; go build -o echo_server -ldflags ${ldflags}
+	cd cmd/server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -ldflags ${ldflags}
+	cd ../memspool/server/cmd/memspool ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -ldflags ${ldflags}
+	cd ../reunion/servers/reunion_katzenpost_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -ldflags ${ldflags}
+	cd ../panda/server/cmd/panda_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -ldflags ${ldflags}
+	cd ../server_plugins/cbor_plugins/echo-go ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -o echo_server -ldflags ${ldflags}
 
 testnet-install:
 	cp /go/katzenpost/server/cmd/server/server /go/bin/server
