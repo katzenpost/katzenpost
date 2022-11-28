@@ -37,7 +37,7 @@ debian_base:
 deps: debian_base
 	if ! docker images|grep katzenpost/deps; then \
 		docker run ${docker_args} --name katzenpost_deps katzenpost/debian_base \
-			bash -c 'go mod download && cd sphincsplus/ref && make libsphincsplus.a' \
+			bash -c 'CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod download && cd sphincsplus/ref && go install' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
         fi
@@ -65,7 +65,7 @@ server: deps
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run ${docker_args} --name katzenpost_voting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/voting && go mod verify && go install -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/voting && go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
         fi
@@ -73,7 +73,7 @@ voting_authority: deps
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run ${docker_args} --name katzenpost_nonvoting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/nonvoting && go mod verify && go install -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/nonvoting && go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
         fi
