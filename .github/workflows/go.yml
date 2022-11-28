@@ -15,12 +15,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Install Sphincsplus dependency
-        run: ./.github/scripts/install_sphincs.sh
-        shell: bash
-
       - name: Run all package unit tests
-        run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -race -v -timeout 0 ./..."
+        run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -race -v -timeout 0 ./..."
   test_e2e:
     env:
       warped: true
@@ -37,17 +33,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Install Sphincsplus dependency
-        run: ./.github/scripts/install_sphincs.sh
-        shell: bash
-
       - name: Build voting authority docker image
         run: |
-          cd docker && make voting_authority
+          cd docker && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make voting_authority
 
       - name: Build server docker image
         run: |
-          cd docker && make server
+          cd docker && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make server
 
       - name: Fix permissions
         run: chmod -R og-rwx docker/voting_mixnet/conf
@@ -61,13 +53,13 @@ jobs:
           sleep 240
 
       - name: run client end to end tests
-        run: cd client && make dockerdockertest
+        run: cd client && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make dockerdockertest
 
       - name: run memspool end to end tests
-        run: cd memspool && make dockerdockertest
+        run: cd memspool && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make dockerdockertest
 
       - name: run catshadow end to end tests
-        run: cd catshadow && make dockerdockertest
+        run: cd catshadow && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make dockerdockertest
 
       - name: Stop the mixnet
         run: |
