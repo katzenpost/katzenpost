@@ -7,18 +7,18 @@ docker_user=${uid}:${gid}
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --ulimit memlock=1048576 --rm
 
 test:
-	go test -v -race -timeout 0 -ldflags ${ldflags} .
+	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags} .
 
 lint:
 	golint ./...
 
 coverage-file:
-	go test ./... -coverprofile=coverage.out
+	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test ./... -coverprofile=coverage.out
 
 coverage-html:
-	go tool cover -html=coverage.out
+	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go tool cover -html=coverage.out
 
 
 dockerdockertest:
 	docker run ${docker_args} katzenpost/deps \
-		bash -c 'cd /go/katzenpost/client/; GORACE=history_size=7 go test -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'
+		bash -c 'cd /go/katzenpost/client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'
