@@ -122,7 +122,7 @@ func SignDescriptor(signer cert.Signer, verifier cert.Verifier, base *pki.MixDes
 
 	// Sign the descriptor. Descriptor will become valid in the next epoch, for 3 epochs.
 	epoch, _, _ := epochtime.Now()
-	signed, err := cert.Sign(signer, verifier, payload, epoch+4)
+	signed, err := cert.Sign(signer, verifier, payload, epoch+5)
 	if err != nil {
 		return nil, err
 	}
