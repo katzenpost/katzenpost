@@ -42,7 +42,7 @@ const (
 	MACLength = 32
 
 	// StreamKeyLength is the key size of the stream cipher in bytes.
-	StreamKeyLength = 16
+	StreamKeyLength = 32
 
 	// StreamIVLength is the IV size of the stream cipher in bytes.
 	StreamIVLength = 16
