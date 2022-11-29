@@ -39,7 +39,7 @@ const (
 	MACKeyLength = 32
 
 	// MACLength is the tag size of the MAC in bytes.
-	MACLength = 16
+	MACLength = 32
 
 	// StreamKeyLength is the key size of the stream cipher in bytes.
 	StreamKeyLength = 16
@@ -66,7 +66,7 @@ type macWrapper struct {
 
 func (m *macWrapper) Sum(b []byte) []byte {
 	tmp := m.Hash.Sum(nil)
-	b = append(b, tmp[0:MACLength]...)
+	b = append(b, tmp...)
 	return b
 }
 
