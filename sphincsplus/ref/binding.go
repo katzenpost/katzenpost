@@ -1,17 +1,21 @@
 package sphincsplus
 
-// #cgo CFLAGS: -g -I../sphincsplus/ref/ -D PARAMS=sphincs-shake-256f
-// #cgo LDFLAGS: -L ../sphincsplus/ref/ -l:libsphincsplus.a
-// #include "api.h"
+//#cgo linux LDFLAGS: "-L./ -L/usr/lib/x86_64-linux-gnu/ -lcrypto"
+//#cgo CFLAGS: -DPARAMS=sphincs-shake-256f
+//#include "api.h"
 import "C"
 import (
 	"fmt"
 	"unsafe"
 
+	"github.com/katzenpost/katzenpost/sphincsplus/ref/params"
+
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 var (
+	_ = params.A
+
 	// PublicKeySize is the size in bytes of the public key.
 	PublicKeySize int = C.CRYPTO_PUBLICKEYBYTES
 
@@ -84,6 +88,21 @@ func (p *PublicKey) FromBytes(data []byte) error {
 	p.publicKey = data
 	return nil
 }
+
+// Verify checks whether the given signature is valid.
+/*
+func (p *PublicKey) Verify(signature, message []byte) bool {
+	ret := C.crypto_sign_verify((*C.uchar)(unsafe.Pointer(&signature[0])),
+		C.ulong(len(signature)),
+		(*C.uchar)(unsafe.Pointer(&message[0])),
+		C.ulong(len(message)),
+		(*C.uchar)(unsafe.Pointer(&p.publicKey[0])))
+	if ret == 0 {
+		return true
+	}
+	return false
+}
+*/
 
 // PrivateKey is a private Sphincs+ key.
 type PrivateKey struct {
