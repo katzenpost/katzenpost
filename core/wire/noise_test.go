@@ -37,12 +37,17 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 	seecGenRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
 	require.NoError(t, err, "seec.GenKeyPRPAES")
 
+	//protocol2, err := nyquist.NewProtocol("Noise_pqXX_Kyber768X25519_ChaChaPoly_BLAKE2s")
+	//require.NoError(t, err)
+
 	protocol := &nyquist.Protocol{
 		Pattern: pattern.PqXX,
 		KEM:     kem.Kyber768X25519,
 		Cipher:  cipher.ChaChaPoly,
 		Hash:    hash.BLAKE2s,
 	}
+
+	//require.Equal(t, protocol, protocol2)
 
 	t.Logf("KEM public key size: %d", protocol.KEM.PublicKeySize())
 	t.Logf("KEM ciphertext size: %d", protocol.KEM.CiphertextSize())
