@@ -200,6 +200,7 @@ func TestCommandVectors(t *testing.T) {
 
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
+
 	emptyMessage := &MessageEmpty{
 		Cmds:     cmds,
 		Sequence: cmdsTest.MessageEmptySeq,
@@ -220,11 +221,13 @@ func TestCommandVectors(t *testing.T) {
 		Sequence:      cmdsTest.MessageSeq,
 		Payload:       payload,
 	}
+
 	messageCmd := message.ToBytes()
 	assert.Equal(messageCmd, messageWant)
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)
+
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
 	messageAck := &MessageACK{
@@ -235,7 +238,7 @@ func TestCommandVectors(t *testing.T) {
 		Payload:       ackPayload,
 	}
 	messageAckCmd := messageAck.ToBytes()
-	assert.Equal(messageAckCmd, messageAckWant)
+	assert.Equal([]byte(messageAckCmd), []byte(messageAckWant))
 
 	getConsensusWant, err := hex.DecodeString(cmdsTest.GetConsensus)
 	assert.NoError(err)
