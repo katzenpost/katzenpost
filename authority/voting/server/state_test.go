@@ -109,6 +109,8 @@ func TestVote(t *testing.T) {
 		for i, _ := range cfg.Authorities {
 			st.verifiers[peerKeys[i].idPubKey.Sum256()] = cert.Verifier(peerKeys[i].idPubKey)
 		}
+		// add this authoritys key to verifiers
+		st.verifiers[peerKeys[i].idPubKey.Sum256()] = cert.Verifier(peerKeys[i].idPubKey)
 		st.threshold = len(st.verifiers)/2 + 1
 		st.dissenters = len(cfg.Authorities)/2 - 1
 
@@ -221,6 +223,7 @@ func TestVote(t *testing.T) {
 
 	// post descriptors from nodes
 	mixDescs := make([]*descriptor, 0)
+	providerDescs := make([]*descriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
@@ -246,14 +249,26 @@ func TestVote(t *testing.T) {
 		// Make a serialized + signed + serialized descriptor.
 		signed, err := s11n.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
-		mixDescs = append(mixDescs, &descriptor{raw: signed, desc: desc})
+
+		if mixCfgs[i].Server.IsProvider {
+			providerDescs = append(mixDescs, &descriptor{raw: signed, desc: desc})
+		} else {
+			mixDescs = append(mixDescs, &descriptor{raw: signed, desc: desc})
+		}
 	}
 
 	// populate the authorities with the descriptors
 	for _, s := range stateAuthority {
 		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*descriptor)
+		s.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
+		s.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
 		for _, d := range mixDescs {
 			s.descriptors[votingEpoch][d.desc.IdentityKey.Sum256()] = d
+			s.authorizedMixes[d.desc.IdentityKey.Sum256()] = true
+		}
+		for _, d := range providerDescs {
+			s.descriptors[votingEpoch][d.desc.IdentityKey.Sum256()] = d
+			s.authorizedProviders[d.desc.IdentityKey.Sum256()] = d.desc.Name
 		}
 	}
 
