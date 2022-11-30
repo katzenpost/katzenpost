@@ -158,25 +158,14 @@ J36qY23I6qGScGjq4tPu3w==
   DisableRateLimit = true
 
 #
-# The Provider secton specifies the Provider configuration.
+# The Provider section specifies the Provider configuration.
 #
 
 [Provider]
+  EnableServiceProvider = false
+  EnableEphemeralClients = true
+  TrustOnFirstUse = true
 
-  [[Provider.Kaetzchen]]
-    Capability = "echo"
-    Endpoint = "+echo"
-    Disable = false
-
-  [[Provider.CBORPluginKaetzchen]]
-    Capability = "reunion"
-    Endpoint = "+reunion"
-    Command = "/go/bin/reunion_katzenpost_server"
-    MaxConcurrency = 1
-    [Provider.CBORPluginKaetzchen.Config]
-      log_level = "DEBUG"
-      log = "/conf/service_logs/reunion.log"
-      s = "/conf/service_data/reunion.storage"
 #
 # The Management section specifies the management interface configuration.
 #

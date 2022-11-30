@@ -58,25 +58,9 @@
 #
 
 [Provider]
-
-   [[Provider.CBORPluginKaetzchen]]
-    Capability = "echo"
-    Endpoint = "echo"
-    Command = "/go/bin/echo_server"
-    MaxConcurrency = 1
-    [Provider.CBORPluginKaetzchen.Config]
-      log_level = "DEBUG"
-      log_dir = "/conf/service_logs"
-
-   [[Provider.CBORPluginKaetzchen]]
-    Capability = "reunion"
-    Endpoint = "+reunion"
-    Command = "/go/bin/reunion_katzenpost_server"
-    MaxConcurrency = 1
-    [Provider.CBORPluginKaetzchen.Config]
-      log_level = "DEBUG"
-      log = "/conf/service_logs/reunion.log"
-      s = "/conf/service_data/reunion.storage"
+  EnableServiceProvider = false
+  EnableEphemeralClients = true
+  TrustOnFirstUse = true
 
 #
 # The Management section specifies the management interface configuration.
