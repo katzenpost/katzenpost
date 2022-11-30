@@ -39,7 +39,7 @@ const (
 	adLength = 2
 
 	// payloadTagLength is the length of the Sphinx packet payload SPRP tag.
-	payloadTagLength = 16
+	payloadTagLength = 32
 
 	// sphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
 	// in bytes.
