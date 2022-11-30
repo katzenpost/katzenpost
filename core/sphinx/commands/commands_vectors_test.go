@@ -86,6 +86,7 @@ func TestCommandVectors(t *testing.T) {
 	}
 	nextHop := nextHopCmd.ToBytes([]byte{})
 	nextHopCmdWant, err := hex.DecodeString(cmdsTest.NextHopCmdWant)
+	_, err = hex.DecodeString(cmdsTest.NextHopCmdWant)
 	assert.NoError(err)
 	assert.Equal(nextHopCmdWant, nextHop)
 
