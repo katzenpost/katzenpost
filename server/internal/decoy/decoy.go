@@ -386,7 +386,11 @@ func (d *decoy) loadAndDeleteSURBCtx(id uint64) *surbCtx {
 	}
 	delete(d.surbStore, id)
 
-	nCtxList := ctx.etaNode.Value.([]*surbCtx)
+	nCtxList, ok := ctx.etaNode.Value.([]*surbCtx)
+	if !ok {
+		nCtx := ctx.etaNode.Value.(*surbCtx)
+		nCtxList = []*surbCtx{nCtx}
+	}
 	if l := len(nCtxList); l > 1 {
 		// There is more than 1 SURB with this ETA, remove the context from
 		// the list, and leave the node in the tree.
