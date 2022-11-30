@@ -4,7 +4,7 @@ Katzenpost Mix Network Wire Protocol Specification
 | Yawning Angel
 | David Stainton
 |
-| Version 1
+| Version 3
 |
 .. rubric:: Abstract
 
@@ -49,28 +49,47 @@ Mix Network.
 ================
 
    The protocol is based on Kyber and Trevor Perrin's Noise
-   Protocol Framework [NOISE]_ with the Hybrid Forward Secrecy extension
-   [NOISEHFS]_ and can be viewed as a prologue, Noise handshake, followed
+   Protocol Framework [NOISE]_ along with "Post Quantum Noise"
+   paper [PQNOISE]_. Older previous versions of our transport were
+   based on [NOISEHFS]_.
+
+   Our transport protocol begins with a prologue, Noise handshake, followed
    by a stream of Noise Transport messages in a minimal framing layer,
    over a TCP/IP connection.
 
-   ``Noise_XXhfs_25519+Kyber1024_ChaChaPoly_BLAKE2b`` is used as the
-   Noise protocol name, and parameterization for the purposes of this
-   specification.  As a non-standard modification to the Noise protocol,
-   the 65535 byte message length limit is increased to 1048576 bytes.
+   Our Noise protocol string:
 
-   The XXhfs handshake pattern is the following:
+   ``Noise_pqXX_Kyber768X25519_ChaChaPoly_BLAKE2s``
+
+   The protocol string is a very condensed description of our protocol.
+   We use the pqXX two way Noise pattern which is described as follows:
 
    ```
-       -> e, e1
-       <- e, ee, ekem1, s, es
-       -> s, se
+   pqXX:
+   -> e
+   <- ekem, s
+   -> skem, s
+   <- skem
    ```
 
-   It is assumed that all parties using the KMNWP protocol have a fixed
-   long or short lived X25519 keypair [RFC7748]_, the public component of which
-   is known to the other party in advance.  How such keys are distributed
-   is beyond the scope of this document.
+   The next part of the protocol string specifies the KEM,
+   `Kyber768X25519` which is a hybrid KEM where the share secret
+   outputs of both X25519 and Kyber768 are combined.
+
+   Finally the `ChaChaPoly_BLAKE2s` parts of the protocol string
+   indicate which stream cipher and hash function we are using.
+
+   As a non-standard modification to the Noise protocol,
+   the 65535 byte message length limit is increased to 1300000 bytes.
+   We send very large messages over our Noise protocol because
+   of our using the Sphincs+ signature scheme which has signatures
+   that are about 49k bytes.
+
+   It is assumed that all parties using the KMNWP protocol have a
+   fixed long or short lived `Kyber768X25519` keypair ([KYBER]_ and
+   [RFC7748]_), the public component of which is known to the other
+   party in advance.  How such keys are distributed is beyond the
+   scope of this document.
 
 2.1 Handshake Phase
 -------------------
@@ -89,7 +108,7 @@ Mix Network.
    .. code::
 
        struct {
-           uint8_t protocol_version; /* 0x00 */
+           uint8_t protocol_version; /* 0x03 */
        } Prologue;
 
    As all Noise handshake messages are fixed sizes, no additional
@@ -111,7 +130,7 @@ Mix Network.
 ------------------------------
 
    Mutual authentication is done via exchanging fixed sized payloads
-   as part of the ``Noise_XX`` handshake consisting of the following
+   as part of the ``pqXX`` handshake consisting of the following
    structure::
 
       struct {
@@ -327,6 +346,10 @@ Appendix A.1 Normative References
 
 .. [NOISE]    Perrin, T., "The Noise Protocol Framework", May 2017,
               <https://noiseprotocol.org/noise.pdf>.
+
+.. [PQNOISE]  Yawning Angel, Benjamin Dowling, Andreas Hülsing, Peter Schwabe and Florian Weber,
+	      2022, "Post Quantum Noise",
+	      <https://eprint.iacr.org/2022/539.pdf>.
 
 .. [NOISEHFS] Weatherley, R., "Noise Extension: Hybrid Forward Secrecy",
 	      <https://github.com/noiseprotocol/noise_hfs_spec/blob/master/output/noise_hfs.pdf>
