@@ -288,7 +288,7 @@ func (p *provider) worker() {
 			recipient, err := p.fixupRecipient(pkt.Recipient.ID[:])
 			if err != nil {
 				p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -296,7 +296,7 @@ func (p *provider) worker() {
 			// Ensure the packet is for a valid recipient.
 			if !p.userDB.Exists(recipient) {
 				p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
