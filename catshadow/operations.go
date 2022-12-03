@@ -32,6 +32,7 @@ type opOffline struct {
 }
 
 type opCreateSpool struct {
+	provider     string
 	responseChan chan error
 }
 

@@ -35,6 +35,7 @@ import (
 	ratchet "github.com/katzenpost/doubleratchet"
 
 	"github.com/katzenpost/katzenpost/client"
+	cUtils "github.com/katzenpost/katzenpost/client/utils"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -56,6 +57,7 @@ var (
 	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
 	errContactNotFound        = errors.New("Contact not found")
 	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
+	errProviderNotFound       = errors.New("Cannot find provider")
 	errBlobNotFound           = errors.New("Blob not found in store")
 	errNoSpool                = errors.New("No Spool Found")
 	errAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
@@ -365,6 +367,27 @@ func (c *Client) garbageCollectConversations() {
 	}
 }
 
+// CreateRemoteSpoolOn creates a remote spool for collecting messages
+// destined to this Client. This method blocks until the reply from
+// the remote spool service is received or the round trip timeout is reached.
+func (c *Client) CreateRemoteSpoolOn(provider string) error {
+	createSpoolOp := &opCreateSpool{
+		provider:     provider,
+		responseChan: make(chan error, 1),
+	}
+	select {
+	case <-c.HaltCh():
+		return errors.New("Halted")
+	case c.opCh <- createSpoolOp:
+	}
+	select {
+	case <-c.HaltCh():
+		return errors.New("Halted")
+	case r := <-createSpoolOp.responseChan:
+		return r
+	}
+}
+
 // CreateRemoteSpool creates a remote spool for collecting messages
 // destined to this Client. This method blocks until the reply from
 // the remote spool service is received or the round trip timeout is reached.
@@ -385,7 +408,10 @@ func (c *Client) CreateRemoteSpool() error {
 	}
 }
 
-func (c *Client) doCreateRemoteSpool(responseChan chan error) {
+func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+
 	if c.spoolReadDescriptor != nil {
 		responseChan <- errors.New("Already have a remote spool")
 		return
@@ -394,10 +420,32 @@ func (c *Client) doCreateRemoteSpool(responseChan chan error) {
 		responseChan <- errors.New("Client is not online")
 		return
 	}
-	desc, err := c.session.GetService(common.SpoolServiceName)
-	if err != nil {
-		responseChan <- err
-		return
+	var desc *cUtils.ServiceDescriptor
+	var err error
+	// if no provider is specified, pick a random one
+	if provider == "" {
+		desc, err = c.session.GetService(common.SpoolServiceName)
+		if err != nil {
+			responseChan <- err
+			return
+		}
+	} else {
+		// search for the provider by name
+		descs, err := c.session.GetServices(common.SpoolServiceName)
+		if err != nil {
+			responseChan <- err
+			return
+		}
+		for _, d := range descs {
+			if d.Name == provider {
+				desc = d
+				break
+			}
+		}
+		if desc == nil {
+			responseChan <- errProviderNotFound
+			return
+		}
 	}
 	go func() {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
@@ -425,7 +473,7 @@ func (c *Client) doCreateRemoteSpool(responseChan chan error) {
 // time after program shutdown or restart.
 func (c *Client) NewContact(nickname string, sharedSecret []byte) {
 	select {
-	case <- c.HaltCh():
+	case <-c.HaltCh():
 	case c.opCh <- &opAddContact{
 		name:         nickname,
 		sharedSecret: sharedSecret,
