@@ -82,7 +82,7 @@ func (c *Client) worker() {
 				isConnected = false
 				c.haltKeyExchanges()
 			case *opCreateSpool:
-				c.doCreateRemoteSpool(op.responseChan)
+				c.doCreateRemoteSpool(op.provider, op.responseChan)
 			case *opUpdateSpool:
 				if op.descriptor != nil {
 					c.spoolReadDescriptor = op.descriptor
