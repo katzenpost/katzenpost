@@ -117,8 +117,11 @@ func (c *Client) worker() {
 				op.responseChan <- c.doWipeConversation(op.name)
 			case *opGetPKIDocument:
 				op.responseChan <- c.doGetPKIDocument()
+			case *opGetSpoolProviders:
+				op.responseChan <- c.doGetSpoolProviders()
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
+
 			}
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)

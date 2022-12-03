@@ -411,6 +411,49 @@ func (c *Client) doGetPKIDocument() interface{} {
 	}
 }
 
+// GetSpoolProviders() returns the set of current spool providers in the pki.Document
+func (c *Client) GetSpoolProviders() ([]string, error) {
+	op := &opGetSpoolProviders{responseChan: make(chan interface{}, 1)}
+	select {
+	case <-c.HaltCh():
+		return nil, errHalted
+	case c.opCh <- op:
+	}
+	select {
+	case <-c.HaltCh():
+		return nil, errHalted
+	case r := <-op.responseChan:
+		switch r := r.(type) {
+		case []string:
+			return r, nil
+		case error:
+			return nil, r
+		default:
+			panic("Unexpected type")
+		}
+	}
+}
+
+func (c *Client) doGetSpoolProviders() interface {} {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+
+	if !c.online || c.session == nil {
+		return errNotOnline
+	}
+	doc := c.session.CurrentDocument()
+	if doc == nil {
+		return errNoCurrentDocument
+	}
+
+	spoolProviders := cUtils.FindServices(common.SpoolServiceName, doc)
+	providerNames := make([]string, len(spoolProviders))
+	for i, d := range spoolProviders {
+		providerNames[i] = d.Provider
+	}
+	return providerNames
+}
+
 // CreateRemoteSpoolOn creates a remote spool for collecting messages
 // destined to this Client. This method blocks until the reply from
 // the remote spool service is received or the round trip timeout is reached.
