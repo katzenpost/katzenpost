@@ -60,7 +60,9 @@ var (
 	errProviderNotFound       = errors.New("Cannot find provider")
 	errBlobNotFound           = errors.New("Blob not found in store")
 	errNoSpool                = errors.New("No Spool Found")
+	errNotOnline              = errors.New("Client is not online")
 	errAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
+	errHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
 )
 
@@ -377,12 +379,12 @@ func (c *Client) CreateRemoteSpoolOn(provider string) error {
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("Halted")
+		return errHalted
 	case c.opCh <- createSpoolOp:
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("Halted")
+		return errHalted
 	case r := <-createSpoolOp.responseChan:
 		return r
 	}
@@ -397,12 +399,12 @@ func (c *Client) CreateRemoteSpool() error {
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("Halted")
+		return errHalted
 	case c.opCh <- createSpoolOp:
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("Halted")
+		return errHalted
 	case r := <-createSpoolOp.responseChan:
 		return r
 	}
@@ -417,7 +419,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		return
 	}
 	if !c.online {
-		responseChan <- errors.New("Client is not online")
+		responseChan <- errNotOnline
 		return
 	}
 	var desc *cUtils.ServiceDescriptor
@@ -769,7 +771,7 @@ func (c *Client) GetExpiration(name string) (time.Duration, error) {
 
 	select {
 	case <-c.HaltCh():
-		return 0, errors.New("Halted")
+		return 0, errHalted
 	case v := <-getExpirationOp.responseChan:
 		switch v := v.(type) {
 		case error:
@@ -1382,7 +1384,7 @@ func (c *Client) WipeConversation(nickname string) error {
 	case r := <-wipeConversationOp.responseChan:
 		return r
 	}
-	return errors.New("Halted")
+	return errHalted
 }
 
 func (c *Client) doWipeConversation(nickname string) error {
