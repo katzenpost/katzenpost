@@ -35,8 +35,8 @@ import (
 	ratchet "github.com/katzenpost/doubleratchet"
 
 	"github.com/katzenpost/katzenpost/client"
-	cUtils "github.com/katzenpost/katzenpost/client/utils"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	cUtils "github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -61,6 +61,7 @@ var (
 	errBlobNotFound           = errors.New("Blob not found in store")
 	errNoSpool                = errors.New("No Spool Found")
 	errNotOnline              = errors.New("Client is not online")
+	errNoCurrentDocument      = errors.New("No current document")
 	errAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
 	errHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
@@ -365,6 +366,47 @@ func (c *Client) garbageCollectConversations() {
 				}
 				delete(messages, mesgID)
 			}
+		}
+	}
+}
+
+// GetPKIDocument() returns the current pki.Document or error
+func (c *Client) GetPKIDocument() (*pki.Document, error) {
+	r := make(chan interface{}, 1)
+	getPKIOp := &opGetPKIDocument{responseChan: r}
+	select {
+	case <-c.HaltCh():
+		return nil, errHalted
+	case c.opCh <- getPKIOp:
+	}
+	select {
+	case <-c.HaltCh():
+		return nil, errHalted
+	case v := <-r:
+		switch v := v.(type) {
+		case error:
+			return nil, v
+		case *pki.Document:
+			return v, nil
+		default:
+			panic("Received unexpected type")
+		}
+	}
+}
+
+func (c *Client) doGetPKIDocument() interface{} {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+
+	if !c.online {
+		return errNotOnline
+		
+	} else {
+		doc := c.session.CurrentDocument()
+		if doc == nil {
+			return errNoCurrentDocument
+		} else {
+			return doc
 		}
 	}
 }

@@ -115,6 +115,8 @@ func (c *Client) worker() {
 				c.doGetConversation(op.name, op.responseChan)
 			case *opWipeConversation:
 				op.responseChan <- c.doWipeConversation(op.name)
+			case *opGetPKIDocument:
+				op.responseChan <- c.doGetPKIDocument()
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 			}
