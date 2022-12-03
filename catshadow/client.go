@@ -243,6 +243,9 @@ func (c *Client) initKeyExchange(contact *Contact) error {
 }
 
 func (c *Client) restartKeyExchanges() {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+
 	c.haltKeyExchanges()
 	if !c.online {
 		return
@@ -600,6 +603,9 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	c.contactNicknames[contact.Nickname] = contact
 	contact.reunionKeyExchange = make(map[uint64]boundExchange)
 	contact.reunionResult = make(map[uint64]string)
+
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
 
 	if c.online {
 		c.initKeyExchange(contact)
@@ -1227,6 +1233,8 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		Command:  appendCmd, ID: convoMesgID}
 	if _, err := contact.outbound.Peek(); err == ErrQueueEmpty {
 		// no messages already queued, so call sendMessage immediately
+		c.connMutex.RLock()
+		defer c.connMutex.RUnlock()
 		if c.online {
 			defer c.sendMessage(contact)
 		}
