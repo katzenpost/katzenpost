@@ -1721,6 +1721,24 @@ func (c *Client) Offline() error {
 	return <-r
 }
 
+// SpoolWriteDescriptor() returns the SpoolWriteDescriptor for this client or nil
+func (c *Client) SpoolWriteDescriptor() *memspoolclient.SpoolWriteDescriptor {
+	r := make(chan *memspoolclient.SpoolWriteDescriptor, 1)
+	select {
+	case c.opCh <- &opSpoolWriteDescriptor{responseChan: r}:
+	case <-c.HaltCh():
+	}
+	return <-r
+}
+
+func (c *Client) getSpoolWriteDescriptor() *memspoolclient.SpoolWriteDescriptor {
+	if c.spoolReadDescriptor == nil {
+		return nil
+	} else {
+		return c.spoolReadDescriptor.GetWriteDescriptor()
+	}
+}
+
 // goOffline is called by worker routine when a goOffline is received
 func (c *Client) goOffline() error {
 	c.connMutex.Lock()

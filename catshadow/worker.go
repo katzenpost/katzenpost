@@ -119,6 +119,8 @@ func (c *Client) worker() {
 				op.responseChan <- c.doGetPKIDocument()
 			case *opGetSpoolProviders:
 				op.responseChan <- c.doGetSpoolProviders()
+			case *opSpoolWriteDescriptor:
+				op.responseChan <- c.getSpoolWriteDescriptor()
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
 

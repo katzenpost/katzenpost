@@ -99,3 +99,7 @@ type opGetPKIDocument struct {
 type opGetSpoolProviders struct {
 	responseChan chan interface{}
 }
+
+type opSpoolWriteDescriptor struct {
+	responseChan chan *client.SpoolWriteDescriptor
+}
