@@ -91,3 +91,7 @@ type opWipeConversation struct {
 	name         string
 	responseChan chan error
 }
+
+type opGetPKIDocument struct {
+	responseChan chan interface{}
+}
