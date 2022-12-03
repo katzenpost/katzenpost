@@ -95,3 +95,7 @@ type opWipeConversation struct {
 type opGetPKIDocument struct {
 	responseChan chan interface{}
 }
+
+type opGetSpoolProviders struct {
+	responseChan chan interface{}
+}
