@@ -229,14 +229,14 @@ Sphinx specification.
 * ``H(M)`` - As the output of this primitive is only used locally to
   a Mix, any suitable primitive may be used.
 
-* ``MAC(K, M)`` - HMAC-SHA256-128 [RFC6234]_, M_KEY_LENGTH of 32 bytes
-  (256 bits), and MAC_LENGTH of 16 bytes (128 bits).
+* ``MAC(K, M)`` - HMAC-SHA256 [RFC6234]_, M_KEY_LENGTH of 32 bytes
+  (256 bits), and MAC_LENGTH of 32 bytes (256 bits).
 
 * ``KDF(SALT, IKM)`` - HKDF-SHA256, HKDF-Expand only, with SALT used
   as the info parameter.
 
-* ``S(K, IV)``  - CTR-AES128 [SP80038A]_, S_KEY_LENGTH of 16 bytes
-  (128 bits), and S_IV_LENGTH of 12 bytes (96 bits),
+* ``S(K, IV)``  - CTR-AES256 [SP80038A]_, S_KEY_LENGTH of 32 bytes
+  (256 bits), and S_IV_LENGTH of 12 bytes (96 bits),
   using a 32 bit counter.
 
 * ``SPRP_Encrypt(K, M)/SPRP_Decrypt(K, M)`` - AEZv5 [AEZV5]_,
@@ -259,7 +259,7 @@ instantiation of the Sphinx Packet Format:
 
 * ``AD_SIZE``            - 2 bytes.
 
-* ``SECURITY_PARAMETER`` - 16 bytes.
+* ``SECURITY_PARAMETER`` - 32 bytes. (except for our SPRP which we plan to upgrade)
 
 * ``PER_HOP_RI_SIZE``    - (XXX/ya: Addition is hard, let's go shopping.)
 
