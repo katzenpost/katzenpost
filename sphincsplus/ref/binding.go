@@ -64,9 +64,9 @@ func (p *PublicKey) Reset() {
 // Verify checks whether the given signature is valid.
 func (p *PublicKey) Verify(signature, message []byte) bool {
 	ret := C.crypto_sign_verify((*C.uchar)(unsafe.Pointer(&signature[0])),
-		C.uint64_t(len(signature)),
+		C.size_t(len(signature)),
 		(*C.uchar)(unsafe.Pointer(&message[0])),
-		C.uint64_t(len(message)),
+		C.size_t(len(message)),
 		(*C.uchar)(unsafe.Pointer(&p.publicKey[0])))
 	if ret == 0 {
 		return true
@@ -117,11 +117,11 @@ func (p *PrivateKey) Reset() {
 // Sign signs the given message and returns the signature.
 func (p *PrivateKey) Sign(message []byte) []byte {
 	signature := make([]byte, C.CRYPTO_BYTES)
-	sigLen := C.uint64_t(C.CRYPTO_BYTES)
+	sigLen := C.size_t(C.CRYPTO_BYTES)
 	C.crypto_sign_signature((*C.uchar)(unsafe.Pointer(&signature[0])),
 		&sigLen,
 		(*C.uchar)(unsafe.Pointer(&message[0])),
-		(C.uint64_t)(len(message)),
+		(C.size_t)(len(message)),
 		(*C.uchar)(unsafe.Pointer(&p.privateKey[0])))
 	return signature
 }
