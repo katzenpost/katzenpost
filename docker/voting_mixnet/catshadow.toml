@@ -7,11 +7,6 @@
   Level = "DEBUG"
   File = ""
 
-[ClientLogging]
-  Disable = false
-  Level = "NOTICE"
-  File = ""
-
 [VotingAuthority]
     [[VotingAuthority.Peers]]
       Addresses = ["127.0.0.1:21483"]
@@ -30,13 +25,4 @@
 
 [Debug]
   DisableDecoyTraffic = true
-  CaseSensitiveUserIdentifiers = false
   PollingInterval = 50
-
-[Panda]
-  Receiver = "+panda"
-  Provider = "provider1"
-  BlobSize = 1000
-
-[Reunion]
-   Enable = false
