@@ -575,7 +575,7 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*descriptor) 
 	return nrProviders > 0 && nrNodes >= minNodes
 }
 
-func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoch uint64) error {
+func (s *state) sendRevealToPeer(peer *config.Authority, reveal []byte, epoch uint64) error {
 	var conn net.Conn
 	var err error
 	for i, a := range peer.Addresses {
@@ -641,7 +641,7 @@ func (s *state) sendRevealToPeer(peer *config.AuthorityPeer, reveal []byte, epoc
 	return nil
 
 }
-func (s *state) sendVoteToPeer(peer *config.AuthorityPeer, vote []byte, epoch uint64) error {
+func (s *state) sendVoteToPeer(peer *config.Authority, vote []byte, epoch uint64) error {
 	// get a connector here
 	var conn net.Conn
 	var err error
@@ -1569,7 +1569,7 @@ func newState(s *Server) (*state, error) {
 				panic(err)
 			}
 		} else {
-			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+			pemFilePath := filepath.Join(s.cfg.DataDir, v.IdentityPublicKeyPem)
 			err := pem.FromFile(pemFilePath, identityPublicKey)
 			if err != nil {
 				panic(err)
@@ -1590,7 +1590,7 @@ func newState(s *Server) (*state, error) {
 				panic(err)
 			}
 		} else {
-			pemFilePath := filepath.Join(s.cfg.Authority.DataDir, v.IdentityPublicKeyPem)
+			pemFilePath := filepath.Join(s.cfg.DataDir, v.IdentityPublicKeyPem)
 			err := pem.FromFile(pemFilePath, identityPublicKey)
 			if err != nil {
 				panic(err)
@@ -1643,7 +1643,7 @@ func newState(s *Server) (*state, error) {
 	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 
 	// Initialize the persistence store and restore state.
-	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
+	dbPath := filepath.Join(s.cfg.DataDir, dbFile)
 	var err error
 	if st.db, err = bolt.Open(dbPath, 0600, nil); err != nil {
 		return nil, err
@@ -1670,7 +1670,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				LogBackend:    s.s.logBackend,
 				Authorities:   s.s.cfg.Authorities,
 				DialContextFn: nil,
-				DataDir:       s.s.cfg.Authority.DataDir,
+				DataDir:       s.s.cfg.DataDir,
 			}
 			c, err := client.New(cfg)
 			if err != nil {

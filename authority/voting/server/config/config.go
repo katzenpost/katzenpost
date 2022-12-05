@@ -19,7 +19,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -65,43 +64,6 @@ var defaultLogging = Logging{
 	Disable: false,
 	File:    "",
 	Level:   defaultLogLevel,
-}
-
-// Authority is the authority configuration.
-type Authority struct {
-	// Identifier is the human readable identifier for the node (eg: FQDN).
-	Identifier string
-
-	// Addresses are the IP address/port combinations that the authority will
-	// bind to for incoming connections.
-	Addresses []string
-
-	// DataDir is the absolute path to the authority's state files.
-	DataDir string
-}
-
-// Validate parses and checks the Authority configuration.
-func (sCfg *Authority) validate() error {
-	if sCfg.Addresses != nil {
-		for _, v := range sCfg.Addresses {
-			if err := utils.EnsureAddrIPPort(v); err != nil {
-				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
-			}
-		}
-	} else {
-		// Try to guess a "suitable" external IPv4 address.  If people want
-		// to do loopback testing, they can manually specify one.  If people
-		// want to use IPng, they can manually specify that as well.
-		addr, err := utils.GetExternalIPv4Address()
-		if err != nil {
-			return err
-		}
-		sCfg.Addresses = []string{addr.String() + defaultAddress}
-	}
-	if !filepath.IsAbs(sCfg.DataDir) {
-		return fmt.Errorf("config: Authority: DataDir '%v' is not an absolute path", sCfg.DataDir)
-	}
-	return nil
 }
 
 // Logging is the authority logging configuration.
@@ -279,9 +241,10 @@ func (dCfg *Debug) applyDefaults() {
 	}
 }
 
-// AuthorityPeer is the connecting information
-// and identity key for the Authority peers
-type AuthorityPeer struct {
+// Authority is the authority configuration for a peer.
+type Authority struct {
+	// Identifier is the human readable identifier for the node (eg: FQDN).
+	Identifier string
 	// IdentityPublicKeyPem is a string in PEM format containing
 	// the public identity key key.
 	IdentityPublicKeyPem string
@@ -292,19 +255,19 @@ type AuthorityPeer struct {
 	Addresses []string
 }
 
-// Validate parses and checks the AuthorityPeer configuration.
-func (a *AuthorityPeer) Validate(datadir string) error {
+// Validate parses and checks the Authority configuration.
+func (a *Authority) Validate() error {
 	for _, v := range a.Addresses {
 		if err := utils.EnsureAddrIPPort(v); err != nil {
-			return fmt.Errorf("config: AuthorityPeer: Address '%v' is invalid: %v", v, err)
+			return fmt.Errorf("config: Authority : Address '%v' is invalid: %v", v, err)
 		}
 	}
 	if a.IdentityPublicKeyPem == "" {
-		return fmt.Errorf("config: %v: AuthorityPeer is missing Identity Key", a)
+		return fmt.Errorf("config: %v: Authority is missing Identity Key", a)
 	}
 
 	if a.LinkPublicKeyPem == "" {
-		return fmt.Errorf("config: %v: AuthorityPeer is missing Link Key PEM filename", a)
+		return fmt.Errorf("config: %v: Authority is missing Link Key PEM filename", a)
 	}
 
 	return nil
@@ -344,10 +307,12 @@ func (n *Node) validate(isProvider bool) error {
 
 // Config is the top level authority configuration.
 type Config struct {
-	Authority   *Authority
-	Authorities []*AuthorityPeer
+	Identifier  string
+	Addresses   []string
+	Authorities []*Authority
 	Logging     *Logging
 	Parameters  *Parameters
+	DataDir     string
 	Debug       *Debug
 
 	Mixes     []*Node
@@ -369,10 +334,25 @@ type Topology struct {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
-	// Handle missing sections if possible.
-	if cfg.Authority == nil {
-		return errors.New("config: No Authority block was present")
+	// Verify DataDir is valid
+	if !filepath.IsAbs(cfg.DataDir) {
+		return fmt.Errorf("config: DataDir '%v' is not an absolute path", cfg.DataDir)
 	}
+	// Verify addresses has a valid entry or a public IPv4 address
+	if cfg.Addresses == nil {
+		addr, err := utils.GetExternalIPv4Address()
+		if err != nil {
+			return err
+		}
+		cfg.Addresses = []string{addr.String() + defaultAddress}
+	} else {
+		for _, v := range cfg.Addresses {
+			if err := utils.EnsureAddrIPPort(v); err != nil {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+			}
+		}
+	}
+	// Handle missing sections if possible.
 	if cfg.Logging == nil {
 		cfg.Logging = &defaultLogging
 	}
@@ -384,9 +364,6 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	// Validate and fixup the various sections.
-	if err := cfg.Authority.validate(); err != nil {
-		return err
-	}
 	if err := cfg.Logging.validate(); err != nil {
 		return err
 	}
@@ -420,7 +397,7 @@ func (cfg *Config) FixupAndValidate() error {
 	_, identityKey := cert.Scheme.NewKeypair()
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
-		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityPublicKeyPem), identityKey)
+		err := pem.FromFile(filepath.Join(cfg.DataDir, v.IdentityPublicKeyPem), identityKey)
 		if err != nil {
 			return err
 		}
@@ -433,7 +410,7 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	for _, auth := range cfg.Authorities {
-		err := auth.Validate(cfg.Authority.DataDir)
+		err := auth.Validate()
 		if err != nil {
 			return err
 		}
