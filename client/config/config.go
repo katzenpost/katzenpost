@@ -159,7 +159,7 @@ func (nvACfg *NonvotingAuthority) validate() error {
 
 // VotingAuthority is a voting authority configuration.
 type VotingAuthority struct {
-	Peers []*vServerConfig.AuthorityPeer
+	Peers []*vServerConfig.Authority
 }
 
 // New constructs a pki.Client with the specified voting authority config.

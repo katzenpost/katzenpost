@@ -63,7 +63,7 @@ type Server struct {
 
 func (s *Server) initDataDir() error {
 	const dirMode = os.ModeDir | 0700
-	d := s.cfg.Authority.DataDir
+	d := s.cfg.DataDir
 
 	// Initialize the data directory, by ensuring that it exists (or can be
 	// created), and that it has the appropriate permissions.
@@ -91,7 +91,7 @@ func (s *Server) initLogging() error {
 	p := s.cfg.Logging.File
 	if !s.cfg.Logging.Disable && s.cfg.Logging.File != "" {
 		if !filepath.IsAbs(p) {
-			p = filepath.Join(s.cfg.Authority.DataDir, p)
+			p = filepath.Join(s.cfg.DataDir, p)
 		}
 	}
 
@@ -204,8 +204,8 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the authority identity key.
-	identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
+	identityPrivateKeyFile := filepath.Join(s.cfg.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.DataDir, "identity.public.pem")
 
 	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
@@ -232,8 +232,8 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	scheme := wire.DefaultScheme
-	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
+	linkPrivateKeyFile := filepath.Join(s.cfg.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.DataDir, "link.public.pem")
 
 	var linkPrivateKey wire.PrivateKey = nil
 	var linkPublicKey wire.PublicKey = nil
@@ -306,7 +306,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.state.Go(s.state.worker)
 
 	// Start up the listeners.
-	for _, v := range s.cfg.Authority.Addresses {
+	for _, v := range s.cfg.Addresses {
 		l, err := net.Listen("tcp", v)
 		if err != nil {
 			s.log.Errorf("Failed to start listener '%v': %v", v, err)

@@ -712,45 +712,14 @@ func (nCfg *Nonvoting) validate(datadir string) error {
 	return nil
 }
 
-// Peer is a voting peer.
-type Peer struct {
-	Addresses            []string
-	IdentityPublicKeyPem string
-	LinkPublicKeyPem     string
-}
-
-func (p *Peer) validate(datadir string) error {
-	for _, address := range p.Addresses {
-		if err := utils.EnsureAddrIPPort(address); err != nil {
-			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
-		}
-	}
-
-	return nil
-}
-
 // Voting is a voting directory authority.
 type Voting struct {
-	Peers []*Peer
-}
-
-// AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
-func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
-	authPeers := []*config.AuthorityPeer{}
-	for _, peer := range peers {
-		authPeer := &config.AuthorityPeer{
-			IdentityPublicKeyPem: peer.IdentityPublicKeyPem,
-			LinkPublicKeyPem:     peer.LinkPublicKeyPem,
-			Addresses:            peer.Addresses,
-		}
-		authPeers = append(authPeers, authPeer)
-	}
-	return authPeers, nil
+	Peers []*config.Authority
 }
 
 func (vCfg *Voting) validate(datadir string) error {
 	for _, peer := range vCfg.Peers {
-		err := peer.validate(datadir)
+		err := peer.Validate()
 		if err != nil {
 			return err
 		}

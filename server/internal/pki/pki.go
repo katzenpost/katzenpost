@@ -38,7 +38,6 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -674,15 +673,11 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			return nil, err
 		}
 	} else {
-		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers, glue.Config().Server.DataDir)
-		if err != nil {
-			return nil, err
-		}
 		pkiCfg := &vClient.Config{
 			DataDir:     glue.Config().Server.DataDir,
 			LinkKey:     glue.LinkKey(),
 			LogBackend:  glue.LogBackend(),
-			Authorities: authorities,
+			Authorities: glue.Config().PKI.Voting.Peers,
 		}
 		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
