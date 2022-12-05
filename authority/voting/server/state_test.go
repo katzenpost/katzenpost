@@ -152,7 +152,7 @@ func TestVote(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Authority.Identifier)
+		tmpDir, err := os.MkdirTemp("", cfg.Identifier)
 		require.NoError(err)
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
@@ -164,14 +164,14 @@ func TestVote(t *testing.T) {
 	}
 
 	// create a voting PKI configuration
-	peers := make([]*sConfig.Peer, 0)
+	peers := make([]*config.Authority, 0)
 	for i, peer := range authCfgs {
 		require.NoError(err)
-		p := &sConfig.Peer{Addresses: peer.Authority.Addresses,
+		p := &config.Authority{Addresses: peer.Addresses,
 			IdentityPublicKeyPem: peerKeys[i].identityPublicKeyPem,
 			LinkPublicKeyPem:     peerKeys[i].linkPublicKeyPem,
 		}
-		if len(peer.Authority.Addresses) == 0 {
+		if len(peer.Addresses) == 0 {
 			panic("wtf")
 		}
 		peers = append(peers, p)
@@ -303,7 +303,7 @@ func TestVote(t *testing.T) {
 				continue
 			}
 			a.reveals[s.votingEpoch][s.s.identityPublicKey.Sum256()] = r
-			t.Logf("%s sent %s reveal", authCfgs[i].Authority.Identifier, authCfgs[j].Authority.Identifier)
+			t.Logf("%s sent %s reveal", authCfgs[i].Identifier, authCfgs[j].Identifier)
 		}
 
 	}
@@ -367,7 +367,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 	myPeerKeys := make([]peerKeys, numAuthorities)
 
 	// initial generation of key material for each authority
-	peersMap := make(map[[sign.PublicKeyHashSize]byte]*config.AuthorityPeer)
+	peersMap := make(map[[sign.PublicKeyHashSize]byte]*config.Authority)
 	for i := 0; i < numAuthorities; i++ {
 		cfg := new(config.Config)
 		cfg.Logging = &config.Logging{Disable: false, File: "", Level: "DEBUG"}
@@ -378,11 +378,9 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 			panic(err)
 		}
 
-		cfg.Authority = &config.Authority{
-			Identifier: fmt.Sprintf("authority-%v", i),
-			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", lastPort)},
-			DataDir:    datadir,
-		}
+		cfg.Identifier = fmt.Sprintf("authority-%v", i)
+		cfg.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
+		cfg.DataDir =  datadir
 		lastPort += 1
 
 		scheme := wire.DefaultScheme
@@ -407,17 +405,17 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 			GenerateOnly:     false,
 		}
 		configs = append(configs, cfg)
-		authorityPeer := &config.AuthorityPeer{
+		authorityPeer := &config.Authority{
 			IdentityPublicKeyPem: identityPublicKeyPem,
 			LinkPublicKeyPem:     linkPublicKeyPem,
-			Addresses:            cfg.Authority.Addresses,
+			Addresses:            cfg.Addresses,
 		}
 		peersMap[idPubKey.Sum256()] = authorityPeer
 	}
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
-		peers := []*config.AuthorityPeer{}
+		peers := []*config.Authority{}
 		for id, peer := range peersMap {
 			idHash := myPeerKeys[i].idPubKey.Sum256()
 			if !bytes.Equal(id[:], idHash[:]) {
