@@ -385,18 +385,18 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
+func generatePeer(peerNum int, datadir string) (*config.Authority, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
 	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
 	linkPrivateKey := scheme.GenerateKeypair(rand.Reader)
 
-	authPeer := &config.AuthorityPeer{
+	authPeer := &config.Authority{
 		IdentityPublicKeyPem: pem.ToPEMString(identityPublicKey),
 		LinkPublicKeyPem:     pem.ToPEMString(linkPrivateKey.PublicKey()),
 		Addresses:            []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}
-	err := authPeer.Validate(datadir)
+	err := authPeer.Validate()
 	if err != nil {
 		panic(err)
 	}
@@ -409,7 +409,7 @@ func TestClient(t *testing.T) {
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)
 	dialer := newMockDialer(logBackend)
-	peers := []*config.AuthorityPeer{}
+	peers := []*config.Authority{}
 
 	datadir := os.TempDir()
 

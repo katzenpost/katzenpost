@@ -76,7 +76,7 @@ type Config struct {
 	LogBackend *log.Backend
 
 	// Authorities is the set of Directory Authority servers.
-	Authorities []*config.AuthorityPeer
+	Authorities []*config.Authority
 
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
@@ -123,7 +123,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
 	var conn net.Conn
 	var err error
 
