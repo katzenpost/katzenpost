@@ -281,7 +281,7 @@ func (s *state) consense(epoch uint64) *document {
 				continue
 			}
 			s.log.Debugf("Checking certificate from %s", sha256b64(idPubKey.Bytes()))
-			s.log.Debugf("sha256(certified): %x", sha256b64(certificate2))
+			s.log.Debugf("sha256(certified): %s", sha256b64(certificate2))
 			if ds, err := cert.GetSignature(pubKeyHash2[:], certificate2); err == nil {
 				if sc, err := cert.AddSignature(idPubKey, *ds, certificate1); err == nil {
 					// addsignature doesn't modify certificate
@@ -1301,7 +1301,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
-			s.log.Debug("Consensus from:\n%x\n%s", vote.PublicKey.Sum256(), doc)
+			s.log.Debug("Consensus from:\n%s\n%s", vote.PublicKey.Sum256(), doc)
 			s.certificates[s.votingEpoch][vote.PublicKey.Sum256()] = vote.Payload
 			if raw, err := cert.GetCertified(vote.Payload); err == nil {
 				s.log.Debugf("Certificate for epoch %v saved", vote.Epoch)
