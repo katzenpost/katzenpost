@@ -1,26 +1,24 @@
-# Katzenpost non-voting authority configuration file.
+# Katzenpost voting authority configuration file.
 
-#
-# The Authority section contains mandatory information.
-#
+# Identifier is the name of the authority
+Identifier = "auth3"
 
-[Authority]
+# Addresses are the IP address/port combinations that the authority will bind
+# to for incoming connections.
+Addresses = [ "172.28.1.9:23483" ]
 
-  # Addresses are the IP address/port combinations that the authority will bind
-  # to for incoming connections.
-  Addresses = [ "172.28.1.9:23483" ]
-
-  # DataDir is the absolute path to the server's state files.
-  DataDir = "/conf/authority_data"
+# DataDir is the absolute path to the server's state files.
+DataDir = "/conf/authority_data"
 
 
 [[Authorities]]
+  Identifier = "auth1"
   IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 3zXGXWKZeW7cgLRKZPeF73Yi0+J+BtEzfoHM1SXMqdB30p0iAy1JDzaLWPOdAJNq
 jWmeAbCVBJkDkRtdzghri6me5ZgEwQ3tr/OVK2Podxl3dIKP+riONi3po+D57ryg
 -----END ED25519 SPHINCS+ PUBLIC KEY-----
 """
-   LinkPublicKeyPem = """-----BEGIN Kyber768-X25519 PUBLIC KEY-----
+  LinkPublicKeyPem = """-----BEGIN Kyber768-X25519 PUBLIC KEY-----
 +WOSbmi5nJWBFx/FePcx+46MindcROtr7mMuS5aJE0r2Z6mIXASEOc5hASZZ4SDs
 lRU1URiBoKQRFRM0UmzgJjpUMhm4miM0ShCwJEEV1RWW5AF+1RlHa2PC7En5gI4O
 prOWNZdhIYp89FMTxIHGYkGD0raREhJisDHmyWvr+jl4qx53a5vIygrCyM3AK4Sp
@@ -52,12 +50,13 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
   Addresses = [ "172.28.1.10:21483" ]
 
 [[Authorities]]
-   IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
+  Identifier = "auth2"
+  IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 hgEs8udDDyojLLqsURI0HIl1kgoue5MSmHPWw1g4TFgcLQ36HIGdlJfl4CoAHzOr
 bxm4u7dz+tD35hAvs54V9Jrmo2yjWMzJQeT7QgHmmoWyH/O5pk6mHEsrQnHe9baY
 -----END ED25519 SPHINCS+ PUBLIC KEY-----
 """
-   LinkPublicKeyPem = """
+  LinkPublicKeyPem = """
 -----BEGIN Kyber768-X25519 PUBLIC KEY-----
 XB8eD5IHOJQB8gJWTKCYAuu4rqxCf+wgKmI1VSYUJRzGu8GKIotwOXC+8zVlCpKm
 8rtzdZ4hKbnO6ZrK671Fqk2xl3vyi7Ov0q6fXA7eq5yDQ435VS+MAbQRhqeQ2lq9
@@ -87,9 +86,10 @@ DItdZYMn3LUW+TrwisixXFSQG5/u4ncHBQkZZJmeiYcx4UrIY22oh1MQpa/UmLNZ
 TJ7QlleBWMH03LJsY2uokw==
 -----END Kyber768-X25519 PUBLIC KEY-----
 """
-   Addresses = [ "172.28.1.8:22483" ]
+  Addresses = [ "172.28.1.8:22483" ]
 
 # [[Authorities]]
+#    Identifier = "auth3"
 #    IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 # F9mrgVb9WMGRl6XvHQcMFBVa5zLXdUxlRRDSsG9ZdQwrSCz4tPwiMhn+eFSjdOk1
 # 1vr7lFe3GYwSFA3xy9IDSzyKS2cDWT45FOiiOQqWMBmAI0MEma81dwkTb77a7cd1
