@@ -1300,7 +1300,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	} else {
 		// peer has voted previously, and has not yet submitted a signature
 		if !s.dupSig(*vote) {
-			s.log.Debug("Consensus from:\n%x\n%s", vote.PublicKey.Sum256(), doc)
+			s.log.Debug("Consensus from:\n%s\n%s", vote.PublicKey.Sum256(), doc)
 			s.certificates[s.votingEpoch][vote.PublicKey.Sum256()] = vote.Payload
 			if raw, err := cert.GetCertified(vote.Payload); err == nil {
 				s.log.Debugf("Certificate for epoch %v saved", vote.Epoch)
