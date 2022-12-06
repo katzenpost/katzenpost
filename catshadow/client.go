@@ -53,17 +53,17 @@ import (
 )
 
 var (
-	errTrialDecryptionFailed  = errors.New("Trial Decryption Failed")
-	errInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
-	errContactNotFound        = errors.New("Contact not found")
-	errPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
-	errProviderNotFound       = errors.New("Cannot find provider")
-	errBlobNotFound           = errors.New("Blob not found in store")
-	errNoSpool                = errors.New("No Spool Found")
-	errNotOnline              = errors.New("Client is not online")
-	errNoCurrentDocument      = errors.New("No current document")
-	errAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
-	errHalted                 = errors.New("Halted")
+	ErrTrialDecryptionFailed  = errors.New("Trial Decryption Failed")
+	ErrInvalidPlaintextLength = errors.New("Plaintext has invalid payload length")
+	ErrContactNotFound        = errors.New("Contact not found")
+	ErrPendingKeyExchange     = errors.New("Cannot send to contact pending key exchange")
+	ErrProviderNotFound       = errors.New("Cannot find provider")
+	ErrBlobNotFound           = errors.New("Blob not found in store")
+	ErrNoSpool                = errors.New("No Spool Found")
+	ErrNotOnline              = errors.New("Client is not online")
+	ErrNoCurrentDocument      = errors.New("No current document")
+	ErrAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
+	ErrHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
 )
 
@@ -226,7 +226,7 @@ func (c *Client) Start() {
 
 func (c *Client) initKeyExchange(contact *Contact) error {
 	if contact.keyExchange != nil {
-		return errAlreadyHaveKeyExchange
+		return ErrAlreadyHaveKeyExchange
 	}
 	signedKeyExchange, err := contact.ratchet.CreateKeyExchange()
 	if err != nil {
@@ -267,7 +267,7 @@ func (c *Client) restartReunionExchanges() {
 	for _, contact := range c.contacts {
 		if contact.IsPending {
 			err := c.initKeyExchange(contact)
-			if err != errAlreadyHaveKeyExchange && err != nil {
+			if err != ErrAlreadyHaveKeyExchange && err != nil {
 				// skip if a ratchet keyexchange cannot be found or created
 				c.log.Errorf("Failed to resume key exchange for %s: %s", contact.Nickname, err)
 				continue
@@ -304,7 +304,7 @@ func (c *Client) restartPANDAExchanges() {
 	for _, contact := range c.contacts {
 		if contact.IsPending {
 			err := c.initKeyExchange(contact)
-			if err != errAlreadyHaveKeyExchange && err != nil {
+			if err != ErrAlreadyHaveKeyExchange && err != nil {
 				// skip if a ratchet keyexchange cannot be found or created
 				c.log.Errorf("Failed to resume key exchange for %s: %s", contact.Nickname, err)
 				continue
@@ -379,12 +379,12 @@ func (c *Client) GetPKIDocument() (*pki.Document, error) {
 	getPKIOp := &opGetPKIDocument{responseChan: r}
 	select {
 	case <-c.HaltCh():
-		return nil, errHalted
+		return nil, ErrHalted
 	case c.opCh <- getPKIOp:
 	}
 	select {
 	case <-c.HaltCh():
-		return nil, errHalted
+		return nil, ErrHalted
 	case v := <-r:
 		switch v := v.(type) {
 		case error:
@@ -402,12 +402,12 @@ func (c *Client) doGetPKIDocument() interface{} {
 	defer c.connMutex.RUnlock()
 
 	if !c.online {
-		return errNotOnline
+		return ErrNotOnline
 		
 	} else {
 		doc := c.session.CurrentDocument()
 		if doc == nil {
-			return errNoCurrentDocument
+			return ErrNoCurrentDocument
 		} else {
 			return doc
 		}
@@ -419,12 +419,12 @@ func (c *Client) GetSpoolProviders() ([]string, error) {
 	op := &opGetSpoolProviders{responseChan: make(chan interface{}, 1)}
 	select {
 	case <-c.HaltCh():
-		return nil, errHalted
+		return nil, ErrHalted
 	case c.opCh <- op:
 	}
 	select {
 	case <-c.HaltCh():
-		return nil, errHalted
+		return nil, ErrHalted
 	case r := <-op.responseChan:
 		switch r := r.(type) {
 		case []string:
@@ -442,11 +442,11 @@ func (c *Client) doGetSpoolProviders() interface {} {
 	defer c.connMutex.RUnlock()
 
 	if !c.online || c.session == nil {
-		return errNotOnline
+		return ErrNotOnline
 	}
 	doc := c.session.CurrentDocument()
 	if doc == nil {
-		return errNoCurrentDocument
+		return ErrNoCurrentDocument
 	}
 
 	spoolProviders := cUtils.FindServices(common.SpoolServiceName, doc)
@@ -467,12 +467,12 @@ func (c *Client) CreateRemoteSpoolOn(provider string) error {
 	}
 	select {
 	case <-c.HaltCh():
-		return errHalted
+		return ErrHalted
 	case c.opCh <- createSpoolOp:
 	}
 	select {
 	case <-c.HaltCh():
-		return errHalted
+		return ErrHalted
 	case r := <-createSpoolOp.responseChan:
 		return r
 	}
@@ -487,12 +487,12 @@ func (c *Client) CreateRemoteSpool() error {
 	}
 	select {
 	case <-c.HaltCh():
-		return errHalted
+		return ErrHalted
 	case c.opCh <- createSpoolOp:
 	}
 	select {
 	case <-c.HaltCh():
-		return errHalted
+		return ErrHalted
 	case r := <-createSpoolOp.responseChan:
 		return r
 	}
@@ -507,7 +507,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		return
 	}
 	if !c.online {
-		responseChan <- errNotOnline
+		responseChan <- ErrNotOnline
 		return
 	}
 	var desc *cUtils.ServiceDescriptor
@@ -533,7 +533,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 			}
 		}
 		if desc == nil {
-			responseChan <- errProviderNotFound
+			responseChan <- ErrProviderNotFound
 			return
 		}
 	}
@@ -670,7 +670,7 @@ func (c *Client) doPANDAExchange(contact *Contact) error {
 		kx.SetSharedRandom(sharedRandom)
 	} else {
 		if c.spoolReadDescriptor == nil {
-			return errNoSpool
+			return ErrNoSpool
 		}
 
 		kx, err = panda.NewKeyExchange(rand.Reader, kxLog, meetingPlace, sharedRandom, contact.sharedSecret, contact.keyExchange, contact.id, c.pandaChan, contact.pandaShutdownChan)
@@ -814,7 +814,7 @@ func (c *Client) RenameContact(oldname, newname string) error {
 func (c *Client) doContactRemoval(nickname string) error {
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
-		return errContactNotFound
+		return ErrContactNotFound
 	}
 	contact.haltKeyExchanges()
 	delete(c.contactNicknames, nickname)
@@ -862,7 +862,7 @@ func (c *Client) GetExpiration(name string) (time.Duration, error) {
 
 	select {
 	case <-c.HaltCh():
-		return 0, errHalted
+		return 0, ErrHalted
 	case v := <-getExpirationOp.responseChan:
 		switch v := v.(type) {
 		case error:
@@ -881,7 +881,7 @@ func (c *Client) doGetExpiration(name string, responseChan chan interface{}) {
 	if contact, ok := c.contactNicknames[name]; !ok {
 		select {
 		case <-c.HaltCh():
-		case responseChan <- errContactNotFound:
+		case responseChan <- ErrContactNotFound:
 		}
 
 	} else {
@@ -915,7 +915,7 @@ func (c *Client) doChangeExpiration(name string, expiration time.Duration) error
 	c.conversationsMutex.Lock()
 	if contact, ok := c.contactNicknames[name]; !ok {
 		c.conversationsMutex.Unlock()
-		return errContactNotFound
+		return ErrContactNotFound
 	} else {
 		contact.messageExpiration = expiration
 	}
@@ -1174,7 +1174,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		c.eventCh.In() <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
-			Err:       errContactNotFound,
+			Err:       ErrContactNotFound,
 		}
 		return
 	}
@@ -1183,7 +1183,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		c.eventCh.In() <- &MessageNotSentEvent{
 			Nickname:  nickname,
 			MessageID: convoMesgID,
-			Err:       errPendingKeyExchange,
+			Err:       ErrPendingKeyExchange,
 		}
 		return
 	}
@@ -1426,7 +1426,7 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 				c.log.Debugf("Calling decryptMessage(%x, xx)", *replyEvent.MessageID)
 				err := c.decryptMessage(replyEvent.MessageID, spoolResponse.Message)
 				switch err {
-				case errTrialDecryptionFailed:
+				case ErrTrialDecryptionFailed:
 					// this message did not correspond to any known contacts
 					// if we have any contacts pending key exchange, do not increment the spool descriptor
 					// in order to avoid losing the first message. this is due to a race where the contact
@@ -1477,7 +1477,7 @@ func (c *Client) WipeConversation(nickname string) error {
 	case r := <-wipeConversationOp.responseChan:
 		return r
 	}
-	return errHalted
+	return ErrHalted
 }
 
 func (c *Client) doWipeConversation(nickname string) error {
@@ -1486,7 +1486,7 @@ func (c *Client) doWipeConversation(nickname string) error {
 	defer c.conversationsMutex.Unlock()
 
 	if _, ok := c.conversations[nickname]; !ok {
-		return errContactNotFound
+		return ErrContactNotFound
 	}
 
 	for k, m := range c.conversations[nickname] {
@@ -1558,12 +1558,12 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 
 				if len(plaintext) < 4 {
 					// short plaintext received
-					return errInvalidPlaintextLength
+					return ErrInvalidPlaintextLength
 				}
 
 				payloadLen := binary.BigEndian.Uint32(plaintext[:4])
 				if payloadLen+4 > uint32(len(plaintext)) {
-					return errInvalidPlaintextLength
+					return ErrInvalidPlaintextLength
 				}
 
 				message.Plaintext = plaintext[4 : 4+payloadLen]
@@ -1604,7 +1604,7 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 		return nil
 	}
 	c.log.Debugf("trial ratchet decryption failure for message ID %x reported ratchet error: %s", *messageID, err)
-	return errTrialDecryptionFailed
+	return ErrTrialDecryptionFailed
 }
 
 // setMessageSent sets Message MessageID Sent = true and returns true on success
@@ -1651,7 +1651,7 @@ func (c *Client) DeleteBlob(id string) error {
 	defer c.blobMutex.Unlock()
 	_, ok := c.blob[id]
 	if !ok {
-		return errBlobNotFound
+		return ErrBlobNotFound
 	}
 	delete(c.blob, id)
 	c.save()
@@ -1664,7 +1664,7 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 	defer c.blobMutex.Unlock()
 	b, ok := c.blob[id]
 	if !ok {
-		return nil, errBlobNotFound
+		return nil, ErrBlobNotFound
 	}
 	return b, nil
 }

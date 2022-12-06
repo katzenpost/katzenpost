@@ -547,7 +547,7 @@ func TestDockerChangeExpiration(t *testing.T) {
 	require.NoError(err)
 	require.Equal(exp, time.Duration(123))
 	_, err = a.GetExpiration("c")
-	require.Error(err, errContactNotFound)
+	require.Error(err, ErrContactNotFound)
 
 }
 
@@ -626,7 +626,7 @@ loop4:
 
 	t.Log("Removing contact b again, checking for err")
 	err = a.RemoveContact("b")
-	require.Error(err, errContactNotFound)
+	require.Error(err, ErrContactNotFound)
 
 	c := a.conversations["b"]
 	require.Equal(len(c), 0)
