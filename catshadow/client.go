@@ -527,7 +527,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 			return
 		}
 		for _, d := range descs {
-			if d.Name == provider {
+			if d.Provider == provider {
 				desc = d
 				break
 			}
