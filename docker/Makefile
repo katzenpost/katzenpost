@@ -1,6 +1,6 @@
 warped?=false
 CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
-ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user=${uid}:${gid}
@@ -65,7 +65,7 @@ server: deps
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run ${docker_args} --name katzenpost_voting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/voting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/voting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -trimpath -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
         fi
@@ -73,7 +73,7 @@ voting_authority: deps
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run ${docker_args} --name katzenpost_nonvoting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/nonvoting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/nonvoting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -trimpath -ldflags ${ldflags}' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
         fi
