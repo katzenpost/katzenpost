@@ -281,16 +281,16 @@ func (s *state) consense(epoch uint64) *document {
 				continue
 			}
 			s.log.Debugf("Checking certificate from %s", sha256b64(idPubKey.Bytes()))
-			s.log.Debugf("sha256(certified): %x", sha256b64(certificate2))
+			s.log.Debugf("sha256(certified): %s", sha256b64(certificate2))
 			if ds, err := cert.GetSignature(pubKeyHash2[:], certificate2); err == nil {
 				if sc, err := cert.AddSignature(idPubKey, *ds, certificate1); err == nil {
 					// addsignature doesn't modify certificate
 					certificate1 = sc
 				} else {
-					s.log.Errorf("Failed to AddSignature on certificate from  %x", sha256b64(s.reverseHash[pubKeyHash2].Bytes()))
+					s.log.Errorf("Failed to AddSignature on certificate from:\n %s", pem.ToPEMBytes(s.reverseHash[pubKeyHash2]))
 				}
 			} else {
-				s.log.Errorf("Failed to GetSignature from certificate by %x", sha256b64(s.reverseHash[pubKeyHash2].Bytes()))
+				s.log.Errorf("Failed to GetSignature from certificate by:\n %s", pem.ToPEMBytes(s.reverseHash[pubKeyHash2]))
 			}
 		}
 		// now see if we managed to get a threshold number of signatures
@@ -508,7 +508,6 @@ func (s *state) vote(epoch uint64) (*document, error) {
 		s.s.fatalErrCh <- err
 		return nil, err
 	}
-
 
 	// we need to do this because our stupid duplication of formats everywhere
 	ourvote, err := s11n.VerifyAndParseDocument(signedVote.raw, s.verifiers[s.s.identityPublicKey.Sum256()])
