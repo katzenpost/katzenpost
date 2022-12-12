@@ -265,12 +265,34 @@ func (s *state) consense(epoch uint64) *document {
 		return nil
 	}
 
+	// check that each authority presented the same commit and reveal to every other authority
+	commits := make(map[[publicKeyHashSize]byte][]byte)
+	badnodes := make(map[[publicKeyHashSize]byte]bool)
+
+	for pk, c := range certificates {
+		// XXX: validate a signature over the commit
+		for pk2, b := range c.SharedRandomCommit {
+			if b2, ok := commits[pk2]; ok {
+				// compare every vote to see if any entries are different
+				if !bytes.Equal(b2, b) {
+					s.log.Errorf("%x submitted different commit to %x, rejecting from consensus process", pk2, pk)
+					badnodes[pk2] = true
+				}
+			} else {
+				commits[pk2] = b2
+			}
+		}
+	}
+
 	// range over the certifcates we have collected and see if we can collect enough signatures to make a consensus
 	for pubKeyHash1, certificate1 := range certificates {
 		b64pk := base64.StdEncoding.EncodeToString(pubKeyHash1[:])
 		s.log.Debugf("Checking certificate: from %s against other certificates", b64pk)
 		s.log.Debugf("sha256(certified): %s", sha256b64(certificate1))
 		for pubKeyHash2, certificate2 := range certificates {
+			if _, ok := badnodes[pubKeyHash2]; ok {
+				continue
+			}
 			if hmac.Equal(pubKeyHash1[:], pubKeyHash2[:]) {
 				continue // skip adding own signature
 			}
@@ -376,26 +398,34 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 			topology = s.generateRandomTopology(nodes, srv)
 		}
 	}
+	// gather SharedRandomCommits and SharedRandomReveals into document
+	reveals := s.reveals[s.votingEpoch]
+	commits := make(map[[publicKeyHashSize]byte][]byte)
+	for id, d := range s.votes[s.votingEpoch] {
+		commits[id] = d.doc.SharedRandomCommit[id]
+	}
 
 	// Build the Document.
 	doc := &s11n.Document{
-		Epoch:             s.votingEpoch,
-		GenesisEpoch:      s.genesisEpoch,
-		SendRatePerMinute: params.SendRatePerMinute,
-		Mu:                params.Mu,
-		MuMaxDelay:        params.MuMaxDelay,
-		LambdaP:           params.LambdaP,
-		LambdaPMaxDelay:   params.LambdaPMaxDelay,
-		LambdaL:           params.LambdaL,
-		LambdaLMaxDelay:   params.LambdaLMaxDelay,
-		LambdaD:           params.LambdaD,
-		LambdaDMaxDelay:   params.LambdaDMaxDelay,
-		LambdaM:           params.LambdaM,
-		LambdaMMaxDelay:   params.LambdaMMaxDelay,
-		Topology:          topology,
-		Providers:         providers,
-		SharedRandomValue: srv,
-		PriorSharedRandom: s.priorSRV,
+		Epoch:              s.votingEpoch,
+		GenesisEpoch:       s.genesisEpoch,
+		SendRatePerMinute:  params.SendRatePerMinute,
+		Mu:                 params.Mu,
+		MuMaxDelay:         params.MuMaxDelay,
+		LambdaP:            params.LambdaP,
+		LambdaPMaxDelay:    params.LambdaPMaxDelay,
+		LambdaL:            params.LambdaL,
+		LambdaLMaxDelay:    params.LambdaLMaxDelay,
+		LambdaD:            params.LambdaD,
+		LambdaDMaxDelay:    params.LambdaDMaxDelay,
+		LambdaM:            params.LambdaM,
+		LambdaMMaxDelay:    params.LambdaMMaxDelay,
+		Topology:           topology,
+		Providers:          providers,
+		SharedRandomCommit: commits,
+		SharedRandomReveal: reveals,
+		SharedRandomValue:  srv,
+		PriorSharedRandom:  s.priorSRV,
 	}
 	return doc
 }
@@ -501,7 +531,8 @@ func (s *state) vote(epoch uint64) (*document, error) {
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
-	vote.SharedRandomCommit = commit
+	vote.SharedRandomCommit = make(map[publicKeySize]byte)
+	vote.SharedRandomCommit[s.identityPubKeyHash()] = commit
 	signedVote := s.sign(vote)
 	if signedVote == nil {
 		err := errors.New("failure: signing vote failed")
@@ -837,18 +868,15 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	for rawDesc, votes := range mixTally {
 		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
-			verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
-			if err != nil {
-				return nil, nil, err
-			}
-			desc, err := s11n.VerifyAndParseDescriptor(verifier, []byte(rawDesc), epoch)
+			desc := new(pki.MixDescriptor)
+			err := desc.UnmarshalBinary(rawDesc)
 			if err != nil {
 				return nil, nil, err
 			}
 
 			// only add nodes we have authorized
 			if s.isDescriptorAuthorized(desc) {
-				nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
+				nodes = append(nodes, desc)
 			}
 		}
 	}
