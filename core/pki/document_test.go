@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package s11n
+package pki
 
 import (
 	"crypto/rand"
@@ -24,17 +24,16 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDescriptor, []byte) {
-	d := new(pki.MixDescriptor)
+func genDescriptor(require *require.Assertions, idx int, layer int) (*MixDescriptor, []byte) {
+	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = map[pki.Transport][]string{
-		pki.TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
+	d.Addresses = map[Transport][]string{
+		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
 	d.Layer = uint8(layer)
 	d.LoadWeight = 23
@@ -49,7 +48,7 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDes
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
 		d.MixKeys[uint64(e)] = mPriv.PublicKey()
 	}
-	if layer == pki.LayerProvider {
+	if layer == LayerProvider {
 		d.Kaetzchen = make(map[string]map[string]interface{})
 		d.Kaetzchen["miau"] = map[string]interface{}{
 			"endpoint":  "+miau",
@@ -81,25 +80,32 @@ func TestDocument(t *testing.T) {
 		Epoch:              debugTestEpoch,
 		GenesisEpoch:       debugTestEpoch,
 		SendRatePerMinute:  testSendRate,
-		Topology:           make([][][]byte, 3),
+		Topology:           make([][]*MixDescriptor, 3),
 		Mu:                 0.42,
 		MuMaxDelay:         23,
 		LambdaP:            0.69,
 		LambdaPMaxDelay:    17,
-		SharedRandomCommit: sharedRandomCommit,
+		SharedRandomCommit: make(map[[PublicKeyHashSize]byte][]byte),
+		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
 			_, rawDesc := genDescriptor(require, idx, 0)
-			doc.Topology[l] = append(doc.Topology[l], rawDesc)
+			d := new(MixDescriptor)
+			err := d.UnmarshalBinary(rawDesc)
+			require.NoError(err)
+			doc.Topology[l] = append(doc.Topology[l], d)
 			idx++
 		}
 	}
 	for i := 0; i < 3; i++ {
-		_, rawDesc := genDescriptor(require, idx, pki.LayerProvider)
-		doc.Providers = append(doc.Providers, rawDesc)
+		_, rawDesc := genDescriptor(require, idx, LayerProvider)
+		d := new(MixDescriptor)
+		err := d.UnmarshalBinary(rawDesc)
+		require.NoError(err)
+		doc.Providers = append(doc.Providers, d)
 		idx++
 	}
 

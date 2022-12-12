@@ -1,5 +1,5 @@
-// pki.go - Mixnet PKI interfaces
-// Copyright (C) 2017  David Stainton, Yawning Angel.
+// document.go - Mixnet PKI interfaces
+// Copyright (C) 2022  David Stainton, Yawning Angel, masala.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,23 +14,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package pki provides the mix network PKI related interfaces.
+// Package pki provides the mix network PKI related interfaces and serialization routines
+
 package pki
 
 import (
 	"context"
 	"crypto/hmac"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/ugorji/go/codec"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
-// LayerProvider is the Layer that providers list in their MixDescriptors.
-const LayerProvider = 255
+const (
+	// LayerProvider is the Layer that providers list in their MixDescriptors.
+	LayerProvider = 255
+	PublicKeyHashSize = 32
+	SharedRandomLength = 40
+	SharedRandomValueLength = 32
+
+	// DocumentVersion identifies the document format version
+	DocumentVersion = "v0"
+)
 
 var (
 	// ErrNoDocument is the error returned when there never will be a document
@@ -46,6 +57,12 @@ var (
 
 	// OutOfBandAuth is a MixDescriptor.AuthenticationType
 	OutOfBandAuth = "oob"
+
+	jsonHandle = new(codec.JsonHandle)
+	// XXX wtf why can these not be set as struct literal???
+	//jsonHandle.Canonical = true
+	//jsonHandle.IntegerAsString = 'A'
+	//jsonHandle.MapKeyAsString = true
 )
 
 // Document is a PKI document.
@@ -107,13 +124,20 @@ type Document struct {
 	Providers []*MixDescriptor
 
 	// SharedRandomCommit used by the voting process.
-	SharedRandomCommit []byte
+	SharedRandomCommit map[[PublicKeyHashSize]byte][]byte
+
+	// SharedRandomReveal used by the voting process.
+	SharedRandomReveal map[[PublicKeyHashSize]byte][]byte
 
 	// SharedRandomValue produced by voting process.
 	SharedRandomValue []byte
 
 	// PriorSharedRandom used by applications that need a longer lived SRV.
 	PriorSharedRandom [][]byte
+
+	// Version uniquely identifies the document format as being for the
+	// specified version so that it can be rejected if the format changes.
+	Version string
 }
 
 // String returns a string representation of a Document.
@@ -253,51 +277,6 @@ var (
 	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
-// MixDescriptor is a description of a given Mix or Provider (node).
-type MixDescriptor struct {
-	// Name is the human readable (descriptive) node identifier.
-	Name string
-
-	// IdentityKey is the node's identity (signing) key.
-	IdentityKey sign.PublicKey
-
-	// LinkKey is the node's wire protocol public key.
-	LinkKey wire.PublicKey
-
-	// MixKeys is a map of epochs to Sphinx keys.
-	MixKeys map[uint64]*ecdh.PublicKey
-
-	// Addresses is the map of transport to address combinations that can
-	// be used to reach the node.
-	Addresses map[Transport][]string
-
-	// Kaetzchen is the map of provider autoresponder agents by capability
-	// to parameters.
-	Kaetzchen map[string]map[string]interface{} `json:",omitempty"`
-
-	// Layer is the topology layer.
-	Layer uint8
-
-	// LoadWeight is the node's load balancing weight (unused).
-	LoadWeight uint8
-
-	// AuthenticationType is the authentication mechanism required
-	AuthenticationType string
-}
-
-// String returns a human readable MixDescriptor suitable for terse logging.
-func (d *MixDescriptor) String() string {
-	kaetzchen := ""
-	if len(d.Kaetzchen) > 0 {
-		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
-	}
-	bs := d.IdentityKey.Sum256()
-	identity := base64.StdEncoding.EncodeToString(bs[:])
-	s := fmt.Sprintf("{%s %s %v", d.Name, identity, d.Addresses)
-	s += kaetzchen + d.AuthenticationType + "}"
-	return s
-}
-
 // Client is the abstract interface used for PKI interaction.
 type Client interface {
 	// Get returns the PKI document along with the raw serialized form for the provided epoch.
@@ -308,4 +287,187 @@ type Client interface {
 
 	// Deserialize returns PKI document given the raw bytes.
 	Deserialize(raw []byte) (*Document, error)
+}
+
+// FromPayload deserializes, then verifies a Document, and returns the Document or error.
+func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
+	verified, err := cert.Verify(verifier, payload)
+	if err != nil {
+		return nil, err
+	}
+	dec := codec.NewDecoderBytes(verified, jsonHandle)
+	d := new(Document)
+	if err := dec.Decode(d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// SignDocument signs and serializes the document with the provided signing key.
+func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
+	d.Version = DocumentVersion
+
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+
+	// Sign the document.
+	return cert.Sign(signer, verifier, payload, d.Epoch+5)
+}
+
+// MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
+func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document) ([]byte, error) {
+	d.Version = DocumentVersion
+
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+
+	// Sign the document.
+	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+5)
+	if err != nil {
+		return nil, err
+	}
+
+	// attach peer signatures
+	for _, signature := range peerSignatures {
+		s := signature.PublicKeySum256
+		verifier := verifiers[s]
+		signed, err = cert.AddSignature(verifier, *signature, signed)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return signed, nil
+}
+
+// VerifyAndParseDocument verifies the signature and deserializes the document.
+func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error) {
+	payload, err := cert.Verify(verifier, b)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the payload.
+	d := new(Document)
+	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	if err = dec.Decode(d); err != nil {
+		return nil, err
+	}
+
+	// Check the Document has met requirements.
+	if err = IsDocumentWellFormed(d); err != nil {
+		return nil, err
+	}
+
+	// Fixup the Layer field in all the Topology MixDescriptors.
+	for layer, nodes := range d.Topology {
+		for _, desc := range nodes {
+			desc.Layer = uint8(layer)
+		}
+	}
+
+	return d, nil
+}
+
+// IsDocumentWellFormed validates the document and returns a descriptive error
+// iff there are any problems that invalidates the document.
+func IsDocumentWellFormed(d *Document) error {
+	// Ensure the document is well formed.
+	if d.Version != DocumentVersion {
+		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
+	}
+	if d.GenesisEpoch == 0 {
+		return fmt.Errorf("Document has invalid GenesisEpoch")
+	}
+	if len(d.PriorSharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
+		return fmt.Errorf("Document has invalid PriorSharedRandom")
+	}
+	// If there is a SharedRandomCommit, verify the Epoch contained in
+	// SharedRandomCommit matches the Epoch in the Document.
+	// XXX: Verify() each SharedRandom and its signature
+	for _, commit := range d.SharedRandomCommit {
+		if len(commit) == SharedRandomLength {
+			srvEpoch := binary.BigEndian.Uint64(commit[0:8])
+			if srvEpoch != d.Epoch {
+				return fmt.Errorf("Document with invalid Epoch in SharedRandomCommit")
+			}
+		} else {
+			return fmt.Errorf("Document has invalid SharedRandomCommit")
+		}
+	}
+	// Votes and Consensus differ in that a Consensus has a SharedRandomValue and the set of SharedRandomCommit and SharedRandomReveals that produced it; otherwise there must be only one SharedRandomCommit
+	switch len(d.SharedRandomValue) {
+	case SharedRandomValueLength:
+	case 0:
+		// if there is no SharedRandomValue, this document must be a
+		// Vote and have only one SharedRandomCommit
+		if len(d.SharedRandomCommit) != 1 {
+			return fmt.Errorf("Document has invalid SharedRandomCommit")
+		}
+	default:
+		return fmt.Errorf("Document has invalid SharedRandomValue")
+	}
+	if len(d.Topology) == 0 {
+		return fmt.Errorf("Document contains no Topology")
+	}
+	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
+	for layer, nodes := range d.Topology {
+		if len(nodes) == 0 {
+			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
+		}
+		for _, desc := range nodes {
+			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
+				return err
+			}
+			pk := desc.IdentityKey.Sum256()
+			if _, ok := pks[pk]; ok {
+				return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
+			}
+			pks[pk] = true
+		}
+	}
+	if len(d.Providers) == 0 {
+		return fmt.Errorf("Document contains no Providers")
+	}
+	for _, desc := range d.Providers {
+		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
+			return err
+		}
+		if desc.Layer != LayerProvider {
+			return fmt.Errorf("Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+		}
+		pk := desc.IdentityKey.Sum256()
+		if _, ok := pks[pk]; ok {
+			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
+		}
+		pks[pk] = true
+	}
+
+	return nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler interface
+func (d *Document) UnmarshalText(text []byte) error {
+	// encoding type is json
+	dec := codec.NewDecoderBytes(text, jsonHandle)
+	return dec.Decode(d)
+}
+
+// MarshalText implements encoding.TextMarshaler interface
+func (d *Document) MarshalText() (text []byte, err error) {
+	// encoding type is json
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+	return payload, nil
 }

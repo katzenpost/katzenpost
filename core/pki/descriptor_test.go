@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package s11n
+package pki
 
 import (
 	"testing"
@@ -25,7 +25,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -35,19 +34,19 @@ func TestDescriptor(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	d := new(pki.MixDescriptor)
+	d := new(MixDescriptor)
 	err := IsDescriptorWellFormed(d, debugTestEpoch)
 	assert.Error(err, "IsDescriptorWellFormed(bad)")
 
 	// Build a well formed descriptor.
 	d.Name = "hydra-dominatus.example.net"
-	d.Addresses = map[pki.Transport][]string{
-		pki.TransportTCPv4:     []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
-		pki.TransportTCPv6:     []string{"[2001:DB8::1]:8901"},
-		pki.Transport("torv2"): []string{"thisisanoldonion.onion:2323"},
-		pki.TransportTCP:       []string{"example.com:4242"},
+	d.Addresses = map[Transport][]string{
+		TransportTCPv4:     []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
+		TransportTCPv6:     []string{"[2001:DB8::1]:8901"},
+		Transport("torv2"): []string{"thisisanoldonion.onion:2323"},
+		TransportTCP:       []string{"example.com:4242"},
 	}
-	d.Layer = pki.LayerProvider
+	d.Layer = LayerProvider
 	d.LoadWeight = 23
 	identityPriv, identityPub := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPub
@@ -77,7 +76,8 @@ func TestDescriptor(t *testing.T) {
 	t.Logf("signed descriptor: '%v'", signed)
 
 	// Verify and deserialize the signed descriptor.
-	dd, err := VerifyAndParseDescriptor(identityPub, signed, debugTestEpoch)
+	dd := new(MixDescriptor)
+	err = dd.UnmarshalBinary(signed)
 	require.NoError(err)
 
 	t.Logf("Deserialized descriptor: '%v'", dd)
