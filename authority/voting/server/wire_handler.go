@@ -195,12 +195,8 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Validate and deserialize the descriptor.
-	verifier, err := s11n.GetVerifierFromDescriptor(cmd.Payload)
-	if err != nil {
-		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
-		return resp
-	}
-	desc, err := s11n.VerifyAndParseDescriptor(verifier, cmd.Payload, cmd.Epoch)
+	desc := new(pki.MixDescriptor)
+	err := desc.UnmarshalBinary(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp

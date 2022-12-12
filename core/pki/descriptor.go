@@ -1,5 +1,5 @@
 // descriptor.go - Katzenpost authority descriptor s11n.
-// Copyright (C) 2017, 2018  Yawning Angel, masala, David Stainton
+// Copyright (C) 2022  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,58 +14,54 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package s11n implements serialization routines for the various PKI
-// data structures.
-package s11n
+// Package pki provides the mix network PKI related interfaces and serialization routines
+
+package pki
 
 import (
 	"fmt"
 	"net"
 	"strconv"
+	"encoding/base64"
 
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
-	nodeDescriptorVersion = "v0"
+	DescriptorVersion = "v0"
 )
 
-type nodeDescriptor struct {
-	// Version uniquely identifies the descriptor format as being for the
-	// specified version so that it can be rejected if the format changes.
-	Version string
-
-	pki.MixDescriptor
-}
-
-type nodeDescriptorIntermediary struct {
-	// Version uniquely identifies the descriptor format as being for the
-	// specified version so that it can be rejected if the format changes.
-	Version string
-
+// MixDescriptor is a description of a given Mix or Provider (node).
+type MixDescriptor struct {
 	// Name is the human readable (descriptive) node identifier.
 	Name string
 
+	// Epoch is the Epoch in which this descriptor was created
+	Epoch uint64
+
 	// IdentityKey is the node's identity (signing) key.
-	IdentityKey string
+	IdentityKey sign.PublicKey
+
+	// Signature is the raw cert.Signature over the serialized MixDescriptor
+	Signature *cert.Signature `json:"-",cbor:"-"`
 
 	// LinkKey is the node's wire protocol public key.
-	LinkKey string
+	LinkKey wire.PublicKey
 
 	// MixKeys is a map of epochs to Sphinx keys.
 	MixKeys map[uint64]*ecdh.PublicKey
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
-	Addresses map[pki.Transport][]string
+	Addresses map[Transport][]string
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
@@ -79,44 +75,88 @@ type nodeDescriptorIntermediary struct {
 
 	// AuthenticationType is the authentication mechanism required
 	AuthenticationType string
+
+	// Version uniquely identifies the descriptor format as being for the
+	// specified version so that it can be rejected if the format changes.
+	Version string
 }
 
-func (n *nodeDescriptorIntermediary) nodeDescriptor() *nodeDescriptor {
-	m := new(nodeDescriptor)
-	m.Version = n.Version
-	m.Name = n.Name
-	var err error
+// String returns a human readable MixDescriptor suitable for terse logging.
+func (d *MixDescriptor) String() string {
+	kaetzchen := ""
+	if len(d.Kaetzchen) > 0 {
+		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
+	}
+	bs := d.IdentityKey.Sum256()
+	identity := base64.StdEncoding.EncodeToString(bs[:])
+	s := fmt.Sprintf("{%s %s %v", d.Name, identity, d.Addresses)
+	s += kaetzchen + d.AuthenticationType + "}"
+	return s
+}
 
-	m.IdentityKey, err = cert.Scheme.UnmarshalTextPublicKey([]byte(n.IdentityKey))
+// ToJSON implements encoding.TextMarshaler interface
+func (d *MixDescriptor) ToJSON() (text []byte, err error) {
+	// encoding type is json
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
+	// extract the embedded IdentityKey and verify it signs the payload
+	certified, err := cert.GetCertified(data)
+	if err != nil {
+		return err
+	}
+	// encoding type is json
+	dec := codec.NewDecoderBytes(certified, jsonHandle)
+	err = dec.Decode(d)
 	if err != nil {
 		panic(err)
+		return err
 	}
-
-	m.LinkKey, err = wire.DefaultScheme.UnmarshalTextPublicKey([]byte(n.LinkKey))
+	_, err = cert.Verify(d.IdentityKey, data)
 	if err != nil {
-		panic(err)
+		return err
 	}
+	idPublic := d.IdentityKey.Sum256()
+	sig, err := cert.GetSignature(idPublic[:], data)
+	if err != nil {
+		return err
+	}
+	d.Signature = sig
+	return nil
+}
 
-	m.MixKeys = n.MixKeys
-	m.Addresses = n.Addresses
-	m.Kaetzchen = n.Kaetzchen
-	m.Layer = n.Layer
-	m.LoadWeight = n.LoadWeight
-	m.AuthenticationType = n.AuthenticationType
-	return m
+// MarshalBinary implements encoding.BinaryMarshaler interface
+func (d *MixDescriptor) MarshalBinary() (data []byte, err error) {
+	// reconstruct a serialized certificate from the detached Signature
+	// encoding type is json
+	var rawDesc []byte
+	enc := codec.NewEncoderBytes(&rawDesc, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+	certified := cert.Certificate{
+		Version: cert.CertVersion,
+		Expiration: d.Epoch+5,
+		KeyType: d.IdentityKey.KeyType(),
+		Certified: rawDesc,
+		Signatures: map[[32]byte]cert.Signature{d.IdentityKey.Sum256(): *d.Signature},
+	}
+	return certified.Marshal()
 }
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
-func SignDescriptor(signer cert.Signer, verifier cert.Verifier, base *pki.MixDescriptor) ([]byte, error) {
-	d := new(nodeDescriptor)
-	d.MixDescriptor = *base
-	d.Version = nodeDescriptorVersion
-
+func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescriptor) ([]byte, error) {
 	// Serialize the descriptor.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
+	payload, err := desc.ToJSON()
+	if err != nil {
 		return nil, err
 	}
 
@@ -132,62 +172,18 @@ func SignDescriptor(signer cert.Signer, verifier cert.Verifier, base *pki.MixDes
 // GetVerifierFromDescriptor returns a verifier for the given
 // mix descriptor certificate.
 func GetVerifierFromDescriptor(rawDesc []byte) (cert.Verifier, error) {
-	payload, err := cert.GetCertified(rawDesc)
+	d := new(MixDescriptor)
+	err := d.UnmarshalBinary(rawDesc)
 	if err != nil {
 		return nil, err
 	}
-	// Parse the payload.
-	d := new(nodeDescriptorIntermediary)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
-	if err = dec.Decode(d); err != nil {
-		return nil, err
-	}
-
-	idPubKey, err := cert.Scheme.UnmarshalTextPublicKey([]byte(d.IdentityKey))
-	if err != nil {
-		return nil, err
-	}
-	return idPubKey, nil
-}
-
-// VerifyAndParseDescriptor verifies the signature and deserializes the
-// descriptor.  MixDescriptors returned from this routine are guaranteed
-// to have been correctly self signed by the IdentityKey listed in the
-// MixDescriptor.
-func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*pki.MixDescriptor, error) {
-	signatures, err := cert.GetSignatures(b)
-	if len(signatures) != 1 {
-		return nil, fmt.Errorf("Expected 1 signature, got: %v", len(signatures))
-	}
-
-	// Verify that the descriptor is signed by the verifier.
-	payload, err := cert.Verify(verifier, b)
-	if err != nil {
-		return nil, fmt.Errorf("Verify failed: %s", err.Error())
-	}
-
-	// Parse the payload.
-	d := new(nodeDescriptorIntermediary)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
-	if err = dec.Decode(d); err != nil {
-		return nil, fmt.Errorf("JSON decoder failure: %s", err.Error())
-	}
-
-	// Ensure the descriptor is well formed.
-	if d.Version != nodeDescriptorVersion {
-		return nil, fmt.Errorf("Invalid Descriptor Version: '%v'", d.Version)
-	}
-	desc := d.nodeDescriptor()
-	if err = IsDescriptorWellFormed(&desc.MixDescriptor, epoch); err != nil {
-		return nil, err
-	}
-	return &desc.MixDescriptor, nil
+	return d.IdentityKey, nil
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive
 // error iff there are any problems that would make it unusable as part of
 // a PKI Document.
-func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
+func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	if d.Name == "" {
 		return fmt.Errorf("Descriptor missing Name")
 	}
@@ -219,19 +215,19 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 
 		var expectedIPVer int
 		switch transport {
-		case pki.TransportInvalid:
+		case TransportInvalid:
 			return fmt.Errorf("Descriptor contains invalid Transport")
-		case pki.TransportTCPv4:
+		case TransportTCPv4:
 			expectedIPVer = 4
-		case pki.TransportTCPv6:
+		case TransportTCPv6:
 			expectedIPVer = 6
 		default:
 			// Unknown transports are only supported between the client and
 			// provider.
-			if d.Layer != pki.LayerProvider {
+			if d.Layer != LayerProvider {
 				return fmt.Errorf("Non-provider published Transport '%v'", transport)
 			}
-			if transport != pki.TransportTCP {
+			if transport != TransportTCP {
 				// Ignore transports that don't have validation logic.
 				continue
 			}
@@ -268,7 +264,7 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 			}
 		}
 	}
-	if len(d.Addresses[pki.TransportTCPv4]) == 0 {
+	if len(d.Addresses[TransportTCPv4]) == 0 {
 		return fmt.Errorf("Descriptor contains no TCPv4 addresses")
 	}
 	switch d.Layer {
@@ -276,7 +272,7 @@ func IsDescriptorWellFormed(d *pki.MixDescriptor, epoch uint64) error {
 		if d.Kaetzchen != nil {
 			return fmt.Errorf("Descriptor contains Kaetzchen when a mix")
 		}
-	case pki.LayerProvider:
+	case LayerProvider:
 		if err := validateKaetzchen(d.Kaetzchen); err != nil {
 			return fmt.Errorf("Descriptor contains invalid Kaetzchen block: %v", err)
 		}
