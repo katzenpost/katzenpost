@@ -1340,7 +1340,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		// If the descriptor changes, then it will be rejected to prevent
 		// nodes from reneging on uploads.
 		if !hmac.Equal(d.raw, rawDesc) {
-			return fmt.Errorf("state: Node %v: Conflicting descriptor for epoch %v", desc.IdentityKey, epoch)
+			return fmt.Errorf("state: Node %s: Conflicting descriptor for epoch %v", pem.ToPEMString(desc.IdentityKey), epoch)
 		}
 
 		// Redundant uploads that don't change are harmless.
@@ -1351,7 +1351,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	if s.documents[epoch] != nil {
 		// If there is a document already, the descriptor is late, and will
 		// never appear in a document, so reject it.
-		return fmt.Errorf("state: Node %v: Late descriptor upload for for epoch %v", desc.IdentityKey, epoch)
+		return fmt.Errorf("state: Node %s: Late descriptor upload for for epoch %v", pem.ToPEMString(desc.IdentityKey), epoch)
 	}
 
 	// Persist the raw descriptor to disk.
@@ -1374,8 +1374,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	d.raw = rawDesc
 	m[pk] = d
 
-	id := base64.StdEncoding.EncodeToString(desc.IdentityKey.Bytes())
-	s.log.Debugf("Node %s: Successfully submitted descriptor for epoch %v.", id, epoch)
+	s.log.Debugf("Node %s: Successfully submitted descriptor for epoch %v.", pem.ToPEMString(desc.IdentityKey), epoch)
 	s.onUpdate()
 	return nil
 }
