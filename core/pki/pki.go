@@ -31,6 +31,7 @@ import (
 
 // LayerProvider is the Layer that providers list in their MixDescriptors.
 const LayerProvider = 255
+const PublicKeyHashSize = 32
 
 var (
 	// ErrNoDocument is the error returned when there never will be a document
@@ -107,7 +108,10 @@ type Document struct {
 	Providers []*MixDescriptor
 
 	// SharedRandomCommit used by the voting process.
-	SharedRandomCommit []byte
+	SharedRandomCommit map[[PublicKeyHashSize]byte][]byte
+
+	// SharedRandomReveal used by the voting process.
+	SharedRandomReveal map[[PublicKeyHashSize]byte][]byte
 
 	// SharedRandomValue produced by voting process.
 	SharedRandomValue []byte
