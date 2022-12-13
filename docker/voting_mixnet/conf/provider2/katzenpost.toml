@@ -9,7 +9,7 @@
 
   # Addresses are the IP address/port combinations that the server will bind
   # to for incoming connections.
-  Addresses = [ "172.28.1.4:29484"]
+  Addresses = [ "127.0.0.1:29484"]
 
   # DataDir is the absolute path to the server's state files.
   DataDir = "/conf/provider_data"
@@ -24,7 +24,7 @@
 [PKI]
   [PKI.Voting]
   [[PKI.Voting.Peers]]
-    Addresses = ["172.28.1.10:21483"]
+    Addresses = ["127.0.0.1:21483"]
   IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 3zXGXWKZeW7cgLRKZPeF73Yi0+J+BtEzfoHM1SXMqdB30p0iAy1JDzaLWPOdAJNq
 jWmeAbCVBJkDkRtdzghri6me5ZgEwQ3tr/OVK2Podxl3dIKP+riONi3po+D57ryg
@@ -61,7 +61,7 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 """
 
   [[PKI.Voting.Peers]]
-    Addresses = ["172.28.1.8:22483"]
+    Addresses = ["127.0.0.1:22483"]
    IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 hgEs8udDDyojLLqsURI0HIl1kgoue5MSmHPWw1g4TFgcLQ36HIGdlJfl4CoAHzOr
 bxm4u7dz+tD35hAvs54V9Jrmo2yjWMzJQeT7QgHmmoWyH/O5pk6mHEsrQnHe9baY
@@ -99,7 +99,7 @@ TJ7QlleBWMH03LJsY2uokw==
 """
 
   [[PKI.Voting.Peers]]
-    Addresses = ["172.28.1.9:23483"]
+    Addresses = ["127.0.0.1:23483"]
    IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 F9mrgVb9WMGRl6XvHQcMFBVa5zLXdUxlRRDSsG9ZdQwrSCz4tPwiMhn+eFSjdOk1
 1vr7lFe3GYwSFA3xy9IDSzyKS2cDWT45FOiiOQqWMBmAI0MEma81dwkTb77a7cd1
