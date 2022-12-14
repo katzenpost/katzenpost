@@ -1,5 +1,5 @@
-// pki.go - Mixnet PKI interfaces
-// Copyright (C) 2017  David Stainton, Yawning Angel.
+// document.go - Mixnet PKI interfaces
+// Copyright (C) 2022  David Stainton, Yawning Angel, masala.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,16 +14,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package pki provides the mix network PKI related interfaces.
+// Package pki provides the mix network PKI related interfaces and serialization routines
+
 package pki
 
 import (
 	"context"
 	"crypto/hmac"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
+	"github.com/ugorji/go/codec"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -33,6 +38,9 @@ const (
 	// LayerProvider is the Layer that providers list in their MixDescriptors.
 	LayerProvider = 255
 	PublicKeyHashSize = 32
+	SharedRandomLength = 40
+	SharedRandomValueLength = 32
+
 	// DocumentVersion identifies the document format version
 	DocumentVersion = "v0"
 )
@@ -51,6 +59,12 @@ var (
 
 	// OutOfBandAuth is a MixDescriptor.AuthenticationType
 	OutOfBandAuth = "oob"
+
+	jsonHandle = new(codec.JsonHandle)
+	// XXX wtf why can these not be set as struct literal???
+	//jsonHandle.Canonical = true
+	//jsonHandle.IntegerAsString = 'A'
+	//jsonHandle.MapKeyAsString = true
 )
 
 // Document is a PKI document.
@@ -122,6 +136,10 @@ type Document struct {
 
 	// PriorSharedRandom used by applications that need a longer lived SRV.
 	PriorSharedRandom [][]byte
+
+	// Version uniquely identifies the document format as being for the
+	// specified version so that it can be rejected if the format changes.
+	Version string
 }
 
 // String returns a string representation of a Document.
@@ -354,6 +372,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error)
 	// Convert from the wire representation to a Document, and validate
 	// everything.
 
+	/*
 	// If there is a SharedRandomCommit, verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
 	if len(d.SharedRandomCommit) == SharedRandomLength {
 		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomCommit[0:8])
@@ -376,6 +395,8 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error)
 			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
 		}
 	}
+	*/
+	panic("XXX")
 	if d.GenesisEpoch == 0 {
 		return nil, fmt.Errorf("Document has invalid GenesisEpoch")
 	}
@@ -385,8 +406,8 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error)
 
 	// XXX: this desrialization stuff needs to live in pki.MixDescriptor and impl. BinaryMarshaller.
 	for layer, nodes := range d.Topology {
-		for _, rawDesc := range nodes {
-			verifier, err := GetVerifierFromDescriptor(rawDesc)
+		for _, node := range nodes {
+			verifier, err := node.IdentityKey
 			if err != nil {
 				return nil, err
 			}
@@ -464,11 +485,4 @@ func IsDocumentWellFormed(d *Document) error {
 	}
 
 	return nil
-}
-
-func init() {
-	jsonHandle = new(codec.JsonHandle)
-	jsonHandle.Canonical = true
-	jsonHandle.IntegerAsString = 'A'
-	jsonHandle.MapKeyAsString = true
 }

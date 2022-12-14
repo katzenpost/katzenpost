@@ -1,5 +1,5 @@
 // descriptor.go - Katzenpost authority descriptor s11n.
-// Copyright (C) 2017, 2018  Yawning Angel, masala, David Stainton
+// Copyright (C) 2022  Yawning Angel, masala, David Stainton
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -14,20 +14,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package pki implements serialization routines for the various PKI
-// data structures.
+// Package pki provides the mix network PKI related interfaces and serialization routines
+
 package pki
 
 import (
 	"fmt"
 	"net"
 	"strconv"
+	"encoding/base64"
+	"errors"
 
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -90,6 +93,8 @@ func (d *MixDescriptor) String() string {
 func (d *MixDescriptor) UnmarshalText(text []byte) error {
 	// encoding type is json
 	dec := codec.NewDecoderBytes(text, jsonHandle)
+	// XXX: verify the descriptor signature here!
+	panic("XXX")
 	return dec.Decode(d)
 }
 
@@ -105,12 +110,14 @@ func (d *MixDescriptor) MarshalText() (text []byte, err error) {
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
-func (d *MixDescriptor) UnmarshalBinary() (data []byte, err error) {
+func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	// encoding type is cbor
+	return errors.New("NotImplemented")
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler interface
 func (d *MixDescriptor) MarshalBinary() (data []byte, err error) {
+	return nil, errors.New("NotImplemented")
 }
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
