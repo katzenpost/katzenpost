@@ -29,9 +29,13 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
-// LayerProvider is the Layer that providers list in their MixDescriptors.
-const LayerProvider = 255
-const PublicKeyHashSize = 32
+const (
+	// LayerProvider is the Layer that providers list in their MixDescriptors.
+	LayerProvider = 255
+	PublicKeyHashSize = 32
+	// DocumentVersion identifies the document format version
+	DocumentVersion = "v0"
+)
 
 var (
 	// ErrNoDocument is the error returned when there never will be a document
@@ -257,51 +261,6 @@ var (
 	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
-// MixDescriptor is a description of a given Mix or Provider (node).
-type MixDescriptor struct {
-	// Name is the human readable (descriptive) node identifier.
-	Name string
-
-	// IdentityKey is the node's identity (signing) key.
-	IdentityKey sign.PublicKey
-
-	// LinkKey is the node's wire protocol public key.
-	LinkKey wire.PublicKey
-
-	// MixKeys is a map of epochs to Sphinx keys.
-	MixKeys map[uint64]*ecdh.PublicKey
-
-	// Addresses is the map of transport to address combinations that can
-	// be used to reach the node.
-	Addresses map[Transport][]string
-
-	// Kaetzchen is the map of provider autoresponder agents by capability
-	// to parameters.
-	Kaetzchen map[string]map[string]interface{} `json:",omitempty"`
-
-	// Layer is the topology layer.
-	Layer uint8
-
-	// LoadWeight is the node's load balancing weight (unused).
-	LoadWeight uint8
-
-	// AuthenticationType is the authentication mechanism required
-	AuthenticationType string
-}
-
-// String returns a human readable MixDescriptor suitable for terse logging.
-func (d *MixDescriptor) String() string {
-	kaetzchen := ""
-	if len(d.Kaetzchen) > 0 {
-		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
-	}
-	bs := d.IdentityKey.Sum256()
-	identity := base64.StdEncoding.EncodeToString(bs[:])
-	s := fmt.Sprintf("{%s %s %v", d.Name, identity, d.Addresses)
-	s += kaetzchen + d.AuthenticationType + "}"
-	return s
-}
-
 // Client is the abstract interface used for PKI interaction.
 type Client interface {
 	// Get returns the PKI document along with the raw serialized form for the provided epoch.
@@ -312,4 +271,204 @@ type Client interface {
 
 	// Deserialize returns PKI document given the raw bytes.
 	Deserialize(raw []byte) (*Document, error)
+}
+
+// FromPayload deserializes, then verifies a Document, and returns the Document or error.
+func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
+	verified, err := cert.Verify(verifier, payload)
+	if err != nil {
+		return nil, err
+	}
+	dec := codec.NewDecoderBytes(verified, jsonHandle)
+	d := new(Document)
+	if err := dec.Decode(d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// SignDocument signs and serializes the document with the provided signing key.
+func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
+	d.Version = DocumentVersion
+
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+
+	// Sign the document.
+	return cert.Sign(signer, verifier, payload, d.Epoch+5)
+}
+
+// MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
+func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document) ([]byte, error) {
+	d.Version = DocumentVersion
+
+	// Serialize the document.
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+
+	// Sign the document.
+	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+5)
+	if err != nil {
+		return nil, err
+	}
+
+	// attach peer signatures
+	for _, signature := range peerSignatures {
+		s := signature.PublicKeySum256
+		verifier := verifiers[s]
+		signed, err = cert.AddSignature(verifier, *signature, signed)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return signed, nil
+}
+
+// VerifyAndParseDocument verifies the signature and deserializes the document.
+func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error) {
+	payload, err := cert.Verify(verifier, b)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse the payload.
+	d := new(Document)
+	dec := codec.NewDecoderBytes(payload, jsonHandle)
+	if err = dec.Decode(d); err != nil {
+		return nil, err
+	}
+
+	// Ensure the document is well formed.
+	if d.Version != DocumentVersion {
+		return nil, fmt.Errorf("Invalid Document Version: '%v'", d.Version)
+	}
+
+	// Convert from the wire representation to a Document, and validate
+	// everything.
+
+	// If there is a SharedRandomCommit, verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
+	if len(d.SharedRandomCommit) == SharedRandomLength {
+		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomCommit[0:8])
+		if srvEpoch != d.Epoch {
+			return nil, fmt.Errorf("Document with invalid Epoch in SharedRandomCommit")
+
+		}
+	}
+	if len(d.SharedRandomValue) != SharedRandomValueLength {
+		if len(d.SharedRandomValue) != 0 {
+			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
+		} else if len(d.SharedRandomCommit) != SharedRandomLength {
+			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
+		}
+	}
+	if len(d.SharedRandomCommit) != SharedRandomLength {
+		if len(d.SharedRandomCommit) != 0 {
+			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
+		} else if len(d.SharedRandomValue) != SharedRandomValueLength {
+			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
+		}
+	}
+	if d.GenesisEpoch == 0 {
+		return nil, fmt.Errorf("Document has invalid GenesisEpoch")
+	}
+	if len(d.PriorSharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
+		return nil, fmt.Errorf("Document has invalid PriorSharedRandom")
+	}
+
+	// XXX: this desrialization stuff needs to live in pki.MixDescriptor and impl. BinaryMarshaller.
+	for layer, nodes := range d.Topology {
+		for _, rawDesc := range nodes {
+			verifier, err := GetVerifierFromDescriptor(rawDesc)
+			if err != nil {
+				return nil, err
+			}
+			desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
+			if err != nil {
+				return nil, err
+			}
+			doc.Topology[layer] = append(doc.Topology[layer], desc)
+		}
+	}
+
+	for _, rawDesc := range d.Providers {
+		verifier, err := GetVerifierFromDescriptor(rawDesc)
+		if err != nil {
+			return nil, err
+		}
+		desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		doc.Providers = append(doc.Providers, desc)
+	}
+
+	if err = IsDocumentWellFormed(doc); err != nil {
+		return nil, err
+	}
+
+	// Fixup the Layer field in all the Topology MixDescriptors.
+	for layer, nodes := range doc.Topology {
+		for _, desc := range nodes {
+			desc.Layer = uint8(layer) // omg?
+		}
+	}
+
+	return doc, nil
+}
+
+// IsDocumentWellFormed validates the document and returns a descriptive error
+// iff there are any problems that invalidates the document.
+func IsDocumentWellFormed(d *Document) error {
+	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
+	if len(d.Topology) == 0 {
+		return fmt.Errorf("Document contains no Topology")
+	}
+	for layer, nodes := range d.Topology {
+		if len(nodes) == 0 {
+			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
+		}
+		for _, desc := range nodes {
+			if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
+				return err
+			}
+			pk := desc.IdentityKey.Sum256()
+			if _, ok := pks[pk]; ok {
+				return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
+			}
+			pks[pk] = true
+		}
+	}
+	if len(d.Providers) == 0 {
+		return fmt.Errorf("Document contains no Providers")
+	}
+	for _, desc := range d.Providers {
+		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
+			return err
+		}
+		if desc.Layer != pki.LayerProvider {
+			return fmt.Errorf("Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+		}
+		pk := desc.IdentityKey.Sum256()
+		if _, ok := pks[pk]; ok {
+			return fmt.Errorf("Document contains multiple entries for %v", desc.IdentityKey)
+		}
+		pks[pk] = true
+	}
+
+	return nil
+}
+
+func init() {
+	jsonHandle = new(codec.JsonHandle)
+	jsonHandle.Canonical = true
+	jsonHandle.IntegerAsString = 'A'
+	jsonHandle.MapKeyAsString = true
 }

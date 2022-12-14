@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package s11n
+package pki
 
 import (
 	"crypto/rand"
@@ -30,11 +30,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDescriptor, []byte) {
-	d := new(pki.MixDescriptor)
+func genDescriptor(require *require.Assertions, idx int, layer int) (*MixDescriptor, []byte) {
+	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = map[pki.Transport][]string{
-		pki.TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
+	d.Addresses = map[Transport][]string{
+		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
 	d.Layer = uint8(layer)
 	d.LoadWeight = 23
@@ -49,7 +49,7 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*pki.MixDes
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
 		d.MixKeys[uint64(e)] = mPriv.PublicKey()
 	}
-	if layer == pki.LayerProvider {
+	if layer == LayerProvider {
 		d.Kaetzchen = make(map[string]map[string]interface{})
 		d.Kaetzchen["miau"] = map[string]interface{}{
 			"endpoint":  "+miau",
@@ -98,7 +98,7 @@ func TestDocument(t *testing.T) {
 		}
 	}
 	for i := 0; i < 3; i++ {
-		_, rawDesc := genDescriptor(require, idx, pki.LayerProvider)
+		_, rawDesc := genDescriptor(require, idx, LayerProvider)
 		doc.Providers = append(doc.Providers, rawDesc)
 		idx++
 	}
