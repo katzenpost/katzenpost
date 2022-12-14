@@ -44,36 +44,8 @@ var (
 	jsonHandle *codec.JsonHandle
 )
 
-// Document is the on-the-wire representation of a PKI Document.
-type Document struct {
-	// Version uniquely identifies the document format as being for the
-	// specified version so that it can be rejected if the format changes.
-	Version           string
-	Epoch             uint64
-	GenesisEpoch      uint64
-	SendRatePerMinute uint64
-
-	Mu              float64
-	MuMaxDelay      uint64
-	LambdaP         float64
-	LambdaPMaxDelay uint64
-	LambdaL         float64
-	LambdaLMaxDelay uint64
-	LambdaD         float64
-	LambdaDMaxDelay uint64
-	LambdaM         float64
-	LambdaMMaxDelay uint64
-
-	Topology  [][][]byte
-	Providers [][]byte
-
-	SharedRandomCommit []byte
-	SharedRandomValue  []byte
-	PriorSharedRandom  [][]byte
-}
-
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
-func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
+func FromPayload(verifier cert.Verifier, payload []byte) (*pki.Document, error) {
 	verified, err := cert.Verify(verifier, payload)
 	if err != nil {
 		return nil, err
@@ -87,7 +59,7 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 }
 
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
+func SignDocument(signer cert.Signer, verifier cert.Verifier, d *pki.Document) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -102,7 +74,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
-func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document) ([]byte, error) {
+func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *pki.Document) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -139,7 +111,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 	}
 
 	// Parse the payload.
-	d := new(Document)
+	d := new(pki.Document)
 	dec := codec.NewDecoderBytes(payload, jsonHandle)
 	if err = dec.Decode(d); err != nil {
 		return nil, err
@@ -182,26 +154,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 		return nil, fmt.Errorf("Document has invalid PriorSharedRandom")
 	}
 
-	doc := new(pki.Document)
-	doc.SharedRandomCommit = d.SharedRandomCommit
-	doc.PriorSharedRandom = d.PriorSharedRandom
-	doc.SharedRandomValue = d.SharedRandomValue
-	doc.Epoch = d.Epoch
-	doc.GenesisEpoch = d.GenesisEpoch
-	doc.SendRatePerMinute = d.SendRatePerMinute
-	doc.Mu = d.Mu
-	doc.MuMaxDelay = d.MuMaxDelay
-	doc.LambdaP = d.LambdaP
-	doc.LambdaPMaxDelay = d.LambdaPMaxDelay
-	doc.LambdaL = d.LambdaL
-	doc.LambdaLMaxDelay = d.LambdaLMaxDelay
-	doc.LambdaD = d.LambdaD
-	doc.LambdaDMaxDelay = d.LambdaDMaxDelay
-	doc.LambdaM = d.LambdaM
-	doc.LambdaMMaxDelay = d.LambdaMMaxDelay
-	doc.Topology = make([][]*pki.MixDescriptor, len(d.Topology))
-	doc.Providers = make([]*pki.MixDescriptor, 0, len(d.Providers))
-
+	// XXX: this desrialization stuff needs to live in pki.MixDescriptor and impl. BinaryMarshaller.
 	for layer, nodes := range d.Topology {
 		for _, rawDesc := range nodes {
 			verifier, err := GetVerifierFromDescriptor(rawDesc)
@@ -235,7 +188,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 	// Fixup the Layer field in all the Topology MixDescriptors.
 	for layer, nodes := range doc.Topology {
 		for _, desc := range nodes {
-			desc.Layer = uint8(layer)
+			desc.Layer = uint8(layer) // omg?
 		}
 	}
 
@@ -244,6 +197,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*pki.Document, er
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
+// XXX: this should also live in core/pki
 func IsDocumentWellFormed(d *pki.Document) error {
 	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
 	if len(d.Topology) == 0 {
