@@ -8,7 +8,7 @@
 
   # Addresses are the IP address/port combinations that the authority will bind
   # to for incoming connections.
-  Addresses = [ "127.0.0.1:21483" ]
+  Addresses = [ "0.0.0.0:21483" ]
 
   # DataDir is the absolute path to the server's state files.
   DataDir = "/conf/authority_data"
@@ -124,7 +124,7 @@ canqB2SXsVTgcF6mDE054jd5NHu4om+DikAkiijippO2WfVKXjyk3KkU/6+7tWun
 J36qY23I6qGScGjq4tPu3w==
 -----END Kyber768-X25519 PUBLIC KEY-----
 """
-   Addresses = [ "172.28.1.9:23483" ]
+   Addresses = [ "127.0.0.1:23483" ]
 
 #
 # The Logging section controls the logging.

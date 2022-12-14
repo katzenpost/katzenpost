@@ -8,11 +8,10 @@
 
   # Addresses are the IP address/port combinations that the authority will bind
   # to for incoming connections.
-  Addresses = [ "127.0.0.1:23483" ]
+  Addresses = [ "0.0.0.0:23483" ]
 
   # DataDir is the absolute path to the server's state files.
   DataDir = "/conf/authority_data"
-
 
 [[Authorities]]
   IdentityPublicKeyPem = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
