@@ -107,8 +107,8 @@ type Signature struct {
 	Payload []byte
 }
 
-// certificate structure for serializing certificates.
-type certificate struct {
+// Certificate structure for serializing certificates.
+type Certificate struct {
 	// Version is the certificate format version.
 	Version uint32
 
@@ -130,11 +130,11 @@ type certificate struct {
 	Signatures map[[32]byte]Signature
 }
 
-func (c *certificate) Marshal() ([]byte, error) {
+func (c *Certificate) Marshal() ([]byte, error) {
 	return cbor.Marshal(c.toCertificateWire())
 }
 
-func (c *certificate) toCertificateWire() *certificateWire {
+func (c *Certificate) toCertificateWire() *certificateWire {
 
 	s := make([]Signature, len(c.Signatures))
 	i := 0
@@ -173,12 +173,12 @@ type certificateWire struct {
 	Signatures []Signature
 }
 
-func (c *certificateWire) toCertificate() *certificate {
+func (c *certificateWire) toCertificate() *Certificate {
 	m := make(map[[32]byte]Signature)
 	for i := 0; i < len(c.Signatures); i++ {
 		m[c.Signatures[i].PublicKeySum256] = c.Signatures[i]
 	}
-	return &certificate{
+	return &Certificate{
 		Version:    c.Version,
 		Expiration: c.Expiration,
 		KeyType:    c.KeyType,
@@ -187,7 +187,7 @@ func (c *certificateWire) toCertificate() *certificate {
 	}
 }
 
-func (c *certificate) message() ([]byte, error) {
+func (c *Certificate) message() ([]byte, error) {
 	message := new(bytes.Buffer)
 	err := binary.Write(message, binary.LittleEndian, c.Version)
 	if err != nil {
@@ -208,7 +208,7 @@ func (c *certificate) message() ([]byte, error) {
 	return message.Bytes(), nil
 }
 
-func (c *certificate) sanityCheck() error {
+func (c *Certificate) sanityCheck() error {
 	if c.Version != CertVersion {
 		return ErrVersionMismatch
 	}
@@ -228,7 +228,7 @@ func (c *certificate) sanityCheck() error {
 // Sign uses the given Signer to create a certificate which
 // certifies the given data.
 func Sign(signer Signer, verifier Verifier, data []byte, expiration uint64) ([]byte, error) {
-	cert := certificate{
+	cert := Certificate{
 		Version:    CertVersion,
 		Expiration: expiration,
 		KeyType:    signer.KeyType(),
