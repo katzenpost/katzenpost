@@ -29,9 +29,7 @@ import (
 	"github.com/ugorji/go/codec"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -364,94 +362,63 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error)
 		return nil, err
 	}
 
-	// Ensure the document is well formed.
-	if d.Version != DocumentVersion {
-		return nil, fmt.Errorf("Invalid Document Version: '%v'", d.Version)
-	}
-
-	// Convert from the wire representation to a Document, and validate
-	// everything.
-
-	/*
-	// If there is a SharedRandomCommit, verify the Epoch contained in SharedRandomCommit matches the Epoch in the Document.
-	if len(d.SharedRandomCommit) == SharedRandomLength {
-		srvEpoch := binary.BigEndian.Uint64(d.SharedRandomCommit[0:8])
-		if srvEpoch != d.Epoch {
-			return nil, fmt.Errorf("Document with invalid Epoch in SharedRandomCommit")
-
-		}
-	}
-	if len(d.SharedRandomValue) != SharedRandomValueLength {
-		if len(d.SharedRandomValue) != 0 {
-			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
-		} else if len(d.SharedRandomCommit) != SharedRandomLength {
-			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
-		}
-	}
-	if len(d.SharedRandomCommit) != SharedRandomLength {
-		if len(d.SharedRandomCommit) != 0 {
-			return nil, fmt.Errorf("Document has invalid SharedRandomCommit")
-		} else if len(d.SharedRandomValue) != SharedRandomValueLength {
-			return nil, fmt.Errorf("Document has invalid SharedRandomValue")
-		}
-	}
-	*/
-	panic("XXX")
-	if d.GenesisEpoch == 0 {
-		return nil, fmt.Errorf("Document has invalid GenesisEpoch")
-	}
-	if len(d.PriorSharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
-		return nil, fmt.Errorf("Document has invalid PriorSharedRandom")
-	}
-
-	// XXX: this desrialization stuff needs to live in pki.MixDescriptor and impl. BinaryMarshaller.
-	for layer, nodes := range d.Topology {
-		for _, node := range nodes {
-			verifier, err := node.IdentityKey
-			if err != nil {
-				return nil, err
-			}
-			desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
-			if err != nil {
-				return nil, err
-			}
-			doc.Topology[layer] = append(doc.Topology[layer], desc)
-		}
-	}
-
-	for _, rawDesc := range d.Providers {
-		verifier, err := GetVerifierFromDescriptor(rawDesc)
-		if err != nil {
-			return nil, err
-		}
-		desc, err := VerifyAndParseDescriptor(verifier, rawDesc, doc.Epoch)
-		if err != nil {
-			return nil, err
-		}
-		doc.Providers = append(doc.Providers, desc)
-	}
-
-	if err = IsDocumentWellFormed(doc); err != nil {
+	// Check the Document has met requirements.
+	if err = IsDocumentWellFormed(d); err != nil {
 		return nil, err
 	}
 
 	// Fixup the Layer field in all the Topology MixDescriptors.
-	for layer, nodes := range doc.Topology {
+	for layer, nodes := range d.Topology {
 		for _, desc := range nodes {
-			desc.Layer = uint8(layer) // omg?
+			desc.Layer = uint8(layer)
 		}
 	}
 
-	return doc, nil
+	return d, nil
 }
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *Document) error {
-	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
+	// Ensure the document is well formed.
+	if d.Version != DocumentVersion {
+		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
+	}
+	if d.GenesisEpoch == 0 {
+		return fmt.Errorf("Document has invalid GenesisEpoch")
+	}
+	if len(d.PriorSharedRandom) == 0 && d.GenesisEpoch != d.Epoch {
+		return fmt.Errorf("Document has invalid PriorSharedRandom")
+	}
+	// If there is a SharedRandomCommit, verify the Epoch contained in
+	// SharedRandomCommit matches the Epoch in the Document.
+	// XXX: Verify() each SharedRandom and its signature
+	for _, commit := range d.SharedRandomCommit {
+		if len(commit) == SharedRandomLength {
+			srvEpoch := binary.BigEndian.Uint64(commit[0:8])
+			if srvEpoch != d.Epoch {
+				return fmt.Errorf("Document with invalid Epoch in SharedRandomCommit")
+			}
+		} else {
+			return fmt.Errorf("Document has invalid SharedRandomCommit")
+		}
+	}
+	// Votes and Consensus differ in that a Consensus has a SharedRandomValue and the set of SharedRandomCommit and SharedRandomReveals that produced it; otherwise there must be only one SharedRandomCommit
+	switch len(d.SharedRandomValue) {
+	case SharedRandomValueLength:
+	case 0:
+		// if there is no SharedRandomValue, this document must be a
+		// Vote and have only one SharedRandomCommit
+		if len(d.SharedRandomCommit) != 1 {
+			return fmt.Errorf("Document has invalid SharedRandomCommit")
+		}
+	default:
+		return fmt.Errorf("Document has invalid SharedRandomValue")
+	}
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("Document contains no Topology")
 	}
+	pks := make(map[[sign.PublicKeyHashSize]byte]bool)
 	for layer, nodes := range d.Topology {
 		if len(nodes) == 0 {
 			return fmt.Errorf("Document Topology layer %d contains no nodes", layer)
@@ -474,7 +441,7 @@ func IsDocumentWellFormed(d *Document) error {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
-		if desc.Layer != pki.LayerProvider {
+		if desc.Layer != LayerProvider {
 			return fmt.Errorf("Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
 		}
 		pk := desc.IdentityKey.Sum256()
@@ -485,4 +452,22 @@ func IsDocumentWellFormed(d *Document) error {
 	}
 
 	return nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler interface
+func (d *Document) UnmarshalText(text []byte) error {
+	// encoding type is json
+	dec := codec.NewDecoderBytes(text, jsonHandle)
+	return dec.Decode(d)
+}
+
+// MarshalText implements encoding.TextMarshaler interface
+func (d *Document) MarshalText() (text []byte, err error) {
+	// encoding type is json
+	var payload []byte
+	enc := codec.NewEncoderBytes(&payload, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+	return payload, nil
 }

@@ -23,7 +23,6 @@ import (
 	"net"
 	"strconv"
 	"encoding/base64"
-	"errors"
 
 	"github.com/ugorji/go/codec"
 	"golang.org/x/net/idna"
@@ -45,8 +44,14 @@ type MixDescriptor struct {
 	// Name is the human readable (descriptive) node identifier.
 	Name string
 
+	// Epoch is the Epoch in which this descriptor was created
+	Epoch uint64
+
 	// IdentityKey is the node's identity (signing) key.
 	IdentityKey sign.PublicKey
+
+	// Signature is the raw cert.Signature over the serialized MixDescriptor
+	Signature *cert.Signature `json:"-",cbor:"-"`
 
 	// LinkKey is the node's wire protocol public key.
 	LinkKey wire.PublicKey
@@ -89,17 +94,8 @@ func (d *MixDescriptor) String() string {
 	return s
 }
 
-// UnmarshalText implements encoding.TextUnmarshaler interface
-func (d *MixDescriptor) UnmarshalText(text []byte) error {
-	// encoding type is json
-	dec := codec.NewDecoderBytes(text, jsonHandle)
-	// XXX: verify the descriptor signature here!
-	panic("XXX")
-	return dec.Decode(d)
-}
-
-// MarshalText implements encoding.TextMarshaler interface
-func (d *MixDescriptor) MarshalText() (text []byte, err error) {
+// ToJSON implements encoding.TextMarshaler interface
+func (d *MixDescriptor) ToJSON() (text []byte, err error) {
 	// encoding type is json
 	var payload []byte
 	enc := codec.NewEncoderBytes(&payload, jsonHandle)
@@ -111,20 +107,55 @@ func (d *MixDescriptor) MarshalText() (text []byte, err error) {
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
-	// encoding type is cbor
-	return errors.New("NotImplemented")
+	// extract the embedded IdentityKey and verify it signs the payload
+	certified, err := cert.GetCertified(data)
+	if err != nil {
+		return err
+	}
+	// encoding type is json
+	dec := codec.NewDecoderBytes(certified, jsonHandle)
+	err = dec.Decode(d)
+	if err != nil {
+		panic(err)
+		return err
+	}
+	_, err = cert.Verify(d.IdentityKey, data)
+	if err != nil {
+		return err
+	}
+	idPublic := d.IdentityKey.Sum256()
+	sig, err := cert.GetSignature(idPublic[:], data)
+	if err != nil {
+		return err
+	}
+	d.Signature = sig
+	return nil
 }
 
 // MarshalBinary implements encoding.BinaryMarshaler interface
 func (d *MixDescriptor) MarshalBinary() (data []byte, err error) {
-	return nil, errors.New("NotImplemented")
+	// reconstruct a serialized certificate from the detached Signature
+	// encoding type is json
+	var rawDesc []byte
+	enc := codec.NewEncoderBytes(&rawDesc, jsonHandle)
+	if err := enc.Encode(d); err != nil {
+		return nil, err
+	}
+	certified := cert.Certificate{
+		Version: cert.CertVersion,
+		Expiration: d.Epoch+5,
+		KeyType: d.IdentityKey.KeyType(),
+		Certified: rawDesc,
+		Signatures: map[[32]byte]cert.Signature{d.IdentityKey.Sum256(): *d.Signature},
+	}
+	return certified.Marshal()
 }
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
 func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescriptor) ([]byte, error) {
 	// Serialize the descriptor.
-	payload, err := desc.MarshalText()
+	payload, err := desc.ToJSON()
 	if err != nil {
 		return nil, err
 	}
@@ -141,41 +172,12 @@ func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescrip
 // GetVerifierFromDescriptor returns a verifier for the given
 // mix descriptor certificate.
 func GetVerifierFromDescriptor(rawDesc []byte) (cert.Verifier, error) {
-	payload, err := cert.GetCertified(rawDesc)
+	d := new(MixDescriptor)
+	err := d.UnmarshalBinary(rawDesc)
 	if err != nil {
 		return nil, err
 	}
-	// Parse the payload.
-	d := new(MixDescriptor)
-	d.UnmarshalText(payload)
 	return d.IdentityKey, nil
-}
-
-// VerifyAndParseDescriptor verifies the signature and deserializes the
-// descriptor.  MixDescriptors returned from this routine are guaranteed
-// to have been correctly self signed by the IdentityKey listed in the
-// MixDescriptor.
-func VerifyAndParseDescriptor(verifier cert.Verifier, b []byte, epoch uint64) (*MixDescriptor, error) {
-	signatures, err := cert.GetSignatures(b)
-	if len(signatures) != 1 {
-		return nil, fmt.Errorf("Expected 1 signature, got: %v", len(signatures))
-	}
-
-	// Verify that the descriptor is signed by the verifier.
-	payload, err := cert.Verify(verifier, b)
-	if err != nil {
-		return nil, fmt.Errorf("Verify failed: %s", err.Error())
-	}
-
-	// Parse the payload.
-	d := new(MixDescriptor)
-	d.UnmarshalText(payload)
-
-	// Ensure the descriptor is well formed.
-	if d.Version != DescriptorVersion {
-		return nil, fmt.Errorf("Invalid Descriptor Version: '%v'", d.Version)
-	}
-	return d, nil
 }
 
 // IsDescriptorWellFormed validates the descriptor and returns a descriptive

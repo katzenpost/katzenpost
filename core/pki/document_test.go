@@ -80,25 +80,32 @@ func TestDocument(t *testing.T) {
 		Epoch:              debugTestEpoch,
 		GenesisEpoch:       debugTestEpoch,
 		SendRatePerMinute:  testSendRate,
-		Topology:           make([][][]byte, 3),
+		Topology:           make([][]*MixDescriptor, 3),
 		Mu:                 0.42,
 		MuMaxDelay:         23,
 		LambdaP:            0.69,
 		LambdaPMaxDelay:    17,
-		SharedRandomCommit: sharedRandomCommit,
+		SharedRandomCommit: make(map[[PublicKeyHashSize]byte][]byte),
+		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
 			_, rawDesc := genDescriptor(require, idx, 0)
-			doc.Topology[l] = append(doc.Topology[l], rawDesc)
+			d := new(MixDescriptor)
+			err := d.UnmarshalBinary(rawDesc)
+			require.NoError(err)
+			doc.Topology[l] = append(doc.Topology[l], d)
 			idx++
 		}
 	}
 	for i := 0; i < 3; i++ {
 		_, rawDesc := genDescriptor(require, idx, LayerProvider)
-		doc.Providers = append(doc.Providers, rawDesc)
+		d := new(MixDescriptor)
+		err := d.UnmarshalBinary(rawDesc)
+		require.NoError(err)
+		doc.Providers = append(doc.Providers, d)
 		idx++
 	}
 

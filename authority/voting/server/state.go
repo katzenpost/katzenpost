@@ -869,18 +869,15 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 	for rawDesc, votes := range mixTally {
 		if len(votes) >= s.threshold {
 			// this shouldn't fail as the descriptors have already been verified
-			verifier, err := s11n.GetVerifierFromDescriptor([]byte(rawDesc))
-			if err != nil {
-				return nil, nil, err
-			}
-			desc, err := s11n.VerifyAndParseDescriptor(verifier, []byte(rawDesc), epoch)
+			desc := new(pki.MixDescriptor)
+			err := desc.UnmarshalBinary(rawDesc)
 			if err != nil {
 				return nil, nil, err
 			}
 
 			// only add nodes we have authorized
 			if s.isDescriptorAuthorized(desc) {
-				nodes = append(nodes, &descriptor{desc: desc, raw: []byte(rawDesc)})
+				nodes = append(nodes, desc)
 			}
 		}
 	}
