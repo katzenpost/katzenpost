@@ -65,7 +65,7 @@ type MixDescriptor struct {
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
-	Kaetzchen map[string]map[string]interface{} `json:",omitempty"`
+	Kaetzchen map[string]map[string]interface{} `cbor:"omitempty"`
 
 	// Layer is the topology layer.
 	Layer uint8
@@ -128,10 +128,10 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-// MarshalBinary
+// MarshalBinary implmements encoding.BinaryMarshaler
 func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	// reconstruct a serialized certificate from the detached Signature
-	rawDesc, err := cbor.Marshal((*mixdescriptor)(d))
+	rawDesc, err := ccbor.Marshal((*mixdescriptor)(d))
 	if err != nil {
 		return nil, err
 	}
@@ -141,10 +141,11 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	if d.Signature != nil {
 		signatures[d.IdentityKey.Sum256()] = *d.Signature
 	}
+	pk, _ := cert.Scheme.NewKeypair()
 	certified := cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
-		KeyType:    d.IdentityKey.KeyType(),
+		KeyType:    pk.KeyType(),
 		Certified:  rawDesc,
 		Signatures: signatures,
 	}
@@ -159,7 +160,7 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 // key.
 func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescriptor) ([]byte, error) {
 	// Serialize the descriptor.
-	payload, err := cbor.Marshal((*mixdescriptor)(desc))
+	payload, err := ccbor.Marshal((*mixdescriptor)(desc))
 	if err != nil {
 		return nil, err
 	}

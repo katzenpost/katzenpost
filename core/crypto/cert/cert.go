@@ -22,7 +22,6 @@ import (
 	"crypto/hmac"
 	"encoding/binary"
 	"errors"
-	"sort"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -77,6 +76,9 @@ var (
 
 	// Scheme is the signature scheme we are using throughout various components of the network.
 	Scheme = ed25519sphincsplus.Scheme
+
+	// Create reusable EncMode interface with immutable options, safe for concurrent use.
+	ccbor cbor.EncMode
 )
 
 // Verifier is used to verify signatures.
@@ -131,60 +133,7 @@ type Certificate struct {
 }
 
 func (c *Certificate) Marshal() ([]byte, error) {
-	return cbor.Marshal(c.toCertificateWire())
-}
-
-func (c *Certificate) toCertificateWire() *certificateWire {
-
-	s := make([]Signature, len(c.Signatures))
-	i := 0
-	for _, v := range c.Signatures {
-		s[i] = v
-		i++
-	}
-
-	sort.Sort(byIdentity(s))
-
-	return &certificateWire{
-		Version:    c.Version,
-		Expiration: c.Expiration,
-		KeyType:    c.KeyType,
-		Certified:  c.Certified,
-		Signatures: s,
-	}
-}
-
-type certificateWire struct {
-	// Version is the certificate format version.
-	Version uint32
-
-	// Expiration is katzenpost epoch id of the expiration.
-	Expiration uint64
-
-	// KeyType indicates the type of key
-	// that is certified by this certificate.
-	KeyType string
-
-	// Certified is the data that is certified by
-	// this certificate.
-	Certified []byte
-
-	// Signatures are the signature of the certificate.
-	Signatures []Signature
-}
-
-func (c *certificateWire) toCertificate() *Certificate {
-	m := make(map[[32]byte]Signature)
-	for i := 0; i < len(c.Signatures); i++ {
-		m[c.Signatures[i].PublicKeySum256] = c.Signatures[i]
-	}
-	return &Certificate{
-		Version:    c.Version,
-		Expiration: c.Expiration,
-		KeyType:    c.KeyType,
-		Certified:  c.Certified,
-		Signatures: m,
-	}
+	return ccbor.Marshal(c)
 }
 
 func (c *Certificate) message() ([]byte, error) {
@@ -252,12 +201,11 @@ func Sign(signer Signer, verifier Verifier, data []byte, expiration uint64) ([]b
 
 // GetCertified returns the certified data.
 func GetCertified(rawCert []byte) ([]byte, error) {
-	wirecert := certificateWire{}
-	err := cbor.Unmarshal(rawCert, &wirecert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleEncode
+		return nil, ErrImpossibleDecode
 	}
-	cert := wirecert.toCertificate()
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
@@ -267,12 +215,11 @@ func GetCertified(rawCert []byte) ([]byte, error) {
 
 // GetSignatures returns all the signatures.
 func GetSignatures(rawCert []byte) ([]Signature, error) {
-	wirecert := certificateWire{}
-	err := cbor.Unmarshal(rawCert, &wirecert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleEncode
+		return nil, ErrImpossibleDecode
 	}
-	cert := wirecert.toCertificate()
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
@@ -289,12 +236,11 @@ func GetSignatures(rawCert []byte) ([]Signature, error) {
 // GetSignature returns a signature that signs the certificate
 // if it matches with the given identity.
 func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
-	wirecert := certificateWire{}
-	err := cbor.Unmarshal(rawCert, &wirecert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleEncode
+		return nil, ErrImpossibleDecode
 	}
-	cert := wirecert.toCertificate()
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
@@ -328,12 +274,11 @@ func (d byIdentity) Less(i, j int) bool {
 // and appends it to the certificate and returns it.
 func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error) {
 	// decode certificate
-	wirecert := certificateWire{}
-	err := cbor.Unmarshal(rawCert, &wirecert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleEncode
+		return nil, ErrImpossibleDecode
 	}
-	cert := wirecert.toCertificate()
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
@@ -366,12 +311,11 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error)
 // can verify the signature signs the certificate.
 func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byte, error) {
 	// decode certificate
-	wirecert := certificateWire{}
-	err := cbor.Unmarshal(rawCert, &wirecert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleEncode
+		return nil, ErrImpossibleDecode
 	}
-	cert := wirecert.toCertificate()
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
@@ -406,12 +350,11 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 // Verify is used to verify one of the signatures attached to the certificate.
 // It returns the certified data if the signature is valid.
 func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
-	wirecert := certificateWire{}
-	err := cbor.Unmarshal(rawCert, &wirecert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
-	cert := wirecert.toCertificate()
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
@@ -478,4 +421,13 @@ func VerifyThreshold(verifiers []Verifier, threshold int, rawCert []byte) ([]byt
 	}
 
 	return nil, good_out, bad, ErrThresholdNotMet
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }
