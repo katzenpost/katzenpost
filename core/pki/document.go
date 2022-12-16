@@ -57,6 +57,9 @@ var (
 
 	// OutOfBandAuth is a MixDescriptor.AuthenticationType
 	OutOfBandAuth = "oob"
+
+	// Create reusable EncMode interface with immutable options, safe for concurrent use.
+	ccbor cbor.EncMode
 )
 
 // Document is a PKI document.
@@ -306,7 +309,7 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
 	// Serialize the document.
-	payload, err := cbor.Marshal((*document)(d))
+	payload, err := ccbor.Marshal((*document)(d))
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +322,7 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	d.Version = DocumentVersion
 
 	// Serialize the document.
-	payload, err := cbor.Marshal((*document)(d))
+	payload, err := ccbor.Marshal((*document)(d))
 	if err != nil {
 		return nil, err
 	}
@@ -351,7 +354,6 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error)
 	if err != nil {
 		return nil, err
 	}
-
 
 	// Check the Document has met requirements.
 	if err = IsDocumentWellFormed(d); err != nil {
@@ -471,6 +473,9 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
 func (d *Document) UnmarshalBinary(data []byte) error {
+	d.SharedRandomCommit = make( map[[PublicKeyHashSize]byte][]byte)
+	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
+	d.SharedRandomReveal = make(map[[PublicKeyHashSize]byte][]byte)
 	certified, err := cert.GetCertified(data)
 	if err != nil {
 		panic(err)
@@ -481,16 +486,22 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 		panic(err)
 		return err
 	}
-	if len(sigs) == 0 {
-		panic("No sigs")
+	for _, s := range sigs {
+		d.Signatures[s.PublicKeySum256] = s
 	}
 	err = cbor.Unmarshal(certified, (*document)(d))
 	if err != nil {
 		panic(err)
 		return err
 	}
-	for _, s := range sigs {
-		d.Signatures[s.PublicKeySum256] = s
-	}
 	return nil
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }
