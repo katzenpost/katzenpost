@@ -31,7 +31,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
@@ -166,7 +165,7 @@ func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescrip
 	}
 
 	// Sign the descriptor. Descriptor will become valid in the next epoch, for 3 epochs.
-	epoch, _, _ := epochtime.Now()
+	epoch := desc.Epoch
 	signed, err := cert.Sign(signer, verifier, payload, epoch+5)
 	if err != nil {
 		return nil, err
