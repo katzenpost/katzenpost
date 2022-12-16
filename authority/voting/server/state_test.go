@@ -30,7 +30,6 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/crypto/sha3"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
@@ -49,7 +48,7 @@ func TestSharedRandomVerify(t *testing.T) {
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
 	require.NoError(err, "wtf")
-	require.True(len(commit) == s11n.SharedRandomLength)
+	require.True(len(commit) == pki.SharedRandomLength)
 	srv.SetCommit(commit)
 	require.True(bytes.Equal(commit, srv.GetCommit()))
 	t.Logf("commit %v", commit)
@@ -58,7 +57,7 @@ func TestSharedRandomVerify(t *testing.T) {
 	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
 	t.Logf("reveal %v", reveal)
 	t.Logf("len(reveal): %v", len(reveal))
-	require.True(len(reveal) == s11n.SharedRandomLength)
+	require.True(len(reveal) == pki.SharedRandomLength)
 	require.True(srv.Verify(reveal))
 }
 
@@ -67,7 +66,7 @@ func TestSharedRandomCommit(t *testing.T) {
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
 	require.NoError(err, "wtf")
-	require.True(len(commit) == s11n.SharedRandomLength)
+	require.True(len(commit) == pki.SharedRandomLength)
 }
 
 func TestSharedRandomSetCommit(t *testing.T) {
@@ -237,6 +236,7 @@ func TestVote(t *testing.T) {
 
 		desc := &pki.MixDescriptor{
 			Name:        mixCfgs[i].Server.Identifier,
+			Epoch:       votingEpoch,
 			IdentityKey: idKeys[i].pubKey,
 			LinkKey:     linkKey.PublicKey(),
 			MixKeys:     mkeys,
@@ -244,10 +244,10 @@ func TestVote(t *testing.T) {
 			Addresses:   addr,
 		}
 
-		err = s11n.IsDescriptorWellFormed(desc, votingEpoch)
+		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
 		// Make a serialized + signed + serialized descriptor.
-		signed, err := s11n.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
+		signed, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
 
 		if mixCfgs[i].Server.IsProvider {
@@ -280,7 +280,7 @@ func TestVote(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(myVote)
 		require.NotNil(myVote.doc)
-		doc, err := s11n.VerifyAndParseDocument(myVote.raw, s.s.identityPublicKey)
+		doc, err := pki.VerifyAndParseDocument(myVote.raw, s.s.identityPublicKey)
 		require.NoError(err)
 		myVote.doc = doc
 		s.state = stateAcceptVote

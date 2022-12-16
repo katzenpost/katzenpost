@@ -26,7 +26,6 @@ import (
 
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -276,11 +275,11 @@ type Client struct {
 // Post posts the node's descriptor to the PKI for the provided epoch.
 func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
 	// Ensure that the descriptor we are about to post is well formed.
-	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
+	if err := pki.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
 	// Make a serialized + signed + serialized descriptor.
-	signed, err := s11n.SignDescriptor(signingPrivateKey, signingPublicKey, d)
+	signed, err := pki.SignDescriptor(signingPrivateKey, signingPublicKey, d)
 	if err != nil {
 		return err
 	}
@@ -358,7 +357,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
 	}
-	doc, err = s11n.VerifyAndParseDocument(r.Payload, good[0])
+	doc, err = pki.VerifyAndParseDocument(r.Payload, good[0])
 	if err != nil {
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
@@ -375,7 +374,7 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, err := s11n.VerifyAndParseDocument(raw, good[0])
+	doc, err := pki.VerifyAndParseDocument(raw, good[0])
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}
