@@ -35,6 +35,8 @@ func TestDescriptor(t *testing.T) {
 	require := require.New(t)
 
 	d := new(MixDescriptor)
+	d.Epoch = debugTestEpoch
+
 	err := IsDescriptorWellFormed(d, debugTestEpoch)
 	assert.Error(err, "IsDescriptorWellFormed(bad)")
 
@@ -72,8 +74,6 @@ func TestDescriptor(t *testing.T) {
 	// Sign the descriptor.
 	signed, err := SignDescriptor(identityPriv, identityPub, d)
 	require.NoError(err, "SignDescriptor()")
-
-	t.Logf("signed descriptor: '%v'", signed)
 
 	// Verify and deserialize the signed descriptor.
 	dd := new(MixDescriptor)
