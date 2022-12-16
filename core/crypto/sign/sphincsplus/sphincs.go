@@ -173,3 +173,10 @@ func (p *publicKey) UnmarshalText(text []byte) error {
 	}
 	return p.FromBytes(raw)
 }
+func (p *publicKey) MarshalBinary() ([]byte, error) {
+	return p.Bytes(), nil
+}
+
+func (p *publicKey) UnmarshalBinary(data []byte) error {
+	return p.FromBytes(data)
+}
