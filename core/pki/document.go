@@ -26,7 +26,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/ugorji/go/codec"
+	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
@@ -34,9 +34,9 @@ import (
 
 const (
 	// LayerProvider is the Layer that providers list in their MixDescriptors.
-	LayerProvider = 255
-	PublicKeyHashSize = 32
-	SharedRandomLength = 40
+	LayerProvider           = 255
+	PublicKeyHashSize       = 32
+	SharedRandomLength      = 40
 	SharedRandomValueLength = 32
 
 	// DocumentVersion identifies the document format version
@@ -57,12 +57,6 @@ var (
 
 	// OutOfBandAuth is a MixDescriptor.AuthenticationType
 	OutOfBandAuth = "oob"
-
-	jsonHandle = new(codec.JsonHandle)
-	// XXX wtf why can these not be set as struct literal???
-	//jsonHandle.Canonical = true
-	//jsonHandle.IntegerAsString = 'A'
-	//jsonHandle.MapKeyAsString = true
 )
 
 // Document is a PKI document.
@@ -123,6 +117,9 @@ type Document struct {
 	// network.
 	Providers []*MixDescriptor
 
+	// Signatures holds detached Signatures from deserializing a signed Document
+	Signatures map[[PublicKeyHashSize]byte]cert.Signature `cbor:"-"`
+
 	// SharedRandomCommit used by the voting process.
 	SharedRandomCommit map[[PublicKeyHashSize]byte][]byte
 
@@ -140,6 +137,9 @@ type Document struct {
 	Version string
 }
 
+// document contains fields from Document but not the encoding.BinaryMarshaler methods
+type document Document
+
 // String returns a string representation of a Document.
 func (d *Document) String() string {
 	srv := base64.StdEncoding.EncodeToString(d.SharedRandomValue)
@@ -155,7 +155,7 @@ func (d *Document) String() string {
 	s := fmt.Sprintf("&{Epoch: %v GenesisEpoch: %v\nSendRatePerMinute: %v Mu: %v MuMaxDelay: %v LambdaP:%v LambdaPMaxDelay:%v LambdaL:%v LambdaLMaxDelay:%v LambdaD:%v LambdaDMaxDelay:%v LambdaM: %v LambdaMMaxDelay: %v\nSharedRandomValue: %v PriorSharedRandom: %v\nTopology:\n", d.Epoch, d.GenesisEpoch, d.SendRatePerMinute, d.Mu, d.MuMaxDelay, d.LambdaP, d.LambdaPMaxDelay, d.LambdaL, d.LambdaLMaxDelay, d.LambdaD, d.LambdaDMaxDelay, d.LambdaM, d.LambdaMMaxDelay, srv, psrv)
 	for l, nodes := range d.Topology {
 		s += fmt.Sprintf("  [%v]{", l)
-		s += fmt.Sprintf("%v",nodes)
+		s += fmt.Sprintf("%v", nodes)
 		s += "}\n"
 	}
 
@@ -295,9 +295,8 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	dec := codec.NewDecoderBytes(verified, jsonHandle)
 	d := new(Document)
-	if err := dec.Decode(d); err != nil {
+	if err := d.UnmarshalBinary(verified); err != nil {
 		return nil, err
 	}
 	return d, nil
@@ -306,14 +305,11 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 // SignDocument signs and serializes the document with the provided signing key.
 func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
-
 	// Serialize the document.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
+	payload, err := cbor.Marshal((*document)(d))
+	if err != nil {
 		return nil, err
 	}
-
 	// Sign the document.
 	return cert.Sign(signer, verifier, payload, d.Epoch+5)
 }
@@ -323,9 +319,8 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	d.Version = DocumentVersion
 
 	// Serialize the document.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
+	payload, err := cbor.Marshal((*document)(d))
+	if err != nil {
 		return nil, err
 	}
 
@@ -350,17 +345,13 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 
 // VerifyAndParseDocument verifies the signature and deserializes the document.
 func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error) {
-	payload, err := cert.Verify(verifier, b)
+	// Parse the payload.
+	d := new(Document)
+	err := d.UnmarshalBinary(b)
 	if err != nil {
 		return nil, err
 	}
 
-	// Parse the payload.
-	d := new(Document)
-	dec := codec.NewDecoderBytes(payload, jsonHandle)
-	if err = dec.Decode(d); err != nil {
-		return nil, err
-	}
 
 	// Check the Document has met requirements.
 	if err = IsDocumentWellFormed(d); err != nil {
@@ -454,20 +445,52 @@ func IsDocumentWellFormed(d *Document) error {
 	return nil
 }
 
-// UnmarshalText implements encoding.TextUnmarshaler interface
-func (d *Document) UnmarshalText(text []byte) error {
-	// encoding type is json
-	dec := codec.NewDecoderBytes(text, jsonHandle)
-	return dec.Decode(d)
-}
-
-// MarshalText implements encoding.TextMarshaler interface
-func (d *Document) MarshalText() (text []byte, err error) {
-	// encoding type is json
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
+// MarshalBinary implements encoding.BinaryMarshaler interface
+// and wraps a Document with a cert.Certificate
+func (d *Document) MarshalBinary() ([]byte, error) {
+	// Serialize Document without calling this method
+	payload, err := cbor.Marshal((*document)(d))
+	if err != nil {
 		return nil, err
 	}
-	return payload, nil
+	pk, _ := cert.Scheme.NewKeypair()
+	certified := cert.Certificate{
+		Version:    cert.CertVersion,
+		Expiration: d.Epoch + 5,
+		KeyType:    pk.KeyType(),
+		Certified:  payload,
+		Signatures: d.Signatures,
+	}
+	b, err := certified.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return b, err
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+// and populates Document with detached Signatures
+func (d *Document) UnmarshalBinary(data []byte) error {
+	certified, err := cert.GetCertified(data)
+	if err != nil {
+		panic(err)
+		return err
+	}
+	sigs, err := cert.GetSignatures(data)
+	if err != nil {
+		panic(err)
+		return err
+	}
+	if len(sigs) == 0 {
+		panic("No sigs")
+	}
+	err = cbor.Unmarshal(certified, (*document)(d))
+	if err != nil {
+		panic(err)
+		return err
+	}
+	for _, s := range sigs {
+		d.Signatures[s.PublicKeySum256] = s
+	}
+	return nil
 }

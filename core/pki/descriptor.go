@@ -52,7 +52,7 @@ type MixDescriptor struct {
 	IdentityKey sign.PublicKey
 
 	// Signature is the raw cert.Signature over the serialized MixDescriptor
-	Signature *cert.Signature `json:"-",cbor:"-"`
+	Signature *cert.Signature `cbor:"-"`
 
 	// LinkKey is the node's wire protocol public key.
 	LinkKey wire.PublicKey
@@ -82,6 +82,8 @@ type MixDescriptor struct {
 	Version string
 }
 
+type mixdescriptor MixDescriptor
+
 // String returns a human readable MixDescriptor suitable for terse logging.
 func (d *MixDescriptor) String() string {
 	kaetzchen := ""
@@ -110,7 +112,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	d.LinkKey = linkPriv.PublicKey()
 
 	// encoding type is cbor
-	err = cbor.Unmarshal(certified, d)
+	err = cbor.Unmarshal(certified, (*mixdescriptor)(d))
 	if err != nil {
 		return err
 	}
@@ -128,18 +130,16 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 }
 
 // MarshalBinary
-func (d *MixDescriptor) MarshalBinary() (data []byte, err error) {
+func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 	// reconstruct a serialized certificate from the detached Signature
-	// copy the type
-	type t MixDescriptor
-	rawDesc, err := cbor.Marshal((*t)(d))
+	rawDesc, err := cbor.Marshal((*mixdescriptor)(d))
 	if err != nil {
 		return nil, err
 	}
 
 	// If the descriptor was signed, add the Signature
 	signatures := make(map[[32]byte]cert.Signature)
-	if d.Signature == nil {
+	if d.Signature != nil {
 		signatures[d.IdentityKey.Sum256()] = *d.Signature
 	}
 	certified := cert.Certificate{
@@ -149,15 +149,18 @@ func (d *MixDescriptor) MarshalBinary() (data []byte, err error) {
 		Certified:  rawDesc,
 		Signatures: signatures,
 	}
-	return certified.Marshal()
+	data, err := certified.Marshal()
+	if err != nil {
+		panic(err)
+	}
+	return data, err
 }
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
 // key.
 func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescriptor) ([]byte, error) {
 	// Serialize the descriptor.
-	type t MixDescriptor
-	payload, err := cbor.Marshal((*t)(desc))
+	payload, err := cbor.Marshal((*mixdescriptor)(desc))
 	if err != nil {
 		return nil, err
 	}

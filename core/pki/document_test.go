@@ -36,6 +36,7 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*MixDescrip
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
 	d.Layer = uint8(layer)
+	d.Epoch = debugTestEpoch
 	d.LoadWeight = 23
 	identityPriv, identityPub := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPub
@@ -88,6 +89,7 @@ func TestDocument(t *testing.T) {
 		SharedRandomCommit: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
+		Version:            DocumentVersion,
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
