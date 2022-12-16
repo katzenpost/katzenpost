@@ -56,6 +56,8 @@ type PrivateKey interface {
 type PublicKey interface {
 	encoding.TextMarshaler
 	encoding.TextUnmarshaler
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
 
 	Key
 
