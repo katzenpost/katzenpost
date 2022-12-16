@@ -33,3 +33,22 @@ func TestEddsaSphincsplusSchemeTextUnmarshaler(t *testing.T) {
 	ok = pubKey2.Verify(signature, message)
 	require.True(t, ok)
 }
+
+
+func TestEddsaSphincsplusSchemeBinaryUnmarshaler(t *testing.T) {
+	message := []byte("hello world")
+	privKey, pubKey := Scheme.NewKeypair()
+
+	pubKeyBytes, err := pubKey.MarshalBinary()
+	require.NoError(t, err)
+
+	pubKey2, err := Scheme.UnmarshalBinaryPublicKey(pubKeyBytes)
+	require.NoError(t, err)
+
+	signature := privKey.Sign(message)
+	ok := pubKey.Verify(signature, message)
+	require.True(t, ok)
+
+	ok = pubKey2.Verify(signature, message)
+	require.True(t, ok)
+}
