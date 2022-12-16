@@ -52,6 +52,9 @@ var (
 	// descriptor upload for a given epoch due to time reasons.
 	ErrInvalidPostEpoch = errors.New("pki: post for epoch will never succeeed")
 
+	// ErrInvalidEpoch is the error to return when the document epoch is invalid.
+	ErrInvalidEpoch = errors.New("invalid document epoch")
+
 	// TrustOnFirstUseAuth is a MixDescriptor.AuthenticationType
 	TrustOnFirstUseAuth = "tofu"
 
