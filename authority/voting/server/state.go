@@ -56,6 +56,7 @@ const (
 	descriptorsBucket     = "descriptors"
 	documentsBucket       = "documents"
 	stateAcceptDescriptor = "accept_desc"
+	stateAcceptCommit     = "accept_commit"
 	stateAcceptVote       = "accept_vote"
 	stateAcceptReveal     = "accept_reveal"
 	stateAcceptSignature  = "accept_signature"
@@ -66,7 +67,8 @@ const (
 
 var (
 	MixPublishDeadline       = epochtime.Period / 4
-	AuthorityVoteDeadline    = MixPublishDeadline + epochtime.Period/8
+	AuthorityCommitDeadline  = MixPublishDeadline
+	AuthorityVoteDeadline    = AuthorityCommitDeadline + epochtime.Period/8
 	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
 	PublishConsensusDeadline = AuthorityRevealDeadline + epochtime.Period/8
 	errGone                  = errors.New("authority: Requested epoch will never get a Document")
@@ -105,6 +107,7 @@ type state struct {
 	votes        map[uint64]map[[publicKeyHashSize]byte]*document
 	priorSRV     [][]byte
 	reveals      map[uint64]map[[publicKeyHashSize]byte][]byte
+	commits      map[uint64]map[[publicKeyHashSize]byte][]byte
 	certificates map[uint64]map[[publicKeyHashSize]byte][]byte
 	verifiers    map[[publicKeyHashSize]byte]cert.Verifier
 
@@ -165,9 +168,42 @@ func (s *state) fsm() <-chan time.Time {
 			s.state = stateBootstrap
 		} else {
 			s.votingEpoch = epoch + 1
-			sleep = MixPublishDeadline - elapsed
-			s.state = stateAcceptDescriptor
+			sleep = AuthorityCommitDeadline - elapsed
+			s.state = stateAcceptCommit
 		}
+		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
+	case stateAcceptCommit:
+		if len(s.commits[s.votingEpoch]) < s.threshold {
+			s.log.Errorf("Not enough commits to make a consensus")
+			sleep = nextEpoch
+			s.votingEpoch = epoch + 2
+			s.state = stateBootstrap
+		}
+		srv := new(SharedRandom)
+		commit, err := srv.Commit(epoch)
+		if err != nil {
+			s.s.fatalErrCh <- err
+		}
+		// sign the serialized commit
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch+1)
+		if err != nil {
+			s.s.fatalErrCh <- err
+		}
+
+		// save our commit
+		if _, ok := s.commits[s.votingEpoch]; !ok {
+			s.commits[s.votingEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+		}
+		s.commits[s.votingEpoch][s.identityPubKeyHash()] = signedCommit
+		// save our own reveal
+		if _, ok := s.reveals[epoch]; !ok {
+			s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+		}
+		s.reveals[s.votingEpoch][s.identityPubKeyHash()] = srv.Reveal()
+
+		// send out commit
+		s.sendCommitToAuthorities(signedCommit, s.votingEpoch)
+		sleep = MixPublishDeadline - elapsed
 		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 	case stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
@@ -264,29 +300,9 @@ func (s *state) consense(epoch uint64) *document {
 		return nil
 	}
 
-	// check that each authority presented the same commit and reveal to every other authority
-	commits := make(map[[publicKeyHashSize]byte][]byte)
-	badnodes := make(map[[publicKeyHashSize]byte]bool)
 
-	for pk, c := range certificates {
-		// XXX: validate a signature over the commit
-		doc := new(pki.Document)
-		err := doc.UnmarshalBinary(c)
-		if err != nil {
-			panic(err)
-		}
-		for pk2, b := range doc.SharedRandomCommit {
-			if b2, ok := commits[pk2]; ok {
-				// compare every vote to see if any entries are different
-				if !bytes.Equal(b2, b) {
-					s.log.Errorf("%x submitted different commit to %x, rejecting from consensus process", pk2, pk)
-					badnodes[pk2] = true
-				}
-			} else {
-				commits[pk2] = b2
-			}
-		}
-	}
+	// check for any discrepancies reported by mixes
+	badnodes := s.validateCommits()
 
 	// range over the certifcates we have collected and see if we can collect enough signatures to make a consensus
 	for pubKeyHash1, certificate1 := range certificates {
@@ -402,12 +418,6 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 			topology = s.generateRandomTopology(nodes, srv)
 		}
 	}
-	// gather SharedRandomCommits and SharedRandomReveals into document
-	reveals := s.reveals[s.votingEpoch]
-	commits := make(map[[publicKeyHashSize]byte][]byte)
-	for id, d := range s.votes[s.votingEpoch] {
-		commits[id] = d.doc.SharedRandomCommit[id]
-	}
 
 	// Build the Document.
 	doc := &pki.Document{
@@ -426,8 +436,7 @@ func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters
 		LambdaMMaxDelay:    params.LambdaMMaxDelay,
 		Topology:           topology,
 		Providers:          providers,
-		SharedRandomCommit: commits,
-		SharedRandomReveal: reveals,
+		SharedRandomCommit: s.commits[s.votingEpoch],
 		SharedRandomValue:  srv,
 		PriorSharedRandom:  s.priorSRV,
 	}
@@ -511,35 +520,13 @@ func (s *state) vote(epoch uint64) (*document, error) {
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
 	}
-	srv := new(SharedRandom)
-	commit, err := srv.Commit(epoch)
-	if err != nil {
-		s.s.fatalErrCh <- err
-		return nil, err
-	}
-
-	// save our own reveal
-	if _, ok := s.reveals[epoch]; !ok {
-		s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
-	}
-	if _, ok := s.reveals[epoch][s.identityPubKeyHash()]; !ok {
-		s.reveals[epoch][s.identityPubKeyHash()] = srv.Reveal()
-		// XXX persist reveals to database?
-	} else {
-		s.log.Errorf("failure: reveal already present, this should never happen.")
-		err := errors.New("failure: reveal already present, this should never happen")
-		s.s.fatalErrCh <- err
-		return nil, err
-	}
 
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
-	vote.SharedRandomCommit = make(map[[pki.PublicKeyHashSize]byte][]byte)
-	vote.SharedRandomCommit[s.identityPubKeyHash()] = commit
 
 	signedVote, err := pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
-	if signedVote == nil {
+	if err != nil {
 		err := errors.New("failure: signing vote failed")
 		s.s.fatalErrCh <- err
 		return nil, err
@@ -606,133 +593,43 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*descriptor) 
 	return nrProviders > 0 && nrNodes >= minNodes
 }
 
-func (s *state) sendRevealToPeer(peer *config.Authority, reveal []byte, epoch uint64) error {
-	var conn net.Conn
-	var err error
-	for i, a := range peer.Addresses {
-		conn, err = net.Dial("tcp", a)
-		if err == nil {
-			break
-		}
-		if i == len(peer.Addresses)-1 {
-			return err
-		}
-	}
-	defer conn.Close()
-	s.s.Add(1)
-	defer s.s.Done()
-	identityHash := s.s.identityPublicKey.Sum256()
-	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-	}
-	session, err := wire.NewSession(cfg, true)
-	if err != nil {
-		return err
-	}
-	defer session.Close()
+func (s *state) validateCommits() map[[publicKeyHashSize]byte]bool {
+	// Lock is held (called from the onWakeup hook).
+	// check that each authority presented the same commit to every other authority
+	badnodes := make(map[[publicKeyHashSize]byte]bool)
 
-	if err = session.Initialize(conn); err != nil {
-		return err
-	}
-	cmd := &commands.Reveal{
-		Epoch:     epoch,
-		PublicKey: s.s.IdentityKey(),
-		Payload:   reveal,
-	}
-	err = session.SendCommand(cmd)
-	if err != nil {
-		return err
-	}
-	resp, err := session.RecvCommand()
-	if err != nil {
-		return err
-	}
-	r, ok := resp.(*commands.RevealStatus)
-	if !ok {
-		return fmt.Errorf("Reveal response resulted in unexpected reply: %T", resp)
-	}
-	switch r.ErrorCode {
-	case commands.RevealOk:
-		return nil
-	case commands.RevealTooLate:
-		return errors.New("reveal was too late")
-	case commands.RevealTooEarly:
-		return errors.New("reveal was too early")
-	case commands.RevealAlreadyReceived:
-		return errors.New("reveal already received by authority")
-	case commands.RevealNotAuthorized:
-		return errors.New("reveal rejected by authority: Not Authorized")
-	default:
-		return fmt.Errorf("reveal rejected by authority: unknown error code received")
-	}
-	return nil
-
-}
-func (s *state) sendVoteToPeer(peer *config.Authority, vote []byte, epoch uint64) error {
-	// get a connector here
-	var conn net.Conn
-	var err error
-	for i, a := range peer.Addresses {
-		conn, err = net.Dial("tcp", a)
-		if err == nil {
-			break
-		}
-		if i == len(peer.Addresses)-1 {
-			return err
+	for pk, vote := range s.votes[s.votingEpoch] {
+		for pk2, signedCommit := range vote.doc.SharedRandomCommit {
+			if v, ok := s.reverseHash[pk2]; !ok {
+				s.log.Errorf("Commit from invaid peer %x in vote from %x", pk2, pk)
+				badnodes[pk] = true
+			} else {
+				commit, err := cert.Verify(v, signedCommit)
+				if err != nil {
+					// pk didn't validate commit in its vote!
+					badnodes[pk] = true
+					s.log.Errorf("Invalid signature over commit from %s in vote from %s, rejecting %s from consensus", pk2, pk, pk)
+					// do not bother checking any more of pk's SharedRandomCommits
+					break
+				} else {
+					// check if we already saw the same commit
+					if commit2, ok := s.commits[s.votingEpoch][pk2]; ok {
+						// check that the commits were the same
+						if !bytes.Equal(commit, commit2) {
+							s.log.Errorf("%x submitted commit %x to %x and previously submitted %x to us", pk2, commit, pk, commit2)
+							badnodes[pk2] = true
+						}
+					} else {
+						// we were missing a commit that another peer saw
+						s.log.Errorf("Missing commit from %x, found in vote from %s", pk2, pk)
+						// this is the first time we saw this commit, and it's valid, so use it
+						s.commits[s.votingEpoch][pk2] = commit
+					}
+				}
+			}
 		}
 	}
-	defer conn.Close()
-	s.s.Add(1)
-	defer s.s.Done()
-	identityHash := s.s.identityPublicKey.Sum256()
-	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
-		Authenticator:     s,
-		AdditionalData:    identityHash[:],
-		AuthenticationKey: s.s.linkKey,
-		RandomReader:      rand.Reader,
-	}
-	session, err := wire.NewSession(cfg, true)
-	if err != nil {
-		return err
-	}
-	defer session.Close()
-
-	if err = session.Initialize(conn); err != nil {
-		return err
-	}
-	cmd := &commands.Vote{
-		Epoch:     epoch,
-		PublicKey: s.s.IdentityKey(),
-		Payload:   vote,
-	}
-	err = session.SendCommand(cmd)
-	if err != nil {
-		return err
-	}
-	resp, err := session.RecvCommand()
-	if err != nil {
-		return err
-	}
-	r, ok := resp.(*commands.VoteStatus)
-	if !ok {
-		return fmt.Errorf("Vote response resulted in unexpected reply: %T", resp)
-	}
-	switch r.ErrorCode {
-	case commands.VoteOk:
-		return nil
-	case commands.VoteTooLate:
-		return errors.New("vote was too late")
-	case commands.VoteTooEarly:
-		return errors.New("vote was too early")
-	default:
-		return fmt.Errorf("vote rejected by authority: unknown error code received")
-	}
-	return nil
+	return badnodes
 }
 
 // IsPeerValid authenticates the remote peer's credentials
@@ -748,26 +645,164 @@ func (s *state) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return false
 }
 
-// sendRevealToAuthorities sends a Shared Random Reveal command to
-// all Directory Authorities
-func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
-	s.log.Noticef("Sending Shared Random Reveal for epoch %v, to all Directory Authorities.", epoch)
-
-	for _, peer := range s.s.cfg.Authorities {
-		go s.sendRevealToPeer(peer, reveal, epoch)
+func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) (commands.Command, error) {
+	var conn net.Conn
+	var err error
+	for i, a := range peer.Addresses {
+		conn, err = net.Dial("tcp", a)
+		if err == nil {
+			break
+		}
+		if i == len(peer.Addresses)-1 {
+			return nil, err
+		}
 	}
+	defer conn.Close()
+	s.s.Add(1)
+	defer s.s.Done()
+	identityHash := s.s.identityPublicKey.Sum256()
+	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
+		Authenticator:     s,
+		AdditionalData:    identityHash[:],
+		AuthenticationKey: s.s.linkKey,
+		RandomReader:      rand.Reader,
+	}
+	session, err := wire.NewSession(cfg, true)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
 
+	if err = session.Initialize(conn); err != nil {
+		return nil, err
+	}
+	err = session.SendCommand(cmd)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := session.RecvCommand()
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
 
-// sendVoteToAuthorities sends s.descriptors[epoch] to
-// all Directory Authorities
+// sendCommitToAuthorities sends our commit to all Directory Authorities
+func (s *state) sendCommitToAuthorities(commit []byte, epoch uint64) {
+	// Lock is held (called from the onWakeup hook).
+	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", epoch)
+	cmd := &commands.Commit{
+		Epoch:     epoch,
+		PublicKey: s.s.IdentityKey(),
+		Payload:   commit,
+	}
+
+	for _, peer := range s.s.cfg.Authorities {
+		go func() {
+			resp, err := s.sendCommandToPeer(peer, cmd)
+			if err != nil {
+				s.log.Error("Failed to send commit to %s", peer.Identifier)
+				return
+			}
+			r, ok := resp.(*commands.CommitStatus)
+			if !ok {
+				s.log.Warningf("Commit response resulted in unexpected reply: %T", resp)
+				return
+			}
+			switch r.ErrorCode {
+			case commands.CommitOk:
+				s.log.Notice("Commit submitted to %s", peer.Identifier)
+			case commands.CommitTooLate:
+				s.log.Warningf("Commit rejected with CommitTooLate by %s", peer.Identifier)
+			case commands.CommitTooEarly:
+				s.log.Warningf("Commit rejected with CommitTooEarly by %s", peer.Identifier)
+			case commands.CommitAlreadyReceived:
+				s.log.Warningf("Commit rejected with CommitAlreadyReceived by %s", peer.Identifier)
+			case commands.CommitNotAuthorized:
+				s.log.Warningf("Commit rejected with CommitNotAuthoritzed by %s", peer.Identifier)
+			default:
+				s.log.Warningf("Commit rejected with unknown error code received by %s", peer.Identifier)
+			}
+		}()
+	}
+}
+
+// sendVoteToAuthorities sends s.descriptors[epoch] to all Directory Authorities
 func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 	// Lock is held (called from the onWakeup hook).
 
 	s.log.Noticef("Sending Document for epoch %v, to all Directory Authorities.", epoch)
 
+	cmd := &commands.Vote{
+		Epoch:     epoch,
+		PublicKey: s.s.IdentityKey(),
+		Payload:   vote,
+	}
+
 	for _, peer := range s.s.cfg.Authorities {
-		go s.sendVoteToPeer(peer, vote, epoch)
+		go func() {
+			resp, err := s.sendCommandToPeer(peer, cmd)
+			if err != nil {
+				s.log.Error("Failed to send vote to %s", peer.Identifier)
+				return
+			}
+			r, ok := resp.(*commands.VoteStatus)
+			if !ok {
+				s.log.Warningf("Vote response resulted in unexpected reply: %T", resp)
+				return
+			}
+			switch r.ErrorCode {
+			case commands.VoteOk:
+				s.log.Notice("Vote submitted to %s", peer.Identifier)
+			case commands.VoteTooLate:
+				s.log.Warningf("Vote rejected with VoteTooLate by %s", peer.Identifier)
+			case commands.VoteTooEarly:
+				s.log.Warningf("Vote rejected with RevealTooEarly by %s", peer.Identifier)
+			default:
+				s.log.Warningf("Vote rejected with unknown error code received by %s", peer.Identifier)
+			}
+		}()
+	}
+}
+
+// sendRevealToAuthorities sends a Shared Random Reveal command to
+// all Directory Authorities
+func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
+	s.log.Noticef("Sending Shared Random Reveal for epoch %v, to all Directory Authorities.", epoch)
+
+	cmd := &commands.Reveal{
+		Epoch:     epoch,
+		PublicKey: s.s.IdentityKey(),
+		Payload:   reveal,
+	}
+	for _, peer := range s.s.cfg.Authorities {
+		go func() {
+			resp, err := s.sendCommandToPeer(peer, cmd)
+			if err != nil {
+				s.log.Error("Failed to send reveal to %s", peer.Identifier)
+				return
+			}
+			r, ok := resp.(*commands.RevealStatus)
+			if !ok {
+				s.log.Error("Reveal response resulted in unexpected reply: %T", resp)
+				return
+			}
+			switch r.ErrorCode {
+			case commands.RevealOk:
+				s.log.Notice("Reveal submitted to %s", peer.Identifier)
+			case commands.RevealTooLate:
+				s.log.Warningf("Reveal rejected with RevealTooLate by %s", peer.Identifier)
+			case commands.RevealTooEarly:
+				s.log.Warningf("Reveal rejected with RevealTooEarly by %s", peer.Identifier)
+			case commands.RevealAlreadyReceived:
+				s.log.Warningf("Reveal rejected with RevealAlreadyReceived by %s", peer.Identifier)
+			case commands.RevealNotAuthorized:
+				s.log.Warningf("Reveal rejected with RevealNotAuthoritzed by %s", peer.Identifier)
+			default:
+				s.log.Warningf("reveal rejected with unknown error code received by %s", peer.Identifier)
+			}
+		}()
 	}
 }
 
@@ -1003,6 +1038,9 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 	s.log.Debug("Mixes tallied, now making a document")
 	doc := s.getDocument(mixes, params, srv)
 
+	// add SharedRandomReveals into document
+	doc.SharedRandomReveal = s.reveals[s.votingEpoch]
+
 	// verify that the topology constraints are satisfied after producing a candidate consensus
 	if err := s.verifyTopology(doc.Topology); err != nil {
 		s.log.Warningf("No consensus for epoch %v, aborting!, %v", epoch, err)
@@ -1232,6 +1270,60 @@ func (s *state) dupVote(vote commands.Vote) bool {
 		return true
 	}
 	return false
+}
+
+func (s *state) onCommitUpload(commit *commands.Commit) commands.Command {
+	s.Lock()
+	defer s.Unlock()
+	resp := commands.CommitStatus{}
+
+	// if not authorized
+	_, ok := s.authorizedAuthorities[commit.PublicKey.Sum256()]
+	if !ok {
+		s.log.Error("Voter not white-listed.")
+		resp.ErrorCode = commands.CommitNotAuthorized
+		return &resp
+	}
+
+	// verify the signature on the payload
+	certified, err := cert.Verify(commit.PublicKey, commit.Payload)
+	if err != nil {
+		s.log.Error("Commit from %s failed to verify.", commit.PublicKey)
+		resp.ErrorCode = commands.CommitNotAuthorized
+		return &resp
+	}
+
+	e := epochFromBytes(certified[:8])
+	// received too late // XXX: shouldn't this be verified by fsm schedule
+	if e < s.votingEpoch {
+		s.log.Errorf("Received Commit too late: %d < %d", e, s.votingEpoch)
+		resp.ErrorCode = commands.CommitTooLate
+		return &resp
+	}
+
+	// received too early
+	if e > s.votingEpoch {
+		s.log.Errorf("Received Commit too early: %d > %d", e, s.votingEpoch)
+		resp.ErrorCode = commands.CommitTooEarly
+		return &resp
+	}
+
+	// the first commit received this round
+	if _, ok := s.commits[s.votingEpoch]; !ok {
+		s.commits[s.votingEpoch] = make(map[[publicKeyHashSize]byte][]byte)
+	}
+
+	// already received a commit for this round
+	if _, ok := s.commits[s.votingEpoch][commit.PublicKey.Sum256()]; ok {
+		s.log.Error("Another Commit received from peer's vote?.")
+		resp.ErrorCode = commands.CommitAlreadyReceived
+		return &resp
+	}
+
+	s.log.Debug("Commit OK.")
+	s.commits[s.votingEpoch][commit.PublicKey.Sum256()] = certified
+	resp.ErrorCode = commands.CommitOk
+	return &resp
 }
 
 func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
@@ -1688,6 +1780,7 @@ func newState(s *Server) (*state, error) {
 	st.votes = make(map[uint64]map[[publicKeyHashSize]byte]*document)
 	st.certificates = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
+	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.DataDir, dbFile)

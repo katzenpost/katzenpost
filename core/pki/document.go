@@ -168,6 +168,16 @@ func (d *Document) String() string {
 	s += "}\n"
 	s += fmt.Sprintf("Providers:[]{%v}", d.Providers)
 	s += "}}"
+
+	for id, commit := range d.SharedRandomCommit {
+		src := base64.StdEncoding.EncodeToString(commit)
+		s += fmt.Sprintf("  SharedRandomCommit: %x, %s\n", id, src)
+	}
+	for id, value := range d.SharedRandomReveal{
+		srr := base64.StdEncoding.EncodeToString(value)
+		s += fmt.Sprintf("  SharedRandomReveal: %x, %s\n", id, srr)
+	}
+
 	return s
 }
 
@@ -297,12 +307,12 @@ type Client interface {
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
 func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
-	verified, err := cert.Verify(verifier, payload)
+	_, err := cert.Verify(verifier, payload)
 	if err != nil {
 		return nil, err
 	}
 	d := new(Document)
-	if err := d.UnmarshalBinary(verified); err != nil {
+	if err := d.UnmarshalBinary(payload); err != nil {
 		return nil, err
 	}
 	return d, nil
