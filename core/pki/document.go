@@ -363,13 +363,6 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error)
 		return nil, err
 	}
 
-	// Fixup the Layer field in all the Topology MixDescriptors.
-	for layer, nodes := range d.Topology {
-		for _, desc := range nodes {
-			desc.Layer = uint8(layer)
-		}
-	}
-
 	return d, nil
 }
 
