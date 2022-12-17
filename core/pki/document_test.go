@@ -17,6 +17,7 @@
 package pki
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
@@ -25,7 +26,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,7 +67,6 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*MixDescrip
 }
 
 func TestDocument(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
 
 	// Generate a random signing key.
@@ -99,6 +98,9 @@ func TestDocument(t *testing.T) {
 			d := new(MixDescriptor)
 			err := d.UnmarshalBinary(rawDesc)
 			require.NoError(err)
+			foo, err := d.MarshalBinary()
+			require.NoError(err)
+			require.True(bytes.Equal(foo, rawDesc))
 			doc.Topology[l] = append(doc.Topology[l], d)
 			idx++
 		}
@@ -108,6 +110,9 @@ func TestDocument(t *testing.T) {
 		d := new(MixDescriptor)
 		err := d.UnmarshalBinary(rawDesc)
 		require.NoError(err)
+		foo, err := d.MarshalBinary()
+		require.NoError(err)
+		require.True(bytes.Equal(foo, rawDesc))
 		doc.Providers = append(doc.Providers, d)
 		idx++
 	}
@@ -131,9 +136,36 @@ func TestDocument(t *testing.T) {
 	require.Equal(doc.LambdaDMaxDelay, ddoc.LambdaDMaxDelay, "VerifyAndParseDocument(): LambdaDMaxDelay")
 	require.Equal(doc.LambdaM, ddoc.LambdaM, "VerifyAndParseDocument(): LambdaM")
 	require.Equal(doc.LambdaMMaxDelay, ddoc.LambdaMMaxDelay, "VerifyAndParseDocument(): LambdaMMaxDelay")
+	require.Equal(doc.SharedRandomValue, ddoc.SharedRandomValue, "VerifyAndParseDocument(): SharedRandomValue")
+	require.Equal(doc.PriorSharedRandom, ddoc.PriorSharedRandom, "VerifyAndParseDocument(): PriorSharedRandom")
+	require.Equal(doc.SharedRandomCommit, ddoc.SharedRandomCommit, "VerifyAndParseDocument(): SharedRandomCommit")
+	require.Equal(doc.SharedRandomReveal, ddoc.SharedRandomReveal, "VerifyAndParseDocument(): SharedRandomReveal")
+	require.Equal(doc.Version, ddoc.Version, "VerifyAndParseDocument(): Version")
 
 	t.Logf("Deserialized document: '%v'", ddoc)
 
-	// TODO: Ensure the descriptors are sane.
-	_ = assert
+	// check that MixDescriptors are signed correctly and can be deserialized and reserialized from the Document
+	for l, layer := range ddoc.Topology {
+		for i, node := range layer {
+			nnode := doc.Topology[l][i] // compare the serialization of descriptors before/after
+			otherDesc, err := nnode.MarshalBinary()
+			require.NoError(err)
+			rawDesc, err := node.MarshalBinary()
+			require.NoError(err)
+			_, err = VerifyDescriptor(rawDesc)
+			require.NoError(err)
+			_, err = VerifyDescriptor(otherDesc)
+			require.NoError(err)
+			require.True(bytes.Equal(otherDesc, rawDesc)) // require the serialization be the same
+		}
+	}
+
+	// check that Providers are the same
+	for i, provider := range ddoc.Providers {
+		d, err := provider.MarshalBinary()
+		require.NoError(err)
+		d2, err := doc.Providers[i].MarshalBinary()
+		require.NoError(err)
+		require.True(bytes.Equal(d, d2))
+	}
 }
