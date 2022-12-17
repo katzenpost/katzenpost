@@ -459,11 +459,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 		Certified:  payload,
 		Signatures: d.Signatures,
 	}
-	b, err := certified.Marshal()
-	if err != nil {
-		panic(err)
-	}
-	return b, err
+	return certified.Marshal()
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
@@ -474,12 +470,10 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 	d.SharedRandomReveal = make(map[[PublicKeyHashSize]byte][]byte)
 	certified, err := cert.GetCertified(data)
 	if err != nil {
-		panic(err)
 		return err
 	}
 	sigs, err := cert.GetSignatures(data)
 	if err != nil {
-		panic(err)
 		return err
 	}
 	for _, s := range sigs {
@@ -487,7 +481,6 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 	}
 	err = cbor.Unmarshal(certified, (*document)(d))
 	if err != nil {
-		panic(err)
 		return err
 	}
 	return nil
