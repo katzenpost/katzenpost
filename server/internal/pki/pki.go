@@ -340,6 +340,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		IdentityKey: p.glue.IdentityPublicKey(),
 		LinkKey:     p.glue.LinkKey().PublicKey(),
 		Addresses:   p.descAddrMap,
+		Epoch:       epoch,
 	}
 	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes

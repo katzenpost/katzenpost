@@ -476,7 +476,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
 func (d *Document) UnmarshalBinary(data []byte) error {
-	d.SharedRandomCommit = make( map[[PublicKeyHashSize]byte][]byte)
+	d.SharedRandomCommit = make(map[[PublicKeyHashSize]byte][]byte)
 	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
 	d.SharedRandomReveal = make(map[[PublicKeyHashSize]byte][]byte)
 	certified, err := cert.GetCertified(data)
