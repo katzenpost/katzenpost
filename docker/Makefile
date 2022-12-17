@@ -1,4 +1,5 @@
 docker := $(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
+docker := docker
 warped?=false
 CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
@@ -30,7 +31,7 @@ fix-perms:
 
 debian_base:
 	if ! ${docker} images|grep katzenpost/debian_base; then \
-		${docker} run --name katzenpost_debian_base docker.io/golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password && apt update && apt upgrade -y' \
+		${docker} run --name katzenpost_debian_base docker.io/golang:bullseye bash -c "echo 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y" \
 		&& ${docker} commit katzenpost_debian_base katzenpost/debian_base \
 		&& ${docker} rm katzenpost_debian_base; \
         fi
@@ -57,6 +58,7 @@ go-mod-upgrade: deps
 
 server: deps
 	if ! ${docker} images|grep katzenpost/server; then \
+		${docker} rm katzenpost_server ; \
 		${docker} run ${docker_args} --name katzenpost_server katzenpost/deps \
 			bash -c 'cd server && warped=${warped} make testnet-build testnet-install' \
 		&& ${docker} commit katzenpost_server katzenpost/server \
