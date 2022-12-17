@@ -27,12 +27,18 @@ import (
 	"io"
 	"os"
 
+	"golang.org/x/crypto/blake2b"
+
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
 
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
+
+// PublicKeyHashSize indicates the hash size returned
+// from the PublicKey's Sum256 method.
+const PublicKeyHashSize = 32
 
 var DefaultScheme = &scheme{
 	KEM: kem.Kyber768X25519,
@@ -61,6 +67,9 @@ type PublicKey interface {
 
 	// FromBytes deserializes the byte slice b into the PublicKey.
 	FromBytes(b []byte) error
+
+	// Sum256 returns the Blake2b 256-bit checksum of the key's raw bytes.
+	Sum256() [32]byte
 }
 
 // PrivateKey is an interface used to abstract away the
@@ -123,6 +132,7 @@ type Scheme interface {
 type publicKey struct {
 	publicKey kem.PublicKey
 	KEM       kem.KEM
+	hash      [PublicKeyHashSize]byte
 }
 
 func (p *publicKey) KeyType() string {
@@ -201,6 +211,11 @@ func (p *publicKey) UnmarshalText(text []byte) error {
 	return p.FromBytes(raw)
 }
 
+func (p *publicKey) Sum256() [32]byte {
+	p.hash = blake2b.Sum256(p.Bytes())
+	return p.hash
+}
+
 type privateKey struct {
 	privateKey kem.Keypair
 	KEM        kem.KEM
@@ -248,6 +263,7 @@ func (p *privateKey) Reset() {
 func (p *privateKey) PublicKey() PublicKey {
 	return &publicKey{
 		publicKey: p.privateKey.Public(),
+		hash:      blake2b.Sum256(p.privateKey.Public().Bytes()),
 		KEM:       p.KEM,
 	}
 }
