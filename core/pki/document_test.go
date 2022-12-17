@@ -37,6 +37,7 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*MixDescrip
 	}
 	d.Layer = uint8(layer)
 	d.Epoch = debugTestEpoch
+	d.Version = DescriptorVersion
 	d.LoadWeight = 23
 	identityPriv, identityPub := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPub
