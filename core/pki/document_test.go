@@ -122,7 +122,7 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "SignDocument()")
 
 	// Validate and deserialize.
-	ddoc, err := VerifyAndParseDocument(signed, idPub)
+	ddoc, err := VerifyAndParseDocument(signed, []cert.Verifier{idPub})
 	require.NoError(err, "VerifyAndParseDocument()")
 	require.Equal(doc.Epoch, ddoc.Epoch, "VerifyAndParseDocument(): Epoch")
 	require.Equal(doc.SendRatePerMinute, testSendRate, "VerifyAndParseDocument(): SendRatePerMinute")
