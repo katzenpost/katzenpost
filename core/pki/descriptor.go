@@ -21,6 +21,7 @@ package pki
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -37,6 +38,12 @@ import (
 
 const (
 	DescriptorVersion = "v0"
+)
+
+var (
+	ErrNoSignature = errors.New("MixDescriptor has no signature")
+	ErrInvalidSignature = errors.New("MixDescriptor has an invalid signature")
+	ErrTooManySignatures = errors.New("MixDescriptor has more than one signature")
 )
 
 // MixDescriptor is a description of a given Mix or Provider (node).
@@ -103,6 +110,18 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
+	sigs, err := cert.GetSignatures(data)
+	if err != nil {
+		return err
+	}
+	switch len(sigs) {
+	case 0:
+		return ErrNoSignature
+	case 1:
+		// must have only 1 signature
+	default:
+		return ErrTooManySignatures
+	}
 
 	// Instantiate concrete instances so we deserialize into the right types
 	_, idPublicKey := cert.Scheme.NewKeypair()
@@ -119,12 +138,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	idPublic := d.IdentityKey.Sum256()
-	sig, err := cert.GetSignature(idPublic[:], data)
-	if err != nil {
-		return err
-	}
-	d.Signature = sig
+	d.Signature = &sigs[0]
 	return nil
 }
 
@@ -171,6 +185,14 @@ func SignDescriptor(signer cert.Signer, verifier cert.Verifier, desc *MixDescrip
 	if err != nil {
 		return nil, err
 	}
+
+	// Update Signature field of desc
+	idPublic := verifier.Sum256()
+	sig, err := cert.GetSignature(idPublic[:], signed)
+	if err != nil {
+		return nil, err
+	}
+	desc.Signature = sig
 	return signed, nil
 }
 
