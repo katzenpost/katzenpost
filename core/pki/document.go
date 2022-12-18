@@ -461,7 +461,7 @@ func IsDocumentWellFormed(d *Document) error {
 // and wraps a Document with a cert.Certificate
 func (d *Document) MarshalBinary() ([]byte, error) {
 	// Serialize Document without calling this method
-	payload, err := cbor.Marshal((*document)(d))
+	payload, err := ccbor.Marshal((*document)(d))
 	if err != nil {
 		return nil, err
 	}
