@@ -287,7 +287,7 @@ func (s *state) generateDocument(epoch uint64) {
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := pki.VerifyAndParseDocument([]byte(signed), s.s.identityPublicKey)
+	pDoc, err := pki.VerifyAndParseDocument([]byte(signed), []cert.Verifier{s.s.identityPublicKey})
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -593,7 +593,7 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				k := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(k); rawDoc != nil {
-					if doc, err := pki.VerifyAndParseDocument(rawDoc, s.s.identityPublicKey); err != nil {
+					if doc, err := pki.VerifyAndParseDocument(rawDoc, []cert.Verifier{s.s.identityPublicKey}); err != nil {
 						// This continues because there's no reason not to load
 						// the descriptors as long as they validate, even if
 						// the document fails to load.

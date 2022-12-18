@@ -346,7 +346,7 @@ func (s *state) consense(epoch uint64) *document {
 				id := base64.StdEncoding.EncodeToString(bs[:])
 				s.log.Errorf("VerifyThreshold returned bad Verifiers: %s\n", id)
 			}
-			if pDoc, err := pki.VerifyAndParseDocument(certificate1, good[0]); err == nil {
+			if pDoc, err := pki.VerifyAndParseDocument(certificate1, s.getVerifiers()); err == nil {
 
 				// Persist the document to disk.
 				s.persistDocument(epoch, []byte(certificate1))
@@ -561,7 +561,7 @@ func (s *state) sign(doc *pki.Document) *document {
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := pki.VerifyAndParseDocument([]byte(signed), s.s.identityPublicKey)
+	pDoc, err := pki.VerifyAndParseDocument([]byte(signed), []cert.Verifier{s.s.identityPublicKey})
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -1420,7 +1420,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		return &resp
 	}
 
-	doc, err := pki.VerifyAndParseDocument(vote.Payload, vote.PublicKey)
+	doc, err := pki.VerifyAndParseDocument(vote.Payload, []cert.Verifier{vote.PublicKey})
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1601,12 +1601,12 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				epochBytes := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-					_, good, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
+					_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
 					if err != nil {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
 					}
-					doc, err := pki.VerifyAndParseDocument(rawDoc, good[0])
+					doc, err := pki.VerifyAndParseDocument(rawDoc, s.getVerifiers())
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
