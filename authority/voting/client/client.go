@@ -357,7 +357,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
 	}
-	doc, err = pki.VerifyAndParseDocument(r.Payload, good[0])
+	doc, err = pki.VerifyAndParseDocument(r.Payload, c.verifiers)
 	if err != nil {
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
@@ -370,11 +370,11 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 // Deserialize returns PKI document given the raw bytes.
 func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
-	_, good, _, err := cert.VerifyThreshold(c.verifiers, c.threshold, raw)
+	_, _, _, err := cert.VerifyThreshold(c.verifiers, c.threshold, raw)
 	if err != nil {
 		return nil, err
 	}
-	doc, err := pki.VerifyAndParseDocument(raw, good[0])
+	doc, err := pki.VerifyAndParseDocument(raw, c.verifiers)
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}

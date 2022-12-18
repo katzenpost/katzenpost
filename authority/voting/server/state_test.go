@@ -291,7 +291,7 @@ func TestVote(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(myVote)
 		require.NotNil(myVote.doc)
-		doc, err := pki.VerifyAndParseDocument(myVote.raw, s.s.identityPublicKey)
+		doc, err := pki.VerifyAndParseDocument(myVote.raw, s.getVerifiers())
 		require.NoError(err)
 		myVote.doc = doc
 		s.state = stateAcceptVote

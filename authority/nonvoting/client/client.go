@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -171,7 +172,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 
 	// Validate the document.
-	doc, err := pki.VerifyAndParseDocument(r.Payload, c.cfg.AuthorityIdentityKey)
+	doc, err := pki.VerifyAndParseDocument(r.Payload, []cert.Verifier{c.cfg.AuthorityIdentityKey})
 	if err != nil {
 		return nil, nil, err
 	} else if doc.Epoch != epoch {
@@ -184,7 +185,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 }
 
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
-	return pki.VerifyAndParseDocument(raw, c.cfg.AuthorityIdentityKey)
+	return pki.VerifyAndParseDocument(raw, []cert.Verifier{c.cfg.AuthorityIdentityKey})
 }
 
 func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey sign.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {
