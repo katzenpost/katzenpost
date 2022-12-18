@@ -257,15 +257,28 @@ func TestVote(t *testing.T) {
 		}
 	}
 
-	// create and exchange signed commits
+	// create and exchange signed commits and reveals
 	commits := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
 	commits[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
-	for i, s := range stateAuthority {
+
+	// exchange commit and create reveals
+	for _, s := range stateAuthority {
+		reveals := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
+		reveals[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+
 		srv := new(SharedRandom)
-		commit := srv.Commit(votingEpoch)
-		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch+1)
-		commits[votingEpoch][i] = signedCommit
+		commit, err := srv.Commit(votingEpoch)
+		require.NoError(err)
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1)
+		require.NoError(err)
+		commits[votingEpoch][s.s.identityPublicKey.Sum256()] = signedCommit
 		s.commits = commits
+
+		reveal := srv.Reveal()
+		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+1)
+		require.NoError(err)
+		reveals[votingEpoch][s.s.identityPublicKey.Sum256()] = signedReveal
+		s.reveals = reveals
 	}
 
 	// populate the authorities with the descriptors
@@ -307,13 +320,11 @@ func TestVote(t *testing.T) {
 	for i, s := range stateAuthority {
 		s.state = stateAcceptReveal
 		c := s.reveal(s.votingEpoch)
-		r, err := cert.Verify(s.s.IdentityKey(), c)
-		require.NoError(err)
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
-			a.reveals[s.votingEpoch][s.s.identityPublicKey.Sum256()] = r
+			a.reveals[a.votingEpoch][s.s.identityPublicKey.Sum256()] = c
 			t.Logf("%s sent %s reveal", authCfgs[i].Identifier, authCfgs[j].Identifier)
 		}
 
@@ -391,7 +402,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 
 		cfg.Identifier = fmt.Sprintf("authority-%v", i)
 		cfg.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
-		cfg.DataDir =  datadir
+		cfg.DataDir = datadir
 		lastPort += 1
 
 		scheme := wire.DefaultScheme
