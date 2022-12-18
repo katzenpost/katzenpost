@@ -105,11 +105,9 @@ func TestVote(t *testing.T) {
 		st.votingEpoch = votingEpoch
 		cfg := authCfgs[i]
 		st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
-		for i, _ := range cfg.Authorities {
-			st.verifiers[peerKeys[i].idPubKey.Sum256()] = cert.Verifier(peerKeys[i].idPubKey)
+		for j, _ := range peerKeys {
+			st.verifiers[peerKeys[j].idPubKey.Sum256()] = cert.Verifier(peerKeys[j].idPubKey)
 		}
-		// add this authoritys key to verifiers
-		st.verifiers[peerKeys[i].idPubKey.Sum256()] = cert.Verifier(peerKeys[i].idPubKey)
 		st.threshold = len(st.verifiers)/2 + 1
 		st.dissenters = len(cfg.Authorities)/2 - 1
 
