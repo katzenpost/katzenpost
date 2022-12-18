@@ -133,28 +133,16 @@ func (s *Server) onAuthority(rAddr net.Addr, cmd commands.Command) commands.Comm
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.Vote:
-		resp = s.onVote(c)
-	case *commands.VoteStatus:
-		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
-		return nil
+		resp = s.state.onVoteUpload(c)
+	case *commands.Commit:
+		resp = s.state.onCommitUpload(c)
 	case *commands.Reveal:
-		resp = s.onReveal(c)
-	case *commands.RevealStatus:
-		s.log.Error("RevealStatus command is not allowed on Authority wire service listener.")
-		return nil
+		resp = s.state.onRevealUpload(c)
 	default:
 		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
 		return nil
 	}
 	return resp
-}
-
-func (s *Server) onVote(cmd *commands.Vote) commands.Command {
-	return s.state.onVoteUpload(cmd)
-}
-
-func (s *Server) onReveal(cmd *commands.Reveal) commands.Command {
-	return s.state.onRevealUpload(cmd)
 }
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
