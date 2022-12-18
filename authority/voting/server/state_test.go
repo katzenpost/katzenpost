@@ -257,6 +257,17 @@ func TestVote(t *testing.T) {
 		}
 	}
 
+	// create and exchange signed commits
+	commits := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
+	commits[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+	for i, s := range stateAuthority {
+		srv := new(SharedRandom)
+		commit := srv.Commit(votingEpoch)
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch+1)
+		commits[votingEpoch][i] = signedCommit
+		s.commits = commits
+	}
+
 	// populate the authorities with the descriptors
 	for _, s := range stateAuthority {
 		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*descriptor)
