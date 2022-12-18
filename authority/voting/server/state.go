@@ -304,7 +304,6 @@ func (s *state) consense(epoch uint64) *document {
 		return nil
 	}
 
-
 	// check for any discrepancies reported by mixes
 	badnodes := s.validateCommits()
 
@@ -604,7 +603,7 @@ func (s *state) validateCommits() map[[publicKeyHashSize]byte]bool {
 				s.log.Errorf("Commit from invaid peer %x in vote from %x", pk2, pk)
 				badnodes[pk] = true
 			} else {
-				commit, err := cert.Verify(v, signedCommit)
+				_, err := cert.Verify(v, signedCommit)
 				if err != nil {
 					// pk didn't validate commit in its vote!
 					badnodes[pk] = true
@@ -613,17 +612,17 @@ func (s *state) validateCommits() map[[publicKeyHashSize]byte]bool {
 					break
 				} else {
 					// check if we already saw the same commit
-					if commit2, ok := s.commits[s.votingEpoch][pk2]; ok {
+					if signedCommit2, ok := s.commits[s.votingEpoch][pk2]; ok {
 						// check that the commits were the same
-						if !bytes.Equal(commit, commit2) {
-							s.log.Errorf("%x submitted commit %x to %x and previously submitted %x to us", pk2, commit, pk, commit2)
+						if !bytes.Equal(signedCommit, signedCommit2) {
+							s.log.Errorf("%x submitted commit %x to %x and previously submitted %x to us", pk2, signedCommit, pk, signedCommit2)
 							badnodes[pk2] = true
 						}
 					} else {
 						// we were missing a commit that another peer saw
 						s.log.Errorf("Missing commit from %x, found in vote from %s", pk2, pk)
 						// this is the first time we saw this commit, and it's valid, so use it
-						s.commits[s.votingEpoch][pk2] = commit
+						s.commits[s.votingEpoch][pk2] = signedCommit
 					}
 				}
 			}
@@ -825,41 +824,45 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 		// so that we can access the mix descriptors + sigs
 		// The votes have already been validated.
 
-		if _, ok := s.reveals[epoch][idHash]; !ok {
-			s.log.Errorf("Skipping vote from Authority %s who failed to reveal", idHash)
+		signedReveal, ok := s.reveals[epoch][idHash]
+		if !ok {
+			s.log.Errorf("Skipping vote from Authority %x who failed to reveal", idHash)
 			continue
 		}
 
 		// Epoch is already verified to match the SharedRandomCommit
 		// Verify that the voting peer has participated in commit-and-reveal this epoch.
-		src, ok := voteDoc.doc.SharedRandomCommit[idHash]
+		signedCommit, ok := voteDoc.doc.SharedRandomCommit[idHash]
 		if !ok {
-			s.log.Errorf("Skipping vote from Authority %v with missing SharedRandomCommit", idHash)
-			continue
-		}
-		srv.SetCommit(src)
-		r, err := cert.GetCertified(s.reveals[epoch][idHash])
-		if err != nil {
-			s.log.Errorf("Skipping vote from Authority %v with invalid Reveal Certificate :%s", idHash, err)
-			continue
-		}
-		if len(r) != pki.SharedRandomLength {
-			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", idHash, len(r), r)
-			continue
-		}
-		if !srv.Verify(r) {
-			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal! %v", idHash, r)
+			s.log.Errorf("Skipping vote from Authority %x with missing SharedRandomCommit", idHash)
 			continue
 		}
 
-		ed, ok := s.reverseHash[idHash]
-		if !ok {
-			panic(fmt.Sprintf("reverse hash map didn't find entry for idHash %x", idHash[:]))
+		// Verify the commit
+		commit, err := cert.Verify(s.reverseHash[idHash], signedCommit)
+
+		// Verify the reveal
+		reveal, err := cert.Verify(s.reverseHash[idHash], signedReveal)
+		if err != nil {
+			s.log.Errorf("Skipping vote from Authority %x with invalid Reveal Certificate :%s", idHash, err)
+			continue
+		}
+		if len(reveal) != pki.SharedRandomLength {
+			s.log.Errorf("Skipping vote from Authority %x with incorrect Reveal length %d :%v", idHash, len(reveal), reveal)
+			continue
 		}
 
-		vote, err := pki.FromPayload(ed, voteDoc.raw)
+		// Verify the commit with reveal
+		srv.SetCommit(commit)
+		if !srv.Verify(reveal) {
+			s.log.Errorf("Skipping vote from Authority %x with incorrect Reveal! %x", idHash, reveal)
+			continue
+		}
+
+		// check that the vote is parsed properly
+		vote, err := pki.VerifyAndParseDocument(voteDoc.raw, s.getVerifiers())
 		if err != nil {
-			s.log.Errorf("Skipping vote from Authority that failed to decode?! %v", err)
+			s.log.Errorf("Skipping vote from Authority %x that failed to decode?! %v", idHash, err)
 			continue
 		}
 		// serialize the vote parameters and tally these as well.
@@ -988,7 +991,12 @@ func (s *state) computeSharedRandom(epoch uint64) ([]byte, error) {
 			continue
 		}
 		sr.SetCommit(src)
-		srr := s.reveals[epoch][pk]
+		signedReveal := s.reveals[epoch][pk]
+		srr, err := cert.Verify(s.reverseHash[pk], signedReveal)
+		if err != nil {
+			s.s.log.Errorf("authority: signed SharedRandomReveal from %x failed to Verify", pk)
+			continue
+		}
 		if sr.Verify(srr) {
 			reveals = append(reveals, Reveal{pk, srr})
 		} else {
@@ -1062,15 +1070,9 @@ func (s *state) tabulate(epoch uint64) ([]byte, error) {
 		s.certificates[epoch] = make(map[[publicKeyHashSize]byte][]byte)
 	}
 	s.certificates[epoch][s.identityPubKeyHash()] = signed
-	if raw, err := cert.GetCertified(signed); err == nil {
-
-		// we need to do this because our stupid duplication of formats everywhere
-		ourvote, err := pki.VerifyAndParseDocument(signed, s.verifiers[s.s.identityPublicKey.Sum256()])
-		if err != nil {
-			panic(err)
-		}
-		s.log.Debugf("Ready to send our vote:\n%s", ourvote)
-		s.log.Debugf("sha256(certified): %s", sha256b64(raw))
+	if certified, err := cert.GetCertified(signed); err == nil {
+		s.log.Debugf("Ready to send our vote:\n%s", doc)
+		s.log.Debugf("sha256(certified): %s", sha256b64(certified))
 	}
 	return signed, nil
 }
@@ -1154,7 +1156,7 @@ func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document, srv 
 // generateFixedTopology returns an array of layers, which are an array of raw descriptors
 // topology is represented as an array of arrays where the contents are the raw descriptors
 // because a mix that does not submit a descriptor must not be in the consensus, the topology section must be populated at runtime and checked for sanity before a consensus is made
-func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][]*pki.MixDescriptor{
+func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][]*pki.MixDescriptor {
 	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
 	// collect all of the identity keys from the current set of descriptors
 	for _, v := range nodes {
@@ -1182,7 +1184,7 @@ func (s *state) generateFixedTopology(nodes []*descriptor, srv []byte) [][]*pki.
 	return topology
 }
 
-func (s *state) generateRandomTopology(nodes []*descriptor, srv []byte) [][]*pki.MixDescriptor{
+func (s *state) generateRandomTopology(nodes []*descriptor, srv []byte) [][]*pki.MixDescriptor {
 	s.log.Debugf("Generating random mix topology.")
 
 	// If there is no node history in the form of a previous consensus,
@@ -1325,7 +1327,7 @@ func (s *state) onCommitUpload(commit *commands.Commit) commands.Command {
 	}
 
 	s.log.Debug("Commit OK.")
-	s.commits[s.votingEpoch][commit.PublicKey.Sum256()] = certified
+	s.commits[s.votingEpoch][commit.PublicKey.Sum256()] = commit.Payload
 	resp.ErrorCode = commands.CommitOk
 	return &resp
 }
