@@ -26,8 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
@@ -155,16 +155,15 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 
 // multiSignTestDocument signs and serializes the document with the provided signing key.
 func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.PublicKey, d *pki.Document) ([]byte, error) {
-	jsonHandle := new(codec.JsonHandle)
-	jsonHandle.Canonical = true
-	jsonHandle.IntegerAsString = 'A'
-	jsonHandle.MapKeyAsString = true
-
-	d.Version = pki.DocumentVersion
 	// Serialize the document.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err := ccbor.Marshal((*document)(d))
+	if err != nil {
 		return nil, err
 	}
 
