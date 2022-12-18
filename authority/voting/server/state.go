@@ -199,7 +199,11 @@ func (s *state) fsm() <-chan time.Time {
 		if _, ok := s.reveals[epoch]; !ok {
 			s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 		}
-		s.reveals[s.votingEpoch][s.identityPubKeyHash()] = srv.Reveal()
+		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch+1)
+		if err != nil {
+			s.s.fatalErrCh <- err
+		}
+		s.reveals[s.votingEpoch][s.identityPubKeyHash()] = signedReveal
 
 		// send out commit
 		s.sendCommitToAuthorities(signedCommit, s.votingEpoch)
@@ -504,15 +508,11 @@ func (s *SharedRandom) Reveal() []byte {
 }
 
 func (s *state) reveal(epoch uint64) []byte {
-	if reveal, ok := s.reveals[epoch][s.identityPubKeyHash()]; ok {
-		// Reveals are only valid until the end of voting round
-		signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, epoch+1)
-		if err != nil {
-			s.s.fatalErrCh <- err
-		}
-		return signed
+	signed, ok := s.reveals[epoch][s.identityPubKeyHash()]
+	if !ok {
+		s.s.fatalErrCh <- errors.New("reveal() called without commit")
 	}
-	return nil
+	return signed
 }
 
 func (s *state) vote(epoch uint64) (*document, error) {
@@ -838,7 +838,11 @@ func (s *state) tallyVotes(epoch uint64) ([]*descriptor, *config.Parameters, err
 			continue
 		}
 		srv.SetCommit(src)
-		r := s.reveals[epoch][idHash]
+		r, err := cert.GetCertified(s.reveals[epoch][idHash])
+		if err != nil {
+			s.log.Errorf("Skipping vote from Authority %v with invalid Reveal Certificate :%s", idHash, err)
+			continue
+		}
 		if len(r) != pki.SharedRandomLength {
 			s.log.Errorf("Skipping vote from Authority %v with incorrect Reveal length %d :%v", idHash, len(r), r)
 			continue
@@ -1389,7 +1393,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	}
 
 	s.log.Debug("Reveal OK.")
-	s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()] = certified
+	s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()] = reveal.Payload
 	resp.ErrorCode = commands.RevealOk
 	return &resp
 }
