@@ -68,8 +68,8 @@ const (
 
 var (
 	AuthoritySubmitCommit    = epochtime.Period / 8
-	MixPublishDeadline       = epochtime.Period / 4
-	AuthorityCommitDeadline  = epochtime.Period / 4
+	AuthorityCommitDeadline  = AuthoritySubmitCommit + epochtime.Period/8
+	MixPublishDeadline       = AuthorityCommitDeadline + epochtime.Period/8
 	AuthorityVoteDeadline    = AuthorityCommitDeadline + epochtime.Period/8
 	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
 	PublishConsensusDeadline = AuthorityRevealDeadline + epochtime.Period/8
@@ -252,7 +252,7 @@ func (s *state) fsm() <-chan time.Time {
 		}
 	case stateAcceptVote:
 		signed := s.reveal(s.votingEpoch)
-		go s.sendRevealToAuthorities(signed, s.votingEpoch)
+		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.state = stateAcceptReveal
 		sleep = AuthorityRevealDeadline - elapsed
 	case stateAcceptReveal:
