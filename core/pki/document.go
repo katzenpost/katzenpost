@@ -176,12 +176,20 @@ func (d *Document) String() string {
 	s += fmt.Sprintf("Providers:[]{%v}", d.Providers)
 	s += "}}\n"
 
-	for id, commit := range d.SharedRandomCommit {
+	for id, signedCommit := range d.SharedRandomCommit {
+		commit, err := cert.GetCertified(signedCommit)
+		if err != nil {
+			panic("corrupted document")
+		}
 		src := base64.StdEncoding.EncodeToString(commit)
 		s += fmt.Sprintf("  SharedRandomCommit: %x, %s\n", id, src)
 	}
-	for id, value := range d.SharedRandomReveal{
-		srr := base64.StdEncoding.EncodeToString(value)
+	for id, signedReveal := range d.SharedRandomReveal{
+		reveal , err := cert.GetCertified(signedReveal)
+		if err != nil {
+			panic("corrupted document")
+		}
+		srr := base64.StdEncoding.EncodeToString(reveal)
 		s += fmt.Sprintf("  SharedRandomReveal: %x, %s\n", id, srr)
 	}
 
