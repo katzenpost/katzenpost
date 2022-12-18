@@ -59,6 +59,9 @@ var (
 	// document
 	ErrDocumentNotSigned = errors.New("document not signed")
 
+	// ErrUnknownVerifier is the error returned when an unknown verifier signed a document
+	ErrUnknownVerifier = errors.New("document has signature by unknown verifier")
+
 	// TrustOnFirstUseAuth is a MixDescriptor.AuthenticationType
 	TrustOnFirstUseAuth = "tofu"
 
@@ -171,7 +174,7 @@ func (d *Document) String() string {
 
 	s += "}\n"
 	s += fmt.Sprintf("Providers:[]{%v}", d.Providers)
-	s += "}}"
+	s += "}}\n"
 
 	for id, commit := range d.SharedRandomCommit {
 		src := base64.StdEncoding.EncodeToString(commit)
@@ -363,17 +366,41 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	return signed, nil
 }
 
-// VerifyAndParseDocument verifies the signature and deserializes the document.
-func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error) {
+// VerifyAndParseDocument verifies the signatures and deserializes the document.
+func VerifyAndParseDocument(b []byte, verifiers []cert.Verifier) (*Document, error) {
+	// XXX: votes contain signatures from other authorities over their SharedRandom Commits
+	// but do not have threshold signatures, this function does not verify threshold is met.
+
+	sigs, err := cert.GetSignatures(b)
+	if err != nil {
+		return nil, err
+	}
+	vmap := make(map[[PublicKeyHashSize]byte]cert.Verifier)
+	for _, v := range verifiers {
+		vmap[v.Sum256()] = v
+	}
+
+	// verify each signature that is present
+	for _, sig := range sigs {
+		v, ok := vmap[sig.PublicKeySum256]
+		if !ok {
+			return nil, ErrUnknownVerifier
+		}
+		_, err := cert.Verify(v, b)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Parse the payload.
 	d := new(Document)
-	err := d.UnmarshalBinary(b)
+	err = d.UnmarshalBinary(b)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check the Document has met requirements.
-	if err = IsDocumentWellFormed(d); err != nil {
+	if err = IsDocumentWellFormed(d, verifiers); err != nil {
 		return nil, err
 	}
 
@@ -382,7 +409,7 @@ func VerifyAndParseDocument(b []byte, verifier cert.Verifier) (*Document, error)
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
-func IsDocumentWellFormed(d *Document) error {
+func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 	// Ensure the document is well formed.
 	if d.Version != DocumentVersion {
 		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
@@ -395,8 +422,21 @@ func IsDocumentWellFormed(d *Document) error {
 	}
 	// If there is a SharedRandomCommit, verify the Epoch contained in
 	// SharedRandomCommit matches the Epoch in the Document.
-	// XXX: Verify() each SharedRandom and its signature
-	for _, commit := range d.SharedRandomCommit {
+	vmap := make(map[[PublicKeyHashSize]byte]cert.Verifier)
+	for _, v := range verifiers {
+		vmap[v.Sum256()] = v
+	}
+
+	for id, signedCommit := range d.SharedRandomCommit {
+		verifier, ok := vmap[id]
+		if !ok {
+			return fmt.Errorf("Document has unknown verifier on a SharedRandomCommit")
+		}
+
+		commit, err := cert.Verify(verifier, signedCommit)
+		if err != nil {
+			return fmt.Errorf("Document has invalid signed SharedRandomCommit")
+		}
 		if len(commit) == SharedRandomLength {
 			srvEpoch := binary.BigEndian.Uint64(commit[0:8])
 			if srvEpoch != d.Epoch {
