@@ -56,6 +56,7 @@ const (
 	descriptorsBucket     = "descriptors"
 	documentsBucket       = "documents"
 	stateAcceptDescriptor = "accept_desc"
+	stateSubmitCommit     = "submit_commit"
 	stateAcceptCommit     = "accept_commit"
 	stateAcceptVote       = "accept_vote"
 	stateAcceptReveal     = "accept_reveal"
@@ -66,8 +67,9 @@ const (
 )
 
 var (
+	AuthoritySubmitCommit    = epochtime.Period / 8
 	MixPublishDeadline       = epochtime.Period / 4
-	AuthorityCommitDeadline  = MixPublishDeadline
+	AuthorityCommitDeadline  = epochtime.Period / 4
 	AuthorityVoteDeadline    = AuthorityCommitDeadline + epochtime.Period/8
 	AuthorityRevealDeadline  = AuthorityVoteDeadline + epochtime.Period/8
 	PublishConsensusDeadline = AuthorityRevealDeadline + epochtime.Period/8
@@ -161,54 +163,64 @@ func (s *state) fsm() <-chan time.Time {
 		s.priorSRV = make([][]byte, 0)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
-		if elapsed > MixPublishDeadline {
+		if elapsed > AuthorityCommitDeadline {
 			s.log.Debugf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
 		} else {
 			s.votingEpoch = epoch + 1
-			sleep = AuthorityCommitDeadline - elapsed
-			s.state = stateAcceptCommit
+			s.state = stateSubmitCommit
+			sleep = AuthoritySubmitCommit - elapsed
+			if sleep < 0 {
+				sleep = 0
+			}
+			s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 		}
-		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
+	case stateSubmitCommit:
+		s.log.Debugf("Generating SharedRandom Commit for %d", s.votingEpoch)
+		srv := new(SharedRandom)
+		commit, err := srv.Commit(s.votingEpoch)
+		if err != nil {
+			s.s.fatalErrCh <- err
+		}
+		// sign the serialized commit
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, s.votingEpoch)
+		if err != nil {
+			s.s.fatalErrCh <- err
+		}
+		// save our commit
+		if _, ok := s.commits[s.votingEpoch]; !ok {
+			s.commits[s.votingEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+		}
+		s.commits[s.votingEpoch][s.identityPubKeyHash()] = signedCommit
+		// sign the reveal
+		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), s.votingEpoch)
+		if err != nil {
+			s.s.fatalErrCh <- err
+		}
+		// save our reveal
+		if _, ok := s.reveals[s.votingEpoch]; !ok {
+			s.reveals[s.votingEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+		}
+		s.reveals[s.votingEpoch][s.identityPubKeyHash()] = signedReveal
+
+		// send out commit
+		s.log.Debugf("Sending SharedRandom Commit to authorities")
+		s.sendCommitToAuthorities(signedCommit, s.votingEpoch)
+
+		sleep = AuthorityCommitDeadline - elapsed
+		s.state = stateAcceptCommit
 	case stateAcceptCommit:
 		if len(s.commits[s.votingEpoch]) < s.threshold {
 			s.log.Errorf("Not enough commits to make a consensus")
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
+		} else {
+			s.state = stateAcceptDescriptor
+			sleep = MixPublishDeadline - elapsed
 		}
-		srv := new(SharedRandom)
-		commit, err := srv.Commit(epoch)
-		if err != nil {
-			s.s.fatalErrCh <- err
-		}
-		// sign the serialized commit
-		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch+1)
-		if err != nil {
-			s.s.fatalErrCh <- err
-		}
-
-		// save our commit
-		if _, ok := s.commits[s.votingEpoch]; !ok {
-			s.commits[s.votingEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
-		}
-		s.commits[s.votingEpoch][s.identityPubKeyHash()] = signedCommit
-		// save our own reveal
-		if _, ok := s.reveals[epoch]; !ok {
-			s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
-		}
-		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch+1)
-		if err != nil {
-			s.s.fatalErrCh <- err
-		}
-		s.reveals[s.votingEpoch][s.identityPubKeyHash()] = signedReveal
-
-		// send out commit
-		s.sendCommitToAuthorities(signedCommit, s.votingEpoch)
-		sleep = MixPublishDeadline - elapsed
-		s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
 	case stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
 			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
@@ -259,8 +271,8 @@ func (s *state) fsm() <-chan time.Time {
 		s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
 		s.consense(s.votingEpoch)
 		if _, ok := s.documents[s.votingEpoch]; ok {
-			s.state = stateAcceptDescriptor
-			sleep = MixPublishDeadline + nextEpoch
+			s.state = stateSubmitCommit
+			sleep = AuthoritySubmitCommit + nextEpoch
 			s.votingEpoch++
 		} else {
 			s.log.Debug("failed to make consensus. try to join next round.")
@@ -321,7 +333,6 @@ func (s *state) consense(epoch uint64) *document {
 			}
 			idPubKey, ok := s.reverseHash[pubKeyHash2]
 			if !ok {
-				// this should never happen as certificates are whitelisted
 				s.log.Errorf("reverse hash key not found %x", pubKeyHash2[:])
 				continue
 			}
@@ -560,7 +571,7 @@ func (s *state) sign(doc *pki.Document) *document {
 	}
 
 	// Ensure the document is sane.
-	pDoc, err := pki.VerifyAndParseDocument([]byte(signed), []cert.Verifier{s.s.identityPublicKey})
+	pDoc, err := pki.VerifyAndParseDocument([]byte(signed), s.getVerifiers())
 	if err != nil {
 		// This should basically always succeed.
 		s.log.Errorf("Signed document failed validation: %v", err)
@@ -698,7 +709,9 @@ func (s *state) sendCommitToAuthorities(commit []byte, epoch uint64) {
 	}
 
 	for _, peer := range s.s.cfg.Authorities {
+		peer := peer
 		go func() {
+			s.log.Debug("Sending commit to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send commit to %s", peer.Identifier)
@@ -720,6 +733,8 @@ func (s *state) sendCommitToAuthorities(commit []byte, epoch uint64) {
 				s.log.Warningf("Commit rejected with CommitAlreadyReceived by %s", peer.Identifier)
 			case commands.CommitNotAuthorized:
 				s.log.Warningf("Commit rejected with CommitNotAuthoritzed by %s", peer.Identifier)
+			case commands.CommitNotSigned:
+				s.log.Warningf("Commit rejected with CommitNotSigned by %s", peer.Identifier)
 			default:
 				s.log.Warningf("Commit rejected with unknown error code received by %s", peer.Identifier)
 			}
@@ -740,7 +755,9 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 	}
 
 	for _, peer := range s.s.cfg.Authorities {
+		peer := peer
 		go func() {
+			s.log.Debug("Sending Vote to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send vote to %s", peer.Identifier)
@@ -757,7 +774,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 			case commands.VoteTooLate:
 				s.log.Warningf("Vote rejected with VoteTooLate by %s", peer.Identifier)
 			case commands.VoteTooEarly:
-				s.log.Warningf("Vote rejected with RevealTooEarly by %s", peer.Identifier)
+				s.log.Warningf("Vote rejected with VoteTooEarly by %s", peer.Identifier)
 			default:
 				s.log.Warningf("Vote rejected with unknown error code received by %s", peer.Identifier)
 			}
@@ -776,7 +793,9 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 		Payload:   reveal,
 	}
 	for _, peer := range s.s.cfg.Authorities {
+		peer := peer
 		go func() {
+			s.log.Debug("Sending Reveal to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send reveal to %s", peer.Identifier)
@@ -798,6 +817,8 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 				s.log.Warningf("Reveal rejected with RevealAlreadyReceived by %s", peer.Identifier)
 			case commands.RevealNotAuthorized:
 				s.log.Warningf("Reveal rejected with RevealNotAuthoritzed by %s", peer.Identifier)
+			case commands.RevealNotSigned:
+				s.log.Warningf("Reveal rejected with RevealNotSigned by %s", peer.Identifier)
 			default:
 				s.log.Warningf("reveal rejected with unknown error code received by %s", peer.Identifier)
 			}
@@ -1286,7 +1307,7 @@ func (s *state) onCommitUpload(commit *commands.Commit) commands.Command {
 	// if not authorized
 	_, ok := s.authorizedAuthorities[commit.PublicKey.Sum256()]
 	if !ok {
-		s.log.Error("Voter not white-listed.")
+		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.CommitNotAuthorized
 		return &resp
 	}
@@ -1295,7 +1316,7 @@ func (s *state) onCommitUpload(commit *commands.Commit) commands.Command {
 	certified, err := cert.Verify(commit.PublicKey, commit.Payload)
 	if err != nil {
 		s.log.Error("Commit from %s failed to verify.", commit.PublicKey)
-		resp.ErrorCode = commands.CommitNotAuthorized
+		resp.ErrorCode = commands.CommitNotSigned
 		return &resp
 	}
 
@@ -1340,7 +1361,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	// if not authorized
 	_, ok := s.authorizedAuthorities[reveal.PublicKey.Sum256()]
 	if !ok {
-		s.log.Error("Voter not white-listed.")
+		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.RevealNotAuthorized
 		return &resp
 	}
@@ -1349,7 +1370,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	certified, err := cert.Verify(reveal.PublicKey, reveal.Payload)
 	if err != nil {
 		s.log.Error("Reveal from %s failed to verify.", reveal.PublicKey)
-		resp.ErrorCode = commands.RevealNotAuthorized
+		resp.ErrorCode = commands.RevealNotSigned
 		return &resp
 	}
 
@@ -1417,12 +1438,12 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	}
 	_, ok := s.authorizedAuthorities[vote.PublicKey.Sum256()]
 	if !ok {
-		s.log.Error("Voter not white-listed.")
+		s.log.Error("Voter not authorized.")
 		resp.ErrorCode = commands.VoteNotAuthorized
 		return &resp
 	}
 
-	doc, err := pki.VerifyAndParseDocument(vote.Payload, []cert.Verifier{vote.PublicKey})
+	doc, err := pki.VerifyAndParseDocument(vote.Payload, s.getVerifiers())
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1687,6 +1708,7 @@ func newState(s *Server) (*state, error) {
 
 	st.log.Debugf("State initialized with epoch Period: %s", epochtime.Period)
 	st.log.Debugf("State initialized with MixPublishDeadline: %s", MixPublishDeadline)
+	st.log.Debugf("State initialized with AuthorityCommitDeadline: %s", AuthorityCommitDeadline)
 	st.log.Debugf("State initialized with AuthorityVoteDeadline: %s", AuthorityVoteDeadline)
 	st.log.Debugf("State initialized with AuthorityRevealDeadline: %s", AuthorityRevealDeadline)
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)

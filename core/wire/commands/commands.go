@@ -133,26 +133,32 @@ const (
 	// RevealNotAuthorized signifies that the revealing entity's key is not white-listed.
 	RevealNotAuthorized = 10
 
+	// RevealNotSigned signifies that the reveal payload failed signature verification.
+	RevealNotSigned = 11
+
 	// RevealAlreadyReceived signifies that the reveal from that peer was already received.
-	RevealAlreadyReceived = 11
+	RevealAlreadyReceived = 12
 
 	// RevealTooLate signifies that the reveal from that peer arrived too late.
-	RevealTooLate = 12
+	RevealTooLate = 13
 
 	// CommitOk signifies that the reveal was accepted by the peer.
-	CommitOk = 13
+	CommitOk = 14
 
 	// CommitTooEarly signifies that the peer breaking protocol.
-	CommitTooEarly = 14
+	CommitTooEarly = 15
 
 	// CommitNotAuthorized signifies that the revealing entity's key is not white-listed.
-	CommitNotAuthorized = 15
+	CommitNotAuthorized = 16
+
+	// CommitNotSigned signifies that the commit payload failed signature verification.
+	CommitNotSigned = 17
 
 	// CommitAlreadyReceived signifies that the reveal from that peer was already received.
-	CommitAlreadyReceived = 16
+	CommitAlreadyReceived = 18
 
 	// CommitTooLate signifies that the reveal from that peer arrived too late.
-	CommitTooLate = 17
+	CommitTooLate = 19
 
 )
 
