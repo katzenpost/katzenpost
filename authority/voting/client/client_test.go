@@ -49,7 +49,7 @@ type descriptor struct {
 	raw  []byte
 }
 
-func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescriptor{
+func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescriptor {
 	rng := rand.NewMath()
 	nodeIndexes := rng.Perm(len(nodes))
 	topology := make([][]*pki.MixDescriptor, layers)
@@ -97,7 +97,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 
 		mix := &pki.MixDescriptor{
 			Name:        name,
-			Epoch:        epoch,
+			Epoch:       epoch,
 			IdentityKey: mixIdentityPublicKey,
 			LinkKey:     linkKey.PublicKey(),
 			MixKeys:     mixKeys,
@@ -157,11 +157,12 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.PublicKey, d *pki.Document) ([]byte, error) {
 	// Serialize the document.
 	opts := cbor.CanonicalEncOptions()
-	ccbor, err = opts.EncMode()
+	ccbor, err := opts.EncMode()
 	if err != nil {
 		return nil, err
 	}
 
+	type document pki.Document
 	payload, err := ccbor.Marshal((*document)(d))
 	if err != nil {
 		return nil, err
