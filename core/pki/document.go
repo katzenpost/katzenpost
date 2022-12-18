@@ -55,6 +55,10 @@ var (
 	// ErrInvalidEpoch is the error to return when the document epoch is invalid.
 	ErrInvalidEpoch = errors.New("invalid document epoch")
 
+	// ErrDocumentNotSigned is the error returned when deserializing an unsigned
+	// document
+	ErrDocumentNotSigned = errors.New("document not signed")
+
 	// TrustOnFirstUseAuth is a MixDescriptor.AuthenticationType
 	TrustOnFirstUseAuth = "tofu"
 
@@ -475,9 +479,7 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
 func (d *Document) UnmarshalBinary(data []byte) error {
-	d.SharedRandomCommit = make(map[[PublicKeyHashSize]byte][]byte)
 	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
-	d.SharedRandomReveal = make(map[[PublicKeyHashSize]byte][]byte)
 	certified, err := cert.GetCertified(data)
 	if err != nil {
 		return err
@@ -485,6 +487,9 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 	sigs, err := cert.GetSignatures(data)
 	if err != nil {
 		return err
+	}
+	if len(sigs) == 0 {
+		return ErrDocumentNotSigned
 	}
 	for _, s := range sigs {
 		d.Signatures[s.PublicKeySum256] = s
