@@ -602,6 +602,7 @@ func (s *state) validateCommits() map[[publicKeyHashSize]byte]bool {
 			if v, ok := s.reverseHash[pk2]; !ok {
 				s.log.Errorf("Commit from invaid peer %x in vote from %x", pk2, pk)
 				badnodes[pk] = true
+				break
 			} else {
 				_, err := cert.Verify(v, signedCommit)
 				if err != nil {
@@ -627,6 +628,9 @@ func (s *state) validateCommits() map[[publicKeyHashSize]byte]bool {
 				}
 			}
 		}
+	}
+	for pk, _ := range badnodes {
+		s.log.Warningf("Found bad node %x", pk)
 	}
 	return badnodes
 }
