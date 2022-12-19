@@ -242,14 +242,12 @@ func (s *state) fsm() <-chan time.Time {
 			}
 		}
 
-		if !s.voted(s.votingEpoch) {
-			s.log.Debugf("Voting for epoch %v", s.votingEpoch)
-			if signed, err := s.vote(s.votingEpoch); err == nil {
-				s.sendVoteToAuthorities(signed.raw, s.votingEpoch)
-			}
-			s.state = stateAcceptVote
-			sleep = AuthorityVoteDeadline - elapsed
+		s.log.Debugf("Voting for epoch %v", s.votingEpoch)
+		if signed, err := s.vote(s.votingEpoch); err == nil {
+			s.sendVoteToAuthorities(signed.raw, s.votingEpoch)
 		}
+		s.state = stateAcceptVote
+		sleep = AuthorityVoteDeadline - elapsed
 	case stateAcceptVote:
 		signed := s.reveal(s.votingEpoch)
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
@@ -392,15 +390,6 @@ func (s *state) getVerifiers() []cert.Verifier {
 
 func (s *state) identityPubKeyHash() [publicKeyHashSize]byte {
 	return s.s.identityPublicKey.Sum256()
-}
-
-func (s *state) voted(epoch uint64) bool {
-	if _, ok := s.votes[epoch]; ok {
-		if _, ok := s.votes[epoch][s.identityPubKeyHash()]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *state) getDocument(descriptors []*descriptor, params *config.Parameters, srv []byte) *pki.Document {
