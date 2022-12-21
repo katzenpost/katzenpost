@@ -404,8 +404,6 @@ func (d *decoy) loadAndDeleteSURBCtx(id uint64) *surbCtx {
 			}
 		}
 		panic("BUG: SURB missing from node ETA list")
-	} else if nCtxList[0] != ctx {
-		panic("BUG: SURB mismatch in node ETA list")
 	}
 
 	d.surbETAs.Remove(ctx.etaNode)
@@ -431,11 +429,11 @@ func (d *decoy) sweepSURBCtxs() {
 	for node := iter.First(); node != nil; node = iter.Next() {
 		var surbCtxs []*surbCtx
 		switch surbCtxOrSlice := node.Value.(type) {
-			case []*surbCtx:
-				surbCtxs = surbCtxOrSlice
-			case *surbCtx:
-				surbCtxs = make([]*surbCtx, 1)
-				surbCtxs[0] = surbCtxOrSlice
+		case []*surbCtx:
+			surbCtxs = surbCtxOrSlice
+		case *surbCtx:
+			surbCtxs = make([]*surbCtx, 1)
+			surbCtxs[0] = surbCtxOrSlice
 		}
 		if surbCtxs[0].eta+slack > now {
 			break
