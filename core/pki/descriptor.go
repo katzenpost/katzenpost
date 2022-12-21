@@ -20,7 +20,6 @@ package pki
 
 import (
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
@@ -41,8 +40,8 @@ const (
 )
 
 var (
-	ErrNoSignature = errors.New("MixDescriptor has no signature")
-	ErrInvalidSignature = errors.New("MixDescriptor has an invalid signature")
+	ErrNoSignature       = errors.New("MixDescriptor has no signature")
+	ErrInvalidSignature  = errors.New("MixDescriptor has an invalid signature")
 	ErrTooManySignatures = errors.New("MixDescriptor has more than one signature")
 )
 
@@ -96,9 +95,8 @@ func (d *MixDescriptor) String() string {
 	if len(d.Kaetzchen) > 0 {
 		kaetzchen = fmt.Sprintf("%v", d.Kaetzchen)
 	}
-	bs := d.IdentityKey.Sum256()
-	identity := base64.StdEncoding.EncodeToString(bs[:])
-	s := fmt.Sprintf("{%s %s %v", d.Name, identity, d.Addresses)
+	id := d.IdentityKey.Sum256()
+	s := fmt.Sprintf("{%s %x %v", d.Name, id, d.Addresses)
 	s += kaetzchen + d.AuthenticationType + "}"
 	return s
 }

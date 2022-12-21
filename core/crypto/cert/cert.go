@@ -109,6 +109,16 @@ type Signature struct {
 	Payload []byte
 }
 
+// Marshal serializes a Signature
+func (s *Signature) Marshal() ([]byte, error) {
+	return ccbor.Marshal(s)
+}
+
+// Unmarshal deserializes a Signature
+func (s *Signature) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, s)
+}
+
 // Certificate structure for serializing certificates.
 type Certificate struct {
 	// Version is the certificate format version.

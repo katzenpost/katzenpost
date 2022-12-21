@@ -127,17 +127,18 @@ func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKeyHash
 }
 
 func (s *Server) onAuthority(rAddr net.Addr, cmd commands.Command) commands.Command {
-	s.log.Debug("onAuthority")
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.Vote:
 		resp = s.state.onVoteUpload(c)
-	case *commands.Commit:
-		resp = s.state.onCommitUpload(c)
+	case *commands.Cert:
+		resp = s.state.onCertUpload(c)
 	case *commands.Reveal:
 		resp = s.state.onRevealUpload(c)
+	case *commands.Sig:
+		resp = s.state.onSigUpload(c)
 	default:
 		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
 		return nil

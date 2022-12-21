@@ -27,6 +27,7 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
@@ -184,8 +185,8 @@ func (d *Document) String() string {
 		src := base64.StdEncoding.EncodeToString(commit)
 		s += fmt.Sprintf("  SharedRandomCommit: %x, %s\n", id, src)
 	}
-	for id, signedReveal := range d.SharedRandomReveal{
-		reveal , err := cert.GetCertified(signedReveal)
+	for id, signedReveal := range d.SharedRandomReveal {
+		reveal, err := cert.GetCertified(signedReveal)
 		if err != nil {
 			panic("corrupted document")
 		}
@@ -342,7 +343,17 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 		return nil, err
 	}
 	// Sign the document.
-	return cert.Sign(signer, verifier, payload, d.Epoch+5)
+	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+5)
+	if err != nil {
+		return nil, err
+	}
+
+	// update Document
+	err = d.UnmarshalBinary(signed)
+	if err != nil {
+		return nil, err
+	}
+	return signed, nil
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
@@ -376,9 +387,6 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 
 // VerifyAndParseDocument verifies the signatures and deserializes the document.
 func VerifyAndParseDocument(b []byte, verifiers []cert.Verifier) (*Document, error) {
-	// XXX: votes contain signatures from other authorities over their SharedRandom Commits
-	// but do not have threshold signatures, this function does not verify threshold is met.
-
 	sigs, err := cert.GetSignatures(b)
 	if err != nil {
 		return nil, err
@@ -440,7 +448,6 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 		if !ok {
 			return fmt.Errorf("Document has unknown verifier on a SharedRandomCommit")
 		}
-
 		commit, err := cert.Verify(verifier, signedCommit)
 		if err != nil {
 			return fmt.Errorf("Document has invalid signed SharedRandomCommit")
@@ -453,18 +460,37 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 		} else {
 			return fmt.Errorf("Document has invalid SharedRandomCommit")
 		}
-	}
-	// Votes and Consensus differ in that a Consensus has a SharedRandomValue and the set of SharedRandomCommit and SharedRandomReveals that produced it; otherwise there must be only one SharedRandomCommit
-	switch len(d.SharedRandomValue) {
-	case SharedRandomValueLength:
-	case 0:
-		// if there is no SharedRandomValue, this document must be a
-		// Vote and have only one SharedRandomCommit
-		if len(d.SharedRandomCommit) != 1 {
-			return fmt.Errorf("Document has invalid SharedRandomCommit")
+		// Votes and Certificates or Consensus differ in that a Consensus has a SharedRandomValue and the set of SharedRandomCommit and SharedRandomReveals that produced it; otherwise there must be only one SharedRandomCommit, and no SharedRandomReveal
+		switch len(d.SharedRandomCommit) {
+		case 1:
+			// This Document is a Vote and must have only one SharedRandomCommit
+			// and no SharedRandomReveal
+			// Vote and have only one SharedRandomCommit
+			if len(d.SharedRandomReveal) != 0 {
+				return fmt.Errorf("Document is not a valid Vote")
+			}
+		default:
+			// verify each reveal
+			if len(d.SharedRandomReveal) != len(d.SharedRandomCommit) {
+				return fmt.Errorf("Document is Malformed")
+			}
+			signedReveal, ok := d.SharedRandomReveal[id]
+			if !ok {
+				return fmt.Errorf("Document is missing a SharedRandomReveal for %x", id)
+			}
+			// Verify the reveal
+			reveal, err := cert.Verify(verifier, signedReveal)
+			if err != nil {
+				return fmt.Errorf("Document has an Invalid Signature on SharedRandomReveal for %x", id)
+			}
+
+			// Verify the commit with reveal
+			srv := new(SharedRandom)
+			srv.SetCommit(commit)
+			if !srv.Verify(reveal) {
+				return fmt.Errorf("Document has an invalid Reveal for! %x", id)
+			}
 		}
-	default:
-		return fmt.Errorf("Document has invalid SharedRandomValue")
 	}
 	if len(d.Topology) == 0 {
 		return fmt.Errorf("Document contains no Topology")
@@ -509,6 +535,7 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 // and wraps a Document with a cert.Certificate
 func (d *Document) MarshalBinary() ([]byte, error) {
 	// Serialize Document without calling this method
+	d.Version = DocumentVersion
 	payload, err := ccbor.Marshal((*document)(d))
 	if err != nil {
 		return nil, err
@@ -547,6 +574,31 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// AddSignature will add a Signature over this Document if it is signed by verifier.
+func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature) error {
+	// Serialize this Document
+	payload, err := d.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	// if AddSignature succeeds, add the Signature to d.Signatures
+	_, err = cert.AddSignature(verifier, signature, payload)
+	if err != nil {
+		return err
+	}
+	d.Signatures[verifier.Sum256()] = signature
+	return nil
+}
+
+func (d *Document) Sum256() [32]byte {
+	b, err := d.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return blake2b.Sum256(b)
 }
 
 func init() {
