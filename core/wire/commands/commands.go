@@ -39,11 +39,10 @@ const (
 	postDescriptorStatusLength = 1
 	postDescriptorLength       = 8
 
-	voteStatusLength = 1
-
+	certStatusLength   = 1
 	revealStatusLength = 1
-
-	commitStatusLength = 1
+	sigStatusLength    = 1
+	voteStatusLength   = 1
 
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
@@ -66,8 +65,10 @@ const (
 	getVote              commandID = 24
 	reveal               commandID = 25
 	revealStatus         commandID = 26
-	commit               commandID = 27
-	commitStatus         commandID = 28
+	sig                  commandID = 27
+	sigStatus            commandID = 28
+	certificate          commandID = 29
+	certStatus           commandID = 30
 
 	// ConsensusOk signifies that the GetConsensus request has completed
 	// successfully.
@@ -109,7 +110,7 @@ const (
 	// VoteTooEarly signifies that the vote was too late.
 	VoteTooEarly = 2
 
-	// VoteNotAuthorized signifies that the voting entity's key is not white-listed.
+	// VoteNotAuthorized signifies that the voting entity's key is not authorized.
 	VoteNotAuthorized = 3
 
 	// VoteNotSigned signifies that the vote payload failed signature verification.
@@ -127,10 +128,10 @@ const (
 	// RevealOk signifies that the reveal was accepted by the peer.
 	RevealOk = 8
 
-	// RevealTooEarly signifies that the peer breaking protocol.
+	// RevealTooEarly signifies that the peer is breaking protocol.
 	RevealTooEarly = 9
 
-	// RevealNotAuthorized signifies that the revealing entity's key is not white-listed.
+	// RevealNotAuthorized signifies that the revealing entity's key is not authorized.
 	RevealNotAuthorized = 10
 
 	// RevealNotSigned signifies that the reveal payload failed signature verification.
@@ -142,24 +143,44 @@ const (
 	// RevealTooLate signifies that the reveal from that peer arrived too late.
 	RevealTooLate = 13
 
-	// CommitOk signifies that the reveal was accepted by the peer.
-	CommitOk = 14
+	// CertOk signifies that the certificate was accepted by the peer.
+	CertOk = 14
 
-	// CommitTooEarly signifies that the peer breaking protocol.
-	CommitTooEarly = 15
+	// CertTooEarly signifies that the peer is breaking protocol.
+	CertTooEarly = 15
 
-	// CommitNotAuthorized signifies that the revealing entity's key is not white-listed.
-	CommitNotAuthorized = 16
+	// CertNotAuthorized signifies that the certifying entity's key is not 
+	CertNotAuthorized = 16
 
-	// CommitNotSigned signifies that the commit payload failed signature verification.
-	CommitNotSigned = 17
+	// CertNotSigned signifies that the certficiate payload failed signature verification.
+	CertNotSigned = 17
 
-	// CommitAlreadyReceived signifies that the reveal from that peer was already received.
-	CommitAlreadyReceived = 18
+	// CertAlreadyReceived signifies that the certificate from that peer was already received.
+	CertAlreadyReceived = 18
 
-	// CommitTooLate signifies that the reveal from that peer arrived too late.
-	CommitTooLate = 19
+	// CertTooLate signifies that the certificate from that peer arrived too late.
+	CertTooLate = 19
 
+	// SigOK signifies that the signature was accepted by the peer.
+	SigOk = 20
+
+	// SigNotAuthorized signifies that the entity's key is not authorized.
+	SigNotAuthorized = 21
+
+	// SigNotSigned signifies that the signature command failed signature verification.
+	SigNotSigned = 22
+
+	// SigTooEarly signifies that the peer is breaking protocol.
+	SigTooEarly = 23
+
+	// SigTooLate signifies that the signature from that peer arrived too late.
+	SigTooLate = 24
+
+	// SigAlreadyReceived signifies that the signature from that peer was already received.
+	SigAlreadyReceived = 25
+	
+	// SigInvalid signifies that the signature failed to deserialiez.
+	SigInvalid = 26
 )
 
 var (
@@ -167,7 +188,8 @@ var (
 
 	voteOverhead   = 8 + cert.Scheme.PublicKeySize()
 	revealOverhead = 8 + cert.Scheme.PublicKeySize()
-	commitOverhead = 8 + cert.Scheme.PublicKeySize()
+	certOverhead   = 8 + cert.Scheme.PublicKeySize()
+	sigOverhead    = 8 + cert.Scheme.PublicKeySize()
 )
 
 type (
@@ -358,66 +380,6 @@ func (c *PostDescriptorStatus) ToBytes() []byte {
 	return out
 }
 
-// Commit is a de-serialized commit command exchanged by authorities.
-type Commit struct {
-	Epoch uint64
-	PublicKey sign.PublicKey
-	Payload []byte
-}
-
-// ToBytes serializes the Reveal and returns the resulting byte slice.
-func (r *Commit) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+commitOverhead)
-	out[0] = byte(commit)
-	// out[1] reserved
-	binary.BigEndian.PutUint32(out[2:6], uint32(commitOverhead+len(r.Payload)))
-	binary.BigEndian.PutUint64(out[6:14], r.Epoch)
-	copy(out[14:14+cert.Scheme.PublicKeySize()], r.PublicKey.Bytes())
-	out = append(out, r.Payload...)
-	return out
-}
-
-func commitFromBytes(b []byte) (Command, error) {
-	if len(b) < commitOverhead {
-		return nil, errors.New(" wtf: errInvalidCommand")
-	}
-
-	r := new(Commit)
-	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	var err error
-	r.PublicKey, err = cert.Scheme.UnmarshalBinaryPublicKey(b[8 : 8+cert.Scheme.PublicKeySize()])
-	if err != nil {
-		return nil, err
-	}
-	r.Payload = make([]byte, 0, len(b)-commitOverhead)
-	r.Payload = append(r.Payload, b[commitOverhead:]...)
-	return r, nil
-}
-
-// CommitStatus is a de-serialized commitStatus command.
-type CommitStatus struct {
-	ErrorCode uint8
-}
-
-func commitStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != commitStatusLength {
-		return nil, errors.New(" wtf: errInvalidCommand")
-	}
-
-	r := new(CommitStatus)
-	r.ErrorCode = b[0]
-	return r, nil
-}
-
-// ToBytes serializes the RevealStatus and returns the resulting byte slice.
-func (r *CommitStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+commitStatusLength)
-	out[0] = byte(commitStatus)
-	binary.BigEndian.PutUint32(out[2:6], commitStatusLength)
-	out[6] = r.ErrorCode
-	return out
-}
-
 // Reveal is a de-serialized reveal command exchanged by authorities.
 type Reveal struct {
 	Epoch     uint64
@@ -532,6 +494,122 @@ func voteStatusFromBytes(b []byte) (Command, error) {
 	}
 
 	r := new(VoteStatus)
+	r.ErrorCode = b[0]
+	return r, nil
+}
+
+// Cert is a potential consensus which is exchanged by Directory Authorities.
+type Cert struct {
+	Epoch     uint64
+	PublicKey sign.PublicKey
+	Payload   []byte
+}
+
+func certFromBytes(b []byte) (Command, error) {
+	r := new(Cert)
+	if len(b) < certOverhead {
+		return nil, errInvalidCommand
+	}
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	var err error
+	r.PublicKey, err = cert.Scheme.UnmarshalBinaryPublicKey(b[8 : 8+cert.Scheme.PublicKeySize()])
+	if err != nil {
+		return nil, err
+	}
+	r.Payload = make([]byte, 0, len(b)-certOverhead)
+	r.Payload = append(r.Payload, b[certOverhead:]...)
+	return r, nil
+}
+
+// ToBytes serializes the Cert and returns the resulting slice.
+func (c *Cert) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+8, cmdOverhead+certOverhead+len(c.Payload))
+	out[0] = byte(certificate)
+	binary.BigEndian.PutUint32(out[2:6], uint32(certOverhead+len(c.Payload)))
+	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
+	out = append(out, c.PublicKey.Bytes()...)
+	out = append(out, c.Payload...)
+	return out
+}
+
+// CertStatus is a resonse status for a Cert command.
+type CertStatus struct {
+	ErrorCode uint8
+}
+
+// ToBytes serializes the CertStatus and returns the resulting slice.
+func (c *CertStatus) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+certStatusLength)
+	out[0] = byte(certStatus)
+	binary.BigEndian.PutUint32(out[2:6], certStatusLength)
+	out[6] = c.ErrorCode
+	return out
+}
+
+func certStatusFromBytes(b []byte) (Command, error) {
+	if len(b) != certStatusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(CertStatus)
+	r.ErrorCode = b[0]
+	return r, nil
+}
+
+// Sig is a signature which is exchanged by Directory Authorities.
+type Sig struct {
+	Epoch     uint64
+	PublicKey sign.PublicKey
+	Payload   []byte
+}
+
+func sigFromBytes(b []byte) (Command, error) {
+	r := new(Sig)
+	if len(b) < sigOverhead {
+		return nil, errInvalidCommand
+	}
+	r.Epoch = binary.BigEndian.Uint64(b[0:8])
+	var err error
+	r.PublicKey, err = cert.Scheme.UnmarshalBinaryPublicKey(b[8 : 8+cert.Scheme.PublicKeySize()])
+	if err != nil {
+		return nil, err
+	}
+	r.Payload = make([]byte, 0, len(b)-sigOverhead)
+	r.Payload = append(r.Payload, b[sigOverhead:]...)
+	return r, nil
+}
+
+// ToBytes serializes the Sig and returns the resulting slice.
+func (c *Sig) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+8, cmdOverhead+sigOverhead+len(c.Payload))
+	out[0] = byte(sig)
+	binary.BigEndian.PutUint32(out[2:6], uint32(sigOverhead+len(c.Payload)))
+	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
+	out = append(out, c.PublicKey.Bytes()...)
+	out = append(out, c.Payload...)
+	return out
+}
+
+// SigStatus is a resonse status for a Sig command.
+type SigStatus struct {
+	ErrorCode uint8
+}
+
+// ToBytes serializes the Status and returns the resulting slice.
+func (c *SigStatus) ToBytes() []byte {
+	out := make([]byte, cmdOverhead+sigStatusLength)
+	out[0] = byte(sigStatus)
+	binary.BigEndian.PutUint32(out[2:6], sigStatusLength)
+	out[6] = c.ErrorCode
+	return out
+}
+
+func sigStatusFromBytes(b []byte) (Command, error) {
+	if len(b) != sigStatusLength {
+		return nil, errInvalidCommand
+	}
+
+	r := new(SigStatus)
 	r.ErrorCode = b[0]
 	return r, nil
 }
@@ -784,14 +862,18 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return voteFromBytes(b)
 	case voteStatus:
 		return voteStatusFromBytes(b)
-	case commit:
-		return commitFromBytes(b)
-	case commitStatus:
-		return commitStatusFromBytes(b)
+	case certificate:
+		return certFromBytes(b)
+	case certStatus:
+		return certStatusFromBytes(b)
 	case reveal:
 		return revealFromBytes(b)
 	case revealStatus:
 		return revealStatusFromBytes(b)
+	case sig:
+		return sigFromBytes(b)
+	case sigStatus:
+		return sigStatusFromBytes(b)
 	default:
 		return nil, errInvalidCommand
 	}

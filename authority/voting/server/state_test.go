@@ -28,7 +28,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/crypto/sha3"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
@@ -42,41 +41,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
-
-func TestSharedRandomVerify(t *testing.T) {
-	require := require.New(t)
-	srv := new(SharedRandom)
-	commit, err := srv.Commit(1234)
-	require.NoError(err, "wtf")
-	require.True(len(commit) == pki.SharedRandomLength)
-	srv.SetCommit(commit)
-	require.True(bytes.Equal(commit, srv.GetCommit()))
-	t.Logf("commit %v", commit)
-	require.True(bytes.Equal(commit, srv.GetCommit()))
-	reveal := srv.Reveal()
-	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
-	t.Logf("reveal %v", reveal)
-	t.Logf("len(reveal): %v", len(reveal))
-	require.True(len(reveal) == pki.SharedRandomLength)
-	require.True(srv.Verify(reveal))
-}
-
-func TestSharedRandomCommit(t *testing.T) {
-	require := require.New(t)
-	srv := new(SharedRandom)
-	commit, err := srv.Commit(1234)
-	require.NoError(err, "wtf")
-	require.True(len(commit) == pki.SharedRandomLength)
-}
-
-func TestSharedRandomSetCommit(t *testing.T) {
-	require := require.New(t)
-	srv := new(SharedRandom)
-	commit, err := srv.Commit(1234)
-	require.NoError(err, "wtf")
-	srv.SetCommit(commit)
-	require.True(bytes.Equal(commit, srv.GetCommit()))
-}
 
 func TestVote(t *testing.T) {
 	require := require.New(t)
@@ -139,13 +103,17 @@ func TestVote(t *testing.T) {
 			s.log = s.logBackend.GetLogger("authority")
 		}
 
-		st.documents = make(map[uint64]*document)
-		st.descriptors = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*descriptor)
-		st.votes = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*document)
-		st.votes[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*document)
-		st.certificates = make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
-		st.certificates[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+		st.documents = make(map[uint64]*pki.Document)
+		st.myconsensus = make(map[uint64]*pki.Document)
+		st.descriptors = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
+		st.votes = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.votes[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.certificates = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.certificates[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.commits = make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
 		st.reveals = make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
+		st.signatures = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*cert.Signature)
+		st.signatures[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*cert.Signature)
 		st.reveals[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
@@ -219,8 +187,8 @@ func TestVote(t *testing.T) {
 	}
 
 	// post descriptors from nodes
-	mixDescs := make([]*descriptor, 0)
-	providerDescs := make([]*descriptor, 0)
+	mixDescs := make([]*pki.MixDescriptor, 0)
+	providerDescs := make([]*pki.MixDescriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
@@ -245,13 +213,13 @@ func TestVote(t *testing.T) {
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
 		// Make a serialized + signed + serialized descriptor.
-		signed, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
+		_, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
 
 		if mixCfgs[i].Server.IsProvider {
-			providerDescs = append(mixDescs, &descriptor{raw: signed, desc: desc})
+			providerDescs = append(mixDescs, desc)
 		} else {
-			mixDescs = append(mixDescs, &descriptor{raw: signed, desc: desc})
+			mixDescs = append(mixDescs, desc)
 		}
 	}
 
@@ -264,7 +232,7 @@ func TestVote(t *testing.T) {
 		reveals := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
 		reveals[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
 
-		srv := new(SharedRandom)
+		srv := new(pki.SharedRandom)
 		commit, err := srv.Commit(votingEpoch)
 		require.NoError(err)
 		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1)
@@ -281,16 +249,16 @@ func TestVote(t *testing.T) {
 
 	// populate the authorities with the descriptors
 	for _, s := range stateAuthority {
-		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*descriptor)
+		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
 		s.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
 		s.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
 		for _, d := range mixDescs {
-			s.descriptors[votingEpoch][d.desc.IdentityKey.Sum256()] = d
-			s.authorizedMixes[d.desc.IdentityKey.Sum256()] = true
+			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
+			s.authorizedMixes[d.IdentityKey.Sum256()] = true
 		}
 		for _, d := range providerDescs {
-			s.descriptors[votingEpoch][d.desc.IdentityKey.Sum256()] = d
-			s.authorizedProviders[d.desc.IdentityKey.Sum256()] = d.desc.Name
+			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
+			s.authorizedProviders[d.IdentityKey.Sum256()] = d.Name
 		}
 	}
 
@@ -298,13 +266,14 @@ func TestVote(t *testing.T) {
 	for i, s := range stateAuthority {
 		s.votingEpoch = votingEpoch
 		s.genesisEpoch = s.votingEpoch
-		myVote, err := s.vote(s.votingEpoch)
+		myVote, err := s.getVote(s.votingEpoch)
+		require.Equal(len(myVote.Signatures), 1)
 		require.NoError(err)
 		require.NotNil(myVote)
-		require.NotNil(myVote.doc)
-		doc, err := pki.VerifyAndParseDocument(myVote.raw, s.getVerifiers())
+		raw, err := myVote.MarshalBinary()
 		require.NoError(err)
-		myVote.doc = doc
+		_, err = pki.VerifyAndParseDocument(raw, s.getVerifiers())
+		require.NoError(err)
 		s.state = stateAcceptVote
 		for j, a := range stateAuthority {
 			if j == i {
@@ -328,10 +297,12 @@ func TestVote(t *testing.T) {
 
 	}
 
-	// create a consensus and exchange signatures
+	// exchange certificates
 	for i, s := range stateAuthority {
-		s.state = stateAcceptSignature
-		myCertificate, err := s.tabulate(s.votingEpoch)
+		s.state = stateAcceptCert
+		myCertificate, err := s.getCertificate(s.votingEpoch)
+		require.NoError(err)
+		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
 		require.NoError(err)
 		for j, a := range stateAuthority {
 			if j == i {
@@ -339,33 +310,39 @@ func TestVote(t *testing.T) {
 			}
 			a.certificates[s.votingEpoch][s.s.identityPublicKey.Sum256()] = myCertificate
 		}
-
 	}
 
-	// save the consensus
-	for i, s := range stateAuthority {
-		consensus := s.consense(s.votingEpoch)
-		require.NotNil(consensus, "auth-%d failed to generate consensus", i)
+	// produced a consensus document signed by each authority
+	for _, s := range stateAuthority {
+		_, err := s.getMyConsensus(s.votingEpoch)
+		require.NoError(err)
 	}
 
-	// verify that each authority produced the same output
-	docs := make([][]byte, len(stateAuthority))
+	// exchange signatures over the consensus
 	for i, s := range stateAuthority {
-		d, _ := s.documents[s.votingEpoch]
-		if d == nil {
-			t.Logf("i %d failed", i)
-			continue
-		}
-		docs[i] = d.raw
-		if i == 0 {
-			continue
-		}
+		s.state = stateAcceptSignature
+		id := s.s.identityPublicKey.Sum256()
+		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
+		require.True(ok)
 
-		a := []byte{}
-		b := []byte{}
-		copy(a, docs[i-1])
-		copy(b, d.raw)
-		require.True(bytes.Equal(a, b))
+		for j, a := range stateAuthority {
+			if j == i {
+				continue
+			}
+			a.signatures[s.votingEpoch][s.s.identityPublicKey.Sum256()] = &mySignature
+		}
+	}
+	// verify that each authority produced an identital consensus
+	consensusHash := ""
+	for _, s := range stateAuthority {
+		doc, err := s.getThresholdConsensus(s.votingEpoch)
+		require.NoError(err)
+		hash := doc.Sum256()
+		if consensusHash == "" {
+			consensusHash = string(hash[:])
+		} else {
+			require.Equal(consensusHash, string(hash[:]))
+		}
 	}
 }
 
