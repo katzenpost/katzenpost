@@ -429,7 +429,14 @@ func (d *decoy) sweepSURBCtxs() {
 	var swept int
 	iter := d.surbETAs.Iterator(avl.Forward)
 	for node := iter.First(); node != nil; node = iter.Next() {
-		surbCtxs := node.Value.([]*surbCtx)
+		var surbCtxs []*surbCtx
+		switch surbCtxOrSlice := node.Value.(type) {
+			case []*surbCtx:
+				surbCtxs = surbCtxOrSlice
+			case *surbCtx:
+				surbCtxs = make([]*surbCtx, 1)
+				surbCtxs[0] = surbCtxOrSlice
+		}
 		if surbCtxs[0].eta+slack > now {
 			break
 		}
