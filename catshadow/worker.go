@@ -82,7 +82,7 @@ func (c *Client) worker() {
 				isConnected = false
 				c.haltKeyExchanges()
 			case *opCreateSpool:
-				c.doCreateRemoteSpool(op.responseChan)
+				c.doCreateRemoteSpool(op.provider, op.responseChan)
 			case *opUpdateSpool:
 				if op.descriptor != nil {
 					c.spoolReadDescriptor = op.descriptor
@@ -115,8 +115,15 @@ func (c *Client) worker() {
 				c.doGetConversation(op.name, op.responseChan)
 			case *opWipeConversation:
 				op.responseChan <- c.doWipeConversation(op.name)
+			case *opGetPKIDocument:
+				op.responseChan <- c.doGetPKIDocument()
+			case *opGetSpoolProviders:
+				op.responseChan <- c.doGetSpoolProviders()
+			case *opSpoolWriteDescriptor:
+				op.responseChan <- c.getSpoolWriteDescriptor()
 			default:
 				c.fatalErrCh <- errors.New("BUG, unknown operation type.")
+
 			}
 		case update := <-c.pandaChan:
 			c.processPANDAUpdate(&update)
