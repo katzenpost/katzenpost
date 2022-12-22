@@ -1702,12 +1702,7 @@ func newState(s *Server) (*state, error) {
 	st.log.Debugf("State initialized with PublishConsensusDeadline: %s", PublishConsensusDeadline)
 	st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
 	for _, auth := range s.cfg.Authorities {
-		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromPEMString(auth.IdentityPublicKeyPem, identityPublicKey)
-		if err != nil {
-			panic(err)
-		}
-		st.verifiers[identityPublicKey.Sum256()] = cert.Verifier(identityPublicKey)
+		st.verifiers[auth.IdentityPublicKey.Sum256()] = auth.IdentityPublicKey
 	}
 	st.verifiers[s.IdentityKey().Sum256()] = cert.Verifier(s.IdentityKey())
 	st.threshold = len(st.verifiers)/2 + 1
@@ -1724,7 +1719,7 @@ func newState(s *Server) (*state, error) {
 				panic(err)
 			}
 		} else {
-			pemFilePath := filepath.Join(s.cfg.DataDir, v.IdentityPublicKeyPem)
+			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
 			err := pem.FromFile(pemFilePath, identityPublicKey)
 			if err != nil {
 				panic(err)
@@ -1745,7 +1740,7 @@ func newState(s *Server) (*state, error) {
 				panic(err)
 			}
 		} else {
-			pemFilePath := filepath.Join(s.cfg.DataDir, v.IdentityPublicKeyPem)
+			pemFilePath := filepath.Join(s.cfg.Server.DataDir, v.IdentityPublicKeyPem)
 			err := pem.FromFile(pemFilePath, identityPublicKey)
 			if err != nil {
 				panic(err)
@@ -1758,37 +1753,16 @@ func newState(s *Server) (*state, error) {
 	}
 	st.authorizedAuthorities = make(map[[publicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Authorities {
-		_, identityPublicKey := cert.Scheme.NewKeypair()
-
-		err := pem.FromPEMString(v.IdentityPublicKeyPem, identityPublicKey)
-		if err != nil {
-			panic(err)
-		}
-
-		pk := identityPublicKey.Sum256()
+		pk := v.IdentityPublicKey.Sum256()
 		st.authorizedAuthorities[pk] = true
-		st.reverseHash[pk] = identityPublicKey
+		st.reverseHash[pk] = v.IdentityPublicKey
 	}
 	st.reverseHash[st.s.identityPublicKey.Sum256()] = st.s.identityPublicKey
 
 	st.authorityLinkKeys = make(map[[publicKeyHashSize]byte]wire.PublicKey)
-	scheme := wire.DefaultScheme
 	for _, v := range st.s.cfg.Authorities {
-		privKey := scheme.GenerateKeypair(rand.Reader)
-		linkPubKey := privKey.PublicKey()
-		err := pem.FromPEMString(v.LinkPublicKeyPem, linkPubKey)
-		if err != nil {
-			return nil, err
-		}
-
-		_, identityPublicKey := cert.Scheme.NewKeypair()
-		err = pem.FromPEMString(v.IdentityPublicKeyPem, identityPublicKey)
-		if err != nil {
-			panic(err)
-		}
-
-		pk := identityPublicKey.Sum256()
-		st.authorityLinkKeys[pk] = linkPubKey
+		pk := v.IdentityPublicKey.Sum256()
+		st.authorityLinkKeys[pk] = v.LinkPublicKey
 	}
 
 	st.documents = make(map[uint64]*pki.Document)
@@ -1801,7 +1775,7 @@ func newState(s *Server) (*state, error) {
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 
 	// Initialize the persistence store and restore state.
-	dbPath := filepath.Join(s.cfg.DataDir, dbFile)
+	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
 	var err error
 	if st.db, err = bolt.Open(dbPath, 0600, nil); err != nil {
 		return nil, err
@@ -1828,7 +1802,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				LogBackend:    s.s.logBackend,
 				Authorities:   s.s.cfg.Authorities,
 				DialContextFn: nil,
-				DataDir:       s.s.cfg.DataDir,
+				DataDir:       s.s.cfg.Server.DataDir,
 			}
 			c, err := client.New(cfg)
 			if err != nil {

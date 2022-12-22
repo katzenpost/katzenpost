@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"encoding/hex"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/ugorji/go/codec"
@@ -99,10 +99,11 @@ func (e *externAuth) Identity(u []byte) (wire.PublicKey, error) {
 			return nil, err
 		}
 
-		if pkhex, ok := response[endpoint]; ok {
-			if decoded, err := hex.DecodeString(pkhex); err == nil {
-				scheme := wire.DefaultScheme
-				return scheme.UnmarshalTextPublicKey(decoded)
+		if idkey, ok := response[endpoint]; ok {
+			_, pubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+			err = pubKey.UnmarshalText([]byte(idkey))
+			if err == nil {
+				return pubKey, nil
 			}
 		}
 	}

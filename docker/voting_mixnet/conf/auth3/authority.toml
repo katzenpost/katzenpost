@@ -1,15 +1,15 @@
 # Katzenpost voting authority configuration file.
 
-# Identifier is the name of the authority
-Identifier = "auth3"
+[Server]
+  # Identifier is the name of the authority
+  Identifier = "auth3"
 
-# Addresses are the IP address/port combinations that the authority will bind
-# to for incoming connections.
-Addresses = [ "172.28.1.9:23483" ]
+  # Addresses are the IP address/port combinations that the authority will bind
+  # to for incoming connections.
+  Addresses = [ "172.28.1.9:23483" ]
 
-# DataDir is the absolute path to the server's state files.
-DataDir = "/conf/authority_data"
-
+  # DataDir is the absolute path to the server's state files.
+  DataDir = "/conf/authority_data"
 
 [[Authorities]]
   Identifier = "auth1"

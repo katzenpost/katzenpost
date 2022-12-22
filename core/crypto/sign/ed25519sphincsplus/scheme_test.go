@@ -34,7 +34,6 @@ func TestEddsaSphincsplusSchemeTextUnmarshaler(t *testing.T) {
 	require.True(t, ok)
 }
 
-
 func TestEddsaSphincsplusSchemeBinaryUnmarshaler(t *testing.T) {
 	message := []byte("hello world")
 	privKey, pubKey := Scheme.NewKeypair()

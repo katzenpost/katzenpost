@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,9 +29,7 @@ import (
 
 	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -649,25 +646,12 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	if glue.Config().PKI.Nonvoting != nil {
-		_, authPk := cert.Scheme.NewKeypair()
-		identityKeyPemFile := filepath.Join(glue.Config().Server.DataDir,
-			glue.Config().PKI.Nonvoting.PublicKeyPem)
-		err := pem.FromFile(identityKeyPemFile, authPk)
-		if err != nil {
-			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public identity key from PEM file: %v", err)
-		}
-
-		wirePemFile := filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem)
-		authPubKey, err := wire.DefaultScheme.PublicKeyFromPemFile(wirePemFile)
-		if err != nil {
-			return nil, err
-		}
 		pkiCfg := &nClient.Config{
-			AuthorityLinkKey:     authPubKey,
 			LinkKey:              glue.LinkKey(),
 			LogBackend:           glue.LogBackend(),
 			Address:              glue.Config().PKI.Nonvoting.Address,
-			AuthorityIdentityKey: authPk,
+			AuthorityIdentityKey: glue.Config().PKI.Nonvoting.PublicKey,
+			AuthorityLinkKey:     glue.Config().PKI.Nonvoting.LinkPublicKey,
 		}
 		p.impl, err = nClient.New(pkiCfg)
 		if err != nil {
@@ -678,7 +662,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			DataDir:     glue.Config().Server.DataDir,
 			LinkKey:     glue.LinkKey(),
 			LogBackend:  glue.LogBackend(),
-			Authorities: glue.Config().PKI.Voting.Peers,
+			Authorities: glue.Config().PKI.Voting.Authorities,
 		}
 		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
