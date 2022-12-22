@@ -135,7 +135,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Generate a random wire keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
-	linkKey := scheme.GenerateKeypair(rand.Reader)
+	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
 	defer linkKey.Reset()
 
 	// Initialize the TCP/IP connection, and wire session.

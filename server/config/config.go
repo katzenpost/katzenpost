@@ -32,8 +32,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -698,10 +700,10 @@ type Nonvoting struct {
 	Address string
 
 	// PublicKeyPem is the authority's Identity key PEM filepath.
-	PublicKeyPem string
+	PublicKey sign.PublicKey
 
 	// LinkPublicKeyPem is the authority's public link key PEM filepath.
-	LinkPublicKeyPem string
+	LinkPublicKey wire.PublicKey
 }
 
 func (nCfg *Nonvoting) validate(datadir string) error {
@@ -712,14 +714,14 @@ func (nCfg *Nonvoting) validate(datadir string) error {
 	return nil
 }
 
-// Voting is a voting directory authority.
+// Voting is a set of Authorities that vote on a threshold consensus PKI
 type Voting struct {
-	Peers []*config.Authority
+	Authorities []*config.Authority
 }
 
 func (vCfg *Voting) validate(datadir string) error {
-	for _, peer := range vCfg.Peers {
-		err := peer.Validate()
+	for _, auth := range vCfg.Authorities {
+		err := auth.Validate()
 		if err != nil {
 			return err
 		}

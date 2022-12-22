@@ -92,10 +92,10 @@ func (cfg *Config) validate() error {
 				return errors.New("voting/client: Invalid Address: zero length")
 			}
 		}
-		if v.IdentityPublicKeyPem == "" {
+		if v.IdentityPublicKey == nil {
 			return fmt.Errorf("voting/client: Identity PublicKey is mandatory")
 		}
-		if v.LinkPublicKeyPem == "" {
+		if v.LinkPublicKey == nil {
 			return fmt.Errorf("voting/client: Link PublicKey is mandatory")
 		}
 	}
@@ -154,23 +154,9 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 	}()
 
-	noKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	peerLinkPublicKey := noKey.PublicKey()
-	pem.FromPEMString(peer.LinkPublicKeyPem, peerLinkPublicKey)
-	if err != nil {
-		return nil, err
-	}
-
-	_, peerIdPublicKey := cert.Scheme.NewKeypair()
-
-	err = pem.FromPEMString(peer.IdentityPublicKeyPem, peerIdPublicKey)
-	if err != nil {
-		return nil, err
-	}
-
 	peerAuthenticator := &authorityAuthenticator{
-		IdentityPublicKey: peerIdPublicKey,
-		LinkPublicKey:     peerLinkPublicKey,
+		IdentityPublicKey: peer.IdentityPublicKey,
+		LinkPublicKey:     peer.LinkPublicKey,
 		log:               p.log,
 	}
 
@@ -227,7 +213,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateK
 	for _, peer := range p.cfg.Authorities {
 		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority peer:\n%s", peer.IdentityPublicKeyPem)
+			p.log.Noticef("pki/voting/client: failure to connect to Authority peer:\n%s", peer.IdentityPublicKey)
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)
@@ -320,7 +306,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Generate a random ecdh keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
-	linkKey := scheme.GenerateKeypair(rand.Reader)
+	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
 	defer linkKey.Reset()
 
 	// Initialize the TCP/IP connection, and wire session.
@@ -396,12 +382,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c.pool = newConnector(cfg)
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
-		_, authIdPublicKey := cert.Scheme.NewKeypair()
-		err := pem.FromPEMString(auth.IdentityPublicKeyPem, authIdPublicKey)
-		if err != nil {
-			return nil, err
-		}
-		c.verifiers[i] = cert.Verifier(authIdPublicKey)
+		c.verifiers[i] = auth.IdentityPublicKey
 	}
 	c.threshold = len(c.verifiers)/2 + 1
 	return c, nil

@@ -19,6 +19,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -247,9 +250,9 @@ type Authority struct {
 	Identifier string
 	// IdentityPublicKeyPem is a string in PEM format containing
 	// the public identity key key.
-	IdentityPublicKeyPem string
+	IdentityPublicKey sign.PublicKey
 	// LinkPublicKeyPem is string containing the PEM format of the peer's public link layer key.
-	LinkPublicKeyPem string
+	LinkPublicKey wire.PublicKey
 	// Addresses are the IP address/port combinations that the peer authority
 	// uses for the Directory Authority service.
 	Addresses []string
@@ -262,11 +265,11 @@ func (a *Authority) Validate() error {
 			return fmt.Errorf("config: Authority : Address '%v' is invalid: %v", v, err)
 		}
 	}
-	if a.IdentityPublicKeyPem == "" {
+	if a.IdentityPublicKey == nil {
 		return fmt.Errorf("config: %v: Authority is missing Identity Key", a)
 	}
 
-	if a.LinkPublicKeyPem == "" {
+	if a.LinkPublicKey == nil {
 		return fmt.Errorf("config: %v: Authority is missing Link Key PEM filename", a)
 	}
 
@@ -305,14 +308,48 @@ func (n *Node) validate(isProvider bool) error {
 	return nil
 }
 
+type Server struct {
+	// Identifier is the human readable identifier for the node (eg: FQDN).
+	Identifier string
+
+	// Addresses are the IP address/port combinations that the server will bind
+	// to for incoming connections.
+	Addresses []string
+
+	// DataDir is the absolute path to the server's state files.
+	DataDir string
+}
+
+// Validate parses and checks the Server configuration.
+func (sCfg *Server) validate() error {
+       if sCfg.Addresses != nil {
+               for _, v := range sCfg.Addresses {
+                       if err := utils.EnsureAddrIPPort(v); err != nil {
+                               return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+                       }
+               }
+       } else {
+               // Try to guess a "suitable" external IPv4 address.  If people want
+               // to do loopback testing, they can manually specify one.  If people
+               // want to use IPng, they can manually specify that as well.
+               addr, err := utils.GetExternalIPv4Address()
+               if err != nil {
+                       return err
+               }
+               sCfg.Addresses = []string{addr.String() + defaultAddress}
+       }
+       if !filepath.IsAbs(sCfg.DataDir) {
+               return fmt.Errorf("config: Authority: DataDir '%v' is not an absolute path", sCfg.DataDir)
+       }
+       return nil
+}
+
 // Config is the top level authority configuration.
 type Config struct {
-	Identifier  string
-	Addresses   []string
+	Server      *Server
 	Authorities []*Authority
 	Logging     *Logging
 	Parameters  *Parameters
-	DataDir     string
 	Debug       *Debug
 
 	Mixes     []*Node
@@ -334,23 +371,9 @@ type Topology struct {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
-	// Verify DataDir is valid
-	if !filepath.IsAbs(cfg.DataDir) {
-		return fmt.Errorf("config: DataDir '%v' is not an absolute path", cfg.DataDir)
-	}
-	// Verify addresses has a valid entry or a public IPv4 address
-	if cfg.Addresses == nil {
-		addr, err := utils.GetExternalIPv4Address()
-		if err != nil {
-			return err
-		}
-		cfg.Addresses = []string{addr.String() + defaultAddress}
-	} else {
-		for _, v := range cfg.Addresses {
-			if err := utils.EnsureAddrIPPort(v); err != nil {
-				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
-			}
-		}
+	// Handle missing sections if possible.
+	if cfg.Server == nil {
+		return errors.New("config: No Authority block was present")
 	}
 	// Handle missing sections if possible.
 	if cfg.Logging == nil {
@@ -364,6 +387,9 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	// Validate and fixup the various sections.
+	if err := cfg.Server.validate(); err != nil {
+		return err
+	}
 	if err := cfg.Logging.validate(); err != nil {
 		return err
 	}
@@ -397,7 +423,7 @@ func (cfg *Config) FixupAndValidate() error {
 	_, identityKey := cert.Scheme.NewKeypair()
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
-		err := pem.FromFile(filepath.Join(cfg.DataDir, v.IdentityPublicKeyPem), identityKey)
+		err := pem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), identityKey)
 		if err != nil {
 			return err
 		}
