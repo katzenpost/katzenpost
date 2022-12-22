@@ -30,7 +30,7 @@ DataDir = "./testdata/"
 
 #[NonvotingAuthority]
 #  Address = "127.0.0.1:29483"
-#  LinkPublicKeyPem = """
+#  LinkPublicKey = """
 #-----BEGIN Kyber768-X25519 PUBLIC KEY-----
 #+WOSbmi5nJWBFx/FePcx+46MindcROtr7mMuS5aJE0r2Z6mIXASEOc5hASZZ4SDs
 #lRU1URiBoKQRFRM0UmzgJjpUMhm4miM0ShCwJEEV1RWW5AF+1RlHa2PC7En5gI4O
@@ -60,7 +60,7 @@ DataDir = "./testdata/"
 #7pZc295vLdQ4w4gOVmGd9w==
 #-----END Kyber768-X25519 PUBLIC KEY-----
 # """
-#  IdentityPublicKeyPem = """
+#  IdentityPublicKey = """
 #-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 #3zXGXWKZeW7cgLRKZPeF73Yi0+J+BtEzfoHM1SXMqdB30p0iAy1JDzaLWPOdAJNq
 #jWmeAbCVBJkDkRtdzghri6me5ZgEwQ3tr/OVK2Podxl3dIKP+riONi3po+D57ryg
@@ -71,7 +71,7 @@ DataDir = "./testdata/"
 [VotingAuthority]
   [[VotingAuthority.Peers]]
     Addresses = ["127.0.0.1:21483"]
-    LinkPublicKeyPem = """
+    LinkPublicKey = """
 -----BEGIN Kyber768-X25519 PUBLIC KEY-----
 +WOSbmi5nJWBFx/FePcx+46MindcROtr7mMuS5aJE0r2Z6mIXASEOc5hASZZ4SDs
 lRU1URiBoKQRFRM0UmzgJjpUMhm4miM0ShCwJEEV1RWW5AF+1RlHa2PC7En5gI4O
@@ -101,7 +101,7 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 7pZc295vLdQ4w4gOVmGd9w==
 -----END Kyber768-X25519 PUBLIC KEY-----
 """
-    IdentityPublicKeyPem = """
+    IdentityPublicKey = """
 -----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 3zXGXWKZeW7cgLRKZPeF73Yi0+J+BtEzfoHM1SXMqdB30p0iAy1JDzaLWPOdAJNq
 jWmeAbCVBJkDkRtdzghri6me5ZgEwQ3tr/OVK2Podxl3dIKP+riONi3po+D57ryg
@@ -110,7 +110,7 @@ jWmeAbCVBJkDkRtdzghri6me5ZgEwQ3tr/OVK2Podxl3dIKP+riONi3po+D57ryg
 
   [[VotingAuthority.Peers]]
     Addresses = ["127.0.0.1:22483"]
-    LinkPublicKeyPem = """
+    LinkPublicKey = """
 -----BEGIN Kyber768-X25519 PUBLIC KEY-----
 XB8eD5IHOJQB8gJWTKCYAuu4rqxCf+wgKmI1VSYUJRzGu8GKIotwOXC+8zVlCpKm
 8rtzdZ4hKbnO6ZrK671Fqk2xl3vyi7Ov0q6fXA7eq5yDQ435VS+MAbQRhqeQ2lq9
@@ -140,7 +140,7 @@ DItdZYMn3LUW+TrwisixXFSQG5/u4ncHBQkZZJmeiYcx4UrIY22oh1MQpa/UmLNZ
 TJ7QlleBWMH03LJsY2uokw==
 -----END Kyber768-X25519 PUBLIC KEY-----
 """
-    IdentityPublicKeyPem = """
+    IdentityPublicKey = """
 -----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 hgEs8udDDyojLLqsURI0HIl1kgoue5MSmHPWw1g4TFgcLQ36HIGdlJfl4CoAHzOr
 bxm4u7dz+tD35hAvs54V9Jrmo2yjWMzJQeT7QgHmmoWyH/O5pk6mHEsrQnHe9baY
@@ -149,7 +149,7 @@ bxm4u7dz+tD35hAvs54V9Jrmo2yjWMzJQeT7QgHmmoWyH/O5pk6mHEsrQnHe9baY
 
   [[VotingAuthority.Peers]]
     Addresses = ["127.0.0.1:23483"]
-    LinkPublicKeyPem = """
+    LinkPublicKey = """
 -----BEGIN Kyber768-X25519 PUBLIC KEY-----
 xYaM/pX6HwZsFqbpwDU9JYcQ6KSj3YD5lfpHgE7BOhVr1C2eincbO8eyCk/k1oWG
 KcbWFGp6Gjic6ytaxgnvWVpq+beNIT1PXCk8XKhe57/hAbfCAY3rrJpFoLvciD+E
@@ -179,7 +179,7 @@ canqB2SXsVTgcF6mDE054jd5NHu4om+DikAkiijippO2WfVKXjyk3KkU/6+7tWun
 J36qY23I6qGScGjq4tPu3w==
 -----END Kyber768-X25519 PUBLIC KEY-----
 """
-    IdentityPublicKeyPem = """
+    IdentityPublicKey = """
 -----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
 F9mrgVb9WMGRl6XvHQcMFBVa5zLXdUxlRRDSsG9ZdQwrSCz4tPwiMhn+eFSjdOk1
 1vr7lFe3GYwSFA3xy9IDSzyKS2cDWT45FOiiOQqWMBmAI0MEma81dwkTb77a7cd1
