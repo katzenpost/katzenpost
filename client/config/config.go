@@ -128,8 +128,7 @@ type NonvotingAuthority struct {
 func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	scheme := wire.DefaultScheme
 
-	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
-	authLinkKey := authLinkPrivKey.PublicKey()
+	_, authLinkKey := scheme.GenerateKeypair(rand.Reader)
 	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
 	if err != nil {
 		return nil, err
@@ -180,7 +179,7 @@ func (vACfg *VotingAuthority) validate() error {
 		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKeyPem == "" || peer.LinkPublicKeyPem == "" || len(peer.Addresses) == 0 {
+		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
 			return errors.New("invalid voting authority peer")
 		}
 	}
