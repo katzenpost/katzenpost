@@ -78,6 +78,6 @@ func TestBlobStorage(t *testing.T) {
 	err = cs.DeleteBlob("foo")
 	require.NoError(err)
 	_, err = cs.GetBlob("foo")
-	require.Error(err, errBlobNotFound)
+	require.Error(err, ErrBlobNotFound)
 	stateWorker.Halt()
 }

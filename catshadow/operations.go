@@ -32,6 +32,7 @@ type opOffline struct {
 }
 
 type opCreateSpool struct {
+	provider     string
 	responseChan chan error
 }
 
@@ -89,4 +90,16 @@ type opRestartSending struct {
 type opWipeConversation struct {
 	name         string
 	responseChan chan error
+}
+
+type opGetPKIDocument struct {
+	responseChan chan interface{}
+}
+
+type opGetSpoolProviders struct {
+	responseChan chan interface{}
+}
+
+type opSpoolWriteDescriptor struct {
+	responseChan chan *client.SpoolWriteDescriptor
 }

@@ -255,9 +255,8 @@ func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
 	// NOT REACHED
 }
 
-// GetService returns a randomly selected service
-// matching the specified service name
-func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, error) {
+// GetServices returns the services matching the specified service name
+func (s *Session) GetServices(serviceName string) ([]*utils.ServiceDescriptor, error) {
 	if s.minclient == nil {
 		return nil, errors.New("minclient is nil")
 	}
@@ -265,11 +264,25 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 	if doc == nil {
 		return nil, errors.New("pki doc is nil")
 	}
-	serviceDescriptors := utils.FindServices(serviceName, doc)
-	if len(serviceDescriptors) == 0 {
+	descs := utils.FindServices(serviceName, doc)
+	if len(descs) == 0 {
 		return nil, errors.New("error, GetService failure, service not found in pki doc")
 	}
-	return &serviceDescriptors[rand.NewMath().Intn(len(serviceDescriptors))], nil
+	serviceDescriptors := make([]*utils.ServiceDescriptor, len(descs))
+	for i, s := range descs {
+		serviceDescriptors[i] = &s
+	}
+	return serviceDescriptors, nil
+}
+
+// GetService returns a randomly selected service
+// matching the specified service name
+func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, error) {
+	serviceDescriptors, err := s.GetServices(serviceName)
+	if err != nil {
+		return nil, err
+	}
+	return serviceDescriptors[rand.NewMath().Intn(len(serviceDescriptors))], nil
 }
 
 // OnConnection will be called by the minclient api
