@@ -60,9 +60,9 @@ type katzenpost struct {
 func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	const serverLogFile = "katzenpost.log"
 
-	n := fmt.Sprintf("mix%d", s.nodeIdx)
+	n := fmt.Sprintf("mix%d", s.nodeIdx+1)
 	if isProvider {
-		n = fmt.Sprintf("provider%d", s.providerIdx)
+		n = fmt.Sprintf("provider%d", s.providerIdx+1)
 	}
 	cfg := new(sConfig.Config)
 
@@ -204,10 +204,10 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 
 	// initial generation of key material for each authority
 	authorities := make(map[[32]byte]*vConfig.Authority)
-	for i := 0; i < numAuthorities; i++ {
+	for i := 1; i <= numAuthorities; i++ {
 		cfg := new(vConfig.Config)
 		cfg.Server = &vConfig.Server{
-			Identifier: fmt.Sprintf("authority-%d", i),
+			Identifier: fmt.Sprintf("auth%d", i),
 			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
