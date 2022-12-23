@@ -276,7 +276,7 @@ func New(cfg *config.Config) (*Server, error) {
 
 	var err error
 	idPubKeyHash := s.identityPublicKey.Sum256()
-	s.log.Noticef("Server identity public key is: %x", idPubKeyHash[:])
+	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 	scheme := wire.DefaultScheme
@@ -308,7 +308,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.linkKey = linkPrivateKey
 
 	linkPubKeyHash := linkPublicKey.Sum256()
-	s.log.Noticef("Server link public key is: %x", linkPubKeyHash[:])
+	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
