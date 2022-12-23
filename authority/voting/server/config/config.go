@@ -343,26 +343,26 @@ type Server struct {
 
 // Validate parses and checks the Server configuration.
 func (sCfg *Server) validate() error {
-       if sCfg.Addresses != nil {
-               for _, v := range sCfg.Addresses {
-                       if err := utils.EnsureAddrIPPort(v); err != nil {
-                               return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
-                       }
-               }
-       } else {
-               // Try to guess a "suitable" external IPv4 address.  If people want
-               // to do loopback testing, they can manually specify one.  If people
-               // want to use IPng, they can manually specify that as well.
-               addr, err := utils.GetExternalIPv4Address()
-               if err != nil {
-                       return err
-               }
-               sCfg.Addresses = []string{addr.String() + defaultAddress}
-       }
-       if !filepath.IsAbs(sCfg.DataDir) {
-               return fmt.Errorf("config: Authority: DataDir '%v' is not an absolute path", sCfg.DataDir)
-       }
-       return nil
+	if sCfg.Addresses != nil {
+		for _, v := range sCfg.Addresses {
+			if err := utils.EnsureAddrIPPort(v); err != nil {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+			}
+		}
+	} else {
+		// Try to guess a "suitable" external IPv4 address.  If people want
+		// to do loopback testing, they can manually specify one.  If people
+		// want to use IPng, they can manually specify that as well.
+		addr, err := utils.GetExternalIPv4Address()
+		if err != nil {
+			return err
+		}
+		sCfg.Addresses = []string{addr.String() + defaultAddress}
+	}
+	if !filepath.IsAbs(sCfg.DataDir) {
+		return fmt.Errorf("config: Authority: DataDir '%v' is not an absolute path", sCfg.DataDir)
+	}
+	return nil
 }
 
 // Config is the top level authority configuration.
