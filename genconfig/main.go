@@ -45,6 +45,7 @@ const (
 
 type katzenpost struct {
 	baseDir   string
+	outDir    string
 	logWriter io.Writer
 
 	authConfig        *aConfig.Config
@@ -71,11 +72,11 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)}
 	cfg.Server.AltAddresses = map[string][]string{
-		"TCP":   []string{fmt.Sprintf("localhost:%d", s.lastPort)},
+		"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
 	}
 
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
-	os.Mkdir(cfg.Server.DataDir, 0700)
+	os.Mkdir(filepath.Join(s.outDir, s.baseDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
 
 	// Debug section.
@@ -87,8 +88,8 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		for _, authCfg := range s.votingAuthConfigs {
 			auth := &vConfig.Authority{
 				Identifier:        authCfg.Server.Identifier,
-				IdentityPublicKey: cfgIdKey(authCfg),
-				LinkPublicKey:     cfgLinkKey(authCfg),
+				IdentityPublicKey: cfgIdKey(authCfg, s.outDir),
+				LinkPublicKey:     cfgLinkKey(authCfg, s.outDir),
 				Addresses:         authCfg.Server.Addresses,
 			}
 			authorities = append(authorities, auth)
@@ -169,8 +170,8 @@ func (s *katzenpost) genAuthConfig() error {
 	os.Mkdir(cfg.Server.DataDir, 0700)
 
 	// Generate keys
-	priv := filepath.Join(cfg.Server.DataDir, "identity.private.pem")
-	public := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
+	priv := filepath.Join(s.outDir, "authority", "identity.private.pem")
+	public := filepath.Join(s.outDir, "authority", "identity.public.pem")
 
 	// cert.
 	idKey, idPubKey := cert.Scheme.NewKeypair()
@@ -211,7 +212,8 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
-		os.Mkdir(cfg.Server.DataDir, 0700)
+		os.Mkdir(filepath.Join(s.outDir, s.baseDir, cfg.Server.Identifier), 0700)
+		log.Printf("created %s", filepath.Join(s.outDir, s.baseDir, cfg.Server.Identifier))
 		s.lastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
@@ -225,8 +227,8 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 			GenerateOnly:     false,
 		}
 		configs = append(configs, cfg)
-		idKey := cfgIdKey(cfg)
-		linkKey := cfgLinkKey(cfg)
+		idKey := cfgIdKey(cfg, s.outDir)
+		linkKey := cfgLinkKey(cfg, s.outDir)
 		authority := &vConfig.Authority{
 			IdentityPublicKey: idKey,
 			LinkPublicKey:     linkKey,
@@ -237,7 +239,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
-		h := cfgIdKey(configs[i]).Sum256()
+		h := cfgIdKey(configs[i], s.outDir).Sum256()
 		peers := []*vConfig.Authority{}
 		for id, peer := range authorities {
 			if !bytes.Equal(id[:], h[:]) {
@@ -257,14 +259,14 @@ func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.
 		if nodeCfg.Server.IsProvider {
 			provider := &aConfig.Node{
 				Identifier:     nodeCfg.Server.Identifier,
-				IdentityKeyPem: filepath.Join(nodeCfg.Server.DataDir, "identity.public.pem"),
+				IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
 			}
 			providers = append(providers, provider)
 			continue
 		}
 		mix := &aConfig.Node{
 			Identifier:     nodeCfg.Server.Identifier,
-			IdentityKeyPem: filepath.Join(nodeCfg.Server.DataDir, "identity.public.pem"),
+			IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
 		mixes = append(mixes, mix)
 	}
@@ -278,7 +280,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	for _, nodeCfg := range s.nodeConfigs {
 		node := &vConfig.Node{
 			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: fmt.Sprintf("%s_id_pub_key.pem", nodeCfg.Server.Identifier),
+			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
 		if nodeCfg.Server.IsProvider {
 			providers = append(providers, node)
@@ -297,20 +299,17 @@ func main() {
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
 	dataDir := flag.String("d", "", "Path to override dataDir, useful with volume mount paths")
+	outDir := flag.String("o", "", "Path to write files to")
 	flag.Parse()
 	s := &katzenpost{
-		lastPort:   basePort + 1,
+		lastPort: basePort + 1,
 	}
 
-	bd, err := filepath.Abs(*baseDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create base directory: %v\n", err)
-		os.Exit(-1)
-		return
-	} else {
-		s.baseDir = bd
-		os.Mkdir(bd, 0700)
-	}
+	s.baseDir = *baseDir
+	s.outDir = *outDir
+
+	os.Mkdir(s.outDir, 0700)
+	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
 	if *voting {
 		// Generate the voting authority configurations
@@ -319,6 +318,7 @@ func main() {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
 	} else {
+		panic("non-voting mode is not currently supported")
 		if err = s.genAuthConfig(); err != nil {
 			log.Fatalf("Failed to generate authority config: %v", err)
 		}
@@ -348,7 +348,7 @@ func main() {
 			aCfg.Providers = providers
 		}
 		for _, aCfg := range s.votingAuthConfigs {
-			if err := saveCfg(aCfg, *dataDir); err != nil {
+			if err := saveCfg(aCfg, *dataDir, *outDir); err != nil {
 				log.Fatalf("Failed to saveCfg of authority with %s", err)
 			}
 		}
@@ -361,13 +361,13 @@ func main() {
 			log.Fatalf("Failed to genNonVotingAuthorizedNodes with %s", err)
 		}
 
-		if err := saveCfg(s.authConfig, *dataDir); err != nil {
+		if err := saveCfg(s.authConfig, *dataDir, *outDir); err != nil {
 			log.Fatalf("Failed to saveCfg of authority with %s", err)
 		}
 	}
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
-		if err := saveCfg(v, *dataDir); err != nil {
+		if err := saveCfg(v, *dataDir, *outDir); err != nil {
 			log.Fatalf("%s", err)
 		}
 	}
@@ -401,8 +401,8 @@ func identifier(cfg interface{}) string {
 	}
 }
 
-func saveCfg(cfg interface{}, dataDir string) error {
-	fileName := filepath.Join(basedir(cfg), fmt.Sprintf("%s.toml", identifier(cfg)))
+func saveCfg(cfg interface{}, dataDir string, outDir string) error {
+	fileName := filepath.Join(outDir, basedir(cfg), fmt.Sprintf("%s.toml", identifier(cfg)))
 	log.Printf("saveCfg of %s", fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
@@ -429,15 +429,15 @@ func saveCfg(cfg interface{}, dataDir string) error {
 	return enc.Encode(cfg)
 }
 
-func cfgIdKey(cfg interface{}) sign.PublicKey {
+func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	var priv, public string
 	switch cfg.(type) {
 	case *sConfig.Config:
-		priv = filepath.Join(cfg.(*sConfig.Config).Server.DataDir, "identity.private.pem")
-		public = filepath.Join(cfg.(*sConfig.Config).Server.DataDir, "identity.public.pem")
+		priv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.private.pem")
+		public = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "identity.public.pem")
 	case *vConfig.Config:
-		priv = filepath.Join(cfg.(*vConfig.Config).Server.DataDir, "identity.private.pem")
-		public = filepath.Join(cfg.(*vConfig.Config).Server.DataDir, "identity.public.pem")
+		priv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.private.pem")
+		public = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "identity.public.pem")
 	default:
 		panic("wrong type")
 	}
@@ -453,14 +453,14 @@ func cfgIdKey(cfg interface{}) sign.PublicKey {
 	return idPubKey
 }
 
-func cfgLinkKey(cfg interface{}) wire.PublicKey {
+func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 	var linkpriv string
 	var linkpublic string
 
 	switch cfg.(type) {
 	case *vConfig.Config:
-		linkpriv = filepath.Join(cfg.(*vConfig.Config).Server.DataDir, "link.private.pem")
-		linkpublic = filepath.Join(cfg.(*vConfig.Config).Server.DataDir, "link.public.pem")
+		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.private.pem")
+		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.public.pem")
 	default:
 		panic("wrong type")
 	}
