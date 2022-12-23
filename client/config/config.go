@@ -164,9 +164,18 @@ type VotingAuthority struct {
 // New constructs a pki.Client with the specified voting authority config.
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
+	cLinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	b, err := linkKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	err = cLinkKey.UnmarshalBinary(b)
+	if err != nil {
+		return nil, err
+	}
 	cfg := &vClient.Config{
 		DataDir:       datadir,
-		LinkKey:       linkKey,
+		LinkKey:       cLinkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash[:])),
