@@ -148,6 +148,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	}
 	s.nodeConfigs = append(s.nodeConfigs, cfg)
 	s.lastPort++
+	_ = cfgIdKey(cfg, s.outDir)
 	return cfg.FixupAndValidate()
 }
 
@@ -281,12 +282,12 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 		if nodeCfg.Server.IsProvider {
 			node := &vConfig.Node{
 				Identifier:           nodeCfg.Server.Identifier,
-				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+				IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
 			}
 			providers = append(providers, node)
 		} else {
 			node := &vConfig.Node{
-				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+				IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
 			}
 			mixes = append(mixes, node)
 		}
@@ -436,7 +437,9 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 		return idPubKey
 	}
 	idKey, idPubKey = cert.Scheme.NewKeypair()
+	log.Printf("writing %s", priv)
 	pem.ToFile(priv, idKey)
+	log.Printf("writing %s", public)
 	pem.ToFile(public, idPubKey)
 	return idPubKey
 }
@@ -459,10 +462,12 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 		return linkPrivKey.PublicKey()
 	}
 	linkPrivKey, linkPubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	log.Printf("writing %s", linkpriv)
 	err = pem.ToFile(linkpriv, linkPrivKey)
 	if err != nil {
 		panic(err)
 	}
+	log.Printf("writing %s", linkpublic)
 	err = pem.ToFile(linkpublic, linkPubKey)
 	if err != nil {
 		panic(err)
