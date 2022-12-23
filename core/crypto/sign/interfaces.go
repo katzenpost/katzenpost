@@ -78,15 +78,6 @@ type Scheme interface {
 	// NewKeypair returns a newly generated key pair.
 	NewKeypair() (PrivateKey, PublicKey)
 
-	// UnmarshalBinaryPublicKey loads a public key from byte slice.
-	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
-
-	// UnmarshalBinaryPrivateKey loads a private key from byte slice.
-	UnmarshalBinaryPrivateKey([]byte) (PrivateKey, error)
-
-	// UnmarshalTextPublicKey loads a public key from byte slice.
-	UnmarshalTextPublicKey([]byte) (PublicKey, error)
-
 	// Name of the scheme.
 	Name() string
 
