@@ -5,8 +5,8 @@ services:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/provider1:/conf
-    command: /go/bin/server -f /conf/katzenpost.toml
+      - ./conf/:/conf
+    command: /go/bin/server -f /conf/provider1/katzenpost.toml
     network_mode: host
 
     depends_on:
@@ -18,8 +18,8 @@ services:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/provider2:/conf
-    command: /go/bin/server -f /conf/katzenpost.toml
+      - ./conf/:/conf
+    command: /go/bin/server -f /conf/provider2/katzenpost.toml
     network_mode: host
     depends_on:
       - auth1
@@ -31,8 +31,8 @@ services:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/mix1:/conf
-    command: /go/bin/server -f /conf/katzenpost.toml
+      - ./conf/:/conf
+    command: /go/bin/server -f /conf/mix1/katzenpost.toml
     network_mode: host
     depends_on:
       - auth1
@@ -45,8 +45,8 @@ services:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/mix2:/conf
-    command: /go/bin/server -f /conf/katzenpost.toml
+      - ./conf/:/conf
+    command: /go/bin/server -f /conf/mix2/katzenpost.toml
     network_mode: host
     depends_on:
       - auth1
@@ -59,8 +59,8 @@ services:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/mix3:/conf
-    command: /go/bin/server -f /conf/katzenpost.toml
+      - ./conf/:/conf
+    command: /go/bin/server -f /conf/mix3/katzenpost.toml
     network_mode: host
     depends_on:
       - auth1
@@ -73,22 +73,22 @@ services:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/auth1:/conf
-    command: /go/bin/voting -f /conf/authority.toml
+      - ./conf/:/conf
+    command: /go/bin/voting -f /conf/auth1/authority.toml
     network_mode: host
 
   auth2:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/auth2:/conf
-    command: /go/bin/voting -f /conf/authority.toml
+      - ./conf/:/conf
+    command: /go/bin/voting -f /conf/auth2/authority.toml
     network_mode: host
 
   auth3:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/auth3:/conf
-    command: /go/bin/voting -f /conf/authority.toml
+      - ./conf/:/conf
+    command: /go/bin/voting -f /conf/auth3/authority.toml
     network_mode: host
