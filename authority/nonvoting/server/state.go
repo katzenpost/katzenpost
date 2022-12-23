@@ -680,7 +680,7 @@ func newState(s *Server) (*state, error) {
 	st.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
 	for _, v := range st.s.cfg.Mixes {
 		_, idKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem), idKey)
+		err := pem.FromFile(filepath.Join(s.cfg.Server.DataDir, v.IdentityKeyPem), idKey)
 		if err != nil {
 			return nil, err
 		}
@@ -691,7 +691,7 @@ func newState(s *Server) (*state, error) {
 	st.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
 	for _, v := range st.s.cfg.Providers {
 		_, idKey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(s.cfg.Authority.DataDir, v.IdentityKeyPem), idKey)
+		err := pem.FromFile(filepath.Join(s.cfg.Server.DataDir, v.IdentityKeyPem), idKey)
 		if err != nil {
 			return nil, err
 		}
@@ -704,7 +704,7 @@ func newState(s *Server) (*state, error) {
 	st.descriptors = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*descriptor)
 
 	// Initialize the persistence store and restore state.
-	dbPath := filepath.Join(s.cfg.Authority.DataDir, dbFile)
+	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
 	var err error
 	if st.db, err = bolt.Open(dbPath, 0600, nil); err != nil {
 		return nil, err
