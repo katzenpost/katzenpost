@@ -258,6 +258,16 @@ type Authority struct {
 	Addresses []string
 }
 
+func (a *Authority) UnmarshalText(text []byte) error {
+	// create concrete instances of interface types
+	// from our schemes and then toml.Unmarshal
+	_, identityKey := cert.Scheme.NewKeypair()
+	_, linkKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	a.IdentityPublicKey = identityKey
+	a.IdentityLinkKey = linkKey
+	return toml.Unmarshal(text, a)
+}
+
 // Validate parses and checks the Authority configuration.
 func (a *Authority) Validate() error {
 	for _, v := range a.Addresses {
