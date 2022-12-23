@@ -1510,7 +1510,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 			return err
 		}
 		if !hmac.Equal(serialized, rawDesc) {
-			return fmt.Errorf("state: Node %v: Conflicting descriptor for epoch %v", desc.IdentityKey, epoch)
+			return fmt.Errorf("state: Node %s (%s): Conflicting descriptor for epoch %v", desc.Name, desc.IdentityKey.Sum256(), epoch)
 		}
 
 		// Redundant uploads that don't change are harmless.
