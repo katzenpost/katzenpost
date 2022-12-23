@@ -275,7 +275,12 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 	if err != nil {
 		return err
 	}
-	a.Addresses, _ = data["Addresses"].([]string)
+	addresses := make([]string, 0)
+	pos, _ := data["Addresses"]
+	for _, addr := range pos.([]interface{}) {
+		addresses = append(addresses, addr.(string))
+	}
+	a.Addresses = addresses
 	return nil
 }
 
