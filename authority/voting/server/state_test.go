@@ -130,7 +130,7 @@ func TestVote(t *testing.T) {
 
 	// create a voting PKI configuration
 	authorities := make([]*config.Authority, 0)
-	for i, aCfg:= range authCfgs {
+	for i, aCfg := range authCfgs {
 		require.NoError(err)
 		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
 			IdentityPublicKey: peerKeys[i].idPubKey,
@@ -347,10 +347,10 @@ func TestVote(t *testing.T) {
 }
 
 type peerKeys struct {
-	linkKey               wire.PrivateKey
-	idKey                 sign.PrivateKey
-	idPubKey              sign.PublicKey
-	datadir               string
+	linkKey  wire.PrivateKey
+	idKey    sign.PrivateKey
+	idPubKey sign.PublicKey
+	datadir  string
 }
 
 func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) ([]peerKeys, []*config.Config, error) {
@@ -383,10 +383,10 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		idKey, idPubKey := cert.Scheme.NewKeypair()
 
 		myPeerKeys[i] = peerKeys{
-			linkKey:              linkKey,
-			idKey:                idKey,
-			idPubKey:             idPubKey,
-			datadir:              datadir,
+			linkKey:  linkKey,
+			idKey:    idKey,
+			idPubKey: idPubKey,
+			datadir:  datadir,
 		}
 
 		cfg.Debug = &config.Debug{
