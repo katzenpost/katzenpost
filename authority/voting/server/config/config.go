@@ -32,8 +32,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -258,14 +258,25 @@ type Authority struct {
 	Addresses []string
 }
 
-func (a *Authority) UnmarshalText(text []byte) error {
-	// create concrete instances of interface types
-	// from our schemes and then toml.Unmarshal
-	_, identityKey := cert.Scheme.NewKeypair()
-	_, linkKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	a.IdentityPublicKey = identityKey
-	a.LinkPublicKey = linkKey
-	return toml.Unmarshal(text, a)
+// UnmarshalTOML deserializes into non-nil instances of sign.PublicKey and wire.PublicKey
+func (a *Authority) UnmarshalTOML(v interface{}) error {
+	_, a.IdentityPublicKey = cert.Scheme.NewKeypair()
+	_, a.LinkPublicKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+
+	data, _ := v.(map[string]interface{})
+	a.Identifier, _ = data["Identifier"].(string)
+	idPublicKeyString, _ := data["IdentityPublicKey"].(string)
+	err := a.IdentityPublicKey.UnmarshalText([]byte(idPublicKeyString))
+	if err != nil {
+		return err
+	}
+	linkPublicKeyString, _ := data["LinkPublicKey"].(string)
+	err = a.LinkPublicKey.UnmarshalText([]byte(linkPublicKeyString))
+	if err != nil {
+		return err
+	}
+	a.Addresses, _ = data["Addresses"].([]string)
+	return nil
 }
 
 // Validate parses and checks the Authority configuration.
