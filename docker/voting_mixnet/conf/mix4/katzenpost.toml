@@ -1,8 +1,8 @@
 [Server]
-  Identifier = "mix1"
-  Addresses = ["127.0.0.1:30009"]
+  Identifier = "mix4"
+  Addresses = ["127.0.0.1:30012"]
   OnlyAdvertiseAltAddresses = false
-  DataDir = "/conf/mix1"
+  DataDir = "/conf/mix4"
   IsProvider = false
   [Server.AltAddresses]
 
@@ -52,7 +52,7 @@
 
 [Management]
   Enable = false
-  Path = "/conf/mix1/management_sock"
+  Path = "/conf/mix4/management_sock"
 
 [Debug]
   NumSphinxWorkers = 8
