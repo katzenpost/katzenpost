@@ -33,7 +33,6 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -93,13 +92,13 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		}
 
 		scheme := wire.DefaultScheme
-		linkKey := scheme.GenerateKeypair(rand.Reader)
+		_, linkPubKey := scheme.GenerateKeypair(rand.Reader)
 
 		mix := &pki.MixDescriptor{
 			Name:        name,
 			Epoch:       epoch,
 			IdentityKey: mixIdentityPublicKey,
-			LinkKey:     linkKey.PublicKey(),
+			LinkKey:     linkPubKey,
 			MixKeys:     mixKeys,
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
@@ -320,12 +319,12 @@ func generatePeer(peerNum int, datadir string) (*config.Authority, sign.PrivateK
 	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
-	linkPrivateKey := scheme.GenerateKeypair(rand.Reader)
+	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
 
 	authPeer := &config.Authority{
-		IdentityPublicKeyPem: pem.ToPEMString(identityPublicKey),
-		LinkPublicKeyPem:     pem.ToPEMString(linkPrivateKey.PublicKey()),
-		Addresses:            []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
+		IdentityPublicKey: identityPublicKey,
+		LinkPublicKey:     linkPublicKey,
+		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}
 	err := authPeer.Validate()
 	if err != nil {
