@@ -117,7 +117,7 @@ func TestVote(t *testing.T) {
 		st.reveals[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
 		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := os.MkdirTemp("", cfg.Identifier)
+		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
@@ -129,19 +129,19 @@ func TestVote(t *testing.T) {
 	}
 
 	// create a voting PKI configuration
-	peers := make([]*config.Authority, 0)
-	for i, peer := range authCfgs {
+	authorities := make([]*config.Authority, 0)
+	for i, aCfg:= range authCfgs {
 		require.NoError(err)
-		p := &config.Authority{Addresses: peer.Addresses,
-			IdentityPublicKeyPem: peerKeys[i].identityPublicKeyPem,
-			LinkPublicKeyPem:     peerKeys[i].linkPublicKeyPem,
+		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
+			IdentityPublicKey: peerKeys[i].idPubKey,
+			LinkPublicKey:     peerKeys[i].linkKey.PublicKey(),
 		}
-		if len(peer.Addresses) == 0 {
+		if len(aCfg.Server.Addresses) == 0 {
 			panic("wtf")
 		}
-		peers = append(peers, p)
+		authorities = append(authorities, auth)
 	}
-	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Peers: peers}}
+	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Authorities: authorities}}
 
 	// generate mixes
 	n := 3 * 2 // 3 layer, 2 nodes per layer
@@ -198,13 +198,13 @@ func TestVote(t *testing.T) {
 			l = 255
 		}
 
-		linkKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 		desc := &pki.MixDescriptor{
 			Name:        mixCfgs[i].Server.Identifier,
 			Epoch:       votingEpoch,
 			IdentityKey: idKeys[i].pubKey,
-			LinkKey:     linkKey.PublicKey(),
+			LinkKey:     linkPubKey,
 			MixKeys:     mkeys,
 			Layer:       l,
 			Addresses:   addr,
@@ -292,7 +292,7 @@ func TestVote(t *testing.T) {
 				continue
 			}
 			a.reveals[a.votingEpoch][s.s.identityPublicKey.Sum256()] = c
-			t.Logf("%s sent %s reveal", authCfgs[i].Identifier, authCfgs[j].Identifier)
+			t.Logf("%s sent %s reveal", authCfgs[i].Server.Identifier, authCfgs[j].Server.Identifier)
 		}
 
 	}
@@ -350,9 +350,6 @@ type peerKeys struct {
 	linkKey               wire.PrivateKey
 	idKey                 sign.PrivateKey
 	idPubKey              sign.PublicKey
-	identityPublicKeyPem  string
-	identityPrivateKeyPem string
-	linkPublicKeyPem      string
 	datadir               string
 }
 
@@ -375,24 +372,20 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 			panic(err)
 		}
 
-		cfg.Identifier = fmt.Sprintf("authority-%v", i)
-		cfg.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
-		cfg.DataDir = datadir
+		cfg.Server = new(config.Server)
+		cfg.Server.Identifier = fmt.Sprintf("authority-%v", i)
+		cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
+		cfg.Server.DataDir = datadir
 		lastPort += 1
 
 		scheme := wire.DefaultScheme
-		linkKey := scheme.GenerateKeypair(rand.Reader)
-		linkPublicKeyPem := pem.ToPEMString(linkKey.PublicKey())
-
+		linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
 		idKey, idPubKey := cert.Scheme.NewKeypair()
-		identityPublicKeyPem := pem.ToPEMString(idPubKey)
 
 		myPeerKeys[i] = peerKeys{
 			linkKey:              linkKey,
 			idKey:                idKey,
 			idPubKey:             idPubKey,
-			identityPublicKeyPem: identityPublicKeyPem,
-			linkPublicKeyPem:     linkPublicKeyPem,
 			datadir:              datadir,
 		}
 
@@ -403,9 +396,9 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 		}
 		configs = append(configs, cfg)
 		authorityPeer := &config.Authority{
-			IdentityPublicKeyPem: identityPublicKeyPem,
-			LinkPublicKeyPem:     linkPublicKeyPem,
-			Addresses:            cfg.Addresses,
+			IdentityPublicKey: idPubKey,
+			LinkPublicKey:     linkPubKey,
+			Addresses:         cfg.Server.Addresses,
 		}
 		peersMap[idPubKey.Sum256()] = authorityPeer
 	}
@@ -452,7 +445,7 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
-	linkKey := scheme.GenerateKeypair(rand.Reader)
+	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
 	linkPublicKeyPem := "link.public.pem"
 
 	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
@@ -472,7 +465,7 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkKey.PublicKey())
+	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -537,7 +530,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
-	linkKey := scheme.GenerateKeypair(rand.Reader)
+	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
 	linkPublicKeyPem := "link.public.pem"
 
 	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
@@ -558,7 +551,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 		return nil, nil, err
 	}
 
-	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkKey.PublicKey())
+	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
 	if err != nil {
 		return nil, nil, err
 	}
