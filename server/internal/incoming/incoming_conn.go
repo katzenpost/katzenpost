@@ -132,7 +132,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		c.log.Debugf("Authentication failed: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Authentication failed: '%v' (%x)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey.Sum256())
 	}
 
 	return isValid
