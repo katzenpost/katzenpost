@@ -71,13 +71,14 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)}
-	cfg.Server.AltAddresses = map[string][]string{
-		"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
-	}
-
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
+	if isProvider {
+		cfg.Server.AltAddresses = map[string][]string{
+			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
+		}
+	}
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
