@@ -117,7 +117,7 @@ run-ping: ping
         /go/bin/ping -c /go/katzenpost/ping/voting_docker_mixnet.toml -s echo -printDiff -n 1
 
 shell: deps
-	docker run --network=host ${docker_args} --rm -it katzenpost/deps bash
+	docker run -e CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" --network=host ${docker_args} --rm -it katzenpost/deps bash
 
 rootshell: deps
 	docker run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
