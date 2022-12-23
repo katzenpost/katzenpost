@@ -230,6 +230,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 		idKey := cfgIdKey(cfg, s.outDir)
 		linkKey := cfgLinkKey(cfg, s.outDir)
 		authority := &vConfig.Authority{
+			Identifier:        fmt.Sprintf("auth%d", i),
 			IdentityPublicKey: idKey,
 			LinkPublicKey:     linkKey,
 			Addresses:         cfg.Server.Addresses,
@@ -265,7 +266,6 @@ func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.
 			continue
 		}
 		mix := &aConfig.Node{
-			Identifier:     nodeCfg.Server.Identifier,
 			IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
 		mixes = append(mixes, mix)
@@ -278,13 +278,16 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	mixes := []*vConfig.Node{}
 	providers := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
-		node := &vConfig.Node{
-			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
-		}
 		if nodeCfg.Server.IsProvider {
+			node := &vConfig.Node{
+				Identifier:           nodeCfg.Server.Identifier,
+				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+			}
 			providers = append(providers, node)
 		} else {
+			node := &vConfig.Node{
+				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+			}
 			mixes = append(mixes, node)
 		}
 	}
