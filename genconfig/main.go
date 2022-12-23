@@ -28,6 +28,7 @@ import (
 	"github.com/BurntSushi/toml"
 	aConfig "github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
+	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -50,12 +51,43 @@ type katzenpost struct {
 
 	authConfig        *aConfig.Config
 	votingAuthConfigs []*vConfig.Config
+	authorities       map[[32]byte]*vConfig.Authority
 	authIdentity      sign.PublicKey
 
 	nodeConfigs []*sConfig.Config
 	lastPort    uint16
 	nodeIdx     int
+	clientIdx     int
 	providerIdx int
+}
+
+func (s *katzenpost) genClientCfg() error {
+	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
+	cfg := new(cConfig.Config)
+	n := fmt.Sprintf("client%d", s.clientIdx+1)
+	s.clientIdx++
+	cfg.DataDir = filepath.Join(s.baseDir, n)
+
+	// Logging section.
+	cfg.Logging = &cConfig.Logging{File: "", Level: "DEBUG"}
+
+	// UpstreamProxy section
+	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
+
+	// VotingAuthority section
+	peers := make([]*vConfig.Authority, 0)
+	for _, peer := range s.authorities { 
+		peers = append(peers, peer)
+	}
+	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
+
+	// Debug section
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
+	err := saveCfg(cfg, s.outDir)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
@@ -206,7 +238,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 	configs := []*vConfig.Config{}
 
 	// initial generation of key material for each authority
-	authorities := make(map[[32]byte]*vConfig.Authority)
+	s.authorities = make(map[[32]byte]*vConfig.Authority)
 	for i := 1; i <= numAuthorities; i++ {
 		cfg := new(vConfig.Config)
 		cfg.Server = &vConfig.Server{
@@ -237,14 +269,14 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 			LinkPublicKey:     linkKey,
 			Addresses:         cfg.Server.Addresses,
 		}
-		authorities[idKey.Sum256()] = authority
+		s.authorities[idKey.Sum256()] = authority
 	}
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
 		h := cfgIdKey(configs[i], s.outDir).Sum256()
 		peers := []*vConfig.Authority{}
-		for id, peer := range authorities {
+		for id, peer := range s.authorities {
 			if !bytes.Equal(id[:], h[:]) {
 				peers = append(peers, peer)
 			}
@@ -375,10 +407,17 @@ func main() {
 			log.Fatalf("%s", err)
 		}
 	}
+
+	err = s.genClientCfg()
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
 }
 
 func identifier(cfg interface{}) string {
 	switch cfg.(type) {
+	case *cConfig.Config:
+		return "client"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
 	case *aConfig.Config:
@@ -393,6 +432,8 @@ func identifier(cfg interface{}) string {
 
 func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
+	case *cConfig.Config:
+		return "client"
 	case *sConfig.Config:
 		return "katzenpost"
 	case *aConfig.Config:
