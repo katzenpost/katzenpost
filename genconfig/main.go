@@ -76,7 +76,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	}
 
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
-	os.Mkdir(filepath.Join(s.outDir, s.baseDir, cfg.Server.Identifier), 0700)
+	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
 
 	// Debug section.
@@ -212,8 +212,8 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
-		os.Mkdir(filepath.Join(s.outDir, s.baseDir, cfg.Server.Identifier), 0700)
-		log.Printf("created %s", filepath.Join(s.outDir, s.baseDir, cfg.Server.Identifier))
+		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
+		log.Printf("created %s", filepath.Join(s.outDir, cfg.Server.Identifier))
 		s.lastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
@@ -259,14 +259,14 @@ func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.
 		if nodeCfg.Server.IsProvider {
 			provider := &aConfig.Node{
 				Identifier:     nodeCfg.Server.Identifier,
-				IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+				IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 			}
 			providers = append(providers, provider)
 			continue
 		}
 		mix := &aConfig.Node{
 			Identifier:     nodeCfg.Server.Identifier,
-			IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+			IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
 		mixes = append(mixes, mix)
 	}
@@ -280,7 +280,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	for _, nodeCfg := range s.nodeConfigs {
 		node := &vConfig.Node{
 			Identifier:           nodeCfg.Server.Identifier,
-			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+			IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
 		if nodeCfg.Server.IsProvider {
 			providers = append(providers, node)
@@ -298,7 +298,6 @@ func main() {
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
-	dataDir := flag.String("d", "", "Path to override dataDir, useful with volume mount paths")
 	outDir := flag.String("o", "", "Path to write files to")
 	flag.Parse()
 	s := &katzenpost{
@@ -348,7 +347,7 @@ func main() {
 			aCfg.Providers = providers
 		}
 		for _, aCfg := range s.votingAuthConfigs {
-			if err := saveCfg(aCfg, *dataDir, *outDir); err != nil {
+			if err := saveCfg(aCfg, *outDir); err != nil {
 				log.Fatalf("Failed to saveCfg of authority with %s", err)
 			}
 		}
@@ -361,33 +360,33 @@ func main() {
 			log.Fatalf("Failed to genNonVotingAuthorizedNodes with %s", err)
 		}
 
-		if err := saveCfg(s.authConfig, *dataDir, *outDir); err != nil {
+		if err := saveCfg(s.authConfig, *outDir); err != nil {
 			log.Fatalf("Failed to saveCfg of authority with %s", err)
 		}
 	}
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
-		if err := saveCfg(v, *dataDir, *outDir); err != nil {
+		if err := saveCfg(v, *outDir); err != nil {
 			log.Fatalf("%s", err)
 		}
 	}
 }
 
-func basedir(cfg interface{}) string {
+func identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *sConfig.Config:
-		return cfg.(*sConfig.Config).Server.DataDir
+		return cfg.(*sConfig.Config).Server.Identifier
 	case *aConfig.Config:
-		return cfg.(*aConfig.Config).Server.DataDir
+		return "authority"
 	case *vConfig.Config:
-		return cfg.(*vConfig.Config).Server.DataDir
+		return cfg.(*vConfig.Config).Server.Identifier
 	default:
 		log.Fatalf("identifier() passed unexpected type")
 		return ""
 	}
 }
 
-func identifier(cfg interface{}) string {
+func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
 	case *sConfig.Config:
 		return "katzenpost"
@@ -396,33 +395,19 @@ func identifier(cfg interface{}) string {
 	case *vConfig.Config:
 		return "authority"
 	default:
-		log.Fatalf("identifier() passed unexpected type")
+		log.Fatalf("toml_name() passed unexpected type")
 		return ""
 	}
 }
 
-func saveCfg(cfg interface{}, dataDir string, outDir string) error {
-	fileName := filepath.Join(outDir, basedir(cfg), fmt.Sprintf("%s.toml", identifier(cfg)))
+func saveCfg(cfg interface{}, outDir string) error {
+	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", toml_name(cfg)))
 	log.Printf("saveCfg of %s", fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-
-	// override each cfg DataDir for use with docker volume mounts
-	if dataDir != "" {
-		switch cfg.(type) {
-		case *sConfig.Config:
-			cfg.(*sConfig.Config).Server.DataDir = dataDir
-		case *aConfig.Config:
-			cfg.(*aConfig.Config).Server.DataDir = dataDir
-		case *vConfig.Config:
-			cfg.(*vConfig.Config).Server.DataDir = dataDir
-		default:
-			log.Fatalf("identifier() passed unexpected type")
-		}
-	}
 
 	// Serialize the descriptor.
 	enc := toml.NewEncoder(f)
