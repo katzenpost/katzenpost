@@ -5,7 +5,7 @@ go 1.19
 require (
 	filippo.io/edwards25519 v1.0.0-rc.1
 	git.xx.network/elixxir/ctidh_cgo v0.0.0-20221019215055-572ef9cc61bd
-	github.com/BurntSushi/toml v0.4.1
+	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.2
 	github.com/cloudflare/circl v1.2.1-0.20220831060716-4cf0150356fc
 	github.com/fxamacker/cbor/v2 v2.3.0
