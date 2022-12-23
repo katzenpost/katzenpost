@@ -264,7 +264,7 @@ func (a *Authority) UnmarshalText(text []byte) error {
 	_, identityKey := cert.Scheme.NewKeypair()
 	_, linkKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	a.IdentityPublicKey = identityKey
-	a.IdentityLinkKey = linkKey
+	a.LinkPublicKey = linkKey
 	return toml.Unmarshal(text, a)
 }
 
