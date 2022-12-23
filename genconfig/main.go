@@ -69,6 +69,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
+	cfg.Server.Identifier = n
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)}
 	cfg.Server.AltAddresses = map[string][]string{
 		"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
