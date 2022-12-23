@@ -120,17 +120,17 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 		cfg.Provider = new(sConfig.Provider)
 
-		loopCfg := new(sConfig.Kaetzchen)
-		loopCfg.Capability = "loop"
-		loopCfg.Endpoint = "+loop"
-		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, loopCfg)
+		echoCfg := new(sConfig.Kaetzchen)
+		echoCfg.Capability = "echo"
+		echoCfg.Endpoint = "+echo"
+		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
 
+		/*
 		keysvrCfg := new(sConfig.Kaetzchen)
 		keysvrCfg.Capability = "keyserver"
 		keysvrCfg.Endpoint = "+keyserver"
 		cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, keysvrCfg)
 
-		/*
 			if s.providerIdx == 1 {
 				cfg.Debug.NumProviderWorkers = 10
 				cfg.Provider.SQLDB = new(sConfig.SQLDB)
