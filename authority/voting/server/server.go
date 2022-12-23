@@ -261,9 +261,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	idKeyHash := s.identityPublicKey.Sum256()
-	s.log.Noticef("Authority identity public key hash is: %x", idKeyHash[:])
-	s.log.Noticef("Authority link public key is: %x", s.linkKey.PublicKey().Bytes())
+	s.log.Noticef("Authority identity public key hash is: %x", s.identityPublicKey.Sum256())
+	s.log.Noticef("Authority link public key hash is: %x", s.linkKey.PublicKey().Sum256())
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
