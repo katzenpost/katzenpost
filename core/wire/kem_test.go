@@ -18,6 +18,8 @@
 package wire
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,4 +40,18 @@ func TestSignatureScheme(t *testing.T) {
 	pubKey3, err := DefaultScheme.UnmarshalTextPublicKey(pubText)
 	require.NoError(t, err)
 	require.True(t, pubKey1.Equal(pubKey3))
+
+	pubkeypempath := filepath.Join(os.TempDir(), "pubkey.pem")
+	err = DefaultScheme.PublicKeyToPemFile(pubkeypempath, pubKey1)
+	require.NoError(t, err)
+	pubKey4, err := DefaultScheme.PublicKeyFromPemFile(pubkeypempath)
+	require.NoError(t, err)
+	require.True(t, pubKey1.Equal(pubKey4))
+
+	privkeypempath := filepath.Join(os.TempDir(), "privkey.pem")
+	err = DefaultScheme.PrivateKeyToPemFile(privkeypempath, privKey1)
+	require.NoError(t, err)
+	privKey2, err := DefaultScheme.PrivateKeyFromPemFile(privkeypempath)
+	require.NoError(t, err)
+	require.Equal(t, privKey1, privKey2)
 }
