@@ -41,14 +41,14 @@ func TestSignatureScheme(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, pubKey1.Equal(pubKey3))
 
-	pubkeypempath := filepath.Join(os.TempDir(), "pubkey.pem")
+	pubkeypempath := filepath.Join(os.TempDir(), "pubkey1.pem")
 	err = DefaultScheme.PublicKeyToPemFile(pubkeypempath, pubKey1)
 	require.NoError(t, err)
 	pubKey4, err := DefaultScheme.PublicKeyFromPemFile(pubkeypempath)
 	require.NoError(t, err)
 	require.True(t, pubKey1.Equal(pubKey4))
 
-	privkeypempath := filepath.Join(os.TempDir(), "privkey.pem")
+	privkeypempath := filepath.Join(os.TempDir(), "privkey2.pem")
 	err = DefaultScheme.PrivateKeyToPemFile(privkeypempath, privKey1)
 	require.NoError(t, err)
 	privKey2, err := DefaultScheme.PrivateKeyFromPemFile(privkeypempath)
