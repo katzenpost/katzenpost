@@ -106,9 +106,6 @@ type Scheme interface {
 	// the specified file path.
 	PublicKeyToPemFile(f string, pubKey PublicKey) error
 
-	// UnmarshalTextPrivateKey loads a private from text encoded in base64.
-	UnmarshalTextPrivateKey([]byte) (PrivateKey, error)
-
 	// UnmarshalTextPublicKey loads a public key from text encoded in base64.
 	UnmarshalTextPublicKey([]byte) (PublicKey, error)
 
@@ -363,14 +360,6 @@ func (s *scheme) UnmarshalTextPublicKey(b []byte) (PublicKey, error) {
 		return nil, err
 	}
 	return s.PublicKeyFromBytes(raw)
-}
-
-func (s *scheme) UnmarshalTextPrivateKey(b []byte) (PrivateKey, error) {
-	raw, err := base64.StdEncoding.DecodeString(string(b))
-	if err != nil {
-		return nil, err
-	}
-	return s.PrivateKeyFromBytes(raw)
 }
 
 func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (PublicKey, error) {
