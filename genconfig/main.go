@@ -105,6 +105,15 @@ func (s *katzenpost) genClientCfg() error {
 	return nil
 }
 
+func write(f *os.File, str string, args ...interface{}) {
+	str = fmt.Sprintf(str, args...)
+	_, err := f.WriteString(str)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	const serverLogFile = "katzenpost.log"
 
@@ -263,7 +272,6 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
-		log.Printf("created %s", filepath.Join(s.outDir, cfg.Server.Identifier))
 		s.lastPort += 1
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
@@ -432,6 +440,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
+
+	err = s.genDockerCompose()
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
 }
 
 func identifier(cfg interface{}) string {
@@ -535,4 +548,77 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 		panic(err)
 	}
 	return linkPubKey
+}
+
+func (s *katzenpost) genDockerCompose() error {
+	dest := filepath.Join(s.outDir, "docker-compose.yml")
+	log.Printf("writing %s", dest)
+	f, err := os.Create(dest)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer f.Close()
+
+	providers, mixes, err := s.genAuthorizedNodes()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	write(f, `version: "2"
+
+services:
+`)
+	for _, p := range providers {
+		write(f, `
+  %s:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./:/conf
+    command: /go/bin/server -f /conf/%s/katzenpost.toml
+    network_mode: host
+
+    depends_on:`, p.Identifier, p.Identifier)
+		for _, authCfg := range s.votingAuthConfigs {
+			write(f, `
+      - %s`, authCfg.Server.Identifier)
+		}
+	}
+
+	for i := range mixes {
+		// mixes in this form don't have their identifiers, because that isn't
+		// part of the consensus. if/when that is fixed this could use that
+		// identifier; instead it duplicates the definition of the name format
+		// here.
+		write(f, `
+  mix%d:
+    restart: unless-stopped
+    image: katzenpost/server
+    volumes:
+      - ./:/conf
+    command: /go/bin/server -f /conf/mix%d/katzenpost.toml
+    network_mode: host
+    depends_on:`, i+1, i+1)
+		for _, authCfg := range s.votingAuthConfigs {
+			// is this depends_on stuff actually necessary?
+			// there was a bit more of it before this function was regenerating docker-compose.yaml...
+			write(f, `
+      - %s`, authCfg.Server.Identifier)
+		}
+	}
+	for _, authCfg := range s.votingAuthConfigs {
+		write(f, `
+  %s:
+    restart: unless-stopped
+    image: katzenpost/voting_authority
+    volumes:
+      - ./:/conf
+    command: /go/bin/voting -f /conf/%s/authority.toml
+    network_mode: host
+`, authCfg.Server.Identifier, authCfg.Server.Identifier)
+	}
+	return nil
 }
