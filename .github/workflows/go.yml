@@ -1,5 +1,8 @@
 name: build
 on: [push]
+env:
+  CGO_CFLAGS_ALLOW: "-DPARAMS=sphincs-shake-256f"
+
 jobs:
   test:
     strategy:
@@ -16,8 +19,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Generate mixnet configuration
+        run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
+
       - name: Run all package unit tests
-        run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -race -v -timeout 0 ./..."
+        run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -race -v -timeout 0 ./..."
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
@@ -40,32 +46,32 @@ jobs:
 
       - name: Build voting authority docker image
         run: |
-          cd docker && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make voting_authority
+          cd docker && make voting_authority
 
       - name: Build server docker image
         run: |
-          cd docker && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make server
+          cd docker && make server
 
-      - name: Fix permissions
-        run: chmod -R og-rwx docker/voting_mixnet/conf
+      - name: Generate mixnet configuration
+        run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
 
       - name: Start the mixnet
         run: |
-          cd docker/voting_mixnet && docker-compose --verbose up -d
+          cd docker && make start-voting-testnet
 
       - name: Allow mixnet to settle
         run: |
           sleep 240
 
       - name: run client end to end tests
-        run: cd client && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make dockerdockertest
+        run: cd client && make dockerdockertest
 
       - name: run memspool end to end tests
-        run: cd memspool && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make dockerdockertest
+        run: cd memspool && make dockerdockertest
 
       - name: run catshadow end to end tests
-        run: cd catshadow && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f make dockerdockertest
+        run: cd catshadow && make dockerdockertest
 
       - name: Stop the mixnet
         run: |
-          cd docker/voting_mixnet && docker-compose down
+          cd docker && make stop-voting-testnet
