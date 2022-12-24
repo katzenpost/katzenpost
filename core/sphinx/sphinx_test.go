@@ -18,7 +18,6 @@ package sphinx
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/require"
