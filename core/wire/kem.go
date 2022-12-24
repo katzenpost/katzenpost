@@ -140,7 +140,7 @@ func (p *publicKey) FromPEMFile(f string) error {
 	if blk == nil {
 		return fmt.Errorf("failed to decode PEM file %v", f)
 	}
-	if blk.Type != keyType {
+	if strings.ToUpper(blk.Type) != keyType {
 		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
 	}
 	return p.FromBytes(blk.Bytes)
@@ -221,7 +221,7 @@ func (p *privateKey) FromPEMFile(f string) error {
 	if blk == nil {
 		return fmt.Errorf("failed to decode PEM file %v", f)
 	}
-	if blk.Type != keyType {
+	if strings.ToUpper(blk.Type) != keyType {
 		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
 	}
 	return p.FromBytes(blk.Bytes)
@@ -327,7 +327,7 @@ func (s *scheme) PrivateKeyFromPemFile(f string) (PrivateKey, error) {
 	if blk == nil {
 		return nil, fmt.Errorf("failed to decode PEM file %v", f)
 	}
-	if blk.Type != keyType {
+	if strings.ToUpper(blk.Type) != keyType {
 		return nil, fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
 	}
 	return s.PrivateKeyFromBytes(blk.Bytes)
@@ -347,7 +347,7 @@ func (s *scheme) PublicKeyFromPemFile(f string) (PublicKey, error) {
 	if blk == nil {
 		return nil, fmt.Errorf("failed to decode PEM file %v", f)
 	}
-	if blk.Type != keyType {
+	if strings.ToUpper(blk.Type) != keyType {
 		return nil, fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
 	}
 	return s.PublicKeyFromBytes(blk.Bytes)
