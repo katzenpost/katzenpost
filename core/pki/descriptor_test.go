@@ -53,8 +53,7 @@ func TestDescriptor(t *testing.T) {
 	identityPriv, identityPub := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPub
 	scheme := wire.DefaultScheme
-	linkPriv := scheme.GenerateKeypair(rand.Reader)
-	d.LinkKey = linkPriv.PublicKey()
+	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
 	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)

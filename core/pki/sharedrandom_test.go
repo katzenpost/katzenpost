@@ -17,8 +17,11 @@
 package pki
 
 import (
-	"github.com/stretchr/testify/require"
+	"bytes"
 	"testing"
+
+	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/sha3"
 )
 
 func TestSharedRandomVerify(t *testing.T) {
@@ -26,7 +29,7 @@ func TestSharedRandomVerify(t *testing.T) {
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
 	require.NoError(err, "wtf")
-	require.True(len(commit) == pki.SharedRandomLength)
+	require.True(len(commit) == SharedRandomLength)
 	srv.SetCommit(commit)
 	require.True(bytes.Equal(commit, srv.GetCommit()))
 	t.Logf("commit %v", commit)
@@ -35,7 +38,7 @@ func TestSharedRandomVerify(t *testing.T) {
 	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
 	t.Logf("reveal %v", reveal)
 	t.Logf("len(reveal): %v", len(reveal))
-	require.True(len(reveal) == pki.SharedRandomLength)
+	require.True(len(reveal) == SharedRandomLength)
 	require.True(srv.Verify(reveal))
 }
 
@@ -44,7 +47,7 @@ func TestSharedRandomCommit(t *testing.T) {
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
 	require.NoError(err, "wtf")
-	require.True(len(commit) == pki.SharedRandomLength)
+	require.True(len(commit) == SharedRandomLength)
 }
 
 func TestSharedRandomSetCommit(t *testing.T) {
