@@ -8,24 +8,26 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user=${uid}:${gid}
 docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -e CGO_CFLAGS_ALLOW=${CGO_CFLAGS_ALLOW}
+net_name=voting_mixnet
+docker_compose_yml=$(net_name)/docker-compose.yml
 
-generate-voting-mixnet-config: server voting_authority
-	docker run -e --network=host ${docker_args} --rm katzenpost/deps bash -c 'cd genconfig && go build && cd ../docker && mkdir -p voting_mixnet && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./voting_mixnet -b /conf'
+$(docker_compose_yml): ../genconfig/main.go
+	docker run -e --network=host ${docker_args} --rm katzenpost/deps bash -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /conf'
 
 #run-nonvoting-testnet: server nonvoting_authority
 #	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up
 
-run-voting-testnet: generate-voting-mixnet-config
-	cd voting_mixnet; DOCKER_USER=${docker_user} docker-compose up
+run-voting-testnet: server voting_authority $(docker_compose_yml)
+	cd $(net_name); DOCKER_USER=${docker_user} docker-compose up
 
 #start-nonvoting-testnet: server nonvoting_authority fix-perms
 #	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up -d; docker-compose top
 
-start-voting-testnet: server voting_authority generate-voting-mixnet-config
-	cd voting_mixnet; DOCKER_USER=${docker_user} docker-compose up -d; docker-compose top
+start-voting-testnet: server voting_authority $(docker_compose_yml)
+	cd $(net_name); DOCKER_USER=${docker_user} docker-compose up -d; docker-compose top
 
 stop-voting-testnet:
-	cd voting_mixnet; docker-compose down
+	cd $(net_name); docker-compose down
 
 #stop-nonvoting-testnet:
 #	cd nonvoting_mixnet; docker-compose down
@@ -92,20 +94,20 @@ nonvoting_authority: deps
         fi
 
 clean-local-images:
-	cd nonvoting_mixnet; docker-compose rm -sf
-	cd voting_mixnet; docker-compose rm -sf
-	docker rm  katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority katzenpost_ping || true
-	docker rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority katzenpost/ping || true
+	-cd nonvoting_mixnet && docker-compose rm -sf
+	-cd net_name && docker-compose rm -sf
+	-docker rm  katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority katzenpost_ping
+	-docker rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority katzenpost/ping
 
 clean-images: clean-local-images
 	docker rm  katzenpost_debian_base katzenpost_deps || true
 	docker rmi katzenpost/debian_base katzenpost/deps || true
 
 clean-data-dryrun:
-	git clean -n -x nonvoting_mixnet voting_mixnet
+	git clean -n -x nonvoting_mixnet $(net_name)
 
 clean-data:
-	git clean -f -x nonvoting_mixnet voting_mixnet
+	git clean -f -x nonvoting_mixnet $(net_name)
 
 clean-local: clean-local-images clean-data
 
@@ -125,9 +127,9 @@ ping-rebuild: deps
 		&& docker commit katzenpost_ping katzenpost/ping \
 		&& docker rm katzenpost_ping; \
 
-run-ping: ping
+run-ping: ping start-voting-testnet
 	docker run --network=host ${docker_args} --rm katzenpost/ping \
-        /go/bin/ping -c /go/katzenpost/docker/voting_mixnet/conf/client/client.toml -s echo -printDiff -n 1
+        /go/bin/ping -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
 shell: deps
 	docker run -e --network=host ${docker_args} --rm -it katzenpost/deps bash
@@ -135,3 +137,7 @@ shell: deps
 rootshell: deps
 	docker run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
 
+test: start-voting-testnet
+	cd ../client && make dockerdockertest
+	cd ../catshadow && make dockerdockertest
+	cd ../memspool && make dockerdockertest
