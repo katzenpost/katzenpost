@@ -11,7 +11,7 @@ docker_compose_yml=$(net_name)/docker-compose.yml
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
-
+sh=sh
 
 # note: currently docker still defaults to docker, until we test podman a
 # little more. to use podman (still with docker compose, but now rootless!) set
@@ -30,7 +30,7 @@ docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpos
 docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix:$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
 
 $(docker_compose_yml): ../genconfig/main.go
-	$(docker) run -e --network=host ${docker_args} --rm katzenpost/deps bash -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /conf'
+	$(docker) run -e --network=host ${docker_args} --rm katzenpost/deps $(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /conf'
 
 run-voting-testnet: server voting_authority $(docker_compose_yml)
 	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up
@@ -55,35 +55,42 @@ fix-perms:
 
 debian_base:
 	if ! $(docker) images|grep katzenpost/debian_base; then \
-		$(docker) run --name katzenpost_debian_base golang:bullseye bash -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y' \
+		$(docker) run --name katzenpost_debian_base golang:bullseye $(sh) -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y' \
 		&& $(docker) commit katzenpost_debian_base katzenpost/debian_base \
 		&& $(docker) rm katzenpost_debian_base; \
         fi
 
-deps: debian_base
+alpine_base:
+	if ! docker images|grep katzenpost/alpine_base; then \
+		docker run --name katzenpost_alpine_base golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make' \
+		&& docker commit katzenpost_alpine_base katzenpost/alpine_base \
+		&& docker rm katzenpost_alpine_base; \
+	fi
+
+deps: alpine_base
 	if ! $(docker) images|grep katzenpost/deps; then \
-		$(docker) run ${docker_args} --name katzenpost_deps katzenpost/debian_base \
-			bash -c 'go mod download && cd sphincsplus/ref && go install' \
+		$(docker) run ${docker_args} --name katzenpost_deps katzenpost/alpine_base \
+			sh -c 'go mod download && cd sphincsplus/ref && go install' \
 		&& $(docker) commit katzenpost_deps katzenpost/deps \
 		&& $(docker) rm katzenpost_deps; \
         fi
 
 go-mod-tidy: deps
 	$(docker) run ${docker_args} --name katzenpost_deps katzenpost/deps \
-			bash -c "go mod tidy" \
+			$(sh) -c "go mod tidy" \
 		&& $(docker) commit katzenpost_deps katzenpost/deps \
 		&& $(docker) rm katzenpost_deps
 
 go-mod-upgrade: deps
 	$(docker) run ${docker_args} --name katzenpost_deps katzenpost/deps \
-			bash -c 'go get -d -u ./... && go mod tidy' \
+			$(sh) -c 'go get -d -u ./... && go mod tidy' \
 		&& $(docker) commit katzenpost_deps katzenpost/deps \
 		&& $(docker) rm katzenpost_deps
 
 server: deps
 	if ! $(docker) images|grep katzenpost/server; then \
 		$(docker) run ${docker_args} --name katzenpost_server katzenpost/deps \
-			bash -c 'cd server && warped=${warped} make testnet-build testnet-install' \
+			$(sh) -c 'cd server && warped=${warped} make testnet-build testnet-install' \
 		&& $(docker) commit katzenpost_server katzenpost/server \
 		&& $(docker) rm katzenpost_server; \
         fi
@@ -91,7 +98,7 @@ server: deps
 voting_authority: deps
 	if ! $(docker) images|grep katzenpost/voting_authority; then \
 		$(docker) run ${docker_args} --name katzenpost_voting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/voting && go mod verify && go install -trimpath -ldflags ${ldflags}' \
+			$(sh) -c 'cd authority/cmd/voting && go mod verify && go install -trimpath -ldflags ${ldflags}' \
 		&& $(docker) commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& $(docker) rm katzenpost_voting_authority; \
         fi
@@ -99,7 +106,7 @@ voting_authority: deps
 nonvoting_authority: deps
 	if ! $(docker) images|grep katzenpost/nonvoting_authority; then \
 		$(docker) run ${docker_args} --name katzenpost_nonvoting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/nonvoting && go mod verify && go install -trimpath -ldflags ${ldflags}' \
+			$(sh) -c 'cd authority/cmd/nonvoting && go mod verify && go install -trimpath -ldflags ${ldflags}' \
 		&& $(docker) commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& $(docker) rm katzenpost_nonvoting_authority; \
         fi
@@ -111,8 +118,9 @@ clean-local-images:
 	-$(docker) rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority katzenpost/ping
 
 clean-images: clean-local-images
-	-$(docker) rm  katzenpost_debian_base katzenpost_deps
-	-$(docker) rmi katzenpost/debian_base katzenpost/deps
+	-$(docker) stop -i katzenpost_alpine_base katzenpost_debian_base katzenpost_deps
+	-$(docker) rm   -i katzenpost_alpine_base katzenpost_debian_base katzenpost_deps
+	-$(docker) rmi  katzenpost/alpine_base katzenpost/debian_base katzenpost/deps
 
 clean-data-dryrun:
 	git clean -n -x nonvoting_mixnet $(net_name)
@@ -127,14 +135,14 @@ clean: clean-images clean-data
 ping: deps
 	if ! $(docker) images|grep katzenpost/ping; then \
 		$(docker) run ${docker_args} --name katzenpost_ping katzenpost/deps \
-			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
+			$(sh) -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
 		&& $(docker) commit katzenpost_ping katzenpost/ping \
 		&& $(docker) rm katzenpost_ping; \
         fi
 
 ping-rebuild: deps
 		$(docker) run ${docker_args} --name katzenpost_ping katzenpost/deps \
-			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
+			$(sh) -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
 		&& $(docker) commit katzenpost_ping katzenpost/ping \
 		&& $(docker) rm katzenpost_ping; \
 
@@ -143,10 +151,10 @@ run-ping: ping start-voting-testnet
         /go/bin/ping -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
 shell: deps
-	$(docker) run -e --network=host ${docker_args} --rm -it katzenpost/deps bash
+	$(docker) run -e --network=host ${docker_args} --rm -it katzenpost/deps $(sh)
 
 rootshell: deps
-	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
+	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps $(sh)
 
 test: start-voting-testnet
 	cd ../client && make docker=$(docker) dockerdockertest
