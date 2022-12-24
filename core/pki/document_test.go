@@ -29,13 +29,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func genDescriptor(require *require.Assertions, idx int, layer int) (*MixDescriptor, []byte) {
+func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte) {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
 	d.Addresses = map[Transport][]string{
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
-	d.Layer = uint8(layer)
+	d.Provider = provider
 	d.Epoch = debugTestEpoch
 	d.Version = DescriptorVersion
 	d.LoadWeight = 23
@@ -49,7 +49,7 @@ func genDescriptor(require *require.Assertions, idx int, layer int) (*MixDescrip
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
 		d.MixKeys[uint64(e)] = mPriv.PublicKey()
 	}
-	if layer == LayerProvider {
+	if provider {
 		d.Kaetzchen = make(map[string]map[string]interface{})
 		d.Kaetzchen["miau"] = map[string]interface{}{
 			"endpoint":  "+miau",
@@ -93,7 +93,8 @@ func TestDocument(t *testing.T) {
 	idx := 1
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
-			_, rawDesc := genDescriptor(require, idx, 0)
+			provider := false
+			_, rawDesc := genDescriptor(require, idx, provider)
 			d := new(MixDescriptor)
 			err := d.UnmarshalBinary(rawDesc)
 			require.NoError(err)
@@ -105,7 +106,8 @@ func TestDocument(t *testing.T) {
 		}
 	}
 	for i := 0; i < 3; i++ {
-		_, rawDesc := genDescriptor(require, idx, LayerProvider)
+		provider := true
+		_, rawDesc := genDescriptor(require, idx, provider)
 		d := new(MixDescriptor)
 		err := d.UnmarshalBinary(rawDesc)
 		require.NoError(err)

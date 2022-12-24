@@ -102,14 +102,16 @@ func (e *Entry) Outgoing() []*pki.MixDescriptor {
 }
 
 func (e *Entry) isOurLayerSane(isProvider bool) bool {
-	if isProvider && e.self.Layer != pki.LayerProvider {
+	if isProvider && !e.self.Provider {
 		return false
 	}
 	if !isProvider {
-		if e.self.Layer == pki.LayerProvider {
+		idHash := e.self.IdentityKey.Sum256()
+		layer, err := e.doc.GetMixLayer(&idHash)
+		if err != nil  || layer == pki.LayerProvider {
 			return false
 		}
-		if int(e.self.Layer) >= len(e.doc.Topology) {
+		if int(layer) >= len(e.doc.Topology) {
 			return false
 		}
 	}
@@ -117,23 +119,33 @@ func (e *Entry) isOurLayerSane(isProvider bool) bool {
 }
 
 func (e *Entry) incomingLayer() uint8 {
-	switch e.self.Layer {
+	idHash := e.self.IdentityKey.Sum256()
+	layer, err := e.doc.GetMixLayer(&idHash)
+	if err != nil {
+		panic(err)
+	}
+	switch layer {
 	case pki.LayerProvider:
 		return uint8(len(e.doc.Topology)) - 1
 	case 0:
 		return pki.LayerProvider
 	}
-	return e.self.Layer - 1
+	return layer - 1
 }
 
 func (e *Entry) outgoingLayer() uint8 {
-	switch int(e.self.Layer) {
+	idHash := e.self.IdentityKey.Sum256()
+	layer, err := e.doc.GetMixLayer(&idHash)
+	if err != nil {
+		panic(err)
+	}
+	switch int(layer) {
 	case len(e.doc.Topology) - 1:
 		return pki.LayerProvider
 	case pki.LayerProvider:
 		return 0
 	}
-	return e.self.Layer + 1
+	return layer + 1
 }
 
 // New constructs a new Entry from a given document.
@@ -154,7 +166,11 @@ func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, 
 
 	// Ensure that the self descriptor has a sensible layer.
 	if !e.isOurLayerSane(isProvider) {
-		return nil, fmt.Errorf("pkicache: self layer is invalid: %d", e.self.Layer)
+		layer, err := e.doc.GetMixLayer(&idKeyHash)
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("pkicache: self layer is invalid: %d", layer)
 	}
 
 	// Build the maps of peers that will connect to us, and that we will

@@ -234,6 +234,25 @@ func (d *Document) GetMix(name string) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: mix '%v' not found", name)
 }
 
+// GetMixLayer returns the assigned layer for the given mix from Topology
+func (d *Document) GetMixLayer(keyhash *[32]byte) (uint8, error) {
+	for _, p := range d.Providers {
+		idKeyHash := p.IdentityKey.Sum256()
+		if hmac.Equal(idKeyHash[:], keyhash[:]) {
+			return LayerProvider, nil
+		}
+	}
+	for n, l := range d.Topology {
+		for _, v := range l {
+			idKeyHash := v.IdentityKey.Sum256()
+			if hmac.Equal(idKeyHash[:], keyhash[:]) {
+				return uint8(n), nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("pki: mix '%v' not found", keyhash)
+}
+
 // GetMixesInLayer returns all the mix descriptors for a given layer.
 func (d *Document) GetMixesInLayer(layer uint8) ([]*MixDescriptor, error) {
 	if len(d.Topology)-1 < int(layer) {
@@ -518,8 +537,8 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 		if err := IsDescriptorWellFormed(desc, d.Epoch); err != nil {
 			return err
 		}
-		if desc.Layer != LayerProvider {
-			return fmt.Errorf("Document lists %v as a Provider with layer %v", desc.IdentityKey, desc.Layer)
+		if !desc.Provider {
+			return fmt.Errorf("Document lists %v as a Provider with desc.Provider = false %v", desc.IdentityKey, desc.Provider)
 		}
 		pk := desc.IdentityKey.Sum256()
 		if _, ok := pks[pk]; ok {

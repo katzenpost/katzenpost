@@ -48,7 +48,7 @@ func TestDescriptor(t *testing.T) {
 		Transport("torv2"): []string{"thisisanoldonion.onion:2323"},
 		TransportTCP:       []string{"example.com:4242"},
 	}
-	d.Layer = LayerProvider
+	d.Provider = true
 	d.LoadWeight = 23
 	identityPriv, identityPub := cert.Scheme.NewKeypair()
 	d.IdentityKey = identityPub
@@ -84,7 +84,7 @@ func TestDescriptor(t *testing.T) {
 	// Ensure the base and de-serialized descriptors match.
 	assert.Equal(d.Name, dd.Name, "Name")
 	assert.Equal(d.Addresses, dd.Addresses, "Addresses")
-	assert.Equal(d.Layer, dd.Layer, "Layer")
+	assert.Equal(d.Provider, dd.Provider, "Provider")
 	assert.Equal(d.LoadWeight, dd.LoadWeight, "LoadWeight")
 	assert.Equal(d.IdentityKey.Bytes(), dd.IdentityKey.Bytes(), "IdentityKey")
 	assert.Equal(d.LinkKey.Bytes(), dd.LinkKey.Bytes(), "LinkKey")

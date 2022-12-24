@@ -342,7 +342,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
 		// shouldn't be self assigning this.
-		desc.Layer = cpki.LayerProvider
+		desc.Provider = true
 
 		// Publish currently running Kaetzchen.
 		var err error
