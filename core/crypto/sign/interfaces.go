@@ -78,6 +78,9 @@ type Scheme interface {
 	// NewKeypair returns a newly generated key pair.
 	NewKeypair() (PrivateKey, PublicKey)
 
+	// NewEmptyPublicKey returns an empty public key.
+	NewEmptyPublicKey() PublicKey
+
 	// Name of the scheme.
 	Name() string
 

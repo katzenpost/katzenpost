@@ -122,7 +122,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	}
 
 	// Instantiate concrete instances so we deserialize into the right types
-	_, idPublicKey := cert.Scheme.NewKeypair()
+	idPublicKey := cert.Scheme.NewEmptyPublicKey()
 	d.IdentityKey = idPublicKey
 	_, linkPub := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	d.LinkKey = linkPub
