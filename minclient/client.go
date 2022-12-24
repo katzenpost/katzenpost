@@ -201,7 +201,6 @@ func New(cfg *ClientConfig) (*Client, error) {
 
 	c.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	c.log.Debugf("User/Provider is: %v", c.displayName)
-	c.log.Debugf("User Link Key is: %v", c.cfg.LinkKey.PublicKey())
 
 	c.rng = rand.NewMath()
 
