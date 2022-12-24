@@ -5,6 +5,7 @@ uid=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user=${uid}:${gid}
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --rm
+sh=bash
 
 test:
 	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags} .
@@ -21,4 +22,4 @@ coverage-html:
 
 dockerdockertest:
 	docker run ${docker_args} katzenpost/deps \
-		bash -c 'cd /go/katzenpost/client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'
+		$(sh) -c 'cd /go/katzenpost/client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'

@@ -157,6 +157,6 @@ rootshell: deps
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps $(sh)
 
 test: start-voting-testnet
-	cd ../client && make docker=$(docker) dockerdockertest
-	cd ../catshadow && docker=$(docker) make dockerdockertest
-	cd ../memspool && docker=$(docker) make dockerdockertest
+	cd ../client && make sh=$(sh) docker=$(docker) dockerdockertest
+	cd ../catshadow && sh=$(sh) docker=$(docker) make dockerdockertest
+	cd ../memspool && sh=$(sh) docker=$(docker) make dockerdockertest
