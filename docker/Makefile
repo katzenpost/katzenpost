@@ -13,10 +13,13 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 
 
-# note: currently docker defaults to docker, and only uses podman if a very
-# particular version of conman is installed (the one in ubuntu 22.10). I
-# haven't tried this there yet, but I hope from
-# https://github.com/containers/podman/issues/9447 that docker-compose might
+# note: currently docker still defaults to docker, until we test podman a
+# little more. to use podman (still with docker compose, but now rootless!) set
+# docker=podman
+
+# maybe relevant issue: https://github.com/containers/podman/issues/9447 (or
+# probably not anymore, now that we're in the host network namespace)
+
 # work with podman there. In the current state now, you can say make
 # docker=podman and run the non-docker-compose make targets here.
 
@@ -27,7 +30,7 @@ docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpos
 docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix:$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
 
 $(docker_compose_yml): ../genconfig/main.go
-	docker run -e --network=host ${docker_args} --rm katzenpost/deps bash -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /conf'
+	$(docker) run -e --network=host ${docker_args} --rm katzenpost/deps bash -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /conf'
 
 run-voting-testnet: server voting_authority $(docker_compose_yml)
 	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up
@@ -58,7 +61,7 @@ debian_base:
         fi
 
 deps: debian_base
-	if ! docker images|grep katzenpost/deps; then \
+	if ! $(docker) images|grep katzenpost/deps; then \
 		$(docker) run ${docker_args} --name katzenpost_deps katzenpost/debian_base \
 			bash -c 'go mod download && cd sphincsplus/ref && go install' \
 		&& $(docker) commit katzenpost_deps katzenpost/deps \
