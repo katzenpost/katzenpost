@@ -464,7 +464,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 	var providers []*pki.MixDescriptor
 	var nodes []*pki.MixDescriptor
 	for _, v := range descriptors {
-		if v.Layer == pki.LayerProvider {
+		if v.Provider {
 			providers = append(providers, v)
 		} else {
 			nodes = append(nodes, v)
@@ -521,7 +521,7 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 	// Otherwise, it's pointless to generate a unusable document.
 	nrProviders := 0
 	for _, v := range m {
-		if v.Layer == pki.LayerProvider {
+		if v.Provider {
 			nrProviders++
 		}
 	}
@@ -1180,19 +1180,14 @@ func (s *state) pruneDocuments() {
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := desc.IdentityKey.Sum256()
-
-	switch desc.Layer {
-	case 0:
+	if !desc.Provider {
 		return s.authorizedMixes[pk]
-	case pki.LayerProvider:
-		name, ok := s.authorizedProviders[pk]
-		if !ok {
-			return false
-		}
-		return name == desc.Name
-	default:
+	}
+	name, ok := s.authorizedProviders[pk]
+	if !ok {
 		return false
 	}
+	return name == desc.Name
 }
 
 func (s *state) dupSig(sig commands.Sig) bool {

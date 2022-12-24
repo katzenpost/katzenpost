@@ -81,13 +81,10 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		if err != nil {
 			return nil, err
 		}
-		var layer uint8
 		var name string
 		if isProvider {
-			layer = pki.LayerProvider
 			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
 		} else {
-			layer = 0
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 
@@ -104,7 +101,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:  nil,
-			Layer:      layer,
+			Provider:   isProvider,
 			LoadWeight: 0,
 		}
 		signed, err := pki.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix)

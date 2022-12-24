@@ -193,11 +193,6 @@ func TestVote(t *testing.T) {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
-		l := uint8(0)
-		if mixCfgs[i].Server.IsProvider {
-			l = 255
-		}
-
 		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 		desc := &pki.MixDescriptor{
@@ -206,7 +201,7 @@ func TestVote(t *testing.T) {
 			IdentityKey: idKeys[i].pubKey,
 			LinkKey:     linkPubKey,
 			MixKeys:     mkeys,
-			Layer:       l,
+			Provider:    mixCfgs[i].Server.IsProvider,
 			Addresses:   addr,
 		}
 
