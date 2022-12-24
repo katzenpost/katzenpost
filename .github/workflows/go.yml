@@ -7,17 +7,17 @@ jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.17.x]
-        os: [ubuntu-latest]
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
 
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Generate mixnet configuration
         run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
@@ -33,16 +33,16 @@ jobs:
       warped: true
     strategy:
       matrix:
-        go-version: [1.17.x]
-        os: [ubuntu-latest]
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Build voting authority docker image
         run: |
