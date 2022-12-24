@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/BurntSushi/toml"
 	aConfig "github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
@@ -57,16 +58,26 @@ type katzenpost struct {
 	nodeConfigs []*sConfig.Config
 	lastPort    uint16
 	nodeIdx     int
-	clientIdx     int
+	clientIdx   int
 	providerIdx int
 }
+
+type AuthById []*vConfig.Authority
+
+func (a AuthById) Len() int           { return len(a) }
+func (a AuthById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a AuthById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
+
+type NodeById []*vConfig.Node
+
+func (a NodeById) Len() int           { return len(a) }
+func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
 func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
-	n := fmt.Sprintf("client%d", s.clientIdx+1)
 	s.clientIdx++
-	cfg.DataDir = filepath.Join(s.baseDir, n)
 
 	// Logging section.
 	cfg.Logging = &cConfig.Logging{File: "", Level: "DEBUG"}
@@ -75,10 +86,14 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
 
 	// VotingAuthority section
+
 	peers := make([]*vConfig.Authority, 0)
-	for _, peer := range s.authorities { 
+	for _, peer := range s.authorities {
 		peers = append(peers, peer)
 	}
+
+	sort.Sort(AuthById(peers))
+
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
@@ -127,6 +142,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			}
 			authorities = append(authorities, auth)
 		}
+		sort.Sort(AuthById(authorities))
 		cfg.PKI = &sConfig.PKI{
 			Voting: &sConfig.Voting{
 				Authorities: authorities,
@@ -281,6 +297,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 				peers = append(peers, peer)
 			}
 		}
+		sort.Sort(AuthById(peers))
 		configs[i].Authorities = peers
 	}
 	s.votingAuthConfigs = configs
@@ -325,6 +342,9 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 			mixes = append(mixes, node)
 		}
 	}
+	sort.Sort(NodeById(mixes))
+	sort.Sort(NodeById(providers))
+
 	return providers, mixes, nil
 }
 
