@@ -1,11 +1,12 @@
 version: "2"
 
 services:
+
   provider1:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/server -f /conf/provider1/katzenpost.toml
     network_mode: host
 
@@ -16,28 +17,11 @@ services:
       - auth4
       - auth5
       - auth6
-
-  provider2:
-    restart: unless-stopped
-    image: katzenpost/server
-    volumes:
-      - ./conf/:/conf
-    command: /go/bin/server -f /conf/provider2/katzenpost.toml
-    network_mode: host
-    depends_on:
-      - auth1
-      - auth2
-      - auth3
-      - auth4
-      - auth5
-      - auth6
-      - provider1
-
   mix1:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/server -f /conf/mix1/katzenpost.toml
     network_mode: host
     depends_on:
@@ -47,14 +31,11 @@ services:
       - auth4
       - auth5
       - auth6
-      - provider1
-      - provider2
-
   mix2:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/server -f /conf/mix2/katzenpost.toml
     network_mode: host
     depends_on:
@@ -64,14 +45,11 @@ services:
       - auth4
       - auth5
       - auth6
-      - provider1
-      - provider2
-
   mix3:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/server -f /conf/mix3/katzenpost.toml
     network_mode: host
     depends_on:
@@ -81,14 +59,11 @@ services:
       - auth4
       - auth5
       - auth6
-      - provider1
-      - provider2
-
   mix4:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/server -f /conf/mix4/katzenpost.toml
     network_mode: host
     depends_on:
@@ -98,14 +73,11 @@ services:
       - auth4
       - auth5
       - auth6
-      - provider1
-      - provider2
-
   mix5:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/server -f /conf/mix5/katzenpost.toml
     network_mode: host
     depends_on:
@@ -115,14 +87,11 @@ services:
       - auth4
       - auth5
       - auth6
-      - provider1
-      - provider2
-
   mix6:
     restart: unless-stopped
     image: katzenpost/server
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/server -f /conf/mix6/katzenpost.toml
     network_mode: host
     depends_on:
@@ -132,14 +101,11 @@ services:
       - auth4
       - auth5
       - auth6
-      - provider1
-      - provider2
-
   auth1:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/voting -f /conf/auth1/authority.toml
     network_mode: host
 
@@ -147,7 +113,7 @@ services:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/voting -f /conf/auth2/authority.toml
     network_mode: host
 
@@ -155,7 +121,7 @@ services:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/voting -f /conf/auth3/authority.toml
     network_mode: host
 
@@ -163,7 +129,7 @@ services:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/voting -f /conf/auth4/authority.toml
     network_mode: host
 
@@ -171,7 +137,7 @@ services:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/voting -f /conf/auth5/authority.toml
     network_mode: host
 
@@ -179,6 +145,6 @@ services:
     restart: unless-stopped
     image: katzenpost/voting_authority
     volumes:
-      - ./conf/:/conf
+      - ./:/conf
     command: /go/bin/voting -f /conf/auth6/authority.toml
     network_mode: host

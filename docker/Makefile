@@ -1,28 +1,34 @@
-warped?=false
+warped?=true
+mixes=6
+auths=6
+providers=2
 CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user=${uid}:${gid}
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -e CGO_CFLAGS_ALLOW=${CGO_CFLAGS_ALLOW}
 
-run-nonvoting-testnet: server nonvoting_authority fix-perms
-	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up
+generate-voting-mixnet-config: server voting_authority
+	docker run -e --network=host ${docker_args} --rm katzenpost/deps bash -c 'cd genconfig && go build && cd ../docker && mkdir -p voting_mixnet && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./voting_mixnet -b /conf'
 
-run-voting-testnet: server voting_authority fix-perms
+#run-nonvoting-testnet: server nonvoting_authority
+#	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up
+
+run-voting-testnet: generate-voting-mixnet-config
 	cd voting_mixnet; DOCKER_USER=${docker_user} docker-compose up
 
-start-nonvoting-testnet: server nonvoting_authority fix-perms
-	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up -d; docker-compose top
+#start-nonvoting-testnet: server nonvoting_authority fix-perms
+#	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up -d; docker-compose top
 
-start-voting-testnet: server voting_authority fix-perms
+start-voting-testnet: server voting_authority generate-voting-mixnet-config
 	cd voting_mixnet; DOCKER_USER=${docker_user} docker-compose up -d; docker-compose top
 
 stop-voting-testnet:
 	cd voting_mixnet; docker-compose down
 
-stop-nonvoting-testnet:
-	cd nonvoting_mixnet; docker-compose down
+#stop-nonvoting-testnet:
+#	cd nonvoting_mixnet; docker-compose down
 
 fix-perms:
 	./fix_perms.sh
@@ -37,20 +43,20 @@ debian_base:
 deps: debian_base
 	if ! docker images|grep katzenpost/deps; then \
 		docker run ${docker_args} --name katzenpost_deps katzenpost/debian_base \
-			bash -c 'CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod download && cd sphincsplus/ref && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install' \
+			bash -c 'go mod download && cd sphincsplus/ref && go install' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
         fi
 
 go-mod-tidy: deps
 	docker run ${docker_args} --name katzenpost_deps katzenpost/deps \
-			bash -c "CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod tidy" \
+			bash -c "go mod tidy" \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
 go-mod-upgrade: deps
 	docker run ${docker_args} --name katzenpost_deps katzenpost/deps \
-			bash -c 'CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go get -d -u ./... && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod tidy' \
+			bash -c 'go get -d -u ./... && go mod tidy' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps
 
@@ -65,7 +71,7 @@ server: deps
 voting_authority: deps
 	if ! docker images|grep katzenpost/voting_authority; then \
 		docker run ${docker_args} --name katzenpost_voting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/voting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -trimpath -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/voting && go mod verify && go install -trimpath -ldflags ${ldflags}' \
 		&& docker commit katzenpost_voting_authority katzenpost/voting_authority \
 		&& docker rm katzenpost_voting_authority; \
         fi
@@ -73,7 +79,7 @@ voting_authority: deps
 nonvoting_authority: deps
 	if ! docker images|grep katzenpost/nonvoting_authority; then \
 		docker run ${docker_args} --name katzenpost_nonvoting_authority katzenpost/deps \
-			bash -c 'cd authority/cmd/nonvoting && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -trimpath -ldflags ${ldflags}' \
+			bash -c 'cd authority/cmd/nonvoting && go mod verify && go install -trimpath -ldflags ${ldflags}' \
 		&& docker commit katzenpost_nonvoting_authority katzenpost/nonvoting_authority \
 		&& docker rm katzenpost_nonvoting_authority; \
         fi
@@ -101,14 +107,14 @@ clean: clean-images clean-data
 ping: deps
 	if ! docker images|grep katzenpost/ping; then \
 		docker run ${docker_args} --name katzenpost_ping katzenpost/deps \
-			bash -c 'cd ping && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
+			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_ping katzenpost/ping \
 		&& docker rm katzenpost_ping; \
         fi
 
 ping-rebuild: deps
 		docker run ${docker_args} --name katzenpost_ping katzenpost/deps \
-			bash -c 'cd ping && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go mod verify && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go install -ldflags ${ldflags}' \
+			bash -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
 		&& docker commit katzenpost_ping katzenpost/ping \
 		&& docker rm katzenpost_ping; \
 
@@ -117,7 +123,7 @@ run-ping: ping
         /go/bin/ping -c /go/katzenpost/docker/voting_mixnet/conf/client/client.toml -s echo -printDiff -n 1
 
 shell: deps
-	docker run -e CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" --network=host ${docker_args} --rm -it katzenpost/deps bash
+	docker run -e --network=host ${docker_args} --rm -it katzenpost/deps bash
 
 rootshell: deps
 	docker run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost/deps bash
