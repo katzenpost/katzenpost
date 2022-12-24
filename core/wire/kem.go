@@ -127,7 +127,9 @@ func (p *publicKey) KeyType() string {
 
 // XXX FIXME
 func (p *publicKey) Reset() {
-	p = nil
+	*p = publicKey{
+		publicKey: nil,
+	}
 }
 
 func (p *publicKey) Equal(publicKey PublicKey) bool {
@@ -178,7 +180,9 @@ func (p *privateKey) KeyType() string {
 
 // XXX FIXME
 func (p *privateKey) Reset() {
-	p = nil
+	*p = privateKey{
+		privateKey: nil,
+	}
 }
 
 func (p *privateKey) PublicKey() PublicKey {
