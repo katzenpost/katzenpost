@@ -1,7 +1,7 @@
 name: build
 on: [push]
 env:
-  CGO_CFLAGS_ALLOW: -DPARAMS=sphincs-shake-256f
+  CGO_CFLAGS_ALLOW: "-DPARAMS=sphincs-shake-256f"
 
 jobs:
   test:
