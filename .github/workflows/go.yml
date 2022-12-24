@@ -23,6 +23,9 @@ jobs:
         run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
 
       - name: Run all package unit tests
+        run: sudo ulimit -l 64435
+
+      - name: Run all package unit tests
         run: GORACE=history_size=7 go test -race -v -timeout 0 ./...
 
       - name: Upload coverage to Codecov
