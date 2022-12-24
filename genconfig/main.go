@@ -500,7 +500,7 @@ func toml_name(cfg interface{}) string {
 
 func saveCfg(cfg interface{}, outDir string) error {
 	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", toml_name(cfg)))
-	log.Printf("saveCfg of %s", fileName)
+	log.Printf("writing %s", fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
 		return err
