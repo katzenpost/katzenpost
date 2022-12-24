@@ -61,18 +61,18 @@ func TestSessionIntegration(t *testing.T) {
 	// Generate the credentials used for authentication.  In a real deployment,
 	// this information is conveyed out of band somehow to the peer a priori.
 	scheme := DefaultScheme
-	authKEMKeyAlice := scheme.GenerateKeypair(rand.Reader)
+	authKEMKeyAlice, authKEMKeyAlicePub := scheme.GenerateKeypair(rand.Reader)
 
 	credsAlice := &PeerCredentials{
 		AdditionalData: []byte("alice@example.com"),
-		PublicKey:      authKEMKeyAlice.PublicKey(),
+		PublicKey:      authKEMKeyAlicePub,
 	}
 
-	authKEMKeyBob := scheme.GenerateKeypair(rand.Reader)
+	authKEMKeyBob, authKEMKeyBobPub := scheme.GenerateKeypair(rand.Reader)
 
 	credsBob := &PeerCredentials{
 		AdditionalData: []byte("katzenpost.example.com"),
-		PublicKey:      authKEMKeyBob.PublicKey(),
+		PublicKey:      authKEMKeyBobPub,
 	}
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
