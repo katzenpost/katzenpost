@@ -4,7 +4,7 @@ ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped
 uid=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 docker_user=${uid}:${gid}
-docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --ulimit memlock=1048576 --rm
+docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --rm
 
 test:
 	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags} .
