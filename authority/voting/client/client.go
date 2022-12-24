@@ -304,7 +304,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
-	// Generate a random ecdh keypair to use for the link authentication.
+	// Generate a random keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
 	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
 	defer linkKey.Reset()

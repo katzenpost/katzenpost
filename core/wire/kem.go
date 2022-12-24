@@ -20,6 +20,8 @@ package wire
 import (
 	"bytes"
 	"encoding"
+	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
@@ -29,7 +31,8 @@ import (
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/katzenpost/core/utils"
+	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
 )
 
 // PublicKeyHashSize indicates the hash size returned
@@ -171,11 +174,11 @@ func (p *publicKey) UnmarshalBinary(data []byte) error {
 }
 
 func (p *publicKey) MarshalText() (text []byte, err error) {
-	return pem.ToPEMBytes(p), nil
+	return cpem.ToPEMBytes(p), nil
 }
 
 func (p *publicKey) UnmarshalText(text []byte) error {
-	return pem.FromPEMBytes(text, p)
+	return cpem.FromPEMBytes(text, p)
 }
 
 func (p *publicKey) Sum256() [32]byte {
@@ -261,11 +264,11 @@ func (p *privateKey) UnmarshalBinary(data []byte) error {
 }
 
 func (p *privateKey) MarshalText() (text []byte, err error) {
-	return pem.ToPEMBytes(p), nil
+	return cpem.ToPEMBytes(p), nil
 }
 
 func (p *privateKey) UnmarshalText(text []byte) error {
-	return pem.FromPEMBytes(text, p)
+	return cpem.FromPEMBytes(text, p)
 }
 
 

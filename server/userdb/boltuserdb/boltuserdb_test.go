@@ -83,8 +83,7 @@ func doTestCreateWithTOFU(t *testing.T) {
 	}
 
 	scheme := wire.DefaultScheme
-	wrongPrivKey := scheme.GenerateKeypair(rand.Reader)
-	wrongPubKey := wrongPrivKey.PublicKey()
+	_, wrongPubKey := scheme.GenerateKeypair(rand.Reader)
 
 	for u, k := range testUsers {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
@@ -128,8 +127,7 @@ func doTestLoadTOFU(t *testing.T) {
 	defer d.Close()
 
 	scheme := wire.DefaultScheme
-	wrongPrivKey := scheme.GenerateKeypair(rand.Reader)
-	wrongPubKey := wrongPrivKey.PublicKey()
+	_, wrongPubKey := scheme.GenerateKeypair(rand.Reader)
 
 	for u, k := range testUsers {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
@@ -173,7 +171,6 @@ func init() {
 	testUsers = make(map[string]wire.PublicKey)
 	for _, v := range testUsernames {
 		scheme := wire.DefaultScheme
-		privKey := scheme.GenerateKeypair(rand.Reader)
-		testUsers[v] = privKey.PublicKey()
+		_, testUsers[v] = scheme.GenerateKeypair(rand.Reader)
 	}
 }
