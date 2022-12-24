@@ -195,7 +195,7 @@ func New(cfg *ClientConfig) (*Client, error) {
 	c.geo = sphinx.DefaultGeometry()
 	c.sphinx = sphinx.DefaultSphinx()
 	c.cfg = cfg
-	c.displayName = fmt.Sprintf("%v@%v", c.cfg.User, c.cfg.Provider)
+	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)
 	c.haltedCh = make(chan interface{})
 
