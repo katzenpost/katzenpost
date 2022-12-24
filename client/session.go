@@ -121,16 +121,9 @@ func NewSession(
 	// Configure the timerQ instance
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
-	linkKeyText, err := s.linkKey.PublicKey().MarshalText()
-	if err != nil {
-		panic(err)
-	}
-	if len(linkKeyText) > 32 {
-		linkKeyText = linkKeyText[:32]
-	}
-
+	idHash := s.linkKey.PublicKey().Sum256()
 	clientCfg := &minclient.ClientConfig{
-		User:                string(linkKeyText),
+		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,
