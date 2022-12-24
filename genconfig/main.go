@@ -182,6 +182,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		if s.providerIdx%2 == 0 {
 			cfg.Provider.TrustOnFirstUse = true
 			cfg.Provider.EnableEphemeralClients = true
+			cfg.Provider.BinaryRecipients = true
 		} else {
 			spoolCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "spool",
