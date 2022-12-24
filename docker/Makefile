@@ -88,7 +88,7 @@ nonvoting_authority: deps
 
 clean-local-images:
 	-cd nonvoting_mixnet && docker-compose rm -sf
-	-cd net_name && docker-compose rm -sf
+	-cd $(net_name) && docker-compose rm -sf
 	-docker rm  katzenpost_server katzenpost_voting_authority katzenpost_nonvoting_authority katzenpost_ping
 	-docker rmi katzenpost/server katzenpost/voting_authority katzenpost/nonvoting_authority katzenpost/ping
 
