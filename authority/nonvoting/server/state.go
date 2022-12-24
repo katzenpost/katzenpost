@@ -177,7 +177,7 @@ func (s *state) hasEnoughDescriptors(m map[[sign.PublicKeyHashSize]byte]*descrip
 	// Otherwise, it's pointless to generate a unusable document.
 	nrProviders := 0
 	for _, v := range m {
-		if v.desc.Layer == pki.LayerProvider {
+		if v.desc.Provider {
 			nrProviders++
 		}
 	}
@@ -196,7 +196,7 @@ func (s *state) generateDocument(epoch uint64) {
 	var providers []*pki.MixDescriptor
 	var nodes []*descriptor
 	for _, v := range s.descriptors[epoch] {
-		if v.desc.Layer == pki.LayerProvider {
+		if v.desc.Provider {
 			providers = append(providers, v.desc)
 		} else {
 			nodes = append(nodes, v)
@@ -432,19 +432,14 @@ func (s *state) pruneDocuments() {
 
 func (s *state) isDescriptorAuthorized(desc *pki.MixDescriptor) bool {
 	pk := desc.IdentityKey.Sum256()
-
-	switch desc.Layer {
-	case 0:
+	if !desc.Provider {
 		return s.authorizedMixes[pk]
-	case pki.LayerProvider:
-		name, ok := s.authorizedProviders[pk]
-		if !ok {
-			return false
-		}
-		return name == desc.Name
-	default:
+	}
+	name, ok := s.authorizedProviders[pk]
+	if !ok {
 		return false
 	}
+	return name == desc.Name
 }
 
 func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoch uint64) error {
