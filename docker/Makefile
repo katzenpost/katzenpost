@@ -40,9 +40,16 @@ debian_base:
 		&& docker rm katzenpost_debian_base; \
         fi
 
-deps: debian_base
+alpine_base:
+	if ! docker images|grep katzenpost/alpine_base; then \
+		docker run --name katzenpost_alpine_base golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password && apk update && apk upgrade' \
+		&& docker commit katzenpost_alpine_base katzenpost/alpine_base \
+		&& docker rm katzenpost_alpine_base; \
+	fi
+
+deps: alpine_base
 	if ! docker images|grep katzenpost/deps; then \
-		docker run ${docker_args} --name katzenpost_deps katzenpost/debian_base \
+		docker run ${docker_args} --name katzenpost_deps katzenpost/alpine_base \
 			bash -c 'go mod download && cd sphincsplus/ref && go install' \
 		&& docker commit katzenpost_deps katzenpost/deps \
 		&& docker rm katzenpost_deps; \
