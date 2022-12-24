@@ -114,7 +114,7 @@ ping-rebuild: deps
 
 run-ping: ping
 	docker run --network=host ${docker_args} --rm katzenpost/ping \
-        /go/bin/ping -c /go/katzenpost/ping/voting_docker_mixnet.toml -s echo -printDiff -n 1
+        /go/bin/ping -c /go/katzenpost/docker/voting_mixnet/conf/client/client.toml -s echo -printDiff -n 1
 
 shell: deps
 	docker run -e CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" --network=host ${docker_args} --rm -it katzenpost/deps bash
