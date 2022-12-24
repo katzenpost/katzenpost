@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Run all package unit tests
-        run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -race -v -timeout 0 ./..."
+        run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -timeout 0 ./..."
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
