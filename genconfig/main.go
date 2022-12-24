@@ -178,6 +178,24 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 		cfg.Provider = new(sConfig.Provider)
 
+		// configure an entry provider or a spool storage provider
+		if s.providerIdx%2 == 0 {
+			cfg.Provider.TrustOnFirstUse = true
+			cfg.Provider.EnableEphemeralClients = true
+		} else {
+			spoolCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "spool",
+				Endpoint:       "+spool",
+				Command:        "/go/bin/memspool",
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"data_store": "/conf/" + cfg.Server.Identifier + "memspool.storage",
+					"log_dir":    "/conf/" + cfg.Server.Identifier,
+				},
+			}
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+		}
+
 		echoCfg := new(sConfig.Kaetzchen)
 		echoCfg.Capability = "echo"
 		echoCfg.Endpoint = "+echo"
