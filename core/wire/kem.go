@@ -126,6 +126,9 @@ type Scheme interface {
 	// PublicKeyFromBytes returns a PublicKey using the provided
 	// bytes.
 	PublicKeyFromBytes(b []byte) (PublicKey, error)
+
+	// NewEmptyPublicKey returns an empty public key.
+	NewEmptyPublicKey() PublicKey
 }
 
 type publicKey struct {
@@ -246,6 +249,13 @@ type scheme struct {
 }
 
 var _ Scheme = (*scheme)(nil)
+
+func (s *scheme) NewEmptyPublicKey() PublicKey {
+	return &publicKey{
+		publicKey: nil,
+		KEM:       s.KEM,
+	}
+}
 
 func (s *scheme) PrivateKeyFromBytes(b []byte) (PrivateKey, error) {
 	privKey, err := s.KEM.ParsePrivateKey(b)
