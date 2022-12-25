@@ -27,9 +27,9 @@ import (
 	"os"
 	"strings"
 
-	"golang.org/x/crypto/blake2b"
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
+	"golang.org/x/crypto/blake2b"
 
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
 )
