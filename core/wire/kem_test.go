@@ -42,12 +42,54 @@ func TestSignatureScheme(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, pubKey1.Equal(pubKey3))
 
+	_, err = DefaultScheme.PublicKeyFromPemFile("definitelydoesnotexist")
+	require.Error(t, err)
+
+	wrongPemData := `-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
+2JQzwEwGBxBkQ0quWab4MD2T3E/WozBsfAMzp9wDLDaSm4jMADucY0gHAxX08iM3
+e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
+-----END ED25519 SPHINCS+ PUBLIC KEY-----
+`
+	wrongPemPath := filepath.Join(os.TempDir(), "wrongpubkey1.pem")
+	err = os.WriteFile(wrongPemPath, []byte(wrongPemData), 0666)
+	require.NoError(t, err)
+	_, err = DefaultScheme.PublicKeyFromPemFile(wrongPemPath)
+	require.Error(t, err)
+
+	badPemData := `-----BEGIN KYBER768-X25519 PRIVATE KEY-----
+2JQzwEwGBxBkQ0quWab4MD2T3E/WozBsfAMzp9wDLDaSm4jMADucY0gHAxX08iM3
+e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
+-----END KYBER768-X25519 PUBLIC KEY-----
+`
+	badPemPath := filepath.Join(os.TempDir(), "bad.pem")
+	err = os.WriteFile(badPemPath, []byte(badPemData), 0666)
+	require.NoError(t, err)
+	_, err = DefaultScheme.PrivateKeyFromPemFile(badPemPath)
+	require.Error(t, err)
+
+	badPemData = `-----BEGIN KYBER768-X25519 PUBLIC KEY-----
+2JQzwEwGBxBkQ0quWab4MD2T3E/WozBsfAMzp9wDLDaSm4jMADucY0gHAxX08iM3
+e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
+-----END KYBER768-X25519 PUBLIC KEY-----
+`
+	badPemPath = filepath.Join(os.TempDir(), "badpub.pem")
+	err = os.WriteFile(badPemPath, []byte(badPemData), 0666)
+	require.NoError(t, err)
+	_, err = DefaultScheme.PublicKeyFromPemFile(badPemPath)
+	require.Error(t, err)
+
 	pubkeypempath := filepath.Join(os.TempDir(), "pubkey1.pem")
 	err = DefaultScheme.PublicKeyToPemFile(pubkeypempath, pubKey1)
 	require.NoError(t, err)
 	pubKey4, err := DefaultScheme.PublicKeyFromPemFile(pubkeypempath)
 	require.NoError(t, err)
 	require.True(t, pubKey1.Equal(pubKey4))
+
+	_, err = DefaultScheme.PrivateKeyFromPemFile("notexit")
+	require.Error(t, err)
+
+	_, err = DefaultScheme.PrivateKeyFromPemFile(wrongPemPath)
+	require.Error(t, err)
 
 	privkeypempath := filepath.Join(os.TempDir(), "privkey2.pem")
 	err = DefaultScheme.PrivateKeyToPemFile(privkeypempath, privKey1)
