@@ -341,19 +341,6 @@ type Provider struct {
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
 
-	// BinaryRecipients disables all Provider side recipient pre-processing,
-	// including removing trailing `NUL` bytes, case normalization, and
-	// delimiter support.
-	BinaryRecipients bool
-
-	// CaseSensitiveRecipients disables recipient case normalization.  If left
-	// unset, all user names will be converted to lower case.
-	CaseSensitiveRecipients bool
-
-	// RecipientDelimiter is the set of characters that separates a user name
-	// from it's extension (eg: `alice+foo`).
-	RecipientDelimiter string
-
 	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
 	// for this provider.
 	Kaetzchen []*Kaetzchen
