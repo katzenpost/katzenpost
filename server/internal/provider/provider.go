@@ -36,7 +36,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -96,11 +95,7 @@ func (p *provider) UserDB() userdb.UserDB {
 }
 
 func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
-	ad, err := p.fixupUserNameCase(c.AdditionalData)
-	if err != nil {
-		return false
-	}
-	isValid := p.userDB.IsValid(ad, c.PublicKey)
+	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
 	if !isValid {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
 			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, c.PublicKey.Sum256())
@@ -137,48 +132,6 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 	}
 
 	return merged, nil
-}
-
-func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
-	// Unless explicitly specified otherwise, force usernames to lower case.
-	if p.glue.Config().Provider.BinaryRecipients {
-		return user, nil
-	}
-
-	if p.glue.Config().Provider.CaseSensitiveRecipients {
-		return precis.UsernameCasePreserved.Bytes(user)
-	}
-	return precis.UsernameCaseMapped.Bytes(user)
-}
-
-func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
-	// If the provider is configured for binary recipients, do no post
-	// processing.
-	if p.glue.Config().Provider.BinaryRecipients {
-		return recipient, nil
-	}
-
-	// Fix the recipient by trimming off the trailing NUL bytes.
-	b := bytes.TrimRight(recipient, "\x00")
-
-	// (Optional, Default) Force recipients to lower case.
-	var err error
-	b, err = p.fixupUserNameCase(b)
-	if err != nil {
-		return nil, err
-	}
-
-	// (Optional) Discard everything after the first recipient delimiter...
-	if delimiter := p.glue.Config().Provider.RecipientDelimiter; delimiter != "" {
-		if sp := bytes.SplitN(b, []byte(delimiter), 2); sp != nil {
-			// ... As long as the recipient doesn't start with a delimiter.
-			if len(sp[0]) > 0 {
-				b = sp[0]
-			}
-		}
-	}
-
-	return b, nil
 }
 
 func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
@@ -285,17 +238,11 @@ func (p *provider) worker() {
 		}
 
 		// Post-process the recipient.
-		recipient, err := p.fixupRecipient(pkt.Recipient.ID[:])
-		if err != nil {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
-			instrument.PacketsDropped()
-			pkt.Dispose()
-			continue
-		}
+		recipient = pkt.Recipient.ID[:]
 
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%x')", pkt.ID, recipient)
 			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
