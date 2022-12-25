@@ -168,7 +168,7 @@ func (d *boltUserDB) Link(u []byte) (wire.PublicKey, error) {
 		return nil, fmt.Errorf("userdb: user does not exist")
 	}
 
-	_, pubKey := d.scheme.GenerateKeypair(rand.Reader)
+	var pubKey wire.PublicKey
 	err := d.db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(usersBucket))
 		rawPubKey := bkt.Get(u)
@@ -176,7 +176,7 @@ func (d *boltUserDB) Link(u []byte) (wire.PublicKey, error) {
 			return fmt.Errorf("userdb: user %s does not have a link key", u)
 		}
 		var err error
-		err = pubKey.UnmarshalText(rawPubKey)
+		pubKey, err = d.scheme.PublicKeyFromBytes(rawPubKey)
 		return err
 	})
 	return pubKey, err
