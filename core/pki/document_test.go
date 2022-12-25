@@ -143,8 +143,6 @@ func TestDocument(t *testing.T) {
 	require.Equal(doc.SharedRandomReveal, ddoc.SharedRandomReveal, "VerifyAndParseDocument(): SharedRandomReveal")
 	require.Equal(doc.Version, ddoc.Version, "VerifyAndParseDocument(): Version")
 
-	t.Logf("Deserialized document: '%v'", ddoc)
-
 	// check that MixDescriptors are signed correctly and can be deserialized and reserialized from the Document
 	for l, layer := range ddoc.Topology {
 		for i, node := range layer {

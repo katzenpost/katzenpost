@@ -32,12 +32,8 @@ func TestSharedRandomVerify(t *testing.T) {
 	require.True(len(commit) == SharedRandomLength)
 	srv.SetCommit(commit)
 	require.True(bytes.Equal(commit, srv.GetCommit()))
-	t.Logf("commit %v", commit)
 	require.True(bytes.Equal(commit, srv.GetCommit()))
 	reveal := srv.Reveal()
-	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
-	t.Logf("reveal %v", reveal)
-	t.Logf("len(reveal): %v", len(reveal))
 	require.True(len(reveal) == SharedRandomLength)
 	require.True(srv.Verify(reveal))
 }

@@ -68,8 +68,6 @@ func TestDescriptor(t *testing.T) {
 	err = IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
-	t.Logf("Descriptor: '%v'", d)
-
 	// Sign the descriptor.
 	signed, err := SignDescriptor(identityPriv, identityPub, d)
 	require.NoError(err, "SignDescriptor()")
@@ -78,8 +76,6 @@ func TestDescriptor(t *testing.T) {
 	dd := new(MixDescriptor)
 	err = dd.UnmarshalBinary(signed)
 	require.NoError(err)
-
-	t.Logf("Deserialized descriptor: '%v'", dd)
 
 	// Ensure the base and de-serialized descriptors match.
 	assert.Equal(d.Name, dd.Name, "Name")
