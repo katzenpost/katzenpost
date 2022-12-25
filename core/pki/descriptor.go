@@ -19,7 +19,6 @@
 package pki
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"net"
