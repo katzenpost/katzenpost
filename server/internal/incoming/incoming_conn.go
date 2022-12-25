@@ -28,10 +28,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -132,7 +130,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		c.log.Debugf("Authentication failed: '%v' (%x)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey.Sum256())
+		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
 	}
 
 	return isValid
@@ -185,9 +183,9 @@ func (c *incomingConn) worker() {
 		c.log.Debugf("Session failure: %s", err)
 	}
 	if c.fromMix {
-		c.log.Debugf("Peer: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
 	} else {
-		c.log.Debugf("User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, creds.PublicKey.Sum256())
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though

@@ -222,17 +222,6 @@ to deviate from the defaults.
 
 The top-level Provider configuration parameters include:
 
-* ``BinaryRecipients`` if set to ``true`` disables all Provider side
-  recipient pre-processing, including removing trailing `NUL` bytes,
-  case normalization, and delimiter support.
-
-* ``CaseSensitiveRecipients`` if set to ``true`` disables recipient
-  case normalization. If left unset, all user names will be converted
-  to lower case.
-
-* ``RecipientDelimiter`` is the set of characters that separates a user name
-  from it's extension (eg: `alice+foo`).
-
 * ``AltAddresses`` is the map of extra transports and addresses at which
   the Provider is reachable by clients.  The most useful alternative
   transport is likely ("tcp") (`core/pki.TransportTCP`).

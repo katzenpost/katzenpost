@@ -36,7 +36,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
@@ -487,7 +486,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 
 	// Ensure the additional data is valid.
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, debug.BytesToPrintString(c.AdditionalData))
+		p.log.Debugf("%v: '%x' AD not an IdentityKey?.", dirStr, c.AdditionalData)
 		return nil, false, false
 	}
 	var nodeID [sConstants.NodeIDLength]byte
@@ -516,7 +515,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		// the most recent descriptor we have for the node.
 		if !m.LinkKey.Equal(c.PublicKey) {
 			if desc == m || !desc.LinkKey.Equal(c.PublicKey) {
-				p.log.Warningf("%v: '%v' Public Key mismatch: '%v'", dirStr, debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
+				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, c.PublicKey.Sum256())
 				continue
 			}
 		}

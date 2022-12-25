@@ -177,12 +177,10 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		s.providerIdx++
 
 		cfg.Provider = new(sConfig.Provider)
-
 		// configure an entry provider or a spool storage provider
 		if s.providerIdx%2 == 0 {
 			cfg.Provider.TrustOnFirstUse = true
 			cfg.Provider.EnableEphemeralClients = true
-			cfg.Provider.BinaryRecipients = true
 		} else {
 			spoolCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "spool",
@@ -278,7 +276,19 @@ func (s *katzenpost) genAuthConfig() error {
 }
 
 func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
-	parameters := &vConfig.Parameters{}
+	parameters := &vConfig.Parameters{
+		SendRatePerMinute: 0,
+		Mu:                0.01,
+		MuMaxDelay:        1000,
+		LambdaP:           0.02,
+		LambdaPMaxDelay:   1000,
+		LambdaL:           0.0005,
+		LambdaLMaxDelay:   1000,
+		LambdaD:           0.0005,
+		LambdaDMaxDelay:   3000,
+		LambdaM:           0.2,
+		LambdaMMaxDelay:   100,
+	}
 	configs := []*vConfig.Config{}
 
 	// initial generation of key material for each authority
