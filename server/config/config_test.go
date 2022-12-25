@@ -40,7 +40,6 @@ DataDir = "%s"
 IsProvider = true
 
 [Provider]
-  BinaryRecipients = true
   [[Provider.Kaetzchen]]
     Capability = "echo"
     Endpoint = "+echo"
@@ -78,7 +77,6 @@ DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
 [Provider]
-  BinaryRecipients = true
   [[Provider.Kaetzchen]]
     Capability = "echo"
     Endpoint = "+echo"
@@ -103,7 +101,6 @@ DataDir = "/var/lib/katzenpost"
 IsProvider = true
 
 [Provider]
-  BinaryRecipients = true
   [[Provider.Kaetzchen]]
     Capability = "echo"
     Endpoint = "+echo"
