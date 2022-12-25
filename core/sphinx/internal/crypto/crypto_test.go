@@ -103,8 +103,6 @@ func TestVectorMAC(t *testing.T) {
 	assert.NoError(err)
 	assert.Equal(len(src), macLen)
 	actual := m.Sum(nil)
-
-	t.Logf("key %x src %x output %x", key[:], src[:], actual)
 }
 
 func TestStream(t *testing.T) {
