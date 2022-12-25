@@ -477,3 +477,117 @@ func TestRevealtatus(t *testing.T) {
 	d := c.(*RevealStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
+
+func TestCert(t *testing.T) {
+	require := require.New(t)
+
+	_, alicePub := cert.Scheme.NewKeypair()
+	cmd := &Cert{
+		Epoch:     3141,
+		PublicKey: alicePub,
+		Payload:   []byte{1, 2, 3, 4},
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmdOverhead+certOverhead+len(cmd.Payload), "Cert: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+
+	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	s := sphinx.NewSphinx(nike, geo)
+
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "Reveal: FromBytes() failed")
+	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
+	d := c.(*Cert)
+	require.Equal(d.Epoch, cmd.Epoch)
+	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+	require.Equal(d.Payload, cmd.Payload)
+}
+
+func TestCertStatus(t *testing.T) {
+	require := require.New(t)
+
+	cmd := &CertStatus{
+		ErrorCode: 14,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, certStatusLength+cmdOverhead, "CertStatus: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	s := sphinx.NewSphinx(nike, geo)
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "CertStatus: FromBytes() failed")
+	require.IsType(cmd, c, "CertStatus: FromBytes() invalid type")
+	d := c.(*CertStatus)
+	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
+
+func TestSig(t *testing.T) {
+	require := require.New(t)
+
+	_, alicePub := cert.Scheme.NewKeypair()
+	cmd := &Sig{
+		Epoch:     3141,
+		PublicKey: alicePub,
+		Payload:   []byte{1, 2, 3, 4},
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmdOverhead+sigOverhead+len(cmd.Payload), "Sig: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+
+	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	s := sphinx.NewSphinx(nike, geo)
+
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "Sig: FromBytes() failed")
+	require.IsType(cmd, c, "Sig: FromBytes() invalid type")
+	d := c.(*Sig)
+	require.Equal(d.Epoch, cmd.Epoch)
+	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+	require.Equal(d.Payload, cmd.Payload)
+}
+
+func TestSigStatus(t *testing.T) {
+	require := require.New(t)
+
+	cmd := &SigStatus{
+		ErrorCode: 23,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, revealStatusLength+cmdOverhead, "SigStatus: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	s := sphinx.NewSphinx(nike, geo)
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "SigStatus: FromBytes() failed")
+	require.IsType(cmd, c, "SigStatus: FromBytes() invalid type")
+	d := c.(*SigStatus)
+	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
