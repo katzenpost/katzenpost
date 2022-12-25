@@ -124,7 +124,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	// Instantiate concrete instances so we deserialize into the right types
 	idPublicKey := cert.Scheme.NewEmptyPublicKey()
 	d.IdentityKey = idPublicKey
-	_, linkPub := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
 	d.LinkKey = linkPub
 
 	// encoding type is cbor
@@ -201,7 +201,7 @@ func VerifyDescriptor(rawDesc []byte) (*MixDescriptor, error) {
 	// that rawDesc will deserialize into the right type
 	d := new(MixDescriptor)
 	_, idPubKey := cert.Scheme.NewKeypair()
-	_, linkPub := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
 	d.IdentityKey = idPubKey
 	d.LinkKey = linkPub
 	err := d.UnmarshalBinary(rawDesc)
