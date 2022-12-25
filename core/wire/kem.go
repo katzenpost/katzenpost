@@ -101,6 +101,10 @@ type Scheme interface {
 	// GenerateKeypair generates a new KEM keypair using the provided
 	// entropy source.
 	GenerateKeypair(r io.Reader) (PrivateKey, PublicKey)
+
+	// PublicKeyFromBytes returns a PublicKey using the provided
+	// bytes.
+	PublicKeyFromBytes(b []byte) (PublicKey, error)
 }
 
 type publicKey struct {
