@@ -93,6 +93,18 @@ func TestPublicKeyMarshalUnmarshal(t *testing.T) {
 	require.True(t, pubKey1.Equal(pubKey2))
 }
 
+func TestPrivateKeyMarshalUnmarshal(t *testing.T) {
+	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
+	privKey2 := DefaultScheme.GenerateKeypair(rand.Reader)
+
+	blob, err := privKey1.MarshalBinary()
+	require.NoError(t, err)
+	err = privKey2.UnmarshalBinary(blob)
+	require.NoError(t, err)
+
+	require.Equal(t, privKey1.Bytes(), privKey2.Bytes())
+}
+
 func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
 	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 	pubKey1 := privKey1.PublicKey()
@@ -106,4 +118,16 @@ func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
 	blob := []byte(base64.StdEncoding.EncodeToString(pubKey1.Bytes()))
 	err = pubKey1.UnmarshalText(blob)
 	require.NoError(t, err)
+}
+
+func TestPrivateKeyMarshalUnmarshalText(t *testing.T) {
+	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
+	blob, err := privKey1.MarshalText()
+	require.NoError(t, err)
+
+	privKey2 := DefaultScheme.GenerateKeypair(rand.Reader)
+	err = privKey2.UnmarshalText(blob)
+	require.NoError(t, err)
+
+	require.Equal(t, privKey1.Bytes(), privKey2.Bytes())
 }
