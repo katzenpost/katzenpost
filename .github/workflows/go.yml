@@ -31,6 +31,7 @@ jobs:
   test_e2e:
     env:
       warped: true
+      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
         go-version: [1.19.x]
@@ -43,6 +44,14 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Checkout code
         uses: actions/checkout@v3
+
+      - name: Install Build dependencies
+        run: |
+          sudo apt update && sudo apt install --no-install-recommends -y make podman dbus-user-session
+
+      - name: Start podman
+        run: |
+          systemctl restart dbus && systemctl enable --now podman.socket
 
       - name: Build voting authority docker image
         run: |
