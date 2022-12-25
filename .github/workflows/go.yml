@@ -51,7 +51,7 @@ jobs:
 
       - name: Start podman
         run: |
-          systemctl restart dbus && systemctl enable --now podman.socket
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
 
       - name: Build voting authority docker image
         run: |
