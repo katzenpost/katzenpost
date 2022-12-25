@@ -190,7 +190,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				Command:        "/go/bin/memspool",
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"data_store": "/conf/" + cfg.Server.Identifier + "memspool.storage",
+					"data_store": "/conf/" + cfg.Server.Identifier + "/memspool.storage",
 					"log_dir":    "/conf/" + cfg.Server.Identifier,
 				},
 			}
@@ -594,7 +594,7 @@ services:
 		write(f, `
   %s:
     restart: unless-stopped
-    image: katzenpost/server
+    image: katzenpost-server
     volumes:
       - ./:/conf
     command: /go/bin/server -f /conf/%s/katzenpost.toml
@@ -615,7 +615,7 @@ services:
 		write(f, `
   mix%d:
     restart: unless-stopped
-    image: katzenpost/server
+    image: katzenpost-server
     volumes:
       - ./:/conf
     command: /go/bin/server -f /conf/mix%d/katzenpost.toml
@@ -632,7 +632,7 @@ services:
 		write(f, `
   %s:
     restart: unless-stopped
-    image: katzenpost/voting_authority
+    image: katzenpost-voting_authority
     volumes:
       - ./:/conf
     command: /go/bin/voting -f /conf/%s/authority.toml
