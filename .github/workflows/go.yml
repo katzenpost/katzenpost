@@ -52,9 +52,6 @@ jobs:
         run: |
           cd docker && make server
 
-      - name: Generate mixnet configuration
-        run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
-
       - name: Start the mixnet
         run: |
           cd docker && make start-voting-testnet
@@ -63,14 +60,9 @@ jobs:
         run: |
           sleep 240
 
-      - name: run client end to end tests
-        run: cd client && make dockerdockertest
-
-      - name: run memspool end to end tests
-        run: cd memspool && make dockerdockertest
-
-      - name: run catshadow end to end tests
-        run: cd catshadow && make dockerdockertest
+      - name: Run end-to-end tests
+        run: |
+          cd docker && make test
 
       - name: Stop the mixnet
         run: |
