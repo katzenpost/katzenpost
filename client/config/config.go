@@ -128,7 +128,7 @@ type NonvotingAuthority struct {
 func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	scheme := wire.DefaultScheme
 
-	_, authLinkKey := scheme.GenerateKeypair(rand.Reader)
+	authLinkKey := scheme.NewEmptyPublicKey()
 	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
 	if err != nil {
 		return nil, err
