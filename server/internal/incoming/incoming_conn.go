@@ -30,7 +30,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -131,7 +130,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		c.log.Debugf("Authentication failed: '%v' (%x)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey.Sum256())
+		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
 	}
 
 	return isValid
