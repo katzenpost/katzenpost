@@ -192,7 +192,18 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    "/conf/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+			pandaCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "panda",
+				Endpoint:       "+panda",
+				Command:        "/go/bin/panda_server",
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"fileStore": "/conf/" + cfg.Server.Identifier + "/panda.storage",
+					"log_dir":   "/conf/" + cfg.Server.Identifier,
+					"log_level": "DEBUG",
+				},
+			}
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, pandaCfg}
 		}
 
 		echoCfg := new(sConfig.Kaetzchen)
