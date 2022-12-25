@@ -31,7 +31,6 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 var DefaultScheme = &scheme{
@@ -106,9 +105,6 @@ type Scheme interface {
 	// the specified file path.
 	PublicKeyToPemFile(f string, pubKey PublicKey) error
 
-	// UnmarshalTextPrivateKey loads a private from text encoded in base64.
-	UnmarshalTextPrivateKey([]byte) (PrivateKey, error)
-
 	// UnmarshalTextPublicKey loads a public key from text encoded in base64.
 	UnmarshalTextPublicKey([]byte) (PublicKey, error)
 
@@ -129,39 +125,11 @@ func (p *publicKey) KeyType() string {
 	return fmt.Sprintf("%s PUBLIC KEY", strings.ToUpper(p.KEM.String()))
 }
 
-func (p *publicKey) FromPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PUBLIC KEY", strings.ToUpper(p.KEM.String()))
-
-	buf, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
-	blk, _ := pem.Decode(buf)
-	if blk == nil {
-		return fmt.Errorf("failed to decode PEM file %v", f)
-	}
-	if strings.ToUpper(blk.Type) != keyType {
-		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
-	}
-	return p.FromBytes(blk.Bytes)
-}
-
-func (p *publicKey) ToPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PUBLIC KEY", strings.ToUpper(p.KEM.String()))
-
-	if utils.CtIsZero(p.Bytes()) {
-		return fmt.Errorf("attempted to serialize scrubbed key")
-	}
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: p.Bytes(),
-	}
-	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
-}
-
 // XXX FIXME
 func (p *publicKey) Reset() {
-	p = nil
+	*p = publicKey{
+		publicKey: nil,
+	}
 }
 
 func (p *publicKey) Equal(publicKey PublicKey) bool {
@@ -210,39 +178,11 @@ func (p *privateKey) KeyType() string {
 	return fmt.Sprintf("%s PRIVATE KEY", strings.ToUpper(p.KEM.String()))
 }
 
-func (p *privateKey) FromPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PRIVATE KEY", strings.ToUpper(p.KEM.String()))
-
-	buf, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
-	blk, _ := pem.Decode(buf)
-	if blk == nil {
-		return fmt.Errorf("failed to decode PEM file %v", f)
-	}
-	if strings.ToUpper(blk.Type) != keyType {
-		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
-	}
-	return p.FromBytes(blk.Bytes)
-}
-
-func (p *privateKey) ToPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PRIVATE KEY", strings.ToUpper(p.KEM.String()))
-
-	if utils.CtIsZero(p.Bytes()) {
-		return fmt.Errorf("attempted to serialize scrubbed key")
-	}
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: p.Bytes(),
-	}
-	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
-}
-
 // XXX FIXME
 func (p *privateKey) Reset() {
-	p = nil
+	*p = privateKey{
+		privateKey: nil,
+	}
 }
 
 func (p *privateKey) PublicKey() PublicKey {
@@ -363,14 +303,6 @@ func (s *scheme) UnmarshalTextPublicKey(b []byte) (PublicKey, error) {
 		return nil, err
 	}
 	return s.PublicKeyFromBytes(raw)
-}
-
-func (s *scheme) UnmarshalTextPrivateKey(b []byte) (PrivateKey, error) {
-	raw, err := base64.StdEncoding.DecodeString(string(b))
-	if err != nil {
-		return nil, err
-	}
-	return s.PrivateKeyFromBytes(raw)
 }
 
 func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (PublicKey, error) {
