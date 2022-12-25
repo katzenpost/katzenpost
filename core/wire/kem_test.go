@@ -18,7 +18,6 @@
 package wire
 
 import (
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -151,7 +150,8 @@ func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
 	err = pubKey1.UnmarshalText([]byte{})
 	require.Error(t, err)
 
-	blob := []byte(base64.StdEncoding.EncodeToString(pubKey1.Bytes()))
+	blob, err := pubKey1.MarshalText()
+	require.NoError(t, err)
 	err = pubKey1.UnmarshalText(blob)
 	require.NoError(t, err)
 }
