@@ -55,15 +55,15 @@ jobs:
 
       - name: Build voting authority docker image
         run: |
-          cd docker && sudo make voting_authority
+          cd docker && sudo -E make voting_authority
 
       - name: Build server docker image
         run: |
-          cd docker && sudo make server
+          cd docker && sudo -E make server
 
       - name: Start the mixnet
         run: |
-          cd docker && sudo make start-voting-testnet
+          cd docker && sudo -E make start-voting-testnet
 
       - name: Allow mixnet to settle
         run: |
@@ -71,8 +71,8 @@ jobs:
 
       - name: Run end-to-end tests
         run: |
-          cd docker && sudo make test
+          cd docker && sudo -E make test
 
       - name: Stop the mixnet
         run: |
-          cd docker && sudo make stop-voting-testnet
+          cd docker && sudo -E make stop-voting-testnet
