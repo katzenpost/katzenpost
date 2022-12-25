@@ -140,8 +140,6 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 		require.NoError(err, "NewKEMPacket failed")
 		require.Len(pkt, sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
 
-		t.Logf("pkt: %s", hex.Dump(pkt))
-
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
 			b, _, cmds, err := sphinx.KEMUnwrap(nodes[i].privateKey, pkt)
@@ -152,11 +150,7 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: recipient mismatch", i)
 
 				require.Equalf(b, payload, "Hop %d: payload mismatch", i)
-
-				t.Logf("Unwrapped payload: %v", hex.Dump(b))
 			} else {
-				t.Logf("Hop %d: Unwrapped pkt: %s", i, hex.Dump(pkt))
-
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
 
