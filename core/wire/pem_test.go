@@ -38,7 +38,7 @@ rJoEjFXoChJF5xWicIVxi0F3k6KTZYTCus+SlMJkVLFwmf9Ui+rDIqVwJ1C6tzKm
 7pZc295vLdQ4w4gOVmGd9w==
 -----END KYBER768-X25519 PUBLIC KEY-----
 `
-	_ , publicKey := DefaultScheme.GenerateKeypair(rand.Reader)
+	_, publicKey := DefaultScheme.GenerateKeypair(rand.Reader)
 	err := pem.FromPEMString(linkPemString1, publicKey)
 	require.NoError(t, err)
 

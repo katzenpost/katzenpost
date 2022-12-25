@@ -36,7 +36,8 @@ func TestSignatureScheme(t *testing.T) {
 
 	pubText, err := pubKey1.MarshalText()
 	require.NoError(t, err)
-	pubKey3, err := DefaultScheme.UnmarshalTextPublicKey(pubText)
+	pubKey3 := DefaultScheme.NewEmptyPublicKey()
+	err = pubKey3.UnmarshalText(pubText)
 	require.NoError(t, err)
 	require.True(t, pubKey1.Equal(pubKey3))
 
