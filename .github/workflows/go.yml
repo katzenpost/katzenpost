@@ -51,19 +51,19 @@ jobs:
 
       - name: Start podman
         run: |
-          sudo systemctl restart dbus && systemctl --user enable --now podman.socket
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
 
       - name: Build voting authority docker image
         run: |
-          cd docker && make voting_authority
+          cd docker && sudo make voting_authority
 
       - name: Build server docker image
         run: |
-          cd docker && make server
+          cd docker && sudo make server
 
       - name: Start the mixnet
         run: |
-          cd docker && make start-voting-testnet
+          cd docker && sudo make start-voting-testnet
 
       - name: Allow mixnet to settle
         run: |
@@ -71,8 +71,8 @@ jobs:
 
       - name: Run end-to-end tests
         run: |
-          cd docker && make test
+          cd docker && sudo make test
 
       - name: Stop the mixnet
         run: |
-          cd docker && make stop-voting-testnet
+          cd docker && sudo make stop-voting-testnet
