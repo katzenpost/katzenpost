@@ -64,7 +64,17 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if provider := c.l.glue.Provider(); provider != nil && !c.fromMix {
+	provider := c.l.glue.Provider()
+	// this node is a provider
+	if provider != nil {
+		// see if it is from a Mix
+		_, canSend, isValid := c.l.glue.PKI().AuthenticateConnection(creds, false)
+		if isValid {
+			c.fromMix = true
+			c.fromClient = false
+			c.canSend = canSend
+			return isValid
+		}
 		isClient := provider.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
