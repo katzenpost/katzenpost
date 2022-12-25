@@ -103,9 +103,9 @@ func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(ad, c.PublicKey)
 	if !isValid {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authentication failed: User: '%v', Key: '%v' (Probably a peer)", debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, c.PublicKey.Sum256())
 		} else {
-			p.log.Errorf("Authentication failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, c.PublicKey.Sum256())
 		}
 	}
 	return isValid
