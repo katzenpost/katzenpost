@@ -18,7 +18,6 @@
 package provider
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"strconv"
@@ -32,7 +31,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -46,7 +44,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/katzenpost/katzenpost/server/userdb/boltuserdb"
 	"github.com/katzenpost/katzenpost/server/userdb/externuserdb"
-	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -238,7 +235,7 @@ func (p *provider) worker() {
 		}
 
 		// Post-process the recipient.
-		recipient = pkt.Recipient.ID[:]
+		recipient := pkt.Recipient.ID[:]
 
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
@@ -332,11 +329,7 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	}
 
 	// Attempt to add or update the user.
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("[ADD/UPDATE]_USER invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
+	u := []byte(sp[1])
 	if err = p.userDB.Add(u, pubKey, isUpdate); err != nil {
 		c.Log().Errorf("Failed to add/update user: %v", err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
@@ -355,20 +348,15 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("REMOVE_USER invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	// Remove the user from the UserDB.
-	if err = p.userDB.Remove(u); err != nil {
+	if err := p.userDB.Remove(u); err != nil {
 		c.Log().Errorf("Failed to remove user '%v': %v", u, err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
 
 	// Remove the user's spool.
-	if err = p.spool.Remove(u); err != nil {
+	if err := p.spool.Remove(u); err != nil {
 		// Log an error, but don't return a failed status, because the
 		// user has been obliterated from the UserDB at this point.
 		c.Log().Errorf("Failed to remove spool '%v': %v", u, err)
@@ -389,13 +377,8 @@ func (p *provider) onRemoveUserIdentity(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("REMOVE_USER_IDENTITY invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	if err = p.userDB.SetIdentity(u, nil); err != nil {
+	u := []byte(sp[1])
+	if err := p.userDB.SetIdentity(u, nil); err != nil {
 		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
@@ -425,12 +408,7 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("SET_USER_IDENTITY invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	if err = p.userDB.SetIdentity(u, pubKey); err != nil {
 		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
@@ -449,12 +427,7 @@ func (p *provider) onUserLink(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("USER_LINK invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	pubKey, err := p.userDB.Link(u)
 	if err != nil {
 		c.Log().Errorf("Failed to query link key for user '%s': %v", string(u), err)
@@ -474,12 +447,7 @@ func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("USER_IDENTITY invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	pubKey, err := p.userDB.Identity(u)
 	if err != nil {
 		c.Log().Errorf("Failed to query identity for user '%v': %v", u, err)

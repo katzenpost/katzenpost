@@ -177,9 +177,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		s.providerIdx++
 
 		cfg.Provider = new(sConfig.Provider)
-		cfg.Provider.BinaryRecipients = true
-		cfg.Provider.CaseSensitiveRecipients = true
-
 		// configure an entry provider or a spool storage provider
 		if s.providerIdx%2 == 0 {
 			cfg.Provider.TrustOnFirstUse = true
