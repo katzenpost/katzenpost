@@ -605,6 +605,7 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 		if epoch < now-1 {
 			return nil, cpki.ErrNoDocument
 		}
+		p.log.Debugf("PKI cache miss for epoch %d", epoch)
 		return nil, errNotCached
 	}
 	return val, nil
