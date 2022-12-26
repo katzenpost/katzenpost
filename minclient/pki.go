@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -33,7 +34,8 @@ import (
 var (
 	errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("minclient/pki: consensus not ready yet")
-	nextFetchTill           = 3 * (epochtime.Period / 8)
+	PublishDeadline         = vServer.PublishConsensusDeadline
+	nextFetchTill           = epochtime.Period - PublishDeadline
 	recheckInterval         = 1 * time.Minute
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
