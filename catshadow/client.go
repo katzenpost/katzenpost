@@ -254,7 +254,8 @@ func (c *Client) restartKeyExchanges() {
 		return
 	}
 	c.restartPANDAExchanges()
-	c.restartReunionExchanges()
+	// FIXME: reunion messages are currently too large for ForwardUserPayload
+	//c.restartReunionExchanges()
 }
 
 // restart reunion exchanges
@@ -614,7 +615,8 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 			c.log.Notice("PANDA Failure for %v: %v", contact, err)
 		}
 
-		err = c.doReunion(contact)
+		// FIXME: reunion messages are currently too large for ForwardUserPayload
+		//err = c.doReunion(contact)
 		if err != nil {
 			c.log.Notice("Reunion Failure for %v: %v", contact, err)
 		}
