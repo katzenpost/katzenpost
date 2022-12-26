@@ -65,21 +65,21 @@ jobs:
         run: |
           cd docker && sudo -E make start-voting-testnet
 
-      - name: Allow mixnet to settle
+      - name: Wait for consensus
         run: |
-          sleep 240
+          cd docker && sudo -E make wait-for-network
 
       - name: run client end to end tests
-        run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> coverage.out
+        run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: run memspool end to end tests
-        run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> coverage.out
+        run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
 
       - name: run catshadow end to end tests
-        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> coverage.out
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: run ping
-        run: cd docker && sudo -E make testargs=-coverprofile=coverage.part run-ping && cat coverage.part >> coverage.out
+        run: cd docker && sudo -E make testargs=-coverprofile=coverage.part run-ping && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
