@@ -49,10 +49,10 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
 	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod $(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /conf'
 
 run-voting-testnet: server voting_authority $(docker_compose_yml)
-	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up
+	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
 
 start-voting-testnet: server voting_authority $(docker_compose_yml)
-	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up -d; $(docker_compose) top
+	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
 
 stop-voting-testnet:
 	cd $(net_name); $(docker_compose) down
