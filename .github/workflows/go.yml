@@ -65,9 +65,9 @@ jobs:
         run: |
           cd docker && sudo -E make start-voting-testnet
 
-      - name: Allow mixnet to settle
+      - name: Wait for consensus
         run: |
-          sleep 240
+          cd docker && sudo -E make wait-for-network
 
       - name: run client end to end tests
         run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
