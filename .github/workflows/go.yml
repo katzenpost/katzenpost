@@ -65,9 +65,9 @@ jobs:
         run: |
           cd docker && sudo -E make start-voting-testnet
 
-      - name: Wait for consensus
+      - name: Allow mixnet to settle
         run: |
-          cd docker && sudo -E make wait-for-network
+          sleep 240
 
       - name: run ping
         run: cd docker && sudo -E make run-ping
