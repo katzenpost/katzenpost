@@ -24,4 +24,4 @@ coverage-html:
 
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'
+		sh -c 'cd /go/katzenpost/client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 1h -run Docker'

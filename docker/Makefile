@@ -178,7 +178,7 @@ rootshell: $(distro)_go_mod
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_go_mod $(sh)
 
 test: start-voting-testnet
-	cd ../client    && make $(make_args) dockerdockertest
-	cd ../catshadow && make $(make_args) dockerdockertest
-	cd ../memspool  && make $(make_args) dockerdockertest
+	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
+	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
+	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
 
