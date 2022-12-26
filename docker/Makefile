@@ -182,7 +182,7 @@ ping.stamp: $(distro)_go_mod.stamp
         fi
 	touch $@
 
-run-ping: ping.stamp start-voting-testnet wait-for-network
+run-ping: ping.stamp start-voting-testnet
 	$(docker) run --network=host ${docker_args} --rm katzenpost-ping \
         /go/bin/ping -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
@@ -192,7 +192,7 @@ shell: $(distro)_go_mod.stamp
 rootshell: $(distro)_go_mod
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_go_mod $(sh)
 
-test: start-voting-testnet wait-for-network
+test: start-voting-testnet
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
