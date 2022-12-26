@@ -294,7 +294,7 @@ func (s *katzenpost) genAuthConfig() error {
 func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: 0,
-		Mu:                0.001,
+		Mu:                0.005,
 		MuMaxDelay:        1000,
 		LambdaP:           0.001,
 		LambdaPMaxDelay:   1000,
