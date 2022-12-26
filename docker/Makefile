@@ -42,12 +42,13 @@ docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo 
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
 docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -e CGO_CFLAGS_ALLOW=${CGO_CFLAGS_ALLOW}
+mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix:$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) warped=$(warped) docker_user=$(docker_user)
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
-	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod $(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /conf'
+	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod $(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /$(net_name)'
 
 run-voting-testnet: server voting_authority $(docker_compose_yml)
 	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
@@ -114,21 +115,14 @@ go-mod-upgrade: $(distro)_go_mod.stamp
 		&& $(docker) commit katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod \
 		&& $(docker) rm katzenpost_$(distro)_go_mod
 
-server: $(distro)_go_mod.stamp
-	if ! $(docker) images|grep katzenpost-server; then \
-		$(docker) run ${docker_args} $(replace_name) katzenpost_server katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd server && warped=${warped} make testnet-build testnet-install' \
-		&& $(docker) commit katzenpost_server katzenpost-server \
-		&& $(docker) rm katzenpost_server; \
-        fi
+$(net_name)/server-$(distro): $(distro)_go_mod.stamp
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
+			$(sh) -c 'cd server && warped=${warped} make testnet-build testnet-install'
 
-voting_authority: $(distro)_go_mod.stamp
-	if ! $(docker) images|grep katzenpost-voting_authority; then \
-		$(docker) run ${docker_args} $(replace_name) katzenpost_voting_authority katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd authority/cmd/voting && go mod verify && go install -trimpath -ldflags ${ldflags}' \
-		&& $(docker) commit katzenpost_voting_authority katzenpost-voting_authority \
-		&& $(docker) rm katzenpost_voting_authority; \
-        fi
+$(net_name)/voting-$(distro): $(distro)_go_mod.stamp
+		$(docker) run ${docker_args} katzenpost-$(distro)_go_mod \
+			$(sh) -c 'cd authority/cmd/voting && go mod verify && go build -trimpath -ldflags ${ldflags}' \
+			mv voting /$(net_name)/voting-$(distro)
 
 clean-local-images:
 	-cd $(net_name) && $(docker_compose) rm -sf

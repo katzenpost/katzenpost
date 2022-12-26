@@ -189,8 +189,8 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				Command:        "/go/bin/memspool",
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"data_store": "/conf/" + cfg.Server.Identifier + "/memspool.storage",
-					"log_dir":    "/conf/" + cfg.Server.Identifier,
+					"data_store": s.baseDir + cfg.Server.Identifier + "/memspool.storage",
+					"log_dir":    s.baseDir + cfg.Server.Identifier,
 				},
 			}
 			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
@@ -622,11 +622,11 @@ services:
     restart: unless-stopped
     image: katzenpost-server
     volumes:
-      - ./:/conf
-    command: /go/bin/server -f /conf/%s/katzenpost.toml
+      - ./:/%s
+    command: /go/bin/server -f /%s/%s/katzenpost.toml
     network_mode: host
 
-    depends_on:`, p.Identifier, p.Identifier)
+    depends_on:`, p.Identifier, s.baseDir, s.baseDir, p.Identifier)
 		for _, authCfg := range s.votingAuthConfigs {
 			write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -643,10 +643,10 @@ services:
     restart: unless-stopped
     image: katzenpost-server
     volumes:
-      - ./:/conf
-    command: /go/bin/server -f /conf/mix%d/katzenpost.toml
+      - ./:/%s
+    command: /go/bin/server -f /%s/mix%d/katzenpost.toml
     network_mode: host
-    depends_on:`, i+1, i+1)
+    depends_on:`, i+1, s.baseDir, s.baseDir, i+1)
 		for _, authCfg := range s.votingAuthConfigs {
 			// is this depends_on stuff actually necessary?
 			// there was a bit more of it before this function was regenerating docker-compose.yaml...
@@ -660,10 +660,10 @@ services:
     restart: unless-stopped
     image: katzenpost-voting_authority
     volumes:
-      - ./:/conf
-    command: /go/bin/voting -f /conf/%s/authority.toml
+      - ./:/%s
+    command: /go/bin/voting -f /%s/%s/authority.toml
     network_mode: host
-`, authCfg.Server.Identifier, authCfg.Server.Identifier)
+`, authCfg.Server.Identifier, s.baseDir, s.baseDir, authCfg.Server.Identifier)
 	}
 	return nil
 }
