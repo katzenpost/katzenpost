@@ -29,6 +29,7 @@ import (
 
 	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
+	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -46,9 +47,9 @@ var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = 1 * time.Minute
 	WarpedEpoch          = "false"
-	nextFetchTill        = 3 * epochtime.Period / 8
 	pkiEarlyConnectSlack = epochtime.Period / 8
-	PublishDeadline      = epochtime.Period / 4
+	PublishDeadline      = vServer.PublishConsensusDeadline
+	nextFetchTill        = epochtime.Period - PublishDeadline
 )
 
 type pki struct {
