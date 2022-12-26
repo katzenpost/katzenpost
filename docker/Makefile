@@ -19,6 +19,7 @@ distro=alpine
 net_name=voting_mixnet
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
+SHELL=/bin/bash
 
 # note: currently docker still defaults to docker, until we test podman a
 # little more. to use podman (still with docker compose, but now rootless!) set
@@ -56,6 +57,20 @@ start-voting-testnet: server voting_authority $(docker_compose_yml)
 
 stop-voting-testnet:
 	cd $(net_name); $(docker_compose) down
+
+wait-for-network:
+	tail -F $(net_name)/auth1/katzenpost.log |while read line; do \
+        echo "$$line"; \
+        if echo "$$line"|grep -q Genesis; then \
+            while read a b c d; do \
+                echo "$$(date) Network has been running for $$(($$b - $$d)) epochs"; \
+                if [ $$(($$b - $$d)) -gt 2 ]; then \
+                    echo "OK! Network should be ready to use now."; \
+                    break 2; \
+                fi; \
+            done < <(echo "$$line"); \
+        fi; \
+    done
 
 #run-nonvoting-testnet: server nonvoting_authority
 #	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up
@@ -167,7 +182,7 @@ ping.stamp: $(distro)_go_mod.stamp
         fi
 	touch $@
 
-run-ping: ping.stamp start-voting-testnet
+run-ping: ping.stamp start-voting-testnet wait-for-network
 	$(docker) run --network=host ${docker_args} --rm katzenpost-ping \
         /go/bin/ping -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
@@ -177,7 +192,7 @@ shell: $(distro)_go_mod.stamp
 rootshell: $(distro)_go_mod
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_go_mod $(sh)
 
-test: start-voting-testnet
+test: start-voting-testnet wait-for-network
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
