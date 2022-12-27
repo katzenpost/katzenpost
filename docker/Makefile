@@ -89,7 +89,7 @@ status:
 show-latest-vote:
 	@grep -A30 'Ready to send' voting_mixnet/auth1/katzenpost.log |tail -30|sed /Sending/q
 
-wait:
+wait: $(net_name)/running.stamp
 	# this waiting approach still needs a lot of improvement, and will wait
 	# significantly longer than necessary (including when waiting isn't
 	# necessary at all).
@@ -186,11 +186,11 @@ clean-image-%:
 	-rm -fv $(patsubst clean-image-%,%,$@).stamp
 
 clean-local: stop
-	git clean -f -x nonvoting_mixnet $(net_name)
+	git clean -f -x $(net_name)
 	git status .
 
 clean-local-dryrun:
-	git clean -n -x nonvoting_mixnet $(net_name)
+	git clean -n -x $(net_name)
 
 clean: clean-images clean-local
 	-$(docker) ps -a|grep katzenpost|cat
