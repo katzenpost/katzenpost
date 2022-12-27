@@ -232,6 +232,7 @@ func (s *state) fsm() <-chan time.Time {
 	case stateAcceptCert:
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
+			s.log.Debugf("my view of consensus: %x\n%s", s.identityPubKeyHash(), doc)
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
