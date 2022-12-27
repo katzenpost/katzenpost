@@ -160,7 +160,6 @@ func (s *state) fsm() <-chan time.Time {
 	switch s.state {
 	case stateBootstrap:
 		s.genesisEpoch = 0
-		s.priorSRV = make([][]byte, 0)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline {
@@ -413,7 +412,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		return nil, err
 	}
 	// if there are no prior SRV values, copy the current srv twice
-	if len(s.priorSRV) == 0 {
+	if epoch == s.genesisEpoch {
 		s.priorSRV = [][]byte{srv, srv}
 	} else if (s.genesisEpoch-epoch)%weekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
@@ -1793,6 +1792,7 @@ func newState(s *Server) (*state, error) {
 	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.signatures = make(map[uint64]map[[publicKeyHashSize]byte]*cert.Signature)
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
+	st.priorSRV = make([][]byte, 0)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
