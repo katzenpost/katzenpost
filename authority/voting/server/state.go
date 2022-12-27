@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -309,7 +310,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
 
-	_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
+	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +326,22 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
 	return vote, nil
+}
+
+func (s *state) doVerifyAndParseDocument(b []byte, verifiers []cert.Verifier) (*pki.Document, error) {
+	verifyAt := monotime.Now()
+	doc, err := pki.VerifyAndParseDocument(b, verifiers)
+	verifiedAt := monotime.Now()
+	s.log.Debugf("pki.VerifyAndParseDocument took %v", verifiedAt-verifyAt)
+	return doc, err
+}
+
+func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pki.Document) ([]byte, error) {
+	signAt := monotime.Now()
+	sig, err := pki.SignDocument(signer, verifier, d)
+	signedAt := monotime.Now()
+	s.log.Debugf("pki.SignDocument took %v", signedAt-signAt)
+	return sig, err
 }
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
@@ -348,7 +365,7 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
-	_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, certificate)
+	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, certificate)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +413,7 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	}
 	mixes, params, err := s.tallyVotes(epoch)
 	consensusOfOne := s.getDocument(mixes, params, srv)
-	_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
+	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
 	}
@@ -1240,7 +1257,7 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	}
 
 	// verify the signature and structure of the certificate
-	doc, err := pki.VerifyAndParseDocument(certificate.Payload, s.getVerifiers())
+	doc, err := s.doVerifyAndParseDocument(certificate.Payload, s.getVerifiers())
 	if err != nil {
 		s.log.Error("Cert from %x failed to verify: %s", certificate.PublicKey, err)
 		resp.ErrorCode = commands.CertNotSigned
@@ -1392,7 +1409,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 
 	// VerifyAndParseDocument verifies the signatures contained in the vote, but doesn't ensure
 	// that the vote contains a SharedRandom Commit from this peer
-	doc, err := pki.VerifyAndParseDocument(vote.Payload, s.getVerifiers())
+	doc, err := s.doVerifyAndParseDocument(vote.Payload, s.getVerifiers())
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1622,7 +1639,7 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
 					}
-					doc, err := pki.VerifyAndParseDocument(rawDoc, s.getVerifiers())
+					doc, err := s.doVerifyAndParseDocument(rawDoc, s.getVerifiers())
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
