@@ -162,21 +162,22 @@ J36qY23I6qGScGjq4tPu3w==
 #
 
 [Provider]
-EnableEphemeralClients = true
-TrustOnFirstUse = true
+  EnableServiceProvider = true
+  EnableEphemeralClients = true
+  TrustOnFirstUse = true
 
-[[Provider.Kaetzchen]]
+  [[Provider.Kaetzchen]]
     Disable = false
     Capability = "echo"
     Endpoint = "+echo"
 
-   [[Provider.CBORPluginKaetzchen]]
-     Disable = false
-     Capability = "panda"
-     Endpoint = "+panda"
-     Command = "/go/bin/panda_server"
-     MaxConcurrency = 1
-     [Provider.CBORPluginKaetzchen.Config]
+  [[Provider.CBORPluginKaetzchen]]
+    Disable = false
+    Capability = "panda"
+    Endpoint = "+panda"
+    Command = "/go/bin/panda_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
       log_dir = "/conf/service_logs"
       log_level = "DEBUG"
       fileStore = "/conf/service_data/panda.storage"
@@ -190,6 +191,16 @@ TrustOnFirstUse = true
     [Provider.CBORPluginKaetzchen.Config]
       data_store = "/conf/service_data/memspool.storage"
       log_dir = "/conf/service_logs"
+
+  [[Provider.CBORPluginKaetzchen]]
+    Capability = "reunion"
+    Endpoint = "+reunion"
+    Command = "/go/bin/reunion_katzenpost_server"
+    MaxConcurrency = 1
+    [Provider.CBORPluginKaetzchen.Config]
+      log_level = "DEBUG"
+      log = "/conf/service_logs/reunion.log"
+      s = "/conf/service_data/reunion.storage"
 
 #
 # The Management section specifies the management interface configuration.
