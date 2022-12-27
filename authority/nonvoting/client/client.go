@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -81,12 +81,12 @@ func (c *client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 	c.log.Debugf("Post(ctx, %d, %v, %+v)", epoch, signingPublicKey, d)
 
 	// Ensure that the descriptor we are about to post is well formed.
-	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
+	if err := pki.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
 
 	// Make a serialized + signed + serialized descriptor.
-	signed, err := s11n.SignDescriptor(signingPrivateKey, signingPublicKey, d)
+	signed, err := pki.SignDescriptor(signingPrivateKey, signingPublicKey, d)
 	if err != nil {
 		return err
 	}
@@ -135,7 +135,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Generate a random wire keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
-	linkKey := scheme.GenerateKeypair(rand.Reader)
+	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
 	defer linkKey.Reset()
 
 	// Initialize the TCP/IP connection, and wire session.
@@ -172,12 +172,12 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 
 	// Validate the document.
-	doc, err := s11n.VerifyAndParseDocument(r.Payload, c.cfg.AuthorityIdentityKey)
+	doc, err := pki.VerifyAndParseDocument(r.Payload, []cert.Verifier{c.cfg.AuthorityIdentityKey})
 	if err != nil {
 		return nil, nil, err
 	} else if doc.Epoch != epoch {
 		c.log.Warningf("nonvoting/Client: Get() authority returned document for wrong epoch: %v", doc.Epoch)
-		return nil, nil, s11n.ErrInvalidEpoch
+		return nil, nil, pki.ErrInvalidEpoch
 	}
 	c.log.Debugf("Document: %v", doc)
 
@@ -185,7 +185,7 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 }
 
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
-	return s11n.VerifyAndParseDocument(raw, c.cfg.AuthorityIdentityKey)
+	return pki.VerifyAndParseDocument(raw, []cert.Verifier{c.cfg.AuthorityIdentityKey})
 }
 
 func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey sign.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {

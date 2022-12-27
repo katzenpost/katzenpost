@@ -25,7 +25,6 @@ import (
 	"sync"
 
 	"gitlab.com/yawning/aez.git"
-	"golang.org/x/crypto/blake2b"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
@@ -277,31 +276,28 @@ func New(cfg *config.Config) (*Server, error) {
 
 	var err error
 	idPubKeyHash := s.identityPublicKey.Sum256()
-	s.log.Noticef("Server identity public key is: %x", idPubKeyHash[:])
+	s.log.Noticef("Server identity public key hash is: %x", idPubKeyHash[:])
 	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
 	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 	scheme := wire.DefaultScheme
 
-	var linkPrivateKey wire.PrivateKey = nil
-	var linkPublicKey wire.PublicKey = nil
-
+	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
 	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey, err = scheme.PrivateKeyFromPemFile(linkPrivateKeyFile)
+		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		_, err = scheme.PublicKeyFromPemFile(linkPublicKeyFile)
+		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
 	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey = scheme.GenerateKeypair(rand.Reader)
-		linkPublicKey = linkPrivateKey.PublicKey()
-		err = scheme.PrivateKeyToPemFile(linkPrivateKeyFile, linkPrivateKey)
+		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
+		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = scheme.PublicKeyToPemFile(linkPublicKeyFile, linkPublicKey)
+		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -311,8 +307,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	linkPubKeyHash := blake2b.Sum256(s.linkKey.PublicKey().Bytes())
-	s.log.Noticef("Server link public key is: %x", linkPubKeyHash[:])
+	linkPubKeyHash := linkPublicKey.Sum256()
+	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly

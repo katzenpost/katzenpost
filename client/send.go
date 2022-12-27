@@ -92,7 +92,7 @@ func (s *Session) doSend(msg *Message) {
 			if msg.Reliable {
 				s.log.Debugf("Sending reliable message with retransmissions")
 				timeSlop := eta // add a round-trip worth of delay before timing out
-				msg.QueuePriority = uint64(msg.SentAt.Add(msg.ReplyETA).Add(timeSlop).UnixNano())
+				msg.SetPriority(uint64(msg.SentAt.Add(msg.ReplyETA).Add(timeSlop).UnixNano()))
 				s.timerQ.Push(msg)
 			}
 		}

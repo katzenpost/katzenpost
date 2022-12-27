@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/userdb"
 	bolt "go.etcd.io/bbolt"
@@ -175,7 +176,7 @@ func (d *boltUserDB) Link(u []byte) (wire.PublicKey, error) {
 			return fmt.Errorf("userdb: user %s does not have a link key", u)
 		}
 		var err error
-		pubKey, err = d.scheme.UnmarshalTextPublicKey(rawPubKey)
+		pubKey, err = d.scheme.PublicKeyFromBytes(rawPubKey)
 		return err
 	})
 	return pubKey, err
@@ -186,7 +187,7 @@ func (d *boltUserDB) Identity(u []byte) (wire.PublicKey, error) {
 		return nil, fmt.Errorf("userdb: invalid username: `%v`", u)
 	}
 
-	var pubKey wire.PublicKey
+	_, pubKey := d.scheme.GenerateKeypair(rand.Reader)
 	err := d.db.View(func(tx *bolt.Tx) error {
 		uBkt := tx.Bucket([]byte(usersBucket))
 		if uEnt := uBkt.Get(u); uEnt == nil {
@@ -199,9 +200,7 @@ func (d *boltUserDB) Identity(u []byte) (wire.PublicKey, error) {
 			return userdb.ErrNoIdentity
 		}
 
-		var err error
-		pubKey, err = d.scheme.UnmarshalTextPublicKey(rawPubKey)
-		return err
+		return pubKey.UnmarshalText(rawPubKey)
 	})
 
 	return pubKey, err

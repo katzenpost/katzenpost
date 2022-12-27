@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,17 +29,14 @@ import (
 
 	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
@@ -51,9 +47,9 @@ var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
 	recheckInterval      = 1 * time.Minute
 	WarpedEpoch          = "false"
-	nextFetchTill        = 3 * epochtime.Period / 8
 	pkiEarlyConnectSlack = epochtime.Period / 8
-	PublishDeadline      = epochtime.Period / 4
+	PublishDeadline      = vServer.PublishConsensusDeadline
+	nextFetchTill        = epochtime.Period - PublishDeadline
 )
 
 type pki struct {
@@ -341,11 +337,12 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		IdentityKey: p.glue.IdentityPublicKey(),
 		LinkKey:     p.glue.LinkKey().PublicKey(),
 		Addresses:   p.descAddrMap,
+		Epoch:       epoch,
 	}
 	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
 		// shouldn't be self assigning this.
-		desc.Layer = cpki.LayerProvider
+		desc.Provider = true
 
 		// Publish currently running Kaetzchen.
 		var err error
@@ -490,7 +487,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 
 	// Ensure the additional data is valid.
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, debug.BytesToPrintString(c.AdditionalData))
+		p.log.Debugf("%v: '%x' AD not an IdentityKey?.", dirStr, c.AdditionalData)
 		return nil, false, false
 	}
 	var nodeID [sConstants.NodeIDLength]byte
@@ -519,7 +516,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		// the most recent descriptor we have for the node.
 		if !m.LinkKey.Equal(c.PublicKey) {
 			if desc == m || !desc.LinkKey.Equal(c.PublicKey) {
-				p.log.Warningf("%v: '%v' Public Key mismatch: '%v'", dirStr, debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
+				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, c.PublicKey.Sum256())
 				continue
 			}
 		}
@@ -608,6 +605,7 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 		if epoch < now-1 {
 			return nil, cpki.ErrNoDocument
 		}
+		p.log.Debugf("PKI cache miss for epoch %d", epoch)
 		return nil, errNotCached
 	}
 	return val, nil
@@ -649,40 +647,23 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	if glue.Config().PKI.Nonvoting != nil {
-		_, authPk := cert.Scheme.NewKeypair()
-		identityKeyPemFile := filepath.Join(glue.Config().Server.DataDir,
-			glue.Config().PKI.Nonvoting.PublicKeyPem)
-		err := pem.FromFile(identityKeyPemFile, authPk)
-		if err != nil {
-			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public identity key from PEM file: %v", err)
-		}
-
-		wirePemFile := filepath.Join(glue.Config().Server.DataDir, glue.Config().PKI.Nonvoting.LinkPublicKeyPem)
-		authPubKey, err := wire.DefaultScheme.PublicKeyFromPemFile(wirePemFile)
-		if err != nil {
-			return nil, err
-		}
 		pkiCfg := &nClient.Config{
-			AuthorityLinkKey:     authPubKey,
 			LinkKey:              glue.LinkKey(),
 			LogBackend:           glue.LogBackend(),
 			Address:              glue.Config().PKI.Nonvoting.Address,
-			AuthorityIdentityKey: authPk,
+			AuthorityIdentityKey: glue.Config().PKI.Nonvoting.PublicKey,
+			AuthorityLinkKey:     glue.Config().PKI.Nonvoting.LinkPublicKey,
 		}
 		p.impl, err = nClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers, glue.Config().Server.DataDir)
-		if err != nil {
-			return nil, err
-		}
 		pkiCfg := &vClient.Config{
 			DataDir:     glue.Config().Server.DataDir,
 			LinkKey:     glue.LinkKey(),
 			LogBackend:  glue.LogBackend(),
-			Authorities: authorities,
+			Authorities: glue.Config().PKI.Voting.Authorities,
 		}
 		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {

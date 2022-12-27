@@ -18,7 +18,6 @@
 package wire
 
 import (
-	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,8 +28,7 @@ import (
 )
 
 func TestSignatureScheme(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
-	pubKey1 := privKey1.PublicKey()
+	privKey1, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
 	pubKey2, err := DefaultScheme.UnmarshalBinaryPublicKey(pubKey1.Bytes())
 	require.NoError(t, err)
@@ -38,7 +36,8 @@ func TestSignatureScheme(t *testing.T) {
 
 	pubText, err := pubKey1.MarshalText()
 	require.NoError(t, err)
-	pubKey3, err := DefaultScheme.UnmarshalTextPublicKey(pubText)
+	pubKey3 := DefaultScheme.NewEmptyPublicKey()
+	err = pubKey3.UnmarshalText(pubText)
 	require.NoError(t, err)
 	require.True(t, pubKey1.Equal(pubKey3))
 
@@ -78,7 +77,7 @@ e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 	_, err = DefaultScheme.PublicKeyFromPemFile(badPemPath)
 	require.Error(t, err)
 
-	pubkeypempath := filepath.Join(os.TempDir(), "pubkey1.pem")
+	pubkeypempath := filepath.Join(os.TempDir(), "pubKey1.pem")
 	err = DefaultScheme.PublicKeyToPemFile(pubkeypempath, pubKey1)
 	require.NoError(t, err)
 	pubKey4, err := DefaultScheme.PublicKeyFromPemFile(pubkeypempath)
@@ -100,32 +99,28 @@ e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 }
 
 func TestPublicKeyReset(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
-	pubKey1 := privKey1.PublicKey()
+	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 	pubKey1.Reset()
 
 	require.Nil(t, pubKey1.(*publicKey).publicKey)
 }
 
 func TestPrivateKeyReset(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
+	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	privKey1.Reset()
 	require.Nil(t, privKey1.(*privateKey).privateKey)
 }
 
 func TestPublicKeyFromBytesFailure(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
-	pubKey1 := privKey1.PublicKey()
+	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 	err := pubKey1.FromBytes([]byte{})
 	require.Error(t, err)
 }
 
 func TestPublicKeyMarshalUnmarshal(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
-	pubKey1 := privKey1.PublicKey()
+	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
-	privKey2 := DefaultScheme.GenerateKeypair(rand.Reader)
-	pubKey2 := privKey2.PublicKey()
+	_, pubKey2 := DefaultScheme.GenerateKeypair(rand.Reader)
 
 	blob, err := pubKey1.MarshalBinary()
 	require.NoError(t, err)
@@ -136,8 +131,8 @@ func TestPublicKeyMarshalUnmarshal(t *testing.T) {
 }
 
 func TestPrivateKeyMarshalUnmarshal(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
-	privKey2 := DefaultScheme.GenerateKeypair(rand.Reader)
+	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
+	privKey2, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 
 	blob, err := privKey1.MarshalBinary()
 	require.NoError(t, err)
@@ -148,8 +143,7 @@ func TestPrivateKeyMarshalUnmarshal(t *testing.T) {
 }
 
 func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
-	pubKey1 := privKey1.PublicKey()
+	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
 	err := pubKey1.UnmarshalText(nil)
 	require.Error(t, err)
@@ -157,17 +151,18 @@ func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
 	err = pubKey1.UnmarshalText([]byte{})
 	require.Error(t, err)
 
-	blob := []byte(base64.StdEncoding.EncodeToString(pubKey1.Bytes()))
+	blob, err := pubKey1.MarshalText()
+	require.NoError(t, err)
 	err = pubKey1.UnmarshalText(blob)
 	require.NoError(t, err)
 }
 
 func TestPrivateKeyMarshalUnmarshalText(t *testing.T) {
-	privKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
+	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	blob, err := privKey1.MarshalText()
 	require.NoError(t, err)
 
-	privKey2 := DefaultScheme.GenerateKeypair(rand.Reader)
+	privKey2, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	err = privKey2.UnmarshalText(blob)
 	require.NoError(t, err)
 

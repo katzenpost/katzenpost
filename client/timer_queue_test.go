@@ -93,7 +93,7 @@ func TestTimerQueueRemove(t *testing.T) {
 
 		m.SentAt = time.Now()
 		m.ReplyETA = 100 * time.Millisecond
-		m.QueuePriority = uint64(m.SentAt.Add(m.ReplyETA).UnixNano())
+		m.SetPriority(uint64(m.SentAt.Add(m.ReplyETA).UnixNano()))
 		_, err := io.ReadFull(rand.Reader, m.ID[:])
 		assert.NoError(err)
 		a.Push(m)
@@ -114,8 +114,8 @@ func TestTimerQueueRemove(t *testing.T) {
 		if err == ErrQueueEmpty {
 			break
 		}
-		assert.True(n.(*Message).QueuePriority > last)
-		last = n.(*Message).QueuePriority
+		assert.True(n.(*Message).Priority() > last)
+		last = n.(*Message).Priority()
 		j++
 	}
 	t.Logf("Popped %d messages", j)
@@ -142,9 +142,9 @@ func TestTimerQueueOrder(t *testing.T) {
 		m.ID = new([16]byte)
 		m.SentAt = time.Now()
 		m.ReplyETA = time.Duration(int(time.Millisecond) * r.Intn(100))
-		m.QueuePriority = uint64((m.SentAt.Add(m.ReplyETA)).UnixNano())
+		m.SetPriority(uint64((m.SentAt.Add(m.ReplyETA)).UnixNano()))
 		m.ID[0] = uint8(i)
-		t.Logf("Inserting: %x : %d", m.ID[0], m.QueuePriority)
+		t.Logf("Inserting: %x : %d", m.ID[0], m.Priority())
 		a.Push(m)
 		<-time.After(10 * time.Millisecond)
 	}
@@ -159,9 +159,9 @@ func TestTimerQueueOrder(t *testing.T) {
 		if err == ErrQueueEmpty {
 			break
 		}
-		t.Logf("Popping:   %x : %d", n.(*Message).ID[0], n.(*Message).QueuePriority)
-		assert.True(n.(*Message).QueuePriority > last)
-		last = n.(*Message).QueuePriority
+		t.Logf("Popping:   %x : %d", n.(*Message).ID[0], n.(*Message).Priority())
+		assert.True(n.(*Message).Priority() > last)
+		last = n.(*Message).Priority()
 		j++
 	}
 	t.Logf("Popped %d messages", j)

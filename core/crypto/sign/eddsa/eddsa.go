@@ -36,6 +36,11 @@ type scheme struct{}
 
 var _ sign.Scheme = (*scheme)(nil)
 
+// NewEmptyPublicKey returns an empty sign.PublicKey
+func (s *scheme) NewEmptyPublicKey() sign.PublicKey {
+	return &publicKey{publicKey: new(eddsa.PublicKey)}
+}
+
 func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
 	privKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
@@ -163,4 +168,12 @@ func (p *publicKey) UnmarshalText(text []byte) error {
 		return err
 	}
 	return p.FromBytes(raw)
+}
+
+func (p *publicKey) MarshalBinary() ([]byte, error) {
+	return p.Bytes(), nil
+}
+
+func (p *publicKey) UnmarshalBinary(data []byte) error {
+	return p.FromBytes(data)
 }
