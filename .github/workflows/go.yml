@@ -41,10 +41,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install Build dependencies
-        run: |
-          sudo apt update && sudo apt install --no-install-recommends -y make podman dbus-user-session
-
       - name: Configure podman socket
         run: |
           sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
@@ -83,10 +79,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Install Build dependencies
-        run: |
-          sudo apt update && sudo apt install --no-install-recommends -y make podman dbus-user-session
-
       - name: Configure podman socket
         run: |
           sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
@@ -121,10 +113,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
-      - name: Install Build dependencies
-        run: |
-          sudo apt update && sudo apt install --no-install-recommends -y make podman dbus-user-session
 
       - name: Configure podman socket
         run: |
