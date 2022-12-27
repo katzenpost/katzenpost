@@ -99,9 +99,6 @@ jobs:
         run: |
           sleep 240
 
-      - name: run ping
-        run: cd docker && sudo -E make run-ping
-
       - name: run memspool end to end tests
         run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
 
@@ -140,9 +137,6 @@ jobs:
       - name: Allow mixnet to settle
         run: |
           sleep 240
-
-      - name: run ping
-        run: cd docker && sudo -E make run-ping
 
       - name: run catshadow end to end tests
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
