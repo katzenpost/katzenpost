@@ -63,7 +63,7 @@ jobs:
 
       - name: Start the mixnet
         run: |
-          cd docker && sudo -E make start-voting-testnet
+          cd docker && sudo -E make start
 
       - name: Allow mixnet to settle
         run: |
@@ -83,7 +83,7 @@ jobs:
 
       - name: Stop the mixnet
         run: |
-          cd docker && sudo -E make stop-voting-testnet
+          cd docker && sudo -E make stop
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
