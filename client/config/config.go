@@ -128,8 +128,7 @@ type NonvotingAuthority struct {
 func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	scheme := wire.DefaultScheme
 
-	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
-	authLinkKey := authLinkPrivKey.PublicKey()
+	authLinkKey := scheme.NewEmptyPublicKey()
 	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
 	if err != nil {
 		return nil, err
@@ -159,15 +158,24 @@ func (nvACfg *NonvotingAuthority) validate() error {
 
 // VotingAuthority is a voting authority configuration.
 type VotingAuthority struct {
-	Peers []*vServerConfig.AuthorityPeer
+	Peers []*vServerConfig.Authority
 }
 
 // New constructs a pki.Client with the specified voting authority config.
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
+	cLinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	b, err := linkKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	err = cLinkKey.UnmarshalBinary(b)
+	if err != nil {
+		return nil, err
+	}
 	cfg := &vClient.Config{
 		DataDir:       datadir,
-		LinkKey:       linkKey,
+		LinkKey:       cLinkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash[:])),
@@ -180,7 +188,7 @@ func (vACfg *VotingAuthority) validate() error {
 		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKeyPem == "" || peer.LinkPublicKeyPem == "" || len(peer.Addresses) == 0 {
+		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
 			return errors.New("invalid voting authority peer")
 		}
 	}
@@ -294,12 +302,9 @@ func (c *Config) FixupAndValidate() error {
 // returns the Config.
 func Load(b []byte) (*Config, error) {
 	cfg := new(Config)
-	md, err := toml.Decode(string(b), cfg)
+	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if undecoded := md.Undecoded(); len(undecoded) != 0 {
-		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err

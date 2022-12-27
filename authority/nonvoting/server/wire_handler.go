@@ -21,10 +21,10 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -141,13 +141,9 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 		return resp
 	}
 
-	// Validate and deserialize the descriptor.
-	verifier, err := s11n.GetVerifierFromDescriptor(cmd.Payload)
-	if err != nil {
-		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
-		return resp
-	}
-	desc, err := s11n.VerifyAndParseDescriptor(verifier, cmd.Payload, cmd.Epoch)
+	// Parse the MixDescriptor
+	desc := new(pki.MixDescriptor)
+	err := desc.UnmarshalBinary(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp

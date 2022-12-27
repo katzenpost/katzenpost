@@ -48,6 +48,11 @@ func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
 		}
 }
 
+// NewEmptyPublicKey returns an empty sign.PublicKey
+func (s *scheme) NewEmptyPublicKey() sign.PublicKey {
+	return NewEmptyPublicKey()
+}
+
 func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (sign.PublicKey, error) {
 	pubKey := NewEmptyPublicKey()
 	err := pubKey.FromBytes(b)
@@ -172,4 +177,11 @@ func (p *publicKey) UnmarshalText(text []byte) error {
 		return err
 	}
 	return p.FromBytes(raw)
+}
+func (p *publicKey) MarshalBinary() ([]byte, error) {
+	return p.Bytes(), nil
+}
+
+func (p *publicKey) UnmarshalBinary(data []byte) error {
+	return p.FromBytes(data)
 }

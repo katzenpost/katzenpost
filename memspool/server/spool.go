@@ -46,6 +46,10 @@ const (
 	SpoolStorageVersion = 0
 )
 
+var (
+	errSpoolAlreadyExists = errors.New("Spool Already Exists")
+)
+
 func HandleSpoolRequest(spoolMap *MemSpoolMap, request *common.SpoolRequest, log *logging.Logger) *common.SpoolResponse {
 	log.Debug("start of handle spool request")
 	spoolResponse := common.SpoolResponse{}
@@ -220,7 +224,7 @@ func (m *MemSpoolMap) addSpoolToMap(publicKey *eddsa.PublicKey, spoolID *[common
 	spool := NewMemSpool(publicKey)
 	_, loaded := m.spools.LoadOrStore(*spoolID, spool)
 	if loaded {
-		return errors.New("Spool creation failed, spool ID collision, this should never happen")
+		return errSpoolAlreadyExists
 	}
 	return nil
 }
@@ -258,7 +262,9 @@ func (m *MemSpoolMap) CreateSpool(publicKey *eddsa.PublicKey, signature []byte) 
 	spoolhash := sha512.Sum512_256(publicKey.Bytes())
 	copy(spoolID[:], spoolhash[:common.SpoolIDSize])
 	err := m.addSpoolToMap(publicKey, &spoolID)
-	if err != nil {
+	if err == errSpoolAlreadyExists {
+		return &spoolID, nil
+	} else if err != nil {
 		return nil, err
 	}
 	err = m.createSpoolBucket(publicKey, &spoolID)

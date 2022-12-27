@@ -140,7 +140,7 @@ func (co *connector) spawnNewConns() {
 
 	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
-		co.log.Debugf("Spawning connection to: '%v'.", debug.NodeIDToPrintString(&id))
+		co.log.Debugf("Spawning connection to: '%x'.", id)
 		c := newOutgoingConn(co, v)
 		co.onNewConn(c)
 	}

@@ -236,8 +236,8 @@ func TestKaetzchenWorker(t *testing.T) {
 	require.NoError(t, err)
 
 	scheme := wire.DefaultScheme
-	userKey := scheme.GenerateKeypair(rand.Reader)
-	linkKey := scheme.GenerateKeypair(rand.Reader)
+	userKey, _ := scheme.GenerateKeypair(rand.Reader)
+	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
 
 	mockProvider := &mockProvider{
 		userName: "alice",

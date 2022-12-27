@@ -29,9 +29,14 @@ import (
 
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
+	"golang.org/x/crypto/blake2b"
 
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
 )
+
+// PublicKeyHashSize indicates the hash size returned
+// from the PublicKey's Sum256 method.
+const PublicKeyHashSize = 32
 
 var DefaultScheme = &scheme{
 	KEM: kem.Kyber768X25519,
@@ -60,6 +65,9 @@ type PublicKey interface {
 
 	// FromBytes deserializes the byte slice b into the PublicKey.
 	FromBytes(b []byte) error
+
+	// Sum256 returns the Blake2b 256-bit checksum of the key's raw bytes.
+	Sum256() [32]byte
 }
 
 // PrivateKey is an interface used to abstract away the
@@ -113,12 +121,20 @@ type Scheme interface {
 
 	// GenerateKeypair generates a new KEM keypair using the provided
 	// entropy source.
-	GenerateKeypair(r io.Reader) PrivateKey
+	GenerateKeypair(r io.Reader) (PrivateKey, PublicKey)
+
+	// PublicKeyFromBytes returns a PublicKey using the provided
+	// bytes.
+	PublicKeyFromBytes(b []byte) (PublicKey, error)
+
+	// NewEmptyPublicKey returns an empty public key.
+	NewEmptyPublicKey() PublicKey
 }
 
 type publicKey struct {
 	publicKey kem.PublicKey
 	KEM       kem.KEM
+	hash      [PublicKeyHashSize]byte
 }
 
 func (p *publicKey) KeyType() string {
@@ -158,15 +174,16 @@ func (p *publicKey) UnmarshalBinary(data []byte) error {
 }
 
 func (p *publicKey) MarshalText() (text []byte, err error) {
-	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+	return cpem.ToPEMBytes(p), nil
 }
 
 func (p *publicKey) UnmarshalText(text []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(text))
-	if err != nil {
-		return err
-	}
-	return p.FromBytes(raw)
+	return cpem.FromPEMBytes(text, p)
+}
+
+func (p *publicKey) Sum256() [32]byte {
+	p.hash = blake2b.Sum256(p.Bytes())
+	return p.hash
 }
 
 type privateKey struct {
@@ -188,6 +205,7 @@ func (p *privateKey) Reset() {
 func (p *privateKey) PublicKey() PublicKey {
 	return &publicKey{
 		publicKey: p.privateKey.Public(),
+		hash:      blake2b.Sum256(p.privateKey.Public().Bytes()),
 		KEM:       p.KEM,
 	}
 }
@@ -218,22 +236,26 @@ func (p *privateKey) UnmarshalBinary(data []byte) error {
 }
 
 func (p *privateKey) MarshalText() (text []byte, err error) {
-	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+	return cpem.ToPEMBytes(p), nil
 }
 
 func (p *privateKey) UnmarshalText(text []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(text))
-	if err != nil {
-		return err
-	}
-	return p.FromBytes(raw)
+	return cpem.FromPEMBytes(text, p)
 }
+
 
 type scheme struct {
 	KEM kem.KEM
 }
 
 var _ Scheme = (*scheme)(nil)
+
+func (s *scheme) NewEmptyPublicKey() PublicKey {
+	return &publicKey{
+		publicKey: nil,
+		KEM:       s.KEM,
+	}
+}
 
 func (s *scheme) PrivateKeyFromBytes(b []byte) (PrivateKey, error) {
 	privKey, err := s.KEM.ParsePrivateKey(b)
@@ -309,7 +331,7 @@ func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (PublicKey, error) {
 	return s.PublicKeyFromBytes(b)
 }
 
-func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
+func (s *scheme) GenerateKeypair(r io.Reader) (PrivateKey, PublicKey) {
 	seecGenRand, err := seec.GenKeyPRPAES(r, 256)
 	if err != nil {
 		panic(err)
@@ -318,8 +340,9 @@ func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
 	if err != nil {
 		panic(err)
 	}
-	return &privateKey{
+	privk := &privateKey{
 		KEM:        s.KEM,
 		privateKey: k,
 	}
+	return privk, privk.PublicKey()
 }
