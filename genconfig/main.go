@@ -48,6 +48,7 @@ const (
 type katzenpost struct {
 	baseDir   string
 	outDir    string
+	binSuffix string
 	logWriter io.Writer
 
 	authConfig        *aConfig.Config
@@ -187,7 +188,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			spoolCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "spool",
 				Endpoint:       "+spool",
-				Command:        "/" + s.baseDir + "/memspool",
+				Command:        "/" + s.baseDir + "/memspool" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
 					"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
@@ -199,7 +200,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
 					Endpoint:       "+panda",
-					Command:        "/" + s.baseDir + "/panda_server",
+					Command:        "/" + s.baseDir + "/panda_server" + s.binSuffix,
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
 						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
@@ -412,11 +413,13 @@ func main() {
 	basePort := flag.Int("P", basePort, "First port number to use")
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
+	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
 	flag.Parse()
 	s := &katzenpost{}
 
 	s.baseDir = *baseDir
 	s.outDir = *outDir
+	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
 
@@ -628,10 +631,10 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/server -f %s/%s/katzenpost.toml
+    command: %s/server%s -f %s/%s/katzenpost.toml
     network_mode: host
 
-    depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.baseDir, p.Identifier)
+    depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, p.Identifier)
 		for _, authCfg := range s.votingAuthConfigs {
 			write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -649,9 +652,9 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/server -f %s/mix%d/katzenpost.toml
+    command: %s/server%s -f %s/mix%d/katzenpost.toml
     network_mode: host
-    depends_on:`, i+1, dockerImage, s.baseDir, s.baseDir, s.baseDir, i+1)
+    depends_on:`, i+1, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, i+1)
 		for _, authCfg := range s.votingAuthConfigs {
 			// is this depends_on stuff actually necessary?
 			// there was a bit more of it before this function was regenerating docker-compose.yaml...
@@ -666,9 +669,9 @@ services:
     image: %s
     volumes:
       - ./:%s
-    command: %s/voting -f %s/%s/authority.toml
+    command: %s/voting%s -f %s/%s/authority.toml
     network_mode: host
-`, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.baseDir, authCfg.Server.Identifier)
+`, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
 	}
 	return nil
 }

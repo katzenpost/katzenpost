@@ -54,18 +54,18 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
 	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) \
-		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} \
+		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -S .$(distro) \
 		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
 
 $(net_name)/running.stamp:
 	make $(make_args) start
 
-run: $(docker_compose_yml) $(net_name)/server $(net_name)/voting
+run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
 	-cd $(net_name) && touch running.stamp \
 	&& DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
 	cd $(net_name) && rm -v running.stamp
 
-start: $(docker_compose_yml) $(net_name)/server $(net_name)/voting
+start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
 	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
 	touch $(net_name)/running.stamp
 
@@ -142,32 +142,20 @@ go-mod-upgrade: $(distro)_go_mod.stamp
 		&& $(docker) commit katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod \
 		&& $(docker) rm katzenpost_$(distro)_go_mod
 
-.PHONY: $(net_name)/server
-$(net_name)/server: $(net_name)/server-$(distro)
-		cd $(net_name) && for f in *-$(distro); do ln -svf $$f $${f%-$(distro)}; done
-
-$(net_name)/server-$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
+$(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd server && warped=${warped} make $(make_args) testnet-build testnet-install'
 
-.PHONY: $(net_name)/voting
-$(net_name)/voting: $(net_name)/voting-$(distro)
-		cd $(net_name) && ln -svf voting-$(distro) voting
-
-$(net_name)/voting-$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
+$(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
 		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd authority/cmd/voting && go mod verify && \
 			go build -trimpath -ldflags ${ldflags} && \
-			mv voting /$(net_name)/voting-$(distro)'
+			mv voting /$(net_name)/voting.$(distro)'
 
-.PHONY: $(net_name)/ping
-$(net_name)/ping: $(net_name)/ping-$(distro)
-		cd $(net_name) && ln -svf ping-$(distro) ping
-
-$(net_name)/ping-$(distro): $(distro)_go_mod.stamp
+$(net_name)/ping.$(distro): $(distro)_go_mod.stamp
 		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
-			mv ping /$(net_name)/ping-$(distro)'
+			mv ping /$(net_name)/ping.$(distro)'
 
 clean-images: stop
 	@-for distro in $(DISTROS); do \
@@ -196,9 +184,9 @@ clean: clean-images clean-local
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
-run-ping: $(net_name)/ping-$(distro) $(net_name)/running.stamp
+run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
-        /$(net_name)/ping-$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp
 	$(docker) run -e --network=host ${docker_args} --rm -it katzenpost-$(distro)_go_mod $(sh)
