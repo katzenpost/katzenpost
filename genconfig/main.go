@@ -56,6 +56,7 @@ type katzenpost struct {
 	authIdentity      sign.PublicKey
 
 	nodeConfigs []*sConfig.Config
+	basePort    uint16
 	lastPort    uint16
 	nodeIdx     int
 	clientIdx   int
@@ -161,7 +162,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	} else {
 		cfg.PKI = new(sConfig.PKI)
 		cfg.PKI.Nonvoting = new(sConfig.Nonvoting)
-		cfg.PKI.Nonvoting.Address = fmt.Sprintf("127.0.0.1:%d", basePort)
+		cfg.PKI.Nonvoting.Address = fmt.Sprintf("127.0.0.1:%d", s.basePort)
 		cfg.PKI.Nonvoting.PublicKey = s.authIdentity
 	}
 
@@ -186,11 +187,11 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			spoolCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "spool",
 				Endpoint:       "+spool",
-				Command:        "/go/bin/memspool",
+				Command:        "/" + s.baseDir + "/memspool",
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"data_store": s.baseDir + cfg.Server.Identifier + "/memspool.storage",
-					"log_dir":    s.baseDir + cfg.Server.Identifier,
+					"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
+					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
 			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
@@ -198,11 +199,11 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
 					Endpoint:       "+panda",
-					Command:        "/go/bin/panda_server",
+					Command:        "/" + s.baseDir + "/panda_server",
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
-						"fileStore": "/conf/" + cfg.Server.Identifier + "/panda.storage",
-						"log_dir":   "/conf/" + cfg.Server.Identifier,
+						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
 						"log_level": "DEBUG",
 					},
 				}
@@ -250,7 +251,7 @@ func (s *katzenpost) genAuthConfig() error {
 
 	// Server section.
 	cfg.Server = new(aConfig.Server)
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", basePort)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.basePort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, "authority")
 
 	// Logging section.
@@ -408,14 +409,16 @@ func main() {
 	voting := flag.Bool("v", false, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
+	basePort := flag.Int("P", basePort, "First port number to use")
 	outDir := flag.String("o", "", "Path to write files to")
+	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	flag.Parse()
-	s := &katzenpost{
-		lastPort: basePort + 1,
-	}
+	s := &katzenpost{}
 
 	s.baseDir = *baseDir
 	s.outDir = *outDir
+	s.basePort = uint16(*basePort)
+	s.lastPort = s.basePort + 1
 
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
@@ -486,7 +489,7 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
-	err = s.genDockerCompose()
+	err = s.genDockerCompose(*dockerImage)
 	if err != nil {
 		log.Fatalf("%s", err)
 	}
@@ -554,6 +557,7 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 	err := pem.FromFile(public, idPubKey)
 	if err == nil {
+		log.Printf("reusing existing %s", public)
 		return idPubKey
 	}
 	idKey, idPubKey = cert.Scheme.NewKeypair()
@@ -577,9 +581,10 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 	}
 
 	linkPrivKey, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	err := pem.FromFile(linkpriv, linkPrivKey)
+	err := pem.FromFile(linkpublic, linkPubKey)
 	if err == nil {
-		return linkPrivKey.PublicKey()
+		log.Printf("reusing existing %s", linkpublic)
+		return linkPubKey
 	}
 	linkPrivKey, linkPubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	log.Printf("writing %s", linkpriv)
@@ -595,7 +600,7 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 	return linkPubKey
 }
 
-func (s *katzenpost) genDockerCompose() error {
+func (s *katzenpost) genDockerCompose(dockerImage string) error {
 	dest := filepath.Join(s.outDir, "docker-compose.yml")
 	log.Printf("writing %s", dest)
 	f, err := os.Create(dest)
@@ -620,13 +625,13 @@ services:
 		write(f, `
   %s:
     restart: unless-stopped
-    image: katzenpost-server
+    image: %s
     volumes:
-      - ./:/%s
-    command: /go/bin/server -f /%s/%s/katzenpost.toml
+      - ./:%s
+    command: %s/server -f %s/%s/katzenpost.toml
     network_mode: host
 
-    depends_on:`, p.Identifier, s.baseDir, s.baseDir, p.Identifier)
+    depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.baseDir, p.Identifier)
 		for _, authCfg := range s.votingAuthConfigs {
 			write(f, `
       - %s`, authCfg.Server.Identifier)
@@ -641,12 +646,12 @@ services:
 		write(f, `
   mix%d:
     restart: unless-stopped
-    image: katzenpost-server
+    image: %s
     volumes:
-      - ./:/%s
-    command: /go/bin/server -f /%s/mix%d/katzenpost.toml
+      - ./:%s
+    command: %s/server -f %s/mix%d/katzenpost.toml
     network_mode: host
-    depends_on:`, i+1, s.baseDir, s.baseDir, i+1)
+    depends_on:`, i+1, dockerImage, s.baseDir, s.baseDir, s.baseDir, i+1)
 		for _, authCfg := range s.votingAuthConfigs {
 			// is this depends_on stuff actually necessary?
 			// there was a bit more of it before this function was regenerating docker-compose.yaml...
@@ -658,12 +663,12 @@ services:
 		write(f, `
   %s:
     restart: unless-stopped
-    image: katzenpost-voting_authority
+    image: %s
     volumes:
-      - ./:/%s
-    command: /go/bin/voting -f /%s/%s/authority.toml
+      - ./:%s
+    command: %s/voting -f %s/%s/authority.toml
     network_mode: host
-`, authCfg.Server.Identifier, s.baseDir, s.baseDir, authCfg.Server.Identifier)
+`, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.baseDir, authCfg.Server.Identifier)
 	}
 	return nil
 }
