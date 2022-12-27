@@ -1,14 +1,18 @@
-.PHONY: clean clean-local clean-data clean-data-dryrun clean-image-% clean-container-% clean-images clean-local-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start-voting-testnet run-voting-testnet stop-voting-testnet
+.PHONY: clean clean-local clean-local-dryrun clean-image-% clean-container-% clean-images test rootshell shell run-ping go-mod-tidy go-mod-upgrade help start run stop
 
 help:
-	@echo "Interesting make targets:"
-	@echo " run-voting-testnet    - run the testnet until ctrl-C"
-	@echo " start-voting-testnet  - run the testnet in the background"
-	@echo " stop-voting-testnet   - stop it"
-	@echo " run-ping              - send a ping over the testnet"
-	@echo " clean-data            - delete data"
-	@echo " clean-local           - delete offline-rebuildable images"
-	@echo " clean                 - delete everything (requires internet to rebuild)"
+	@echo "These make targets allow you to control the test network:"
+	@echo " run                - run the testnet in the foreground, until ctrl-C"
+	@echo " start              - start the testnet in the background"
+	@echo " stop               - stop the testnet"
+	@echo " wait               - wait for testnet to have consensus"
+	@echo " watch              - tail -F all logs"
+	@echo " status             - show testnet consensus status"
+	@echo " show-latest-vote   - does what it says"
+	@echo " run-ping           - send a ping over the testnet"
+	@echo " clean-local        - stop, and delete data and binaries"
+	@echo " clean-local-dryrun - show what clean-local would delete"
+	@echo " clean              - the above, plus cleans includes go_deps images"
 	@echo
 
 warped?=true
@@ -17,6 +21,7 @@ auths=6
 providers=2
 distro=alpine
 net_name=voting_mixnet
+base_port=30000
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
@@ -36,7 +41,6 @@ uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
 CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 DISTROS=alpine debian
-IMAGES=server voting_authority ping
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
@@ -45,42 +49,65 @@ docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpos
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
 docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix:$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
 
-make_args=--no-print-directory net_name=$(net_name) docker=$(docker) warped=$(warped) docker_user=$(docker_user)
+make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
 
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
-	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod $(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) && ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -v -o ./$(net_name) -b /$(net_name)'
+	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
+		$(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) \
+		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} \
+		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
 
-run-voting-testnet: server voting_authority $(docker_compose_yml)
-	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
+$(net_name)/running.stamp:
+	make $(make_args) start
 
-start-voting-testnet: server voting_authority $(docker_compose_yml)
+run: $(docker_compose_yml) $(net_name)/server $(net_name)/voting
+	-cd $(net_name) && touch running.stamp \
+	&& DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
+	cd $(net_name) && rm -v running.stamp
+
+start: $(docker_compose_yml) $(net_name)/server $(net_name)/voting
 	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
+	touch $(net_name)/running.stamp
 
-stop-voting-testnet:
-	cd $(net_name); $(docker_compose) down
+stop:
+	cd $(net_name) && $(docker_compose) down --remove-orphans; rm -fv running.stamp
 
-wait-for-network:
+watch:
+	tail -F $(net_name)/*/*.log
+
+status:
+	@[ -d $(net_name) ] || (echo "./$(net_name)/ does not exist" && false)
+	tail -10 $(net_name)/auth1/katzenpost.log
+	@echo
+	@du -hs ./$(net_name)
+	@echo "Current time: $$(TZ=UTC date "+%H:%M:%S %Z") (compare to log timestamps to see if they are current)"
+	@cat $(net_name)/auth1/katzenpost.log |grep Genesis|tail -1|while read a b c d; do \
+			echo "Network appears to have been running for $$(($$b - $$d)) consecutive epochs:"; \
+			grep 'Consensus made' $(net_name)/auth1/katzenpost.log; \
+		done|grep . || (echo "(no consensus yet; exiting with error)" && false)
+
+show-latest-vote:
+	@grep -A30 'Ready to send' voting_mixnet/auth1/katzenpost.log |tail -30|sed /Sending/q
+
+wait:
+	# this waiting approach still needs a lot of improvement, and will wait
+	# significantly longer than necessary (including when waiting isn't
+	# necessary at all).
+	#
+	# ideally we should make the ping command be usable for waiting, instead..
+	#
 	tail -F $(net_name)/auth1/katzenpost.log |while read line; do \
         echo "$$line"; \
         if echo "$$line"|grep -q Genesis; then \
             while read a b c d; do \
                 echo "$$(date) Network has been running for $$(($$b - $$d)) epochs"; \
-                if [ $$(($$b - $$d)) -gt 2 ]; then \
+                if [ $$(($$b - $$d)) -gt 1 ]; then \
                     echo "OK! Network should be ready to use now."; \
                     break 2; \
                 fi; \
             done < <(echo "$$line"); \
         fi; \
     done
-
-#run-nonvoting-testnet: server nonvoting_authority
-#	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up
-
-#start-nonvoting-testnet: server nonvoting_authority fix-perms
-#	cd nonvoting_mixnet; DOCKER_USER=${docker_user} docker-compose up -d; docker-compose top
-
-#stop-nonvoting-testnet:
-#	cd nonvoting_mixnet; docker-compose down
 
 debian_base.stamp:
 	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y'
@@ -115,30 +142,34 @@ go-mod-upgrade: $(distro)_go_mod.stamp
 		&& $(docker) commit katzenpost_$(distro)_go_mod katzenpost-$(distro)_go_mod \
 		&& $(docker) rm katzenpost_$(distro)_go_mod
 
-$(net_name)/server-$(distro): $(distro)_go_mod.stamp
+.PHONY: $(net_name)/server
+$(net_name)/server: $(net_name)/server-$(distro)
+		cd $(net_name) && for f in *-$(distro); do ln -svf $$f $${f%-$(distro)}; done
+
+$(net_name)/server-$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd server && warped=${warped} make testnet-build testnet-install'
+			$(sh) -c 'cd server && warped=${warped} make $(make_args) testnet-build testnet-install'
 
-$(net_name)/voting-$(distro): $(distro)_go_mod.stamp
-		$(docker) run ${docker_args} katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd authority/cmd/voting && go mod verify && go build -trimpath -ldflags ${ldflags}' \
-			mv voting /$(net_name)/voting-$(distro)
+.PHONY: $(net_name)/voting
+$(net_name)/voting: $(net_name)/voting-$(distro)
+		cd $(net_name) && ln -svf voting-$(distro) voting
 
-clean-local-images:
-	-cd $(net_name) && $(docker_compose) rm -sf
-	for image in $(IMAGES); do \
-		make $(make_args) clean-container-$$image; \
-		make $(make_args) clean-image-$$image; \
-	done
+$(net_name)/voting-$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
+		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
+			$(sh) -c 'cd authority/cmd/voting && go mod verify && \
+			go build -trimpath -ldflags ${ldflags} && \
+			mv voting /$(net_name)/voting-$(distro)'
 
-#	@-for distro in $(DISTROS); do \
-#		for image in $(IMAGES); do \
-#			make $(make_args) clean-container-$$distro_$$image; \
-#			make $(make_args) clean-image-$$distro-$$image; \
-#		done; \
-#	done
+.PHONY: $(net_name)/ping
+$(net_name)/ping: $(net_name)/ping-$(distro)
+		cd $(net_name) && ln -svf ping-$(distro) ping
 
-clean-images: clean-local-images
+$(net_name)/ping-$(distro): $(distro)_go_mod.stamp
+		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
+			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
+			mv ping /$(net_name)/ping-$(distro)'
+
+clean-images: stop
 	@-for distro in $(DISTROS); do \
 		for image in base go_mod; do \
 			make $(make_args) distro=$$distro clean-container-$${distro}_$$image; \
@@ -154,31 +185,20 @@ clean-image-%:
 	-$(docker) rmi $(patsubst clean-image-%,katzenpost-%,$@)
 	-rm -fv $(patsubst clean-image-%,%,$@).stamp
 
-clean-data-dryrun:
-	git clean -n -x nonvoting_mixnet $(net_name)
-
-clean-data:
+clean-local: stop
 	git clean -f -x nonvoting_mixnet $(net_name)
 	git status .
 
-clean-local: clean-local-images clean-data
+clean-local-dryrun:
+	git clean -n -x nonvoting_mixnet $(net_name)
 
-clean: clean-images clean-data
+clean: clean-images clean-local
 	-$(docker) ps -a|grep katzenpost|cat
 	-$(docker) images|grep katzenpost|cat
 
-ping.stamp: $(distro)_go_mod.stamp
-	if ! $(docker) images|grep katzenpost-ping; then \
-		$(docker) run ${docker_args} $(replace_name) katzenpost_ping katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd ping && go mod verify && go install -ldflags ${ldflags}' \
-		&& $(docker) commit katzenpost_ping katzenpost-ping \
-		&& $(docker) rm katzenpost_ping; \
-        fi
-	touch $@
-
-run-ping: ping.stamp start-voting-testnet
-	$(docker) run --network=host ${docker_args} --rm katzenpost-ping \
-        /go/bin/ping -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
+run-ping: $(net_name)/ping-$(distro) $(net_name)/running.stamp
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
+        /$(net_name)/ping-$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp
 	$(docker) run -e --network=host ${docker_args} --rm -it katzenpost-$(distro)_go_mod $(sh)
@@ -186,7 +206,7 @@ shell: $(distro)_go_mod.stamp
 rootshell: $(distro)_go_mod
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_go_mod $(sh)
 
-test: start-voting-testnet
+test: start
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
