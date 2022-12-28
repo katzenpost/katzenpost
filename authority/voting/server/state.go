@@ -440,7 +440,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		v := s.reverseHash[pk]
 		err := ourConsensus.AddSignature(v, *signature)
 		if err != nil {
-			s.log.Errorf("Failed to AddSignature from %x on our consensus", pk)
+			s.log.Errorf("Failed to AddSignature from %x on our consensus: %s", pk, err)
 		}
 	}
 	// now see if we managed to get a threshold number of signatures
