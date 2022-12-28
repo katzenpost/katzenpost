@@ -1077,6 +1077,9 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	for _, n := range nodeMap {
 		toAssign = append(toAssign, n)
 	}
+	// must sort toAssign by ID!
+	sortNodesByPublicKey(toAssign)
+
 	assignIndexes := rng.Perm(len(toAssign))
 
 	// Fill out any layers that are under the target size, by
