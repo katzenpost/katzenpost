@@ -184,18 +184,6 @@ func (s *state) fsm() <-chan time.Time {
 			s.state = stateBootstrap
 			break
 		}
-		// If the authority has recently bootstrapped, the previous SRV values and genesisEpoch must be updated
-		if s.genesisEpoch == 0 {
-			// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
-			if d, ok := s.documents[s.votingEpoch-1]; ok {
-				s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
-				s.genesisEpoch = d.GenesisEpoch
-				s.priorSRV = d.PriorSharedRandom
-			} else {
-				s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
-				s.genesisEpoch = s.votingEpoch
-			}
-		}
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
 			serialized, err := signed.MarshalBinary()
@@ -292,6 +280,16 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 
 // getVote produces a pki.Document using all MixDescriptors that we have seen
 func (s *state) getVote(epoch uint64) (*pki.Document, error) {
+	// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
+	if d, ok := s.documents[s.votingEpoch-1]; ok {
+		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
+		s.genesisEpoch = d.GenesisEpoch
+		s.priorSRV = d.PriorSharedRandom
+	} else {
+		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
+		s.genesisEpoch = s.votingEpoch
+	}
+
 	descriptors := []*pki.MixDescriptor{}
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
