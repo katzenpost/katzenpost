@@ -1197,7 +1197,7 @@ func (s *state) pruneDocuments() {
 	}
 	for e := range s.myconsensus {
 		if e < cmpEpoch {
-			delete(s.documents, e)
+			delete(s.myconsensus, e)
 		}
 	}
 }
