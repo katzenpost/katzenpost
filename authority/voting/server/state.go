@@ -1054,20 +1054,18 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 
 	// Assign nodes that still exist up to the target size.
 	for layer, nodes := range doc.Topology {
-		nodeIndexes := rng.Perm(len(nodes))
-
-		for _, idx := range nodeIndexes {
-			if len(topology[layer]) >= targetNodesPerLayer {
-				break
-			}
-
-			id := nodes[idx].IdentityKey.Sum256()
-			if n, ok := nodeMap[id]; ok {
-				// There is a new descriptor with the same identity key,
-				// as an existing descriptor in the previous document,
-				// so preserve the layering.
+		if len(topology[layer]) >= targetNodesPerLayer {
+			continue
+		}
+		for _, node := range nodes {
+			id := node.IdentityKey.Sum256()
+			n, ok := nodeMap[id]
+			if ok {
 				topology[layer] = append(topology[layer], n)
 				delete(nodeMap, id)
+			} else {
+				// node not found
+				s.log.Notice("Mix %x no longer in consensus on %d", id, s.votingEpoch)
 			}
 		}
 	}
