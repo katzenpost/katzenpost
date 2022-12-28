@@ -43,6 +43,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -159,7 +160,6 @@ func (s *state) fsm() <-chan time.Time {
 	switch s.state {
 	case stateBootstrap:
 		s.genesisEpoch = 0
-		s.priorSRV = make([][]byte, 0)
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline {
@@ -183,18 +183,6 @@ func (s *state) fsm() <-chan time.Time {
 			s.votingEpoch = epoch + 2 // wait until next epoch begins and bootstrap
 			s.state = stateBootstrap
 			break
-		}
-		// If the authority has recently bootstrapped, the previous SRV values and genesisEpoch must be updated
-		if s.genesisEpoch == 0 {
-			// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
-			if d, ok := s.documents[s.votingEpoch-1]; ok {
-				s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
-				s.genesisEpoch = d.GenesisEpoch
-				s.priorSRV = d.PriorSharedRandom
-			} else {
-				s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
-				s.genesisEpoch = s.votingEpoch
-			}
 		}
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
@@ -231,6 +219,7 @@ func (s *state) fsm() <-chan time.Time {
 	case stateAcceptCert:
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
+			s.log.Debugf("my view of consensus: %x\n%s", s.identityPubKeyHash(), doc)
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
@@ -291,6 +280,16 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 
 // getVote produces a pki.Document using all MixDescriptors that we have seen
 func (s *state) getVote(epoch uint64) (*pki.Document, error) {
+	// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
+	if d, ok := s.documents[s.votingEpoch-1]; ok {
+		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
+		s.genesisEpoch = d.GenesisEpoch
+		s.priorSRV = d.PriorSharedRandom
+	} else {
+		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
+		s.genesisEpoch = s.votingEpoch
+	}
+
 	descriptors := []*pki.MixDescriptor{}
 	for _, desc := range s.descriptors[epoch] {
 		descriptors = append(descriptors, desc)
@@ -309,7 +308,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
 
-	_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
+	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +324,22 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
 	return vote, nil
+}
+
+func (s *state) doVerifyAndParseDocument(b []byte, verifiers []cert.Verifier) (*pki.Document, error) {
+	verifyAt := monotime.Now()
+	doc, err := pki.VerifyAndParseDocument(b, verifiers)
+	verifiedAt := monotime.Now()
+	s.log.Debugf("pki.VerifyAndParseDocument took %v", verifiedAt-verifyAt)
+	return doc, err
+}
+
+func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pki.Document) ([]byte, error) {
+	signAt := monotime.Now()
+	sig, err := pki.SignDocument(signer, verifier, d)
+	signedAt := monotime.Now()
+	s.log.Debugf("pki.SignDocument took %v", signedAt-signAt)
+	return sig, err
 }
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
@@ -348,7 +363,7 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
-	_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, certificate)
+	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, certificate)
 	if err != nil {
 		return nil, err
 	}
@@ -394,9 +409,16 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 	if err != nil {
 		return nil, err
 	}
+	// if there are no prior SRV values, copy the current srv twice
+	if epoch == s.genesisEpoch {
+		s.priorSRV = [][]byte{srv, srv}
+	} else if (s.genesisEpoch-epoch)%weekOfEpochs == 0 {
+		// rotate the weekly epochs if it is time to do so.
+		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
+	}
 	mixes, params, err := s.tallyVotes(epoch)
 	consensusOfOne := s.getDocument(mixes, params, srv)
-	_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
+	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +440,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		v := s.reverseHash[pk]
 		err := ourConsensus.AddSignature(v, *signature)
 		if err != nil {
-			s.log.Errorf("Failed to AddSignature from %x on our consensus", pk)
+			s.log.Errorf("Failed to AddSignature from %x on our consensus: %s", pk, err)
 		}
 	}
 	// now see if we managed to get a threshold number of signatures
@@ -1055,6 +1077,9 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 	for _, n := range nodeMap {
 		toAssign = append(toAssign, n)
 	}
+	// must sort toAssign by ID!
+	sortNodesByPublicKey(toAssign)
+
 	assignIndexes := rng.Perm(len(toAssign))
 
 	// Fill out any layers that are under the target size, by
@@ -1173,7 +1198,7 @@ func (s *state) pruneDocuments() {
 	}
 	for e := range s.myconsensus {
 		if e < cmpEpoch {
-			delete(s.documents, e)
+			delete(s.myconsensus, e)
 		}
 	}
 }
@@ -1240,7 +1265,7 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	}
 
 	// verify the signature and structure of the certificate
-	doc, err := pki.VerifyAndParseDocument(certificate.Payload, s.getVerifiers())
+	doc, err := s.doVerifyAndParseDocument(certificate.Payload, s.getVerifiers())
 	if err != nil {
 		s.log.Error("Cert from %x failed to verify: %s", certificate.PublicKey, err)
 		resp.ErrorCode = commands.CertNotSigned
@@ -1392,7 +1417,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 
 	// VerifyAndParseDocument verifies the signatures contained in the vote, but doesn't ensure
 	// that the vote contains a SharedRandom Commit from this peer
-	doc, err := pki.VerifyAndParseDocument(vote.Payload, s.getVerifiers())
+	doc, err := s.doVerifyAndParseDocument(vote.Payload, s.getVerifiers())
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1622,7 +1647,7 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
 					}
-					doc, err := pki.VerifyAndParseDocument(rawDoc, s.getVerifiers())
+					doc, err := s.doVerifyAndParseDocument(rawDoc, s.getVerifiers())
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
@@ -1768,6 +1793,7 @@ func newState(s *Server) (*state, error) {
 	st.reveals = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
 	st.signatures = make(map[uint64]map[[publicKeyHashSize]byte]*cert.Signature)
 	st.commits = make(map[uint64]map[[publicKeyHashSize]byte][]byte)
+	st.priorSRV = make([][]byte, 0)
 
 	// Initialize the persistence store and restore state.
 	dbPath := filepath.Join(s.cfg.Server.DataDir, dbFile)
