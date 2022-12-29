@@ -1119,12 +1119,22 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 	topology := make([][]*pki.MixDescriptor, len(s.s.cfg.Topology.Layers))
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
-			_, identityKey := cert.Scheme.NewKeypair()
-			err := pem.FromFile(node.IdentityPublicKeyPem, identityKey)
-			if err != nil {
-				panic(err)
+
+			_, identityPublicKey := cert.Scheme.NewKeypair()
+			if filepath.IsAbs(node.IdentityPublicKeyPem) {
+				err := pem.FromFile(node.IdentityPublicKeyPem, identityPublicKey)
+				if err != nil {
+					panic(err)
+				}
+			} else {
+				pemFilePath := filepath.Join(s.s.cfg.Server.DataDir, node.IdentityPublicKeyPem)
+				err := pem.FromFile(pemFilePath, identityPublicKey)
+				if err != nil {
+					panic(err)
+				}
 			}
-			id := identityKey.Sum256()
+
+			id := identityPublicKey.Sum256()
 
 			// if the listed node is in the current descriptor set, place it in the layer
 			if n, ok := nodeMap[id]; ok {
