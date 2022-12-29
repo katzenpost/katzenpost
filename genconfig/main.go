@@ -40,6 +40,7 @@ import (
 
 const (
 	basePort      = 30000
+	nrLayers      = 3
 	nrNodes       = 6
 	nrProviders   = 2
 	nrAuthorities = 3
@@ -293,7 +294,7 @@ func (s *katzenpost) genAuthConfig() error {
 	return nil
 }
 
-func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile string) error {
+func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile string, nrLayers int) error {
 
 	configs := []*vConfig.Config{}
 
@@ -342,7 +343,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile stri
 		}
 		cfg.Parameters = parameters
 		cfg.Debug = &vConfig.Debug{
-			Layers:           3,
+			Layers:           nrLayers,
 			MinNodesPerLayer: 1,
 			GenerateOnly:     false,
 		}
@@ -420,6 +421,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 
 func main() {
 	var err error
+	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 	nrProviders := flag.Int("p", nrProviders, "Number of providers.")
 	voting := flag.Bool("v", false, "Generate voting configuration")
@@ -430,6 +432,7 @@ func main() {
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
 	paramsFile := flag.String("t", "", "Path to read params.toml from (optional)")
+	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	flag.Parse()
 	s := &katzenpost{}
 
@@ -444,7 +447,7 @@ func main() {
 
 	if *voting {
 		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting, *paramsFile)
+		err := s.genVotingAuthoritiesCfg(*nrVoting, *paramsFile, *nrLayers)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
@@ -474,12 +477,24 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		for _, aCfg := range s.votingAuthConfigs {
-			aCfg.Mixes = mixes
-			aCfg.Providers = providers
+		for _, vCfg := range s.votingAuthConfigs {
+			vCfg.Mixes = mixes
+			vCfg.Providers = providers
+			if *omitTopology == false {
+				vCfg.Topology = new(vConfig.Topology)
+				vCfg.Topology.Layers = make([]vConfig.Layer, 0)
+				for i := 0; i < *nrLayers; i++ {
+					vCfg.Topology.Layers = append(vCfg.Topology.Layers, *new(vConfig.Layer))
+					vCfg.Topology.Layers[i].Nodes = make([]vConfig.Node, 0)
+				}
+				for j := range mixes {
+					layer := j % *nrLayers
+					vCfg.Topology.Layers[layer].Nodes = append(vCfg.Topology.Layers[layer].Nodes, *mixes[j])
+				}
+			}
 		}
-		for _, aCfg := range s.votingAuthConfigs {
-			if err := saveCfg(aCfg, *outDir); err != nil {
+		for _, vCfg := range s.votingAuthConfigs {
+			if err := saveCfg(vCfg, *outDir); err != nil {
 				log.Fatalf("Failed to saveCfg of authority with %s", err)
 			}
 		}
