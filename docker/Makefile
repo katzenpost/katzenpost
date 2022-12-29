@@ -140,7 +140,7 @@ go-mod-upgrade: $(distro)_go_mod.stamp
 
 $(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd server && warped=${warped} make $(make_args) testnet-build testnet-install'
+			$(sh) -c 'cd server && make $(make_args) testnet-build testnet-install'
 
 $(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
 		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
