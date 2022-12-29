@@ -188,7 +188,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			spoolCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "spool",
 				Endpoint:       "+spool",
-				Command:        "/" + s.baseDir + "/memspool" + s.binSuffix,
+				Command:        s.baseDir + "/memspool" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
 					"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
@@ -200,7 +200,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
 					Endpoint:       "+panda",
-					Command:        "/" + s.baseDir + "/panda_server" + s.binSuffix,
+					Command:        s.baseDir + "/panda_server" + s.binSuffix,
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
 						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",

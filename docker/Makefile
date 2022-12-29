@@ -19,6 +19,7 @@ warped?=true
 mixes=6
 auths=6
 providers=2
+DISTROS=alpine debian
 distro=alpine
 net_name=voting_mixnet
 base_port=30000
@@ -26,27 +27,21 @@ docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
 
-# note: currently docker still defaults to docker, until we test podman a
-# little more. to use podman (still with docker compose, but now rootless!) set
-# docker=podman
-
-# maybe relevant issue: https://github.com/containers/podman/issues/9447 (or
-# probably not anymore, now that we're in the host network namespace)
-
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 
 uid?=$(shell [ "$$SUDO_UID" != "" ] && echo "$$SUDO_UID" || id -u)
 gid?=$(shell [ "$$SUDO_GID" != "" ] && echo "$$SUDO_GID" || id -g)
-CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
-DISTROS=alpine debian
 
 docker_user?=$(shell if echo ${docker}|grep -q podman; then echo 0:0; else echo ${uid}:${gid}; fi)
+docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -e CGO_CFLAGS_ALLOW=${CGO_CFLAGS_ALLOW}
+
 replace_name=$(shell if echo ${docker}|grep -q podman; then echo " --replace --name"; else echo " --name"; fi)
 i_if_podman=$(shell if echo ${docker}|grep -q podman; then echo " -i"; else echo; fi)
-docker_args=--user ${docker_user} --volume $(shell readlink -f ..):/go/katzenpost --workdir /go/katzenpost -e CGO_CFLAGS_ALLOW=${CGO_CFLAGS_ALLOW}
 mount_net_name=-v `pwd`/$(net_name):/$(net_name)
+
 docker_compose?= $(shell if echo ${docker}|grep -q podman; then echo DOCKER_HOST="unix:$$XDG_RUNTIME_DIR/podman/podman.sock" docker-compose; else echo docker-compose; fi)
 
 make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(distro) warped=$(warped) docker_user=$(docker_user)
@@ -191,10 +186,13 @@ run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 shell: $(distro)_go_mod.stamp
 	$(docker) run -e --network=host ${docker_args} --rm -it katzenpost-$(distro)_go_mod $(sh)
 
+# this is for running with docker, where we are root outside and (except for
+# here) non-root inside. When using podman, we are rootless outside and uid 0
+# inside already, so this target is never needed.
 rootshell: $(distro)_go_mod
 	$(docker) run --network=host --user 0:0 -v $(shell readlink -f ..):/go/katzenpost --rm -it katzenpost-$(distro)_go_mod $(sh)
 
-test: start
+test: wait
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
