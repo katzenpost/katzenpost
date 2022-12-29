@@ -51,7 +51,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
 	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) \
 		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -S .$(distro) -t $(params)\
-		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
+		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod -D'
 
 $(net_name)/running.stamp:
 	make $(make_args) start
