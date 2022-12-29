@@ -402,12 +402,12 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 		if nodeCfg.Server.IsProvider {
 			node := &vConfig.Node{
 				Identifier:           nodeCfg.Server.Identifier,
-				IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 			}
 			providers = append(providers, node)
 		} else {
 			node := &vConfig.Node{
-				IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 			}
 			mixes = append(mixes, node)
 		}
