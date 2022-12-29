@@ -650,7 +650,7 @@ services:
 	for _, p := range providers {
 		write(f, `
   %s:
-    restart: unless-stopped
+    restart: "no"
     image: %s
     volumes:
       - ./:%s
@@ -671,7 +671,7 @@ services:
 		// here.
 		write(f, `
   mix%d:
-    restart: unless-stopped
+    restart: "no"
     image: %s
     volumes:
       - ./:%s
@@ -688,7 +688,7 @@ services:
 	for _, authCfg := range s.votingAuthConfigs {
 		write(f, `
   %s:
-    restart: unless-stopped
+    restart: "no"
     image: %s
     volumes:
       - ./:%s
