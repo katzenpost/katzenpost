@@ -378,18 +378,16 @@ func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.
 	mixes := []*aConfig.Node{}
 	providers := []*aConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
-		if nodeCfg.Server.IsProvider {
-			provider := &aConfig.Node{
-				Identifier:     nodeCfg.Server.Identifier,
-				IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
-			}
-			providers = append(providers, provider)
-			continue
-		}
-		mix := &aConfig.Node{
+		node := &aConfig.Node{
+			Identifier:     nodeCfg.Server.Identifier,
 			IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
-		mixes = append(mixes, mix)
+
+		if nodeCfg.Server.IsProvider {
+			providers = append(providers, node)
+			continue
+		}
+		mixes = append(mixes, node)
 	}
 
 	return providers, mixes, nil
@@ -399,15 +397,33 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	mixes := []*vConfig.Node{}
 	providers := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
+
+		// filename of the authorities pem-encoded public key file for the Node
+		keyFile := filepath.Join("keys/", nodeCfg.Server.Identifier, "_id_public.pem")
+		outFile := filepath.Join(s.baseDir, "/", keyFile)
+
+		// location of the pem-file
+		idPem := filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem")
+
+		// copy the keyfile into the authority path
+		pemBytes, err := os.ReadFile(idPem)
+		if err != nil {
+			return nil, nil, err
+		}
+		err = os.WriteFile(outFile, pemBytes, 0500)
+		if err != nil {
+			return nil, nil, err
+		}
 		if nodeCfg.Server.IsProvider {
 			node := &vConfig.Node{
 				Identifier:           nodeCfg.Server.Identifier,
-				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+				IdentityPublicKeyPem: keyFile,
 			}
 			providers = append(providers, node)
 		} else {
 			node := &vConfig.Node{
-				IdentityPublicKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+				// FIXME: Identifier is not allowed for mixes
+				IdentityPublicKeyPem: keyFile,
 			}
 			mixes = append(mixes, node)
 		}
