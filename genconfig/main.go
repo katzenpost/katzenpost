@@ -380,7 +380,7 @@ func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.
 	for _, nodeCfg := range s.nodeConfigs {
 		node := &aConfig.Node{
 			Identifier:     nodeCfg.Server.Identifier,
-			IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
+			IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
 		}
 
 		if nodeCfg.Server.IsProvider {
