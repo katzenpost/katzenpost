@@ -576,7 +576,6 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 	err := pem.FromFile(public, idPubKey)
 	if err == nil {
-		log.Printf("reusing existing %s", public)
 		return idPubKey
 	}
 	idKey, idPubKey = cert.Scheme.NewKeypair()
@@ -602,7 +601,6 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 	linkPrivKey, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	err := pem.FromFile(linkpublic, linkPubKey)
 	if err == nil {
-		log.Printf("reusing existing %s", linkpublic)
 		return linkPubKey
 	}
 	linkPrivKey, linkPubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
