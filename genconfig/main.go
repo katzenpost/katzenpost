@@ -293,21 +293,36 @@ func (s *katzenpost) genAuthConfig() error {
 	return nil
 }
 
-func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
-	parameters := &vConfig.Parameters{
-		SendRatePerMinute: 0,
-		Mu:                0.005,
-		MuMaxDelay:        1000,
-		LambdaP:           0.001,
-		LambdaPMaxDelay:   1000,
-		LambdaL:           0.0005,
-		LambdaLMaxDelay:   1000,
-		LambdaD:           0.0005,
-		LambdaDMaxDelay:   3000,
-		LambdaM:           0.2,
-		LambdaMMaxDelay:   100,
-	}
+func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile string) error {
+
 	configs := []*vConfig.Config{}
+
+	parameters := new(vConfig.Parameters)
+
+	if paramsFile != "" {
+		b, err := os.ReadFile(paramsFile)
+		if err != nil {
+			return err
+		}
+		err = toml.Unmarshal(b, parameters)
+		if err != nil {
+			return err
+		}
+	} else {
+		parameters = &vConfig.Parameters{
+			SendRatePerMinute: 0,
+			Mu:                0.005,
+			MuMaxDelay:        1000,
+			LambdaP:           0.001,
+			LambdaPMaxDelay:   1000,
+			LambdaL:           0.0005,
+			LambdaLMaxDelay:   1000,
+			LambdaD:           0.0005,
+			LambdaDMaxDelay:   3000,
+			LambdaM:           0.2,
+			LambdaMMaxDelay:   100,
+		}
+	}
 
 	// initial generation of key material for each authority
 	s.authorities = make(map[[32]byte]*vConfig.Authority)
@@ -414,6 +429,7 @@ func main() {
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
+	paramsFile := flag.String("t", "", "Path to read params.toml from (optional)")
 	flag.Parse()
 	s := &katzenpost{}
 
@@ -428,7 +444,7 @@ func main() {
 
 	if *voting {
 		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting)
+		err := s.genVotingAuthoritiesCfg(*nrVoting, *paramsFile)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
