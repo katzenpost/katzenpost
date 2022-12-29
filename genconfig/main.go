@@ -298,31 +298,30 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile stri
 
 	configs := []*vConfig.Config{}
 
-	parameters := new(vConfig.Parameters)
+	parameters := &vConfig.Parameters{
+		SendRatePerMinute: 0,
+		Mu:                0.005,
+		MuMaxDelay:        1000,
+		LambdaP:           0.001,
+		LambdaPMaxDelay:   1000,
+		LambdaL:           0.0005,
+		LambdaLMaxDelay:   1000,
+		LambdaD:           0.0005,
+		LambdaDMaxDelay:   3000,
+		LambdaM:           0.2,
+		LambdaMMaxDelay:   100,
+	}
 
 	if paramsFile != "" {
 		b, err := os.ReadFile(paramsFile)
 		if err != nil {
 			return err
 		}
-		err = toml.Unmarshal(b, parameters)
+		err = toml.Unmarshal(b, &parameters)
 		if err != nil {
 			return err
 		}
-	} else {
-		parameters = &vConfig.Parameters{
-			SendRatePerMinute: 0,
-			Mu:                0.005,
-			MuMaxDelay:        1000,
-			LambdaP:           0.001,
-			LambdaPMaxDelay:   1000,
-			LambdaL:           0.0005,
-			LambdaLMaxDelay:   1000,
-			LambdaD:           0.0005,
-			LambdaDMaxDelay:   3000,
-			LambdaM:           0.2,
-			LambdaMMaxDelay:   100,
-		}
+		log.Printf("Using params from %s (Mu=%f)", paramsFile, parameters.Mu)
 	}
 
 	// initial generation of key material for each authority
