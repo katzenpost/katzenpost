@@ -1120,7 +1120,7 @@ func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) []
 	for strata, layer := range s.s.cfg.Topology.Layers {
 		for _, node := range layer.Nodes {
 			_, identityKey := cert.Scheme.NewKeypair()
-			err := pem.FromPEMString(node.IdentityPublicKeyPem, identityKey)
+			err := pem.FromFile(node.IdentityPublicKeyPem, identityKey)
 			if err != nil {
 				panic(err)
 			}
