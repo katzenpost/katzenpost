@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -94,9 +95,9 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 }
 
 func (c *outgoingConn) worker() {
-	const (
-		retryIncrement = 15 * time.Second
-		maxRetryDelay  = 120 * time.Second
+	var (
+		retryIncrement = epochtime.Period / 64
+		maxRetryDelay  = epochtime.Period / 8
 	)
 
 	defer func() {

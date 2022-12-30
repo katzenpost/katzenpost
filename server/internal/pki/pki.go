@@ -45,7 +45,7 @@ import (
 
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
-	recheckInterval      = 1 * time.Minute
+	recheckInterval      = epochtime.Period / 64
 	WarpedEpoch          = "false"
 	pkiEarlyConnectSlack = epochtime.Period / 8
 	PublishDeadline      = vServer.PublishConsensusDeadline
@@ -711,6 +711,6 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 
 func init() {
 	if WarpedEpoch == "true" {
-		recheckInterval = epochtime.Period/64
+		recheckInterval = epochtime.Period / 64
 	}
 }

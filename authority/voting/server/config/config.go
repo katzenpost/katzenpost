@@ -430,25 +430,23 @@ func (cfg *Config) FixupAndValidate() error {
 
 	allNodes := make([]*Node, 0, len(cfg.Mixes)+len(cfg.Providers))
 	for _, v := range cfg.Mixes {
-		if err := v.validate(false); err != nil {
-			return err
-		}
 		allNodes = append(allNodes, v)
 	}
-	idMap := make(map[string]*Node)
 	for _, v := range cfg.Providers {
-		if err := v.validate(true); err != nil {
-			return err
-		}
-		if _, ok := idMap[v.Identifier]; ok {
-			return fmt.Errorf("config: Providers: Identifier '%v' is present more than once", v.Identifier)
-		}
-		idMap[v.Identifier] = v
 		allNodes = append(allNodes, v)
 	}
 	_, identityKey := cert.Scheme.NewKeypair()
+	idMap := make(map[string]*Node)
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
+		if _, ok := idMap[v.Identifier]; ok {
+			return fmt.Errorf("config: Node: Identifier '%v' is present more than once", v.Identifier)
+		}
+		if err := v.validate(true); err != nil {
+			return err
+		}
+		idMap[v.Identifier] = v
+
 		err := pem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityPublicKeyPem), identityKey)
 		if err != nil {
 			return err

@@ -351,6 +351,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
+	c.log.Debugf("voting/Client: Get() document:\n%s", doc)
 	return doc, r.Payload, nil
 }
 
