@@ -78,6 +78,12 @@ type Scheme interface {
 	// See also PublicKey's Blind method.
 	Blind(groupMember []byte, blindingFactor []byte) (blindedGroupMember []byte)
 
+	// NewEmptyPublicKey returns an uninitialized
+	// PublicKey which is suitable to be loaded
+	// via some serialization format via FromBytes
+	// or FromPEMFile methods.
+	NewEmptyPublicKey() PublicKey
+
 	// UnmarshalBinaryPublicKey loads a public key from byte slice.
 	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
 }
