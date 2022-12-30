@@ -4,7 +4,6 @@ go 1.19
 
 require (
 	filippo.io/edwards25519 v1.0.0
-	git.xx.network/elixxir/ctidh_cgo v0.0.0-20221019215055-572ef9cc61bd
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
 	github.com/cloudflare/circl v1.3.1
@@ -13,6 +12,7 @@ require (
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
+	github.com/katzenpost/ctidh_cgo v0.0.0-20221206014129-18ef3f3259b7
 	github.com/katzenpost/doubleratchet v0.0.14
 	github.com/katzenpost/noise v0.0.3
 	github.com/katzenpost/nyquist v0.0.0-20220905145943-9f7e8b431eaf
@@ -45,7 +45,6 @@ require (
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
-	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/oasislabs/deoxysii v0.0.0-20190807103041-6159f99c2236 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
