@@ -160,12 +160,12 @@ func TestVote(t *testing.T) {
 
 	// generate a Topology section
 	topology := config.Topology{Layers: make([]config.Layer, 3)}
-	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[0].pubKey)},
-		config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[1].pubKey)}}
-	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[2].pubKey)},
-		config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[3].pubKey)}}
-	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[4].pubKey)},
-		config.Node{IdentityPublicKeyPem: pem.ToPEMString(idKeys[5].pubKey)}}
+	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[0].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[1].identityPublicKeyPem}}
+	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[2].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[3].identityPublicKeyPem}}
+	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[4].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[5].identityPublicKeyPem}}
 
 	// generate a Topology section
 	authCfgs[0].Topology = &topology
