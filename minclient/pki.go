@@ -35,9 +35,9 @@ var (
 	errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("minclient/pki: consensus not ready yet")
 	PublishDeadline         = vServer.PublishConsensusDeadline
-	mixServerCacheDelay     = epochtime.Period / 32
+	mixServerCacheDelay     = epochtime.Period / 16
 	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
-	recheckInterval         = 1 * time.Minute
+	recheckInterval         = epochtime.Period / 16
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
 )
@@ -284,10 +284,4 @@ func newPKI(c *Client) *pki {
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
 	return p
-}
-
-func init() {
-	if WarpedEpoch == "true" {
-		recheckInterval = epochtime.Period / 64
-	}
 }

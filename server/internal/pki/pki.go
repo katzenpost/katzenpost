@@ -45,10 +45,10 @@ import (
 
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
-	recheckInterval      = epochtime.Period / 64
+	recheckInterval      = epochtime.Period / 32
 	WarpedEpoch          = "false"
 	pkiEarlyConnectSlack = epochtime.Period / 8
-	PublishDeadline      = vServer.PublishConsensusDeadline
+	PublishDeadline      = vServer.MixPublishDeadline
 	nextFetchTill        = epochtime.Period - PublishDeadline
 )
 
@@ -73,7 +73,7 @@ func (p *pki) StartWorker() {
 }
 
 func (p *pki) worker() {
-	const initialSpawnDelay = 5 * time.Second
+	var initialSpawnDelay = epochtime.Period / 64
 
 	timer := time.NewTimer(initialSpawnDelay)
 	defer func() {
@@ -478,7 +478,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 }
 
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
-	const earlySendSlack = 2 * time.Minute
+	var earlySendSlack = epochtime.Period / 8
 
 	dirStr := "Incoming"
 	if isOutgoing {
@@ -707,10 +707,4 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 		m[t] = append(m[t], addr)
 	}
 	return m, nil
-}
-
-func init() {
-	if WarpedEpoch == "true" {
-		recheckInterval = epochtime.Period / 64
-	}
 }
