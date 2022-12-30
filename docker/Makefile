@@ -19,6 +19,7 @@ warped?=true
 mixes=6
 auths=6
 providers=2
+params=""
 DISTROS=alpine debian
 distro=alpine
 net_name=voting_mixnet
@@ -49,7 +50,7 @@ make_args=--no-print-directory net_name=$(net_name) docker=$(docker) distro=$(di
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp
 	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker && mkdir -p $(net_name) \
-		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -S .$(distro) \
+		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -S .$(distro) -t $(params)\
 		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
 
 $(net_name)/running.stamp:
@@ -139,7 +140,7 @@ go-mod-upgrade: $(distro)_go_mod.stamp
 
 $(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd server && warped=${warped} make $(make_args) testnet-build testnet-install'
+			$(sh) -c 'cd server && make $(make_args) testnet-build testnet-install'
 
 $(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml)
 		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
