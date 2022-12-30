@@ -46,9 +46,9 @@ type PublicKey interface {
 	Blind(blindingFactor []byte) error
 }
 
-// Nike is an interface encapsulating a
+// Scheme is an interface encapsulating a
 // non-interactive key exchange.
-type Nike interface {
+type Scheme interface {
 
 	// PublicKeySize returns the size in bytes of the public key.
 	PublicKeySize() int

@@ -43,7 +43,7 @@ func NewEcdhNike(rng io.Reader) *EcdhNike {
 
 var _ nike.PrivateKey = (*ecdh.PrivateKey)(nil)
 var _ nike.PublicKey = (*ecdh.PublicKey)(nil)
-var _ nike.Nike = (*EcdhNike)(nil)
+var _ nike.Scheme = (*EcdhNike)(nil)
 
 // PublicKeySize returns the size in bytes of the public key.
 func (e *EcdhNike) PublicKeySize() int {

@@ -25,18 +25,15 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 )
 
-// CtidhNike implements the Nike interface using our ctidh module.
-type CtidhNike struct {
+// CTIDH implements the Nike interface using our CTIDH module.
+type CTIDH struct {
 }
 
-// NewCtidhNike returns a new Ctidh Nike.
-func NewCtidhNike() *CtidhNike {
-	return new(CtidhNike)
-}
+var CTIDHScheme = &CTIDH{}
 
 var _ nike.PrivateKey = (*ctidh.PrivateKey)(nil)
 var _ nike.PublicKey = (*ctidh.PublicKey)(nil)
-var _ nike.Nike = (*CtidhNike)(nil)
+var _ nike.Scheme = (*CTIDH)(nil)
 
 // PublicKeySize returns the size in bytes of the public key.
 func (e *CtidhNike) PublicKeySize() int {
