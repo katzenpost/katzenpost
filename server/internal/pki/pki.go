@@ -711,6 +711,6 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 
 func init() {
 	if WarpedEpoch == "true" {
-		recheckInterval = 5 * time.Second
+		recheckInterval = epochtime.Period/64
 	}
 }
