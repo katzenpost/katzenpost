@@ -69,7 +69,7 @@ func DefaultGeometry() *Geometry {
 
 func defaultGeometry(nike nike.Nike) *Geometry {
 	forwardPayloadLength := 2 * 1024
-	nrHops := 5
+	nrHops := 20
 	return GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
 }
 

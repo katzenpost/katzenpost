@@ -20,9 +20,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/katzenpost/client/utils"
 	"io"
 	"time"
+
+	"github.com/katzenpost/katzenpost/client/utils"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -76,6 +77,8 @@ func (s *Session) doSend(msg *Message) {
 		s.log.Debugf("doSend %s without SURB", msgIdStr)
 		err = s.minclient.SendUnreliableCiphertext(msg.Recipient, msg.Provider, msg.Payload)
 	}
+
+	s.log.Infof("********************************* minclient send error: %s", err.Error())
 
 	// message was sent
 	if err == nil {
