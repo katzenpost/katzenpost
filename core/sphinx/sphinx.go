@@ -70,7 +70,7 @@ func DefaultGeometry() *Geometry {
 func defaultGeometry(nike nike.Nike) *Geometry {
 	forwardPayloadLength := 2 * 1024
 	nrHops := 20
-	return GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	return GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 }
 
 // Geometry describes the geometry of a Sphinx packet.
