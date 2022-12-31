@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
@@ -91,9 +92,9 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 }
 
 func (co *connector) worker() {
-	const (
-		initialSpawnDelay = 15 * time.Second
-		resweepInterval   = 3 * time.Minute
+	var (
+		initialSpawnDelay = epochtime.Period / 64
+		resweepInterval   = epochtime.Period / 8
 	)
 
 	timer := time.NewTimer(initialSpawnDelay)
