@@ -227,14 +227,6 @@ type Debug struct {
 	GenerateOnly bool
 }
 
-func (dCfg *Debug) validate() error {
-	if dCfg.Layers > defaultLayers {
-		// This is a limitation of the Sphinx implementation.
-		return fmt.Errorf("config: Debug: Layers %v exceeds maximum", dCfg.Layers)
-	}
-	return nil
-}
-
 func (dCfg *Debug) applyDefaults() {
 	if dCfg.Layers <= 0 {
 		dCfg.Layers = defaultLayers
@@ -420,9 +412,6 @@ func (cfg *Config) FixupAndValidate() error {
 		return err
 	}
 	if err := cfg.Parameters.validate(); err != nil {
-		return err
-	}
-	if err := cfg.Debug.validate(); err != nil {
 		return err
 	}
 	cfg.Parameters.applyDefaults()
