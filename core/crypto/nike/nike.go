@@ -17,8 +17,14 @@
 // Package sphinx implements the Katzenpost parameterized Sphinx Packet Format.
 package nike
 
+import "encoding"
+
 // Key is an interface for types encapsulating key material.
 type Key interface {
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
+	encoding.TextMarshaler
+	encoding.TextUnmarshaler
 
 	// Reset resets the key material to all zeros.
 	Reset()
@@ -83,6 +89,12 @@ type Scheme interface {
 	// via some serialization format via FromBytes
 	// or FromPEMFile methods.
 	NewEmptyPublicKey() PublicKey
+
+	// NewEmptyPrivateKey returns an uninitialized
+	// PrivateKey which is suitable to be loaded
+	// via some serialization format via FromBytes
+	// or FromPEMFile methods.
+	NewEmptyPrivateKey() PrivateKey
 
 	// UnmarshalBinaryPublicKey loads a public key from byte slice.
 	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
