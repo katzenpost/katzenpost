@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:build docker_test
 // +build docker_test
 
 package client
@@ -132,7 +133,7 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 		rand.Reader.Read(message[:])
 		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:])
 		require.NoError(err)
-		rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
+		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
 		require.NoError(err)
 		response := new(common.SpoolResponse)
 		err = response.Unmarshal(rawResponse)
