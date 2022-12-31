@@ -185,7 +185,7 @@ run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp
-	$(docker) run -e --network=host ${docker_args} --rm -it katzenpost-$(distro)_go_mod $(sh)
+	$(docker) run -e --network=host ${docker_args} $(mount_net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
 
 # this is for running with docker, where we are root outside and (except for
 # here) non-root inside. When using podman, we are rootless outside and uid 0
