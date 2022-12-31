@@ -263,6 +263,7 @@ func (s *Session) GetServices(serviceName string) ([]*utils.ServiceDescriptor, e
 	}
 	serviceDescriptors := make([]*utils.ServiceDescriptor, len(descs))
 	for i, s := range descs {
+		s := s
 		serviceDescriptors[i] = &s
 	}
 	return serviceDescriptors, nil
