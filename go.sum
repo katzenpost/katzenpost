@@ -50,6 +50,8 @@ github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129 h1:BkX
 github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129/go.mod h1:moU3dWG1uk4xayUNdUPs2Q3dx2Zsk5i9Ysfx+ujQrwM=
 github.com/katzenpost/ctidh_cgo v0.0.0-20221206014129-18ef3f3259b7 h1:8F+r8TM8CryDYVrFpNzbWPNlUXDSPAKDcxgKt8+IKQM=
 github.com/katzenpost/ctidh_cgo v0.0.0-20221206014129-18ef3f3259b7/go.mod h1:96mxXmthxcc25S+YTnLdS4FuN/aP+8y0MDnOcR/lo88=
+github.com/katzenpost/ctidh_cgo v0.0.0-20221231023300-144e0130d1e9 h1:70NiGUJmPrN1uJiD5uOREI0ziiGtAv+9B6YSnrkD1UM=
+github.com/katzenpost/ctidh_cgo v0.0.0-20221231023300-144e0130d1e9/go.mod h1:96mxXmthxcc25S+YTnLdS4FuN/aP+8y0MDnOcR/lo88=
 github.com/katzenpost/doubleratchet v0.0.14 h1:dbLUUbgK7ceOSQzUJOYxdfPR+5A5LKHUIjzh1cBTAIU=
 github.com/katzenpost/doubleratchet v0.0.14/go.mod h1:S/shjvsqWuDYwa/3ZsCcvkN1SdfVaNtBDZ4dx5mXUDI=
 github.com/katzenpost/noise v0.0.3 h1:bpYnozkk8j0XE1FAX9iRYgKtfIywuAINF+vMdBOidrM=
