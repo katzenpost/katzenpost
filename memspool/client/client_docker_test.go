@@ -155,3 +155,29 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 		messageID += 1
 	}
 }
+
+func TestDockerGetSpoolServices(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	client, err := cc.New(cfg)
+	require.NoError(err)
+
+	s, err := client.NewTOFUSession()
+	require.NoError(err)
+
+	s.WaitForDocument()
+
+	spoolServices, err := s.GetServices(common.SpoolServiceName)
+	require.NoError(err)
+
+	for _, svc := range spoolServices {
+		t.Logf("Got %s ServiceDescriptor: %v", common.SpoolServiceName, svc)
+		rd, err := NewSpoolReadDescriptor(svc.Name, svc.Provider, s)
+		require.NoError(err)
+		t.Logf("Got SpoolReadDescriptor: %v", rd)
+	}
+
+}
