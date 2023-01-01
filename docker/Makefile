@@ -16,8 +16,8 @@ help:
 	@echo
 
 warped?=true
-mixes=6
-auths=6
+mixes=3
+auths=3
 providers=2
 params=""
 DISTROS=alpine debian
