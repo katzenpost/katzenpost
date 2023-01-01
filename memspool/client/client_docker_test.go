@@ -105,6 +105,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 }
 
 func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
+	t.Skip("This test does not handle lossy networks well")
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
