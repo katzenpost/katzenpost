@@ -229,7 +229,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateK
 	return responses, nil
 }
 
-func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey, epoch uint64) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -249,6 +249,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 			return nil, err
 		}
 		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
+		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
 		p.log.Debugf("got response (err=%v) from %s", err, auth.Identifier)
 		if err == pki.ErrNoDocument {
@@ -324,8 +325,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	defer close(doneCh)
 
 	// Dispatch the get_consensus command.
-	cmd := &commands.GetConsensus{Epoch: epoch}
-	resp, err := c.pool.fetchConsensus(ctx, linkKey, cmd)
+	resp, err := c.pool.fetchConsensus(ctx, linkKey, epoch)
 	if err != nil {
 		return nil, nil, err
 	}
