@@ -229,7 +229,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateK
 	return responses, nil
 }
 
-func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey, epoch uint64) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -240,13 +240,24 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.Privat
 	r := rand.NewMath()
 	peerIndex := r.Intn(len(p.cfg.Authorities))
 
-	conn, err := p.initSession(ctx, doneCh, linkKey, nil, p.cfg.Authorities[peerIndex])
-	if err != nil {
-		return nil, err
-	}
-	resp, err := p.roundTrip(conn.session, cmd)
+	// check for a document from threshold authorities
 
-	return resp, err
+	for i := 0; i < len(p.cfg.Authorities)/2; i++ {
+		auth := p.cfg.Authorities[peerIndex+i%len(p.cfg.Authorities)]
+		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
+		if err != nil {
+			return nil, err
+		}
+		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
+		cmd := &commands.GetConsensus{Epoch: epoch}
+		resp, err := p.roundTrip(conn.session, cmd)
+		p.log.Debugf("got response (err=%v) from %s", err, auth.Identifier)
+		if err == pki.ErrNoDocument {
+			continue
+		}
+		return resp, err
+	}
+	return nil, pki.ErrNoDocument
 }
 
 // Client is a PKI client.
@@ -314,8 +325,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	defer close(doneCh)
 
 	// Dispatch the get_consensus command.
-	cmd := &commands.GetConsensus{Epoch: epoch}
-	resp, err := c.pool.randomPeerRoundTrip(ctx, linkKey, cmd)
+	resp, err := c.pool.fetchConsensus(ctx, linkKey, epoch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -342,6 +352,16 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
+	} else {
+		c.log.Noticef("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
+		for _, auth := range c.cfg.Authorities {
+			for _, badauth := range bad {
+				if badauth == auth.IdentityPublicKey {
+					c.log.Noticef("missing or invalid signature from %s", auth.Identifier)
+					break
+				}
+			}
+		}
 	}
 	doc, err = pki.VerifyAndParseDocument(r.Payload, c.verifiers)
 	if err != nil {
