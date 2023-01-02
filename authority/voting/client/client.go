@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -239,12 +240,14 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.Privat
 
 	r := rand.NewMath()
 	peerIndex := r.Intn(len(p.cfg.Authorities))
+	p.log.Debugf("sending %v to %s", reflect.TypeOf(cmd), p.cfg.Authorities[peerIndex].Identifier)
 
 	conn, err := p.initSession(ctx, doneCh, linkKey, nil, p.cfg.Authorities[peerIndex])
 	if err != nil {
 		return nil, err
 	}
 	resp, err := p.roundTrip(conn.session, cmd)
+	p.log.Debugf("got response %s (err=%v) from %s", reflect.TypeOf(resp), err, p.cfg.Authorities[peerIndex].Identifier)
 
 	return resp, err
 }
