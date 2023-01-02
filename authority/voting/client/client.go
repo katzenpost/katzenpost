@@ -229,7 +229,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateK
 	return responses, nil
 }
 
-func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey, cmd commands.Command) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -240,13 +240,22 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey wire.Privat
 	r := rand.NewMath()
 	peerIndex := r.Intn(len(p.cfg.Authorities))
 
-	conn, err := p.initSession(ctx, doneCh, linkKey, nil, p.cfg.Authorities[peerIndex])
-	if err != nil {
-		return nil, err
+	// check for a document from threshold authorities
+	i := 0;
+	for i < len(p.cfg.Authorities)/2 {
+		auth := p.cfg.Authorities[peerIndex + i % len(p.cfg.Authorities)]
+		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
+		if err != nil {
+			return nil, err
+		}
+		resp, err := p.roundTrip(conn.session, cmd)
+		if err == pki.ErrNoDocument {
+			continue
+		}
+		i++
+		return resp, err
 	}
-	resp, err := p.roundTrip(conn.session, cmd)
-
-	return resp, err
+	return nil, pki.ErrNoDocument
 }
 
 // Client is a PKI client.
@@ -315,7 +324,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 	// Dispatch the get_consensus command.
 	cmd := &commands.GetConsensus{Epoch: epoch}
-	resp, err := c.pool.randomPeerRoundTrip(ctx, linkKey, cmd)
+	resp, err := c.pool.fetchConsensus(ctx, linkKey, cmd)
 	if err != nil {
 		return nil, nil, err
 	}
