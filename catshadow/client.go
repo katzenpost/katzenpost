@@ -689,7 +689,10 @@ func (c *Client) doContactRename(oldname, newname string) error {
 	}
 	contact.Nickname = newname
 	c.contactNicknames[newname] = contact
-	c.conversations[newname] = c.conversations[oldname]
+	if _, ok := c.conversations[oldname]; ok {
+		c.conversations[newname] = c.conversations[oldname]
+	}
+
 	c.blobMutex.Lock()
 	if b, ok := c.blob["avatar://"+oldname]; ok {
 		c.blob["avatar://"+newname] = b
