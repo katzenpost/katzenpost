@@ -241,20 +241,19 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 	peerIndex := r.Intn(len(p.cfg.Authorities))
 
 	// check for a document from threshold authorities
-	i := 0;
-	for i < len(p.cfg.Authorities)/2 {
-		auth := p.cfg.Authorities[peerIndex + i % len(p.cfg.Authorities)]
+
+	for i := 0; i < len(p.cfg.Authorities)/2; i++ {
+		auth := p.cfg.Authorities[peerIndex+i%len(p.cfg.Authorities)]
 		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
 		if err != nil {
 			return nil, err
 		}
 		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 		resp, err := p.roundTrip(conn.session, cmd)
+		p.log.Debugf("got response (err=%v) from %s", err, auth.Identifier)
 		if err == pki.ErrNoDocument {
 			continue
 		}
-		p.log.Debugf("got response (err=%v) from %s", err, auth.Identifier)
-		i++
 		return resp, err
 	}
 	return nil, pki.ErrNoDocument
