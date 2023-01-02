@@ -248,10 +248,12 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 		if err != nil {
 			return nil, err
 		}
+		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 		resp, err := p.roundTrip(conn.session, cmd)
 		if err == pki.ErrNoDocument {
 			continue
 		}
+		p.log.Debugf("got response (err=%v) from %s", err, auth.Identifier)
 		i++
 		return resp, err
 	}
@@ -351,6 +353,16 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
+	} else {
+		c.log.Noticef("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
+		for _, auth := range c.cfg.Authorities {
+			for _, badauth := range bad {
+				if badauth == auth.IdentityPublicKey {
+					c.log.Noticef("missing or invalid signature from %s", auth.Identifier)
+					break
+				}
+			}
+		}
 	}
 	doc, err = pki.VerifyAndParseDocument(r.Payload, c.verifiers)
 	if err != nil {
