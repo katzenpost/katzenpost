@@ -218,36 +218,6 @@ func (s *Session) garbageCollect() {
 	s.surbIDMap.Range(surbIDMapRange)
 }
 
-func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
-	for {
-		var qo workerOp
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.HaltCh():
-			s.log.Debugf("Await first pki doc worker terminating gracefully")
-			return errors.New("terminating gracefully")
-		case <-time.After(time.Duration(s.cfg.Debug.InitialMaxPKIRetrievalDelay) * time.Second):
-			return errors.New("timeout failure awaiting first PKI document")
-		case qo = <-s.opCh:
-		}
-		switch op := qo.(type) {
-		case opNewDocument:
-			// Determine if PKI doc is valid. If not then abort.
-			err := s.isDocValid(op.doc)
-			if err != nil {
-				s.fatalErrCh <- fmt.Errorf("aborting, PKI doc is not valid for our decoy traffic use case: %v", err)
-				return err
-			}
-			s.setPollIntervalFromDoc(op.doc)
-			return nil
-		default:
-			continue
-		}
-	}
-	// NOT REACHED
-}
-
 // GetServices returns the services matching the specified service name
 func (s *Session) GetServices(serviceName string) ([]*utils.ServiceDescriptor, error) {
 	if s.minclient == nil {
