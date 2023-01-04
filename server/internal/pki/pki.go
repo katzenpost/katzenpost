@@ -220,7 +220,23 @@ func (p *pki) worker() {
 			}
 		}
 
-		timer.Reset(recheckInterval)
+		now, elapsed, till := epochtime.Now()
+
+		// it's after the consensus publication deadline
+		if elapsed > vServer.PublishConsensusDeadline {
+			if p.entryForEpoch(now+1) == nil {
+				timer.Reset(recheckInterval)
+			} else {
+				timer.Reset(till + vServer.PublishConsensusDeadline)
+			}
+		} else {
+			// no document for current epoch
+			if p.entryForEpoch(now) == nil {
+				timer.Reset(recheckInterval)
+			} else {
+				timer.Reset(vServer.PublishConsensusDeadline - elapsed)
+			}
+		}
 	}
 }
 
