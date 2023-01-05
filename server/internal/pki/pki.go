@@ -230,7 +230,7 @@ func (p *pki) worker() {
 				p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval)
 				timer.Reset(recheckInterval)
 			} else {
-				interval := till + vServer.PublishConsensusDeadline
+				interval := till
 				p.log.Debugf("document cached for %v, reset to %v", now+1, interval)
 				timer.Reset(interval)
 			}
