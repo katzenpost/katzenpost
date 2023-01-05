@@ -4,6 +4,8 @@ codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105025039-a7c2ede32eb8 h1:HUThGyEl
 codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105025039-a7c2ede32eb8/go.mod h1:Lp8Bi8Y6j3P7mUKBa4jHt8CJFDn3uIqO9lwRLfcZ2zs=
 codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105030638-380b67619d16 h1:xArP/lDr0WShzI/pymKEkHEGXG6EFW9NJHmQv5J+gdM=
 codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105030638-380b67619d16/go.mod h1:Lp8Bi8Y6j3P7mUKBa4jHt8CJFDn3uIqO9lwRLfcZ2zs=
+codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105032648-93478c890f92 h1:Y9ZXTMxR7Ye/nJHbrj7F7Cvj55sgZ3ZV8M0woVEtCUI=
+codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105032648-93478c890f92/go.mod h1:Lp8Bi8Y6j3P7mUKBa4jHt8CJFDn3uIqO9lwRLfcZ2zs=
 filippo.io/edwards25519 v1.0.0 h1:0wAIcmJUqRdI8IJ/3eGi5/HwXZWPujYXXlkrQogz0Ek=
 filippo.io/edwards25519 v1.0.0/go.mod h1:N1IkdkCkiLB6tki+MYJoSx2JTY9NUlxZE7eHn5EwJns=
 github.com/BurntSushi/toml v1.2.1 h1:9F2/+DoOYIOksmaJFPw1tGFy1eDnIJXg+UHjuD8lTak=
