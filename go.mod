@@ -33,6 +33,7 @@ require (
 )
 
 require (
+	codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105030638-380b67619d16 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect

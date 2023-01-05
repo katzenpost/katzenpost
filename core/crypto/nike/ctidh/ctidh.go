@@ -20,7 +20,7 @@
 package ctidh
 
 import (
-	ctidh "github.com/katzenpost/ctidh_cgo"
+	ctidh "codeberg.org/dawuud/highctidh/cgo"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 )
