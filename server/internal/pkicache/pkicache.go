@@ -108,7 +108,7 @@ func (e *Entry) isOurLayerSane(isProvider bool) bool {
 	if !isProvider {
 		idHash := e.self.IdentityKey.Sum256()
 		layer, err := e.doc.GetMixLayer(&idHash)
-		if err != nil  || layer == pki.LayerProvider {
+		if err != nil || layer == pki.LayerProvider {
 			return false
 		}
 		if int(layer) >= len(e.doc.Topology) {

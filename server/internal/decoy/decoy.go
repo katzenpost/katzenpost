@@ -203,7 +203,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	isLoopPkt := true // HACK HACK HACK HACK.
 
 	selfDesc := ent.Self()
-	if !selfDesc.Provider {
+	if selfDesc.Provider {
 		// The code doesn't handle this correctly yet.  It does need to
 		// happen eventually though.
 		panic("BUG: Provider generated decoy traffic not supported yet")

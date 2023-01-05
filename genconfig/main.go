@@ -40,6 +40,7 @@ import (
 
 const (
 	basePort      = 30000
+	nrLayers      = 3
 	nrNodes       = 6
 	nrProviders   = 2
 	nrAuthorities = 3
@@ -100,7 +101,7 @@ func (s *katzenpost) genClientCfg() error {
 	cfg.VotingAuthority = &cConfig.VotingAuthority{Peers: peers}
 
 	// Debug section
-	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
+	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -141,6 +142,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
+	cfg.Debug.SendDecoyTraffic = true
 
 	// PKI section.
 	if isVoting {
@@ -293,7 +295,10 @@ func (s *katzenpost) genAuthConfig() error {
 	return nil
 }
 
-func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
+func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile string, nrLayers int) error {
+
+	configs := []*vConfig.Config{}
+
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: 0,
 		Mu:                0.005,
@@ -307,7 +312,18 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 		LambdaM:           0.2,
 		LambdaMMaxDelay:   100,
 	}
-	configs := []*vConfig.Config{}
+
+	if paramsFile != "" {
+		b, err := os.ReadFile(paramsFile)
+		if err != nil {
+			return err
+		}
+		err = toml.Unmarshal(b, &parameters)
+		if err != nil {
+			return err
+		}
+		log.Printf("Using params from %s (Mu=%f)", paramsFile, parameters.Mu)
+	}
 
 	// initial generation of key material for each authority
 	s.authorities = make(map[[32]byte]*vConfig.Authority)
@@ -327,7 +343,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int) error {
 		}
 		cfg.Parameters = parameters
 		cfg.Debug = &vConfig.Debug{
-			Layers:           3,
+			Layers:           nrLayers,
 			MinNodesPerLayer: 1,
 			GenerateOnly:     false,
 		}
@@ -363,18 +379,16 @@ func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.
 	mixes := []*aConfig.Node{}
 	providers := []*aConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
+		node := &aConfig.Node{
+			Identifier:     nodeCfg.Server.Identifier,
+			IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+		}
+
 		if nodeCfg.Server.IsProvider {
-			provider := &aConfig.Node{
-				Identifier:     nodeCfg.Server.Identifier,
-				IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
-			}
-			providers = append(providers, provider)
+			providers = append(providers, node)
 			continue
 		}
-		mix := &aConfig.Node{
-			IdentityKeyPem: filepath.Join(s.baseDir, nodeCfg.Server.Identifier, "identity.public.pem"),
-		}
-		mixes = append(mixes, mix)
+		mixes = append(mixes, node)
 	}
 
 	return providers, mixes, nil
@@ -384,16 +398,13 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	mixes := []*vConfig.Node{}
 	providers := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
+        node := &vConfig.Node{
+            Identifier:           nodeCfg.Server.Identifier,
+            IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+        }
 		if nodeCfg.Server.IsProvider {
-			node := &vConfig.Node{
-				Identifier:           nodeCfg.Server.Identifier,
-				IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
-			}
 			providers = append(providers, node)
 		} else {
-			node := &vConfig.Node{
-				IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
-			}
 			mixes = append(mixes, node)
 		}
 	}
@@ -405,6 +416,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 
 func main() {
 	var err error
+	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 	nrProviders := flag.Int("p", nrProviders, "Number of providers.")
 	voting := flag.Bool("v", false, "Generate voting configuration")
@@ -414,6 +426,8 @@ func main() {
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
+	paramsFile := flag.String("t", "", "Path to read params.toml from (optional)")
+	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	flag.Parse()
 	s := &katzenpost{}
 
@@ -428,7 +442,7 @@ func main() {
 
 	if *voting {
 		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting)
+		err := s.genVotingAuthoritiesCfg(*nrVoting, *paramsFile, *nrLayers)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
@@ -458,12 +472,24 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		for _, aCfg := range s.votingAuthConfigs {
-			aCfg.Mixes = mixes
-			aCfg.Providers = providers
+		for _, vCfg := range s.votingAuthConfigs {
+			vCfg.Mixes = mixes
+			vCfg.Providers = providers
+			if *omitTopology == false {
+				vCfg.Topology = new(vConfig.Topology)
+				vCfg.Topology.Layers = make([]vConfig.Layer, 0)
+				for i := 0; i < *nrLayers; i++ {
+					vCfg.Topology.Layers = append(vCfg.Topology.Layers, *new(vConfig.Layer))
+					vCfg.Topology.Layers[i].Nodes = make([]vConfig.Node, 0)
+				}
+				for j := range mixes {
+					layer := j % *nrLayers
+					vCfg.Topology.Layers[layer].Nodes = append(vCfg.Topology.Layers[layer].Nodes, *mixes[j])
+				}
+			}
 		}
-		for _, aCfg := range s.votingAuthConfigs {
-			if err := saveCfg(aCfg, *outDir); err != nil {
+		for _, vCfg := range s.votingAuthConfigs {
+			if err := saveCfg(vCfg, *outDir); err != nil {
 				log.Fatalf("Failed to saveCfg of authority with %s", err)
 			}
 		}
@@ -560,7 +586,6 @@ func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 	err := pem.FromFile(public, idPubKey)
 	if err == nil {
-		log.Printf("reusing existing %s", public)
 		return idPubKey
 	}
 	idKey, idPubKey = cert.Scheme.NewKeypair()
@@ -586,7 +611,6 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 	linkPrivKey, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	err := pem.FromFile(linkpublic, linkPubKey)
 	if err == nil {
-		log.Printf("reusing existing %s", linkpublic)
 		return linkPubKey
 	}
 	linkPrivKey, linkPubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
@@ -627,7 +651,7 @@ services:
 	for _, p := range providers {
 		write(f, `
   %s:
-    restart: unless-stopped
+    restart: "no"
     image: %s
     volumes:
       - ./:%s
@@ -648,7 +672,7 @@ services:
 		// here.
 		write(f, `
   mix%d:
-    restart: unless-stopped
+    restart: "no"
     image: %s
     volumes:
       - ./:%s
@@ -665,7 +689,7 @@ services:
 	for _, authCfg := range s.votingAuthConfigs {
 		write(f, `
   %s:
-    restart: unless-stopped
+    restart: "no"
     image: %s
     volumes:
       - ./:%s
