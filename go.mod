@@ -3,6 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.19
 
 require (
+	codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105032648-93478c890f92
 	filippo.io/edwards25519 v1.0.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
@@ -33,7 +34,6 @@ require (
 )
 
 require (
-	codeberg.org/dawuud/highctidh/cgo v0.0.0-20230105032648-93478c890f92 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
