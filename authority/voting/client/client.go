@@ -257,7 +257,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 			return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
 		}
 
-		p.log.Noticef("got response from %s to GetConsensus (attempt %d, err=%v, res=%s)", auth.Identifier, i, err, postErrorToString(r.ErrorCode))
+		p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, postErrorToString(r.ErrorCode))
 		if err == pki.ErrNoDocument {
 			continue
 		}
@@ -314,7 +314,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("failure to Post to %d Directory Authorities: %v", len(errs), errs)
+	return fmt.Errorf("failure to Post(%d) to %d Directory Authorities: %v", epoch, len(errs), errs)
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
