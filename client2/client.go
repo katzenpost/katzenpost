@@ -1,11 +1,15 @@
 package client2
 
 import (
+	"errors"
+	mRand "math/rand"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
@@ -29,8 +33,8 @@ type Client interface {
 // SendMessageDescriptor describes a message to be sent.
 type SendMessageDescriptor struct {
 
-	// ServiceMixName is the name of the service mix that we send a message to.
-	ServiceMixName string
+	// ServiceMixIdHash is the identity hash of the service mix that we send a message to.
+	ServiceMixIdHash []byte
 
 	// RecipientQueueID is the queue identity which will receive the message.
 	RecipientQueueID []byte
@@ -50,8 +54,10 @@ type PathFactory interface {
 	// ComposePath is used to compose a Sphinx packet path. Returns
 	// path and round trip time or an error.
 	ComposePath(
+		doc *pki.Document,
 		recipient []byte,
-		provider string,
+		recipientServiceMix *[32]byte,
+		entryMixIdHash *[32]byte,
 		surbID *[constants.SURBIDLength]byte,
 		baseTime time.Time,
 		isForward bool) (path []*sphinx.PathHop, rtt time.Time, err error)
@@ -64,7 +70,7 @@ type PacketFactory interface {
 	// a Sphinx packet, a surbKey and round trip time or an error.
 	ComposePacket(
 		recipient []byte,
-		provider string,
+		entryMixIdHash *[32]byte,
 		surbID *[constants.SURBIDLength]byte,
 		payload []byte) (packet []byte, surbKey []byte, rtt time.Duration, err error)
 }
@@ -93,18 +99,36 @@ func newPacketFactory(opts ...PacketFactoryOption) *packetFactory {
 	return factory
 }
 
-type defaultPathFactory struct{} // TODO(david): easy peasy
+type defaultPathFactory struct {
+	rng *mRand.Rand
+}
+
+func newDefaultPathFactory() *defaultPathFactory {
+	return &defaultPathFactory{
+		rng: rand.NewMath(),
+	}
+}
 
 // ComposePath is used to compose a Sphinx packet path. Returns
 // path and round trip time or an error.
 func (d *defaultPathFactory) ComposePath(
+	doc *pki.Document,
 	recipient []byte,
-	provider string,
+	recipientServiceMix *[32]byte,
+	entryMixIdHash *[32]byte,
 	surbID *[constants.SURBIDLength]byte,
 	baseTime time.Time,
-	isForward bool) (path []*sphinx.PathHop, rtt time.Time, err error) {
+	isForward bool) (outputPath []*sphinx.PathHop, rtt time.Time, err error) {
 
-	return nil, time.Now(), nil // XXX FIXME
+	src, err := doc.GetProviderByKeyHash(entryMixIdHash)
+	if err != nil {
+		return nil, time.Time{}, errors.New("failed to find entry mix in pki doc")
+	}
+	dst, err := doc.GetProviderByKeyHash(recipientServiceMix)
+	if err != nil {
+		return nil, time.Time{}, errors.New("failed to find service mix in pki doc")
+	}
+	return path.New(d.rng, doc, recipient, src, dst, surbID, baseTime, true, isForward)
 }
 
 // Session is the cryptographic noise protocol session with the entry mix and
@@ -122,6 +146,20 @@ type Session interface {
 
 	// CurrentDocument returns the current PKI doc.
 	CurrentDocument() *pki.Document
+
+	// Shutdown shuts down the session.
+	Shutdown()
+}
+
+// AutomaticRepeatRequest is a type of error correction strategy where
+// dropped packets are resent.
+type AutomaticRepeatRequest interface {
+
+	// Start initiates the network connections and starts the worker thread.
+	Start()
+
+	// SendMessage returns the chosen Round Trip Time of the Sphinx packet which was sent.
+	SendMessage(message *SendMessageDescriptor, sequence uint64) (rtt time.Duration, err error)
 
 	// Shutdown shuts down the session.
 	Shutdown()
