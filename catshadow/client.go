@@ -1246,27 +1246,9 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 			decrypted = true
 			nickname = contact.Nickname
 
-			// if the message is a cbor-encoded Message, extract the fields
 			err := cbor.Unmarshal(plaintext, &message)
 			if err != nil {
-				// FIXME: sometime soon, we should remove this
-				// backwards-compatibility code path which allows receiving
-				// messages that were sent and spooled prior to the cbor
-				// message upgrade.
-
-				if len(plaintext) < 4 {
-					// short plaintext received
-					return ErrInvalidPlaintextLength
-				}
-
-				payloadLen := binary.BigEndian.Uint32(plaintext[:4])
-				if payloadLen+4 > uint32(len(plaintext)) {
-					return ErrInvalidPlaintextLength
-				}
-
-				message.Plaintext = plaintext[4 : 4+payloadLen]
-				message.Timestamp = time.Now()
-
+				return err
 			}
 			message.Outbound = false
 			break
