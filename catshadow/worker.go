@@ -65,7 +65,7 @@ func (c *Client) worker() {
 			c.garbageCollectConversations()
 			gcMessagestimer.Reset(GarbageCollectionInterval)
 		case <-readInboxTimer.C:
-			if isConnected {
+			if isConnected && c.spoolReadDescriptor != nil {
 				c.log.Debug("READING INBOX")
 				c.sendReadInbox()
 				readInboxInterval := c.getReadInboxInterval()
