@@ -39,7 +39,7 @@ type MessageNotSentEvent struct {
 	Nickname string
 
 	// MessageID is the key in the conversation map referencing a specific message.
-	MessageID MessageID
+	MessageID *MessageID
 
 	// Err is an error with reason for failure
 	Err error
@@ -52,7 +52,7 @@ type MessageSentEvent struct {
 	Nickname string
 
 	// MessageID is the key in the conversation map referencing a specific message.
-	MessageID MessageID
+	MessageID *MessageID
 }
 
 // MessageDeliveredEvent is an event signaling that the message
@@ -62,7 +62,7 @@ type MessageDeliveredEvent struct {
 	Nickname string
 
 	// MessageID is the key in the conversation map referencing a specific message.
-	MessageID MessageID
+	MessageID *MessageID
 }
 
 // MessageNotDeliveredEvent is an event signaling that the message
@@ -72,7 +72,7 @@ type MessageNotDeliveredEvent struct {
 	Nickname string
 
 	// MessageID is the key in the conversation map referencing a specific message.
-	MessageID MessageID
+	MessageID *MessageID
 
 	// Err is an error with reason for failure
 	Err error

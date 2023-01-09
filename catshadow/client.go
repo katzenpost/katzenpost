@@ -59,6 +59,7 @@ var (
 	ErrNotOnline              = errors.New("Client is not online")
 	ErrNoCurrentDocument      = errors.New("No current document")
 	ErrAlreadyHaveKeyExchange = errors.New("Already created KeyExchange with contact")
+	ErrMessageTooLarge        = errors.New("Message too large")
 	ErrHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
 )
@@ -106,7 +107,7 @@ type queuedSpoolCommand struct {
 	Provider string
 	Receiver string
 	Command  []byte
-	ID       MessageID
+	ID       *MessageID
 }
 
 // NewClientAndRemoteSpool creates and connects a new Client and creates a new
@@ -831,10 +832,10 @@ func (c *Client) Shutdown() {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) (*MessageID, error) {
-	if len(message)+4 > DoubleRatchetPayloadLength {
-		return MessageID{}, ErrMessageTooLarge
+	if len(message) > DoubleRatchetPayloadLength {
+		return nil, ErrMessageTooLarge
 	}
-	convoMesgID := MessageID{}
+	convoMesgID := &MessageID{}
 	_, err := rand.Reader.Read(convoMesgID[:])
 	if err != nil {
 		c.fatalErrCh <- err
@@ -863,7 +864,7 @@ func (c *Client) SendMessage(nickname string, message []byte) (*MessageID, error
 	return convoMesgID, nil
 }
 
-func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message []byte) error {
+func (c *Client) doSendMessage(convoMesgID *MessageID, nickname string, message []byte) error {
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
 		c.log.Errorf("contact %s not found", nickname)
@@ -951,7 +952,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	if !ok {
 		c.conversations[nickname] = make(map[MessageID]*Message)
 	}
-	c.conversations[nickname][convoMesgID] = &outMessage
+	c.conversations[nickname][*convoMesgID] = &outMessage
 	c.contactNicknames[nickname].LastMessage = &outMessage
 	c.conversationsMutex.Unlock()
 	c.save()
@@ -1004,7 +1005,7 @@ func (c *Client) sendReadInbox() {
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(*mesgID, &ReadMessageDescriptor{MessageID: a})
+	c.sendMap.Store(*mesgID, &ReadMessageDescriptor{MessageID: &a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
@@ -1288,11 +1289,11 @@ func (c *Client) decryptMessage(messageID *[cConstants.MessageIDLength]byte, cip
 }
 
 // setMessageSent sets Message MessageID Sent = true and returns true on success
-func (c *Client) setMessageSent(nickname string, msgId MessageID) bool {
+func (c *Client) setMessageSent(nickname string, msgId *MessageID) bool {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	if ch, ok := c.conversations[nickname]; ok {
-		if m, ok := ch[msgId]; ok {
+		if m, ok := ch[*msgId]; ok {
 			m.Sent = true
 			return true
 		}
@@ -1302,11 +1303,11 @@ func (c *Client) setMessageSent(nickname string, msgId MessageID) bool {
 }
 
 // setMessageDelivered sets Message MessageID Delivered = true and returns true on success
-func (c *Client) setMessageDelivered(nickname string, msgId MessageID) bool {
+func (c *Client) setMessageDelivered(nickname string, msgId *MessageID) bool {
 	c.conversationsMutex.Lock()
 	defer c.conversationsMutex.Unlock()
 	if ch, ok := c.conversations[nickname]; ok {
-		if m, ok := ch[msgId]; ok {
+		if m, ok := ch[*msgId]; ok {
 			m.Delivered = true
 			return true
 		}

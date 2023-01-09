@@ -28,13 +28,13 @@ type SentMessageDescriptor struct {
 	Nickname string
 
 	// MessageID is the key in the conversation map referencing a specific message.
-	MessageID MessageID
+	MessageID *MessageID
 }
 
 // ReadMessageDescriptor is used to track Spool Read Responses
 type ReadMessageDescriptor struct {
 	// MessageID is the key in the conversation map referencing a specific message.
-	MessageID MessageID
+	MessageID *MessageID
 }
 
 // Message encapsulates message that is sent or received.

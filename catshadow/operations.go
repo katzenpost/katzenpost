@@ -69,7 +69,7 @@ type opChangeExpiration struct {
 }
 
 type opSendMessage struct {
-	id           MessageID
+	id           *MessageID
 	name         string
 	payload      []byte
 	responseChan chan error
