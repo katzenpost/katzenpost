@@ -631,12 +631,12 @@ func (c *Client) RemoveContact(nickname string) error {
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("No Response to RemoveContact")
+		return ErrHalted
 	case c.opCh <- removeContactOp:
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("No Response to RemoveContact")
+		return ErrHalted
 	case r := <-removeContactOp.responseChan:
 		return r
 	}
@@ -652,12 +652,12 @@ func (c *Client) RenameContact(oldname, newname string) error {
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("No Response to RenameContact")
+		return ErrHalted
 	case c.opCh <- renameContactOp:
 	}
 	select {
 	case <-c.HaltCh():
-		return errors.New("No Response to RenameContact")
+		return ErrHalted
 	case r := <-renameContactOp.responseChan:
 		return r
 	}
@@ -1368,7 +1368,7 @@ func (c *Client) Online() error {
 	case r := <-r:
 		return r
 	}
-	return errors.New("Shutdown")
+	return ErrHalted
 }
 
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
@@ -1411,6 +1411,7 @@ func (c *Client) Offline() error {
 	select {
 	case c.opCh <- &opOffline{responseChan: r}:
 	case <-c.HaltCh():
+		return ErrHalted
 	}
 	return <-r
 }
