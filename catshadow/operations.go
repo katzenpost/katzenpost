@@ -69,9 +69,10 @@ type opChangeExpiration struct {
 }
 
 type opSendMessage struct {
-	id      MessageID
-	name    string
-	payload []byte
+	id           MessageID
+	name         string
+	payload      []byte
+	responseChan chan error
 }
 
 type opGetContacts struct {

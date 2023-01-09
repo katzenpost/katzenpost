@@ -830,29 +830,40 @@ func (c *Client) Shutdown() {
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
-func (c *Client) SendMessage(nickname string, message []byte) MessageID {
+func (c *Client) SendMessage(nickname string, message []byte) (*MessageID, error) {
 	if len(message)+4 > DoubleRatchetPayloadLength {
-		return MessageID{}
+		return MessageID{}, ErrMessageTooLarge
 	}
 	convoMesgID := MessageID{}
 	_, err := rand.Reader.Read(convoMesgID[:])
 	if err != nil {
 		c.fatalErrCh <- err
 	}
+	msgOp := &opSendMessage{
+		id:           convoMesgID,
+		name:         nickname,
+		payload:      message,
+		responseChan: make(chan error, 1),
+	}
 
 	select {
 	case <-c.HaltCh():
-	case c.opCh <- &opSendMessage{
-		id:      convoMesgID,
-		name:    nickname,
-		payload: message,
-	}:
+		return nil, ErrHalted
+	case c.opCh <- msgOp:
+	}
+	select {
+	case <-c.HaltCh():
+		return nil, ErrHalted
+	case e := <-msgOp.responseChan:
+		if e != nil {
+			return nil, e
+		}
 	}
 
-	return convoMesgID
+	return convoMesgID, nil
 }
 
-func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message []byte) {
+func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message []byte) error {
 	contact, ok := c.contactNicknames[nickname]
 	if !ok {
 		c.log.Errorf("contact %s not found", nickname)
@@ -861,7 +872,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 			MessageID: convoMesgID,
 			Err:       ErrContactNotFound,
 		}
-		return
+		return ErrContactNotFound
 	}
 	if contact.IsPending {
 		c.log.Errorf("cannot send message, contact %s is pending a key exchange", nickname)
@@ -870,7 +881,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 			MessageID: convoMesgID,
 			Err:       ErrPendingKeyExchange,
 		}
-		return
+		return ErrPendingKeyExchange
 	}
 	outMessage := Message{
 		Plaintext: message,
@@ -885,7 +896,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 			MessageID: convoMesgID,
 			Err:       err,
 		}
-		return
+		return err
 	}
 	contact.ratchetMutex.Lock()
 	ciphertext, err := contact.ratchet.Encrypt(nil, serialized)
@@ -897,7 +908,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 			MessageID: convoMesgID,
 			Err:       err,
 		}
-		return
+		return err
 	}
 	contact.ratchetMutex.Unlock()
 
@@ -909,7 +920,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 			MessageID: convoMesgID,
 			Err:       err,
 		}
-		return
+		return err
 	}
 
 	// enqueue the message for sending
@@ -931,7 +942,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 			MessageID: convoMesgID,
 			Err:       err,
 		}
-		return
+		return err
 	}
 
 	// update the conversation history
@@ -944,6 +955,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	c.contactNicknames[nickname].LastMessage = &outMessage
 	c.conversationsMutex.Unlock()
 	c.save()
+	return nil
 }
 
 func (c *Client) sendMessage(contact *Contact) {
