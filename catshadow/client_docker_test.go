@@ -344,31 +344,35 @@ func TestDockerSendReceive(t *testing.T) {
 	<-aliceKXFinishedChan
 	<-malKXFinishedChan
 	<-bobKXFinishedChan
-	alice.SendMessage("bob", []byte(`Data encryption is used widely to protect the content of Internet
+	_, err = alice.SendMessage("bob", []byte(`Data encryption is used widely to protect the content of Internet
 communications and enables the myriad of activities that are popular today,
 from online banking to chatting with loved ones. However, encryption is not
 sufficient to protect the meta-data associated with the communications.
 `))
+	require.NoError(err)
 	<-aliceSentChan
 	<-aliceDeliveredChan
 	<-bobReceivedMessageChan
 
-	alice.SendMessage("bob", []byte(`Since 1979, there has been active academic research into communication
+	_, err = alice.SendMessage("bob", []byte(`Since 1979, there has been active academic research into communication
 meta-data protection, also called anonymous communication networking, that has
 produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `))
+	require.NoError(err)
 	<-aliceSentChan
 	<-aliceDeliveredChan
 	<-bobReceivedMessageChan
 
-	mal.SendMessage("bob", []byte(`Hello bob`))
+	_, err = mal.SendMessage("bob", []byte(`Hello bob`))
+	require.NoError(err)
 	<-malSentChan
 	<-malDeliveredChan
 	<-bobReceivedMessageChan
 
 	// bob replies to mal
-	bob.SendMessage("mal", []byte(`Hello mal`))
+	_, err = bob.SendMessage("mal", []byte(`Hello mal`))
+	require.NoError(err)
 	<-bobSentChan
 	<-bobDeliveredChan
 	<-malReceivedMessageChan
@@ -588,7 +592,8 @@ loop2:
 	}
 
 	t.Log("Sending message to b")
-	a.SendMessage("b", []byte{0})
+	_, err = a.SendMessage("b", []byte{0})
+	require.NoError(err)
 loop3:
 	for {
 		ev := <-a.EventSink
@@ -605,7 +610,8 @@ loop3:
 	}
 
 	t.Log("Sending message to a")
-	b.SendMessage("a", []byte{0})
+	_, err = b.SendMessage("a", []byte{0})
+	require.NoError(err)
 
 loop4:
 	for {
@@ -633,7 +639,8 @@ loop4:
 	require.Equal(len(c), 0)
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
-	a.SendMessage("b", []byte("must fail"))
+	_, err = a.SendMessage("b", []byte("must fail"))
+	require.Error(err)
 loop5:
 	for {
 		ev := <-a.EventSink
@@ -686,7 +693,8 @@ loop2:
 	}
 
 	t.Log("Sending message to b")
-	a.SendMessage("b", []byte("a->b"))
+	_, err = a.SendMessage("b", []byte("a->b"))
+	require.NoError(err)
 loop3:
 	for {
 		ev := <-a.EventSink
@@ -703,7 +711,8 @@ loop3:
 	}
 
 	t.Log("Sending message to a")
-	b.SendMessage("a", []byte("b->a"))
+	_, err = b.SendMessage("a", []byte("b->a"))
+	require.NoError(err)
 
 loop4:
 	for {
@@ -727,7 +736,8 @@ loop4:
 
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
-	a.SendMessage("b", []byte("must fail"))
+	_, err = a.SendMessage("b", []byte("must fail"))
+	require.NoError(err)
 
 loop5:
 	for {
@@ -742,7 +752,8 @@ loop5:
 	}
 
 	// send message to the renamed contact
-	a.SendMessage("b2", []byte("a->b2"))
+	_, err = a.SendMessage("b2", []byte("a->b2"))
+	require.NoError(err)
 loop6:
 	for {
 		ev := <-a.EventSink
