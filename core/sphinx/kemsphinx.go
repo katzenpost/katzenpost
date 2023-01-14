@@ -26,44 +26,17 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
-
-func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
-	f := &geometryFactory{
-		kem:    kem,
-		nrHops: nrHops,
-	}
-
-	geo := &Geometry{
-		NrHops:                      nrHops,
-		HeaderLength:                f.headerLength(),
-		PacketLength:                f.packetLength(),
-		SURBLength:                  f.surbLength(),
-		UserForwardPayloadLength:    userForwardPayloadLength,
-		PayloadTagLength:            payloadTagLength,
-		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-		SURBIDLength:                constants.SURBIDLength,
-		RoutingInfoLength:           f.routingInfoLength(),
-		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
-	}
-
-	if withSURB {
-		geo.ForwardPayloadLength = f.deriveForwardPayloadLength(userForwardPayloadLength)
-	} else {
-		geo.ForwardPayloadLength = userForwardPayloadLength
-	}
-	return geo
-}
 
 // NewKEMSphinx creates a new instance of KEMSphinx, the Sphinx
 // nested cryptographic packet format that uses a KEM instead of a NIKE.
 // This implies lots of packet over, one KEM encapsulation per hop actually.
 // But since we no longer use 2400 maude modems let's rock out with
 // our Hybrid Classical + PQ KEM Sphinx.
-func NewKEMSphinx(k kem.Scheme, geometry *Geometry) *Sphinx {
+func NewKEMSphinx(k kem.Scheme, geometry *geo.Geometry) *Sphinx {
 	s := &Sphinx{
 		kem:      k,
 		geometry: geometry,
@@ -294,7 +267,7 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	// Katzenpost mixnet usage of the Sphinx packet format.
 	cmds := make([]commands.RoutingCommand, 0, 2)
 	for {
-		cmd, rest, err := commands.FromBytes(cmdBuf)
+		cmd, rest, err := commands.FromBytes(cmdBuf, s.geometry)
 		if err != nil {
 			return nil, replayTag[:], nil, err
 		} else if cmd == nil { // Terminal null command.

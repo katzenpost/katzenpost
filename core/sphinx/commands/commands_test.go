@@ -17,16 +17,19 @@
 package commands
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"testing"
 
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func fillRand(require *require.Assertions, b []byte) {
-	_, err := rand.Read(b)
+	_, err := rand.Reader.Read(b)
 	require.NoError(err, "failed to randomize buffer")
 }
 
@@ -41,16 +44,16 @@ func toBytesTest(assert *assert.Assertions, b []byte, sz int, id commandID, valu
 	assert.Equalf(sz, len(b)-len(ptr), "(%d).ToBytes(): Invalid length", id)
 }
 
-func fromBytesTest(assert *assert.Assertions, b []byte, sz int, expected RoutingCommand) []byte {
-	iCmd, rest, err := FromBytes(b)
+func fromBytesTest(assert *assert.Assertions, b []byte, g *geo.Geometry, sz int, expected RoutingCommand) []byte {
+	iCmd, rest, err := FromBytes(b, g)
 	assert.NoError(err, "FromBytes() failed")
 	assert.Equal(len(rest), len(b)-sz, "FromBytes(): Returned unexpected sized rest")
 	assert.EqualValues(expected, iCmd, "FromBytes(): Returned unexpected command")
 	return rest
 }
 
-func fromBytesErrorTest(assert *assert.Assertions, b []byte, s string) {
-	iCmd, rest, err := FromBytes(b)
+func fromBytesErrorTest(assert *assert.Assertions, b []byte, g *geo.Geometry, s string) {
+	iCmd, rest, err := FromBytes(b, g)
 	assert.Nil(iCmd, "FromBytes(): Returned cmd for "+s)
 	assert.Nil(rest, "FromBytes(): Returned rest for "+s)
 	assert.Error(err, "FromBytes(): Returned success for "+s)
@@ -60,9 +63,14 @@ func TestCommands(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
+	nike := nike.Nike(ecdh.NewEcdhNike(rand.Reader))
+	payloadLen := 2000
+	nrHops := 5
+	g := geo.GeometryFromUserForwardPayloadLength(nike, payloadLen, true, nrHops)
+
 	// Tollerate 0 length input.
 	var b []byte
-	iCmd, rest, err := FromBytes(b)
+	iCmd, rest, err := FromBytes(b, g)
 	assert.Nil(iCmd, "FromBytes(): Returned cmd for null")
 	assert.Nil(rest, "FromBytes(): Returned rest for null")
 	assert.NoError(err, "FromBytes(): null command failed")
@@ -78,7 +86,7 @@ func TestCommands(t *testing.T) {
 	b = nextNodeHopCmd.ToBytes(b)
 	ser := b[off:]
 	off = len(b)
-	toBytesTest(assert, ser, NextNodeHopLength, nextNodeHop, nextNodeHopValues)
+	toBytesTest(assert, ser, g.NextNodeHopLength, nextNodeHop, nextNodeHopValues)
 
 	// Recipient
 	recipientCmd := &Recipient{}
@@ -87,7 +95,8 @@ func TestCommands(t *testing.T) {
 	b = recipientCmd.ToBytes(b)
 	ser = b[off:]
 	off = len(b)
-	toBytesTest(assert, ser, RecipientLength, recipient, recipientValues)
+	recipientLength := 1 + g.RecipientIDLength
+	toBytesTest(assert, ser, recipientLength, recipient, recipientValues)
 
 	// SURBReply
 	surbReplyCmd := &SURBReply{}
@@ -96,7 +105,8 @@ func TestCommands(t *testing.T) {
 	b = surbReplyCmd.ToBytes(b)
 	ser = b[off:]
 	off = len(b)
-	toBytesTest(assert, ser, SURBReplyLength, surbReply, surbReplyValues)
+	surbReplyLength := 1 + g.SURBIDLength
+	toBytesTest(assert, ser, surbReplyLength, surbReply, surbReplyValues)
 
 	// NodeDelay
 	const testDelay = 0xdeadbabe
@@ -107,30 +117,31 @@ func TestCommands(t *testing.T) {
 	nodeDelayValues := [][]byte{tmp[:]}
 	b = nodeDelayCmd.ToBytes(b)
 	ser = b[off:]
-	toBytesTest(assert, ser, NodeDelayLength, nodeDelay, nodeDelayValues)
+	nodeDelayLength := 1 + 4
+	toBytesTest(assert, ser, nodeDelayLength, nodeDelay, nodeDelayValues)
 
 	// Null (No command or serialization because it is just 0x00s).
 	b = append(b, []byte{0x00, 0x00, 0x00}...) // Append a null command.
 
 	// Test the rest of the FromBytes() cases.
-	b = fromBytesTest(assert, b, NextNodeHopLength, nextNodeHopCmd)
-	b = fromBytesTest(assert, b, RecipientLength, recipientCmd)
-	b = fromBytesTest(assert, b, SURBReplyLength, surbReplyCmd)
-	b = fromBytesTest(assert, b, NodeDelayLength, nodeDelayCmd)
+	b = fromBytesTest(assert, b, g, g.NextNodeHopLength, nextNodeHopCmd)
+	b = fromBytesTest(assert, b, g, recipientLength, recipientCmd)
+	b = fromBytesTest(assert, b, g, surbReplyLength, surbReplyCmd)
+	b = fromBytesTest(assert, b, g, nodeDelayLength, nodeDelayCmd)
 
 	// Ensure that Null commands as a terminal works as intended.
-	iCmd, rest, err = FromBytes(b)
+	iCmd, rest, err = FromBytes(b, g)
 	assert.Nil(iCmd, "FromBytes(): Returned cmd instead of a null command")
 	assert.Nil(rest, "FromBytes(): Returned rest after a null command")
 	assert.NoError(err, "FromBytes(): Returned error for a null command")
 
 	// Ensure that Null commands are validated.
 	b = []byte{0x00, 0x00, 0x01}
-	fromBytesErrorTest(assert, b, "a invalid null command")
+	fromBytesErrorTest(assert, b, g, "a invalid null command")
 
 	// Ensure that unknown commands are rejected.
 	b = []byte{0xff, 0x00, 0x00}
-	fromBytesErrorTest(assert, b, "a unknown command")
+	fromBytesErrorTest(assert, b, g, "a unknown command")
 
 	// TODO: Test that truncated commands are rejected.
 }

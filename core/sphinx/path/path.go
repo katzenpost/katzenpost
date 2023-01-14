@@ -28,7 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const maxAttempts = 3
@@ -41,7 +41,7 @@ var errMaxAttempts = errors.New("path: max path selection attempts exceeded")
 // Note: Forward packets originating from a client have slightly different
 // path requirements than internally sourced packets or response packets as it
 // includes the 0th hop.
-func New(rng *mRand.Rand, doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor, surbID *[constants.SURBIDLength]byte, baseTime time.Time, isFromClient, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+func New(rng *mRand.Rand, doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor, surbID *[geo.SURBIDLength]byte, baseTime time.Time, isFromClient, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
 
 	var then time.Time
 	var path []*sphinx.PathHop

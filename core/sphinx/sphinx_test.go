@@ -24,11 +24,11 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 type nodeParams struct {
-	id         [constants.NodeIDLength]byte
+	id         [geo.NodeIDLength]byte
 	privateKey nike.PrivateKey
 	publicKey  nike.PublicKey
 }

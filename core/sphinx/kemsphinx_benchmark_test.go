@@ -26,6 +26,7 @@ import (
 	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 func BenchmarkKEMSphinxUnwrapKyber512(b *testing.B) {
@@ -47,17 +48,17 @@ func BenchmarkKEMSphinxUnwrapKyber768X25519(b *testing.B) {
 func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	geo := KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 5)
-	sphinx := NewKEMSphinx(mykem, geo)
+	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 5)
+	sphinx := NewKEMSphinx(mykem, g)
 
-	nodes, path := newBenchKEMPathVector(mykem, geo.NrHops, false)
+	nodes, path := newBenchKEMPathVector(mykem, g.NrHops, false)
 	payload := []byte(testPayload)
 
 	pkt, err := sphinx.NewKEMPacket(rand.Reader, path, payload)
 	if err != nil {
 		panic("wtf")
 	}
-	if len(pkt) != geo.HeaderLength+geo.PayloadTagLength+len(payload) {
+	if len(pkt) != g.HeaderLength+g.PayloadTagLength+len(payload) {
 		panic("wtf")
 	}
 
