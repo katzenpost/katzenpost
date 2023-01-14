@@ -28,10 +28,13 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -42,8 +45,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
-	"gitlab.com/yawning/avl.git"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const maxAttempts = 3
@@ -51,11 +52,10 @@ const maxAttempts = 3
 var errMaxAttempts = errors.New("decoy: max path selection attempts exceeded")
 
 type surbCtx struct {
-	id      uint64
-	eta     time.Duration
-	sprpKey []byte
-
-	etaNode *avl.Node
+	id       uint64
+	eta      time.Duration
+	sprpKey  []byte
+	priority uint64
 }
 
 type decoy struct {
@@ -72,9 +72,14 @@ type decoy struct {
 	rng       *mRand.Rand
 	docCh     chan *pkicache.Entry
 
-	surbETAs   *avl.Tree
+	surbETAs   *queue.PriorityQueue
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
+}
+
+func addPriority(ctx *surbCtx) {
+	now := monotime.Now()
+	ctx.priority = uint64(now + ctx.eta)
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -174,11 +179,6 @@ func (d *decoy) worker() {
 			}
 
 			// Schedule the next decoy packet.
-			//
-			// This closely follows how the mailproxy worker schedules
-			// outgoing sends, except that the SendShift value is ignored.
-			//
-			// TODO: Eventually this should use separate parameters.
 			doc := docCache.Document()
 			wakeMsec := uint64(rand.Exp(d.rng, doc.LambdaM))
 			if wakeMsec > doc.LambdaMMaxDelay {
@@ -365,14 +365,8 @@ func (d *decoy) storeSURBCtx(ctx *surbCtx) {
 	d.Lock()
 	defer d.Unlock()
 
-	ctxList := []*surbCtx{ctx}
-	ctx.etaNode = d.surbETAs.Insert(ctxList)
-	if nCtxList := ctx.etaNode.Value.([]*surbCtx); nCtxList[0] != ctx {
-		// Existing node, append the context to the list stored
-		// as the node value.  This should be exceedingly rare.
-		ctx.etaNode.Value = append(nCtxList, ctx)
-	}
-
+	addPriority(ctx)
+	d.surbETAs.Enqueue(ctx.priority, ctx)
 	d.surbStore[ctx.id] = ctx
 }
 
@@ -385,30 +379,7 @@ func (d *decoy) loadAndDeleteSURBCtx(id uint64) *surbCtx {
 		return nil
 	}
 	delete(d.surbStore, id)
-
-	nCtxList, ok := ctx.etaNode.Value.([]*surbCtx)
-	if !ok {
-		nCtx := ctx.etaNode.Value.(*surbCtx)
-		nCtxList = []*surbCtx{nCtx}
-	}
-	if l := len(nCtxList); l > 1 {
-		// There is more than 1 SURB with this ETA, remove the context from
-		// the list, and leave the node in the tree.
-		for i, v := range nCtxList {
-			if v == ctx {
-				copy(nCtxList[i:], nCtxList[i+1:])
-				nCtxList[l-1] = nil
-				ctx.etaNode.Value = nCtxList[l-1]
-				ctx.etaNode = nil
-				return ctx
-			}
-		}
-		panic("BUG: SURB missing from node ETA list")
-	}
-
-	d.surbETAs.Remove(ctx.etaNode)
-	ctx.etaNode = nil
-
+	d.surbETAs.RemovePriority(ctx.priority)
 	return ctx
 }
 
@@ -423,29 +394,19 @@ func (d *decoy) sweepSURBCtxs() {
 
 	now := monotime.Now()
 	slack := time.Duration(d.glue.Config().Debug.DecoySlack) * time.Millisecond
-
 	var swept int
-	iter := d.surbETAs.Iterator(avl.Forward)
-	for node := iter.First(); node != nil; node = iter.Next() {
-		var surbCtxs []*surbCtx
-		switch surbCtxOrSlice := node.Value.(type) {
-		case []*surbCtx:
-			surbCtxs = surbCtxOrSlice
-		case *surbCtx:
-			surbCtxs = make([]*surbCtx, 1)
-			surbCtxs[0] = surbCtxOrSlice
-		}
-		if surbCtxs[0].eta+slack > now {
+	for {
+		entry := d.surbETAs.Peek()
+		if entry == nil {
 			break
 		}
-
-		for _, ctx := range surbCtxs {
-			delete(d.surbStore, ctx.id)
-			// TODO: At some point, this should do more than just log.
-			d.log.Debugf("Sweep: Lost SURB ID: 0x%08x ETA: %v (DeltaT: %v)", ctx.id, ctx.eta, now-ctx.eta)
-			swept++
+		ctx := entry.Value.(*surbCtx)
+		now := monotime.Now()
+		if ctx.eta+slack > now {
+			break
 		}
-		d.surbETAs.Remove(node)
+		d.surbETAs.Pop()
+		swept++
 	}
 
 	d.log.Debugf("Sweep: Count: %v (Removed: %v, Elapsed: %v)", len(d.surbStore), swept, monotime.Now()-now)
@@ -454,25 +415,14 @@ func (d *decoy) sweepSURBCtxs() {
 // New constructs a new decoy instance.
 func New(glue glue.Glue) (glue.Decoy, error) {
 	d := &decoy{
-		geo:       sphinx.DefaultGeometry(),
-		sphinx:    sphinx.DefaultSphinx(),
-		glue:      glue,
-		log:       glue.LogBackend().GetLogger("decoy"),
-		recipient: make([]byte, sConstants.RecipientIDLength),
-		rng:       rand.NewMath(),
-		docCh:     make(chan *pkicache.Entry),
-		surbETAs: avl.New(func(a, b interface{}) int {
-			surbCtxsA, surbCtxsB := a.([]*surbCtx), b.([]*surbCtx)
-			etaA, etaB := surbCtxsA[0].eta, surbCtxsB[0].eta
-			switch {
-			case etaA < etaB:
-				return -1
-			case etaA > etaB:
-				return 1
-			default:
-				return 0
-			}
-		}),
+		geo:        sphinx.DefaultGeometry(),
+		sphinx:     sphinx.DefaultSphinx(),
+		glue:       glue,
+		log:        glue.LogBackend().GetLogger("decoy"),
+		recipient:  make([]byte, sConstants.RecipientIDLength),
+		rng:        rand.NewMath(),
+		docCh:      make(chan *pkicache.Entry),
+		surbETAs:   queue.New(),
 		surbStore:  make(map[uint64]*surbCtx),
 		surbIDBase: uint64(time.Now().Unix()),
 	}
