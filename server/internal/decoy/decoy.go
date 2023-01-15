@@ -328,7 +328,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 }
 
 func (d *decoy) dispatchPacket(fwdPath []*sphinx.PathHop, raw []byte) {
-	pkt, err := packet.New(raw)
+	pkt, err := packet.New(raw, d.geo)
 	if err != nil {
 		d.log.Debugf("Failed to allocate packet: %v", err)
 		return

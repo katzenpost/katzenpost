@@ -17,17 +17,18 @@
 package scheduler
 
 import (
+	"testing"
+	"time"
+
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 type mockServer struct {
@@ -92,12 +93,14 @@ func TestMemoryQueueBulkEnqueue(t *testing.T) {
 	q := newMemoryQueue(g, logger.GetLogger("mq"))
 	pkts := make([]*packet.Packet, 100)
 
-	geo := sphinx.DefaultGeometry()
+	forwardPayloadLength := 2000
+	nrHops := 5
+	g := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
 
-	payload := make([]byte, geo.PacketLength)
+	payload := make([]byte, g.PacketLength)
 	for i := 0; i < 100; i++ {
 		// create a set of packets with out-of-order delays
-		pkts[i], err = packet.New(payload)
+		pkts[i], err = packet.New(payload, g)
 		require.NoError(err)
 		pkts[i].Delay = time.Millisecond * time.Duration((i%2)*400+i*5+40)
 	}

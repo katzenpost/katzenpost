@@ -297,7 +297,7 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	// invalid packet test case
 	payload := make([]byte, geo.PacketLength)
-	testPacket, err := packet.New(payload)
+	testPacket, err := packet.New(payload, geo)
 	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
@@ -309,7 +309,7 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	// timeout test case
 	payload = make([]byte, geo.PacketLength)
-	testPacket, err = packet.New(payload)
+	testPacket, err = packet.New(payload, geo)
 	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
@@ -320,7 +320,7 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	// working test case
 	payload = make([]byte, geo.PacketLength)
-	testPacket, err = packet.New(payload)
+	testPacket, err = packet.New(payload, geo)
 	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,

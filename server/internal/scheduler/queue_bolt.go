@@ -35,9 +35,8 @@ import (
 const (
 	boltQueuePath = "external_queue.db"
 
-	boltPacketKeySize      = 8 + 8
-	boltPacketTimesSize    = 8 + 8 + 8
-	boltPacketCommandsSize = commands.NextNodeHopLength + commands.NodeDelayLength
+	boltPacketKeySize   = 8 + 8
+	boltPacketTimesSize = 8 + 8 + 8
 
 	boltPacketsBucket        = "packets"
 	boltPacketRawKey         = "raw"
@@ -87,6 +86,10 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 		bkt.Put([]byte(boltPacketPayloadKey), payloadBuf)
 	}
 
+	// XXX FIX ME
+	//pkt.Geometry.
+
+	boltPacketCommandsSize := commands.NextNodeHopLength + commands.NodeDelayLength
 	cmdBuf := make([]byte, 0, boltPacketCommandsSize)
 	cmdBuf = pkt.NextNodeHop.ToBytes(cmdBuf)
 	cmdBuf = pkt.NodeDelay.ToBytes(cmdBuf)
@@ -108,13 +111,16 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 	return nil
 }
 
-func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte) (*packet.Packet, error) {
+func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte, g glue.Glue) (*packet.Packet, error) {
 	bkt := parentBkt.Bucket(k)
 	if bkt == nil {
 		panic("BUG: packet does not exist")
 	}
-
-	pkt, err := packet.NewWithID(bkt.Get([]byte(boltPacketRawKey)), binary.BigEndian.Uint64(k[8:]))
+	pkt, err := packet.NewWithID(
+		bkt.Get([]byte(boltPacketRawKey)),
+		binary.BigEndian.Uint64(k[8:]),
+		g.PKI().GetSphinxGeometry(),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +236,7 @@ func (q *boltQueue) Pop() {
 			var err error
 			if deltaT := now - prio; deltaT > timerSlack {
 				q.log.Debugf("Dropping packet: %v (Deadline blown by %v)", id, deltaT)
-			} else if pkt, err = packetFromBoltBkt(packetsBkt, k); err != nil {
+			} else if pkt, err = packetFromBoltBkt(packetsBkt, k, q.glue); err != nil {
 				q.log.Debugf("Dropping packet: %v (s11n failure: %v)", id, err)
 			}
 

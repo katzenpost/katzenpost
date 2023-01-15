@@ -417,7 +417,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
-	pkt, err := packet.New(cmd.SphinxPacket)
+	pkt, err := packet.New(cmd.SphinxPacket, c.geo)
 	if err != nil {
 		return err
 	}

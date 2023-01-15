@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -609,6 +610,34 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 		return nil, errNotCached
 	}
 	return val, nil
+}
+
+func (p *pki) GetSphinxGeometry() *geo.Geometry {
+	epoch, _, _ := epochtime.Now()
+	p.Lock()
+	defer p.Unlock()
+	doc, ok := p.docs[epoch]
+	if !ok {
+		doc, ok = p.docs[epoch-1]
+		if !ok {
+			return nil, errors.New("pki doc not available for current epoch or previous epoch")
+		}
+	}
+	return doc.SphinxGeometry
+}
+
+func (p *pki) GetSphinx() (*sphinx.Sphinx, error) {
+	epoch, _, _ := epochtime.Now()
+	p.Lock()
+	defer p.Unlock()
+	doc, ok := p.docs[epoch]
+	if !ok {
+		doc, ok = p.docs[epoch-1]
+		if !ok {
+			return nil, errors.New("pki doc not available for current epoch or previous epoch")
+		}
+	}
+	return doc.Sphinx()
 }
 
 // New reuturns a new pki.

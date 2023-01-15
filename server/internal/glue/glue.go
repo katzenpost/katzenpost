@@ -23,6 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -68,6 +69,8 @@ type PKI interface {
 	OutgoingDestinations() map[[geo.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)
+	GetSphinx() (*sphinx.Sphinx, error)
+	GetSphinxGeometry() *geo.Geometry
 }
 
 type Provider interface {
