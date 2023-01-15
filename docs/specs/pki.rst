@@ -7,8 +7,9 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 | Claudia Diaz
 | Ania Piotrowska
 | David Stainton
+| Masala
 |
-| Version 0
+| Version 1
 |
 .. rubric:: Abstract
 
@@ -130,7 +131,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    which is different from that of Tor's and Mixminion's in a number
    of ways:
 
-      * The list of valid mixes is expressed in a white list. For
+      * The list of valid mixes is expressed in an allowlist. For
         the time being there is no specified "bandwidth authority"
         system which verifies the health of mixes
         (Further research required in this area).
@@ -173,7 +174,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    Authority system requires time synchronization to within a few
    minutes.
 
-   Let each epoch be exactly ``10800 seconds (3 hours)`` in duration, and
+   Let each epoch be exactly ``1200 seconds (20 minutes)`` in duration, and
    the 0th Epoch begin at ``2017-06-01 00:00 UTC``.
 
    To facilitate smooth operation of the network and to allow for
@@ -183,8 +184,8 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 
    Thus, at any time, keys for all Mixes for the Nth through N + 2nd
    epoch will be available, allowing for a maximum round trip (forward
-   message + SURB) delay + transit time of 6 hours. SURB lifetime is
-   limited to a few hours because of the key rotation epoch, however
+   message + SURB) delay + transit time of 40 minutes. SURB lifetime is
+   limited to a single epoch because of the key rotation epoch, however
    this shouldn't present any useability problems since SURBs are only
    used for sending ACK messages from the destination Provider to the
    sender as described in [KATZMIXE2E]_.
@@ -202,7 +203,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    protocol; upload descriptors, vote, generate documents, download
    documents, establish connections for user traffic.
 
-   The epoch duration of 3 hours is more than adequate for these two
+   The epoch duration of 20 minutes is more than adequate for these two
    constraints.
 
    .. note::
@@ -234,7 +235,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    Mix PKI interactions are conducted according to the following
    schedule, where T is the beginning of the current epoch.
 
-    ``T + P/2``            - Deadline for publication of all mixes documents
+    ``T + P/8``            - Deadline for publication of all mixes documents
                                for the next epoch.
 
     ``T + (7/8)*P``        - This marks the beginning of the period
@@ -251,10 +252,6 @@ Katzenpost Mix Network Public Key Infrastructure Specification
                                the previous epoch's keys, close connections to
                                peers no longer listed in the PKI documents and
                                erase the list of seen packet tags.
-
-   As it stands, mixes have ~1.5 hours to publish, the PKI has ~1 hour
-   to vote, and the mixes have 20 mins to establish connections before
-   there is network connectivity failure.
 
    Mix layer changes are controlled by the Directory Authorities and
    therefore a mix can be reassigned to a different layer in our
@@ -298,9 +295,9 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 -----------------
 
    As described in section "2.1 PKI Protocol Schedule", the Directory
-   Authority servers begin the voting process 2 hours after epoch
-   beginning.  Each Authority exchanges vote directory messages with
-   each other.
+   Authority servers begin the voting process 1/8 of an epoch period after
+   the start of a new epoch.  Each Authority exchanges vote directory
+   messages with each other.
 
    Authorities archive votes from other authorities and make them
    available for retreival. Upon receiving a new vote, the authority
@@ -335,7 +332,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 
 3.2.2 The vote Command
 
-   The get_consensus command is used to send a PKI document to a peer
+   The vote command is used to send a PKI document to a peer
    Authority during the voting period of the PKI schedule.
 
    The payload field contains the signed and serialized PKI document
@@ -431,7 +428,21 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    report that a valid reveal command was already received for this
    round.
 
-3.4 Vote Tabulation for Consensus Computation
+3.4 Cert Exchange
+-----------------
+
+   The Cert command is the same as a Vote but contains the set of Reveal
+   values as seen by the voting peer. In order to ensure that a misconfigured
+   or malicious Authority operator cannot amplify their ability to influence
+   the threshold voting process, after Reveal messages have been exchanged,
+   Authorities vote again, including the Reveals seen by them. Authorities
+   may not introduce new MixDescriptors at this phase in the protocol.
+
+   Otherwise, a consensus partition can be obtained by witholding Reveal
+   values from a threshold number of Peers. In the case of an even-number of
+   Authorities, a denial of service by a single Authority was observed.
+
+3.5 Vote Tabulation for Consensus Computation
 ---------------------------------------------
 
    The main design constraint of the vote tabulation algorithm is that
@@ -478,20 +489,22 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 
    3. Compute a shared random number from the values revealed in the "Reveal"
          step. Authorities whose reveal value does not verify their commit
-         value MUST be excluded from the consensus round.
+         value MUST be excluded from the consensus round. Authorities ensure
+         that their peers MUST participate in Commit-and-Reveal, and MUST use
+         correct Reveal values obtained from other Peers as part of the
+         "Cert" exchange.
 
    4. Generate or update the network topology using the shared random number as
          a seed to a deterministic random number generator that determines the
          order that new mixes are placed into the topology.
 
-3.5 Signature Collection
+3.6 Signature Collection
 ------------------------
 
-   Each Authority exchanges their newly generated consensus files with
-   each other. Upon receiving signed consensus documents from the
-   other Authorities, peer signatures are appended to the current
-   local consensus file if the signed contents match. The Authority
-   SHOULD warn the administrator if network partition is detected.
+   Each Authority signs their view of consensus, and exchanges detached
+   Signatures with each other. Upon receiving each Signature it is added to
+   the signatures on the Consensus if it validates the Consensus.  The
+   Authority SHOULD warn the administrator if network partition is detected.
 
    If there is disagreement about the consensus directory, each
    authority collects signatures from only the servers which it agrees
@@ -500,7 +513,7 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    // TODO: consider exchanging peers votes amongst authorities (or hashes thereof) to
    // ensure that an authority has distributed one and only unique vote amongst its peers.
 
-3.6 Publication
+3.7 Publication
 ---------------
 
    If the consensus is signed by a majority of members of the voting
@@ -698,7 +711,7 @@ The structures of these command are defined as follows:
 5.2.1 The vote Command
 ----------------------
 
-The ``get_consensus`` command is used to send a PKI document to a peer
+The ``vote`` command is used to send a PKI document to a peer
 Authority during the voting period of the PKI schedule.
 
 The payload field contains the signed and serialized PKI document
@@ -721,7 +734,7 @@ of the PKI document.
          vote_ok(0),               /* None error condition. */
          vote_too_early(1),        /* The Authority should try again later. */
          vote_too_late(2),         /* This round of voting was missed. */
-         vote_not_authorized(3),   /* The voter's key is not white-listed */
+         vote_not_authorized(3),   /* The voter's key is not authorized. */
          vote_not_signed(4),       /* The vote signature verification failed */
          vote_malformed(5),        /* The vote payload was invalid */
          vote_already_received(6), /* The vote was already received */
@@ -801,6 +814,36 @@ vote was not accepted.
          consensus_not_found(1), /* The client should try again later. */
          consensus_gone(2),      /* The consensus will not be available in the future. */
       } ErrorCodes;
+
+5.4.1 The Cert Command
+----------------------
+
+   The ``cert`` command is used to send a PKI document to a peer Authority
+   during the voting period of the PKI schedule. It is the same as the
+   ``vote`` command, but must contain the set of SharedRandomCommit and
+   SharedRandomReveal values as seen by the Authority during the voting
+   process.
+
+5.4.2 The CertStatus Command
+----------------------------
+    The ``cert_status`` command is the response to a ``cert`` command, and is
+    the same as a ``vote_status`` response, other than the command
+    identifier. Responses are CertOK, CertTooEarly, CertNotAuthorized, CertNotSigned, CertAlreadyReceived, CertTooLate
+
+5.5 Signature Exchange
+----------------------
+    Signatures exchange is the final round of the consensus protocol and
+    consists of the Sig and SigStatus commands.
+
+5.5.1 The Sig Command
+---------------------
+    The ``sig`` command contains a detached Signature from PublicKey of Consensus for Epoch.
+
+5.5.2 The SigStatus Command
+---------------------------
+    The ``sig_status`` command is the response to a ``sig`` command.
+    Responses are SigOK, SigNotAuthorized, SigNotSigned, SigTooEarly,
+    SigTooLate, SigAlreadyReceived, and SigInvalid.
 
 6. Scalability Considerations
 =============================
