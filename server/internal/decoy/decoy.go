@@ -401,7 +401,6 @@ func (d *decoy) sweepSURBCtxs() {
 			break
 		}
 		ctx := entry.Value.(*surbCtx)
-		now := monotime.Now()
 		if ctx.eta+slack > now {
 			break
 		}
