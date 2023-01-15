@@ -24,8 +24,10 @@ import (
 	"io"
 
 	"github.com/cloudflare/circl/kem"
+	kemschemes "github.com/cloudflare/circl/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -46,6 +48,26 @@ type Sphinx struct {
 	nike     nike.Nike
 	kem      kem.Scheme
 	geometry *geo.Geometry
+}
+
+// FromGeometry returns Sphinx type given a valid Geometry.
+func FromGeometry(geometry *geo.Geometry) (*Sphinx, error) {
+	if geometry.NIKEName == "" && geometry.KEMName == "" {
+		return nil, errors.New("geometry NIKEName or KEMName must be set")
+	}
+	if geometry.NIKEName != "" && geometry.KEMName != "" {
+		return nil, errors.New("geometry NIKEName and KEMName must not both be set")
+	}
+	if geometry.NIKEName != "" {
+		return &Sphinx{
+			nike:     schemes.ByName(geometry.NIKEName),
+			geometry: geometry,
+		}, nil
+	}
+	return &Sphinx{
+		kem:      kemschemes.ByName(geometry.KEMName),
+		geometry: geometry,
+	}, nil
 }
 
 // NewSphinx creates a new instance of Sphinx.

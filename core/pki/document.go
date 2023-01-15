@@ -31,6 +31,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
@@ -157,6 +158,16 @@ type Document struct {
 
 // document contains fields from Document but not the encoding.BinaryMarshaler methods
 type document Document
+
+// Sphinx returns a Sphinx type for
+// creating or unwrapping sphinx packets.
+func (d *Document) Sphinx() (*sphinx.Sphinx, error) {
+	s, err := sphinx.FromGeometry(d.SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
+	return s, nil
+}
 
 // String returns a string representation of a Document.
 func (d *Document) String() string {
