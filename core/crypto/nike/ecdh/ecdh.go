@@ -45,6 +45,10 @@ var _ nike.PrivateKey = (*ecdh.PrivateKey)(nil)
 var _ nike.PublicKey = (*ecdh.PublicKey)(nil)
 var _ nike.Nike = (*EcdhNike)(nil)
 
+func (e *EcdhNike) Name() string {
+	return "x25519"
+}
+
 // PublicKeySize returns the size in bytes of the public key.
 func (e *EcdhNike) PublicKeySize() int {
 	return ecdh.PublicKeySize

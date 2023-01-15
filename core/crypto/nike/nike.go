@@ -50,6 +50,9 @@ type PublicKey interface {
 // non-interactive key exchange.
 type Nike interface {
 
+	// Name returns the name of the NIKE scheme implementation.
+	Name() string
+
 	// PublicKeySize returns the size in bytes of the public key.
 	PublicKeySize() int
 

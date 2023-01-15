@@ -38,6 +38,10 @@ var _ nike.PrivateKey = (*ctidh.PrivateKey)(nil)
 var _ nike.PublicKey = (*ctidh.PublicKey)(nil)
 var _ nike.Nike = (*CtidhNike)(nil)
 
+func (e *CtidhNike) Name() string {
+	return "ctidh"
+}
+
 // PublicKeySize returns the size in bytes of the public key.
 func (e *CtidhNike) PublicKeySize() int {
 	return ctidh.PublicKeySize
