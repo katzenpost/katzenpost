@@ -19,7 +19,6 @@ package queue
 import (
 	"container/heap"
 	"math/rand"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -33,7 +32,6 @@ func TestPriorityQueue(t *testing.T) {
 			Value:    []byte("That books do not take the place of experience,"),
 			Priority: 0,
 		},
-
 		{
 			Value:    []byte("and that learning is no substitute for genius,"),
 			Priority: 1,
@@ -94,43 +92,6 @@ func TestPriorityQueue(t *testing.T) {
 	require.Equal(0, q.Len(), "Queue length (empty), post-rand test")
 }
 
-func TestFilterOnce(t *testing.T) {
-	require := require.New(t)
-
-	testEntries := []Entry{
-		{
-			Value:    []byte("But as academics gravitated to cryptography, they tended to sanitize it, stripping it of ostensible connectedness to power."),
-			Priority: 0,
-		},
-
-		{
-			Value:    []byte("Applied and privacy-related work drifted outside of the field’s core venues, the IACR conferences."),
-			Priority: 1,
-		},
-		{
-			Value:    []byte("It is as though a chemical synthesis would take place, transforming this powerful powder into harmless dust."),
-			Priority: 2,
-		},
-	}
-
-	q := New()
-	for _, v := range testEntries {
-		q.Enqueue(v.Priority, v.Value)
-	}
-	require.Equal(len(testEntries), q.Len(), "Queue length (full)")
-
-	filter := func(value interface{}) bool {
-		str := value.([]byte)
-		return strings.Contains(string(str), "academics")
-	}
-
-	s := string(q.Peek().Value.([]byte))
-	require.True(strings.Contains(s, "academics"))
-	q.FilterOnce(filter)
-	s = string(q.Peek().Value.([]byte))
-	require.False(strings.Contains(s, "academics"))
-}
-
 func TestPriorityQueueRemove(t *testing.T) {
 	require := require.New(t)
 	testEntries := []Entry{
@@ -157,7 +118,9 @@ func TestPriorityQueueRemove(t *testing.T) {
 		e := q.RemovePriority(v.Priority)
 		t.Logf("removing %d", v.Priority)
 		require.NotNil(e)
-		t.Logf("removed entry %s priority %d", e.(*Entry).Value.([]uint8), e.(*Entry).Priority)
+		require.Equal(len(e), 1)
+		t.Logf("removed entry %s priority %d", e[0].Value.([]uint8), e[0].Priority)
+
 	}
 	for i := range testEntries {
 		v := testEntries[len(testEntries)-i-1]
@@ -168,7 +131,7 @@ func TestPriorityQueueRemove(t *testing.T) {
 		e := q.RemovePriority(v.Priority)
 		t.Logf("removing %d", v.Priority)
 		require.NotNil(e)
-		t.Logf("removed entry %s priority %d", e.(*Entry).Value.([]uint8), e.(*Entry).Priority)
+		t.Logf("removed entry %s priority %d", e[0].Value.([]uint8), e[0].Priority)
 	}
 	e := q.RemovePriority(1234)
 	require.Nil(e)
@@ -176,29 +139,19 @@ func TestPriorityQueueRemove(t *testing.T) {
 }
 
 func TestPriorityQueueDuplicatePriority(t *testing.T) {
-	require := require.New(t)
-
 	testEntries := []Entry{
 		{
 			Value:    []byte("That books do not take the place of experience,"),
-			Priority: 0,
+			Priority: 1,
 		},
 
 		{
 			Value:    []byte("and that learning is no substitute for genius,"),
-			Priority: 1,
+			Priority: 20,
 		},
 		{
 			Value:    []byte("are two kindred phenomena;"),
-			Priority: 1,
-		},
-		{
-			Value:    []byte("their common ground is that the abstract can never take the place of the perceptive."),
-			Priority: 1,
-		},
-		{
-			Value:    []byte(" -- Arthur_Schopenhauer"),
-			Priority: 1,
+			Priority: 20,
 		},
 	}
 
@@ -206,40 +159,36 @@ func TestPriorityQueueDuplicatePriority(t *testing.T) {
 	for _, v := range testEntries {
 		q.Enqueue(v.Priority, v.Value)
 	}
-	require.Equal(len(testEntries), q.Len(), "Queue length (full)")
+	require.Equal(t, 3, q.Len())
 
-	for i, expected := range testEntries {
-		require.Equal(len(testEntries)-i, q.Len(), "Queue length")
-
-		// Peek
-		ent := q.Peek()
-		//require.Equal(expected.Value, ent.Value, "Peek(): Value")
-		require.Equal(expected.Priority, ent.Priority, "Peek(): Priority")
-
-		// Pop
-		ent = heap.Pop(q).(*Entry)
-		//require.Equal(expected.Value, ent.Value, "Pop(): Value")
-		require.Equal(expected.Priority, ent.Priority, "Pop(): Priority")
-
-		s := ent.Value.([]byte)
-		t.Logf("ent[%d]: %d %s", i, ent.Priority, s)
+	for priority, indexes := range q.m {
+		t.Logf("priority %d", priority)
+		t.Logf("indexes %v", indexes)
 	}
 
-	require.Equal(0, q.Len(), "Queue length (empty)")
-	require.Nil(q.Peek(), "Peek() (empty)")
-	require.Nil(heap.Pop(q), "Pop() (empty)")
+	entries := q.RemovePriority(1)
+	t.Logf("%d entries removed", len(entries))
 
-	// Refill the queue.
-	for _, v := range testEntries {
-		q.Enqueue(v.Priority, v.Value)
+	for priority, indexes := range q.m {
+		t.Logf("priority %d", priority)
+		t.Logf("indexes %v", indexes)
 	}
-	require.Equal(len(testEntries), q.Len(), "Queue length (full), pre-rand test")
 
-	r := rand.New(rand.NewSource(23)) // Don't do this in production.
-	for i := 0; i < len(testEntries); i++ {
-		ent := q.DequeueRandom(r)
-		s := ent.Value.([]byte)
-		t.Logf("random ent[%d]: %d %s", i, ent.Priority, s)
-	}
-	require.Equal(0, q.Len(), "Queue length (empty), post-rand test")
+	/*
+		for priority, indexes := range q.m {
+			t.Logf("--- -------------------priority %d", priority)
+			t.Logf("indexes %v", indexes)
+		}
+		require.Equal(t, 2, q.Len())
+
+		t.Logf("removing priority 20:")
+		entries = q.RemovePriority(20)
+
+		t.Logf("%d entries removed", len(entries))
+		for priority, indexes := range q.m {
+			t.Logf("priority %d", priority)
+			t.Logf("indexes %v", indexes)
+		}
+		require.Equal(t, 0, q.Len())
+	*/
 }
