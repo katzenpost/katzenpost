@@ -35,7 +35,7 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -605,5 +605,5 @@ type SessionConfig struct {
 
 	// Geometry is the geometry of the Sphinx cryptographic packets
 	// that we will use with our wire protocol.
-	Geometry *sphinx.Geometry
+	Geometry *geo.Geometry
 }

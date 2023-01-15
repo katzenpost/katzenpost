@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -38,7 +38,7 @@ type connector struct {
 	glue glue.Glue
 	log  *logging.Logger
 
-	conns         map[[constants.NodeIDLength]byte]*outgoingConn
+	conns         map[[geo.NodeIDLength]byte]*outgoingConn
 	forceUpdateCh chan interface{}
 
 	closeAllCh chan interface{}
@@ -174,7 +174,7 @@ func (co *connector) onClosedConn(c *outgoingConn) {
 	delete(co.conns, nodeID)
 }
 
-func (co *connector) IsValidForwardDest(id *[constants.NodeIDLength]byte) bool {
+func (co *connector) IsValidForwardDest(id *[geo.NodeIDLength]byte) bool {
 	// This doesn't need to be super accurate, just enough to prevent packets
 	// destined to la-la land from being scheduled.
 	co.RLock()
@@ -188,7 +188,7 @@ func New(glue glue.Glue) glue.Connector {
 	co := &connector{
 		glue:          glue,
 		log:           glue.LogBackend().GetLogger("connector"),
-		conns:         make(map[[constants.NodeIDLength]byte]*outgoingConn),
+		conns:         make(map[[geo.NodeIDLength]byte]*outgoingConn),
 		forceUpdateCh: make(chan interface{}, 1), // See forceUpdate().
 		closeAllCh:    make(chan interface{}),
 	}

@@ -34,7 +34,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -242,7 +242,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
-	var surbID [sConstants.SURBIDLength]byte
+	var surbID [geo.SURBIDLength]byte
 	d.makeSURBID(&surbID)
 
 	for attempts := 0; attempts < maxAttempts; attempts++ {
@@ -341,7 +341,7 @@ func (d *decoy) dispatchPacket(fwdPath []*sphinx.PathHop, raw []byte) {
 	d.glue.Connector().DispatchPacket(pkt)
 }
 
-func (d *decoy) makeSURBID(surbID *[sConstants.SURBIDLength]byte) {
+func (d *decoy) makeSURBID(surbID *[geo.SURBIDLength]byte) {
 	// Generate a random SURB ID, prefixed with the time that the decoy
 	// instance was initialized.
 
@@ -458,7 +458,7 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 		sphinx:    sphinx.DefaultSphinx(),
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("decoy"),
-		recipient: make([]byte, sConstants.RecipientIDLength),
+		recipient: make([]byte, geo.RecipientIDLength),
 		rng:       rand.NewMath(),
 		docCh:     make(chan *pkicache.Entry),
 		surbETAs: avl.New(func(a, b interface{}) int {

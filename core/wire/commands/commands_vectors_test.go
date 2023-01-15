@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,8 +76,8 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	//forwardPayloadLength := len(payload) + (sphinx.SphinxPlaintextHeaderLength + 556)
 	nrHops := 5
 
-	//geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
+	//geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
 	cmds := &Commands{
 		geo: geo,
 	}
@@ -163,7 +164,7 @@ func TestCommandVectors(t *testing.T) {
 
 	nrHops := 5
 
-	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{

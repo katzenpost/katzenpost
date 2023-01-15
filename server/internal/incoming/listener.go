@@ -26,7 +26,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -131,11 +131,11 @@ func (l *listener) onClosedConn(c *incomingConn) {
 
 // GetConnIdentities returns a slice of byte slices each corresponding
 // to a currently connected client identity.
-func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
+func (l *listener) GetConnIdentities() (map[[geo.RecipientIDLength]byte]interface{}, error) {
 	l.Lock()
 	defer l.Unlock()
 
-	identitySet := make(map[[sConstants.RecipientIDLength]byte]interface{})
+	identitySet := make(map[[geo.RecipientIDLength]byte]interface{})
 	for e := l.conns.Front(); e != nil; e = e.Next() {
 		cc := e.Value.(*incomingConn)
 
@@ -149,7 +149,7 @@ func (l *listener) GetConnIdentities() (map[[sConstants.RecipientIDLength]byte]i
 			l.log.Errorf("Session fail: %s", err)
 			return nil, errors.New("strange failure to retrieve session identity")
 		}
-		key := [sConstants.RecipientIDLength]byte{}
+		key := [geo.RecipientIDLength]byte{}
 		copy(key[:], b.AdditionalData)
 		identitySet[key] = struct{}{}
 	}

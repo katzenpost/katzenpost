@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -79,7 +79,7 @@ func TestSessionIntegration(t *testing.T) {
 	userForwardPayloadLength := 3000
 	withSURB := true
 	nrHops := 5
-	geometry := sphinx.GeometryFromUserForwardPayloadLength(nike,
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
 		userForwardPayloadLength,
 		withSURB,
 		nrHops,
@@ -195,7 +195,7 @@ func TestNewSessionErrors(t *testing.T) {
 	userForwardPayloadLength := 3000
 	withSURB := true
 	nrHops := 5
-	geometry := sphinx.GeometryFromUserForwardPayloadLength(nike,
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
 		userForwardPayloadLength,
 		withSURB,
 		nrHops,
@@ -269,7 +269,7 @@ func TestErrorInvalidStatePeerCreds(t *testing.T) {
 	userForwardPayloadLength := 3000
 	withSURB := true
 	nrHops := 5
-	geometry := sphinx.GeometryFromUserForwardPayloadLength(nike,
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
 		userForwardPayloadLength,
 		withSURB,
 		nrHops,
@@ -303,7 +303,7 @@ func TestErrorInvalidStateClockSkew(t *testing.T) {
 	userForwardPayloadLength := 3000
 	withSURB := true
 	nrHops := 5
-	geometry := sphinx.GeometryFromUserForwardPayloadLength(nike,
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
 		userForwardPayloadLength,
 		withSURB,
 		nrHops,

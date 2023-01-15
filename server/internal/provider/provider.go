@@ -29,7 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -94,7 +94,7 @@ func (p *provider) UserDB() userdb.UserDB {
 func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
 	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
 	if !isValid {
-		if len(c.AdditionalData) == sConstants.NodeIDLength {
+		if len(c.AdditionalData) == geo.NodeIDLength {
 			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, c.PublicKey.Sum256())
 		} else {
 			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, c.PublicKey.Sum256())
@@ -131,8 +131,8 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 	return merged, nil
 }
 
-func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
-	identities := make(map[[sConstants.RecipientIDLength]byte]interface{})
+func (p *provider) connectedClients() (map[[geo.RecipientIDLength]byte]interface{}, error) {
+	identities := make(map[[geo.RecipientIDLength]byte]interface{})
 	for _, listener := range p.glue.Listeners() {
 		listenerIdentities, err := listener.GetConnIdentities()
 		if err != nil {

@@ -46,7 +46,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -1028,7 +1028,7 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Document, srv []byte) [][]*pki.MixDescriptor {
 	s.log.Debugf("Generating mix topology.")
 
-	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	nodeMap := make(map[[geo.NodeIDLength]byte]*pki.MixDescriptor)
 	for _, v := range nodeList {
 		id := v.IdentityKey.Sum256()
 		nodeMap[id] = v
@@ -1108,7 +1108,7 @@ func (s *state) generateTopology(nodeList []*pki.MixDescriptor, doc *pki.Documen
 // topology is represented as an array of arrays where the contents are the raw descriptors
 // because a mix that does not submit a descriptor must not be in the consensus, the topology section must be populated at runtime and checked for sanity before a consensus is made
 func (s *state) generateFixedTopology(nodes []*pki.MixDescriptor, srv []byte) [][]*pki.MixDescriptor {
-	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	nodeMap := make(map[[geo.NodeIDLength]byte]*pki.MixDescriptor)
 	// collect all of the identity keys from the current set of descriptors
 	for _, v := range nodes {
 		id := v.IdentityKey.Sum256()

@@ -19,11 +19,12 @@ package debug
 
 import (
 	"encoding/base64"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 // NodeIDToPrintString pretty-prints a node identifier.
-func NodeIDToPrintString(id *[constants.NodeIDLength]byte) string {
+func NodeIDToPrintString(id *[geo.NodeIDLength]byte) string {
 	return base64.StdEncoding.EncodeToString(id[:])
 }
 

@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/monotime"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -97,12 +97,12 @@ type KaetzchenWorker struct {
 	log  *logging.Logger
 
 	ch        *channels.InfiniteChannel
-	kaetzchen map[[sConstants.RecipientIDLength]byte]Kaetzchen
+	kaetzchen map[[geo.RecipientIDLength]byte]Kaetzchen
 
 	dropCounter uint64
 }
 
-func (k *KaetzchenWorker) IsKaetzchen(recipient [sConstants.RecipientIDLength]byte) bool {
+func (k *KaetzchenWorker) IsKaetzchen(recipient [geo.RecipientIDLength]byte) bool {
 	_, ok := k.kaetzchen[recipient]
 	return ok
 }
@@ -127,12 +127,12 @@ func (k *KaetzchenWorker) registerKaetzchen(service Kaetzchen) error {
 		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not normalized", capa)
 	}
 	rawEp := []byte(ep)
-	if len(rawEp) == 0 || len(rawEp) > sConstants.RecipientIDLength {
+	if len(rawEp) == 0 || len(rawEp) > geo.RecipientIDLength {
 		return fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
 	}
 
 	// Register it in the map by endpoint.
-	var epKey [sConstants.RecipientIDLength]byte
+	var epKey [geo.RecipientIDLength]byte
 	copy(epKey[:], rawEp)
 	if _, ok := k.kaetzchen[epKey]; ok {
 		return fmt.Errorf("provider: Kaetzchen: '%v' endpoint '%v' already registered", capa, ep)
@@ -258,7 +258,7 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("kaetzchen_worker"),
 		ch:        channels.NewInfiniteChannel(),
-		kaetzchen: make(map[[sConstants.RecipientIDLength]byte]Kaetzchen),
+		kaetzchen: make(map[[geo.RecipientIDLength]byte]Kaetzchen),
 	}
 
 	// Initialize the internal Kaetzchen.

@@ -22,10 +22,10 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
@@ -303,7 +303,7 @@ func (s *pgxSpool) StoreMessage(u, msg []byte) error {
 	return s.doStore(u, nil, msg)
 }
 
-func (s *pgxSpool) StoreSURBReply(u []byte, id *[constants.SURBIDLength]byte, msg []byte) error {
+func (s *pgxSpool) StoreSURBReply(u []byte, id *[geo.SURBIDLength]byte, msg []byte) error {
 	if id == nil {
 		return fmt.Errorf("pgx/spool: SURBReply is missing ID")
 	}
@@ -333,7 +333,7 @@ func (s *pgxSpool) Remove(u []byte) error {
 	return s.pgx.doUserDelete(u)
 }
 
-func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[constants.RecipientIDLength]byte]interface{}) error {
+func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[geo.RecipientIDLength]byte]interface{}) error {
 	panic("failure! VacuumExpired not implemented for pgxSpool :(")
 	return nil // XXX *le sigh* implement me
 }

@@ -22,8 +22,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/sphinx"
-	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -149,7 +148,7 @@ const (
 	// CertTooEarly signifies that the peer is breaking protocol.
 	CertTooEarly = 15
 
-	// CertNotAuthorized signifies that the certifying entity's key is not 
+	// CertNotAuthorized signifies that the certifying entity's key is not
 	CertNotAuthorized = 16
 
 	// CertNotSigned signifies that the certficiate payload failed signature verification.
@@ -178,7 +177,7 @@ const (
 
 	// SigAlreadyReceived signifies that the signature from that peer was already received.
 	SigAlreadyReceived = 25
-	
+
 	// SigInvalid signifies that the signature failed to deserialiez.
 	SigInvalid = 26
 )
@@ -206,11 +205,11 @@ type Command interface {
 // Commands encapsulates all of the wire protocol commands so that it can
 // pass around a sphinx geometry where needed.
 type Commands struct {
-	geo *sphinx.Geometry
+	geo *geo.Geometry
 }
 
 // NewCommands returns a Commands given a sphinx geometry.
-func NewCommands(geo *sphinx.Geometry) *Commands {
+func NewCommands(geo *geo.Geometry) *Commands {
 	return &Commands{
 		geo: geo,
 	}
@@ -221,7 +220,7 @@ func (c *Commands) messageMsgLength() int {
 }
 
 func messageACKLength() int {
-	return messageBaseLength + sphinxConstants.SURBIDLength
+	return messageBaseLength + geo.SURBIDLength
 }
 
 func (c *Commands) messageEmptyLength() int {
@@ -229,7 +228,7 @@ func (c *Commands) messageEmptyLength() int {
 }
 
 func (c *Commands) messageMsgPaddingLength() int {
-	return sphinxConstants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
+	return geo.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
 }
 
 // NoOp is a de-serialized noop command.
@@ -671,11 +670,11 @@ func retreiveMessageFromBytes(b []byte) (Command, error) {
 
 // MessageACK is a de-serialized message command containing an ACK.
 type MessageACK struct {
-	Geo *sphinx.Geometry
+	Geo *geo.Geometry
 
 	QueueSizeHint uint8
 	Sequence      uint32
-	ID            [sphinxConstants.SURBIDLength]byte
+	ID            [geo.SURBIDLength]byte
 	Payload       []byte
 }
 
@@ -692,14 +691,14 @@ func (c *MessageACK) ToBytes() []byte {
 	out[6] = byte(messageTypeACK)
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	copy(out[12:12+sphinxConstants.SURBIDLength], c.ID[:])
+	copy(out[12:12+geo.SURBIDLength], c.ID[:])
 	out = append(out, c.Payload...)
 	return out
 }
 
 // Message is a de-serialized message command containing a message.
 type Message struct {
-	Geo  *sphinx.Geometry
+	Geo  *geo.Geometry
 	Cmds *Commands
 
 	QueueSizeHint uint8
@@ -754,15 +753,15 @@ func (c *Commands) messageFromBytes(b []byte) (Command, error) {
 
 	switch t {
 	case messageTypeACK:
-		if len(b) != sphinxConstants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+		if len(b) != geo.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
 		r := new(MessageACK)
 		r.QueueSizeHint = hint
 		r.Sequence = seq
-		copy(r.ID[:], b[:sphinxConstants.SURBIDLength])
-		b = b[sphinxConstants.SURBIDLength:]
+		copy(r.ID[:], b[:geo.SURBIDLength])
+		b = b[geo.SURBIDLength:]
 		r.Payload = make([]byte, 0, len(b))
 		r.Payload = append(r.Payload, b...)
 		return r, nil

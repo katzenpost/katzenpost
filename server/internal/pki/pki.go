@@ -33,7 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -486,11 +486,11 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 	}
 
 	// Ensure the additional data is valid.
-	if len(c.AdditionalData) != sConstants.NodeIDLength {
+	if len(c.AdditionalData) != geo.NodeIDLength {
 		p.log.Debugf("%v: '%x' AD not an IdentityKey?.", dirStr, c.AdditionalData)
 		return nil, false, false
 	}
-	var nodeID [sConstants.NodeIDLength]byte
+	var nodeID [geo.NodeIDLength]byte
 	copy(nodeID[:], c.AdditionalData)
 
 	// Iterate over whatever documents we happen to have for the epochs
@@ -559,9 +559,9 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 	return
 }
 
-func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.MixDescriptor {
+func (p *pki) OutgoingDestinations() map[[geo.NodeIDLength]byte]*cpki.MixDescriptor {
 	docs, nowDoc, now, _ := p.documentsForAuthentication()
-	descMap := make(map[[sConstants.NodeIDLength]byte]*cpki.MixDescriptor)
+	descMap := make(map[[geo.NodeIDLength]byte]*cpki.MixDescriptor)
 
 	for _, d := range docs {
 		docEpoch := d.Epoch()

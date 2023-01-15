@@ -31,6 +31,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const (
@@ -145,6 +146,9 @@ type Document struct {
 
 	// PriorSharedRandom used by applications that need a longer lived SRV.
 	PriorSharedRandom [][]byte
+
+	// SphinxGeometry is the Sphinx geometry that the mixnet will use.
+	SphinxGeometry *geo.Geometry
 
 	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.

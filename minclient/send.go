@@ -24,7 +24,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
@@ -34,8 +34,8 @@ func (c *Client) SendSphinxPacket(pkt []byte) error {
 }
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
-func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConstants.SURBIDLength]byte, b []byte) ([]byte, []byte, time.Duration, error) {
-	if len(recipient) > sConstants.RecipientIDLength {
+func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[geo.SURBIDLength]byte, b []byte) ([]byte, []byte, time.Duration, error) {
+	if len(recipient) > geo.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("minclient: invalid recipient: '%v'", recipient)
 	}
 	if len(b) != c.geo.UserForwardPayloadLength {
@@ -117,7 +117,7 @@ func (c *Client) SendUnreliableCiphertext(recipient, provider string, b []byte) 
 // SendCiphertext sends the ciphertext b to the recipient/provider, with a
 // SURB identified by surbID, and returns the SURB decryption key and total
 // round trip delay.
-func (c *Client) SendCiphertext(recipient, provider string, surbID *[sConstants.SURBIDLength]byte, b []byte) ([]byte, time.Duration, error) {
+func (c *Client) SendCiphertext(recipient, provider string, surbID *[geo.SURBIDLength]byte, b []byte) ([]byte, time.Duration, error) {
 	pkt, k, rtt, err := c.ComposeSphinxPacket(recipient, provider, surbID, b)
 	if err != nil {
 		return nil, 0, err
@@ -126,7 +126,7 @@ func (c *Client) SendCiphertext(recipient, provider string, surbID *[sConstants.
 	return k, rtt, err
 }
 
-func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+func (c *Client) makePath(recipient, provider string, surbID *[geo.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
 	srcProvider, dstProvider := c.cfg.Provider, provider
 	if !isForward {
 		srcProvider, dstProvider = dstProvider, srcProvider

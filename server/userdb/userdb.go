@@ -21,12 +21,12 @@ package userdb
 import (
 	"errors"
 
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // MaxUsernameSize is the maximum username length in bytes.
-const MaxUsernameSize = constants.RecipientIDLength
+const MaxUsernameSize = geo.RecipientIDLength
 
 var (
 	// ErrNoSuchUser is the error returned when an operation fails due to

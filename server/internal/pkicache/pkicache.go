@@ -23,16 +23,16 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 // Entry is a cached PKI Document.
 type Entry struct {
 	doc      *pki.Document
 	self     *pki.MixDescriptor
-	incoming map[[constants.NodeIDLength]byte]*pki.MixDescriptor
-	outgoing map[[constants.NodeIDLength]byte]*pki.MixDescriptor
-	all      map[[constants.NodeIDLength]byte]*pki.MixDescriptor
+	incoming map[[geo.NodeIDLength]byte]*pki.MixDescriptor
+	outgoing map[[geo.NodeIDLength]byte]*pki.MixDescriptor
+	all      map[[geo.NodeIDLength]byte]*pki.MixDescriptor
 }
 
 // Epoch returns the epoch that the cached PKI document is valid for.
@@ -62,7 +62,7 @@ func (e *Entry) Document() *pki.Document {
 
 // GetIncomingByID returns the MixDescriptor for a incoming connection source
 // queried by node ID, or nil iff the node ID is not a valid source.
-func (e *Entry) GetIncomingByID(id *[constants.NodeIDLength]byte) *pki.MixDescriptor {
+func (e *Entry) GetIncomingByID(id *[geo.NodeIDLength]byte) *pki.MixDescriptor {
 	desc, ok := e.incoming[*id]
 	if !ok {
 		return nil
@@ -73,7 +73,7 @@ func (e *Entry) GetIncomingByID(id *[constants.NodeIDLength]byte) *pki.MixDescri
 // GetOutgoingByID returns the MixDescriptor for an outgoing connection
 // destination queried by node ID, or nil iff the node ID is not a valid
 // destination.
-func (e *Entry) GetOutgoingByID(id *[constants.NodeIDLength]byte) *pki.MixDescriptor {
+func (e *Entry) GetOutgoingByID(id *[geo.NodeIDLength]byte) *pki.MixDescriptor {
 	desc, ok := e.outgoing[*id]
 	if !ok {
 		return nil
@@ -83,7 +83,7 @@ func (e *Entry) GetOutgoingByID(id *[constants.NodeIDLength]byte) *pki.MixDescri
 
 // GetByID returns the MixDescriptor by node ID, or nil iff the node ID is not
 // listed in the document.
-func (e *Entry) GetByID(id *[constants.NodeIDLength]byte) *pki.MixDescriptor {
+func (e *Entry) GetByID(id *[geo.NodeIDLength]byte) *pki.MixDescriptor {
 	desc, ok := e.all[*id]
 	if !ok {
 		return nil
@@ -152,9 +152,9 @@ func (e *Entry) outgoingLayer() uint8 {
 func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, error) {
 	e := new(Entry)
 	e.doc = d
-	e.incoming = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
-	e.outgoing = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
-	e.all = make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	e.incoming = make(map[[geo.NodeIDLength]byte]*pki.MixDescriptor)
+	e.outgoing = make(map[[geo.NodeIDLength]byte]*pki.MixDescriptor)
+	e.all = make(map[[geo.NodeIDLength]byte]*pki.MixDescriptor)
 
 	// Find our descriptor.
 	var err error
@@ -175,7 +175,7 @@ func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, 
 
 	// Build the maps of peers that will connect to us, and that we will
 	// connect to.
-	appendMap := func(layer uint8, m map[[constants.NodeIDLength]byte]*pki.MixDescriptor) {
+	appendMap := func(layer uint8, m map[[geo.NodeIDLength]byte]*pki.MixDescriptor) {
 		var nodes []*pki.MixDescriptor
 		switch layer {
 		case pki.LayerProvider:

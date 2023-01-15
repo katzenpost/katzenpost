@@ -20,13 +20,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/katzenpost/katzenpost/client/utils"
 	"io"
 	"time"
 
+	"github.com/katzenpost/katzenpost/client/utils"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 var ErrReplyTimeout = errors.New("failure waiting for reply, timeout reached")
@@ -58,7 +59,7 @@ func (s *Session) doRetransmit(msg *Message) {
 }
 
 func (s *Session) doSend(msg *Message) {
-	surbID := [sConstants.SURBIDLength]byte{}
+	surbID := [geo.SURBIDLength]byte{}
 	_, err := io.ReadFull(rand.Reader, surbID[:])
 	if err != nil {
 		s.fatalErrCh <- fmt.Errorf("impossible failure, failed to generate SURB ID for message ID %x", *msg.ID)

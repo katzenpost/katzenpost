@@ -33,7 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
@@ -68,7 +68,7 @@ type Session struct {
 	egressQueue EgressQueue
 	timerQ      *TimerQueue
 
-	surbIDMap        sync.Map // [sConstants.SURBIDLength]byte -> *Message
+	surbIDMap        sync.Map // [geo.SURBIDLength]byte -> *Message
 	sentWaitChanMap  sync.Map // MessageID -> chan *Message
 	replyWaitChanMap sync.Map // MessageID -> chan []byte
 
@@ -202,9 +202,9 @@ func (s *Session) garbageCollectionWorker() {
 
 func (s *Session) garbageCollect() {
 	s.log.Debug("Running garbage collection process.")
-	// [sConstants.SURBIDLength]byte -> *Message
+	// [geo.SURBIDLength]byte -> *Message
 	surbIDMapRange := func(rawSurbID, rawMessage interface{}) bool {
-		surbID := rawSurbID.([sConstants.SURBIDLength]byte)
+		surbID := rawSurbID.([geo.SURBIDLength]byte)
 		message := rawMessage.(*Message)
 		if time.Now().After(message.SentAt.Add(message.ReplyETA).Add(cConstants.RoundTripTimeSlop)) {
 			s.log.Debug("Garbage collecting SURB ID Map entry for Message ID %x", message.ID)
@@ -289,7 +289,7 @@ func (s *Session) onConnection(err error) {
 	}
 	select {
 	case <-s.HaltCh():
-	case s.opCh <- opConnStatusChanged{ isConnected: err == nil, }:
+	case s.opCh <- opConnStatusChanged{isConnected: err == nil}:
 	}
 }
 
@@ -309,7 +309,7 @@ func (s *Session) decrementDecoyLoopTally() {
 }
 
 // OnACK is called by the minclient api when we receive a SURB reply message.
-func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) error {
+func (s *Session) onACK(surbID *[geo.SURBIDLength]byte, ciphertext []byte) error {
 	idStr := fmt.Sprintf("[%v]", hex.EncodeToString(surbID[:]))
 	s.log.Infof("OnACK with SURBID %s", idStr)
 

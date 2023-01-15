@@ -76,6 +76,14 @@ type Geometry struct {
 
 	// SPRPKeyMaterialLength is the length of the SPRP key.
 	SPRPKeyMaterialLength int
+
+	// NIKEName is the name of the NIKE scheme used by the mixnet's Sphinx packet.
+	// NIKEName and KEMName are mutually exclusive.
+	NIKEName string
+
+	// KEMName is the name of the KEM scheme used by the mixnet's Sphinx packet.
+	// NIKEName and KEMName are mutually exclusive.
+	KEMName string
 }
 
 func (g *Geometry) String() string {

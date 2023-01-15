@@ -30,7 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -83,7 +83,7 @@ type ClientConfig struct {
 	// MUST be prepared to receive multiple callbacks with the same
 	// SURB ID and SURB ciphertext.  Calls to the callback that return
 	// an error will be treated as a signal to tear down the connection.
-	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
+	OnACKFn func(*[geo.SURBIDLength]byte, []byte) error
 
 	// OnDocumentFn is the callback function taht will be called when a
 	// new directory document is retreived for the current epoch.

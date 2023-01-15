@@ -19,7 +19,7 @@
 package spool
 
 import (
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
 
@@ -29,7 +29,7 @@ type Spool interface {
 	StoreMessage(u, msg []byte) error
 
 	// StoreSURBReply stores a SURBReply in the user's spool.
-	StoreSURBReply(u []byte, id *[constants.SURBIDLength]byte, msg []byte) error
+	StoreSURBReply(u []byte, id *[geo.SURBIDLength]byte, msg []byte) error
 
 	// Get optionally deletes the first entry in a user's spool, and returns
 	// the (new) first entry.  Both messages and SURBReplies may be returned.
@@ -45,7 +45,7 @@ type Spool interface {
 	// VacuumExpired removes expired users from the userdb and then
 	// removes their spools unless the identity is present in the given
 	// ignoreIdentities.
-	VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[constants.RecipientIDLength]byte]interface{}) error
+	VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[geo.RecipientIDLength]byte]interface{}) error
 
 	// Close closes the Spool instance.
 	Close()

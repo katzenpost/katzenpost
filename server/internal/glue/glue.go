@@ -23,7 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -65,7 +65,7 @@ type MixKeys interface {
 type PKI interface {
 	Halt()
 	StartWorker()
-	OutgoingDestinations() map[[constants.NodeIDLength]byte]*pki.MixDescriptor
+	OutgoingDestinations() map[[geo.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)
 }
@@ -88,14 +88,14 @@ type Scheduler interface {
 type Connector interface {
 	Halt()
 	DispatchPacket(*packet.Packet)
-	IsValidForwardDest(*[constants.NodeIDLength]byte) bool
+	IsValidForwardDest(*[geo.NodeIDLength]byte) bool
 	ForceUpdate()
 }
 
 type Listener interface {
 	Halt()
 	CloseOldConns(interface{}) error
-	GetConnIdentities() (map[[constants.RecipientIDLength]byte]interface{}, error)
+	GetConnIdentities() (map[[geo.RecipientIDLength]byte]interface{}, error)
 	OnNewSendRatePerMinute(uint64)
 	OnNewSendBurst(uint64)
 }

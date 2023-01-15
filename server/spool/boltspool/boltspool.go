@@ -22,7 +22,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 	bolt "go.etcd.io/bbolt"
@@ -47,7 +47,7 @@ func (s *boltSpool) StoreMessage(u, msg []byte) error {
 	return s.doStore(u, nil, msg)
 }
 
-func (s *boltSpool) StoreSURBReply(u []byte, id *[sConstants.SURBIDLength]byte, msg []byte) error {
+func (s *boltSpool) StoreSURBReply(u []byte, id *[geo.SURBIDLength]byte, msg []byte) error {
 	if id == nil {
 		return fmt.Errorf("spool: SURBReply is missing ID")
 	}
@@ -55,7 +55,7 @@ func (s *boltSpool) StoreSURBReply(u []byte, id *[sConstants.SURBIDLength]byte, 
 	return s.doStore(u, id, msg)
 }
 
-func (s *boltSpool) doStore(u []byte, id *[sConstants.SURBIDLength]byte, msg []byte) error {
+func (s *boltSpool) doStore(u []byte, id *[geo.SURBIDLength]byte, msg []byte) error {
 	if len(u) == 0 || len(u) > userdb.MaxUsernameSize {
 		return fmt.Errorf("spool: invalid username: `%v`", u)
 	}
@@ -190,12 +190,12 @@ func (s *boltSpool) Remove(u []byte) error {
 	})
 }
 
-func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sConstants.RecipientIDLength]byte]interface{}) error {
+func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[geo.RecipientIDLength]byte]interface{}) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
 		uBkt := tx.Bucket([]byte(usersBucket))
 		usersCursor := uBkt.Cursor()
 		for identity, _ := usersCursor.First(); identity != nil; identity, _ = usersCursor.Next() {
-			key := [sConstants.RecipientIDLength]byte{}
+			key := [geo.RecipientIDLength]byte{}
 			copy(key[:], identity)
 			if _, ok := ignoreIdentities[key]; ok {
 				continue

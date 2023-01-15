@@ -21,7 +21,7 @@ import (
 	"time"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 // Message is a message reference which is used to match future
@@ -51,7 +51,7 @@ type Message struct {
 	IsBlocking bool
 
 	// SURBID is the SURB identifier.
-	SURBID *[sConstants.SURBIDLength]byte
+	SURBID *[geo.SURBIDLength]byte
 
 	// Key is the SURB decryption keys
 	Key []byte

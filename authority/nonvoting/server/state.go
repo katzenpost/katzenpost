@@ -35,7 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
@@ -322,7 +322,7 @@ func (s *state) generateDocument(epoch uint64) {
 func (s *state) generateTopology(nodeList []*descriptor, doc *pki.Document) [][]*pki.MixDescriptor {
 	s.log.Debugf("Generating mix topology.")
 
-	nodeMap := make(map[[constants.NodeIDLength]byte]*pki.MixDescriptor)
+	nodeMap := make(map[[geo.NodeIDLength]byte]*pki.MixDescriptor)
 	for _, v := range nodeList {
 		id := v.desc.IdentityKey.Sum256()
 		nodeMap[id] = v.desc

@@ -30,7 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -231,7 +231,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 	if d.Name == "" {
 		return fmt.Errorf("Descriptor missing Name")
 	}
-	if len(d.Name) > constants.NodeIDLength {
+	if len(d.Name) > geo.NodeIDLength {
 		return fmt.Errorf("Descriptor Name '%v' exceeds max length", d.Name)
 	}
 	if d.LinkKey == nil {
@@ -346,7 +346,7 @@ func validateKaetzchen(m map[string]map[string]interface{}) error {
 			return fmt.Errorf("capability '%v' invalid endpoint type: %T", capa, v)
 		}
 		// XXX: Should this enforce formating?
-		if len(ep) == 0 || len(ep) > constants.RecipientIDLength {
+		if len(ep) == 0 || len(ep) > geo.RecipientIDLength {
 			return fmt.Errorf("capability '%v' invalid endpoint, length out of bounds", capa)
 		}
 

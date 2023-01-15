@@ -30,7 +30,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -39,7 +39,7 @@ import (
 )
 
 // PluginChans maps from Recipient ID to channel.
-type PluginChans = map[[constants.RecipientIDLength]byte]*channels.InfiniteChannel
+type PluginChans = map[[geo.RecipientIDLength]byte]*channels.InfiniteChannel
 
 // PluginName is the name of a plugin.
 type PluginName = string
@@ -78,7 +78,7 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 	handlerCh.In() <- pkt
 }
 
-func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
+func (k *CBORPluginWorker) worker(recipient [geo.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -188,7 +188,7 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 }
 
 // IsKaetzchen returns true if the given recipient is one of our workers.
-func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
+func (k *CBORPluginWorker) IsKaetzchen(recipient [geo.RecipientIDLength]byte) bool {
 	_, ok := k.pluginChans[recipient]
 	return ok
 }
@@ -238,12 +238,12 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			return nil, fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, not normalized", capa)
 		}
 		rawEp := []byte(pluginConf.Endpoint)
-		if len(rawEp) == 0 || len(rawEp) > constants.RecipientIDLength {
+		if len(rawEp) == 0 || len(rawEp) > geo.RecipientIDLength {
 			return nil, fmt.Errorf("provider: Kaetzchen: '%v' invalid endpoint, length out of bounds", capa)
 		}
 
 		// Add an infinite channel for this plugin.
-		var endpoint [constants.RecipientIDLength]byte
+		var endpoint [geo.RecipientIDLength]byte
 		copy(endpoint[:], rawEp)
 		kaetzchenWorker.pluginChans[endpoint] = channels.NewInfiniteChannel()
 		kaetzchenWorker.log.Noticef("Starting Kaetzchen plugin client: %s", capa)
