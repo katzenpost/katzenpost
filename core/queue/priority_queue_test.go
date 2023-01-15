@@ -174,3 +174,72 @@ func TestPriorityQueueRemove(t *testing.T) {
 	require.Nil(e)
 
 }
+
+func TestPriorityQueueDuplicatePriority(t *testing.T) {
+	require := require.New(t)
+
+	testEntries := []Entry{
+		{
+			Value:    []byte("That books do not take the place of experience,"),
+			Priority: 0,
+		},
+
+		{
+			Value:    []byte("and that learning is no substitute for genius,"),
+			Priority: 1,
+		},
+		{
+			Value:    []byte("are two kindred phenomena;"),
+			Priority: 1,
+		},
+		{
+			Value:    []byte("their common ground is that the abstract can never take the place of the perceptive."),
+			Priority: 1,
+		},
+		{
+			Value:    []byte(" -- Arthur_Schopenhauer"),
+			Priority: 1,
+		},
+	}
+
+	q := New()
+	for _, v := range testEntries {
+		q.Enqueue(v.Priority, v.Value)
+	}
+	require.Equal(len(testEntries), q.Len(), "Queue length (full)")
+
+	for i, expected := range testEntries {
+		require.Equal(len(testEntries)-i, q.Len(), "Queue length")
+
+		// Peek
+		ent := q.Peek()
+		//require.Equal(expected.Value, ent.Value, "Peek(): Value")
+		require.Equal(expected.Priority, ent.Priority, "Peek(): Priority")
+
+		// Pop
+		ent = heap.Pop(q).(*Entry)
+		//require.Equal(expected.Value, ent.Value, "Pop(): Value")
+		require.Equal(expected.Priority, ent.Priority, "Pop(): Priority")
+
+		s := ent.Value.([]byte)
+		t.Logf("ent[%d]: %d %s", i, ent.Priority, s)
+	}
+
+	require.Equal(0, q.Len(), "Queue length (empty)")
+	require.Nil(q.Peek(), "Peek() (empty)")
+	require.Nil(heap.Pop(q), "Pop() (empty)")
+
+	// Refill the queue.
+	for _, v := range testEntries {
+		q.Enqueue(v.Priority, v.Value)
+	}
+	require.Equal(len(testEntries), q.Len(), "Queue length (full), pre-rand test")
+
+	r := rand.New(rand.NewSource(23)) // Don't do this in production.
+	for i := 0; i < len(testEntries); i++ {
+		ent := q.DequeueRandom(r)
+		s := ent.Value.([]byte)
+		t.Logf("random ent[%d]: %d %s", i, ent.Priority, s)
+	}
+	require.Equal(0, q.Len(), "Queue length (empty), post-rand test")
+}
