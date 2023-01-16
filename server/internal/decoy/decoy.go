@@ -469,6 +469,10 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 				return -1
 			case etaA > etaB:
 				return 1
+			case surbCtxsA[0].id < surbCtxsB[0].id:
+				return -1
+			case surbCtxsA[0].id > surbCtxsB[0].id:
+				return 1
 			default:
 				return 0
 			}
