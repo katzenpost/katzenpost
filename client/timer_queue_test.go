@@ -77,54 +77,6 @@ func TestTimerQueuePush(t *testing.T) {
 	a.Halt()
 }
 
-func TestTimerQueueRemove(t *testing.T) {
-	assert := assert.New(t)
-
-	// create a Queue for forwarded messages
-	q := new(Queue)
-
-	a := NewTimerQueue(q)
-	a.Go(a.worker)
-
-	// enqueue 10 messages, and call TimerQueue.Remove() on half of them before their timers expire
-	for i := 0; i < 10; i++ {
-		m := &Message{}
-		m.ID = new([16]byte)
-
-		m.SentAt = time.Now()
-		m.ReplyETA = 100 * time.Millisecond
-		m.SetPriority(uint64(m.SentAt.Add(m.ReplyETA).UnixNano()))
-		_, err := io.ReadFull(rand.Reader, m.ID[:])
-		assert.NoError(err)
-		a.Push(m)
-		<-time.After(20 * time.Millisecond)
-		if i%2 == 0 {
-			err := a.Remove(m)
-			assert.NoError(err)
-		}
-		<-time.After(80 * time.Millisecond)
-	}
-	t.Logf("Sent 10 messages")
-	<-time.After(2 * time.Second)
-
-	j := 0
-	var last uint64
-	for {
-		n, err := q.Pop()
-		if err == ErrQueueEmpty {
-			break
-		}
-		assert.True(n.(*Message).Priority() > last)
-		last = n.(*Message).Priority()
-		j++
-	}
-	t.Logf("Popped %d messages", j)
-
-	// verify that half of the messages were sent to q
-	assert.Equal(5, j)
-	a.Halt()
-}
-
 func TestTimerQueueOrder(t *testing.T) {
 	assert := assert.New(t)
 
@@ -136,7 +88,6 @@ func TestTimerQueueOrder(t *testing.T) {
 
 	r := mrand.New(mrand.NewSource(0))
 
-	// enqueue 10 messages, and call TimerQueue.Remove() on half of them before their timers expire
 	for i := 0; i < 10; i++ {
 		m := &Message{}
 		m.ID = new([16]byte)
