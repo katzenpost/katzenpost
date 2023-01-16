@@ -75,7 +75,6 @@ type decoy struct {
 	surbETAs   *avl.Tree
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
-	uniqueId   uint64
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
