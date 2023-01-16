@@ -75,6 +75,7 @@ type decoy struct {
 	surbETAs   *avl.Tree
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
+	uniqueId   uint64
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -468,6 +469,10 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 			case etaA < etaB:
 				return -1
 			case etaA > etaB:
+				return 1
+			case surbCtxsA[0].id < surbCtxsB[0].id:
+				return -1
+			case surbCtxsA[0].id > surbCtxsB[0].id:
 				return 1
 			default:
 				return 0
