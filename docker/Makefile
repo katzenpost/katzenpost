@@ -146,13 +146,13 @@ $(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) $(net
 			$(sh) -c 'cd server && make $(make_args) testnet-build testnet-install'
 
 $(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) $(net_name)
-		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd authority/cmd/voting && go mod verify && \
 			go build -trimpath -ldflags ${ldflags} && \
 			mv voting /$(net_name)/voting.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_go_mod.stamp $(net_name)
-		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
 
