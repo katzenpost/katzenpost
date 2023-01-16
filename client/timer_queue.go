@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/queue"
+	queue "github.com/katzenpost/katzenpost/client/corequeue"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
