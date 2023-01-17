@@ -28,7 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
@@ -75,6 +75,7 @@ type client struct {
 	log *logging.Logger
 
 	serverLinkKey wire.PublicKey
+	geo           *geo.Geometry
 }
 
 func (c *client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
@@ -214,7 +215,7 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 
 	// Initialize the wire protocol session.
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
@@ -263,7 +264,7 @@ func (c *client) doRoundTrip(ctx context.Context, s *wire.Session, cmd commands.
 }
 
 // New constructs a new pki.Client instance.
-func New(cfg *Config) (pki.Client, error) {
+func New(cfg *Config, geo *geo.Geometry) (pki.Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("nonvoting/client: cfg is mandatory")
 	}
@@ -273,6 +274,7 @@ func New(cfg *Config) (pki.Client, error) {
 
 	c := new(client)
 	c.cfg = cfg
+	c.geo = geo
 	c.log = cfg.LogBackend.GetLogger("pki/nonvoting/client")
 	c.serverLinkKey = cfg.AuthorityLinkKey
 

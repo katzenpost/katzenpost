@@ -45,7 +45,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -92,6 +91,7 @@ type state struct {
 	worker.Worker
 
 	s   *Server
+	geo *geo.Geometry
 	log *logging.Logger
 
 	db *bolt.DB
@@ -685,7 +685,7 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	defer s.s.Done()
 	identityHash := s.s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          s.geo,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
@@ -1721,6 +1721,7 @@ func newState(s *Server) (*state, error) {
 
 	st := new(state)
 	st.s = s
+	st.geo = s.geo
 	st.log = s.logBackend.GetLogger("state")
 
 	// set voting schedule at runtime
@@ -1835,7 +1836,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				DialContextFn: nil,
 				DataDir:       s.s.cfg.Server.DataDir,
 			}
-			c, err := client.New(cfg)
+			c, err := client.New(cfg, s.geo)
 			if err != nil {
 				return
 			}

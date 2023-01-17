@@ -33,7 +33,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -112,10 +111,11 @@ type connection struct {
 type connector struct {
 	cfg *Config
 	log *logging.Logger
+	geo *geo.Geometry
 }
 
 // newConnector returns a connector initialized from a Config.
-func newConnector(cfg *Config) *connector {
+func newConnector(cfg *Config, geo *geo.Geometry) *connector {
 	p := &connector{
 		cfg: cfg,
 		log: cfg.LogBackend.GetLogger("pki/voting/client/connector"),
@@ -123,7 +123,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.Authority, geo *geo.Geometry) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -168,7 +168,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          p.geo,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
@@ -390,7 +390,7 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 }
 
 // New constructs a new pki.Client instance.
-func New(cfg *Config) (pki.Client, error) {
+func New(cfg *Config, geo *geo.Geometry) (pki.Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("voting/Client: cfg is mandatory")
 	}
@@ -401,7 +401,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c := new(Client)
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/voting/Client")
-	c.pool = newConnector(cfg)
+	c.pool = newConnector(cfg, geo)
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
 		c.verifiers[i] = auth.IdentityPublicKey

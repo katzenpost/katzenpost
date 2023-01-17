@@ -650,13 +650,13 @@ func (p *pki) GetSphinxGeometry() *geo.Geometry {
 	if !ok {
 		doc, ok = p.docs[epoch-1]
 		if !ok {
-			return nil, errors.New("pki doc not available for current epoch or previous epoch")
+			panic("pki doc not available for current epoch or previous epoch")
 		}
 	}
-	return doc.SphinxGeometry
+	return doc.Document().SphinxGeometry
 }
 
-func (p *pki) GetSphinx() (*sphinx.Sphinx, error) {
+func (p *pki) GetSphinx() *sphinx.Sphinx {
 	epoch, _, _ := epochtime.Now()
 	p.Lock()
 	defer p.Unlock()
@@ -664,10 +664,14 @@ func (p *pki) GetSphinx() (*sphinx.Sphinx, error) {
 	if !ok {
 		doc, ok = p.docs[epoch-1]
 		if !ok {
-			return nil, errors.New("pki doc not available for current epoch or previous epoch")
+			panic("pki doc not available for current epoch or previous epoch")
 		}
 	}
-	return doc.Sphinx()
+	sphinx, err := doc.Document().Sphinx()
+	if err != nil {
+		panic(err)
+	}
+	return sphinx
 }
 
 // New reuturns a new pki.
@@ -713,7 +717,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			AuthorityIdentityKey: glue.Config().PKI.Nonvoting.PublicKey,
 			AuthorityLinkKey:     glue.Config().PKI.Nonvoting.LinkPublicKey,
 		}
-		p.impl, err = nClient.New(pkiCfg)
+		p.impl, err = nClient.New(pkiCfg, glue.PKI().GetSphinxGeometry())
 		if err != nil {
 			return nil, err
 		}
@@ -724,7 +728,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			LogBackend:  glue.LogBackend(),
 			Authorities: glue.Config().PKI.Voting.Authorities,
 		}
-		p.impl, err = vClient.New(pkiCfg)
+		p.impl, err = vClient.New(pkiCfg, glue.PKI().GetSphinxGeometry())
 		if err != nil {
 			return nil, err
 		}

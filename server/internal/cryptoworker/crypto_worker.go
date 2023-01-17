@@ -314,21 +314,17 @@ func (w *Worker) derefKeys() {
 }
 
 // New constructs a new Worker instance.
-func New(glue glue.Glue, incomingCh <-chan interface{}, id int) (*Worker, error) {
-	s, err := glue.PKI().GetSphinx()
-	if err != nil {
-		return nil, err
-	}
+func New(glue glue.Glue, incomingCh <-chan interface{}, id int) *Worker {
 	w := &Worker{
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger(fmt.Sprintf("crypto:%d", id)),
 		mixKeys:    make(map[uint64]*mixkey.MixKey),
 		incomingCh: incomingCh,
 		updateCh:   make(chan bool),
-		sphinx:     s,
+		sphinx:     glue.PKI().GetSphinx(),
 	}
 
 	w.glue.MixKeys().Shadow(w.mixKeys)
 	w.Go(w.worker)
-	return w, nil
+	return w
 }

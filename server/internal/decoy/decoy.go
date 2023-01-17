@@ -453,13 +453,9 @@ func (d *decoy) sweepSURBCtxs() {
 
 // New constructs a new decoy instance.
 func New(glue glue.Glue) (glue.Decoy, error) {
-	s, err := glue.PKI().GetSphinx()
-	if err != nil {
-		return nil, err
-	}
 	d := &decoy{
 		geo:       glue.PKI().GetSphinxGeometry(),
-		sphinx:    s,
+		sphinx:    glue.PKI().GetSphinx(),
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("decoy"),
 		recipient: make([]byte, geo.RecipientIDLength),

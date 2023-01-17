@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -95,12 +97,13 @@ func TestMemoryQueueBulkEnqueue(t *testing.T) {
 
 	forwardPayloadLength := 2000
 	nrHops := 5
-	g := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
 
-	payload := make([]byte, g.PacketLength)
+	payload := make([]byte, geo.PacketLength)
 	for i := 0; i < 100; i++ {
 		// create a set of packets with out-of-order delays
-		pkts[i], err = packet.New(payload, g)
+		pkts[i], err = packet.New(payload, geo)
 		require.NoError(err)
 		pkts[i].Delay = time.Millisecond * time.Duration((i%2)*400+i*5+40)
 	}

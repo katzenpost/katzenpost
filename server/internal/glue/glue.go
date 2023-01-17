@@ -69,7 +69,7 @@ type PKI interface {
 	OutgoingDestinations() map[[geo.NodeIDLength]byte]*pki.MixDescriptor
 	AuthenticateConnection(*wire.PeerCredentials, bool) (*pki.MixDescriptor, bool, bool)
 	GetRawConsensus(uint64) ([]byte, error)
-	GetSphinx() (*sphinx.Sphinx, error)
+	GetSphinx() *sphinx.Sphinx
 	GetSphinxGeometry() *geo.Geometry
 }
 

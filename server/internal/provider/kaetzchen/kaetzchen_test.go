@@ -25,15 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -74,7 +73,7 @@ type mockSpool struct{}
 
 func (s *mockSpool) StoreMessage(u, msg []byte) error { return nil }
 
-func (s *mockSpool) StoreSURBReply(u []byte, id *[constants.SURBIDLength]byte, msg []byte) error {
+func (s *mockSpool) StoreSURBReply(u []byte, id *[geo.SURBIDLength]byte, msg []byte) error {
 	return nil
 }
 
@@ -285,7 +284,7 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	kaetzWorker.registerKaetzchen(mockService)
 
-	recipient := [sConstants.RecipientIDLength]byte{}
+	recipient := [geo.RecipientIDLength]byte{}
 	copy(recipient[:], []byte("+test"))
 	require.True(t, kaetzWorker.IsKaetzchen(recipient))
 
@@ -293,7 +292,9 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["test"]
 	require.True(t, ok)
 
-	geo := sphinx.DefaultGeometry()
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 
 	// invalid packet test case
 	payload := make([]byte, geo.PacketLength)
