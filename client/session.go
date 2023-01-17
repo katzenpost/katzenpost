@@ -333,12 +333,6 @@ func (s *Session) onACK(surbID *[geo.SURBIDLength]byte, ciphertext []byte) error
 		s.decrementDecoyLoopTally()
 		return nil
 	}
-	if msg.Reliable {
-		err := s.timerQ.Remove(msg)
-		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
-		}
-	}
 
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
