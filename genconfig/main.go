@@ -197,7 +197,17 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+			mapCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "map",
+				Endpoint:       "+map",
+				Command:        s.baseDir + "/map" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					"db": s.baseDir + "/" + cfg.Server.Identifier + "/map.storage",
+					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+				},
+			}
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, mapCfg}
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
