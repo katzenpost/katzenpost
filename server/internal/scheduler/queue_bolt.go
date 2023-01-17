@@ -86,10 +86,7 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 		bkt.Put([]byte(boltPacketPayloadKey), payloadBuf)
 	}
 
-	// XXX FIX ME
-	//pkt.Geometry.
-
-	boltPacketCommandsSize := commands.NextNodeHopLength + commands.NodeDelayLength
+	boltPacketCommandsSize := pkt.Geometry.NextNodeHopLength
 	cmdBuf := make([]byte, 0, boltPacketCommandsSize)
 	cmdBuf = pkt.NextNodeHop.ToBytes(cmdBuf)
 	cmdBuf = pkt.NodeDelay.ToBytes(cmdBuf)
@@ -133,7 +130,7 @@ func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte, g glue.Glue) (*packet.P
 	cmds := make([]commands.RoutingCommand, 0, 2)
 	cmdBuf := bkt.Get([]byte(boltPacketCommandsKey))
 	for {
-		cmd, rest, err := commands.FromBytes(cmdBuf)
+		cmd, rest, err := commands.FromBytes(cmdBuf, g.PKI().GetSphinxGeometry())
 		if err != nil {
 			pkt.Dispose()
 			return nil, err

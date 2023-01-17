@@ -29,7 +29,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/monotime"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -61,7 +60,7 @@ type CBORPluginWorker struct {
 
 	glue glue.Glue
 	log  *logging.Logger
-	geo  *sphinx.Geometry
+	geo  *geo.Geometry
 
 	haltOnce    sync.Once
 	pluginChans PluginChans
@@ -147,7 +146,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		}
 		// Iff there is a SURB, generate a SURB-Reply and schedule.
 		if surb != nil {
-			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload)
+			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload, k.geo)
 			if err != nil {
 				k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
 				return
@@ -204,7 +203,7 @@ func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []s
 func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
 	kaetzchenWorker := CBORPluginWorker{
-		geo:         sphinx.DefaultGeometry(),
+		geo:         glue.PKI().GetSphinxGeometry(),
 		glue:        glue,
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),

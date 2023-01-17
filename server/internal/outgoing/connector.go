@@ -142,7 +142,7 @@ func (co *connector) spawnNewConns() {
 	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
 		co.log.Debugf("Spawning connection to: '%x'.", id)
-		c := newOutgoingConn(co, v)
+		c := newOutgoingConn(co, v, co.glue.PKI().GetSphinxGeometry())
 		co.onNewConn(c)
 	}
 }

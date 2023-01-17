@@ -28,7 +28,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -259,7 +258,7 @@ func (p *provider) worker() {
 }
 
 func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
-	geo := sphinx.DefaultGeometry()
+	geo := p.glue.PKI().GetSphinxGeometry()
 	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
 		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.ID, len(pkt.Payload))
 		return
@@ -289,7 +288,7 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 
 	// Iff there is a SURB, generate a SURB-ACK and schedule.
 	if surb != nil {
-		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil)
+		ackPkt, err := packet.NewPacketFromSURB(pkt, surb, nil, p.glue.PKI().GetSphinxGeometry())
 		if err != nil {
 			p.log.Debugf("Failed to generate SURB-ACK: %v (%v)", pkt.ID, err)
 			return
