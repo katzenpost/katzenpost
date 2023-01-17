@@ -17,13 +17,16 @@
 package server
 
 import (
+	"crypto/hmac"
 	"net"
 	"time"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -44,9 +47,11 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Initialize the wire protocol session.
 	auth := &wireAuthenticator{s: s}
+	keyHash := s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     auth,
-		AdditionalData:    s.identityKey.PublicKey().Bytes(),
+		AdditionalData:    keyHash[:],
 		AuthenticationKey: s.linkKey,
 		RandomReader:      rand.Reader,
 	}
@@ -77,7 +82,7 @@ func (s *Server) onConn(conn net.Conn) {
 	if auth.isClient {
 		resp = s.onClient(rAddr, cmd)
 	} else if auth.isMix {
-		resp = s.onMix(rAddr, cmd, auth.peerIdentityKey)
+		resp = s.onMix(rAddr, cmd, auth.peerIdentityKeyHash)
 	} else if auth.isAuthority {
 		resp = s.onAuthority(rAddr, cmd)
 	} else {
@@ -106,14 +111,14 @@ func (s *Server) onClient(rAddr net.Addr, cmd commands.Command) commands.Command
 	return resp
 }
 
-func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKey *eddsa.PublicKey) commands.Command {
+func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKeyHash []byte) commands.Command {
 	s.log.Debug("onMix")
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.PostDescriptor:
-		resp = s.onPostDescriptor(rAddr, c, peerIdentityKey)
+		resp = s.onPostDescriptor(rAddr, c, peerIdentityKeyHash)
 	default:
 		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
 		return nil
@@ -122,34 +127,23 @@ func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKey *ed
 }
 
 func (s *Server) onAuthority(rAddr net.Addr, cmd commands.Command) commands.Command {
-	s.log.Debug("onAuthority")
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.Vote:
-		resp = s.onVote(c)
-	case *commands.VoteStatus:
-		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
-		return nil
+		resp = s.state.onVoteUpload(c)
+	case *commands.Cert:
+		resp = s.state.onCertUpload(c)
 	case *commands.Reveal:
-		resp = s.onReveal(c)
-	case *commands.RevealStatus:
-		s.log.Error("RevealStatus command is not allowed on Authority wire service listener.")
-		return nil
+		resp = s.state.onRevealUpload(c)
+	case *commands.Sig:
+		resp = s.state.onSigUpload(c)
 	default:
 		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
 		return nil
 	}
 	return resp
-}
-
-func (s *Server) onVote(cmd *commands.Vote) commands.Command {
-	return s.state.onVoteUpload(cmd)
-}
-
-func (s *Server) onReveal(cmd *commands.Reveal) commands.Command {
-	return s.state.onRevealUpload(cmd)
 }
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
@@ -171,7 +165,7 @@ func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) comm
 	return resp
 }
 
-func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKey *eddsa.PublicKey) commands.Command {
+func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, pubKeyHash []byte) commands.Command {
 	resp := &commands.PostDescriptorStatus{
 		ErrorCode: commands.DescriptorInvalid,
 	}
@@ -190,27 +184,24 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Validate and deserialize the descriptor.
-	verifier, err := s11n.GetVerifierFromDescriptor(cmd.Payload)
-	if err != nil {
-		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
-		return resp
-	}
-	desc, err := s11n.VerifyAndParseDescriptor(verifier, cmd.Payload, cmd.Epoch)
+	desc := new(pki.MixDescriptor)
+	err := desc.UnmarshalBinary(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp
 	}
 
 	// Ensure that the descriptor is signed by the peer that is posting.
-	if !desc.IdentityKey.Equal(pubKey) {
-		s.log.Errorf("Peer %v: Identity key '%v' is not link key '%v'.", rAddr, desc.IdentityKey, pubKey)
+	identityKeyHash := desc.IdentityKey.Sum256()
+	if !hmac.Equal(identityKeyHash[:], pubKeyHash) {
+		s.log.Errorf("Peer %v: Identity key hash '%x' is not link key '%v'.", rAddr, desc.IdentityKey.Sum256(), pubKeyHash)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
 
 	// Ensure that the descriptor is from an allowed peer.
 	if !s.state.isDescriptorAuthorized(desc) {
-		s.log.Errorf("Peer %v: Identity key '%v' not authorized", rAddr, desc.IdentityKey)
+		s.log.Errorf("Peer %v: Identity key hash '%x' not authorized", rAddr, desc.IdentityKey.Sum256)
 		resp.ErrorCode = commands.DescriptorForbidden
 		return resp
 	}
@@ -234,11 +225,12 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 }
 
 type wireAuthenticator struct {
-	s               *Server
-	peerIdentityKey *eddsa.PublicKey
-	isClient        bool
-	isMix           bool
-	isAuthority     bool
+	s                   *Server
+	peerLinkKey         *ecdh.PublicKey
+	peerIdentityKeyHash []byte
+	isClient            bool
+	isMix               bool
+	isAuthority         bool
 }
 
 func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
@@ -246,29 +238,22 @@ func (a *wireAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	case 0:
 		a.isClient = true
 		return true
-	case eddsa.PublicKeySize:
+	case sign.PublicKeyHashSize:
 	default:
 		a.s.log.Warning("Rejecting authentication, invalid AD size.")
 		return false
 	}
 
-	a.peerIdentityKey = new(eddsa.PublicKey)
-	if err := a.peerIdentityKey.FromBytes(creds.AdditionalData); err != nil {
-		a.s.log.Warningf("Rejecting authentication, invalid AD: %v", err)
-		return false
-	}
+	a.peerIdentityKeyHash = creds.AdditionalData
 
-	pk := a.peerIdentityKey.ByteArray()
+	pk := [sign.PublicKeyHashSize]byte{}
+	copy(pk[:], creds.AdditionalData[:sign.PublicKeyHashSize])
+
 	_, isMix := a.s.state.authorizedMixes[pk]
 	_, isProvider := a.s.state.authorizedProviders[pk]
 	_, isAuthority := a.s.state.authorizedAuthorities[pk]
 
 	if isMix || isProvider {
-		linkPk := a.peerIdentityKey.ToECDH()
-		if !linkPk.Equal(creds.PublicKey) {
-			a.s.log.Warning("Rejecting mix authentication, public key mismatch.")
-			return false
-		}
 		a.isMix = true // Providers and mixes are both mixes. :)
 		return true
 	} else if isAuthority {

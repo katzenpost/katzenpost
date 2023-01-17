@@ -17,15 +17,20 @@
 package kaetzchen
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
-	cConstants "github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -37,7 +42,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
-	"github.com/stretchr/testify/require"
 )
 
 type mockUserDB struct {
@@ -48,17 +52,17 @@ func (u *mockUserDB) Exists([]byte) bool {
 	return true
 }
 
-func (u *mockUserDB) IsValid([]byte, *ecdh.PublicKey) bool { return true }
+func (u *mockUserDB) IsValid([]byte, wire.PublicKey) bool { return true }
 
-func (u *mockUserDB) Add([]byte, *ecdh.PublicKey, bool) error { return nil }
+func (u *mockUserDB) Add([]byte, wire.PublicKey, bool) error { return nil }
 
-func (u *mockUserDB) SetIdentity([]byte, *ecdh.PublicKey) error { return nil }
+func (u *mockUserDB) SetIdentity([]byte, wire.PublicKey) error { return nil }
 
-func (u *mockUserDB) Link([]byte) (*ecdh.PublicKey, error) {
+func (u *mockUserDB) Link([]byte) (wire.PublicKey, error) {
 	return nil, nil
 }
 
-func (u *mockUserDB) Identity([]byte) (*ecdh.PublicKey, error) {
+func (u *mockUserDB) Identity([]byte) (wire.PublicKey, error) {
 	return u.provider.userKey, nil
 }
 
@@ -80,7 +84,7 @@ func (s *mockSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 func (s *mockSpool) Remove(u []byte) error { return nil }
 
-func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[64]byte]interface {}) error {
+func (s *mockSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[32]byte]interface{}) error {
 	return nil
 }
 
@@ -90,7 +94,7 @@ func (s *mockSpool) Close() {}
 
 type mockProvider struct {
 	userName string
-	userKey  *ecdh.PublicKey
+	userKey  wire.PublicKey
 }
 
 func (p *mockProvider) Halt() {}
@@ -124,17 +128,18 @@ func (d *mockDecoy) OnNewDocument(*pkicache.Entry) {}
 func (d *mockDecoy) OnPacket(*packet.Packet) {}
 
 type mockServer struct {
-	cfg         *config.Config
-	logBackend  *log.Backend
-	identityKey *eddsa.PrivateKey
-	linkKey     *ecdh.PrivateKey
-	management  *thwack.Server
-	mixKeys     glue.MixKeys
-	pki         glue.PKI
-	provider    glue.Provider
-	scheduler   glue.Scheduler
-	connector   glue.Connector
-	listeners   []glue.Listener
+	cfg               *config.Config
+	logBackend        *log.Backend
+	identityKey       sign.PrivateKey
+	identityPublicKey sign.PublicKey
+	linkKey           wire.PrivateKey
+	management        *thwack.Server
+	mixKeys           glue.MixKeys
+	pki               glue.PKI
+	provider          glue.Provider
+	scheduler         glue.Scheduler
+	connector         glue.Connector
+	listeners         []glue.Listener
 }
 
 type mockGlue struct {
@@ -149,11 +154,15 @@ func (g *mockGlue) LogBackend() *log.Backend {
 	return g.s.logBackend
 }
 
-func (g *mockGlue) IdentityKey() *eddsa.PrivateKey {
+func (g *mockGlue) IdentityKey() sign.PrivateKey {
 	return g.s.identityKey
 }
 
-func (g *mockGlue) LinkKey() *ecdh.PrivateKey {
+func (g *mockGlue) IdentityPublicKey() sign.PublicKey {
+	return g.s.identityPublicKey
+}
+
+func (g *mockGlue) LinkKey() wire.PrivateKey {
 	return g.s.linkKey
 }
 
@@ -213,19 +222,22 @@ func (m *MockKaetzchen) OnRequest(id uint64, payload []byte, hasSURB bool) ([]by
 func (m *MockKaetzchen) Halt() {}
 
 func TestKaetzchenWorker(t *testing.T) {
-	require := require.New(t)
 
-	idKey, err := eddsa.NewKeypair(rand.Reader)
-	require.NoError(err)
+	datadir := os.TempDir()
+
+	idKey, idPubKey := cert.Scheme.NewKeypair()
+	err := pem.ToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
+	require.NoError(t, err)
+
+	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	require.NoError(t, err)
 
 	logBackend, err := log.New("", "DEBUG", false)
-	require.NoError(err)
+	require.NoError(t, err)
 
-	userKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
-
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
+	scheme := wire.DefaultScheme
+	userKey, _ := scheme.GenerateKeypair(rand.Reader)
+	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
 
 	mockProvider := &mockProvider{
 		userName: "alice",
@@ -254,7 +266,6 @@ func TestKaetzchenWorker(t *testing.T) {
 				Management: &config.Management{},
 				Debug: &config.Debug{
 					NumKaetzchenWorkers: 3,
-					IdentityKey:         idKey,
 					KaetzchenDelay:      300,
 				},
 			},
@@ -262,7 +273,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	}
 
 	kaetzWorker, err := New(goo)
-	require.NoError(err)
+	require.NoError(t, err)
 
 	params := make(Parameters)
 	params[ParameterEndpoint] = "+test"
@@ -276,43 +287,46 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	recipient := [sConstants.RecipientIDLength]byte{}
 	copy(recipient[:], []byte("+test"))
-	require.True(kaetzWorker.IsKaetzchen(recipient))
+	require.True(t, kaetzWorker.IsKaetzchen(recipient))
 
 	pkiMap := kaetzWorker.KaetzchenForPKI()
 	_, ok := pkiMap["test"]
-	require.True(ok)
+	require.True(t, ok)
+
+	geo := sphinx.DefaultGeometry()
 
 	// invalid packet test case
-	payload := make([]byte, cConstants.PacketLength)
+	payload := make([]byte, geo.PacketLength)
 	testPacket, err := packet.New(payload)
-	require.NoError(err)
+	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
 	testPacket.DispatchAt = monotime.Now()
-	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength-1) // off by one erroneous size
+
+	testPacket.Payload = make([]byte, geo.ForwardPayloadLength-1) // off by one erroneous size
 	kaetzWorker.OnKaetzchen(testPacket)
 
 	// timeout test case
-	payload = make([]byte, cConstants.PacketLength)
+	payload = make([]byte, geo.PacketLength)
 	testPacket, err = packet.New(payload)
-	require.NoError(err)
+	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
 	testPacket.DispatchAt = monotime.Now() - time.Duration(goo.Config().Debug.KaetzchenDelay)*time.Millisecond
-	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength)
+	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 	kaetzWorker.OnKaetzchen(testPacket)
 
 	// working test case
-	payload = make([]byte, cConstants.PacketLength)
+	payload = make([]byte, geo.PacketLength)
 	testPacket, err = packet.New(payload)
-	require.NoError(err)
+	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
 	}
 	testPacket.DispatchAt = monotime.Now()
-	testPacket.Payload = make([]byte, cConstants.ForwardPayloadLength)
+	testPacket.Payload = make([]byte, geo.ForwardPayloadLength)
 
 	kaetzWorker.OnKaetzchen(testPacket)
 	<-mockService.receivedCh
@@ -320,7 +334,7 @@ func TestKaetzchenWorker(t *testing.T) {
 	// test that we dropped two packets from the timeout and
 	// invalid packet test casses
 	time.Sleep(time.Duration(goo.Config().Debug.KaetzchenDelay) * time.Millisecond)
-	require.Equal(uint64(2), kaetzWorker.getDropCounter())
+	require.Equal(t, uint64(2), kaetzWorker.getDropCounter())
 
 	kaetzWorker.Halt()
 }

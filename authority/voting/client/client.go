@@ -18,43 +18,45 @@
 package client
 
 import (
-	"bytes"
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var defaultDialer = &net.Dialer{}
 
 // authorityAuthenticator implements the PeerAuthenticator interface
 type authorityAuthenticator struct {
-	IdentityPublicKey *eddsa.PublicKey
-	LinkPublicKey     *ecdh.PublicKey
+	IdentityPublicKey sign.PublicKey
+	LinkPublicKey     wire.PublicKey
 	log               *logging.Logger
 }
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
 // iff the peer is valid.
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if !bytes.Equal(a.IdentityPublicKey.Bytes(), creds.AdditionalData) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", a.IdentityPublicKey.Bytes(), creds.AdditionalData[:])
+	identityHash := a.IdentityPublicKey.Sum256()
+	if !hmac.Equal(identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize]) {
+		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 		return false
 	}
-	if !a.LinkPublicKey.Equal(creds.PublicKey) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %v != %v", a.LinkPublicKey, creds.PublicKey)
+	if !hmac.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
+		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", pem.ToPEMString(a.LinkPublicKey), pem.ToPEMString(creds.PublicKey))
 		return false
 	}
 	return true
@@ -62,11 +64,18 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
+	// DataDir is the absolute path to the directory
+	// containing Authority link pub key PEM files.
+	DataDir string
+
+	// LinkKey is the link key for the client's wire connections.
+	LinkKey wire.PrivateKey
+
 	// LogBackend is the `core/log` Backend instance to use for logging.
 	LogBackend *log.Backend
 
 	// Authorities is the set of Directory Authority servers.
-	Authorities []*config.AuthorityPeer
+	Authorities []*config.Authority
 
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
@@ -113,7 +122,7 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
-func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, peer *config.AuthorityPeer) (*connection, error) {
+func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
 	var conn net.Conn
 	var err error
 
@@ -145,11 +154,6 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 	}()
 
-	var ad []byte
-	if signingKey != nil {
-		ad = signingKey.Bytes()
-	}
-
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
 		LinkPublicKey:     peer.LinkPublicKey,
@@ -157,7 +161,13 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	}
 
 	// Initialize the wire protocol session.
+	var ad []byte
+	if signingKey != nil {
+		keyHash := signingKey.Sum256()
+		ad = keyHash[:]
+	}
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
@@ -171,6 +181,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	go func() {
 		select {
 		case <-ctx.Done():
+			p.log.Warning("closing connection due to context Done event... most likely a timeout")
 			conn.Close()
 		case <-doneCh:
 		}
@@ -180,7 +191,6 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	if err = s.Initialize(conn); err != nil {
 		return nil, err
 	}
-
 	isOk = true
 
 	return &connection{
@@ -196,14 +206,14 @@ func (p *connector) roundTrip(s *wire.Session, cmd commands.Command) (commands.C
 	return s.RecvCommand()
 }
 
-func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, signingKey *eddsa.PublicKey, cmd commands.Command) ([]commands.Command, error) {
+func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateKey, signingKey sign.PublicKey, cmd commands.Command) ([]commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 	responses := []commands.Command{}
 	for _, peer := range p.cfg.Authorities {
 		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority peer %s", peer.IdentityPublicKey)
+			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, peer.IdentityPublicKey.Sum256())
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)
@@ -219,7 +229,7 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey *ecdh.Private
 	return responses, nil
 }
 
-func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.PrivateKey, cmd commands.Command) (commands.Command, error) {
+func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey, epoch uint64) (commands.Command, error) {
 	doneCh := make(chan interface{})
 	defer close(doneCh)
 
@@ -230,12 +240,24 @@ func (p *connector) randomPeerRoundTrip(ctx context.Context, linkKey *ecdh.Priva
 	r := rand.NewMath()
 	peerIndex := r.Intn(len(p.cfg.Authorities))
 
-	conn, err := p.initSession(ctx, doneCh, linkKey, nil, p.cfg.Authorities[peerIndex])
-	if err != nil {
-		return nil, err
+	// check for a document from threshold authorities
+
+	for i := 0; i < len(p.cfg.Authorities)/2; i++ {
+		auth := p.cfg.Authorities[peerIndex+i%len(p.cfg.Authorities)]
+		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
+		if err != nil {
+			return nil, err
+		}
+		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
+		cmd := &commands.GetConsensus{Epoch: epoch}
+		resp, err := p.roundTrip(conn.session, cmd)
+		p.log.Debugf("got response (err=%v) from %s", err, auth.Identifier)
+		if err == pki.ErrNoDocument {
+			continue
+		}
+		return resp, err
 	}
-	resp, err := p.roundTrip(conn.session, cmd)
-	return resp, err
+	return nil, pki.ErrNoDocument
 }
 
 // Client is a PKI client.
@@ -248,25 +270,22 @@ type Client struct {
 }
 
 // Post posts the node's descriptor to the PKI for the provided epoch.
-func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
+func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
 	// Ensure that the descriptor we are about to post is well formed.
-	if err := s11n.IsDescriptorWellFormed(d, epoch); err != nil {
+	if err := pki.IsDescriptorWellFormed(d, epoch); err != nil {
 		return err
 	}
 	// Make a serialized + signed + serialized descriptor.
-	signed, err := s11n.SignDescriptor(signingKey, d)
+	signed, err := pki.SignDescriptor(signingPrivateKey, signingPublicKey, d)
 	if err != nil {
 		return err
 	}
-	// Convert the link key to an ECDH keypair.
-	linkKey := signingKey.ToECDH()
-	defer linkKey.Reset()
 	// Dispatch the post_descriptor command.
 	cmd := &commands.PostDescriptor{
 		Epoch:   epoch,
 		Payload: []byte(signed),
 	}
-	responses, err := c.pool.allPeersRoundTrip(ctx, linkKey, signingKey.PublicKey(), cmd)
+	responses, err := c.pool.allPeersRoundTrip(ctx, c.cfg.LinkKey, signingPublicKey, cmd)
 	if err != nil {
 		return err
 	}
@@ -296,11 +315,9 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingKey *eddsa.Priva
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
 	c.log.Debugf("Get(ctx, %d)", epoch)
 
-	// Generate a random ecdh keypair to use for the link authentication.
-	linkKey, err := ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
+	// Generate a random keypair to use for the link authentication.
+	scheme := wire.DefaultScheme
+	linkKey, _ := scheme.GenerateKeypair(rand.Reader)
 	defer linkKey.Reset()
 
 	// Initialize the TCP/IP connection, and wire session.
@@ -308,8 +325,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	defer close(doneCh)
 
 	// Dispatch the get_consensus command.
-	cmd := &commands.GetConsensus{Epoch: epoch}
-	resp, err := c.pool.randomPeerRoundTrip(ctx, linkKey, cmd)
+	resp, err := c.pool.fetchConsensus(ctx, linkKey, epoch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -336,8 +352,18 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 	if len(good) == len(c.cfg.Authorities) {
 		c.log.Notice("OK, received fully signed consensus document.")
+	} else {
+		c.log.Noticef("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
+		for _, auth := range c.cfg.Authorities {
+			for _, badauth := range bad {
+				if badauth == auth.IdentityPublicKey {
+					c.log.Noticef("missing or invalid signature from %s", auth.Identifier)
+					break
+				}
+			}
+		}
 	}
-	doc, err = s11n.VerifyAndParseDocument(r.Payload, good[0])
+	doc, err = pki.VerifyAndParseDocument(r.Payload, c.verifiers)
 	if err != nil {
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
@@ -345,16 +371,17 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
+	c.log.Debugf("voting/Client: Get() document:\n%s", doc)
 	return doc, r.Payload, nil
 }
 
 // Deserialize returns PKI document given the raw bytes.
 func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
-	_, good, _, err := cert.VerifyThreshold(c.verifiers, c.threshold, raw)
+	_, _, _, err := cert.VerifyThreshold(c.verifiers, c.threshold, raw)
 	if err != nil {
 		return nil, err
 	}
-	doc, err := s11n.VerifyAndParseDocument(raw, good[0])
+	doc, err := pki.VerifyAndParseDocument(raw, c.verifiers)
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}
@@ -376,7 +403,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c.pool = newConnector(cfg)
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
-		c.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+		c.verifiers[i] = auth.IdentityPublicKey
 	}
 	c.threshold = len(c.verifiers)/2 + 1
 	return c, nil

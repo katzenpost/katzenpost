@@ -2,25 +2,34 @@
 Katzenpost Docker test network
 ==============================
 
-This docker-compose configuration is intended to allow Katzenpost developers to
-locally run a test network on their development system. It is meant for testing
-client and server mix network components as part of the core Katzenpost
-developer work flow. It should be obvious that this docker-compose situation is
-not meant for production use.
+This Podman-compatible docker-compose configuration is intended to allow
+Katzenpost developers to locally run an offline test network on their
+development system. It is meant for developing and testing client and server
+mix network components as part of the core Katzenpost developer work flow.
+
+0. Requirements
+
+* Podman or Docker
+* docker-compose (tested with 1.29.2, among other versions)
+* GNU Make
 
 1. Run a test network
 ::
 
    git clone https://github.com/katzenpost/katzenpost.git
    cd katzenpost/docker
-   make run-nonvoting-testnet
+   make run-voting-testnet
 
-Note that if your system configuration requires you to ``sudo`` to use docker,
-you will need to prefix all of the ``make`` commands in this directory with
-``sudo``.
+Note that if you do not have podman and your system configuration requires you
+to ``sudo`` to use docker, you will need to prefix all of the ``make`` commands
+in this directory with ``sudo``. If you have both podman and docker installed,
+you can override the automatic choice of podman over docker by prefixing the
+``make`` argument list with ``docker=docker``.
 
 At this point, you should have a locally running network. You can hit ctrl-C to
-stop it.
+stop it, or use another terminal to observe the logs with ``tail -F voting_mixnet/*/*log``.
+
+You can send pings through the network with ``make ping``.
 
 While the docker-compose test network is running, you can use the ``make
 dockerdockertest`` targets in the ``client`` and ``catshadow`` directories to
@@ -32,25 +41,20 @@ warped=true dockerdockertest`` in the client directory) to set the WarpedEpoch
 build flag.
 
 You can also connect to the test network with a catshadow client by telling it
-to use the ``docker/nonvoting_mixnet/catshadow.toml`` configuration file.
+to use the ``docker/voting_mixnet/client/client.toml`` configuration file.
 
-After stopping the network, you can discard all docker images by running ``make
-clean-images``, and can delete the test network's data with ``make
-clean-data``, or run ``make clean`` to delete both images and data.
+After stopping the network, you can discard all katzenpost-specific container
+images by running ``make clean``, and can delete the test network's data
+with ``make clean-data``, or run ``make clean`` to delete both images and data.
 
-The ``make clean-local`` target will delete instance data and images, but
-retain the ``katzenpost/deps`` image which requires network access to rebuild.
-This allows for quick and easy offline development.
+The ``make clean-local`` target will delete instance data and
+offline-regeneratable images, but will retain the images containing
+dependencies which require network access to rebuild. This allows for an
+offline development workflow.
 
-The docker commands in the ``Makefile`` are not as robust as they should be, so
-watch for error messages to see if it becomes necessary to delete stray
+The docker/podman commands in the ``Makefile`` are not as robust as they should
+be, so watch for error messages to see if it becomes necessary to delete stray
 containers which are using the images and preventing them from being deleted.
-
-**NOTE**: between restarting your local docker mixnet you **SHOULD**
-remove the state changes on disk by running the following command:
-::
-
-   make clean-data
 
 **NOTE**: If you switch between voting and nonvoting authority mixnets then
 you must run this command after shutting down the old docker composed mixnet:

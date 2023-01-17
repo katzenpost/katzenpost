@@ -20,7 +20,6 @@ package log
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	goLog "log"
 	"os"
 	"strings"
@@ -40,7 +39,7 @@ func (d *discardCloser) Close() error {
 
 func newDiscardCloser() *discardCloser {
 	d := new(discardCloser)
-	d.discard = ioutil.Discard
+	d.discard = io.Discard
 	return d
 }
 

@@ -18,7 +18,6 @@
 package provider
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"strconv"
@@ -26,21 +25,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/thwack"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/config"
-
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	internalConstants "github.com/katzenpost/katzenpost/server/internal/constants"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
 	"github.com/katzenpost/katzenpost/server/internal/sqldb"
@@ -49,8 +44,6 @@ import (
 	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/katzenpost/katzenpost/server/userdb/boltuserdb"
 	"github.com/katzenpost/katzenpost/server/userdb/externuserdb"
-	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -69,21 +62,6 @@ type provider struct {
 
 	kaetzchenWorker           *kaetzchen.KaetzchenWorker
 	cborPluginKaetzchenWorker *kaetzchen.CBORPluginWorker
-}
-
-var (
-	packetsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: internalConstants.Namespace,
-			Name:      "dropped_packets_total",
-			Subsystem: internalConstants.ProviderSubsystem,
-			Help:      "Number of dropped packets",
-		},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(packetsDropped)
 }
 
 func (p *provider) Halt() {
@@ -114,16 +92,12 @@ func (p *provider) UserDB() userdb.UserDB {
 }
 
 func (p *provider) AuthenticateClient(c *wire.PeerCredentials) bool {
-	ad, err := p.fixupUserNameCase(c.AdditionalData)
-	if err != nil {
-		return false
-	}
-	isValid := p.userDB.IsValid(ad, c.PublicKey)
+	isValid := p.userDB.IsValid(c.AdditionalData, c.PublicKey)
 	if !isValid {
 		if len(c.AdditionalData) == sConstants.NodeIDLength {
-			p.log.Errorf("Authentication failed: User: '%v', Key: '%v' (Probably a peer)", debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authentication failed: User: '%x', Key: '%x' (Probably a peer)", c.AdditionalData, c.PublicKey.Sum256())
 		} else {
-			p.log.Errorf("Authentication failed: User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(c.AdditionalData), c.PublicKey)
+			p.log.Errorf("Authentication failed: User: '%x', Key: '%x'", c.AdditionalData, c.PublicKey.Sum256())
 		}
 	}
 	return isValid
@@ -157,48 +131,6 @@ func (p *provider) KaetzchenForPKI() (map[string]map[string]interface{}, error) 
 	return merged, nil
 }
 
-func (p *provider) fixupUserNameCase(user []byte) ([]byte, error) {
-	// Unless explicitly specified otherwise, force usernames to lower case.
-	if p.glue.Config().Provider.BinaryRecipients {
-		return user, nil
-	}
-
-	if p.glue.Config().Provider.CaseSensitiveRecipients {
-		return precis.UsernameCasePreserved.Bytes(user)
-	}
-	return precis.UsernameCaseMapped.Bytes(user)
-}
-
-func (p *provider) fixupRecipient(recipient []byte) ([]byte, error) {
-	// If the provider is configured for binary recipients, do no post
-	// processing.
-	if p.glue.Config().Provider.BinaryRecipients {
-		return recipient, nil
-	}
-
-	// Fix the recipient by trimming off the trailing NUL bytes.
-	b := bytes.TrimRight(recipient, "\x00")
-
-	// (Optional, Default) Force recipients to lower case.
-	var err error
-	b, err = p.fixupUserNameCase(b)
-	if err != nil {
-		return nil, err
-	}
-
-	// (Optional) Discard everything after the first recipient delimiter...
-	if delimiter := p.glue.Config().Provider.RecipientDelimiter; delimiter != "" {
-		if sp := bytes.SplitN(b, []byte(delimiter), 2); sp != nil {
-			// ... As long as the recipient doesn't start with a delimiter.
-			if len(sp[0]) > 0 {
-				b = sp[0]
-			}
-		}
-	}
-
-	return b, nil
-}
-
 func (p *provider) connectedClients() (map[[sConstants.RecipientIDLength]byte]interface{}, error) {
 	identities := make(map[[sConstants.RecipientIDLength]byte]interface{})
 	for _, listener := range p.glue.Listeners() {
@@ -229,7 +161,6 @@ func (p *provider) gcEphemeralClients() {
 }
 
 func (p *provider) worker() {
-
 	maxDwell := time.Duration(p.glue.Config().Debug.ProviderDelay) * time.Millisecond
 
 	defer p.log.Debugf("Halting Provider worker.")
@@ -261,7 +192,7 @@ func (p *provider) worker() {
 
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				p.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -280,7 +211,7 @@ func (p *provider) worker() {
 			// can't be a SURB-Reply.
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 			} else {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
@@ -293,7 +224,7 @@ func (p *provider) worker() {
 		if p.cborPluginKaetzchenWorker.IsKaetzchen(pkt.Recipient.ID) {
 			if pkt.IsSURBReply() {
 				p.log.Debugf("Dropping packet: %v (SURB-Reply for Kaetzchen)", pkt.ID)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 			} else {
 				// Note that we pass ownership of pkt to p.kaetzchenWorker
@@ -304,18 +235,12 @@ func (p *provider) worker() {
 		}
 
 		// Post-process the recipient.
-		recipient, err := p.fixupRecipient(pkt.Recipient.ID[:])
-		if err != nil {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
-			packetsDropped.Inc()
-			pkt.Dispose()
-			continue
-		}
+		recipient := pkt.Recipient.ID[:]
 
 		// Ensure the packet is for a valid recipient.
 		if !p.userDB.Exists(recipient) {
-			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%v')", pkt.ID, utils.ASCIIBytesToPrintString(recipient))
-			packetsDropped.Inc()
+			p.log.Debugf("Dropping packet: %v (Invalid Recipient: '%x')", pkt.ID, recipient)
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}
@@ -334,7 +259,8 @@ func (p *provider) worker() {
 }
 
 func (p *provider) onSURBReply(pkt *packet.Packet, recipient []byte) {
-	if len(pkt.Payload) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
+	geo := sphinx.DefaultGeometry()
+	if len(pkt.Payload) != geo.PayloadTagLength+geo.ForwardPayloadLength {
 		p.log.Debugf("Refusing to store mis-sized SURB-Reply: %v (%v)", pkt.ID, len(pkt.Payload))
 		return
 	}
@@ -351,7 +277,7 @@ func (p *provider) onToUser(pkt *packet.Packet, recipient []byte) {
 	ct, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		p.log.Debugf("Dropping packet: %v (%v)", pkt.ID, err)
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		return
 	}
 
@@ -395,19 +321,16 @@ func (p *provider) doAddUpdate(c *thwack.Conn, l string, isUpdate bool) error {
 	}
 
 	// Deserialize the public key.
-	var pubKey ecdh.PublicKey
-	if err := pubKey.FromString(sp[2]); err != nil {
+	_, pubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	err := pubKey.UnmarshalText([]byte(sp[2]))
+	if err != nil {
 		c.Log().Errorf("[ADD/UPDATE]_USER invalid public key: %v", err)
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
 	// Attempt to add or update the user.
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("[ADD/UPDATE]_USER invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-	if err = p.userDB.Add(u, &pubKey, isUpdate); err != nil {
+	u := []byte(sp[1])
+	if err = p.userDB.Add(u, pubKey, isUpdate); err != nil {
 		c.Log().Errorf("Failed to add/update user: %v", err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
@@ -425,20 +348,15 @@ func (p *provider) onRemoveUser(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("REMOVE_USER invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	// Remove the user from the UserDB.
-	if err = p.userDB.Remove(u); err != nil {
+	if err := p.userDB.Remove(u); err != nil {
 		c.Log().Errorf("Failed to remove user '%v': %v", u, err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
 
 	// Remove the user's spool.
-	if err = p.spool.Remove(u); err != nil {
+	if err := p.spool.Remove(u); err != nil {
 		// Log an error, but don't return a failed status, because the
 		// user has been obliterated from the UserDB at this point.
 		c.Log().Errorf("Failed to remove spool '%v': %v", u, err)
@@ -459,13 +377,8 @@ func (p *provider) onRemoveUserIdentity(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("REMOVE_USER_IDENTITY invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
-	if err = p.userDB.SetIdentity(u, nil); err != nil {
+	u := []byte(sp[1])
+	if err := p.userDB.SetIdentity(u, nil); err != nil {
 		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
 	}
@@ -477,14 +390,16 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 	p.Lock()
 	defer p.Unlock()
 
-	var pubKey *ecdh.PublicKey
+	var err error
+	var pubKey wire.PublicKey
 
 	sp := strings.Split(l, " ")
 	switch len(sp) {
 	case 2:
 	case 3:
-		pubKey = new(ecdh.PublicKey)
-		if err := pubKey.FromString(sp[2]); err != nil {
+		_, pubKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+		err = pubKey.UnmarshalText([]byte(sp[2]))
+		if err != nil {
 			c.Log().Errorf("SET_USER_IDENTITY invalid public key: %v", err)
 			return c.WriteReply(thwack.StatusSyntaxError)
 		}
@@ -493,12 +408,7 @@ func (p *provider) onSetUserIdentity(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("SET_USER_IDENTITY invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	if err = p.userDB.SetIdentity(u, pubKey); err != nil {
 		c.Log().Errorf("Failed to set identity for user '%v': %v", u, err)
 		return c.WriteReply(thwack.StatusTransactionFailed)
@@ -517,12 +427,7 @@ func (p *provider) onUserLink(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("USER_LINK invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	pubKey, err := p.userDB.Link(u)
 	if err != nil {
 		c.Log().Errorf("Failed to query link key for user '%s': %v", string(u), err)
@@ -542,12 +447,7 @@ func (p *provider) onUserIdentity(c *thwack.Conn, l string) error {
 		return c.WriteReply(thwack.StatusSyntaxError)
 	}
 
-	u, err := p.fixupUserNameCase([]byte(sp[1]))
-	if err != nil {
-		c.Log().Errorf("USER_IDENTITY invalid user: %v", err)
-		return c.WriteReply(thwack.StatusSyntaxError)
-	}
-
+	u := []byte(sp[1])
 	pubKey, err := p.userDB.Identity(u)
 	if err != nil {
 		c.Log().Errorf("Failed to query identity for user '%v': %v", u, err)

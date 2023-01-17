@@ -22,11 +22,10 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx"
-	"github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
@@ -205,7 +204,7 @@ func (d *pgxUserDB) Exists(u []byte) bool {
 	return d.getAuthKey(u) != nil
 }
 
-func (d *pgxUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
+func (d *pgxUserDB) IsValid(u []byte, k wire.PublicKey) bool {
 	dbKey := d.getAuthKey(u)
 	if dbKey == nil {
 		return false
@@ -213,15 +212,16 @@ func (d *pgxUserDB) IsValid(u []byte, k *ecdh.PublicKey) bool {
 	return dbKey.Equal(k)
 }
 
-func (d *pgxUserDB) getAuthKey(u []byte) *ecdh.PublicKey {
+func (d *pgxUserDB) getAuthKey(u []byte) wire.PublicKey {
 	var raw []byte
 	if err := d.pgx.pool.QueryRow(pgxTagUserGetAuthKey, u).Scan(&raw); err != nil {
 		d.pgx.d.log.Debugf("user_get_authentication_key() failed: %v", err)
 		return nil
 	}
 
-	pk := new(ecdh.PublicKey)
-	if err := pk.FromBytes(raw); err != nil {
+	_, pk := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	err := pk.UnmarshalBinary(raw)
+	if err != nil {
 		d.pgx.d.log.Warningf("Failed to deserialize authentication key for user '%v': %v", utils.ASCIIBytesToPrintString(u), err)
 		return nil
 	}
@@ -229,7 +229,7 @@ func (d *pgxUserDB) getAuthKey(u []byte) *ecdh.PublicKey {
 	return pk
 }
 
-func (d *pgxUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
+func (d *pgxUserDB) Add(u []byte, k wire.PublicKey, update bool) error {
 	_, err := d.pgx.pool.Exec(pgxTagUserSetAuthKey, u, k.Bytes(), update)
 	if err != nil && isPgNoDataFound(err) {
 		return userdb.ErrNoSuchUser
@@ -237,7 +237,7 @@ func (d *pgxUserDB) Add(u []byte, k *ecdh.PublicKey, update bool) error {
 	return err
 }
 
-func (d *pgxUserDB) SetIdentity(u []byte, k *ecdh.PublicKey) error {
+func (d *pgxUserDB) SetIdentity(u []byte, k wire.PublicKey) error {
 	var kBytes []byte
 	if k != nil {
 		kBytes = k.Bytes()
@@ -252,7 +252,7 @@ func (d *pgxUserDB) SetIdentity(u []byte, k *ecdh.PublicKey) error {
 	return nil
 }
 
-func (d *pgxUserDB) Link(u []byte) (*ecdh.PublicKey, error) {
+func (d *pgxUserDB) Link(u []byte) (wire.PublicKey, error) {
 	key := d.getAuthKey(u)
 	if key == nil {
 		return nil, userdb.ErrNoSuchUser
@@ -260,7 +260,7 @@ func (d *pgxUserDB) Link(u []byte) (*ecdh.PublicKey, error) {
 	return key, nil
 }
 
-func (d *pgxUserDB) Identity(u []byte) (*ecdh.PublicKey, error) {
+func (d *pgxUserDB) Identity(u []byte) (wire.PublicKey, error) {
 	var raw []byte
 	if err := d.pgx.pool.QueryRow(pgxTagUserGetIdentKey, u).Scan(&raw); err != nil {
 		if isPgNoDataFound(err) {
@@ -272,8 +272,9 @@ func (d *pgxUserDB) Identity(u []byte) (*ecdh.PublicKey, error) {
 		return nil, userdb.ErrNoIdentity
 	}
 
-	pk := new(ecdh.PublicKey)
-	if err := pk.FromBytes(raw); err != nil {
+	_, pk := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	err := pk.UnmarshalBinary(raw)
+	if err != nil {
 		return nil, err
 	}
 
@@ -299,16 +300,10 @@ type pgxSpool struct {
 }
 
 func (s *pgxSpool) StoreMessage(u, msg []byte) error {
-	if len(msg) != constants.UserForwardPayloadLength {
-		return fmt.Errorf("pgx/spool: invalid user message size: %d", len(msg))
-	}
 	return s.doStore(u, nil, msg)
 }
 
-func (s *pgxSpool) StoreSURBReply(u []byte, id *[sConstants.SURBIDLength]byte, msg []byte) error {
-	if len(msg) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
-		return fmt.Errorf("pgx/spool: invalid SURBReply message size: %d", len(msg))
-	}
+func (s *pgxSpool) StoreSURBReply(u []byte, id *[constants.SURBIDLength]byte, msg []byte) error {
 	if id == nil {
 		return fmt.Errorf("pgx/spool: SURBReply is missing ID")
 	}
@@ -338,7 +333,7 @@ func (s *pgxSpool) Remove(u []byte) error {
 	return s.pgx.doUserDelete(u)
 }
 
-func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sConstants.RecipientIDLength]byte]interface{}) error {
+func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[constants.RecipientIDLength]byte]interface{}) error {
 	panic("failure! VacuumExpired not implemented for pgxSpool :(")
 	return nil // XXX *le sigh* implement me
 }

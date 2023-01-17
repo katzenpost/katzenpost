@@ -17,8 +17,8 @@
 package minclient
 
 import (
-	"bytes"
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -26,13 +26,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var (
@@ -226,8 +228,18 @@ func (c *connection) connectWorker() {
 				timerFired = true
 			}
 		}
+
+		select {
+		case <-c.HaltCh():
+			return
+		default:
+		}
 		if !timerFired && !timer.Stop() {
-			<-timer.C
+			select {
+			case <-c.HaltCh():
+				return
+			case <-timer.C:
+			}
 		}
 
 		// Query the PKI for the current descriptor.
@@ -237,11 +249,6 @@ func (c *connection) connectWorker() {
 		} else if c.c.cfg.OnConnFn != nil {
 			// Can't connect due to lacking descriptor.
 			c.c.cfg.OnConnFn(err)
-		}
-		select {
-		case <-c.HaltCh():
-			return
-		default:
 		}
 		timer.Reset(pkiFallbackInterval)
 	}
@@ -353,6 +360,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,
 		AdditionalData:    []byte(c.c.cfg.User),
 		AuthenticationKey: c.c.cfg.LinkKey,
@@ -416,12 +424,17 @@ func (c *connection) onWireConn(w *wire.Session) {
 			rawCmd, err := w.RecvCommand()
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
-				cmdCh <- err
+				select {
+				case <-c.HaltCh():
+				case cmdCh <- err:
+				}
 				return
 			}
 			// XXX: why retryDelay 0?
 			atomic.StoreInt64(&c.retryDelay, 0)
 			select {
+			case <-c.HaltCh():
+				return
 			case cmdCh <- rawCmd:
 			case <-cmdCloseCh:
 				return
@@ -446,7 +459,10 @@ func (c *connection) onWireConn(w *wire.Session) {
 	var consensusCtx *getConsensusCtx
 	defer func() {
 		if consensusCtx != nil {
-			consensusCtx.replyCh <- ErrNotConnected
+			select {
+			case <-c.HaltCh():
+			case consensusCtx.replyCh <- ErrNotConnected:
+			}
 		}
 	}()
 
@@ -647,7 +663,8 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 		return false
 	}
 
-	if !bytes.Equal(c.descriptor.IdentityKey.Bytes(), creds.AdditionalData) {
+	identityHash := c.descriptor.IdentityKey.Sum256()
+	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}
 	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
@@ -691,20 +708,27 @@ func (c *connection) sendPacket(pkt []byte) error {
 		c.Unlock()
 		return ErrNotConnected
 	}
+	c.Unlock()
 
 	errCh := make(chan error)
-	c.sendCh <- &connSendCtx{
+	select {
+	case c.sendCh <- &connSendCtx{
 		pkt: pkt,
 		doneFn: func(err error) {
 			errCh <- err
 		},
+	}:
+	case <-c.HaltCh():
+		return ErrShutdown
 	}
 	c.log.Debugf("Enqueued packet for send.")
 
-	// Release the lock so this won't deadlock in onConnStatusChange.
-	c.Unlock()
-
-	return <-errCh
+	select {
+	case err := <-errCh:
+		return err
+	case <-c.HaltCh():
+		return ErrShutdown
+	}
 }
 
 func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
@@ -713,30 +737,41 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 		c.Unlock()
 		return nil, ErrNotConnected
 	}
+	c.Unlock()
 
 	errCh := make(chan error)
 	replyCh := make(chan interface{})
-	c.getConsensusCh <- &getConsensusCtx{
+	select {
+	case c.getConsensusCh <- &getConsensusCtx{
 		replyCh: replyCh,
 		epoch:   epoch,
 		doneFn: func(err error) {
 			errCh <- err
 		},
+	}:
+	case <-c.HaltCh():
+		return nil, ErrShutdown
 	}
 	c.log.Debug("Enqueued GetConsensus command for send.")
 
-	// Release the lock so this won't deadlock in onConnStatusChange.
-	c.Unlock()
-
 	// Ensure the dispatch succeeded.
-	err := <-errCh
-	if err != nil {
-		c.log.Debugf("Failed to dispatch GetConsensus: %v", err)
-		return nil, err
+	select {
+	case <-c.HaltCh():
+		return nil, ErrShutdown
+	case err := <-errCh:
+		if err != nil {
+			c.log.Debugf("Failed to dispatch GetConsensus: %v", err)
+			return nil, err
+		}
+	case <-ctx.Done():
+		// Canceled mid-fetch.
+		return nil, errGetConsensusCanceled
 	}
 
 	// Wait for the dispatch to complete.
 	select {
+	case <-c.HaltCh():
+		return nil, ErrShutdown
 	case rawResp := <-replyCh:
 		switch resp := rawResp.(type) {
 		case error:
@@ -765,7 +800,7 @@ func newConnection(c *Client) *connection {
 	k.pkiFetchCh = make(chan interface{}, 1)
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
-	k.getConsensusCh = make(chan *getConsensusCtx)
+	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k
 }
 

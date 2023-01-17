@@ -18,7 +18,7 @@ package ecdh
 
 import (
 	"crypto/rand"
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -59,7 +59,7 @@ func TestECDHOps(t *testing.T) {
 	aliceKeypair, err := NewKeypair(rand.Reader)
 	require.NoError(t, err, "NewKeygen() Alice failed")
 
-	var bobSk, bobPk, aliceS, bobS, tmp [GroupElementLength]byte
+	var bobSk, bobPk, bobS, tmp [GroupElementLength]byte
 	_, err = rand.Read(bobSk[:])
 	require.NoError(t, err, "failed to generate bobSk")
 	curve25519.ScalarBaseMult(&bobPk, &bobSk)
@@ -67,17 +67,17 @@ func TestECDHOps(t *testing.T) {
 	curve25519.ScalarBaseMult(&tmp, &aliceKeypair.privBytes)
 	assert.Equal(aliceKeypair.PublicKey().Bytes(), tmp[:], "ExpG() mismatch against X25519 scalar base mult")
 
-	Exp(&aliceS, &bobPk, &aliceKeypair.privBytes)
+	aliceS := Exp(bobPk[:], aliceKeypair.privBytes[:])
 	copy(tmp[:], aliceKeypair.PublicKey().Bytes())
 	curve25519.ScalarMult(&bobS, &bobSk, &tmp)
-	assert.Equal(bobS, aliceS, "Exp() mismatch against X25519 scalar mult")
+	assert.Equal(bobS[:], aliceS, "Exp() mismatch against X25519 scalar mult")
 }
 
 func TestPublicKeyToFromPEMFile(t *testing.T) {
 	assert := assert.New(t)
 	aliceKeypair, err := NewKeypair(rand.Reader)
 	assert.NoError(err)
-	f, err := ioutil.TempFile("", "alice.pem")
+	f, err := os.CreateTemp("", "alice.pem")
 	assert.NoError(err)
 	err = aliceKeypair.PublicKey().ToPEMFile(f.Name())
 	assert.NoError(err)

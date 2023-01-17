@@ -24,18 +24,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	internalConstants "github.com/katzenpost/katzenpost/server/internal/constants"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
-	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -45,9 +41,10 @@ type incomingConn struct {
 	l   *listener
 	log *logging.Logger
 
-	c net.Conn
-	e *list.Element
-	w *wire.Session
+	c   net.Conn
+	e   *list.Element
+	w   *wire.Session
+	geo *sphinx.Geometry
 
 	id      uint64
 	retrSeq uint32
@@ -66,42 +63,18 @@ type incomingConn struct {
 	closeConnectionCh chan bool
 }
 
-var (
-	incomingConns = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: internalConstants.Namespace,
-			Name:      "incoming_requests_total",
-			Subsystem: internalConstants.IncomingConnSubsystem,
-			Help:      "Number of incoming requests",
-		},
-		[]string{"command"},
-	)
-	packetsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: internalConstants.Namespace,
-			Name:      "dropped_packets_total",
-			Subsystem: internalConstants.IncomingConnSubsystem,
-			Help:      "Number of dropped packets",
-		},
-	)
-	ingressQueueSize = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: internalConstants.Namespace,
-			Name:      "ingress_queue_size",
-			Subsystem: internalConstants.IncomingConnSubsystem,
-			Help:      "Size of the ingress queue",
-		},
-	)
-)
-
-func init() {
-	prometheus.MustRegister(incomingConns)
-	prometheus.MustRegister(packetsDropped)
-	prometheus.MustRegister(ingressQueueSize)
-}
-
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if provider := c.l.glue.Provider(); provider != nil && !c.fromMix {
+	provider := c.l.glue.Provider()
+	// this node is a provider
+	if provider != nil {
+		// see if it is from a Mix
+		_, canSend, isValid := c.l.glue.PKI().AuthenticateConnection(creds, false)
+		if isValid {
+			c.fromMix = true
+			c.fromClient = false
+			c.canSend = canSend
+			return isValid
+		}
 		isClient := provider.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
@@ -167,7 +140,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		c.log.Debugf("Authentication failed: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
 	}
 
 	return isValid
@@ -178,7 +151,6 @@ func (c *incomingConn) Close() {
 }
 
 func (c *incomingConn) worker() {
-
 	defer func() {
 		c.log.Debugf("Closing.")
 		c.c.Close()
@@ -186,9 +158,11 @@ func (c *incomingConn) worker() {
 	}()
 
 	// Allocate the session struct.
+	identityHash := c.l.glue.IdentityPublicKey().Sum256()
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,
-		AdditionalData:    c.l.glue.IdentityKey().PublicKey().Bytes(),
+		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.l.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}
@@ -219,9 +193,9 @@ func (c *incomingConn) worker() {
 		c.log.Debugf("Session failure: %s", err)
 	}
 	if c.fromMix {
-		c.log.Debugf("Peer: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
 	} else {
-		c.log.Debugf("User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, creds.PublicKey.Sum256())
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
@@ -302,9 +276,7 @@ func (c *incomingConn) worker() {
 			continue
 		}
 
-		cmdStr := fmt.Sprintf("%T", rawCmd)
-		incomingConns.With(prometheus.Labels{"command": cmdStr}).Inc()
-
+		instrument.Incoming(rawCmd)
 		if c.fromClient {
 			switch cmd := rawCmd.(type) {
 			case *commands.RetrieveMessage:
@@ -397,12 +369,14 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		remaining = math.MaxUint8
 	}
 	hint := uint8(remaining)
-	ingressQueueSize.Observe(float64(hint))
+	instrument.IngressQueue(hint)
 
 	var respCmd commands.Command
 	if surbID != nil {
 		// This was a SURBReply.
 		surbCmd := &commands.MessageACK{
+			Geo: c.geo,
+
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
 			Payload:       msg,
@@ -410,17 +384,20 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 		copy(surbCmd.ID[:], surbID)
 		respCmd = surbCmd
 
-		if len(msg) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
+		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
 		}
 	} else if msg != nil {
 		// This was a message.
 		respCmd = &commands.Message{
+			Geo:  c.geo,
+			Cmds: commands.NewCommands(c.geo),
+
 			QueueSizeHint: hint,
 			Sequence:      cmd.Sequence,
 			Payload:       msg,
 		}
-		if len(msg) != constants.UserForwardPayloadLength {
+		if len(msg) != c.geo.UserForwardPayloadLength {
 			return fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
 		}
 	} else {
@@ -431,6 +408,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
 		}
 		respCmd = &commands.MessageEmpty{
+			Cmds:     commands.NewCommands(c.geo),
 			Sequence: cmd.Sequence,
 		}
 	}
@@ -470,7 +448,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 
 		if c.sendTokens == 0 {
 			c.log.Debugf("Dropping packet: %v (Rate limited)", pkt.ID)
-			packetsDropped.Inc()
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			return nil
 		}
@@ -497,6 +475,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 		sendTokenLast:     monotime.Now(),
 		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
 		closeConnectionCh: make(chan bool),
+		geo:               sphinx.DefaultGeometry(),
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 

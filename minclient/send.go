@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -39,12 +38,12 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 	if len(recipient) > sConstants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("minclient: invalid recipient: '%v'", recipient)
 	}
-	if len(b) != constants.UserForwardPayloadLength {
+	if len(b) != c.geo.UserForwardPayloadLength {
 		return nil, nil, 0, fmt.Errorf("minclient: invalid ciphertext size: %v", len(b))
 	}
 
 	// Wrap the ciphertext in a BlockSphinxCiphertext.
-	payload := make([]byte, 2+sphinx.SURBLength, 2+sphinx.SURBLength+len(b))
+	payload := make([]byte, 2+c.geo.SURBLength, 2+c.geo.SURBLength+len(b))
 	payload = append(payload, b...)
 
 	for {
@@ -79,22 +78,22 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
 			if surbID != nil {
-				payload := make([]byte, 2, 2+sphinx.SURBLength+len(b))
+				payload := make([]byte, 2, 2+c.geo.SURBLength+len(b))
 				payload[0] = 1 // Packet has a SURB.
-				surb, k, err := sphinx.NewSURB(rand.Reader, revPath)
+				surb, k, err := c.sphinx.NewSURB(rand.Reader, revPath)
 				if err != nil {
 					return nil, nil, 0, err
 				}
 				payload = append(payload, surb...)
 				payload = append(payload, b...)
 
-				pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
+				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 				if err != nil {
 					return nil, nil, 0, err
 				}
 				return pkt, k, then.Sub(now), err
 			} else {
-				pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
+				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 				if err != nil {
 					return nil, nil, 0, err
 				}

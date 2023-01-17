@@ -224,7 +224,7 @@ Appendix A.1 Normative References
 
    [KAETZCHEN]  Angel, Y., Kaneko, K., Stainton, D.,
                 "Katzenpost Provider-side Autoresponder", January 2018,
-                <https://github.com/Katzenpost/docs/blob/master/drafts/kaetzchen.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/kaetzchen.rst>.
 
 Appendix A.2 Informative References
 
@@ -244,4 +244,4 @@ Appendix A.2 Informative References
 
    [KATZKEYSERVER]   Angel, Y., Diaz, C., Pollan, R., kwadronaut, mo, Kaneko, K., Stainton, D.,
                      "Katzenpost Key Discovery Extension", February 2018,
-                     <https://github.com/katzenpost/katzenpost/blob/master/docs/drafts/keyserver.rst>.
+                     <https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/keyserver.rst>.

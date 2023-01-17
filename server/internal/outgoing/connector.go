@@ -21,10 +21,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -68,20 +70,20 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 
 	if pkt == nil {
 		co.log.Debug("Dropping packet: packet is nil, wtf")
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
 	}
 	if pkt.NextNodeHop == nil {
 		co.log.Debug("Dropping packet: packet NextNodeHop is nil, wtf")
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
 	}
 	c, ok := co.conns[pkt.NextNodeHop.ID]
 	if !ok {
 		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
 	}
@@ -90,9 +92,9 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 }
 
 func (co *connector) worker() {
-	const (
-		initialSpawnDelay = 15 * time.Second
-		resweepInterval   = 3 * time.Minute
+	var (
+		initialSpawnDelay = epochtime.Period / 64
+		resweepInterval   = epochtime.Period / 8
 	)
 
 	timer := time.NewTimer(initialSpawnDelay)
@@ -139,14 +141,14 @@ func (co *connector) spawnNewConns() {
 
 	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
-		co.log.Debugf("Spawning connection to: '%v'.", debug.NodeIDToPrintString(&id))
+		co.log.Debugf("Spawning connection to: '%x'.", id)
 		c := newOutgoingConn(co, v)
 		co.onNewConn(c)
 	}
 }
 
 func (co *connector) onNewConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.ByteArray()
+	nodeID := c.dst.IdentityKey.Sum256()
 
 	co.closeAllWg.Add(1)
 	co.Lock()
@@ -162,7 +164,7 @@ func (co *connector) onNewConn(c *outgoingConn) {
 }
 
 func (co *connector) onClosedConn(c *outgoingConn) {
-	nodeID := c.dst.IdentityKey.ByteArray()
+	nodeID := c.dst.IdentityKey.Sum256()
 
 	co.Lock()
 	defer func() {
@@ -177,7 +179,6 @@ func (co *connector) IsValidForwardDest(id *[constants.NodeIDLength]byte) bool {
 	// destined to la-la land from being scheduled.
 	co.RLock()
 	defer co.RUnlock()
-
 	_, ok := co.conns[*id]
 	return ok
 }

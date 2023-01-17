@@ -58,22 +58,20 @@ func main() {
 
 	cfg, err := config.LoadFile(configFile)
 	if err != nil {
-		panic(err)
-	}
-	cfg, linkKey, err := client.NewEphemeralClientConfig(cfg)
-	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to open config: %s", err))
 	}
 
 	// create a client and connect to the mixnet Provider
 	c, err := client.New(cfg)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to create client: %s", err))
 	}
-	session, err := c.NewSession(linkKey)
+	session, err := c.NewTOFUSession()
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to create session: %s", err))
 	}
+
+	session.WaitForDocument()
 
 	serviceDesc, err := session.GetService(service)
 	if err != nil {

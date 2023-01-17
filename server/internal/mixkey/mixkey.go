@@ -28,12 +28,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yawning/bloom"
-	bolt "go.etcd.io/bbolt"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/yawning/bloom"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (

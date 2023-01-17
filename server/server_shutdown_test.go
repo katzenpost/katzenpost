@@ -18,34 +18,52 @@
 package server
 
 import (
-	"io/ioutil"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/server/config"
 )
 
 func TestServerStartShutdown(t *testing.T) {
 	assert := assert.New(t)
 
-	dir, err := ioutil.TempDir("", "server_data_dir")
+	datadir, err := os.MkdirTemp("", "server_data_dir")
 	assert.NoError(err)
 
-	authkey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
-	authKeyStr := authkey.PublicKey().String()
-	assert.NoError(err)
+	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
-	mixIdKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
+	scheme := wire.DefaultScheme
+	_, authLinkPubKey := scheme.GenerateKeypair(rand.Reader)
+	err = pem.ToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
+	require.NoError(t, err)
+
+	_, authPubkey := cert.Scheme.NewKeypair()
+
+	authIDPubKeyPem := "auth_id_pub_key.pem"
+	authkeyPath := filepath.Join(datadir, authIDPubKeyPem)
+
+	err = pem.ToFile(authkeyPath, authPubkey)
+	require.NoError(t, err)
+
+	mixIdPrivateKey, mixIdPublicKey := cert.Scheme.NewKeypair()
+	err = pem.ToFile(filepath.Join(datadir, "identity.private.pem"), mixIdPrivateKey)
+	require.NoError(t, err)
+	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
+	require.NoError(t, err)
 
 	cfg := config.Config{
 		Server: &config.Server{
 			Identifier: "testserver",
 			Addresses:  []string{"127.0.0.1:1234"},
-			DataDir:    dir,
+			DataDir:    datadir,
 			IsProvider: false,
 		},
 		Logging: &config.Logging{
@@ -56,8 +74,9 @@ func TestServerStartShutdown(t *testing.T) {
 		Provider: nil,
 		PKI: &config.PKI{
 			Nonvoting: &config.Nonvoting{
-				Address:   "127.0.0.1:3321",
-				PublicKey: authKeyStr,
+				Address:       "127.0.0.1:3321",
+				PublicKey:     authPubkey,
+				LinkPublicKey: authLinkPubKey,
 			},
 		},
 		Management: &config.Management{
@@ -65,7 +84,6 @@ func TestServerStartShutdown(t *testing.T) {
 			Path:   "",
 		},
 		Debug: &config.Debug{
-			IdentityKey:                  mixIdKey,
 			NumSphinxWorkers:             1,
 			NumProviderWorkers:           0,
 			NumKaetzchenWorkers:          1,

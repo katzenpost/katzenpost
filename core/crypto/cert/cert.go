@@ -19,12 +19,14 @@ package cert
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"encoding/binary"
 	"errors"
-	"sort"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
+
+	"github.com/katzenpost/katzenpost/core/crypto/sign/ed25519sphincsplus"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
 const (
@@ -71,6 +73,12 @@ var (
 
 	// ErrThresholdNotMet indicates that there were not enough valid signatures to meet the threshold.
 	ErrThresholdNotMet = errors.New("threshold failure")
+
+	// Scheme is the signature scheme we are using throughout various components of the network.
+	Scheme = ed25519sphincsplus.Scheme
+
+	// Create reusable EncMode interface with immutable options, safe for concurrent use.
+	ccbor cbor.EncMode
 )
 
 // Verifier is used to verify signatures.
@@ -78,17 +86,14 @@ type Verifier interface {
 	// Verify verifies a signature.
 	Verify(sig, msg []byte) bool
 
-	// Identity returns the Verifier identity.
-	Identity() []byte
+	// Sum256 returns the Blake2b 256-bit checksum of the key's raw bytes.
+	Sum256() [32]byte
 }
 
 // Signer signs messages.
 type Signer interface {
 	// Sign signs the message and returns the signature.
 	Sign(msg []byte) []byte
-
-	// Identity returns the Signer identity.
-	Identity() []byte
 
 	// KeyType returns the key type string.
 	KeyType() string
@@ -97,19 +102,33 @@ type Signer interface {
 // Signature is a cryptographic signature
 // which has an associated signer ID.
 type Signature struct {
-	// Identity is the identity of the signer.
-	Identity []byte
+	// PublicKeySum256 is the 256 bit hash of the public key.
+	PublicKeySum256 [32]byte
+
 	// Payload is the actual signature value.
 	Payload []byte
 }
 
-// certificate structure for serializing certificates.
-type certificate struct {
+// Marshal serializes a Signature
+func (s *Signature) Marshal() ([]byte, error) {
+	return ccbor.Marshal(s)
+}
+
+// Unmarshal deserializes a Signature
+func (s *Signature) Unmarshal(b []byte) error {
+	return cbor.Unmarshal(b, s)
+}
+
+// Certificate structure for serializing certificates.
+type Certificate struct {
 	// Version is the certificate format version.
 	Version uint32
 
-	// Expiration is seconds since Unix epoch.
-	Expiration int64
+	// Expiration is katzenpost epoch id of the expiration,
+	// where if set to `epoch` then at `epoch-1` the
+	// certificate is valid and at `epoch` or `epoch+n`
+	// the certificate is not valid.
+	Expiration uint64
 
 	// KeyType indicates the type of key
 	// that is certified by this certificate.
@@ -120,10 +139,14 @@ type certificate struct {
 	Certified []byte
 
 	// Signatures are the signature of the certificate.
-	Signatures []Signature
+	Signatures map[[32]byte]Signature
 }
 
-func (c *certificate) message() ([]byte, error) {
+func (c *Certificate) Marshal() ([]byte, error) {
+	return ccbor.Marshal(c)
+}
+
+func (c *Certificate) message() ([]byte, error) {
 	message := new(bytes.Buffer)
 	err := binary.Write(message, binary.LittleEndian, c.Version)
 	if err != nil {
@@ -144,11 +167,12 @@ func (c *certificate) message() ([]byte, error) {
 	return message.Bytes(), nil
 }
 
-func (c *certificate) sanityCheck() error {
+func (c *Certificate) sanityCheck() error {
 	if c.Version != CertVersion {
 		return ErrVersionMismatch
 	}
-	if time.Unix(c.Expiration, 0).Before(time.Now()) {
+	current, _, _ := epochtime.Now()
+	if current >= c.Expiration {
 		return ErrCertificateExpired
 	}
 	if len(c.KeyType) == 0 {
@@ -162,8 +186,8 @@ func (c *certificate) sanityCheck() error {
 
 // Sign uses the given Signer to create a certificate which
 // certifies the given data.
-func Sign(signer Signer, data []byte, expiration int64) ([]byte, error) {
-	cert := certificate{
+func Sign(signer Signer, verifier Verifier, data []byte, expiration uint64) ([]byte, error) {
+	cert := Certificate{
 		Version:    CertVersion,
 		Expiration: expiration,
 		KeyType:    signer.KeyType(),
@@ -177,21 +201,20 @@ func Sign(signer Signer, data []byte, expiration int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	cert.Signatures = []Signature{
-		Signature{
-			Identity: signer.Identity(),
-			Payload:  signer.Sign(mesg),
-		},
+	cert.Signatures = make(map[[32]byte]Signature)
+	cert.Signatures[verifier.Sum256()] = Signature{
+		PublicKeySum256: verifier.Sum256(),
+		Payload:         signer.Sign(mesg),
 	}
-	return cbor.Marshal(cert)
+	return cert.Marshal()
 }
 
 // GetCertified returns the certified data.
 func GetCertified(rawCert []byte) ([]byte, error) {
-	cert := certificate{}
-	err := cbor.Unmarshal(rawCert, &cert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleEncode
+		return nil, ErrImpossibleDecode
 	}
 	err = cert.sanityCheck()
 	if err != nil {
@@ -202,23 +225,29 @@ func GetCertified(rawCert []byte) ([]byte, error) {
 
 // GetSignatures returns all the signatures.
 func GetSignatures(rawCert []byte) ([]Signature, error) {
-	cert := certificate{}
-	err := cbor.Unmarshal(rawCert, &cert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleEncode
+		return nil, ErrImpossibleDecode
 	}
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
 	}
-	return cert.Signatures, nil
+	s := make([]Signature, len(cert.Signatures))
+	i := 0
+	for _, v := range cert.Signatures {
+		s[i] = v
+		i++
+	}
+	return s, nil
 }
 
 // GetSignature returns a signature that signs the certificate
 // if it matches with the given identity.
 func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
-	cert := certificate{}
-	err := cbor.Unmarshal(rawCert, &cert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
@@ -227,7 +256,8 @@ func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
 		return nil, err
 	}
 	for _, s := range cert.Signatures {
-		if bytes.Equal(identity, s.Identity) {
+		hash := s.PublicKeySum256
+		if hmac.Equal(identity, hash[:]) {
 			return &s, nil
 		}
 	}
@@ -245,15 +275,17 @@ func (d byIdentity) Swap(i, j int) {
 }
 
 func (d byIdentity) Less(i, j int) bool {
-	return bytes.Compare(d[i].Identity, d[j].Identity) < 0
+	hash1 := d[i].PublicKeySum256
+	hash2 := d[j].PublicKeySum256
+	return bytes.Compare(hash1[:], hash2[:]) < 0
 }
 
 // SignMulti uses the given signer to create a signature
 // and appends it to the certificate and returns it.
-func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
+func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error) {
 	// decode certificate
-	cert := new(certificate)
-	err := cbor.Unmarshal(rawCert, &cert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
@@ -271,22 +303,14 @@ func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
 		return nil, err
 	}
 	signature := Signature{
-		Identity: signer.Identity(),
-		Payload:  signer.Sign(mesg),
+		PublicKeySum256: verifier.Sum256(),
+		Payload:         signer.Sign(mesg),
 	}
 
-	// dedup
-	for _, sig := range cert.Signatures {
-		if bytes.Equal(sig.Identity, signature.Identity) || bytes.Equal(sig.Payload, signature.Payload) {
-			return nil, ErrDuplicateSignature
-		}
-	}
-
-	cert.Signatures = append(cert.Signatures, signature)
-	sort.Sort(byIdentity(cert.Signatures))
+	cert.Signatures[signature.PublicKeySum256] = signature
 
 	// serialize certificate
-	out, err := cbor.Marshal(&cert)
+	out, err := cert.Marshal()
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
@@ -297,12 +321,11 @@ func SignMulti(signer Signer, rawCert []byte) ([]byte, error) {
 // can verify the signature signs the certificate.
 func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byte, error) {
 	// decode certificate
-	cert := new(certificate)
-	err := cbor.Unmarshal(rawCert, &cert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
-
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
@@ -310,7 +333,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 
 	// dedup
 	for _, sig := range cert.Signatures {
-		if bytes.Equal(sig.Identity, signature.Identity) || bytes.Equal(sig.Payload, signature.Payload) {
+		if hmac.Equal(sig.PublicKeySum256[:], signature.PublicKeySum256[:]) {
 			return nil, ErrDuplicateSignature
 		}
 	}
@@ -320,14 +343,14 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 	if err != nil {
 		return nil, err
 	}
+
 	if verifier.Verify(signature.Payload, mesg) {
-		cert.Signatures = append(cert.Signatures, signature)
-		sort.Sort(byIdentity(cert.Signatures))
+		cert.Signatures[signature.PublicKeySum256] = signature
 	} else {
 		return nil, ErrBadSignature
 	}
 	// serialize certificate
-	out, err := cbor.Marshal(cert)
+	out, err := cert.Marshal()
 	if err != nil {
 		return nil, ErrImpossibleEncode
 	}
@@ -337,19 +360,19 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 // Verify is used to verify one of the signatures attached to the certificate.
 // It returns the certified data if the signature is valid.
 func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
-	cert := new(certificate)
-	err := cbor.Unmarshal(rawCert, &cert)
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, err
+		return nil, ErrImpossibleEncode
 	}
-
 	err = cert.sanityCheck()
 	if err != nil {
 		return nil, err
 	}
 
 	for _, sig := range cert.Signatures {
-		if bytes.Equal(verifier.Identity(), sig.Identity) {
+		hash := verifier.Sum256()
+		if hmac.Equal(hash[:], sig.PublicKeySum256[:]) {
 			mesg, err := cert.message()
 			if err != nil {
 				return nil, err
@@ -387,20 +410,34 @@ func VerifyThreshold(verifiers []Verifier, threshold int, rawCert []byte) ([]byt
 	}
 	certified := []byte{}
 	count := 0
-	good := []Verifier{}
+	good := make(map[[32]byte]*Verifier)
 	bad := []Verifier{}
-	for _, verifier := range verifiers {
+	for i, verifier := range verifiers {
 		c, err := Verify(verifier, rawCert)
 		if err != nil {
 			bad = append(bad, verifier)
 			continue
 		}
-		good = append(good, verifier)
+		good[verifier.Sum256()] = &verifiers[i]
 		certified = c
 		count++
 	}
-	if count >= threshold {
-		return certified, good, bad, nil
+	var good_out []Verifier
+	for _, v := range good {
+		good_out = append(good_out, *v)
 	}
-	return nil, good, bad, ErrThresholdNotMet
+	if len(good) >= threshold {
+		return certified, good_out, bad, nil
+	}
+
+	return nil, good_out, bad, ErrThresholdNotMet
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }

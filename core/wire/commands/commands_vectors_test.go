@@ -19,16 +19,18 @@ package commands
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"io/ioutil"
+	"encoding/json"
+	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/stretchr/testify/assert"
-	"github.com/ugorji/go/codec"
 )
 
 const wireCommandsVectorsFile = "testdata/wire_commands_vectors.json"
+
+const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 
 type commandsTest struct {
 	NoOp               string
@@ -54,13 +56,12 @@ type commandsTest struct {
 	ConsensusErrorCode uint8
 }
 
-func TestBuildCommandVectors(t *testing.T) {
+func NoTestBuildCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
 	noOp := NoOp{}
 	disconnect := &Disconnect{}
 
-	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 	sendPacket := &SendPacket{SphinxPacket: []byte(payload)}
 
 	var retrieveMessageSeq uint32 = 12345
@@ -70,23 +71,40 @@ func TestBuildCommandVectors(t *testing.T) {
 		hint = 0x17
 	)
 
-	var emptyMsgSeq uint32 = 9876
-	messageEmpty := &MessageEmpty{Sequence: emptyMsgSeq}
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	//forwardPayloadLength := len(payload) + (sphinx.SphinxPlaintextHeaderLength + 556)
+	nrHops := 5
 
-	msgPayload := make([]byte, constants.ForwardPayloadLength)
+	//geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
+	cmds := &Commands{
+		geo: geo,
+	}
+
+	var emptyMsgSeq uint32 = 9876
+	messageEmpty := &MessageEmpty{
+		Cmds:     cmds,
+		Sequence: emptyMsgSeq,
+	}
+
+	msgPayload := make([]byte, cmds.geo.ForwardPayloadLength)
 	_, err := rand.Read(msgPayload)
 	assert.NoError(err)
 	var msgSeq uint32 = 9876
 	message := &Message{
+		Cmds: cmds,
+		Geo:  geo,
+
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
-		Payload:       msgPayload[:constants.UserForwardPayloadLength],
+		Payload:       msgPayload[:geo.UserForwardPayloadLength],
 	}
 
-	ackPayload := make([]byte, sphinx.PayloadTagLength+constants.ForwardPayloadLength)
+	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
 	_, err = rand.Read(ackPayload)
 	assert.NoError(err)
 	cmdMessageACK := &MessageACK{
+		Geo:           geo,
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
 		Payload:       ackPayload,
@@ -113,7 +131,7 @@ func TestBuildCommandVectors(t *testing.T) {
 		MessageEmptySeq:    emptyMsgSeq,
 		MessageHint:        hint,
 		MessageSeq:         msgSeq,
-		MessagePayload:     hex.EncodeToString(msgPayload[:constants.UserForwardPayloadLength]),
+		MessagePayload:     hex.EncodeToString(msgPayload[:cmds.geo.UserForwardPayloadLength]),
 		Message:            hex.EncodeToString(message.ToBytes()),
 		MessageAck:         hex.EncodeToString(cmdMessageACK.ToBytes()),
 		MessageAckHint:     hint,
@@ -126,36 +144,42 @@ func TestBuildCommandVectors(t *testing.T) {
 		ConsensusErrorCode: consensus.ErrorCode,
 	}
 
-	serialized := []byte{}
-	handle := new(codec.JsonHandle)
-	handle.Indent = 4
-	enc := codec.NewEncoderBytes(&serialized, handle)
-	err = enc.Encode(cmdsTest)
+	serialized, err := json.Marshal(cmdsTest)
 	assert.NoError(err)
-	err = ioutil.WriteFile(wireCommandsVectorsFile, serialized, 0644)
+	err = os.WriteFile(wireCommandsVectorsFile, serialized, 0644)
 	assert.NoError(err)
 }
 
 func TestCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
-	serialized, err := ioutil.ReadFile(wireCommandsVectorsFile)
+	serialized, err := os.ReadFile(wireCommandsVectorsFile)
 	assert.NoError(err)
-	decoder := codec.NewDecoderBytes(serialized, new(codec.JsonHandle))
 	cmdsTest := commandsTest{}
-	err = decoder.Decode(&cmdsTest)
+	err = json.Unmarshal(serialized, &cmdsTest)
 	assert.NoError(err)
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+
+	nrHops := 5
+
+	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
+	s := sphinx.NewSphinx(nike, geo)
+
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
 
 	noOpBytes, err := hex.DecodeString(cmdsTest.NoOp)
 	assert.NoError(err)
-	cmd, err := FromBytes(noOpBytes)
+	cmd, err := cmds.FromBytes(noOpBytes)
 	assert.NoError(err)
 	_, ok := cmd.(*NoOp)
 	assert.True(ok)
 
 	disconnectBytes, err := hex.DecodeString(cmdsTest.Disconnect)
 	assert.NoError(err)
-	cmd, err = FromBytes(disconnectBytes)
+	cmd, err = cmds.FromBytes(disconnectBytes)
 	assert.NoError(err)
 	_, ok = cmd.(*Disconnect)
 	assert.True(ok)
@@ -176,33 +200,45 @@ func TestCommandVectors(t *testing.T) {
 
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
-	emptyMessage := &MessageEmpty{Sequence: cmdsTest.MessageEmptySeq}
+
+	emptyMessage := &MessageEmpty{
+		Cmds:     cmds,
+		Sequence: cmdsTest.MessageEmptySeq,
+	}
 	emptyMessageCmd := emptyMessage.ToBytes()
 	assert.Equal(emptyMessageCmd, messageEmptyWant)
 
 	messageWant, err := hex.DecodeString(cmdsTest.Message)
 	assert.NoError(err)
+
 	payload, err := hex.DecodeString(cmdsTest.MessagePayload)
 	assert.NoError(err)
+
 	message := &Message{
+		Geo:           geo,
+		Cmds:          cmds,
 		QueueSizeHint: cmdsTest.MessageHint,
 		Sequence:      cmdsTest.MessageSeq,
 		Payload:       payload,
 	}
+
 	messageCmd := message.ToBytes()
 	assert.Equal(messageCmd, messageWant)
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)
+
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
 	messageAck := &MessageACK{
+		Geo: geo,
+
 		QueueSizeHint: cmdsTest.MessageAckHint,
 		Sequence:      cmdsTest.MessageAckSeq,
 		Payload:       ackPayload,
 	}
 	messageAckCmd := messageAck.ToBytes()
-	assert.Equal(messageAckCmd, messageAckWant)
+	assert.Equal([]byte(messageAckCmd), []byte(messageAckWant))
 
 	getConsensusWant, err := hex.DecodeString(cmdsTest.GetConsensus)
 	assert.NoError(err)

@@ -50,63 +50,6 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	client.Wait()
 }
 
-func TestDockerClientBlockingSendReceive(t *testing.T) {
-	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	client, err := New(cfg)
-	require.NoError(err)
-
-	session, err := client.NewTOFUSession()
-	require.NoError(err)
-
-	session.WaitForDocument()
-	desc, err := session.GetService(constants.LoopService)
-	require.NoError(err)
-
-	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
-	require.NoError(err)
-	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
-
-	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
-	require.NoError(err)
-	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
-
-	client.Shutdown()
-	client.Wait()
-}
-
-func TestDockerClientBlockingSendReceiveWithDecoyTraffic(t *testing.T) {
-	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	cfg.Debug.DisableDecoyTraffic = false
-	client, err := New(cfg)
-	require.NoError(err)
-
-	session, err := client.NewTOFUSession()
-	require.NoError(err)
-
-	session.WaitForDocument()
-	desc, err := session.GetService(constants.LoopService)
-	require.NoError(err)
-
-	reply, err := session.BlockingSendUnreliableMessage(desc.Name, desc.Provider, []byte("hello"))
-	require.NoError(err)
-	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
-
-	reply, err = session.BlockingSendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
-	require.NoError(err)
-	require.True(bytes.Equal([]byte("hello"), reply[:5])) // padding
-
-	client.Shutdown()
-	client.Wait()
-}
-
 func TestDockerClientAsyncSendReceive(t *testing.T) {
 	require := require.New(t)
 
@@ -286,58 +229,6 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	clientSession.garbageCollect()
 	_, ok := clientSession.surbIDMap.Load(surbID)
 	require.False(ok)
-
-	client.Shutdown()
-	client.Wait()
-}
-
-func TestDockerClientAsyncSendReceiveMore(t *testing.T) {
-	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	client, err := New(cfg)
-	require.NoError(err)
-
-	clientSession, err := client.NewTOFUSession()
-	require.NoError(err)
-
-	clientSession.WaitForDocument()
-	desc, err := clientSession.GetService(constants.LoopService)
-	require.NoError(err)
-
-	for i := 0; i < 10; i++ {
-		msgID, err := clientSession.SendReliableMessage(desc.Name, desc.Provider, []byte("hello"))
-		require.NoError(err)
-		t.Logf("sent message ID %x", msgID)
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer t.Logf("receiver returned")
-			for eventRaw := range clientSession.EventSink {
-				switch event := eventRaw.(type) {
-				case *MessageSentEvent:
-					if bytes.Equal(msgID[:], event.MessageID[:]) {
-						require.NoError(event.Err)
-						t.Logf("message ID %x sent", msgID)
-					}
-				case *MessageReplyEvent:
-					if bytes.Equal(msgID[:], event.MessageID[:]) {
-						require.NoError(event.Err)
-						t.Logf("message ID %x reply received", msgID)
-						require.True(bytes.Equal([]byte("hello"), event.Payload[:5])) // padding
-						wg.Done()
-						return
-					}
-				default:
-					continue
-				}
-			}
-		}()
-		wg.Wait()
-	}
 
 	client.Shutdown()
 	client.Wait()

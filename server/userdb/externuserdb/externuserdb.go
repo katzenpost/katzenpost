@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"encoding/hex"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/userdb"
 	"github.com/ugorji/go/codec"
 )
@@ -56,8 +56,12 @@ func (e *externAuth) doPost(endpoint string, data url.Values) bool {
 	return rsp.StatusCode == 200 && response[endpoint]
 }
 
-func (e *externAuth) IsValid(u []byte, k *ecdh.PublicKey) bool {
-	form := url.Values{"user": {string(u)}, "key": {k.String()}}
+func (e *externAuth) IsValid(u []byte, k wire.PublicKey) bool {
+	keyText, err := k.MarshalText()
+	if err != nil {
+		panic(err)
+	}
+	form := url.Values{"user": {string(u)}, "key": {string(keyText)}}
 	return e.doPost("isvalid", form)
 }
 
@@ -66,19 +70,19 @@ func (e *externAuth) Exists(u []byte) bool {
 	return e.doPost("exists", form)
 }
 
-func (e *externAuth) Add(u []byte, k *ecdh.PublicKey, update bool) error {
+func (e *externAuth) Add(u []byte, k wire.PublicKey, update bool) error {
 	return errCantModify
 }
 
-func (e *externAuth) Link(u []byte) (*ecdh.PublicKey, error) {
+func (e *externAuth) Link(u []byte) (wire.PublicKey, error) {
 	return nil, errNotSupported
 }
 
-func (e *externAuth) SetIdentity(u []byte, k *ecdh.PublicKey) error {
+func (e *externAuth) SetIdentity(u []byte, k wire.PublicKey) error {
 	return errNotSupported
 }
 
-func (e *externAuth) Identity(u []byte) (*ecdh.PublicKey, error) {
+func (e *externAuth) Identity(u []byte) (wire.PublicKey, error) {
 	endpoint := "getidkey"
 	uri := e.provider + "/" + endpoint
 	form := url.Values{"user": {string(u)}}
@@ -95,12 +99,11 @@ func (e *externAuth) Identity(u []byte) (*ecdh.PublicKey, error) {
 			return nil, err
 		}
 
-		if pkhex, ok := response[endpoint]; ok {
-			if decoded, err := hex.DecodeString(pkhex); err == nil {
-				pk := new(ecdh.PublicKey)
-				if err := pk.FromBytes(decoded); err == nil {
-					return pk, nil
-				}
+		if idkey, ok := response[endpoint]; ok {
+			_, pubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+			err = pubKey.UnmarshalText([]byte(idkey))
+			if err == nil {
+				return pubKey, nil
 			}
 		}
 	}

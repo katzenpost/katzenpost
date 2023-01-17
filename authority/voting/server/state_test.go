@@ -14,78 +14,42 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// +build test
-
 package server
 
 import (
 	"bytes"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
+	"github.com/stretchr/testify/require"
+	bolt "go.etcd.io/bbolt"
+
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	bolt "go.etcd.io/bbolt"
-	"golang.org/x/crypto/sha3"
-	"io/ioutil"
-	"net/http"
-	_ "net/http/pprof"
-	"path/filepath"
-	"runtime"
 )
 
-func TestSharedRandomVerify(t *testing.T) {
-	assert := assert.New(t)
-	srv := new(SharedRandom)
-	commit, err := srv.Commit(1234)
-	assert.NoError(err, "wtf")
-	assert.True(len(commit) == s11n.SharedRandomLength)
-	srv.SetCommit(commit)
-	assert.True(bytes.Equal(commit, srv.GetCommit()))
-	t.Logf("commit %v", commit)
-	assert.True(bytes.Equal(commit, srv.GetCommit()))
-	reveal := srv.Reveal()
-	t.Logf("h(reveal) %v", sha3.Sum256(reveal))
-	t.Logf("reveal %v", reveal)
-	t.Logf("len(reveal): %v", len(reveal))
-	assert.True(len(reveal) == s11n.SharedRandomLength)
-	assert.True(srv.Verify(reveal))
-}
-
-func TestSharedRandomCommit(t *testing.T) {
-	assert := assert.New(t)
-	srv := new(SharedRandom)
-	commit, err := srv.Commit(1234)
-	assert.NoError(err, "wtf")
-	assert.True(len(commit) == s11n.SharedRandomLength)
-}
-
-func TestSharedRandomSetCommit(t *testing.T) {
-	assert := assert.New(t)
-	srv := new(SharedRandom)
-	commit, err := srv.Commit(1234)
-	assert.NoError(err, "wtf")
-	srv.SetCommit(commit)
-	assert.True(bytes.Equal(commit, srv.GetCommit()))
-}
-
 func TestVote(t *testing.T) {
-	assert := assert.New(t)
 	require := require.New(t)
 
 	// instantiate states
-	n := 3
-	stateAuthority := make([]*state, n)
-	votingEpoch := uint64(42)
+	authNum := 3
+	stateAuthority := make([]*state, authNum)
+	votingEpoch, _, _ := epochtime.Now()
+	votingEpoch += 5
 	parameters := &config.Parameters{
 		SendRatePerMinute: 100, Mu: 0.001, MuMaxDelay: 9000,
 		LambdaP: 0.002, LambdaPMaxDelay: 9000,
@@ -94,33 +58,37 @@ func TestVote(t *testing.T) {
 		LambdaM: 0.2, LambdaMMaxDelay: 9000,
 	}
 
-	authCfgs, err := genVotingAuthoritiesCfg(parameters, n)
+	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
 	require.NoError(err)
 
+	reverseHash := make(map[[publicKeyHashSize]byte]sign.PublicKey)
+
 	// set up authorities from configuration
-	for i := 0; i < n; i++ {
+	for i := 0; i < authNum; i++ {
 		st := new(state)
 		st.votingEpoch = votingEpoch
 		cfg := authCfgs[i]
-		st.verifiers = make([]cert.Verifier, len(cfg.Authorities)+1)
-		for i, auth := range cfg.Authorities {
-			st.verifiers[i] = cert.Verifier(auth.IdentityPublicKey)
+		st.verifiers = make(map[[publicKeyHashSize]byte]cert.Verifier)
+		for j, _ := range peerKeys {
+			st.verifiers[peerKeys[j].idPubKey.Sum256()] = cert.Verifier(peerKeys[j].idPubKey)
 		}
-		st.verifiers[len(cfg.Authorities)] = cert.Verifier(cfg.Debug.IdentityKey.PublicKey())
 		st.threshold = len(st.verifiers)/2 + 1
 		st.dissenters = len(cfg.Authorities)/2 - 1
 
 		s := &Server{
-			cfg:         cfg,
-			identityKey: cfg.Debug.IdentityKey,
-			fatalErrCh:  make(chan error),
-			haltedCh:    make(chan interface{}),
+			cfg:                cfg,
+			identityPrivateKey: peerKeys[i].idKey,
+			identityPublicKey:  peerKeys[i].idPubKey,
+			fatalErrCh:         make(chan error),
+			haltedCh:           make(chan interface{}),
 		}
+		reverseHash[peerKeys[i].idPubKey.Sum256()] = peerKeys[i].idPubKey
+
 		go func() {
 			for {
 				select {
 				case err := <-s.fatalErrCh:
-					assert.NoError(err)
+					require.NoError(err)
 				case _, ok := <-s.haltedCh:
 					if !ok {
 						return
@@ -130,21 +98,26 @@ func TestVote(t *testing.T) {
 		}()
 		st.s = s
 		s.logBackend, err = log.New(cfg.Logging.File, s.cfg.Logging.Level, s.cfg.Logging.Disable)
-		st.log = s.logBackend.GetLogger("state")
+		st.log = s.logBackend.GetLogger(fmt.Sprintf("state%d", i))
 		if err == nil {
 			s.log = s.logBackend.GetLogger("authority")
 		}
 
-		st.documents = make(map[uint64]*document)
-		st.descriptors = make(map[uint64]map[[eddsa.PublicKeySize]byte]*descriptor)
-		st.votes = make(map[uint64]map[[eddsa.PublicKeySize]byte]*document)
-		st.votes[votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*document)
-		st.certificates = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
-		st.certificates[st.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
-		st.reveals = make(map[uint64]map[[eddsa.PublicKeySize]byte][]byte)
-		st.reveals[st.votingEpoch] = make(map[[eddsa.PublicKeySize]byte][]byte)
+		st.documents = make(map[uint64]*pki.Document)
+		st.myconsensus = make(map[uint64]*pki.Document)
+		st.descriptors = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
+		st.votes = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.votes[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.certificates = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.certificates[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.Document)
+		st.commits = make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
+		st.reveals = make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
+		st.signatures = make(map[uint64]map[[sign.PublicKeyHashSize]byte]*cert.Signature)
+		st.signatures[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*cert.Signature)
+		st.reveals[st.votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+		st.reverseHash = make(map[[publicKeyHashSize]byte]sign.PublicKey)
 		stateAuthority[i] = st
-		tmpDir, err := ioutil.TempDir("", cfg.Authority.Identifier)
+		tmpDir, err := os.MkdirTemp("", cfg.Server.Identifier)
 		require.NoError(err)
 		dbPath := filepath.Join(tmpDir, "persistance.db")
 		db, err := bolt.Open(dbPath, 0600, nil)
@@ -156,125 +129,152 @@ func TestVote(t *testing.T) {
 	}
 
 	// create a voting PKI configuration
-	peers := make([]*sConfig.Peer, 0)
-	for _, peer := range authCfgs {
-		idKey, err := peer.Debug.IdentityKey.PublicKey().MarshalText()
+	authorities := make([]*config.Authority, 0)
+	for i, aCfg := range authCfgs {
 		require.NoError(err)
-
-		linkKey, err := peer.Debug.IdentityKey.PublicKey().ToECDH().MarshalText()
-		require.NoError(err)
-		p := &sConfig.Peer{Addresses: peer.Authority.Addresses,
-			IdentityPublicKey: string(idKey),
-			LinkPublicKey:     string(linkKey),
+		auth := &config.Authority{Addresses: aCfg.Server.Addresses,
+			IdentityPublicKey: peerKeys[i].idPubKey,
+			LinkPublicKey:     peerKeys[i].linkKey.PublicKey(),
 		}
-		if len(peer.Authority.Addresses) == 0 {
+		if len(aCfg.Server.Addresses) == 0 {
 			panic("wtf")
 		}
-		peers = append(peers, p)
+		authorities = append(authorities, auth)
 	}
-	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Peers: peers}}
+	votingPKI := &sConfig.PKI{Voting: &sConfig.Voting{Authorities: authorities}}
 
 	// generate mixes
-	n = 3 * 2 // 3 layer, 2 nodes per layer
-	m := 2    // 2 providers
+	n := 3 * 2 // 3 layer, 2 nodes per layer
+	m := 2     // 2 providers
+	idKeys := make([]*identityKey, 0)
 	mixCfgs := make([]*sConfig.Config, 0)
 	port := uint16(30000)
 	for i := 0; i < n; i++ {
-		c, err := genMixConfig(fmt.Sprintf("node-%d", i), votingPKI, port)
+		idKey, c, err := genMixConfig(fmt.Sprintf("node-%d", i), votingPKI, port)
 		require.NoError(err)
 		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
 		port++
+		reverseHash[idKey.pubKey.Sum256()] = idKey.pubKey
 	}
 
 	// generate a Topology section
-	topology := config.Topology{Layers: make([]config.Layer,3)}
-	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
-	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
-	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()},
-						 config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()}}
+	topology := config.Topology{Layers: make([]config.Layer, 3)}
+	topology.Layers[0].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[0].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[1].identityPublicKeyPem}}
+	topology.Layers[1].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[2].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[3].identityPublicKeyPem}}
+	topology.Layers[2].Nodes = []config.Node{config.Node{IdentityPublicKeyPem: idKeys[4].identityPublicKeyPem},
+		config.Node{IdentityPublicKeyPem: idKeys[5].identityPublicKeyPem}}
 
-
-	// generate a conflicting Topology
 	// generate a Topology section
-	topology2 := config.Topology{Layers: make([]config.Layer,3)}
-	topology2.Layers[0].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[0].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[1].Debug.IdentityKey.PublicKey()}}
-	topology2.Layers[1].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[2].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[3].Debug.IdentityKey.PublicKey()}}
-	topology2.Layers[2].Nodes = []config.Node{config.Node{IdentityKey:mixCfgs[5].Debug.IdentityKey.PublicKey()},
-						  config.Node{IdentityKey:mixCfgs[4].Debug.IdentityKey.PublicKey()}}
-
-	// one auth uses the conflicting topology, so we shall expect consensus with 2/3
 	authCfgs[0].Topology = &topology
-	authCfgs[1].Topology = &topology2
+	authCfgs[1].Topology = &topology
 	authCfgs[2].Topology = &topology
 
 	// generate providers
 	for i := 0; i < m; i++ {
-		c, err := genProviderConfig(fmt.Sprintf("provider-%d", i), votingPKI, port)
+		idKey, c, err := genProviderConfig(fmt.Sprintf("provider-%d", i), votingPKI, port)
 		require.NoError(err)
 		mixCfgs = append(mixCfgs, c)
+		idKeys = append(idKeys, idKey)
 		port++
+		reverseHash[idKey.pubKey.Sum256()] = idKey.pubKey
+	}
+
+	for i := 0; i < len(stateAuthority); i++ {
+		stateAuthority[i].reverseHash = reverseHash
 	}
 
 	// post descriptors from nodes
-	mixDescs := make([]*descriptor, 0)
-	for _, mixCfg := range mixCfgs {
+	mixDescs := make([]*pki.MixDescriptor, 0)
+	providerDescs := make([]*pki.MixDescriptor, 0)
+	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
-		l := uint8(0)
-		if mixCfg.Server.IsProvider {
-			l = 255
-		}
+		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 		desc := &pki.MixDescriptor{
-			Name:        mixCfg.Server.Identifier,
-			IdentityKey: mixCfg.Debug.IdentityKey.PublicKey(),
-			LinkKey:     mixCfg.Debug.IdentityKey.PublicKey().ToECDH(),
+			Name:        mixCfgs[i].Server.Identifier,
+			Epoch:       votingEpoch,
+			IdentityKey: idKeys[i].pubKey,
+			LinkKey:     linkPubKey,
 			MixKeys:     mkeys,
-			Layer:       l,
+			Provider:    mixCfgs[i].Server.IsProvider,
 			Addresses:   addr,
 		}
 
-		err := s11n.IsDescriptorWellFormed(desc, votingEpoch)
+		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
 		// Make a serialized + signed + serialized descriptor.
-		signed, err := s11n.SignDescriptor(mixCfg.Debug.IdentityKey, desc)
+		_, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
 		require.NoError(err)
-		mixDescs = append(mixDescs, &descriptor{raw: signed, desc: desc})
+
+		if mixCfgs[i].Server.IsProvider {
+			providerDescs = append(mixDescs, desc)
+		} else {
+			mixDescs = append(mixDescs, desc)
+		}
+	}
+
+	// create and exchange signed commits and reveals
+	commits := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
+	commits[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+
+	// exchange commit and create reveals
+	for _, s := range stateAuthority {
+		reveals := make(map[uint64]map[[sign.PublicKeyHashSize]byte][]byte)
+		reveals[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte][]byte)
+
+		srv := new(pki.SharedRandom)
+		commit, err := srv.Commit(votingEpoch)
+		require.NoError(err)
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1)
+		require.NoError(err)
+		commits[votingEpoch][s.s.identityPublicKey.Sum256()] = signedCommit
+		s.commits = commits
+
+		reveal := srv.Reveal()
+		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+1)
+		require.NoError(err)
+		reveals[votingEpoch][s.s.identityPublicKey.Sum256()] = signedReveal
+		s.reveals = reveals
 	}
 
 	// populate the authorities with the descriptors
 	for _, s := range stateAuthority {
-		s.descriptors[votingEpoch] = make(map[[eddsa.PublicKeySize]byte]*descriptor)
+		s.descriptors[votingEpoch] = make(map[[sign.PublicKeyHashSize]byte]*pki.MixDescriptor)
+		s.authorizedMixes = make(map[[sign.PublicKeyHashSize]byte]bool)
+		s.authorizedProviders = make(map[[sign.PublicKeyHashSize]byte]string)
 		for _, d := range mixDescs {
-			var fu [eddsa.PublicKeySize]byte
-			copy(fu[:], d.desc.IdentityKey.Bytes())
-			s.descriptors[votingEpoch][fu] = d
+			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
+			s.authorizedMixes[d.IdentityKey.Sum256()] = true
+		}
+		for _, d := range providerDescs {
+			s.descriptors[votingEpoch][d.IdentityKey.Sum256()] = d
+			s.authorizedProviders[d.IdentityKey.Sum256()] = d.Name
 		}
 	}
 
 	// exchange votes
 	for i, s := range stateAuthority {
-		t.Logf("s.s.IdentityKey: %s", s.s.IdentityKey())
 		s.votingEpoch = votingEpoch
 		s.genesisEpoch = s.votingEpoch
-		myVote, err := s.vote(s.votingEpoch)
+		myVote, err := s.getVote(s.votingEpoch)
+		require.Equal(len(myVote.Signatures), 1)
 		require.NoError(err)
 		require.NotNil(myVote)
-		require.NotNil(myVote.doc)
-		doc, err := s11n.VerifyAndParseDocument(myVote.raw, s.s.identityKey.PublicKey())
+		raw, err := myVote.MarshalBinary()
 		require.NoError(err)
-		myVote.doc = doc
+		_, err = pki.VerifyAndParseDocument(raw, s.getVerifiers())
+		require.NoError(err)
 		s.state = stateAcceptVote
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
-			a.votes[s.votingEpoch][s.identityPubKey()] = myVote
+			a.votes[s.votingEpoch][s.s.identityPublicKey.Sum256()] = myVote
 		}
 	}
 
@@ -282,99 +282,137 @@ func TestVote(t *testing.T) {
 	for i, s := range stateAuthority {
 		s.state = stateAcceptReveal
 		c := s.reveal(s.votingEpoch)
-		r, err := cert.Verify(s.s.IdentityKey(), c)
+		for j, a := range stateAuthority {
+			if j == i {
+				continue
+			}
+			a.reveals[a.votingEpoch][s.s.identityPublicKey.Sum256()] = c
+			t.Logf("%s sent %s reveal", authCfgs[i].Server.Identifier, authCfgs[j].Server.Identifier)
+		}
+
+	}
+
+	// exchange certificates
+	for i, s := range stateAuthority {
+		s.state = stateAcceptCert
+		myCertificate, err := s.getCertificate(s.votingEpoch)
+		require.NoError(err)
+		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
 		require.NoError(err)
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
-			a.reveals[s.votingEpoch][s.identityPubKey()] = r
-			t.Logf("%s sent %s reveal", authCfgs[i].Authority.Identifier, authCfgs[j].Authority.Identifier)
+			a.certificates[s.votingEpoch][s.s.identityPublicKey.Sum256()] = myCertificate
 		}
-
 	}
 
-	// create a consensus and exchange signatures
+	// produced a consensus document signed by each authority
+	for _, s := range stateAuthority {
+		_, err := s.getMyConsensus(s.votingEpoch)
+		require.NoError(err)
+	}
+
+	// exchange signatures over the consensus
 	for i, s := range stateAuthority {
 		s.state = stateAcceptSignature
-		myCertificate, err := s.tabulate(s.votingEpoch)
-		assert.NoError(err)
+		id := s.s.identityPublicKey.Sum256()
+		mySignature, ok := s.myconsensus[s.votingEpoch].Signatures[id]
+		require.True(ok)
+
 		for j, a := range stateAuthority {
 			if j == i {
 				continue
 			}
-			a.certificates[s.votingEpoch][s.identityPubKey()] = myCertificate
+			a.signatures[s.votingEpoch][s.s.identityPublicKey.Sum256()] = &mySignature
 		}
-
 	}
-
-	// save the consensus
+	// verify that each authority produced an identital consensus
+	consensusHash := ""
 	for _, s := range stateAuthority {
-		s.consense(s.votingEpoch)
-	}
-
-	// verify that each authority produced the same output
-	docs := make([][]byte, len(stateAuthority))
-	for i, s := range stateAuthority {
-		d, ok := s.documents[s.votingEpoch]
-		assert.True(ok)
-		docs[i] = d.raw
-		if i == 0 {
-			continue
+		doc, err := s.getThresholdConsensus(s.votingEpoch)
+		require.NoError(err)
+		hash := doc.Sum256()
+		if consensusHash == "" {
+			consensusHash = string(hash[:])
+		} else {
+			require.Equal(consensusHash, string(hash[:]))
 		}
-		require.True(bytes.Equal(docs[i-1], d.raw))
 	}
 }
 
-func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) ([]*config.Config, error) {
+type peerKeys struct {
+	linkKey  wire.PrivateKey
+	idKey    sign.PrivateKey
+	idPubKey sign.PublicKey
+	datadir  string
+}
+
+func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) ([]peerKeys, []*config.Config, error) {
 	configs := []*config.Config{}
 	basePort := 30000
 	lastPort := basePort + 1
 
+	myPeerKeys := make([]peerKeys, numAuthorities)
+
 	// initial generation of key material for each authority
-	peersMap := make(map[[eddsa.PublicKeySize]byte]*config.AuthorityPeer)
+	peersMap := make(map[[sign.PublicKeyHashSize]byte]*config.Authority)
 	for i := 0; i < numAuthorities; i++ {
 		cfg := new(config.Config)
 		cfg.Logging = &config.Logging{Disable: false, File: "", Level: "DEBUG"}
 		cfg.Parameters = parameters
-		cfg.Authority = &config.Authority{
-			Identifier: fmt.Sprintf("authority-%v", i),
-			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", lastPort)},
-		}
-		lastPort += 1
-		idKey, err := eddsa.NewKeypair(rand.Reader)
+
+		datadir, err := os.MkdirTemp("", fmt.Sprintf("auth_%d", i))
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
+
+		cfg.Server = new(config.Server)
+		cfg.Server.Identifier = fmt.Sprintf("authority-%v", i)
+		cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
+		cfg.Server.DataDir = datadir
+		lastPort += 1
+
+		scheme := wire.DefaultScheme
+		linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+		idKey, idPubKey := cert.Scheme.NewKeypair()
+
+		myPeerKeys[i] = peerKeys{
+			linkKey:  linkKey,
+			idKey:    idKey,
+			idPubKey: idPubKey,
+			datadir:  datadir,
+		}
+
 		cfg.Debug = &config.Debug{
-			IdentityKey:      idKey,
 			Layers:           3,
 			MinNodesPerLayer: 1,
 			GenerateOnly:     false,
 		}
 		configs = append(configs, cfg)
-		authorityPeer := &config.AuthorityPeer{
-			IdentityPublicKey: cfg.Debug.IdentityKey.PublicKey(),
-			LinkPublicKey:     cfg.Debug.IdentityKey.PublicKey().ToECDH(),
-			Addresses:         cfg.Authority.Addresses,
+		authorityPeer := &config.Authority{
+			IdentityPublicKey: idPubKey,
+			LinkPublicKey:     linkPubKey,
+			Addresses:         cfg.Server.Addresses,
 		}
-		peersMap[cfg.Debug.IdentityKey.PublicKey().ByteArray()] = authorityPeer
+		peersMap[idPubKey.Sum256()] = authorityPeer
 	}
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
-		peers := []*config.AuthorityPeer{}
+		peers := []*config.Authority{}
 		for id, peer := range peersMap {
-			if !bytes.Equal(id[:], configs[i].Debug.IdentityKey.PublicKey().Bytes()) {
+			idHash := myPeerKeys[i].idPubKey.Sum256()
+			if !bytes.Equal(id[:], idHash[:]) {
 				peers = append(peers, peer)
 			}
 		}
 		configs[i].Authorities = peers
 	}
-	return configs, nil
+	return myPeerKeys, configs, nil
 }
 
-func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*sConfig.Config, error) {
+func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
 	const serverLogFile = ""
 
 	cfg := new(sConfig.Config)
@@ -387,18 +425,45 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*sConfig.Con
 		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
 	}
 
-	cfg.Server.DataDir = "/foo/bar"
+	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
+	if err != nil {
+		panic(err)
+	}
+
+	cfg.Server.DataDir = datadir
 	cfg.Server.IsProvider = true
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idKey, err := eddsa.NewKeypair(rand.Reader)
+	idKey, idPubKey := cert.Scheme.NewKeypair()
+
+	scheme := wire.DefaultScheme
+	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	linkPublicKeyPem := "link.public.pem"
+
+	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
+
+	err = pem.ToFile(idprivkeypem, idKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	cfg.Debug.IdentityKey = idKey
+
+	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), idPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// PKI section.
 	cfg.PKI = pki
@@ -415,13 +480,27 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*sConfig.Con
 	cfg.Provider.Kaetzchen = append(cfg.Provider.Kaetzchen, echoCfg)
 	err = cfg.FixupAndValidate()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return cfg, nil
-
+	return &identityKey{
+		publicPemFile:         filepath.Join(datadir, "identity.public.pem"),
+		privatePemFile:        filepath.Join(datadir, "identity.private.pem"),
+		identityPrivateKeyPem: idprivkeypem,
+		privKey:               idKey,
+		pubKey:                idPubKey,
+	}, cfg, nil
 }
 
-func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*sConfig.Config, error) {
+type identityKey struct {
+	publicPemFile         string
+	privatePemFile        string
+	identityPrivateKeyPem string
+	identityPublicKeyPem  string
+	privKey               sign.PrivateKey
+	pubKey                sign.PublicKey
+}
+
+func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sConfig.Config, error) {
 	const serverLogFile = ""
 
 	cfg := new(sConfig.Config)
@@ -430,18 +509,47 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*sConfig.Config, 
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
-	cfg.Server.DataDir = "/foo/bar"
 	cfg.Server.IsProvider = false
+
+	datadir, err := os.MkdirTemp("", fmt.Sprintf("mix_%s", name))
+	if err != nil {
+		panic(err)
+	}
+
+	cfg.Server.DataDir = datadir
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
 
 	// Generate keys
-	idKey, err := eddsa.NewKeypair(rand.Reader)
+	idKey, idPubKey := cert.Scheme.NewKeypair()
+
+	scheme := wire.DefaultScheme
+	linkKey, linkPubKey := scheme.GenerateKeypair(rand.Reader)
+	linkPublicKeyPem := "link.public.pem"
+
+	idprivkeypem := filepath.Join(datadir, "identity.private.pem")
+	idpubkeypem := filepath.Join(datadir, "identity.public.pem")
+
+	err = pem.ToFile(idprivkeypem, idKey)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	cfg.Debug.IdentityKey = idKey
+
+	err = pem.ToFile(idpubkeypem, idPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = pem.ToFile(filepath.Join(datadir, "link.private.pem"), linkKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = pem.ToFile(filepath.Join(datadir, linkPublicKeyPem), linkPubKey)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// PKI section.
 	cfg.PKI = pki
@@ -452,9 +560,16 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*sConfig.Config, 
 	cfg.Logging.Level = "DEBUG"
 	err = cfg.FixupAndValidate()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return cfg, nil
+	return &identityKey{
+		publicPemFile:         filepath.Join(datadir, "identity.public.pem"),
+		privatePemFile:        filepath.Join(datadir, "identity.private.pem"),
+		identityPrivateKeyPem: idprivkeypem,
+		identityPublicKeyPem:  idpubkeypem,
+		privKey:               idKey,
+		pubKey:                idPubKey,
+	}, cfg, nil
 }
 
 // create epoch keys

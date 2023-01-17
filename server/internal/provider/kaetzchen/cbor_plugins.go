@@ -24,17 +24,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/text/secure/precis"
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	cConstants "github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 )
 
@@ -61,6 +61,7 @@ type CBORPluginWorker struct {
 
 	glue glue.Glue
 	log  *logging.Logger
+	geo  *sphinx.Geometry
 
 	haltOnce    sync.Once
 	pluginChans PluginChans
@@ -78,7 +79,6 @@ func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
 }
 
 func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
-
 	// Kaetzchen delay is our max dwell time.
 	maxDwell := time.Duration(k.glue.Config().Debug.KaetzchenDelay) * time.Millisecond
 
@@ -87,7 +87,7 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 	handlerCh, ok := k.pluginChans[recipient]
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", recipient)
-		kaetzchenRequestsDropped.Inc()
+		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
 	ch := handlerCh.Out()
@@ -102,14 +102,14 @@ func (k *CBORPluginWorker) worker(recipient [constants.RecipientIDLength]byte, p
 			pkt = e.(*packet.Packet)
 			if dwellTime := monotime.Now() - pkt.DispatchAt; dwellTime > maxDwell {
 				k.log.Debugf("Dropping packet: %v (Spend %v in queue)", pkt.ID, dwellTime)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
 		}
 
 		k.processKaetzchen(pkt, pluginClient)
-		kaetzchenRequests.Inc()
+		instrument.KaetzchenRequests()
 	}
 }
 
@@ -121,14 +121,12 @@ func (k *CBORPluginWorker) haltAllClients() {
 }
 
 func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin.Client) {
-	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
-	defer kaetzchenRequestsTimer.ObserveDuration()
 	defer pkt.Dispose()
 
 	payload, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
 		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
-		kaetzchenRequestsDropped.Inc()
+		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
 
@@ -140,11 +138,11 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	cborResponse := <-pluginClient.ReadChan()
 	switch r := cborResponse.(type) {
 	case *cborplugin.Response:
-		if len(r.Payload) > cConstants.UserForwardPayloadLength {
+		if len(r.Payload) > k.geo.UserForwardPayloadLength {
 			// response is probably invalid, so drop it
 			k.log.Errorf("Got response too long: %d > max (%d)",
-			len(r.Payload), cConstants.UserForwardPayloadLength)
-			kaetzchenRequestsDropped.Inc()
+				len(r.Payload), k.geo.UserForwardPayloadLength)
+			instrument.KaetzchenRequestsDropped(1)
 			return
 		}
 		// Iff there is a SURB, generate a SURB-Reply and schedule.
@@ -163,7 +161,7 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	default:
 		// received some unknown command type
 		k.log.Errorf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, cborResponse)
-		kaetzchenRequestsDropped.Inc()
+		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
 }
@@ -206,6 +204,7 @@ func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []s
 func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
 	kaetzchenWorker := CBORPluginWorker{
+		geo:         sphinx.DefaultGeometry(),
 		glue:        glue,
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),

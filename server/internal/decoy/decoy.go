@@ -28,8 +28,6 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/yawning/avl.git"
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
@@ -39,12 +37,12 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/worker"
-	internalConstants "github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
 	"github.com/katzenpost/katzenpost/server/internal/provider/kaetzchen"
-	"github.com/prometheus/client_golang/prometheus"
+	"gitlab.com/yawning/avl.git"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -64,6 +62,9 @@ type decoy struct {
 	worker.Worker
 	sync.Mutex
 
+	sphinx *sphinx.Sphinx
+	geo    *sphinx.Geometry
+
 	glue glue.Glue
 	log  *logging.Logger
 
@@ -74,41 +75,6 @@ type decoy struct {
 	surbETAs   *avl.Tree
 	surbStore  map[uint64]*surbCtx
 	surbIDBase uint64
-}
-
-// Prometheus metrics
-var (
-	packetsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: internalConstants.Namespace,
-			Name:      "dropped_packets_total",
-			Subsystem: internalConstants.DecoySubsystem,
-			Help:      "Number of dropped packets",
-		},
-	)
-	ignoredPKIDocs = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: internalConstants.Namespace,
-			Name:      "documents_ignored_total",
-			Subsystem: internalConstants.DecoySubsystem,
-			Help:      "Number of ignored PKI Documents",
-		},
-	)
-	pkiDocs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: internalConstants.Namespace,
-			Name:      "pki_docs_per_epoch_total",
-			Subsystem: internalConstants.DecoySubsystem,
-			Help:      "Number of pki docs in an epoch",
-		},
-		[]string{"epoch"},
-	)
-)
-
-func initPrometheus() {
-	prometheus.MustRegister(packetsDropped)
-	prometheus.MustRegister(ignoredPKIDocs)
-	prometheus.MustRegister(pkiDocs)
 }
 
 func (d *decoy) OnNewDocument(ent *pkicache.Entry) {
@@ -128,14 +94,14 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	// fields are visible to any other party involved.
 	if subtle.ConstantTimeCompare(pkt.Recipient.ID[:], d.recipient) != 1 {
 		d.log.Debugf("Dropping packet: %v (Invalid recipient)", pkt.ID)
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		return
 	}
 
 	idBase, id := binary.BigEndian.Uint64(pkt.SurbReply.ID[0:]), binary.BigEndian.Uint64(pkt.SurbReply.ID[8:])
 	if idBase != d.surbIDBase {
 		d.log.Debugf("Dropping packet: %v (Invalid SURB ID base: %v)", pkt.ID, idBase)
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		return
 	}
 
@@ -144,13 +110,13 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 	ctx := d.loadAndDeleteSURBCtx(id)
 	if ctx == nil {
 		d.log.Debugf("Dropping packet: %v (Unknown SURB ID: 0x%08x)", pkt.ID, id)
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		return
 	}
 
-	if _, err := sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
+	if _, err := d.sphinx.DecryptSURBPayload(pkt.Payload, ctx.sprpKey); err != nil {
 		d.log.Debugf("Dropping packet: %v (SURB ID: 0x08x%): %v", pkt.ID, id, err)
-		packetsDropped.Inc()
+		instrument.PacketsDropped()
 		return
 	}
 
@@ -159,9 +125,6 @@ func (d *decoy) OnPacket(pkt *packet.Packet) {
 }
 
 func (d *decoy) worker() {
-	// Initialize prometheus metrics
-	initPrometheus()
-
 	const maxDuration = math.MaxInt64
 
 	wakeInterval := time.Duration(maxDuration)
@@ -178,23 +141,23 @@ func (d *decoy) worker() {
 		case newEnt := <-d.docCh:
 			if !d.glue.Config().Debug.SendDecoyTraffic {
 				d.log.Debugf("Received PKI document but decoy traffic is disabled, ignoring.")
-				ignoredPKIDocs.Inc()
+				instrument.IgnoredPKIDocs()
 				continue
 			}
 
 			now, _, _ := epochtime.Now()
 			if entEpoch := newEnt.Epoch(); entEpoch != now {
 				d.log.Debugf("Received PKI document for non-current epoch, ignoring: %v", entEpoch)
-				ignoredPKIDocs.Inc()
+				instrument.IgnoredPKIDocs()
 				continue
 			}
 			if d.glue.Config().Server.IsProvider {
 				d.log.Debugf("Received PKI document when Provider, ignoring (not supported yet).")
-				ignoredPKIDocs.Inc()
+				instrument.IgnoredPKIDocs()
 				continue
 			}
 			d.log.Debugf("Received new PKI document for epoch: %v", now)
-			pkiDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", now)}).Inc()
+			instrument.PKIDocs(fmt.Sprintf("%v", now))
 			docCache = newEnt
 		case <-timer.C:
 			timerFired = true
@@ -240,7 +203,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	isLoopPkt := true // HACK HACK HACK HACK.
 
 	selfDesc := ent.Self()
-	if selfDesc.Layer == pki.LayerProvider {
+	if selfDesc.Provider {
 		// The code doesn't handle this correctly yet.  It does need to
 		// happen eventually though.
 		panic("BUG: Provider generated decoy traffic not supported yet")
@@ -298,11 +261,11 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 		}
 
 		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
-			zeroBytes := make([]byte, constants.UserForwardPayloadLength)
-			payload := make([]byte, 2, 2+sphinx.SURBLength+constants.UserForwardPayloadLength)
+			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength)
+			payload := make([]byte, 2, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
 			payload[0] = 1 // Packet has a SURB.
 
-			surb, k, err := sphinx.NewSURB(rand.Reader, revPath)
+			surb, k, err := d.sphinx.NewSURB(rand.Reader, revPath)
 			if err != nil {
 				d.log.Debugf("Failed to generate SURB: %v", err)
 			}
@@ -319,7 +282,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 			}
 			d.storeSURBCtx(ctx)
 
-			pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
+			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
 				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
 				return
@@ -338,7 +301,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 }
 
 func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
-	payload := make([]byte, 2+sphinx.SURBLength+constants.UserForwardPayloadLength)
+	payload := make([]byte, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
 
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
@@ -350,7 +313,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 		}
 
 		if then.Sub(now) < epochtime.Period*2 {
-			pkt, err := sphinx.NewPacket(rand.Reader, fwdPath, payload)
+			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
 				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
 				return
@@ -423,7 +386,11 @@ func (d *decoy) loadAndDeleteSURBCtx(id uint64) *surbCtx {
 	}
 	delete(d.surbStore, id)
 
-	nCtxList := ctx.etaNode.Value.([]*surbCtx)
+	nCtxList, ok := ctx.etaNode.Value.([]*surbCtx)
+	if !ok {
+		nCtx := ctx.etaNode.Value.(*surbCtx)
+		nCtxList = []*surbCtx{nCtx}
+	}
 	if l := len(nCtxList); l > 1 {
 		// There is more than 1 SURB with this ETA, remove the context from
 		// the list, and leave the node in the tree.
@@ -437,8 +404,6 @@ func (d *decoy) loadAndDeleteSURBCtx(id uint64) *surbCtx {
 			}
 		}
 		panic("BUG: SURB missing from node ETA list")
-	} else if nCtxList[0] != ctx {
-		panic("BUG: SURB mismatch in node ETA list")
 	}
 
 	d.surbETAs.Remove(ctx.etaNode)
@@ -462,7 +427,14 @@ func (d *decoy) sweepSURBCtxs() {
 	var swept int
 	iter := d.surbETAs.Iterator(avl.Forward)
 	for node := iter.First(); node != nil; node = iter.Next() {
-		surbCtxs := node.Value.([]*surbCtx)
+		var surbCtxs []*surbCtx
+		switch surbCtxOrSlice := node.Value.(type) {
+		case []*surbCtx:
+			surbCtxs = surbCtxOrSlice
+		case *surbCtx:
+			surbCtxs = make([]*surbCtx, 1)
+			surbCtxs[0] = surbCtxOrSlice
+		}
 		if surbCtxs[0].eta+slack > now {
 			break
 		}
@@ -482,6 +454,8 @@ func (d *decoy) sweepSURBCtxs() {
 // New constructs a new decoy instance.
 func New(glue glue.Glue) (glue.Decoy, error) {
 	d := &decoy{
+		geo:       sphinx.DefaultGeometry(),
+		sphinx:    sphinx.DefaultSphinx(),
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("decoy"),
 		recipient: make([]byte, sConstants.RecipientIDLength),
@@ -494,6 +468,10 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 			case etaA < etaB:
 				return -1
 			case etaA > etaB:
+				return 1
+			case surbCtxsA[0].id < surbCtxsB[0].id:
+				return -1
+			case surbCtxsA[0].id > surbCtxsB[0].id:
 				return 1
 			default:
 				return 0

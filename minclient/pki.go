@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -33,8 +34,10 @@ import (
 var (
 	errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("minclient/pki: consensus not ready yet")
-	nextFetchTill           = 3 * (epochtime.Period / 8)
-	recheckInterval         = 1 * time.Minute
+	PublishDeadline         = vServer.PublishConsensusDeadline
+	mixServerCacheDelay     = epochtime.Period / 16
+	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
+	recheckInterval         = epochtime.Period / 16
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
 )
@@ -281,10 +284,4 @@ func newPKI(c *Client) *pki {
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
 	return p
-}
-
-func init() {
-	if WarpedEpoch == "true" {
-		recheckInterval = 5 * time.Second
-	}
 }

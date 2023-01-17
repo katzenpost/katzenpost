@@ -19,7 +19,7 @@ package rand
 import (
 	"bytes"
 	"crypto/rand"
-	"io/ioutil"
+	"os"
 	"runtime"
 	"strconv"
 	"syscall"
@@ -58,7 +58,7 @@ func getentropy(b []byte) error {
 func waitOnUrandomSanity() error {
 	for {
 		// Use the /proc interface to query the entropy estimate.
-		buf, err := ioutil.ReadFile("/proc/sys/kernel/random/entropy_avail")
+		buf, err := os.ReadFile("/proc/sys/kernel/random/entropy_avail")
 		if err != nil {
 			return err
 		}

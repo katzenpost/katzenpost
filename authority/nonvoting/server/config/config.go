@@ -21,15 +21,17 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"golang.org/x/net/idna"
+
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/utils"
-	"golang.org/x/net/idna"
 )
 
 const (
@@ -55,6 +57,8 @@ const (
 	defaultLambdaDMaxPercentile = 0.99999
 	defaultLambdaM              = 0.00025
 	defaultLambdaMMaxPercentile = 0.99999
+
+	publicKeyHashSize = 32 // blake2b.Sum256
 )
 
 var defaultLogging = Logging{
@@ -63,8 +67,8 @@ var defaultLogging = Logging{
 	Level:   defaultLogLevel,
 }
 
-// Authority is the authority configuration.
-type Authority struct {
+// Server is the authority configuration.
+type Server struct {
 	// Addresses are the IP address/port combinations that the authority will
 	// bind to for incoming connections.
 	Addresses []string
@@ -73,7 +77,7 @@ type Authority struct {
 	DataDir string
 }
 
-func (sCfg *Authority) validate() error {
+func (sCfg *Server) validate() error {
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
 			if err := utils.EnsureAddrIPPort(v); err != nil {
@@ -242,9 +246,6 @@ func (pCfg *Parameters) applyDefaults() {
 
 // Debug is the authority debug configuration.
 type Debug struct {
-	// IdentityKey specifies the identity private key.
-	IdentityKey *eddsa.PrivateKey `toml:"-"`
-
 	// Layers is the number of non-provider layers in the network topology.
 	Layers int
 
@@ -280,8 +281,8 @@ type Node struct {
 	// the node is a Provider.
 	Identifier string
 
-	// IdentityKey is the node's identity signing key.
-	IdentityKey *eddsa.PublicKey
+	// IdentityKeyPem is the node's identity signing key pem file path.
+	IdentityKeyPem string
 }
 
 func (n *Node) validate(isProvider bool) error {
@@ -299,15 +300,15 @@ func (n *Node) validate(isProvider bool) error {
 	} else if n.Identifier != "" {
 		return fmt.Errorf("config: %v: Node has Identifier set", section)
 	}
-	if n.IdentityKey == nil {
-		return fmt.Errorf("config: %v: Node is missing IdentityKey", section)
+	if n.IdentityKeyPem == "" {
+		return fmt.Errorf("config: %v: Node is missing IdentityKeyPem", section)
 	}
 	return nil
 }
 
 // Config is the top level authority configuration.
 type Config struct {
-	Authority  *Authority
+	Server     *Server
 	Logging    *Logging
 	Parameters *Parameters
 	Debug      *Debug
@@ -321,7 +322,7 @@ type Config struct {
 // instead.
 func (cfg *Config) FixupAndValidate() error {
 	// Handle missing sections if possible.
-	if cfg.Authority == nil {
+	if cfg.Server == nil {
 		return errors.New("config: No Authority block was present")
 	}
 	if cfg.Logging == nil {
@@ -335,7 +336,7 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	// Validate and fixup the various sections.
-	if err := cfg.Authority.validate(); err != nil {
+	if err := cfg.Server.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Logging.validate(); err != nil {
@@ -368,14 +369,18 @@ func (cfg *Config) FixupAndValidate() error {
 		idMap[v.Identifier] = v
 		allNodes = append(allNodes, v)
 	}
-	pkMap := make(map[[eddsa.PublicKeySize]byte]*Node)
+	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
-		var tmp [eddsa.PublicKeySize]byte
-		copy(tmp[:], v.IdentityKey.Bytes())
-		if _, ok := pkMap[tmp]; ok {
-			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKey)
+		_, idkey := cert.Scheme.NewKeypair()
+		err := pem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityKeyPem), idkey)
+		if err != nil {
+			return err
 		}
-		pkMap[tmp] = v
+		idKeyHash := idkey.Sum256()
+		if _, ok := pkMap[idKeyHash]; ok {
+			return fmt.Errorf("config: Nodes: IdentityKey '%v' is present more than once", v.IdentityKeyPem)
+		}
+		pkMap[idKeyHash] = v
 	}
 
 	return nil
@@ -385,12 +390,9 @@ func (cfg *Config) FixupAndValidate() error {
 // returns the Config.
 func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	cfg := new(Config)
-	md, err := toml.Decode(string(b), cfg)
+	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if undecoded := md.Undecoded(); len(undecoded) != 0 {
-		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
@@ -406,7 +408,7 @@ func Load(b []byte, forceGenOnly bool) (*Config, error) {
 // LoadFile loads, parses and validates the provided file and returns the
 // Config.
 func LoadFile(f string, forceGenOnly bool) (*Config, error) {
-	b, err := ioutil.ReadFile(f)
+	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}

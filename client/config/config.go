@@ -18,19 +18,24 @@
 package config
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/crypto/blake2b"
+
 	nvClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const (
@@ -112,39 +117,68 @@ type NonvotingAuthority struct {
 	// Address is the IP address/port combination of the authority.
 	Address string
 
-	// PublicKey is the authority's public key.
-	PublicKey *eddsa.PublicKey
+	// IdentityPublicKeyPem is the authority's identity public key pem.
+	IdentityPublicKeyPem string
+
+	// LinkPublicKeyPem is the PEM data of the authority's link public key.
+	LinkPublicKeyPem string
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+	scheme := wire.DefaultScheme
+
+	authLinkKey := scheme.NewEmptyPublicKey()
+	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
+	if err != nil {
+		return nil, err
+	}
+
+	_, identityPublicKey := cert.Scheme.NewKeypair()
+	pem.FromPEMString(nvACfg.IdentityPublicKeyPem, identityPublicKey)
+
+	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
 	cfg := &nvClient.Config{
-		LogBackend:    l,
-		Address:       nvACfg.Address,
-		PublicKey:     nvACfg.PublicKey,
-		DialContextFn: pCfg.ToDialContext("nonvoting:" + nvACfg.PublicKey.String()),
+		AuthorityLinkKey:     authLinkKey,
+		LinkKey:              linkKey,
+		LogBackend:           l,
+		Address:              nvACfg.Address,
+		AuthorityIdentityKey: identityPublicKey,
+		DialContextFn:        pCfg.ToDialContext(fmt.Sprintf("nonvoting: %x", linkHash[:])),
 	}
 	return nvClient.New(cfg)
 }
 
 func (nvACfg *NonvotingAuthority) validate() error {
-	if nvACfg.PublicKey == nil {
-		return errors.New("error PublicKey is missing")
+	if nvACfg.IdentityPublicKeyPem == "" {
+		return errors.New("error IdentityPublicKeyPem is missing")
 	}
 	return nil
 }
 
 // VotingAuthority is a voting authority configuration.
 type VotingAuthority struct {
-	Peers []*vServerConfig.AuthorityPeer
+	Peers []*vServerConfig.Authority
 }
 
-// New constructs a pki.Client with the specified non-voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+// New constructs a pki.Client with the specified voting authority config.
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
+	cLinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	b, err := linkKey.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	err = cLinkKey.UnmarshalBinary(b)
+	if err != nil {
+		return nil, err
+	}
 	cfg := &vClient.Config{
+		DataDir:       datadir,
+		LinkKey:       cLinkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext("voting"),
+		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash[:])),
 	}
 	return vClient.New(cfg)
 }
@@ -162,12 +196,12 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
 	switch {
 	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg)
+		return c.NonvotingAuthority.New(l, pCfg, linkKey, datadir)
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg)
+		return c.VotingAuthority.New(l, pCfg, linkKey, datadir)
 	}
 	return nil, errors.New("no Authority found")
 }
@@ -208,6 +242,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
+	DataDir            string
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
@@ -267,12 +302,9 @@ func (c *Config) FixupAndValidate() error {
 // returns the Config.
 func Load(b []byte) (*Config, error) {
 	cfg := new(Config)
-	md, err := toml.Decode(string(b), cfg)
+	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if undecoded := md.Undecoded(); len(undecoded) != 0 {
-		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
@@ -283,7 +315,7 @@ func Load(b []byte) (*Config, error) {
 // LoadFile loads, parses, and validates the provided file and returns the
 // Config.
 func LoadFile(f string) (*Config, error) {
-	b, err := ioutil.ReadFile(f)
+	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}

@@ -17,18 +17,19 @@
 package outgoing
 
 import (
-	"bytes"
 	"context"
+	"crypto/hmac"
 	"fmt"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"net"
 	"sync/atomic"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -50,47 +51,17 @@ type outgoingConn struct {
 	canSend    bool
 }
 
-var (
-	outgoingConns = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "outgoing_connections_total",
-			Subsystem: constants.OutgoingConnSubsystem,
-			Help:      "Number of outgoing connections",
-		},
-	)
-	canceledOutgoingConns = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "canceled_outgoing_connections_total",
-			Subsystem: constants.OutgoingConnSubsystem,
-			Help:      "Number of cancelled outgoing connections",
-		},
-	)
-	packetsDropped = prometheus.NewCounter(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "dropped_packets_total",
-			Subsystem: constants.OutgoingConnSubsystem,
-			Help:      "Number of dropped packets",
-		},
-	)
-)
-
-// InitPrometheus registers prometheus metrics
-func init() {
-	prometheus.MustRegister(outgoingConns)
-	prometheus.MustRegister(canceledOutgoingConns)
-	prometheus.MustRegister(packetsDropped)
-}
-
 func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	// At a minimum, the peer's credentials should match what we started out
 	// with.  This is enforced even if mix authentication is disabled.
-	if !bytes.Equal(c.dst.IdentityKey.Bytes(), creds.AdditionalData) {
+
+	idHash := c.dst.IdentityKey.Sum256()
+	if !hmac.Equal(idHash[:], creds.AdditionalData) {
+		c.log.Debug("IsPeerValid false, identity hash mismatch")
 		return false
 	}
 	if !c.dst.LinkKey.Equal(creds.PublicKey) {
+		c.log.Debug("IsPeerValid false, link key mismatch")
 		return false
 	}
 
@@ -99,6 +70,9 @@ func (c *outgoingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	var isValid bool
 	_, c.canSend, isValid = c.co.glue.PKI().AuthenticateConnection(creds, true)
 
+	if !isValid {
+		c.log.Debug("failed to authenticate connect via latest PKI doc")
+	}
 	return isValid
 }
 
@@ -121,10 +95,9 @@ func (c *outgoingConn) dispatchPacket(pkt *packet.Packet) {
 }
 
 func (c *outgoingConn) worker() {
-
-	const (
-		retryIncrement = 15 * time.Second
-		maxRetryDelay  = 120 * time.Second
+	var (
+		retryIncrement = epochtime.Period / 64
+		maxRetryDelay  = epochtime.Period / 8
 	)
 
 	defer func() {
@@ -155,8 +128,9 @@ func (c *outgoingConn) worker() {
 		}
 	}()
 
+	identityHash := c.dst.IdentityKey.Sum256()
 	dialCheckCreds := wire.PeerCredentials{
-		AdditionalData: c.dst.IdentityKey.Bytes(),
+		AdditionalData: identityHash[:],
 		PublicKey:      c.dst.LinkKey,
 	}
 
@@ -229,15 +203,14 @@ func (c *outgoingConn) worker() {
 				}
 			}
 			c.log.Debugf("TCP connection established.")
-			outgoingConns.Inc()
-
+			instrument.Outgoing()
 			start := time.Now()
 
 			// Handle the new connection.
 			if c.onConnEstablished(conn, dialCtx.Done()) {
 				// Canceled with a connection established.
 				c.log.Debugf("Existing connection canceled.")
-				canceledOutgoingConns.Inc()
+				instrument.CancelledOutgoing()
 				return
 			}
 
@@ -260,9 +233,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}()
 
 	// Allocate the session struct.
+	identityHash := c.co.glue.IdentityPublicKey().Sum256()
 	cfg := &wire.SessionConfig{
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     c,
-		AdditionalData:    c.co.glue.IdentityKey().PublicKey().Bytes(),
+		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.co.glue.LinkKey(),
 		RandomReader:      rand.Reader,
 	}
@@ -316,7 +291,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			}
 			if err := w.SendCommand(&cmd); err != nil {
 				c.log.Debugf("Dropping packet: %v (SendCommand failed: %v)", pkt.ID, err)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				return
 			}
@@ -358,7 +333,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			now := monotime.Now()
 			if now-pkt.DispatchAt > time.Duration(c.co.glue.Config().Debug.SendSlack)*time.Millisecond {
 				c.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-pkt.DispatchAt)
-				packetsDropped.Inc()
+				instrument.PacketsDropped()
 				pkt.Dispose()
 				continue
 			}
@@ -368,7 +343,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 			// This is presumably a early connect, and we aren't allowed to
 			// actually send packets to the peer yet.
 			c.log.Debugf("Dropping packet: %v (Out of epoch)", pkt.ID)
-			packetsDropped.Inc()
+			instrument.PacketsDropped()
 			pkt.Dispose()
 			continue
 		}

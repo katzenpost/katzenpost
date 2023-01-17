@@ -18,14 +18,14 @@ package boltuserdb
 
 import (
 	"crypto/rand"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 const testDB = "userdb.db"
@@ -35,7 +35,7 @@ var (
 	testDBPath string
 
 	testUsernames = []string{"alice", "bob"}
-	testUsers     map[string]*ecdh.PublicKey
+	testUsers     map[string]wire.PublicKey
 )
 
 func TestBoltUserDB(t *testing.T) {
@@ -82,9 +82,8 @@ func doTestCreateWithTOFU(t *testing.T) {
 		require.NoErrorf(err, "Add(%v, k, false)", u)
 	}
 
-	wrongPrivKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
-	wrongPubKey := wrongPrivKey.PublicKey()
+	scheme := wire.DefaultScheme
+	_, wrongPubKey := scheme.GenerateKeypair(rand.Reader)
 
 	for u, k := range testUsers {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
@@ -127,9 +126,8 @@ func doTestLoadTOFU(t *testing.T) {
 	require.NoError(err, "New() load")
 	defer d.Close()
 
-	wrongPrivKey, err := ecdh.NewKeypair(rand.Reader)
-	require.NoError(err)
-	wrongPubKey := wrongPrivKey.PublicKey()
+	scheme := wire.DefaultScheme
+	_, wrongPubKey := scheme.GenerateKeypair(rand.Reader)
 
 	for u, k := range testUsers {
 		assert.True(d.Exists([]byte(u)), "Exists('%s')", u)
@@ -165,17 +163,14 @@ func doTestLoad(t *testing.T) {
 
 func init() {
 	var err error
-	tmpDir, err = ioutil.TempDir("", "boltuserdb_tests")
+	tmpDir, err = os.MkdirTemp("", "boltuserdb_tests")
 	if err != nil {
 		panic(err)
 	}
 	testDBPath = filepath.Join(tmpDir, testDB)
-	testUsers = make(map[string]*ecdh.PublicKey)
+	testUsers = make(map[string]wire.PublicKey)
 	for _, v := range testUsernames {
-		privKey, err := ecdh.NewKeypair(rand.Reader)
-		if err != nil {
-			panic(err)
-		}
-		testUsers[v] = privKey.PublicKey()
+		scheme := wire.DefaultScheme
+		_, testUsers[v] = scheme.GenerateKeypair(rand.Reader)
 	}
 }

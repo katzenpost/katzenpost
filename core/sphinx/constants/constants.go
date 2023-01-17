@@ -23,11 +23,8 @@ const (
 	NodeIDLength = 32
 
 	// RecipientIDLength is the recipient identifier length in bytes.
-	RecipientIDLength = 64
+	RecipientIDLength = 32
 
 	// SURBIDLength is the SURB identifier length in bytes.
 	SURBIDLength = 16
-
-	// NrHops is the number of hops a packet will traverse.
-	NrHops = 5
 )

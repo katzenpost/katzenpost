@@ -1,5 +1,5 @@
 // sphinx_test.go - Sphinx Packet Format tests.
-// Copyright (C) 2017  Yawning Angel.
+// Copyright (C) 2022  Yawning Angel and David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -18,37 +18,38 @@ package sphinx
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/stretchr/testify/require"
 )
 
 type nodeParams struct {
 	id         [constants.NodeIDLength]byte
-	privateKey *ecdh.PrivateKey
+	privateKey nike.PrivateKey
+	publicKey  nike.PublicKey
 }
 
-func newNode(require *require.Assertions) *nodeParams {
+func newNikeNode(require *require.Assertions, mynike nike.Nike) *nodeParams {
 	n := new(nodeParams)
 
 	_, err := rand.Read(n.id[:])
-	require.NoError(err, "newNode(): failed to generate ID")
-	n.privateKey, err = ecdh.NewKeypair(rand.Reader)
-	require.NoError(err, "newNode(): NewKeypair() failed")
+	require.NoError(err, "newNikeNode(): failed to generate ID")
+	n.privateKey, n.publicKey = mynike.NewKeypair()
+	require.NoError(err, "newNikeNode(): NewKeypair() failed")
 	return n
 }
 
-func newPathVector(require *require.Assertions, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
+func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
 	nodes := make([]*nodeParams, nrHops)
 	for i := range nodes {
-		nodes[i] = newNode(require)
+		nodes[i] = newNikeNode(require, mynike)
 	}
 
 	// Assemble the path vector.
@@ -56,7 +57,7 @@ func newPathVector(require *require.Assertions, nrHops int, isSURB bool) ([]*nod
 	for i := range path {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].PublicKey = nodes[i].privateKey.PublicKey()
+		path[i].NIKEPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
@@ -82,29 +83,25 @@ func newPathVector(require *require.Assertions, nrHops int, isSURB bool) ([]*nod
 	return nodes, path
 }
 
-func TestForwardSphinx(t *testing.T) {
-	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
-
+func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
-	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
+	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the forward sphinx packet.
-		nodes, path := newPathVector(require, nrHops, false)
+		nodes, path := newNikePathVector(require, mynike, nrHops, false)
 
 		// Create the packet.
 		payload := []byte(testPayload)
-		pkt, err := NewPacket(rand.Reader, path, payload)
-		require.NoError(err, "NewPacket failed")
-		require.Len(pkt, HeaderLength+PayloadTagLength+len(payload), "Packet Length")
-
-		t.Logf("pkt: %s", hex.Dump(pkt))
+		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+		require.NoError(err)
+		require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
@@ -112,11 +109,7 @@ func TestForwardSphinx(t *testing.T) {
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: recipient mismatch", i)
 
 				require.Equalf(b, payload, "Hop %d: payload mismatch", i)
-
-				t.Logf("Unwrapped payload: %v", hex.Dump(b))
 			} else {
-				t.Logf("Hop %d: Unwrapped pkt: %s", i, hex.Dump(pkt))
-
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
 
@@ -130,32 +123,30 @@ func TestForwardSphinx(t *testing.T) {
 	}
 }
 
-func TestSURB(t *testing.T) {
-	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
-
+func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
-	for nrHops := 1; nrHops <= constants.NrHops; nrHops++ {
+	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
 		t.Logf("Testing %d hop(s).", nrHops)
 
 		// Generate the "nodes" and path for the SURB.
-		nodes, path := newPathVector(require, nrHops, true)
+		nodes, path := newNikePathVector(require, mynike, nrHops, true)
 
 		// Create the SURB.
-		surb, surbKeys, err := NewSURB(rand.Reader, path)
+		surb, surbKeys, err := sphinx.NewSURB(rand.Reader, path)
 		require.NoError(err, "NewSURB failed")
-		require.Equal(SURBLength, len(surb), "SURB length")
+		require.Equal(sphinx.Geometry().SURBLength, len(surb), "SURB length")
 
 		// Create a reply packet using the SURB.
 		payload := []byte(testPayload)
-		pkt, firstHop, err := NewPacketFromSURB(surb, payload)
+		pkt, firstHop, err := sphinx.NewPacketFromSURB(surb, payload)
 		require.NoError(err, "NewPacketFromSURB failed")
 		require.EqualValues(&nodes[0].id, firstHop, "NewPacketFromSURB: 0th hop")
 
 		// Unwrap the packet, valdiating the output.
 		for i := range nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			b, _, cmds, err := Unwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.Unwrap(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "SURB Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
@@ -163,12 +154,10 @@ func TestSURB(t *testing.T) {
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: recipient mismatch", i)
 				require.EqualValuesf(path[i].Commands[1], cmds[1], "SURB Hop %d: surb_reply mismatch", i)
 
-				b, err = DecryptSURBPayload(b, surbKeys)
+				b, err = sphinx.DecryptSURBPayload(b, surbKeys)
 				require.NoError(err, "DecrytSURBPayload")
 				require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
-				t.Logf("Unwrapped payload: %v", hex.Dump(b))
 			} else {
-				t.Logf("Hop %d: Unwrapped pkt: %s", i, hex.Dump(pkt))
 
 				require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: delay mismatch", i)

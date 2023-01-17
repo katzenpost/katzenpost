@@ -20,31 +20,59 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
-func benchNewNode() *nodeParams {
+/*
+
+
+ */
+
+func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Nike) {
+	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
+
+	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(mynike, geo)
+
+	nodes, path := benchNewPathVector(geo.NrHops, false, mynike)
+	payload := []byte(testPayload)
+
+	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+	if err != nil {
+		panic("wtf")
+	}
+	if len(pkt) != geo.HeaderLength+geo.PayloadTagLength+len(payload) {
+		panic("wtf")
+	}
+
+	for n := 0; n < b.N; n++ {
+		testPacket := make([]byte, len(pkt))
+		copy(testPacket, pkt)
+		_, _, _, err := sphinx.Unwrap(nodes[0].privateKey, testPacket)
+		if err != nil {
+			panic("wtf")
+		}
+	}
+}
+
+func benchNewNode(mynike nike.Nike) *nodeParams {
 	n := new(nodeParams)
 	_, err := rand.Read(n.id[:])
 	if err != nil {
 		panic("wtf")
 	}
-	n.privateKey, err = ecdh.NewKeypair(rand.Reader)
-	if err != nil {
-		panic("wtf")
-	}
+	n.privateKey, n.publicKey = mynike.NewKeypair()
 	return n
 }
 
-func benchNewPathVector(nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
+func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Nike) ([]*nodeParams, []*PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
 	nodes := make([]*nodeParams, nrHops)
 	for i := range nodes {
-		nodes[i] = benchNewNode()
+		nodes[i] = benchNewNode(mynike)
 	}
 
 	// Assemble the path vector.
@@ -52,7 +80,7 @@ func benchNewPathVector(nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 	for i := range path {
 		path[i] = new(PathHop)
 		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].PublicKey = nodes[i].privateKey.PublicKey()
+		path[i].NIKEPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
@@ -80,26 +108,4 @@ func benchNewPathVector(nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 	}
 
 	return nodes, path
-}
-
-func BenchmarkSphinxUnwrap(b *testing.B) {
-	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
-	nodes, path := benchNewPathVector(constants.NrHops, false)
-	payload := []byte(testPayload)
-	pkt, err := NewPacket(rand.Reader, path, payload)
-	if err != nil {
-		panic("wtf")
-	}
-	if len(pkt) != HeaderLength+PayloadTagLength+len(payload) {
-		panic("wtf")
-	}
-
-	for n := 0; n < b.N; n++ {
-		testPacket := make([]byte, len(pkt))
-		copy(testPacket, pkt)
-		_, _, _, err := Unwrap(nodes[0].privateKey, testPacket)
-		if err != nil {
-			panic("wtf")
-		}
-	}
 }

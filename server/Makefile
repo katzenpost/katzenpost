@@ -1,19 +1,19 @@
 warped?=false
-ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
+ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
 
 testnet-build:
 	go mod verify
-	cd cmd/server ; go build -ldflags ${ldflags}
-	cd ../memspool/server/cmd/memspool ; go build -ldflags ${ldflags}
-	cd ../map/server/cmd/map; go build -ldflags ${ldflags}
-	cd ../reunion/servers/reunion_katzenpost_server ; go build -ldflags ${ldflags}
-	cd ../panda/server/cmd/panda_server ; go build -ldflags ${ldflags}
-	cd ../server_plugins/cbor_plugins/echo-go ; go build -o echo_server -ldflags ${ldflags}
+	cd cmd/server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+	cd ../memspool/server/cmd/memspool ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+	cd ../map/server/cmd/map; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -ldflags ${ldflags}
+	cd ../reunion/servers/reunion_katzenpost_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+	cd ../panda/server/cmd/panda_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+	cd ../server_plugins/cbor_plugins/echo-go ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -o echo_server -ldflags ${ldflags}
 
 testnet-install:
-	cp /go/katzenpost/server/cmd/server/server /go/bin/server
-	cp /go/katzenpost/memspool/server/cmd/memspool/memspool /go/bin/memspool
-	cp /go/katzenpost/map/server/cmd/map/map /go/bin/map
-	cp /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /go/bin/reunion_katzenpost_server
-	cp /go/katzenpost/panda/server/cmd/panda_server/panda_server /go/bin/panda_server
-	cp /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /go/bin/echo_server
+	mv /go/katzenpost/server/cmd/server/server /$(net_name)/server.$(distro)
+	mv /go/katzenpost/memspool/server/cmd/memspool/memspool /$(net_name)/memspool.$(distro)
+	mv /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /$(net_name)/reunion_katzenpost_server.$(distro)
+	mv /go/katzenpost/panda/server/cmd/panda_server/panda_server /$(net_name)/panda_server.$(distro)
+	mv /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /$(net_name)/echo_server.$(distro)

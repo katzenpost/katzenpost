@@ -22,8 +22,6 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/katzenpost/katzenpost/core/constants"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
@@ -46,16 +44,10 @@ func (s *boltSpool) Close() {
 }
 
 func (s *boltSpool) StoreMessage(u, msg []byte) error {
-	if len(msg) != constants.UserForwardPayloadLength {
-		return fmt.Errorf("spool: invalid user message size: %d", len(msg))
-	}
 	return s.doStore(u, nil, msg)
 }
 
 func (s *boltSpool) StoreSURBReply(u []byte, id *[sConstants.SURBIDLength]byte, msg []byte) error {
-	if len(msg) != sphinx.PayloadTagLength+constants.ForwardPayloadLength {
-		return fmt.Errorf("spool: invalid SURBReply message size: %d", len(msg))
-	}
 	if id == nil {
 		return fmt.Errorf("spool: SURBReply is missing ID")
 	}

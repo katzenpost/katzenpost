@@ -20,7 +20,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/mail"
 	"net/url"
@@ -33,10 +32,10 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -167,9 +166,6 @@ func (sCfg *Server) validate() error {
 
 // Debug is the Katzenpost server debug configuration.
 type Debug struct {
-	// IdentityKey specifies the identity private key.
-	IdentityKey *eddsa.PrivateKey `toml:"-"`
-
 	// NumSphinxWorkers specifies the number of worker instances to use for
 	// inbound Sphinx packet processing.
 	NumSphinxWorkers int
@@ -245,11 +241,6 @@ type Debug struct {
 	// GenerateOnly halts and cleans up the server right after long term
 	// key generation.
 	GenerateOnly bool
-}
-
-// IsUnsafe returns true iff any debug options that destroy security are set.
-func (dCfg *Debug) IsUnsafe() bool {
-	return dCfg.IdentityKey != nil
 }
 
 func (dCfg *Debug) applyDefaults() {
@@ -349,19 +340,6 @@ type Provider struct {
 
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
-
-	// BinaryRecipients disables all Provider side recipient pre-processing,
-	// including removing trailing `NUL` bytes, case normalization, and
-	// delimiter support.
-	BinaryRecipients bool
-
-	// CaseSensitiveRecipients disables recipient case normalization.  If left
-	// unset, all user names will be converted to lower case.
-	CaseSensitiveRecipients bool
-
-	// RecipientDelimiter is the set of characters that separates a user name
-	// from it's extension (eg: `alice+foo`).
-	RecipientDelimiter string
 
 	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
 	// for this provider.
@@ -681,18 +659,18 @@ type PKI struct {
 	Voting    *Voting
 }
 
-func (pCfg *PKI) validate() error {
+func (pCfg *PKI) validate(datadir string) error {
 	nrCfg := 0
 	if pCfg.Nonvoting != nil && pCfg.Voting != nil {
 		return errors.New("pki config failure: cannot configure voting and nonvoting pki")
 	}
 	if pCfg.Nonvoting != nil {
-		if err := pCfg.Nonvoting.validate(); err != nil {
+		if err := pCfg.Nonvoting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
 	} else {
-		if err := pCfg.Voting.validate(); err != nil {
+		if err := pCfg.Voting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
@@ -708,78 +686,29 @@ type Nonvoting struct {
 	// Address is the authority's IP/port combination.
 	Address string
 
-	// PublicKey is the authority's public key in Base64 or Base16 format.
-	PublicKey string
+	// PublicKeyPem is the authority's Identity key PEM filepath.
+	PublicKey sign.PublicKey
+
+	// LinkPublicKeyPem is the authority's public link key PEM filepath.
+	LinkPublicKey wire.PublicKey
 }
 
-func (nCfg *Nonvoting) validate() error {
+func (nCfg *Nonvoting) validate(datadir string) error {
 	if err := utils.EnsureAddrIPPort(nCfg.Address); err != nil {
 		return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
 	}
 
-	var pubKey eddsa.PublicKey
-	if err := pubKey.FromString(nCfg.PublicKey); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Invalid PublicKey: %v", err)
-	}
-
 	return nil
 }
 
-// Peer is a voting peer.
-type Peer struct {
-	Addresses         []string
-	IdentityPublicKey string
-	LinkPublicKey     string
-}
-
-func (p *Peer) validate() error {
-	for _, address := range p.Addresses {
-		if err := utils.EnsureAddrIPPort(address); err != nil {
-			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
-		}
-	}
-	var pubKey eddsa.PublicKey
-	if err := pubKey.FromString(p.IdentityPublicKey); err != nil {
-		return fmt.Errorf("Voting Peer: Invalid IdentityPublicKey: %v", err)
-	}
-	if err := pubKey.FromString(p.LinkPublicKey); err != nil {
-		return fmt.Errorf("Voting Peer: Invalid LinkPublicKey: %v", err)
-	}
-	return nil
-}
-
-// Voting is a voting directory authority.
+// Voting is a set of Authorities that vote on a threshold consensus PKI
 type Voting struct {
-	Peers []*Peer
+	Authorities []*config.Authority
 }
 
-// AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
-func AuthorityPeersFromPeers(peers []*Peer) ([]*config.AuthorityPeer, error) {
-	authPeers := []*config.AuthorityPeer{}
-	for _, peer := range peers {
-		linkKey := new(ecdh.PublicKey)
-		err := linkKey.UnmarshalText([]byte(peer.LinkPublicKey))
-		if err != nil {
-			return nil, err
-		}
-		identityKey := new(eddsa.PublicKey)
-		err = identityKey.UnmarshalText([]byte(peer.IdentityPublicKey))
-		if err != nil {
-			return nil, err
-		}
-		authPeer := &config.AuthorityPeer{
-			IdentityPublicKey: identityKey,
-			LinkPublicKey:     linkKey,
-			Addresses:         peer.Addresses,
-		}
-		authPeers = append(authPeers, authPeer)
-	}
-	return authPeers, nil
-}
-
-func (vCfg *Voting) validate() error {
-	for _, peer := range vCfg.Peers {
-		err := peer.validate()
+func (vCfg *Voting) validate(datadir string) error {
+	for _, auth := range vCfg.Authorities {
+		err := auth.Validate()
 		if err != nil {
 			return err
 		}
@@ -850,7 +779,7 @@ func (cfg *Config) FixupAndValidate() error {
 	if err := cfg.Server.validate(); err != nil {
 		return err
 	}
-	if err := cfg.PKI.validate(); err != nil {
+	if err := cfg.PKI.validate(cfg.Server.DataDir); err != nil {
 		return err
 	}
 	if cfg.Server.IsProvider {
@@ -907,12 +836,9 @@ func Load(b []byte) (*Config, error) {
 	}
 
 	cfg := new(Config)
-	md, err := toml.Decode(string(b), cfg)
+	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if undecoded := md.Undecoded(); len(undecoded) != 0 {
-		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
@@ -924,7 +850,7 @@ func Load(b []byte) (*Config, error) {
 // LoadFile loads, parses and validates the provided file and returns the
 // Config.
 func LoadFile(f string) (*Config, error) {
-	b, err := ioutil.ReadFile(f)
+	b, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}

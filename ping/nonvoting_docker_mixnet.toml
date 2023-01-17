@@ -1,16 +1,19 @@
 
+DataDir = "/go/katzenpost/client/testdata"
+
 [UpstreamProxy]
   Type = "none"
 
 [Logging]
   Disable = false
   Level = "DEBUG"
-  File = "/tmp/ping.log"
+  File = ""
 
 [NonvotingAuthority]
-    Address = "127.0.0.1:29483"
-    PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+  Address = "127.0.0.1:29483"
+  PublicKey = "o4w1Nyj/nKNwho5SWfAIfh7SMU8FRx52nMHGgYsMHqQ="
+  LinkPublicKeyPem = "auth1_link_pub_key.pem"
 
 [Debug]
   PollingInterval = 10
-  
+  DisableDecoyTraffic = true

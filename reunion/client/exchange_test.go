@@ -19,7 +19,7 @@ package client
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"sync"
 	"testing"
 
@@ -38,7 +38,7 @@ type MockReunionDB struct {
 }
 
 func NewMockReunionDB(mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
-	stateFile, err := ioutil.TempFile("", "catshadow_test_statefile")
+	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +76,7 @@ func TestClientServerBasics1(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
+	shutdownChan := make(chan struct{})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -108,7 +109,7 @@ func TestClientServerBasics1(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// bob client
@@ -131,7 +132,7 @@ func TestClientServerBasics1(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// Run the reunion client exchanges manually instead of using the Exchange method.
@@ -172,6 +173,7 @@ func TestClientServerBasics1(t *testing.T) {
 	bobExchange.sentUpdateOK()
 
 	wg.Wait()
+	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)
@@ -186,6 +188,7 @@ func TestClientServerBasics2(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
+	shutdownChan := make(chan struct {})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -220,7 +223,7 @@ func TestClientServerBasics2(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// bob client
@@ -244,7 +247,7 @@ func TestClientServerBasics2(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// Run reunion client exchanges.
@@ -253,6 +256,7 @@ func TestClientServerBasics2(t *testing.T) {
 	go bobExchange.Run()
 
 	wg.Wait()
+	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)
@@ -267,6 +271,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
+	shutdownChan := make(chan struct {})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -308,7 +313,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// bob client
@@ -338,7 +343,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// nsa client
@@ -368,7 +373,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 		}
 	}()
 
-	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase, srv, epoch, nsaUpdateCh)
+	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase, srv, epoch, nsaUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// Run reunion client exchanges.
@@ -378,6 +383,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	go nsaExchange.Run()
 
 	wg.Wait()
+	close(shutdownChan)
 
 	//require.Equal(aliceResult, bobPayload)
 	//require.Equal(bobResult, alicePayload)
@@ -395,6 +401,7 @@ func TestClientServerBasics4(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
+	shutdownChan := make(chan struct {})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -433,7 +440,7 @@ func TestClientServerBasics4(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// bob client
@@ -458,7 +465,7 @@ func TestClientServerBasics4(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase1, srv, epoch, bobUpdateCh)
+	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase1, srv, epoch, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// nsa client
@@ -483,7 +490,7 @@ func TestClientServerBasics4(t *testing.T) {
 		}
 	}()
 
-	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh)
+	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// gchq client
@@ -508,7 +515,7 @@ func TestClientServerBasics4(t *testing.T) {
 		}
 	}()
 
-	gchqExchange, err := NewExchange(gchqPayload, gchqExchangelog, reunionDB, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh)
+	gchqExchange, err := NewExchange(gchqPayload, gchqExchangelog, reunionDB, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// Run reunion client exchanges.
@@ -535,6 +542,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	disable := false
 	logBackend, err := log.New(f, level, disable)
 	require.NoError(err)
+	shutdownChan := make(chan struct {})
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
@@ -568,7 +576,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 		}
 	}()
 
-	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh)
+	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// bob client
@@ -591,7 +599,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 		}
 	}()
 
-	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh)
+	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	// Run the reunion client exchanges manually instead of using the Exchange method.
@@ -602,12 +610,12 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 
 	aliceSerialized, err := aliceExchange.Marshal()
 	require.NoError(err)
-	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	bobSerialized, err := bobExchange.Marshal()
 	require.NoError(err)
-	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	err = aliceExchange.fetchState()
@@ -627,12 +635,12 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 
 	aliceSerialized, err = aliceExchange.Marshal()
 	require.NoError(err)
-	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	bobSerialized, err = bobExchange.Marshal()
 	require.NoError(err)
-	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	hasAliceSent = aliceExchange.sendT3Messages()
@@ -647,12 +655,12 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 
 	aliceSerialized, err = aliceExchange.Marshal()
 	require.NoError(err)
-	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh)
+	aliceExchange, err = NewExchangeFromSnapshot(aliceSerialized, aliceExchangelog, reunionDB, aliceUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	bobSerialized, err = bobExchange.Marshal()
 	require.NoError(err)
-	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh)
+	bobExchange, err = NewExchangeFromSnapshot(bobSerialized, bobExchangelog, reunionDB, bobUpdateCh, shutdownChan)
 	require.NoError(err)
 
 	aliceExchange.processT3Messages()

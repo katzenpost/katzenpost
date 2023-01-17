@@ -25,12 +25,15 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/log"
 	"gopkg.in/op/go-logging.v1"
+
+	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -43,8 +46,9 @@ type Server struct {
 
 	cfg *config.Config
 
-	identityKey *eddsa.PrivateKey
-	linkKey     *ecdh.PrivateKey
+	identityPrivateKey sign.PrivateKey
+	identityPublicKey  sign.PublicKey
+	linkKey            wire.PrivateKey
 
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -59,7 +63,7 @@ type Server struct {
 
 func (s *Server) initDataDir() error {
 	const dirMode = os.ModeDir | 0700
-	d := s.cfg.Authority.DataDir
+	d := s.cfg.Server.DataDir
 
 	// Initialize the data directory, by ensuring that it exists (or can be
 	// created), and that it has the appropriate permissions.
@@ -87,7 +91,7 @@ func (s *Server) initLogging() error {
 	p := s.cfg.Logging.File
 	if !s.cfg.Logging.Disable && s.cfg.Logging.File != "" {
 		if !filepath.IsAbs(p) {
-			p = filepath.Join(s.cfg.Authority.DataDir, p)
+			p = filepath.Join(s.cfg.Server.DataDir, p)
 		}
 	}
 
@@ -100,8 +104,8 @@ func (s *Server) initLogging() error {
 }
 
 // IdentityKey returns the running Server's identity public key.
-func (s *Server) IdentityKey() *eddsa.PublicKey {
-	return s.identityKey.PublicKey()
+func (s *Server) IdentityKey() sign.PublicKey {
+	return s.identityPublicKey
 }
 
 // RotateLog rotates the log file
@@ -169,7 +173,8 @@ func (s *Server) halt() {
 		s.state = nil
 	}
 
-	s.identityKey.Reset()
+	s.identityPublicKey.Reset()
+	s.identityPrivateKey.Reset()
 	s.linkKey.Reset()
 	close(s.fatalErrCh)
 
@@ -199,35 +204,65 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the authority identity key.
+	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
+
+	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
-	if s.cfg.Debug.IdentityKey != nil {
-		s.log.Warning("Debug.IdentityKey MUST NOT be used for production deployments.")
-		s.identityKey = new(eddsa.PrivateKey)
-		s.identityKey.FromBytes(s.cfg.Debug.IdentityKey.Bytes())
-	} else {
-		identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
-		identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
-		if s.identityKey, err = eddsa.Load(identityPrivateKeyFile, identityPublicKeyFile, rand.Reader); err != nil {
-			s.log.Errorf("Failed to initialize identity key: %v", err)
+	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
 			return nil, err
 		}
-	}
-
-	if s.cfg.Debug.LinkKey != nil {
-		s.log.Warning("Debug.LinkKey MUST NOT be used for production deployments.")
-		s.linkKey = new(ecdh.PrivateKey)
-		s.linkKey.FromBytes(s.cfg.Debug.LinkKey.Bytes())
-	} else {
-		linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
-		linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
-		if s.linkKey, err = ecdh.Load(linkPrivateKeyFile, linkPublicKeyFile, rand.Reader); err != nil {
-			s.log.Errorf("Failed to initialize link key: %v", err)
+		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
 			return nil, err
 		}
+	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
+		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
-	s.log.Noticef("Authority identity public key is: %s", s.identityKey.PublicKey())
-	s.log.Noticef("Authority link public key is: %s", s.linkKey.PublicKey())
+	scheme := wire.DefaultScheme
+	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
+
+	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
+	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
+		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
+		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
+		if err != nil {
+			return nil, err
+		}
+		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		panic("Improbable: Only found one link PEM file.")
+	}
+
+	s.linkKey = linkPrivateKey
+
+	s.log.Noticef("Authority identity public key hash is: %x", s.identityPublicKey.Sum256())
+	s.log.Noticef("Authority link public key hash is: %x", s.linkKey.PublicKey().Sum256())
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -267,7 +302,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.state.Go(s.state.worker)
 
 	// Start up the listeners.
-	for _, v := range s.cfg.Authority.Addresses {
+	for _, v := range s.cfg.Server.Addresses {
 		l, err := net.Listen("tcp", v)
 		if err != nil {
 			s.log.Errorf("Failed to start listener '%v': %v", v, err)

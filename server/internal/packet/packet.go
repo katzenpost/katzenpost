@@ -23,7 +23,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -37,7 +36,8 @@ var (
 	}
 	rawPacketPool = sync.Pool{
 		New: func() interface{} {
-			b := make([]byte, constants.PacketLength)
+			geo := sphinx.DefaultGeometry()
+			b := make([]byte, geo.PacketLength)
 			return b
 		},
 	}
@@ -45,6 +45,8 @@ var (
 )
 
 type Packet struct {
+	Geometry *sphinx.Geometry
+
 	Raw     []byte
 	Payload []byte
 
@@ -163,7 +165,7 @@ func (pkt *Packet) Dispose() {
 }
 
 func (pkt *Packet) copyToRaw(b []byte) error {
-	if len(b) != constants.PacketLength {
+	if len(b) != pkt.Geometry.PacketLength {
 		// TODO: When we have actual large packets, handle them.
 		return fmt.Errorf("invalid Sphinx packet size: %v", len(b))
 	}
@@ -184,7 +186,7 @@ func (pkt *Packet) copyToRaw(b []byte) error {
 }
 
 func (pkt *Packet) disposeRaw() {
-	if len(pkt.Raw) == constants.PacketLength {
+	if len(pkt.Raw) == pkt.Geometry.PacketLength {
 		utils.ExplicitBzero(pkt.Raw)
 		rawPacketPool.Put(pkt.Raw) // nolint: megacheck
 	}
@@ -203,6 +205,7 @@ func New(raw []byte) (*Packet, error) {
 func NewWithID(raw []byte, id uint64) (*Packet, error) {
 	v := pktPool.Get()
 	pkt := v.(*Packet)
+	pkt.Geometry = sphinx.DefaultGeometry()
 	pkt.ID = id
 	if err := pkt.copyToRaw(raw); err != nil {
 		pkt.Dispose()
@@ -217,7 +220,7 @@ func newRedundantError(cmd commands.RoutingCommand) error {
 
 func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 
-	var hdrLength = constants.SphinxPlaintextHeaderLength + sphinx.SURBLength
+	var hdrLength = pkt.Geometry.SphinxPlaintextHeaderLength + pkt.Geometry.SURBLength
 	const (
 		flagsPadding = 0
 		flagsSURB    = 1
@@ -225,7 +228,7 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	)
 
 	// Sanity check the forward packet payload length.
-	if len(pkt.Payload) != constants.ForwardPayloadLength {
+	if len(pkt.Payload) != pkt.Geometry.ForwardPayloadLength {
 		return nil, nil, fmt.Errorf("invalid payload length: %v", len(pkt.Payload))
 	}
 
@@ -243,12 +246,11 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	switch b[0] {
 	case flagsPadding:
 	case flagsSURB:
-		surb = b[constants.SphinxPlaintextHeaderLength:hdrLength]
+		surb = b[pkt.Geometry.SphinxPlaintextHeaderLength:hdrLength]
 	default:
 		return nil, nil, fmt.Errorf("invalid message flags: 0x%02x", b[0])
 	}
-	// this is no longer useful
-	if len(ct) != constants.UserForwardPayloadLength {
+	if len(ct) != pkt.Geometry.UserForwardPayloadLength {
 		return nil, nil, fmt.Errorf("mis-sized user payload: %v", len(ct))
 	}
 
@@ -262,10 +264,10 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	}
 
 	// Pad out payloads to the full packet size.
-	respPayload := make([]byte, constants.ForwardPayloadLength)
+	respPayload := make([]byte, pkt.Geometry.ForwardPayloadLength)
 	switch {
 	case len(payload) == 0:
-	case len(payload) > constants.ForwardPayloadLength:
+	case len(payload) > pkt.Geometry.ForwardPayloadLength:
 		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
 	default:
 		copy(respPayload, payload)
@@ -278,7 +280,9 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	// based on hardware acceleration considerations.  However the forward
 	// packet processing doesn't constantly utilize the AES-NI units due
 	// to the non-AEZ components of a Sphinx Unwrap operation.
-	rawRespPkt, firstHop, err := sphinx.NewPacketFromSURB(surb, respPayload)
+
+	s := sphinx.DefaultSphinx()
+	rawRespPkt, firstHop, err := s.NewPacketFromSURB(surb, respPayload)
 	if err != nil {
 		return nil, err
 	}
@@ -297,6 +301,7 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 
 	// Assemble the response packet.
 	respPkt, _ := New(rawRespPkt)
+	respPkt.Geometry = pkt.Geometry
 	respPkt.Set(nil, cmds)
 
 	respPkt.RecvAt = pkt.RecvAt

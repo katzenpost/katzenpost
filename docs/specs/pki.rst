@@ -376,7 +376,10 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 
 3.3.1 Reveal Wire Protocol Commands
 
-   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used by Authorities to exchange reveal values previously commited to in their votes. We define additional wire protocol commands for exchanging reveals:
+   The Katzenpost Wire Protocol as described in [KATZMIXWIRE] is used
+   by Authorities to exchange reveal values previously commited to in
+   their votes. We define additional wire protocol commands for
+   exchanging reveals:
 
    enum {
       reveal(25),
@@ -580,25 +583,34 @@ Katzenpost Mix Network Public Key Infrastructure Specification
 4.3 Shared Random Value structure
 ---------------------------------
 
-Katzenpost's Shared Random Value computation is inspired by Tor's Shared Random Subsystem [TORSRV]_.
+Katzenpost's Shared Random Value computation is inspired by Tor's
+Shared Random Subsystem [TORSRV]_.
 
-Each voting round a commit value is included in the votes sent to other authorities. These are produced as follows:
+Each voting round a commit value is included in the votes sent to
+other authorities. These are produced as follows:
+
    H = SHA3-256
 
    COMMIT = Uint64(epoch) | H(REVEAL)
    REVEAL = Uint64(epoch) | H(RN)
 
-After the votes are collected from the voting round, and before signature exchange, the Shared Random Value field of the consensus document is the output of H over the input string calculated as follows:
+After the votes are collected from the voting round, and before
+signature exchange, the Shared Random Value field of the consensus
+document is the output of H over the input string calculated as
+follows:
 
   1. Validated Reveal commands received including the authorities own reveal
        are sorted by reveal value in ascending order and appended to the input
        in format IdentityPublicKeyBytes_n | RevealValue_n
 
+       However instead of the Identity Public Key bytes we instead encode the Reveal
+       with the blake2b 256 bit hash of the public key bytes.
+
   2. If a SharedRandomValue for the previous epoch exists, it is appended to
        the input string, otherwise 32 NUL (\x00) bytes are used.
 
-  REVEALS = ID_a | R_a | ID_b | R_b | ...
-  SharedRandomValue = H("shared-random" | Uint64(epoch) | REVEALS | PREVIOUS_SRV)
+   REVEALS = ID_a | R_a | ID_b | R_b | ...
+   SharedRandomValue = H("shared-random" | Uint64(epoch) | REVEALS | PREVIOUS_SRV)
 
 5. PKI Wire Protocol
 ====================
@@ -897,14 +909,14 @@ Appendix A.1 Normative References
 
 .. [KATZMIXNET]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Katzenpost Mix Network Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/mixnet.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/mixnet.rst>.
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/Katzenpost/docs/blob/master/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.
 
 .. [KATZMIXWIRE] Angel, Y. "Katzenpost Mix Network Wire Protocol Specification", June 2017,
-                <https://github.com/Katzenpost/docs/blob/master/specs/wire-protocol.rst>.
+                <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/wire-protocol.rst>.
 
 Appendix A.2 Informative References
 -----------------------------------
@@ -938,7 +950,7 @@ Appendix A.2 Informative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/Katzenpost/docs/blob/master/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx.rst>.
 
 .. [SPHINCS256] Bernstein, D., Hopwood, D., Hulsing, A., Lange, T.,
                 Niederhagen, R., Papachristodoulou, L., Schwabe, P., Wilcox
@@ -977,6 +989,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{KatzMixPKI,
    title = {Katzenpost Mix Network Public Key Infrastructure Specification},
    author = {Yawning Angel and Ania Piotrowska and David Stainton},
-   url= {https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst},
+   url= {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/pki.rst},
    year = {2017}
    }

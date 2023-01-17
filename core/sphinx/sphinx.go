@@ -20,9 +20,14 @@ package sphinx
 import (
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/cloudflare/circl/kem"
+
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -31,35 +36,242 @@ import (
 )
 
 const (
-	// This is derived off the largest routing info block that we expect to
-	// encounter.  Everything else just has a NextNodeHop + NodeDelay, or a
-	// Recipient, both cases which are shorter.
-	perHopRoutingInfoLength = commands.RecipientLength + commands.SURBReplyLength
+	adLength = 2
 
-	routingInfoLength = perHopRoutingInfoLength * constants.NrHops
-	adLength          = 2
+	// payloadTagLength is the length of the Sphinx packet payload SPRP tag.
+	payloadTagLength = 32
 
-	// HeaderLength is the length of a Sphinx packet header in bytes.
-	HeaderLength = adLength + crypto.GroupElementLength + routingInfoLength + crypto.MACLength // 460 bytes.
-
-	// PayloadTagLength is the length of the Sphinx packet payload SPRP tag.
-	PayloadTagLength = 16
+	// sphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
+	// in bytes.
+	sphinxPlaintextHeaderLength = 1 + 1
 )
 
 var (
-	v0AD      = [2]byte{0x00, 0x00}
-	zeroBytes = [perHopRoutingInfoLength]byte{}
+	v0AD = [2]byte{0x00, 0x00}
 
 	errTruncatedPayload = errors.New("sphinx: truncated payload")
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
+
+	defaultSphinx *Sphinx
 )
+
+// DefaultSphinx returns an instance of the default sphinx packet factory.
+func DefaultSphinx() *Sphinx {
+	return defaultSphinx
+}
+
+// DefaultGeometry returns the Sphinx geometry we are using right now.
+// In the future there will be two types of Sphinx packets, classical
+// and post-quantum (using CTIDH NIKE).
+func DefaultGeometry() *Geometry {
+	return defaultGeometry(ecdh.NewEcdhNike(rand.Reader))
+}
+
+func defaultGeometry(nike nike.Nike) *Geometry {
+	forwardPayloadLength := 2 * 1024
+	nrHops := 5
+	return GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+}
+
+// Geometry describes the geometry of a Sphinx packet.
+type Geometry struct {
+
+	// PacketLength is the length of a packet.
+	PacketLength int
+
+	// NrHops is the number of hops, this indicates the size
+	// of the Sphinx packet header.
+	NrHops int
+
+	// HeaderLength is the length of the Sphinx packet header in bytes.
+	HeaderLength int
+
+	// RoutingInfoLength is the length of the routing info portion of the header.
+	RoutingInfoLength int
+
+	// PerHopRoutingInfoLength is the length of the per hop routing info.
+	PerHopRoutingInfoLength int
+
+	// SURBLength is the length of SURB.
+	SURBLength int
+
+	// SphinxPlaintextHeaderLength is the length of the plaintext header.
+	SphinxPlaintextHeaderLength int
+
+	// SURBIDLength is the length of a SURB ID.
+	SURBIDLength int
+
+	// PayloadTagLength is the length of the payload tag.
+	PayloadTagLength int
+
+	// ForwardPayloadLength is the size of the payload.
+	ForwardPayloadLength int
+
+	// UserForwardPayloadLength is the size of the usable payload.
+	UserForwardPayloadLength int
+
+	// NodeIDLength is the node identifier length in bytes.
+	NodeIDLength int
+}
+
+func (g *Geometry) String() string {
+	var b strings.Builder
+	b.WriteString("sphinx_packet_geometry:\n")
+	b.WriteString(fmt.Sprintf("packet size: %d\n", g.PacketLength))
+	b.WriteString(fmt.Sprintf("number of hops: %d\n", g.NrHops))
+	b.WriteString(fmt.Sprintf("header size: %d\n", g.HeaderLength))
+	b.WriteString(fmt.Sprintf("forward payload size: %d\n", g.ForwardPayloadLength))
+	b.WriteString(fmt.Sprintf("user forward payload size: %d\n", g.UserForwardPayloadLength))
+	b.WriteString(fmt.Sprintf("payload tag size: %d\n", g.PayloadTagLength))
+	b.WriteString(fmt.Sprintf("routing info size: %d\n", g.RoutingInfoLength))
+	b.WriteString(fmt.Sprintf("surb size: %d\n", g.SURBLength))
+	b.WriteString(fmt.Sprintf("sphinx plaintext header size: %d\n", g.SphinxPlaintextHeaderLength))
+	return b.String()
+}
+
+type geometryFactory struct {
+	nike                 nike.Nike
+	kem                  kem.Scheme
+	nrHops               int
+	forwardPayloadLength int
+}
+
+func (f *geometryFactory) perHopRoutingInfoLength() int {
+	if f.nike == nil { // KEM
+		return commands.NextNodeHopLength + commands.SURBReplyLength + f.kem.CiphertextSize()
+	} else { // NIKE
+		// This is derived off the largest routing info block that we expect to
+		// encounter.  Everything else just has a NextNodeHop + NodeDelay, or a
+		// Recipient, both cases which are shorter.
+		return commands.NextNodeHopLength + commands.SURBReplyLength
+	}
+}
+
+func (f *geometryFactory) routingInfoLength() int {
+	// XXX FIXME: for the KEM use case it might be possible to take one KEM ciphertext less space
+	// return (f.perHopRoutingInfoLength() * f.nrHops) - f.kem.CiphertextSize()
+	return (f.perHopRoutingInfoLength() * f.nrHops)
+}
+
+func (f *geometryFactory) headerLength() int {
+	if f.nike == nil && f.kem == nil {
+		panic("nike and kem can't both be nil")
+	}
+	if f.nike != nil && f.kem != nil {
+		panic("nike and kem can't both be set")
+	}
+
+	if f.nike != nil {
+		// NIKE
+		return adLength + f.nike.PublicKeySize() + f.routingInfoLength() + crypto.MACLength
+	}
+	// KEM
+	return adLength + f.kem.CiphertextSize() + f.routingInfoLength() + crypto.MACLength
+}
+
+// PacketLength returns the length of a Sphinx Packet in bytes.
+func (f *geometryFactory) packetLength() int {
+	return f.headerLength() + payloadTagLength + f.forwardPayloadLength
+}
+
+// surbLength returns the length of a Sphinx SURB in bytes.
+// If the X25519 ECDH NIKE is used then the size is 556 bytes.
+func (f *geometryFactory) surbLength() int {
+	return f.headerLength() + constants.NodeIDLength + sprpKeyMaterialLength
+}
+
+// UserForwardPayloadLength returns the length of user portion of the forward
+// payload.  The End to End spec calls this `PAYLOAD_LENGTH` but this is
+// somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
+// spec.
+func (f *geometryFactory) userForwardPayloadLength() int {
+	return f.forwardPayloadLength - (sphinxPlaintextHeaderLength + f.surbLength())
+}
+
+func (f *geometryFactory) deriveForwardPayloadLength(userForwardPayloadLength int) int {
+	return userForwardPayloadLength + (sphinxPlaintextHeaderLength + f.surbLength())
+}
+
+func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
+	f := &geometryFactory{
+		nike:   nike,
+		nrHops: nrHops,
+	}
+
+	forwardPayloadLength := 0
+	if withSURB {
+		forwardPayloadLength = f.deriveForwardPayloadLength(userForwardPayloadLength)
+	} else {
+		forwardPayloadLength = userForwardPayloadLength
+	}
+	f.forwardPayloadLength = forwardPayloadLength // used in f.packetLength
+	geo := &Geometry{
+		NrHops:                      nrHops,
+		HeaderLength:                f.headerLength(),
+		PacketLength:                f.packetLength(),
+		SURBLength:                  f.surbLength(),
+		UserForwardPayloadLength:    userForwardPayloadLength,
+		ForwardPayloadLength:        forwardPayloadLength,
+		PayloadTagLength:            payloadTagLength,
+		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
+		SURBIDLength:                constants.SURBIDLength,
+		RoutingInfoLength:           f.routingInfoLength(),
+		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
+	}
+
+	return geo
+}
+
+func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHops int) *Geometry {
+	f := &geometryFactory{
+		nike:                 nike,
+		nrHops:               nrHops,
+		forwardPayloadLength: forwardPayloadLength,
+	}
+	return &Geometry{
+		NrHops:                      nrHops,
+		HeaderLength:                f.headerLength(),
+		PacketLength:                f.packetLength(),
+		SURBLength:                  f.surbLength(),
+		UserForwardPayloadLength:    f.userForwardPayloadLength(),
+		ForwardPayloadLength:        f.forwardPayloadLength,
+		PayloadTagLength:            payloadTagLength,
+		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
+		SURBIDLength:                constants.SURBIDLength,
+		RoutingInfoLength:           f.routingInfoLength(),
+		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
+	}
+}
+
+// Sphinx is a modular implementation of the Sphinx cryptographic packet
+// format that has a pluggable NIKE, non-interactive key exchange.
+type Sphinx struct {
+	nike     nike.Nike
+	kem      kem.Scheme
+	geometry *Geometry
+}
+
+// NewSphinx creates a new instance of Sphinx.
+func NewSphinx(n nike.Nike, geometry *Geometry) *Sphinx {
+	s := &Sphinx{
+		nike:     n,
+		geometry: geometry,
+	}
+	return s
+}
+
+// Geometry returns the Sphinx packet geometry.
+func (s *Sphinx) Geometry() *Geometry {
+	return s.geometry
+}
 
 // PathHop describes a hop that a Sphinx Packet will traverse, along with
 // all of the per-hop Commands (excluding NextNodeHop).
 type PathHop struct {
-	ID        [constants.NodeIDLength]byte
-	PublicKey *ecdh.PublicKey
-	Commands  []commands.RoutingCommand
+	ID            [constants.NodeIDLength]byte
+	NIKEPublicKey nike.PublicKey
+	KEMPublicKey  kem.PublicKey
+	Commands      []commands.RoutingCommand
 }
 
 type sprpKey struct {
@@ -72,8 +284,8 @@ func (k *sprpKey) Reset() {
 	utils.ExplicitBzero(k.iv[:])
 }
 
-func commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool) ([]byte, error) {
-	b := make([]byte, 0, perHopRoutingInfoLength)
+func (s *Sphinx) commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool) ([]byte, error) {
+	b := make([]byte, 0, s.geometry.PerHopRoutingInfoLength)
 	for _, v := range cmds {
 		// NextNodeHop is generated by the header creation process.
 		if _, isNextNodeHop := v.(*commands.NextNodeHop); isNextNodeHop {
@@ -81,7 +293,7 @@ func commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool) ([]byte, e
 		}
 		b = v.ToBytes(b)
 	}
-	if len(b) > perHopRoutingInfoLength {
+	if len(b) > s.geometry.PerHopRoutingInfoLength {
 		return nil, errors.New("sphinx: invalid commands, oversized serialized block")
 	}
 	if !isTerminal && cap(b)-len(b) < commands.NextNodeHopLength {
@@ -91,53 +303,60 @@ func commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool) ([]byte, e
 	return b, nil
 }
 
-func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
+func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	nrHops := len(path)
-	if nrHops > constants.NrHops {
+	if nrHops > s.geometry.NrHops {
 		return nil, nil, errors.New("sphinx: invalid path")
 	}
 
 	// Derive the key material for each hop.
-	keypair, err := ecdh.NewKeypair(r)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer keypair.Reset()
+	clientPrivateKey, clientPublicKey := s.nike.NewKeypair()
+	defer clientPrivateKey.Reset()
+	defer clientPublicKey.Reset()
 
-	var groupElements [constants.NrHops]ecdh.PublicKey
-	var keys [constants.NrHops]*crypto.PacketKeys
+	groupElements := make([]nike.PublicKey, s.geometry.NrHops)
+	keys := make([]*crypto.PacketKeys, s.geometry.NrHops)
 
-	var sharedSecret [crypto.GroupElementLength]byte
-	defer utils.ExplicitBzero(sharedSecret[:])
-	keypair.Exp(&sharedSecret, path[0].PublicKey)
-	keys[0] = crypto.KDF(&sharedSecret)
+	sharedSecret := s.nike.DeriveSecret(clientPrivateKey, path[0].NIKEPublicKey)
+	defer utils.ExplicitBzero(sharedSecret)
+
+	keys[0] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 	defer keys[0].Reset()
-	groupElements[0].FromBytes(keypair.PublicKey().Bytes())
+
+	var err error
+	groupElements[0], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
+	if err != nil {
+		panic(err)
+	}
+
 	for i := 1; i < nrHops; i++ {
-		keypair.Exp(&sharedSecret, path[i].PublicKey)
+		sharedSecret = s.nike.DeriveSecret(clientPrivateKey, path[i].NIKEPublicKey)
 		for j := 0; j < i; j++ {
-			ecdh.Exp(&sharedSecret, &sharedSecret, &keys[j].BlindingFactor)
+			sharedSecret = s.nike.Blind(sharedSecret, keys[j].BlindingFactor)
 		}
-		keys[i] = crypto.KDF(&sharedSecret)
+		keys[i] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 		defer keys[i].Reset()
-		keypair.PublicKey().Blind(&keys[i-1].BlindingFactor)
-		groupElements[i].FromBytes(keypair.PublicKey().Bytes())
+		clientPublicKey.Blind(keys[i-1].BlindingFactor)
+		groupElements[i], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// Derive the routing_information keystream and encrypted padding for each
 	// hop.
-	var riKeyStream [constants.NrHops][]byte
-	var riPadding [constants.NrHops][]byte
+	riKeyStream := make([][]byte, s.geometry.NrHops)
+	riPadding := make([][]byte, s.geometry.NrHops)
 
 	for i := 0; i < nrHops; i++ {
-		keyStream := make([]byte, routingInfoLength+perHopRoutingInfoLength)
+		keyStream := make([]byte, s.geometry.RoutingInfoLength+s.geometry.PerHopRoutingInfoLength)
 		defer utils.ExplicitBzero(keyStream)
 
-		s := crypto.NewStream(&keys[i].HeaderEncryption, &keys[i].HeaderEncryptionIV)
-		s.KeyStream(keyStream)
-		s.Reset()
+		streamCipher := crypto.NewStream(&keys[i].HeaderEncryption, &keys[i].HeaderEncryptionIV)
+		streamCipher.KeyStream(keyStream)
+		streamCipher.Reset()
 
-		ksLen := len(keyStream) - (i+1)*perHopRoutingInfoLength
+		ksLen := len(keyStream) - (i+1)*s.geometry.PerHopRoutingInfoLength
 		riKeyStream[i] = keyStream[:ksLen]
 		riPadding[i] = keyStream[ksLen:]
 		if i > 0 {
@@ -149,16 +368,18 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 	// Create the routing_information block.
 	var mac []byte
 	var routingInfo []byte
-	if skippedHops := constants.NrHops - nrHops; skippedHops > 0 {
-		routingInfo = make([]byte, skippedHops*perHopRoutingInfoLength)
+	if skippedHops := s.geometry.NrHops - nrHops; skippedHops > 0 {
+		routingInfo = make([]byte, skippedHops*s.geometry.PerHopRoutingInfoLength)
 		_, err := io.ReadFull(rand.Reader, routingInfo)
 		if err != nil {
 			return nil, nil, err
 		}
 	}
+	zeroBytes := make([]byte, s.geometry.PerHopRoutingInfoLength)
 	for i := nrHops - 1; i >= 0; i-- {
 		isTerminal := i == nrHops-1
-		riFragment, err := commandsToBytes(path[i].Commands, isTerminal)
+
+		riFragment, err := s.commandsToBytes(path[i].Commands, isTerminal)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -168,12 +389,13 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 			copy(nextCmd.MAC[:], mac)
 			riFragment = nextCmd.ToBytes(riFragment)
 		}
-		if padLen := perHopRoutingInfoLength - len(riFragment); padLen > 0 {
+		if padLen := s.geometry.PerHopRoutingInfoLength - len(riFragment); padLen > 0 {
 			riFragment = append(riFragment, zeroBytes[:padLen]...)
 		}
 
 		routingInfo = append(riFragment, routingInfo...) // Prepend
 		xorBytes(routingInfo, routingInfo, riKeyStream[i])
+
 		m := crypto.NewMAC(&keys[i].HeaderMAC)
 		defer m.Reset()
 		m.Write(v0AD[:])
@@ -187,7 +409,7 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 
 	// Assemble the completed Sphinx Packet Header and Sphinx Packet Payload
 	// SPRP key vector.
-	hdr := make([]byte, 0, HeaderLength)
+	hdr := make([]byte, 0, s.geometry.HeaderLength)
 	hdr = append(hdr, v0AD[:]...)
 	hdr = append(hdr, groupElements[0].Bytes()...)
 	hdr = append(hdr, routingInfo...)
@@ -210,8 +432,12 @@ func createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
 
 // NewPacket creates a forward Sphinx packet with the provided path and
 // payload, using the provided entropy source.
-func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
-	hdr, sprpKeys, err := createHeader(r, path)
+func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+	if len(payload) != s.geometry.ForwardPayloadLength {
+		return nil, fmt.Errorf("invalid payload length: %d, expected %d", len(payload), s.geometry.ForwardPayloadLength)
+	}
+
+	hdr, sprpKeys, err := s.createHeader(r, path)
 	if err != nil {
 		return nil, err
 	}
@@ -219,10 +445,12 @@ func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 		defer v.Reset()
 	}
 
+	zeroBytes := make([]byte, s.geometry.PerHopRoutingInfoLength)
+
 	// Assemble the packet.
-	pkt := make([]byte, 0, len(hdr)+PayloadTagLength+len(payload))
+	pkt := make([]byte, 0, len(hdr)+s.geometry.PayloadTagLength+len(payload))
 	pkt = append(pkt, hdr...)
-	pkt = append(pkt, zeroBytes[:PayloadTagLength]...)
+	pkt = append(pkt, zeroBytes[:s.geometry.PayloadTagLength]...)
 	pkt = append(pkt, payload...)
 
 	// Encrypt the payload.
@@ -237,34 +465,38 @@ func NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 }
 
 // Unwrap unwraps the provided Sphinx packet pkt in-place, using the provided
-// ECDH private key, and returns the payload (if applicable), replay tag, and
+// NIKE private key, and returns the payload (if applicable), replay tag, and
 // routing info command vector.
-func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
-	const (
+func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
+	var (
 		geOff      = 2
-		riOff      = geOff + crypto.GroupElementLength
-		macOff     = riOff + routingInfoLength
+		riOff      = geOff + s.nike.PublicKeySize()
+		macOff     = riOff + s.geometry.RoutingInfoLength
 		payloadOff = macOff + crypto.MACLength
 	)
 
 	// Do some basic sanity checking, and validate the AD.
-	if len(pkt) < HeaderLength {
+	if len(pkt) < s.geometry.HeaderLength {
 		return nil, nil, nil, errors.New("sphinx: invalid packet, truncated")
 	}
 	if subtle.ConstantTimeCompare(v0AD[:], pkt[:2]) != 1 {
 		return nil, nil, nil, errors.New("sphinx: invalid packet, unknown version")
 	}
 
+	var sharedSecret []byte
+	defer utils.ExplicitBzero(sharedSecret)
+
 	// Calculate the hop's shared secret, and replay_tag.
-	var groupElement ecdh.PublicKey
-	var sharedSecret [crypto.GroupElementLength]byte
-	defer utils.ExplicitBzero(sharedSecret[:])
-	groupElement.FromBytes(pkt[geOff:riOff])
-	privKey.Exp(&sharedSecret, &groupElement)
+	groupElement, err := s.nike.UnmarshalBinaryPublicKey(pkt[geOff:riOff])
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("sphinx: failed to unmarshal group element: %s", err)
+	}
+	sharedSecret = s.nike.DeriveSecret(privKey, groupElement)
+
 	replayTag := crypto.Hash(groupElement.Bytes())
 
 	// Derive the various keys required for packet processing.
-	keys := crypto.KDF(&sharedSecret)
+	keys := crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 	defer keys.Reset()
 
 	// Validate the Sphinx Packet Header.
@@ -279,14 +511,14 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 
 	// Append padding to preserve length invariance, decrypt the (padded)
 	// routing_info block, and extract the section for the current hop.
-	var b [routingInfoLength + perHopRoutingInfoLength]byte
-	copy(b[:routingInfoLength], pkt[riOff:riOff+routingInfoLength])
-	s := crypto.NewStream(&keys.HeaderEncryption, &keys.HeaderEncryptionIV)
-	defer s.Reset()
-	s.XORKeyStream(b[:], b[:])
+	b := make([]byte, s.geometry.RoutingInfoLength+s.geometry.PerHopRoutingInfoLength)
+	copy(b[:s.geometry.RoutingInfoLength], pkt[riOff:riOff+s.geometry.RoutingInfoLength])
+	stream := crypto.NewStream(&keys.HeaderEncryption, &keys.HeaderEncryptionIV)
+	defer stream.Reset()
+	stream.XORKeyStream(b[:], b[:])
 
-	newRoutingInfo := b[perHopRoutingInfoLength:]
-	cmdBuf := b[:perHopRoutingInfoLength]
+	newRoutingInfo := b[s.geometry.PerHopRoutingInfoLength:]
+	cmdBuf := b[:s.geometry.PerHopRoutingInfoLength]
 
 	// Parse the per-hop routing commands.
 	var nextNode *commands.NextNodeHop
@@ -331,7 +563,7 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 	// Transform the packet for forwarding to the next mix, iff the
 	// routing commands vector included a NextNodeHopCommand.
 	if nextNode != nil {
-		groupElement.Blind(&keys.BlindingFactor)
+		groupElement.Blind(keys.BlindingFactor)
 		copy(pkt[geOff:riOff], groupElement.Bytes()[:])
 		copy(pkt[riOff:macOff], newRoutingInfo)
 		copy(pkt[macOff:payloadOff], nextNode.MAC[:])
@@ -340,15 +572,15 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 		}
 		payload = nil
 	} else {
-		if len(payload) < PayloadTagLength {
+		if len(payload) < s.geometry.PayloadTagLength {
 			return nil, replayTag[:], nil, errTruncatedPayload
 		}
 		// Validate the payload tag, iff this is not a SURB reply.
 		if surbReply == nil {
-			if !utils.CtIsZero(payload[:PayloadTagLength]) {
+			if !utils.CtIsZero(payload[:s.geometry.PayloadTagLength]) {
 				return nil, replayTag[:], nil, errInvalidTag
 			}
-			payload = payload[PayloadTagLength:]
+			payload = payload[s.geometry.PayloadTagLength:]
 		}
 	}
 
@@ -357,11 +589,17 @@ func Unwrap(privKey *ecdh.PrivateKey, pkt []byte) ([]byte, []byte, []commands.Ro
 
 func xorBytes(dst, a, b []byte) {
 	if len(a) != len(b) || len(a) != len(dst) {
-		panic("sphinx: BUG: xorBytes called with mismatched buffer sizes")
+		panic(fmt.Sprintf("sphinx: BUG: xorBytes called with mismatched buffer sizes, got 'len(a)' %d and 'len(b)' %d", len(a), len(b)))
 	}
 
 	// TODO: If this shows up in the profiles, vectorize it.
 	for i, v := range a {
 		dst[i] = v ^ b[i]
 	}
+}
+
+func init() {
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	geo := defaultGeometry(nike)
+	defaultSphinx = NewSphinx(nike, geo)
 }

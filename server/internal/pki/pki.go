@@ -29,29 +29,27 @@ import (
 
 	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
+	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/pkicache"
-	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/op/go-logging.v1"
 )
 
 var (
 	errNotCached         = errors.New("pki: requested epoch document not in cache")
-	recheckInterval      = 1 * time.Minute
+	recheckInterval      = epochtime.Period / 32
 	WarpedEpoch          = "false"
-	nextFetchTill        = 3*epochtime.Period / 8
 	pkiEarlyConnectSlack = epochtime.Period / 8
-	PublishDeadline      = epochtime.Period / 4
+	PublishDeadline      = vServer.MixPublishDeadline
+	nextFetchTill        = epochtime.Period - PublishDeadline
 )
 
 type pki struct {
@@ -70,61 +68,12 @@ type pki struct {
 	lastWarnedEpoch    uint64
 }
 
-var (
-	fetchedPKIDocs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "fetched_pki_docs_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of fetch PKI docs per epoch",
-		},
-		[]string{"epoch"},
-	)
-	fetchedPKIDocsDuration = prometheus.NewSummary(
-		prometheus.SummaryOpts{
-			Namespace: constants.Namespace,
-			Name:      "fetched_pki_docs_per_epoch_duration",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Duration of PKI docs fetching requests per epoch",
-		},
-	)
-	failedFetchPKIDocs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "failed_fetch_pki_docs_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of failed PKI docs fetches per epoch",
-		},
-		[]string{"epoch"},
-	)
-	failedPKICacheGeneration = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "failed_pki_cache_generation_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of failed PKI caches generation per epoch",
-		},
-		[]string{"epoch"},
-	)
-	invalidPKICache = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Namespace: constants.Namespace,
-			Name:      "katzenpost_invalid_pki_cache_per_epoch_total",
-			Subsystem: constants.PKISubsystem,
-			Help:      "Number of invalid PKI caches per epoch",
-		},
-		[]string{"epoch"},
-	)
-	fetchedPKIDocsTimer *prometheus.Timer
-)
-
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
 }
 
 func (p *pki) worker() {
-
-	const initialSpawnDelay = 5 * time.Second
+	var initialSpawnDelay = epochtime.Period / 64
 
 	timer := time.NewTimer(initialSpawnDelay)
 	defer func() {
@@ -177,7 +126,7 @@ func (p *pki) worker() {
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
-			fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
+			instrument.SetFetchedPKIDocsTimer()
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
@@ -193,24 +142,24 @@ func (p *pki) worker() {
 			}
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
-				failedFetchPKIDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
+				instrument.FailedFetchPKIDocs(fmt.Sprintf("%v", epoch))
 				if err == cpki.ErrNoDocument {
 					p.setFailedFetch(epoch, err)
 				}
 				continue
 			}
 
-			ent, err := pkicache.New(d, p.glue.IdentityKey().PublicKey(), p.glue.Config().Server.IsProvider)
+			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsProvider)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
 				p.setFailedFetch(epoch, err)
-				failedPKICacheGeneration.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
+				instrument.FailedPKICacheGeneration(fmt.Sprintf("%v", epoch))
 				continue
 			}
 			if err = p.validateCacheEntry(ent); err != nil {
 				p.log.Warningf("Generated PKI cache is invalid: %v", err)
 				p.setFailedFetch(epoch, err)
-				invalidPKICache.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)}).Inc()
+				instrument.InvalidPKICache(fmt.Sprintf("%v", epoch))
 				continue
 			}
 
@@ -219,8 +168,8 @@ func (p *pki) worker() {
 			p.docs[epoch] = ent
 			p.Unlock()
 			didUpdate = true
-			fetchedPKIDocs.With(prometheus.Labels{"epoch": fmt.Sprintf("%v", epoch)})
-			fetchedPKIDocsTimer.ObserveDuration()
+			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
+			instrument.TimeFetchedPKIDocsDuration()
 		}
 
 		p.pruneFailures()
@@ -271,7 +220,37 @@ func (p *pki) worker() {
 			}
 		}
 
-		timer.Reset(recheckInterval)
+		p.updateTimer(timer)
+	}
+}
+
+// updateTimer is used by the worker loop to determine when next to wake and fetch.
+func (p *pki) updateTimer(timer *time.Timer) {
+	now, elapsed, till := epochtime.Now()
+	p.log.Debugf("pki woke %v into epoch %v with %v remaining", elapsed, now, till)
+
+	// it's after the consensus publication deadline
+	if elapsed > vServer.PublishConsensusDeadline {
+		p.log.Debugf("After deadline for next epoch publication")
+		if p.entryForEpoch(now+1) == nil {
+			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval)
+			timer.Reset(recheckInterval)
+		} else {
+			interval := till
+			p.log.Debugf("document cached for %v, reset to %v", now+1, interval)
+			timer.Reset(interval)
+		}
+	} else {
+		p.log.Debugf("Not yet time for next epoch publication")
+		// no document for current epoch
+		if p.entryForEpoch(now) == nil {
+			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
+			timer.Reset(recheckInterval)
+		} else {
+			interval := vServer.PublishConsensusDeadline - elapsed
+			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, recheckInterval)
+			timer.Reset(interval)
+		}
 	}
 }
 
@@ -284,7 +263,7 @@ func (p *pki) validateCacheEntry(ent *pkicache.Entry) error {
 	if desc.Name != p.glue.Config().Server.Identifier {
 		return fmt.Errorf("self Name field does not match Identifier")
 	}
-	if !desc.IdentityKey.Equal(p.glue.IdentityKey().PublicKey()) {
+	if !desc.IdentityKey.Equal(p.glue.IdentityPublicKey()) {
 		return fmt.Errorf("self identity key mismatch")
 	}
 	if !desc.LinkKey.Equal(p.glue.LinkKey().PublicKey()) {
@@ -385,14 +364,15 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	// Generate the non-key parts of the descriptor.
 	desc := &cpki.MixDescriptor{
 		Name:        p.glue.Config().Server.Identifier,
-		IdentityKey: p.glue.IdentityKey().PublicKey(),
+		IdentityKey: p.glue.IdentityPublicKey(),
 		LinkKey:     p.glue.LinkKey().PublicKey(),
 		Addresses:   p.descAddrMap,
+		Epoch:       epoch,
 	}
 	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
 		// shouldn't be self assigning this.
-		desc.Layer = cpki.LayerProvider
+		desc.Provider = true
 
 		// Publish currently running Kaetzchen.
 		var err error
@@ -442,7 +422,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 	}
 
 	// Post the descriptor to all the authorities.
-	err := p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), desc)
+	err := p.impl.Post(pkiCtx, doPublishEpoch, p.glue.IdentityKey(), p.glue.IdentityPublicKey(), desc)
 	switch err {
 	case nil:
 		p.log.Debugf("Posted descriptor for epoch: %v", doPublishEpoch)
@@ -528,7 +508,7 @@ func (p *pki) documentsForAuthentication() ([]*pkicache.Entry, *pkicache.Entry, 
 }
 
 func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (desc *cpki.MixDescriptor, canSend, isValid bool) {
-	const earlySendSlack = 2 * time.Minute
+	var earlySendSlack = epochtime.Period / 8
 
 	dirStr := "Incoming"
 	if isOutgoing {
@@ -537,7 +517,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 
 	// Ensure the additional data is valid.
 	if len(c.AdditionalData) != sConstants.NodeIDLength {
-		p.log.Debugf("%v: '%v' AD not an IdentityKey?.", dirStr, debug.BytesToPrintString(c.AdditionalData))
+		p.log.Debugf("%v: '%x' AD not an IdentityKey?.", dirStr, c.AdditionalData)
 		return nil, false, false
 	}
 	var nodeID [sConstants.NodeIDLength]byte
@@ -566,7 +546,7 @@ func (p *pki) AuthenticateConnection(c *wire.PeerCredentials, isOutgoing bool) (
 		// the most recent descriptor we have for the node.
 		if !m.LinkKey.Equal(c.PublicKey) {
 			if desc == m || !desc.LinkKey.Equal(c.PublicKey) {
-				p.log.Warningf("%v: '%v' Public Key mismatch: '%v'", dirStr, debug.BytesToPrintString(c.AdditionalData), c.PublicKey)
+				p.log.Warningf("%v: '%x' Public Key mismatch: '%x'", dirStr, c.AdditionalData, c.PublicKey.Sum256())
 				continue
 			}
 		}
@@ -624,7 +604,7 @@ func (p *pki) OutgoingDestinations() map[[sConstants.NodeIDLength]byte]*cpki.Mix
 		}
 
 		for _, v := range d.Outgoing() {
-			nodeID := v.IdentityKey.ByteArray()
+			nodeID := v.IdentityKey.Sum256()
 
 			// Ignore nodes from past epochs that are not listed in the
 			// current document.
@@ -655,6 +635,7 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 		if epoch < now-1 {
 			return nil, cpki.ErrNoDocument
 		}
+		p.log.Debugf("PKI cache miss for epoch %d", epoch)
 		return nil, errNotCached
 	}
 	return val, nil
@@ -696,27 +677,23 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	if glue.Config().PKI.Nonvoting != nil {
-		authPk := new(eddsa.PublicKey)
-		if err = authPk.FromString(glue.Config().PKI.Nonvoting.PublicKey); err != nil {
-			return nil, fmt.Errorf("BUG: pki: Failed to deserialize validated public key: %v", err)
-		}
 		pkiCfg := &nClient.Config{
-			LogBackend: glue.LogBackend(),
-			Address:    glue.Config().PKI.Nonvoting.Address,
-			PublicKey:  authPk,
+			LinkKey:              glue.LinkKey(),
+			LogBackend:           glue.LogBackend(),
+			Address:              glue.Config().PKI.Nonvoting.Address,
+			AuthorityIdentityKey: glue.Config().PKI.Nonvoting.PublicKey,
+			AuthorityLinkKey:     glue.Config().PKI.Nonvoting.LinkPublicKey,
 		}
 		p.impl, err = nClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		authorities, err := config.AuthorityPeersFromPeers(glue.Config().PKI.Voting.Peers)
-		if err != nil {
-			return nil, err
-		}
 		pkiCfg := &vClient.Config{
+			DataDir:     glue.Config().Server.DataDir,
+			LinkKey:     glue.LinkKey(),
 			LogBackend:  glue.LogBackend(),
-			Authorities: authorities,
+			Authorities: glue.Config().PKI.Voting.Authorities,
 		}
 		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
@@ -760,14 +737,4 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 		m[t] = append(m[t], addr)
 	}
 	return m, nil
-}
-
-func init() {
-	prometheus.MustRegister(fetchedPKIDocs)
-	prometheus.MustRegister(fetchedPKIDocsDuration)
-	prometheus.MustRegister(failedFetchPKIDocs)
-
-	if WarpedEpoch == "true" {
-		recheckInterval = 5 * time.Second
-	}
 }

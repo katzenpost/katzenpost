@@ -25,11 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
@@ -43,13 +43,13 @@ type ClientConfig struct {
 	// Provider is the provider identifier to connect to.
 	Provider string
 
-	// ProviderKeyPin is the optional pinned provider EdDSA signing key.
+	// ProviderKeyPin is the optional pinned provider signing key.
 	// If specified, the client will refuse to accept provider descriptors
 	// in PKI documents unless they are signed by the pinned key.
-	ProviderKeyPin *eddsa.PublicKey
+	ProviderKeyPin sign.PublicKey
 
 	// LinkKey is the user's ECDH link authentication private key.
-	LinkKey *ecdh.PrivateKey
+	LinkKey wire.PrivateKey
 
 	// LogBackend is the logging backend to use for client logging.
 	LogBackend *log.Backend
@@ -144,6 +144,9 @@ type Client struct {
 	cfg *ClientConfig
 	log *logging.Logger
 
+	geo    *sphinx.Geometry
+	sphinx *sphinx.Sphinx
+
 	rng  *mRand.Rand
 	pki  *pki
 	conn *connection
@@ -189,14 +192,15 @@ func New(cfg *ClientConfig) (*Client, error) {
 	}
 
 	c := new(Client)
+	c.geo = sphinx.DefaultGeometry()
+	c.sphinx = sphinx.DefaultSphinx()
 	c.cfg = cfg
-	c.displayName = fmt.Sprintf("%v@%v", c.cfg.User, c.cfg.Provider)
+	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)
 	c.haltedCh = make(chan interface{})
 
 	c.log.Notice("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 	c.log.Debugf("User/Provider is: %v", c.displayName)
-	c.log.Debugf("User Link Key is: %v", c.cfg.LinkKey.PublicKey())
 
 	c.rng = rand.NewMath()
 

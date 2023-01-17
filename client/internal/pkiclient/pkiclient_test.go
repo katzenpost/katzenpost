@@ -3,10 +3,11 @@ package pkiclient
 import (
 	"context"
 	"errors"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/pki"
 	"testing"
 	"time"
+
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/pki"
 )
 
 var (
@@ -16,7 +17,7 @@ var (
 type mockPKI struct {
 }
 
-func (m mockPKI) Post(ctx context.Context, epoch uint64, signingKey *eddsa.PrivateKey, d *pki.MixDescriptor) error {
+func (m mockPKI) Post(ctx context.Context, epoch uint64, signingKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *pki.MixDescriptor) error {
 	return errNotImplemented
 }
 

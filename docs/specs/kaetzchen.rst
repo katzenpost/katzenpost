@@ -190,11 +190,11 @@ Appendix A.1 Normative References
 
 .. [SPHINXSPEC] Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                 "Sphinx Mix Network Cryptographic Packet Format Specification"
-                July 2017, <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/sphinx.rst>.
+                July 2017, <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/sphinx.rst>.
 
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/end_to_end.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.
 
 .. [RFC5322]  Resnick, P., Ed., "Internet Message Format", RFC 5322,
               DOI 10.17487/RFC5322, October 2008,
@@ -209,7 +209,7 @@ Appendix A.2 Informative References
 
 .. [KATZMIXPKI]  Angel, Y., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network Public Key Infrastructure Specification", December 2017,
-                 <https://github.com/katzenpost/katzenpost/blob/master/docs/specs/pki.rst>.
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/pki.rst>.
 
 Appendix B. Citing This Document
 ================================
@@ -225,6 +225,6 @@ as described in a document called "How to Use the IEEEtran BIBTEX Style".
    @online{Kaetzchen,
    title = {Katzenpost Provider-side Autoresponder Extension},
    author = {Yawning Angel and Kali Kaneko and David Stainton},
-   url = {https://github.com/Katzenpost/docs/blob/master/specs/kaetzchen.rst},
+   url = {https://github.com/katzenpost/katzenpost/blob/main/docs/specs/kaetzchen.rst},
    year = {2018}
    }

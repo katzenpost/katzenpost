@@ -21,7 +21,6 @@
 // as described in our Kaetzchen specification document:
 //
 // https://github.com/katzenpost/katzenpost/blob/master/docs/specs/kaetzchen.rst
-//
 package cborplugin
 
 import (

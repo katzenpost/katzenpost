@@ -67,8 +67,25 @@ func TestEdDSAOps(t *testing.T) {
 	assert.Equal(SignatureSize, len(sig), "Sign() length")
 	assert.True(pubKey.Verify(sig, msg), "Verify(sig, msg)")
 	assert.False(pubKey.Verify(sig, msg[:16]), "Verify(sig, msg[:16])")
+}
 
-	dhPrivKey := privKey.ToECDH()
-	dhPubKey := privKey.PublicKey().ToECDH()
-	assert.True(dhPrivKey.PublicKey().Equal(dhPubKey), "ToECDH() basic sanity")
+func TestCheckEdDSA(t *testing.T) {
+	// check that EdDSA signing works like the first test vector in
+	// https://ed25519.cr.yp.to/python/sign.input
+	// (this is a sanity check to ensure (R,s) is computed as it should
+	// as it was non-obvious to me that the nonce is being clamped
+	assert := assert.New(t)
+	vector_signed := [64]byte{229, 86, 67, 0, 195, 96, 172, 114, 144, 134, 226, 204, 128, 110, 130, 138, 132, 135, 127, 30, 184, 229, 217, 116, 216, 115, 224, 101, 34, 73, 1, 85, 95, 184, 130, 21, 144, 163, 59, 172, 198, 30, 57, 112, 28, 249, 180, 107, 210, 91, 245, 240, 89, 91, 190, 36, 101, 81, 65, 67, 142, 122, 16, 11}
+	tsk := [64]byte{157, 97, 177, 157, 239, 253, 90, 96, 186, 132, 74, 244, 146, 236, 44, 196, 68, 73, 197, 105, 123, 50, 105, 25, 112, 59, 172, 3, 28, 174, 127, 96, 215, 90, 152, 1, 130, 177, 10, 183, 213, 75, 254, 211, 201, 100, 7, 58, 14, 225, 114, 243, 218, 166, 35, 37, 175, 2, 26, 104, 247, 7, 81, 26}
+	tpk := [32]byte{215, 90, 152, 1, 130, 177, 10, 183, 213, 75, 254, 211, 201, 100, 7, 58, 14, 225, 114, 243, 218, 166, 35, 37, 175, 2, 26, 104, 247, 7, 81, 26}
+	rsk := new(PrivateKey)
+	rsk.FromBytes(tsk[:])
+	assert.Equal(tpk[:], rsk.PublicKey().Bytes())
+	actual_signed := rsk.Sign([]byte{})
+	assert.Equal(vector_signed[:], actual_signed)
+	verify_res := rsk.PublicKey().Verify(vector_signed[:], []byte{})
+	assert.Equal(true, verify_res)
+	// and 1 was NOT the message, so that shouldn't check out:
+	verify_res = rsk.PublicKey().Verify(vector_signed[:], []byte{1})
+	assert.Equal(false, verify_res)
 }
