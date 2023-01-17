@@ -106,9 +106,8 @@ func (s *stream) readworker() {
 
 			// pab has been acknowledged, stop
 			// periodic retransmission and clean map
-			pr, ok := s.r.wack[f.Pab]
+			_, ok := s.r.wack[f.Pab]
 			if ok {
-				s.tq.Remove(&smsg{priority: pr})
 				delete(s.r.wack, f.Pab)
 			}
 
