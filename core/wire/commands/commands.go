@@ -208,6 +208,13 @@ type Commands struct {
 	geo *geo.Geometry
 }
 
+// NewPKICommands returns a Commands without a given sphinx geometry.
+func NewPKICommands() *Commands {
+	return &Commands{
+		geo: nil,
+	}
+}
+
 // NewCommands returns a Commands given a sphinx geometry.
 func NewCommands(geo *geo.Geometry) *Commands {
 	return &Commands{

@@ -33,7 +33,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -111,11 +110,10 @@ type connection struct {
 type connector struct {
 	cfg *Config
 	log *logging.Logger
-	geo *geo.Geometry
 }
 
 // newConnector returns a connector initialized from a Config.
-func newConnector(cfg *Config, geo *geo.Geometry) *connector {
+func newConnector(cfg *Config) *connector {
 	p := &connector{
 		cfg: cfg,
 		log: cfg.LogBackend.GetLogger("pki/voting/client/connector"),
@@ -168,13 +166,12 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
-		Geometry:          p.geo,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
-	s, err := wire.NewSession(cfg, true)
+	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +387,7 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 }
 
 // New constructs a new pki.Client instance.
-func New(cfg *Config, geo *geo.Geometry) (pki.Client, error) {
+func New(cfg *Config) (pki.Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("voting/Client: cfg is mandatory")
 	}
@@ -401,7 +398,7 @@ func New(cfg *Config, geo *geo.Geometry) (pki.Client, error) {
 	c := new(Client)
 	c.cfg = cfg
 	c.log = cfg.LogBackend.GetLogger("pki/voting/Client")
-	c.pool = newConnector(cfg, geo)
+	c.pool = newConnector(cfg)
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {
 		c.verifiers[i] = auth.IdentityPublicKey

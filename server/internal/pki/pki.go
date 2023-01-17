@@ -717,7 +717,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			AuthorityIdentityKey: glue.Config().PKI.Nonvoting.PublicKey,
 			AuthorityLinkKey:     glue.Config().PKI.Nonvoting.LinkPublicKey,
 		}
-		p.impl, err = nClient.New(pkiCfg, glue.PKI().GetSphinxGeometry())
+		p.impl, err = nClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}
@@ -728,7 +728,7 @@ func New(glue glue.Glue) (glue.PKI, error) {
 			LogBackend:  glue.LogBackend(),
 			Authorities: glue.Config().PKI.Voting.Authorities,
 		}
-		p.impl, err = vClient.New(pkiCfg, glue.PKI().GetSphinxGeometry())
+		p.impl, err = vClient.New(pkiCfg)
 		if err != nil {
 			return nil, err
 		}

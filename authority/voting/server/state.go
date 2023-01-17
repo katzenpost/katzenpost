@@ -1836,7 +1836,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				DialContextFn: nil,
 				DataDir:       s.s.cfg.Server.DataDir,
 			}
-			c, err := client.New(cfg, s.geo)
+			c, err := client.New(cfg)
 			if err != nil {
 				return
 			}
