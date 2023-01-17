@@ -1,3 +1,6 @@
+//go:build ctidh
+// +build ctidh
+
 package hybrid
 
 import (
