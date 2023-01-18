@@ -218,20 +218,23 @@ func (s *Server) halt() {
 
 // New returns a new Server instance parameterized with the specified
 // configuration.
-func New(cfg *config.Config) (*Server, error) {
-	s := &Server{
+func New(cfg *config.Config) *Server {
+	return &Server{
 		cfg:        cfg,
 		fatalErrCh: make(chan error),
 		haltedCh:   make(chan interface{}),
 	}
+}
+
+func (s *Server) Start() error {
 	goo := &serverGlue{s}
 
 	// Do the early initialization and bring up logging.
 	if err := utils.MkDataDir(s.cfg.Server.DataDir); err != nil {
-		return nil, err
+		return err
 	}
 	if err := s.initLogging(); err != nil {
-		return nil, err
+		return err
 	}
 	instrument.Init()
 
@@ -255,23 +258,23 @@ func New(cfg *config.Config) (*Server, error) {
 	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err := pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err := pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	} else {
-		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
+		return fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
 	}
 
 	var err error
@@ -285,21 +288,21 @@ func New(cfg *config.Config) (*Server, error) {
 	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
-			return nil, err
+			return nil
 		}
 		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
-			return nil, err
+			return nil
 		}
 	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
 		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
 		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
-			return nil, err
+			return nil
 		}
 		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
-			return nil, err
+			return nil
 		}
 	} else {
 		panic("Improbable: Only found one link PEM file.")
@@ -311,13 +314,13 @@ func New(cfg *config.Config) (*Server, error) {
 	s.log.Noticef("Server link public key hash is: %x", linkPubKeyHash[:])
 
 	if s.cfg.Debug.GenerateOnly {
-		return nil, ErrGenerateOnly
+		return ErrGenerateOnly
 	}
 
 	// Load and or generate mix keys.
 	if s.mixKeys, err = newMixKeys(goo); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
-		return nil, err
+		return nil
 	}
 
 	// Past this point, failures need to call s.Shutdown() to do cleanup.
@@ -349,7 +352,7 @@ func New(cfg *config.Config) (*Server, error) {
 		err := os.Remove(s.cfg.Management.Path)
 		if err != nil {
 			s.fatalErrCh <- fmt.Errorf("failed to delete mgmt socket file, shutting down now")
-			return nil, err
+			return nil
 		}
 	}
 	if s.cfg.Management.Enable {
@@ -362,7 +365,7 @@ func New(cfg *config.Config) (*Server, error) {
 		}
 		if s.management, err = thwack.New(mgmtCfg); err != nil {
 			s.log.Errorf("Failed to initialize management interface: %v", err)
-			return nil, err
+			return nil
 		}
 
 		const shutdownCmd = "SHUTDOWN"
@@ -375,21 +378,23 @@ func New(cfg *config.Config) (*Server, error) {
 	// Initialize the PKI interface.
 	if s.pki, err = pki.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize PKI client: %v", err)
-		return nil, err
+		return nil
 	}
+
+	s.pki.StartWorker()
 
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
 		if s.provider, err = provider.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
-			return nil, err
+			return nil
 		}
 	}
 
 	// Initialize and start the the scheduler.
 	if s.scheduler, err = scheduler.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize scheduler: %v", err)
-		return nil, err
+		return nil
 	}
 
 	// Initialize and start the Sphinx workers.
@@ -405,7 +410,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.connector = outgoing.New(goo)
 	if s.decoy, err = decoy.New(goo); err != nil {
 		s.log.Errorf("Failed to initialize decoy source/sink: %v", err)
-		return nil, err
+		return nil
 	}
 
 	// Bring the listener(s) online.
@@ -414,12 +419,10 @@ func New(cfg *config.Config) (*Server, error) {
 		l, err := incoming.New(goo, s.inboundPackets.In(), i, addr)
 		if err != nil {
 			s.log.Errorf("Failed to spawn listener on address: %v (%v).", addr, err)
-			return nil, err
+			return nil
 		}
 		s.listeners = append(s.listeners, l)
 	}
-
-	s.pki.StartWorker()
 
 	// Start the periodic 1 Hz utility timer.
 	s.periodic = newPeriodicTimer(s)
@@ -432,7 +435,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	isOk = true
-	return s, nil
+	return nil
 }
 
 type serverGlue struct {

@@ -203,6 +203,12 @@ func NewWithID(raw []byte, id uint64, g *geo.Geometry) (*Packet, error) {
 	pkt := v.(*Packet)
 	pkt.Geometry = g
 	pkt.ID = id
+	pkt.rawPacketPool = sync.Pool{
+		New: func() interface{} {
+			b := make([]byte, pkt.Geometry.PacketLength)
+			return b
+		},
+	}
 	if err := pkt.copyToRaw(raw); err != nil {
 		pkt.Dispose()
 		return nil, err

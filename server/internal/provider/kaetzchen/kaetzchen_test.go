@@ -31,6 +31,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
@@ -42,6 +44,32 @@ import (
 	"github.com/katzenpost/katzenpost/server/spool"
 	"github.com/katzenpost/katzenpost/server/userdb"
 )
+
+type mockPKI struct{}
+
+func (u *mockPKI) Halt() {}
+
+func (u *mockPKI) StartWorker() {}
+
+func (u *mockPKI) OutgoingDestinations() map[[geo.NodeIDLength]byte]*pki.MixDescriptor {
+	return nil
+}
+
+func (u *mockPKI) AuthenticateConnection(a *wire.PeerCredentials, b bool) (*pki.MixDescriptor, bool, bool) {
+	return nil, true, false
+}
+
+func (u *mockPKI) GetRawConsensus(meow uint64) ([]byte, error) {
+	return nil, nil
+}
+
+func (u *mockPKI) GetSphinx() *sphinx.Sphinx {
+	return nil
+}
+
+func (u *mockPKI) GetSphinxGeometry() *geo.Geometry {
+	return nil
+}
 
 type mockUserDB struct {
 	provider *mockProvider
@@ -174,7 +202,7 @@ func (g *mockGlue) MixKeys() glue.MixKeys {
 }
 
 func (g *mockGlue) PKI() glue.PKI {
-	return g.s.pki
+	return &mockPKI{}
 }
 
 func (g *mockGlue) Provider() glue.Provider {

@@ -67,14 +67,22 @@ type pki struct {
 	failedFetches      map[uint64]error
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
+
+	blockStartChan chan struct{}
 }
 
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
+	p.blockUntilConsensus()
+}
+
+func (p *pki) blockUntilConsensus() {
+	<-p.blockStartChan
 }
 
 func (p *pki) worker() {
 	var initialSpawnDelay = epochtime.Period / 64
+	var firstStart bool
 
 	timer := time.NewTimer(initialSpawnDelay)
 	defer func() {
@@ -171,6 +179,11 @@ func (p *pki) worker() {
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
 			instrument.TimeFetchedPKIDocsDuration()
+
+			if !firstStart {
+				firstStart = true
+				p.blockStartChan <- struct{}{}
+			}
 		}
 
 		p.pruneFailures()
@@ -677,11 +690,12 @@ func (p *pki) GetSphinx() *sphinx.Sphinx {
 // New reuturns a new pki.
 func New(glue glue.Glue) (glue.PKI, error) {
 	p := &pki{
-		glue:          glue,
-		log:           glue.LogBackend().GetLogger("pki"),
-		docs:          make(map[uint64]*pkicache.Entry),
-		rawDocs:       make(map[uint64][]byte),
-		failedFetches: make(map[uint64]error),
+		glue:           glue,
+		log:            glue.LogBackend().GetLogger("pki"),
+		docs:           make(map[uint64]*pkicache.Entry),
+		rawDocs:        make(map[uint64][]byte),
+		failedFetches:  make(map[uint64]error),
+		blockStartChan: make(chan struct{}, 2),
 	}
 
 	var err error

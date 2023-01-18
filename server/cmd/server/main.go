@@ -63,7 +63,8 @@ func main() {
 	signal.Notify(rotateCh, syscall.SIGHUP)
 
 	// Start up the server.
-	svr, err := server.New(cfg)
+	svr := server.New(cfg)
+	err = svr.Start()
 	if err != nil {
 		if err == server.ErrGenerateOnly {
 			os.Exit(0)

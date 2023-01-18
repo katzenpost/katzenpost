@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -108,7 +109,12 @@ func TestServerStartShutdown(t *testing.T) {
 	err = cfg.FixupAndValidate()
 	assert.NoError(err)
 
-	s, err := New(&cfg)
-	assert.NoError(err)
+	s := New(&cfg)
+
+	go func() {
+		err = s.Start()
+		assert.NoError(err)
+	}()
+	time.Sleep(time.Second * 1)
 	s.Shutdown()
 }
