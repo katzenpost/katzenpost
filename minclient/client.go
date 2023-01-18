@@ -144,7 +144,7 @@ type Client struct {
 	cfg *ClientConfig
 	log *logging.Logger
 
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
 	rng  *mRand.Rand
@@ -192,8 +192,8 @@ func New(cfg *ClientConfig) (*Client, error) {
 	}
 
 	c := new(Client)
-	c.geo = sphinx.DefaultGeometry()
-	c.sphinx = sphinx.DefaultSphinx()
+	c.geo = nil
+	c.sphinx = nil
 	c.cfg = cfg
 	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)
@@ -204,7 +204,7 @@ func New(cfg *ClientConfig) (*Client, error) {
 
 	c.rng = rand.NewMath()
 
-	c.conn = newConnection(c)
+	c.conn = newConnection(c, c.geo)
 	c.pki = newPKI(c)
 	c.pki.start()
 	c.conn.start()
