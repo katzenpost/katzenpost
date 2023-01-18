@@ -21,8 +21,10 @@ import (
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/memspool/common"
 	"github.com/stretchr/testify/assert"
 )
@@ -107,8 +109,13 @@ func TestPersistence(t *testing.T) {
 	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
 	assert.NoError(err)
 	messages := make([][]byte, 1)
+
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
+
 	for i := 1; i < 100; i++ {
-		msg := make([]byte, common.SpoolPayloadLength)
+		msg := make([]byte, common.SpoolPayloadLength(geo))
 		n, err := rand.Reader.Read(msg)
 		assert.NoError(err)
 		assert.Equal(n, len(msg))

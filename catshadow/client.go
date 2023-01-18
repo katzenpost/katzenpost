@@ -22,10 +22,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/awnumar/memguard"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/awnumar/memguard"
 
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/eapache/channels.v1"
@@ -39,6 +40,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
@@ -62,6 +64,10 @@ var (
 	ErrHalted                 = errors.New("Halted")
 	pandaBlobSize             = 1000
 )
+
+func DoubleRatchetPayloadLength(geo *geo.Geometry) int {
+	return common.SpoolPayloadLength(geo) - ratchet.DoubleRatchetOverhead
+}
 
 // Client is the mixnet client which interacts with other clients
 // and services on the network.
@@ -831,7 +837,7 @@ func (c *Client) Shutdown() {
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
-	if len(message)+4 > DoubleRatchetPayloadLength {
+	if len(message)+4 > DoubleRatchetPayloadLength(c.session.SphinxGeometry()) {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}
@@ -901,7 +907,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	contact.ratchetMutex.Unlock()
 
-	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
+	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext, c.session.SphinxGeometry())
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
 		c.eventCh.In() <- &MessageNotSentEvent{
