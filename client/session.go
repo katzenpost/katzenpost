@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -45,7 +46,7 @@ import (
 type Session struct {
 	worker.Worker
 
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
 	cfg       *config.Config
@@ -93,6 +94,11 @@ func NewSession(
 	if err != nil {
 		return nil, err
 	}
+	epoch, _, _ := epochtime.Now()
+	doc, _, err := pkiClient.Get(ctx, epoch)
+	if err != nil {
+		panic(err)
+	}
 
 	// create a pkiclient for minclient's use
 	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
@@ -103,9 +109,14 @@ func NewSession(
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
+	sphinx, err := doc.Sphinx()
+	if err != nil {
+		panic(err)
+	}
+
 	s := &Session{
-		geo:         sphinx.DefaultGeometry(),
-		sphinx:      sphinx.DefaultSphinx(),
+		geo:         doc.SphinxGeometry,
+		sphinx:      sphinx,
 		cfg:         cfg,
 		linkKey:     linkKey,
 		provider:    provider,
