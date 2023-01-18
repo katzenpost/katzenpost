@@ -38,7 +38,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -256,7 +256,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.waitUntilDialed(address)
 	identityHash := identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          &sphinx.Geometry{},
+		Geometry:          &geo.Geometry{},
 		Authenticator:     d,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: linkPrivateKey,
