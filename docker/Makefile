@@ -109,7 +109,7 @@ wait: $(net_name)/running.stamp
     done
 
 debian_base.stamp:
-	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y'
+	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c "echo -e 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list && apt update && apt upgrade -y && adduser katzenpost --gecos '' --disabled-password && apt update && apt upgrade -y"
 	$(docker) commit katzenpost_debian_base katzenpost-debian_base
 	$(docker) rm katzenpost_debian_base
 	touch $@
