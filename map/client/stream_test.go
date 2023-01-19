@@ -20,6 +20,7 @@ package client
 
 import (
 	"bytes"
+	"io"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/stretchr/testify/require"
@@ -76,12 +77,15 @@ func TestCreateStream(t *testing.T) {
 	require.Equal(n, len(msg))
 
 	yolo = make([]byte, len(msg))
+	n, err = io.ReadAtLeast(r, yolo, len(msg))
+	/*
 	for {
 		n, err = r.Read(yolo)
 		if n == len(msg) {
 			break
 		}
 	}
+	*/
 	require.NoError(err)
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
