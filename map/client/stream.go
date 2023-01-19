@@ -117,7 +117,9 @@ func (s *stream) readworker() {
 
 			fmt.Printf("Writing %s to buf\n", f.Payload)
 			// write payload to buf
+			s.Lock()
 			s.buf.Write(f.Payload)
+			s.Unlock()
 
 			// increment the read pointer
 			fmt.Printf("Updating readPtr!: %s -> ", b64(s.readPtr))
@@ -132,6 +134,8 @@ func (s *stream) readworker() {
 
 // Read impl io.Reader
 func (s *stream) Read(p []byte) (n int, err error) {
+	s.Lock()
+	defer s.Unlock()
 	return s.buf.Read(p)
 }
 
@@ -164,7 +168,7 @@ func (s *stream) Write(p []byte) (n int, err error) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("Putting: %s %s\n", m.msg, base64.StdEncoding.EncodeToString(m.mid[:]))
+	fmt.Printf("Putting: %s %s\n", m.msg, b64(m.mid))
 	s.c.Put(m.mid, b)
 
 	if err != nil {
@@ -184,8 +188,12 @@ func (s *stream) txEnqueue(m *smsg) {
 	s.tq.Push(m)
 }
 
-func H(i string) (res common.MessageID) {
-	return common.MessageID(sha256.Sum256([]byte(i)))
+func b64(id common.MessageID) string {
+	return base64.StdEncoding.EncodeToString(id[:])
+}
+
+func H(i []byte) (res common.MessageID) {
+	return common.MessageID(sha256.Sum256(i))
 }
 
 // take secret and return writer order

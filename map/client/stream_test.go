@@ -19,10 +19,12 @@
 package client
 
 import (
+	"bytes"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/stretchr/testify/require"
 	"testing"
+	"time"
 )
 
 func TestCreateStream(t *testing.T) {
