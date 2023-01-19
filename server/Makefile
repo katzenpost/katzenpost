@@ -14,6 +14,7 @@ testnet-build:
 testnet-install:
 	mv /go/katzenpost/server/cmd/server/server /$(net_name)/server.$(distro)
 	mv /go/katzenpost/memspool/server/cmd/memspool/memspool /$(net_name)/memspool.$(distro)
+	mv /go/katzenpost/map/server/cmd/map/map /$(net_name)/map.$(distro)
 	mv /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /$(net_name)/reunion_katzenpost_server.$(distro)
 	mv /go/katzenpost/panda/server/cmd/panda_server/panda_server /$(net_name)/panda_server.$(distro)
 	mv /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /$(net_name)/echo_server.$(distro)
