@@ -15,13 +15,13 @@ import (
 
 // payload of ctframe is frame
 type frame struct {
-	Pab     common.MessageID
-	Payload []byte // transported data
+	Ack     common.MessageID // acknowledgement of last seen msg
+	Payload []byte           // transported data
 }
 
+// smsg is some sort of container for written messages pending acknowledgement
 type smsg struct {
 	mid      common.MessageID // message unique id used to derive message storage location
-	pab      common.MessageID // acknowledgement of last known peer message
 	msg      []byte           // payload of message
 	priority uint64           // timeout, for when to retransmit if the message is not acknowledged
 }
@@ -32,14 +32,16 @@ func (s *smsg) Priority() uint64 {
 }
 
 type stream struct {
-	c       *Client
-	asecret string             // our secret
-	bsecret string             // peers secret
-	pab     common.MessageID   // our write pointer
-	pba     common.MessageID   // peer's read pointer (sent via acknowledgement)
-	buf     *bytes.Buffer      // buffer to facilitate io.ReadWriter
-	tq      *client.TimerQueue // a delay queue to enable retransmissions
-	r       *retx
+	sync.Mutex
+	c        *Client
+	asecret  string             // our secret
+	bsecret  string             // peers secret
+	writePtr common.MessageID   // our write pointer (tip)
+	readPtr  common.MessageID   // our read pointer
+	peerAck  common.MessageID   // peer's last ack
+	buf      *bytes.Buffer      // buffer to facilitate io.ReadWriter
+	tq       *client.TimerQueue // a delay queue to enable retransmissions
+	r        *retx
 
 	// tunable parameters
 	// stream retransmit window size
@@ -104,11 +106,13 @@ func (s *stream) readworker() {
 				// XXX alert user to failures???
 			}
 
-			// pab has been acknowledged, stop
-			// periodic retransmission and clean map
-			_, ok := s.r.wack[f.Pab]
+			// a write has been ack'd
+			// remove from the waiting-ack list
+			// and do not retransmit any more
+			_, ok := s.r.wack[f.Ack]
 			if ok {
-				delete(s.r.wack, f.Pab)
+				fmt.Printf("Deleting ack'd msgid %s from w(aiting)ack", b64(f.Ack))
+				delete(s.r.wack, f.Ack)
 			}
 
 			fmt.Printf("Writing %s to buf\n", f.Payload)
@@ -116,9 +120,12 @@ func (s *stream) readworker() {
 			s.buf.Write(f.Payload)
 
 			// increment the read pointer
-			fmt.Printf("Updating pab!: %s -> ", base64.StdEncoding.EncodeToString(s.pba[:]))
-			s.pba = common.MessageID(sha256.Sum256(s.pba[:]))
-			fmt.Printf("%s\n", base64.StdEncoding.EncodeToString(s.pba[:]))
+			fmt.Printf("Updating readPtr!: %s -> ", b64(s.readPtr))
+			s.readPtr = H(s.readPtr[:])
+			fmt.Printf("%s\n", b64(s.readPtr))
+		} else {
+			fmt.Printf("Woah, got an error fetching %s: %s\n", b64(s.readPtr), err)
+			<-time.After(1 * time.Second)
 		}
 	}
 }
@@ -143,7 +150,8 @@ func (s *stream) Write(p []byte) (n int, err error) {
 		msg = p
 	}
 
-	m := &smsg{mid: s.writer(), pab: s.pab, msg: msg, priority: uint64(time.Now().Add(4 * time.Hour).Unix())}
+	// FIXME: retransmit unack'd on next storage rotation/epoch ??
+	m := &smsg{mid: s.writer(), msg: msg, priority: uint64(time.Now().Add(4 * time.Hour).Unix())}
 
 	// enqueue transmitted messages
 	// periodically retransmit messages that have not been acknowledged, e.g. using a timer + exponential backoff
@@ -151,7 +159,7 @@ func (s *stream) Write(p []byte) (n int, err error) {
 	s.txEnqueue(m)
 
 	// serialize msg into a frame
-	f := &frame{Pab: s.pab, Payload: msg}
+	f := &frame{Ack: s.readPtr, Payload: msg}
 	b, err := cbor.Marshal(f)
 	if err != nil {
 		panic(err)
@@ -163,7 +171,11 @@ func (s *stream) Write(p []byte) (n int, err error) {
 		return 0, err
 	}
 
-	s.pab = common.MessageID(sha256.Sum256(s.pab[:]))
+	// this is just hashing again, not deriving location from sequence
+	fmt.Printf("Updating writePtr!: %s -> ", b64(s.writePtr))
+	s.writePtr = H(s.writePtr[:])
+	fmt.Printf("%s\n", b64(s.writePtr))
+
 	return len(msg), nil
 }
 
@@ -178,9 +190,9 @@ func H(i string) (res common.MessageID) {
 
 // take secret and return writer order
 func (s *stream) writer() common.MessageID {
-	write := H(s.asecret + s.bsecret + string(s.pab[:]))
-	fmt.Printf("writer(): %s\n", base64.StdEncoding.EncodeToString(write[:]))
-	return write
+	// do whatever else with sharedrandom etc
+	fmt.Printf("writer(): %s\n", b64(s.writePtr))
+	return s.writePtr
 }
 
 // take secret and return reader order
@@ -191,9 +203,9 @@ func (s *stream) writer() common.MessageID {
 // so the secret exchange consists simply of exchanging 2 secrets, not 1
 
 func (s *stream) reader() common.MessageID {
-	read := H(s.bsecret + s.asecret + string(s.pba[:]))
-	fmt.Printf("reader(): %s\n", base64.StdEncoding.EncodeToString(read[:]))
-	return read
+	// XXX: do whatever to dervice tid
+	fmt.Printf("reader(): %s\n", b64(s.readPtr))
+	return s.readPtr
 }
 
 // take order two secrets, a > b
@@ -211,8 +223,8 @@ func NewStream(c *Client, mysecret, theirsecret string) *stream {
 	s.tq = client.NewTimerQueue(s.r)
 	s.buf = new(bytes.Buffer)
 	s.exchange(mysecret, theirsecret)
-	s.pba = H(mysecret + theirsecret + "one") // pick initial pba
-	s.pab = H(theirsecret + mysecret + "one") // pick initial pab
-	go s.readworker()                         // XXX: streams never die
+	s.writePtr = H([]byte(mysecret + theirsecret + "one")) // derive starting ID for writing
+	s.readPtr = H([]byte(theirsecret + mysecret + "one"))  // dervice starting ID for reading
+	go s.readworker()                                      // XXX: streams never die
 	return s
 }
