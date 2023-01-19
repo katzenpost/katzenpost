@@ -9,6 +9,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/map/common"
+	"io"
 	"sync"
 	"time"
 )
@@ -136,7 +137,11 @@ func (s *stream) readworker() {
 func (s *stream) Read(p []byte) (n int, err error) {
 	s.Lock()
 	defer s.Unlock()
-	return s.buf.Read(p)
+	n, err = s.buf.Read(p)
+	if err == io.EOF {
+		return n, nil
+	}
+	return
 }
 
 // Write impl io.Writer

@@ -19,13 +19,11 @@
 package client
 
 import (
-	"bytes"
-	"io"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/stretchr/testify/require"
+	"io"
 	"testing"
-	"time"
 )
 
 func TestCreateStream(t *testing.T) {
@@ -62,6 +60,10 @@ func TestCreateStream(t *testing.T) {
 
 	yolo := make([]byte, len(msg))
 	for {
+		// XXX: the tricky part is that we don't have a convenience method that will handle spinning on Read() for us and
+		// ReadAtLeast payload
+		// I thought io.ReadAtLeast would do this, but we get EOF too soon
+		// because we are just proxying the calls through bytes.Buffer and whatever it does
 		n, err = r.Read(yolo)
 		if n == len(msg) {
 			break
