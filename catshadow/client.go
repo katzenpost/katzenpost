@@ -235,6 +235,10 @@ func (c *Client) initKeyExchange(contact *Contact) error {
 		return err
 	}
 
+	// somehow we are able to add a contact without having created a spool yet
+	if c.spoolReadDescriptor == nil {
+		return errors.New("Unable to create key exchange without a spool")
+	}
 	exchange, err := NewContactExchangeBytes(c.spoolReadDescriptor.GetWriteDescriptor(), signedKeyExchange)
 	if err != nil {
 		return err
