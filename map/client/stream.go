@@ -58,32 +58,45 @@ func (s *smsg) Priority() uint64 {
 	return s.priority
 }
 
-type stream struct {
+// TID returns the temporary storage ID for a MessageID
+func TID(i common.MessageID) common.MessageID {
+	pre := []byte("Both clients get this from somewhere to prepend the input to H, such as the PriorSharedRandom")
+	return H(append(pre, i[:]...))
+}
+
+type Stream struct {
 	sync.Mutex
-	c        *Client
-	asecret  string             // our secret
-	bsecret  string             // peers secret
-	writePtr common.MessageID   // our write pointer (tip)
-	readPtr  common.MessageID   // our read pointer
-	peerAck  common.MessageID   // peer's last ack
-	buf      *bytes.Buffer      // buffer to facilitate io.ReadWriter
-	tq       *client.TimerQueue // a delay queue to enable retransmissions
-	r        *retx
+	worker.Worker
 
-	// tunable parameters
-	// stream retransmit window size
-	// how many messages we can write ahead before acknowledgement
-	//
-	// stream acknowldgement permits dropping messages from the retransmit queue
+	c *Client
+
+	// XXX: need a type for the agreed key and direction as output of handshake
+	asecret  string           // our secret
+	bsecret  string           // peers secret
+	writePtr common.MessageID // our write pointer (tip)
+	readPtr  common.MessageID // our read pointer
+	peerAck  common.MessageID // peer's last ack
+	writeBuf *bytes.Buffer    // buffer to enqueue data before being transmitted
+	readBuf  *bytes.Buffer    // buffer to reassumble data from Frames
+
+	frame_written uint               // number of frames written
+	frame_read    uint               // numbr of frames read
+	tq            *client.TimerQueue // a delay queue to enable retransmissions of unacknowledged blocks
+	r             *retx
+
+	// Parameters
+	// stream_window_size is the number of messages ahead of peer's
+	// ackknowledgement that the writeworker will periodically retransmit
+
+	stream_window_size uint
+	// Mode indicates whether this Stream will be a fire-and-forget ScrambleStream or a reliable channel with retranmissions of unacknowledged messages
+	Mode       StreamMode
+	prodWriter chan struct{}
 }
 
+// XXX: need to calculate the CBOR overhead of serializing frame
+// to figure out what the maximum message size should be per block stored
 var maxmsg = 1000
-
-// fetch
-func fetch(storageid string) (*smsg, error) {
-	panic("NotImplemented")
-	return nil, nil
-}
 
 // glue for timerQ
 type retx struct {
@@ -100,22 +113,32 @@ func (r *retx) Push(i client.Item) error {
 		panic("must be smsg")
 	}
 
+	if _, ok := r.wack[m.mid]; !ok {
+		// not waiting ack, do not retransmit
+		return nil
+	}
+
 	// update the priority and re-enqueue for retransmission
 	m.priority = uint64(time.Now().Add(4 * time.Hour).Unix())
 	r.Lock() // XXX: protect wack
 	defer r.Unlock()
 	r.wack[m.mid] = m.priority // update waiting ack map
-	return r.c.Put(m.mid, m.msg)
+
+	// XXX: encrypt payload before transmit
+	b, err := cbor.Marshal(m.f)
+	if err != nil {
+		return err
+	}
+
+	return r.c.Put(TID(m.mid), b)
 }
 
-// readworker loop polls receive window of messages and adds to the reader queue
-func (s *stream) readworker() {
+// reader polls receive window of messages and adds to the reader queue
+func (s *Stream) reader() {
 
 	for {
-		// scheduler baked-in fetch()
-		// nextblock
 		// next is the MessageID of the next message in the stream
-		msg, err := s.c.Get(s.reader())
+		msg, err := s.c.Get(TID(s.readPtr))
 		if err == nil {
 			// XXX: decrypt block
 			// deserialize cbor to frame
@@ -125,7 +148,7 @@ func (s *stream) readworker() {
 			// XXX: pick serialization for smsgs? cbor
 			// pick block encryption key derivation scheme - ...
 			// from here we can drop messages from the retransmit queue once they have been acknowledged
-			f := new(frame)
+			f := new(Frame)
 			err := cbor.Unmarshal(msg, f)
 			if err != nil {
 				panic(err)
@@ -145,7 +168,7 @@ func (s *stream) readworker() {
 			fmt.Printf("Writing %s to buf\n", f.Payload)
 			// write payload to buf
 			s.Lock()
-			s.buf.Write(f.Payload)
+			s.readBuf.Write(f.Payload)
 			s.Unlock()
 
 			// increment the read pointer
@@ -154,67 +177,105 @@ func (s *stream) readworker() {
 			fmt.Printf("%s\n", b64(s.readPtr))
 		} else {
 			fmt.Printf("Woah, got an error fetching %s: %s\n", b64(s.readPtr), err)
-			<-time.After(1 * time.Second)
 		}
 	}
 }
 
 // Read impl io.Reader
-func (s *stream) Read(p []byte) (n int, err error) {
+func (s *Stream) Read(p []byte) (n int, err error) {
 	s.Lock()
 	defer s.Unlock()
-	n, err = s.buf.Read(p)
+	n, err = s.readBuf.Read(p)
 	if err == io.EOF {
+		// XXX: was final Frame and stream Closed ?
 		return n, nil
 	}
 	return
 }
 
 // Write impl io.Writer
-func (s *stream) Write(p []byte) (n int, err error) {
+func (s *Stream) Write(p []byte) (n int, err error) {
 	// writes message with our last read pointer as header
-	if len(p) > maxmsg {
-		return 0, errors.New("Message Too large")
+	s.Lock()
+	// buffer data to bytes.Buffer
+	fmt.Printf("Wrote data to writeBuf, now prod!\n")
+	s.writeBuf.Write(p)
+	s.Unlock()
+	// prod writer
+	s.prodWriter <- struct{}{}
+	return len(p), nil
+}
+
+func (s *Stream) writer() {
+	for {
+		fmt.Printf("Stream writer() for {}\n")
+		// XXX: support disabled Acks
+		f := &Frame{Ack: s.readPtr, Payload: make([]byte, maxmsg)}
+		s.Lock()
+		// Read up to the maximum frame payload size
+		n, err := io.ReadFull(s.writeBuf, f.Payload)
+		s.Unlock()
+		switch err {
+		case nil, io.ErrUnexpectedEOF, io.EOF:
+		default:
+			fmt.Printf("Stream writer(): %s\n", err)
+			continue
+		}
+		if n > 0 {
+			// XXX: optionally, wait for more data if
+			// it is likely that another write would
+			fmt.Printf("Stream writer() txFrame\n")
+			// truncate Payload so that Frame is serialized
+			// with the correct Payload length.
+			// Padding must be added when Frames are
+			// encrypted.
+			f.Payload = f.Payload[:n]
+			s.txFrame(f)
+		} else {
+			fmt.Printf("Stream writer() no data to send\n")
+			select {
+			case <-time.After(10 * time.Second):
+				fmt.Printf("Stream writer() wakeup to send\n")
+			case <-s.prodWriter:
+				fmt.Printf("Stream writer() prodded\n")
+			case <-s.HaltCh():
+				fmt.Printf("Stream writer() halted\n")
+				return
+			}
+		}
 	}
-	var msg []byte
+}
 
-	if len(p) > maxmsg {
-		n = maxmsg
-		msg = p[:maxmsg]
-	} else {
-		msg = p
-	}
+func (s *Stream) txFrame(f *Frame) (err error) {
+	fmt.Printf("Stream txFrame\n")
+	// XXX: FIXME: retransmit unack'd on next storage rotation/epoch ??
+	// Retransmit unacknowledged blocks every few epochs
+	_, _, til := epochtime.Now()
+	m := &smsg{mid: s.writePtr, f: f, priority: uint64(til + 2*epochtime.Period)}
 
-	// FIXME: retransmit unack'd on next storage rotation/epoch ??
-	m := &smsg{mid: s.writer(), msg: msg, priority: uint64(time.Now().Add(4 * time.Hour).Unix())}
-
-	// enqueue transmitted messages
-	// periodically retransmit messages that have not been acknowledged, e.g. using a timer + exponential backoff
-
-	s.txEnqueue(m)
-
-	// serialize msg into a frame
-	f := &frame{Ack: s.readPtr, Payload: msg}
+	// XXX: encrypt frame before storing
 	b, err := cbor.Marshal(f)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	fmt.Printf("Putting: %s %s\n", m.msg, b64(m.mid))
-	s.c.Put(m.mid, b)
 
+	err = s.c.Put(TID(m.mid), b)
 	if err != nil {
-		return 0, err
+		fmt.Printf("Stream txFrame err: %s\n", err)
+		return err
 	}
+
+	s.txEnqueue(m)
 
 	// this is just hashing again, not deriving location from sequence
 	fmt.Printf("Updating writePtr!: %s -> ", b64(s.writePtr))
 	s.writePtr = H(s.writePtr[:])
 	fmt.Printf("%s\n", b64(s.writePtr))
 
-	return len(msg), nil
+	return nil
 }
 
-func (s *stream) txEnqueue(m *smsg) {
+func (s *Stream) txEnqueue(m *smsg) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
 	s.tq.Push(m)
 }
@@ -227,43 +288,26 @@ func H(i []byte) (res common.MessageID) {
 	return common.MessageID(sha256.Sum256(i))
 }
 
-// take secret and return writer order
-func (s *stream) writer() common.MessageID {
-	// do whatever else with sharedrandom etc
-	fmt.Printf("writer(): %s\n", b64(s.writePtr))
-	return s.writePtr
-}
-
-// take secret and return reader order
-// XXX: needs to figure out how A, B are differentiated; our secret construction should include our order relative to the peer; e.g. we need to agree who goes first in the hash function
-
-// secret is composed of my secret + your secret
-// and I'll construct my view of the read and write sequences in that way
-// so the secret exchange consists simply of exchanging 2 secrets, not 1
-
-func (s *stream) reader() common.MessageID {
-	// XXX: do whatever to dervice tid
-	fmt.Printf("reader(): %s\n", b64(s.readPtr))
-	return s.readPtr
-}
-
 // take order two secrets, a > b
-func (s *stream) exchange(mysecret, othersecret string) {
+func (s *Stream) exchange(mysecret, othersecret string) {
 	s.asecret = mysecret
 	s.bsecret = othersecret
 }
 
 // newstream handshakes and starts a read worker
-func NewStream(c *Client, mysecret, theirsecret string) *stream {
-	s := &stream{}
+func NewStream(c *Client, mysecret, theirsecret string) *Stream {
+	s := new(Stream)
 	s.c = c
 	// timerqueue calls s.Push when timeout of enqueued item
 	s.r = &retx{c: c}
 	s.tq = client.NewTimerQueue(s.r)
-	s.buf = new(bytes.Buffer)
+	s.writeBuf = new(bytes.Buffer)
+	s.readBuf = new(bytes.Buffer)
 	s.exchange(mysecret, theirsecret)
 	s.writePtr = H([]byte(mysecret + theirsecret + "one")) // derive starting ID for writing
 	s.readPtr = H([]byte(theirsecret + mysecret + "one"))  // dervice starting ID for reading
-	go s.readworker()                                      // XXX: streams never die
+	s.prodWriter = make(chan struct{}, 1)
+	go s.Go(s.reader)
+	go s.Go(s.writer)
 	return s
 }
