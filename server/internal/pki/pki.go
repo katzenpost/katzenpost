@@ -69,6 +69,9 @@ type pki struct {
 	lastWarnedEpoch    uint64
 
 	blockStartChan chan struct{}
+
+	geometry *geo.Geometry
+	sphinx   *sphinx.Sphinx
 }
 
 func (p *pki) StartWorker() {
@@ -175,7 +178,14 @@ func (p *pki) worker() {
 			p.Lock()
 			p.rawDocs[epoch] = rawDoc
 			p.docs[epoch] = ent
+			p.geometry = ent.Document().SphinxGeometry
+			p.sphinx, err = ent.Document().Sphinx()
 			p.Unlock()
+
+			if err != nil {
+				p.log.Warningf("Failed to get Sphinx from PKI doc: %v", err)
+			}
+
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
 			instrument.TimeFetchedPKIDocsDuration()
@@ -382,6 +392,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		LinkKey:     p.glue.LinkKey().PublicKey(),
 		Addresses:   p.descAddrMap,
 		Epoch:       epoch,
+		Kaetzchen:   make(map[string]map[string]interface{}),
 	}
 	if p.glue.Config().Server.IsProvider {
 		// Only set the layer if the node is a provider.  Otherwise, nodes
@@ -390,9 +401,11 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// Publish currently running Kaetzchen.
 		var err error
-		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
-		if err != nil {
-			return err
+		if p.glue.Provider() != nil {
+			desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+			if err != nil {
+				return err
+			}
 		}
 
 		// Publish the AuthenticationType
@@ -656,35 +669,11 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 }
 
 func (p *pki) GetSphinxGeometry() *geo.Geometry {
-	epoch, _, _ := epochtime.Now()
-	p.Lock()
-	defer p.Unlock()
-	doc, ok := p.docs[epoch]
-	if !ok {
-		doc, ok = p.docs[epoch-1]
-		if !ok {
-			panic("pki doc not available for current epoch or previous epoch")
-		}
-	}
-	return doc.Document().SphinxGeometry
+	return p.geometry
 }
 
 func (p *pki) GetSphinx() *sphinx.Sphinx {
-	epoch, _, _ := epochtime.Now()
-	p.Lock()
-	defer p.Unlock()
-	doc, ok := p.docs[epoch]
-	if !ok {
-		doc, ok = p.docs[epoch-1]
-		if !ok {
-			panic("pki doc not available for current epoch or previous epoch")
-		}
-	}
-	sphinx, err := doc.Document().Sphinx()
-	if err != nil {
-		panic(err)
-	}
-	return sphinx
+	return p.sphinx
 }
 
 // New reuturns a new pki.
