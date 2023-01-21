@@ -546,6 +546,9 @@ func (s *Session) ClockSkew() time.Duration {
 	return s.clockSkew
 }
 
+// NewPKISession creates a new session to be used with the PKI (authority).
+// Unlike NewSession, NewPKISession does not require that you pass in
+// a Sphinx geometry.
 func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	if cfg.Authenticator == nil {
 		return nil, errors.New("wire/session: missing Authenticator")
