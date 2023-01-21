@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
-	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/epochtime"

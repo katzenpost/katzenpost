@@ -102,10 +102,12 @@ func TestCreateStream(t *testing.T) {
 			io.ReadFull(rand.Reader, entropic)
 			message := base64.StdEncoding.EncodeToString(entropic)
 			// tell the other worker what message we're going to try and send
+			t.Logf("Sending %d bytes", len(message))
 			sidechannel <- message
 			s.Write([]byte(message))
 		}
 		close(sidechannel)
+		t.Logf("SendWorker Done()")
 		wg.Done()
 	}()
 
@@ -116,6 +118,7 @@ func TestCreateStream(t *testing.T) {
 			msg, ok := <-sidechannel
 			// channel was closed by writer, we're done
 			if !ok {
+				t.Logf("ReadWorker Done()")
 				wg.Done()
 				return
 			}
@@ -126,10 +129,12 @@ func TestCreateStream(t *testing.T) {
 				if err != nil {
 					panic(err)
 				}
+				t.Logf("Read %d bytes", n)
+
 				readOff += n
 				if n == 0 {
 					// XXX retry a sensible time later, like the average round trip time
-					<-time.After(time.Second * 10)
+					<-time.After(time.Second * 2)
 				}
 			}
 			require.Equal([]byte(msg), b)
