@@ -31,9 +31,11 @@ import (
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -52,6 +54,7 @@ type katzenpost struct {
 	binSuffix string
 	logWriter io.Writer
 
+	sphinxGeometry    *geo.Geometry
 	authConfig        *aConfig.Config
 	votingAuthConfigs []*vConfig.Config
 	authorities       map[[32]byte]*vConfig.Authority
@@ -252,6 +255,8 @@ func (s *katzenpost) genAuthConfig() error {
 
 	cfg := new(aConfig.Config)
 
+	cfg.SphinxGeometry = s.sphinxGeometry
+
 	// Server section.
 	cfg.Server = new(aConfig.Server)
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.basePort)}
@@ -329,6 +334,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile stri
 	s.authorities = make(map[[32]byte]*vConfig.Authority)
 	for i := 1; i <= numAuthorities; i++ {
 		cfg := new(vConfig.Config)
+		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
 			Identifier: fmt.Sprintf("auth%d", i),
 			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
@@ -398,10 +404,10 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	mixes := []*vConfig.Node{}
 	providers := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
-        node := &vConfig.Node{
-            Identifier:           nodeCfg.Server.Identifier,
-            IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
-        }
+		node := &vConfig.Node{
+			Identifier:           nodeCfg.Server.Identifier,
+			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+		}
 		if nodeCfg.Server.IsProvider {
 			providers = append(providers, node)
 		} else {
@@ -436,6 +442,11 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+
+	nrHops := *nrLayers + *nrProviders
+	s.sphinxGeometry = geo.GeometryFromForwardPayloadLength(
+		ecdh.NewEcdhNike(rand.Reader), 2000, nrHops,
+	)
 
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
