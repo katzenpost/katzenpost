@@ -31,6 +31,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -313,14 +315,23 @@ type Config struct {
 	Parameters *Parameters
 	Debug      *Debug
 
-	Mixes     []*Node
-	Providers []*Node
+	SphinxGeometry *geo.Geometry
+	Mixes          []*Node
+	Providers      []*Node
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
+	if cfg.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+	_, err := sphinx.FromGeometry(cfg.SphinxGeometry)
+	if err != nil {
+		return err
+	}
+
 	// Handle missing sections if possible.
 	if cfg.Server == nil {
 		return errors.New("config: No Authority block was present")
