@@ -90,8 +90,8 @@ type Stream struct {
 
 	stream_window_size uint
 	// Mode indicates whether this Stream will be a fire-and-forget ScrambleStream or a reliable channel with retranmissions of unacknowledged messages
-	Mode       StreamMode
-	prodWriter chan struct{}
+	Mode    StreamMode
+	doFlush chan struct{}
 }
 
 // XXX: need to calculate the CBOR overhead of serializing frame
@@ -198,17 +198,15 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 	// writes message with our last read pointer as header
 	s.Lock()
 	// buffer data to bytes.Buffer
-	fmt.Printf("Wrote data to writeBuf, now prod!\n")
 	s.writeBuf.Write(p)
 	s.Unlock()
-	// prod writer
-	s.prodWriter <- struct{}{}
+	// flush writer
+	s.doFlush <- struct{}{}
 	return len(p), nil
 }
 
 func (s *Stream) writer() {
 	for {
-		fmt.Printf("Stream writer() for {}\n")
 		// XXX: support disabled Acks
 		f := &Frame{Ack: s.readPtr, Payload: make([]byte, maxmsg)}
 		s.Lock()
@@ -218,28 +216,15 @@ func (s *Stream) writer() {
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
 		default:
-			fmt.Printf("Stream writer(): %s\n", err)
-			continue
 		}
 		if n > 0 {
-			// XXX: optionally, wait for more data if
-			// it is likely that another write would
-			fmt.Printf("Stream writer() txFrame\n")
-			// truncate Payload so that Frame is serialized
-			// with the correct Payload length.
-			// Padding must be added when Frames are
-			// encrypted.
+			// truncate frame.Payload
 			f.Payload = f.Payload[:n]
 			s.txFrame(f)
 		} else {
-			fmt.Printf("Stream writer() no data to send\n")
 			select {
-			case <-time.After(10 * time.Second):
-				fmt.Printf("Stream writer() wakeup to send\n")
-			case <-s.prodWriter:
-				fmt.Printf("Stream writer() prodded\n")
+			case <-s.doFlush:
 			case <-s.HaltCh():
-				fmt.Printf("Stream writer() halted\n")
 				return
 			}
 		}
