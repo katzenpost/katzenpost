@@ -31,7 +31,7 @@ const (
 // that indicates whether the Frame is the first, last, or an intermediary
 // block. This
 type Frame struct {
-	Type FrameType
+	Type    FrameType
 	Ack     common.MessageID // acknowledgement of last seen msg
 	Payload []byte           // transported data
 }
@@ -213,7 +213,7 @@ func (s *Stream) writer() {
 		f := &Frame{Ack: s.readPtr, Payload: make([]byte, maxmsg)}
 		s.Lock()
 		// Read up to the maximum frame payload size
-		n, err := io.ReadFull(s.writeBuf, f.Payload)
+		n, err := s.writeBuf.Read(f.Payload)
 		s.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
