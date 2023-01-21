@@ -4,26 +4,42 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/map/common"
 	"io"
 	"sync"
 	"time"
 )
 
-// payload of ctframe is frame
-type frame struct {
+// FrameType indicates the state of Stream at the current Frame
+type FrameType uint8
+
+const (
+	// StreamStart indicates that this is the first Frame in a Stream
+	StreamStart FrameType = iota
+	// StreamData indicates that this is a data carrying Frame in a Stream
+	StreamData
+	// StreamEnd indicates that this is the last Frame in a Stream
+	StreamEnd
+)
+
+// Frame is the container for Stream payloads and contains Stream metadata
+// that indicates whether the Frame is the first, last, or an intermediary
+// block. This
+type Frame struct {
+	Type FrameType
 	Ack     common.MessageID // acknowledgement of last seen msg
 	Payload []byte           // transported data
 }
 
 // smsg is some sort of container for written messages pending acknowledgement
 type smsg struct {
-	mid      common.MessageID // message unique id used to derive message storage location
-	msg      []byte           // payload of message
+	mid      common.MessageID // message unique id used to derive message storage location (NOT TID)
+	f        *Frame           // payload of message
 	priority uint64           // timeout, for when to retransmit if the message is not acknowledged
 }
 
