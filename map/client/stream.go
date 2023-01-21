@@ -141,42 +141,26 @@ func (s *Stream) reader() {
 		msg, err := s.c.Get(TID(s.readPtr))
 		if err == nil {
 			// XXX: decrypt block
-			// deserialize cbor to frame
-			// update stream pointers
-			// append bytes to stream
-			// XXX: decode smsgs, update our view of receiver ptr
-			// XXX: pick serialization for smsgs? cbor
-			// pick block encryption key derivation scheme - ...
-			// from here we can drop messages from the retransmit queue once they have been acknowledged
 			f := new(Frame)
 			err := cbor.Unmarshal(msg, f)
 			if err != nil {
-				panic(err)
-				continue
-				// XXX alert user to failures???
+				// XXX: corrupted stream must terminate
+				return
 			}
 
-			// a write has been ack'd
-			// remove from the waiting-ack list
-			// and do not retransmit any more
+			// remove acknowledged Frames from waiting-ack
+			s.Lock()
 			_, ok := s.r.wack[f.Ack]
 			if ok {
-				fmt.Printf("Deleting ack'd msgid %s from w(aiting)ack", b64(f.Ack))
 				delete(s.r.wack, f.Ack)
 			}
 
-			fmt.Printf("Writing %s to buf\n", f.Payload)
 			// write payload to buf
-			s.Lock()
 			s.readBuf.Write(f.Payload)
-			s.Unlock()
 
 			// increment the read pointer
-			fmt.Printf("Updating readPtr!: %s -> ", b64(s.readPtr))
 			s.readPtr = H(s.readPtr[:])
-			fmt.Printf("%s\n", b64(s.readPtr))
-		} else {
-			fmt.Printf("Woah, got an error fetching %s: %s\n", b64(s.readPtr), err)
+			s.Unlock()
 		}
 	}
 }
@@ -232,7 +216,6 @@ func (s *Stream) writer() {
 }
 
 func (s *Stream) txFrame(f *Frame) (err error) {
-	fmt.Printf("Stream txFrame\n")
 	// XXX: FIXME: retransmit unack'd on next storage rotation/epoch ??
 	// Retransmit unacknowledged blocks every few epochs
 	_, _, til := epochtime.Now()
@@ -246,16 +229,13 @@ func (s *Stream) txFrame(f *Frame) (err error) {
 
 	err = s.c.Put(TID(m.mid), b)
 	if err != nil {
-		fmt.Printf("Stream txFrame err: %s\n", err)
 		return err
 	}
 
 	s.txEnqueue(m)
 
-	// this is just hashing again, not deriving location from sequence
-	fmt.Printf("Updating writePtr!: %s -> ", b64(s.writePtr))
+	// XXX: this is just hashing again, not deriving location from sequence
 	s.writePtr = H(s.writePtr[:])
-	fmt.Printf("%s\n", b64(s.writePtr))
 
 	return nil
 }
@@ -291,7 +271,7 @@ func NewStream(c *Client, mysecret, theirsecret string) *Stream {
 	s.exchange(mysecret, theirsecret)
 	s.writePtr = H([]byte(mysecret + theirsecret + "one")) // derive starting ID for writing
 	s.readPtr = H([]byte(theirsecret + mysecret + "one"))  // dervice starting ID for reading
-	s.prodWriter = make(chan struct{}, 1)
+	s.doFlush = make(chan struct{}, 1)
 	go s.Go(s.reader)
 	go s.Go(s.writer)
 	return s
