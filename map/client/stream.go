@@ -36,6 +36,16 @@ type Frame struct {
 	Payload []byte           // transported data
 }
 
+// StreamMode indicates the type of Stream
+type StreamMode uint8
+
+const (
+	// ReliableStream transmits StreamWindowSize Frames ahead of Ack
+	ReliableStream StreamMode = iota
+	// ScrambleStream transmits Frames in any order without retransmissions
+	ScrambleStream
+)
+
 // smsg is some sort of container for written messages pending acknowledgement
 type smsg struct {
 	mid      common.MessageID // message unique id used to derive message storage location (NOT TID)
