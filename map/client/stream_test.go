@@ -19,11 +19,15 @@
 package client
 
 import (
+	"encoding/base64"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 	"io"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestCreateStream(t *testing.T) {
@@ -80,15 +84,56 @@ func TestCreateStream(t *testing.T) {
 
 	yolo = make([]byte, len(msg))
 	n, err = io.ReadAtLeast(r, yolo, len(msg))
-	/*
-	for {
-		n, err = r.Read(yolo)
-		if n == len(msg) {
-			break
-		}
-	}
-	*/
 	require.NoError(err)
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
+
+	mysecret2 := "1initiator"
+	theirsecret2 := "1receiver"
+
+	wg := new(sync.WaitGroup)
+	wg.Add(2)
+	sidechannel := make(chan string, 0)
+	// worker A
+	go func() {
+		s := NewStream(c, mysecret2, theirsecret2)
+		for i := 0; i < 4; i++ {
+			entropic := make([]byte, 4242) // ensures fragmentation
+			io.ReadFull(rand.Reader, entropic)
+			message := base64.StdEncoding.EncodeToString(entropic)
+			// tell the other worker what message we're going to try and send
+			sidechannel <- message
+			s.Write([]byte(message))
+		}
+		close(sidechannel)
+		wg.Done()
+	}()
+
+	// worker B
+	go func() {
+		s := NewStream(c, theirsecret2, mysecret2)
+		for {
+			msg, ok := <-sidechannel
+			// channel was closed by writer, we're done
+			if !ok {
+				wg.Done()
+				return
+			}
+			b := make([]byte, len(msg))
+			// Read() data until we have received the message
+			for readOff := 0; readOff < len(msg); {
+				n, err := s.Read(b[readOff:])
+				if err != nil {
+					panic(err)
+				}
+				readOff += n
+				if n == 0 {
+					// XXX retry a sensible time later, like the average round trip time
+					<-time.After(time.Second * 10)
+				}
+			}
+			require.Equal([]byte(msg), b)
+		}
+	}()
+	wg.Wait()
 }
