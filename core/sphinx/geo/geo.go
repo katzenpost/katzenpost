@@ -199,6 +199,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 		RecipientIDLength:           RecipientIDLength,
 		NextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
 		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
+		NIKEName:                    nike.Name(),
 	}
 }
 
@@ -226,6 +227,7 @@ func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHo
 		RecipientIDLength:           RecipientIDLength,
 		NextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
 		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
+		NIKEName:                    nike.Name(),
 	}
 }
 
@@ -253,6 +255,7 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		RecipientIDLength:           RecipientIDLength,
 		NextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
 		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
+		KEMName:                     kem.Name(),
 	}
 
 	if withSURB {
