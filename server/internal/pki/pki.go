@@ -178,8 +178,10 @@ func (p *pki) worker() {
 			p.Lock()
 			p.rawDocs[epoch] = rawDoc
 			p.docs[epoch] = ent
-			p.geometry = ent.Document().SphinxGeometry
-			p.sphinx, err = ent.Document().Sphinx()
+			if !firstStart {
+				p.geometry = ent.Document().SphinxGeometry
+				p.sphinx, err = ent.Document().Sphinx()
+			}
 			p.Unlock()
 
 			if err != nil {
