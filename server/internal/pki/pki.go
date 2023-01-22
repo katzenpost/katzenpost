@@ -401,11 +401,9 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 
 		// Publish currently running Kaetzchen.
 		var err error
-		if p.glue.Provider() != nil {
-			desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
-			if err != nil {
-				return err
-			}
+		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+		if err != nil {
+			return err
 		}
 
 		// Publish the AuthenticationType
