@@ -443,7 +443,7 @@ func main() {
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
 
-	nrHops := *nrLayers + *nrProviders
+	nrHops := *nrLayers + 2
 	s.sphinxGeometry = geo.GeometryFromForwardPayloadLength(
 		ecdh.NewEcdhNike(rand.Reader), 2000, nrHops,
 	)
