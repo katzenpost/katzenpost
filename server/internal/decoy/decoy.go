@@ -242,6 +242,20 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 }
 
 func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
+	var err error
+	if d.geo == nil {
+		if doc.SphinxGeometry == nil {
+			d.log.Error("pki doc has nil SphinxGeometry")
+			return
+		}
+		d.geo = doc.SphinxGeometry
+		d.sphinx, err = sphinx.FromGeometry(d.geo)
+		if err != nil {
+			d.log.Error("failed to get sphinx from pki doc")
+			return
+		}
+	}
+
 	var surbID [geo.SURBIDLength]byte
 	d.makeSURBID(&surbID)
 

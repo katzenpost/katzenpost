@@ -180,13 +180,16 @@ func (p *pki) worker() {
 			p.docs[epoch] = ent
 			if !firstStart {
 				p.geometry = ent.Document().SphinxGeometry
-				p.sphinx, err = ent.Document().Sphinx()
+				if p.geometry == nil {
+					p.log.Warning("WARNING: PKI Document with nil Sphinx Geometry")
+				} else {
+					p.sphinx, err = sphinx.FromGeometry(p.geometry)
+					if err != nil {
+						p.log.Warningf("WARNING: Failed to get Sphinx from PKI doc: %v", err)
+					}
+				}
 			}
 			p.Unlock()
-
-			if err != nil {
-				p.log.Warningf("Failed to get Sphinx from PKI doc: %v", err)
-			}
 
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
@@ -204,7 +207,9 @@ func (p *pki) worker() {
 			p.pruneDocuments()
 
 			// If the PKI document map changed, kick the connector worker.
-			p.glue.Connector().ForceUpdate()
+			if p.glue.Connector() != nil {
+				p.glue.Connector().ForceUpdate()
+			}
 		}
 
 		// Check to see if we need to publish the descriptor, and do so, along
@@ -240,7 +245,9 @@ func (p *pki) worker() {
 				}
 
 				p.log.Debugf("Updating decoy document for epoch %v.", now)
-				p.glue.Decoy().OnNewDocument(ent)
+				if p.glue.Decoy() != nil {
+					p.glue.Decoy().OnNewDocument(ent)
+				}
 
 				lastUpdateEpoch = now
 			}
