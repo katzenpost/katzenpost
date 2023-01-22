@@ -9,6 +9,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/map/common"
+	mClient "github.com/katzenpost/katzenpost/map/client"
 	"io"
 	"sync"
 	"time"
@@ -67,7 +68,7 @@ type Stream struct {
 	sync.Mutex
 	worker.Worker
 
-	c *Client
+	c *mClient.Client
 
 	// XXX: need a type for the agreed key and direction as output of handshake
 	asecret  string           // our secret
@@ -100,7 +101,7 @@ var maxmsg = 1000
 // glue for timerQ
 type retx struct {
 	sync.Mutex
-	c    *Client                     // XXX pointer to stream or client??
+	c    *mClient.Client             // XXX pointer to stream or client??
 	wack map[common.MessageID]uint64 // waiting for ack until priority (uint64)
 }
 
@@ -259,7 +260,7 @@ func (s *Stream) exchange(mysecret, othersecret string) {
 }
 
 // newstream handshakes and starts a read worker
-func NewStream(c *Client, mysecret, theirsecret string) *Stream {
+func NewStream(c *mClient.Client, mysecret, theirsecret string) *Stream {
 	s := new(Stream)
 	s.c = c
 	// timerqueue calls s.Push when timeout of enqueued item
