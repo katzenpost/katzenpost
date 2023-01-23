@@ -530,6 +530,7 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 		Providers:         providers,
 		SharedRandomValue: srv,
 		PriorSharedRandom: s.priorSRV,
+		SphinxGeometry:    s.geo,
 	}
 	return doc
 }
