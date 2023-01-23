@@ -23,6 +23,10 @@ const (
 	nonceSize = 24
 )
 
+var (
+	FramePayloadSize int
+)
+
 // FrameType indicates the state of Stream at the current Frame
 type FrameType uint8
 
@@ -117,11 +121,6 @@ type Stream struct {
 	// doFlush signals writer worker to wake and transmit frames
 	doFlush chan struct{}
 }
-
-// XXX: need to calculate the CBOR overhead of serializing frame
-// to figure out what the maximum message size should be per block stored
-// user_fwd_payloadsize - nonceSize - cborFrameOverhead
-var maxmsg = 1000
 
 // glue for timerQ
 type retx struct {
@@ -228,7 +227,7 @@ func (s *Stream) writer() {
 		if s.Mode == ReliableStream {
 			f.Ack = s.f_read_idx
 		}
-		f.Payload = make([]byte, maxmsg)
+		f.Payload = make([]byte, FramePayloadSize)
 		s.Lock()
 		// Read up to the maximum frame payload size
 		n, err := s.writeBuf.Read(f.Payload)
@@ -283,6 +282,13 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	if err != nil {
 		return err
 	}
+
+	// zero extend ciphertext until maximum FramePayloadSize
+	if FramePayloadSize-len(serialized) > 0 {
+		padding := make([]byte, FramePayloadSize-len(serialized))
+		serialized = append(serialized, padding...)
+	}
+
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, s.writekey)
 	ciphertext = append(nonce[:], ciphertext...)
 
@@ -316,14 +322,14 @@ func H(i []byte) (res common.MessageID) {
 	return common.MessageID(sha256.Sum256(i))
 }
 
-// take order two secrets, a > b
+// produce keymaterial from handshake secrets
 func (s *Stream) exchange(mysecret, othersecret []byte) {
 	salt := []byte("stream_reader_writer_keymaterial")
 	hash := sha256.New
 	reader_keymaterial := hkdf.New(hash, othersecret[:], salt, nil)
 	writer_keymaterial := hkdf.New(hash, mysecret[:], salt, nil)
 
-	// obtain the frame encryption key and and sequence seed
+	// obtain the frame encryption key and sequence seed
 	_, err := io.ReadFull(writer_keymaterial, s.writekey[:])
 	if err != nil {
 		panic(err)
@@ -334,7 +340,7 @@ func (s *Stream) exchange(mysecret, othersecret []byte) {
 		panic(err)
 	}
 
-	// obtain the frame decryption key and and sequence seed
+	// obtain the frame decryption key and sequence seed
 	_, err = io.ReadFull(reader_keymaterial, s.readkey[:])
 	if err != nil {
 		panic(err)
@@ -363,4 +369,16 @@ func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	go s.Go(s.reader)
 	go s.Go(s.writer)
 	return s
+}
+
+func init() {
+	b, _ := cbor.Marshal(Frame{})
+	cborFrameOverhead := len(b)
+	nonce := [nonceSize]byte{}
+	rand.Reader.Read(nonce[:])
+	key := &[keySize]byte{}
+	rand.Reader.Read(key[:])
+	ciphertext := secretbox.Seal(nil, b, &nonce, key)
+	secretboxOverhead := len(ciphertext) - len(b)
+	FramePayloadSize = mClient.PayloadSize - nonceSize - cborFrameOverhead - secretboxOverhead
 }

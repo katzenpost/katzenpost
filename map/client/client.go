@@ -23,9 +23,12 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/map/common"
 	"sort"
 )
+
+var PayloadSize int
 
 type Client struct {
 	Session *client.Session
@@ -148,4 +151,12 @@ func (c *Client) Get(ID common.MessageID) ([]byte, error) {
 
 func NewClient(session *client.Session) (*Client, error) {
 	return &Client{Session: session}, nil
+}
+
+func init() {
+	b, _ := cbor.Marshal(common.MapRequest{})
+	cborFrameOverhead := len(b)
+	geo := sphinx.DefaultGeometry()
+	wtfFactor := 4 // XXX: command Overhead ???
+	PayloadSize = geo.UserForwardPayloadLength - cborFrameOverhead - wtfFactor
 }
