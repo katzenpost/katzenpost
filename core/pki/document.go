@@ -461,6 +461,9 @@ func VerifyAndParseDocument(b []byte, verifiers []cert.Verifier) (*Document, err
 // iff there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 	// Ensure the document is well formed.
+	if d.SphinxGeometry == nil {
+		return errors.New("Document has nil SphinxGeometry")
+	}
 	if d.Version != DocumentVersion {
 		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
 	}

@@ -161,6 +161,10 @@ func (p *pki) worker() {
 				continue
 			}
 
+			if d.SphinxGeometry == nil {
+				panic("received PKI doc with nil SphinxGeometry")
+			}
+
 			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsProvider)
 			if err != nil {
 				p.log.Warningf("Failed to generate PKI cache for epoch %v: %v", epoch, err)
@@ -181,11 +185,12 @@ func (p *pki) worker() {
 			if !firstStart {
 				p.geometry = ent.Document().SphinxGeometry
 				if p.geometry == nil {
-					p.log.Warning("WARNING: PKI Document with nil Sphinx Geometry")
+					epoch := ent.Document().Epoch
+					panic(fmt.Sprintf("PKI Document with nil Sphinx Geometry, epoch %d", epoch))
 				} else {
 					p.sphinx, err = sphinx.FromGeometry(p.geometry)
 					if err != nil {
-						p.log.Warningf("WARNING: Failed to get Sphinx from PKI doc: %v", err)
+						panic(fmt.Sprintf("Failed to get Sphinx from PKI doc: %v", err))
 					}
 				}
 			}
@@ -408,10 +413,12 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 		desc.Provider = true
 
 		// Publish currently running Kaetzchen.
-		var err error
-		desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
-		if err != nil {
-			return err
+		if p.glue.Provider() != nil {
+			var err error
+			desc.Kaetzchen, err = p.glue.Provider().KaetzchenForPKI()
+			if err != nil {
+				return err
+			}
 		}
 
 		// Publish the AuthenticationType
@@ -675,10 +682,16 @@ func (p *pki) GetRawConsensus(epoch uint64) ([]byte, error) {
 }
 
 func (p *pki) GetSphinxGeometry() *geo.Geometry {
+	if p.geometry == nil {
+		panic("GetSphinxGeometry is nil")
+	}
 	return p.geometry
 }
 
 func (p *pki) GetSphinx() *sphinx.Sphinx {
+	if p.sphinx == nil {
+		panic("GetSphinx is nil")
+	}
 	return p.sphinx
 }
 

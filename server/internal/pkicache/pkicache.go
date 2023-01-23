@@ -150,6 +150,9 @@ func (e *Entry) outgoingLayer() uint8 {
 
 // New constructs a new Entry from a given document.
 func New(d *pki.Document, identityKey sign.PublicKey, isProvider bool) (*Entry, error) {
+	if d.SphinxGeometry == nil {
+		panic("pki doc has nil SphinxGeometry")
+	}
 	e := new(Entry)
 	e.doc = d
 	e.incoming = make(map[[geo.NodeIDLength]byte]*pki.MixDescriptor)

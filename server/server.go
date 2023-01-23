@@ -381,6 +381,8 @@ func (s *Server) Start() error {
 		return nil
 	}
 
+	s.pki.StartWorker()
+
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
 		if s.provider, err = provider.New(goo); err != nil {
@@ -388,8 +390,6 @@ func (s *Server) Start() error {
 			return nil
 		}
 	}
-
-	s.pki.StartWorker()
 
 	// Initialize and start the the scheduler.
 	if s.scheduler, err = scheduler.New(goo); err != nil {

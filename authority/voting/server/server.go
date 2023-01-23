@@ -190,6 +190,11 @@ func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
 	s.geo = cfg.SphinxGeometry
+
+	if s.geo == nil {
+		panic("sphinx geometry is nil")
+	}
+
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
 

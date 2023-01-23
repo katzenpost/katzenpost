@@ -372,6 +372,9 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
 	}
+	if doc.SphinxGeometry == nil {
+		panic("received pki doc with nil SphinxGeometry")
+	}
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
