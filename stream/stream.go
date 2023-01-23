@@ -4,15 +4,23 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/map/common"
 	mClient "github.com/katzenpost/katzenpost/map/client"
+	"github.com/katzenpost/katzenpost/map/common"
+	"golang.org/x/crypto/hkdf"
+	"golang.org/x/crypto/nacl/secretbox"
 	"io"
 	"sync"
-	"time"
+)
+
+const (
+	keySize   = 32
+	nonceSize = 24
 )
 
 // FrameType indicates the state of Stream at the current Frame
@@ -31,9 +39,10 @@ const (
 // that indicates whether the Frame is the first, last, or an intermediary
 // block. This
 type Frame struct {
-	Type    FrameType
-	Ack     common.MessageID // acknowledgement of last seen msg
-	Payload []byte           // transported data
+	Type FrameType
+	// Ack is the sequence number of last consequtive frame seen by peer
+	Ack     uint64
+	Payload []byte // transported data
 }
 
 // StreamMode indicates the type of Stream
@@ -48,9 +57,9 @@ const (
 
 // smsg is some sort of container for written messages pending acknowledgement
 type smsg struct {
-	mid      common.MessageID // message unique id used to derive message storage location (NOT TID)
-	f        *Frame           // payload of message
-	priority uint64           // timeout, for when to retransmit if the message is not acknowledged
+	id       uint64 // frame sequence number
+	f        *Frame // payload of message
+	priority uint64 // timeout, for when to retransmit if the message is not acknowledged
 }
 
 // Priority implements client.Item interface; used by TimerQueue for retransmissions
@@ -70,39 +79,55 @@ type Stream struct {
 
 	c *mClient.Client
 
-	// XXX: need a type for the agreed key and direction as output of handshake
-	asecret  string           // our secret
-	bsecret  string           // peers secret
-	writePtr common.MessageID // our write pointer (tip)
-	readPtr  common.MessageID // our read pointer
-	peerAck  common.MessageID // peer's last ack
-	writeBuf *bytes.Buffer    // buffer to enqueue data before being transmitted
-	readBuf  *bytes.Buffer    // buffer to reassumble data from Frames
+	// frame encryption secrets
+	writekey *[keySize]byte // secretbox key to encrypt with
+	readkey  *[keySize]byte // secretbox key to decrypt with
 
-	frame_written uint               // number of frames written
-	frame_read    uint               // numbr of frames read
-	tq            *client.TimerQueue // a delay queue to enable retransmissions of unacknowledged blocks
-	r             *retx
+	// read/write secrets initialized from handshake
+	write_id_base common.MessageID
+	read_id_base  common.MessageID
+
+	// buffers
+	writeBuf *bytes.Buffer // buffer to enqueue data before being transmitted
+	readBuf  *bytes.Buffer // buffer to reassumble data from Frames
+
+	// counters
+	f_writes uint64 // number of frames written
+	f_reads  uint64 // number of frames read
+
+	// our frame pointers
+	f_read_idx  uint64
+	f_write_idx uint64
+
+	// peer's frame pointers
+	peer_read_idx  uint64
+	peer_write_idx uint64
+
+	tq *client.TimerQueue
+	r  *retx
 
 	// Parameters
 	// stream_window_size is the number of messages ahead of peer's
 	// ackknowledgement that the writeworker will periodically retransmit
-
 	stream_window_size uint
+
 	// Mode indicates whether this Stream will be a fire-and-forget ScrambleStream or a reliable channel with retranmissions of unacknowledged messages
-	Mode    StreamMode
+	Mode StreamMode
+
+	// doFlush signals writer worker to wake and transmit frames
 	doFlush chan struct{}
 }
 
 // XXX: need to calculate the CBOR overhead of serializing frame
 // to figure out what the maximum message size should be per block stored
+// user_fwd_payloadsize - nonceSize - cborFrameOverhead
 var maxmsg = 1000
 
 // glue for timerQ
 type retx struct {
 	sync.Mutex
-	c    *mClient.Client             // XXX pointer to stream or client??
-	wack map[common.MessageID]uint64 // waiting for ack until priority (uint64)
+	s    *Stream
+	wack map[uint64]struct{}
 }
 
 // Push implements the client.nqueue interface
@@ -113,24 +138,14 @@ func (r *retx) Push(i client.Item) error {
 		panic("must be smsg")
 	}
 
-	if _, ok := r.wack[m.mid]; !ok {
-		// not waiting ack, do not retransmit
+	r.Lock()
+	_, ok = r.wack[m.id]
+	r.Unlock()
+	if !ok {
+		// Already Acknowledged
 		return nil
 	}
-
-	// update the priority and re-enqueue for retransmission
-	m.priority = uint64(time.Now().Add(4 * time.Hour).Unix())
-	r.Lock() // XXX: protect wack
-	defer r.Unlock()
-	r.wack[m.mid] = m.priority // update waiting ack map
-
-	// XXX: encrypt payload before transmit
-	b, err := cbor.Marshal(m.f)
-	if err != nil {
-		return err
-	}
-
-	return r.c.Put(TID(m.mid), b)
+	return r.s.txFrame(m.f)
 }
 
 // reader polls receive window of messages and adds to the reader queue
@@ -138,28 +153,45 @@ func (s *Stream) reader() {
 
 	for {
 		// next is the MessageID of the next message in the stream
-		msg, err := s.c.Get(TID(s.readPtr))
+		s.Lock()
+		frame_id := s.rxFrameID(s.f_read_idx)
+		s.f_reads += 1
+		s.Unlock()
+		ciphertext, err := s.c.Get(TID(frame_id))
 		if err == nil {
-			// XXX: decrypt block
+			nonce := [nonceSize]byte{}
+			copy(nonce[:], ciphertext[:nonceSize])
+			ciphertext = ciphertext[nonceSize:]
+			plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.readkey)
+			if !ok {
+				// damaged Stream, abort / retry / fail ?
+				panic("damaged Stream, decrypt fail")
+			}
+
 			f := new(Frame)
-			err := cbor.Unmarshal(msg, f)
+			err := cbor.Unmarshal(plaintext, f)
 			if err != nil {
 				// XXX: corrupted stream must terminate
-				return
+				panic("damaged Stream, incorrect Frame")
 			}
 
 			// remove acknowledged Frames from waiting-ack
-			s.Lock()
-			_, ok := s.r.wack[f.Ack]
-			if ok {
-				delete(s.r.wack, f.Ack)
+			s.r.Lock()
+			// ack all frames predecessor to peer ack
+			for i, _ := range s.r.wack {
+				if i < f.Ack {
+					delete(s.r.wack, i)
+				}
 			}
+			s.r.Unlock()
+			s.Lock()
 
 			// write payload to buf
 			s.readBuf.Write(f.Payload)
 
+			// increment the frame pointer
 			// increment the read pointer
-			s.readPtr = H(s.readPtr[:])
+			s.f_read_idx += 1
 			s.Unlock()
 		}
 	}
@@ -191,8 +223,12 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 
 func (s *Stream) writer() {
 	for {
-		// XXX: support disabled Acks
-		f := &Frame{Ack: s.readPtr, Payload: make([]byte, maxmsg)}
+		f := new(Frame)
+		// indicate how much of the complete stream we've read
+		if s.Mode == ReliableStream {
+			f.Ack = s.f_read_idx
+		}
+		f.Payload = make([]byte, maxmsg)
 		s.Lock()
 		// Read up to the maximum frame payload size
 		n, err := s.writeBuf.Read(f.Payload)
@@ -215,27 +251,54 @@ func (s *Stream) writer() {
 	}
 }
 
-func (s *Stream) txFrame(f *Frame) (err error) {
-	// XXX: FIXME: retransmit unack'd on next storage rotation/epoch ??
-	// Retransmit unacknowledged blocks every few epochs
+// derive the reader frame ID for frame_num
+func (s *Stream) rxFrameID(frame_num uint64) common.MessageID {
+	f := make([]byte, 8)
+	binary.BigEndian.PutUint64(f, frame_num)
+	return H(append(s.read_id_base[:], f...))
+}
+
+// derive the writer frame ID for frame_num
+func (s *Stream) txFrameID(frame_num uint64) common.MessageID {
+	f := make([]byte, 8)
+	binary.BigEndian.PutUint64(f, frame_num)
+	return H(append(s.write_id_base[:], f...))
+}
+
+func (s *Stream) txFrame(frame *Frame) (err error) {
+	serialized, err := cbor.Marshal(frame)
+	if err != nil {
+		return err
+	}
 	_, _, til := epochtime.Now()
-	m := &smsg{mid: s.writePtr, f: f, priority: uint64(til + 2*epochtime.Period)}
+	s.Lock()
+	// Retransmit unacknowledged blocks every few epochs
+	m := &smsg{id: s.f_write_idx, f: frame, priority: uint64(til + 2*epochtime.Period)}
+	frame_id := s.txFrameID(s.f_write_idx)
+	s.Unlock()
 
-	// XXX: encrypt frame before storing
-	b, err := cbor.Marshal(f)
+	// encrypt serialized frame
+	nonce := [nonceSize]byte{}
+	_, err = rand.Reader.Read(nonce[:])
 	if err != nil {
 		return err
 	}
+	ciphertext := secretbox.Seal(nil, serialized, &nonce, s.writekey)
+	ciphertext = append(nonce[:], ciphertext...)
 
-	err = s.c.Put(TID(m.mid), b)
+	err = s.c.Put(TID(frame_id), ciphertext)
 	if err != nil {
 		return err
 	}
+	s.Lock()
+	s.f_writes += 1
+	s.f_write_idx += 1
+	s.Unlock()
 
-	s.txEnqueue(m)
-
-	// XXX: this is just hashing again, not deriving location from sequence
-	s.writePtr = H(s.writePtr[:])
+	// Enable retransmissions of unacknowledged frames
+	if s.Mode == ReliableStream {
+		s.txEnqueue(m)
+	}
 
 	return nil
 }
@@ -254,23 +317,48 @@ func H(i []byte) (res common.MessageID) {
 }
 
 // take order two secrets, a > b
-func (s *Stream) exchange(mysecret, othersecret string) {
-	s.asecret = mysecret
-	s.bsecret = othersecret
+func (s *Stream) exchange(mysecret, othersecret []byte) {
+	salt := []byte("stream_reader_writer_keymaterial")
+	hash := sha256.New
+	reader_keymaterial := hkdf.New(hash, othersecret[:], salt, nil)
+	writer_keymaterial := hkdf.New(hash, mysecret[:], salt, nil)
+
+	// obtain the frame encryption key and and sequence seed
+	_, err := io.ReadFull(writer_keymaterial, s.writekey[:])
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = io.ReadFull(writer_keymaterial, s.write_id_base[:])
+	if err != nil {
+		panic(err)
+	}
+
+	// obtain the frame decryption key and and sequence seed
+	_, err = io.ReadFull(reader_keymaterial, s.readkey[:])
+	if err != nil {
+		panic(err)
+	}
+	_, err = io.ReadFull(reader_keymaterial, s.read_id_base[:])
+	if err != nil {
+		panic(err)
+	}
 }
 
 // newstream handshakes and starts a read worker
-func NewStream(c *mClient.Client, mysecret, theirsecret string) *Stream {
+func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s := new(Stream)
 	s.c = c
+	s.Mode = ReliableStream
 	// timerqueue calls s.Push when timeout of enqueued item
-	s.r = &retx{c: c}
+	s.r = &retx{s: s}
 	s.tq = client.NewTimerQueue(s.r)
 	s.writeBuf = new(bytes.Buffer)
 	s.readBuf = new(bytes.Buffer)
+
+	s.writekey = &[keySize]byte{}
+	s.readkey = &[keySize]byte{}
 	s.exchange(mysecret, theirsecret)
-	s.writePtr = H([]byte(mysecret + theirsecret + "one")) // derive starting ID for writing
-	s.readPtr = H([]byte(theirsecret + mysecret + "one"))  // dervice starting ID for reading
 	s.doFlush = make(chan struct{}, 1)
 	go s.Go(s.reader)
 	go s.Go(s.writer)

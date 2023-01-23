@@ -21,9 +21,9 @@ package client
 import (
 	"encoding/base64"
 	"github.com/katzenpost/katzenpost/client"
-	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/stretchr/testify/require"
 	"io"
 	"sync"
@@ -50,8 +50,8 @@ func TestCreateStream(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	mysecret := "initiator"
-	theirsecret := "receiver"
+	mysecret := []byte("initiator")
+	theirsecret := []byte("receiver")
 
 	// our view of stream
 	s := NewStream(c, mysecret, theirsecret)
@@ -89,8 +89,8 @@ func TestCreateStream(t *testing.T) {
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
 
-	mysecret2 := "1initiator"
-	theirsecret2 := "1receiver"
+	mysecret2 := []byte("1initiator")
+	theirsecret2 := []byte("1receiver")
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -107,7 +107,6 @@ func TestCreateStream(t *testing.T) {
 			sidechannel <- message
 			s.Write([]byte(message))
 		}
-		t.Logf("close(sidechannel)")
 		close(sidechannel)
 		t.Logf("SendWorker Done()")
 		wg.Done()
@@ -124,7 +123,6 @@ func TestCreateStream(t *testing.T) {
 				wg.Done()
 				return
 			}
-			require.NotZero(len(msg))
 			b := make([]byte, len(msg))
 			// Read() data until we have received the message
 			for readOff := 0; readOff < len(msg); {
