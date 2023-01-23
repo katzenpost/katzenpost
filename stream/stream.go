@@ -45,6 +45,7 @@ const (
 type Frame struct {
 	Type FrameType
 	// Ack is the sequence number of last consequtive frame seen by peer
+	id      uint64
 	Ack     uint64
 	Payload []byte // transported data
 }
@@ -61,7 +62,6 @@ const (
 
 // smsg is some sort of container for written messages pending acknowledgement
 type smsg struct {
-	id       uint64 // frame sequence number
 	f        *Frame // payload of message
 	priority uint64 // timeout, for when to retransmit if the message is not acknowledged
 }
@@ -138,7 +138,7 @@ func (r *retx) Push(i client.Item) error {
 	}
 
 	r.Lock()
-	_, ok = r.wack[m.id]
+	_, ok = r.wack[m.f.id]
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
@@ -151,9 +151,16 @@ func (r *retx) Push(i client.Item) error {
 func (s *Stream) reader() {
 
 	for {
+		select {
+		case <-s.HaltCh():
+			return
+		default:
+		}
 		// next is the MessageID of the next message in the stream
 		s.Lock()
-		frame_id := s.rxFrameID(s.f_read_idx)
+		id := s.f_read_idx
+		frame_id := s.rxFrameID(id)
+		frame_key := s.rxFrameKey(id)
 		s.f_reads += 1
 		s.Unlock()
 		ciphertext, err := s.c.Get(TID(frame_id))
@@ -161,13 +168,14 @@ func (s *Stream) reader() {
 			nonce := [nonceSize]byte{}
 			copy(nonce[:], ciphertext[:nonceSize])
 			ciphertext = ciphertext[nonceSize:]
-			plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.readkey)
+			plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, frame_key)
 			if !ok {
 				// damaged Stream, abort / retry / fail ?
 				panic("damaged Stream, decrypt fail")
 			}
 
 			f := new(Frame)
+			f.id = id
 			err := cbor.Unmarshal(plaintext, f)
 			if err != nil {
 				// XXX: corrupted stream must terminate
@@ -222,15 +230,21 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 
 func (s *Stream) writer() {
 	for {
+		select {
+		case <-s.HaltCh():
+			return
+		default:
+		}
 		f := new(Frame)
 		// indicate how much of the complete stream we've read
+		s.Lock()
 		if s.Mode == ReliableStream {
 			f.Ack = s.f_read_idx
 		}
 		f.Payload = make([]byte, FramePayloadSize)
-		s.Lock()
 		// Read up to the maximum frame payload size
 		n, err := s.writeBuf.Read(f.Payload)
+		f.id = s.f_write_idx
 		s.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
@@ -239,7 +253,18 @@ func (s *Stream) writer() {
 		if n > 0 {
 			// truncate frame.Payload
 			f.Payload = f.Payload[:n]
-			s.txFrame(f)
+			err = s.txFrame(f)
+			if err != nil {
+				/*
+				s.Lock()
+				s.State = StreamClosed
+				s.Unlock()
+				*/
+				return
+			}
+			s.Lock()
+			s.f_write_idx += 1
+			s.Unlock()
 		} else {
 			select {
 			case <-s.doFlush:
@@ -257,6 +282,22 @@ func (s *Stream) rxFrameID(frame_num uint64) common.MessageID {
 	return H(append(s.read_id_base[:], f...))
 }
 
+func (s *Stream) rxFrameKey(frame_num uint64) *[keySize]byte {
+	f := make([]byte, 8)
+	binary.BigEndian.PutUint64(f, frame_num)
+	hk := H(append(s.readkey[:], f...))
+	k := [keySize]byte(hk)
+	return &k
+}
+
+func (s *Stream) txFrameKey(frame_num uint64) *[keySize]byte {
+	f := make([]byte, 8)
+	binary.BigEndian.PutUint64(f, frame_num)
+	hk := H(append(s.writekey[:], f...))
+	k := [keySize]byte(hk)
+	return &k
+}
+
 // derive the writer frame ID for frame_num
 func (s *Stream) txFrameID(frame_num uint64) common.MessageID {
 	f := make([]byte, 8)
@@ -272,8 +313,9 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	_, _, til := epochtime.Now()
 	s.Lock()
 	// Retransmit unacknowledged blocks every few epochs
-	m := &smsg{id: s.f_write_idx, f: frame, priority: uint64(til + 2*epochtime.Period)}
-	frame_id := s.txFrameID(s.f_write_idx)
+	m := &smsg{f: frame, priority: uint64(til + 2*epochtime.Period)}
+	frame_id := s.txFrameID(frame.id)
+	frame_key := s.txFrameKey(frame.id)
 	s.Unlock()
 
 	// encrypt serialized frame
@@ -289,18 +331,13 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		serialized = append(serialized, padding...)
 	}
 
-	ciphertext := secretbox.Seal(nil, serialized, &nonce, s.writekey)
+	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
 	ciphertext = append(nonce[:], ciphertext...)
 
 	err = s.c.Put(TID(frame_id), ciphertext)
 	if err != nil {
 		return err
 	}
-	s.Lock()
-	s.f_writes += 1
-	s.f_write_idx += 1
-	s.Unlock()
-
 	// Enable retransmissions of unacknowledged frames
 	if s.Mode == ReliableStream {
 		s.txEnqueue(m)
@@ -366,8 +403,8 @@ func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s.readkey = &[keySize]byte{}
 	s.exchange(mysecret, theirsecret)
 	s.doFlush = make(chan struct{}, 1)
-	go s.Go(s.reader)
-	go s.Go(s.writer)
+	s.Go(s.reader)
+	s.Go(s.writer)
 	return s
 }
 

@@ -31,6 +31,48 @@ import (
 	"time"
 )
 
+// newStreams returns an initialized pair of Streams
+func newStreams() (*Stream, *Stream) {
+	a := new(Stream)
+	b := new(Stream)
+
+	// allocate memory for keys
+	a.writekey = &[keySize]byte{}
+	a.readkey = &[keySize]byte{}
+	b.writekey = &[keySize]byte{}
+	b.readkey = &[keySize]byte{}
+	asecret := &[keySize]byte{}
+	bsecret := &[keySize]byte{}
+
+	// initialize handshake secrets from random
+	io.ReadFull(rand.Reader, asecret[:])
+	io.ReadFull(rand.Reader, bsecret[:])
+
+	// Stream keys should now be initialized
+	a.exchange(asecret[:], bsecret[:])
+	b.exchange(bsecret[:], asecret[:])
+	return a, b
+}
+
+func TestFrameKey(t *testing.T) {
+	require := require.New(t)
+
+	// the same key should be returned for every idx
+	a, b := newStreams()
+	for i := 0; i < 4096; i++ {
+		i := uint64(i)
+		// require sender/receiver frame ID match
+		require.Equal(a.rxFrameID(i), b.txFrameID(i))
+		require.Equal(a.txFrameID(i), b.rxFrameID(i))
+
+		// require sender/receiver frame keys match
+		require.Equal(a.rxFrameKey(i), b.txFrameKey(i))
+		require.Equal(a.txFrameKey(i), b.rxFrameKey(i))
+	}
+	a.Halt()
+	b.Halt()
+}
+
 func TestCreateStream(t *testing.T) {
 	require := require.New(t)
 
@@ -50,13 +92,17 @@ func TestCreateStream(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	mysecret := []byte("initiator")
-	theirsecret := []byte("receiver")
+	asecret := &[keySize]byte{}
+	bsecret := &[keySize]byte{}
+
+	// initialize handshake secrets from random
+	io.ReadFull(rand.Reader, asecret[:])
+	io.ReadFull(rand.Reader, bsecret[:])
 
 	// our view of stream
-	s := NewStream(c, mysecret, theirsecret)
+	s := NewStream(c, asecret[:], bsecret[:])
 	// "other end" of stream
-	r := NewStream(c, theirsecret, mysecret)
+	r := NewStream(c, bsecret[:], asecret[:])
 
 	msg := []byte("Hello World")
 	n, err := s.Write(msg)
@@ -88,16 +134,19 @@ func TestCreateStream(t *testing.T) {
 	require.NoError(err)
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
+	s.Halt()
+	r.Halt()
 
-	mysecret2 := []byte("1initiator")
-	theirsecret2 := []byte("1receiver")
+	// initialize handshake secrets from random
+	io.ReadFull(rand.Reader, asecret[:])
+	io.ReadFull(rand.Reader, bsecret[:])
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 	sidechannel := make(chan string, 0)
 	// worker A
 	go func() {
-		s := NewStream(c, mysecret2, theirsecret2)
+		s := NewStream(c, asecret[:], bsecret[:])
 		for i := 0; i < 4; i++ {
 			entropic := make([]byte, 4242) // ensures fragmentation
 			io.ReadFull(rand.Reader, entropic)
@@ -110,17 +159,22 @@ func TestCreateStream(t *testing.T) {
 		close(sidechannel)
 		t.Logf("SendWorker Done()")
 		wg.Done()
+		// wait until reader has finished reading
+		// before halting the writer()
+		wg.Wait()
+		s.Halt()
 	}()
 
 	// worker B
 	go func() {
-		s := NewStream(c, theirsecret2, mysecret2)
+		s := NewStream(c, bsecret[:], asecret[:])
 		for {
 			msg, ok := <-sidechannel
 			// channel was closed by writer, we're done
 			if !ok {
 				t.Logf("ReadWorker Done()")
 				wg.Done()
+				s.Halt()
 				return
 			}
 			b := make([]byte, len(msg))
