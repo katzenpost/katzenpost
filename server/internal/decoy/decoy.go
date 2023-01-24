@@ -169,22 +169,29 @@ func (d *decoy) worker() {
 			wakeInterval = time.Duration(maxDuration)
 		} else {
 			// The timer fired, and there is a valid document for this epoch.
+			isSent := false
 			if timerFired {
-				d.sendDecoyPacket(docCache)
+				isSent = d.sendDecoyPacket(docCache)
 			}
 
-			// Schedule the next decoy packet.
-			//
-			// This closely follows how the mailproxy worker schedules
-			// outgoing sends, except that the SendShift value is ignored.
-			//
-			// TODO: Eventually this should use separate parameters.
-			doc := docCache.Document()
-			wakeMsec := uint64(rand.Exp(d.rng, doc.LambdaM))
-			if wakeMsec > doc.LambdaMMaxDelay {
-				wakeMsec = doc.LambdaMMaxDelay
+			if timerFired && !isSent {
+				wakeInterval = time.Duration(7 * time.Second)
+			} else {
+				// Schedule the next decoy packet.
+				//
+				// This closely follows how the mailproxy worker schedules
+				// outgoing sends, except that the SendShift value is ignored.
+				//
+				// TODO: Eventually this should use separate parameters.
+
+				doc := docCache.Document()
+				wakeMsec := uint64(rand.Exp(d.rng, doc.LambdaM))
+				if wakeMsec > doc.LambdaMMaxDelay {
+					wakeMsec = doc.LambdaMMaxDelay
+				}
+				wakeInterval = time.Duration(wakeMsec) * time.Millisecond
 			}
-			wakeInterval = time.Duration(wakeMsec) * time.Millisecond
+
 			d.log.Debugf("Next wakeInterval: %v", wakeInterval)
 
 			d.sweepSURBCtxs()
@@ -196,7 +203,7 @@ func (d *decoy) worker() {
 	}
 }
 
-func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
+func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) bool {
 	// TODO: (#52) Do nothing if the rate limiter would discard the packet(?).
 
 	// TODO: Determine if this should be a loop or discard packet.
@@ -231,14 +238,15 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	}
 	if providerDesc == nil {
 		d.log.Debugf("Failed to find suitable provider")
-		return
+		return false
 	}
 
 	if isLoopPkt {
 		d.sendLoopPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
-		return
+		return true
 	}
 	d.sendDiscardPacket(doc, []byte(loopRecip), selfDesc, providerDesc)
+	return true
 }
 
 func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor) {
@@ -276,15 +284,22 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 
 		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
 			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength)
+			if d.geo.ForwardPayloadLength != 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength {
+				panic("invalid sphinx geometry!")
+			}
 			payload := make([]byte, 2, d.geo.ForwardPayloadLength)
 			payload[0] = 1 // Packet has a SURB.
 
 			surb, k, err := d.sphinx.NewSURB(rand.Reader, revPath)
 			if err != nil {
-				d.log.Debugf("Failed to generate SURB: %v", err)
+				panic(fmt.Sprintf("Failed to generate SURB: %v", err))
 			}
 			payload = append(payload, surb...)
 			payload = append(payload, zeroBytes...)
+
+			if len(payload) != d.geo.ForwardPayloadLength {
+				panic("invalid sphinx payload length")
+			}
 
 			// TODO: This should probably also store path information,
 			// so that it's possible to figure out which links/nodes
@@ -298,8 +313,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 
 			pkt, err := d.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 			if err != nil {
-				d.log.Debugf("Failed to generate Sphinx packet: %v", err)
-				return
+				panic(fmt.Sprintf("Failed to generate Sphinx packet: %v", err))
 			}
 
 			d.logPath(doc, fwdPath)

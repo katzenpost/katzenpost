@@ -383,6 +383,9 @@ func (s *Server) Start() error {
 
 	s.pki.StartWorker()
 
+	s.log.Noticef("Current Sphinx Geometry is:\n[SphinxGeometry]\n%s\n",
+		goo.PKI().GetSphinxGeometry().Display())
+
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
 		if s.provider, err = provider.New(goo); err != nil {

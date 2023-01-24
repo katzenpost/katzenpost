@@ -1,9 +1,11 @@
 package geo
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 	"github.com/cloudflare/circl/kem"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
@@ -99,6 +101,16 @@ func (g *Geometry) String() string {
 	b.WriteString(fmt.Sprintf("surb size: %d\n", g.SURBLength))
 	b.WriteString(fmt.Sprintf("sphinx plaintext header size: %d\n", g.SphinxPlaintextHeaderLength))
 	return b.String()
+}
+
+func (g *Geometry) Display() string {
+	buf := new(bytes.Buffer)
+	encoder := toml.NewEncoder(buf)
+	err := encoder.Encode(g)
+	if err != nil {
+		panic(err)
+	}
+	return string(buf.Bytes())
 }
 
 type geometryFactory struct {
