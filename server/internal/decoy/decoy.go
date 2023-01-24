@@ -276,7 +276,7 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 
 		if deltaT := then.Sub(now); deltaT < epochtime.Period*2 {
 			zeroBytes := make([]byte, d.geo.UserForwardPayloadLength)
-			payload := make([]byte, 2, 2+d.geo.SURBLength+d.geo.UserForwardPayloadLength)
+			payload := make([]byte, 2, d.geo.ForwardPayloadLength)
 			payload[0] = 1 // Packet has a SURB.
 
 			surb, k, err := d.sphinx.NewSURB(rand.Reader, revPath)
