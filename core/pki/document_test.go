@@ -25,6 +25,8 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	nikeecdh "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
 )
@@ -76,6 +78,10 @@ func TestDocument(t *testing.T) {
 	binary.BigEndian.PutUint64(sharedRandomCommit[:8], debugTestEpoch)
 
 	// Generate a Document.
+	nike := nikeecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	doc := &Document{
 		Epoch:              debugTestEpoch,
 		GenesisEpoch:       debugTestEpoch,
@@ -89,6 +95,7 @@ func TestDocument(t *testing.T) {
 		SharedRandomReveal: make(map[[PublicKeyHashSize]byte][]byte),
 		SharedRandomValue:  make([]byte, SharedRandomValueLength),
 		Version:            DocumentVersion,
+		SphinxGeometry:     geo,
 	}
 	idx := 1
 	for l := 0; l < 3; l++ {
