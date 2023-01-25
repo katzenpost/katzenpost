@@ -60,7 +60,6 @@ type CBORPluginWorker struct {
 
 	glue glue.Glue
 	log  *logging.Logger
-	geo  *geo.Geometry
 
 	haltOnce    sync.Once
 	pluginChans PluginChans
@@ -137,16 +136,16 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	cborResponse := <-pluginClient.ReadChan()
 	switch r := cborResponse.(type) {
 	case *cborplugin.Response:
-		if len(r.Payload) > k.geo.UserForwardPayloadLength {
+		if len(r.Payload) > k.glue.PKI().GetSphinxGeometry().UserForwardPayloadLength {
 			// response is probably invalid, so drop it
 			k.log.Errorf("Got response too long: %d > max (%d)",
-				len(r.Payload), k.geo.UserForwardPayloadLength)
+				len(r.Payload), k.glue.PKI().GetSphinxGeometry().UserForwardPayloadLength)
 			instrument.KaetzchenRequestsDropped(1)
 			return
 		}
 		// Iff there is a SURB, generate a SURB-Reply and schedule.
 		if surb != nil {
-			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload, k.geo)
+			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload, k.glue.PKI().GetSphinxGeometry())
 			if err != nil {
 				k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
 				return
@@ -203,7 +202,6 @@ func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []s
 func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
 	kaetzchenWorker := CBORPluginWorker{
-		geo:         glue.PKI().GetSphinxGeometry(),
 		glue:        glue,
 		log:         glue.LogBackend().GetLogger("CBOR plugin worker"),
 		pluginChans: make(PluginChans),

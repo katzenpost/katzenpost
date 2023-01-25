@@ -74,6 +74,7 @@ type PKI interface {
 }
 
 type Provider interface {
+	Start()
 	Halt()
 	UserDB() userdb.UserDB
 	Spool() spool.Spool

@@ -381,17 +381,21 @@ func (s *Server) Start() error {
 		return nil
 	}
 
-	s.pki.StartWorker()
-
-	s.log.Noticef("Current Sphinx Geometry is:\n[SphinxGeometry]\n%s\n",
-		goo.PKI().GetSphinxGeometry().Display())
-
 	// Initialize the provider backend.
 	if s.cfg.Server.IsProvider {
 		if s.provider, err = provider.New(goo); err != nil {
 			s.log.Errorf("Failed to initialize provider backend: %v", err)
 			return nil
 		}
+	}
+
+	s.pki.StartWorker()
+
+	s.log.Noticef("Current Sphinx Geometry is:\n[SphinxGeometry]\n%s\n",
+		goo.PKI().GetSphinxGeometry().Display())
+
+	if s.cfg.Server.IsProvider {
+		s.provider.Start()
 	}
 
 	// Initialize and start the the scheduler.

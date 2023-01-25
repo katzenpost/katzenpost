@@ -502,6 +502,13 @@ func (p *provider) onSendBurst(c *thwack.Conn, l string) error {
 	return c.Writer().PrintfLine("%v %v", thwack.StatusOk, burst)
 }
 
+func (p *provider) Start() {
+	cfg := p.glue.Config()
+	for i := 0; i < cfg.Debug.NumProviderWorkers; i++ {
+		p.Go(p.worker)
+	}
+}
+
 // New constructs a new provider instance.
 func New(glue glue.Glue) (glue.Provider, error) {
 	kaetzchenWorker, err := kaetzchen.New(glue)
@@ -606,11 +613,6 @@ func New(glue glue.Glue) (glue.Provider, error) {
 		glue.Management().RegisterCommand(cmdUserLink, p.onUserLink)
 		glue.Management().RegisterCommand(cmdSendRate, p.onSendRate)
 		glue.Management().RegisterCommand(cmdSendBurst, p.onSendBurst)
-	}
-
-	// Start the workers.
-	for i := 0; i < cfg.Debug.NumProviderWorkers; i++ {
-		p.Go(p.worker)
 	}
 
 	isOk = true
