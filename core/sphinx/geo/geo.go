@@ -166,14 +166,6 @@ func (f *geometryFactory) surbLength() int {
 	return f.headerLength() + NodeIDLength + f.sprpKeyMaterialLength
 }
 
-// UserForwardPayloadLength returns the length of user portion of the forward
-// payload.  The End to End spec calls this `PAYLOAD_LENGTH` but this is
-// somewhat shorter than the `PAYLOAD_LENGTH` as defined in the Sphinx
-// spec.
-func (f *geometryFactory) userForwardPayloadLength() int {
-	return f.forwardPayloadLength - (f.sphinxPlaintextHeaderLength + f.surbLength())
-}
-
 func (f *geometryFactory) deriveForwardPayloadLength(userForwardPayloadLength int) int {
 	return userForwardPayloadLength + (sphinxPlaintextHeaderLength + f.surbLength())
 }
@@ -202,34 +194,6 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 		SURBLength:                  f.surbLength(),
 		UserForwardPayloadLength:    userForwardPayloadLength,
 		ForwardPayloadLength:        forwardPayloadLength,
-		PayloadTagLength:            payloadTagLength,
-		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-		RoutingInfoLength:           f.routingInfoLength(),
-		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
-		SURBIDLength:                SURBIDLength,
-		NodeIDLength:                NodeIDLength,
-		RecipientIDLength:           RecipientIDLength,
-		NextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
-		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
-		NIKEName:                    nike.Name(),
-	}
-}
-
-func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHops int) *Geometry {
-	f := &geometryFactory{
-		nike:                        nike,
-		nrHops:                      nrHops,
-		forwardPayloadLength:        forwardPayloadLength,
-		sprpKeyMaterialLength:       crypto.SPRPKeyLength + crypto.SPRPIVLength,
-		sphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-	}
-	return &Geometry{
-		NrHops:                      nrHops,
-		HeaderLength:                f.headerLength(),
-		PacketLength:                f.packetLength(),
-		SURBLength:                  f.surbLength(),
-		UserForwardPayloadLength:    f.userForwardPayloadLength(),
-		ForwardPayloadLength:        f.forwardPayloadLength,
 		PayloadTagLength:            payloadTagLength,
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		RoutingInfoLength:           f.routingInfoLength(),
