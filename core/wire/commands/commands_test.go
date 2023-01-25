@@ -35,7 +35,7 @@ func TestNoOp(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -61,7 +61,7 @@ func TestDisconnect(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -84,7 +84,7 @@ func TestSendPacket(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -110,7 +110,7 @@ func TestRetrieveMessage(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -129,7 +129,7 @@ func TestMessage(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 2000
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	cmds := &Commands{
 		geo: geo,
 	}
@@ -226,7 +226,7 @@ func TestGetConsensus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -250,7 +250,7 @@ func TestConsensus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -289,7 +289,7 @@ func TestPostDescriptor(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -317,7 +317,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -346,7 +346,7 @@ func TestGetVote(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -374,7 +374,7 @@ func TestVote(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -403,7 +403,7 @@ func TestVoteStatus(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -437,7 +437,7 @@ func TestReveal(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -465,7 +465,7 @@ func TestRevealtatus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -494,7 +494,7 @@ func TestCert(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -522,7 +522,7 @@ func TestCertStatus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -551,7 +551,7 @@ func TestSig(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 
 	cmds := &Commands{
@@ -579,7 +579,7 @@ func TestSigStatus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(nike, geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
