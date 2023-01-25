@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -132,6 +133,11 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 	}
 	topology := generateRandomTopology(mixes, 3)
 
+	forwardPayloadLength := 2000
+	nrHops := 5
+	nike := ecdhnike.NewEcdhNike(rand.Reader)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+
 	sharedRandomCommit := make(map[[pki.PublicKeyHashSize]byte][]byte)
 	doc := &pki.Document{
 		Version:            pki.DocumentVersion,
@@ -145,6 +151,7 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, er
 		Providers:          pdescs,
 		SharedRandomCommit: sharedRandomCommit,
 		SharedRandomValue:  make([]byte, pki.SharedRandomValueLength),
+		SphinxGeometry:     geo,
 	}
 	return doc, nil
 }
