@@ -126,6 +126,8 @@ type mockProvider struct {
 
 func (p *mockProvider) Halt() {}
 
+func (p *mockProvider) Start() {}
+
 func (p *mockProvider) UserDB() userdb.UserDB {
 	return &mockUserDB{
 		provider: p,

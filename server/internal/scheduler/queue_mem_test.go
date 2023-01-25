@@ -98,7 +98,7 @@ func TestMemoryQueueBulkEnqueue(t *testing.T) {
 	forwardPayloadLength := 2000
 	nrHops := 5
 	nike := ecdh.NewEcdhNike(rand.Reader)
-	geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 
 	payload := make([]byte, geo.PacketLength)
 	for i := 0; i < 100; i++ {
