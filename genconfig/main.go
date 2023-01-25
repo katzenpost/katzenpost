@@ -444,8 +444,12 @@ func main() {
 	s.lastPort = s.basePort + 1
 
 	nrHops := *nrLayers + 2
-	s.sphinxGeometry = geo.GeometryFromForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader), 2000, nrHops,
+
+	s.sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
+		ecdh.NewEcdhNike(rand.Reader),
+		2000,
+		true,
+		nrHops,
 	)
 
 	os.Mkdir(s.outDir, 0700)
