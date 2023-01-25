@@ -32,12 +32,14 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -57,6 +59,11 @@ func TestVote(t *testing.T) {
 		LambdaD: 0.0005, LambdaDMaxDelay: 9000,
 		LambdaM: 0.2, LambdaMMaxDelay: 9000,
 	}
+
+	forwardPayloadLength := 2000
+	nrHops := 5
+	nike := ecdhnike.NewEcdhNike(rand.Reader)
+	sphinxGeometry := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 
 	peerKeys, authCfgs, err := genVotingAuthoritiesCfg(parameters, authNum)
 	require.NoError(err)
@@ -259,6 +266,7 @@ func TestVote(t *testing.T) {
 
 	// exchange votes
 	for i, s := range stateAuthority {
+		s.geo = sphinxGeometry
 		s.votingEpoch = votingEpoch
 		s.genesisEpoch = s.votingEpoch
 		myVote, err := s.getVote(s.votingEpoch)
