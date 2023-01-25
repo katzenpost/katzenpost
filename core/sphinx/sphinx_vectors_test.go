@@ -54,16 +54,20 @@ type hexSphinxTest struct {
 	SurbKeys string
 }
 
-func NoTestBuildFileVectorSphinx(t *testing.T) {
+func TestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
+
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	g := geo.GeometryFromForwardPayloadLength(mynike, 103, 5)
-	sphinx := NewSphinx(mynike, g)
 
 	withSURB := false
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
+	sphinx := NewSphinx(mynike, g)
 	hexTests := buildVectorSphinx(t, mynike, withSURB, sphinx)
 	withSURB = true
+	g = geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
+	sphinx = NewSphinx(mynike, g)
 	hexTests2 := buildVectorSphinx(t, mynike, withSURB, sphinx)
+
 	hexTests = append(hexTests, hexTests2...)
 
 	serialized, err := json.Marshal(hexTests)
@@ -73,11 +77,9 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 	require.NoError(err)
 }
 
-func NoTestVectorSphinx(t *testing.T) {
+func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	g := geo.GeometryFromForwardPayloadLength(mynike, 103, 5)
-	sphinx := NewSphinx(mynike, g)
 
 	serialized, err := os.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
@@ -89,6 +91,13 @@ func NoTestVectorSphinx(t *testing.T) {
 	for _, test := range tests {
 		packet, err := hex.DecodeString(test.Packets[0])
 		require.NoError(err)
+
+		withSURB := false
+		if test.Surb != "" {
+			withSURB = true
+		}
+		g := geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
+		sphinx := NewSphinx(mynike, g)
 
 		// Unwrap the packet, validating the output.
 		for i := range test.Nodes {
