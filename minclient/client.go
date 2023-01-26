@@ -186,13 +186,13 @@ func (c *Client) halt() {
 }
 
 // New creates a new Client with the provided configuration.
-func New(cfg *ClientConfig) (*Client, error) {
+func New(cfg *ClientConfig, geo *geo.Geometry) (*Client, error) {
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
 
 	c := new(Client)
-	c.geo = nil
+	c.geo = geo
 	c.sphinx = nil
 	c.cfg = cfg
 	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)

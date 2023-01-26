@@ -154,7 +154,7 @@ func NewSession(
 	s.Go(s.eventSinkWorker)
 	s.Go(s.garbageCollectionWorker)
 
-	s.minclient, err = minclient.New(clientCfg)
+	s.minclient, err = minclient.New(clientCfg, s.geo)
 	if err != nil {
 		pkiCacheClient.Halt()
 		return nil, err
