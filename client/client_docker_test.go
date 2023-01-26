@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:build docker_test
 // +build docker_test
 
 package client
@@ -28,7 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/require"
 )
 
