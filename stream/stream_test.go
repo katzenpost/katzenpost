@@ -23,6 +23,8 @@ import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/pki"
 	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/stretchr/testify/require"
 	"io"
@@ -30,6 +32,29 @@ import (
 	"testing"
 	"time"
 )
+
+// getSession waits until pki.Document is available and returns a *client.Session
+func getSession(t *testing.T) *client.Session {
+	require := require.New(t)
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+	require.NotNil(cfg)
+	cc, err := client.New(cfg)
+	require.NotNil(cc)
+	require.NoError(err)
+	var session *client.Session
+	for session == nil {
+		session, err = cc.NewTOFUSession()
+		if err == pki.ErrNoDocument {
+			_, _, till := epochtime.Now()
+			<-time.After(till)
+		} else {
+			require.NoError(err)
+		}
+	}
+	session.WaitForDocument()
+	return session
+}
 
 // newStreams returns an initialized pair of Streams
 func newStreams() (*Stream, *Stream) {
@@ -75,18 +100,8 @@ func TestFrameKey(t *testing.T) {
 
 func TestCreateStream(t *testing.T) {
 	require := require.New(t)
-
-	cfg, err := config.LoadFile("testdata/client.toml")
-	require.NoError(err)
-
-	cc, err := client.New(cfg)
-	require.NoError(err)
-	require.NotNil(cc)
-
-	session, err := cc.NewTOFUSession()
-	require.NoError(err)
+	session := getSession(t)
 	require.NotNil(session)
-	session.WaitForDocument()
 
 	c, err := mClient.NewClient(session)
 	require.NoError(err)
@@ -105,6 +120,7 @@ func TestCreateStream(t *testing.T) {
 	r := NewStream(c, bsecret[:], asecret[:])
 
 	msg := []byte("Hello World")
+	t.Logf("Sending %s", string(msg))
 	n, err := s.Write(msg)
 	require.NoError(err)
 	require.Equal(n, len(msg))
@@ -116,26 +132,51 @@ func TestCreateStream(t *testing.T) {
 		// I thought io.ReadAtLeast would do this, but we get EOF too soon
 		// because we are just proxying the calls through bytes.Buffer and whatever it does
 		n, err = r.Read(yolo)
+		require.NoError(err)
 		if n == len(msg) {
+			t.Logf("Read %s", string(yolo))
 			break
+		} else {
+			t.Logf("Read(%d): %s", n, string(yolo))
 		}
+		<-time.After(time.Second)
 	}
 	require.NoError(err)
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
 
 	msg = []byte("Goodbye World")
+	t.Logf("Sending %s", string(msg))
 	n, err = s.Write(msg)
 	require.NoError(err)
 	require.Equal(n, len(msg))
+	err = s.Close()
+	require.NoError(err)
 
 	yolo = make([]byte, len(msg))
+	t.Logf("Reading Stream")
 	n, err = io.ReadAtLeast(r, yolo, len(msg))
 	require.NoError(err)
 	require.Equal(n, len(msg))
 	require.Equal(yolo, msg)
+	t.Logf("Read %s", string(yolo))
+	err = r.Close()
+	require.NoError(err)
 	s.Halt()
 	r.Halt()
+}
+
+func TestStreamFragmentation(t *testing.T) {
+	require := require.New(t)
+	session := getSession(t)
+	require.NotNil(session)
+
+	c, err := mClient.NewClient(session)
+	require.NoError(err)
+	require.NotNil(c)
+
+	asecret := &[keySize]byte{}
+	bsecret := &[keySize]byte{}
 
 	// initialize handshake secrets from random
 	io.ReadFull(rand.Reader, asecret[:])
@@ -156,8 +197,14 @@ func TestCreateStream(t *testing.T) {
 			sidechannel <- message
 			s.Write([]byte(message))
 		}
+		// Writer closes stream
+		err = s.Close()
+		require.NoError(err)
+		t.Logf("SendWorker Close()")
+
 		close(sidechannel)
 		t.Logf("SendWorker Done()")
+		require.NoError(err)
 		wg.Done()
 		// wait until reader has finished reading
 		// before halting the writer()
@@ -172,7 +219,22 @@ func TestCreateStream(t *testing.T) {
 			msg, ok := <-sidechannel
 			// channel was closed by writer, we're done
 			if !ok {
-				t.Logf("ReadWorker Done()")
+				// verify that EOF is (eventuallY) returned on a Read after Stream.Close()
+				foo := make([]byte, 42)
+				var n int
+				var err error
+				// retry read until StreamClosed and EOF has arrived
+				for err == nil {
+					t.Logf("Waiting for StreamEnd")
+					n, err = s.Read(foo)
+					require.Equal(n, 0)
+					<-time.After(2 * time.Second)
+				}
+				// stream must return EOF when writer has finalized stream
+				require.Error(err, io.EOF)
+				t.Logf("ReadWorker Close()")
+				err = s.Close()
+				require.NoError(err)
 				wg.Done()
 				s.Halt()
 				return
@@ -182,7 +244,10 @@ func TestCreateStream(t *testing.T) {
 			for readOff := 0; readOff < len(msg); {
 				n, err := s.Read(b[readOff:])
 				if err != nil {
-					panic(err)
+					t.Logf("read %d, total %d", n, readOff)
+					if readOff != len(msg) {
+						panic(err)
+					}
 				}
 				t.Logf("Read %d bytes", n)
 

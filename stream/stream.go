@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -25,6 +26,7 @@ const (
 
 var (
 	FramePayloadSize int
+	ErrStreamClosed  = errors.New("Stream Closed")
 )
 
 // FrameType indicates the state of Stream at the current Frame
@@ -58,6 +60,14 @@ const (
 	ReliableStream StreamMode = iota
 	// ScrambleStream transmits Frames in any order without retransmissions
 	ScrambleStream
+)
+
+type StreamState uint8
+
+const (
+	StreamOpen StreamState = iota
+	StreamClosing
+	StreamClosed
 )
 
 // smsg is some sort of container for written messages pending acknowledgement
@@ -103,9 +113,7 @@ type Stream struct {
 	f_read_idx  uint64
 	f_write_idx uint64
 
-	// peer's frame pointers
-	peer_read_idx  uint64
-	peer_write_idx uint64
+	f_ack_idx uint64
 
 	tq *client.TimerQueue
 	r  *retx
@@ -113,13 +121,21 @@ type Stream struct {
 	// Parameters
 	// stream_window_size is the number of messages ahead of peer's
 	// ackknowledgement that the writeworker will periodically retransmit
-	stream_window_size uint
+	stream_window_size uint64
 
 	// Mode indicates whether this Stream will be a fire-and-forget ScrambleStream or a reliable channel with retranmissions of unacknowledged messages
 	Mode StreamMode
 
-	// doFlush signals writer worker to wake and transmit frames
-	doFlush chan struct{}
+	// RState indicates Reader State
+	RState StreamState
+
+	// RState indicates Writer State
+	WState StreamState
+
+	// onFlush signals writer worker to wake and transmit frames
+	onFlush       chan struct{}
+	onAck         chan struct{}
+	onStreamClose chan struct{}
 }
 
 // glue for timerQ
@@ -149,59 +165,55 @@ func (r *retx) Push(i client.Item) error {
 
 // reader polls receive window of messages and adds to the reader queue
 func (s *Stream) reader() {
-
 	for {
 		select {
 		case <-s.HaltCh():
 			return
 		default:
 		}
-		// next is the MessageID of the next message in the stream
+
 		s.Lock()
-		id := s.f_read_idx
-		frame_id := s.rxFrameID(id)
-		frame_key := s.rxFrameKey(id)
-		s.f_reads += 1
-		s.Unlock()
-		ciphertext, err := s.c.Get(TID(frame_id))
-		if err == nil {
-			nonce := [nonceSize]byte{}
-			copy(nonce[:], ciphertext[:nonceSize])
-			ciphertext = ciphertext[nonceSize:]
-			plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, frame_key)
-			if !ok {
-				// damaged Stream, abort / retry / fail ?
-				panic("damaged Stream, decrypt fail")
-			}
-
-			f := new(Frame)
-			f.id = id
-			err := cbor.Unmarshal(plaintext, f)
-			if err != nil {
-				// XXX: corrupted stream must terminate
-				panic("damaged Stream, incorrect Frame")
-			}
-
-			// remove acknowledged Frames from waiting-ack
-			s.r.Lock()
-			// ack all frames predecessor to peer ack
-			for i, _ := range s.r.wack {
-				if i < f.Ack {
-					delete(s.r.wack, i)
+		switch s.RState {
+		case StreamClosed:
+			// No more frames will be sent by peer
+			// If ReliableStream, send final Ack
+			if s.Mode == ReliableStream {
+				if s.f_read_idx > s.f_ack_idx {
+					s.doFlush()
 				}
 			}
-			s.r.Unlock()
-			s.Lock()
-
-			// write payload to buf
-			s.readBuf.Write(f.Payload)
-
-			// increment the frame pointer
-			// increment the read pointer
-			s.f_read_idx += 1
 			s.Unlock()
+			return
+		case StreamOpen:
+			if s.Mode == ReliableStream {
+				// prod writer to Ack
+				if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
+					s.doFlush()
+				}
+			}
 		}
+		s.Unlock()
+
+		// read next frame
+		f, err := s.readFrame()
+		if err != nil {
+			continue
+		}
+
+		// process Acks
+		s.processAck(f)
+		s.Lock()
+		s.readBuf.Write(f.Payload)
+
+		// If this is the last Frame in the stream, set RState to StreamClosed
+		if f.Type == StreamEnd {
+			s.RState = StreamClosed
+		} else {
+			s.f_read_idx += 1
+		}
+		s.Unlock()
 	}
+	s.Done()
 }
 
 // Read impl io.Reader
@@ -209,70 +221,141 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 	s.Lock()
 	defer s.Unlock()
 	n, err = s.readBuf.Read(p)
-	if err == io.EOF {
-		// XXX: was final Frame and stream Closed ?
-		return n, nil
+	switch err {
+	case io.EOF:
+		if n > 0 {
+			return n, nil
+		}
+		if s.RState == StreamClosed {
+			return 0, ErrStreamClosed
+		}
+		if s.WState == StreamClosed && s.Mode == ReliableStream {
+			return 0, ErrStreamClosed
+		}
+		return 0, nil
+	default:
+		if err != nil {
+			panic(err)
+		}
+		return n, err
 	}
-	return
 }
 
 // Write impl io.Writer
 func (s *Stream) Write(p []byte) (n int, err error) {
 	// writes message with our last read pointer as header
 	s.Lock()
+	defer s.Unlock()
 	// buffer data to bytes.Buffer
+	if s.WState == StreamClosed {
+		return 0, ErrStreamClosed
+	}
+	if s.WState == StreamClosing {
+		return 0, ErrStreamClosed
+	}
 	s.writeBuf.Write(p)
-	s.Unlock()
 	// flush writer
-	s.doFlush <- struct{}{}
+	s.doFlush()
 	return len(p), nil
+}
+
+// Close terminates the Stream with a final Frame and blocks future Writes
+func (s *Stream) Close() error {
+	s.Lock()
+	s.RState = StreamClosed
+	if s.WState == StreamOpen {
+		s.WState = StreamClosing
+		s.Unlock()
+		<-s.onStreamClose // block until writer has finalized
+		return nil
+	}
+	s.Unlock()
+	return nil
 }
 
 func (s *Stream) writer() {
 	for {
+
 		select {
 		case <-s.HaltCh():
 			return
 		default:
 		}
-		f := new(Frame)
-		// indicate how much of the complete stream we've read
+		mustAck := false
+		mustTeardown := false
 		s.Lock()
-		if s.Mode == ReliableStream {
-			f.Ack = s.f_read_idx
+		switch s.WState {
+		case StreamClosed:
+			s.onStreamClose <- struct{}{}
+			s.Unlock()
+			return
+		case StreamOpen, StreamClosing:
+			if s.Mode == ReliableStream {
+				if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
+					mustAck = true
+				}
+				if s.RState == StreamClosed || s.WState == StreamClosing {
+					mustTeardown = true
+					// XXX: should not call Close() before writeBuf is cleared
+					// maybe we need a blocking call Flush() to ensure caller
+					// will not call Close() before the buffer is emptied
+					if s.writeBuf.Len() != 0 {
+						mustTeardown = false
+					}
+					if s.f_read_idx-s.f_ack_idx > 0 {
+						mustAck = true
+					}
+				}
+				if !mustAck && !mustTeardown {
+					s.r.Lock()
+					// must wait for Ack before continuing to transmit
+					mustWait := uint64(len(s.r.wack)) >= s.stream_window_size || s.writeBuf.Len() == 0
+					if s.WState == StreamClosing {
+						mustWait = false
+					}
+					s.Unlock()
+					s.r.Unlock()
+					if mustWait {
+						select {
+						case <-s.onFlush:
+						case <-s.onAck:
+						case <-s.HaltCh():
+							return
+						}
+					}
+					s.Lock() // re-obtain lock
+				} else {
+					// fallthrough and send a frame
+				}
+			}
+		}
+
+		f := new(Frame)
+		f.id = s.f_write_idx
+		f.Ack = s.f_read_idx
+
+		if mustTeardown {
+			// final Ack and frame transmitted
+			s.WState = StreamClosed
+			f.Type = StreamEnd
 		}
 		f.Payload = make([]byte, FramePayloadSize)
 		// Read up to the maximum frame payload size
 		n, err := s.writeBuf.Read(f.Payload)
-		f.id = s.f_write_idx
 		s.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
 		default:
 		}
-		if n > 0 {
-			// truncate frame.Payload
-			f.Payload = f.Payload[:n]
+		f.Payload = f.Payload[:n]
+		if n > 0 || mustAck || mustTeardown {
 			err = s.txFrame(f)
 			if err != nil {
-				/*
-				s.Lock()
-				s.State = StreamClosed
-				s.Unlock()
-				*/
-				return
-			}
-			s.Lock()
-			s.f_write_idx += 1
-			s.Unlock()
-		} else {
-			select {
-			case <-s.doFlush:
-			case <-s.HaltCh():
-				return
+				panic(err)
 			}
 		}
 	}
+	s.Done()
 }
 
 // derive the reader frame ID for frame_num
@@ -316,6 +399,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	m := &smsg{f: frame, priority: uint64(til + 2*epochtime.Period)}
 	frame_id := s.txFrameID(frame.id)
 	frame_key := s.txFrameKey(frame.id)
+	// Update reference to last acknowledged message
+	if frame.Ack > s.f_ack_idx {
+		s.f_ack_idx = frame.Ack
+	}
 	s.Unlock()
 
 	// encrypt serialized frame
@@ -338,6 +425,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	if err != nil {
 		return err
 	}
+	s.Lock()
+	s.f_write_idx += 1
+	s.Unlock()
+
 	// Enable retransmissions of unacknowledged frames
 	if s.Mode == ReliableStream {
 		s.txEnqueue(m)
@@ -348,6 +439,9 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 
 func (s *Stream) txEnqueue(m *smsg) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
+	s.r.Lock()
+	s.r.wack[m.f.id] = struct{}{}
+	s.r.Unlock()
 	s.tq.Push(m)
 }
 
@@ -388,13 +482,78 @@ func (s *Stream) exchange(mysecret, othersecret []byte) {
 	}
 }
 
+func (s *Stream) doFlush() {
+	select {
+	case s.onFlush <- struct{}{}:
+		// prod writer() worker to Ack and halt reader()
+	default:
+		// do not block on halted writer()
+	}
+	return
+}
+
+func (s *Stream) readFrame() (*Frame, error) {
+	s.Lock()
+	idx := s.f_read_idx
+	s.Unlock()
+	ciphertext, err := s.c.Get(TID(s.rxFrameID(idx)))
+	if err != nil {
+		return nil, err
+	}
+	nonce := [nonceSize]byte{}
+	copy(nonce[:], ciphertext[:nonceSize])
+	ciphertext = ciphertext[nonceSize:]
+	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.rxFrameKey(idx))
+	if !ok {
+		// damaged Stream, abort / retry / fail ?
+		// TODO: indicate serious error somehow
+		panic("damaged Stream, decrypt fail")
+		return nil, err
+	}
+
+	f := new(Frame)
+	f.id = idx
+	err = cbor.Unmarshal(plaintext, f)
+	if err != nil {
+		// XXX: corrupted stream must terminate
+		// TODO: indicate serious error somehow
+		panic("damaged Stream, incorrect Frame")
+		return nil, err
+	}
+	return f, nil
+}
+
+func (s *Stream) processAck(f *Frame) {
+	ackD := false
+	s.r.Lock()
+	// ack all frames predecessor to peer ack
+	for i, _ := range s.r.wack {
+		if i <= f.Ack {
+			delete(s.r.wack, i)
+			ackD = true
+		}
+	}
+	s.r.Unlock()
+	// prod writer() waiting on Ack
+	if ackD {
+		select {
+		case s.onAck <- struct{}{}:
+		default:
+		}
+	}
+}
+
 // newstream handshakes and starts a read worker
 func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s := new(Stream)
 	s.c = c
 	s.Mode = ReliableStream
+	s.stream_window_size = 3
+	s.RState = StreamOpen
+	s.WState = StreamOpen
 	// timerqueue calls s.Push when timeout of enqueued item
 	s.r = &retx{s: s}
+	s.r.wack = make(map[uint64]struct{})
 	s.tq = client.NewTimerQueue(s.r)
 	s.writeBuf = new(bytes.Buffer)
 	s.readBuf = new(bytes.Buffer)
@@ -402,7 +561,9 @@ func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s.writekey = &[keySize]byte{}
 	s.readkey = &[keySize]byte{}
 	s.exchange(mysecret, theirsecret)
-	s.doFlush = make(chan struct{}, 1)
+	s.onFlush = make(chan struct{}, 1)
+	s.onAck = make(chan struct{}, 1)
+	s.onStreamClose = make(chan struct{}, 1)
 	s.Go(s.reader)
 	s.Go(s.writer)
 	return s
