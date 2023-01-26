@@ -20,6 +20,8 @@ package client
 
 import (
 	"encoding/base64"
+	"fmt"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -262,4 +264,53 @@ func TestStreamFragmentation(t *testing.T) {
 		}
 	}()
 	wg.Wait()
+}
+
+func TestCBORSerialization(t *testing.T) {
+	require := require.New(t)
+	session := getSession(t)
+	require.NotNil(session)
+
+	c, err := mClient.NewClient(session)
+	require.NoError(err)
+	require.NotNil(c)
+
+	asecret := &[keySize]byte{}
+	bsecret := &[keySize]byte{}
+
+	// initialize handshake secrets from random
+	io.ReadFull(rand.Reader, asecret[:])
+	io.ReadFull(rand.Reader, bsecret[:])
+
+	// our view of stream
+	s := NewStream(c, asecret[:], bsecret[:])
+	// "other end" of stream
+	r := NewStream(c, bsecret[:], asecret[:])
+
+	type msg struct {
+		Message string
+		Name    string
+		Count   int
+	}
+
+	enc := cbor.NewEncoder(s)
+	dec := cbor.NewDecoder(r)
+	for i := 0; i < 10; i++ {
+		m := new(msg)
+		m.Message = fmt.Sprintf("hello world, %d\n", i)
+		m.Name = "foo"
+		m.Count = i
+		err := enc.Encode(m)
+		require.NoError(err)
+		m2 := new(msg)
+		err = dec.Decode(m2)
+		require.NoError(err)
+		require.Equal(m.Message, m2.Message)
+		require.Equal(m.Name, m2.Name)
+		require.Equal(m.Count, m2.Count)
+	}
+	err = s.Close()
+	require.NoError(err)
+	err = r.Close()
+	require.NoError(err)
 }
