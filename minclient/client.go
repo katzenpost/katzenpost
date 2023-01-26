@@ -193,7 +193,11 @@ func New(cfg *ClientConfig, geo *geo.Geometry) (*Client, error) {
 
 	c := new(Client)
 	c.geo = geo
-	c.sphinx = nil
+	var err error
+	c.sphinx, err = sphinx.FromGeometry(geo)
+	if err != nil {
+		return nil, err
+	}
 	c.cfg = cfg
 	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)
