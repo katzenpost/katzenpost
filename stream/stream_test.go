@@ -313,9 +313,11 @@ func TestCBORSerialization(t *testing.T) {
 		m.Count = i
 		err := enc.Encode(m)
 		require.NoError(err)
+		t.Logf("Wrote CBOR object")
 		m2 := new(msg)
 		err = dec.Decode(m2)
 		require.NoError(err)
+		t.Logf("Decoded CBOR object")
 		require.Equal(m.Message, m2.Message)
 		require.Equal(m.Name, m2.Name)
 		require.Equal(m.Count, m2.Count)
