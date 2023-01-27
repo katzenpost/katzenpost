@@ -194,10 +194,16 @@ func TestStreamFragmentation(t *testing.T) {
 			entropic := make([]byte, 4242) // ensures fragmentation
 			io.ReadFull(rand.Reader, entropic)
 			message := base64.StdEncoding.EncodeToString(entropic)
+			mbytes := []byte(message)
 			// tell the other worker what message we're going to try and send
 			t.Logf("Sending %d bytes", len(message))
 			sidechannel <- message
-			s.Write([]byte(message))
+			offs := 0
+			for offs < len(mbytes) {
+				n, err := s.Write(mbytes[offs:])
+				require.NoError(err)
+				offs += n
+			}
 		}
 		// Writer closes stream
 		err = s.Close()
@@ -288,6 +294,7 @@ func TestCBORSerialization(t *testing.T) {
 	r := NewStream(c, bsecret[:], asecret[:])
 
 	type msg struct {
+		Payload []byte
 		Message string
 		Name    string
 		Count   int
@@ -297,6 +304,10 @@ func TestCBORSerialization(t *testing.T) {
 	dec := cbor.NewDecoder(r)
 	for i := 0; i < 10; i++ {
 		m := new(msg)
+		m.Payload = make([]byte, 4200)
+		for j := 0; j < len(m.Payload); j++ {
+			m.Payload[j] = 0x10
+		}
 		m.Message = fmt.Sprintf("hello world, %d\n", i)
 		m.Name = "foo"
 		m.Count = i

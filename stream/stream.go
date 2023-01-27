@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/nacl/secretbox"
 	"io"
 	"sync"
+	"time"
 )
 
 const (
@@ -113,6 +114,7 @@ type Stream struct {
 	f_read_idx  uint64
 	f_write_idx uint64
 
+	// idx of last ack
 	f_ack_idx uint64
 
 	tq *client.TimerQueue
@@ -123,6 +125,8 @@ type Stream struct {
 	// ackknowledgement that the writeworker will periodically retransmit
 	stream_window_size uint64
 
+	max_writebuf_size int
+
 	// Mode indicates whether this Stream will be a fire-and-forget ScrambleStream or a reliable channel with retranmissions of unacknowledged messages
 	Mode StreamMode
 
@@ -132,9 +136,14 @@ type Stream struct {
 	// RState indicates Writer State
 	WState StreamState
 
+	// timeout value used internally before failing a blocking call
+	defaultTimeout time.Duration
+
 	// onFlush signals writer worker to wake and transmit frames
 	onFlush       chan struct{}
 	onAck         chan struct{}
+	onWrite       chan struct{}
+	onRead        chan struct{}
 	onStreamClose chan struct{}
 }
 
@@ -204,6 +213,7 @@ func (s *Stream) reader() {
 		s.processAck(f)
 		s.Lock()
 		s.readBuf.Write(f.Payload)
+		// signal that data has been read to callers blocking on Read()
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
 		if f.Type == StreamEnd {
@@ -212,6 +222,7 @@ func (s *Stream) reader() {
 			s.f_read_idx += 1
 		}
 		s.Unlock()
+		s.doOnRead()
 	}
 	s.Done()
 }
@@ -219,44 +230,66 @@ func (s *Stream) reader() {
 // Read impl io.Reader
 func (s *Stream) Read(p []byte) (n int, err error) {
 	s.Lock()
-	defer s.Unlock()
+	if s.RState == StreamClosed {
+		s.Unlock()
+		return 0, io.EOF
+	}
+	if s.WState == StreamClosed && s.Mode == ReliableStream {
+		s.Unlock()
+		return 0, io.EOF
+	}
+	if s.readBuf.Len() == 0 {
+		s.Unlock()
+		select {
+		case <-time.After(s.defaultTimeout):
+			return 0, io.EOF
+		case <-s.HaltCh():
+			return 0, io.EOF
+		case <-s.onRead:
+			// frame has been read
+		}
+		s.Lock()
+	}
 	n, err = s.readBuf.Read(p)
-	switch err {
-	case io.EOF:
+	s.Unlock()
+	// ignore io.EOF on short reads from readBuf
+	if err == io.EOF {
 		if n > 0 {
 			return n, nil
 		}
-		if s.RState == StreamClosed {
-			return 0, ErrStreamClosed
-		}
-		if s.WState == StreamClosed && s.Mode == ReliableStream {
-			return 0, ErrStreamClosed
-		}
-		return 0, nil
-	default:
-		if err != nil {
-			panic(err)
-		}
-		return n, err
 	}
+	return n, err
 }
 
 // Write impl io.Writer
 func (s *Stream) Write(p []byte) (n int, err error) {
 	// writes message with our last read pointer as header
 	s.Lock()
-	defer s.Unlock()
 	// buffer data to bytes.Buffer
-	if s.WState == StreamClosed {
-		return 0, ErrStreamClosed
+	if s.WState == StreamClosed || s.WState == StreamClosing {
+		s.Unlock()
+		return 0, io.EOF
 	}
-	if s.WState == StreamClosing {
-		return 0, ErrStreamClosed
+	// take max_writebuf_size as ... a guideline rather than a hard limit
+	// because many users of io.Writer do not seem to handle short writes
+	// properly, so just rate limit calls to write by waiting until
+	// a frame has been transmitted before returning
+	if s.writeBuf.Len() >= s.max_writebuf_size {
+		s.Unlock()
+		select {
+		case <-time.After(s.defaultTimeout):
+			return 0, io.EOF
+		case <-s.HaltCh():
+			return 0, io.EOF
+		case <-s.onStreamClose:
+			return 0, io.EOF
+		case <-s.onWrite:
+		}
+		s.Lock()
 	}
-	s.writeBuf.Write(p)
-	// flush writer
-	s.doFlush()
-	return len(p), nil
+	defer s.doFlush()
+	defer s.Unlock()
+	return s.writeBuf.Write(p)
 }
 
 // Close terminates the Stream with a final Frame and blocks future Writes
@@ -353,6 +386,9 @@ func (s *Stream) writer() {
 			if err != nil {
 				panic(err)
 			}
+			// Signal that data has been written to callers blocked on Write due to
+			// maximum write buffer size exceeded
+			s.doOnWrite()
 		}
 	}
 	s.Done()
@@ -433,7 +469,6 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	if s.Mode == ReliableStream {
 		s.txEnqueue(m)
 	}
-
 	return nil
 }
 
@@ -455,6 +490,7 @@ func H(i []byte) (res common.MessageID) {
 
 // produce keymaterial from handshake secrets
 func (s *Stream) exchange(mysecret, othersecret []byte) {
+
 	salt := []byte("stream_reader_writer_keymaterial")
 	hash := sha256.New
 	reader_keymaterial := hkdf.New(hash, othersecret[:], salt, nil)
@@ -465,7 +501,6 @@ func (s *Stream) exchange(mysecret, othersecret []byte) {
 	if err != nil {
 		panic(err)
 	}
-
 	_, err = io.ReadFull(writer_keymaterial, s.write_id_base[:])
 	if err != nil {
 		panic(err)
@@ -485,11 +520,22 @@ func (s *Stream) exchange(mysecret, othersecret []byte) {
 func (s *Stream) doFlush() {
 	select {
 	case s.onFlush <- struct{}{}:
-		// prod writer() worker to Ack and halt reader()
 	default:
-		// do not block on halted writer()
 	}
-	return
+}
+
+func (s *Stream) doOnRead() {
+	select {
+	case s.onRead <- struct{}{}:
+	default:
+	}
+}
+
+func (s *Stream) doOnWrite() {
+	select {
+	case s.onWrite <- struct{}{}:
+	default:
+	}
 }
 
 func (s *Stream) readFrame() (*Frame, error) {
@@ -543,14 +589,31 @@ func (s *Stream) processAck(f *Frame) {
 	}
 }
 
+// impl net.Addr
+type StreamAddr struct {
+	network, address string
+}
+
+func (s *StreamAddr) Network() string {
+	return s.network
+}
+
+func (s *StreamAddr) String() string {
+	return s.address
+}
+
 // newstream handshakes and starts a read worker
 func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s := new(Stream)
 	s.c = c
 	s.Mode = ReliableStream
+
+	// what is a good size to balance message loss vs interactivity
 	s.stream_window_size = 3
+	s.max_writebuf_size = 42 * FramePayloadSize
 	s.RState = StreamOpen
 	s.WState = StreamOpen
+	s.defaultTimeout = 5 * time.Minute
 	// timerqueue calls s.Push when timeout of enqueued item
 	s.r = &retx{s: s}
 	s.r.wack = make(map[uint64]struct{})
@@ -564,6 +627,8 @@ func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s.onFlush = make(chan struct{}, 1)
 	s.onAck = make(chan struct{}, 1)
 	s.onStreamClose = make(chan struct{}, 1)
+	s.onWrite = make(chan struct{}, 1)
+	s.onRead = make(chan struct{}, 1)
 	s.Go(s.reader)
 	s.Go(s.writer)
 	return s
