@@ -192,7 +192,11 @@ func (s *Stream) reader() {
 			continue
 		default:
 			// rate limit spinning if client is offline, error returns immediately
-			<-time.After(retryDelay)
+			select {
+			case <-s.HaltCh():
+				return
+			case <-time.After(retryDelay):
+			}
 			continue
 		}
 
@@ -371,8 +375,15 @@ func (s *Stream) writer() {
 		f.Payload = f.Payload[:n]
 		if n > 0 || mustAck || mustTeardown {
 			err = s.txFrame(f)
-			if err != nil {
-				panic(err)
+			switch err {
+			case nil:
+			default:
+				select {
+				case <-s.HaltCh():
+					return
+				case <-time.After(retryDelay):
+				}
+				continue
 			}
 			// Signal that data has been written to callers blocked on Write due to
 			// maximum write buffer size exceeded
