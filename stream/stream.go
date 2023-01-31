@@ -54,16 +54,6 @@ type Frame struct {
 	Payload []byte // transported data
 }
 
-// StreamMode indicates the type of Stream
-type StreamMode uint8
-
-const (
-	// ReliableStream transmits StreamWindowSize Frames ahead of Ack
-	ReliableStream StreamMode = iota
-	// ScrambleStream transmits Frames in any order without retransmissions
-	ScrambleStream
-)
-
 type StreamState uint8
 
 const (
@@ -124,9 +114,6 @@ type Stream struct {
 
 	max_writebuf_size int
 
-	// Mode indicates whether this Stream will be a fire-and-forget ScrambleStream or a reliable channel with retranmissions of unacknowledged messages
-	Mode StreamMode
-
 	// RState indicates Reader State
 	RState StreamState
 
@@ -183,19 +170,15 @@ func (s *Stream) reader() {
 		case StreamClosed:
 			// No more frames will be sent by peer
 			// If ReliableStream, send final Ack
-			if s.Mode == ReliableStream {
-				if s.f_read_idx > s.f_ack_idx {
-					s.doFlush()
-				}
+			if s.f_read_idx > s.f_ack_idx {
+				s.doFlush()
 			}
 			s.Unlock()
 			return
 		case StreamOpen:
-			if s.Mode == ReliableStream {
-				// prod writer to Ack
-				if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
-					s.doFlush()
-				}
+			// prod writer to Ack
+			if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
+				s.doFlush()
 			}
 		}
 		s.Unlock()
@@ -238,7 +221,7 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		s.Unlock()
 		return 0, io.EOF
 	}
-	if s.WState == StreamClosed && s.Mode == ReliableStream {
+	if s.WState == StreamClosed {
 		s.Unlock()
 		return 0, io.EOF
 	}
@@ -254,7 +237,7 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		}
 		s.Lock()
 		if s.readBuf.Len() == 0 {
-			if s.RState != StreamClosed  {
+			if s.RState != StreamClosed {
 				panic("Read() must not awaken to an empty buffer unless StreamClosed is true")
 			}
 		}
@@ -307,7 +290,7 @@ func (s *Stream) Close() error {
 	if s.WState == StreamOpen {
 		s.WState = StreamClosing
 		s.Unlock()
-		s.doFlush() // wake up a sleeping writer !
+		s.doFlush()       // wake up a sleeping writer !
 		<-s.onStreamClose // block until writer has finalized
 		s.Lock()
 		s.RState = StreamClosed
@@ -335,40 +318,35 @@ func (s *Stream) writer() {
 			s.Unlock()
 			return
 		case StreamOpen, StreamClosing:
-			if s.Mode == ReliableStream {
-				if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
+			if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
+				mustAck = true
+			}
+			if s.RState == StreamClosed || s.WState == StreamClosing {
+				mustTeardown = true
+				if s.writeBuf.Len() != 0 {
+					mustTeardown = false
+				}
+				if s.f_read_idx-s.f_ack_idx > 0 {
 					mustAck = true
 				}
-				if s.RState == StreamClosed || s.WState == StreamClosing {
-					mustTeardown = true
-					// XXX: should not call Close() before writeBuf is cleared
-					// maybe we need a blocking call Flush() to ensure caller
-					// will not call Close() before the buffer is emptied
-					if s.writeBuf.Len() != 0 {
-						mustTeardown = false
-					}
-					if s.f_read_idx-s.f_ack_idx > 0 {
-						mustAck = true
-					}
+			}
+			if !mustAck && !mustTeardown {
+				s.r.Lock()
+				// must wait for Ack before continuing to transmit
+				mustWait := uint64(len(s.r.wack)) >= s.stream_window_size || s.writeBuf.Len() == 0
+				if s.WState == StreamClosing {
+					mustWait = false
 				}
-				if !mustAck && !mustTeardown {
-					s.r.Lock()
-					// must wait for Ack before continuing to transmit
-					mustWait := uint64(len(s.r.wack)) >= s.stream_window_size || s.writeBuf.Len() == 0
-					if s.WState == StreamClosing {
-						mustWait = false
+				s.r.Unlock()
+				if mustWait {
+					s.Unlock()
+					select {
+					case <-s.onFlush:
+					case <-s.onAck:
+					case <-s.HaltCh():
+						return
 					}
-					s.r.Unlock()
-					if mustWait {
-						s.Unlock()
-						select {
-						case <-s.onFlush:
-						case <-s.onAck:
-						case <-s.HaltCh():
-							return
-						}
-						continue // re-evaluate all of the conditions above after wakeup!
-					}
+					continue // re-evaluate all of the conditions above after wakeup!
 				}
 			}
 		}
@@ -476,9 +454,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	s.Unlock()
 
 	// Enable retransmissions of unacknowledged frames
-	if s.Mode == ReliableStream {
-		s.txEnqueue(m)
-	}
+	s.txEnqueue(m)
 	return nil
 }
 
@@ -616,7 +592,6 @@ func (s *StreamAddr) String() string {
 func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s := new(Stream)
 	s.c = c
-	s.Mode = ReliableStream
 
 	// what is a good size to balance message loss vs interactivity
 	s.stream_window_size = 7
