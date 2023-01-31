@@ -107,10 +107,6 @@ type Stream struct {
 	writeBuf *bytes.Buffer // buffer to enqueue data before being transmitted
 	readBuf  *bytes.Buffer // buffer to reassumble data from Frames
 
-	// counters
-	f_writes uint64 // number of frames written
-	f_reads  uint64 // number of frames read
-
 	// our frame pointers
 	f_read_idx  uint64
 	f_write_idx uint64
