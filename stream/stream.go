@@ -214,6 +214,7 @@ func (s *Stream) reader() {
 		default:
 			// rate limit spinning if client is offline, error returns immediately
 			<-time.After(retryDelay)
+			continue
 		}
 
 		// process Acks
