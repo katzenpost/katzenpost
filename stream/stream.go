@@ -622,7 +622,7 @@ func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s.Mode = ReliableStream
 
 	// what is a good size to balance message loss vs interactivity
-	s.stream_window_size = 3
+	s.stream_window_size = 7
 	s.max_writebuf_size = 42 * FramePayloadSize
 	s.RState = StreamOpen
 	s.WState = StreamOpen
