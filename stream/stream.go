@@ -300,11 +300,14 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 // Close terminates the Stream with a final Frame and blocks future Writes
 func (s *Stream) Close() error {
 	s.Lock()
-	s.RState = StreamClosed
 	if s.WState == StreamOpen {
 		s.WState = StreamClosing
 		s.Unlock()
+		s.doFlush() // wake up a sleeping writer !
 		<-s.onStreamClose // block until writer has finalized
+		s.Lock()
+		s.RState = StreamClosed
+		s.Unlock()
 		return nil
 	}
 	s.Unlock()
@@ -351,19 +354,17 @@ func (s *Stream) writer() {
 					if s.WState == StreamClosing {
 						mustWait = false
 					}
-					s.Unlock()
 					s.r.Unlock()
 					if mustWait {
+						s.Unlock()
 						select {
 						case <-s.onFlush:
 						case <-s.onAck:
 						case <-s.HaltCh():
 							return
 						}
+						continue // re-evaluate all of the conditions above after wakeup!
 					}
-					s.Lock() // re-obtain lock
-				} else {
-					// fallthrough and send a frame
 				}
 			}
 		}
