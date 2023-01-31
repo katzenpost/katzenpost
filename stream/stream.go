@@ -26,6 +26,7 @@ const (
 )
 
 var (
+	retryDelay       = epochtime.Period / 16
 	FramePayloadSize int
 	ErrStreamClosed  = errors.New("Stream Closed")
 )
@@ -205,8 +206,14 @@ func (s *Stream) reader() {
 
 		// read next frame
 		f, err := s.readFrame()
-		if err != nil {
+		switch err {
+		case nil:
+		case mClient.ErrStatusNotFound:
+			// we got a response from the map service but no data
 			continue
+		default:
+			// rate limit spinning if client is offline, error returns immediately
+			<-time.After(retryDelay)
 		}
 
 		// process Acks

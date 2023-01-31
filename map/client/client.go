@@ -28,7 +28,11 @@ import (
 	"sort"
 )
 
-var PayloadSize int
+
+var (
+	PayloadSize int
+	ErrStatusNotFound = errors.New("StatusNotFound")
+)
 
 type Client struct {
 	Session *client.Session
@@ -144,7 +148,7 @@ func (c *Client) Get(ID common.MessageID) ([]byte, error) {
 		return nil, err
 	}
 	if resp.Status == common.StatusNotFound {
-		return nil, errors.New("StatusNoFound")
+		return nil, ErrStatusNotFound
 	}
 	return resp.Payload, nil
 }
