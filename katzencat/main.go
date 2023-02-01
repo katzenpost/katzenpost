@@ -112,7 +112,11 @@ func main() {
 		binary.BigEndian.PutUint64(lengthprefix, uint64(fi.Size()))
 		st.Write(lengthprefix)
 		n, err := io.Copy(st, f)
-		if err != nil {
+		switch err {
+		case io.EOF, nil:
+			// XXX: unsure how we panic() with io.EOF here!
+			// theory: peer Close received in same Frame that Ack'd a blocked Write?
+		default:
 			panic(err)
 		}
 		fmt.Println("Wrote ", n, "bytes")
