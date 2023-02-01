@@ -114,6 +114,7 @@ func main() {
 		total := int64(0)
 		for {
 			n, err := io.Copy(st, f)
+			total += n
 			switch err {
 			case io.EOF, nil:
 				// XXX: unsure how we panic() with io.EOF here!
@@ -125,7 +126,6 @@ func main() {
 			default:
 				panic(err)
 			}
-			total += n
 		}
 		fmt.Println("Wrote ", total, "bytes")
 		// try to read a response from the client until defaultTimeout, and log status
