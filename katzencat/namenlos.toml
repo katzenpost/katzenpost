@@ -14,6 +14,7 @@
 [Debug]
   PollingInterval = 1000
   DisableDecoyTraffic = false
+  # PreferedTransports = ["onion"]
 
 [VotingAuthority]
   [[VotingAuthority.Peers]]
