@@ -153,25 +153,34 @@ func main() {
 		}
 		payloadlen := binary.BigEndian.Uint64(lengthprefix)
 		limited := io.LimitReader(st, int64(payloadlen))
-		nn, err := io.Copy(f, limited)
-		switch err {
-		case os.ErrDeadlineExceeded:
-			panic("failed with os.ErrDeadlineExceeded")
-			// XXX: could wrap this in a retry loop
-		case io.EOF:
-			panic("failed with short Read, wrong lenght prefix or bug")
-		default:
-			panic(err)
-		case nil:
+		total := int64(0)
+		for {
+			nn, err := io.Copy(f, limited)
+			total += nn
+			switch err {
+			case os.ErrDeadlineExceeded:
+				continue
+			case io.EOF:
+				panic("failed with short Read, wrong lenght prefix or bug")
+			default:
+				panic(err)
+			case nil:
+				break
+			}
 		}
-		fmt.Println("Read ", nn, "bytes")
-		_, err = st.Write([]byte{0x42})
-		switch err {
-		case io.EOF:
-			panic("server closed connection prematurely")
-		default:
-			panic(err)
-		case nil:
+		fmt.Println("Read ", total, "bytes")
+		for {
+			_, err = st.Write([]byte{0x42})
+			switch err {
+			case io.EOF:
+				panic("server closed connection prematurely")
+			case os.ErrDeadlineExceeded:
+				continue
+			default:
+				panic(err)
+			case nil:
+			}
+			// Hangup reader
 		}
 		// Hangup reader
 		st.Close()
