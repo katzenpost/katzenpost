@@ -37,17 +37,20 @@ func getSession() (*client.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	session, err := cc.NewTOFUSession()
-	switch err {
-	case nil:
-	case pki.ErrNoDocument:
-		_, _, till := epochtime.Now()
-		<-time.After(till)
-	default:
-		return nil, err
+	for {
+		session, err := cc.NewTOFUSession()
+		switch err {
+		case nil:
+		case pki.ErrNoDocument:
+			_, _, till := epochtime.Now()
+			<-time.After(till)
+			continue
+		default:
+			return nil, err
+		}
+		session.WaitForDocument()
+		return session, nil
 	}
-	session.WaitForDocument()
-	return session, nil
 }
 
 func main() {
