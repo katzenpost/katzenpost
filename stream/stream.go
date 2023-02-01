@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
 	"io"
+	"os"
 	"sync"
 	"time"
 )
@@ -233,7 +234,7 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		s.Unlock()
 		select {
 		case <-time.After(s.defaultTimeout):
-			return 0, io.EOF
+			return 0, os.ErrDeadlineExceeded
 		case <-s.HaltCh():
 			return 0, io.EOF
 		case <-s.onRead:
