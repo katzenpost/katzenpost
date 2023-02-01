@@ -1,4 +1,4 @@
-package client
+package stream
 
 import (
 	"bytes"
@@ -240,11 +240,6 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 			// frame has been read
 		}
 		s.Lock()
-		if s.readBuf.Len() == 0 {
-			if s.RState != StreamClosed {
-				panic("Read() must not awaken to an empty buffer unless StreamClosed is true")
-			}
-		}
 	}
 	n, err = s.readBuf.Read(p)
 	s.Unlock()
