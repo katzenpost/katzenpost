@@ -270,7 +270,7 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 		s.Unlock()
 		select {
 		case <-time.After(s.defaultTimeout):
-			return 0, io.EOF
+			return 0, os.ErrDeadlineExceeded
 		case <-s.HaltCh():
 			return 0, io.EOF
 		case <-s.onStreamClose:

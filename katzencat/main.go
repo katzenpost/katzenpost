@@ -111,15 +111,23 @@ func main() {
 		lengthprefix := make([]byte, 8)
 		binary.BigEndian.PutUint64(lengthprefix, uint64(fi.Size()))
 		st.Write(lengthprefix)
-		n, err := io.Copy(st, f)
-		switch err {
-		case io.EOF, nil:
-			// XXX: unsure how we panic() with io.EOF here!
-			// theory: peer Close received in same Frame that Ack'd a blocked Write?
-		default:
-			panic(err)
+		total := int64(0)
+		for {
+			n, err := io.Copy(st, f)
+			switch err {
+			case io.EOF, nil:
+				// XXX: unsure how we panic() with io.EOF here!
+				// theory: peer Close received in same Frame that Ack'd a blocked Write?
+				break
+			case os.ErrDeadlineExceeded:
+				// this happen when Writes block until timeout
+				continue
+			default:
+				panic(err)
+			}
+			total += n
 		}
-		fmt.Println("Wrote ", n, "bytes")
+		fmt.Println("Wrote ", total, "bytes")
 		// try to read a response from the client until defaultTimeout, and log status
 		for {
 			b, _ := io.ReadAll(st)
