@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,7 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/server/config"
 )
 
-func NoTestServerStartShutdown(t *testing.T) {
+func TestServerStartShutdown(t *testing.T) {
 	assert := assert.New(t)
 
 	datadir, err := os.MkdirTemp("", "server_data_dir")
@@ -109,6 +110,12 @@ func NoTestServerStartShutdown(t *testing.T) {
 	assert.NoError(err)
 
 	s := New(&cfg)
-	//err = s.Start()
+
+	go func() {
+		err = s.Start()
+	}()
+
+	time.Sleep(time.Second * 3)
+
 	s.Shutdown()
 }
