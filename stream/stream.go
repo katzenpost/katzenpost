@@ -541,7 +541,6 @@ func (s *Stream) readFrame() (*Frame, error) {
 	if !ok {
 		// damaged Stream, abort / retry / fail ?
 		// TODO: indicate serious error somehow
-		panic("damaged Stream, decrypt fail")
 		return nil, err
 	}
 
@@ -549,9 +548,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 	f.id = idx
 	err = cbor.Unmarshal(plaintext, f)
 	if err != nil {
-		// XXX: corrupted stream must terminate
 		// TODO: indicate serious error somehow
-		panic("damaged Stream, incorrect Frame")
 		return nil, err
 	}
 	return f, nil
