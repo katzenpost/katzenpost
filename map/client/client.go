@@ -96,8 +96,9 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 	}
 	// hash ID with the PriorSharedRandom value or other consensus parameters
 	temporalStorageId := sha256.New()
-	temporalStorageId.Write(ID[:])
+	// XXX: consider what happens at epoch transitions
 	temporalStorageId.Write(doc.PriorSharedRandom[0])
+	temporalStorageId.Write(ID[:])
 	var tid common.MessageID
 	copy(tid[:], temporalStorageId.Sum(nil))
 	slot := int(binary.LittleEndian.Uint64(tid[:8])) % len(descs)
