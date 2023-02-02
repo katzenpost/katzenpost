@@ -139,7 +139,7 @@ func NewSession(
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
-	s.timerQ.Go(s.timerQ.worker)
+	s.timerQ.Start()
 	s.Go(s.eventSinkWorker)
 	s.Go(s.garbageCollectionWorker)
 

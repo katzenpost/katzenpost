@@ -28,6 +28,7 @@ const (
 
 var (
 	retryDelay       = epochtime.Period / 16
+	defaultTimeout   = 5 * time.Minute
 	FramePayloadSize int
 	ErrStreamClosed  = errors.New("Stream Closed")
 )
@@ -84,36 +85,42 @@ type Stream struct {
 	sync.Mutex
 	worker.Worker
 
-	c *mClient.Client
-
+	c *mClient.Client `cbor:"-"`
 	// frame encryption secrets
-	writekey *[keySize]byte // secretbox key to encrypt with
-	readkey  *[keySize]byte // secretbox key to decrypt with
+	WriteKey *[keySize]byte // secretbox key to encrypt with
+	ReadKey  *[keySize]byte // secretbox key to decrypt with
 
 	// read/write secrets initialized from handshake
-	write_id_base common.MessageID
-	read_id_base  common.MessageID
+	WriteIDBase common.MessageID
+	ReadIDBase  common.MessageID
 
 	// buffers
-	writeBuf *bytes.Buffer // buffer to enqueue data before being transmitted
-	readBuf  *bytes.Buffer // buffer to reassumble data from Frames
+	WriteBuf *bytes.Buffer // buffer to enqueue data before being transmitted
+	ReadBuf  *bytes.Buffer // buffer to reassumble data from Frames
 
 	// our frame pointers
-	f_read_idx  uint64
-	f_write_idx uint64
+	ReadIdx  uint64
+	WriteIdx uint64
 
 	// idx of last ack
-	f_ack_idx uint64
+	AckIdx uint64
 
-	tq *client.TimerQueue
-	r  *retx
+	// last ack received from peer
+	PeerAckIdx uint64
+
+	// TQ is used to schedule retransmission events of unacknowledged messages
+	TQ *client.TimerQueue
+
+	// R holds state needed to reschedule unacknowledged messages expiring in TQ
+	R *ReTx
 
 	// Parameters
-	// stream_window_size is the number of messages ahead of peer's
+	// WindowSize is the number of messages ahead of peer's
 	// ackknowledgement that the writeworker will periodically retransmit
-	stream_window_size uint64
+	WindowSize uint64
 
-	max_writebuf_size int
+	// MaxWriteBufSize is the number of bytes to buffer before blocking calls to Write()
+	MaxWriteBufSize int
 
 	// RState indicates Reader State
 	RState StreamState
@@ -122,7 +129,7 @@ type Stream struct {
 	WState StreamState
 
 	// timeout value used internally before failing a blocking call
-	defaultTimeout time.Duration
+	Timeout time.Duration
 
 	// onFlush signals writer worker to wake and transmit frames
 	onFlush       chan struct{}
@@ -133,14 +140,14 @@ type Stream struct {
 }
 
 // glue for timerQ
-type retx struct {
+type ReTx struct {
 	sync.Mutex
 	s    *Stream
-	wack map[uint64]struct{}
+	Wack map[uint64]struct{}
 }
 
 // Push implements the client.nqueue interface
-func (r *retx) Push(i client.Item) error {
+func (r *ReTx) Push(i client.Item) error {
 	// time to retransmit a block that has not been acknowledged yet
 	m, ok := i.(*smsg)
 	if !ok {
@@ -148,7 +155,7 @@ func (r *retx) Push(i client.Item) error {
 	}
 
 	r.Lock()
-	_, ok = r.wack[m.f.id]
+	_, ok = r.Wack[m.f.id]
 	r.Unlock()
 	if !ok {
 		// Already Acknowledged
@@ -171,14 +178,14 @@ func (s *Stream) reader() {
 		case StreamClosed:
 			// No more frames will be sent by peer
 			// If ReliableStream, send final Ack
-			if s.f_read_idx > s.f_ack_idx {
+			if s.ReadIdx > s.AckIdx {
 				s.doFlush()
 			}
 			s.Unlock()
 			return
 		case StreamOpen:
 			// prod writer to Ack
-			if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
+			if s.ReadIdx-s.AckIdx >= s.WindowSize {
 				s.doFlush()
 			}
 		}
@@ -204,14 +211,14 @@ func (s *Stream) reader() {
 		// process Acks
 		s.processAck(f)
 		s.Lock()
-		s.readBuf.Write(f.Payload)
+		s.ReadBuf.Write(f.Payload)
 		// signal that data has been read to callers blocking on Read()
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
 		if f.Type == StreamEnd {
 			s.RState = StreamClosed
 		} else {
-			s.f_read_idx += 1
+			s.ReadIdx += 1
 		}
 		s.Unlock()
 		s.doOnRead()
@@ -230,10 +237,10 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		s.Unlock()
 		return 0, io.EOF
 	}
-	if s.readBuf.Len() == 0 {
+	if s.ReadBuf.Len() == 0 {
 		s.Unlock()
 		select {
-		case <-time.After(s.defaultTimeout):
+		case <-time.After(s.Timeout):
 			return 0, os.ErrDeadlineExceeded
 		case <-s.HaltCh():
 			return 0, io.EOF
@@ -242,9 +249,9 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		}
 		s.Lock()
 	}
-	n, err = s.readBuf.Read(p)
+	n, err = s.ReadBuf.Read(p)
 	s.Unlock()
-	// ignore io.EOF on short reads from readBuf
+	// ignore io.EOF on short reads from ReadBuf
 	if err == io.EOF {
 		if n > 0 {
 			return n, nil
@@ -262,14 +269,14 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 		s.Unlock()
 		return 0, io.EOF
 	}
-	// take max_writebuf_size as ... a guideline rather than a hard limit
+	// take MaxWriteBufSize as ... a guideline rather than a hard limit
 	// because many users of io.Writer do not seem to handle short writes
 	// properly, so just rate limit calls to write by waiting until
 	// a frame has been transmitted before returning
-	if s.writeBuf.Len() >= s.max_writebuf_size {
+	if s.WriteBuf.Len() >= s.MaxWriteBufSize {
 		s.Unlock()
 		select {
-		case <-time.After(s.defaultTimeout):
+		case <-time.After(s.Timeout):
 			return 0, os.ErrDeadlineExceeded
 		case <-s.HaltCh():
 			return 0, io.EOF
@@ -281,7 +288,7 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 	}
 	defer s.doFlush()
 	defer s.Unlock()
-	return s.writeBuf.Write(p)
+	return s.WriteBuf.Write(p)
 }
 
 // Close terminates the Stream with a final Frame and blocks future Writes
@@ -318,26 +325,26 @@ func (s *Stream) writer() {
 			s.Unlock()
 			return
 		case StreamOpen, StreamClosing:
-			if s.f_read_idx-s.f_ack_idx >= s.stream_window_size {
+			if s.ReadIdx-s.AckIdx >= s.WindowSize {
 				mustAck = true
 			}
 			if s.RState == StreamClosed || s.WState == StreamClosing {
 				mustTeardown = true
-				if s.writeBuf.Len() != 0 {
+				if s.WriteBuf.Len() != 0 {
 					mustTeardown = false
 				}
-				if s.f_read_idx-s.f_ack_idx > 0 {
+				if s.ReadIdx-s.AckIdx > 0 {
 					mustAck = true
 				}
 			}
 			if !mustAck && !mustTeardown {
-				s.r.Lock()
+				s.R.Lock()
 				// must wait for Ack before continuing to transmit
-				mustWait := uint64(len(s.r.wack)) >= s.stream_window_size || s.writeBuf.Len() == 0
+				mustWait := uint64(len(s.R.Wack)) >= s.WindowSize || s.WriteBuf.Len() == 0
 				if s.WState == StreamClosing {
 					mustWait = false
 				}
-				s.r.Unlock()
+				s.R.Unlock()
 				if mustWait {
 					s.Unlock()
 					select {
@@ -352,8 +359,8 @@ func (s *Stream) writer() {
 		}
 
 		f := new(Frame)
-		f.id = s.f_write_idx
-		f.Ack = s.f_read_idx
+		f.id = s.WriteIdx
+		f.Ack = s.ReadIdx
 
 		if mustTeardown {
 			// final Ack and frame transmitted
@@ -362,7 +369,7 @@ func (s *Stream) writer() {
 		}
 		f.Payload = make([]byte, FramePayloadSize)
 		// Read up to the maximum frame payload size
-		n, err := s.writeBuf.Read(f.Payload)
+		n, err := s.WriteBuf.Read(f.Payload)
 		s.Unlock()
 		switch err {
 		case nil, io.ErrUnexpectedEOF, io.EOF:
@@ -393,13 +400,13 @@ func (s *Stream) writer() {
 func (s *Stream) rxFrameID(frame_num uint64) common.MessageID {
 	f := make([]byte, 8)
 	binary.BigEndian.PutUint64(f, frame_num)
-	return H(append(s.read_id_base[:], f...))
+	return H(append(s.ReadIDBase[:], f...))
 }
 
 func (s *Stream) rxFrameKey(frame_num uint64) *[keySize]byte {
 	f := make([]byte, 8)
 	binary.BigEndian.PutUint64(f, frame_num)
-	hk := H(append(s.readkey[:], f...))
+	hk := H(append(s.ReadKey[:], f...))
 	k := [keySize]byte(hk)
 	return &k
 }
@@ -407,7 +414,7 @@ func (s *Stream) rxFrameKey(frame_num uint64) *[keySize]byte {
 func (s *Stream) txFrameKey(frame_num uint64) *[keySize]byte {
 	f := make([]byte, 8)
 	binary.BigEndian.PutUint64(f, frame_num)
-	hk := H(append(s.writekey[:], f...))
+	hk := H(append(s.WriteKey[:], f...))
 	k := [keySize]byte(hk)
 	return &k
 }
@@ -416,7 +423,7 @@ func (s *Stream) txFrameKey(frame_num uint64) *[keySize]byte {
 func (s *Stream) txFrameID(frame_num uint64) common.MessageID {
 	f := make([]byte, 8)
 	binary.BigEndian.PutUint64(f, frame_num)
-	return H(append(s.write_id_base[:], f...))
+	return H(append(s.WriteIDBase[:], f...))
 }
 
 func (s *Stream) txFrame(frame *Frame) (err error) {
@@ -427,12 +434,12 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	_, _, til := epochtime.Now()
 	s.Lock()
 	// Retransmit unacknowledged blocks every few epochs
-	m := &smsg{f: frame, priority: uint64(til + 2*epochtime.Period)}
+	m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
 	frame_id := s.txFrameID(frame.id)
 	frame_key := s.txFrameKey(frame.id)
 	// Update reference to last acknowledged message
-	if frame.Ack > s.f_ack_idx {
-		s.f_ack_idx = frame.Ack
+	if frame.Ack > s.AckIdx {
+		s.AckIdx = frame.Ack
 	}
 	s.Unlock()
 
@@ -451,7 +458,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		return err
 	}
 	s.Lock()
-	s.f_write_idx += 1
+	s.WriteIdx += 1
 	s.Unlock()
 
 	// Enable retransmissions of unacknowledged frames
@@ -461,10 +468,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 
 func (s *Stream) txEnqueue(m *smsg) {
 	// use a timerqueue here and set an acknowledgement retransmit timeout; ideally we would know the effective durability of the storage medium and maximize the retransmission delay so that we retransmit a message as little as possible.
-	s.r.Lock()
-	s.r.wack[m.f.id] = struct{}{}
-	s.r.Unlock()
-	s.tq.Push(m)
+	s.R.Lock()
+	s.R.Wack[m.f.id] = struct{}{}
+	s.R.Unlock()
+	s.TQ.Push(m)
 }
 
 func b64(id common.MessageID) string {
@@ -484,21 +491,21 @@ func (s *Stream) exchange(mysecret, othersecret []byte) {
 	writer_keymaterial := hkdf.New(hash, mysecret[:], salt, nil)
 
 	// obtain the frame encryption key and sequence seed
-	_, err := io.ReadFull(writer_keymaterial, s.writekey[:])
+	_, err := io.ReadFull(writer_keymaterial, s.WriteKey[:])
 	if err != nil {
 		panic(err)
 	}
-	_, err = io.ReadFull(writer_keymaterial, s.write_id_base[:])
+	_, err = io.ReadFull(writer_keymaterial, s.WriteIDBase[:])
 	if err != nil {
 		panic(err)
 	}
 
 	// obtain the frame decryption key and sequence seed
-	_, err = io.ReadFull(reader_keymaterial, s.readkey[:])
+	_, err = io.ReadFull(reader_keymaterial, s.ReadKey[:])
 	if err != nil {
 		panic(err)
 	}
-	_, err = io.ReadFull(reader_keymaterial, s.read_id_base[:])
+	_, err = io.ReadFull(reader_keymaterial, s.ReadIDBase[:])
 	if err != nil {
 		panic(err)
 	}
@@ -527,7 +534,7 @@ func (s *Stream) doOnWrite() {
 
 func (s *Stream) readFrame() (*Frame, error) {
 	s.Lock()
-	idx := s.f_read_idx
+	idx := s.ReadIdx
 	s.Unlock()
 	frame_id := s.rxFrameID(idx)
 	ciphertext, err := s.c.Get(TID(frame_id))
@@ -556,15 +563,21 @@ func (s *Stream) readFrame() (*Frame, error) {
 
 func (s *Stream) processAck(f *Frame) {
 	ackD := false
-	s.r.Lock()
+	s.R.Lock()
 	// ack all frames predecessor to peer ack
-	for i, _ := range s.r.wack {
+	for i, _ := range s.R.Wack {
 		if i <= f.Ack {
-			delete(s.r.wack, i)
+			delete(s.R.Wack, i)
 			ackD = true
 		}
 	}
-	s.r.Unlock()
+	s.R.Unlock()
+	// update last_ack from peer
+	s.Lock()
+	if f.Ack > s.PeerAckIdx {
+		s.PeerAckIdx = f.Ack
+	}
+	s.Unlock()
 	// prod writer() waiting on Ack
 	if ackD {
 		select {
@@ -574,48 +587,75 @@ func (s *Stream) processAck(f *Frame) {
 	}
 }
 
-// impl net.Addr
+// StreamAddr implements net.Addr
 type StreamAddr struct {
 	network, address string
 }
 
+// Network implements net.Addr
 func (s *StreamAddr) Network() string {
 	return s.network
 }
 
+// String implements net.Addr String()
 func (s *StreamAddr) String() string {
 	return s.address
 }
 
-// newstream handshakes and starts a read worker
+// NewStream handshakes and starts the read/write workers
 func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	s := new(Stream)
 	s.c = c
-
-	// what is a good size to balance message loss vs interactivity
-	s.stream_window_size = 7
-	s.max_writebuf_size = 42 * FramePayloadSize
 	s.RState = StreamOpen
 	s.WState = StreamOpen
-	s.defaultTimeout = 5 * time.Minute
+	s.Timeout = defaultTimeout
 	// timerqueue calls s.Push when timeout of enqueued item
-	s.r = &retx{s: s}
-	s.r.wack = make(map[uint64]struct{})
-	s.tq = client.NewTimerQueue(s.r)
-	s.writeBuf = new(bytes.Buffer)
-	s.readBuf = new(bytes.Buffer)
+	s.R = &ReTx{s: s}
+	s.R.Wack = make(map[uint64]struct{})
+	s.TQ = client.NewTimerQueue(s.R)
+	s.WriteBuf = new(bytes.Buffer)
+	s.ReadBuf = new(bytes.Buffer)
 
-	s.writekey = &[keySize]byte{}
-	s.readkey = &[keySize]byte{}
+	s.WriteKey = &[keySize]byte{}
+	s.ReadKey = &[keySize]byte{}
 	s.exchange(mysecret, theirsecret)
+	s.Start()
+	return s
+}
+
+func LoadStream(c *mClient.Client, state []byte) (*Stream, error) {
+	s := new(Stream)
+	s.c = c
+	err := cbor.Unmarshal(state, s)
+	if err != nil {
+		return nil, err
+	}
+	s.R.s = s
+	s.TQ.NextQ = s.R
+	s.TQ.Timer = time.NewTimer(0)
+	s.TQ.L = new(sync.Mutex)
+	return s, nil
+}
+
+func (s *Stream) Save() ([]byte, error) {
+	s.Lock()
+	s.R.Lock()
+	defer s.Unlock()
+	defer s.R.Unlock()
+	return cbor.Marshal(s)
+}
+
+func (s *Stream) Start() {
+	s.WindowSize = 7
+	s.MaxWriteBufSize = 42 * FramePayloadSize
 	s.onFlush = make(chan struct{}, 1)
 	s.onAck = make(chan struct{}, 1)
 	s.onStreamClose = make(chan struct{}, 1)
 	s.onWrite = make(chan struct{}, 1)
 	s.onRead = make(chan struct{}, 1)
+	s.TQ.Start()
 	s.Go(s.reader)
 	s.Go(s.writer)
-	return s
 }
 
 func init() {

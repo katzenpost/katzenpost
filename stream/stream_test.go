@@ -64,10 +64,10 @@ func newStreams() (*Stream, *Stream) {
 	b := new(Stream)
 
 	// allocate memory for keys
-	a.writekey = &[keySize]byte{}
-	a.readkey = &[keySize]byte{}
-	b.writekey = &[keySize]byte{}
-	b.readkey = &[keySize]byte{}
+	a.WriteKey = &[keySize]byte{}
+	a.ReadKey = &[keySize]byte{}
+	b.WriteKey = &[keySize]byte{}
+	b.ReadKey = &[keySize]byte{}
 	asecret := &[keySize]byte{}
 	bsecret := &[keySize]byte{}
 
@@ -321,6 +321,78 @@ func TestCBORSerialization(t *testing.T) {
 		require.Equal(m.Message, m2.Message)
 		require.Equal(m.Name, m2.Name)
 		require.Equal(m.Count, m2.Count)
+	}
+	err = s.Close()
+	require.NoError(err)
+	err = r.Close()
+	require.NoError(err)
+}
+
+func TestStreamSerialize(t *testing.T) {
+	require := require.New(t)
+	session := getSession(t)
+	require.NotNil(session)
+
+	c, err := mClient.NewClient(session)
+	require.NoError(err)
+	require.NotNil(c)
+
+	asecret := &[keySize]byte{}
+	bsecret := &[keySize]byte{}
+
+	// initialize handshake secrets from random
+	io.ReadFull(rand.Reader, asecret[:])
+	io.ReadFull(rand.Reader, bsecret[:])
+
+	// our view of stream
+	s := NewStream(c, asecret[:], bsecret[:])
+	// "other end" of stream
+	r := NewStream(c, bsecret[:], asecret[:])
+
+	type msg struct {
+		Payload []byte
+		Message string
+		Name    string
+		Count   int
+	}
+
+	for i := 0; i < 10; i++ {
+		enc := cbor.NewEncoder(s)
+		dec := cbor.NewDecoder(r)
+		m := new(msg)
+		m.Payload = make([]byte, 42) //2 * FramePayloadSize)
+		for j := 0; j < len(m.Payload); j++ {
+			m.Payload[j] = 0x10
+		}
+		m.Message = fmt.Sprintf("hello world, %d\n", i)
+		m.Name = "foo"
+		m.Count = i
+		err := enc.Encode(m)
+		require.NoError(err)
+		t.Logf("Wrote CBOR object")
+		m2 := new(msg)
+		err = dec.Decode(m2)
+		require.NoError(err)
+		t.Logf("Decoded CBOR object")
+		require.Equal(m.Message, m2.Message)
+		require.Equal(m.Name, m2.Name)
+		require.Equal(m.Count, m2.Count)
+
+		// stop the stream workers, serialize, deserialize, and start them again
+		// note that the same stream object is kept
+
+		s.Halt()
+		senderStreamState, err := s.Save()
+		require.NoError(err)
+		s, err = LoadStream(c, senderStreamState)
+		require.NoError(err)
+		s.Start()
+		r.Halt()
+		receiverStreamState, err := r.Save()
+		require.NoError(err)
+		r, err = LoadStream(c, receiverStreamState)
+		require.NoError(err)
+		r.Start()
 	}
 	err = s.Close()
 	require.NoError(err)
