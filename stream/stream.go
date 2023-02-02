@@ -436,22 +436,16 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	}
 	s.Unlock()
 
-	// encrypt serialized frame
-	nonce := [nonceSize]byte{}
-	_, err = rand.Reader.Read(nonce[:])
-	if err != nil {
-		return err
-	}
-
 	// zero extend ciphertext until maximum FramePayloadSize
 	if FramePayloadSize-len(serialized) > 0 {
 		padding := make([]byte, FramePayloadSize-len(serialized))
 		serialized = append(serialized, padding...)
 	}
 
+	// use frame_id bytes as nonce
+	nonce := [nonceSize]byte{}
+	copy(nonce[:], frame_id[:nonceSize])
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
-	ciphertext = append(nonce[:], ciphertext...)
-
 	err = s.c.Put(TID(frame_id), ciphertext)
 	if err != nil {
 		return err
@@ -535,13 +529,14 @@ func (s *Stream) readFrame() (*Frame, error) {
 	s.Lock()
 	idx := s.f_read_idx
 	s.Unlock()
-	ciphertext, err := s.c.Get(TID(s.rxFrameID(idx)))
+	frame_id := s.rxFrameID(idx)
+	ciphertext, err := s.c.Get(TID(frame_id))
 	if err != nil {
 		return nil, err
 	}
+	// use frame_id bytes as nonce
 	nonce := [nonceSize]byte{}
-	copy(nonce[:], ciphertext[:nonceSize])
-	ciphertext = ciphertext[nonceSize:]
+	copy(nonce[:], frame_id[:nonceSize])
 	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.rxFrameKey(idx))
 	if !ok {
 		// damaged Stream, abort / retry / fail ?
@@ -635,5 +630,5 @@ func init() {
 	rand.Reader.Read(key[:])
 	ciphertext := secretbox.Seal(nil, b, &nonce, key)
 	secretboxOverhead := len(ciphertext) - len(b)
-	FramePayloadSize = mClient.PayloadSize - nonceSize - cborFrameOverhead - secretboxOverhead
+	FramePayloadSize = mClient.PayloadSize - cborFrameOverhead - secretboxOverhead
 }
