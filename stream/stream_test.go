@@ -16,7 +16,7 @@
 //go:build docker_test
 // +build docker_test
 
-package client
+package stream
 
 import (
 	"encoding/base64"
