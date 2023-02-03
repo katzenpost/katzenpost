@@ -75,12 +75,6 @@ func (s *smsg) Priority() uint64 {
 	return s.priority
 }
 
-// TID returns the temporary storage ID for a MessageID
-func TID(i common.MessageID) common.MessageID {
-	pre := []byte("Both clients get this from somewhere to prepend the input to H, such as the PriorSharedRandom")
-	return H(append(pre, i[:]...))
-}
-
 type Stream struct {
 	sync.Mutex
 	worker.Worker
@@ -447,7 +441,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	nonce := [nonceSize]byte{}
 	copy(nonce[:], frame_id[:nonceSize])
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
-	err = s.c.Put(TID(frame_id), ciphertext)
+	err = s.c.Put(frame_id, ciphertext)
 	if err != nil {
 		return err
 	}
@@ -466,10 +460,6 @@ func (s *Stream) txEnqueue(m *smsg) {
 	s.R.Wack[m.f.id] = struct{}{}
 	s.R.Unlock()
 	s.TQ.Push(m)
-}
-
-func b64(id common.MessageID) string {
-	return base64.StdEncoding.EncodeToString(id[:])
 }
 
 func H(i []byte) (res common.MessageID) {
@@ -535,7 +525,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 	// s.c.Get() is a blocking call, so wrap in a goroutine so
 	// we can select on s.HaltCh() and
 	f := func() {
-		ciphertext, err := s.c.Get(TID(frame_id))
+		ciphertext, err := s.c.Get(frame_id)
 		if err != nil {
 			fc <- err
 			return
