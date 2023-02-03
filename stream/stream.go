@@ -630,6 +630,7 @@ func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 	return s
 }
 
+// LoadStream initializes a Stream from state saved by Save()
 func LoadStream(c *mClient.Client, state []byte) (*Stream, error) {
 	s := new(Stream)
 	s.c = c
@@ -644,6 +645,7 @@ func LoadStream(c *mClient.Client, state []byte) (*Stream, error) {
 	return s, nil
 }
 
+// Save serializes the current state of the Stream
 func (s *Stream) Save() ([]byte, error) {
 	s.Lock()
 	s.R.Lock()
@@ -652,6 +654,7 @@ func (s *Stream) Save() ([]byte, error) {
 	return cbor.Marshal(s)
 }
 
+// Start starts the reader and writer workers
 func (s *Stream) Start() {
 	s.WindowSize = 7
 	s.MaxWriteBufSize = 42 * FramePayloadSize
