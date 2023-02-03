@@ -167,12 +167,6 @@ func (r *ReTx) Push(i client.Item) error {
 // reader polls receive window of messages and adds to the reader queue
 func (s *Stream) reader() {
 	for {
-		select {
-		case <-s.HaltCh():
-			return
-		default:
-		}
-
 		s.Lock()
 		switch s.RState {
 		case StreamClosed:
@@ -537,28 +531,51 @@ func (s *Stream) readFrame() (*Frame, error) {
 	idx := s.ReadIdx
 	s.Unlock()
 	frame_id := s.rxFrameID(idx)
-	ciphertext, err := s.c.Get(TID(frame_id))
-	if err != nil {
-		return nil, err
+	fc := make(chan interface{}, 1)
+	// s.c.Get() is a blocking call, so wrap in a goroutine so
+	// we can select on s.HaltCh() and
+	f := func() {
+		ciphertext, err := s.c.Get(TID(frame_id))
+		if err != nil {
+			fc <- err
+			return
+		} else {
+			// use frame_id bytes as nonce
+			nonce := [nonceSize]byte{}
+			copy(nonce[:], frame_id[:nonceSize])
+			plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.rxFrameKey(idx))
+			if !ok {
+				// damaged Stream, abort / retry / fail ?
+				// TODO: indicate serious error somehow
+				fc <- errors.New("Failed to decrypt")
+				return
+			}
+			f := new(Frame)
+			f.id = idx
+			err = cbor.Unmarshal(plaintext, f)
+			if err != nil {
+				// TODO: indicate serious error somehow
+				fc <- err
+				return
+			}
+			fc <- f
+		}
 	}
-	// use frame_id bytes as nonce
-	nonce := [nonceSize]byte{}
-	copy(nonce[:], frame_id[:nonceSize])
-	plaintext, ok := secretbox.Open(nil, ciphertext, &nonce, s.rxFrameKey(idx))
-	if !ok {
-		// damaged Stream, abort / retry / fail ?
-		// TODO: indicate serious error somehow
-		return nil, err
+	s.Go(f)
+	select {
+	case f := <-fc:
+		switch v := f.(type) {
+		case *Frame:
+			return v, nil
+		case error:
+			return nil, v
+		default:
+			panic("unknown type")
+		}
+	case <-s.HaltCh():
+		return nil, errors.New("Halted")
 	}
-
-	f := new(Frame)
-	f.id = idx
-	err = cbor.Unmarshal(plaintext, f)
-	if err != nil {
-		// TODO: indicate serious error somehow
-		return nil, err
-	}
-	return f, nil
+	panic("NotReached")
 }
 
 func (s *Stream) processAck(f *Frame) {
