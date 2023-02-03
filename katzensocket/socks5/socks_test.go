@@ -267,40 +267,6 @@ func TestRFC1929InvalidPlen(t *testing.T) {
 	}
 }
 
-// TestRFC1929InvalidArgs tests RFC1929 auth with invalid pt args.
-func TestRFC1929InvalidPTArgs(t *testing.T) {
-	c := new(testReadWriter)
-	req := c.toRequest()
-
-	// VER = 01, ULEN = 5, UNAME = "ABCDE", PLEN = 5, PASSWD = "abcde"
-	c.writeHex("01054142434445056162636465")
-	if err := req.authenticate(authUsernamePassword); err == nil {
-		t.Error("authenticate(InvalidArgs) succeded")
-	}
-	if msg := c.readHex(); msg != "0101" {
-		t.Error("authenticate(InvalidArgs) invalid response:", msg)
-	}
-}
-
-// TestRFC1929Success tests RFC1929 auth with valid pt args.
-func TestRFC1929Success(t *testing.T) {
-	c := new(testReadWriter)
-	req := c.toRequest()
-
-	// VER = 01, ULEN = 9, UNAME = "key=value", PLEN = 1, PASSWD = "\0"
-	c.writeHex("01096b65793d76616c75650100")
-	if err := req.authenticate(authUsernamePassword); err != nil {
-		t.Error("authenticate(Success) failed:", err)
-	}
-	if msg := c.readHex(); msg != "0100" {
-		t.Error("authenticate(Success) invalid response:", msg)
-	}
-	v, ok := req.Args.Get("key")
-	if v != "value" || !ok {
-		t.Error("RFC1929 k,v parse failure:", v)
-	}
-}
-
 // TestRequestInvalidHdr tests SOCKS5 requests with invalid VER/CMD/RSV/ATYPE
 func TestRequestInvalidHdr(t *testing.T) {
 	c := new(testReadWriter)

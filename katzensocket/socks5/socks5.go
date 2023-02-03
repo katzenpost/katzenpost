@@ -45,8 +45,6 @@ import (
 	"net"
 	"syscall"
 	"time"
-
-	"git.torproject.org/pluggable-transports/goptlib.git"
 )
 
 const (
@@ -117,7 +115,6 @@ func ErrorToReplyCode(err error) ReplyCode {
 // Request describes a SOCKS 5 request.
 type Request struct {
 	Target string
-	Args   pt.Args
 	rw     *bufio.ReadWriter
 }
 

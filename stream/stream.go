@@ -3,7 +3,6 @@ package stream
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"github.com/fxamacker/cbor/v2"
