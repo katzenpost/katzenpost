@@ -94,11 +94,6 @@ func (req *Request) authRFC1929() (err error) {
 		// actual argument data.
 		argStr += string(passwd)
 	}
-	if req.Args, err = parseClientParameters(argStr); err != nil {
-		sendErrResp()
-		return
-	}
-
 	resp := []byte{authRFC1929Ver, authRFC1929Success}
 	_, err = req.rw.Write(resp[:])
 	return
