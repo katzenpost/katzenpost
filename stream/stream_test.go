@@ -60,24 +60,11 @@ func getSession(t *testing.T) *client.Session {
 
 // newStreams returns an initialized pair of Streams
 func newStreams() (*Stream, *Stream) {
-	a := new(Stream)
-	b := new(Stream)
-
-	// allocate memory for keys
-	a.WriteKey = &[keySize]byte{}
-	a.ReadKey = &[keySize]byte{}
-	b.WriteKey = &[keySize]byte{}
-	b.ReadKey = &[keySize]byte{}
-	asecret := &[keySize]byte{}
-	bsecret := &[keySize]byte{}
-
-	// initialize handshake secrets from random
-	io.ReadFull(rand.Reader, asecret[:])
-	io.ReadFull(rand.Reader, bsecret[:])
-
-	// Stream keys should now be initialized
-	a.exchange(asecret[:], bsecret[:])
-	b.exchange(bsecret[:], asecret[:])
+	a := newStream(nil)
+	addr := &StreamAddr{address: generate()}
+	a.keyAsListener(addr)
+	b := newStream(nil)
+	b.keyAsDialer(addr)
 	return a, b
 }
 
@@ -109,17 +96,11 @@ func TestCreateStream(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	asecret := &[keySize]byte{}
-	bsecret := &[keySize]byte{}
-
-	// initialize handshake secrets from random
-	io.ReadFull(rand.Reader, asecret[:])
-	io.ReadFull(rand.Reader, bsecret[:])
-
 	// our view of stream
-	s := NewStream(c, asecret[:], bsecret[:])
+	s := NewStream(c)
 	// "other end" of stream
-	r := NewStream(c, bsecret[:], asecret[:])
+	r, err := Dial(c, "", s.RemoteAddr().String())
+	require.NoError(err)
 
 	msg := []byte("Hello World")
 	t.Logf("Sending %s", string(msg))
@@ -187,9 +168,13 @@ func TestStreamFragmentation(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 	sidechannel := make(chan string, 0)
+
+	// StreamAddr
+	addr := &StreamAddr{"address", generate()}
 	// worker A
 	go func() {
-		s := NewStream(c, asecret[:], bsecret[:])
+		s, err := Listen(c, "", addr)
+		require.NoError(err)
 		for i := 0; i < 4; i++ {
 			entropic := make([]byte, 4242) // ensures fragmentation
 			io.ReadFull(rand.Reader, entropic)
@@ -222,7 +207,8 @@ func TestStreamFragmentation(t *testing.T) {
 
 	// worker B
 	go func() {
-		s := NewStream(c, bsecret[:], asecret[:])
+		s, err := Dial(c, "", addr.String())
+		require.NoError(err)
 		for {
 			msg, ok := <-sidechannel
 			// channel was closed by writer, we're done
@@ -281,17 +267,11 @@ func TestCBORSerialization(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	asecret := &[keySize]byte{}
-	bsecret := &[keySize]byte{}
-
-	// initialize handshake secrets from random
-	io.ReadFull(rand.Reader, asecret[:])
-	io.ReadFull(rand.Reader, bsecret[:])
-
 	// our view of stream
-	s := NewStream(c, asecret[:], bsecret[:])
+	s := NewStream(c)
 	// "other end" of stream
-	r := NewStream(c, bsecret[:], asecret[:])
+	r, err := Dial(c, "", s.RemoteAddr().String())
+	require.NoError(err)
 
 	type msg struct {
 		Payload []byte
@@ -337,17 +317,11 @@ func TestStreamSerialize(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	asecret := &[keySize]byte{}
-	bsecret := &[keySize]byte{}
-
-	// initialize handshake secrets from random
-	io.ReadFull(rand.Reader, asecret[:])
-	io.ReadFull(rand.Reader, bsecret[:])
-
 	// our view of stream
-	s := NewStream(c, asecret[:], bsecret[:])
+	s := NewStream(c)
 	// "other end" of stream
-	r := NewStream(c, bsecret[:], asecret[:])
+	r, err := Dial(c, "", s.RemoteAddr().String())
+	require.NoError(err)
 
 	type msg struct {
 		Payload []byte

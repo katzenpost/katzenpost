@@ -3,6 +3,7 @@ package stream
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"github.com/fxamacker/cbor/v2"
@@ -26,6 +27,7 @@ const (
 )
 
 var (
+	hash             = sha256.New
 	retryDelay       = epochtime.Period / 16
 	defaultTimeout   = 5 * time.Minute
 	FramePayloadSize int
@@ -78,7 +80,10 @@ type Stream struct {
 	sync.Mutex
 	worker.Worker
 
-	c *mClient.Client `cbor:"-"`
+	// address of the Stream
+	addr *StreamAddr
+
+	c Store
 	// frame encryption secrets
 	WriteKey *[keySize]byte // secretbox key to encrypt with
 	ReadKey  *[keySize]byte // secretbox key to decrypt with
@@ -465,16 +470,31 @@ func H(i []byte) (res common.MessageID) {
 	return common.MessageID(sha256.Sum256(i))
 }
 
-// produce keymaterial from handshake secrets
-func (s *Stream) exchange(mysecret, othersecret []byte) {
+// Dial returns a Stream initialized with secret address
+func Dial(c Store, network, addr string) (*Stream, error) {
+	s := newStream(c)
+	a := &StreamAddr{network: network, address: addr}
+	err := s.keyAsDialer(a)
+	if err != nil {
+		return nil, err
+	}
+	s.Start()
+	return s, nil
+}
 
+// configure keymaterial as dialer
+func (s *Stream) keyAsDialer(addr *StreamAddr) error {
+	a, b, err := decode(addr.String())
+	if err != nil {
+		return err
+	}
+	s.addr = addr
 	salt := []byte("stream_reader_writer_keymaterial")
-	hash := sha256.New
-	reader_keymaterial := hkdf.New(hash, othersecret[:], salt, nil)
-	writer_keymaterial := hkdf.New(hash, mysecret[:], salt, nil)
+	reader_keymaterial := hkdf.New(hash, a[:], salt, nil)
+	writer_keymaterial := hkdf.New(hash, b[:], salt, nil)
 
 	// obtain the frame encryption key and sequence seed
-	_, err := io.ReadFull(writer_keymaterial, s.WriteKey[:])
+	_, err = io.ReadFull(writer_keymaterial, s.WriteKey[:])
 	if err != nil {
 		panic(err)
 	}
@@ -492,6 +512,82 @@ func (s *Stream) exchange(mysecret, othersecret []byte) {
 	if err != nil {
 		panic(err)
 	}
+	return nil
+}
+
+// generate a new address secret to Listen() or Dial() with
+func generate() string {
+	newsecret := &[keySize]byte{}
+	io.ReadFull(rand.Reader, newsecret[:])
+	return base64.StdEncoding.EncodeToString(newsecret[:])
+}
+
+// convert base64 string into tuple of secrets for reader/writer
+func decode(addr string) ([]byte, []byte, error) {
+	// get base secret
+	secret, err := base64.StdEncoding.DecodeString(addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(secret) < keySize {
+		return nil, nil, errors.New("Invalid StreamAddr")
+	}
+	salt := []byte("stream_reader_writer_keymaterial")
+	keymaterial := hkdf.New(hash, secret, salt, nil)
+	a := &[keySize]byte{}
+	b := &[keySize]byte{}
+	_, err = io.ReadFull(keymaterial, a[:])
+	if err != nil {
+		panic(err)
+	}
+	_, err = io.ReadFull(keymaterial, b[:])
+	if err != nil {
+		panic(err)
+	}
+	return a[:], b[:], nil
+}
+
+func Listen(c Store, network string, addr *StreamAddr) (*Stream, error) {
+	s := newStream(c)
+	err := s.keyAsListener(addr)
+	if err != nil {
+		return nil, err
+	}
+	s.Start()
+	return s, nil
+}
+
+// configure keymaterial as listener
+func (s *Stream) keyAsListener(addr *StreamAddr) error {
+	a, b, err := decode(addr.String())
+	if err != nil {
+		return err
+	}
+	s.addr = addr
+	salt := []byte("stream_reader_writer_keymaterial")
+	reader_keymaterial := hkdf.New(hash, b[:], salt, nil)
+	writer_keymaterial := hkdf.New(hash, a[:], salt, nil)
+
+	// obtain the frame encryption key and sequence seed
+	_, err = io.ReadFull(writer_keymaterial, s.WriteKey[:])
+	if err != nil {
+		panic(err)
+	}
+	_, err = io.ReadFull(writer_keymaterial, s.WriteIDBase[:])
+	if err != nil {
+		panic(err)
+	}
+
+	// obtain the frame decryption key and sequence seed
+	_, err = io.ReadFull(reader_keymaterial, s.ReadKey[:])
+	if err != nil {
+		panic(err)
+	}
+	_, err = io.ReadFull(reader_keymaterial, s.ReadIDBase[:])
+	if err != nil {
+		panic(err)
+	}
+	return nil
 }
 
 func (s *Stream) doFlush() {
@@ -608,8 +704,23 @@ func (s *StreamAddr) String() string {
 	return s.address
 }
 
-// NewStream handshakes and starts the read/write workers
-func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
+// LocalAddr implements net.Addr LocalAddr()
+func (s *Stream) LocalAddr() *StreamAddr {
+	return s.addr
+}
+
+// LocalAddr implements net.Conn RemoteAddr()
+func (s *Stream) RemoteAddr() *StreamAddr {
+	return s.addr
+}
+
+// Store describes the interface to Get or Put Frames
+type Store interface {
+	Put(ID common.MessageID, payload []byte) error
+	Get(ID common.MessageID) ([]byte, error)
+}
+
+func newStream(c Store) *Stream {
 	s := new(Stream)
 	s.c = c
 	s.RState = StreamOpen
@@ -624,13 +735,20 @@ func NewStream(c *mClient.Client, mysecret, theirsecret []byte) *Stream {
 
 	s.WriteKey = &[keySize]byte{}
 	s.ReadKey = &[keySize]byte{}
-	s.exchange(mysecret, theirsecret)
+	return s
+}
+
+// NewStream generates a new address and starts the read/write workers
+func NewStream(c Store) *Stream {
+	s := newStream(c)
+	addr := &StreamAddr{network: "", address: generate()}
+	s.keyAsListener(addr)
 	s.Start()
 	return s
 }
 
 // LoadStream initializes a Stream from state saved by Save()
-func LoadStream(c *mClient.Client, state []byte) (*Stream, error) {
+func LoadStream(c Store, state []byte) (*Stream, error) {
 	s := new(Stream)
 	s.c = c
 	err := cbor.Unmarshal(state, s)
