@@ -170,8 +170,6 @@ func clientHandler(fac StreamFactory, conn net.Conn) {
 
 	// send request to the upstream socket server and await the response
 	if err = copyLoop(conn, s); err != nil {
-		panic(err)
-		// log err
 	}
 	// log done
 }
@@ -185,17 +183,17 @@ func copyLoop(a io.ReadWriteCloser, b io.ReadWriteCloser) error {
 
 	go func() {
 		defer wg.Done()
-		defer b.Close()
-		defer a.Close()
 		_, err := io.Copy(b, a)
-		errChan <- err
+		if err != nil {
+			errChan <- err
+		}
 	}()
 	go func() {
 		defer wg.Done()
-		defer a.Close()
-		defer b.Close()
 		_, err := io.Copy(a, b)
-		errChan <- err
+		if err != nil {
+			errChan <- err
+		}
 	}()
 
 	// Wait for both upstream and downstream to close.  Since one side
