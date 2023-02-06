@@ -213,12 +213,7 @@ func (s *Stream) reader() {
 		// process Acks
 		s.processAck(f)
 		s.Lock()
-		if len(f.Payload) > 0 {
-			s.ReadBuf.Write(f.Payload)
-			s.doOnRead()
-		}
-
-		// signal that data has been read to callers blocking on Read()
+		n, _ := s.ReadBuf.Write(f.Payload)
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
 		if f.Type == StreamEnd {
@@ -226,7 +221,13 @@ func (s *Stream) reader() {
 		} else {
 			s.ReadIdx += 1
 		}
-		s.Unlock()
+		// signal to a caller blocked on Read() that there is data or EOF
+		if f.Type == StreamEnd || n > 0 {
+			s.Unlock()
+			s.doOnRead()
+		} else {
+			s.Unlock()
+		}
 	}
 	s.Done()
 }
@@ -250,11 +251,15 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		case <-s.HaltCh():
 			return 0, io.EOF
 		case <-s.onRead:
-			// frame has been read
+			// awaken on StreamData or StreamEnd
 		}
 		s.Lock()
 	}
 	n, err = s.ReadBuf.Read(p)
+	if s.RState == StreamClosed {
+		s.Unlock()
+		return n, io.EOF
+	}
 	s.Unlock()
 	// ignore io.EOF on short reads from ReadBuf
 	if err == io.EOF {
