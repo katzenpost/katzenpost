@@ -159,7 +159,14 @@ func (r *ReTx) Push(i client.Item) error {
 		// Already Acknowledged
 		return nil
 	}
-	return r.s.txFrame(m.f)
+	// XXX: causes panic in TimerQueue if an error is returned
+	err := r.s.txFrame(m.f)
+	if err != nil {
+		// try again later
+		m.priority = m.priority + uint64(retryDelay)
+		r.s.txEnqueue(m)
+	}
+	return nil
 }
 
 // reader polls receive window of messages and adds to the reader queue
