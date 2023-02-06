@@ -203,7 +203,11 @@ func (s *Stream) reader() {
 		// process Acks
 		s.processAck(f)
 		s.Lock()
-		s.ReadBuf.Write(f.Payload)
+		if len(f.Payload) > 0 {
+			s.ReadBuf.Write(f.Payload)
+			s.doOnRead()
+		}
+
 		// signal that data has been read to callers blocking on Read()
 
 		// If this is the last Frame in the stream, set RState to StreamClosed
@@ -213,7 +217,6 @@ func (s *Stream) reader() {
 			s.ReadIdx += 1
 		}
 		s.Unlock()
-		s.doOnRead()
 	}
 	s.Done()
 }
@@ -372,6 +375,7 @@ func (s *Stream) writer() {
 			err = s.txFrame(f)
 			switch err {
 			case nil:
+				s.doOnWrite()
 			default:
 				select {
 				case <-s.HaltCh():
@@ -380,9 +384,6 @@ func (s *Stream) writer() {
 				}
 				continue
 			}
-			// Signal that data has been written to callers blocked on Write due to
-			// maximum write buffer size exceeded
-			s.doOnWrite()
 		}
 	}
 	s.Done()
