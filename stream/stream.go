@@ -86,7 +86,7 @@ type Stream struct {
 	// address of the Stream
 	addr *StreamAddr
 
-	c Store
+	c Transport
 	// frame encryption secrets
 	WriteKey *[keySize]byte // secretbox key to encrypt with
 	ReadKey  *[keySize]byte // secretbox key to decrypt with
@@ -482,7 +482,7 @@ func H(i []byte) (res common.MessageID) {
 }
 
 // Dial returns a Stream initialized with secret address
-func Dial(c Store, network, addr string) (*Stream, error) {
+func Dial(c Transport, network, addr string) (*Stream, error) {
 	s := newStream(c)
 	a := &StreamAddr{network: network, address: addr}
 	err := s.keyAsDialer(a)
@@ -558,7 +558,8 @@ func decode(addr string) ([]byte, []byte, error) {
 	return a[:], b[:], nil
 }
 
-func Listen(c Store, network string, addr *StreamAddr) (*Stream, error) {
+// Listen should be net.Listener
+func Listen(c Transport, network string, addr *StreamAddr) (*Stream, error) {
 	s := newStream(c)
 	err := s.keyAsListener(addr)
 	if err != nil {
@@ -725,13 +726,13 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 	return s.addr
 }
 
-// Store describes the interface to Get or Put Frames
-type Store interface {
+// Transport describes the interface to Get or Put Frames
+type Transport interface {
 	Put(ID common.MessageID, payload []byte) error
 	Get(ID common.MessageID) ([]byte, error)
 }
 
-func newStream(c Store) *Stream {
+func newStream(c Transport) *Stream {
 	s := new(Stream)
 	s.c = c
 	s.RState = StreamOpen
@@ -750,16 +751,20 @@ func newStream(c Store) *Stream {
 }
 
 // NewStream generates a new address and starts the read/write workers
-func NewStream(c Store) *Stream {
+//func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
+func NewStream(c Transport) *Stream {
 	s := newStream(c)
 	addr := &StreamAddr{network: "", address: generate()}
-	s.keyAsListener(addr)
+	err := s.keyAsListener(addr)
+	if err != nil {
+		panic(err)
+	}
 	s.Start()
 	return s
 }
 
 // LoadStream initializes a Stream from state saved by Save()
-func LoadStream(c Store, state []byte) (*Stream, error) {
+func LoadStream(c Transport, state []byte) (*Stream, error) {
 	s := new(Stream)
 	s.c = c
 	err := cbor.Unmarshal(state, s)
