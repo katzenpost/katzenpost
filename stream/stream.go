@@ -290,14 +290,16 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 			return 0, os.ErrDeadlineExceeded
 		case <-s.HaltCh():
 			return 0, io.EOF
-		case <-s.onStreamClose:
-			return 0, io.EOF
 		case <-s.onWrite:
 		}
 		s.Lock()
 	}
-	defer s.doFlush()
 	defer s.Unlock()
+	// if stream closed, abort Write
+	if s.WState == StreamClosed {
+		return 0, io.EOF
+	}
+	defer s.doFlush()
 	return s.WriteBuf.Write(p)
 }
 
@@ -311,6 +313,7 @@ func (s *Stream) Close() error {
 		<-s.onStreamClose // block until writer has finalized
 		s.Lock()
 		s.RState = StreamClosed
+		s.doOnRead()
 		s.Unlock()
 		return nil
 	}
