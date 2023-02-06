@@ -16,7 +16,8 @@ import (
 )
 
 const (
-	keySize = 32
+	keySize           = 32
+	progressChunkSize = 4096 // 4kb
 )
 
 var cConf = flag.String("cfg", "namenlos.toml", "config file")
@@ -87,44 +88,36 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		// XXX: length prefix payload so client can close connection upon complete
 		lengthprefix := make([]byte, 8)
 		binary.BigEndian.PutUint64(lengthprefix, uint64(fi.Size()))
-		st.Write(lengthprefix)
+		for {
+			_, err := st.Write(lengthprefix)
+			if err == nil {
+				break
+			}
+		}
 		total := int64(0)
 		for total < fi.Size() {
-			n, err := io.Copy(st, f)
+			limited := io.LimitReader(f, progressChunkSize)
+			n, err := io.Copy(st, limited)
 			total += n
-			switch err {
-			case io.EOF, nil:
-				// XXX: unsure how we panic() with io.EOF here!
-				// theory: peer Close received in same Frame that Ack'd a blocked Write?
-				if total < fi.Size() {
-					continue
-				}
-				fmt.Println("Writer done")
-			case os.ErrDeadlineExceeded:
-				// this happen when Writes block until timeout
+			if err == io.EOF {
+				panic("wtf, EOF of limitReader")
+			} else {
+				fmt.Fprintf(os.Stderr, "\rWrite(%d/%d)", total, fi.Size())
 				continue
-			default:
-				panic(err)
 			}
 		}
-		fmt.Println("Wrote ", total, "bytes")
+		fmt.Fprintln(os.Stderr, "\nTransfer completed, waiting for peer to close stream")
 		// try to read a response from the client until defaultTimeout, and log status
-	retry2:
 		for {
-			b, err := io.ReadAll(st)
-			switch err {
-			case io.EOF:
-				break retry2
-			case nil:
-				break retry2
-			default:
-				continue
+			_, err := io.ReadAll(st)
+			if err == nil || err == io.EOF {
+				break
 			}
-			fmt.Println("peer did not finish reading")
 		}
+		// Teardown the sender side stream
+		fmt.Fprintln(os.Stderr, "\nTransfer acknowledged, shutting down")
 		st.Close()
 	} else {
 		st, err := stream.Dial(c, "", *secret)
@@ -135,51 +128,39 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		n := 0
 		lengthprefix := make([]byte, 8)
-		n, err := st.Read(lengthprefix)
-		if err != nil {
-			panic(err)
-		}
-		if n != 8 {
-			panic("failed to read lenghtprefix")
+		for n < 8 {
+			n, err = st.Read(lengthprefix[n:])
+			if err != nil {
+				continue
+			}
 		}
 		payloadlen := binary.BigEndian.Uint64(lengthprefix)
-		limited := io.LimitReader(st, int64(payloadlen))
-		total := int64(0)
-		for total < int64(payloadlen) {
+		total := uint64(0)
+		for total < payloadlen {
+			limitsize := int64(progressChunkSize)
+			if total+progressChunkSize > payloadlen {
+				limitsize = int64(payloadlen - total)
+			}
+			limited := io.LimitReader(st, int64(limitsize))
 			nn, err := io.Copy(f, limited)
-			total += nn
-			switch err {
-			case os.ErrDeadlineExceeded:
+			total += uint64(nn)
+			if err == os.ErrDeadlineExceeded {
 				continue
-			case io.EOF:
-				panic("failed with short Read, wrong lenght prefix or bug")
-			default:
-				panic(err)
-			case nil:
 			}
-		}
-		fmt.Println("Read ", total, "bytes")
-	retry:
-		for {
-			_, err = st.Write([]byte{0x42})
-			switch err {
-			case io.EOF:
-				panic("server closed connection prematurely")
-			case os.ErrDeadlineExceeded:
-				continue
-			default:
+			if err != nil {
 				panic(err)
-			case nil:
-				break retry
 			}
-			// Hangup reader
+
+			fmt.Fprintf(os.Stderr, "\rRead(%d/%d)", total, payloadlen)
 		}
-		// Hangup reader
+		fmt.Fprintln(os.Stderr, "\nTransfer completed, closing stream")
 		st.Close()
 		f.Close()
 	}
 	// it seems that messages may get lost in the send queue if exit happens immediately after Close()
 	<-time.After(10 * time.Second)
 	s.Shutdown()
+	s.Wait()
 }
