@@ -32,6 +32,9 @@ var (
 	defaultTimeout   = 5 * time.Minute
 	FramePayloadSize int
 	ErrStreamClosed  = errors.New("Stream Closed")
+	ErrFrameDecrypt  = errors.New("Failed to decrypt")
+	ErrInvalidAddr   = errors.New("Invalid StreamAddr")
+	ErrHalted        = errors.New("Halted")
 )
 
 // FrameType indicates the state of Stream at the current Frame
@@ -538,7 +541,7 @@ func decode(addr string) ([]byte, []byte, error) {
 		return nil, nil, err
 	}
 	if len(secret) < keySize {
-		return nil, nil, errors.New("Invalid StreamAddr")
+		return nil, nil, ErrInvalidAddr
 	}
 	salt := []byte("stream_reader_writer_keymaterial")
 	keymaterial := hkdf.New(hash, secret, salt, nil)
@@ -640,7 +643,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 			if !ok {
 				// damaged Stream, abort / retry / fail ?
 				// TODO: indicate serious error somehow
-				fc <- errors.New("Failed to decrypt")
+				fc <- ErrFrameDecrypt
 				return
 			}
 			f := new(Frame)
@@ -666,7 +669,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 			panic("unknown type")
 		}
 	case <-s.HaltCh():
-		return nil, errors.New("Halted")
+		return nil, ErrHalted
 	}
 	panic("NotReached")
 }
