@@ -10,8 +10,8 @@ import (
 	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/stream"
 	"io"
-	"os/signal"
 	"os"
+	"os/signal"
 	"sync"
 	"time"
 )
@@ -21,14 +21,14 @@ const (
 	progressChunkSize = 4096 // 4kb
 )
 
-var cConf = flag.String("cfg", "namenlos.toml", "config file")
+var cConf = flag.String("cfg", "client.toml", "config file")
 
 func getSession() (*client.Session, error) {
 	cfg, err := config.LoadFile(*cConf)
-	cfg.Logging.Level = "NOTICE"
 	if err != nil {
 		return nil, err
 	}
+	cfg.Logging.File = "/dev/null" // noisy garbage
 	cc, err := client.New(cfg)
 	if err != nil {
 		return nil, err
@@ -89,18 +89,18 @@ func main() {
 	// catch ctrl-C and kill stream
 	intc := make(chan os.Signal, 1)
 	signal.Notify(intc, os.Interrupt)
-	go func(){
+	go func() {
 		for _ = range intc {
+			fmt.Fprintln(os.Stderr, "ctrl-c caught")
 			st.Close()
 			break
 		}
-		wg.Wait()
 	}()
 
 	wg.Wait()
 	st.Close()
+	fmt.Fprintln(os.Stderr, "halting gracefully")
 	// it seems that messages may get lost in the send queue if exit happens immediately after Close()
-	<-time.After(10 * time.Second)
+	<-time.After(5 * time.Second)
 	s.Shutdown()
-	s.Wait()
 }
