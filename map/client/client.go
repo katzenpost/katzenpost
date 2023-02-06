@@ -138,7 +138,7 @@ func (c *Client) Get(ID common.MessageID) ([]byte, error) {
 		return nil, err
 	}
 
-	r, err := c.Session.BlockingSendReliableMessage(loc.Name(), loc.Provider(), serialized)
+	r, err := c.Session.BlockingSendUnreliableMessage(loc.Name(), loc.Provider(), serialized)
 	if err != nil {
 		return nil, err
 	}
