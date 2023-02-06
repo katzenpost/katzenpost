@@ -1,19 +1,15 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/binary"
 	"flag"
 	"fmt"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/stream"
-	"golang.org/x/crypto/hkdf"
 	"io"
 	"os"
 	"time"
@@ -66,27 +62,6 @@ func main() {
 		os.Exit(-1)
 	}
 
-	salt := []byte("katzencat_initiator_receiver_secret")
-	isinitiator := *secret == ""
-	if *secret == "" {
-		newsecret := &[keySize]byte{}
-		io.ReadFull(rand.Reader, newsecret[:])
-		*secret = base64.StdEncoding.EncodeToString(newsecret[:])
-		fmt.Println("KatzenCat secret: ", *secret)
-	}
-	hash := sha256.New
-
-	keymaterial := hkdf.New(hash, []byte(*secret), salt, nil)
-	asecret := &[keySize]byte{}
-	bsecret := &[keySize]byte{}
-
-	if isinitiator {
-		io.ReadFull(keymaterial, asecret[:])
-		io.ReadFull(keymaterial, bsecret[:])
-	} else {
-		io.ReadFull(keymaterial, bsecret[:])
-		io.ReadFull(keymaterial, asecret[:])
-	}
 	s, err := getSession()
 	if err != nil {
 		panic(err)
@@ -96,8 +71,13 @@ func main() {
 		panic(err)
 	}
 
-	st := stream.NewStream(c, asecret[:], bsecret[:])
-
+	var st *stream.Stream
+	isinitiator := *secret == ""
+	if *secret == "" {
+		st = stream.NewStream(c)
+		*secret = st.RemoteAddr().String()
+		fmt.Println("KatzenCat secret:", *secret)
+	}
 	if isinitiator {
 		fi, err := os.Stat(*inFile)
 		if err != nil {
@@ -112,14 +92,17 @@ func main() {
 		binary.BigEndian.PutUint64(lengthprefix, uint64(fi.Size()))
 		st.Write(lengthprefix)
 		total := int64(0)
-		for {
+		for total < fi.Size() {
 			n, err := io.Copy(st, f)
 			total += n
 			switch err {
 			case io.EOF, nil:
 				// XXX: unsure how we panic() with io.EOF here!
 				// theory: peer Close received in same Frame that Ack'd a blocked Write?
-				break
+				if total < fi.Size() {
+					continue
+				}
+				fmt.Println("Writer done")
 			case os.ErrDeadlineExceeded:
 				// this happen when Writes block until timeout
 				continue
@@ -129,16 +112,25 @@ func main() {
 		}
 		fmt.Println("Wrote ", total, "bytes")
 		// try to read a response from the client until defaultTimeout, and log status
+	retry2:
 		for {
-			b, _ := io.ReadAll(st)
-			if len(b) > 0 {
-				fmt.Println("peer has completed transfer")
-				break
+			b, err := io.ReadAll(st)
+			switch err {
+			case io.EOF:
+				break retry2
+			case nil:
+				break retry2
+			default:
+				continue
 			}
 			fmt.Println("peer did not finish reading")
 		}
 		st.Close()
 	} else {
+		st, err := stream.Dial(c, "", *secret)
+		if err != nil {
+			panic(err)
+		}
 		f, err := os.Create(*outFile)
 		if err != nil {
 			panic(err)
@@ -154,7 +146,7 @@ func main() {
 		payloadlen := binary.BigEndian.Uint64(lengthprefix)
 		limited := io.LimitReader(st, int64(payloadlen))
 		total := int64(0)
-		for {
+		for total < int64(payloadlen) {
 			nn, err := io.Copy(f, limited)
 			total += nn
 			switch err {
@@ -165,10 +157,10 @@ func main() {
 			default:
 				panic(err)
 			case nil:
-				break
 			}
 		}
 		fmt.Println("Read ", total, "bytes")
+	retry:
 		for {
 			_, err = st.Write([]byte{0x42})
 			switch err {
@@ -179,6 +171,7 @@ func main() {
 			default:
 				panic(err)
 			case nil:
+				break retry
 			}
 			// Hangup reader
 		}
