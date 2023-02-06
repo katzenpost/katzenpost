@@ -30,6 +30,7 @@ import (
 )
 
 var ErrReplyTimeout = errors.New("failure waiting for reply, timeout reached")
+var ErrHalted = errors.New("Halted")
 var ErrMessageNotSent = errors.New("failure sending message")
 
 func (s *Session) sendNext() {
@@ -244,7 +245,8 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	// these timeouts are often far too aggressive
+	case <-s.HaltCh():
+		return nil, ErrHalted
 	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
 		return nil, ErrReplyTimeout
 	}
@@ -279,13 +281,12 @@ func (s *Session) BlockingSendReliableMessage(recipient, provider string, messag
 		return nil, ErrMessageNotSent
 	}
 
-	// TODO: it would be better to have the message automatically retransmitted a configurable number of times before emitting a failure to this channel
-	// wait for reply or round trip timeout
+	// XXX: may block forever
 	select {
 	case reply := <-replyWaitChan:
 		return reply, nil
-	case <-time.After(2 * sentMessage.ReplyETA):
-		return nil, ErrReplyTimeout
+	case <-s.HaltCh():
+		return nil, ErrHalted
 	}
 	// unreachable
 }
