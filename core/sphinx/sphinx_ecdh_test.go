@@ -40,7 +40,7 @@ func TestEcdhForwardSphinx(t *testing.T) {
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
 	nrHops := 20
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
-	sphinx := NewSphinx(mynike, g)
+	sphinx := NewSphinx(g)
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
 
@@ -50,7 +50,7 @@ func TestEcdhSURB(t *testing.T) {
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
 	nrHops := 20
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
-	sphinx := NewSphinx(mynike, g)
+	sphinx := NewSphinx(g)
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }
 

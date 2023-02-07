@@ -29,7 +29,7 @@ func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Nike) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(mynike, g)
+	sphinx := NewSphinx(g)
 
 	nodes, path := benchNewPathVector(g.NrHops, false, mynike)
 	payload := []byte(testPayload)

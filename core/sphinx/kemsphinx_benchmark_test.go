@@ -54,7 +54,7 @@ func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 	nodes, path := newBenchKEMPathVector(mykem, g.NrHops, false)
 	payload := []byte(testPayload)
 
-	pkt, err := sphinx.NewKEMPacket(rand.Reader, path, payload)
+	pkt, err := sphinx.newKEMPacket(rand.Reader, path, payload)
 	if err != nil {
 		panic("wtf")
 	}
@@ -65,7 +65,7 @@ func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 	for n := 0; n < b.N; n++ {
 		testPacket := make([]byte, len(pkt))
 		copy(testPacket, pkt)
-		_, _, _, err := sphinx.KEMUnwrap(nodes[0].privateKey, testPacket)
+		_, _, _, err := sphinx.Unwrap(nodes[0].privateKey, testPacket)
 		if err != nil {
 			panic("wtf")
 		}

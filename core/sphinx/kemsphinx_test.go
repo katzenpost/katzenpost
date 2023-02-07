@@ -138,13 +138,13 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 
 		// Create the packet.
 		payload := []byte(testPayload)
-		pkt, err := sphinx.NewKEMPacket(rand.Reader, path, payload)
+		pkt, err := sphinx.newKEMPacket(rand.Reader, path, payload)
 		require.NoError(err, "NewKEMPacket failed")
 		require.Equal(len(pkt), sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
-			b, _, cmds, err := sphinx.KEMUnwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.unwrapKem(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {

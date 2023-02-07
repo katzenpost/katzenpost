@@ -61,11 +61,11 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 
 	withSURB := false
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
-	sphinx := NewSphinx(mynike, g)
+	sphinx := NewSphinx(g)
 	hexTests := buildVectorSphinx(t, mynike, withSURB, sphinx)
 	withSURB = true
 	g = geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
-	sphinx = NewSphinx(mynike, g)
+	sphinx = NewSphinx(g)
 	hexTests2 := buildVectorSphinx(t, mynike, withSURB, sphinx)
 
 	hexTests = append(hexTests, hexTests2...)
@@ -97,7 +97,7 @@ func TestVectorSphinx(t *testing.T) {
 			withSURB = true
 		}
 		g := geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
-		sphinx := NewSphinx(mynike, g)
+		sphinx := NewSphinx(g)
 
 		// Unwrap the packet, validating the output.
 		for i := range test.Nodes {

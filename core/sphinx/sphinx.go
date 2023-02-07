@@ -71,10 +71,10 @@ func FromGeometry(geometry *geo.Geometry) (*Sphinx, error) {
 }
 
 // NewSphinx creates a new instance of Sphinx.
-func NewSphinx(n nike.Nike, geometry *geo.Geometry) *Sphinx {
-	s := &Sphinx{
-		nike:     n,
-		geometry: geometry,
+func NewSphinx(geo *geo.Geometry) *Sphinx {
+	s, err := FromGeometry(geo)
+	if err != nil {
+		panic(err)
 	}
 	return s
 }
@@ -249,9 +249,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	return hdr, sprpKeys, nil
 }
 
-// NewPacket creates a forward Sphinx packet with the provided path and
-// payload, using the provided entropy source.
-func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+func (s *Sphinx) newNikePacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 	if len(payload) != s.geometry.ForwardPayloadLength {
 		return nil, fmt.Errorf("invalid payload length: %d, expected %d", len(payload), s.geometry.ForwardPayloadLength)
 	}
@@ -286,7 +284,7 @@ func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte
 // Unwrap unwraps the provided Sphinx packet pkt in-place, using the provided
 // NIKE private key, and returns the payload (if applicable), replay tag, and
 // routing info command vector.
-func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
+func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
 	var (
 		geOff      = 2
 		riOff      = geOff + s.nike.PublicKeySize()
