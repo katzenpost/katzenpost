@@ -20,23 +20,20 @@
 package ctidh
 
 import (
-	ctidh "git.xx.network/elixxir/ctidh_cgo"
+	ctidh "codeberg.org/dawuud/highctidh/cgo"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 )
 
-// CtidhNike implements the Nike interface using our ctidh module.
+// CTIDH implements the Nike interface using our CTIDH module.
 type CtidhNike struct {
 }
 
-// NewCtidhNike returns a new Ctidh Nike.
-func NewCtidhNike() *CtidhNike {
-	return new(CtidhNike)
-}
+var CTIDHScheme = &CtidhNike{}
 
 var _ nike.PrivateKey = (*ctidh.PrivateKey)(nil)
 var _ nike.PublicKey = (*ctidh.PublicKey)(nil)
-var _ nike.Nike = (*CtidhNike)(nil)
+var _ nike.Scheme = (*CtidhNike)(nil)
 
 func (e *CtidhNike) Name() string {
 	return "ctidh"

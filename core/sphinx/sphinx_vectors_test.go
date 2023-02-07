@@ -159,7 +159,7 @@ func TestVectorSphinx(t *testing.T) {
 	}
 }
 
-func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
+func buildVectorSphinx(t *testing.T, mynike nike.Scheme, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)

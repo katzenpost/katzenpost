@@ -45,7 +45,7 @@ var (
 // Sphinx is a modular implementation of the Sphinx cryptographic packet
 // format that has a pluggable NIKE, non-interactive key exchange.
 type Sphinx struct {
-	nike     nike.Nike
+	nike     nike.Scheme
 	kem      kem.Scheme
 	geometry *geo.Geometry
 }
