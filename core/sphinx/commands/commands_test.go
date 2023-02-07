@@ -63,7 +63,7 @@ func TestCommands(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	nike := nike.Nike(ecdh.NewEcdhNike(rand.Reader))
+	nike := nike.Scheme(ecdh.NewEcdhNike(rand.Reader))
 	payloadLen := 2000
 	nrHops := 5
 	g := geo.GeometryFromUserForwardPayloadLength(nike, payloadLen, true, nrHops)

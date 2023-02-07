@@ -165,7 +165,7 @@ func TestCommandVectors(t *testing.T) {
 	nrHops := 5
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
