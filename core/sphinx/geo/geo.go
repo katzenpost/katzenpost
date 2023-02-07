@@ -114,7 +114,7 @@ func (g *Geometry) Display() string {
 }
 
 type geometryFactory struct {
-	nike                        nike.Nike
+	nike                        nike.Scheme
 	kem                         kem.Scheme
 	nrHops                      int
 	forwardPayloadLength        int
@@ -170,7 +170,7 @@ func (f *geometryFactory) deriveForwardPayloadLength(userForwardPayloadLength in
 	return userForwardPayloadLength + (sphinxPlaintextHeaderLength + f.surbLength())
 }
 
-func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
+func GeometryFromUserForwardPayloadLength(nike nike.Scheme, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
 	f := &geometryFactory{
 		nike:                        nike,
 		nrHops:                      nrHops,
