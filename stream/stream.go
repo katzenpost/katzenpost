@@ -166,7 +166,7 @@ func (r *ReTx) Push(i client.Item) error {
 	err := r.s.txFrame(m.f)
 	if err != nil {
 		// try again later
-		m.priority = m.priority + uint64(retryDelay)
+		m.priority = time.Now().Add(retryDelay).UnixNano()
 		r.s.txEnqueue(m)
 	}
 	return nil
@@ -466,15 +466,15 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
 	err = s.c.Put(frame_id, ciphertext)
 	if err != nil {
-		return err
+		// reschedule packet for transmission after retryDelay
+		// rather than 2 * epochtime.Period
+		m.priority = time.Now().Add(retryDelay).UnixNano()
 	}
 	s.Lock()
+	s.txEnqueue(m)
 	s.WriteIdx += 1
 	s.Unlock()
-
-	// Enable retransmissions of unacknowledged frames
-	s.txEnqueue(m)
-	return nil
+	return err
 }
 
 func (s *Stream) txEnqueue(m *smsg) {
