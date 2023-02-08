@@ -124,6 +124,19 @@ func (b *BlindedPrivateKey) Sign(message []byte) []byte {
 // and returns the BlindedPrivateKey. This function does not
 // mutate the PrivateKey.
 func (k *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
+	// Here digest is the actual secret key derived from the seed:
+	digest := sha512.Sum512(k.Bytes()[:32])
+	clamped, err := new(edwards25519.Scalar).SetBytesWithClamping(digest[:32])
+	if err != nil {
+		panic(err)
+	}
+	bpk := new(BlindedPrivateKey)
+	bpk.blinded = make([]byte, ed25519.PrivateKeySize)
+	copy(bpk.blinded[:32], clamped.Bytes())
+	return bpk.Blind(factor)
+}
+
+func (k *BlindedPrivateKey) Blind(factor []byte) *BlindedPrivateKey {
 	// changes the *value* of the slice factor, which points at new bytes
 	// and does not modify the caller's copy of factor.
 	sum := sha512.Sum512_256(factor)
@@ -134,9 +147,9 @@ func (k *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
 		panic(err)
 	}
 
-	// Here digest is the actual secret key derived from the seed:
-	digest := sha512.Sum512(k.Bytes()[:32])
-	bb_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(digest[:32])
+	oldsec := make([]byte, ed25519.PrivateKeySize)
+	copy(oldsec[:32], k.blinded[:32])
+	bb_sc, err := new(edwards25519.Scalar).SetUniformBytes(oldsec)
 
 	// (ab + c) mod l = ScMulAdd(out, a, b, c)
 	// a := factor
