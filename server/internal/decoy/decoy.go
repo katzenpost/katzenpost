@@ -393,12 +393,9 @@ func (d *decoy) storeSURBCtx(ctx *surbCtx) {
 	d.Lock()
 	defer d.Unlock()
 
-	ctxList := []*surbCtx{ctx}
-	ctx.etaNode = d.surbETAs.Insert(ctxList)
-	if nCtxList := ctx.etaNode.Value.([]*surbCtx); nCtxList[0] != ctx {
-		// Existing node, append the context to the list stored
-		// as the node value.  This should be exceedingly rare.
-		ctx.etaNode.Value = append(nCtxList, ctx)
+	ctx.etaNode = d.surbETAs.Insert(ctx)
+	if ctx.etaNode.Value.(*surbCtx) != ctx {
+		panic("inserting surbCtx failed, duplicate eta+id?")
 	}
 
 	d.surbStore[ctx.id] = ctx
@@ -413,26 +410,6 @@ func (d *decoy) loadAndDeleteSURBCtx(id uint64) *surbCtx {
 		return nil
 	}
 	delete(d.surbStore, id)
-
-	nCtxList, ok := ctx.etaNode.Value.([]*surbCtx)
-	if !ok {
-		nCtx := ctx.etaNode.Value.(*surbCtx)
-		nCtxList = []*surbCtx{nCtx}
-	}
-	if l := len(nCtxList); l > 1 {
-		// There is more than 1 SURB with this ETA, remove the context from
-		// the list, and leave the node in the tree.
-		for i, v := range nCtxList {
-			if v == ctx {
-				copy(nCtxList[i:], nCtxList[i+1:])
-				nCtxList[l-1] = nil
-				ctx.etaNode.Value = nCtxList[l-1]
-				ctx.etaNode = nil
-				return ctx
-			}
-		}
-		panic("BUG: SURB missing from node ETA list")
-	}
 
 	d.surbETAs.Remove(ctx.etaNode)
 	ctx.etaNode = nil
@@ -451,28 +428,25 @@ func (d *decoy) sweepSURBCtxs() {
 
 	now := monotime.Now()
 	slack := time.Duration(d.glue.Config().Debug.DecoySlack) * time.Millisecond
+	// instead of if ctx.eta + slack > now { break } in each loop iteration
+	// we precompute it:
+	now_minus_slack := now - slack
 
 	var swept int
 	iter := d.surbETAs.Iterator(avl.Forward)
 	for node := iter.First(); node != nil; node = iter.Next() {
-		var surbCtxs []*surbCtx
-		switch surbCtxOrSlice := node.Value.(type) {
-		case []*surbCtx:
-			surbCtxs = surbCtxOrSlice
-		case *surbCtx:
-			surbCtxs = make([]*surbCtx, 1)
-			surbCtxs[0] = surbCtxOrSlice
-		}
-		if surbCtxs[0].eta+slack > now {
+		ctx := node.Value.(*surbCtx)
+		if ctx.eta > now_minus_slack {
 			break
 		}
 
-		for _, ctx := range surbCtxs {
-			delete(d.surbStore, ctx.id)
-			// TODO: At some point, this should do more than just log.
-			d.log.Debugf("Sweep: Lost SURB ID: 0x%08x ETA: %v (DeltaT: %v)", ctx.id, ctx.eta, now-ctx.eta)
-			swept++
-		}
+		delete(d.surbStore, ctx.id)
+
+		// TODO: At some point, this should do more than just log.
+		d.log.Debugf("Sweep: Lost SURB ID: 0x%08x ETA: %v (DeltaT: %v)", ctx.id, ctx.eta, now-ctx.eta)
+		swept++
+		// modification is unsupported EXCEPT "removing the current
+		// Node", see godoc for avl/avl.go:Iterator
 		d.surbETAs.Remove(node)
 	}
 
@@ -490,16 +464,15 @@ func New(glue glue.Glue) (glue.Decoy, error) {
 		rng:       rand.NewMath(),
 		docCh:     make(chan *pkicache.Entry),
 		surbETAs: avl.New(func(a, b interface{}) int {
-			surbCtxsA, surbCtxsB := a.([]*surbCtx), b.([]*surbCtx)
-			etaA, etaB := surbCtxsA[0].eta, surbCtxsB[0].eta
+			surbCtxA, surbCtxB := a.(*surbCtx), b.(*surbCtx)
 			switch {
-			case etaA < etaB:
+			case surbCtxA.eta < surbCtxB.eta:
 				return -1
-			case etaA > etaB:
+			case surbCtxA.eta > surbCtxB.eta:
 				return 1
-			case surbCtxsA[0].id < surbCtxsB[0].id:
+			case surbCtxA.id < surbCtxB.id:
 				return -1
-			case surbCtxsA[0].id > surbCtxsB[0].id:
+			case surbCtxA.id > surbCtxB.id:
 				return 1
 			default:
 				return 0
