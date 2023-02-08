@@ -136,10 +136,16 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 			return nil, err
 		}
 
+		// validate the capabilities of MapRequest
+		if !validateCap(req) {
+			m.log.Errorf("validateCap failed with error %s", err)
+			return nil, errors.New("failed to verify capability")
+		}
+
 		resp := &common.MapResponse{}
 		// Write data if payload present
 		if len(req.Payload) > 0 {
-			err := m.Put(req.TID, req.Payload)
+			err := m.Put(req.ID, req.Payload)
 			if err != nil {
 				resp.Status = common.StatusFailed
 			} else {
@@ -147,7 +153,7 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 			}
 			// Otherwise request data
 		} else {
-			p, err := m.Get(req.TID)
+			p, err := m.Get(req.ID)
 			if err != nil {
 				resp.Status = common.StatusNotFound
 			} else {
@@ -163,6 +169,18 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	default:
 		m.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")
+	}
+}
+
+func validateCap(req *common.MapRequest) bool {
+	if len(req.Payload) == 0 {
+		v := req.ID.ReadPk()
+		// verify v Signs the publickey bytes
+		return v.Verify(req.Signature, req.ID.Bytes())
+	} else {
+		v := req.ID.WritePk()
+		// verify v Signs the payload bytes
+		return v.Verify(req.Signature, req.Payload)
 	}
 }
 

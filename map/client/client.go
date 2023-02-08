@@ -17,7 +17,6 @@
 package client
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"github.com/fxamacker/cbor/v2"
@@ -28,9 +27,8 @@ import (
 	"sort"
 )
 
-
 var (
-	PayloadSize int
+	PayloadSize       int
 	ErrStatusNotFound = errors.New("StatusNotFound")
 )
 
@@ -39,23 +37,18 @@ type Client struct {
 }
 
 type StorageLocation interface {
-	Secret() common.MessageID
-	TID() common.MessageID
+	ID() common.MessageID
 	Name() string
 	Provider() string
 }
 
 type mapStorage struct {
-	secret         common.MessageID
-	tid            common.MessageID
+	id             common.MessageID
 	name, provider string
 }
 
-func (m *mapStorage) Secret() common.MessageID {
-	return m.secret
-}
-func (m *mapStorage) TID() common.MessageID {
-	return m.tid
+func (m *mapStorage) ID() common.MessageID {
+	return m.id
 }
 func (m *mapStorage) Name() string {
 	return m.name
@@ -94,26 +87,23 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 	if len(descs) == 0 {
 		return nil, errors.New("No descriptors")
 	}
-	// hash ID with the PriorSharedRandom value or other consensus parameters
-	temporalStorageId := sha256.New()
-	// XXX: consider what happens at epoch transitions
-	temporalStorageId.Write(doc.PriorSharedRandom[0])
-	temporalStorageId.Write(ID[:])
-	var tid common.MessageID
-	copy(tid[:], temporalStorageId.Sum(nil))
-	slot := int(binary.LittleEndian.Uint64(tid[:8])) % len(descs)
+	slot := int(binary.LittleEndian.Uint64(ID[:8])) % len(descs)
 	// sort the descs and return the chosen one
 	desc := deterministicSelect(descs, slot)
-	return &mapStorage{name: desc.Name, provider: desc.Provider, secret: ID, tid: tid}, nil
+	return &mapStorage{name: desc.Name, provider: desc.Provider, id: ID}, nil
 }
 
 // Put places a value into the store
-func (c *Client) Put(ID common.MessageID, payload []byte) error {
+func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
+	if !ID.WritePk().Verify(signature, ID.Bytes()) {
+		return errors.New("signature does not verify Read")
+	}
+
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return err
 	}
-	b := common.MapRequest{TID: loc.TID(), Payload: payload}
+	b := common.MapRequest{ID: ID, Signature: signature, Payload: payload}
 	// XXX: ideally we limit the number of retries
 	// so that it doesn't keep trying to deliver to a stale/missing service forever...
 	serialized, err := cbor.Marshal(b)
@@ -127,12 +117,16 @@ func (c *Client) Put(ID common.MessageID, payload []byte) error {
 }
 
 // Get requests ID from the chosen storage node and returns a payload or error
-func (c *Client) Get(ID common.MessageID) ([]byte, error) {
+func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
+
+	if !ID.ReadPk().Verify(signature, ID[:]) {
+		return nil, errors.New("signature does not verify Read")
+	}
 	loc, err := c.GetStorageProvider(ID)
 	if err != nil {
 		return nil, err
 	}
-	b := &common.MapRequest{TID: loc.TID()}
+	b := &common.MapRequest{ID: ID, Signature: signature}
 	serialized, err := cbor.Marshal(b)
 	if err != nil {
 		return nil, err

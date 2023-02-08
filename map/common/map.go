@@ -5,16 +5,21 @@ import (
 )
 
 const (
-	// MessageID keys are 32 bytes long and globally unique amongst all clients
-	MessageIDLen   = 32
 	MapServiceName = "map"
 )
 
-type MessageID [MessageIDLen]byte
 
 type MapRequest struct {
-	// TID is the temporary ID of the block
-	TID MessageID
+	// ID is the ID of the block which is a ed25519 PublicKey
+	ID MessageID
+
+	// Future version may wish to include the PublicKey
+	// if PublicKeySize is
+	// Signature is the signature over Payload with
+	// The Read or Write capability keys for the entry
+	// identified by ID
+	Signature []byte
+
 	// Payload is the contents to store or nil
 	Payload []byte
 }
