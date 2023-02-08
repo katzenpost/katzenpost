@@ -34,6 +34,7 @@ func TestCtidhForwardSphinx(t *testing.T) {
 	sphinx := NewSphinx(geo)
 	sphinx.nike = mynike // XXX fixes sphinx, currently schemes.ByName doesn't
 	// return CTIDH NIKE because it's guarded by the ctidh build tag for now.
+
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
 
@@ -43,6 +44,8 @@ func TestCtidhSURB(t *testing.T) {
 	mynike := ctidhnike.CTIDHScheme
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
 	sphinx := NewSphinx(geo)
+	sphinx.nike = mynike // XXX fixes sphinx, currently schemes.ByName doesn't
+	// return CTIDH NIKE because it's guarded by the ctidh build tag for now.
 
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }
