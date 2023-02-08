@@ -20,12 +20,11 @@ package client
 
 import (
 	"testing"
-	"time"
 
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 )
@@ -49,29 +48,46 @@ func TestCreateMap(t *testing.T) {
 
 	// test creating and retrieving an item
 
-
 	// create a capability key
 	pk, err := eddsa.NewKeypair(rand.Reader)
 	require.NoError(err)
-
 	rwCap := common.NewRWCap(pk)
+
+	// get the id and writeKey for an addrress
 	addr := []byte("we can use whatever byte sequence we like as address here")
 	id := rwCap.Addr(addr)
 	wKey := rwCap.Write(addr)
+
+	// make sure that the verifier of id matches the publickey of writekey
 	require.Equal(wKey.PublicKey().Bytes(), id.WritePk().Bytes())
+
+	// get the readKey for the address
 	rKey := rwCap.Read(addr)
+
+	// make sure the verifier of id matches the publicKey of readKey
 	require.Equal(rKey.PublicKey().Bytes(), id.ReadPk().Bytes())
 	payload := []byte("hello world")
+
+	// verify that writing with Write() works
 	err = c.Put(id, wKey.Sign(payload), payload)
 	require.NoError(err)
-	// XXX: we should have a finite number of retransmissions allowed
-	// calls to Put are nonblocking but do retry until the message is written.
-	// so we need to wait long enough for the command to have arrived. ...
-	<-time.After(30 * time.Second)
 
+	// verify that writing with wrong key fails:
+	err = c.Put(id, rKey.Sign(payload), payload)
+	require.Error(err)
+
+	// verify that Reading with the ROKey interface works
+	roKey := rwCap.ReadOnly().Read(addr)
+	payload2, err := c.Get(id, roKey.Sign(id.Bytes()))
 	require.NoError(err)
-	resp, err := c.Get(id, rKey.Sign(id.Bytes()))
+	require.Equal(payload, payload2)
+
+	payload = []byte("goodbye world")
+	// verify that Writing with the WOKey works
+	woKey := rwCap.WriteOnly().Write(addr)
+	id = rwCap.WriteOnly().Addr(addr)
+	err = c.Put(id, woKey.Sign(payload), payload)
 	require.NoError(err)
-	require.NotNil(resp)
+	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
 	require.Equal(payload, resp)
 }

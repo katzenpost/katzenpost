@@ -8,7 +8,6 @@ const (
 	MapServiceName = "map"
 )
 
-
 type MapRequest struct {
 	// ID is the ID of the block which is a ed25519 PublicKey
 	ID MessageID

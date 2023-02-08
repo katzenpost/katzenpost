@@ -1,12 +1,12 @@
-package common 
+package common
 
 import (
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 	"testing"
-
 )
+
 func TestCreateRWCap(t *testing.T) {
 	require := require.New(t)
 	// create a capability key

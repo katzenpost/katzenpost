@@ -9,13 +9,13 @@ var (
 	WriteCap = []byte("write")
 )
 
+// MessageID represents a storage address with Read/Write capability
 type MessageID [eddsa.PublicKeySize]byte
 
 // ReadPk returns the verifier of ReadCap for this ID
 func (m MessageID) ReadPk() *eddsa.PublicKey {
 	p := new(eddsa.PublicKey)
 	if err := p.FromBytes(m[:]); err != nil {
-		// only implemented for eddsa PublicKeys
 		panic(err)
 	}
 	return p.Blind(ReadCap)
@@ -44,11 +44,13 @@ type ReadWriteCap interface {
 	WriteOnly() WriteOnlyCap
 }
 
+// ReadOnlyCap describes a Capability that has Read capability only.
 type ReadOnlyCap interface {
 	Addr(addr []byte) MessageID
 	Read(addr []byte) *eddsa.BlindedPrivateKey
 }
 
+// ReadOnlyCap describes a Capability that has Write capability only.
 type WriteOnlyCap interface {
 	Addr(addr []byte) MessageID
 	Write(addr []byte) *eddsa.BlindedPrivateKey

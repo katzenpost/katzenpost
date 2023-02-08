@@ -36,6 +36,10 @@ type Client struct {
 	Session *client.Session
 }
 
+func NewClient(s *client.Session) (*Client, error) {
+	return &Client{Session: s}, nil
+}
+
 type StorageLocation interface {
 	ID() common.MessageID
 	Name() string
@@ -95,8 +99,8 @@ func (c *Client) GetStorageProvider(ID common.MessageID) (StorageLocation, error
 
 // Put places a value into the store
 func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
-	if !ID.WritePk().Verify(signature, ID.Bytes()) {
-		return errors.New("signature does not verify Read")
+	if !ID.WritePk().Verify(signature, payload) {
+		return errors.New("signature does not verify Write")
 	}
 
 	loc, err := c.GetStorageProvider(ID)
@@ -148,10 +152,93 @@ func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 	return resp.Payload, nil
 }
 
-func NewClient(session *client.Session) (*Client, error) {
-	return &Client{Session: session}, nil
+// RWClient has both Get and Put
+type RWClient interface {
+	Put(addr []byte, payload []byte) error
+	Get(addr []byte) ([]byte, error)
 }
 
+// ROClient only has Get
+type ROClient interface {
+	Get(addr []byte) ([]byte, error)
+}
+
+// WOClient only has Put
+type WOClient interface {
+	Put(addr []byte, payload []byte) error
+}
+
+// rwMap implements ReadWriteTranport using a ReadWriteCap and reference to map client
+// The idea is that several streams can share map/client and client/session but
+// have different capabilities for the underlying Streams transported by map/client
+type rwMap struct {
+	c     *Client
+	rwCap common.ReadWriteCap
+}
+
+// Get implements RWClient.Get
+func (r *rwMap) Get(addr []byte) ([]byte, error) {
+	i := r.rwCap.Addr(addr)
+	k := r.rwCap.Read(addr)
+	return r.c.Get(i, k.Sign(i.Bytes()))
+}
+
+// Put implements RWClient.Put
+func (r *rwMap) Put(addr []byte, payload []byte) error {
+	i := r.rwCap.Addr(addr)
+	k := r.rwCap.Read(addr)
+	return r.c.Put(i, k.Sign(payload), payload)
+}
+
+// roMap implements ReadOnlyTranport using a ReadOnlyCap and reference to map client
+type roMap struct {
+	c     *Client
+	roCap common.ReadOnlyCap
+}
+
+// Get implements ROClient.Get
+func (r *roMap) Get(addr []byte) ([]byte, error) {
+	i := r.roCap.Addr(addr)
+	k := r.roCap.Read(addr)
+	return r.c.Get(i, k.Sign(i.Bytes()))
+}
+
+// woMap implements WOClient
+type woMap struct {
+	c     *Client
+	woCap common.WriteOnlyCap
+}
+
+// Put implements WOClient.Put
+func (w *woMap) Put(addr []byte, payload []byte) error {
+	i := w.woCap.Addr(addr)
+	k := w.woCap.Write(addr)
+	return w.c.Put(i, k.Sign(payload), payload)
+}
+
+// ReadWrite returns a Transport using map that can read or write with Get() and Put()
+func ReadWriteMap(c *Client, rwCap common.ReadWriteCap) RWClient {
+	m := new(rwMap)
+	m.c = c
+	m.rwCap = rwCap
+	return m
+}
+
+// ReadOnlyMap returns a Transport using map that can read with Get() only
+func ReadOnlyMap(c *Client, roCap common.ReadOnlyCap) ROClient {
+	m := new(roMap)
+	m.c = c
+	m.roCap = roCap
+	return m
+}
+
+// WriteOnlyMap returns a Transport using map that can write with Put() only
+func WriteOnlyMap(c *Client, woCap common.WriteOnlyCap) WOClient {
+	m := new(woMap)
+	m.c = c
+	m.woCap = woCap
+	return m
+}
 func init() {
 	b, _ := cbor.Marshal(common.MapRequest{})
 	cborFrameOverhead := len(b)
