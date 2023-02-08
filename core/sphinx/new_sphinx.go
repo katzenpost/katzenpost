@@ -28,7 +28,7 @@ import (
 // payload, using the provided entropy source.
 func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 	if s.nike == nil {
-		s.newKEMPacket(r, path, payload)
+		return s.newKEMPacket(r, path, payload)
 	}
 
 	if s.kem == nil {

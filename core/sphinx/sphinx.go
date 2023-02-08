@@ -59,11 +59,13 @@ func FromGeometry(geometry *geo.Geometry) (*Sphinx, error) {
 		return nil, errors.New("geometry NIKEName and KEMName must not both be set")
 	}
 	if geometry.NIKEName != "" {
+		mynike := schemes.ByName(geometry.NIKEName)
 		return &Sphinx{
-			nike:     schemes.ByName(geometry.NIKEName),
+			nike:     mynike,
 			geometry: geometry,
 		}, nil
 	}
+	fmt.Println("KEM name is set")
 	return &Sphinx{
 		kem:      kemschemes.ByName(geometry.KEMName),
 		geometry: geometry,
