@@ -8,7 +8,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-// TODO(david): later we will add the CTIDH NIKE scheme.
+// TODO(david): later we will add the CTIDH NIKE scheme. For
+// now it's guarded behind the "ctidh" build tag.
 var allSchemes = [...]nike.Scheme{
 	ecdh.NewEcdhNike(rand.Reader),
 }

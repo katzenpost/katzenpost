@@ -36,6 +36,10 @@ type scheme struct {
 	second nike.Scheme
 }
 
+func (s *scheme) Name() string {
+	return s.name
+}
+
 func (s *scheme) PublicKeySize() int {
 	return s.first.PublicKeySize() + s.second.PublicKeySize()
 }
