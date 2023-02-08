@@ -187,6 +187,6 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 		return nil, err
 	}
 
-	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider, doc.SphinxGeometry)
 	return c.session, err
 }
