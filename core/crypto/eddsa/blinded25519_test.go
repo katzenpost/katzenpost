@@ -72,6 +72,21 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	assert.Equal(true, check_public_key(f1_blind_public_x))
 	assert.Equal(true, check_public_key(f2_blind_public))
 
+	f12_blind_secret := f1_blind_secret.Blind(factor2)
+	f21_blind_secret := f2_blind_secret.Blind(factor)
+	assert.Equal(f12_blind_secret, f21_blind_secret)
+	assert.Equal(f12_blind_secret.PublicKey(), unblinded.Blind(factor).PublicKey().Blind(factor2))
+	factor3 := make([]byte, BlindFactorSize)
+	rng.Read(factor3)
+	f123_blind_secret := f12_blind_secret.Blind(factor3)
+	f213_blind_secret := f21_blind_secret.Blind(factor3)
+	f321_blind_secret := unblinded.Blind(factor3).Blind(factor2).Blind(factor)
+	assert.Equal(f123_blind_secret, f213_blind_secret)
+	assert.Equal(f321_blind_secret, f123_blind_secret)
+	assert.NotEqual(f123_blind_secret, f12_blind_secret)
+	f123_blind_public := unblinded.PublicKey().Blind(factor).Blind(factor2).Blind(factor3)
+	assert.Equal(f123_blind_secret.PublicKey(), f123_blind_public)
+
 	// Check signature creation and validation:
 	msg := [5]byte{'a', 'b', 'c', 'd', 'e'}
 	msg_x := [5]byte{'a', 'b', 'c', 'd', 'x'}
