@@ -112,9 +112,7 @@ func (p *pki) currentDocument() *cpki.Document {
 }
 
 func (p *pki) worker() {
-	const initialSpawnDelay = 5 * time.Second
-
-	timer := time.NewTimer(initialSpawnDelay)
+	timer := time.NewTimer(0)
 	defer func() {
 		p.log.Debug("Halting PKI worker.")
 		timer.Stop()
