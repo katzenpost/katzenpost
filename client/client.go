@@ -179,7 +179,8 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 	linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 	// fetch a pki.Document
-	if _, doc, err = PKIBootstrap(c.cfg, linkKey); err != nil {
+	pkiclient, doc, err := PKIBootstrap(c.cfg, linkKey)
+	if err != nil {
 		return nil, err
 	}
 	// choose a provider
@@ -187,6 +188,6 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 		return nil, err
 	}
 
-	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	c.session, err = NewSession(ctx, pkiclient, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
 	return c.session, err
 }
