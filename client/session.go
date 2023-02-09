@@ -78,6 +78,7 @@ type Session struct {
 // This method will block until session is connected to the Provider.
 func NewSession(
 	ctx context.Context,
+	pkiclient *pki.Client,
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
