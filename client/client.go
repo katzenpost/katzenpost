@@ -57,7 +57,7 @@ func (c *Client) GetConfig() *config.Config {
 // PKIBootstrap returns a pkiClient and fetches a consensus.
 func PKIBootstrap(cfg *config.Config, linkKey wire.PrivateKey) (*pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
-	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
+	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	if err != nil {
 		return nil, nil, err
 	}
