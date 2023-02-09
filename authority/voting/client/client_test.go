@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -312,7 +311,7 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int, datadir string) (*config.Authority, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
+func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
 	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
@@ -338,11 +337,9 @@ func TestClient(t *testing.T) {
 	dialer := newMockDialer(logBackend)
 	peers := []*config.Authority{}
 
-	datadir := os.TempDir()
-
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i, datadir)
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i,)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)
@@ -350,7 +347,6 @@ func TestClient(t *testing.T) {
 	}
 	wg.Wait()
 	cfg := &Config{
-		DataDir:       datadir,
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,

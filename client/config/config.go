@@ -123,7 +123,7 @@ type NonvotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	scheme := wire.DefaultScheme
 
 	authLinkKey := scheme.NewEmptyPublicKey()
@@ -159,9 +159,8 @@ type VotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	cfg := &vClient.Config{
-		DataDir:       datadir,
 		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
@@ -183,12 +182,12 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	switch {
 	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg, linkKey, datadir)
+		return c.NonvotingAuthority.New(l, pCfg, linkKey)
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey, datadir)
+		return c.VotingAuthority.New(l, pCfg, linkKey)
 	}
 	return nil, errors.New("no Authority found")
 }
@@ -229,7 +228,6 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
-	DataDir            string
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
