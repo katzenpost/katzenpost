@@ -125,7 +125,7 @@ func NewSession(
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
-		DialContextFn:       proxyCfg.ToDialContext("authority"),
+		DialContextFn:       proxyCfg.ToDialContext(string(idHash[:])),
 		PreferedTransports:  cfg.Debug.PreferedTransports,
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Millisecond,
 		EnableTimeSync:      false, // Be explicit about it.
