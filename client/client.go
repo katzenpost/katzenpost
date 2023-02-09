@@ -62,7 +62,7 @@ func PKIBootstrap(cfg *config.Config, linkKey wire.PrivateKey) (*pki.Client, *pk
 		return nil, nil, err
 	}
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg, linkKey, cfg.DataDir)
+	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg, linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
