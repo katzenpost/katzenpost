@@ -18,14 +18,12 @@
 package config
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"golang.org/x/crypto/blake2b"
 
 	nvClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
@@ -137,14 +135,13 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKe
 	_, identityPublicKey := cert.Scheme.NewKeypair()
 	pem.FromPEMString(nvACfg.IdentityPublicKeyPem, identityPublicKey)
 
-	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
 	cfg := &nvClient.Config{
 		AuthorityLinkKey:     authLinkKey,
 		LinkKey:              linkKey,
 		LogBackend:           l,
 		Address:              nvACfg.Address,
 		AuthorityIdentityKey: identityPublicKey,
-		DialContextFn:        pCfg.ToDialContext(fmt.Sprintf("nonvoting: %x", linkHash[:])),
+		DialContextFn:        pCfg.ToDialContext(fmt.Sprintf("nonvoting: %x", linkKey.PublicKey().Sum256())),
 	}
 	return nvClient.New(cfg)
 }
@@ -163,22 +160,12 @@ type VotingAuthority struct {
 
 // New constructs a pki.Client with the specified voting authority config.
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
-	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
-	cLinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	b, err := linkKey.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-	err = cLinkKey.UnmarshalBinary(b)
-	if err != nil {
-		return nil, err
-	}
 	cfg := &vClient.Config{
 		DataDir:       datadir,
-		LinkKey:       cLinkKey,
+		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash[:])),
+		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
 	}
 	return vClient.New(cfg)
 }
