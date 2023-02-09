@@ -27,7 +27,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -86,20 +85,12 @@ func NewSession(
 	provider *pki.MixDescriptor) (*Session, error) {
 	var err error
 
-	// create a pkiclient for our own client lookups
-	// AND create a pkiclient for minclient's use
+	// create a pkiclient
 	proxyCfg := cfg.UpstreamProxyConfig()
 	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
-
-	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	pkiCacheClient := pkiclient.New(pkiClient2)
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
@@ -128,7 +119,7 @@ func NewSession(
 		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
-		PKIClient:           pkiCacheClient,
+		PKIClient:           pkiClient,
 		OnConnFn:            s.onConnection,
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
@@ -145,14 +136,8 @@ func NewSession(
 
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
-		pkiCacheClient.Halt()
 		return nil, err
 	}
-	// shutdown the pkiCacheClient when minclient halts
-	go func() {
-		s.minclient.Wait()
-		pkiCacheClient.Halt()
-	}()
 
 	// start the worker
 	s.Go(s.worker)
