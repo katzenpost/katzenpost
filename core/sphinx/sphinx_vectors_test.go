@@ -25,7 +25,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
@@ -102,7 +101,7 @@ func TestVectorSphinx(t *testing.T) {
 		// Unwrap the packet, validating the output.
 		for i := range test.Nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			privateKey := new(ecdh.PrivateKey)
+			privateKey := ecdhnike.EcdhScheme.NewEmptyPrivateKey()
 			rawKey, err := hex.DecodeString(test.Nodes[i].PrivateKey)
 			require.NoError(err)
 			err = privateKey.FromBytes(rawKey)

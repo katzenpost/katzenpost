@@ -29,9 +29,10 @@ import (
 func TestCtidhNike(t *testing.T) {
 	ctidhNike := new(CtidhNike)
 
-	alicePrivateKey, alicePublicKey := ctidhNike.NewKeypair()
+	alicePublicKey, alicePrivateKey, err := ctidhNike.GenerateKeyPair()
+	require.NoError(t, err)
 
-	tmp := ctidh.DerivePublicKey(alicePrivateKey.(*ctidh.PrivateKey))
+	tmp := ctidh.DerivePublicKey(alicePrivateKey.(*PrivateKey).privateKey)
 	require.Equal(t, alicePublicKey.Bytes(), tmp.Bytes())
 
 	bobPrivKey, bobPubKey := ctidh.GenerateKeyPair()

@@ -131,7 +131,10 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	}
 
 	// Derive the key material for each hop.
-	clientPrivateKey, clientPublicKey := s.nike.NewKeypair()
+	clientPublicKey, clientPrivateKey, err := s.nike.GenerateKeyPair()
+	if err != nil {
+		return nil, nil, err
+	}
 	defer clientPrivateKey.Reset()
 	defer clientPublicKey.Reset()
 
@@ -144,7 +147,6 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	keys[0] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 	defer keys[0].Reset()
 
-	var err error
 	groupElements[0], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 	if err != nil {
 		panic(err)

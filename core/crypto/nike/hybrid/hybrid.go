@@ -48,18 +48,24 @@ func (s *scheme) PrivateKeySize() int {
 	return s.first.PrivateKeySize() + s.second.PrivateKeySize()
 }
 
-func (s *scheme) NewKeypair() (nike.PrivateKey, nike.PublicKey) {
-	privKey1, pubKey1 := s.first.NewKeypair()
-	privKey2, pubKey2 := s.second.NewKeypair()
-	return &privateKey{
-			scheme: s,
-			first:  privKey1,
-			second: privKey2,
-		}, &publicKey{
+func (s *scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
+	pubKey1, privKey1, err := s.first.GenerateKeyPair()
+	if err != nil {
+		return nil, nil, err
+	}
+	pubKey2, privKey2, err := s.second.GenerateKeyPair()
+	if err != nil {
+		return nil, nil, err
+	}
+	return &publicKey{
 			scheme: s,
 			first:  pubKey1,
 			second: pubKey2,
-		}
+		}, &privateKey{
+			scheme: s,
+			first:  privKey1,
+			second: privKey2,
+		}, nil
 }
 
 func (s *scheme) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
@@ -109,6 +115,23 @@ func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
 		return nil, err
 	}
 	return pubkey, nil
+}
+
+func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
+	privkey := s.NewEmptyPrivateKey()
+	err := privkey.FromBytes(b)
+	if err != nil {
+		return nil, err
+	}
+	return privkey, nil
+}
+
+func (p *privateKey) Public() nike.PublicKey {
+	return &publicKey{
+		scheme: p.scheme,
+		first:  p.first.Public(),
+		second: p.second.Public(),
+	}
 }
 
 func (p *privateKey) Reset() {

@@ -38,7 +38,7 @@ func newNikeNode(require *require.Assertions, mynike nike.Scheme) *nodeParams {
 
 	_, err := rand.Read(n.id[:])
 	require.NoError(err, "newNikeNode(): failed to generate ID")
-	n.privateKey, n.publicKey = mynike.NewKeypair()
+	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
 	require.NoError(err, "newNikeNode(): NewKeypair() failed")
 	return n
 }

@@ -58,7 +58,10 @@ func benchNewNode(mynike nike.Scheme) *nodeParams {
 	if err != nil {
 		panic("wtf")
 	}
-	n.privateKey, n.publicKey = mynike.NewKeypair()
+	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
+	if err != nil {
+		panic("wtf")
+	}
 	return n
 }
 

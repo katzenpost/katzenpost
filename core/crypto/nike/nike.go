@@ -40,6 +40,8 @@ type Key interface {
 // private key material.
 type PrivateKey interface {
 	Key
+
+	Public() PublicKey
 }
 
 // PublicKey is an interface for types encapsulating
@@ -65,8 +67,8 @@ type Scheme interface {
 	// PrivateKeySize returns the size in bytes of the private key.
 	PrivateKeySize() int
 
-	// NewKeypair returns a newly generated key pair.
-	NewKeypair() (PrivateKey, PublicKey)
+	// GenerateKeyPair creates a new key pair.
+	GenerateKeyPair() (PublicKey, PrivateKey, error)
 
 	// DeriveSecret derives a shared secret given a private key
 	// from one party and a public key from another.
@@ -101,4 +103,7 @@ type Scheme interface {
 
 	// UnmarshalBinaryPublicKey loads a public key from byte slice.
 	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
+
+	// Unmarshals a PrivateKey from the provided buffer.
+	UnmarshalBinaryPrivateKey([]byte) (PrivateKey, error)
 }
