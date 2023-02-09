@@ -670,6 +670,7 @@ func TestDockerRenameContact(t *testing.T) {
 	a.NewContact("b", s[:])
 	b.NewContact("a", s[:])
 
+	// wait for key exchanges to complete
 loop1:
 	for {
 		ev := <-a.EventSink
@@ -694,6 +695,7 @@ loop2:
 
 	t.Log("Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
+	// wait for message to be delivered to spool
 loop3:
 	for {
 		ev := <-a.EventSink
@@ -709,9 +711,22 @@ loop3:
 		}
 	}
 
+	// wait for message to be received by b
+loop3a:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *MessageReceivedEvent:
+			t.Log("Message received by b")
+			if event.Nickname == "a" {
+				break loop3a
+			}
+		default:
+		}
+	}
 	t.Log("Sending message to a")
 	b.SendMessage("a", []byte("b->a"))
-
+	// wait for message to be delivered to spool
 loop4:
 	for {
 		ev := <-b.EventSink
@@ -724,7 +739,21 @@ loop4:
 		default:
 		}
 	}
+	// wait for message to be received by a
+loop4a:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageReceivedEvent:
+			t.Log("Message received by a")
+			if event.Nickname == "b" {
+				break loop4a
+			}
+		default:
+		}
+	}
 
+	// rename the contacts
 	t.Log("Renaming contact b")
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
@@ -736,6 +765,7 @@ loop4:
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 
+	// wait for failure sending message
 loop5:
 	for {
 		ev := <-a.EventSink
@@ -750,6 +780,7 @@ loop5:
 
 	// send message to the renamed contact
 	a.SendMessage("b2", []byte("a->b2"))
+	// wait for message to be delivered to spool
 loop6:
 	for {
 		ev := <-a.EventSink
@@ -764,6 +795,7 @@ loop6:
 		default:
 		}
 	}
+	// wait for message to be received by b
 loop7:
 	for {
 		ev := <-b.EventSink
@@ -792,22 +824,7 @@ loop7:
 		}
 	}
 	require.Equal(sent, 1)
-
-	if received > 2 {
-		t.Logf("Retransmission of message detected")
-		var last *Message
-		for _, msg := range c {
-			if last == nil {
-				last = msg
-			} else {
-				if bytes.Equal(last.Plaintext, msg.Plaintext) {
-					t.Logf("%s was retransmitted", last.Plaintext)
-				}
-			}
-		}
-	} else {
-		require.Equal(received, 2)
-	}
+	require.Equal(received, 2)
 
 	// clear conversation history
 	b.WipeConversation("a")
