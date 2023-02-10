@@ -13,15 +13,6 @@
 // representation of secret keys where the nonce seed is stored in expanded
 // form (instead of deriving it with sha512 for each signature)
 
-// It would be kind of useful to have
-// BlindedPrivateKey.FromBytes()
-// BlindedPrivateKey.ToBytes()
-// to enable passing around the derived keys, for instance to pass on
-// delegated privileges. Unfortunately checking the private scalars does
-// not seem trivial (since they are "malformed", ie no clamping), so it
-// seems like it could be a great footgun. Leaving it out for now, but
-// it's something to consider for the future I guess.
-
 // Note that use of Scalar.SetUniformBytes() is a bit unorthodox:
 // The API was designed to take 64 uniformly random bytes,
 // which are then reduced mod L. We "abuse" it by providing
@@ -41,19 +32,97 @@ package eddsa
 import (
 	"crypto/ed25519"
 	"crypto/sha512"
-
+	"crypto/subtle"
+	"encoding"
+	"errors"
 	"filippo.io/edwards25519"
 )
+
+var identity_element = [32]byte{1, 0}
 
 const (
 	// BlindFactorSize is the size in bytes of the blinding factors.
 	BlindFactorSize = ed25519.PublicKeySize
 )
 
+// Sanity checking of public keys.
+// We do NOT do check for small-order points here or otherwise validate the point.
+// This function is just here to catch accidentally-bad keys, basically.
+// Checks that p != G
+// Checks that p != 1
+// Checks that p != 0
+// Checks that L*p = 1
+func CheckPublicKey(pk *PublicKey) bool {
+	var result [32]byte
+	order_64 := [64]byte{0xed, 0xd3, 0xf5, 0x5c, 0x1a, 0x63, 0x12, 0x58, 0xd6, 0x9c,
+		0xf7, 0xa2, 0xde, 0xf9, 0xde, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10}
+	order_sc, _ := new(edwards25519.Scalar).SetUniformBytes(order_64[:])
+	pkA_n , err := new(edwards25519.Point).SetBytes(pk.Bytes())
+	if nil != err {
+		panic("failed to set edwards25519.Point.SetBytes(), incorrect size?")
+	}
+	pkA_n.ScalarMult(order_sc, pkA_n)
+	pk_is_1 := subtle.ConstantTimeCompare(identity_element[:], pk.Bytes())
+	copy(result[:], pkA_n.Bytes())
+	pk_mult_L_is_1 := subtle.ConstantTimeCompare(identity_element[:], result[:])
+	pk_is_G := subtle.ConstantTimeCompare(edwards25519.NewGeneratorPoint().Bytes(),pk.Bytes())
+
+	nulls := [32]byte{}
+	pk_is_0 := subtle.ConstantTimeCompare(nulls[:], pk.Bytes())
+	if (pk_is_0 << 3) | (pk_is_G << 2) | (pk_is_1 << 1) | pk_mult_L_is_1 == 1 {
+		return true
+	}
+	return false
+}
+
 // BlindedPrivateKey encapsulates a blinded PrivateKey.
 type BlindedPrivateKey struct {
 	blinded ed25519.PrivateKey
 }
+
+// Marshal a secret key to 32 bytes.
+func (k BlindedPrivateKey) MarshalBinary() (data []byte, err error) {
+	if k.blinded == nil || len(k.blinded) == 0 {
+		err = errors.New("BlindedPrivateKey.MarshalBinary() empty key")
+		return nil, err
+	}
+	ret := make([]byte, 32)
+	copy(ret, k.blinded[:32])
+	return ret, err
+}
+
+// Unmarshal 32 bytes to a private key. Rederives the public key.
+func (k *BlindedPrivateKey) UnmarshalBinary(data []byte) error {
+	if len(data) != 32 {
+		e := errors.New("BlindedPrivatekey.UnmarshalBinary: len(data) != 32")
+		if e == nil { panic("what") }
+		return e
+	}
+	// we could reuse the old k.blinded, but it's easier to throw it away:
+	k.blinded = make([]byte, 64)
+	copy(k.blinded[:32], data)
+	// ns = k.blinded (mod L)
+	newsec_scalar, err := new(edwards25519.Scalar).SetUniformBytes(k.blinded)
+	if err != nil {
+		return err
+	}
+	// ns * G (mod L)
+	pkxA_n := new(edwards25519.Point).ScalarBaseMult(newsec_scalar)
+	copy(k.blinded[32:], pkxA_n.Bytes())
+	if false == CheckPublicKey(k.PublicKey()) {
+		k.blinded = nil
+		return errors.New("Invalid marshalled data")
+	}
+	return nil
+}
+
+// static type check ensuring we implement the
+// encoding.BinaryMarshaler interface::
+var (
+	_ encoding.BinaryMarshaler = &BlindedPrivateKey{}
+	_ encoding.BinaryUnmarshaler = &BlindedPrivateKey{}
+)
 
 // PublicKey returns a PublicKey.
 func (b *BlindedPrivateKey) PublicKey() *PublicKey {
