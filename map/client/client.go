@@ -17,18 +17,23 @@
 package client
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/map/common"
+	"golang.org/x/crypto/hkdf"
+	"io"
 	"sort"
 )
 
 var (
 	PayloadSize       int
+	hash              = sha256.New
 	ErrStatusNotFound = errors.New("StatusNotFound")
 )
 
@@ -238,6 +243,37 @@ func WriteOnly(c *Client, woCap common.WriteOnlyCap) WOClient {
 	m.c = c
 	m.woCap = woCap
 	return m
+}
+
+// create a duplex using a shared secret
+func DuplexFromSeed(c *Client, initiator bool, secret []byte) RWClient {
+	salt := []byte("duplex initialized from seed is not for multi-party use")
+	keymaterial := hkdf.New(hash, secret, salt, nil)
+	a := &[eddsa.PrivateKeySize]byte{}
+	b := &[eddsa.PrivateKeySize]byte{}
+	if _, err := io.ReadFull(keymaterial, a[:]); err != nil {
+		panic(err)
+	}
+	if _, err := io.ReadFull(keymaterial, b[:]); err != nil {
+		panic(err)
+	}
+	pk1 := new(eddsa.PrivateKey)
+	pk2 := new(eddsa.PrivateKey)
+	// return the listener or dialer side of caps from seed
+	if initiator {
+		pk1.FromBytes(a[:])
+		pk2.FromBytes(b[:])
+	} else {
+		pk1.FromBytes(b[:])
+		pk2.FromBytes(a[:])
+	}
+
+	// initialize root capabilities for both keys
+	rw1 := common.NewRWCap(pk1)
+	rw2 := common.NewRWCap(pk2)
+
+	// initiator socket
+	return Duplex(c, rw1.ReadOnly(), rw2.WriteOnly())
 }
 
 // duplex holds a pair of ROClient and WOClient and implements
