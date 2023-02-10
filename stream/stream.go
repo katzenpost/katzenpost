@@ -166,7 +166,7 @@ func (r *ReTx) Push(i client.Item) error {
 	err := r.s.txFrame(m.f)
 	if err != nil {
 		// try again later
-		m.priority = time.Now().Add(retryDelay).UnixNano()
+		m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
 		r.s.txEnqueue(m)
 	}
 	return nil
@@ -468,7 +468,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	if err != nil {
 		// reschedule packet for transmission after retryDelay
 		// rather than 2 * epochtime.Period
-		m.priority = time.Now().Add(retryDelay).UnixNano()
+		m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
 	}
 	s.Lock()
 	s.txEnqueue(m)
