@@ -217,23 +217,23 @@ func (w *woMap) Put(addr []byte, payload []byte) error {
 }
 
 // ReadWrite returns a Transport using map that can read or write with Get() and Put()
-func ReadWriteMap(c *Client, rwCap common.ReadWriteCap) RWClient {
+func ReadWrite(c *Client, rwCap common.ReadWriteCap) RWClient {
 	m := new(rwMap)
 	m.c = c
 	m.rwCap = rwCap
 	return m
 }
 
-// ReadOnlyMap returns a Transport using map that can read with Get() only
-func ReadOnlyMap(c *Client, roCap common.ReadOnlyCap) ROClient {
+// ReadOnly returns a Transport using map that can read with Get() only
+func ReadOnly(c *Client, roCap common.ReadOnlyCap) ROClient {
 	m := new(roMap)
 	m.c = c
 	m.roCap = roCap
 	return m
 }
 
-// WriteOnlyMap returns a Transport using map that can write with Put() only
-func WriteOnlyMap(c *Client, woCap common.WriteOnlyCap) WOClient {
+// WriteOnly returns a Transport using map that can write with Put() only
+func WriteOnly(c *Client, woCap common.WriteOnlyCap) WOClient {
 	m := new(woMap)
 	m.c = c
 	m.woCap = woCap
