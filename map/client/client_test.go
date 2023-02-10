@@ -82,12 +82,12 @@ func TestCreateMap(t *testing.T) {
 	require.NoError(err)
 	require.Equal(payload, payload2)
 
-	payload = []byte("goodbye world")
+	payload2 = []byte("goodbye world")
 	// verify that Writing with the WOKey works
 	woKey := rwCap.WriteOnly().Write(addr)
 	id = rwCap.WriteOnly().Addr(addr)
-	err = c.Put(id, woKey.Sign(payload), payload)
+	err = c.Put(id, woKey.Sign(payload2), payload2)
 	require.NoError(err)
 	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
-	require.Equal(payload, resp)
+	require.Equal(payload2, resp)
 }
