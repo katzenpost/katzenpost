@@ -91,7 +91,7 @@ type ROCap struct {
 	PCap
 	// Read capability keys
 	CapRSk *eddsa.BlindedPrivateKey
-	capRPk *eddsa.PublicKey
+	CapRPk *eddsa.PublicKey
 }
 
 // WOCap holds the keys implementing Write Capabilities using blinded ed25519 keys
@@ -99,7 +99,7 @@ type WOCap struct {
 	PCap
 	// Write capability keys
 	CapWSk *eddsa.BlindedPrivateKey
-	capWPk *eddsa.PublicKey
+	CapWPk *eddsa.PublicKey
 }
 
 // Read(addr) returns a key from which to sign the command reading from addr
@@ -117,7 +117,7 @@ func (s *RWCap) ReadOnly() *ROCap {
 	ro := &ROCap{}
 	ro.CapPk = s.CapPk
 	ro.CapRSk = s.CapRSk
-	ro.capRPk = s.capRPk
+	ro.CapRPk = s.CapRPk
 	return ro
 }
 
@@ -126,7 +126,7 @@ func (s *RWCap) WriteOnly() *WOCap {
 	wo := &WOCap{}
 	wo.CapPk = s.CapPk
 	wo.CapWSk = s.CapWSk
-	wo.capWPk = s.capWPk
+	wo.CapWPk = s.CapWPk
 	return wo
 }
 
@@ -159,8 +159,8 @@ func NewRWCap(root *eddsa.PrivateKey) *RWCap {
 	rw.CapSk = root
 	rw.CapPk = pRoot
 	rw.CapRSk = root.Blind(ReadCap)
-	rw.capRPk = pRoot.Blind(ReadCap)
+	rw.CapRPk = pRoot.Blind(ReadCap)
 	rw.CapWSk = root.Blind(WriteCap)
-	rw.capWPk = pRoot.Blind(WriteCap)
+	rw.CapWPk = pRoot.Blind(WriteCap)
 	return rw
 }
