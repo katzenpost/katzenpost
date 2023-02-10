@@ -809,6 +809,38 @@ func (s *Stream) Start() {
 	s.Go(s.writer)
 }
 
+// DialDuplex returns a stream using capability backed map storage (Duplex)
+func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
+	c, _ := mClient.NewClient(s)
+	st := newStream(duplexFromSeed(c, false, []byte(addr)))
+	a := &StreamAddr{network: network, address: addr}
+	st.keyAsDialer(a)
+	st.Start()
+	return st, nil
+}
+
+// ListenDuplex returns a Stream using capability map storage (Duplex) as initiator
+func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
+	c, _ := mClient.NewClient(s)
+	st := newStream(duplexFromSeed(c, true, []byte(addr)))
+	a := &StreamAddr{network: network, address: addr}
+	st.keyAsListener(a)
+	st.Start()
+	return st, nil
+}
+
+// NewDuplex returns a Stream using capability map storage (Duplex) a Listener
+func NewDuplex(s *client.Session) (*Stream, error) {
+	c, _ := mClient.NewClient(s)
+	a := &StreamAddr{network: "", address: generate()}
+	st := newStream(duplexFromSeed(c, true, []byte(a.String())))
+	err := st.keyAsListener(a)
+	if err != nil {
+		return nil, err
+	}
+	return st, nil
+}
+
 func init() {
 	b, _ := cbor.Marshal(Frame{})
 	cborFrameOverhead := len(b)

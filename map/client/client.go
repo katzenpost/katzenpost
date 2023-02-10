@@ -239,6 +239,33 @@ func WriteOnlyMap(c *Client, woCap common.WriteOnlyCap) WOClient {
 	m.woCap = woCap
 	return m
 }
+
+// duplex holds a pair of ROClient and WOClient and implements
+// RWClient with different read/write root capabilities so that a pair
+// of clients may use the capabilities to communicate unidirectionally
+type duplex struct {
+	ro ROClient // used to read data to client
+	wo WOClient // used to send data to peer
+}
+
+// Put implements RWClient.Put
+func (s *duplex) Put(addr []byte, payload []byte) error {
+	return s.wo.Put(addr, payload)
+}
+
+// Put implements RWClient.Get
+func (s *duplex) Get(addr []byte) ([]byte, error) {
+	return s.ro.Get(addr)
+}
+
+// Duplex returns a RWclient from a pair of ReadOnly and WriteOnly capabilities
+func Duplex(c *Client, r common.ReadOnlyCap, w common.WriteOnlyCap) RWClient {
+	s := new(duplex)
+	s.wo = WriteOnly(c, w)
+	s.ro = ReadOnly(c, r)
+	return s
+}
+
 func init() {
 	b, _ := cbor.Marshal(common.MapRequest{})
 	cborFrameOverhead := len(b)
