@@ -769,18 +769,21 @@ func NewStream(c Transport) *Stream {
 }
 
 // LoadStream initializes a Stream from state saved by Save()
-func LoadStream(c Transport, state []byte) (*Stream, error) {
-	s := new(Stream)
-	s.c = c
-	err := cbor.Unmarshal(state, s)
+func LoadStream(s *client.Session, state []byte) (*Stream, error) {
+	st := new(Stream)
+	err := cbor.Unmarshal(state, st)
 	if err != nil {
 		return nil, err
 	}
-	s.R.s = s
-	s.TQ.NextQ = s.R
-	s.TQ.Timer = time.NewTimer(0)
-	s.TQ.L = new(sync.Mutex)
-	return s, nil
+	c, _ := mClient.NewClient(s)
+	// XXX: we need to save whether this stream was initiator!
+	st.c = mClient.DuplexFromSeed(c, false, []byte(st.LocalAddr().String()))
+
+	st.R.s = st
+	st.TQ.NextQ = st.R
+	st.TQ.Timer = time.NewTimer(0)
+	st.TQ.L = new(sync.Mutex)
+	return st, nil
 }
 
 // Save serializes the current state of the Stream
@@ -809,7 +812,8 @@ func (s *Stream) Start() {
 // DialDuplex returns a stream using capability backed map storage (Duplex)
 func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
-	st := newStream(duplexFromSeed(c, false, []byte(addr)))
+	t := mClient.DuplexFromSeed(c, false, []byte(addr))
+	st := newStream(t)
 	a := &StreamAddr{network: network, address: addr}
 	st.keyAsDialer(a)
 	st.Start()
@@ -819,7 +823,7 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 // ListenDuplex returns a Stream using capability map storage (Duplex) as initiator
 func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
-	st := newStream(duplexFromSeed(c, true, []byte(addr)))
+	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)))
 	a := &StreamAddr{network: network, address: addr}
 	st.keyAsListener(a)
 	st.Start()
@@ -828,10 +832,13 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 
 // NewDuplex returns a Stream using capability map storage (Duplex) a Listener
 func NewDuplex(s *client.Session) (*Stream, error) {
-	c, _ := mClient.NewClient(s)
+	c, err := mClient.NewClient(s)
+	if err != nil {
+		return nil, err
+	}
 	a := &StreamAddr{network: "", address: generate()}
-	st := newStream(duplexFromSeed(c, true, []byte(a.String())))
-	err := st.keyAsListener(a)
+	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())))
+	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err
 	}

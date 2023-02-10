@@ -92,14 +92,22 @@ func TestCreateStream(t *testing.T) {
 	session := getSession(t)
 	require.NotNil(session)
 
+	// get a client
 	c, err := mClient.NewClient(session)
 	require.NoError(err)
-	require.NotNil(c)
 
-	// our view of stream
-	s := NewStream(c)
-	// "other end" of stream
-	r, err := Dial(c, "", s.RemoteAddr().String())
+	// get a duplex as initiator
+	initiator := true
+	secret := make([]byte, 32)
+	io.ReadFull(rand.Reader, secret)
+	transport := mClient.DuplexFromSeed(c, initiator, secret)
+
+	// listener (initiator) of stream
+	s := NewStream(transport)
+
+	// dialer (client) of stream
+	dtransport := mClient.DuplexFromSeed(c, false, secret)
+	r, err := Dial(dtransport, "", s.RemoteAddr().String())
 	require.NoError(err)
 
 	msg := []byte("Hello World")
@@ -158,13 +166,6 @@ func TestStreamFragmentation(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	asecret := &[keySize]byte{}
-	bsecret := &[keySize]byte{}
-
-	// initialize handshake secrets from random
-	io.ReadFull(rand.Reader, asecret[:])
-	io.ReadFull(rand.Reader, bsecret[:])
-
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 	sidechannel := make(chan string, 0)
@@ -173,7 +174,7 @@ func TestStreamFragmentation(t *testing.T) {
 	addr := &StreamAddr{"address", generate()}
 	// worker A
 	go func() {
-		s, err := Listen(c, "", addr)
+		s, err := ListenDuplex(session, "", addr.String())
 		require.NoError(err)
 		for i := 0; i < 4; i++ {
 			entropic := make([]byte, 4242) // ensures fragmentation
@@ -207,7 +208,8 @@ func TestStreamFragmentation(t *testing.T) {
 
 	// worker B
 	go func() {
-		s, err := Dial(c, "", addr.String())
+		d := mClient.DuplexFromSeed(c, false, []byte(addr.String()))
+		s, err := Dial(d, "", addr.String())
 		require.NoError(err)
 		for {
 			msg, ok := <-sidechannel
@@ -263,14 +265,11 @@ func TestCBORSerialization(t *testing.T) {
 	session := getSession(t)
 	require.NotNil(session)
 
-	c, err := mClient.NewClient(session)
-	require.NoError(err)
-	require.NotNil(c)
-
 	// our view of stream
-	s := NewStream(c)
 	// "other end" of stream
-	r, err := Dial(c, "", s.RemoteAddr().String())
+	s, err := NewDuplex(session)
+	require.NoError(err)
+	r, err := DialDuplex(session, "", s.RemoteAddr().String())
 	require.NoError(err)
 
 	type msg struct {
@@ -313,14 +312,11 @@ func TestStreamSerialize(t *testing.T) {
 	session := getSession(t)
 	require.NotNil(session)
 
-	c, err := mClient.NewClient(session)
+	// Initialize a capability backed stream (Duplex) as listener
+	s, err := NewDuplex(session)
 	require.NoError(err)
-	require.NotNil(c)
-
-	// our view of stream
-	s := NewStream(c)
 	// "other end" of stream
-	r, err := Dial(c, "", s.RemoteAddr().String())
+	r, err := DialDuplex(session, "", s.RemoteAddr().String())
 	require.NoError(err)
 
 	type msg struct {
@@ -358,13 +354,13 @@ func TestStreamSerialize(t *testing.T) {
 		s.Halt()
 		senderStreamState, err := s.Save()
 		require.NoError(err)
-		s, err = LoadStream(c, senderStreamState)
+		s, err = LoadStream(session, senderStreamState)
 		require.NoError(err)
 		s.Start()
 		r.Halt()
 		receiverStreamState, err := r.Save()
 		require.NoError(err)
-		r, err = LoadStream(c, receiverStreamState)
+		r, err = LoadStream(session, receiverStreamState)
 		require.NoError(err)
 		r.Start()
 	}
