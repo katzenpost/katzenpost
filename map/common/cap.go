@@ -34,125 +34,133 @@ func (m MessageID) Bytes() []byte {
 	return m[:]
 }
 
+type Cap interface {
+	Addr(addr []byte) MessageID
+}
+
 // ReadWriteCap describes a Capability that has Read and Write
 // capabilities and can return ReadOnly and WriteOnly capabilities
 type ReadWriteCap interface {
-	Addr(addr []byte) MessageID
-	Read(addr []byte) *eddsa.BlindedPrivateKey
-	Write(addr []byte) *eddsa.BlindedPrivateKey
+	Cap
+	ReadOnlyCap
+	WriteOnlyCap
 	ReadOnly() ReadOnlyCap
 	WriteOnly() WriteOnlyCap
 }
 
 // ReadOnlyCap describes a Capability that has Read capability only.
 type ReadOnlyCap interface {
-	Addr(addr []byte) MessageID
+	Cap
 	Read(addr []byte) *eddsa.BlindedPrivateKey
 }
 
 // ReadOnlyCap describes a Capability that has Write capability only.
 type WriteOnlyCap interface {
-	Addr(addr []byte) MessageID
+	Cap
 	Write(addr []byte) *eddsa.BlindedPrivateKey
 }
 
-// rwCap holds the keys implementing Read/Write Capabilities using blinded ed25519 keys
-type rwCap struct {
-	// capability root private key from which other keys are derived
-	capSk *eddsa.PrivateKey
-	capPk *eddsa.PublicKey
-
-	// Read capability keys
-	capRSk *eddsa.BlindedPrivateKey
-	capRPk *eddsa.PublicKey
-
-	// Write capability keys
-	capWSk *eddsa.BlindedPrivateKey
-	capWPk *eddsa.PublicKey
-}
-
-// roCap holds the keys implementing Read Capabilities using blinded ed25519 keys
-type roCap struct {
-	// capability root public key to derive address mappings
-	capPk *eddsa.PublicKey
-	// Read capability keys
-	capRSk *eddsa.BlindedPrivateKey
-	capRPk *eddsa.PublicKey
-}
-
-// woCap holds the keys implementing Write Capabilities using blinded ed25519 keys
-type woCap struct {
-	// capability root public key to derive address mappings
-	capPk *eddsa.PublicKey
-	// Write capability keys
-	capWSk *eddsa.BlindedPrivateKey
-	capWPk *eddsa.PublicKey
+// PCap holds CapPk and Addr method
+type PCap struct {
+	CapPk *eddsa.PublicKey
 }
 
 // Addr returns the capability id (publickey) for addr, used as map address
-func (s *rwCap) Addr(addr []byte) MessageID {
+func (s *PCap) Addr(addr []byte) MessageID {
 	// returns the capability derived from the root key
 	// mapping address to a public identity key contained in MessageID
 	// which provides ReadPk and WritePk methods to verify Signatures
 	// from the Read() and Write() capability keys help by Cap
-	capAddr := s.capPk.Blind(addr)
+	capAddr := s.CapPk.Blind(addr)
 	var id MessageID
 	copy(id[:], capAddr.Bytes())
 	return id
 }
 
-// Addr maps address to a capability ID
-func (s *roCap) Addr(addr []byte) MessageID {
-	capAddr := s.capPk.Blind(addr)
-	var id MessageID
-	copy(id[:], capAddr.Bytes())
-	return id
+// RWCap holds the keys implementing Read/Write Capabilities using blinded ed25519 keys
+type RWCap struct {
+	PCap
+	ROCap
+	WOCap
+	// capability root private key from which other keys are derived
+	CapSk *eddsa.PrivateKey
+}
+
+// ROCap holds the keys implementing Read Capabilities using blinded ed25519 keys
+type ROCap struct {
+	PCap
+	// Read capability keys
+	CapRSk *eddsa.BlindedPrivateKey
+	capRPk *eddsa.PublicKey
+}
+
+// WOCap holds the keys implementing Write Capabilities using blinded ed25519 keys
+type WOCap struct {
+	PCap
+	// Write capability keys
+	CapWSk *eddsa.BlindedPrivateKey
+	capWPk *eddsa.PublicKey
 }
 
 // Read(addr) returns a key from which to sign the command reading from addr
-func (s *roCap) Read(addr []byte) *eddsa.BlindedPrivateKey {
-	return s.capRSk.Blind(addr)
-}
-
-// Addr maps address to a capability ID
-func (s *woCap) Addr(addr []byte) MessageID {
-	capAddr := s.capPk.Blind(addr)
-	var id MessageID
-	copy(id[:], capAddr.Bytes())
-	return id
+func (s *ROCap) Read(addr []byte) *eddsa.BlindedPrivateKey {
+	return s.CapRSk.Blind(addr)
 }
 
 // Write(addr) returns a key from which to sign the command writing to addr
-func (s *woCap) Write(addr []byte) *eddsa.BlindedPrivateKey {
-	return s.capWSk.Blind(addr)
-}
-
-// Read(addr) returns a key from which to sign the command reading from addr
-func (s *rwCap) Read(addr []byte) *eddsa.BlindedPrivateKey {
-	return s.capRSk.Blind(addr)
-}
-
-// Write(addr) returns a key from which to sign the command writing to addr
-func (s *rwCap) Write(addr []byte) *eddsa.BlindedPrivateKey {
-	return s.capWSk.Blind(addr)
+func (s *WOCap) Write(addr []byte) *eddsa.BlindedPrivateKey {
+	return s.CapWSk.Blind(addr)
 }
 
 // RO returns a ReadOnlyCap from RWCap
-func (s *rwCap) ReadOnly() ReadOnlyCap {
-	return &roCap{capPk: s.capPk, capRSk: s.capRSk, capRPk: s.capRPk}
+func (s *RWCap) ReadOnly() *ROCap {
+	ro := &ROCap{}
+	ro.CapPk = s.CapPk
+	ro.CapRSk = s.CapRSk
+	ro.capRPk = s.capRPk
+	return ro
 }
 
 // WO returns a WriteOnlyCap from RWCap
-func (s *rwCap) WriteOnly() WriteOnlyCap {
-	return &woCap{capPk: s.capPk, capWSk: s.capWSk, capWPk: s.capWPk}
+func (s *RWCap) WriteOnly() *WOCap {
+	wo := &WOCap{}
+	wo.CapPk = s.CapPk
+	wo.CapWSk = s.CapWSk
+	wo.capWPk = s.capWPk
+	return wo
 }
 
-// NewCap returns a Cap initialized with capability keys from a root key
-func NewRWCap(root *eddsa.PrivateKey) ReadWriteCap {
-	pRoot := root.PublicKey()
-	c := &rwCap{capSk: root, capPk: pRoot,
-		capRSk: root.Blind(ReadCap), capRPk: pRoot.Blind(ReadCap),
-		capWSk: root.Blind(WriteCap), capWPk: pRoot.Blind(WriteCap),
+// NewROCap returns a Cap initialized with read capability and root public key
+func NewWOCap(pRoot *eddsa.PublicKey, wSk *eddsa.BlindedPrivateKey) *WOCap {
+	wo := &WOCap{}
+	wo.CapPk = pRoot
+	wo.CapWSk = wSk
+	if wSk.PublicKey() != pRoot.Blind(WriteCap) {
+		panic("wtf")
 	}
-	return c
+	return wo
+}
+
+// NewROCap returns a Cap initialized with read capability and root public key
+func NewROCap(pRoot *eddsa.PublicKey, rSk *eddsa.BlindedPrivateKey) *ROCap {
+	ro := &ROCap{}
+	ro.CapPk = pRoot
+	ro.CapRSk = rSk
+	if rSk.PublicKey() != pRoot.Blind(ReadCap) {
+		panic("wtf")
+	}
+	return ro
+}
+
+// NewRWCap returns a Cap initialized with capability keys from a root key
+func NewRWCap(root *eddsa.PrivateKey) *RWCap {
+	pRoot := root.PublicKey()
+	rw := &RWCap{}
+	rw.CapSk = root
+	rw.CapPk = pRoot
+	rw.CapRSk = root.Blind(ReadCap)
+	rw.capRPk = pRoot.Blind(ReadCap)
+	rw.CapWSk = root.Blind(WriteCap)
+	rw.capWPk = pRoot.Blind(WriteCap)
+	return rw
 }
