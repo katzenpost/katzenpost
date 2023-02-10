@@ -464,7 +464,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	nonce := [nonceSize]byte{}
 	copy(nonce[:], frame_id[:nonceSize])
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
-	err = s.c.Put(frame_id, ciphertext)
+	err = s.c.Put(frame_id[:], ciphertext)
 	if err != nil {
 		// reschedule packet for transmission after retryDelay
 		// rather than 2 * epochtime.Period
@@ -640,7 +640,7 @@ func (s *Stream) readFrame() (*Frame, error) {
 	// s.c.Get() is a blocking call, so wrap in a goroutine so
 	// we can select on s.HaltCh() and
 	f := func() {
-		ciphertext, err := s.c.Get(frame_id)
+		ciphertext, err := s.c.Get(frame_id[:])
 		if err != nil {
 			fc <- err
 			return
@@ -735,10 +735,7 @@ func (s *Stream) RemoteAddr() *StreamAddr {
 }
 
 // Transport describes the interface to Get or Put Frames
-type Transport interface {
-	Put(ID common.MessageID, payload []byte) error
-	Get(ID common.MessageID) ([]byte, error)
-}
+type Transport mClient.RWClient
 
 func newStream(c Transport) *Stream {
 	s := new(Stream)
@@ -759,7 +756,7 @@ func newStream(c Transport) *Stream {
 }
 
 // NewStream generates a new address and starts the read/write workers
-//func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
+// func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
 func NewStream(c Transport) *Stream {
 	s := newStream(c)
 	addr := &StreamAddr{network: "", address: generate()}
