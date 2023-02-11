@@ -84,7 +84,10 @@ type Stream struct {
 	worker.Worker
 
 	// address of the Stream
-	addr *StreamAddr
+	Addr *StreamAddr
+
+	// Initiator is true if Stream is created by NewStream or Listen methods
+	Initiator bool
 
 	c Transport
 	// frame encryption secrets
@@ -507,7 +510,8 @@ func (s *Stream) keyAsDialer(addr *StreamAddr) error {
 	if err != nil {
 		return err
 	}
-	s.addr = addr
+	s.Addr = addr
+	s.Initiator = false
 	salt := []byte("stream_reader_writer_keymaterial")
 	reader_keymaterial := hkdf.New(hash, a[:], salt, nil)
 	writer_keymaterial := hkdf.New(hash, b[:], salt, nil)
@@ -583,7 +587,8 @@ func (s *Stream) keyAsListener(addr *StreamAddr) error {
 	if err != nil {
 		return err
 	}
-	s.addr = addr
+	s.Addr = addr
+	s.Initiator = true
 	salt := []byte("stream_reader_writer_keymaterial")
 	reader_keymaterial := hkdf.New(hash, b[:], salt, nil)
 	writer_keymaterial := hkdf.New(hash, a[:], salt, nil)
@@ -726,12 +731,12 @@ func (s *StreamAddr) String() string {
 
 // LocalAddr implements net.Addr LocalAddr()
 func (s *Stream) LocalAddr() *StreamAddr {
-	return s.addr
+	return s.Addr
 }
 
 // LocalAddr implements net.Conn RemoteAddr()
 func (s *Stream) RemoteAddr() *StreamAddr {
-	return s.addr
+	return s.Addr
 }
 
 // Transport describes the interface to Get or Put Frames
@@ -777,7 +782,7 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	}
 	c, _ := mClient.NewClient(s)
 	// XXX: we need to save whether this stream was initiator!
-	st.c = mClient.DuplexFromSeed(c, false, []byte(st.LocalAddr().String()))
+	st.c = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
 
 	st.R.s = st
 	st.TQ.NextQ = st.R
