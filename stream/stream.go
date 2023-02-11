@@ -6,15 +6,18 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
 	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/map/common"
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/nacl/secretbox"
+	"gopkg.in/op/go-logging.v1"
 	"io"
 	"os"
 	"sync"
@@ -85,6 +88,7 @@ type Stream struct {
 
 	// address of the Stream
 	addr *StreamAddr
+	log  *logging.Logger
 
 	c Transport
 	// frame encryption secrets
@@ -324,6 +328,7 @@ func (s *Stream) Close() error {
 func (s *Stream) writer() {
 	for {
 
+		s.log.Debugf("writer() top of loop")
 		select {
 		case <-s.HaltCh():
 			return
@@ -334,17 +339,23 @@ func (s *Stream) writer() {
 		s.Lock()
 		switch s.WState {
 		case StreamClosed:
+			s.log.Debugf("writer() StreamClosed")
 			s.onStreamClose <- struct{}{}
 			s.Unlock()
 			return
 		case StreamOpen, StreamClosing:
+			s.log.Debugf("writer() StreamOpen|StreamClosing")
 			if s.ReadIdx-s.AckIdx >= s.WindowSize {
+				s.log.Debugf("writer() WindowSize: mustAck")
 				mustAck = true
 			}
 			if s.RState == StreamClosed || s.WState == StreamClosing {
 				mustTeardown = true
 				if s.WriteBuf.Len() != 0 {
+					s.log.Debugf("writer() data to send: !mustTeardown")
 					mustTeardown = false
+				} else {
+					s.log.Debugf("writer() mustTeardown")
 				}
 				if s.ReadIdx-s.AckIdx > 0 {
 					mustAck = true
@@ -353,17 +364,32 @@ func (s *Stream) writer() {
 			if !mustAck && !mustTeardown {
 				s.R.Lock()
 				// must wait for Ack before continuing to transmit
-				mustWait := uint64(len(s.R.Wack)) >= s.WindowSize || s.WriteBuf.Len() == 0
+				numWaitingAck := len(s.R.Wack)
+
+				mustWaitForAck := uint64(numWaitingAck) >= s.WindowSize
+				if mustWaitForAck {
+					s.log.Debugf("mustWaitForAck: waiting: %d", numWaitingAck)
+				}
+				mustWaitForData := s.WriteBuf.Len() == 0
+				if mustWaitForData {
+					s.log.Debugf("mustWaitForData")
+				}
+				mustWait :=  mustWaitForAck || mustWaitForData
 				if s.WState == StreamClosing {
+					s.log.Debugf("writer() StreamClosing !mustWait")
 					mustWait = false
 				}
 				s.R.Unlock()
 				if mustWait {
+					s.log.Debugf("writer() sleeping")
 					s.Unlock()
 					select {
 					case <-s.onFlush:
+						s.log.Debugf("writer() woke onFlush")
 					case <-s.onAck:
+						s.log.Debugf("writer() woke onAck")
 					case <-s.HaltCh():
+						s.log.Debugf("writer() Halt()")
 						return
 					}
 					continue // re-evaluate all of the conditions above after wakeup!
@@ -372,11 +398,13 @@ func (s *Stream) writer() {
 		}
 
 		f := new(Frame)
+		s.log.Debugf("Sending frame for %d", s.WriteIdx)
 		f.id = s.WriteIdx
 		f.Ack = s.ReadIdx
 
 		if mustTeardown {
 			// final Ack and frame transmitted
+			s.log.Debugf("Setting WState.StreamClosed and StreamEnd")
 			s.WState = StreamClosed
 			f.Type = StreamEnd
 		}
@@ -390,15 +418,30 @@ func (s *Stream) writer() {
 		}
 		f.Payload = f.Payload[:n]
 		if n > 0 || mustAck || mustTeardown {
+			s.log.Debugf("txFrame on condition:")
+			if mustAck {
+				s.log.Debugf("mustAck")
+			}
+			if mustTeardown {
+				s.log.Debugf("mustTeardown")
+			}
+			if n > 0 {
+				s.log.Debugf("n>0")
+			} else {
+				s.log.Debugf("n==0")
+			}
 			err = s.txFrame(f)
 			switch err {
 			case nil:
+				s.log.Debugf("txFrame OK: do.OnWrite()")
 				s.doOnWrite()
 			default:
+				s.log.Debugf("txFrame err: do.OnWrite()")
 				select {
 				case <-s.HaltCh():
 					return
 				case <-time.After(retryDelay):
+					s.log.Debugf("txFrame err: after retryDelay")
 				}
 				continue
 			}
@@ -466,9 +509,12 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	ciphertext := secretbox.Seal(nil, serialized, &nonce, frame_key)
 	err = s.c.Put(frame_id[:], ciphertext)
 	if err != nil {
+		s.log.Debugf("txFrame: Put() failed with %s", err)
 		// reschedule packet for transmission after retryDelay
 		// rather than 2 * epochtime.Period
-		m.priority = uint64(time.Now().Add(retryDelay).UnixNano())
+		newPriority :=uint64(time.Now().Add(retryDelay).UnixNano())
+		s.log.Debugf("txFrame: setting priority to %s for retry", time.Unix(0, int64(newPriority)))
+		m.priority = newPriority
 	}
 	s.Lock()
 	s.txEnqueue(m)
@@ -739,6 +785,12 @@ type Transport mClient.RWClient
 
 func newStream(c Transport) *Stream {
 	s := new(Stream)
+
+	logBackend, err := log.New("", "DEBUG", false)
+	if err != nil {
+		panic(err)
+	}
+	s.log = logBackend.GetLogger(fmt.Sprintf("Stream: %x", &s))
 	s.c = c
 	s.RState = StreamOpen
 	s.WState = StreamOpen
@@ -815,6 +867,9 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
 	st := newStream(t)
 	a := &StreamAddr{network: network, address: addr}
+	st.log = s.GetLogger()
+	st.log.Debugf("DialDuplex: DuplexFromSeed: %x", []byte(a.String()))
+
 	st.keyAsDialer(a)
 	st.Start()
 	return st, nil
@@ -825,6 +880,8 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)))
 	a := &StreamAddr{network: network, address: addr}
+	st.log = s.GetLogger()
+	st.log.Debugf("ListenDuplex: DuplexFromSeed: %x", []byte(a.String()))
 	st.keyAsListener(a)
 	st.Start()
 	return st, nil
