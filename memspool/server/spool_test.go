@@ -28,6 +28,7 @@ import (
 )
 
 func TestSpool(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	key := new(eddsa.PublicKey)
@@ -49,6 +50,7 @@ func TestSpool(t *testing.T) {
 }
 
 func TestMemSpoolMapBasics(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	privKey, err := eddsa.NewKeypair(rand.NewMath())
@@ -90,6 +92,7 @@ func TestMemSpoolMapBasics(t *testing.T) {
 }
 
 func TestPersistence(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	privKey, err := eddsa.NewKeypair(rand.NewMath())

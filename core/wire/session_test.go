@@ -47,6 +47,7 @@ func (s *stubAuthenticator) IsPeerValid(peer *PeerCredentials) bool {
 }
 
 func TestSessionIntegration(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -173,6 +174,7 @@ func TestSessionIntegration(t *testing.T) {
 }
 
 func TestAuthenticateMessageToBytes(t *testing.T) {
+	t.Parallel()
 	m := authenticateMessage{
 		ad: make([]byte, MaxAdditionalDataLength+1),
 	}
@@ -183,6 +185,7 @@ func TestAuthenticateMessageToBytes(t *testing.T) {
 }
 
 func TestAuthenticateMessageFromBytes(t *testing.T) {
+	t.Parallel()
 	b := make([]byte, authLen-1)
 	f := func() {
 		authenticateMessageFromBytes(b)
@@ -191,6 +194,7 @@ func TestAuthenticateMessageFromBytes(t *testing.T) {
 }
 
 func TestNewSessionErrors(t *testing.T) {
+	t.Parallel()
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	userForwardPayloadLength := 3000
 	withSURB := true
@@ -265,6 +269,7 @@ func TestNewSessionErrors(t *testing.T) {
 }
 
 func TestErrorInvalidStatePeerCreds(t *testing.T) {
+	t.Parallel()
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	userForwardPayloadLength := 3000
 	withSURB := true
@@ -299,6 +304,7 @@ func TestErrorInvalidStatePeerCreds(t *testing.T) {
 }
 
 func TestErrorInvalidStateClockSkew(t *testing.T) {
+	t.Parallel()
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	userForwardPayloadLength := 3000
 	withSURB := true

@@ -37,6 +37,7 @@ type kemNodeParams struct {
 }
 
 func TestKEMSphinxSimple(t *testing.T) {
+	t.Parallel()
 	mykem := hybrid.Kyber768X25519()
 	withSURB := false
 	geo := KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
@@ -45,6 +46,7 @@ func TestKEMSphinxSimple(t *testing.T) {
 }
 
 func TestKEMSphinxGeometry(t *testing.T) {
+	t.Parallel()
 	withSURB := false
 	geo := KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", geo.HeaderLength)
@@ -65,6 +67,7 @@ func TestKEMSphinxGeometry(t *testing.T) {
 }
 
 func TestKEMForwardSphinx(t *testing.T) {
+	t.Parallel()
 	const testPayload = "Only the mob and the elite can be attracted by the momentum of totalitarianism itself. The masses have to be won by propaganda."
 
 	mykem := hybrid.Kyber768X25519()

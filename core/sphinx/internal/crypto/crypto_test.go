@@ -31,6 +31,7 @@ import (
 )
 
 func TestHash(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	var src [1024]byte
@@ -44,6 +45,7 @@ func TestHash(t *testing.T) {
 }
 
 func TestVectorHash(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	mesg, err := hex.DecodeString("f72fbd7f19e0f192524aea4973354479d6507d964242b30ded31c87e81c5c889")
 	assert.NoError(err)
@@ -54,6 +56,7 @@ func TestVectorHash(t *testing.T) {
 }
 
 func TestMAC(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -88,6 +91,7 @@ func TestMAC(t *testing.T) {
 }
 
 func TestVectorMAC(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	var key [MACKeyLength]byte
@@ -105,6 +109,7 @@ func TestVectorMAC(t *testing.T) {
 }
 
 func TestStream(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -135,6 +140,7 @@ func TestStream(t *testing.T) {
 }
 
 func TestVectorStream(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	var key [StreamKeyLength]byte
@@ -165,6 +171,7 @@ func TestVectorStream(t *testing.T) {
 }
 
 func TestSPRP(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -188,6 +195,7 @@ func TestSPRP(t *testing.T) {
 }
 
 func TestKDF(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	ikm := make([]byte, 32)
@@ -216,6 +224,7 @@ func TestKDF(t *testing.T) {
 }
 
 func TestVectorKDFWithECDHNike(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	ikm := make([]byte, 32)

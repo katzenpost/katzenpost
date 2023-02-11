@@ -28,6 +28,7 @@ import (
 )
 
 func TestSignatureScheme(t *testing.T) {
+	t.Parallel()
 	privKey1, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
 	pubKey2, err := DefaultScheme.UnmarshalBinaryPublicKey(pubKey1.Bytes())
@@ -99,6 +100,7 @@ e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 }
 
 func TestPublicKeyReset(t *testing.T) {
+	t.Parallel()
 	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 	pubKey1.Reset()
 
@@ -106,18 +108,21 @@ func TestPublicKeyReset(t *testing.T) {
 }
 
 func TestPrivateKeyReset(t *testing.T) {
+	t.Parallel()
 	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	privKey1.Reset()
 	require.Nil(t, privKey1.(*privateKey).privateKey)
 }
 
 func TestPublicKeyFromBytesFailure(t *testing.T) {
+	t.Parallel()
 	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 	err := pubKey1.FromBytes([]byte{})
 	require.Error(t, err)
 }
 
 func TestPublicKeyMarshalUnmarshal(t *testing.T) {
+	t.Parallel()
 	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
 	_, pubKey2 := DefaultScheme.GenerateKeypair(rand.Reader)
@@ -131,6 +136,7 @@ func TestPublicKeyMarshalUnmarshal(t *testing.T) {
 }
 
 func TestPrivateKeyMarshalUnmarshal(t *testing.T) {
+	t.Parallel()
 	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	privKey2, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 
@@ -143,6 +149,7 @@ func TestPrivateKeyMarshalUnmarshal(t *testing.T) {
 }
 
 func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
+	t.Parallel()
 	_, pubKey1 := DefaultScheme.GenerateKeypair(rand.Reader)
 
 	err := pubKey1.UnmarshalText(nil)
@@ -158,6 +165,7 @@ func TestPublicKeyMarshalUnmarshalText(t *testing.T) {
 }
 
 func TestPrivateKeyMarshalUnmarshalText(t *testing.T) {
+	t.Parallel()
 	privKey1, _ := DefaultScheme.GenerateKeypair(rand.Reader)
 	blob, err := privKey1.MarshalText()
 	require.NoError(t, err)
