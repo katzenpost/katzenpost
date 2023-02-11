@@ -21,12 +21,14 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	rng.Read(factor[:])
 	f1_blind_secret := unblinded.Blind(factor)
 	f1_blind_public := unblinded.PublicKey().Blind(factor)
+	assert.Equal(f1_blind_secret.Identity(), f1_blind_public.Bytes())
 	f1_derived_public := f1_blind_secret.PublicKey()
 	assert.Equal(f1_blind_public, f1_derived_public)
 
 	// check public keys: multiply by L and verify we get identity element
 	assert.Equal(true, CheckPublicKey(f1_derived_public))
 
+	identity_element := edwards25519.NewIdentityPoint().Bytes()
 	assert.NotEqual(identity_element, unblinded.PublicKey())
 	assert.NotEqual(identity_element, f1_blind_public)
 
@@ -57,8 +59,7 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	factor2 := make([]byte, BlindFactorSize)
 	rng.Read(factor2)
 	// we just need to ensure that the factors are different,
-	// ie we could copy factor and xor a byte in the range 1..30
-	// note that factor gets clamped, so we can't use[0] or [31] here
+	// since we hash factor, any bit flip should work.
 	assert.NotEqual(factor, factor2)
 	f2_blind_secret := unblinded.Blind(factor2)
 	f2_blind_public := unblinded.PublicKey().Blind(factor2)
@@ -66,7 +67,8 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	assert.Equal(f2_blind_public, f2_derived_public)
 	assert.NotEqual(f2_blind_public, f1_blind_public)
 
-	// Ensure that reusing an object for UnmarshalBinary doesn't yield old PublicKey
+	// Ensure that reusing an object for UnmarshalBinary
+	// doesn't yield old PublicKey
 	f2_blind_secret_ser, err := f2_blind_secret.MarshalBinary()
 	assert.Equal(nil, err)
 	err = f1_blind_secret_deser.UnmarshalBinary(f2_blind_secret_ser)
@@ -77,6 +79,16 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	assert.NotEqual(nil, err)
 	nulls[0] = 1
 	err = f1_blind_secret_deser.UnmarshalBinary(nulls[:])
+	assert.NotEqual(nil, err)
+
+	// exercise some error paths:
+	uninit_blind := new(BlindedPrivateKey)
+	should_be_empty, err := uninit_blind.MarshalBinary()
+	assert.Equal(0, len(should_be_empty))
+	assert.NotEqual(nil, err)
+	err = uninit_blind.UnmarshalBinary([]byte{})
+	assert.NotEqual(nil, err)
+	err = uninit_blind.UnmarshalBinary([]byte{2})
 	assert.NotEqual(nil, err)
 
 	assert.Equal(true, CheckPublicKey(f1_blind_public))
