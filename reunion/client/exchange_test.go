@@ -101,9 +101,10 @@ func TestClientServerBasics1(t *testing.T) {
 			if len(update.Result) > 0 {
 				aliceResult = update.Result
 				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
-				wg.Done()
+				break
 			}
 		}
+		wg.Done()
 	}()
 
 	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
@@ -124,9 +125,10 @@ func TestClientServerBasics1(t *testing.T) {
 			if len(update.Result) > 0 {
 				bobResult = update.Result
 				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
-				wg.Done()
+				break
 			}
 		}
+		wg.Done()
 	}()
 
 	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
@@ -250,8 +252,16 @@ func TestClientServerBasics2(t *testing.T) {
 
 	// Run reunion client exchanges.
 
-	go aliceExchange.Run()
-	go bobExchange.Run()
+	wg.Add(1)
+	go func() {
+		aliceExchange.Run()
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		bobExchange.Run()
+		wg.Done()
+	}()
 
 	wg.Wait()
 	close(shutdownChan)
@@ -292,24 +302,24 @@ func NoTestClientServerBasics3(t *testing.T) {
 	aliceExchangelog := logBackend.GetLogger("alice_exchange")
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 	aliceUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		count := 0
 		for {
 			if count == 2 {
-				return
+				break
 			}
 			update := <-aliceUpdateCh
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					aliceResult = update.Result
 					fmt.Printf("\nAlice got result: %s\n\n", update.Result)
-					wg.Done()
 					count++
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
@@ -322,24 +332,24 @@ func NoTestClientServerBasics3(t *testing.T) {
 	require.NoError(err)
 	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
 
-	wg.Add(2)
+	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		count := 0
 		for {
 			if count == 2 {
-				return
+				break
 			}
 			update := <-bobUpdateCh
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					bobResult = update.Result
 					fmt.Printf("\nBob got result: %s\n\n", update.Result)
-					wg.Done()
 					count++
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
@@ -352,24 +362,24 @@ func NoTestClientServerBasics3(t *testing.T) {
 	require.NoError(err)
 	nsaExchangelog := nsaLogBackend.GetLogger("nsa_exchange")
 
-	wg.Add(2)
+	wg.Add(1)
 	nsaUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		count := 0
 		for {
 			if count == 2 {
-				return
+				break
 			}
 			update := <-nsaUpdateCh
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					nsaResult = update.Result
 					fmt.Printf("\nNsa got result: %s\n\n", update.Result)
-					wg.Done()
 					count++
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase, srv, epoch, nsaUpdateCh, shutdownChan)
@@ -377,9 +387,19 @@ func NoTestClientServerBasics3(t *testing.T) {
 
 	// Run reunion client exchanges.
 
-	go aliceExchange.Run()
-	go bobExchange.Run()
-	go nsaExchange.Run()
+	wg.Add(3)
+	go func() {
+		aliceExchange.Run()
+		wg.Done()
+	}()
+	go func(){
+		bobExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		nsaExchange.Run()
+		wg.Done()
+	}()
 
 	wg.Wait()
 	close(shutdownChan)
@@ -434,10 +454,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					aliceResult = update.Result
 					fmt.Printf("\nAlice got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh, shutdownChan)
@@ -459,10 +480,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					bobResult = update.Result
 					fmt.Printf("\nBob got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase1, srv, epoch, bobUpdateCh, shutdownChan)
@@ -484,10 +506,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					nsaResult = update.Result
 					fmt.Printf("\nNSA got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh, shutdownChan)
@@ -509,10 +532,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					gchqResult = update.Result
 					fmt.Printf("\nGCHQ got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	gchqExchange, err := NewExchange(gchqPayload, gchqExchangelog, reunionDB, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh, shutdownChan)
@@ -520,10 +544,23 @@ func TestClientServerBasics4(t *testing.T) {
 
 	// Run reunion client exchanges.
 
-	go aliceExchange.Run()
-	go bobExchange.Run()
-	go nsaExchange.Run()
-	go gchqExchange.Run()
+	wg.Add(4)
+	go func() {
+		aliceExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		bobExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		nsaExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		gchqExchange.Run()
+		wg.Done()
+	}()
 
 	wg.Wait()
 
@@ -573,6 +610,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 				aliceResult = update.Result
 				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
 				wg.Done()
+				break
 			}
 		}
 	}()
@@ -596,6 +634,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 				bobResult = update.Result
 				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
 				wg.Done()
+				break
 			}
 		}
 	}()
