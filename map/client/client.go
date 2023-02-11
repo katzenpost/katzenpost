@@ -27,7 +27,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/map/common"
 	"golang.org/x/crypto/hkdf"
-	"io"
 	"sort"
 )
 
@@ -249,23 +248,23 @@ func WriteOnly(c *Client, woCap common.WriteOnlyCap) WOClient {
 func DuplexFromSeed(c *Client, initiator bool, secret []byte) RWClient {
 	salt := []byte("duplex initialized from seed is not for multi-party use")
 	keymaterial := hkdf.New(hash, secret, salt, nil)
-	a := &[eddsa.PrivateKeySize]byte{}
-	b := &[eddsa.PrivateKeySize]byte{}
-	if _, err := io.ReadFull(keymaterial, a[:]); err != nil {
-		panic(err)
-	}
-	if _, err := io.ReadFull(keymaterial, b[:]); err != nil {
-		panic(err)
-	}
-	pk1 := new(eddsa.PrivateKey)
-	pk2 := new(eddsa.PrivateKey)
+	var err error
+	var pk1, pk2 *eddsa.PrivateKey
 	// return the listener or dialer side of caps from seed
 	if initiator {
-		pk1.FromBytes(a[:])
-		pk2.FromBytes(b[:])
+		if pk1, err = eddsa.NewKeypair(keymaterial); err != nil {
+			panic(err)
+		}
+		if pk2, err = eddsa.NewKeypair(keymaterial); err != nil {
+			panic(err)
+		}
 	} else {
-		pk1.FromBytes(b[:])
-		pk2.FromBytes(a[:])
+		if pk2, err = eddsa.NewKeypair(keymaterial); err != nil {
+			panic(err)
+		}
+		if pk1, err = eddsa.NewKeypair(keymaterial); err != nil {
+			panic(err)
+		}
 	}
 
 	// initialize root capabilities for both keys
