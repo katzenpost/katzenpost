@@ -838,8 +838,6 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	}
 	a := &StreamAddr{network: "", address: generate()}
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())))
-	st.log = s.GetLogger()
-	st.log.Debugf("NewDuplex: DuplexFromSeed: %x", []byte(a.String()))
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err
