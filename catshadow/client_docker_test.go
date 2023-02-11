@@ -107,6 +107,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 }
 
 func TestDockerPandaSuccess(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
@@ -150,6 +151,7 @@ loop2:
 }
 
 func TestDockerPandaTagContendedError(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
@@ -228,6 +230,7 @@ loop4:
 }
 
 func TestDockerSendReceive(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
@@ -456,6 +459,7 @@ and can readily scale to millions of users.
 
 func TestDockerReunionSuccess(t *testing.T) {
 	t.Skip("Reunion does not work with 2KB payloads")
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
@@ -530,6 +534,7 @@ loop2:
 }
 
 func TestDockerChangeExpiration(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -553,6 +558,7 @@ func TestDockerChangeExpiration(t *testing.T) {
 }
 
 func TestDockerAddRemoveContact(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -651,6 +657,7 @@ loop5:
 }
 
 func TestDockerRenameContact(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))

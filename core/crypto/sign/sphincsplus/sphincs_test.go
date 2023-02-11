@@ -7,6 +7,7 @@ import (
 )
 
 func TestSignatureScheme(t *testing.T) {
+	t.Parallel()
 	privKey, pubKey := Scheme.NewKeypair()
 	message := []byte("i am a message")
 	sig := privKey.Sign(message)
@@ -14,6 +15,7 @@ func TestSignatureScheme(t *testing.T) {
 }
 
 func TestSerialization(t *testing.T) {
+	t.Parallel()
 	privKey, pubKey := Scheme.NewKeypair()
 	message := []byte("i am a message")
 	sig := privKey.Sign(message)
@@ -30,6 +32,7 @@ func TestSerialization(t *testing.T) {
 }
 
 func TestSizes(t *testing.T) {
+	t.Parallel()
 	privKey, pubKey := Scheme.NewKeypair()
 	message := []byte("i am a message")
 	sig := privKey.Sign(message)
