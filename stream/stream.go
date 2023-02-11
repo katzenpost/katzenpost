@@ -838,21 +838,18 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	}
 	a := &StreamAddr{network: "", address: generate()}
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())))
+	st.log = s.GetLogger()
+	st.log.Debugf("NewDuplex: DuplexFromSeed: %x", []byte(a.String()))
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err
 	}
+	st.Start()
 	return st, nil
 }
 
 func init() {
 	b, _ := cbor.Marshal(Frame{})
 	cborFrameOverhead := len(b)
-	nonce := [nonceSize]byte{}
-	rand.Reader.Read(nonce[:])
-	key := &[keySize]byte{}
-	rand.Reader.Read(key[:])
-	ciphertext := secretbox.Seal(nil, b, &nonce, key)
-	secretboxOverhead := len(ciphertext) - len(b)
-	FramePayloadSize = mClient.PayloadSize - cborFrameOverhead - secretboxOverhead
+	FramePayloadSize = mClient.PayloadSize - cborFrameOverhead - secretbox.Overhead - nonceSize
 }
