@@ -204,9 +204,13 @@ func (k *PrivateKey) Blind(factor []byte) *BlindedPrivateKey {
 	return bpk.Blind(factor)
 }
 
+// changes the *value* of the slice factor, which points at new bytes
+// and does not modify the caller's copy of factor.
 func (k *BlindedPrivateKey) Blind(factor []byte) *BlindedPrivateKey {
-	// changes the *value* of the slice factor, which points at new bytes
-	// and does not modify the caller's copy of factor.
+	if 0 == len(factor) {
+		panic("Blind with empty factor")
+	}
+
 	sum := sha512.Sum512_256(factor)
 	factor = sum[:]
 	factor_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(factor)
@@ -259,13 +263,20 @@ func (b *BlindedPrivateKey) KeyType() string {
 // and returns the blinded public key. This function does not
 // mutate the PublicKey.
 func (k *PublicKey) Blind(factor []byte) *PublicKey {
-	// out <- factor*pkA + zero*Basepoint
+	if 0 == len(factor) {
+		panic("Blind with empty factor")
+	}
+
 	sum := sha512.Sum512_256(factor)
 	factor = sum[:]
-	factor_sc, _ := new(edwards25519.Scalar).SetBytesWithClamping(factor)
-	out, _ := new(edwards25519.Point).SetBytes(k.Bytes())
+	factor_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(factor)
+	// out <- factor*pkA + zero*Basepoint
+	out, err := new(edwards25519.Point).SetBytes(k.Bytes())
+	if err != nil {
+		panic("k.Bytes() was not a valid [32]byte slice public key. Was *PublicKey initialized?")
+	}
 	newkey := new(PublicKey)
-	err := newkey.FromBytes(out.ScalarMult(factor_sc, out).Bytes())
+	err = newkey.FromBytes(out.ScalarMult(factor_sc, out).Bytes())
 	if err != nil {
 		// Again this should not happen; but in case it does:
 		panic(err)

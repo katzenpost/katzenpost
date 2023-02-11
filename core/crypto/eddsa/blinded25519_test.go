@@ -17,13 +17,21 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	require.NoError(t, err, "NewKeypair(1)")
 	assert.Equal(true, CheckPublicKey(unblinded.PublicKey()))
 
+
 	factor := make([]byte, BlindFactorSize)
 	rng.Read(factor[:])
+
+	// Blind on uninitialized key should panic:
+	bad_public := new(PublicKey)
+	assert.Panics(func() { bad_public.Blind(factor) })
+
+	// Test that blinded public+private keys match:
 	f1_blind_secret := unblinded.Blind(factor)
 	f1_blind_public := unblinded.PublicKey().Blind(factor)
 	assert.Equal(f1_blind_secret.Identity(), f1_blind_public.Bytes())
 	f1_derived_public := f1_blind_secret.PublicKey()
 	assert.Equal(f1_blind_public, f1_derived_public)
+	assert.Equal(f1_blind_secret.KeyType(), "ed25519")
 
 	// check public keys: multiply by L and verify we get identity element
 	assert.Equal(true, CheckPublicKey(f1_derived_public))
@@ -80,6 +88,10 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	nulls[0] = 1
 	err = f1_blind_secret_deser.UnmarshalBinary(nulls[:])
 	assert.NotEqual(nil, err)
+
+	// Accidentally blinding with an empty slice should panic:
+	assert.Panics(func() { f2_blind_secret.Blind(factor[:0]) })
+	assert.Panics(func() { f2_blind_public.Blind(factor[:0]) })
 
 	// exercise some error paths:
 	uninit_blind := new(BlindedPrivateKey)
