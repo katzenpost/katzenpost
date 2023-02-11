@@ -12,6 +12,7 @@ import (
 )
 
 func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) bool {
+	t.Parallel()
 	assert := assertx
 	unblinded, err := NewKeypair(rng)
 	require.NoError(t, err, "NewKeypair(1)")
@@ -177,6 +178,7 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 }
 
 func TestBlinding(t *testing.T) {
+	t.Parallel()
 	assertx := assert.New(t)
 	test_seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(test_seed))
