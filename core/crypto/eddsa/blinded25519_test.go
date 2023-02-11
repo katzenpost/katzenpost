@@ -12,7 +12,6 @@ import (
 )
 
 func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) bool {
-	t.Parallel()
 	assert := assertx
 	unblinded, err := NewKeypair(rng)
 	require.NoError(t, err, "NewKeypair(1)")
