@@ -100,7 +100,7 @@ func TestClientServerBasics1(t *testing.T) {
 			update := <-aliceUpdateCh
 			if len(update.Result) > 0 {
 				aliceResult = update.Result
-				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
+				t.Log("Alice got result:", update.Result)
 				break
 			}
 		}
@@ -124,7 +124,7 @@ func TestClientServerBasics1(t *testing.T) {
 			update := <-bobUpdateCh
 			if len(update.Result) > 0 {
 				bobResult = update.Result
-				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
+				t.Log("Bob got result:", update.Result)
 				break
 			}
 		}
@@ -314,7 +314,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					aliceResult = update.Result
-					fmt.Printf("\nAlice got result: %s\n\n", update.Result)
+					t.Log("Alice got result:", update.Result)
 					count++
 				}
 			}
@@ -344,7 +344,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					bobResult = update.Result
-					fmt.Printf("\nBob got result: %s\n\n", update.Result)
+					t.Log("Bob got result:", update.Result)
 					count++
 				}
 			}
@@ -374,7 +374,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					nsaResult = update.Result
-					fmt.Printf("\nNsa got result: %s\n\n", update.Result)
+					t.Log("Nsa got result:", update.Result)
 					count++
 				}
 			}
