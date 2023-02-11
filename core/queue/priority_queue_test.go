@@ -25,6 +25,7 @@ import (
 )
 
 func TestPriorityQueue(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	testEntries := []Entry{
@@ -94,6 +95,7 @@ func TestPriorityQueue(t *testing.T) {
 }
 
 func TestPriorityQueueDuplicatePriority(t *testing.T) {
+	t.Parallel()
 	testEntries := []Entry{
 		{
 			Value:    []byte("That books do not take the place of experience,"),

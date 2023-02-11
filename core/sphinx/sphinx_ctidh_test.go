@@ -26,6 +26,7 @@ import (
 )
 
 func TestCtidhForwardSphinx(t *testing.T) {
+	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	mynike := ctidhnike.NewCtidhNike()
@@ -36,6 +37,7 @@ func TestCtidhForwardSphinx(t *testing.T) {
 }
 
 func TestCtidhSURB(t *testing.T) {
+	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
 	mynike := ctidhnike.NewCtidhNike()
@@ -46,6 +48,7 @@ func TestCtidhSURB(t *testing.T) {
 }
 
 func TestCTIDHSphinxGeometry(t *testing.T) {
+	t.Parallel()
 	withSURB := false
 	geo := GeometryFromUserForwardPayloadLength(ctidhnike.NewCtidhNike(), 512, withSURB, 5)
 	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", geo.HeaderLength)
