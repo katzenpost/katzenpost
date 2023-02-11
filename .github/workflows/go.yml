@@ -10,16 +10,14 @@ jobs:
         os: [ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: Install Go
         uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
           cache: true
           check-latest: true
-          cache-dependency-path: go.sum
-
-      - name: Checkout code
-        uses: actions/checkout@v3
 
       - name: Generate mixnet configuration
         run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
