@@ -16,6 +16,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache: true
           check-latest: true
+          cache-dependency-path: go.sum
 
       - name: Checkout code
         uses: actions/checkout@v3
