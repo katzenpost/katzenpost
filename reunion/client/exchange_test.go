@@ -20,6 +20,7 @@ package client
 import (
 	"fmt"
 	"path/filepath"
+	"os"
 	"sync"
 	"testing"
 
