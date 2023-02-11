@@ -18,7 +18,7 @@ package ecdh
 
 import (
 	"crypto/rand"
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -80,12 +80,11 @@ func TestPublicKeyToFromPEMFile(t *testing.T) {
 	assert := assert.New(t)
 	aliceKeypair, err := NewKeypair(rand.Reader)
 	assert.NoError(err)
-	f, err := os.CreateTemp("", "alice.pem")
-	assert.NoError(err)
-	err = aliceKeypair.PublicKey().ToPEMFile(f.Name())
+	fName := filepath.Join(t.TempDir(), "alice.pem")
+	err = aliceKeypair.PublicKey().ToPEMFile(fName)
 	assert.NoError(err)
 	pubKey := new(PublicKey)
-	err = pubKey.FromPEMFile(f.Name())
+	err = pubKey.FromPEMFile(fName)
 	assert.NoError(err)
 	assert.Equal(pubKey.Bytes(), aliceKeypair.PublicKey().Bytes())
 }

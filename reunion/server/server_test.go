@@ -17,7 +17,7 @@
 package server
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/reunion/commands"
@@ -30,13 +30,11 @@ func TestServer(t *testing.T) {
 
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
-	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
-	require.NoError(err)
-	stateFile.Close()
+	stateFileName := filepath.Join(t.TempDir(), "catshadow_test_statefile")
 
 	logPath := ""
 	logLevel := "DEBUG"
-	server, err := NewServer(clock, stateFile.Name(), logPath, logLevel)
+	server, err := NewServer(clock, stateFileName, logPath, logLevel)
 	require.NoError(err)
 
 	sendt1 := commands.SendT1{

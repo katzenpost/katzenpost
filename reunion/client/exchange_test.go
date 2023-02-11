@@ -19,7 +19,7 @@ package client
 
 import (
 	"fmt"
-	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -37,16 +37,12 @@ type MockReunionDB struct {
 	log    *logging.Logger
 }
 
-func NewMockReunionDB(mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
-	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
-	if err != nil {
-		return nil, err
-	}
-	stateFile.Close()
+func NewMockReunionDB(pathPrefix string, mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
+	stateFileName := filepath.Join(pathPrefix, "catshadow_test_statefile")
 
 	logPath := ""
 	logLevel := "DEBUG"
-	s, err := server.NewServer(clock, stateFile.Name(), logPath, logLevel)
+	s, err := server.NewServer(clock, stateFileName, logPath, logLevel)
 	return &MockReunionDB{
 		server: s,
 		log:    mylog,
@@ -82,7 +78,7 @@ func TestClientServerBasics1(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -195,7 +191,7 @@ func TestClientServerBasics2(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -279,7 +275,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -410,7 +406,7 @@ func TestClientServerBasics4(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -552,7 +548,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
