@@ -38,6 +38,9 @@ type MockReunionDB struct {
 }
 
 func NewMockReunionDB(pathPrefix string, mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
+	if false == os.Stat(pathPrefix).IsDir() {
+		panic("mockdir doesn't exist")
+	}
 	stateFileName := filepath.Join(pathPrefix, "catshadow_test_statefile")
 
 	logPath := ""
@@ -564,6 +567,7 @@ func TestClientServerBasics4(t *testing.T) {
 
 	wg.Wait()
 
+	t.Log("comparing results in TestClientServerBasics4 after wg.Wait()")
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)
 	require.Equal(nsaResult, gchqPayload)

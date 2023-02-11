@@ -557,7 +557,7 @@ func (e *Exchange) Run() {
 		// 2:A -> DB: transmit א message
 		for {
 			err := e.sendT1()
-			if err == client.ErrReplyTimeout {
+			if err == client.ErrReplyTimeout && !e.shouldStop() {
 				continue
 			} else if err != nil {
 				defer haltedfn()
@@ -581,7 +581,7 @@ func (e *Exchange) Run() {
 			// 3:A <- DB: fetch epoch state
 			err := e.fetchState()
 			// if failure due to timeout, retransmit
-			if err == client.ErrReplyTimeout {
+			if err == client.ErrReplyTimeout && !e.shouldStop() {
 				continue
 			}
 			if err != nil {
