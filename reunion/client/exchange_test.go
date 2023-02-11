@@ -39,8 +39,11 @@ type MockReunionDB struct {
 }
 
 func NewMockReunionDB(pathPrefix string, mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
-	if false == os.Stat(pathPrefix).IsDir() {
-		panic("mockdir doesn't exist")
+	debugs, debuge := os.Stat(pathPrefix)
+	if debuge != nil {
+		panic("mockdir stat failed")
+	} else if !debugs.IsDir() {
+		panic("mockdir is not dir")
 	}
 	stateFileName := filepath.Join(pathPrefix, "catshadow_test_statefile")
 
