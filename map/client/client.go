@@ -305,6 +305,5 @@ func init() {
 	b, _ := cbor.Marshal(common.MapRequest{})
 	cborFrameOverhead := len(b)
 	geo := sphinx.DefaultGeometry()
-	wtfFactor := 4 // XXX: command Overhead ???
-	PayloadSize = geo.UserForwardPayloadLength - cborFrameOverhead - wtfFactor
+	PayloadSize = geo.UserForwardPayloadLength - cborFrameOverhead - eddsa.SignatureSize
 }
