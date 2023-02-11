@@ -22,6 +22,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"fmt"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -267,7 +268,7 @@ func (s *Server) maybeFlush() {
 	}
 	err := s.doFlush()
 	if err != nil {
-		panic("flush to disk failure, aborting...") // XXX should we panic here or what?
+		panic(fmt.Sprintf("flush to disk failure, aborting... %s", err))
 	}
 	atomic.StoreUint64(&s.nDirtyEntries, 0)
 }
