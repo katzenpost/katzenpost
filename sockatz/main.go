@@ -8,7 +8,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/sockatz/socks5"
 	"github.com/katzenpost/katzenpost/stream"
 
@@ -61,6 +60,7 @@ func getSession(cfgFile string) (*client.Session, error) {
 }
 
 func main() {
+	flag.Parse()
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		panic(err)
@@ -70,23 +70,20 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	c, err := mClient.NewClient(s)
 	if err != nil {
 		panic(err)
 	}
-	d := &defaultFac{c: c}
-
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 	go func() {
-		_ = clientAcceptLoop(d, ln)
+		_ = clientAcceptLoop(s, ln)
 		wg.Done()
 	}()
 	// wait until loop has exited
 	wg.Wait()
 }
 
-func clientAcceptLoop(fac StreamFactory, ln net.Listener) error {
+func clientAcceptLoop(session *client.Session, ln net.Listener) error {
 	defer ln.Close()
 	for {
 		conn, err := ln.Accept()
@@ -96,28 +93,11 @@ func clientAcceptLoop(fac StreamFactory, ln net.Listener) error {
 			}
 			continue
 		}
-		go clientHandler(fac, conn)
+		go clientHandler(session, conn)
 	}
 }
 
-type StreamFactory interface {
-	Stream() *stream.Stream
-	Store() stream.Store
-}
-
-type defaultFac struct {
-	c stream.Store
-}
-
-func (d *defaultFac) Stream() *stream.Stream {
-	return stream.NewStream(d.c)
-}
-
-func (d *defaultFac) Store() stream.Store {
-	return d.c
-}
-
-func clientHandler(fac StreamFactory, conn net.Conn) {
+func clientHandler(session *client.Session, conn net.Conn) {
 	defer conn.Close()
 
 	// Read the client's SOCKS handshake.
@@ -133,27 +113,43 @@ func clientHandler(fac StreamFactory, conn net.Conn) {
 	// FIXME: the pki parameters should be used to obtain the epoch key for the session
 	// so that a zero round trip handshake can be used to encrypt the stream session details
 	// wth a a session key that rotates each epoch which clients will encrypt their requests to
-	s := fac.Stream()
 	u, err := url.Parse(socksReq.Target)
 	if err != nil {
 		panic(err)
 		return
 	}
 	// XXX: actually send this to the remote service
-	ssr := StreamSocketRequest{Endpoint: u, Address: s.RemoteAddr()}
+	local, err:= stream.NewDuplex(session)
+	if err != nil {
+		panic(err)
+	}
+	ssr := StreamSocketRequest{Endpoint: u, Address: local.RemoteAddr()}
 	go func() {
 		fmt.Println("launching socks5<->stream<->gateway proxy request")
 		// connect to the stream of the requesting client
-		s, err := stream.Dial(fac.Store(), "", ssr.Address.String())
+		s, err := stream.DialDuplex(session, "", ssr.Address.String())
 		if err != nil {
 			panic(err)
 		}
 		// dial the remote host (using our local proxy config if specified)
 		pCfg := cfg.UpstreamProxyConfig()
+		pCfg.Network = "tcp"
+		pCfg.Type = "socks5"
+		pCfg.Address= "10.42.42.42:9050"
+
+		var con net.Conn
 		ctx := context.Background()
-		con, err := pCfg.ToDialContext("")(ctx, "tcp", ssr.Endpoint.String())
-		if err != nil {
-			panic(err)
+		dialer := pCfg.ToDialContext("")
+		if dialer == nil {
+			con, err = net.Dial("tcp", ssr.Endpoint.String())
+			if err != nil {
+				panic(err)
+			}
+		} else{
+			con, err = dialer(ctx, "tcp", ssr.Endpoint.String())
+			if err != nil {
+				panic(err)
+			}
 		}
 		err = socksReq.Reply(socks5.ReplySucceeded)
 		if err != nil {
@@ -163,13 +159,13 @@ func clientHandler(fac StreamFactory, conn net.Conn) {
 		defer con.Close()
 
 		if err = copyLoop(s, con); err != nil {
-			panic(err)
+			fmt.Println("connection lost with err", err)
 		}
 		fmt.Println("connection closed")
 	}()
 
 	// send request to the upstream socket server and await the response
-	if err = copyLoop(conn, s); err != nil {
+	if err = copyLoop(conn, local); err != nil {
 	}
 	// log done
 }
