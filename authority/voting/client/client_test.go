@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -339,7 +338,7 @@ func TestClient(t *testing.T) {
 	dialer := newMockDialer(logBackend)
 	peers := []*config.Authority{}
 
-	datadir := os.TempDir()
+	datadir := t.TempDir()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {

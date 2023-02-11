@@ -18,7 +18,6 @@ package boltspool
 
 import (
 	"crypto/rand"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -34,9 +33,6 @@ const (
 )
 
 var (
-	tmpDir        string
-	testSpoolPath string
-
 	testMsg     []byte
 	testSurbID  [sConstants.SURBIDLength]byte
 	testSurbMsg []byte
@@ -45,7 +41,9 @@ var (
 func TestBoltSpool(t *testing.T) {
 	require := require.New(t)
 
+	tmpDir := t.TempDir()
 	t.Logf("TempDir: %v", tmpDir)
+	tmpSpool := filepath.Join(t.TempDir(), testSpool)
 
 	geo := sphinx.DefaultGeometry()
 
@@ -61,20 +59,18 @@ func TestBoltSpool(t *testing.T) {
 	_, err = rand.Read(testSurbMsg)
 	require.NoError(err, "rand.Read(testSurbMsg)")
 
-	if ok := t.Run("create", doTestCreate); ok {
-		t.Run("load", doTestLoad)
+	if ok := t.Run("create", func(t *testing.T) { doTestCreate(t, tmpSpool) }); ok {
+		t.Run("load", func(t *testing.T) { doTestLoad(t, tmpSpool) })
 	} else {
 		t.Errorf("create tests failed, skipping load test")
 	}
-
-	os.RemoveAll(tmpDir)
 }
 
-func doTestCreate(t *testing.T) {
+func doTestCreate(t *testing.T, tmpSpool string) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	s, err := New(testSpoolPath)
+	s, err := New(tmpSpool)
 	require.NoError(err, "New()")
 	defer s.Close()
 
@@ -85,11 +81,11 @@ func doTestCreate(t *testing.T) {
 	assert.NoError(err, "StoreSURBReply()")
 }
 
-func doTestLoad(t *testing.T) {
+func doTestLoad(t *testing.T, tmpSpool string) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	s, err := New(testSpoolPath)
+	s, err := New(tmpSpool)
 	require.NoError(err, "New()")
 	defer s.Close()
 
@@ -121,14 +117,4 @@ func doTestLoad(t *testing.T) {
 	// Delete the user's spool.
 	err = s.Remove([]byte(testUser))
 	assert.NoError(err, "Delete(u)")
-}
-
-func init() {
-	var err error
-	tmpDir, err = os.MkdirTemp("", "boltspool_tests")
-	if err != nil {
-		panic(err)
-	}
-
-	testSpoolPath = filepath.Join(tmpDir, testSpool)
 }

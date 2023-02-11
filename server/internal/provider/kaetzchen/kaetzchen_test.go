@@ -17,7 +17,6 @@
 package kaetzchen
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -223,7 +222,7 @@ func (m *MockKaetzchen) Halt() {}
 
 func TestKaetzchenWorker(t *testing.T) {
 
-	datadir := os.TempDir()
+	datadir := t.TempDir()
 
 	idKey, idPubKey := cert.Scheme.NewKeypair()
 	err := pem.ToFile(filepath.Join(datadir, "identity.private.pem"), idKey)
