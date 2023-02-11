@@ -92,6 +92,7 @@ type multiSigTest struct {
 }
 
 func TestEd25519MultipleSignatureCertificateVectors(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	certificateTests := []struct {
