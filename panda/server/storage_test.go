@@ -125,7 +125,6 @@ func TestStoragePurgeTags(t *testing.T) {
 	assert := assert.New(t)
 
 	storeFileName := filepath.Join(t.TempDir(), "pandaStoragePurgeTags")
-	assert.NoError(err)
 
 	dwellDuration := time.Second * 30
 	writeBackInterval := time.Second * 30
