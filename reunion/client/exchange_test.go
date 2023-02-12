@@ -56,6 +56,10 @@ func NewMockReunionDB(pathPrefix string, mylog *logging.Logger, clock epochtime.
 	}, err
 }
 
+func (m *MockReunionDB) Halt() {
+	m.server.Halt()
+}
+
 func (m *MockReunionDB) Query(command commands.Command) (commands.Command, error) {
 	return m.server.ProcessQuery(command)
 }
@@ -181,7 +185,7 @@ func TestClientServerBasics1(t *testing.T) {
 	bobExchange.sentUpdateOK()
 
 	wg.Wait()
-	reunionDB.s.worker.Halt()
+	reunionDB.Halt()
 	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
@@ -274,7 +278,7 @@ func TestClientServerBasics2(t *testing.T) {
 	}()
 
 	wg.Wait()
-	reunionDB.s.worker.Halt()
+	reunionDB.Halt()
 	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
@@ -413,7 +417,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	}()
 
 	wg.Wait()
-	reunionDB.s.worker.Halt()
+	reunionDB.Halt()
 	close(shutdownChan)
 
 	//require.Equal(aliceResult, bobPayload)
@@ -575,7 +579,7 @@ func TestClientServerBasics4(t *testing.T) {
 	}()
 
 	wg.Wait()
-	reunionDB.s.worker.Halt()
+	reunionDB.Halt()
 
 	t.Log("comparing results in TestClientServerBasics4 after wg.Wait()")
 	require.Equal(aliceResult, bobPayload)
@@ -721,7 +725,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	bobExchange.processT3Messages()
 
 	wg.Wait()
-	reunionDB.s.worker.Halt()
+	reunionDB.Halt()
 
 
 	require.Equal(aliceResult, bobPayload)
