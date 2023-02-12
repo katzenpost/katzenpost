@@ -7,7 +7,6 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/stream"
 	"io"
 	"os"
@@ -57,18 +56,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	c, err := mClient.NewClient(s)
-	if err != nil {
-		panic(err)
-	}
 
 	var st *stream.Stream
 	if *secret == "" {
-		st = stream.NewStream(c)
+		st, _ = stream.NewDuplex(s)
 		*secret = st.RemoteAddr().String()
 		fmt.Fprintln(os.Stderr, "KatzenCat secret:", *secret)
 	} else {
-		st, err = stream.Dial(c, "", *secret)
+		st, err = stream.DialDuplex(s, "", *secret)
 		if err != nil {
 			panic(err)
 		}
