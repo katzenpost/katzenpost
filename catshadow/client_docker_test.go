@@ -712,6 +712,7 @@ loop3:
 			t.Log(event)
 			panic("MessageNotDeliveredEvent {a->b}")
 		default:
+			t.Logf("loop3: %T %+v", ev, ev)
 		}
 	}
 
@@ -723,16 +724,16 @@ loop4:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to a")
+			t.Log("loop4:Message delivered to a")
 			if event.Nickname == "a" {
 				break loop4
 			}
 		case *MessageNotSentEvent:
-			t.Log(event)
-			panic("MessageNotSent {b->a}")
+			t.Log("loop4", event)
+			panic("loop4:MessageNotSent {b->a}")
 		case *MessageNotDeliveredEvent:
-			t.Log(event)
-			panic("MessageNotDeliveredEvent {b->a}")
+			t.Log("loop4", event)
+			panic("loop4:MessageNotDeliveredEvent {b->a}")
 		default:
 		}
 	}
@@ -758,9 +759,11 @@ loop5:
 		case *MessageNotSentEvent:
 			if event.Nickname == "b" {
 				break loop5
+			} else {
+				t.Logf("loop5:MNSE: %+v", event)
 			}
 		default:
-			t.Log(event)
+			t.Logf("loop5 %T %+v", event, event)
 			panic("wait why didn't we get an error here")
 		}
 	}
@@ -772,20 +775,22 @@ loop6:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to b2")
+			t.Log("loop6:Message delivered to b2")
 			if event.Nickname == "b2" {
 				break loop6
 			} else {
 				t.Log(event)
 			}
 		case *MessageSentEvent:
-			t.Log("Message sent but not delivered to b2 yet")
+			t.Log("loop6:Message sent but not delivered to b2 yet")
 		case *MessageNotSentEvent:
-			t.Log("Well that is too plain bad, MessageNotSent")
-			panic("couldnt send message")
+			t.Log("loop6:Well that is too plain bad, MessageNotSent")
+			panic("loop6:couldnt send message")
+		case *MessageReceivedEvent:
+			t.Logf("loop6:a:MessageReceivedEvent %+v", event)
 		default:
-			t.Logf("how we ended up here %T %s %T %s", event, event, ev, ev)
-			panic("how did we end up here")
+			t.Logf("loop6:how we ended up here %T %s %T %s", event, event, ev, ev)
+			panic("loop6:how did we end up here")
 		}
 	}
 loop7:
@@ -793,11 +798,11 @@ loop7:
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
-			t.Log("Message received by b2")
+			t.Log("loop7:Message received by b2")
 			if event.Nickname == "a" {
 				break loop7
 			} else {
-				t.Log(event)
+				t.Log("loop7",event)
 			}
 		default:
 			t.Log(event)
