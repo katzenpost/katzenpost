@@ -818,7 +818,7 @@ func NewStream(c Transport) *Stream {
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	st := new(Stream)
-	st.log = s.GetLogger()
+	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
 	err := cbor.Unmarshal(state, st)
 	if err != nil {
 		return nil, err
@@ -866,7 +866,7 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
 	st := newStream(t)
 	a := &StreamAddr{network: network, address: addr}
-	st.log = s.GetLogger()
+	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
 	st.log.Debugf("DialDuplex: DuplexFromSeed: %x", []byte(a.String()))
 
 	st.keyAsDialer(a)
@@ -879,7 +879,7 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)))
 	a := &StreamAddr{network: network, address: addr}
-	st.log = s.GetLogger()
+	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
 	st.log.Debugf("ListenDuplex: DuplexFromSeed: %x", []byte(a.String()))
 	st.keyAsListener(a)
 	st.Start()
@@ -894,7 +894,7 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	}
 	a := &StreamAddr{network: "", address: generate()}
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())))
-	st.log = s.GetLogger()
+	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err
