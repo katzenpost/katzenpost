@@ -105,6 +105,7 @@ func TestClientServerBasics1(t *testing.T) {
 	go func() {
 		for {
 			update := <-aliceUpdateCh
+			require.NoError(update.Error)
 			if len(update.Result) > 0 {
 				aliceResult = update.Result
 				t.Log("Alice got result:", update.Result)
@@ -129,6 +130,7 @@ func TestClientServerBasics1(t *testing.T) {
 	go func() {
 		for {
 			update := <-bobUpdateCh
+			require.NoError(update.Error)
 			if len(update.Result) > 0 {
 				bobResult = update.Result
 				t.Log("Bob got result:", update.Result)
