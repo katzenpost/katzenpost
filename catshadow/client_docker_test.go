@@ -784,7 +784,7 @@ loop6:
 			t.Log("Well that is too plain bad, MessageNotSent")
 			panic("couldnt send message")
 		default:
-			t.Logf("how we ended up here %s", event)
+			t.Logf("how we ended up here %s %s", event, ev)
 			panic("how did we end up here")
 		}
 	}
