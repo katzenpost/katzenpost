@@ -707,6 +707,8 @@ loop3: // wait for "a->b" to be delivered
 				t.Log(event)
 				panic("who the hell did we MessageDeliveredEvent to")
 			}
+		case *MessageSent:
+			t.Log("loop3: MessengeSent")
 		case *MessageNotSentEvent:
 			t.Log(event)
 			panic("MessageNotSent {a->b}")
