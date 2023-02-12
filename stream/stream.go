@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"errors"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
