@@ -123,7 +123,7 @@ jobs:
 
       - name: Allow mixnet to settle
         run: |
-          sleep 90
+          sleep 240
 
       - name: run catshadow end to end tests
         run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
