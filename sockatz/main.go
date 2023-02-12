@@ -143,7 +143,8 @@ func clientHandler(session *client.Session, conn net.Conn) {
 	}
 	_, err = session.BlockingSendUnreliableMessage(d.Name, d.Provider, serialized)
 	if err != nil {
-		panic(err)
+		socksReq.Reply(socks5.ReplyGeneralFailure)
+		return
 	}
 	socksReq.Reply(socks5.ReplySucceeded)
 	if err != nil {
