@@ -143,7 +143,6 @@ func (s *Sockatz) getSession() (*client.Session, error) {
 			s.log.Errorf("Failed to get session:", err)
 		}
 	}
-	s.log = session.GetLogger() // fucking logger bullshit
 	session.WaitForDocument()
 	return session, nil
 }
@@ -190,7 +189,6 @@ func (s *Sockatz) handleRequest(session *client.Session, request *SockatzRequest
 		panic("wtf")
 	}
 	reply, err := stream.DialDuplex(session, "", request.Stream)
-	panic("fuck off")
 	s.log.Debugf("after DialDuplex")
 	if err != nil {
 		s.log.Debugf("dialing failed: %s", err)
