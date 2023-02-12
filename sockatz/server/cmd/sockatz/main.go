@@ -61,7 +61,6 @@ func main() {
 		panic(err)
 	}
 	serverLog := logBackend.GetLogger("sockatz_server")
-	cborLog := logBackend.GetLogger("cborworker_sockatz_server")
 
 	// start service
 	tmpDir, err := ioutil.TempDir("", "sockatz_server")
@@ -87,7 +86,7 @@ func main() {
 		panic(err)
 	}
 	cmdBuilder := new(cborplugin.RequestFactory)
-	server := cborplugin.NewServer(cborLog, socketFile, cmdBuilder, sockatzServer)
+	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, sockatzServer)
 	// XXX: MUST PRINT THIS LINE FOR KATZENPOST SERVER TO CONNECT !!!
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
