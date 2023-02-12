@@ -236,6 +236,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, pandaCfg)
 				s.hasPanda = true
 			}
+			cfg.Debug.NumKaetzchenWorkers = 4
 		}
 
 		echoCfg := new(sConfig.Kaetzchen)

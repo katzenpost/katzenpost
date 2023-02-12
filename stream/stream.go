@@ -194,6 +194,7 @@ func (s *Stream) reader() {
 		case StreamOpen:
 			// prod writer to Ack
 			if s.ReadIdx-s.AckIdx >= s.WindowSize {
+				s.log.Debugf("doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx - s.AckIdx)
 				s.doFlush()
 			}
 		}
