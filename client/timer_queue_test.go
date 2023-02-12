@@ -27,6 +27,7 @@ import (
 )
 
 func TestNewTimerQueue(t *testing.T) {
+	t.Parallel()
 	// create a Queue for rescheduled messages
 	q := new(Queue)
 
@@ -36,6 +37,7 @@ func TestNewTimerQueue(t *testing.T) {
 }
 
 func TestTimerQueuePush(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	// create a queue for rescheduled messages
@@ -78,6 +80,7 @@ func TestTimerQueuePush(t *testing.T) {
 }
 
 func TestTimerQueueOrder(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	// create a Queue for forwarded messages

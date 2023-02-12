@@ -25,6 +25,7 @@ import (
 )
 
 func TestStateSerialization1(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	state1 := NewReunionState()
@@ -68,6 +69,7 @@ func TestStateSerialization1(t *testing.T) {
 }
 
 func TestStateSerialization2(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	state1 := NewReunionState()
@@ -120,6 +122,7 @@ func TestStateSerialization2(t *testing.T) {
 }
 
 func TestStateSerialization3(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	state1 := NewReunionState()

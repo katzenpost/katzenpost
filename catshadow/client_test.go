@@ -47,6 +47,7 @@ func createRandomStateFile(t *testing.T) string {
 }
 
 func TestBlobStorage(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)

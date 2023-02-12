@@ -331,6 +331,7 @@ func generatePeer(peerNum int, datadir string) (*config.Authority, sign.PrivateK
 }
 
 func TestClient(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	logBackend, err := log.New("", "DEBUG", false)

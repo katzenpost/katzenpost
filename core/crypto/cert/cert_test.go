@@ -28,6 +28,7 @@ import (
 )
 
 func TestExpiredCertificate(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	scheme := Scheme
@@ -48,6 +49,7 @@ func TestExpiredCertificate(t *testing.T) {
 }
 
 func TestCertificate(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	scheme := Scheme
@@ -68,6 +70,7 @@ func TestCertificate(t *testing.T) {
 }
 
 func TestBadCertificate(t *testing.T) {
+	t.Parallel()
 
 	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
@@ -87,6 +90,7 @@ func TestBadCertificate(t *testing.T) {
 }
 
 func TestWrongCertificate(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	_, ephemeralPubKey := Scheme.NewKeypair()
@@ -102,6 +106,7 @@ func TestWrongCertificate(t *testing.T) {
 }
 
 func TestMultiSignatureCertificate(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
@@ -135,6 +140,7 @@ func TestMultiSignatureCertificate(t *testing.T) {
 }
 
 func TestVerifyAll(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	_, ephemeralPubKey := Scheme.NewKeypair()
@@ -161,6 +167,7 @@ func TestVerifyAll(t *testing.T) {
 }
 
 func TestVerifyThreshold(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	_, ephemeralPubKey := Scheme.NewKeypair()
@@ -186,6 +193,8 @@ func TestVerifyThreshold(t *testing.T) {
 	mesg, good, bad, err := VerifyThreshold(verifiers, threshold, certificate)
 	assert.NoError(err)
 	assert.NotNil(mesg)
+	assert.Equal(len(verifiers), len(good)+len(bad))
+	assert.Equal(true, len(good) >= threshold)
 	assert.Equal(bad[0].Sum256(), signingPubKey4.Sum256())
 	hasVerifier := func(verifier Verifier) bool {
 		for _, v := range good {
@@ -203,6 +212,7 @@ func TestVerifyThreshold(t *testing.T) {
 }
 
 func TestAddSignature(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	_, ephemeralPubKey := Scheme.NewKeypair()
