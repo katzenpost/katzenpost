@@ -365,11 +365,9 @@ func (s *Stream) writer() {
 			if !mustAck && !mustTeardown {
 				s.R.Lock()
 				// must wait for Ack before continuing to transmit
-				numWaitingAck := len(s.R.Wack)
-
-				mustWaitForAck := uint64(numWaitingAck) >= s.WindowSize
+				mustWaitForAck := s.WriteIdx - s.PeerAckIdx >= s.WindowSize
 				if mustWaitForAck {
-					s.log.Debugf("mustWaitForAck: waiting: %d", numWaitingAck)
+					s.log.Debugf("mustWaitForAck: PeerAckIdx - s.WriteIdx: %d", s.PeerAckIdx - s.WriteIdx)
 				}
 				mustWaitForData := s.WriteBuf.Len() == 0
 				if mustWaitForData {
