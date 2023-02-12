@@ -234,6 +234,10 @@ func copyLoop(a io.ReadWriteCloser, b io.ReadWriteCloser) error {
 		if err != nil {
 			errChan <- err
 		}
+		// copying from stream to endpoint failed
+		a.Close()
+		b.Close()
+
 	}()
 	go func() {
 		defer wg.Done()
@@ -242,6 +246,9 @@ func copyLoop(a io.ReadWriteCloser, b io.ReadWriteCloser) error {
 		if err != nil {
 			errChan <- err
 		}
+		// copying from endpoint to stream
+		b.Close()
+		a.Close()
 	}()
 
 	// Wait for both upstream and downstream to close.  Since one side
