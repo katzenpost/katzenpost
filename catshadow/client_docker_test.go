@@ -780,8 +780,11 @@ loop6:
 			}
 		case *MessageSentEvent:
 			t.Log("Message sent but not delivered to b2 yet")
+		case *MessageNotSentEvent:
+			t.Log("Well that is too plain bad, MessageNotSent")
+			panic("couldnt send message")
 		default:
-			t.Log(event)
+			t.Log("how we ended up here", *event, ev.(type))
 			panic("how did we end up here")
 		}
 	}
