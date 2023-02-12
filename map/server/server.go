@@ -64,6 +64,13 @@ func (m *Map) Get(msgID common.MessageID) ([]byte, error) {
 func (m *Map) Put(msgID common.MessageID, payload []byte) error {
 	return m.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(mapBucket))
+		p := bkt.Get(msgID[:])
+		if p != nil {
+			if !bytes.Equal(p, payload) {
+				m.log.Errorf("Got different payload for %x", msgID[:])
+			}
+		}
+
 		err := bkt.Put(msgID[:], payload)
 		if err != nil {
 			return err
@@ -147,16 +154,20 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		if len(req.Payload) > 0 {
 			err := m.Put(req.ID, req.Payload)
 			if err != nil {
+				m.log.Debugf("Put(%x): Failed", req.ID)
 				resp.Status = common.StatusFailed
 			} else {
+				m.log.Debugf("Put(%x): OK", req.ID)
 				resp.Status = common.StatusOK
 			}
 			// Otherwise request data
 		} else {
 			p, err := m.Get(req.ID)
 			if err != nil {
+				m.log.Debugf("Get(%x): NotFound", req.ID)
 				resp.Status = common.StatusNotFound
 			} else {
+				m.log.Debugf("Get(%x): OK", req.ID)
 				resp.Status = common.StatusOK
 				resp.Payload = p
 			}

@@ -311,12 +311,12 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile stri
 
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: 0,
-		Mu:                0.005,
-		MuMaxDelay:        1000,
-		LambdaP:           0.001,
-		LambdaPMaxDelay:   1000,
+		Mu:                0.1,
+		MuMaxDelay:        100,
+		LambdaP:           0.2,
+		LambdaPMaxDelay:   100,
 		LambdaL:           0.0005,
-		LambdaLMaxDelay:   1000,
+		LambdaLMaxDelay:   100,
 		LambdaD:           0.0005,
 		LambdaDMaxDelay:   3000,
 		LambdaM:           0.2,

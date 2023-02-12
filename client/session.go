@@ -354,6 +354,10 @@ func (s *Session) Push(i Item) error {
 	return nil
 }
 
+func (s *Session) GetLogger() *logging.Logger {
+	return s.log
+}
+
 func (s *Session) ForceFetchPKI() {
 	s.minclient.ForceFetchPKI()
 }
