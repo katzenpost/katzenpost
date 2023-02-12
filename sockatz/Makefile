@@ -5,3 +5,4 @@ ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoc
 all:
 	go mod verify
 	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+	cd server/cmd/sockatz && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}

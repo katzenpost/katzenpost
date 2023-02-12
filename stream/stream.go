@@ -6,12 +6,10 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/worker"
 	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/map/common"
@@ -790,12 +788,6 @@ type Transport mClient.RWClient
 
 func newStream(c Transport) *Stream {
 	s := new(Stream)
-
-	logBackend, err := log.New("", "DEBUG", false)
-	if err != nil {
-		panic(err)
-	}
-	s.log = logBackend.GetLogger(fmt.Sprintf("Stream: %x", &s))
 	s.c = c
 	s.RState = StreamOpen
 	s.WState = StreamOpen
@@ -828,6 +820,7 @@ func NewStream(c Transport) *Stream {
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	st := new(Stream)
+	st.log = s.GetLogger()
 	err := cbor.Unmarshal(state, st)
 	if err != nil {
 		return nil, err
@@ -868,7 +861,10 @@ func (s *Stream) Start() {
 
 // DialDuplex returns a stream using capability backed map storage (Duplex)
 func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
-	c, _ := mClient.NewClient(s)
+	c, err := mClient.NewClient(s)
+	if err != nil {
+		return nil, err
+	}
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
 	st := newStream(t)
 	a := &StreamAddr{network: network, address: addr}
@@ -900,6 +896,7 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	}
 	a := &StreamAddr{network: "", address: generate()}
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())))
+	st.log = s.GetLogger()
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err
