@@ -211,6 +211,7 @@ loop3:
 			require.NotNil(event.Err)
 			break loop3
 		default:
+			t.Logf("loop3: %T %+v", event, ev)
 		}
 	}
 
@@ -694,7 +695,7 @@ loop2:
 
 	t.Log("Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
-loop3:
+loop3: // wait for "a->b" to be delivered
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
@@ -704,6 +705,7 @@ loop3:
 				break loop3
 			} else {
 				t.Log(event)
+				panic("who the hell did we MessageDeliveredEvent to")
 			}
 		case *MessageNotSentEvent:
 			t.Log(event)
@@ -713,33 +715,38 @@ loop3:
 			panic("MessageNotDeliveredEvent {a->b}")
 		default:
 			t.Logf("loop3: %T %+v", ev, ev)
+			panic("loop3 received some unknown stuff")
 		}
 	}
 
 	t.Log("Sending message to a")
 	b.SendMessage("a", []byte("b->a"))
 
-loop4:
+loop4: // wait for "b->a" to be delivered
 	for {
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("loop4:Message delivered to a")
 			if event.Nickname == "a" {
+			t.Log("loop4:Message delivered to a")
 				break loop4
 			}
+			t.Log(event)
+			panic("loop4:who the hell got b->a?")
 		case *MessageNotSentEvent:
-			t.Log("loop4", event)
+			t.Log("loop4:", event)
 			panic("loop4:MessageNotSent {b->a}")
 		case *MessageNotDeliveredEvent:
 			t.Log("loop4", event)
 			panic("loop4:MessageNotDeliveredEvent {b->a}")
 		default:
+			t.Logf("%T %+v", event, ev)
+			panic("loop4: default")
 		}
 	}
 
 	c0 := len(a.conversations["b"])
-	t.Log("Renaming contact b to b2")
+	t.Logf("Renaming contact b to b2, len(a.conversations[b]): %v", c0)
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
@@ -752,7 +759,7 @@ loop4:
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 
-loop5:
+loop5: // wait for a->b: "must fail" to fail because b is now called b2
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
@@ -764,13 +771,13 @@ loop5:
 			}
 		default:
 			t.Logf("loop5 %T %+v", event, event)
-			panic("wait why didn't we get an error here")
+			panic("loop5: wait why didn't we get an error here")
 		}
 	}
 
 	// send message to the renamed contact
 	a.SendMessage("b2", []byte("a->b2"))
-loop6:
+loop6: // wait for a->b2 to be delivered
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
@@ -780,6 +787,7 @@ loop6:
 				break loop6
 			} else {
 				t.Log(event)
+				panic("loop6: who did we deliver to")
 			}
 		case *MessageSentEvent:
 			t.Log("loop6:Message sent but not delivered to b2 yet")
@@ -788,6 +796,7 @@ loop6:
 			panic("loop6:couldnt send message")
 		case *MessageReceivedEvent:
 			t.Logf("loop6:a:MessageReceivedEvent %+v", event)
+			panic("loop6: MessageReceivedEvent")
 		default:
 			t.Logf("loop6:how we ended up here %T %s %T %s", event, event, ev, ev)
 			panic("loop6:how did we end up here")
@@ -803,6 +812,7 @@ loop7:
 				break loop7
 			} else {
 				t.Log("loop7",event)
+				panic("wait who sent that")
 			}
 		default:
 			t.Log(event)
@@ -826,6 +836,17 @@ loop7:
 		}
 	}
 	require.Equal(1, sent)
+
+	//a.SendMessage("b", []byte("a->b")) // after loop2
+	//b.SendMessage("a", []byte("b->a")) // after loop3
+	// after loop 4 and renaming b->b2:
+	// a.SendMessage("b", []byte("must fail")) // but "b" no longer exists
+	// a.SendMessage("b2", []byte("a->b2"))
+	// so at this point:
+	// "a" should have sent 2 valid messages to "b"/"b2"
+	// "a" should have received 1 message from "a"
+	// "b" should have sent 1 valid message to "a"
+	// "b" should have received 2 messages from "a"
 
 	if received > 2 {
 		t.Logf("Retransmission of message detected")
