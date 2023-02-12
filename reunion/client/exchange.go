@@ -265,7 +265,7 @@ func (e *Exchange) shouldStop() bool {
 
 func (e *Exchange) sentUpdateOK() bool {
 	serialized, err := e.Marshal()
-	e.updateChan <- ReunionUpdate{
+	e.updateChan <- ReunionUpdate{ // this blocks for 30 min
 		ContactID:  e.contactID,
 		ExchangeID: e.ExchangeID,
 		Error:      err,

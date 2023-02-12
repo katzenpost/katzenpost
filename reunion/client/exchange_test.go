@@ -133,7 +133,7 @@ func TestClientServerBasics1(t *testing.T) {
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		for {
-			update := <-bobUpdateCh
+			update := <-bobUpdateCh // this never gets shut down
 			require.NoError(update.Error)
 			if len(update.Result) > 0 {
 				bobResult = update.Result
@@ -178,10 +178,13 @@ func TestClientServerBasics1(t *testing.T) {
 	err = bobExchange.fetchState()
 	require.NoError(err)
 
-	aliceExchange.processT3Messages()
+	aDidProcess := aliceExchange.processT3Messages()
+	t.Log("alice processT3Messages", aDidProcess)
+	bDidProcess := bobExchange.processT3Messages()
+	t.Log("bob processT3Messages", aDidProcess)
 	aliceExchange.sentUpdateOK()
+	// this blocks for 30min in e.updateChan <- ReunionUpdate
 
-	bobExchange.processT3Messages()
 	bobExchange.sentUpdateOK()
 
 	wg.Wait()
