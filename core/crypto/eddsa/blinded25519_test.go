@@ -177,6 +177,7 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 }
 
 func TestBlinding(t *testing.T) {
+	t.Parallel()
 	assertx := assert.New(t)
 	test_seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(test_seed))

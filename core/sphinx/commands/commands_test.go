@@ -57,6 +57,7 @@ func fromBytesErrorTest(assert *assert.Assertions, b []byte, s string) {
 }
 
 func TestCommands(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 

@@ -78,6 +78,7 @@ func NewSimpleMeetingPlace() *SimpleMeetingPlace {
 }
 
 func TestSerialise(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	secret := []byte("foo")
@@ -139,6 +140,7 @@ func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, sr
 }
 
 func TestKeyExchange(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a, b := make(chan interface{}), make(chan interface{})
@@ -167,6 +169,7 @@ func TestKeyExchange(t *testing.T) {
 
 // XXX FIXME. This test is broken and sometimes deadlocks or sometimes fails.
 func NoTestUpdateSRV(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a, b := make(chan interface{}), make(chan interface{})
@@ -248,6 +251,7 @@ func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp Mee
 }
 
 func TestKeyExchangeWithSerialization(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a, b := make(chan interface{}), make(chan interface{})
