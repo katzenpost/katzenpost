@@ -1,13 +1,12 @@
 package main
 
 import (
-	"context"
-	"encoding/base64"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/sockatz/server"
 	"github.com/katzenpost/katzenpost/sockatz/socks5"
 	"github.com/katzenpost/katzenpost/stream"
 
@@ -108,66 +107,58 @@ func clientHandler(session *client.Session, conn net.Conn) {
 		return
 	}
 
-	// create a StreamSocketRequest for the resource and specifiy the secret
-	// XXX: StreamSecret should be encrypted to the service's epoch key
-	// FIXME: the pki parameters should be used to obtain the epoch key for the session
-	// so that a zero round trip handshake can be used to encrypt the stream session details
-	// wth a a session key that rotates each epoch which clients will encrypt their requests to
+	// create a SockatzRequest for the resource and specifiy the secret
+	// XXX: Stream secret MUST BE ENCRYPTED using a PQ handshake or Stream is not PQ
+
+	// FIXME: the plugin should generate a (ctidh) keypair each epoch and publish it
+	// using the pki parameters so that clients
+
+	// clients will then construct a zero round trip handshake that encrypts the requested
+	// endpoint and stream secret
 	u, err := url.Parse(socksReq.Target)
 	if err != nil {
 		panic(err)
 		return
 	}
-	// XXX: actually send this to the remote service
-	local, err:= stream.NewDuplex(session)
+	local, err := stream.NewDuplex(session)
 	if err != nil {
 		panic(err)
 	}
-	ssr := StreamSocketRequest{Endpoint: u, Address: local.RemoteAddr()}
-	go func() {
-		fmt.Println("launching socks5<->stream<->gateway proxy request")
-		// connect to the stream of the requesting client
-		s, err := stream.DialDuplex(session, "", ssr.Address.String())
-		if err != nil {
-			panic(err)
-		}
-		// dial the remote host (using our local proxy config if specified)
-		pCfg := cfg.UpstreamProxyConfig()
-		pCfg.Network = "tcp"
-		pCfg.Type = "socks5"
-		pCfg.Address= "10.42.42.42:9050"
+	defer local.Close()
 
-		var con net.Conn
-		ctx := context.Background()
-		dialer := pCfg.ToDialContext("")
-		if dialer == nil {
-			con, err = net.Dial("tcp", ssr.Endpoint.String())
-			if err != nil {
-				panic(err)
-			}
-		} else{
-			con, err = dialer(ctx, "tcp", ssr.Endpoint.String())
-			if err != nil {
-				panic(err)
-			}
-		}
-		err = socksReq.Reply(socks5.ReplySucceeded)
-		if err != nil {
-			panic(err)
-		}
-		defer s.Close()
-		defer con.Close()
+	ssr := server.SockatzRequest{Endpoint: u, Stream: local.RemoteAddr().String()}
 
-		if err = copyLoop(s, con); err != nil {
-			fmt.Println("connection lost with err", err)
-		}
-		fmt.Println("connection closed")
-	}()
+	// find a sockatz server for the request
+	d, err := session.GetService("sockatz")
+	if err != nil {
+		socksReq.Reply(socks5.ReplyNetworkUnreachable)
+		return
+	}
+
+	serialized, err := cbor.Marshal(ssr)
+	if err != nil {
+		// XXX: log client err
+		socksReq.Reply(socks5.ReplyGeneralFailure)
+		return
+	}
+	_, err = session.BlockingSendUnreliableMessage(d.Name, d.Provider, serialized)
+	if err != nil {
+		panic(err)
+	}
+	socksReq.Reply(socks5.ReplySucceeded)
+	if err != nil {
+		return
+	}
+
+	fmt.Println("starting copyLoop")
 
 	// send request to the upstream socket server and await the response
 	if err = copyLoop(conn, local); err != nil {
+		fmt.Println("copyLoop err", err)
+		// log err
+	} else {
+		fmt.Println("copyLoop done")
 	}
-	// log done
 }
 
 func copyLoop(a io.ReadWriteCloser, b io.ReadWriteCloser) error {
@@ -202,17 +193,4 @@ func copyLoop(a io.ReadWriteCloser, b io.ReadWriteCloser) error {
 	}
 
 	return nil
-}
-
-func newSecret() []byte {
-	// generate secrets
-	newsecret := &[keySize]byte{}
-	io.ReadFull(rand.Reader, newsecret[:])
-	secret := base64.StdEncoding.EncodeToString(newsecret[:])
-	return []byte(secret)
-}
-
-type StreamSocketRequest struct {
-	Endpoint *url.URL
-	Address  *stream.StreamAddr
 }
