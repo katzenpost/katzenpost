@@ -699,12 +699,18 @@ loop3:
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to b")
 			if event.Nickname == "b" {
+				t.Log("Message delivered to b")
 				break loop3
 			} else {
 				t.Log(event)
 			}
+		case *MessageNotSentEvent:
+			t.Log(event)
+			panic("MessageNotSent {a->b}")
+		case *MessageNotDeliveredEvent:
+			t.Log(event)
+			panic("MessageNotDeliveredEvent {a->b}")
 		default:
 		}
 	}
@@ -721,16 +727,25 @@ loop4:
 			if event.Nickname == "a" {
 				break loop4
 			}
+		case *MessageNotSentEvent:
+			t.Log(event)
+			panic("MessageNotSent {b->a}")
+		case *MessageNotDeliveredEvent:
+			t.Log(event)
+			panic("MessageNotDeliveredEvent {b->a}")
 		default:
 		}
 	}
 
-	t.Log("Renaming contact b")
+	c0 := len(a.conversations["b"])
+	t.Log("Renaming contact b to b2")
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
 	c := a.conversations["b"]
 	require.Equal(len(c), 0)
+	// should have old conversations under new name:
+	require.Equal(c0, len(a.conversations["b2"]))
 
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
@@ -745,6 +760,8 @@ loop5:
 				break loop5
 			}
 		default:
+			t.Log(event)
+			panic("wait why didn't we get an error here")
 		}
 	}
 
@@ -761,7 +778,11 @@ loop6:
 			} else {
 				t.Log(event)
 			}
+		case *MessageSentEvent:
+			t.Log("Message sent but not delivered to b2 yet")
 		default:
+			t.Log(event)
+			panic("how did we end up here")
 		}
 	}
 loop7:
@@ -776,6 +797,8 @@ loop7:
 				t.Log(event)
 			}
 		default:
+			t.Log(event)
+			panic("what the heck")
 		}
 	}
 
@@ -788,10 +811,13 @@ loop7:
 		if msg.Sent {
 			sent += 1
 		} else {
+			if msg.Outbound {
+				panic("Outbound but not Sent")
+			}
 			received += 1
 		}
 	}
-	require.Equal(sent, 1)
+	require.Equal(1, sent)
 
 	if received > 2 {
 		t.Logf("Retransmission of message detected")
@@ -806,13 +832,13 @@ loop7:
 			}
 		}
 	} else {
-		require.Equal(received, 2)
+		require.Equal(2, received)
 	}
 
 	// clear conversation history
 	b.WipeConversation("a")
 	c = b.conversations["a"]
-	require.Equal(len(c), 0)
+	require.Equal(0, len(c))
 
 	a.Shutdown()
 	b.Shutdown()
