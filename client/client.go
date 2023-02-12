@@ -55,14 +55,12 @@ func (c *Client) GetConfig() *config.Config {
 }
 
 // PKIBootstrap returns a pkiClient and fetches a consensus.
-func PKIBootstrap(cfg *config.Config, linkKey wire.PrivateKey) (*pki.Client, *pki.Document, error) {
+func PKIBootstrap(c *Client, linkKey wire.PrivateKey) (*pki.Client, *pki.Document, error) {
+	cfg := c.cfg
 	// Retrieve a copy of the PKI consensus document.
-	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
-	if err != nil {
-		return nil, nil, err
-	}
+	// XXX: this is fucked up and breaks the logger
 	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg, linkKey, cfg.DataDir)
+	pkiClient, err := cfg.NewPKIClient(c.logBackend, proxyCfg, linkKey, cfg.DataDir)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -179,7 +177,7 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 	linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 	// fetch a pki.Document
-	pkiclient, doc, err := PKIBootstrap(c.cfg, linkKey)
+	pkiclient, doc, err := PKIBootstrap(c, linkKey)
 	if err != nil {
 		return nil, err
 	}
