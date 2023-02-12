@@ -181,7 +181,7 @@ func TestClientServerBasics1(t *testing.T) {
 	aDidProcess := aliceExchange.processT3Messages()
 	t.Log("alice processT3Messages", aDidProcess)
 	bDidProcess := bobExchange.processT3Messages()
-	t.Log("bob processT3Messages", aDidProcess)
+	t.Log("bob processT3Messages", bDidProcess)
 	aliceExchange.sentUpdateOK()
 	// this blocks for 30min in e.updateChan <- ReunionUpdate
 
