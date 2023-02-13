@@ -704,6 +704,20 @@ loop2:
 		}
 	}
 
+	b_has_a := 0
+	b_has_a_b2 := 0
+	bMessageReceivedCallback := func(m []byte) {
+		switch string(m) {
+		case "a->b2":
+			b_has_a_b2 = b_has_a_b2 + 1
+		case "a->b":
+			b_has_a = b_has_a + 1
+		default:
+			t.Log(string(m))
+			panic("why did we receive this?")
+		}
+	}
+
 	t.Log("Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
 loop3: // wait for "a->b" to be delivered
@@ -809,14 +823,18 @@ loop6: // wait for a->b2 to be delivered
 			panic("loop6:how did we end up here")
 		}
 	}
-loop7: // wait for a->b2 to be received by b2
+loop7: // wait for a->b2 to be received by b2.
 	for {
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
 			t.Logf("loop7:Message received by b2 %+v", event)
 			require.Equal("a", event.Nickname)
-			break loop7
+			bMessageReceivedCallback(event.Message)
+			if b_has_a > 0 && b_has_a_b2 > 0 {
+				break loop7
+			}
+			t.Logf("loop7: (b) still waiting for another message %d / %d", b_has_a, b_has_a_b2)
 		default:
 			t.Log(event)
 			panic("what the heck")
