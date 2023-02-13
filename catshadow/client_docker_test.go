@@ -835,7 +835,7 @@ loop7: // wait for a->b2 to be received by b2
 			if msg.Outbound {
 				panic("Outbound but not Sent")
 			}
-			t.Logf("recv:%d: %s", received, string(msg.Message))
+			t.Logf("recv:%d: %s", received, string(msg.Plaintext))
 			received += 1
 		}
 	}
