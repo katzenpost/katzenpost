@@ -22,14 +22,14 @@ providers=2
 
 # Parameters
 sr=0
-mu=0.005
-muMax=1000
-lP=0.001
-lPMax=1000
+mu=0.05 # 20 ms per hop avg
+muMax=100 # 100 ms max delay per hop
+lP=0.01 # corresponds to send rate 1/.1 ~ 100 ms or 10 messages / second
+lPMax=100
 lL=0.0005
-lLMax=1000
+lLMax=100
 lD=0.0005
-lDMax=3000
+lDMax=300
 lM=0.2
 lMMax=100
 
