@@ -161,6 +161,7 @@ func (p *pki) worker() {
 			}()
 
 			d, err := p.getDocument(pkiCtx, epoch)
+			cancelFn()
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {
