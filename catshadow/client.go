@@ -206,12 +206,7 @@ func (c *Client) Start() {
 	c.garbageCollectConversations()
 	c.Go(c.eventSinkWorker)
 	c.Go(c.worker)
-	for nickname, contact := range c.GetContacts() {
-		msgs := c.GetSortedConversation(nickname)
-		if len(msgs) > 0 {
-			contact.LastMessage = msgs[len(msgs)-1]
-		}
-	}
+
 	// Shutdown if the client halts for some reason
 	go func() {
 		c.client.Wait()
@@ -321,12 +316,25 @@ func (c *Client) garbageCollectConversations() {
 		if contact.messageExpiration == 0 {
 			continue
 		}
+		// Now > message + expiration
+		// Now - expiration > message + expiration - expiration
+		// Now - expiration > message
+		expiresAt := time.Now().Add(-contact.messageExpiration)
+		var lastLive *Message
 		for mesgID, message := range messages {
-			if time.Now().After(message.Timestamp.Add(contact.messageExpiration)) {
+			if expiresAt.After(message.Timestamp) {
 				if contact.LastMessage == message {
-					contact.LastMessage = nil
+					// instead of nil, should we set it to
+					// the last live message?
+					contact.LastMessage = lastLive
 				}
 				delete(messages, mesgID)
+			} else {
+				// since we aren't iterating in sorted order, we
+				// need to compare before assignment:
+				if lastLive == nil || lastLive.Timestamp.Before(message.Timestamp) {
+					lastLive = message
+				}
 			}
 		}
 	}
