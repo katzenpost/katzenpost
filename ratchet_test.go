@@ -82,8 +82,18 @@ collective behavior embodies values—and the institutions we create do, too.`)
 	require.NoError(t, err)
 	require.Equal(t, msg2, result)
 
+	_, err = b.CreateKeyExchange()
+	require.Error(t, ErrHandshakeAlreadyComplete, err)
+	err = a.ProcessKeyExchange(bkx)
+	require.Error(t, ErrHandshakeAlreadyComplete, err)
+
 	DestroyRatchet(a)
 	DestroyRatchet(b)
+
+	err = a.ProcessKeyExchange(bkx)
+	require.Error(t, ErrHandshakeAlreadyComplete, err)
+	_, err = b.CreateKeyExchange()
+	require.Error(t, ErrHandshakeAlreadyComplete, err)
 }
 
 func Test_Serialization0(t *testing.T) {
