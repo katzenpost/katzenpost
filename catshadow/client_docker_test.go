@@ -866,11 +866,12 @@ loop7: // wait for a->b2 to be received by b2
 	} else {
 		if 2 != received {
 			t.Logf("a.conversations: %+v", a.conversations)
-			t.Logf("b.conversations: %+v", a.conversations)
+			t.Logf("b.conversations: %+v", b.conversations)
 		}
 		// Ought to check the contents to make sure we didn't
 		// just receive the same twice
 		require.Equal(2, received)
+		require.NotEqual(c[0].Message, c[1].Message)
 	}
 
 	// should only have one each since there's only one conversation
