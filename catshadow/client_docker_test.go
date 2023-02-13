@@ -594,36 +594,42 @@ loop2:
 		}
 	}
 
-	t.Log("Sending message to b")
+	t.Log("AddRemove: Sending message to b")
 	a.SendMessage("b", []byte{0})
 loop3:
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to b")
-			if event.Nickname == "b" {
-				break loop3
-			} else {
-				t.Log(event)
-			}
+			t.Log("loop3: AddRemove: Message delivered to b")
+			require.Equal("b", event.Nickname)
+			break loop3
+		case *MessageSentEvent:
+			t.Log("loop3: AddRemove: MessageSent")
 		default:
+			t.Logf("loop3: AddRemove: %T %+v", event, event)
+			panic("loop3: AddRemove:")
 		}
 	}
 
 	t.Log("Sending message to a")
 	b.SendMessage("a", []byte{0})
 
-loop4:
+loop4: // b->a: ""
 	for {
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
 			t.Log("Message delivered to a")
-			if event.Nickname == "a" {
-				break loop4
-			}
+			require.Equal("a", event.Nickname)
+			break loop4
+		case *MessageSentEvent:
+			t.Log("loop4: MessageSent")
+		case *MessageReceivedEvent:
+			t.Log("loop4: AddRemove: received:", event)
 		default:
+			t.Logf("loop3: AddRemove: %T %+v", event, event)
+			panic("loop4: AddRemove:")
 		}
 	}
 
@@ -635,6 +641,11 @@ loop4:
 	t.Log("Removing contact b again, checking for err")
 	err = a.RemoveContact("b")
 	require.Error(err, ErrContactNotFound)
+
+	// we are not guaranteed to have received any messages yet,
+	// they can arrive after RemoveContact("b"),
+	// so the assertion that conversations["b"] is empty seems
+	// risky at this point?
 
 	c := a.conversations["b"]
 	require.Equal(len(c), 0)
@@ -700,7 +711,7 @@ loop3: // wait for "a->b" to be delivered
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("loop3: MessageDelivered %+v", event)
+			t.Logf("loop3: MessageDelivered %+v", event)
 			require.Equal("b", event.Nickname)
 			break loop3
 		case *MessageSentEvent:
@@ -855,6 +866,8 @@ loop7: // wait for a->b2 to be received by b2
 			t.Logf("a.conversations: %+v", a.conversations)
 			t.Logf("b.conversations: %+v", a.conversations)
 		}
+		// Ought to check the contents to make sure we didn't
+		// just receive the same twice
 		require.Equal(2, received)
 	}
 

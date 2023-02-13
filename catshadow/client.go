@@ -552,7 +552,7 @@ func (c *Client) randID() uint64 {
 // called by worker upon opAddContact
 func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	// conversationsMutex lock is taken because we are accessing
-	// c.contactNicknames
+	// c.contactNicknames and c.conversations
 	c.conversationsMutex.Lock()
 	if _, ok := c.contactNicknames[nickname]; ok {
 		return fmt.Errorf("Contact with nickname %s, already exists.", nickname)
@@ -565,6 +565,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	}
 	c.contacts[contact.ID()] = contact
 	c.contactNicknames[contact.Nickname] = contact
+	
 	c.conversationsMutex.Unlock()
 	// FIXME: #157
 	//contact.reunionKeyExchange = make(map[uint64]boundExchange)
