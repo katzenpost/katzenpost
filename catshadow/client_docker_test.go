@@ -700,15 +700,12 @@ loop3: // wait for "a->b" to be delivered
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			if event.Nickname == "b" {
-				t.Log("Message delivered to b")
-				break loop3
-			} else {
-				t.Log(event)
-				panic("who the hell did we MessageDeliveredEvent to")
-			}
-		case *MessageSent:
-			t.Log("loop3: MessengeSent")
+			t.Log("loop3: MessageDelivered %+v", event)
+			require.Equal("b", event.Nickname)
+			break loop3
+		case *MessageSentEvent:
+			t.Log("loop3: MessengeSent {a->b}, now waiting for delivery")
+			require.Equal("b", event.Nickname)
 		case *MessageNotSentEvent:
 			t.Log(event)
 			panic("MessageNotSent {a->b}")
@@ -729,23 +726,19 @@ loop4: // wait for "b->a" to be delivered
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			if event.Nickname == "a" {
-			t.Log("loop4:Message delivered to a")
-				break loop4
-			}
-			t.Log(event)
-			panic("loop4:who the hell got b->a?")
-		case *MessageNotSentEvent:
-			t.Log("loop4:", event)
-			panic("loop4:MessageNotSent {b->a}")
-		case *MessageNotDeliveredEvent:
-			t.Log("loop4", event)
-			panic("loop4:MessageNotDeliveredEvent {b->a}")
+			t.Log("loop4: MessageDelivered b->a")
+			require.Equal("a", event.Nickname)
+			break loop4
+		case *MessageSentEvent:
+			t.Log("loop4: MessageSent")
+			require.Equal("a", event.Nickname)
 		default:
-			t.Logf("%T %+v", event, ev)
-			panic("loop4: default")
+			t.Logf("%T %+v", event, event)
+			panic("loop4: b->a: default")
 		}
 	}
+
+	// now "b" has delivered b->a, but "a" might not have received it yet
 
 	c0 := len(a.conversations["b"])
 	t.Logf("Renaming contact b to b2, len(a.conversations[b]): %v", c0)
@@ -766,14 +759,16 @@ loop5: // wait for a->b: "must fail" to fail because b is now called b2
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageNotSentEvent:
-			if event.Nickname == "b" {
-				break loop5
-			} else {
-				t.Logf("loop5:MNSE: %+v", event)
-			}
+			t.Log("loop5: MessageNotSent (expected)")
+			require.Equal("b", event.Nickname)
+			break loop5
+		case *MessageReceivedEvent:
+			// what happens if it was received before the RenameContact()
+			// but only popped from queue after? is it using the old name then?
+			require.Equal("b2", event.Nickname)
 		default:
 			t.Logf("loop5 %T %+v", event, event)
-			panic("loop5: wait why didn't we get an error here")
+			panic("loop5: Sending to ")
 		}
 	}
 
@@ -785,14 +780,11 @@ loop6: // wait for a->b2 to be delivered
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
 			t.Log("loop6:Message delivered to b2")
-			if event.Nickname == "b2" {
-				break loop6
-			} else {
-				t.Log(event)
-				panic("loop6: who did we deliver to")
-			}
+			require.Equal("b2", event.Nickname)
+			break loop6
 		case *MessageSentEvent:
 			t.Log("loop6:Message sent but not delivered to b2 yet")
+			require.Equal("b2", event.Nickname)
 		case *MessageNotSentEvent:
 			t.Log("loop6:Well that is too plain bad, MessageNotSent")
 			panic("loop6:couldnt send message")
@@ -804,18 +796,14 @@ loop6: // wait for a->b2 to be delivered
 			panic("loop6:how did we end up here")
 		}
 	}
-loop7:
+loop7: // wait for a->b2 to be received by b2
 	for {
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
-			t.Log("loop7:Message received by b2")
-			if event.Nickname == "a" {
-				break loop7
-			} else {
-				t.Log("loop7",event)
-				panic("wait who sent that")
-			}
+			t.Logf("loop7:Message received by b2 %+v", event)
+			require.Equal("a", event.Nickname)
+			break loop7
 		default:
 			t.Log(event)
 			panic("what the heck")
@@ -863,13 +851,23 @@ loop7:
 			}
 		}
 	} else {
+		if 2 != received {
+			t.Logf("a.conversations: %+v", a.conversations)
+			t.Logf("b.conversations: %+v", a.conversations)
+		}
 		require.Equal(2, received)
 	}
+
+	// should only have one each since there's only one conversation
+	// in this test:
+	require.Equal(1, len(a.conversations))
+	require.Equal(1, len(b.conversations))
 
 	// clear conversation history
 	b.WipeConversation("a")
 	c = b.conversations["a"]
 	require.Equal(0, len(c))
+
 
 	a.Shutdown()
 	b.Shutdown()
