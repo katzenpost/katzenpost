@@ -107,6 +107,8 @@ func NewSession(
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
 	idHash := s.linkKey.PublicKey().Sum256()
+	// A per-connection tag (for Tor SOCKS5 stream isloation)
+	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 	clientCfg := &minclient.ClientConfig{
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
@@ -118,7 +120,7 @@ func NewSession(
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
-		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(string(idHash[:])),
+		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(proxyContext),
 		PreferedTransports:  cfg.Debug.PreferedTransports,
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Millisecond,
 		EnableTimeSync:      false, // Be explicit about it.
