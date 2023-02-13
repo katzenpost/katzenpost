@@ -1,5 +1,5 @@
-//go:build ctidh
-// +build ctidh
+//deletemego:build ctidh
+//deleteme +build ctidh
 
 // ctidh_test.go - Adapts ctidh module to our NIKE interface.
 // Copyright (C) 2022  David Stainton.
