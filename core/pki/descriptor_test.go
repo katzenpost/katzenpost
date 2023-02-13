@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
@@ -54,11 +54,11 @@ func TestDescriptor(t *testing.T) {
 	d.IdentityKey = identityPub
 	scheme := wire.DefaultScheme
 	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
-	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
-		mPriv, err := ecdh.NewKeypair(rand.Reader)
+		pubKey, _, err := ecdh.EcdhScheme.GenerateKeyPair()
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey()
+		d.MixKeys[uint64(e)] = pubKey.Bytes()
 	}
 	d.Kaetzchen = make(map[string]map[string]interface{})
 	d.Kaetzchen["miau"] = map[string]interface{}{
@@ -88,6 +88,6 @@ func TestDescriptor(t *testing.T) {
 	for k, v := range d.MixKeys {
 		vv := dd.MixKeys[k]
 		require.NotNil(vv)
-		require.Equal(v.Bytes(), vv.Bytes(), "MixKeys[%v]", k)
+		require.Equal(v, vv, "MixKeys[%v]", k)
 	}
 }

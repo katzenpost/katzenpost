@@ -24,7 +24,7 @@ import (
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	nikeecdh "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -45,11 +45,11 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	d.IdentityKey = identityPub
 	scheme := wire.DefaultScheme
 	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
-	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
-		mPriv, err := ecdh.NewKeypair(rand.Reader)
+		pubKey, _, err := ecdh.EcdhScheme.GenerateKeyPair()
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey()
+		d.MixKeys[uint64(e)] = pubKey.Bytes()
 	}
 	if provider {
 		d.Kaetzchen = make(map[string]map[string]interface{})
@@ -112,6 +112,7 @@ func TestDocument(t *testing.T) {
 			idx++
 		}
 	}
+
 	for i := 0; i < 3; i++ {
 		provider := true
 		_, rawDesc := genDescriptor(require, idx, provider)

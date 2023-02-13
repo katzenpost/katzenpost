@@ -59,10 +59,21 @@ selectLoop:
 			idHash := desc.IdentityKey.Sum256()
 			copy(h.ID[:], idHash[:])
 			epoch, _, _ := epochtime.FromUnix(then.Unix())
-			if k, ok := desc.MixKeys[epoch]; !ok {
+			if _, ok := desc.MixKeys[epoch]; !ok {
 				continue selectLoop
 			} else {
-				h.NIKEPublicKey = k
+				if doc.SphinxGeometry.NIKEName == "" {
+					h.KEMPublicKey, err = desc.UnmarshalMixKeyAsKEM(epoch, doc.SphinxGeometry)
+					if err != nil {
+						return nil, time.Time{}, err
+					}
+				} else {
+					h.NIKEPublicKey, err = desc.UnmarshalMixKeyAsNike(epoch, doc.SphinxGeometry)
+					if err != nil {
+						return nil, time.Time{}, err
+					}
+				}
+
 			}
 
 			// All non-terminal hops, and the terminal forward hop iff the
