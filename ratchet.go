@@ -55,6 +55,7 @@ var (
 	ErrCSIDHPublicExport                      = errors.New("Ratchet: CSIDH: failed to export public key")
 	ErrCSIDHPublicImport                      = errors.New("Ratchet: CSIDH: failed to import public key")
 	ErrCSIDHInvalidPublicKey                  = errors.New("Ratchet: CSIDH public key validation failure")
+	ErrInconsistentState                       = errors.New("Ratchet: the state is inconsistent")
 
 	// These constants are used as the label argument to deriveKey to derive
 	// independent keys from a master key.
@@ -382,7 +383,13 @@ func InitRatchet(rand io.Reader) (*Ratchet, error) {
 // Ratchet's ProcessKeyExchange method to process this byte blob
 // and establish a communications channel with the sender.
 func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
-	if r.kxPrivate0 == nil || r.kxPrivate1 == nil {
+	if r.kxPrivate0 == r.kxPrivate1 && r.kxPrivate0 == nil {
+		return nil, ErrHandshakeAlreadyComplete
+	}
+	if r.kxPrivate0.IsAlive() != r.kxPrivate1.IsAlive() {
+		return nil, ErrInconsistentState
+	}
+	if r.kxPrivate0.IsAlive() == false {
 		return nil, ErrHandshakeAlreadyComplete
 	}
 	public0 := [publicKeySize]byte{}
@@ -445,7 +452,13 @@ func (r *Ratchet) ProcessKeyExchange(exchangePayload []byte) error {
 // completeKeyExchange takes a keyExchange message from the other party and
 // establishes the ratchet.
 func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
-	if r.kxPrivate0 == nil {
+	if r.kxPrivate0 == r.kxPrivate1 && r.kxPrivate0 == nil {
+		return ErrHandshakeAlreadyComplete
+	}
+	if r.kxPrivate0.IsAlive() != r.kxPrivate1.IsAlive() {
+		return ErrInconsistentState
+	}
+	if r.kxPrivate0.IsAlive() == false {
 		return ErrHandshakeAlreadyComplete
 	}
 	if len(kx.Dh0) != publicKeySize || len(kx.Dh1) != publicKeySize {
@@ -525,6 +538,8 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	r.kxPrivate1.Melt()
 	r.kxPrivate0.Destroy()
 	r.kxPrivate1.Destroy()
+	r.kxPrivate0 = nil
+	r.kxPrivate1 = nil
 	return nil
 }
 
