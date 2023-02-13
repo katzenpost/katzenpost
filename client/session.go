@@ -27,7 +27,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -79,27 +78,13 @@ type Session struct {
 // This method will block until session is connected to the Provider.
 func NewSession(
 	ctx context.Context,
+	pkiClient pki.Client,
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
 	linkKey wire.PrivateKey,
 	provider *pki.MixDescriptor) (*Session, error) {
 	var err error
-
-	// create a pkiclient for our own client lookups
-	// AND create a pkiclient for minclient's use
-	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	pkiCacheClient := pkiclient.New(pkiClient2)
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
@@ -122,18 +107,20 @@ func NewSession(
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
 	idHash := s.linkKey.PublicKey().Sum256()
+	// A per-connection tag (for Tor SOCKS5 stream isloation)
+	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 	clientCfg := &minclient.ClientConfig{
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
-		PKIClient:           pkiCacheClient,
+		PKIClient:           pkiClient,
 		OnConnFn:            s.onConnection,
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
-		DialContextFn:       proxyCfg.ToDialContext("authority"),
+		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(proxyContext),
 		PreferedTransports:  cfg.Debug.PreferedTransports,
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Millisecond,
 		EnableTimeSync:      false, // Be explicit about it.
@@ -145,14 +132,8 @@ func NewSession(
 
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
-		pkiCacheClient.Halt()
 		return nil, err
 	}
-	// shutdown the pkiCacheClient when minclient halts
-	go func() {
-		s.minclient.Wait()
-		pkiCacheClient.Halt()
-	}()
 
 	// start the worker
 	s.Go(s.worker)
@@ -216,36 +197,6 @@ func (s *Session) garbageCollect() {
 		return true
 	}
 	s.surbIDMap.Range(surbIDMapRange)
-}
-
-func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
-	for {
-		var qo workerOp
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.HaltCh():
-			s.log.Debugf("Await first pki doc worker terminating gracefully")
-			return errors.New("terminating gracefully")
-		case <-time.After(time.Duration(s.cfg.Debug.InitialMaxPKIRetrievalDelay) * time.Second):
-			return errors.New("timeout failure awaiting first PKI document")
-		case qo = <-s.opCh:
-		}
-		switch op := qo.(type) {
-		case opNewDocument:
-			// Determine if PKI doc is valid. If not then abort.
-			err := s.isDocValid(op.doc)
-			if err != nil {
-				s.fatalErrCh <- fmt.Errorf("aborting, PKI doc is not valid for our decoy traffic use case: %v", err)
-				return err
-			}
-			s.setPollIntervalFromDoc(op.doc)
-			return nil
-		default:
-			continue
-		}
-	}
-	// NOT REACHED
 }
 
 // GetServices returns the services matching the specified service name
@@ -332,12 +283,6 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	if msg.WithSURB && msg.IsDecoy {
 		s.decrementDecoyLoopTally()
 		return nil
-	}
-	if msg.Reliable {
-		err := s.timerQ.Remove(msg)
-		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
-		}
 	}
 
 	if msg.IsBlocking {

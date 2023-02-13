@@ -68,6 +68,7 @@ func (m *MockReunionDB) CurrentSharedRandoms() ([][]byte, error) {
 }
 
 func TestClientServerBasics1(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// variable shared among reunion clients
@@ -180,6 +181,7 @@ func TestClientServerBasics1(t *testing.T) {
 }
 
 func TestClientServerBasics2(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// variable shared among reunion clients
@@ -263,6 +265,7 @@ func TestClientServerBasics2(t *testing.T) {
 }
 
 func NoTestClientServerBasics3(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// variable shared among reunion clients
@@ -393,6 +396,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 }
 
 func TestClientServerBasics4(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// variable shared among reunion clients
@@ -534,6 +538,7 @@ func TestClientServerBasics4(t *testing.T) {
 }
 
 func TestClientStateSavingAndRecovery(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// variable shared among reunion clients

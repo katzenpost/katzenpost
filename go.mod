@@ -14,7 +14,7 @@ require (
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/ctidh_cgo v0.0.0-20221231023300-144e0130d1e9
-	github.com/katzenpost/doubleratchet v0.0.14
+	github.com/katzenpost/doubleratchet v0.0.15
 	github.com/katzenpost/noise v0.0.3
 	github.com/katzenpost/nyquist v0.0.0-20220905145943-9f7e8b431eaf
 	github.com/prometheus/client_golang v1.14.0

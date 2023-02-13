@@ -220,7 +220,37 @@ func (p *pki) worker() {
 			}
 		}
 
-		timer.Reset(recheckInterval)
+		p.updateTimer(timer)
+	}
+}
+
+// updateTimer is used by the worker loop to determine when next to wake and fetch.
+func (p *pki) updateTimer(timer *time.Timer) {
+	now, elapsed, till := epochtime.Now()
+	p.log.Debugf("pki woke %v into epoch %v with %v remaining", elapsed, now, till)
+
+	// it's after the consensus publication deadline
+	if elapsed > vServer.PublishConsensusDeadline {
+		p.log.Debugf("After deadline for next epoch publication")
+		if p.entryForEpoch(now+1) == nil {
+			p.log.Debugf("no document for %v yet, reset to %v", now+1, recheckInterval)
+			timer.Reset(recheckInterval)
+		} else {
+			interval := till
+			p.log.Debugf("document cached for %v, reset to %v", now+1, interval)
+			timer.Reset(interval)
+		}
+	} else {
+		p.log.Debugf("Not yet time for next epoch publication")
+		// no document for current epoch
+		if p.entryForEpoch(now) == nil {
+			p.log.Debugf("no document cached for current epoch %v, reset to %v", now, recheckInterval)
+			timer.Reset(recheckInterval)
+		} else {
+			interval := vServer.PublishConsensusDeadline - elapsed
+			p.log.Debugf("Document cached for current epoch %v, reset to %v", now, recheckInterval)
+			timer.Reset(interval)
+		}
 	}
 }
 
@@ -660,7 +690,6 @@ func New(glue glue.Glue) (glue.PKI, error) {
 		}
 	} else {
 		pkiCfg := &vClient.Config{
-			DataDir:     glue.Config().Server.DataDir,
 			LinkKey:     glue.LinkKey(),
 			LogBackend:  glue.LogBackend(),
 			Authorities: glue.Config().PKI.Voting.Authorities,
