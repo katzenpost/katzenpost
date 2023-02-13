@@ -78,20 +78,13 @@ type Session struct {
 // This method will block until session is connected to the Provider.
 func NewSession(
 	ctx context.Context,
-	pkiclient *pki.Client,
+	pkiClient pki.Client,
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
 	linkKey wire.PrivateKey,
 	provider *pki.MixDescriptor) (*Session, error) {
 	var err error
-
-	// create a pkiclient
-	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey)
-	if err != nil {
-		return nil, err
-	}
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
@@ -125,7 +118,7 @@ func NewSession(
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
-		DialContextFn:       proxyCfg.ToDialContext(string(idHash[:])),
+		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(string(idHash[:])),
 		PreferedTransports:  cfg.Debug.PreferedTransports,
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Millisecond,
 		EnableTimeSync:      false, // Be explicit about it.
