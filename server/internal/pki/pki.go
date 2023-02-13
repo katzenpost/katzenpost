@@ -30,7 +30,6 @@ import (
 	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -426,7 +425,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			desc.AuthenticationType = cpki.OutOfBandAuth
 		}
 	}
-	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	desc.MixKeys = make(map[uint64][]byte)
 
 	// Ensure that there are mix keys for the epochs [e, ..., e+2],
 	// assuming that key rotation isn't disabled, and fill them into
@@ -447,7 +446,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 				// so bail out and try again in a little while.
 				return fmt.Errorf("key that was scheduled for publication got pruned")
 			}
-			desc.MixKeys[e] = k
+			desc.MixKeys[e] = k.Bytes()
 		}
 		if didGen || didPrune {
 			// Kick the crypto workers into reshadowing the mix keys,

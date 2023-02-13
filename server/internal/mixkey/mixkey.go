@@ -28,9 +28,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/yawning/bloom"
 	bolt "go.etcd.io/bbolt"
@@ -68,9 +70,11 @@ type MixKey struct {
 	sync.Mutex
 	worker.Worker
 
-	db      *bolt.DB
-	keypair *ecdh.PrivateKey
-	epoch   uint64
+	db          *bolt.DB
+	nikeKeypair nike.PrivateKey
+	nikePubKey  nike.PublicKey
+	kemKeypair  kem.PrivateKey
+	epoch       uint64
 
 	f         *bloom.Filter
 	writeBack map[[TagLength]byte]bool
@@ -87,13 +91,21 @@ func (k *MixKey) SetUnlinkIfExpired(b bool) {
 }
 
 // PublicKey returns the public component of the key.
-func (k *MixKey) PublicKey() *ecdh.PublicKey {
-	return k.keypair.PublicKey()
+func (k *MixKey) PublicKey() (nike.PublicKey, kem.PublicKey) {
+	if k.nikePubKey == nil {
+		return nil, k.kemKeypair.Public()
+	} else {
+		return k.nikePubKey, nil
+	}
 }
 
 // PrivateKey returns the private component of the key.
-func (k *MixKey) PrivateKey() *ecdh.PrivateKey {
-	return k.keypair
+func (k *MixKey) PrivateKey() (nike.PrivateKey, kem.PrivateKey) {
+	if k.nikeKeypair == nil {
+		return nil, k.kemKeypair
+	} else {
+		return k.nikeKeypair, nil
+	}
 }
 
 // Epoch returns the Katzenpost epoch associated with the keypair.
@@ -286,15 +298,21 @@ func (k *MixKey) forceClose() {
 			os.Remove(f)
 		}
 	}
-	if k.keypair != nil {
-		k.keypair.Reset()
-		k.keypair = nil
+
+	if k.nikeKeypair != nil {
+		k.nikeKeypair.Reset()
+		k.nikePubKey.Reset()
+	}
+
+	if k.kemKeypair != nil {
+		// k.kemKeypair.Reset()
+		k.kemKeypair = nil
 	}
 }
 
 // New creates (or loads) a mix key in the provided data directory, for the
 // given epoch.
-func New(dataDir string, epoch uint64) (*MixKey, error) {
+func New(dataDir string, epoch uint64, g *geo.Geometry) (*MixKey, error) {
 	const (
 		versionKey = "version"
 		pkKey      = "privateKey"
@@ -342,11 +360,20 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 			if b = bkt.Get([]byte(pkKey)); b == nil {
 				return fmt.Errorf("mixkey: db missing privateKey entry")
 			}
-			k.keypair = new(ecdh.PrivateKey)
-			if err = k.keypair.FromBytes(b); err != nil {
-				return err
-			}
 
+			nikeScheme, kemScheme := g.Scheme()
+
+			if nikeScheme != nil {
+				k.nikeKeypair, err = nikeScheme.UnmarshalBinaryPrivateKey(b)
+				if err != nil {
+					return err
+				}
+			} else {
+				k.kemKeypair, err = kemScheme.UnmarshalBinaryPrivateKey(b)
+				if err != nil {
+					return err
+				}
+			}
 			getUint64 := func(key string) (uint64, error) {
 				var buf []byte
 				if buf = bkt.Get([]byte(key)); buf == nil {
@@ -378,16 +405,31 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 
 		// If control reaches here, then a new key needs to be created.
 		didCreate = true
-		k.keypair, err = ecdh.NewKeypair(rand.Reader)
-		if err != nil {
-			return err
+		nikeScheme, kemScheme := g.Scheme()
+		var keypairBytes []byte
+		if nikeScheme != nil {
+			k.nikePubKey, k.nikeKeypair, err = nikeScheme.GenerateKeyPair()
+			if err != nil {
+				return err
+			}
+			keypairBytes = k.nikeKeypair.Bytes()
+		} else {
+			_, k.kemKeypair, err = kemScheme.GenerateKeyPair()
+			if err != nil {
+				return err
+			}
+			keypairBytes, err = k.kemKeypair.MarshalBinary()
+			if err != nil {
+				return err
+			}
 		}
+
 		var epochBytes [8]byte
 		binary.LittleEndian.PutUint64(epochBytes[:], epoch)
 
 		// Stash the version/key/epoch in the metadata bucket.
 		bkt.Put([]byte(versionKey), []byte{0})
-		bkt.Put([]byte(pkKey), k.keypair.Bytes())
+		bkt.Put([]byte(pkKey), keypairBytes)
 		bkt.Put([]byte(epochKey), epochBytes[:])
 
 		return nil

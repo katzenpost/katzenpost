@@ -7,7 +7,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/cloudflare/circl/kem"
+	kemschemes "github.com/cloudflare/circl/kem/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 )
 
@@ -86,6 +88,15 @@ type Geometry struct {
 	// KEMName is the name of the KEM scheme used by the mixnet's Sphinx packet.
 	// NIKEName and KEMName are mutually exclusive.
 	KEMName string
+}
+
+func (g *Geometry) Scheme() (nike.Scheme, kem.Scheme) {
+	s := schemes.ByName(g.NIKEName)
+	k := kemschemes.ByName(g.KEMName)
+	if s == nil && k == nil {
+		panic("failed to get a scheme")
+	}
+	return s, k
 }
 
 func (g *Geometry) String() string {
