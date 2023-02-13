@@ -800,8 +800,10 @@ loop6: // wait for a->b2 to be delivered
 			t.Log("loop6:Well that is too plain bad, MessageNotSent")
 			panic("loop6:couldnt send message")
 		case *MessageReceivedEvent:
+			// at this point can still get "b->a"
 			t.Logf("loop6:a:MessageReceivedEvent %+v", event)
-			panic("loop6: MessageReceivedEvent")
+			require.Equal("b2", event.Nickname)
+			require.Equal("b->a", string(event.Message))
 		default:
 			t.Logf("loop6:how we ended up here %T %s %T %s", event, event, ev, ev)
 			panic("loop6:how did we end up here")
