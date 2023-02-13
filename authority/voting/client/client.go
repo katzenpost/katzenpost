@@ -64,10 +64,6 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
-	// DataDir is the absolute path to the directory
-	// containing Authority link pub key PEM files.
-	DataDir string
-
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey wire.PrivateKey
 
