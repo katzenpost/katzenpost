@@ -211,6 +211,7 @@ loop3:
 			require.NotNil(event.Err)
 			break loop3
 		default:
+			t.Logf("loop3: %T %+v", event, ev)
 		}
 	}
 
@@ -593,36 +594,42 @@ loop2:
 		}
 	}
 
-	t.Log("Sending message to b")
+	t.Log("AddRemove: Sending message to b")
 	a.SendMessage("b", []byte{0})
 loop3:
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to b")
-			if event.Nickname == "b" {
-				break loop3
-			} else {
-				t.Log(event)
-			}
+			t.Log("loop3: AddRemove: Message delivered to b")
+			require.Equal("b", event.Nickname)
+			break loop3
+		case *MessageSentEvent:
+			t.Log("loop3: AddRemove: MessageSent")
 		default:
+			t.Logf("loop3: AddRemove: %T %+v", event, event)
+			panic("loop3: AddRemove:")
 		}
 	}
 
 	t.Log("Sending message to a")
 	b.SendMessage("a", []byte{0})
 
-loop4:
+loop4: // b->a: ""
 	for {
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
 			t.Log("Message delivered to a")
-			if event.Nickname == "a" {
-				break loop4
-			}
+			require.Equal("a", event.Nickname)
+			break loop4
+		case *MessageSentEvent:
+			t.Log("loop4: MessageSent")
+		case *MessageReceivedEvent:
+			t.Log("loop4: AddRemove: received:", event)
 		default:
+			t.Logf("loop3: AddRemove: %T %+v", event, event)
+			panic("loop4: AddRemove:")
 		}
 	}
 
@@ -634,6 +641,11 @@ loop4:
 	t.Log("Removing contact b again, checking for err")
 	err = a.RemoveContact("b")
 	require.Error(err, ErrContactNotFound)
+
+	// we are not guaranteed to have received any messages yet,
+	// they can arrive after RemoveContact("b"),
+	// so the assertion that conversations["b"] is empty seems
+	// risky at this point?
 
 	c := a.conversations["b"]
 	require.Equal(len(c), 0)
@@ -692,90 +704,140 @@ loop2:
 		}
 	}
 
+	b_has_a := 0
+	b_has_a_b2 := 0
+	bMessageReceivedCallback := func(m []byte) {
+		switch string(m) {
+		case "a->b2":
+			b_has_a_b2 = b_has_a_b2 + 1
+		case "a->b":
+			b_has_a = b_has_a + 1
+		default:
+			t.Log(string(m))
+			panic("why did we receive this?")
+		}
+	}
+
 	t.Log("Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
-loop3:
+loop3: // wait for "a->b" to be delivered
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to b")
-			if event.Nickname == "b" {
-				break loop3
-			} else {
-				t.Log(event)
-			}
+			t.Logf("loop3: MessageDelivered %+v", event)
+			require.Equal("b", event.Nickname)
+			break loop3
+		case *MessageSentEvent:
+			t.Log("loop3: MessengeSent {a->b}, now waiting for delivery")
+			require.Equal("b", event.Nickname)
+		case *MessageNotSentEvent:
+			t.Log(event)
+			panic("MessageNotSent {a->b}")
+		case *MessageNotDeliveredEvent:
+			t.Log(event)
+			panic("MessageNotDeliveredEvent {a->b}")
 		default:
+			t.Logf("loop3: %T %+v", ev, ev)
+			panic("loop3 received some unknown stuff")
 		}
 	}
 
 	t.Log("Sending message to a")
 	b.SendMessage("a", []byte("b->a"))
 
-loop4:
+loop4: // wait for "b->a" to be delivered
 	for {
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to a")
-			if event.Nickname == "a" {
-				break loop4
-			}
+			t.Log("loop4: MessageDelivered b->a")
+			require.Equal("a", event.Nickname)
+			break loop4
+		case *MessageSentEvent:
+			t.Log("loop4: MessageSent")
+			require.Equal("a", event.Nickname)
 		default:
+			t.Logf("%T %+v", event, event)
+			panic("loop4: b->a: default")
 		}
 	}
 
-	t.Log("Renaming contact b")
+	// now "b" has delivered b->a, but "a" might not have received it yet
+
+	c0 := len(a.conversations["b"])
+	t.Logf("Renaming contact b to b2, len(a.conversations[b]): %v", c0)
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
 
 	c := a.conversations["b"]
 	require.Equal(len(c), 0)
+	// should have old conversations under new name:
+	require.Equal(c0, len(a.conversations["b2"]))
 
 	// verify that contact data is gone
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 
-loop5:
+loop5: // wait for a->b: "must fail" to fail because b is now called b2
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageNotSentEvent:
-			if event.Nickname == "b" {
-				break loop5
-			}
+			t.Log("loop5: MessageNotSent (expected)")
+			require.Equal("b", event.Nickname)
+			break loop5
+		case *MessageReceivedEvent:
+			// what happens if it was received before the RenameContact()
+			// but only popped from queue after? is it using the old name then?
+			require.Equal("b2", event.Nickname)
 		default:
+			t.Logf("loop5 %T %+v", event, event)
+			panic("loop5: Sending to ")
 		}
 	}
 
 	// send message to the renamed contact
 	a.SendMessage("b2", []byte("a->b2"))
-loop6:
+loop6: // wait for a->b2 to be delivered
 	for {
 		ev := <-a.EventSink
 		switch event := ev.(type) {
 		case *MessageDeliveredEvent:
-			t.Log("Message delivered to b2")
-			if event.Nickname == "b2" {
-				break loop6
-			} else {
-				t.Log(event)
-			}
+			t.Log("loop6:Message delivered to b2")
+			require.Equal("b2", event.Nickname)
+			break loop6
+		case *MessageSentEvent:
+			t.Log("loop6:Message sent but not delivered to b2 yet")
+			require.Equal("b2", event.Nickname)
+		case *MessageNotSentEvent:
+			t.Log("loop6:Well that is too plain bad, MessageNotSent")
+			panic("loop6:couldnt send message")
+		case *MessageReceivedEvent:
+			// at this point can still get "b->a"
+			t.Logf("loop6:a:MessageReceivedEvent %+v", event)
+			require.Equal("b2", event.Nickname)
+			require.Equal("b->a", string(event.Message))
 		default:
+			t.Logf("loop6:how we ended up here %T %s %T %s", event, event, ev, ev)
+			panic("loop6:how did we end up here")
 		}
 	}
-loop7:
+loop7: // wait for a->b2 to be received by b2.
 	for {
 		ev := <-b.EventSink
 		switch event := ev.(type) {
 		case *MessageReceivedEvent:
-			t.Log("Message received by b2")
-			if event.Nickname == "a" {
+			t.Logf("loop7:Message received by b2 %+v", event)
+			require.Equal("a", event.Nickname)
+			bMessageReceivedCallback(event.Message)
+			if b_has_a > 0 && b_has_a_b2 > 0 {
 				break loop7
-			} else {
-				t.Log(event)
 			}
+			t.Logf("loop7: (b) still waiting for another message %d / %d", b_has_a, b_has_a_b2)
 		default:
+			t.Log(event)
+			panic("what the heck")
 		}
 	}
 
@@ -788,10 +850,25 @@ loop7:
 		if msg.Sent {
 			sent += 1
 		} else {
+			if msg.Outbound {
+				panic("Outbound but not Sent")
+			}
+			t.Logf("recv:%d: %s", received, string(msg.Plaintext))
 			received += 1
 		}
 	}
-	require.Equal(sent, 1)
+	require.Equal(1, sent)
+
+	//a.SendMessage("b", []byte("a->b")) // after loop2
+	//b.SendMessage("a", []byte("b->a")) // after loop3
+	// after loop 4 and renaming b->b2:
+	// a.SendMessage("b", []byte("must fail")) // but "b" no longer exists
+	// a.SendMessage("b2", []byte("a->b2"))
+	// so at this point:
+	// "a" should have sent 2 valid messages to "b"/"b2"
+	// "a" should have received 1 message from "a"
+	// "b" should have sent 1 valid message to "a"
+	// "b" should have received 2 messages from "a"
 
 	if received > 2 {
 		t.Logf("Retransmission of message detected")
@@ -806,13 +883,26 @@ loop7:
 			}
 		}
 	} else {
-		require.Equal(received, 2)
+		if 2 != received {
+			t.Logf("a.conversations: %d: %+v", len(a.conversations), a.conversations)
+			t.Logf("b.conversations: %d: %+v", len(b.conversations), b.conversations)
+		}
+		// Ought to check the contents to make sure we didn't
+		// just receive the same twice
+		require.Equal(2, received)
+		//require.NotEqual(c[0].Message, c[1].Message)
 	}
+
+	// should only have one each since there's only one conversation
+	// in this test:
+	require.Equal(1, len(a.conversations))
+	require.Equal(1, len(b.conversations))
 
 	// clear conversation history
 	b.WipeConversation("a")
 	c = b.conversations["a"]
-	require.Equal(len(c), 0)
+	require.Equal(0, len(c))
+
 
 	a.Shutdown()
 	b.Shutdown()
