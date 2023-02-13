@@ -823,8 +823,10 @@ loop7:
 			received += 1
 		}
 	}
-	require.Equal(sent, 1)
-	require.Equal(received, 2)
+	require.Equal(1, sent)
+	require.Equal(2, received)
+	require.Equal(1, len(a.conversations))
+	require.Equal(1, len(b.conversations))
 
 	// clear conversation history
 	b.WipeConversation("a")
