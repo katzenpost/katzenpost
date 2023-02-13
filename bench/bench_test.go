@@ -25,6 +25,7 @@ import (
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
@@ -34,7 +35,9 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
 
+	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync"
@@ -49,6 +52,7 @@ import (
 
 var (
 	clientTestCfg = "testdata/client.toml"
+	initialPKIConsensusTimeout = 45 * time.Second
 
 	// prometheus counters
 	clientMessageSent = prometheus.NewCounter(
@@ -145,7 +149,12 @@ func (b *MinclientBench) setup() {
 
 	b.linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	idHash := b.linkKey.PublicKey().Sum256()
-	pkiClient, doc, err := client.PKIBootstrap(cfg, b.linkKey)
+	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
+	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey)
+	currentEpoch, _, _ := epochtime.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
+	defer cancel()
+	doc, _, err := pkiClient.Get(ctx, currentEpoch)
 	if err != nil {
 		panic(err)
 	}
@@ -161,12 +170,12 @@ func (b *MinclientBench) setup() {
 		ProviderKeyPin:      b.provider.IdentityKey,
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
-		PKIClient:           *pkiClient,
+		PKIClient:           pkiClient,
 		OnConnFn:            b.onConn,
 		OnMessageFn:         b.onMessage,
 		OnACKFn:             b.onAck,
 		OnDocumentFn:        b.onDocument,
-		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(string(idHash[:])),
+		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(proxyContext),
 		PreferedTransports:  cfg.Debug.PreferedTransports,
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Millisecond,
 		EnableTimeSync:      false, // Be explicit about it.
