@@ -835,6 +835,7 @@ loop7: // wait for a->b2 to be received by b2
 			if msg.Outbound {
 				panic("Outbound but not Sent")
 			}
+			t.Logf("recv:%d: %s", received, string(msg.Message))
 			received += 1
 		}
 	}
@@ -865,8 +866,8 @@ loop7: // wait for a->b2 to be received by b2
 		}
 	} else {
 		if 2 != received {
-			t.Logf("a.conversations: %+v", a.conversations)
-			t.Logf("b.conversations: %+v", b.conversations)
+			t.Logf("a.conversations: %d: %+v", len(a.conversations), a.conversations)
+			t.Logf("b.conversations: %d: %+v", len(b.conversations), b.conversations)
 		}
 		// Ought to check the contents to make sure we didn't
 		// just receive the same twice
