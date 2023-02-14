@@ -28,9 +28,10 @@ import (
 func TestEcdhNike(t *testing.T) {
 	ecdhNike := NewEcdhNike(rand.Reader)
 
-	alicePrivateKey, alicePublicKey := ecdhNike.NewKeypair()
+	alicePublicKey, alicePrivateKey, err := ecdhNike.GenerateKeyPair()
+	require.NoError(t, err)
 
-	tmp := alicePrivateKey.(*ecdh.PrivateKey).PublicKey()
+	tmp := alicePrivateKey.(*PrivateKey).privateKey.PublicKey()
 	require.Equal(t, alicePublicKey.Bytes(), tmp.Bytes())
 
 	bobKeypair, err := ecdh.NewKeypair(rand.Reader)
