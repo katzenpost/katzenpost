@@ -90,7 +90,7 @@ func doTestLoad(t *testing.T) {
 	k.SetUnlinkIfExpired(true)
 	defer k.Deref()
 
-	assert.Equal(&testKey, k.PrivateKey(), "Serialized private key")
+	assert.Equal(testKey.Bytes(), k.PrivateKey().Bytes(), "Serialized private key")
 	assert.Equal(testKey.PublicKey(), k.Public(), "Serialized public key")
 	assert.Equal(uint64(testEpoch), k.Epoch(), "Serialized epoch")
 
