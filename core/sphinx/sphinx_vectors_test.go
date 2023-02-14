@@ -25,7 +25,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
@@ -92,7 +91,7 @@ func TestVectorSphinx(t *testing.T) {
 		// Unwrap the packet, validating the output.
 		for i := range test.Nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			privateKey := new(ecdh.PrivateKey)
+			privateKey := mynike.NewEmptyPrivateKey()
 			rawKey, err := hex.DecodeString(test.Nodes[i].PrivateKey)
 			require.NoError(err)
 			err = privateKey.FromBytes(rawKey)
@@ -149,7 +148,7 @@ func TestVectorSphinx(t *testing.T) {
 	}
 }
 
-func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
+func buildVectorSphinx(t *testing.T, mynike nike.Scheme, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)
