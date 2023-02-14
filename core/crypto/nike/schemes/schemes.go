@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/csidh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
@@ -11,6 +12,7 @@ import (
 // TODO(david): later we will add the CTIDH NIKE scheme. For
 // now it's guarded behind the "ctidh" build tag.
 var allSchemes = [...]nike.Scheme{
+	csidh.CSIDHScheme,
 	ecdh.NewEcdhNike(rand.Reader),
 }
 
