@@ -67,7 +67,7 @@ func DefaultGeometry() *Geometry {
 	return defaultGeometry(ecdh.NewEcdhNike(rand.Reader))
 }
 
-func defaultGeometry(nike nike.Nike) *Geometry {
+func defaultGeometry(nike nike.Scheme) *Geometry {
 	forwardPayloadLength := 2 * 1024
 	nrHops := 5
 	return GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
@@ -130,7 +130,7 @@ func (g *Geometry) String() string {
 }
 
 type geometryFactory struct {
-	nike                 nike.Nike
+	nike                 nike.Scheme
 	kem                  kem.Scheme
 	nrHops               int
 	forwardPayloadLength int
@@ -192,7 +192,7 @@ func (f *geometryFactory) deriveForwardPayloadLength(userForwardPayloadLength in
 	return userForwardPayloadLength + (sphinxPlaintextHeaderLength + f.surbLength())
 }
 
-func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
+func GeometryFromUserForwardPayloadLength(nike nike.Scheme, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
 	f := &geometryFactory{
 		nike:   nike,
 		nrHops: nrHops,
@@ -222,7 +222,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Nike, userForwardPayloadLeng
 	return geo
 }
 
-func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHops int) *Geometry {
+func GeometryFromForwardPayloadLength(nike nike.Scheme, forwardPayloadLength, nrHops int) *Geometry {
 	f := &geometryFactory{
 		nike:                 nike,
 		nrHops:               nrHops,
@@ -246,13 +246,13 @@ func GeometryFromForwardPayloadLength(nike nike.Nike, forwardPayloadLength, nrHo
 // Sphinx is a modular implementation of the Sphinx cryptographic packet
 // format that has a pluggable NIKE, non-interactive key exchange.
 type Sphinx struct {
-	nike     nike.Nike
+	nike     nike.Scheme
 	kem      kem.Scheme
 	geometry *Geometry
 }
 
 // NewSphinx creates a new instance of Sphinx.
-func NewSphinx(n nike.Nike, geometry *Geometry) *Sphinx {
+func NewSphinx(n nike.Scheme, geometry *Geometry) *Sphinx {
 	s := &Sphinx{
 		nike:     n,
 		geometry: geometry,
@@ -310,7 +310,10 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	}
 
 	// Derive the key material for each hop.
-	clientPrivateKey, clientPublicKey := s.nike.NewKeypair()
+	clientPublicKey, clientPrivateKey, err := s.nike.GenerateKeyPair()
+	if err != nil {
+		return nil, nil, err
+	}
 	defer clientPrivateKey.Reset()
 	defer clientPublicKey.Reset()
 
@@ -323,7 +326,6 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	keys[0] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize())
 	defer keys[0].Reset()
 
-	var err error
 	groupElements[0], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 	if err != nil {
 		panic(err)
