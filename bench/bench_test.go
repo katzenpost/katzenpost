@@ -343,8 +343,6 @@ func (b *ClientBench) sendWorker() {
 			case <-b.HaltCh():
 				return
 			case <-b.onSent:
-				// block until message has left queue
-				<-b.onSent
 			}
 		}
 	}
