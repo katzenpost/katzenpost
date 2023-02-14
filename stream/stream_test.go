@@ -92,22 +92,11 @@ func TestCreateStream(t *testing.T) {
 	session := getSession(t)
 	require.NotNil(session)
 
-	// get a client
-	c, err := mClient.NewClient(session)
-	require.NoError(err)
-
-	// get a duplex as initiator
-	initiator := true
-	secret := make([]byte, 32)
-	io.ReadFull(rand.Reader, secret)
-	transport := mClient.DuplexFromSeed(c, initiator, secret)
-
 	// listener (initiator) of stream
-	s := NewStream(transport)
+	s := NewStream(session)
 
-	// dialer (client) of stream
-	dtransport := mClient.DuplexFromSeed(c, false, secret)
-	r, err := Dial(dtransport, "", s.RemoteAddr().String())
+	// receiver (dialer) of stream
+	r, err := DialDuplex(session, "", s.RemoteAddr().String())
 	require.NoError(err)
 
 	msg := []byte("Hello World")
@@ -208,8 +197,7 @@ func TestStreamFragmentation(t *testing.T) {
 
 	// worker B
 	go func() {
-		d := mClient.DuplexFromSeed(c, false, []byte(addr.String()))
-		s, err := Dial(d, "", addr.String())
+		s, err := DialDuplex(session, "", addr.String())
 		require.NoError(err)
 		for {
 			msg, ok := <-sidechannel

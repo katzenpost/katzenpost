@@ -806,15 +806,18 @@ func newStream(c Transport) *Stream {
 
 // NewStream generates a new address and starts the read/write workers
 // func NewStream(c Transport, identity sign.PrivateKey, sign.PublicKey) *Stream {
-func NewStream(c Transport) *Stream {
-	s := newStream(c)
+func NewStream(s *client.Session) *Stream {
+	c, _ := mClient.NewClient(s)
 	addr := &StreamAddr{network: "", address: generate()}
-	err := s.keyAsListener(addr)
+	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
+	st := newStream(t)
+	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
+	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
 	}
-	s.Start()
-	return s
+	st.Start()
+	return st
 }
 
 // LoadStream initializes a Stream from state saved by Save()
