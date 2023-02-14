@@ -319,13 +319,22 @@ func (c *Client) garbageCollectConversations() {
 		// Now > message + expiration
 		// Now - expiration > message + expiration - expiration
 		// Now - expiration > message
+		// == expiresAt.After(message.Timestamp):
 		expiresAt := time.Now().Add(-contact.messageExpiration)
 		var lastLive *Message
+		// maintain a stable contact.LastMessage unless it's expired;
+		// that way we only update contact.LastMessage/lastLive in case
+		// it was wrong or expired:
+		if contact.LastMessage != nil {
+			if expiresAt.After(contact.LastMessage.Timestamp) {
+				contact.LastMessage = nil
+			} else {
+				lastLive = contact.LastMessage
+			}
+		}
 		for mesgID, message := range messages {
 			if expiresAt.After(message.Timestamp) {
 				if contact.LastMessage == message {
-					// instead of nil, should we set it to
-					// the last live message?
 					contact.LastMessage = lastLive
 				}
 				delete(messages, mesgID)
@@ -334,6 +343,7 @@ func (c *Client) garbageCollectConversations() {
 				// need to compare before assignment:
 				if lastLive == nil || lastLive.Timestamp.Before(message.Timestamp) {
 					lastLive = message
+					contact.LastMessage = lastLive
 				}
 			}
 		}
