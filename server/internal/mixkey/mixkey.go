@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -87,13 +88,13 @@ func (k *MixKey) SetUnlinkIfExpired(b bool) {
 }
 
 // PublicKey returns the public component of the key.
-func (k *MixKey) PublicKey() *ecdh.PublicKey {
+func (k *MixKey) Public() *ecdh.PublicKey {
 	return k.keypair.PublicKey()
 }
 
 // PrivateKey returns the private component of the key.
-func (k *MixKey) PrivateKey() *ecdh.PrivateKey {
-	return k.keypair
+func (k *MixKey) PrivateKey() *ecdhnike.PrivateKey {
+	return ecdhnike.FromECDH(k.keypair)
 }
 
 // Epoch returns the Katzenpost epoch associated with the keypair.

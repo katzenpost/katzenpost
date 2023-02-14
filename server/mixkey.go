@@ -125,7 +125,7 @@ func (m *mixKeys) Get(epoch uint64) (*ecdh.PublicKey, bool) {
 	defer m.Unlock()
 
 	if k, ok := m.keys[epoch]; ok {
-		return k.PublicKey(), true
+		return k.Public(), true
 	}
 	return nil, false
 }

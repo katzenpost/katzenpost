@@ -48,6 +48,12 @@ func NewEcdhNike(rng io.Reader) *EcdhNike {
 	}
 }
 
+func FromECDH(p *ecdh.PrivateKey) *PrivateKey {
+	return &PrivateKey{
+		privateKey: p,
+	}
+}
+
 type PrivateKey struct {
 	privateKey *ecdh.PrivateKey
 }
