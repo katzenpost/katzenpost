@@ -26,6 +26,7 @@ import (
 )
 
 func TestBlockPlaintext(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	var msgID [MessageIDLength]byte
@@ -60,6 +61,7 @@ func TestBlockPlaintext(t *testing.T) {
 }
 
 func TestBlockCrypto(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 

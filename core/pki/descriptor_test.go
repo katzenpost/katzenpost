@@ -31,6 +31,7 @@ import (
 const debugTestEpoch = 0xFFFFFFFF
 
 func TestDescriptor(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 

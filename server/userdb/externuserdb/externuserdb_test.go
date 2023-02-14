@@ -28,6 +28,7 @@ import (
 )
 
 func TestExists(t *testing.T) {
+	t.Parallel()
 	ts := httpMock("{\"exists\": true}")
 	defer ts.Close()
 
@@ -40,6 +41,7 @@ func TestExists(t *testing.T) {
 }
 
 func TestNotExists(t *testing.T) {
+	t.Parallel()
 	ts := httpMock("{\"exists\": false}")
 	defer ts.Close()
 
@@ -52,6 +54,7 @@ func TestNotExists(t *testing.T) {
 }
 
 func TestIsValid(t *testing.T) {
+	t.Parallel()
 	ts := httpMock("{\"isvalid\": true}")
 	defer ts.Close()
 
@@ -70,6 +73,7 @@ func TestIsValid(t *testing.T) {
 }
 
 func TestIsNotValid(t *testing.T) {
+	t.Parallel()
 	ts := httpMock("{\"isvalid\": false}")
 	defer ts.Close()
 

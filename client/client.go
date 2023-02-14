@@ -55,12 +55,9 @@ func (c *Client) GetConfig() *config.Config {
 }
 
 // PKIBootstrap returns a pkiClient and fetches a consensus.
-func PKIBootstrap(c *Client, linkKey wire.PrivateKey) (*pki.Client, *pki.Document, error) {
-	cfg := c.cfg
+func PKIBootstrap(c *Client, linkKey wire.PrivateKey) (pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
-	// XXX: this is fucked up and breaks the logger
-	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(c.logBackend, proxyCfg, linkKey, cfg.DataDir)
+	pkiClient, err := c.cfg.NewPKIClient(c.logBackend, c.cfg.UpstreamProxyConfig(), linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -71,7 +68,7 @@ func PKIBootstrap(c *Client, linkKey wire.PrivateKey) (*pki.Client, *pki.Documen
 	if err != nil {
 		return nil, nil, err
 	}
-	return &pkiClient, doc, nil
+	return pkiClient, doc, nil
 }
 
 // SelectProvider returns a provider descriptor or error.
