@@ -67,7 +67,8 @@ type pki struct {
 	lastPublishedEpoch uint64
 	lastWarnedEpoch    uint64
 
-	blockStartChan chan struct{}
+	blockStartChan  chan struct{}
+	resumeStartChan chan struct{}
 
 	geometry *geo.Geometry
 	sphinx   *sphinx.Sphinx
@@ -76,6 +77,10 @@ type pki struct {
 func (p *pki) StartWorker() {
 	p.Go(p.worker)
 	p.blockUntilConsensus()
+}
+
+func (p *pki) ResumeStartup() {
+	p.resumeStartChan <- struct{}{}
 }
 
 func (p *pki) blockUntilConsensus() {
@@ -202,6 +207,7 @@ func (p *pki) worker() {
 			if !firstStart {
 				firstStart = true
 				p.blockStartChan <- struct{}{}
+				<-p.resumeStartChan
 			}
 		}
 

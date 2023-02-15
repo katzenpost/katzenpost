@@ -394,6 +394,8 @@ func (s *Server) Start() error {
 		s.Shutdown()
 	}()
 
+	s.pki.ResumeStartup()
+
 	if s.cfg.Server.IsProvider {
 		s.provider.Start()
 	}
