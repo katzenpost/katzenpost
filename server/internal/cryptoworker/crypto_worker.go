@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -98,7 +99,18 @@ func (w *Worker) doUnwrap(pkt *packet.Packet) error {
 
 		// TODO/perf: payload is a new heap allocation if it's returned,
 		// though that should only happen if this is a provider.
-		payload, tag, cmds, err := w.sphinx.Unwrap(k.PrivateKey(), pkt.Raw)
+
+		nikePrivKey, kemPrivKey := k.PrivateKey()
+		var payload []byte
+		var tag []byte
+		var cmds []commands.RoutingCommand
+		var err error
+
+		if nikePrivKey != nil {
+			payload, tag, cmds, err = w.sphinx.Unwrap(nikePrivKey, pkt.Raw)
+		} else {
+			payload, tag, cmds, err = w.sphinx.Unwrap(kemPrivKey, pkt.Raw)
+		}
 		unwrapAt := monotime.Now()
 
 		w.log.Debugf("Packet: %v (Unwrap took: %v)", pkt.ID, unwrapAt-startAt)
