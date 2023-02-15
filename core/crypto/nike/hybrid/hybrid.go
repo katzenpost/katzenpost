@@ -182,9 +182,15 @@ func (p *privateKey) UnmarshalText(data []byte) error {
 func (p *publicKey) Blind(blindingFactor []byte) error {
 	err := p.first.Blind(blindingFactor[:p.scheme.first.PublicKeySize()])
 	if err != nil {
+		p.Reset()
 		return err
 	}
-	return p.second.Blind(blindingFactor[p.scheme.first.PublicKeySize():])
+	err = p.second.Blind(blindingFactor[p.scheme.first.PublicKeySize():])
+	if err != nil {
+		p.Reset()
+		return err
+	}
+	return nil
 }
 
 func (p *publicKey) Reset() {
