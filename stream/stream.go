@@ -307,7 +307,8 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 	}
 	defer s.Unlock()
 	// if stream closed, abort Write
-	if s.WState == StreamClosed {
+	if s.WState == StreamClosed || s.WState == StreamClosing {
+		<-s.onStreamClose
 		return 0, io.EOF
 	}
 	s.log.Debugf("Write() doFlush()")
@@ -350,7 +351,7 @@ func (s *Stream) writer() {
 		switch s.WState {
 		case StreamClosed:
 			s.log.Debugf("writer() StreamClosed")
-			s.onStreamClose <- struct{}{}
+			close(s.onStreamClose)
 			s.Unlock()
 			return
 		case StreamOpen, StreamClosing:
@@ -365,11 +366,9 @@ func (s *Stream) writer() {
 			}
 			if s.RState == StreamClosed || s.WState == StreamClosing {
 				mustTeardown = true
-				if s.WriteBuf.Len() != 0 {
-					s.log.Debugf("writer() data to send: !mustTeardown")
-					mustTeardown = false
-				} else {
-					s.log.Debugf("writer() mustTeardown")
+				if s.WState != StreamClosing {
+					s.log.Debugf("Rstate == StreamClosed, setting WState == StreamClosing")
+					s.WState = StreamClosing
 				}
 				if s.ReadIdx-s.AckIdx > 0 {
 					mustAck = true
