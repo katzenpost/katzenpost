@@ -533,10 +533,11 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	if err != nil {
 		return err
 	}
-	_, _, til := epochtime.Now()
+	//_, _, til := epochtime.Now()
 	s.Lock()
 	// Retransmit unacknowledged blocks every few epochs
-	m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
+	//m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
+	m := &smsg{f: frame, priority: uint64(time.Now().Add(10*time.Second).UnixNano())}
 	frame_id := s.txFrameID(frame.id)
 	frame_key := s.txFrameKey(frame.id)
 	// Update reference to last acknowledged message on retransmit
