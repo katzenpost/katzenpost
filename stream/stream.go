@@ -31,6 +31,8 @@ const (
 var (
 	hash             = sha256.New
 	retryDelay       = epochtime.Period / 16
+	minBackoffDelay  = 1 * time.Millisecond
+	maxBackoffDelay  = 200 * time.Millisecond // epochtime.Period
 	defaultTimeout   = 5 * time.Minute
 	FramePayloadSize int
 	ErrStreamClosed  = errors.New("Stream Closed")
@@ -180,6 +182,7 @@ func (r *ReTx) Push(i client.Item) error {
 
 // reader polls receive window of messages and adds to the reader queue
 func (s *Stream) reader() {
+	backoff := minBackoffDelay
 	for {
 		s.Lock()
 		switch s.RState {
@@ -207,16 +210,37 @@ func (s *Stream) reader() {
 		f, err := s.readFrame()
 		switch err {
 		case nil:
+			backoff = backoff >> 2
+			if backoff < minBackoffDelay {
+				backoff = minBackoffDelay
+			}
+			s.log.Debugf("reader() got Frame: resetting backoff: %s", backoff)
 		case mClient.ErrStatusNotFound:
+			s.log.Debugf("%s for frame: %d", err, s.ReadIdx)
+			backoff = backoff << 1
+			if backoff > maxBackoffDelay {
+				backoff = maxBackoffDelay
+			}
+			s.log.Debugf("reader() backoff: wait for %s", backoff)
 			// we got a response from the map service but no data
+			select {
+			case <-time.After(backoff):
+			case <-s.HaltCh():
+				return
+			}
 			continue
 		default:
 			s.log.Errorf("readFrame Got err %s", err)
+			s.log.Errorf("retrying in %s", backoff)
+			backoff = backoff << 1
+			if backoff > maxBackoffDelay {
+				backoff = maxBackoffDelay
+			}
 			// rate limit spinning if client is offline, error returns immediately
 			select {
 			case <-s.HaltCh():
 				return
-			case <-time.After(retryDelay):
+			case <-time.After(backoff):
 			}
 			continue
 		}
@@ -452,7 +476,13 @@ func (s *Stream) writer() {
 			switch err {
 			case nil:
 				s.log.Debugf("txFrame OK: do.OnWrite()")
-				s.doOnWrite()
+				// wakes writer into state where Write returns 0, nil
+				// which is treated as EOF condition
+				if n > 0 {
+					s.doOnWrite()
+				} else {
+					// do not wake blocked Write() if no data frames were sent
+				}
 			default:
 				s.log.Debugf("txFrame err: do.OnWrite()")
 				select {
