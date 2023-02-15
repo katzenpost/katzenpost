@@ -52,12 +52,6 @@ type Sphinx struct {
 
 // FromGeometry returns Sphinx type given a valid Geometry.
 func FromGeometry(geometry *geo.Geometry) (*Sphinx, error) {
-	if geometry.NIKEName == "" && geometry.KEMName == "" {
-		return nil, errors.New("geometry NIKEName or KEMName must be set")
-	}
-	if geometry.NIKEName != "" && geometry.KEMName != "" {
-		return nil, errors.New("geometry NIKEName and KEMName must not both be set")
-	}
 	if geometry.NIKEName != "" {
 		mynike := schemes.ByName(geometry.NIKEName)
 		return &Sphinx{
@@ -65,7 +59,6 @@ func FromGeometry(geometry *geo.Geometry) (*Sphinx, error) {
 			geometry: geometry,
 		}, nil
 	}
-	fmt.Println("KEM name is set")
 	return &Sphinx{
 		kem:      kemschemes.ByName(geometry.KEMName),
 		geometry: geometry,

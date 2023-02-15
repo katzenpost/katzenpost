@@ -32,7 +32,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -403,7 +402,7 @@ func (cfg *Config) FixupAndValidate() error {
 	if cfg.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
 	}
-	_, err := sphinx.FromGeometry(cfg.SphinxGeometry)
+	err := cfg.SphinxGeometry.Validate()
 	if err != nil {
 		return err
 	}

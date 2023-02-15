@@ -2,6 +2,7 @@ package geo
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -88,6 +89,48 @@ type Geometry struct {
 	// KEMName is the name of the KEM scheme used by the mixnet's Sphinx packet.
 	// NIKEName and KEMName are mutually exclusive.
 	KEMName string
+}
+
+// Validate returns an error if one of it's validation checks fails. Note however
+// that currently we only validate a few of the Geometry fields. This is not meant
+// to be exhaustive, but more checks could be added.
+func (g *Geometry) Validate() error {
+	if g == nil {
+		return errors.New("geometry reference is nil")
+	}
+	if g.NIKEName == "" && g.KEMName == "" {
+		return errors.New("geometry NIKEName or KEMName must be set")
+	}
+	if g.NIKEName != "" && g.KEMName != "" {
+		return errors.New("geometry NIKEName and KEMName must not both be set")
+	}
+	if g.NIKEName != "" {
+		mynike := schemes.ByName(g.NIKEName)
+		if mynike == nil {
+			return fmt.Errorf("geometry has invalid NIKE Scheme %s", g.NIKEName)
+		}
+	} else {
+		mykem := kemschemes.ByName(g.KEMName)
+		if mykem == nil {
+			return fmt.Errorf("geometry has invalid KEM Scheme %s", g.KEMName)
+		}
+	}
+	if g.PacketLength == 0 {
+		return errors.New("geometry has PacketLength of 0")
+	}
+	if g.NrHops == 0 {
+		return errors.New("geometry has NrHops of 0")
+	}
+	if g.HeaderLength == 0 {
+		return errors.New("geometry has HeaderLength of 0")
+	}
+	if g.RoutingInfoLength == 0 {
+		return errors.New("geometry has RoutingInfoLength of 0")
+	}
+	if g.PerHopRoutingInfoLength == 0 {
+		return errors.New("geometry has PerHopRoutingInfoLength of 0")
+	}
+	return nil
 }
 
 func (g *Geometry) Scheme() (nike.Scheme, kem.Scheme) {
