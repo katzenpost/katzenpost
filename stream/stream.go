@@ -186,15 +186,18 @@ func (s *Stream) reader() {
 		case StreamClosed:
 			// No more frames will be sent by peer
 			// If ReliableStream, send final Ack
-			if s.ReadIdx > s.AckIdx {
-				s.doFlush()
+			if s.ReadIdx > 0 {
+				if s.ReadIdx-1 > s.AckIdx {
+					s.log.Debugf("reader mustAck at StreamClosed() doFlush()")
+					s.doFlush()
+				}
 			}
 			s.Unlock()
 			return
 		case StreamOpen:
 			// prod writer to Ack
-			if s.ReadIdx-s.AckIdx >= s.WindowSize {
-				s.log.Debugf("doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx - s.AckIdx)
+			if s.ReadIdx-s.AckIdx > s.WindowSize {
+				s.log.Debugf("reader() doFlush: s.ReadIdx-s.AckIdx = %d", s.ReadIdx-s.AckIdx)
 				s.doFlush()
 			}
 		}
@@ -338,6 +341,7 @@ func (s *Stream) writer() {
 		default:
 		}
 		mustAck := false
+		mustWaitForAck := false
 		mustTeardown := false
 		s.Lock()
 		switch s.WState {
@@ -366,16 +370,17 @@ func (s *Stream) writer() {
 			}
 			if !mustAck && !mustTeardown {
 				s.R.Lock()
+
 				// must wait for Ack before continuing to transmit
-				mustWaitForAck := s.WriteIdx - s.PeerAckIdx >= s.WindowSize
-				if mustWaitForAck {
-					s.log.Debugf("mustWaitForAck: PeerAckIdx - s.WriteIdx: %d", s.PeerAckIdx - s.WriteIdx)
+				if s.WriteIdx > s.PeerAckIdx+s.WindowSize {
+					mustWaitForAck = true
+					s.log.Debugf("mustWaitForAck: s.WriteIdx - PeerAckIdx : %d > %d", int(s.WriteIdx)-int(s.PeerAckIdx), s.WindowSize)
 				}
 				mustWaitForData := s.WriteBuf.Len() == 0
 				if mustWaitForData {
 					s.log.Debugf("mustWaitForData")
 				}
-				mustWait :=  mustWaitForAck || mustWaitForData
+				mustWait := mustWaitForAck || mustWaitForData
 				if s.WState == StreamClosing {
 					s.log.Debugf("writer() StreamClosing !mustWait")
 					mustWait = false
@@ -401,7 +406,13 @@ func (s *Stream) writer() {
 		f := new(Frame)
 		s.log.Debugf("Sending frame for %d", s.WriteIdx)
 		f.id = s.WriteIdx
-		f.Ack = s.ReadIdx
+
+		if s.ReadIdx == 0 {
+			// have not read any data from peer yet so Ack = 0 is special case
+			f.Ack = 0
+		} else {
+			f.Ack = s.ReadIdx - 1 // ReadIdx points at next frame, which we haven't read
+		}
 
 		if mustTeardown {
 			// final Ack and frame transmitted
@@ -492,9 +503,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
 	frame_id := s.txFrameID(frame.id)
 	frame_key := s.txFrameKey(frame.id)
-	// Update reference to last acknowledged message
-	if frame.Ack > s.AckIdx {
-		s.AckIdx = frame.Ack
+	// Update reference to last acknowledged message on retransmit
+	if s.ReadIdx > 0 {
+		// update retransmitted frame to point at last read payload (ReadIdx points at next frame)
+		frame.Ack = s.ReadIdx - 1
 	}
 	s.Unlock()
 
@@ -513,13 +525,14 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 		s.log.Debugf("txFrame: Put() failed with %s", err)
 		// reschedule packet for transmission after retryDelay
 		// rather than 2 * epochtime.Period
-		newPriority :=uint64(time.Now().Add(retryDelay).UnixNano())
+		newPriority := uint64(time.Now().Add(retryDelay).UnixNano())
 		s.log.Debugf("txFrame: setting priority to %s for retry", time.Unix(0, int64(newPriority)))
 		m.priority = newPriority
 	}
 	s.Lock()
 	s.txEnqueue(m)
 	s.WriteIdx += 1
+	s.AckIdx = frame.Ack
 	s.Unlock()
 	return err
 }
@@ -746,6 +759,7 @@ func (s *Stream) processAck(f *Frame) {
 	// update last_ack from peer
 	s.Lock()
 	if f.Ack > s.PeerAckIdx {
+		s.log.Debugf("Got Ack %d > PeerAckIdx: %d", f.Ack, s.PeerAckIdx)
 		s.PeerAckIdx = f.Ack
 	}
 	s.Unlock()
