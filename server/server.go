@@ -317,33 +317,6 @@ func (s *Server) Start() error {
 		return ErrGenerateOnly
 	}
 
-	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(goo); err != nil {
-		s.log.Errorf("Failed to initialize mix keys: %v", err)
-		return nil
-	}
-
-	// Past this point, failures need to call s.Shutdown() to do cleanup.
-	isOk := false
-	defer func() {
-		// Something failed in bringing the server up, past the point where
-		// files are open etc, clean up the partially constructed instance.
-		if !isOk {
-			s.Shutdown()
-		}
-	}()
-
-	// Start the fatal error watcher.
-	go func() {
-		err, ok := <-s.fatalErrCh
-		if !ok {
-			// Graceful termination.
-			return
-		}
-		s.log.Warningf("Shutting down due to error: %v", err)
-		s.Shutdown()
-	}()
-
 	// Initialize the management interface if enabled.
 	//
 	// Note: This is done first so that other subsystems may register commands.
@@ -393,6 +366,33 @@ func (s *Server) Start() error {
 
 	s.log.Noticef("Current Sphinx Geometry is:\n[SphinxGeometry]\n%s\n",
 		goo.PKI().GetSphinxGeometry().Display())
+
+	// Load and or generate mix keys.
+	if s.mixKeys, err = newMixKeys(goo); err != nil {
+		s.log.Errorf("Failed to initialize mix keys: %v", err)
+		return nil
+	}
+
+	// Past this point, failures need to call s.Shutdown() to do cleanup.
+	isOk := false
+	defer func() {
+		// Something failed in bringing the server up, past the point where
+		// files are open etc, clean up the partially constructed instance.
+		if !isOk {
+			s.Shutdown()
+		}
+	}()
+
+	// Start the fatal error watcher.
+	go func() {
+		err, ok := <-s.fatalErrCh
+		if !ok {
+			// Graceful termination.
+			return
+		}
+		s.log.Warningf("Shutting down due to error: %v", err)
+		s.Shutdown()
+	}()
 
 	if s.cfg.Server.IsProvider {
 		s.provider.Start()
