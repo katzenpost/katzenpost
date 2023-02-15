@@ -360,7 +360,7 @@ func (s *Stream) writer() {
 			} else {
 				s.log.Debugf("writer() StreamClosing")
 			}
-			if s.ReadIdx-s.AckIdx >= s.WindowSize {
+			if s.ReadIdx-s.AckIdx > s.WindowSize {
 				s.log.Debugf("writer() WindowSize: mustAck")
 				mustAck = true
 			}
@@ -370,7 +370,7 @@ func (s *Stream) writer() {
 					s.log.Debugf("Rstate == StreamClosed, setting WState == StreamClosing")
 					s.WState = StreamClosing
 				}
-				if s.ReadIdx-s.AckIdx > 0 {
+				if s.ReadIdx-s.AckIdx > 1 {
 					mustAck = true
 				}
 			}
