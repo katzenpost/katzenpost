@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
-	"fmt"
 	"errors"
+	"fmt"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -90,7 +90,7 @@ type Stream struct {
 
 	// Initiator is true if Stream is created by NewStream or Listen methods
 	Initiator bool
-	log  *logging.Logger
+	log       *logging.Logger
 
 	c Transport
 	// frame encryption secrets
@@ -211,6 +211,7 @@ func (s *Stream) reader() {
 			// we got a response from the map service but no data
 			continue
 		default:
+			s.log.Errorf("readFrame Got err %s", err)
 			// rate limit spinning if client is offline, error returns immediately
 			select {
 			case <-s.HaltCh():
@@ -309,6 +310,7 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 	if s.WState == StreamClosed {
 		return 0, io.EOF
 	}
+	s.log.Debugf("Write() doFlush()")
 	defer s.doFlush()
 	return s.WriteBuf.Write(p)
 }
@@ -319,6 +321,7 @@ func (s *Stream) Close() error {
 	if s.WState == StreamOpen {
 		s.WState = StreamClosing
 		s.Unlock()
+		s.log.Debugf("Close() doFlush()")
 		s.doFlush()       // wake up a sleeping writer !
 		<-s.onStreamClose // block until writer has finalized
 		s.Lock()
@@ -351,7 +354,11 @@ func (s *Stream) writer() {
 			s.Unlock()
 			return
 		case StreamOpen, StreamClosing:
-			s.log.Debugf("writer() StreamOpen|StreamClosing")
+			if s.WState == StreamOpen {
+				s.log.Debugf("writer() StreamOpen")
+			} else {
+				s.log.Debugf("writer() StreamClosing")
+			}
 			if s.ReadIdx-s.AckIdx >= s.WindowSize {
 				s.log.Debugf("writer() WindowSize: mustAck")
 				mustAck = true
