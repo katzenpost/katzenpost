@@ -107,6 +107,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 }
 
 func TestDockerPandaSuccess(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
@@ -150,6 +151,7 @@ loop2:
 }
 
 func TestDockerPandaTagContendedError(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
@@ -228,6 +230,7 @@ loop4:
 }
 
 func TestDockerSendReceive(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
@@ -456,6 +459,7 @@ and can readily scale to millions of users.
 
 func TestDockerReunionSuccess(t *testing.T) {
 	t.Skip("Reunion does not work with 2KB payloads")
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
@@ -530,6 +534,7 @@ loop2:
 }
 
 func TestDockerChangeExpiration(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -553,6 +558,7 @@ func TestDockerChangeExpiration(t *testing.T) {
 }
 
 func TestDockerAddRemoveContact(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -651,6 +657,7 @@ loop5:
 }
 
 func TestDockerRenameContact(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -663,6 +670,7 @@ func TestDockerRenameContact(t *testing.T) {
 	a.NewContact("b", s[:])
 	b.NewContact("a", s[:])
 
+	// wait for key exchanges to complete
 loop1:
 	for {
 		ev := <-a.EventSink
@@ -687,6 +695,7 @@ loop2:
 
 	t.Log("Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
+	// wait for message to be delivered to spool
 loop3:
 	for {
 		ev := <-a.EventSink
@@ -702,9 +711,22 @@ loop3:
 		}
 	}
 
+	// wait for message to be received by b
+loop3a:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *MessageReceivedEvent:
+			t.Log("Message received by b")
+			if event.Nickname == "a" {
+				break loop3a
+			}
+		default:
+		}
+	}
 	t.Log("Sending message to a")
 	b.SendMessage("a", []byte("b->a"))
-
+	// wait for message to be delivered to spool
 loop4:
 	for {
 		ev := <-b.EventSink
@@ -717,7 +739,21 @@ loop4:
 		default:
 		}
 	}
+	// wait for message to be received by a
+loop4a:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageReceivedEvent:
+			t.Log("Message received by a")
+			if event.Nickname == "b" {
+				break loop4a
+			}
+		default:
+		}
+	}
 
+	// rename the contacts
 	t.Log("Renaming contact b")
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
@@ -729,6 +765,7 @@ loop4:
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 
+	// wait for failure sending message
 loop5:
 	for {
 		ev := <-a.EventSink
@@ -743,6 +780,7 @@ loop5:
 
 	// send message to the renamed contact
 	a.SendMessage("b2", []byte("a->b2"))
+	// wait for message to be delivered to spool
 loop6:
 	for {
 		ev := <-a.EventSink
@@ -757,6 +795,7 @@ loop6:
 		default:
 		}
 	}
+	// wait for message to be received by b
 loop7:
 	for {
 		ev := <-b.EventSink
@@ -784,23 +823,10 @@ loop7:
 			received += 1
 		}
 	}
-	require.Equal(sent, 1)
-
-	if received > 2 {
-		t.Logf("Retransmission of message detected")
-		var last *Message
-		for _, msg := range c {
-			if last == nil {
-				last = msg
-			} else {
-				if bytes.Equal(last.Plaintext, msg.Plaintext) {
-					t.Logf("%s was retransmitted", last.Plaintext)
-				}
-			}
-		}
-	} else {
-		require.Equal(received, 2)
-	}
+	require.Equal(1, sent)
+	require.Equal(2, received)
+	require.Equal(1, len(a.conversations))
+	require.Equal(1, len(b.conversations))
 
 	// clear conversation history
 	b.WipeConversation("a")

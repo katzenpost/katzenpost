@@ -29,6 +29,7 @@ import (
 )
 
 func TestNoOp(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
@@ -51,6 +52,7 @@ func TestNoOp(t *testing.T) {
 }
 
 func TestDisconnect(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &Disconnect{}
@@ -73,6 +75,7 @@ func TestDisconnect(t *testing.T) {
 }
 
 func TestSendPacket(t *testing.T) {
+	t.Parallel()
 	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 
 	require := require.New(t)
@@ -99,6 +102,7 @@ func TestSendPacket(t *testing.T) {
 }
 
 func TestRetrieveMessage(t *testing.T) {
+	t.Parallel()
 	const seq = 0xbeefbeef
 
 	require := require.New(t)
@@ -125,6 +129,7 @@ func TestRetrieveMessage(t *testing.T) {
 }
 
 func TestMessage(t *testing.T) {
+	t.Parallel()
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 2000
@@ -215,6 +220,7 @@ func TestMessage(t *testing.T) {
 }
 
 func TestGetConsensus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &GetConsensus{
@@ -238,6 +244,7 @@ func TestGetConsensus(t *testing.T) {
 }
 
 func TestConsensus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &Consensus{
@@ -276,6 +283,7 @@ func TestConsensus(t *testing.T) {
 }
 
 func TestPostDescriptor(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &PostDescriptor{
@@ -305,6 +313,7 @@ func TestPostDescriptor(t *testing.T) {
 }
 
 func TestPostDescriptorStatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &PostDescriptorStatus{
@@ -332,6 +341,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 }
 
 func TestGetVote(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_, alicePub := cert.Scheme.NewKeypair()
 
@@ -359,6 +369,7 @@ func TestGetVote(t *testing.T) {
 }
 
 func TestVote(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
@@ -391,6 +402,7 @@ func TestVote(t *testing.T) {
 }
 
 func TestVoteStatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &VoteStatus{
@@ -418,6 +430,7 @@ func TestVoteStatus(t *testing.T) {
 }
 
 func TestReveal(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
@@ -454,6 +467,7 @@ func TestReveal(t *testing.T) {
 }
 
 func TestRevealtatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &RevealStatus{
@@ -479,6 +493,7 @@ func TestRevealtatus(t *testing.T) {
 }
 
 func TestCert(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
@@ -511,6 +526,7 @@ func TestCert(t *testing.T) {
 }
 
 func TestCertStatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &CertStatus{
@@ -536,6 +552,7 @@ func TestCertStatus(t *testing.T) {
 }
 
 func TestSig(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
@@ -568,6 +585,7 @@ func TestSig(t *testing.T) {
 }
 
 func TestSigStatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &SigStatus{

@@ -68,6 +68,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 }
 
 func TestDocument(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// Generate a random signing key.

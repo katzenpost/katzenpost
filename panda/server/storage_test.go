@@ -27,6 +27,7 @@ import (
 )
 
 func TestStorageBasics(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	storeFile, err := os.CreateTemp("", "pandaStorageBasics")
@@ -91,6 +92,7 @@ func TestStorageBasics(t *testing.T) {
 }
 
 func TestStorageLoadTags(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	storeFile, err := os.CreateTemp("", "pandaStorageLoadTags")
@@ -121,6 +123,7 @@ func TestStorageLoadTags(t *testing.T) {
 }
 
 func TestStoragePurgeTags(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	storeFile, err := os.CreateTemp("", "pandaStoragePurgeTags")

@@ -107,9 +107,7 @@ func (p *pki) currentDocument() *cpki.Document {
 }
 
 func (p *pki) worker() {
-	const initialSpawnDelay = 5 * time.Second
-
-	timer := time.NewTimer(initialSpawnDelay)
+	timer := time.NewTimer(0)
 	defer func() {
 		p.log.Debug("Halting PKI worker.")
 		timer.Stop()
@@ -163,6 +161,7 @@ func (p *pki) worker() {
 			}()
 
 			d, err := p.getDocument(pkiCtx, epoch)
+			cancelFn()
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {

@@ -42,6 +42,7 @@ type commandsTest struct {
 }
 
 func TestBuildCommandVectors(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	cmdsTest := commandsTest{
@@ -63,6 +64,7 @@ func TestBuildCommandVectors(t *testing.T) {
 }
 
 func TestCommandVectors(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	serialized, err := os.ReadFile(sphinxCommandsVectorsFile)

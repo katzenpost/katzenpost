@@ -7,6 +7,7 @@ import (
 )
 
 func TestSignVerify(t *testing.T) {
+	t.Parallel()
 	privKey1, pubKey1 := NewKeypair()
 	message := []byte("i am a message")
 	sig1 := privKey1.Sign(message)
@@ -25,6 +26,7 @@ func TestSignVerify(t *testing.T) {
 }
 
 func TestSerialization(t *testing.T) {
+	t.Parallel()
 	privKey1, pubKey1 := NewKeypair()
 	message := []byte("i am a message")
 	sig := privKey1.Sign(message)
@@ -47,6 +49,7 @@ func TestSerialization(t *testing.T) {
 }
 
 func TestSizes(t *testing.T) {
+	t.Parallel()
 	privKey, pubKey := NewKeypair()
 	message := []byte("i am a message")
 	sig := privKey.Sign(message)

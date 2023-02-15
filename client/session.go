@@ -27,7 +27,6 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
@@ -79,6 +78,7 @@ type Session struct {
 // This method will block until session is connected to the Provider.
 func NewSession(
 	ctx context.Context,
+	pkiClient pki.Client,
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
@@ -86,21 +86,6 @@ func NewSession(
 	provider *pki.MixDescriptor,
 	geo *geo.Geometry) (*Session, error) {
 	var err error
-
-	// create a pkiclient for our own client lookups
-	// AND create a pkiclient for minclient's use
-	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	pkiCacheClient := pkiclient.New(pkiClient2)
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 	sphinx, err := sphinx.FromGeometry(geo)
@@ -127,18 +112,20 @@ func NewSession(
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
 	idHash := s.linkKey.PublicKey().Sum256()
+	// A per-connection tag (for Tor SOCKS5 stream isloation)
+	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 	clientCfg := &minclient.ClientConfig{
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
-		PKIClient:           pkiCacheClient,
+		PKIClient:           pkiClient,
 		OnConnFn:            s.onConnection,
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
-		DialContextFn:       proxyCfg.ToDialContext("authority"),
+		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(proxyContext),
 		PreferedTransports:  cfg.Debug.PreferedTransports,
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Millisecond,
 		EnableTimeSync:      false, // Be explicit about it.
@@ -150,14 +137,8 @@ func NewSession(
 
 	s.minclient, err = minclient.New(clientCfg, s.geo)
 	if err != nil {
-		pkiCacheClient.Halt()
 		return nil, err
 	}
-	// shutdown the pkiCacheClient when minclient halts
-	go func() {
-		s.minclient.Wait()
-		pkiCacheClient.Halt()
-	}()
 
 	// start the worker
 	s.Go(s.worker)

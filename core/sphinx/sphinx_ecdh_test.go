@@ -27,6 +27,7 @@ import (
 )
 
 func TestEcdhSphinxGeometry(t *testing.T) {
+	t.Parallel()
 	withSURB := false
 	g := geo.GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 5)
 	t.Logf("NIKE Sphinx X25519 5 hops: HeaderLength = %d", g.HeaderLength)
@@ -35,6 +36,7 @@ func TestEcdhSphinxGeometry(t *testing.T) {
 }
 
 func TestEcdhForwardSphinx(t *testing.T) {
+	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
@@ -45,6 +47,7 @@ func TestEcdhForwardSphinx(t *testing.T) {
 }
 
 func TestEcdhSURB(t *testing.T) {
+	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)

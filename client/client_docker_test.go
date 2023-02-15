@@ -34,6 +34,7 @@ import (
 )
 
 func TestDockerClientConnectShutdown(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -52,6 +53,7 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 }
 
 func TestDockerClientAsyncSendReceive(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -100,6 +102,7 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 }
 
 func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -149,6 +152,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 }
 
 func TestDockerClientTestGarbageCollection(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -179,6 +183,7 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 }
 
 func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")

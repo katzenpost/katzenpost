@@ -53,7 +53,7 @@ var (
 
 	keepAliveInterval   = 3 * time.Minute
 	connectTimeout      = 1 * time.Minute
-	pkiFallbackInterval = 3 * time.Minute
+	pkiFallbackInterval = epochtime.Period / 16
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -804,12 +804,4 @@ func newConnection(c *Client, geo *geo.Geometry) *connection {
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k
-}
-
-func init() {
-	if WarpedEpoch == "true" {
-		keepAliveInterval = 30 * time.Second
-		connectTimeout = 10 * time.Second
-		pkiFallbackInterval = 30 * time.Second
-	}
 }
