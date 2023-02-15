@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -83,7 +82,7 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		}
 
 		didGenerate = true
-		k, err := mixkey.New(m.glue.Config().Server.DataDir, e)
+		k, err := mixkey.New(m.glue.Config().Server.DataDir, e, m.glue.PKI().GetSphinxGeometry())
 		if err != nil {
 			// Clean up whatever keys that may have succeeded.
 			for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {
@@ -120,12 +119,22 @@ func (m *mixKeys) Prune() bool {
 	return didPrune
 }
 
-func (m *mixKeys) Get(epoch uint64) (*ecdh.PublicKey, bool) {
+func (m *mixKeys) Get(epoch uint64) ([]byte, bool) {
 	m.Lock()
 	defer m.Unlock()
 
 	if k, ok := m.keys[epoch]; ok {
-		return k.PublicKey(), true
+		nikeKey, kemKey := k.PublicKey()
+		if nikeKey != nil {
+			return nikeKey.Bytes(), true
+		}
+		if kemKey != nil {
+			blob, err := kemKey.MarshalBinary()
+			if err != nil {
+				panic(err)
+			}
+			return blob, true
+		}
 	}
 	return nil, false
 }

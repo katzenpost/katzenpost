@@ -446,7 +446,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 				// so bail out and try again in a little while.
 				return fmt.Errorf("key that was scheduled for publication got pruned")
 			}
-			desc.MixKeys[e] = k.Bytes()
+			desc.MixKeys[e] = k
 		}
 		if didGen || didPrune {
 			// Kick the crypto workers into reshadowing the mix keys,
