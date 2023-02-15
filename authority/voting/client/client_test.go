@@ -61,14 +61,14 @@ func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescrip
 	return topology
 }
 
-func generateMixKeys(epoch uint64) (map[uint64]*ecdh.PublicKey, error) {
-	m := make(map[uint64]*ecdh.PublicKey)
+func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
+	m := make(map[uint64][]byte)
 	for i := epoch; i < epoch+3; i++ {
 		privatekey, err := ecdh.NewKeypair(rand.Reader)
 		if err != nil {
 			return nil, err
 		}
-		m[uint64(i)] = privatekey.PublicKey()
+		m[uint64(i)] = privatekey.PublicKey().Bytes()
 	}
 	return m, nil
 }
@@ -347,7 +347,7 @@ func TestClient(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i,)
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)

@@ -582,11 +582,11 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 }
 
 // create epoch keys
-func genMixKeys(votingEpoch uint64) map[uint64]*ecdh.PublicKey {
-	mixKeys := make(map[uint64]*ecdh.PublicKey)
+func genMixKeys(votingEpoch uint64) map[uint64][]byte {
+	mixKeys := make(map[uint64][]byte)
 	for i := votingEpoch; i < votingEpoch+2; i++ {
 		idKey, _ := ecdh.NewKeypair(rand.Reader)
-		mixKeys[i] = idKey.PublicKey()
+		mixKeys[i] = idKey.PublicKey().Bytes()
 	}
 	return mixKeys
 }
