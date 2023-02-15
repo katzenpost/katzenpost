@@ -538,7 +538,10 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	}
 	s.Lock()
 	s.txEnqueue(m)
-	s.WriteIdx += 1
+	if frame.id == s.WriteIdx {
+		// do not increment WriteIdx unless frame tx'd is tip
+		s.WriteIdx += 1
+	}
 	s.AckIdx = frame.Ack
 	s.Unlock()
 	return err
