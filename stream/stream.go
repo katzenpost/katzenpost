@@ -905,7 +905,7 @@ func (s *Stream) Save() ([]byte, error) {
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
 	s.WindowSize = 7
-	s.MaxWriteBufSize = 42 * FramePayloadSize
+	s.MaxWriteBufSize = int(s.WindowSize)
 	s.onFlush = make(chan struct{}, 1)
 	s.onAck = make(chan struct{}, 1)
 	s.onStreamClose = make(chan struct{}, 1)
