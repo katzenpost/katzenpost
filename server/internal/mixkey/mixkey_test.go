@@ -22,7 +22,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
@@ -35,7 +34,7 @@ var (
 	tmpDir string
 
 	testKeyPath string
-	testKey     nike.PrivateKey
+	testKey     *ecdh.PrivateKey
 
 	testPositiveTags, testNegativeTags map[[TagLength]byte]bool
 )
@@ -80,11 +79,14 @@ func doTestCreate(t *testing.T) {
 	}
 
 	a, _ := k.PrivateKey()
+	require.NotNil(a)
 	t.Logf("Private Key: %v", hex.EncodeToString(a.Bytes()))
 	t.Logf("Epoch: %x", k.Epoch())
 
 	// Save a copy so this can be compared later.
 	a, _ = k.PrivateKey()
+	require.NotNil(a)
+
 	err = testKey.FromBytes(a.Bytes())
 	require.NoError(err, "testKey save")
 
@@ -111,8 +113,11 @@ func doTestLoad(t *testing.T) {
 	defer k.Deref()
 
 	a, _ := k.PrivateKey()
-	assert.Equal(&testKey, a, "Serialized private key")
+	assert.Equal(testKey, a, "Serialized private key")
+	require.NotNil(k)
 	d, _ := k.PublicKey()
+	require.NotNil(d)
+
 	assert.Equal(testKey.Public(), d, "Serialized public key")
 	assert.Equal(uint64(testEpoch), k.Epoch(), "Serialized epoch")
 
@@ -206,7 +211,13 @@ func doBenchIsReplayHit(b *testing.B) {
 }
 
 func init() {
-	var err error
+	_, privkey, err := ecdh.EcdhScheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+
+	testKey = privkey.(*ecdh.PrivateKey)
+
 	tmpDir, err = os.MkdirTemp("", "mixkey_tests")
 	if err != nil {
 		panic(err)

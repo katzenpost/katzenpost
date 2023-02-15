@@ -368,6 +368,7 @@ func New(dataDir string, epoch uint64, g *geo.Geometry) (*MixKey, error) {
 				if err != nil {
 					return err
 				}
+				k.nikePubKey = k.nikeKeypair.Public()
 			} else {
 				k.kemKeypair, err = kemScheme.UnmarshalBinaryPrivateKey(b)
 				if err != nil {
