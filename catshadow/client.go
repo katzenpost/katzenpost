@@ -1409,15 +1409,13 @@ func (c *Client) Online() error {
 
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
 func (c *Client) goOnline() error {
-	c.connMutex.RLock()
+	c.connMutex.Lock()
 	if c.connected == StateOnline || c.connected == StateConnecting {
-		c.connMutex.RUnlock()
+		c.connMutex.Unlock()
 		return errors.New("Already Connected")
 	}
-	c.connMutex.RUnlock()
 
 	// set connecting status
-	c.connMutex.Lock()
 	c.connected = StateConnecting
 	c.connMutex.Unlock()
 
