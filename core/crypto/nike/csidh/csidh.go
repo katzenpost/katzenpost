@@ -52,13 +52,11 @@ func (e *CsidhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	publicKey := new(csidh.PublicKey)
-	csidh.GeneratePublicKey(publicKey, privateKey, rand.Reader)
-	return &PublicKey{
-			publicKey: publicKey,
-		}, &PrivateKey{
-			privateKey: privateKey,
-		}, nil
+	privKey := &PrivateKey{
+		privateKey: privateKey,
+	}
+	publicKey := e.DerivePublicKey(privKey)
+	return publicKey, privKey, nil
 }
 
 func (e *CsidhNike) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
