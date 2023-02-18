@@ -63,6 +63,14 @@ var (
 	pandaBlobSize             = 1000
 )
 
+type ConnectedState uint8
+
+const (
+	StateOffline ConnectedState = iota
+	StateConnecting
+	StateOnline
+)
+
 // Client is the mixnet client which interacts with other clients
 // and services on the network.
 type Client struct {
@@ -89,8 +97,7 @@ type Client struct {
 	blobMutex           *sync.Mutex
 	connMutex           *sync.RWMutex
 
-	online     bool
-	connecting bool
+	connected ConnectedState
 
 	client    *client.Client
 	session   *client.Session
@@ -242,7 +249,7 @@ func (c *Client) restartKeyExchanges() {
 	defer c.connMutex.RUnlock()
 
 	c.haltKeyExchanges()
-	if !c.online {
+	if c.connected != StateOnline {
 		return
 	}
 	if c.spoolReadDescriptor == nil {
@@ -378,7 +385,7 @@ func (c *Client) doGetPKIDocument() interface{} {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 
-	if !c.online {
+	if c.connected != StateOnline {
 		return ErrNotOnline
 
 	} else {
@@ -418,7 +425,7 @@ func (c *Client) doGetSpoolProviders() interface{} {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 
-	if !c.online || c.session == nil {
+	if c.connected != StateOnline {
 		return ErrNotOnline
 	}
 	doc := c.session.CurrentDocument()
@@ -483,7 +490,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		responseChan <- errors.New("Already have a remote spool")
 		return
 	}
-	if !c.online {
+	if c.connected != StateOnline {
 		responseChan <- ErrNotOnline
 		return
 	}
@@ -585,7 +592,7 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 
-	if c.online {
+	if c.connected == StateOnline {
 		c.initKeyExchange(contact)
 		err = c.doPANDAExchange(contact)
 		if err != nil {
@@ -942,7 +949,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 		// no messages already queued, so call sendMessage immediately
 		c.connMutex.RLock()
 		defer c.connMutex.RUnlock()
-		if c.online {
+		if c.connected == StateOnline {
 			defer c.sendMessage(contact)
 		}
 	}
@@ -1377,6 +1384,13 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 	return b, nil
 }
 
+// Status() returns ConnectedState
+func (c *Client) Status() ConnectedState {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+	return c.connected
+}
+
 // Online() brings catshadow online or returns an error
 func (c *Client) Online() error {
 	// XXX: block until connection or error ?
@@ -1396,7 +1410,7 @@ func (c *Client) Online() error {
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
 func (c *Client) goOnline() error {
 	c.connMutex.RLock()
-	if c.online || c.connecting || c.session != nil {
+	if c.connected == StateOnline || c.connected == StateConnecting {
 		c.connMutex.RUnlock()
 		return errors.New("Already Connected")
 	}
@@ -1404,7 +1418,7 @@ func (c *Client) goOnline() error {
 
 	// set connecting status
 	c.connMutex.Lock()
-	c.connecting = true
+	c.connected = StateConnecting
 	c.connMutex.Unlock()
 
 	// try to connect
@@ -1412,14 +1426,13 @@ func (c *Client) goOnline() error {
 
 	// re-obtain lock
 	c.connMutex.Lock()
-	c.connecting = false
 	if err != nil {
-		c.online = false
+		c.connected = StateOffline
 		c.connMutex.Unlock()
 		return err
 	}
 	c.session = s
-	c.online = true
+	c.connected = StateOnline
 	c.connMutex.Unlock()
 	// wait for pki document to arrive
 	s.WaitForDocument()
@@ -1459,16 +1472,16 @@ func (c *Client) getSpoolWriteDescriptor() *memspoolclient.SpoolWriteDescriptor 
 func (c *Client) goOffline() error {
 	c.connMutex.Lock()
 	defer c.connMutex.Unlock()
-	if c.connecting {
+	if c.connected == StateConnecting {
 		return errors.New("Offline() does not cancel Online()")
 	}
 
-	if !c.online || c.session == nil {
+	if c.connected == StateOffline {
 		return errors.New("Already Offline")
 	}
 
 	c.session.Shutdown()
-	c.online = false
+	c.connected = StateOffline
 	c.session = nil
 	return nil
 }
