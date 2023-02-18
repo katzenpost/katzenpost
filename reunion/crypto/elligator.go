@@ -34,7 +34,6 @@ import (
 
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/katzenpost/katzenpost/core/crypto/extra25519"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"golang.org/x/crypto/curve25519"
 )
@@ -173,7 +172,8 @@ func (repr *Representative) UnmarshalBinary(data []byte) error {
 func (repr *Representative) ToPublic() *PublicKey {
 	pub := new(PublicKey)
 
-	extra25519.RepresentativeToPublicKey(pub.Bytes(), repr.Bytes())
+	// to be replaced with elligator2:
+	// extra25519.RepresentativeToPublicKey(pub.Bytes(), repr.Bytes())
 	return pub
 }
 
@@ -359,11 +359,11 @@ func NewKeypair(elligator bool) (*Keypair, error) {
 		keypair.private = NewRandomPrivateKey()
 		if elligator {
 			// Apply the Elligator transform.  This fails ~50% of the time.
-			if !extra25519.ScalarBaseMult(keypair.public.Bytes(),
-				keypair.representative.Bytes(),
-				keypair.private.ByteArray32()) {
-				continue
-			}
+			//if !extra25519.ScalarBaseMult(keypair.public.Bytes(),
+			//	keypair.representative.Bytes(),
+			//	keypair.private.ByteArray32()) {
+			//	continue
+			//}
 		} else {
 			// Generate the corresponding Curve25519 public key.
 			curve25519.ScalarBaseMult(keypair.public.Bytes(),
