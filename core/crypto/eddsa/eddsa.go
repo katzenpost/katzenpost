@@ -236,12 +236,12 @@ func (k *PrivateKey) KeyType() string {
 // ToECDH converts the PrivateKey to the corresponding ecdh.PrivateKey.
 func (k *PrivateKey) ToECDH() *ecdh.PrivateKey {
 	dhBytes := sha512.Sum512(k.Bytes()[:32])
+	defer utils.ExplicitBzero(dhBytes[:])
 	dhBytes[0] &= 248
 	dhBytes[31] &= 127
 	dhBytes[31] |= 64
 	r := new(ecdh.PrivateKey)
 	r.FromBytes(dhBytes[:32])
-	utils.ExplicitBzero(dhBytes[:])
 	return r
 }
 
