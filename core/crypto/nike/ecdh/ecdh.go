@@ -90,6 +90,17 @@ func (p *PrivateKey) UnmarshalText(data []byte) error {
 	return p.privateKey.UnmarshalText(data)
 }
 
+func (e *EcdhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+	privKey, err := ecdh.NewKeypair(rng)
+	if err != nil {
+		return nil, nil, err
+	}
+	p := &PrivateKey{
+		privateKey: privKey,
+	}
+	return p.Public(), p, nil
+}
+
 func (e *EcdhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 	privKey, err := ecdh.NewKeypair(e.rng)
 	if err != nil {

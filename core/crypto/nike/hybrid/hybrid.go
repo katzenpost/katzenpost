@@ -5,6 +5,7 @@ package hybrid
 
 import (
 	"encoding/base64"
+	"io"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
@@ -46,6 +47,26 @@ func (s *scheme) PublicKeySize() int {
 
 func (s *scheme) PrivateKeySize() int {
 	return s.first.PrivateKeySize() + s.second.PrivateKeySize()
+}
+
+func (s *scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+	pubKey1, privKey1, err := s.first.GenerateKeyPairFromEntropy(rng)
+	if err != nil {
+		return nil, nil, err
+	}
+	pubKey2, privKey2, err := s.second.GenerateKeyPairFromEntropy(rng)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &publicKey{
+			scheme: s,
+			first:  pubKey1,
+			second: pubKey2,
+		}, &privateKey{
+			scheme: s,
+			first:  privKey1,
+			second: privKey2,
+		}, nil
 }
 
 func (s *scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
