@@ -17,7 +17,10 @@
 // Package sphinx implements the Katzenpost parameterized Sphinx Packet Format.
 package nike
 
-import "encoding"
+import (
+	"encoding"
+	"io"
+)
 
 // Key is an interface for types encapsulating key material.
 type Key interface {
@@ -69,6 +72,9 @@ type Scheme interface {
 
 	// GenerateKeyPair creates a new key pair.
 	GenerateKeyPair() (PublicKey, PrivateKey, error)
+
+	// GenerateKeyPairFromEntropy creates a new key pair from the given entropy source.
+	GenerateKeyPairFromEntropy(rng io.Reader) (PublicKey, PrivateKey, error)
 
 	// DeriveSecret derives a shared secret given a private key
 	// from one party and a public key from another.

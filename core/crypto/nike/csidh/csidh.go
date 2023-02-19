@@ -19,6 +19,7 @@ package csidh
 import (
 	"encoding/base64"
 	"errors"
+	"io"
 
 	"github.com/henrydcase/nobs/dh/csidh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
@@ -44,6 +45,10 @@ func (e *CsidhNike) PublicKeySize() int {
 
 func (e *CsidhNike) PrivateKeySize() int {
 	return csidh.PrivateKeySize
+}
+
+func (e *CsidhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+	return e.GenerateKeyPair()
 }
 
 func (e *CsidhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {

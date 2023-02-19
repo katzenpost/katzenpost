@@ -20,6 +20,8 @@
 package ctidh
 
 import (
+	"io"
+
 	ctidh "github.com/katzenpost/ctidh_cgo"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
@@ -65,6 +67,13 @@ func (e *CtidhNike) NewEmptyPrivateKey() nike.PrivateKey {
 	return &PrivateKey{
 		privateKey: ctidh.NewEmptyPrivateKey(),
 	}
+}
+
+func (e *CtidhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+	privKey, pubKey := ctidh.GenerateKeyPairWithRNG(rng)
+	return pubKey, &PrivateKey{
+		privateKey: privKey,
+	}, nil
 }
 
 // GenerateKeyPair creates a new key pair.
