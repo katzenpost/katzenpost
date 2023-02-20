@@ -77,7 +77,7 @@ func main() {
 	var st *stream.Stream
 	isinitiator := *secret == ""
 	if *secret == "" {
-		st = stream.NewStream(c)
+		st = stream.NewStream(s)
 		*secret = st.RemoteAddr().String()
 		fmt.Println("KatzenCat secret:", *secret)
 	}

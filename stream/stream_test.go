@@ -19,8 +19,14 @@
 package stream
 
 import (
-	"encoding/base64"
+	"io"
+	"context"
+	"sync"
 	"fmt"
+	"testing"
+	"time"
+
+	"encoding/base64"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
@@ -29,10 +35,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/stretchr/testify/require"
-	"io"
-	"sync"
-	"testing"
-	"time"
 )
 
 // getSession waits until pki.Document is available and returns a *client.Session
@@ -46,7 +48,7 @@ func getSession(t *testing.T) *client.Session {
 	require.NoError(err)
 	var session *client.Session
 	for session == nil {
-		session, err = cc.NewTOFUSession()
+		session, err = cc.NewTOFUSession(context.Background())
 		if err == pki.ErrNoDocument {
 			_, _, till := epochtime.Now()
 			<-time.After(till)
@@ -54,7 +56,7 @@ func getSession(t *testing.T) *client.Session {
 			require.NoError(err)
 		}
 	}
-	session.WaitForDocument()
+	session.WaitForDocument(context.Background())
 	return session
 }
 
