@@ -102,15 +102,17 @@ func New(cfg *config.Config) (*Client, error) {
 	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
 
 	// Start the fatal error watcher.
-	go func() {
-		err, ok := <-c.fatalErrCh
-		if !ok {
-			return
-		}
-		c.log.Warningf("Shutting down due to error: %v", err)
-		c.Shutdown()
-	}()
+	go c.fatalErr()
 	return c, nil
+}
+
+func (c *Client) fatalErr() {
+	err, ok := <-c.fatalErrCh
+	if !ok {
+		return
+	}
+	c.log.Warningf("Shutting down due to error: %v", err)
+	c.Shutdown()
 }
 
 func (c *Client) initLogging() error {
