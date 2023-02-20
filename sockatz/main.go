@@ -10,6 +10,7 @@ import (
 	"github.com/katzenpost/katzenpost/sockatz/socks5"
 	"github.com/katzenpost/katzenpost/stream"
 
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -44,7 +45,7 @@ func getSession(cfgFile string) (*client.Session, error) {
 
 	var session *client.Session
 	for session == nil {
-		session, err = cc.NewTOFUSession()
+		session, err = cc.NewTOFUSession(context.Background())
 		switch err {
 		case nil:
 		case pki.ErrNoDocument:
@@ -54,7 +55,7 @@ func getSession(cfgFile string) (*client.Session, error) {
 			return nil, err
 		}
 	}
-	session.WaitForDocument()
+	session.WaitForDocument(context.Background())
 	return session, nil
 }
 

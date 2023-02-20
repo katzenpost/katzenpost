@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"github.com/katzenpost/katzenpost/client"
@@ -33,7 +34,7 @@ func getSession() (*client.Session, error) {
 		return nil, err
 	}
 	for {
-		session, err := cc.NewTOFUSession()
+		session, err := cc.NewTOFUSession(context.Background())
 		switch err {
 		case nil:
 		case pki.ErrNoDocument:
@@ -43,7 +44,7 @@ func getSession() (*client.Session, error) {
 		default:
 			return nil, err
 		}
-		session.WaitForDocument()
+		session.WaitForDocument(context.Background())
 		return session, nil
 	}
 }

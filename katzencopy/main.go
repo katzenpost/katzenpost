@@ -1,18 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"io"
+	"os"
+	"time"
+
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/stream"
-	"io"
-	"os"
-	"time"
 )
 
 const (
@@ -35,7 +37,7 @@ func getSession() (*client.Session, error) {
 		return nil, err
 	}
 	for {
-		session, err := cc.NewTOFUSession()
+		session, err := cc.NewTOFUSession(context.Background())
 		switch err {
 		case nil:
 		case pki.ErrNoDocument:
@@ -45,7 +47,7 @@ func getSession() (*client.Session, error) {
 		default:
 			return nil, err
 		}
-		session.WaitForDocument()
+		session.WaitForDocument(context.Background())
 		return session, nil
 	}
 }
