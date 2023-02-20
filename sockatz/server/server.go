@@ -129,7 +129,7 @@ func (s *Sockatz) getSession() (*client.Session, error) {
 
 	var session *client.Session
 	for session == nil {
-		session, err = cc.NewTOFUSession()
+		session, err = cc.NewTOFUSession(context.Background())
 		switch err {
 		case nil:
 		case pki.ErrNoDocument:
@@ -143,7 +143,7 @@ func (s *Sockatz) getSession() (*client.Session, error) {
 			s.log.Errorf("Failed to get session:", err)
 		}
 	}
-	session.WaitForDocument()
+	session.WaitForDocument(context.Background())
 	return session, nil
 }
 
