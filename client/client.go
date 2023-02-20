@@ -39,6 +39,8 @@ const (
 
 // Client handles sending and receiving messages over the mix network
 type Client struct {
+	sync.Mutex
+
 	cfg        *config.Config
 	logBackend *log.Backend
 	log        *logging.Logger
@@ -46,7 +48,7 @@ type Client struct {
 	haltedCh   chan interface{}
 	haltOnce   *sync.Once
 
-	session *Session
+	sessions []*Session
 }
 
 // GetConfig returns the client configuration
@@ -150,8 +152,10 @@ func (c *Client) Wait() {
 
 func (c *Client) halt() {
 	c.log.Noticef("Starting graceful shutdown.")
-	if c.session != nil {
-		c.session.Shutdown()
+	c.Lock()
+	defer c.Unlock()
+	for _, s := range c.sessions {
+		s.Shutdown()
 	}
 	close(c.fatalErrCh)
 	close(c.haltedCh)
@@ -183,6 +187,23 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 		return nil, err
 	}
 
-	c.session, err = NewSession(ctx, pkiclient, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
-	return c.session, err
+	c.Lock()
+	defer c.Unlock()
+	s, err := NewSession(ctx, pkiclient, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	if err != nil {
+		return nil, err
+	}
+	c.sessions = append(c.sessions, s)
+	return s, err
+}
+
+// Returns a random Session from sessions
+func (c *Client) Session() *Session {
+	c.Lock()
+	defer c.Unlock()
+	if len(c.sessions) == 0 {
+		return nil
+	}
+	s := c.sessions[rand.NewMath().Intn(len(c.sessions))]
+	return s
 }
