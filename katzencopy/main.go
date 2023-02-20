@@ -13,7 +13,6 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	mClient "github.com/katzenpost/katzenpost/map/client"
 	"github.com/katzenpost/katzenpost/stream"
 )
 
@@ -69,10 +68,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	c, err := mClient.NewClient(s)
-	if err != nil {
-		panic(err)
-	}
 
 	var st *stream.Stream
 	isinitiator := *secret == ""
@@ -122,7 +117,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "\nTransfer acknowledged, shutting down")
 		st.Close()
 	} else {
-		st, err := stream.Dial(c, "", *secret)
+		st, err := stream.DialDuplex(s, "", *secret)
 		if err != nil {
 			panic(err)
 		}
