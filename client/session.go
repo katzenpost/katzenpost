@@ -144,11 +144,14 @@ func NewSession(
 }
 
 // WaitForDocument blocks until a pki fetch has completed
-func (s *Session) WaitForDocument() {
+func (s *Session) WaitForDocument(ctx context.Context) error {
 	select {
+	case <-ctx.Done():
+		return errors.New("Cancelled")
 	case <-s.newPKIDoc:
 	case <-s.HaltCh():
 	}
+	return nil
 }
 
 func (s *Session) eventSinkWorker() {
@@ -242,7 +245,7 @@ func (s *Session) onConnection(err error) {
 	}
 	select {
 	case <-s.HaltCh():
-	case s.opCh <- opConnStatusChanged{ isConnected: err == nil, }:
+	case s.opCh <- opConnStatusChanged{isConnected: err == nil}:
 	}
 }
 

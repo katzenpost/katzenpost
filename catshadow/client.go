@@ -19,6 +19,7 @@
 package catshadow
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -1421,7 +1422,10 @@ func (c *Client) goOnline() error {
 	c.connMutex.Unlock()
 
 	// try to connect
-	s, err := c.client.NewTOFUSession()
+	cfg := c.client.GetConfig()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Debug.SessionDialTimeout)*time.Second)
+	defer cancel()
+	s, err := c.client.NewTOFUSession(ctx)
 
 	// re-obtain lock
 	c.connMutex.Lock()
@@ -1434,8 +1438,7 @@ func (c *Client) goOnline() error {
 	c.connected = StateOnline
 	c.connMutex.Unlock()
 	// wait for pki document to arrive
-	s.WaitForDocument()
-	return nil
+	return s.WaitForDocument(ctx)
 }
 
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
