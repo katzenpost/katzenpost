@@ -37,7 +37,9 @@ func TestEcdhNike(t *testing.T) {
 	bobKeypair, err := ecdh.NewKeypair(rand.Reader)
 	require.NoError(t, err)
 
-	aliceS := ecdhNike.DeriveSecret(alicePrivateKey, bobKeypair.PublicKey())
+	aliceS := ecdhNike.DeriveSecret(alicePrivateKey, &PublicKey{
+		publicKey: bobKeypair.PublicKey(),
+	})
 
 	bobS := ecdh.Exp(alicePublicKey.Bytes(), bobKeypair.Bytes())
 	require.Equal(t, bobS, aliceS)
