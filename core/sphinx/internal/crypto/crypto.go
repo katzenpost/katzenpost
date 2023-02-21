@@ -54,9 +54,9 @@ const (
 
 	// SPRPIVLength is the IV size of the SPRP in bytes.
 	SPRPIVLength = StreamIVLength
-
-	kdfInfo = "katzenpost-kdf-v0-hkdf-sha256"
 )
+
+var kdfInfo = []byte("katzenpost-kdf-v0-hkdf-sha256")
 
 type resetable interface {
 	Reset()
@@ -168,7 +168,15 @@ func (k *PacketKeys) Reset() {
 // KEMSphinx doesn't need the BlindingFactor.
 func KDF(ikm []byte, privateKeySize int, scheme nike.Scheme) *PacketKeys {
 	okmLength := MACKeyLength + StreamKeyLength + StreamIVLength + SPRPKeyLength + privateKeySize
-	okm := hkdfExpand(sha256.New, ikm[:], []byte(kdfInfo), okmLength)
+	okm := make([]byte, okmLength)
+	h := hkdf.Expand(sha256.New, ikm, kdfInfo)
+	count, err := h.Read(okm)
+	if count != okmLength {
+		panic("hkdf read fail")
+	}
+	if err != nil {
+		panic(err)
+	}
 	defer utils.ExplicitBzero(okm)
 	ptr := okm
 
@@ -182,7 +190,7 @@ func KDF(ikm []byte, privateKeySize int, scheme nike.Scheme) *PacketKeys {
 	copy(k.PayloadEncryption[:], ptr[:SPRPKeyLength])
 	ptr = ptr[SPRPKeyLength:]
 	if privateKeySize != 0 {
-		var hkdfInfo = []byte("Sphinx blinding factor hkdf")
+		hkdfInfo := []byte("Sphinx-NIKE-blinding-factor-hkdf-info")
 		k.BlindingFactor = scheme.GeneratePrivateKey(
 			hkdf.New(sha256.New, ptr[:privateKeySize], nil, hkdfInfo),
 		)
