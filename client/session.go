@@ -79,6 +79,7 @@ type Session struct {
 func NewSession(
 	ctx context.Context,
 	pkiClient pki.Client,
+	cachedDoc *pki.Document,
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
@@ -116,6 +117,7 @@ func NewSession(
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
+		CachedDocument:      cachedDoc,
 		OnConnFn:            s.onConnection,
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
