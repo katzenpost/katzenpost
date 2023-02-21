@@ -23,6 +23,7 @@ import (
 	mRand "math/rand"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -62,7 +63,7 @@ selectLoop:
 			if k, ok := desc.MixKeys[epoch]; !ok {
 				continue selectLoop
 			} else {
-				h.NIKEPublicKey = k
+				h.NIKEPublicKey = ecdh.FromEcdhKey(k)
 			}
 
 			// All non-terminal hops, and the terminal forward hop iff the
