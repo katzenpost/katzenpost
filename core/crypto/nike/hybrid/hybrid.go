@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/csidh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -16,6 +17,12 @@ import (
 var CTIDHX25519 nike.Scheme = &scheme{
 	name:   "CTIDH-X25519",
 	first:  ctidh.CTIDHScheme,
+	second: ecdh.NewEcdhNike(rand.Reader),
+}
+
+var NOBS_CSIDHX25519 nike.Scheme = &scheme{
+	name:   "NOBS_CSIDH-X25519",
+	first:  csidh.CSIDHScheme,
 	second: ecdh.NewEcdhNike(rand.Reader),
 }
 
@@ -47,6 +54,14 @@ func (s *scheme) PublicKeySize() int {
 
 func (s *scheme) PrivateKeySize() int {
 	return s.first.PrivateKeySize() + s.second.PrivateKeySize()
+}
+
+func (s *scheme) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
+	return &privateKey{
+		scheme: s,
+		first:  s.first.GeneratePrivateKey(rng),
+		second: s.second.GeneratePrivateKey(rng),
+	}
 }
 
 func (s *scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
@@ -102,15 +117,12 @@ func (s *scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 	}
 }
 
-func (s *scheme) Blind(groupMember []byte, blindingFactor []byte) (blindedGroupMember []byte) {
-	if len(groupMember) != s.PublicKeySize() {
-		panic("invalid group member size")
+func (s *scheme) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
+	return &publicKey{
+		scheme: s,
+		first:  s.Blind(groupMember.(*publicKey).first, blindingFactor.(*privateKey).first),
+		second: s.Blind(groupMember.(*publicKey).second, blindingFactor.(*privateKey).second),
 	}
-	if len(blindingFactor) != s.PrivateKeySize() {
-		panic("invalid blinding factor size")
-	}
-	return append(s.first.Blind(groupMember[:s.first.PublicKeySize()], blindingFactor[:s.first.PrivateKeySize()]),
-		s.second.Blind(groupMember[s.first.PublicKeySize():], blindingFactor[s.first.PrivateKeySize():])...)
 }
 
 func (s *scheme) NewEmptyPublicKey() nike.PublicKey {
@@ -200,13 +212,13 @@ func (p *privateKey) UnmarshalText(data []byte) error {
 	return p.FromBytes(raw)
 }
 
-func (p *publicKey) Blind(blindingFactor []byte) error {
-	err := p.first.Blind(blindingFactor[:p.scheme.first.PublicKeySize()])
+func (p *publicKey) Blind(blindingFactor nike.PrivateKey) error {
+	err := p.first.Blind(blindingFactor.(*privateKey).first)
 	if err != nil {
 		p.Reset()
 		return err
 	}
-	err = p.second.Blind(blindingFactor[p.scheme.first.PublicKeySize():])
+	err = p.second.Blind(blindingFactor.(*privateKey).second)
 	if err != nil {
 		p.Reset()
 		return err
