@@ -96,6 +96,12 @@ type PublicKey struct {
 	publicKey *ecdh.PublicKey
 }
 
+func FromEcdhKey(key *ecdh.PublicKey) *PublicKey {
+	return &PublicKey{
+		publicKey: key,
+	}
+}
+
 func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
 	return p.publicKey.Blind(blindingFactor.(*PrivateKey).privateKey.Bytes())
 }
