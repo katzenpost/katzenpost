@@ -82,27 +82,7 @@ func (e *CsidhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 }
 
 func (e CsidhNike) Blind(groupMember []byte, blindingFactor []byte) (blindedGroupMember []byte) {
-	if len(groupMember) != csidh.PublicKeySize {
-		panic("incorrect group member size")
-	}
-	if len(blindingFactor) != csidh.PrivateKeySize {
-		panic("incorrect blinding factor size")
-	}
-	privKey := new(csidh.PrivateKey)
-	ok := privKey.Import(blindingFactor)
-	if !ok {
-		panic("blind op failure to import private key")
-	}
-	sharedSecret := &[64]byte{}
-	pubKey := new(csidh.PublicKey)
-	pubKey.Import(groupMember)
-
-	ok = csidh.DeriveSecret(sharedSecret, pubKey, privKey, rand.Reader)
-	if !ok {
-		panic("Blind operation DeriveSecret failed!")
-	}
-
-	return sharedSecret[:]
+	panic("Blind operation no implemented")
 }
 
 func (e *CsidhNike) NewEmptyPublicKey() nike.PublicKey {
@@ -144,18 +124,7 @@ type PublicKey struct {
 }
 
 func (p *PublicKey) Blind(blindingFactor []byte) error {
-	if len(blindingFactor) != csidh.PrivateKeySize {
-		return errors.New("incorrect blinding factor size")
-	}
-	privKey := new(csidh.PrivateKey)
-	privKey.Import(blindingFactor)
-	sharedSecret := &[64]byte{}
-
-	ok := csidh.DeriveSecret(sharedSecret, p.publicKey, privKey, rand.Reader)
-	if !ok {
-		panic("Blind operation failed!")
-	}
-	return p.FromBytes(sharedSecret[:])
+	panic("Blind operation no implemented")
 }
 
 func (p *PublicKey) Reset() {
