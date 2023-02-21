@@ -185,7 +185,7 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 
 	c.Lock()
 	defer c.Unlock()
-	s, err := NewSession(ctx, pkiclient, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	s, err := NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
 	if err != nil {
 		return nil, err
 	}
