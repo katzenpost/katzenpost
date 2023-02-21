@@ -57,6 +57,11 @@ type ClientConfig struct {
 	// PKIClient is the PKI Document data source.
 	PKIClient cpki.Client
 
+	// CachedDocument is a PKI Document that has a MixDescriptor
+	// containg the Addresses and LinkKeys of minclient's Provider
+	// so that it can connect directly without contacting an Authority.
+	CachedDocument *cpki.Document
+
 	// OnConnFn is the callback function that will be called when the
 	// connection status changes.  The error parameter will be nil on
 	// successful connection establishment, otherwise it will be set

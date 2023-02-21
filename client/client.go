@@ -177,6 +177,6 @@ func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 		return nil, err
 	}
 
-	c.session, err = NewSession(ctx, pkiclient, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	c.session, err = NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
 	return c.session, err
 }
