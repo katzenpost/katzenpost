@@ -35,10 +35,11 @@ func TestCtidhNike(t *testing.T) {
 	tmp := ctidh.DerivePublicKey(alicePrivateKey.(*PrivateKey).privateKey)
 	require.Equal(t, alicePublicKey.Bytes(), tmp.Bytes())
 
-	bobPrivKey, bobPubKey := ctidh.GenerateKeyPair()
+	bobPubKey, bobPrivKey, err := ctidhNike.GenerateKeyPair()
+	require.NoError(t, err)
 
 	aliceS := ctidhNike.DeriveSecret(alicePrivateKey, bobPubKey)
 
-	bobS := ctidh.DeriveSecret(bobPrivKey, alicePublicKey.(*ctidh.PublicKey))
+	bobS := ctidh.DeriveSecret(bobPrivKey.(*PrivateKey).privateKey, alicePublicKey.(*PublicKey).publicKey)
 	require.Equal(t, bobS, aliceS)
 }
