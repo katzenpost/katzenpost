@@ -47,8 +47,28 @@ func (e *CsidhNike) PrivateKeySize() int {
 	return csidh.PrivateKeySize
 }
 
+func (e *CsidhNike) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
+	privateKey := new(csidh.PrivateKey)
+	err := csidh.GeneratePrivateKey(privateKey, rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	return &PrivateKey{
+		privateKey: privateKey,
+	}
+}
+
 func (e *CsidhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
-	return e.GenerateKeyPair()
+	privateKey := new(csidh.PrivateKey)
+	err := csidh.GeneratePrivateKey(privateKey, rng)
+	if err != nil {
+		return nil, nil, err
+	}
+	privKey := &PrivateKey{
+		privateKey: privateKey,
+	}
+	publicKey := e.DerivePublicKey(privKey)
+	return publicKey, privKey, nil
 }
 
 func (e *CsidhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
@@ -81,7 +101,7 @@ func (e *CsidhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 	}
 }
 
-func (e CsidhNike) Blind(groupMember []byte, blindingFactor []byte) (blindedGroupMember []byte) {
+func (e CsidhNike) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) (blindedGroupMember nike.PublicKey) {
 	panic("Blind operation no implemented")
 }
 
@@ -123,7 +143,7 @@ type PublicKey struct {
 	publicKey *csidh.PublicKey
 }
 
-func (p *PublicKey) Blind(blindingFactor []byte) error {
+func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
 	panic("Blind operation no implemented")
 }
 
