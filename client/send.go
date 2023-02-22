@@ -247,7 +247,7 @@ func (s *Session) BlockingSendUnreliableMessage(recipient, provider string, mess
 		return reply, nil
 	case <-s.HaltCh():
 		return nil, ErrHalted
-	case <-time.After(sentMessage.ReplyETA + cConstants.RoundTripTimeSlop):
+	case <-time.After(sentMessage.ReplyETA + sentMessage.ReplyETA>>2):
 		return nil, ErrReplyTimeout
 	}
 	// unreachable
