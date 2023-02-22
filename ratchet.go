@@ -319,8 +319,16 @@ func InitRatchet(rand io.Reader, scheme nike.Scheme) (*Ratchet, error) {
 		scheme: scheme,
 	}
 
-	r.kxPrivate0, _ = scheme.NewKeypair()
-	r.kxPrivate1, _ = scheme.NewKeypair()
+	var err error
+	_, r.kxPrivate0, err = scheme.GenerateKeyPairFromEntropy(rand)
+	if err != nil {
+		return nil, err
+	}
+
+	_, r.kxPrivate1, err = scheme.GenerateKeyPairFromEntropy(rand)
+	if err != nil {
+		return nil, err
+	}
 
 	r.sendHeaderKey = make([]byte, keySize)
 	r.recvHeaderKey = make([]byte, keySize)
@@ -346,10 +354,10 @@ func (r *Ratchet) CreateKeyExchange() ([]byte, error) {
 	if r.kxPrivate0 == r.kxPrivate1 && r.kxPrivate0 == nil {
 		return nil, ErrHandshakeAlreadyComplete
 	}
-	if r.kxPrivate0.IsAlive() != r.kxPrivate1.IsAlive() {
+	if (r.kxPrivate0 == nil) != (r.kxPrivate1 == nil) {
 		return nil, ErrInconsistentState
 	}
-	if r.kxPrivate0.IsAlive() == false {
+	if r.kxPrivate0 == nil {
 		return nil, ErrHandshakeAlreadyComplete
 	}
 	public0 := r.scheme.DerivePublicKey(r.kxPrivate0)
@@ -395,10 +403,10 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 	if r.kxPrivate0 == r.kxPrivate1 && r.kxPrivate0 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
-	if r.kxPrivate0.IsAlive() != r.kxPrivate1.IsAlive() {
+	if (r.kxPrivate0 == nil) != (r.kxPrivate1 == nil) {
 		return ErrInconsistentState
 	}
-	if r.kxPrivate0.IsAlive() == false {
+	if r.kxPrivate0 == nil {
 		return ErrHandshakeAlreadyComplete
 	}
 	if len(kx.Dh0) != r.scheme.PublicKeySize() || len(kx.Dh1) != r.scheme.PublicKeySize() {
@@ -460,7 +468,11 @@ func (r *Ratchet) completeKeyExchange(kx *keyExchange) error {
 // Encrypt acts like append() but appends an encrypted version of msg to out.
 func (r *Ratchet) Encrypt(out, msg []byte) ([]byte, error) {
 	if r.ratchet {
-		r.sendRatchetPrivate, _ = r.scheme.NewKeypair()
+		var err error
+		_, r.sendRatchetPrivate, err = r.scheme.GenerateKeyPairFromEntropy(r.rand)
+		if err != nil {
+			return nil, err
+		}
 		copy(r.sendHeaderKey, r.nextSendHeaderKey)
 		sharedKey := r.scheme.DeriveSecret(r.sendRatchetPrivate, r.recvRatchetPublic)
 
