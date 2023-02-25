@@ -22,8 +22,8 @@ var CTIDHX25519 nike.Scheme = &scheme{
 
 var NOBS_CSIDHX25519 nike.Scheme = &scheme{
 	name:   "NOBS_CSIDH-X25519",
-	first:  csidh.CSIDHScheme,
-	second: ecdh.NewEcdhNike(rand.Reader),
+	first:  ecdh.NewEcdhNike(rand.Reader),
+	second: csidh.CSIDHScheme,
 }
 
 type publicKey struct {
