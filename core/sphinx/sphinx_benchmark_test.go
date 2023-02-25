@@ -29,7 +29,7 @@ import (
 
  */
 
-func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Nike) {
+func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
@@ -56,17 +56,20 @@ func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Nike) {
 	}
 }
 
-func benchNewNode(mynike nike.Nike) *nodeParams {
+func benchNewNode(mynike nike.Scheme) *nodeParams {
 	n := new(nodeParams)
 	_, err := rand.Read(n.id[:])
 	if err != nil {
 		panic("wtf")
 	}
-	n.privateKey, n.publicKey = mynike.NewKeypair()
+	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
 	return n
 }
 
-func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Nike) ([]*nodeParams, []*PathHop) {
+func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodeParams, []*PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
