@@ -23,11 +23,16 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+
 	ratchet "github.com/katzenpost/doubleratchet"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
+
+var scheme nike.Scheme
 
 type contactExchange struct {
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
@@ -136,7 +141,7 @@ type Contact struct {
 
 // NewContact creates a new Contact or returns an error.
 func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
-	ratchet, err := ratchet.InitRatchet(rand.Reader)
+	ratchet, err := ratchet.InitRatchet(rand.Reader, scheme)
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +201,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
-	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet)
+	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet, scheme)
 	if err != nil {
 		return err
 	}
@@ -239,4 +244,8 @@ func (c *Contact) haltKeyExchanges() {
 			c.reunionShutdownChan = nil
 		}
 	}
+}
+
+func init() {
+	scheme = hybrid.NOBS_CSIDHX25519
 }
