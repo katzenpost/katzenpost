@@ -26,8 +26,10 @@ import (
 	"encoding/hex"
 	"testing"
 
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/hkdf"
 )
 
 func TestHash(t *testing.T) {
@@ -201,9 +203,13 @@ func TestKDF(t *testing.T) {
 	ikm := make([]byte, 32)
 	privateKeySize := 32
 	okmLength := MACKeyLength + StreamKeyLength + StreamIVLength + SPRPKeyLength + privateKeySize
-	okm := hkdfExpand(sha256.New, ikm[:], []byte(kdfInfo), okmLength)
+	okm := make([]byte, okmLength)
+	h := hkdf.Expand(sha256.New, ikm[:], kdfInfo)
+	count, err := h.Read(okm)
+	require.NoError(t, err)
+	require.Equal(t, count, okmLength)
 
-	k := KDF(ikm, privateKeySize)
+	k := KDF(ikm, privateKeySize, ecdh.EcdhScheme)
 	require.Equal(t, okm[:MACKeyLength], k.HeaderMAC[:])
 	okm = okm[MACKeyLength:]
 	assert.Equal(okm[:StreamKeyLength], k.HeaderEncryption[:])
@@ -212,15 +218,12 @@ func TestKDF(t *testing.T) {
 	okm = okm[StreamIVLength:]
 	assert.Equal(okm[:SPRPKeyLength], k.PayloadEncryption[:])
 	okm = okm[SPRPKeyLength:]
-	assert.Equal(okm, k.BlindingFactor[:])
 
 	k.Reset()
 	assert.Zero(k.HeaderMAC)
 	assert.Zero(k.HeaderEncryption)
 	assert.Zero(k.HeaderEncryptionIV)
 	assert.Zero(k.PayloadEncryption)
-	zeros := make([]byte, privateKeySize)
-	require.Equal(t, zeros, k.BlindingFactor)
 }
 
 func TestVectorKDFWithECDHNike(t *testing.T) {
@@ -231,7 +234,7 @@ func TestVectorKDFWithECDHNike(t *testing.T) {
 	rawInput, err := hex.DecodeString("9dd74a26535e05ba0ddb62e06ef9b3b29b089707b4652b9172d91e529c938b51")
 	assert.NoError(err)
 	copy(ikm[:], rawInput)
-	k := KDF(ikm, 32)
+	k := KDF(ikm, 32, ecdh.EcdhScheme)
 
 	rawHeaderMAC, err := hex.DecodeString("56a3cca100da21fa9823df7884132e89e2155dadbf425e62ba43392c81581a69")
 	assert.NoError(err)
@@ -245,8 +248,7 @@ func TestVectorKDFWithECDHNike(t *testing.T) {
 	rawPayloadEncryption, err := hex.DecodeString("82f26dff7fd14e304bce0aa6d464e6e4a440aad784b18c062700c352e7df6c4422884af95653aef353d3bd3e8b7f9ac2")
 	assert.NoError(err)
 	assert.Equal(rawPayloadEncryption, k.PayloadEncryption[:])
-	rawBlindingFactor, err := hex.DecodeString("214d4d4f4d726c7bd78553fb6098244414dc27d8360b28cdfa1ea70e29143f22")
+	rawBlindingFactor, err := hex.DecodeString("2c9d4d661bcfbdb3da8c851c11518175a1cd07957c90ba3332e3219d82210701")
 	assert.NoError(err)
-	assert.Equal(rawBlindingFactor, k.BlindingFactor[:])
-
+	assert.Equal(rawBlindingFactor, k.BlindingFactor.Bytes())
 }

@@ -63,7 +63,7 @@ func doTestCreate(t *testing.T) {
 	defer k.Deref()
 
 	t.Logf("db: %v", testKeyPath)
-	t.Logf("Public Key: %v", hex.EncodeToString(k.PublicKey().Bytes()))
+	t.Logf("Public Key: %v", hex.EncodeToString(k.Public().Bytes()))
 	t.Logf("Private Key: %v", hex.EncodeToString(k.PrivateKey().Bytes()))
 	t.Logf("Epoch: %x", k.Epoch())
 
@@ -90,8 +90,8 @@ func doTestLoad(t *testing.T) {
 	k.SetUnlinkIfExpired(true)
 	defer k.Deref()
 
-	assert.Equal(&testKey, k.PrivateKey(), "Serialized private key")
-	assert.Equal(testKey.PublicKey(), k.PublicKey(), "Serialized public key")
+	assert.Equal(testKey.Bytes(), k.PrivateKey().Bytes(), "Serialized private key")
+	assert.Equal(testKey.PublicKey(), k.Public(), "Serialized public key")
 	assert.Equal(uint64(testEpoch), k.Epoch(), "Serialized epoch")
 
 	// Ensure that the loaded replay filter is consistent.

@@ -20,23 +20,27 @@
 package ctidh
 
 import (
-	ctidh "git.xx.network/elixxir/ctidh_cgo"
+	"encoding/base64"
+	"io"
+
+	ctidh "github.com/katzenpost/ctidh_cgo"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 )
 
-// CtidhNike implements the Nike interface using our ctidh module.
+// CTIDH implements the Nike interface using our CTIDH module.
 type CtidhNike struct {
 }
 
-// NewCtidhNike returns a new Ctidh Nike.
-func NewCtidhNike() *CtidhNike {
-	return new(CtidhNike)
-}
+var CTIDHScheme = &CtidhNike{}
 
-var _ nike.PrivateKey = (*ctidh.PrivateKey)(nil)
-var _ nike.PublicKey = (*ctidh.PublicKey)(nil)
-var _ nike.Nike = (*CtidhNike)(nil)
+var _ nike.PrivateKey = (*PrivateKey)(nil)
+var _ nike.PublicKey = (*PublicKey)(nil)
+var _ nike.Scheme = (*CtidhNike)(nil)
+
+func (e *CtidhNike) Name() string {
+	return "ctidh"
+}
 
 // PublicKeySize returns the size in bytes of the public key.
 func (e *CtidhNike) PublicKeySize() int {
@@ -53,7 +57,9 @@ func (e *CtidhNike) PrivateKeySize() int {
 // via some serialization format via FromBytes
 // or FromPEMFile methods.
 func (e *CtidhNike) NewEmptyPublicKey() nike.PublicKey {
-	return ctidh.NewEmptyPublicKey()
+	return &PublicKey{
+		publicKey: ctidh.NewEmptyPublicKey(),
+	}
 }
 
 // NewEmptyPrivateKey returns an uninitialized
@@ -61,47 +67,60 @@ func (e *CtidhNike) NewEmptyPublicKey() nike.PublicKey {
 // via some serialization format via FromBytes
 // or FromPEMFile methods.
 func (e *CtidhNike) NewEmptyPrivateKey() nike.PrivateKey {
-	return ctidh.NewEmptyPrivateKey()
+	return &PrivateKey{
+		privateKey: ctidh.NewEmptyPrivateKey(),
+	}
 }
 
-// NewKeypair returns a newly generated key pair.
-func (e *CtidhNike) NewKeypair() (nike.PrivateKey, nike.PublicKey) {
+func (e *CtidhNike) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
+	return &PrivateKey{
+		privateKey: ctidh.GeneratePrivateKey(rng),
+	}
+}
+
+func (e *CtidhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+	privKey, pubKey := ctidh.GenerateKeyPairWithRNG(rng)
+	return &PublicKey{
+			publicKey: pubKey,
+		}, &PrivateKey{
+			privateKey: privKey,
+		}, nil
+}
+
+// GenerateKeyPair creates a new key pair.
+func (e *CtidhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 	privKey, pubKey := ctidh.GenerateKeyPair()
-	return privKey, pubKey
+	return &PublicKey{
+			publicKey: pubKey,
+		}, &PrivateKey{
+			privateKey: privKey,
+		}, nil
 }
 
 // DeriveSecret derives a shared secret given a private key
 // from one party and a public key from another.
 func (e *CtidhNike) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
-	return ctidh.DeriveSecret(privKey.(*ctidh.PrivateKey), pubKey.(*ctidh.PublicKey))
+	return ctidh.DeriveSecret(privKey.(*PrivateKey).privateKey, pubKey.(*PublicKey).publicKey)
 }
 
 // DerivePublicKey derives a public key given a private key.
 func (e *CtidhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
-	return ctidh.DerivePublicKey(privKey.(*ctidh.PrivateKey))
+	return &PublicKey{
+		publicKey: ctidh.DerivePublicKey(privKey.(*PrivateKey).privateKey),
+	}
 }
 
-// Blind performs the blinding operation against the
-// two byte slices and returns the blinded value.
-//
-// Note that the two arguments must be the correct lengths:
-//
-// * groupMember must be the size of a public key.
-//
-// * blindingFactor must be the size of a private key.
-//
-// See also PublicKey's Blind method.
-func (e *CtidhNike) Blind(groupMember []byte, blindingFactor []byte) []byte {
-	pubkey := ctidh.NewEmptyPublicKey()
-	err := pubkey.FromBytes(groupMember)
+func (e *CtidhNike) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
+	blinded, err := ctidh.Blind(
+		blindingFactor.(*PrivateKey).privateKey,
+		groupMember.(*PublicKey).publicKey,
+	)
 	if err != nil {
 		panic(err)
 	}
-	blinded, err := ctidh.Blind(blindingFactor, pubkey)
-	if err != nil {
-		panic(err)
+	return &PublicKey{
+		publicKey: blinded,
 	}
-	return blinded.Bytes()
 }
 
 func (e *CtidhNike) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
@@ -110,5 +129,104 @@ func (e *CtidhNike) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pubkey, nil
+	return &PublicKey{
+		publicKey: pubkey,
+	}, nil
+}
+
+func (e *CtidhNike) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
+	privkey := ctidh.NewEmptyPrivateKey()
+	err := privkey.FromBytes(b)
+	if err != nil {
+		return nil, err
+	}
+	return &PrivateKey{
+		privateKey: privkey,
+	}, nil
+}
+
+type PublicKey struct {
+	publicKey *ctidh.PublicKey
+}
+
+func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
+	return p.publicKey.Blind(blindingFactor.(*PrivateKey).privateKey)
+}
+
+func (p *PublicKey) Reset() {
+	p.publicKey.Reset()
+}
+
+func (p *PublicKey) Bytes() []byte {
+	return p.publicKey.Bytes()
+}
+
+func (p *PublicKey) FromBytes(data []byte) error {
+	return p.publicKey.FromBytes(data)
+}
+
+// MarshalBinary is an implementation of a method on the
+// BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
+func (p *PublicKey) MarshalBinary() ([]byte, error) {
+	return p.Bytes(), nil
+}
+
+// UnmarshalBinary is an implementation of a method on the
+// BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (p *PublicKey) UnmarshalBinary(data []byte) error {
+	return p.FromBytes(data)
+}
+
+// MarshalText is an implementation of a method on the
+// TextMarshaler interface defined in https://golang.org/pkg/encoding/
+func (p *PublicKey) MarshalText() ([]byte, error) {
+	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+}
+
+// UnmarshalText is an implementation of a method on the
+// TextUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (p *PublicKey) UnmarshalText(data []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		return err
+	}
+	return p.FromBytes(raw)
+}
+
+type PrivateKey struct {
+	privateKey *ctidh.PrivateKey
+}
+
+func (p *PrivateKey) Public() nike.PublicKey {
+	return &PublicKey{
+		publicKey: p.privateKey.Public(),
+	}
+}
+
+func (p *PrivateKey) Reset() {
+	p.privateKey.Reset()
+}
+
+func (p *PrivateKey) Bytes() []byte {
+	return p.privateKey.Bytes()
+}
+
+func (p *PrivateKey) FromBytes(data []byte) error {
+	return p.privateKey.FromBytes(data)
+}
+
+func (p *PrivateKey) MarshalBinary() ([]byte, error) {
+	return p.privateKey.MarshalBinary()
+}
+
+func (p *PrivateKey) MarshalText() ([]byte, error) {
+	return p.privateKey.MarshalText()
+}
+
+func (p *PrivateKey) UnmarshalBinary(data []byte) error {
+	return p.privateKey.UnmarshalBinary(data)
+}
+
+func (p *PrivateKey) UnmarshalText(data []byte) error {
+	return p.privateKey.UnmarshalText(data)
 }
