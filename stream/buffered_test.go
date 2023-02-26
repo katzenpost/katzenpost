@@ -3,6 +3,7 @@ package stream
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	_ "net/http/pprof"
@@ -12,10 +13,12 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/stretchr/testify/require"
 )
 
 var numEntries = 42
+var logBackend *log.Backend
 
 type mockTransport struct {
 	l    *sync.Mutex
@@ -24,10 +27,13 @@ type mockTransport struct {
 
 // newStreams returns an initialized pair of Streams
 func newStreams(t Transport) (*Stream, *Stream) {
+
 	a := newStream(t)
+	a.log = logBackend.GetLogger(fmt.Sprintf("Stream %x", &a))
 	addr := &StreamAddr{address: generate()}
 	a.keyAsListener(addr)
 	b := newStream(t)
+	b.log = logBackend.GetLogger(fmt.Sprintf("Stream %x", &b))
 	b.keyAsDialer(addr)
 
 	if a == nil || b == nil {
@@ -147,6 +153,12 @@ func TestBufferedStream(t *testing.T) {
 }
 
 func init() {
+	var e error
+	logBackend, e = log.New("", "DEBUG", false)
+	if e != nil {
+		panic(e)
+	}
+
 	go func() {
 		http.ListenAndServe("localhost:8181", nil)
 	}()

@@ -60,16 +60,6 @@ func getSession(t *testing.T) *client.Session {
 	return session
 }
 
-// newStreams returns an initialized pair of Streams
-func newStreams() (*Stream, *Stream) {
-	a := newStream(nil)
-	addr := &StreamAddr{address: generate()}
-	a.keyAsListener(addr)
-	b := newStream(nil)
-	b.keyAsDialer(addr)
-	return a, b
-}
-
 func TestFrameKey(t *testing.T) {
 	require := require.New(t)
 
