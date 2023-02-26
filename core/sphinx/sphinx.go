@@ -323,7 +323,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	sharedSecret := s.nike.DeriveSecret(clientPrivateKey, path[0].NIKEPublicKey)
 	defer utils.ExplicitBzero(sharedSecret)
 
-	keys[0] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize(), s.nike)
+	keys[0] = crypto.KDF(sharedSecret, s.nike)
 	defer keys[0].Reset()
 
 	groupElements[0], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
@@ -343,7 +343,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 			blinded := s.nike.Blind(pubkey, keys[j].BlindingFactor)
 			sharedSecret = blinded.Bytes()
 		}
-		keys[i] = crypto.KDF(sharedSecret, s.nike.PrivateKeySize(), s.nike)
+		keys[i] = crypto.KDF(sharedSecret, s.nike)
 		defer keys[i].Reset()
 
 		clientPublicKey.Blind(keys[i-1].BlindingFactor)
@@ -506,7 +506,7 @@ func (s *Sphinx) Unwrap(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte, []
 	replayTag := crypto.Hash(groupElement.Bytes())
 
 	// Derive the various keys required for packet processing.
-	keys := crypto.KDF(sharedSecret, s.nike.PrivateKeySize(), s.nike)
+	keys := crypto.KDF(sharedSecret, s.nike)
 	defer keys.Reset()
 
 	// Validate the Sphinx Packet Header.
