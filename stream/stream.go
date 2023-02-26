@@ -197,6 +197,7 @@ func (s *Stream) reader() {
 				}
 			}
 			s.Unlock()
+			s.doFlush()
 			return
 		case StreamOpen:
 			// prod writer to Ack
@@ -261,6 +262,7 @@ func (s *Stream) reader() {
 		if f.Type == StreamEnd || n > 0 {
 			s.Unlock()
 			s.doOnRead()
+			s.doFlush() // prod sleeping writer
 		} else {
 			s.Unlock()
 		}
