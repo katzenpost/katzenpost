@@ -1,0 +1,109 @@
+?   	github.com/katzenpost/katzenpost/authority/cmd/nonvoting	[no test files]
+?   	github.com/katzenpost/katzenpost/authority/cmd/voting	[no test files]
+?   	github.com/katzenpost/katzenpost/authority/nonvoting/client	[no test files]
+?   	github.com/katzenpost/katzenpost/authority/nonvoting/server	[no test files]
+?   	github.com/katzenpost/katzenpost/authority/nonvoting/server/config	[no test files]
+=== RUN   TestClient
+=== PAUSE TestClient
+=== CONT  TestClient
+10:59:09.811 DEBU pki/voting/Client: Get(ctx, 150959)
+10:59:09.811 DEBU mockDialer: : MOCK DIAL 127.0.0.1:5
+10:59:09.812 DEBU pki/voting/client/connector: sending getConsensus to 
+10:59:35.257 NOTI pki/voting/client/connector: got response from  to GetConsensus(150959) (attempt 0, err=<nil>, res=Ok)
+10:59:35.709 NOTI pki/voting/Client: OK, received fully signed consensus document.
+10:59:36.461 DEBU pki/voting/Client: voting/Client: Get() document:
+&{Epoch: 150959 GenesisEpoch: 150959
+SendRatePerMinute: 0 Mu: 0.25 MuMaxDelay: 4000 LambdaP:1.2 LambdaPMaxDelay:300 LambdaL:0 LambdaLMaxDelay:0 LambdaD:0 LambdaDMaxDelay:0 LambdaM: 0 LambdaMMaxDelay: 0
+SharedRandomValue: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PriorSharedRandom: []
+Topology:
+  [0]{[{NSA_Spy_Satelite_Mix4 a5884af2c97f8de2f53697414708afe2cd038e028dd3d86141a3b353c5a839eb map[tcp4:[127.0.0.1:5]]} {NSA_Spy_Satelite_Mix1 6fdfe3484412e50a928f00d5f83a85ffe4ded1c521a300112c613ef53f2b6781 map[tcp4:[127.0.0.1:2]]} {NSA_Spy_Satelite_Mix6 53e7283c4f8a6d523b1ad0260aee055d00f393ac337ed84bb6bb4b9191782092 map[tcp4:[127.0.0.1:7]]}]}
+  [1]{[{NSA_Spy_Satelite_Mix7 3ad9c8b218f08715fecd35b8bffd420bb21f5f925faadf1d2ff809de49093054 map[tcp4:[127.0.0.1:8]]} {NSA_Spy_Satelite_Mix0 be8edbaef42f2101302b0f8be15911903a2fa06b1363c4cf9753d6fe41d9c029 map[tcp4:[127.0.0.1:1]]} {NSA_Spy_Satelite_Mix2 9384a2a5d88b28a3a5f2ddb6972c6f13f71b61199eb9da3144b76e5ec19d5fc7 map[tcp4:[127.0.0.1:3]]}]}
+  [2]{[{NSA_Spy_Satelite_Mix5 0d135f46f836f7f226bd50160163e192b3f8bda3ce7d904c02eac98aac46646c map[tcp4:[127.0.0.1:6]]} {NSA_Spy_Satelite_Mix3 4979c6bc20f0baa22a9dd29a62d7abbc446cbd80d6f152b53cf539599af79704 map[tcp4:[127.0.0.1:4]]}]}
+}
+Providers:[]{[{NSA_Spy_Satelite_Provider0 3061186881e224840c0d7085dd8e69e56518190ddfb4017a5df855c732ed0701 map[tcp4:[127.0.0.1:1]]} {NSA_Spy_Satelite_Provider1 547bbfa6cc06f00bbc7e82671a581a8c3a2e1e6005e521ef0ca422ee43362149 map[tcp4:[127.0.0.1:2]]}]}}}
+    client_test.go:367: rawDoc size is 1017628
+--- PASS: TestClient (27.26s)
+PASS
+ok  	github.com/katzenpost/katzenpost/authority/voting/client	(cached)
+=== RUN   TestVote
+=== PAUSE TestVote
+=== CONT  TestVote
+11:03:19.773 DEBU state0: Setting genesisEpoch 150965 from votingEpoch
+11:03:20.110 DEBU state0: Generating SharedRandom Commit for 150965
+11:03:24.061 DEBU state0: pki.SignDocument took 1.734577807s
+11:03:24.061 DEBU state0: Ready to send our vote:
+&{Epoch: 150965 GenesisEpoch: 150965
+SendRatePerMinute: 100 Mu: 0.001 MuMaxDelay: 9000 LambdaP:0.002 LambdaPMaxDelay:9000 LambdaL:0.0005 LambdaLMaxDelay:9000 LambdaD:0.0005 LambdaDMaxDelay:9000 LambdaM: 0.2 LambdaMMaxDelay: 9000
+SharedRandomValue: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PriorSharedRandom: []
+Topology:
+  [0]{[{node-0 4deedc1e77559e5e08d6a8fd9ea725438c07a85b4fec6b709c04ee765c4575bd map[tcp4:[127.0.0.1:1234]]} {node-1 30882552ef573c49be97b66bce96372bce67e166e19c7e4af5f6dda0be7ccfd7 map[tcp4:[127.0.0.1:1234]]}]}
+  [1]{[{node-2 a678635a41d88fc54a9d513fd2c6c3e4c58d23f304e314ec06473027fef332e2 map[tcp4:[127.0.0.1:1234]]} {node-3 4ff346286ac8dc282a097995d1c73fd8fd1058476aeaa8026bba19cc6e3e5da3 map[tcp4:[127.0.0.1:1234]]}]}
+  [2]{[{node-4 821cfdbb2f90fdb31c1d1d699c33eff420e05ee68035734125d00dcaddee62a3 map[tcp4:[127.0.0.1:1234]]} {node-5 a087e29dc42aa7bb87c770d1b2de4bde27bb5d96547aed7cf138e7c46609667e map[tcp4:[127.0.0.1:1234]]}]}
+}
+Providers:[]{[{provider-1 0877afe9e4dfa36d651fcde940ef200d335e3837485170a27b50461266290b1f map[tcp4:[127.0.0.1:1234]]}]}}}
+  SharedRandomCommit: 8642b6de0e42560874e08a5e20ae0a65a7fbfee405915d662a72a0d40990af6e, AAAAAAACTbWlu7HcRF5hjq99H8F/jfsBnVmX8qd/Jeefg7uIq2LlOg==
+11:03:24.790 DEBU state1: Setting genesisEpoch 150965 from votingEpoch
+11:03:25.129 DEBU state1: Generating SharedRandom Commit for 150965
+11:03:29.077 DEBU state1: pki.SignDocument took 1.722362098s
+11:03:29.077 DEBU state1: Ready to send our vote:
+&{Epoch: 150965 GenesisEpoch: 150965
+SendRatePerMinute: 100 Mu: 0.001 MuMaxDelay: 9000 LambdaP:0.002 LambdaPMaxDelay:9000 LambdaL:0.0005 LambdaLMaxDelay:9000 LambdaD:0.0005 LambdaDMaxDelay:9000 LambdaM: 0.2 LambdaMMaxDelay: 9000
+SharedRandomValue: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PriorSharedRandom: []
+Topology:
+  [0]{[{node-0 4deedc1e77559e5e08d6a8fd9ea725438c07a85b4fec6b709c04ee765c4575bd map[tcp4:[127.0.0.1:1234]]} {node-1 30882552ef573c49be97b66bce96372bce67e166e19c7e4af5f6dda0be7ccfd7 map[tcp4:[127.0.0.1:1234]]}]}
+  [1]{[{node-2 a678635a41d88fc54a9d513fd2c6c3e4c58d23f304e314ec06473027fef332e2 map[tcp4:[127.0.0.1:1234]]} {node-3 4ff346286ac8dc282a097995d1c73fd8fd1058476aeaa8026bba19cc6e3e5da3 map[tcp4:[127.0.0.1:1234]]}]}
+  [2]{[{node-4 821cfdbb2f90fdb31c1d1d699c33eff420e05ee68035734125d00dcaddee62a3 map[tcp4:[127.0.0.1:1234]]} {node-5 a087e29dc42aa7bb87c770d1b2de4bde27bb5d96547aed7cf138e7c46609667e map[tcp4:[127.0.0.1:1234]]}]}
+}
+Providers:[]{[{provider-1 0877afe9e4dfa36d651fcde940ef200d335e3837485170a27b50461266290b1f map[tcp4:[127.0.0.1:1234]]}]}}}
+  SharedRandomCommit: 47fd47e22ce0d49a6c696dedd5cd33d3a4762073f7e680be8a2033f78ee08237, AAAAAAACTbUfmQ+nJ525+kAa3BJxep89N8N5UZ+Cr7dFOqKlqGtRhQ==
+11:03:29.807 DEBU state2: Setting genesisEpoch 150965 from votingEpoch
+11:03:30.146 DEBU state2: Generating SharedRandom Commit for 150965
+11:03:34.106 DEBU state2: pki.SignDocument took 1.727407372s
+11:03:34.106 DEBU state2: Ready to send our vote:
+&{Epoch: 150965 GenesisEpoch: 150965
+SendRatePerMinute: 100 Mu: 0.001 MuMaxDelay: 9000 LambdaP:0.002 LambdaPMaxDelay:9000 LambdaL:0.0005 LambdaLMaxDelay:9000 LambdaD:0.0005 LambdaDMaxDelay:9000 LambdaM: 0.2 LambdaMMaxDelay: 9000
+SharedRandomValue: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= PriorSharedRandom: []
+Topology:
+  [0]{[{node-0 4deedc1e77559e5e08d6a8fd9ea725438c07a85b4fec6b709c04ee765c4575bd map[tcp4:[127.0.0.1:1234]]} {node-1 30882552ef573c49be97b66bce96372bce67e166e19c7e4af5f6dda0be7ccfd7 map[tcp4:[127.0.0.1:1234]]}]}
+  [1]{[{node-2 a678635a41d88fc54a9d513fd2c6c3e4c58d23f304e314ec06473027fef332e2 map[tcp4:[127.0.0.1:1234]]} {node-3 4ff346286ac8dc282a097995d1c73fd8fd1058476aeaa8026bba19cc6e3e5da3 map[tcp4:[127.0.0.1:1234]]}]}
+  [2]{[{node-4 821cfdbb2f90fdb31c1d1d699c33eff420e05ee68035734125d00dcaddee62a3 map[tcp4:[127.0.0.1:1234]]} {node-5 a087e29dc42aa7bb87c770d1b2de4bde27bb5d96547aed7cf138e7c46609667e map[tcp4:[127.0.0.1:1234]]}]}
+}
+Providers:[]{[{provider-1 0877afe9e4dfa36d651fcde940ef200d335e3837485170a27b50461266290b1f map[tcp4:[127.0.0.1:1234]]}]}}}
+  SharedRandomCommit: 652036c88c6bcc27fd3020ce8aa5a78e4a4c59ead795a4687fe848b3102a04d9, AAAAAAACTbUqor2PelYRfr9sn9FinTDDx6sp9b03KNiZAoI3D9MgUg==
+    state_test.go:291: authority-0 sent authority-1 reveal
+    state_test.go:291: authority-0 sent authority-2 reveal
+    state_test.go:291: authority-1 sent authority-0 reveal
+    state_test.go:291: authority-1 sent authority-2 reveal
+    state_test.go:291: authority-2 sent authority-0 reveal
+    state_test.go:291: authority-2 sent authority-1 reveal
+11:03:36.233 DEBU state0: Mixes tallied, now making a document
+11:03:38.309 DEBU state0: pki.SignDocument took 1.737581913s
+11:03:41.627 DEBU state1: Mixes tallied, now making a document
+11:03:43.847 DEBU state1: pki.SignDocument took 1.866785488s
+11:03:47.476 DEBU state2: Mixes tallied, now making a document
+11:03:49.754 DEBU state2: pki.SignDocument took 1.935668994s
+11:03:56.234 DEBU state0: pki.SignDocument took 1.842170017s
+11:04:00.629 DEBU state1: pki.SignDocument took 1.975184423s
+11:04:04.956 DEBU state2: pki.SignDocument took 1.849153579s
+11:04:04.956 DEBU state0: Checking signature from 652036c88c6bcc27fd3020ce8aa5a78e4a4c59ead795a4687fe848b3102a04d9 on our certificates
+11:04:05.453 DEBU state0: Checking signature from 47fd47e22ce0d49a6c696dedd5cd33d3a4762073f7e680be8a2033f78ee08237 on our certificates
+11:04:06.546 NOTI state0: Consensus signed by 8642b6de0e42560874e08a5e20ae0a65a7fbfee405915d662a72a0d40990af6e
+11:04:06.546 NOTI state0: Consensus signed by 47fd47e22ce0d49a6c696dedd5cd33d3a4762073f7e680be8a2033f78ee08237
+11:04:06.546 NOTI state0: Consensus signed by 652036c88c6bcc27fd3020ce8aa5a78e4a4c59ead795a4687fe848b3102a04d9
+11:04:06.546 NOTI state0: Consensus made for epoch 150965 with 3/3 signatures
+11:04:07.029 DEBU state1: Checking signature from 8642b6de0e42560874e08a5e20ae0a65a7fbfee405915d662a72a0d40990af6e on our certificates
+11:04:07.548 DEBU state1: Checking signature from 652036c88c6bcc27fd3020ce8aa5a78e4a4c59ead795a4687fe848b3102a04d9 on our certificates
+11:04:08.613 NOTI state1: Consensus signed by 8642b6de0e42560874e08a5e20ae0a65a7fbfee405915d662a72a0d40990af6e
+11:04:08.613 NOTI state1: Consensus signed by 47fd47e22ce0d49a6c696dedd5cd33d3a4762073f7e680be8a2033f78ee08237
+11:04:08.613 NOTI state1: Consensus signed by 652036c88c6bcc27fd3020ce8aa5a78e4a4c59ead795a4687fe848b3102a04d9
+11:04:08.613 NOTI state1: Consensus made for epoch 150965 with 3/3 signatures
+11:04:09.086 DEBU state2: Checking signature from 8642b6de0e42560874e08a5e20ae0a65a7fbfee405915d662a72a0d40990af6e on our certificates
+11:04:09.584 DEBU state2: Checking signature from 47fd47e22ce0d49a6c696dedd5cd33d3a4762073f7e680be8a2033f78ee08237 on our certificates
+11:04:10.647 NOTI state2: Consensus signed by 47fd47e22ce0d49a6c696dedd5cd33d3a4762073f7e680be8a2033f78ee08237
+11:04:10.647 NOTI state2: Consensus signed by 652036c88c6bcc27fd3020ce8aa5a78e4a4c59ead795a4687fe848b3102a04d9
+11:04:10.647 NOTI state2: Consensus signed by 8642b6de0e42560874e08a5e20ae0a65a7fbfee405915d662a72a0d40990af6e
+11:04:10.647 NOTI state2: Consensus made for epoch 150965 with 3/3 signatures
+--- PASS: TestVote (67.70s)
+PASS
+ok  	github.com/katzenpost/katzenpost/authority/voting/server	(cached)
+?   	github.com/katzenpost/katzenpost/authority/voting/server/config	[no test files]

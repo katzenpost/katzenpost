@@ -45,8 +45,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -92,6 +92,7 @@ type state struct {
 	worker.Worker
 
 	s   *Server
+	geo *geo.Geometry
 	log *logging.Logger
 
 	db *bolt.DB
@@ -513,23 +514,24 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 
 	// Build the Document.
 	doc := &pki.Document{
-		Epoch:             s.votingEpoch,
-		GenesisEpoch:      s.genesisEpoch,
-		SendRatePerMinute: params.SendRatePerMinute,
-		Mu:                params.Mu,
-		MuMaxDelay:        params.MuMaxDelay,
-		LambdaP:           params.LambdaP,
-		LambdaPMaxDelay:   params.LambdaPMaxDelay,
-		LambdaL:           params.LambdaL,
-		LambdaLMaxDelay:   params.LambdaLMaxDelay,
-		LambdaD:           params.LambdaD,
-		LambdaDMaxDelay:   params.LambdaDMaxDelay,
-		LambdaM:           params.LambdaM,
-		LambdaMMaxDelay:   params.LambdaMMaxDelay,
-		Topology:          topology,
-		Providers:         providers,
-		SharedRandomValue: srv,
-		PriorSharedRandom: s.priorSRV,
+		Epoch:              s.votingEpoch,
+		GenesisEpoch:       s.genesisEpoch,
+		SendRatePerMinute:  params.SendRatePerMinute,
+		Mu:                 params.Mu,
+		MuMaxDelay:         params.MuMaxDelay,
+		LambdaP:            params.LambdaP,
+		LambdaPMaxDelay:    params.LambdaPMaxDelay,
+		LambdaL:            params.LambdaL,
+		LambdaLMaxDelay:    params.LambdaLMaxDelay,
+		LambdaD:            params.LambdaD,
+		LambdaDMaxDelay:    params.LambdaDMaxDelay,
+		LambdaM:            params.LambdaM,
+		LambdaMMaxDelay:    params.LambdaMMaxDelay,
+		Topology:           topology,
+		Providers:          providers,
+		SharedRandomValue:  srv,
+		PriorSharedRandom:  s.priorSRV,
+		SphinxGeometryHash: s.geo.Hash(),
 	}
 	return doc
 }
@@ -685,13 +687,13 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	defer s.s.Done()
 	identityHash := s.s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          nil,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
-	session, err := wire.NewSession(cfg, true)
+	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1721,6 +1723,7 @@ func newState(s *Server) (*state, error) {
 
 	st := new(state)
 	st.s = s
+	st.geo = s.geo
 	st.log = s.logBackend.GetLogger("state")
 
 	// set voting schedule at runtime
