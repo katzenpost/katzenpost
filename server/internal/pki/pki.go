@@ -19,6 +19,7 @@ package pki
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -146,6 +147,11 @@ func (p *pki) worker() {
 					p.setFailedFetch(epoch, err)
 				}
 				continue
+			}
+
+			if !hmac.Equal(d.SphinxGeometryHash, p.glue.Config().SphinxGeometry.Hash()) {
+				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.glue.Config().SphinxGeometry.Display())
+				panic("Sphinx Geometry mismatch!")
 			}
 
 			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsProvider)
