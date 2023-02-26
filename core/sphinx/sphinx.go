@@ -27,7 +27,6 @@ import (
 	kemschemes "github.com/cloudflare/circl/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
@@ -41,19 +40,7 @@ var (
 
 	errTruncatedPayload = errors.New("sphinx: truncated payload")
 	errInvalidTag       = errors.New("sphinx: payload auth failed")
-
-	nrHops = 5
-
-	DefaultNike = ecdh.NewEcdhNike(rand.Reader)
 )
-
-func DefaultSphinx() *Sphinx {
-	return NewSphinx(DefaultGeometry())
-}
-
-func DefaultGeometry() *geo.Geometry {
-	return geo.GeometryFromUserForwardPayloadLength(DefaultNike, 2000, true, nrHops)
-}
 
 // Sphinx is a modular implementation of the Sphinx cryptographic packet
 // format that has a pluggable NIKE, non-interactive key exchange.
