@@ -255,7 +255,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.waitUntilDialed(address)
 	identityHash := identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          &sphinx.Geometry{},
+		Geometry:          sphinx.DefaultGeometry(),
 		Authenticator:     d,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: linkPrivateKey,
@@ -340,7 +340,7 @@ func TestClient(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i,)
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)

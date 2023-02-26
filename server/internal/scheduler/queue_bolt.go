@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/monotime"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -35,9 +36,8 @@ import (
 const (
 	boltQueuePath = "external_queue.db"
 
-	boltPacketKeySize      = 8 + 8
-	boltPacketTimesSize    = 8 + 8 + 8
-	boltPacketCommandsSize = commands.NextNodeHopLength + commands.NodeDelayLength
+	boltPacketKeySize   = 8 + 8
+	boltPacketTimesSize = 8 + 8 + 8
 
 	boltPacketsBucket        = "packets"
 	boltPacketRawKey         = "raw"
@@ -87,6 +87,8 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 		bkt.Put([]byte(boltPacketPayloadKey), payloadBuf)
 	}
 
+	boltPacketCommandsSize := sphinx.DefaultGeometry().NextNodeHopLength
+
 	cmdBuf := make([]byte, 0, boltPacketCommandsSize)
 	cmdBuf = pkt.NextNodeHop.ToBytes(cmdBuf)
 	cmdBuf = pkt.NodeDelay.ToBytes(cmdBuf)
@@ -127,7 +129,7 @@ func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte) (*packet.Packet, error)
 	cmds := make([]commands.RoutingCommand, 0, 2)
 	cmdBuf := bkt.Get([]byte(boltPacketCommandsKey))
 	for {
-		cmd, rest, err := commands.FromBytes(cmdBuf)
+		cmd, rest, err := commands.FromBytes(cmdBuf, sphinx.DefaultGeometry())
 		if err != nil {
 			pkt.Dispose()
 			return nil, err

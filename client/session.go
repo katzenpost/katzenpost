@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
@@ -44,7 +45,7 @@ import (
 type Session struct {
 	worker.Worker
 
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
 	cfg       *config.Config
@@ -240,7 +241,7 @@ func (s *Session) onConnection(err error) {
 	}
 	select {
 	case <-s.HaltCh():
-	case s.opCh <- opConnStatusChanged{ isConnected: err == nil, }:
+	case s.opCh <- opConnStatusChanged{isConnected: err == nil}:
 	}
 }
 

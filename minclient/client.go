@@ -31,6 +31,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
 )
@@ -144,7 +145,7 @@ type Client struct {
 	cfg *ClientConfig
 	log *logging.Logger
 
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
 	rng  *mRand.Rand
