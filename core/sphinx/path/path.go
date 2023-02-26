@@ -23,13 +23,12 @@ import (
 	mRand "math/rand"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const maxAttempts = 3
@@ -42,7 +41,15 @@ var errMaxAttempts = errors.New("path: max path selection attempts exceeded")
 // Note: Forward packets originating from a client have slightly different
 // path requirements than internally sourced packets or response packets as it
 // includes the 0th hop.
-func New(rng *mRand.Rand, doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor, surbID *[constants.SURBIDLength]byte, baseTime time.Time, isFromClient, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+func New(rng *mRand.Rand,
+	sphinxGeometry *geo.Geometry,
+	doc *pki.Document,
+	recipient []byte,
+	src, dst *pki.MixDescriptor,
+	surbID *[geo.SURBIDLength]byte,
+	baseTime time.Time,
+	isFromClient,
+	isForward bool) ([]*sphinx.PathHop, time.Time, error) {
 
 	var then time.Time
 	var path []*sphinx.PathHop
@@ -60,10 +67,21 @@ selectLoop:
 			idHash := desc.IdentityKey.Sum256()
 			copy(h.ID[:], idHash[:])
 			epoch, _, _ := epochtime.FromUnix(then.Unix())
-			if k, ok := desc.MixKeys[epoch]; !ok {
+			if _, ok := desc.MixKeys[epoch]; !ok {
 				continue selectLoop
 			} else {
-				h.NIKEPublicKey = ecdh.FromEcdhKey(k)
+				if sphinxGeometry.NIKEName == "" {
+					h.KEMPublicKey, err = desc.UnmarshalMixKeyAsKEM(epoch, sphinxGeometry)
+					if err != nil {
+						return nil, time.Time{}, err
+					}
+				} else {
+					h.NIKEPublicKey, err = desc.UnmarshalMixKeyAsNike(epoch, sphinxGeometry)
+					if err != nil {
+						return nil, time.Time{}, err
+					}
+				}
+
 			}
 
 			// All non-terminal hops, and the terminal forward hop iff the

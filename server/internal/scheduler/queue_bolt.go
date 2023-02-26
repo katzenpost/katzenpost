@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/monotime"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
@@ -87,7 +86,7 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 		bkt.Put([]byte(boltPacketPayloadKey), payloadBuf)
 	}
 
-	boltPacketCommandsSize := sphinx.DefaultGeometry().NextNodeHopLength
+	boltPacketCommandsSize := pkt.Geometry.NextNodeHopLength
 
 	cmdBuf := make([]byte, 0, boltPacketCommandsSize)
 	cmdBuf = pkt.NextNodeHop.ToBytes(cmdBuf)
@@ -110,13 +109,16 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 	return nil
 }
 
-func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte) (*packet.Packet, error) {
+func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte, g glue.Glue) (*packet.Packet, error) {
 	bkt := parentBkt.Bucket(k)
 	if bkt == nil {
 		panic("BUG: packet does not exist")
 	}
-
-	pkt, err := packet.NewWithID(bkt.Get([]byte(boltPacketRawKey)), binary.BigEndian.Uint64(k[8:]))
+	pkt, err := packet.NewWithID(
+		bkt.Get([]byte(boltPacketRawKey)),
+		binary.BigEndian.Uint64(k[8:]),
+		g.Config().SphinxGeometry,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +131,7 @@ func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte) (*packet.Packet, error)
 	cmds := make([]commands.RoutingCommand, 0, 2)
 	cmdBuf := bkt.Get([]byte(boltPacketCommandsKey))
 	for {
-		cmd, rest, err := commands.FromBytes(cmdBuf, sphinx.DefaultGeometry())
+		cmd, rest, err := commands.FromBytes(cmdBuf, g.Config().SphinxGeometry)
 		if err != nil {
 			pkt.Dispose()
 			return nil, err
@@ -232,7 +234,7 @@ func (q *boltQueue) Pop() {
 			var err error
 			if deltaT := now - prio; deltaT > timerSlack {
 				q.log.Debugf("Dropping packet: %v (Deadline blown by %v)", id, deltaT)
-			} else if pkt, err = packetFromBoltBkt(packetsBkt, k); err != nil {
+			} else if pkt, err = packetFromBoltBkt(packetsBkt, k, q.glue); err != nil {
 				q.log.Debugf("Dropping packet: %v (s11n failure: %v)", id, err)
 			}
 

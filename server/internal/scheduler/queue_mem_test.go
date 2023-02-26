@@ -17,17 +17,20 @@
 package scheduler
 
 import (
+	"testing"
+	"time"
+
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 type mockServer struct {
@@ -92,12 +95,17 @@ func TestMemoryQueueBulkEnqueue(t *testing.T) {
 	q := newMemoryQueue(g, logger.GetLogger("mq"))
 	pkts := make([]*packet.Packet, 100)
 
-	geo := sphinx.DefaultGeometry()
+	geo := geo.GeometryFromUserForwardPayloadLength(
+		ecdh.NewEcdhNike(rand.Reader),
+		2000,
+		true,
+		5,
+	)
 
 	payload := make([]byte, geo.PacketLength)
 	for i := 0; i < 100; i++ {
 		// create a set of packets with out-of-order delays
-		pkts[i], err = packet.New(payload)
+		pkts[i], err = packet.New(payload, geo)
 		require.NoError(err)
 		pkts[i].Delay = time.Millisecond * time.Duration((i%2)*400+i*5+40)
 	}

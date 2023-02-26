@@ -19,6 +19,7 @@ package minclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	mRand "math/rand"
 	"net"
@@ -38,6 +39,9 @@ import (
 
 // ClientConfig is a client configuration.
 type ClientConfig struct {
+	// SphinxGeometry is a Sphinx Geometry.
+	SphinxGeometry *geo.Geometry
+
 	// User is the user identifier used to connect to the Provider.
 	User string
 
@@ -109,6 +113,13 @@ type ClientConfig struct {
 }
 
 func (cfg *ClientConfig) validate() error {
+	if cfg.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+	err := cfg.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
 	if cfg.User == "" || len(cfg.User) > wire.MaxAdditionalDataLength {
 		return fmt.Errorf("minclient: invalid User: '%v'", cfg.User)
 	}
@@ -193,8 +204,12 @@ func New(cfg *ClientConfig) (*Client, error) {
 	}
 
 	c := new(Client)
-	c.geo = sphinx.DefaultGeometry()
-	c.sphinx = sphinx.DefaultSphinx()
+	c.geo = cfg.SphinxGeometry
+	var err error
+	c.sphinx, err = sphinx.FromGeometry(cfg.SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
 	c.cfg = cfg
 	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)
