@@ -301,7 +301,7 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 	s.Unlock()
 	// ignore io.EOF on short reads from ReadBuf
 	if err == io.EOF {
-		if n > 0 {
+		if s.RState != StreamClosed {
 			return n, nil
 		}
 	}
