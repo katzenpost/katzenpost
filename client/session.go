@@ -18,6 +18,7 @@ package client
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -319,6 +320,12 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): %s", doc)
+
+	if !hmac.Equal(doc.SphinxGeometryHash, s.geo.Hash()) {
+		s.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", s.geo.Display())
+		panic("Sphinx Geometry mismatch!")
+	}
+
 	s.hasPKIDoc = true
 	select {
 	case <-s.HaltCh():
