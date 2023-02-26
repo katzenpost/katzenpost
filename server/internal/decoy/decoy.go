@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -63,7 +64,7 @@ type decoy struct {
 	sync.Mutex
 
 	sphinx *sphinx.Sphinx
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 
 	glue glue.Glue
 	log  *logging.Logger

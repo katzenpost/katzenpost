@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -61,7 +62,7 @@ type CBORPluginWorker struct {
 
 	glue glue.Glue
 	log  *logging.Logger
-	geo  *sphinx.Geometry
+	geo  *geo.Geometry
 
 	haltOnce    sync.Once
 	pluginChans PluginChans

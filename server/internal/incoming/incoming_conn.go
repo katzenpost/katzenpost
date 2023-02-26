@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -44,7 +45,7 @@ type incomingConn struct {
 	c   net.Conn
 	e   *list.Element
 	w   *wire.Session
-	geo *sphinx.Geometry
+	geo *geo.Geometry
 
 	id      uint64
 	retrSeq uint32

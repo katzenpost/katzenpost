@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -45,7 +46,7 @@ var (
 )
 
 type Packet struct {
-	Geometry *sphinx.Geometry
+	Geometry *geo.Geometry
 
 	Raw     []byte
 	Payload []byte
