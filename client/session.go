@@ -148,6 +148,10 @@ func NewSession(
 	return s, nil
 }
 
+func (s *Session) SphinxGeometry() *geo.Geometry {
+	return s.cfg.SphinxGeometry
+}
+
 // WaitForDocument blocks until a pki fetch has completed
 func (s *Session) WaitForDocument() {
 	select {
