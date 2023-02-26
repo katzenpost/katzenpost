@@ -87,6 +87,7 @@ type Stream struct {
 	sync.Mutex
 	worker.Worker
 
+	startOnce *sync.Once
 	// address of the Stream
 	Addr *StreamAddr
 
@@ -843,6 +844,7 @@ type Transport mClient.RWClient
 func newStream(c Transport) *Stream {
 	s := new(Stream)
 	s.c = c
+	s.startOnce = new(sync.Once)
 	s.RState = StreamOpen
 	s.WState = StreamOpen
 	s.Timeout = defaultTimeout
@@ -878,6 +880,7 @@ func NewStream(s *client.Session) *Stream {
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	st := new(Stream)
 	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
+	st.startOnce = new(sync.Once)
 	err := cbor.Unmarshal(state, st)
 	if err != nil {
 		return nil, err
@@ -904,16 +907,18 @@ func (s *Stream) Save() ([]byte, error) {
 
 // Start starts the reader and writer workers
 func (s *Stream) Start() {
-	s.WindowSize = 7
-	s.MaxWriteBufSize = int(s.WindowSize)
-	s.onFlush = make(chan struct{}, 1)
-	s.onAck = make(chan struct{}, 1)
-	s.onStreamClose = make(chan struct{}, 1)
-	s.onWrite = make(chan struct{}, 1)
-	s.onRead = make(chan struct{}, 1)
-	s.TQ.Start()
-	s.Go(s.reader)
-	s.Go(s.writer)
+	s.startOnce.Do(func() {
+		s.WindowSize = 7
+		s.MaxWriteBufSize = int(s.WindowSize)
+		s.onFlush = make(chan struct{}, 1)
+		s.onAck = make(chan struct{}, 1)
+		s.onStreamClose = make(chan struct{}, 1)
+		s.onWrite = make(chan struct{}, 1)
+		s.onRead = make(chan struct{})
+		s.TQ.Start()
+		s.Go(s.reader)
+		s.Go(s.writer)
+	})
 }
 
 // DialDuplex returns a stream using capability backed map storage (Duplex)

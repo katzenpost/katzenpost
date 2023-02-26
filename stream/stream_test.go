@@ -19,10 +19,10 @@
 package stream
 
 import (
-	"io"
 	"context"
-	"sync"
 	"fmt"
+	"io"
+	"sync"
 	"testing"
 	"time"
 
