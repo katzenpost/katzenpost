@@ -85,13 +85,17 @@ func NewSession(
 	cfg *config.Config,
 	linkKey wire.PrivateKey,
 	provider *pki.MixDescriptor) (*Session, error) {
-	var err error
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
+	mysphinx, err := sphinx.FromGeometry(cfg.SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Session{
-		geo:         sphinx.DefaultGeometry(),
-		sphinx:      sphinx.DefaultSphinx(),
+		geo:         cfg.SphinxGeometry,
+		sphinx:      mysphinx,
 		cfg:         cfg,
 		linkKey:     linkKey,
 		provider:    provider,
@@ -111,6 +115,7 @@ func NewSession(
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 	clientCfg := &minclient.ClientConfig{
+		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      s.provider.IdentityKey,

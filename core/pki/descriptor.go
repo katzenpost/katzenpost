@@ -24,12 +24,18 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/cloudflare/circl/kem"
 	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/net/idna"
 
+	kemschemes "github.com/cloudflare/circl/kem/schemes"
+
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -86,6 +92,22 @@ type MixDescriptor struct {
 }
 
 type mixdescriptor MixDescriptor
+
+func (d *MixDescriptor) UnmarshalMixKeyAsNike(epoch uint64, g *geo.Geometry) (nike.PublicKey, error) {
+	s := schemes.ByName(g.NIKEName)
+	if s == nil {
+		panic("failed to get a NIKE scheme")
+	}
+	return s.UnmarshalBinaryPublicKey(d.MixKeys[epoch])
+}
+
+func (d *MixDescriptor) UnmarshalMixKeyAsKEM(epoch uint64, g *geo.Geometry) (kem.PublicKey, error) {
+	k := kemschemes.ByName(g.KEMName)
+	if k == nil {
+		panic("failed to get a KEM scheme")
+	}
+	return k.UnmarshalBinaryPublicKey(d.MixKeys[epoch])
+}
 
 // String returns a human readable MixDescriptor suitable for terse logging.
 func (d *MixDescriptor) String() string {
