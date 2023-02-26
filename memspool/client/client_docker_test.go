@@ -56,7 +56,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 
 	// append to a spool
 	message := []byte("hello there")
-	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message)
+	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message, s.SphinxGeometry())
 	require.NoError(err)
 	rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
 	require.NoError(err)
@@ -130,9 +130,9 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	messageID := uint32(1) // where do we learn messageID?
 	for i := 0; i < 20; i += 1 {
 		// append to a spool
-		message := make([]byte, common.SpoolPayloadLength)
+		message := make([]byte, common.SpoolPayloadLength(s.SphinxGeometry()))
 		rand.Reader.Read(message[:])
-		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:])
+		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:], s.SphinxGeometry())
 		require.NoError(err)
 		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
 		require.NoError(err)
