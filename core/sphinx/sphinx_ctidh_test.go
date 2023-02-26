@@ -23,13 +23,25 @@ import (
 	"testing"
 
 	ctidhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 )
+
+func TestHybridCtidhForwardSphinx(t *testing.T) {
+	t.Parallel()
+	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
+
+	mynike := hybrid.CTIDHX25519
+	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(mynike, geo)
+
+	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
+}
 
 func TestCtidhForwardSphinx(t *testing.T) {
 	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	mynike := ctidhnike.NewCtidhNike()
+	mynike := ctidhnike.CTIDHScheme
 	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
 	sphinx := NewSphinx(mynike, geo)
 
@@ -40,7 +52,7 @@ func TestCtidhSURB(t *testing.T) {
 	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
-	mynike := ctidhnike.NewCtidhNike()
+	mynike := ctidhnike.CTIDHScheme
 	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
 	sphinx := NewSphinx(mynike, geo)
 
@@ -50,8 +62,8 @@ func TestCtidhSURB(t *testing.T) {
 func TestCTIDHSphinxGeometry(t *testing.T) {
 	t.Parallel()
 	withSURB := false
-	geo := GeometryFromUserForwardPayloadLength(ctidhnike.NewCtidhNike(), 512, withSURB, 5)
+	geo := GeometryFromUserForwardPayloadLength(ctidhnike.CTIDHScheme, 512, withSURB, 5)
 	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = GeometryFromUserForwardPayloadLength(ctidhnike.NewCtidhNike(), 512, withSURB, 10)
+	geo = GeometryFromUserForwardPayloadLength(ctidhnike.CTIDHScheme, 512, withSURB, 10)
 	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", geo.HeaderLength)
 }

@@ -133,7 +133,7 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 		// set privateKey size to zero 0 since
 		// we don't need to generate blinding factors
 		// for KEMSphinx.
-		keys[i] = crypto.KDF(sharedSecret, 0, nil)
+		keys[i] = crypto.KDF(sharedSecret, nil)
 		defer keys[i].Reset()
 	}
 
@@ -261,7 +261,7 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	// Derive the various keys required for packet processing.
 	// note we set the private key size to zero because we do not
 	// derive blinding factors for KEMSphinx!
-	keys := crypto.KDF(sharedSecret, 0, nil)
+	keys := crypto.KDF(sharedSecret, nil)
 	defer keys.Reset()
 
 	// Validate the Sphinx Packet Header.
