@@ -7,8 +7,12 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/fxamacker/cbor/v2"
+	"golang.org/x/crypto/sha3"
+
 	"github.com/cloudflare/circl/kem"
 	kemschemes "github.com/cloudflare/circl/kem/schemes"
+
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
@@ -28,6 +32,11 @@ const (
 
 	// payloadTagLength is the length of the Sphinx packet payload SPRP tag.
 	payloadTagLength = 32
+)
+
+var (
+	// Create reusable EncMode interface with immutable options, safe for concurrent use.
+	ccbor cbor.EncMode
 )
 
 // Geometry describes the geometry of a Sphinx packet.
@@ -89,6 +98,23 @@ type Geometry struct {
 	// KEMName is the name of the KEM scheme used by the mixnet's Sphinx packet.
 	// NIKEName and KEMName are mutually exclusive.
 	KEMName string
+}
+
+func (g *Geometry) bytes() []byte {
+	blob, err := ccbor.Marshal(g)
+	if err != nil {
+		panic(err)
+	}
+	return blob
+}
+
+func (g *Geometry) Hash() []byte {
+	h := sha3.New256()
+	_, err := h.Write(g.bytes())
+	if err != nil {
+		panic(err)
+	}
+	return h.Sum(nil)
 }
 
 // Validate returns an error if one of it's validation checks fails. Note however
@@ -294,4 +320,13 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		geo.ForwardPayloadLength = userForwardPayloadLength
 	}
 	return geo
+}
+
+func init() {
+	var err error
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err = opts.EncMode()
+	if err != nil {
+		panic(err)
+	}
 }
