@@ -28,7 +28,6 @@ import (
 	"golang.org/x/net/idna"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -62,7 +61,7 @@ type MixDescriptor struct {
 	LinkKey wire.PublicKey
 
 	// MixKeys is a map of epochs to Sphinx keys.
-	MixKeys map[uint64]*ecdh.PublicKey
+	MixKeys map[uint64][]byte
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
