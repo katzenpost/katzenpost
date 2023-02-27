@@ -199,6 +199,22 @@ func (k *PrivateKey) UnmarshalBinary(data []byte) error {
 	return k.FromBytes(data)
 }
 
+// MarshalText is an implementation of a method on the
+// TextMarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) MarshalText() ([]byte, error) {
+	return []byte(base64.StdEncoding.EncodeToString(k.Bytes())), nil
+}
+
+// UnmarshalText is an implementation of a method on the
+// TextUnmarshaler interface defined in https://golang.org/pkg/encoding/
+func (k *PrivateKey) UnmarshalText(data []byte) error {
+	raw, err := base64.StdEncoding.DecodeString(string(data))
+	if err != nil {
+		return err
+	}
+	return k.FromBytes(raw)
+}
+
 // FromBytes deserializes the byte slice b into the PrivateKey.
 func (k *PrivateKey) FromBytes(b []byte) error {
 	if len(b) != PrivateKeySize {
