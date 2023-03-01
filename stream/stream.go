@@ -273,15 +273,13 @@ func (s *Stream) reader() {
 // Read impl io.Reader
 func (s *Stream) Read(p []byte) (n int, err error) {
 	s.Lock()
-	if s.RState == StreamClosed {
-		s.Unlock()
-		return 0, io.EOF
-	}
-	if s.WState == StreamClosed {
-		s.Unlock()
-		return 0, io.EOF
-	}
 	if s.ReadBuf.Len() == 0 {
+		if s.WState == StreamClosed || s.RState == StreamClosed {
+			s.Unlock()
+			s.RState = StreamClosed
+			return 0, io.EOF
+		}
+		s.log.Debugf("Read() sleeping until unblocked")
 		s.Unlock()
 		select {
 		case <-time.After(s.Timeout):
@@ -353,8 +351,6 @@ func (s *Stream) Close() error {
 		s.doFlush()       // wake up a sleeping writer !
 		<-s.onStreamClose // block until writer has finalized
 		s.Lock()
-		s.RState = StreamClosed
-		s.doOnRead()
 		s.Unlock()
 		return nil
 	}
