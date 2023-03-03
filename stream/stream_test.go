@@ -64,7 +64,7 @@ func TestFrameKey(t *testing.T) {
 	require := require.New(t)
 
 	// the same key should be returned for every idx
-	a, b := newStreams()
+	a, b := newStreams(NewMockTransport())
 	for i := 0; i < 4096; i++ {
 		i := uint64(i)
 		// require sender/receiver frame ID match
