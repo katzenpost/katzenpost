@@ -336,7 +336,31 @@ func (s *Stream) Write(p []byte) (n int, err error) {
 	return s.WriteBuf.Write(p)
 }
 
+// Sync() blocks until Stream.WriteBuf is flushed
+func (s *Stream) Sync() error {
+	s.Lock()
+	if s.WState != StreamOpen {
+		s.Unlock()
+		return ErrStreamClosed
+	}
+	s.Unlock()
+	for {
+		select {
+		case <-s.onWrite:
+		case <-s.HaltCh():
+			return ErrHalted
+		}
+		s.Lock()
+		if s.WriteBuf.Len() == 0 {
+			s.Unlock()
+			return nil
+		}
+		s.Unlock()
+	}
+}
+
 // Close terminates the Stream with a final Frame and blocks future Writes
+// it does *not* drain WriteBuf, call Sync() to flush WriteBuf first.
 func (s *Stream) Close() error {
 	s.Lock()
 	if s.WState == StreamOpen {

@@ -173,14 +173,18 @@ func TestStreamFragmentation(t *testing.T) {
 			}
 		}
 		// Writer closes stream
-		err = s.Close()
+		t.Logf("SendWorker Sync()")
+		err = s.Sync()
 		require.NoError(err)
 		t.Logf("SendWorker Close()")
+		err = s.Close()
+		require.NoError(err)
 
 		close(sidechannel)
 		t.Logf("SendWorker Done()")
 		require.NoError(err)
 		wg.Done()
+
 		// wait until reader has finished reading
 		// before halting the writer()
 		wg.Wait()
