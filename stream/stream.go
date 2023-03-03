@@ -274,9 +274,8 @@ func (s *Stream) reader() {
 func (s *Stream) Read(p []byte) (n int, err error) {
 	s.Lock()
 	if s.ReadBuf.Len() == 0 {
-		if s.WState == StreamClosed || s.RState == StreamClosed {
+		if s.RState == StreamClosed {
 			s.Unlock()
-			s.RState = StreamClosed
 			return 0, io.EOF
 		}
 		s.log.Debugf("Read() sleeping until unblocked")
