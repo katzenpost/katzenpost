@@ -19,6 +19,7 @@
 package client
 
 import (
+	"context"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/client"
@@ -38,9 +39,10 @@ func TestCreateMap(t *testing.T) {
 	client, err := client.New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewTOFUSession()
+	ctx := context.Background()
+	session, err := client.NewTOFUSession(ctx)
 	require.NoError(err)
-	session.WaitForDocument()
+	session.WaitForDocument(ctx)
 
 	c, err := NewClient(session)
 	require.NoError(err)
