@@ -236,7 +236,7 @@ func (s *Session) setPollIntervalFromDoc(doc *pki.Document) {
 	// we need to poll faster than incomoing packets, yes, but also more frequently than the round trip eta
 	// or else surb-acks expire in queue
 	avgSendInterval := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * float64(time.Millisecond))
-	avgRoundTrip := time.Duration((8.0 / doc.Mu) * float64(time.Millisecond))
+	avgRoundTrip := time.Duration((6.0 / doc.Mu) * float64(time.Millisecond))
 
 	var pollProviderMsec time.Duration
 	if avgRoundTrip < avgSendInterval {
@@ -246,7 +246,7 @@ func (s *Session) setPollIntervalFromDoc(doc *pki.Document) {
 	}
 
 	// poll 25% faster than mean interval or round trip. Cant win em all.
-	pollProviderMsec = pollProviderMsec - pollProviderMsec >> 2
+	pollProviderMsec = pollProviderMsec - (pollProviderMsec >> 1)
 	s.log.Debugf("onDocument(): setting PollInterval to %s", pollProviderMsec)
 	s.minclient.SetPollInterval(pollProviderMsec)
 }
