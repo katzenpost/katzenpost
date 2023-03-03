@@ -33,50 +33,50 @@ func (b *BufferedStream) Start() {
 func (b *BufferedStream) CBORDecodeAsync(instance interface{}) chan interface{} {
 	result := make(chan interface{})
 	b.Go(func() {
-	b.Lock() // BufferedStreams are not to be shared
-	if b.Buffer == nil {
-		b.Buffer = new(bytes.Buffer)
-	}
-	defer b.Unlock()
-	defer close(result)
-	var dec *cbor.Decoder
-	for {
-		// buf will contain the bytes read by the cbor Decoder using a TeeReader
-		buf := new(bytes.Buffer)
-
-		// if the Buffer contains data, read from it first
-		if b.Buffer.Len() > 0 {
-			dec = cbor.NewDecoder(io.TeeReader(io.MultiReader(b.Buffer, b.Stream), buf))
-		} else {
-			dec = cbor.NewDecoder(io.TeeReader(b.Stream, buf))
+		b.Lock() // BufferedStreams are not to be shared
+		if b.Buffer == nil {
+			b.Buffer = new(bytes.Buffer)
 		}
+		defer b.Unlock()
+		defer close(result)
+		var dec *cbor.Decoder
+		for {
+			// buf will contain the bytes read by the cbor Decoder using a TeeReader
+			buf := new(bytes.Buffer)
 
-		err := dec.Decode(instance)
-		if buf.Len() > 0 && b.Buffer.Len() > 0 {
-			io.Copy(buf, b.Buffer) // keep bytes unconsumed from Buffer
-		}
-		buf.Next(dec.NumBytesRead()) // dump the successfully decoded bytes (0 on error)
-		b.Buffer = buf               // save read-but-not-decoded bytes
-
-		if err != nil {
-			// if Stream was closed during Decode, it's over.
-			if err == io.EOF {
-				result <- err
-				return
+			// if the Buffer contains data, read from it first
+			if b.Buffer.Len() > 0 {
+				dec = cbor.NewDecoder(io.TeeReader(io.MultiReader(b.Buffer, b.Stream), buf))
+			} else {
+				dec = cbor.NewDecoder(io.TeeReader(b.Stream, buf))
 			}
-			//XXX: backoff rety <-time.After(1*time.Second)//tryagain later
-			continue
-		}
-		select {
-		case <-b.HaltCh():
-			b.Stream.Halt()
+
+			err := dec.Decode(instance)
+			if buf.Len() > 0 && b.Buffer.Len() > 0 {
+				io.Copy(buf, b.Buffer) // keep bytes unconsumed from Buffer
+			}
+			buf.Next(dec.NumBytesRead()) // dump the successfully decoded bytes (0 on error)
+			b.Buffer = buf               // save read-but-not-decoded bytes
+
+			if err != nil {
+				// if Stream was closed during Decode, it's over.
+				if err == io.EOF {
+					result <- err
+					return
+				}
+				//XXX: backoff rety <-time.After(1*time.Second)//tryagain later
+				continue
+			}
+			select {
+			case <-b.HaltCh():
+				b.Stream.Halt()
+				return
+			case result <- instance:
+			}
 			return
-		case result <- instance:
 		}
-		return
-	}
-})
-return result
+	})
+	return result
 }
 
 // Write calls Stream.Write

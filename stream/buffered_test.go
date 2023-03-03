@@ -147,6 +147,7 @@ func TestBufferedStream(t *testing.T) {
 		wg.Done()
 	}()
 	wg.Wait()
+	require.Equal(len(sent), len(recv))
 	for i := 0; i < numEntries; i++ {
 		require.Equal(sent[i], recv[i])
 	}
