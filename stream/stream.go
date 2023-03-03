@@ -345,8 +345,6 @@ func (s *Stream) Close() error {
 		s.log.Debugf("Close() doFlush()")
 		s.doFlush()       // wake up a sleeping writer !
 		<-s.onStreamClose // block until writer has finalized
-		s.Lock()
-		s.Unlock()
 		return nil
 	}
 	s.Unlock()
