@@ -291,14 +291,10 @@ func (s *Stream) Read(p []byte) (n int, err error) {
 		s.Lock()
 	}
 	n, err = s.ReadBuf.Read(p)
-	if s.RState == StreamClosed {
-		s.Unlock()
-		return n, io.EOF
-	}
 	s.Unlock()
 	// ignore io.EOF on short reads from ReadBuf
 	if err == io.EOF {
-		if s.RState != StreamClosed {
+		if s.RState != StreamClosed || n > 0 {
 			return n, nil
 		}
 	}
