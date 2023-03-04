@@ -147,7 +147,7 @@ func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
 		ratchet:             ratchet,
 		ratchetMutex:        new(sync.Mutex),
 		sharedSecret:        secret,
-		pandaShutdownChan:   make(chan struct{}),
+		pandaShutdownChan:   make(chan interface{}),
 		reunionShutdownChan: make(chan struct{}),
 		outbound:            new(Queue),
 		messageExpiration:   MessageExpirationDuration,
@@ -216,7 +216,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.outbound = s.Outbound
 	c.messageExpiration = s.MessageExpiration
 	if c.IsPending {
-		c.pandaShutdownChan = make(chan struct{})
+		c.pandaShutdownChan = make(chan interface{})
 		c.reunionShutdownChan = make(chan struct{})
 	}
 	return nil
