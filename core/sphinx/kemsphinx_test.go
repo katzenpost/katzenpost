@@ -47,6 +47,8 @@ func TestKEMSphinxSimple(t *testing.T) {
 
 func TestKEMSphinxGeometry(t *testing.T) {
 	t.Parallel()
+	require := require.New(t)
+
 	withSURB := false
 	g := geo.KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 5)
 	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", g.HeaderLength)
@@ -67,6 +69,28 @@ func TestKEMSphinxGeometry(t *testing.T) {
 	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 20)
 	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
 
+	mykem := hybrid.Kyber768X25519()
+	withSURB = true
+	payloadLen := 2000
+
+	g = geo.KEMGeometryFromUserForwardPayloadLength(mykem, payloadLen, withSURB, 5)
+
+	t.Logf("\n[SphinxGeometry]\n%s", g.Display())
+
+	err := g.Validate()
+	require.NoError(err)
+
+	sphinx := NewKEMSphinx(mykem, g)
+	nrHops := 5
+	_, path := newKEMPathVector(require, mykem, nrHops, true)
+	payload := make([]byte, g.ForwardPayloadLength)
+
+	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+	require.NoError(err)
+
+	t.Logf("packet length %d", len(pkt))
+	t.Logf("geometry packet length %d", g.PacketLength)
+	require.Equal(len(pkt), g.PacketLength)
 }
 
 func TestKEMForwardSphinx(t *testing.T) {
@@ -141,7 +165,7 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 
 		// Create the packet.
 		payload := []byte(testPayload)
-		pkt, err := sphinx.newKEMPacket(rand.Reader, path, payload)
+		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 		require.NoError(err, "NewKEMPacket failed")
 		require.Equal(len(pkt), sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
 
