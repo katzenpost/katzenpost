@@ -1426,7 +1426,8 @@ func (c *Client) goOnline() error {
 	c.online = true
 	c.connMutex.Unlock()
 	// wait for pki document to arrive
-	return s.WaitForDocument(ctx)
+	err := s.WaitForDocument(ctx)
+	return err
 }
 
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
