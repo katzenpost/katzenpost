@@ -19,7 +19,20 @@ warped?=true
 mixes=3
 auths=3
 providers=2
-params=""
+
+# Parameters
+sr=0
+mu=0.05 # 20 ms per hop avg
+muMax=100 # 100 ms max delay per hop
+lP=0.01 # corresponds to send rate 1/.1 ~ 100 ms or 10 messages / second
+lPMax=100
+lL=0.0005
+lLMax=100
+lD=0.0005
+lDMax=300
+lM=0.2
+lMMax=100
+
 DISTROS=alpine debian
 distro=alpine
 net_name=voting_mixnet
@@ -53,8 +66,10 @@ $(net_name):
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -S .$(distro) -t $(params)\
-		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
+		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} \
+		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
+		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
+		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
