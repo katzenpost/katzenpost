@@ -28,11 +28,32 @@ import (
 
 func TestEcdhSphinxGeometry(t *testing.T) {
 	t.Parallel()
+	require := require.New(t)
+
 	withSURB := false
 	g := geo.GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 5)
 	t.Logf("NIKE Sphinx X25519 5 hops: HeaderLength = %d", g.HeaderLength)
 	g = geo.GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 10)
 	t.Logf("NIKE Sphinx X25519 10 hops: HeaderLength = %d", g.HeaderLength)
+
+	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	withSURB = true
+	payloadLen := 2000
+	g = geo.GeometryFromUserForwardPayloadLength(mynike, payloadLen, withSURB, 5)
+
+	err := g.Validate()
+	require.NoError(err)
+
+	sphinx := NewSphinx(g)
+	nrHops := 5
+	_, path := newNikePathVector(require, mynike, nrHops, true)
+	payload := make([]byte, g.ForwardPayloadLength)
+	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+	require.NoError(err)
+
+	t.Logf("packet length %d", len(pkt))
+	t.Logf("geometry packet length %d", g.PacketLength)
+	require.Equal(len(pkt), g.PacketLength)
 }
 
 func TestEcdhForwardSphinx(t *testing.T) {

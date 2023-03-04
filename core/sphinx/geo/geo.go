@@ -304,12 +304,21 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		nextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
 	}
 
+	forwardPayloadLength := 0
+	if withSURB {
+		forwardPayloadLength = f.deriveForwardPayloadLength(userForwardPayloadLength)
+	} else {
+		forwardPayloadLength = userForwardPayloadLength
+	}
+	f.forwardPayloadLength = forwardPayloadLength // used in f.packetLength
+
 	geo := &Geometry{
 		NrHops:                      nrHops,
 		HeaderLength:                f.headerLength(),
 		PacketLength:                f.packetLength(),
 		SURBLength:                  f.surbLength(),
 		UserForwardPayloadLength:    userForwardPayloadLength,
+		ForwardPayloadLength:        forwardPayloadLength,
 		PayloadTagLength:            payloadTagLength,
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		RoutingInfoLength:           f.routingInfoLength(),
@@ -322,11 +331,6 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		KEMName:                     kem.Name(),
 	}
 
-	if withSURB {
-		geo.ForwardPayloadLength = f.deriveForwardPayloadLength(userForwardPayloadLength)
-	} else {
-		geo.ForwardPayloadLength = userForwardPayloadLength
-	}
 	return geo
 }
 
