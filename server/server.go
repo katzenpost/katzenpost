@@ -315,7 +315,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(goo, cfg.SphinxGeometry.NIKE(), cfg.SphinxGeometry.KEM()); err != nil {
+	if s.mixKeys, err = newMixKeys(goo, cfg.SphinxGeometry); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}
