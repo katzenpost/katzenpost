@@ -27,11 +27,11 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
+	"github.com/cloudflare/circl/kem/hybrid"
 	aConfig "github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
@@ -450,8 +450,8 @@ func main() {
 
 	nrHops := *nrLayers + 2
 
-	s.sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
-		ecdh.NewEcdhNike(rand.Reader),
+	s.sphinxGeometry = geo.KEMGeometryFromUserForwardPayloadLength(
+		hybrid.Kyber768X25519(),
 		2000,
 		true,
 		nrHops,

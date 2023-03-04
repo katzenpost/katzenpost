@@ -28,8 +28,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -69,9 +69,10 @@ type MixKey struct {
 	sync.Mutex
 	worker.Worker
 
-	db      *bolt.DB
-	keypair *ecdh.PrivateKey
-	epoch   uint64
+	db          *bolt.DB
+	nikekeypair nike.PrivateKey
+	kemkeypair  kem.PrivateKey
+	epoch       uint64
 
 	f         *bloom.Filter
 	writeBack map[[TagLength]byte]bool
@@ -79,6 +80,9 @@ type MixKey struct {
 
 	refCount        int32
 	unlinkIfExpired bool
+
+	nike nike.Scheme
+	kem  kem.Scheme
 }
 
 // SetUnlinkIfExpired sets if the key will be deleted when closed if it is
@@ -88,13 +92,31 @@ func (k *MixKey) SetUnlinkIfExpired(b bool) {
 }
 
 // PublicKey returns the public component of the key.
-func (k *MixKey) Public() *ecdh.PublicKey {
-	return k.keypair.PublicKey()
+func (k *MixKey) Public() interface{} {
+	if k.nike != nil {
+		return k.nikekeypair.Public()
+	}
+	return k.kemkeypair.Public()
+}
+
+// PublicBytes returns the public bytes.
+func (k *MixKey) PublicBytes() []byte {
+	if k.nike != nil {
+		return k.nikekeypair.Public().Bytes()
+	}
+	blob, err := k.kemkeypair.Public().MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	return blob
 }
 
 // PrivateKey returns the private component of the key.
-func (k *MixKey) PrivateKey() *ecdhnike.PrivateKey {
-	return ecdhnike.FromECDH(k.keypair)
+func (k *MixKey) PrivateKey() interface{} {
+	if k.nike != nil {
+		return k.nikekeypair
+	}
+	return k.kemkeypair
 }
 
 // Epoch returns the Katzenpost epoch associated with the keypair.
@@ -287,15 +309,18 @@ func (k *MixKey) forceClose() {
 			os.Remove(f)
 		}
 	}
-	if k.keypair != nil {
-		k.keypair.Reset()
-		k.keypair = nil
+	if k.nikekeypair != nil {
+		k.nikekeypair.Reset()
+		k.nikekeypair = nil
+	}
+	if k.kemkeypair != nil {
+		k.kemkeypair = nil
 	}
 }
 
 // New creates (or loads) a mix key in the provided data directory, for the
 // given epoch.
-func New(dataDir string, epoch uint64) (*MixKey, error) {
+func New(dataDir string, epoch uint64, nike nike.Scheme, kem kem.Scheme) (*MixKey, error) {
 	const (
 		versionKey = "version"
 		pkKey      = "privateKey"
@@ -309,6 +334,8 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 		refCount:  1,
 		writeBack: make(map[[TagLength]byte]bool),
 		flushCh:   make(chan interface{}, 1),
+		nike:      nike,
+		kem:       kem,
 	}
 
 	f := filepath.Join(dataDir, fmt.Sprintf(KeyFmt, epoch))
@@ -343,8 +370,13 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 			if b = bkt.Get([]byte(pkKey)); b == nil {
 				return fmt.Errorf("mixkey: db missing privateKey entry")
 			}
-			k.keypair = new(ecdh.PrivateKey)
-			if err = k.keypair.FromBytes(b); err != nil {
+
+			if nike != nil {
+				_, k.nikekeypair, err = nike.GenerateKeyPairFromEntropy(rand.Reader)
+			} else {
+				_, k.kemkeypair, err = kem.GenerateKeyPair()
+			}
+			if err != nil {
 				return err
 			}
 
@@ -379,16 +411,29 @@ func New(dataDir string, epoch uint64) (*MixKey, error) {
 
 		// If control reaches here, then a new key needs to be created.
 		didCreate = true
-		k.keypair, err = ecdh.NewKeypair(rand.Reader)
+		if nike != nil {
+			_, k.nikekeypair, err = nike.GenerateKeyPairFromEntropy(rand.Reader)
+		} else {
+			_, k.kemkeypair, err = kem.GenerateKeyPair()
+		}
 		if err != nil {
 			return err
 		}
+
 		var epochBytes [8]byte
 		binary.LittleEndian.PutUint64(epochBytes[:], epoch)
 
 		// Stash the version/key/epoch in the metadata bucket.
 		bkt.Put([]byte(versionKey), []byte{0})
-		bkt.Put([]byte(pkKey), k.keypair.Bytes())
+		if nike != nil {
+			bkt.Put([]byte(pkKey), k.nikekeypair.Bytes())
+		} else {
+			blob, err := k.kemkeypair.MarshalBinary()
+			if err != nil {
+				return err
+			}
+			bkt.Put([]byte(pkKey), blob)
+		}
 		bkt.Put([]byte(epochKey), epochBytes[:])
 
 		return nil
