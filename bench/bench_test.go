@@ -113,7 +113,8 @@ func getClient(cfg *config.Config) *client.Client {
 func DockerTestBenchClient(t *testing.T) {
 	require := require.New(t)
 	c := getClient(getClientCfg(clientTestCfg))
-	_, err := c.NewTOFUSession()
+	ctx := context.Background()
+	_, err := c.NewTOFUSession(ctx)
 	require.NoError(err)
 }
 
@@ -317,14 +318,15 @@ func (b *ClientBench) Start(t *testing.T) {
 
 	b.log = b.c.GetBackendLog().GetLogger("ClientBench")
 
-	b.s, err = b.c.NewTOFUSession()
+	ctx := context.Background()
+	b.s, err = b.c.NewTOFUSession(ctx)
 	require.NoError(err)
 
 	for i := 0; i < b.numWorkers; i++ {
 		b.Go(b.eventWorker)
 	}
 
-	b.s.WaitForDocument()
+	b.s.WaitForDocument(ctx)
 	b.Go(b.sendWorker)
 }
 
