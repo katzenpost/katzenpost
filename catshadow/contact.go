@@ -93,7 +93,7 @@ type Contact struct {
 
 	// pandaShutdownChan can be closed to trigger the shutdown of a PANDA
 	// key exchange worker goroutine.
-	pandaShutdownChan chan struct{}
+	pandaShutdownChan chan interface{}
 
 	// reunionShutdownChans can be closed to trigger the shutodwn of a Reunion
 	// key exchange worker goroutine.
