@@ -1426,7 +1426,7 @@ func (c *Client) goOnline() error {
 	c.online = true
 	c.connMutex.Unlock()
 	// wait for pki document to arrive
-	err := s.WaitForDocument(ctx)
+	err = s.WaitForDocument(ctx)
 	return err
 }
 
