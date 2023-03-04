@@ -100,6 +100,14 @@ type Geometry struct {
 	KEMName string
 }
 
+func (g *Geometry) KEM() kem.Scheme {
+	return kemschemes.ByName(g.KEMName)
+}
+
+func (g *Geometry) NIKE() nike.Scheme {
+	return schemes.ByName(g.NIKEName)
+}
+
 func (g *Geometry) bytes() []byte {
 	blob, err := ccbor.Marshal(g)
 	if err != nil {
