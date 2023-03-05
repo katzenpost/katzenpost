@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
-	github.com/katzenpost/katzenpost v0.0.22-0.20230305232027-ea176b5585e7
+	github.com/katzenpost/katzenpost v0.0.22-0.20230305232931-72fc001cc534
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/crypto v0.4.0
 )
