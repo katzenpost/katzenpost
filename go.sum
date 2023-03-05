@@ -54,6 +54,8 @@ github.com/katzenpost/ctidh_cgo v0.0.0-20230221154820-a332f2af8202 h1:1Q1OxBqejE
 github.com/katzenpost/ctidh_cgo v0.0.0-20230221154820-a332f2af8202/go.mod h1:SfsyoYU9SyUSu46WK58qY9x7EHX+PexWqvKXI4dMhyU=
 github.com/katzenpost/doubleratchet v0.0.15 h1:8IqLfuWNCD1UiHrkCtni3Wc71RUeXyxRMdMoFjQaSn4=
 github.com/katzenpost/doubleratchet v0.0.15/go.mod h1:S/shjvsqWuDYwa/3ZsCcvkN1SdfVaNtBDZ4dx5mXUDI=
+github.com/katzenpost/doubleratchet v0.0.16-0.20230305225959-3eccf2853c31 h1:jarZiSK88yLvxwwUGq/Mwmok1Pl9jVy4bHq8YEHa4H8=
+github.com/katzenpost/doubleratchet v0.0.16-0.20230305225959-3eccf2853c31/go.mod h1:z9IvhRix85Z6nMKDr3Q0mIMzfwuVKt2Lmd6tOtAbGGU=
 github.com/katzenpost/noise v0.0.3 h1:bpYnozkk8j0XE1FAX9iRYgKtfIywuAINF+vMdBOidrM=
 github.com/katzenpost/noise v0.0.3/go.mod h1:+3UhOI7g4gXPlAdRKdgMKmxZmK/PP1/3sCnX20SA/vQ=
 github.com/katzenpost/nyquist v0.0.0-20220905145943-9f7e8b431eaf h1:iTvu+cdByoEzF1Hatwbl8AoFfTEB2ZITE2FOeJUyz78=
