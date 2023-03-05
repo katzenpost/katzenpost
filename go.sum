@@ -171,6 +171,8 @@ github.com/katzenpost/katzenpost v0.0.19-0.20221231023911-9ff7af83b6f7 h1:Qj7TtI
 github.com/katzenpost/katzenpost v0.0.19-0.20221231023911-9ff7af83b6f7/go.mod h1:cm1zjtpwJ00ieGbhYIjobjRLBiUtii+nzEaGx3StSm8=
 github.com/katzenpost/katzenpost v0.0.22-0.20230221195630-4293bceb947f h1:2VArIxpnQl9fovPJ81XyCzY34LAlFbF+8T3Vg+pTqcw=
 github.com/katzenpost/katzenpost v0.0.22-0.20230221195630-4293bceb947f/go.mod h1:RSNTSZ74l4lKdNlihT6nNsugRHZZqIHrzN1H+7n61Gg=
+github.com/katzenpost/katzenpost v0.0.22-0.20230305224126-1a77ac8292e8 h1:CSsh2qEIgTuMZWIpkv9K8/x6npikYP4dUzPjhW/CdGk=
+github.com/katzenpost/katzenpost v0.0.22-0.20230305224126-1a77ac8292e8/go.mod h1:RSNTSZ74l4lKdNlihT6nNsugRHZZqIHrzN1H+7n61Gg=
 github.com/katzenpost/noise v0.0.3/go.mod h1:+3UhOI7g4gXPlAdRKdgMKmxZmK/PP1/3sCnX20SA/vQ=
 github.com/katzenpost/nyquist v0.0.0-20220905145943-9f7e8b431eaf/go.mod h1:wzbXAL9lcBAiryER2XStcCww3HGTKl7jjzf2BCgHWrI=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=

@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/doubleratchet/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 )
 
 var (
@@ -174,7 +175,41 @@ type state struct {
 	PrevSendCount      uint32
 	Private0           []byte
 	Private1           []byte
+	PQPrivate0         []byte
+	PQPrivate1         []byte
 	Ratchet            bool
+}
+
+func (s *state) Upgrade(scheme *hybrid.Scheme) error {
+	first1, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private0)
+	if err != nil {
+		return err
+	}
+	second1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate0)
+	if err != nil {
+		return err
+	}
+
+	hybridKey1 := scheme.PrivateKeyFromKeys(first1, second1)
+
+	first2, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private1)
+	if err != nil {
+		return err
+	}
+	second2, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate1)
+	if err != nil {
+		return err
+	}
+
+	hybridKey2 := scheme.PrivateKeyFromKeys(first2, second2)
+
+	utils.ExplicitBzero(s.PQPrivate0)
+	utils.ExplicitBzero(s.PQPrivate1)
+
+	s.Private0 = hybridKey1.Bytes()
+	s.Private1 = hybridKey2.Bytes()
+
+	return nil
 }
 
 // savedKey contains a message key and timestamp for a message which has not
@@ -240,6 +275,12 @@ func NewRatchetFromBytes(rand io.Reader, data []byte, scheme nike.Scheme) (*Ratc
 	state := state{}
 	if err := cbor.Unmarshal(data, &state); err != nil {
 		return nil, err
+	}
+	if state.PQPrivate0 != nil && state.PQPrivate1 != nil {
+		err := state.Upgrade(scheme.(*hybrid.Scheme))
+		if err != nil {
+			return nil, err
+		}
 	}
 	return newRatchetFromState(rand, &state, scheme)
 }
