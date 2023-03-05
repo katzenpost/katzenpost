@@ -11,6 +11,8 @@ github.com/katzenpost/ctidh_cgo v0.0.0-20230221154820-a332f2af8202 h1:1Q1OxBqejE
 github.com/katzenpost/ctidh_cgo v0.0.0-20230221154820-a332f2af8202/go.mod h1:SfsyoYU9SyUSu46WK58qY9x7EHX+PexWqvKXI4dMhyU=
 github.com/katzenpost/katzenpost v0.0.22-0.20230305225901-133ba3560c70 h1:LDrYWgjlF5+tPUZwh4mLVMG3avIt6/rfzkZ+yF2Z8Ow=
 github.com/katzenpost/katzenpost v0.0.22-0.20230305225901-133ba3560c70/go.mod h1:RSNTSZ74l4lKdNlihT6nNsugRHZZqIHrzN1H+7n61Gg=
+github.com/katzenpost/katzenpost v0.0.22-0.20230305232027-ea176b5585e7 h1:dM0cAM560bPisLslsk8lBoWSNEGHrgM/nEfR91YE/AI=
+github.com/katzenpost/katzenpost v0.0.22-0.20230305232027-ea176b5585e7/go.mod h1:c7CxTRCWBxIOENvDYEK63Z/vRAMvY0isbInj50jQOpE=
 github.com/mattn/go-pointer v0.0.1 h1:n+XhsuGeVO6MEAp7xyEukFINEa+Quek5psIR/ylA6o0=
 github.com/mattn/go-pointer v0.0.1/go.mod h1:2zXcozF6qYGgmsG+SeTZz3oAbFLdD3OWqnUbNvJZAlc=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
