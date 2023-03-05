@@ -172,20 +172,27 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 
 	// Validate the document.
-	doc, err := pki.VerifyAndParseDocument(r.Payload, []cert.Verifier{c.cfg.AuthorityIdentityKey})
+	doc, err := pki.ParseDocument(r.Payload)
 	if err != nil {
 		return nil, nil, err
 	} else if doc.Epoch != epoch {
 		c.log.Warningf("nonvoting/Client: Get() authority returned document for wrong epoch: %v", doc.Epoch)
 		return nil, nil, pki.ErrInvalidEpoch
 	}
+
+	err = pki.IsDocumentWellFormed(doc, []cert.Verifier{c.cfg.AuthorityIdentityKey})
+	if err != nil {
+		c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
+		return nil, nil, err
+	}
+
 	c.log.Debugf("Document: %v", doc)
 
 	return doc, r.Payload, nil
 }
 
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
-	return pki.VerifyAndParseDocument(raw, []cert.Verifier{c.cfg.AuthorityIdentityKey})
+	return pki.ParseDocument(raw)
 }
 
 func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey sign.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {

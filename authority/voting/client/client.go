@@ -365,11 +365,18 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 			}
 		}
 	}
-	doc, err = pki.VerifyAndParseDocument(r.Payload, c.verifiers)
+	doc, err = pki.ParseDocument(r.Payload)
 	if err != nil {
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
 	}
+
+	err = pki.IsDocumentWellFormed(doc, c.verifiers)
+	if err != nil {
+		c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
+		return nil, nil, err
+	}
+
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
@@ -383,7 +390,7 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, err := pki.VerifyAndParseDocument(raw, c.verifiers)
+	doc, err := pki.ParseDocument(raw)
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}
