@@ -27,11 +27,12 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
-	"github.com/cloudflare/circl/kem/hybrid"
+	kemschemes "github.com/cloudflare/circl/kem/schemes"
 	aConfig "github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
@@ -412,6 +413,8 @@ func main() {
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
+	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
+	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -426,6 +429,13 @@ func main() {
 	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
 
 	flag.Parse()
+
+	if *kem == "" && *nike == "" {
+		log.Fatal("either nike or kem must be set")
+	}
+	if *kem != "" && *nike != "" {
+		log.Fatal("nike and kem flags cannot both be set")
+	}
 
 	parameters := &vConfig.Parameters{
 		SendRatePerMinute: *sr,
@@ -451,12 +461,30 @@ func main() {
 
 	nrHops := *nrLayers + 2
 
-	s.sphinxGeometry = geo.KEMGeometryFromUserForwardPayloadLength(
-		hybrid.Kyber768X25519(),
-		2000,
-		true,
-		nrHops,
-	)
+	if *nike != "" {
+		nikeScheme := schemes.ByName(*nike)
+		if nikeScheme == nil {
+			log.Fatalf("failed to resolve nike scheme %s", *nike)
+		}
+		s.sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
+			nikeScheme,
+			2000,
+			true,
+			nrHops,
+		)
+	}
+	if *kem != "" {
+		kemScheme := kemschemes.ByName(*kem)
+		if kemScheme == nil {
+			log.Fatalf("failed to resolve kem scheme %s", *kem)
+		}
+		s.sphinxGeometry = geo.KEMGeometryFromUserForwardPayloadLength(
+			kemScheme,
+			2000,
+			true,
+			nrHops,
+		)
+	}
 
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
