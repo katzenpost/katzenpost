@@ -23,6 +23,7 @@ package catshadow
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -66,7 +67,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	stateWorker.Start()
 	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker)
+	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), backendLog, c, stateWorker)
 	require.NoError(err)
 
 	return catShadowClient
@@ -101,7 +102,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	catShadowClient.Start()
 
 	// Bring catshadow online
-	catShadowClient.Online()
+	catShadowClient.Online(context.Background())
 
 	return catShadowClient
 }
