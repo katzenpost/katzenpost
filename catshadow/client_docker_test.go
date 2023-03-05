@@ -23,6 +23,7 @@ package catshadow
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -101,7 +102,7 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	catShadowClient.Start()
 
 	// Bring catshadow online
-	catShadowClient.Online()
+	catShadowClient.Online(context.Background())
 
 	return catShadowClient
 }
