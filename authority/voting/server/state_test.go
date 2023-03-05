@@ -268,7 +268,7 @@ func TestVote(t *testing.T) {
 		require.NotNil(myVote)
 		raw, err := myVote.MarshalBinary()
 		require.NoError(err)
-		_, err = pki.VerifyAndParseDocument(raw, s.getVerifiers())
+		_, err = pki.ParseDocument(raw)
 		require.NoError(err)
 		s.state = stateAcceptVote
 		for j, a := range stateAuthority {
