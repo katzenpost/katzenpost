@@ -66,7 +66,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	stateWorker.Start()
 	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker)
+	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), backendLog, c, stateWorker)
 	require.NoError(err)
 
 	return catShadowClient

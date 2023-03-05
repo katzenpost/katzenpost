@@ -116,7 +116,7 @@ type queuedSpoolCommand struct {
 // encrypted statefile, of course.  This constructor of Client is used when
 // creating a new Client as opposed to loading the previously saved state for
 // an existing Client.
-func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
+func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
@@ -127,7 +127,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		return nil, err
 	}
 	c.Start()
-	err = c.Online()
+	err = c.Online(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1379,12 +1379,12 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 }
 
 // Online() brings catshadow online or returns an error
-func (c *Client) Online() error {
+func (c *Client) Online(ctx context.Context) error {
 	// XXX: block until connection or error ?
 	r := make(chan error, 1)
 	select {
 	case <-c.HaltCh():
-	case c.opCh <- &opOnline{responseChan: r}:
+	case c.opCh <- &opOnline{context: ctx, responseChan: r}:
 	}
 	select {
 	case <-c.HaltCh():
@@ -1395,7 +1395,7 @@ func (c *Client) Online() error {
 }
 
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
-func (c *Client) goOnline() error {
+func (c *Client) goOnline(ctx context.Context) error {
 	c.connMutex.RLock()
 	if c.online || c.connecting || c.session != nil {
 		c.connMutex.RUnlock()
@@ -1409,9 +1409,6 @@ func (c *Client) goOnline() error {
 	c.connMutex.Unlock()
 
 	// try to connect
-	cfg := c.client.GetConfig()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Debug.SessionDialTimeout)*time.Second)
-	defer cancel()
 	s, err := c.client.NewTOFUSession(ctx)
 
 	// re-obtain lock
@@ -1426,7 +1423,7 @@ func (c *Client) goOnline() error {
 	c.online = true
 	c.connMutex.Unlock()
 	// wait for pki document to arrive
-	err := s.WaitForDocument(ctx)
+	err = s.WaitForDocument(ctx)
 	return err
 }
 
