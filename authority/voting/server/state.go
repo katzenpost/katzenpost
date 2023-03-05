@@ -326,7 +326,7 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	return vote, nil
 }
 
-func (s *state) doParseDocument(b []byte, verifiers []cert.Verifier) (*pki.Document, error) {
+func (s *state) doParseDocument(b []byte) (*pki.Document, error) {
 	doc, err := pki.ParseDocument(b)
 	return doc, err
 }
@@ -1271,8 +1271,8 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 		return &resp
 	}
 
-	// verify the signature and structure of the certificate
-	doc, err := s.doParseDocument(certificate.Payload, s.getVerifiers())
+	// verify the structure of the certificate
+	doc, err := s.doParseDocument(certificate.Payload)
 	if err != nil {
 		s.log.Error("Cert from %x failed to verify: %s", certificate.PublicKey, err)
 		resp.ErrorCode = commands.CertNotSigned
@@ -1422,7 +1422,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		return &resp
 	}
 
-	doc, err := s.doParseDocument(vote.Payload, s.getVerifiers())
+	doc, err := s.doParseDocument(vote.Payload)
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1652,7 +1652,7 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
 					}
-					doc, err := s.doParseDocument(rawDoc, s.getVerifiers())
+					doc, err := s.doParseDocument(rawDoc)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
