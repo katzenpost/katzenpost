@@ -33,6 +33,9 @@ lDMax=3000
 lM=0.2
 lMMax=100
 
+nike=x25519 # hybrid ctidh PQ can work here, but requires manually building ctidh.
+kem= # eg, Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go
+
 DISTROS=alpine debian
 distro=alpine
 net_name=voting_mixnet
@@ -69,7 +72,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
-		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
+		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) -nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
