@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
@@ -193,7 +194,7 @@ func TestMessage(t *testing.T) {
 	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
 	_, err = rand.Reader.Read(ackPayload)
 	require.NoError(err, "Message: failed to generate ACK payload")
-	id := make([]byte, geo.SURBIDLength)
+	id := make([]byte, constants.SURBIDLength)
 	_, err = rand.Reader.Read(id[:])
 	require.NoError(err, "MessageACK: Failed to generate ID")
 

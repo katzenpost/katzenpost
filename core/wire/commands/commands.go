@@ -22,6 +22,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -227,7 +228,7 @@ func (c *Commands) messageMsgLength() int {
 }
 
 func messageACKLength() int {
-	return messageBaseLength + geo.SURBIDLength
+	return messageBaseLength + constants.SURBIDLength
 }
 
 func (c *Commands) messageEmptyLength() int {
@@ -235,7 +236,7 @@ func (c *Commands) messageEmptyLength() int {
 }
 
 func (c *Commands) messageMsgPaddingLength() int {
-	return geo.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
+	return constants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
 }
 
 // NoOp is a de-serialized noop command.
@@ -681,7 +682,7 @@ type MessageACK struct {
 
 	QueueSizeHint uint8
 	Sequence      uint32
-	ID            [geo.SURBIDLength]byte
+	ID            [constants.SURBIDLength]byte
 	Payload       []byte
 }
 
@@ -698,7 +699,7 @@ func (c *MessageACK) ToBytes() []byte {
 	out[6] = byte(messageTypeACK)
 	out[7] = c.QueueSizeHint
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
-	copy(out[12:12+geo.SURBIDLength], c.ID[:])
+	copy(out[12:12+constants.SURBIDLength], c.ID[:])
 	out = append(out, c.Payload...)
 	return out
 }
@@ -760,15 +761,15 @@ func (c *Commands) messageFromBytes(b []byte) (Command, error) {
 
 	switch t {
 	case messageTypeACK:
-		if len(b) != geo.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+		if len(b) != constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
 		r := new(MessageACK)
 		r.QueueSizeHint = hint
 		r.Sequence = seq
-		copy(r.ID[:], b[:geo.SURBIDLength])
-		b = b[geo.SURBIDLength:]
+		copy(r.ID[:], b[:constants.SURBIDLength])
+		b = b[constants.SURBIDLength:]
 		r.Payload = make([]byte, 0, len(b))
 		r.Payload = append(r.Payload, b...)
 		return r, nil

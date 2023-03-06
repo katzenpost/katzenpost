@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"errors"
 
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -94,7 +95,7 @@ func FromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err 
 
 // NextNodeHop is a de-serialized Sphinx next_node command.
 type NextNodeHop struct {
-	ID  [geo.NodeIDLength]byte
+	ID  [constants.NodeIDLength]byte
 	MAC [crypto.MACLength]byte
 }
 
@@ -115,15 +116,15 @@ func nextNodeHopFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest [
 	rest = b[g.NextNodeHopLength-1:]
 
 	r := new(NextNodeHop)
-	copy(r.ID[:], b[:g.NodeIDLength])
-	copy(r.MAC[:], b[g.NodeIDLength:])
+	copy(r.ID[:], b[:constants.NodeIDLength])
+	copy(r.MAC[:], b[constants.NodeIDLength:])
 	cmd = r
 	return
 }
 
 // Recipient is a de-serialized Sphinx recipient command.
 type Recipient struct {
-	ID [geo.RecipientIDLength]byte
+	ID [constants.RecipientIDLength]byte
 }
 
 // ToBytes appends the serialized Recipeient to slice b, and returns the
@@ -137,7 +138,7 @@ func (cmd *Recipient) ToBytes(b []byte) []byte {
 func recipeientFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
 
 	// recipientLength is the length of a Recipient command in bytes.
-	recipientLength := 1 + g.RecipientIDLength
+	recipientLength := 1 + constants.RecipientIDLength
 
 	if len(b) < recipientLength-1 {
 		err = errInvalidCommand
@@ -146,14 +147,14 @@ func recipeientFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []
 	rest = b[recipientLength-1:]
 
 	r := new(Recipient)
-	copy(r.ID[:], b[:g.RecipientIDLength])
+	copy(r.ID[:], b[:constants.RecipientIDLength])
 	cmd = r
 	return
 }
 
 // SURBReply is a de-serialized Sphinx surb-reply command.
 type SURBReply struct {
-	ID [geo.SURBIDLength]byte
+	ID [constants.SURBIDLength]byte
 }
 
 // ToBytes appends the serialized SURBReply to slice b, and returns the
@@ -167,7 +168,7 @@ func (cmd *SURBReply) ToBytes(b []byte) []byte {
 func surbReplyFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
 
 	// surbReplyLength is the length of a SURBReply command in bytes.
-	surbReplyLength := 1 + g.SURBIDLength
+	surbReplyLength := 1 + constants.SURBIDLength
 
 	if len(b) < surbReplyLength-1 {
 		err = errInvalidCommand
@@ -176,7 +177,7 @@ func surbReplyFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []b
 	rest = b[surbReplyLength-1:]
 
 	r := new(SURBReply)
-	copy(r.ID[:], b[:g.SURBIDLength])
+	copy(r.ID[:], b[:constants.SURBIDLength])
 	cmd = r
 	return
 }
