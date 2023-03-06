@@ -14,12 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:build docker_test
 // +build docker_test
 
 package client
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"sync"
 	"testing"
@@ -42,7 +44,7 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewTOFUSession()
+	session, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
 	<-session.EventSink
@@ -61,10 +63,11 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	ctx := context.Background()
+	clientSession, err := client.NewTOFUSession(ctx)
 	require.NoError(err)
 
-	clientSession.WaitForDocument()
+	clientSession.WaitForDocument(ctx)
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -111,10 +114,11 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	ctx := context.Background()
+	clientSession, err := client.NewTOFUSession(ctx)
 	require.NoError(err)
 
-	clientSession.WaitForDocument()
+	clientSession.WaitForDocument(ctx)
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -160,7 +164,7 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	clientSession, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
 	msgID := [constants.MessageIDLength]byte{}
@@ -191,10 +195,11 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	ctx := context.Background()
+	clientSession, err := client.NewTOFUSession(ctx)
 	require.NoError(err)
 
-	clientSession.WaitForDocument()
+	clientSession.WaitForDocument(ctx)
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
