@@ -20,7 +20,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -64,10 +64,10 @@ func (s *Sphinx) newNikeSURB(r io.Reader, path []*PathHop) ([]byte, []byte, erro
 
 // NewPacketFromSURB creates a new reply Sphinx packet with the provided SURB
 // and payload, and returns the packet and ID of the first hop.
-func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[geo.NodeIDLength]byte, error) {
+func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]byte, error) {
 	var (
 		idOff  = s.geometry.HeaderLength
-		keyOff = idOff + s.geometry.NodeIDLength
+		keyOff = idOff + constants.NodeIDLength
 		ivOff  = keyOff + crypto.SPRPKeyLength
 	)
 
@@ -77,7 +77,7 @@ func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[geo.NodeIDLe
 
 	// Deserialize the SURB.
 	hdr := surb[:s.geometry.HeaderLength]
-	var nodeID [geo.NodeIDLength]byte
+	var nodeID [constants.NodeIDLength]byte
 	var sprpKey [crypto.SPRPKeyLength]byte
 	var sprpIV [crypto.SPRPIVLength]byte
 
