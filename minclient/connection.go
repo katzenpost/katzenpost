@@ -172,9 +172,11 @@ func (c *connection) getDescriptor() error {
 	}()
 
 	doc := c.c.CurrentDocument()
-	if doc == nil {
-		c.log.Debugf("No PKI document for current epoch.")
+	if doc == nil && c.c.cfg.CachedDocument == nil {
+		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
 		return newPKIError("no PKI document for current epoch")
+	} else if c.c.cfg.CachedDocument != nil {
+		doc = c.c.cfg.CachedDocument
 	}
 	desc, err := doc.GetProvider(c.c.cfg.Provider)
 	if err != nil {

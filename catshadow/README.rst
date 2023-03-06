@@ -154,7 +154,7 @@ code. This client depends on lots of code in other Katzenpost
 repositories including my fork of agl's PANDA and agl's Signal Double
 Ratchet:
 
-* https://github.com/katzenpost/doubleratchet
+* https://github.com/katzenpost/katzenpost/doubleratchet
 * https://github.com/katzenpost/katzenpost/panda
 * https://github.com/katzenpost/channels
 * https://github.com/katzenpost/katzenpost/memspool
