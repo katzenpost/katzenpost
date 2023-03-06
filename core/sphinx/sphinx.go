@@ -30,6 +30,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/katzenpost/core/utils"
@@ -82,7 +83,7 @@ func (s *Sphinx) Geometry() *geo.Geometry {
 // PathHop describes a hop that a Sphinx Packet will traverse, along with
 // all of the per-hop Commands (excluding NextNodeHop).
 type PathHop struct {
-	ID            [geo.NodeIDLength]byte
+	ID            [constants.NodeIDLength]byte
 	NIKEPublicKey nike.PublicKey
 	KEMPublicKey  kem.PublicKey
 	Commands      []commands.RoutingCommand

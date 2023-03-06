@@ -23,6 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,7 +97,7 @@ func TestCommands(t *testing.T) {
 	b = recipientCmd.ToBytes(b)
 	ser = b[off:]
 	off = len(b)
-	recipientLength := 1 + g.RecipientIDLength
+	recipientLength := 1 + constants.RecipientIDLength
 	toBytesTest(assert, ser, recipientLength, recipient, recipientValues)
 
 	// SURBReply
@@ -106,7 +107,7 @@ func TestCommands(t *testing.T) {
 	b = surbReplyCmd.ToBytes(b)
 	ser = b[off:]
 	off = len(b)
-	surbReplyLength := 1 + g.SURBIDLength
+	surbReplyLength := 1 + constants.SURBIDLength
 	toBytesTest(assert, ser, surbReplyLength, surbReply, surbReplyValues)
 
 	// NodeDelay

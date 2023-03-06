@@ -22,7 +22,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/stretchr/testify/assert"
 )
@@ -78,7 +78,7 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	nextHopMAC, err := hex.DecodeString(cmdsTest.NextHopMAC)
 	assert.NoError(err)
-	id := [geo.NodeIDLength]byte{}
+	id := [constants.NodeIDLength]byte{}
 	copy(id[:], nextHopID)
 	mac := [crypto.MACLength]byte{}
 	copy(mac[:], nextHopMAC)
