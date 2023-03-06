@@ -15,14 +15,12 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 )
 
 const (
-	NodeIDLength      = 32
-	RecipientIDLength = 32
-	SURBIDLength      = 16
-	surbReplyLength   = 1 + SURBIDLength
+	surbReplyLength = 1 + constants.SURBIDLength
 
 	// sphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
 	// in bytes.
@@ -72,15 +70,6 @@ type Geometry struct {
 
 	// UserForwardPayloadLength is the size of the usable payload.
 	UserForwardPayloadLength int
-
-	// SURBIDLength is the length of a SURB ID.
-	SURBIDLength int
-
-	// RecipientIDLength is the recipient identifier length in bytes.
-	RecipientIDLength int
-
-	// NodeIDLength is the node identifier length in bytes.
-	NodeIDLength int
 
 	// NextNodeHopLength is derived off the largest routing info
 	// block that we expect to encounter. Everything else just has a
@@ -251,7 +240,7 @@ func (f *geometryFactory) packetLength() int {
 
 // surbLength returns the length of a Sphinx SURB in bytes.
 func (f *geometryFactory) surbLength() int {
-	return f.headerLength() + NodeIDLength + f.sprpKeyMaterialLength
+	return f.headerLength() + constants.NodeIDLength + f.sprpKeyMaterialLength
 }
 
 func (f *geometryFactory) deriveForwardPayloadLength(userForwardPayloadLength int) int {
@@ -264,7 +253,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Scheme, userForwardPayloadLe
 		nrHops:                      nrHops,
 		sprpKeyMaterialLength:       crypto.SPRPKeyLength + crypto.SPRPIVLength,
 		sphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-		nextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
+		nextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
 	}
 
 	forwardPayloadLength := 0
@@ -286,10 +275,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Scheme, userForwardPayloadLe
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		RoutingInfoLength:           f.routingInfoLength(),
 		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
-		SURBIDLength:                SURBIDLength,
-		NodeIDLength:                NodeIDLength,
-		RecipientIDLength:           RecipientIDLength,
-		NextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
+		NextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
 		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
 		NIKEName:                    nike.Name(),
 	}
@@ -301,7 +287,7 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		nrHops:                      nrHops,
 		sprpKeyMaterialLength:       crypto.SPRPKeyLength + crypto.SPRPIVLength,
 		sphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-		nextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
+		nextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
 	}
 
 	forwardPayloadLength := 0
@@ -323,10 +309,7 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		RoutingInfoLength:           f.routingInfoLength(),
 		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
-		SURBIDLength:                SURBIDLength,
-		NodeIDLength:                NodeIDLength,
-		RecipientIDLength:           RecipientIDLength,
-		NextNodeHopLength:           1 + NodeIDLength + crypto.MACLength,
+		NextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
 		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
 		KEMName:                     kem.Name(),
 	}
