@@ -24,11 +24,13 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -51,7 +53,7 @@ import (
 )
 
 var (
-	clientTestCfg = "testdata/client.toml"
+	clientTestCfg              = "testdata/client.toml"
 	initialPKIConsensusTimeout = 45 * time.Second
 
 	// prometheus counters
@@ -230,7 +232,10 @@ func (b *MinclientBench) sendWorker() {
 		if err != nil {
 			panic(err)
 		}
-		crap := make([]byte, sphinx.DefaultGeometry().UserForwardPayloadLength)
+		mynike := ecdh.NewEcdhNike(rand.Reader)
+		nrHops := 5
+		geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
+		crap := make([]byte, geo.UserForwardPayloadLength)
 		_, _, err = b.minclient.SendCiphertext(desc.Name, desc.Provider, surbID, crap)
 		if err != nil {
 			panic(err)
@@ -336,7 +341,11 @@ func (b *ClientBench) sendWorker() {
 	if err != nil {
 		panic(err)
 	}
-	crap := make([]byte, sphinx.DefaultGeometry().UserForwardPayloadLength)
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
+	crap := make([]byte, geo.UserForwardPayloadLength)
+
 	for {
 		// keep sending till we fill the egressQueue, then block onSent
 		_, err := b.s.SendUnreliableMessage(desc.Name, desc.Provider, crap)
