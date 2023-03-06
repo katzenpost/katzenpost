@@ -415,6 +415,7 @@ func main() {
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
+	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
@@ -468,7 +469,7 @@ func main() {
 		}
 		s.sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
 			nikeScheme,
-			2000,
+			*UserForwardPayloadLength,
 			true,
 			nrHops,
 		)
@@ -480,7 +481,7 @@ func main() {
 		}
 		s.sphinxGeometry = geo.KEMGeometryFromUserForwardPayloadLength(
 			kemScheme,
-			2000,
+			*UserForwardPayloadLength,
 			true,
 			nrHops,
 		)
