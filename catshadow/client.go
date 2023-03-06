@@ -31,7 +31,7 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
-	ratchet "github.com/katzenpost/doubleratchet"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
