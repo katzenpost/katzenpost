@@ -167,7 +167,11 @@ func (b *MinclientBench) setup() {
 	}
 	b.provider = desc
 
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 	b.minclientConfig = &minclient.ClientConfig{
+		SphinxGeometry:      geo,
 		User:                string(idHash[:]),
 		Provider:            b.provider.Name,
 		ProviderKeyPin:      b.provider.IdentityKey,
