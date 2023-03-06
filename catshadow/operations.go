@@ -19,11 +19,14 @@
 package catshadow
 
 import (
-	"github.com/katzenpost/katzenpost/memspool/client"
+	"context"
 	"time"
+
+	"github.com/katzenpost/katzenpost/memspool/client"
 )
 
 type opOnline struct {
+	context context.Context
 	responseChan chan error
 }
 
