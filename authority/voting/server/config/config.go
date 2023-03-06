@@ -32,6 +32,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
@@ -381,6 +382,8 @@ type Config struct {
 	Mixes     []*Node
 	Providers []*Node
 	Topology  *Topology
+
+	SphinxGeometry *geo.Geometry
 }
 
 // Layer holds a slice of Nodes
@@ -397,6 +400,16 @@ type Topology struct {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
+
+	if cfg.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+
+	err := cfg.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
+
 	// Handle missing sections if possible.
 	if cfg.Server == nil {
 		return errors.New("config: No Authority block was present")

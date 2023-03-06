@@ -20,7 +20,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
@@ -29,9 +29,7 @@ const (
 	sprpKeyMaterialLength = crypto.SPRPKeyLength + crypto.SPRPIVLength
 )
 
-// NewSURB creates a new SURB with the provided path using the provided entropy
-// source, and returns the SURB and decrypion keys.
-func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+func (s *Sphinx) newNikeSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 	// Create a random SPRP key + iv for the recipient to use to encrypt
 	// the payload when using the SURB.
 	var keyPayload [sprpKeyMaterialLength]byte
@@ -66,10 +64,10 @@ func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 
 // NewPacketFromSURB creates a new reply Sphinx packet with the provided SURB
 // and payload, and returns the packet and ID of the first hop.
-func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.NodeIDLength]byte, error) {
+func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[geo.NodeIDLength]byte, error) {
 	var (
 		idOff  = s.geometry.HeaderLength
-		keyOff = idOff + constants.NodeIDLength
+		keyOff = idOff + s.geometry.NodeIDLength
 		ivOff  = keyOff + crypto.SPRPKeyLength
 	)
 
@@ -79,7 +77,7 @@ func (s *Sphinx) NewPacketFromSURB(surb, payload []byte) ([]byte, *[constants.No
 
 	// Deserialize the SURB.
 	hdr := surb[:s.geometry.HeaderLength]
-	var nodeID [constants.NodeIDLength]byte
+	var nodeID [geo.NodeIDLength]byte
 	var sprpKey [crypto.SPRPKeyLength]byte
 	var sprpIV [crypto.SPRPIVLength]byte
 

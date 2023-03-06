@@ -18,6 +18,7 @@ package minclient
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"sync"
@@ -173,6 +174,10 @@ func (p *pki) worker() {
 				}
 				continue
 			}
+			if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
+				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
+				panic("Sphinx Geometry mismatch!")
+			}
 			p.docs.Store(epoch, d)
 			didUpdate = true
 		}
@@ -282,5 +287,10 @@ func newPKI(c *Client) *pki {
 	p.log = c.cfg.LogBackend.GetLogger("minclient/pki:" + c.displayName)
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
+	// Save cached documents
+	d := c.cfg.CachedDocument
+	if d != nil {
+		p.docs.Store(d.Epoch, d)
+	}
 	return p
 }

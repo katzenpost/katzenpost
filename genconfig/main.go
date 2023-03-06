@@ -27,13 +27,16 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
+	kemschemes "github.com/cloudflare/circl/kem/schemes"
 	aConfig "github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
 )
@@ -52,6 +55,7 @@ type katzenpost struct {
 	binSuffix string
 	logWriter io.Writer
 
+	sphinxGeometry    *geo.Geometry
 	authConfig        *aConfig.Config
 	votingAuthConfigs []*vConfig.Config
 	authorities       map[[32]byte]*vConfig.Authority
@@ -81,6 +85,9 @@ func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier
 func (s *katzenpost) genClientCfg() error {
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
+
+	cfg.SphinxGeometry = s.sphinxGeometry
+
 	s.clientIdx++
 
 	// Logging section.
@@ -126,6 +133,8 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		n = fmt.Sprintf("provider%d", s.providerIdx+1)
 	}
 	cfg := new(sConfig.Config)
+
+	cfg.SphinxGeometry = s.sphinxGeometry
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
@@ -252,6 +261,8 @@ func (s *katzenpost) genAuthConfig() error {
 
 	cfg := new(aConfig.Config)
 
+	cfg.SphinxGeometry = s.sphinxGeometry
+
 	// Server section.
 	cfg.Server = new(aConfig.Server)
 	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.basePort)}
@@ -295,40 +306,15 @@ func (s *katzenpost) genAuthConfig() error {
 	return nil
 }
 
-func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile string, nrLayers int) error {
+func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int) error {
 
 	configs := []*vConfig.Config{}
-
-	parameters := &vConfig.Parameters{
-		SendRatePerMinute: 0,
-		Mu:                0.005,
-		MuMaxDelay:        1000,
-		LambdaP:           0.001,
-		LambdaPMaxDelay:   1000,
-		LambdaL:           0.0005,
-		LambdaLMaxDelay:   1000,
-		LambdaD:           0.0005,
-		LambdaDMaxDelay:   3000,
-		LambdaM:           0.2,
-		LambdaMMaxDelay:   100,
-	}
-
-	if paramsFile != "" {
-		b, err := os.ReadFile(paramsFile)
-		if err != nil {
-			return err
-		}
-		err = toml.Unmarshal(b, &parameters)
-		if err != nil {
-			return err
-		}
-		log.Printf("Using params from %s (Mu=%f)", paramsFile, parameters.Mu)
-	}
 
 	// initial generation of key material for each authority
 	s.authorities = make(map[[32]byte]*vConfig.Authority)
 	for i := 1; i <= numAuthorities; i++ {
 		cfg := new(vConfig.Config)
+		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
 			Identifier: fmt.Sprintf("auth%d", i),
 			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
@@ -398,10 +384,10 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	mixes := []*vConfig.Node{}
 	providers := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
-        node := &vConfig.Node{
-            Identifier:           nodeCfg.Server.Identifier,
-            IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
-        }
+		node := &vConfig.Node{
+			Identifier:           nodeCfg.Server.Identifier,
+			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+		}
 		if nodeCfg.Server.IsProvider {
 			providers = append(providers, node)
 		} else {
@@ -426,9 +412,44 @@ func main() {
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
-	paramsFile := flag.String("t", "", "Path to read params.toml from (optional)")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
+	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
+	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
+	sr := flag.Uint64("sr", 0, "Sendrate limit")
+	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
+	muMax := flag.Uint64("muMax", 1000, "Maximum delay for Mu.")
+	lP := flag.Float64("lP", 0.001, "Inverse of mean for client send rate LambdaP")
+	lPMax := flag.Uint64("lPMax", 1000, "Maximum delay for LambdaP.")
+	lL := flag.Float64("lL", 0.0005, "Inverse of mean of loop decoy send rate LambdaL")
+	lLMax := flag.Uint64("lLMax", 1000, "Maximum delay for LambdaL")
+	lD := flag.Float64("lD", 0.0005, "Inverse of mean of drop decoy send rate LambdaD")
+	lDMax := flag.Uint64("lDMax", 3000, "Maximum delay for LambaD")
+	lM := flag.Float64("lM", 0.2, "Inverse of mean of mix decoy send rate")
+	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
+
 	flag.Parse()
+
+	if *kem == "" && *nike == "" {
+		log.Fatal("either nike or kem must be set")
+	}
+	if *kem != "" && *nike != "" {
+		log.Fatal("nike and kem flags cannot both be set")
+	}
+
+	parameters := &vConfig.Parameters{
+		SendRatePerMinute: *sr,
+		Mu:                *mu,
+		MuMaxDelay:        *muMax,
+		LambdaP:           *lP,
+		LambdaPMaxDelay:   *lPMax,
+		LambdaL:           *lL,
+		LambdaLMaxDelay:   *lLMax,
+		LambdaD:           *lD,
+		LambdaDMaxDelay:   *lDMax,
+		LambdaM:           *lM,
+		LambdaMMaxDelay:   *lMMax,
+	}
+
 	s := &katzenpost{}
 
 	s.baseDir = *baseDir
@@ -437,12 +458,39 @@ func main() {
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
 
+	nrHops := *nrLayers + 2
+
+	if *nike != "" {
+		nikeScheme := schemes.ByName(*nike)
+		if nikeScheme == nil {
+			log.Fatalf("failed to resolve nike scheme %s", *nike)
+		}
+		s.sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
+			nikeScheme,
+			2000,
+			true,
+			nrHops,
+		)
+	}
+	if *kem != "" {
+		kemScheme := kemschemes.ByName(*kem)
+		if kemScheme == nil {
+			log.Fatalf("failed to resolve kem scheme %s", *kem)
+		}
+		s.sphinxGeometry = geo.KEMGeometryFromUserForwardPayloadLength(
+			kemScheme,
+			2000,
+			true,
+			nrHops,
+		)
+	}
+
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
 	if *voting {
 		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting, *paramsFile, *nrLayers)
+		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}

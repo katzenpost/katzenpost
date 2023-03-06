@@ -25,9 +25,17 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
+
+var nikeScheme nike.Scheme
+
+func init() {
+	nikeScheme = hybrid.NOBS_CSIDHX25519
+}
 
 type contactExchange struct {
 	SpoolWriteDescriptor *memspoolClient.SpoolWriteDescriptor
@@ -93,7 +101,7 @@ type Contact struct {
 
 	// pandaShutdownChan can be closed to trigger the shutdown of a PANDA
 	// key exchange worker goroutine.
-	pandaShutdownChan chan struct{}
+	pandaShutdownChan chan interface{}
 
 	// reunionShutdownChans can be closed to trigger the shutodwn of a Reunion
 	// key exchange worker goroutine.
@@ -136,7 +144,7 @@ type Contact struct {
 
 // NewContact creates a new Contact or returns an error.
 func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
-	ratchet, err := ratchet.InitRatchet(rand.Reader)
+	ratchet, err := ratchet.InitRatchet(rand.Reader, nikeScheme)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +155,7 @@ func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
 		ratchet:             ratchet,
 		ratchetMutex:        new(sync.Mutex),
 		sharedSecret:        secret,
-		pandaShutdownChan:   make(chan struct{}),
+		pandaShutdownChan:   make(chan interface{}),
 		reunionShutdownChan: make(chan struct{}),
 		outbound:            new(Queue),
 		messageExpiration:   MessageExpirationDuration,
@@ -196,7 +204,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
-	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet)
+	r, err := ratchet.NewRatchetFromBytes(rand.Reader, s.Ratchet, nikeScheme)
 	if err != nil {
 		return err
 	}
@@ -216,7 +224,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.outbound = s.Outbound
 	c.messageExpiration = s.MessageExpiration
 	if c.IsPending {
-		c.pandaShutdownChan = make(chan struct{})
+		c.pandaShutdownChan = make(chan interface{})
 		c.reunionShutdownChan = make(chan struct{})
 	}
 	return nil

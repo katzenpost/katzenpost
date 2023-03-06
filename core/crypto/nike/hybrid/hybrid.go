@@ -1,6 +1,3 @@
-//go:build ctidh
-// +build ctidh
-
 package hybrid
 
 import (
@@ -9,54 +6,67 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/csidh"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-var CTIDHX25519 nike.Scheme = &scheme{
-	name:   "CTIDH-X25519",
-	first:  ctidh.CTIDHScheme,
-	second: ecdh.NewEcdhNike(rand.Reader),
-}
-
-var NOBS_CSIDHX25519 nike.Scheme = &scheme{
+var NOBS_CSIDHX25519 nike.Scheme = &Scheme{
 	name:   "NOBS_CSIDH-X25519",
 	first:  ecdh.NewEcdhNike(rand.Reader),
 	second: csidh.CSIDHScheme,
 }
 
+var _ nike.PrivateKey = (*privateKey)(nil)
+var _ nike.PublicKey = (*publicKey)(nil)
+var _ nike.Scheme = (*Scheme)(nil)
+
 type publicKey struct {
-	scheme *scheme
+	scheme *Scheme
 	first  nike.PublicKey
 	second nike.PublicKey
 }
 
 type privateKey struct {
-	scheme *scheme
+	scheme *Scheme
 	first  nike.PrivateKey
 	second nike.PrivateKey
 }
 
-type scheme struct {
+type Scheme struct {
 	name   string
 	first  nike.Scheme
 	second nike.Scheme
 }
 
-func (s *scheme) Name() string {
+func (s *Scheme) First() nike.Scheme {
+	return s.first
+}
+
+func (s *Scheme) Second() nike.Scheme {
+	return s.second
+}
+
+func (s *Scheme) Name() string {
 	return s.name
 }
 
-func (s *scheme) PublicKeySize() int {
+func (s *Scheme) PublicKeySize() int {
 	return s.first.PublicKeySize() + s.second.PublicKeySize()
 }
 
-func (s *scheme) PrivateKeySize() int {
+func (s *Scheme) PrivateKeySize() int {
 	return s.first.PrivateKeySize() + s.second.PrivateKeySize()
 }
 
-func (s *scheme) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
+func (s *Scheme) PrivateKeyFromKeys(first, second nike.PrivateKey) nike.PrivateKey {
+	return &privateKey{
+		scheme: s,
+		first:  first,
+		second: second,
+	}
+}
+
+func (s *Scheme) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
 	return &privateKey{
 		scheme: s,
 		first:  s.first.GeneratePrivateKey(rng),
@@ -64,7 +74,7 @@ func (s *scheme) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
 	}
 }
 
-func (s *scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+func (s *Scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
 	pubKey1, privKey1, err := s.first.GenerateKeyPairFromEntropy(rng)
 	if err != nil {
 		return nil, nil, err
@@ -84,7 +94,7 @@ func (s *scheme) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike
 		}, nil
 }
 
-func (s *scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
+func (s *Scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 	pubKey1, privKey1, err := s.first.GenerateKeyPair()
 	if err != nil {
 		return nil, nil, err
@@ -104,12 +114,12 @@ func (s *scheme) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 		}, nil
 }
 
-func (s *scheme) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
+func (s *Scheme) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
 	return append(privKey.(*privateKey).scheme.first.DeriveSecret(privKey.(*privateKey).first, pubKey.(*publicKey).first),
 		privKey.(*privateKey).scheme.second.DeriveSecret(privKey.(*privateKey).second, pubKey.(*publicKey).second)...)
 }
 
-func (s *scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
+func (s *Scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 	return &publicKey{
 		scheme: s,
 		first:  privKey.(*privateKey).scheme.first.DerivePublicKey(privKey.(*privateKey).first),
@@ -117,15 +127,15 @@ func (s *scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 	}
 }
 
-func (s *scheme) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
+func (s *Scheme) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
 	return &publicKey{
 		scheme: s,
-		first:  s.Blind(groupMember.(*publicKey).first, blindingFactor.(*privateKey).first),
-		second: s.Blind(groupMember.(*publicKey).second, blindingFactor.(*privateKey).second),
+		first:  s.first.Blind(groupMember.(*publicKey).first, blindingFactor.(*privateKey).first),
+		second: s.second.Blind(groupMember.(*publicKey).second, blindingFactor.(*privateKey).second),
 	}
 }
 
-func (s *scheme) NewEmptyPublicKey() nike.PublicKey {
+func (s *Scheme) NewEmptyPublicKey() nike.PublicKey {
 	return &publicKey{
 		scheme: s,
 		first:  s.first.NewEmptyPublicKey(),
@@ -133,7 +143,7 @@ func (s *scheme) NewEmptyPublicKey() nike.PublicKey {
 	}
 }
 
-func (s *scheme) NewEmptyPrivateKey() nike.PrivateKey {
+func (s *Scheme) NewEmptyPrivateKey() nike.PrivateKey {
 	return &privateKey{
 		scheme: s,
 		first:  s.first.NewEmptyPrivateKey(),
@@ -141,7 +151,7 @@ func (s *scheme) NewEmptyPrivateKey() nike.PrivateKey {
 	}
 }
 
-func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
+func (s *Scheme) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
 	pubkey := s.NewEmptyPublicKey()
 	err := pubkey.FromBytes(b)
 	if err != nil {
@@ -150,7 +160,7 @@ func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
 	return pubkey, nil
 }
 
-func (s *scheme) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
+func (s *Scheme) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
 	privkey := s.NewEmptyPrivateKey()
 	err := privkey.FromBytes(b)
 	if err != nil {

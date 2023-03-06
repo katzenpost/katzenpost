@@ -19,13 +19,15 @@
 package catshadow
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/awnumar/memguard"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/awnumar/memguard"
 
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/eapache/channels.v1"
@@ -115,7 +117,7 @@ type queuedSpoolCommand struct {
 // encrypted statefile, of course.  This constructor of Client is used when
 // creating a new Client as opposed to loading the previously saved state for
 // an existing Client.
-func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
+func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
@@ -126,7 +128,7 @@ func NewClientAndRemoteSpool(logBackend *log.Backend, mixnetClient *client.Clien
 		return nil, err
 	}
 	c.Start()
-	err = c.Online()
+	err = c.Online(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -851,9 +853,14 @@ func (c *Client) Shutdown() {
 	c.stateWorker.Halt()
 }
 
+func (c *Client) DoubleRatchetPayloadLength() int {
+	cfg := c.client.GetConfig()
+	return common.SpoolPayloadLength(cfg.SphinxGeometry) - ratchet.DoubleRatchetOverhead
+}
+
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
-	if len(message)+4 > DoubleRatchetPayloadLength {
+	if len(message)+4 > c.DoubleRatchetPayloadLength() {
 		return MessageID{}
 	}
 	convoMesgID := MessageID{}
@@ -923,7 +930,8 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	contact.ratchetMutex.Unlock()
 
-	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext)
+	cfg := c.client.GetConfig()
+	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext, cfg.SphinxGeometry)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
 		c.eventCh.In() <- &MessageNotSentEvent{
@@ -1378,12 +1386,12 @@ func (c *Client) GetBlob(id string) ([]byte, error) {
 }
 
 // Online() brings catshadow online or returns an error
-func (c *Client) Online() error {
+func (c *Client) Online(ctx context.Context) error {
 	// XXX: block until connection or error ?
 	r := make(chan error, 1)
 	select {
 	case <-c.HaltCh():
-	case c.opCh <- &opOnline{responseChan: r}:
+	case c.opCh <- &opOnline{context: ctx, responseChan: r}:
 	}
 	select {
 	case <-c.HaltCh():
@@ -1394,7 +1402,7 @@ func (c *Client) Online() error {
 }
 
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
-func (c *Client) goOnline() error {
+func (c *Client) goOnline(ctx context.Context) error {
 	c.connMutex.RLock()
 	if c.online || c.connecting || c.session != nil {
 		c.connMutex.RUnlock()
@@ -1408,7 +1416,7 @@ func (c *Client) goOnline() error {
 	c.connMutex.Unlock()
 
 	// try to connect
-	s, err := c.client.NewTOFUSession()
+	s, err := c.client.NewTOFUSession(ctx)
 
 	// re-obtain lock
 	c.connMutex.Lock()
@@ -1422,8 +1430,8 @@ func (c *Client) goOnline() error {
 	c.online = true
 	c.connMutex.Unlock()
 	// wait for pki document to arrive
-	s.WaitForDocument()
-	return nil
+	err = s.WaitForDocument(ctx)
+	return err
 }
 
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.

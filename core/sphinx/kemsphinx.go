@@ -26,44 +26,17 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
-
-func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadLength int, withSURB bool, nrHops int) *Geometry {
-	f := &geometryFactory{
-		kem:    kem,
-		nrHops: nrHops,
-	}
-
-	geo := &Geometry{
-		NrHops:                      nrHops,
-		HeaderLength:                f.headerLength(),
-		PacketLength:                f.packetLength(),
-		SURBLength:                  f.surbLength(),
-		UserForwardPayloadLength:    userForwardPayloadLength,
-		PayloadTagLength:            payloadTagLength,
-		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-		SURBIDLength:                constants.SURBIDLength,
-		RoutingInfoLength:           f.routingInfoLength(),
-		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
-	}
-
-	if withSURB {
-		geo.ForwardPayloadLength = f.deriveForwardPayloadLength(userForwardPayloadLength)
-	} else {
-		geo.ForwardPayloadLength = userForwardPayloadLength
-	}
-	return geo
-}
 
 // NewKEMSphinx creates a new instance of KEMSphinx, the Sphinx
 // nested cryptographic packet format that uses a KEM instead of a NIKE.
 // This implies lots of packet over, one KEM encapsulation per hop actually.
 // But since we no longer use 2400 maude modems let's rock out with
 // our Hybrid Classical + PQ KEM Sphinx.
-func NewKEMSphinx(k kem.Scheme, geometry *Geometry) *Sphinx {
+func NewKEMSphinx(k kem.Scheme, geometry *geo.Geometry) *Sphinx {
 	s := &Sphinx{
 		kem:      k,
 		geometry: geometry,
@@ -71,7 +44,40 @@ func NewKEMSphinx(k kem.Scheme, geometry *Geometry) *Sphinx {
 	return s
 }
 
-func (s *Sphinx) NewKEMPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+func (s *Sphinx) newKemSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+	// Create a random SPRP key + iv for the recipient to use to encrypt
+	// the payload when using the SURB.
+	var keyPayload [sprpKeyMaterialLength]byte
+	if _, err := io.ReadFull(r, keyPayload[:]); err != nil {
+		return nil, nil, err
+	}
+	defer utils.ExplicitBzero(keyPayload[:])
+
+	hdr, sprpKeys, err := s.createKEMHeader(r, path)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Serialize the SPRP keys into an opaque blob, in reverse order to ease
+	// decryption.
+	k := make([]byte, 0, sprpKeyMaterialLength*(len(path)+1))
+	for i := len(path) - 1; i >= 0; i-- {
+		k = append(k, sprpKeys[i].key[:]...)
+		k = append(k, sprpKeys[i].iv[:]...)
+		sprpKeys[i].Reset()
+	}
+	k = append(k, keyPayload[:]...)
+
+	// Serialize the SURB into an opaque blob.
+	surb := make([]byte, 0, s.geometry.SURBLength)
+	surb = append(surb, hdr...)
+	surb = append(surb, path[0].ID[:]...)
+	surb = append(surb, keyPayload[:]...)
+
+	return surb, k, nil
+}
+
+func (s *Sphinx) newKEMPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
 	if len(payload) != s.geometry.ForwardPayloadLength {
 		return nil, fmt.Errorf("invalid payload length: %d, expected %d", len(payload), s.geometry.ForwardPayloadLength)
 	}
@@ -133,7 +139,7 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 		// set privateKey size to zero 0 since
 		// we don't need to generate blinding factors
 		// for KEMSphinx.
-		keys[i] = crypto.KDF(sharedSecret, 0, nil)
+		keys[i] = crypto.KDF(sharedSecret, nil)
 		defer keys[i].Reset()
 	}
 
@@ -227,10 +233,7 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 	return hdr, sprpKeys, nil
 }
 
-// KEMUnwrap unwraps the provided KEMSphinx packet pkt in-place, using the provided
-// KEM private key, and returns the payload (if applicable), replay tag, and
-// routing info command vector.
-func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
+func (s *Sphinx) unwrapKem(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, []commands.RoutingCommand, error) {
 	var (
 		geOff      = 2
 		riOff      = geOff + s.kem.CiphertextSize()
@@ -261,7 +264,7 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	// Derive the various keys required for packet processing.
 	// note we set the private key size to zero because we do not
 	// derive blinding factors for KEMSphinx!
-	keys := crypto.KDF(sharedSecret, 0, nil)
+	keys := crypto.KDF(sharedSecret, nil)
 	defer keys.Reset()
 
 	// Validate the Sphinx Packet Header.
@@ -294,7 +297,7 @@ func (s *Sphinx) KEMUnwrap(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	// Katzenpost mixnet usage of the Sphinx packet format.
 	cmds := make([]commands.RoutingCommand, 0, 2)
 	for {
-		cmd, rest, err := commands.FromBytes(cmdBuf)
+		cmd, rest, err := commands.FromBytes(cmdBuf, s.geometry)
 		if err != nil {
 			return nil, replayTag[:], nil, err
 		} else if cmd == nil { // Terminal null command.
