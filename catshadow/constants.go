@@ -21,7 +21,7 @@ package catshadow
 import (
 	"time"
 
-	ratchet "github.com/katzenpost/doubleratchet"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	"github.com/katzenpost/katzenpost/memspool/common"
 )
 
