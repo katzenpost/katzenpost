@@ -282,5 +282,10 @@ func newPKI(c *Client) *pki {
 	p.log = c.cfg.LogBackend.GetLogger("minclient/pki:" + c.displayName)
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
+	// Save cached documents
+	d := c.cfg.CachedDocument
+	if d != nil {
+		p.docs.Store(d.Epoch, d)
+	}
 	return p
 }
