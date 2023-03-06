@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	ratchet "github.com/katzenpost/doubleratchet"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
@@ -101,7 +101,7 @@ type Contact struct {
 
 	// pandaShutdownChan can be closed to trigger the shutdown of a PANDA
 	// key exchange worker goroutine.
-	pandaShutdownChan chan struct{}
+	pandaShutdownChan chan interface{}
 
 	// reunionShutdownChans can be closed to trigger the shutodwn of a Reunion
 	// key exchange worker goroutine.
@@ -155,7 +155,7 @@ func NewContact(nickname string, id uint64, secret []byte) (*Contact, error) {
 		ratchet:             ratchet,
 		ratchetMutex:        new(sync.Mutex),
 		sharedSecret:        secret,
-		pandaShutdownChan:   make(chan struct{}),
+		pandaShutdownChan:   make(chan interface{}),
 		reunionShutdownChan: make(chan struct{}),
 		outbound:            new(Queue),
 		messageExpiration:   MessageExpirationDuration,
@@ -224,7 +224,7 @@ func (c *Contact) UnmarshalBinary(data []byte) error {
 	c.outbound = s.Outbound
 	c.messageExpiration = s.MessageExpiration
 	if c.IsPending {
-		c.pandaShutdownChan = make(chan struct{})
+		c.pandaShutdownChan = make(chan interface{})
 		c.reunionShutdownChan = make(chan struct{})
 	}
 	return nil

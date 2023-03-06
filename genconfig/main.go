@@ -415,7 +415,6 @@ func main() {
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
-
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
 	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
 	muMax := flag.Uint64("muMax", 1000, "Maximum delay for Mu.")
