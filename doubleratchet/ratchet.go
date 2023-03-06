@@ -25,7 +25,7 @@ import (
 	"github.com/awnumar/memguard"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/henrydcase/nobs/dh/csidh"
-	"github.com/katzenpost/doubleratchet/utils"
+	"github.com/katzenpost/katzenpost/doubleratchet/utils"
 )
 
 var (
