@@ -21,6 +21,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	cc "github.com/katzenpost/katzenpost/client"
@@ -39,11 +40,11 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
@@ -114,10 +115,10 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
@@ -165,10 +166,10 @@ func TestDockerGetSpoolServices(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	spoolServices, err := s.GetServices(common.SpoolServiceName)
 	require.NoError(err)
