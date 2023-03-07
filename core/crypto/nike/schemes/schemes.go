@@ -10,8 +10,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-// TODO(david): later we will add the CTIDH NIKE scheme. For
-// now it's guarded behind the "ctidh" build tag.
+// NOTE(david): The CTIDH schemes won't work unless you build with
+// "ctidh" build tag.
 var allSchemes = [...]nike.Scheme{
 	csidh.CSIDHScheme,
 	ecdh.NewEcdhNike(rand.Reader),
