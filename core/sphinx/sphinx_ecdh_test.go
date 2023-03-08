@@ -38,7 +38,7 @@ func TestEcdhSphinxGeometry(t *testing.T) {
 
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
 	withSURB = true
-	payloadLen := 2000
+	payloadLen := 50000
 	g = geo.GeometryFromUserForwardPayloadLength(mynike, payloadLen, withSURB, 5)
 
 	err := g.Validate()
