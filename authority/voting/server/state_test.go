@@ -590,7 +590,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 func genMixKeys(votingEpoch uint64) map[uint64][]byte {
 	mixKeys := make(map[uint64][]byte)
 	for i := votingEpoch; i < votingEpoch+2; i++ {
-		_, pubkey, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
+		pubkey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
 		if err != nil {
 			panic(err)
 		}
