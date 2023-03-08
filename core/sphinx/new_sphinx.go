@@ -35,7 +35,7 @@ func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte
 		return s.newNikePacket(r, path, payload)
 	}
 
-	panic("NewPacket error, KEM and NIKE both cannot be onil")
+	panic("NewPacket error, KEM and NIKE, one must be set and the other must be nil")
 }
 
 // Unwrap unwraps the provided Sphinx packet pkt in-place, using the provided
