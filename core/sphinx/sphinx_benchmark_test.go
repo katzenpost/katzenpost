@@ -36,10 +36,10 @@ func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 
 	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 	if err != nil {
-		panic("wtf")
+		panic(err)
 	}
 	if len(pkt) != g.HeaderLength+g.PayloadTagLength+len(payload) {
-		panic("wtf")
+		panic("packet length mismatch")
 	}
 
 	for n := 0; n < b.N; n++ {
