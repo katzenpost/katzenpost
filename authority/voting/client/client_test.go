@@ -63,11 +63,11 @@ func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescrip
 func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
 	m := make(map[uint64][]byte)
 	for i := epoch; i < epoch+3; i++ {
-		_, privatekey, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
+		publickey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
 		if err != nil {
 			return nil, err
 		}
-		m[uint64(i)] = privatekey.Public().Bytes()
+		m[uint64(i)] = publickey.Bytes()
 	}
 	return m, nil
 }
