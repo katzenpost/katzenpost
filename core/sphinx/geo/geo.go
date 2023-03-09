@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	surbReplyLength = 1 + constants.SURBIDLength
+	surbReplyLength = constants.CommandTagLength + constants.SURBIDLength
 
 	// sphinxPlaintextHeaderLength is the length of a BlockSphinxPlaintext
 	// in bytes.
