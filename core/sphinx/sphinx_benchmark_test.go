@@ -22,28 +22,24 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
-
-/*
-
-
- */
 
 func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(mynike, geo)
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(g)
 
-	nodes, path := benchNewPathVector(geo.NrHops, false, mynike)
+	nodes, path := benchNewPathVector(g.NrHops, false, mynike)
 	payload := []byte(testPayload)
 
 	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 	if err != nil {
-		panic("wtf")
+		panic(err)
 	}
-	if len(pkt) != geo.HeaderLength+geo.PayloadTagLength+len(payload) {
-		panic("wtf")
+	if len(pkt) != g.HeaderLength+g.PayloadTagLength+len(payload) {
+		panic("packet length mismatch")
 	}
 
 	for n := 0; n < b.N; n++ {
@@ -64,7 +60,7 @@ func benchNewNode(mynike nike.Scheme) *nodeParams {
 	}
 	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
 	if err != nil {
-		panic(err)
+		panic("wtf")
 	}
 	return n
 }

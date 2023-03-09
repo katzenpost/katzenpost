@@ -20,16 +20,17 @@ import (
 	"context"
 	"crypto/hmac"
 	"fmt"
-	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"net"
 	"sync/atomic"
 	"time"
+
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
@@ -40,6 +41,7 @@ import (
 var outgoingConnID uint64
 
 type outgoingConn struct {
+	geo *geo.Geometry
 	co  *connector
 	log *logging.Logger
 
@@ -235,7 +237,7 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	// Allocate the session struct.
 	identityHash := c.co.glue.IdentityPublicKey().Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.co.glue.LinkKey(),
@@ -364,10 +366,11 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 	}
 }
 
-func newOutgoingConn(co *connector, dst *cpki.MixDescriptor) *outgoingConn {
+func newOutgoingConn(co *connector, dst *cpki.MixDescriptor, geo *geo.Geometry) *outgoingConn {
 	const maxQueueSize = 64 // TODO/perf: Tune this.
 
 	c := &outgoingConn{
+		geo: geo,
 		co:  co,
 		dst: dst,
 		ch:  make(chan *packet.Packet, maxQueueSize),
