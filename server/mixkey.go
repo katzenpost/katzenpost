@@ -22,8 +22,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/katzenpost/katzenpost/server/internal/mixkey"
@@ -33,10 +35,14 @@ import (
 type mixKeys struct {
 	sync.Mutex
 
+	geo  *geo.Geometry
 	glue glue.Glue
 	log  *logging.Logger
 
 	keys map[uint64]*mixkey.MixKey
+
+	nike nike.Scheme
+	kem  kem.Scheme
 }
 
 func (m *mixKeys) init() error {
@@ -83,7 +89,7 @@ func (m *mixKeys) Generate(baseEpoch uint64) (bool, error) {
 		}
 
 		didGenerate = true
-		k, err := mixkey.New(m.glue.Config().Server.DataDir, e)
+		k, err := mixkey.New(m.glue.Config().Server.DataDir, e, m.geo)
 		if err != nil {
 			// Clean up whatever keys that may have succeeded.
 			for ee := baseEpoch; ee < baseEpoch+constants.NumMixKeys; ee++ {
@@ -120,12 +126,12 @@ func (m *mixKeys) Prune() bool {
 	return didPrune
 }
 
-func (m *mixKeys) Get(epoch uint64) (*ecdh.PublicKey, bool) {
+func (m *mixKeys) Get(epoch uint64) ([]byte, bool) {
 	m.Lock()
 	defer m.Unlock()
 
 	if k, ok := m.keys[epoch]; ok {
-		return k.Public(), true
+		return k.PublicBytes(), true
 	}
 	return nil, false
 }
@@ -161,8 +167,9 @@ func (m *mixKeys) Halt() {
 	}
 }
 
-func newMixKeys(glue glue.Glue) (glue.MixKeys, error) {
+func newMixKeys(glue glue.Glue, geo *geo.Geometry) (glue.MixKeys, error) {
 	m := &mixKeys{
+		geo:  geo,
 		glue: glue,
 		log:  glue.LogBackend().GetLogger("mixkeys"),
 		keys: make(map[uint64]*mixkey.MixKey),

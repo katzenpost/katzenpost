@@ -27,7 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
@@ -44,7 +44,7 @@ type incomingConn struct {
 	c   net.Conn
 	e   *list.Element
 	w   *wire.Session
-	geo *sphinx.Geometry
+	geo *geo.Geometry
 
 	id      uint64
 	retrSeq uint32
@@ -160,7 +160,7 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	identityHash := c.l.glue.IdentityPublicKey().Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.l.glue.LinkKey(),
@@ -417,7 +417,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
-	pkt, err := packet.New(cmd.SphinxPacket)
+	pkt, err := packet.New(cmd.SphinxPacket, c.geo)
 	if err != nil {
 		return err
 	}
@@ -467,7 +467,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry) *incomingConn {
 	c := &incomingConn{
 		l:                 l,
 		c:                 conn,
@@ -475,7 +475,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 		sendTokenLast:     monotime.Now(),
 		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
 		closeConnectionCh: make(chan bool),
-		geo:               sphinx.DefaultGeometry(),
+		geo:               geo,
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 

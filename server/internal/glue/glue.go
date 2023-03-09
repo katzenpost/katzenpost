@@ -19,7 +19,6 @@
 package glue
 
 import (
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -58,7 +57,7 @@ type MixKeys interface {
 	Halt()
 	Generate(uint64) (bool, error)
 	Prune() bool
-	Get(uint64) (*ecdh.PublicKey, bool)
+	Get(uint64) ([]byte, bool)
 	Shadow(map[uint64]*mixkey.MixKey)
 }
 

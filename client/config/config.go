@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -228,6 +229,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
+	SphinxGeometry     *geo.Geometry
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
@@ -245,6 +247,13 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+	err := c.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
 	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging

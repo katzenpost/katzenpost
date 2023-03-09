@@ -22,10 +22,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/sphinx"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const (
@@ -47,7 +49,13 @@ func TestBoltSpool(t *testing.T) {
 
 	t.Logf("TempDir: %v", tmpDir)
 
-	geo := sphinx.DefaultGeometry()
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(
+		ecdh.NewEcdhNike(rand.Reader),
+		2000,
+		true,
+		nrHops,
+	)
 
 	// Build a test message.
 	testMsg = make([]byte, geo.UserForwardPayloadLength)
