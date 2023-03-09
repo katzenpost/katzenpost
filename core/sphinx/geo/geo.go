@@ -253,7 +253,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Scheme, userForwardPayloadLe
 		nrHops:                      nrHops,
 		sprpKeyMaterialLength:       crypto.SPRPKeyLength + crypto.SPRPIVLength,
 		sphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-		nextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
+		nextNodeHopLength:           constants.CommandTagLength + constants.NodeIDLength + crypto.MACLength,
 	}
 
 	forwardPayloadLength := 0
@@ -275,7 +275,7 @@ func GeometryFromUserForwardPayloadLength(nike nike.Scheme, userForwardPayloadLe
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		RoutingInfoLength:           f.routingInfoLength(),
 		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
-		NextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
+		NextNodeHopLength:           f.nextNodeHopLength,
 		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
 		NIKEName:                    nike.Name(),
 	}
@@ -287,7 +287,7 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		nrHops:                      nrHops,
 		sprpKeyMaterialLength:       crypto.SPRPKeyLength + crypto.SPRPIVLength,
 		sphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
-		nextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
+		nextNodeHopLength:           constants.CommandTagLength + constants.NodeIDLength + crypto.MACLength,
 	}
 
 	forwardPayloadLength := 0
@@ -309,7 +309,7 @@ func KEMGeometryFromUserForwardPayloadLength(kem kem.Scheme, userForwardPayloadL
 		SphinxPlaintextHeaderLength: sphinxPlaintextHeaderLength,
 		RoutingInfoLength:           f.routingInfoLength(),
 		PerHopRoutingInfoLength:     f.perHopRoutingInfoLength(),
-		NextNodeHopLength:           1 + constants.NodeIDLength + crypto.MACLength,
+		NextNodeHopLength:           f.nextNodeHopLength,
 		SPRPKeyMaterialLength:       f.sprpKeyMaterialLength,
 		KEMName:                     kem.Name(),
 	}
