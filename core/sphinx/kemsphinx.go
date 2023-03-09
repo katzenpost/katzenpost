@@ -262,8 +262,8 @@ func (s *Sphinx) unwrapKem(privKey kem.PrivateKey, pkt []byte) ([]byte, []byte, 
 	replayTag := crypto.Hash(kemCiphertext)
 
 	// Derive the various keys required for packet processing.
-	// note we set the private key size to zero because we do not
-	// derive blinding factors for KEMSphinx!
+	// note we set the second arg (NIKE interface object) to nil
+	// because we do not derive blinding factors for KEMSphinx!
 	keys := crypto.KDF(sharedSecret, nil)
 	defer keys.Reset()
 
