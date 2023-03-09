@@ -136,10 +136,6 @@ func (cmd *Recipient) ToBytes(b []byte) []byte {
 }
 
 func recipeientFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
-
-	// recipientLength is the length of a Recipient command in bytes.
-	recipientLength := 1 + constants.RecipientIDLength
-
 	if len(b) < constants.RecipientIDLength {
 		err = errInvalidCommand
 		return
@@ -166,15 +162,11 @@ func (cmd *SURBReply) ToBytes(b []byte) []byte {
 }
 
 func surbReplyFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
-
-	// surbReplyLength is the length of a SURBReply command in bytes.
-	surbReplyLength := 1 + constants.SURBIDLength
-
-	if len(b) < surbReplyLength-1 {
+	if len(b) < constants.SURBIDLength {
 		err = errInvalidCommand
 		return
 	}
-	rest = b[surbReplyLength-1:]
+	rest = b[constants.SURBIDLength:]
 
 	r := new(SURBReply)
 	copy(r.ID[:], b[:constants.SURBIDLength])
@@ -198,17 +190,14 @@ func (cmd *NodeDelay) ToBytes(b []byte) []byte {
 }
 
 func nodeDelayFromBytes(b []byte) (cmd RoutingCommand, rest []byte, err error) {
-	// nodeDelayLength is the length of a NodeDelay command in bytes.
-	nodeDelayLength := 1 + 4
-
-	if len(b) < nodeDelayLength-1 {
+	nodeDelayLength := 4
+	if len(b) < nodeDelayLength {
 		err = errInvalidCommand
 		return
 	}
-	rest = b[nodeDelayLength-1:]
-
+	rest = b[nodeDelayLength:]
 	r := new(NodeDelay)
-	r.Delay = binary.BigEndian.Uint32(b[:4])
+	r.Delay = binary.BigEndian.Uint32(b[:nodeDelayLength])
 	cmd = r
 	return
 }
