@@ -140,11 +140,11 @@ func recipeientFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []
 	// recipientLength is the length of a Recipient command in bytes.
 	recipientLength := 1 + constants.RecipientIDLength
 
-	if len(b) < recipientLength-1 {
+	if len(b) < constants.RecipientIDLength {
 		err = errInvalidCommand
 		return
 	}
-	rest = b[recipientLength-1:]
+	rest = b[constants.RecipientIDLength:]
 
 	r := new(Recipient)
 	copy(r.ID[:], b[:constants.RecipientIDLength])
