@@ -33,7 +33,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -163,13 +162,13 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          nil,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
-	s, err := wire.NewSession(cfg, true)
+	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		return nil, err
 	}

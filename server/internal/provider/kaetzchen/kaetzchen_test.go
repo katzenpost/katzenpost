@@ -25,15 +25,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/monotime"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/thwack"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
@@ -293,11 +294,16 @@ func TestKaetzchenWorker(t *testing.T) {
 	_, ok := pkiMap["test"]
 	require.True(t, ok)
 
-	geo := sphinx.DefaultGeometry()
+	geo := geo.GeometryFromUserForwardPayloadLength(
+		ecdh.NewEcdhNike(rand.Reader),
+		2000,
+		true,
+		5,
+	)
 
 	// invalid packet test case
 	payload := make([]byte, geo.PacketLength)
-	testPacket, err := packet.New(payload)
+	testPacket, err := packet.New(payload, geo)
 	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
@@ -309,7 +315,7 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	// timeout test case
 	payload = make([]byte, geo.PacketLength)
-	testPacket, err = packet.New(payload)
+	testPacket, err = packet.New(payload, geo)
 	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,
@@ -320,7 +326,7 @@ func TestKaetzchenWorker(t *testing.T) {
 
 	// working test case
 	payload = make([]byte, geo.PacketLength)
-	testPacket, err = packet.New(payload)
+	testPacket, err = packet.New(payload, geo)
 	require.NoError(t, err)
 	testPacket.Recipient = &commands.Recipient{
 		ID: recipient,

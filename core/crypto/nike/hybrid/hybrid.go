@@ -1,6 +1,3 @@
-//go:build ctidh
-// +build ctidh
-
 package hybrid
 
 import (
@@ -9,22 +6,19 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/csidh"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
-
-var CTIDHX25519 nike.Scheme = &scheme{
-	name:   "CTIDH-X25519",
-	first:  ctidh.CTIDHScheme,
-	second: ecdh.NewEcdhNike(rand.Reader),
-}
 
 var NOBS_CSIDHX25519 nike.Scheme = &scheme{
 	name:   "NOBS_CSIDH-X25519",
 	first:  ecdh.NewEcdhNike(rand.Reader),
 	second: csidh.CSIDHScheme,
 }
+
+var _ nike.PrivateKey = (*privateKey)(nil)
+var _ nike.PublicKey = (*publicKey)(nil)
+var _ nike.Scheme = (*scheme)(nil)
 
 type publicKey struct {
 	scheme *scheme
@@ -120,8 +114,8 @@ func (s *scheme) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
 func (s *scheme) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
 	return &publicKey{
 		scheme: s,
-		first:  s.Blind(groupMember.(*publicKey).first, blindingFactor.(*privateKey).first),
-		second: s.Blind(groupMember.(*publicKey).second, blindingFactor.(*privateKey).second),
+		first:  s.first.Blind(groupMember.(*publicKey).first, blindingFactor.(*privateKey).first),
+		second: s.second.Blind(groupMember.(*publicKey).second, blindingFactor.(*privateKey).second),
 	}
 }
 
