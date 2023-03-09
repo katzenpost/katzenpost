@@ -136,8 +136,8 @@ func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpK
 		}
 		defer utils.ExplicitBzero(sharedSecret)
 
-		// set privateKey size to zero 0 since
-		// we don't need to generate blinding factors
+		// set the second arg (NIKE interface object) to nil
+		// so we don't need to generate blinding factors
 		// for KEMSphinx.
 		keys[i] = crypto.KDF(sharedSecret, nil)
 		defer keys[i].Reset()
