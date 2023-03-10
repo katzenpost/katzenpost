@@ -23,9 +23,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/katzenpost/katzenpost/doubleratchet/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
+	"github.com/katzenpost/katzenpost/doubleratchet/utils"
 )
 
 var (
@@ -205,6 +205,9 @@ func (s *state) Upgrade(scheme *hybrid.Scheme) error {
 
 	utils.ExplicitBzero(s.PQPrivate0)
 	utils.ExplicitBzero(s.PQPrivate1)
+
+	s.PQPrivate0 = []byte{}
+	s.PQPrivate1 = []byte{}
 
 	s.Private0 = hybridKey1.Bytes()
 	s.Private1 = hybridKey2.Bytes()
