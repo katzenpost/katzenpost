@@ -14,6 +14,7 @@ import (
 	"crypto/hmac"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"hash"
 	"io"
 	"time"
@@ -160,54 +161,60 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 
 // state constains all the data associated with a ratchet
 type state struct {
-	SavedKeys          []*savedKeys
-	RootKey            []byte
-	SendHeaderKey      []byte
-	RecvHeaderKey      []byte
-	NextSendHeaderKey  []byte
-	NextRecvHeaderKey  []byte
-	SendChainKey       []byte
-	RecvChainKey       []byte
-	SendRatchetPrivate []byte
-	RecvRatchetPublic  []byte
-	SendCount          uint32
-	RecvCount          uint32
-	PrevSendCount      uint32
-	Private0           []byte
-	Private1           []byte
-	PQPrivate0         []byte
-	PQPrivate1         []byte
-	Ratchet            bool
+	SavedKeys            []*savedKeys
+	RootKey              []byte
+	SendHeaderKey        []byte
+	RecvHeaderKey        []byte
+	NextSendHeaderKey    []byte
+	NextRecvHeaderKey    []byte
+	SendChainKey         []byte
+	RecvChainKey         []byte
+	SendRatchetPrivate   []byte
+	RecvRatchetPublic    []byte
+	SendPQRatchetPrivate []byte
+	RecvPQRatchetPublic  []byte
+	SendCount            uint32
+	RecvCount            uint32
+	PrevSendCount        uint32
+	Private0             []byte
+	Private1             []byte
+	PQPrivate0           []byte
+	PQPrivate1           []byte
+	Ratchet              bool
 }
 
 func (s *state) Upgrade(scheme *hybrid.Scheme) error {
-	first1, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private0)
+	first1, err := scheme.First().UnmarshalBinaryPrivateKey(s.SendRatchetPrivate)
 	if err != nil {
 		return err
 	}
-	second1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate0)
+	second1, err := scheme.Second().UnmarshalBinaryPrivateKey(s.SendPQRatchetPrivate)
 	if err != nil {
 		return err
 	}
 
 	hybridKey1 := scheme.PrivateKeyFromKeys(first1, second1)
 
-	first2, err := scheme.First().UnmarshalBinaryPrivateKey(s.Private1)
+	s.SendRatchetPrivate = hybridKey1.Bytes()
+
+	first2, err := scheme.First().UnmarshalBinaryPublicKey(s.RecvRatchetPublic)
 	if err != nil {
 		return err
 	}
-	second2, err := scheme.Second().UnmarshalBinaryPrivateKey(s.PQPrivate1)
+	second2, err := scheme.Second().UnmarshalBinaryPublicKey(s.RecvPQRatchetPublic)
 	if err != nil {
 		return err
 	}
 
-	hybridKey2 := scheme.PrivateKeyFromKeys(first2, second2)
+	hybridKey2 := scheme.PublicKeyFromKeys(first2, second2)
 
-	utils.ExplicitBzero(s.PQPrivate0)
-	utils.ExplicitBzero(s.PQPrivate1)
+	s.RecvRatchetPublic = hybridKey2.Bytes()
 
-	s.PQPrivate0 = []byte{}
-	s.PQPrivate1 = []byte{}
+	utils.ExplicitBzero(s.SendPQRatchetPrivate)
+	utils.ExplicitBzero(s.RecvPQRatchetPublic)
+
+	s.SendPQRatchetPrivate = []byte{}
+	s.RecvPQRatchetPublic = []byte{}
 
 	s.Private0 = hybridKey1.Bytes()
 	s.Private1 = hybridKey2.Bytes()
@@ -282,7 +289,7 @@ func NewRatchetFromBytes(rand io.Reader, data []byte, scheme nike.Scheme) (*Ratc
 	if state.PQPrivate0 != nil && state.PQPrivate1 != nil {
 		err := state.Upgrade(scheme.(*hybrid.Scheme))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("key upgrade failure: %s", err)
 		}
 	}
 	return newRatchetFromState(rand, &state, scheme)

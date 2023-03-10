@@ -66,6 +66,14 @@ func (s *Scheme) PrivateKeyFromKeys(first, second nike.PrivateKey) nike.PrivateK
 	}
 }
 
+func (s *Scheme) PublicKeyFromKeys(first, second nike.PublicKey) nike.PublicKey {
+	return &publicKey{
+		scheme: s,
+		first:  first,
+		second: second,
+	}
+}
+
 func (s *Scheme) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
 	return &privateKey{
 		scheme: s,
