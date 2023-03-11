@@ -1,41 +1,25 @@
-// config.go - Katzenpost client configuration.
-// Copyright (C) 2018  Yawning Angel, David Stainton.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: 2023, David Stainton <dstainton415@gmail.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package config implements the configuration for the Katzenpost client.
 package config
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"golang.org/x/crypto/blake2b"
 
-	nvClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/client/internal/proxy"
-	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
+
+	"github.com/katzenpost/katzenpost/client2/internal/proxy"
 )
 
 const (
@@ -112,73 +96,18 @@ func (d *Debug) fixup() {
 	}
 }
 
-// NonvotingAuthority is a non-voting authority configuration.
-type NonvotingAuthority struct {
-	// Address is the IP address/port combination of the authority.
-	Address string
-
-	// IdentityPublicKeyPem is the authority's identity public key pem.
-	IdentityPublicKeyPem string
-
-	// LinkPublicKeyPem is the PEM data of the authority's link public key.
-	LinkPublicKeyPem string
-}
-
-// New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
-	scheme := wire.DefaultScheme
-
-	authLinkKey := scheme.NewEmptyPublicKey()
-	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
-	if err != nil {
-		return nil, err
-	}
-
-	_, identityPublicKey := cert.Scheme.NewKeypair()
-	pem.FromPEMString(nvACfg.IdentityPublicKeyPem, identityPublicKey)
-
-	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
-	cfg := &nvClient.Config{
-		AuthorityLinkKey:     authLinkKey,
-		LinkKey:              linkKey,
-		LogBackend:           l,
-		Address:              nvACfg.Address,
-		AuthorityIdentityKey: identityPublicKey,
-		DialContextFn:        pCfg.ToDialContext(fmt.Sprintf("nonvoting: %x", linkHash[:])),
-	}
-	return nvClient.New(cfg)
-}
-
-func (nvACfg *NonvotingAuthority) validate() error {
-	if nvACfg.IdentityPublicKeyPem == "" {
-		return errors.New("error IdentityPublicKeyPem is missing")
-	}
-	return nil
-}
-
 // VotingAuthority is a voting authority configuration.
 type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
-	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
-	cLinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	b, err := linkKey.MarshalBinary()
-	if err != nil {
-		return nil, err
-	}
-	err = cLinkKey.UnmarshalBinary(b)
-	if err != nil {
-		return nil, err
-	}
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	cfg := &vClient.Config{
-		DataDir:       datadir,
-		LinkKey:       cLinkKey,
+		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash[:])),
+		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
 	}
 	return vClient.New(cfg)
 }
@@ -196,12 +125,10 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	switch {
-	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg, linkKey, datadir)
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey, datadir)
+		return c.VotingAuthority.New(l, pCfg, linkKey)
 	}
 	return nil, errors.New("no Authority found")
 }
@@ -242,13 +169,12 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
-	DataDir            string
-	Logging            *Logging
-	UpstreamProxy      *UpstreamProxy
-	Debug              *Debug
-	NonvotingAuthority *NonvotingAuthority
-	VotingAuthority    *VotingAuthority
-	upstreamProxy      *proxy.Config
+	SphinxGeometry  *geo.Geometry
+	Logging         *Logging
+	UpstreamProxy   *UpstreamProxy
+	Debug           *Debug
+	VotingAuthority *VotingAuthority
+	upstreamProxy   *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for
@@ -260,6 +186,13 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+	err := c.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
 	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
@@ -283,13 +216,9 @@ func (c *Config) FixupAndValidate() error {
 		return err
 	}
 	switch {
-	case c.NonvotingAuthority == nil && c.VotingAuthority != nil:
+	case c.VotingAuthority != nil:
 		if err := c.VotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: NonvotingAuthority/VotingAuthority is invalid: %s", err)
-		}
-	case c.NonvotingAuthority != nil && c.VotingAuthority == nil:
-		if err := c.NonvotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: NonvotingAuthority/VotingAuthority is invalid: %s", err)
+			return fmt.Errorf("config: VotingAuthority is invalid: %s", err)
 		}
 	default:
 		return fmt.Errorf("config: Authority configuration is invalid")
