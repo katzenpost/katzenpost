@@ -21,12 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
 
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/gobwas/ws"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -150,6 +152,36 @@ func (s *Server) listenWorker(l net.Listener) {
 		s.onConn(conn)
 	}
 
+	// NOTREACHED
+}
+
+func (s *Server) listenWSWorker(l net.Listener) {
+	addr := l.Addr()
+	s.log.Noticef("Websocket Listening on: %v", addr)
+	defer func() {
+		s.log.Noticef("Stopping listening on: %v", addr)
+		l.Close()
+		s.Done()
+	}()
+	u := new(ws.Upgrader)
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			if e, ok := err.(net.Error); ok && !e.Temporary() {
+				s.log.Errorf("Critical accept failure: %v", err)
+				return
+			}
+			continue
+		}
+		_, err = u.Upgrade(conn)
+		if err != nil {
+			s.log.Noticef("Upgrading connection to websocket failed: %s", err)
+			continue
+		}
+
+		s.Add(1)
+		s.onConn(conn)
+	}
 	// NOTREACHED
 }
 
@@ -303,14 +335,30 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start up the listeners.
 	for _, v := range s.cfg.Server.Addresses {
-		l, err := net.Listen("tcp", v)
-		if err != nil {
-			s.log.Errorf("Failed to start listener '%v': %v", v, err)
-			continue
+		// parse the Address line as a URL
+		u, err := url.Parse(v)
+		if err == nil {
+			switch u.Scheme {
+			case "http":
+				l, err := net.Listen("tcp", u.Hostname()+":"+u.Port())
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				s.listeners = append(s.listeners, l)
+				s.Add(1)
+				go s.listenWSWorker(l)
+			case "tcp":
+				l, err := net.Listen("tcp", u.Hostname()+":"+u.Port())
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				s.listeners = append(s.listeners, l)
+				s.Add(1)
+				go s.listenWorker(l)
+			}
 		}
-		s.listeners = append(s.listeners, l)
-		s.Add(1)
-		go s.listenWorker(l)
 	}
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")
