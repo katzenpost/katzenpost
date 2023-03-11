@@ -43,11 +43,11 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	d.IdentityKey = identityPub
 	scheme := wire.DefaultScheme
 	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
-	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey()
+		d.MixKeys[uint64(e)] = mPriv.PublicKey().Bytes()
 	}
 	if provider {
 		d.Kaetzchen = make(map[string]map[string]interface{})
@@ -66,6 +66,7 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 }
 
 func TestDocument(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	// Generate a random signing key.
@@ -123,25 +124,25 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "SignDocument()")
 
 	// Validate and deserialize.
-	ddoc, err := VerifyAndParseDocument(signed, []cert.Verifier{idPub})
-	require.NoError(err, "VerifyAndParseDocument()")
-	require.Equal(doc.Epoch, ddoc.Epoch, "VerifyAndParseDocument(): Epoch")
-	require.Equal(doc.SendRatePerMinute, testSendRate, "VerifyAndParseDocument(): SendRatePerMinute")
-	require.Equal(doc.Mu, ddoc.Mu, "VerifyAndParseDocument(): Mu")
-	require.Equal(doc.MuMaxDelay, ddoc.MuMaxDelay, "VerifyAndParseDocument(): MuMaxDelay")
-	require.Equal(doc.LambdaP, ddoc.LambdaP, "VerifyAndParseDocument(): LambdaP")
-	require.Equal(doc.LambdaPMaxDelay, ddoc.LambdaPMaxDelay, "VerifyAndParseDocument(): LambdaPMaxDelay")
-	require.Equal(doc.LambdaL, ddoc.LambdaL, "VerifyAndParseDocument(): LambdaL")
-	require.Equal(doc.LambdaLMaxDelay, ddoc.LambdaLMaxDelay, "VerifyAndParseDocument(): LambdaLMaxDelay")
-	require.Equal(doc.LambdaD, ddoc.LambdaD, "VerifyAndParseDocument(): LambdaD")
-	require.Equal(doc.LambdaDMaxDelay, ddoc.LambdaDMaxDelay, "VerifyAndParseDocument(): LambdaDMaxDelay")
-	require.Equal(doc.LambdaM, ddoc.LambdaM, "VerifyAndParseDocument(): LambdaM")
-	require.Equal(doc.LambdaMMaxDelay, ddoc.LambdaMMaxDelay, "VerifyAndParseDocument(): LambdaMMaxDelay")
-	require.Equal(doc.SharedRandomValue, ddoc.SharedRandomValue, "VerifyAndParseDocument(): SharedRandomValue")
-	require.Equal(doc.PriorSharedRandom, ddoc.PriorSharedRandom, "VerifyAndParseDocument(): PriorSharedRandom")
-	require.Equal(doc.SharedRandomCommit, ddoc.SharedRandomCommit, "VerifyAndParseDocument(): SharedRandomCommit")
-	require.Equal(doc.SharedRandomReveal, ddoc.SharedRandomReveal, "VerifyAndParseDocument(): SharedRandomReveal")
-	require.Equal(doc.Version, ddoc.Version, "VerifyAndParseDocument(): Version")
+	ddoc, err := ParseDocument(signed)
+	require.NoError(err, "ParseDocument()")
+	require.Equal(doc.Epoch, ddoc.Epoch, "ParseDocument(): Epoch")
+	require.Equal(doc.SendRatePerMinute, testSendRate, "ParseDocument(): SendRatePerMinute")
+	require.Equal(doc.Mu, ddoc.Mu, "ParseDocument(): Mu")
+	require.Equal(doc.MuMaxDelay, ddoc.MuMaxDelay, "ParseDocument(): MuMaxDelay")
+	require.Equal(doc.LambdaP, ddoc.LambdaP, "ParseDocument(): LambdaP")
+	require.Equal(doc.LambdaPMaxDelay, ddoc.LambdaPMaxDelay, "ParseDocument(): LambdaPMaxDelay")
+	require.Equal(doc.LambdaL, ddoc.LambdaL, "ParseDocument(): LambdaL")
+	require.Equal(doc.LambdaLMaxDelay, ddoc.LambdaLMaxDelay, "ParseDocument(): LambdaLMaxDelay")
+	require.Equal(doc.LambdaD, ddoc.LambdaD, "ParseDocument(): LambdaD")
+	require.Equal(doc.LambdaDMaxDelay, ddoc.LambdaDMaxDelay, "ParseDocument(): LambdaDMaxDelay")
+	require.Equal(doc.LambdaM, ddoc.LambdaM, "ParseDocument(): LambdaM")
+	require.Equal(doc.LambdaMMaxDelay, ddoc.LambdaMMaxDelay, "ParseDocument(): LambdaMMaxDelay")
+	require.Equal(doc.SharedRandomValue, ddoc.SharedRandomValue, "ParseDocument(): SharedRandomValue")
+	require.Equal(doc.PriorSharedRandom, ddoc.PriorSharedRandom, "ParseDocument(): PriorSharedRandom")
+	require.Equal(doc.SharedRandomCommit, ddoc.SharedRandomCommit, "ParseDocument(): SharedRandomCommit")
+	require.Equal(doc.SharedRandomReveal, ddoc.SharedRandomReveal, "ParseDocument(): SharedRandomReveal")
+	require.Equal(doc.Version, ddoc.Version, "ParseDocument(): Version")
 
 	// check that MixDescriptors are signed correctly and can be deserialized and reserialized from the Document
 	for l, layer := range ddoc.Topology {

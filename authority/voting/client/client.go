@@ -33,7 +33,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -64,10 +63,6 @@ func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 
 // Config is a voting authority pki.Client instance.
 type Config struct {
-	// DataDir is the absolute path to the directory
-	// containing Authority link pub key PEM files.
-	DataDir string
-
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey wire.PrivateKey
 
@@ -167,13 +162,13 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          nil,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
-	s, err := wire.NewSession(cfg, true)
+	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		return nil, err
 	}
@@ -251,7 +246,13 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
-		p.log.Debugf("got response (err=%v) from %s", err, auth.Identifier)
+
+		r, ok := resp.(*commands.Consensus)
+		if !ok {
+			return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
+		}
+
+		p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, postErrorToString(r.ErrorCode))
 		if err == pki.ErrNoDocument {
 			continue
 		}
@@ -308,7 +309,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("failure to Post to %d Directory Authorities", len(errs))
+	return fmt.Errorf("failure to Post(%d) to %d Directory Authorities: %v", epoch, len(errs), errs)
 }
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
@@ -363,11 +364,18 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 			}
 		}
 	}
-	doc, err = pki.VerifyAndParseDocument(r.Payload, c.verifiers)
+	doc, err = pki.ParseDocument(r.Payload)
 	if err != nil {
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
 	}
+
+	err = pki.IsDocumentWellFormed(doc, c.verifiers)
+	if err != nil {
+		c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
+		return nil, nil, err
+	}
+
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
@@ -381,7 +389,7 @@ func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, err := pki.VerifyAndParseDocument(raw, c.verifiers)
+	doc, err := pki.ParseDocument(raw)
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}

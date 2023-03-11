@@ -34,6 +34,7 @@ import (
 )
 
 func TestNyquistPqNoiseParams2(t *testing.T) {
+	t.Parallel()
 	seecGenRand, err := seec.GenKeyPRPAES(rand.Reader, 256)
 	require.NoError(t, err, "seec.GenKeyPRPAES")
 
@@ -153,6 +154,7 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 }
 
 func TestNoiseParams1(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	clientStaticKeypair, _ := noise.DH25519.GenerateKeypair(rand.Reader)
@@ -234,6 +236,7 @@ func TestNoiseParams1(t *testing.T) {
 }
 
 func TestNoiseParams2(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	const plaintext = "Ich sage euch: man muss noch Chaos in sich haben, um einen tanzenden Stern gebären zu können. Ich sage euch: ihr habt noch Chaos in euch."

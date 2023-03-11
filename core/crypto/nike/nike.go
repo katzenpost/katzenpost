@@ -17,8 +17,17 @@
 // Package sphinx implements the Katzenpost parameterized Sphinx Packet Format.
 package nike
 
+import (
+	"encoding"
+	"io"
+)
+
 // Key is an interface for types encapsulating key material.
 type Key interface {
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
+	encoding.TextMarshaler
+	encoding.TextUnmarshaler
 
 	// Reset resets the key material to all zeros.
 	Reset()
@@ -34,6 +43,8 @@ type Key interface {
 // private key material.
 type PrivateKey interface {
 	Key
+
+	Public() PublicKey
 }
 
 // PublicKey is an interface for types encapsulating
@@ -43,12 +54,15 @@ type PublicKey interface {
 
 	// Blind performs a blinding operation and mutates the public
 	// key with the blinded value.
-	Blind(blindingFactor []byte) error
+	Blind(blindingFactor PrivateKey) error
 }
 
-// Nike is an interface encapsulating a
+// Scheme is an interface encapsulating a
 // non-interactive key exchange.
-type Nike interface {
+type Scheme interface {
+
+	// Name returns the name of the NIKE scheme implementation.
+	Name() string
 
 	// PublicKeySize returns the size in bytes of the public key.
 	PublicKeySize() int
@@ -56,8 +70,16 @@ type Nike interface {
 	// PrivateKeySize returns the size in bytes of the private key.
 	PrivateKeySize() int
 
-	// NewKeypair returns a newly generated key pair.
-	NewKeypair() (PrivateKey, PublicKey)
+	// GeneratePrivateKey uses the given RNG to derive a new private key.
+	// This can be used to deterministically generate private keys if the
+	// entropy source is deterministic, for example an HKDF.
+	GeneratePrivateKey(rng io.Reader) PrivateKey
+
+	// GenerateKeyPair creates a new key pair.
+	GenerateKeyPair() (PublicKey, PrivateKey, error)
+
+	// GenerateKeyPairFromEntropy creates a new key pair from the given entropy source.
+	GenerateKeyPairFromEntropy(rng io.Reader) (PublicKey, PrivateKey, error)
 
 	// DeriveSecret derives a shared secret given a private key
 	// from one party and a public key from another.
@@ -67,17 +89,24 @@ type Nike interface {
 	DerivePublicKey(PrivateKey) PublicKey
 
 	// Blind performs the blinding operation against the
-	// two byte slices and returns the blinded value.
-	//
-	// Note that the two arguments must be the correct lengths:
-	//
-	// * groupMember must be the size of a public key.
-	//
-	// * blindingFactor must be the size of a private key.
-	//
-	// See also PublicKey's Blind method.
-	Blind(groupMember []byte, blindingFactor []byte) (blindedGroupMember []byte)
+	// given group member, returning the blinded key.
+	Blind(groupMember PublicKey, blindingFactor PrivateKey) (blindedGroupMember PublicKey)
+
+	// NewEmptyPublicKey returns an uninitialized
+	// PublicKey which is suitable to be loaded
+	// via some serialization format via FromBytes
+	// or FromPEMFile methods.
+	NewEmptyPublicKey() PublicKey
+
+	// NewEmptyPrivateKey returns an uninitialized
+	// PrivateKey which is suitable to be loaded
+	// via some serialization format via FromBytes
+	// or FromPEMFile methods.
+	NewEmptyPrivateKey() PrivateKey
 
 	// UnmarshalBinaryPublicKey loads a public key from byte slice.
 	UnmarshalBinaryPublicKey([]byte) (PublicKey, error)
+
+	// Unmarshals a PrivateKey from the provided buffer.
+	UnmarshalBinaryPrivateKey([]byte) (PrivateKey, error)
 }

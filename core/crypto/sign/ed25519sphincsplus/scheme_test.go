@@ -7,6 +7,7 @@ import (
 )
 
 func TestEddsaSphincsplusScheme(t *testing.T) {
+	t.Parallel()
 	message := []byte("hello world")
 	privKey, pubKey := Scheme.NewKeypair()
 	signature := privKey.Sign(message)
@@ -17,6 +18,7 @@ func TestEddsaSphincsplusScheme(t *testing.T) {
 }
 
 func TestEddsaSphincsplusSchemeTextUnmarshaler(t *testing.T) {
+	t.Parallel()
 	message := []byte("hello world")
 	privKey, pubKey := Scheme.NewKeypair()
 
@@ -35,6 +37,7 @@ func TestEddsaSphincsplusSchemeTextUnmarshaler(t *testing.T) {
 }
 
 func TestEddsaSphincsplusSchemeBinaryUnmarshaler(t *testing.T) {
+	t.Parallel()
 	message := []byte("hello world")
 	privKey, pubKey := Scheme.NewKeypair()
 

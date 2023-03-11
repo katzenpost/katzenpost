@@ -33,17 +33,17 @@ type nodeParams struct {
 	publicKey  nike.PublicKey
 }
 
-func newNikeNode(require *require.Assertions, mynike nike.Nike) *nodeParams {
+func newNikeNode(require *require.Assertions, mynike nike.Scheme) *nodeParams {
 	n := new(nodeParams)
 
 	_, err := rand.Read(n.id[:])
 	require.NoError(err, "newNikeNode(): failed to generate ID")
-	n.privateKey, n.publicKey = mynike.NewKeypair()
+	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
 	require.NoError(err, "newNikeNode(): NewKeypair() failed")
 	return n
 }
 
-func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
+func newNikePathVector(require *require.Assertions, mynike nike.Scheme, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
@@ -83,7 +83,7 @@ func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int
 	return nodes, path
 }
 
-func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
+func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
@@ -123,7 +123,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 	}
 }
 
-func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
+func testSURB(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
