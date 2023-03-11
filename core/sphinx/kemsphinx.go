@@ -28,6 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -44,7 +45,7 @@ func NewKEMSphinx(k kem.Scheme, geometry *geo.Geometry) *Sphinx {
 	return s
 }
 
-func (s *Sphinx) newKemSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+func (s *Sphinx) newKemSURB(r io.Reader, path []*path.PathHop) ([]byte, []byte, error) {
 	// Create a random SPRP key + iv for the recipient to use to encrypt
 	// the payload when using the SURB.
 	var keyPayload [sprpKeyMaterialLength]byte
@@ -77,7 +78,7 @@ func (s *Sphinx) newKemSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error
 	return surb, k, nil
 }
 
-func (s *Sphinx) newKEMPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+func (s *Sphinx) newKEMPacket(r io.Reader, path []*path.PathHop, payload []byte) ([]byte, error) {
 	if len(payload) != s.geometry.ForwardPayloadLength {
 		return nil, fmt.Errorf("invalid payload length: %d, expected %d", len(payload), s.geometry.ForwardPayloadLength)
 	}
@@ -117,7 +118,7 @@ KEM Sphinx header elements:
 3. encrypted per routing commands (containing KEM ciphertexts for each next hop)
 4. MAC for this hop (authenticates header fields 1-4)
 */
-func (s *Sphinx) createKEMHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
+func (s *Sphinx) createKEMHeader(r io.Reader, path []*path.PathHop) ([]byte, []*sprpKey, error) {
 	nrHops := len(path)
 	if nrHops > s.geometry.NrHops {
 		return nil, nil, errors.New("sphinx: invalid path")

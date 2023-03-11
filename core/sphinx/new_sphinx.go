@@ -22,11 +22,12 @@ import (
 	"github.com/cloudflare/circl/kem"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 // NewPacket creates a forward Sphinx packet with the provided path and
 // payload, using the provided entropy source.
-func (s *Sphinx) NewPacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+func (s *Sphinx) NewPacket(r io.Reader, path []*path.PathHop, payload []byte) ([]byte, error) {
 	if s.nike == nil {
 		return s.newKEMPacket(r, path, payload)
 	}
@@ -55,7 +56,7 @@ func (s *Sphinx) Unwrap(privKey interface{}, pkt []byte) ([]byte, []byte, []comm
 
 // NewSURB creates a new SURB with the provided path using the provided entropy
 // source, and returns the SURB and decrypion keys.
-func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+func (s *Sphinx) NewSURB(r io.Reader, path []*path.PathHop) ([]byte, []byte, error) {
 	if s.nike == nil {
 		return s.newKemSURB(r, path)
 	}

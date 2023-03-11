@@ -29,10 +29,12 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
+
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -80,15 +82,6 @@ func (s *Sphinx) Geometry() *geo.Geometry {
 	return s.geometry
 }
 
-// PathHop describes a hop that a Sphinx Packet will traverse, along with
-// all of the per-hop Commands (excluding NextNodeHop).
-type PathHop struct {
-	ID            [constants.NodeIDLength]byte
-	NIKEPublicKey nike.PublicKey
-	KEMPublicKey  kem.PublicKey
-	Commands      []commands.RoutingCommand
-}
-
 type sprpKey struct {
 	key [crypto.SPRPKeyLength]byte
 	iv  [crypto.SPRPIVLength]byte
@@ -118,7 +111,7 @@ func (s *Sphinx) commandsToBytes(cmds []commands.RoutingCommand, isTerminal bool
 	return b, nil
 }
 
-func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey, error) {
+func (s *Sphinx) createHeader(r io.Reader, path []*path.PathHop) ([]byte, []*sprpKey, error) {
 	nrHops := len(path)
 	if nrHops > s.geometry.NrHops {
 		return nil, nil, errors.New("sphinx: invalid path")
@@ -254,7 +247,7 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 	return hdr, sprpKeys, nil
 }
 
-func (s *Sphinx) newNikePacket(r io.Reader, path []*PathHop, payload []byte) ([]byte, error) {
+func (s *Sphinx) newNikePacket(r io.Reader, path []*path.PathHop, payload []byte) ([]byte, error) {
 	if len(payload) != s.geometry.ForwardPayloadLength {
 		return nil, fmt.Errorf("invalid payload length: %d, expected %d", len(payload), s.geometry.ForwardPayloadLength)
 	}

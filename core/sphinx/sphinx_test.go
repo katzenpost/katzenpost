@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 type nodeParams struct {
@@ -43,7 +44,7 @@ func newNikeNode(require *require.Assertions, mynike nike.Scheme) *nodeParams {
 	return n
 }
 
-func newNikePathVector(require *require.Assertions, mynike nike.Scheme, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
+func newNikePathVector(require *require.Assertions, mynike nike.Scheme, nrHops int, isSURB bool) ([]*nodeParams, []*path.PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
@@ -53,34 +54,34 @@ func newNikePathVector(require *require.Assertions, mynike nike.Scheme, nrHops i
 	}
 
 	// Assemble the path vector.
-	path := make([]*PathHop, nrHops)
-	for i := range path {
-		path[i] = new(PathHop)
-		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].NIKEPublicKey = nodes[i].publicKey
+	p := make([]*path.PathHop, nrHops)
+	for i := range p {
+		p[i] = new(path.PathHop)
+		copy(p[i].ID[:], nodes[i].id[:])
+		p[i].NIKEPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
 			delay.Delay = delayBase * uint32(i+1)
-			path[i].Commands = append(path[i].Commands, delay)
+			p[i].Commands = append(p[i].Commands, delay)
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
 			_, err := rand.Read(recipient.ID[:])
 			require.NoError(err, "failed to generate recipient")
-			path[i].Commands = append(path[i].Commands, recipient)
+			p[i].Commands = append(p[i].Commands, recipient)
 
 			// This is a SURB, add a surb_reply.
 			if isSURB {
 				surbReply := new(commands.SURBReply)
 				_, err := rand.Read(surbReply.ID[:])
 				require.NoError(err, "failed to generate surb_reply")
-				path[i].Commands = append(path[i].Commands, surbReply)
+				p[i].Commands = append(p[i].Commands, surbReply)
 			}
 		}
 	}
 
-	return nodes, path
+	return nodes, p
 }
 
 func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {

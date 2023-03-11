@@ -22,6 +22,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -29,7 +30,7 @@ const (
 	sprpKeyMaterialLength = crypto.SPRPKeyLength + crypto.SPRPIVLength
 )
 
-func (s *Sphinx) newNikeSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+func (s *Sphinx) newNikeSURB(r io.Reader, path []*path.PathHop) ([]byte, []byte, error) {
 	// Create a random SPRP key + iv for the recipient to use to encrypt
 	// the payload when using the SURB.
 	var keyPayload [sprpKeyMaterialLength]byte

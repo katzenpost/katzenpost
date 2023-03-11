@@ -27,6 +27,7 @@ import (
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 func BenchmarkKEMSphinxUnwrapKyber512(b *testing.B) {
@@ -86,7 +87,7 @@ func benchNewKEMNode(mykem kem.Scheme) *kemNodeParams {
 	return n
 }
 
-func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNodeParams, []*PathHop) {
+func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNodeParams, []*path.PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
@@ -96,16 +97,16 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 	}
 
 	// Assemble the path vector.
-	path := make([]*PathHop, nrHops)
-	for i := range path {
-		path[i] = new(PathHop)
-		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].KEMPublicKey = nodes[i].publicKey
+	p := make([]*path.PathHop, nrHops)
+	for i := range p {
+		p[i] = &path.PathHop{}
+		copy(p[i].ID[:], nodes[i].id[:])
+		p[i].KEMPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
 			delay.Delay = delayBase * uint32(i+1)
-			path[i].Commands = append(path[i].Commands, delay)
+			p[i].Commands = append(p[i].Commands, delay)
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
@@ -113,7 +114,7 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 			if err != nil {
 				panic(err)
 			}
-			path[i].Commands = append(path[i].Commands, recipient)
+			p[i].Commands = append(p[i].Commands, recipient)
 
 			// This is a SURB, add a surb_reply.
 			if isSURB {
@@ -123,10 +124,10 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 					panic(err)
 				}
 
-				path[i].Commands = append(path[i].Commands, surbReply)
+				p[i].Commands = append(p[i].Commands, surbReply)
 			}
 		}
 	}
 
-	return nodes, path
+	return nodes, p
 }

@@ -1,69 +1,39 @@
-package client2
+package sphinx
 
 import (
-	"errors"
 	"fmt"
-	mRand "math/rand"
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
-// PathFactory is used to compose Sphinx packet paths.
-type PathFactory interface {
-
-	// ComposePath is used to compose a Sphinx packet path. Returns
-	// path and round trip time or an error.
-	ComposePath(
-		doc *pki.Document,
-		srcMix *[32]byte,
-		dstId []byte,
-		dstMix *[32]byte,
-		surbID *[constants.SURBIDLength]byte,
-		baseTime time.Time,
-		isForward bool) (path []*sphinx.PathHop, rtt time.Time, err error)
-}
-
 // PacketFactory is used to compose Sphinx packets.
-type PacketFactory interface {
-
-	// ComposePacket is used to compose Sphinx packets. Returns
-	// a Sphinx packet, a surbKey and round trip time or an error.
-	ComposePacket(
-		doc *pki.Document,
-		srcId []byte,
-		srcMix *[32]byte,
-		dstId []byte,
-		dstMix *[32]byte,
-		surbID *[constants.SURBIDLength]byte,
-		message []byte) (packet []byte, surbKey []byte, rtt time.Duration, err error)
-}
-
-type packetFactory struct {
-	pathFactory PathFactory
-	geo         *sphinx.Geometry
-	sphinx      *sphinx.Sphinx
+type PacketFactory struct {
+	pathFactory *path.PathFactory
+	geo         *geo.Geometry
+	sphinx      *Sphinx
 }
 
 // PacketFactoryOption is an option to the Sphinx packet factory.
-type PacketFactoryOption func(*packetFactory)
+type PacketFactoryOption func(*PacketFactory)
 
 // WithPathFactory is used to set the path factory.
-func WithPathFactory(pathFactory PathFactory) PacketFactoryOption {
-	return func(packetFactory *packetFactory) {
-		packetFactory.pathFactory = pathFactory
+func WithPathFactory(pathFactory *path.PathFactory) PacketFactoryOption {
+	return func(PacketFactory *PacketFactory) {
+		PacketFactory.pathFactory = pathFactory
 	}
 }
 
-func newPacketFactory(opts ...PacketFactoryOption) *packetFactory {
-	factory := &packetFactory{
-		pathFactory: new(defaultPathFactory),
-		geo:         sphinx.DefaultGeometry(),
+func NewPacketFactory(geo *geo.Geometry, opts ...PacketFactoryOption) *PacketFactory {
+	factory := &PacketFactory{
+		pathFactory: new(path.PathFactory),
+		geo:         geo,
 	}
 	for _, opt := range opts {
 		opt(factory)
@@ -71,7 +41,7 @@ func newPacketFactory(opts ...PacketFactoryOption) *packetFactory {
 	return factory
 }
 
-func (p *packetFactory) ComposePacket(
+func (p *PacketFactory) ComposePacket(
 	doc *pki.Document,
 	srcId []byte,
 	srcMix *[32]byte,
@@ -100,6 +70,7 @@ func (p *packetFactory) ComposePacket(
 		now := time.Unix(unixTime, 0)
 
 		fwdPath, then, err := p.pathFactory.ComposePath(
+			p.geo,
 			doc,
 			srcMix,
 			dstId,
@@ -111,9 +82,10 @@ func (p *packetFactory) ComposePacket(
 			return nil, nil, 0, err
 		}
 
-		revPath := make([]*sphinx.PathHop, 0)
+		revPath := make([]*path.PathHop, 0)
 		if surbID != nil {
 			revPath, then, err = p.pathFactory.ComposePath(
+				p.geo,
 				doc,
 				dstMix,
 				srcId,
@@ -160,36 +132,4 @@ func (p *packetFactory) ComposePacket(
 			}
 		}
 	}
-}
-
-type defaultPathFactory struct {
-	rng *mRand.Rand
-}
-
-func newDefaultPathFactory() *defaultPathFactory {
-	return &defaultPathFactory{
-		rng: rand.NewMath(),
-	}
-}
-
-// ComposePath is used to compose a Sphinx packet path. Returns
-// path and round trip time or an error.
-func (d *defaultPathFactory) ComposePath(
-	doc *pki.Document,
-	srcMix *[32]byte,
-	dstId []byte,
-	dstMix *[32]byte,
-	surbID *[constants.SURBIDLength]byte,
-	baseTime time.Time,
-	isForward bool) (outputPath []*sphinx.PathHop, rtt time.Time, err error) {
-
-	src, err := doc.GetProviderByKeyHash(srcMix)
-	if err != nil {
-		return nil, time.Time{}, errors.New("failed to find entry mix in pki doc")
-	}
-	dst, err := doc.GetProviderByKeyHash(dstMix)
-	if err != nil {
-		return nil, time.Time{}, errors.New("failed to find service mix in pki doc")
-	}
-	return path.New(d.rng, doc, dstId, src, dst, surbID, baseTime, true, isForward)
 }
