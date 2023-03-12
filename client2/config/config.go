@@ -12,9 +12,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
-	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
-	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -96,43 +96,6 @@ func (d *Debug) fixup() {
 	}
 }
 
-// VotingAuthority is a voting authority configuration.
-type VotingAuthority struct {
-	Peers []*vServerConfig.Authority
-}
-
-// New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
-	cfg := &vClient.Config{
-		LinkKey:       linkKey,
-		LogBackend:    l,
-		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
-	}
-	return vClient.New(cfg)
-}
-
-func (vACfg *VotingAuthority) validate() error {
-	if vACfg.Peers == nil || len(vACfg.Peers) == 0 {
-		return errors.New("error VotingAuthority failure, must specify at least one peer")
-	}
-	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
-			return errors.New("invalid voting authority peer")
-		}
-	}
-	return nil
-}
-
-// NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
-	switch {
-	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey)
-	}
-	return nil, errors.New("no Authority found")
-}
-
 // UpstreamProxy is the outgoing connection proxy configuration.
 type UpstreamProxy struct {
 	// Type is the proxy type (Eg: "none"," socks5").
@@ -167,13 +130,69 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
+type PinnedProviders struct {
+	Providers []*Provider
+}
+
+// Provider describes all necessary Provider connection information
+// so that clients can connect to the Provider and use the mixnet
+// and retrieve cached PKI documents.
+type Provider struct {
+	// Name is the human readable (descriptive) node identifier.
+	Name string
+
+	// IdentityKey is the node's identity (signing) key.
+	IdentityKey sign.PublicKey
+
+	// LinkKey is the node's wire protocol public key.
+	LinkKey wire.PublicKey
+
+	// Addresses is the map of transport to address combinations that can
+	// be used to reach the node.
+	Addresses map[string][]string
+}
+
+func (p *Provider) UnmarshalTOML(v interface{}) error {
+	_, p.IdentityKey = cert.Scheme.NewKeypair()
+	_, p.LinkKey = wire.DefaultScheme.GenerateKeypair(rand.Reader)
+
+	data, _ := v.(map[string]interface{})
+	p.Name = data["Name"].(string)
+	err := p.IdentityKey.UnmarshalText([]byte(data["IdentityKey"].(string)))
+	if err != nil {
+		return err
+	}
+	err = p.LinkKey.UnmarshalText([]byte(data["LinkKey"].(string)))
+	if err != nil {
+		return err
+	}
+
+	m := data["Addresses"].(map[string]interface{})
+	p.Addresses = make(map[string][]string)
+
+	for k, v := range m {
+		values := make([]string, 0)
+		if v == nil {
+			return fmt.Errorf("error: KEY %s has nil value\n", k)
+		} else {
+			vals := v.([]interface{})
+			for i := 0; i < len(vals); i++ {
+				values = append(values, vals[i].(string))
+			}
+		}
+		p.Addresses[k] = values
+	}
+
+	return nil
+}
+
 // Config is the top level client configuration.
 type Config struct {
+	PinnedProviders *PinnedProviders
 	SphinxGeometry  *geo.Geometry
 	Logging         *Logging
 	UpstreamProxy   *UpstreamProxy
 	Debug           *Debug
-	VotingAuthority *VotingAuthority
 	upstreamProxy   *proxy.Config
 }
 
@@ -186,6 +205,13 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.PinnedProviders == nil {
+		return errors.New("config: No PinnedProviders block was present")
+	}
+	if len(c.PinnedProviders.Providers) == 0 {
+		return errors.New("config: No PinnedProviders block was present")
+	}
+
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
 	}
@@ -215,14 +241,6 @@ func (c *Config) FixupAndValidate() error {
 	} else {
 		return err
 	}
-	switch {
-	case c.VotingAuthority != nil:
-		if err := c.VotingAuthority.validate(); err != nil {
-			return fmt.Errorf("config: VotingAuthority is invalid: %s", err)
-		}
-	default:
-		return fmt.Errorf("config: Authority configuration is invalid")
-	}
 
 	return nil
 }
@@ -231,6 +249,7 @@ func (c *Config) FixupAndValidate() error {
 // returns the Config.
 func Load(b []byte) (*Config, error) {
 	cfg := new(Config)
+
 	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
