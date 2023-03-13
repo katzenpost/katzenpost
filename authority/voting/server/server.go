@@ -339,7 +339,7 @@ func New(cfg *config.Config) (*Server, error) {
 		u, err := url.Parse(v)
 		if err == nil {
 			switch u.Scheme {
-			case "http":
+			case "ws":
 				l, err := net.Listen("tcp", u.Hostname()+":"+u.Port())
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)

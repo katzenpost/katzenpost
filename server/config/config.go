@@ -115,8 +115,10 @@ func (sCfg *Server) validate() error {
 
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
-			if err := utils.EnsureAddrIPPort(v); err != nil {
-				return fmt.Errorf("config: Server: Address '%v' is invalid: %v", v, err)
+			if u, err := url.Parse(v); err != nil {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+			} else if u.Port() == "" {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
 		}
 	} else {
@@ -128,7 +130,7 @@ func (sCfg *Server) validate() error {
 			return err
 		}
 
-		sCfg.Addresses = []string{addr.String() + defaultAddress}
+		sCfg.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
 	}
 
 	internalTransports := make(map[string]bool)
@@ -694,10 +696,11 @@ type Nonvoting struct {
 }
 
 func (nCfg *Nonvoting) validate(datadir string) error {
-	if err := utils.EnsureAddrIPPort(nCfg.Address); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
+	if u, err := url.Parse(nCfg.Address); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Address '%v' is invalid: %v", nCfg.Address, err)
+	} else if u.Port() == "" {
+		return fmt.Errorf("config: PKI/Nonvoting: Address '%v' is invalid: Must contain Port", nCfg.Address)
 	}
-
 	return nil
 }
 
