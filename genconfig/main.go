@@ -319,35 +319,9 @@ func (s *katzenpost) genAuthConfig() error {
 	return nil
 }
 
-func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, paramsFile string, nrLayers int) error {
+func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int) error {
 
 	configs := []*vConfig.Config{}
-
-	parameters := &vConfig.Parameters{
-		SendRatePerMinute: 0,
-		Mu:                0.1,
-		MuMaxDelay:        100,
-		LambdaP:           0.2,
-		LambdaPMaxDelay:   100,
-		LambdaL:           0.0005,
-		LambdaLMaxDelay:   100,
-		LambdaD:           0.0005,
-		LambdaDMaxDelay:   3000,
-		LambdaM:           0.2,
-		LambdaMMaxDelay:   100,
-	}
-
-	if paramsFile != "" {
-		b, err := os.ReadFile(paramsFile)
-		if err != nil {
-			return err
-		}
-		err = toml.Unmarshal(b, &parameters)
-		if err != nil {
-			return err
-		}
-		log.Printf("Using params from %s (Mu=%f)", paramsFile, parameters.Mu)
-	}
 
 	// initial generation of key material for each authority
 	s.authorities = make(map[[32]byte]*vConfig.Authority)
@@ -422,10 +396,10 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	mixes := []*vConfig.Node{}
 	providers := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
-        node := &vConfig.Node{
-            Identifier:           nodeCfg.Server.Identifier,
-            IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
-        }
+		node := &vConfig.Node{
+			Identifier:           nodeCfg.Server.Identifier,
+			IdentityPublicKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
+		}
 		if nodeCfg.Server.IsProvider {
 			providers = append(providers, node)
 		} else {
@@ -450,9 +424,36 @@ func main() {
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
-	paramsFile := flag.String("t", "", "Path to read params.toml from (optional)")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
+
+	sr := flag.Uint64("sr", 0, "Sendrate limit")
+	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
+	muMax := flag.Uint64("muMax", 1000, "Maximum delay for Mu.")
+	lP := flag.Float64("lP", 0.001, "Inverse of mean for client send rate LambdaP")
+	lPMax := flag.Uint64("lPMax", 1000, "Maximum delay for LambdaP.")
+	lL := flag.Float64("lL", 0.0005, "Inverse of mean of loop decoy send rate LambdaL")
+	lLMax := flag.Uint64("lLMax", 1000, "Maximum delay for LambdaL")
+	lD := flag.Float64("lD", 0.0005, "Inverse of mean of drop decoy send rate LambdaD")
+	lDMax := flag.Uint64("lDMax", 3000, "Maximum delay for LambaD")
+	lM := flag.Float64("lM", 0.2, "Inverse of mean of mix decoy send rate")
+	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
+
 	flag.Parse()
+
+	parameters := &vConfig.Parameters{
+		SendRatePerMinute: *sr,
+		Mu:                *mu,
+		MuMaxDelay:        *muMax,
+		LambdaP:           *lP,
+		LambdaPMaxDelay:   *lPMax,
+		LambdaL:           *lL,
+		LambdaLMaxDelay:   *lLMax,
+		LambdaD:           *lD,
+		LambdaDMaxDelay:   *lDMax,
+		LambdaM:           *lM,
+		LambdaMMaxDelay:   *lMMax,
+	}
+
 	s := &katzenpost{}
 
 	s.baseDir = *baseDir
@@ -466,7 +467,7 @@ func main() {
 
 	if *voting {
 		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting, *paramsFile, *nrLayers)
+		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
