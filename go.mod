@@ -40,25 +40,35 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.1.0 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
+	github.com/golang/mock v1.6.0 // indirect
+	github.com/google/pprof v0.0.0-20210407192527-94a9f03dee38 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/oasislabs/deoxysii v0.0.0-20190807103041-6159f99c2236 // indirect
+	github.com/onsi/ginkgo/v2 v2.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.39.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
+	github.com/quic-go/qtls-go1-19 v0.2.1 // indirect
+	github.com/quic-go/qtls-go1-20 v0.1.1 // indirect
+	github.com/quic-go/quic-go v0.33.0 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	gitlab.com/yawning/slice.git v0.0.0-20190714152416-bc4ae2510529 // indirect
+	golang.org/x/exp v0.0.0-20221205204356-47842c84f3db // indirect
+	golang.org/x/mod v0.6.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/tools v0.2.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
