@@ -3,13 +3,18 @@ package client2
 import (
 	"time"
 
-	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/client2/config"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
-type Client interface {
+type Client struct {
+	pki *pki
+	cfg *config.Config
+}
 
+/*
 	// ReconnectOldSession reuses the old noise protocol key to reconnect to
 	// a previously selected entry mix.
 	ReconnectOldSession(Session) error
@@ -23,7 +28,7 @@ type Client interface {
 
 	// Shutdown shuts down the client.
 	Shutdown()
-}
+*/
 
 // SendMessageDescriptor describes a message to be sent.
 type SendMessageDescriptor struct {
@@ -45,8 +50,9 @@ type SendMessageDescriptor struct {
 
 // Session is the cryptographic noise protocol session with the entry mix and
 // manages all that is related to sending and receiving messages.
-type Session interface {
+type Session struct{}
 
+/*
 	// Start initiates the network connections and starts the worker thread.
 	Start()
 
@@ -57,11 +63,11 @@ type Session interface {
 	SendSphinxPacket(pkt []byte) error
 
 	// CurrentDocument returns the current PKI doc.
-	CurrentDocument() *pki.Document
+	CurrentDocument() *cpki.Document
 
 	// Shutdown shuts down the session.
 	Shutdown()
-}
+*/
 
 // AutomaticRepeatRequest is a type of error correction strategy where
 // dropped packets are resent.

@@ -15,7 +15,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/pki"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 
@@ -81,7 +81,11 @@ type Debug struct {
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []pki.Transport
+	PreferedTransports []cpki.Transport
+
+	// EnableTimeSync enables the use of skewed remote provider time
+	// instead of system time when available.
+	EnableTimeSync bool
 }
 
 func (d *Debug) fixup() {
@@ -188,12 +192,27 @@ func (p *Provider) UnmarshalTOML(v interface{}) error {
 
 // Config is the top level client configuration.
 type Config struct {
+	// PinnedProviders
 	PinnedProviders *PinnedProviders
-	SphinxGeometry  *geo.Geometry
-	Logging         *Logging
-	UpstreamProxy   *UpstreamProxy
-	Debug           *Debug
-	upstreamProxy   *proxy.Config
+
+	// SphinxGeometry
+	SphinxGeometry *geo.Geometry
+
+	// Logging
+	Logging *Logging
+
+	// UpstreamProxy can be used to setup a SOCKS proxy for use with a VPN or Tor.
+	UpstreamProxy *UpstreamProxy
+
+	// Debug is used to set various parameters.
+	Debug *Debug
+
+	// CachedDocument is a PKI Document that has a MixDescriptor
+	// containg the Addresses and LinkKeys of minclient's Provider
+	// so that it can connect directly without contacting an Authority.
+	CachedDocument *cpki.Document
+
+	upstreamProxy *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for

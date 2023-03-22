@@ -1,0 +1,107 @@
+
+[Logging]
+  Disable = false
+  File = ""
+  Level = "DEBUG"
+
+[UpstreamProxy]
+  Type = "none"
+  Network = ""
+  Address = ""
+  User = ""
+  Password = ""
+
+[Debug]
+  DisableDecoyTraffic = false
+  SessionDialTimeout = 0
+  InitialMaxPKIRetrievalDelay = 0
+  PollingInterval = 0
+
+[PinnedProviders]
+[[PinnedProviders.Providers]]
+Name = "Provider1"
+Addresses = { "tcp" = ["localhost:30004"] }
+IdentityKey = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
+7tLt9ZGCWMaW+TjOCgroU3Po01q6Tac2cu8LFc4IqnbmmGyISlu+MhXrkmfdWUPu
+tUt4b4FBzBoIcnvcte8iZoH7SbaI8y38b8FBljuw1EIynzaFvfsmoXwgfKcCuddA
+-----END ED25519 SPHINCS+ PUBLIC KEY-----"""
+LinkKey = """-----BEGIN KYBER768-X25519 PUBLIC KEY-----
+tftCAF9Uqe68UEJgrP75khSivaR0IkGYjadD5RV74lVBmyRI6JQZxrEwlIGO+ZYD
+ppUzI0/bCYyjprdz2ZAXaF5mxg1VhzSR56TSm2zPrL4RCQmFrJkb0TQIigD0xc5A
+VoeJIBcygRV9ho/US8VhWKiyhJEFDEFB0gtsZ8eOpaOeBMpmRCbqLMqKFj/7/EjS
+l5gEepfn9bGkUlRQK5KUkkdY8lrLdRrnEWiKR2QgSJZvyjZDtyQpBUiC1q8fcH08
+xg/EobpSuITSDLbFM4pDxSw2p2AZWA8gpZPZQqq1RwvEm7dxksqnWlfyB05i5Vc7
+pc31ArioWn08t32/ly174kN+FDgiVqzebJUo9wSL3Elzk8DP8W1JijZmVr4lMaLZ
+2H7h0Ksi0ozm5caYY0olgsBq0jHU84/ZxHMVo7g6gahAtKkGNzITy30pRZ6APGka
+KzXk4pVVIINLNn/GYQimial3A2Z4ize8kivA9WlzZRgxjChnI7rdWS6Ci3D+Qjy0
+2W3KLIGeUWOLZn5J5bVGjDEKtXx9pIeSucNKlxvf1mFBEgxoOY0gSZD0jD7i8AV6
+5bPPMx0VoWsDkb61JqXZdQ+fOlsg64AtKKG7+mafVlQbsgAIimOBvAzHUBfl+yBr
+Jz4lwae/uYGO9wGAVLeOJb9vOH7awBWyVH5q8Suh6Vl/hE+xqQBjQaBRWy5ObIYL
+MpRhxbvyzLwRK2xFTLouzL049TSvKM141oA+4nEOZj7ctUwj23v+ZXcmOpmqxasD
+dKUYyRDMrFFgzE/5EKJ+KA4NugIRuUbzikttBwEq1ALcNT3taKYvQpgGCi1L+YHM
+lWkLRFHXM1oww767qpCrMWmH1RLieh5d0GlOcKmsRAkTSr1ttRIYSzxd+aHFpQis
+6X9g4olmWZx9DACYK2pCdMpoiJn3ZMqe9g+gVzaCpbIRto04pTxkuozfFl+eu0gN
+wkUmtMF61QhMWJNrxAfXWM/XWHx82R0y66EB06wxAggVVCFEGxNgAm54yX0e+BS8
+W8bcEVXRBcZTwmjm2MHCqEBTenvXcS7I05OL048NYrAYCwfmmbI4yWVmIWnM067a
+V62ZPJyRUm0i8GiPtLqQoYV8+mKTumrAnCNB8gZghGEuMzgpQiEpw79KuL/cEAdI
+q3RYuKJYxqnpY5KaZxZZMUhHwQj0U25q1S93PERHp55Hi3vl9zBaPBNIqFAVZcIr
+WSJRWz19Icg2yHTRFSLY4YFxAXo+hFBlZpEhsGpUahWySWOdE8Fz+YWj6QfsuMFJ
+gzuQA72A3Gt7J02xqJKCBZLUzBvCmTJNM4UzDKNtmRVip7TDUaamehT9U8p3szpV
+Gx1Gk1UEwADvHKhckQ9C9ye3ikmXOJoLahVo0lLgNyp1jDd4hiOmYL9laUDRW3ig
+1QwrK431EZOSQ3lBAbHgca8SjL6fuxGNIw5vYoBUen2s6GwdwhFimlygZLWLdo0A
+wsjEeh+IYJLjUlA4ZJRJvM5ckmnNo5y3ZMQA2Fik125cJYO8bCc+x7puswmPBshp
+Q6ni0HzlBq4ClSe9aEfBVD6PSy8kw4+AC2/fCDPtJ6iI6vVmN//bIWLogRx2NsgV
+u2lHb8xbayqhfyRlSiaDvg==
+-----END KYBER768-X25519 PUBLIC KEY-----"""
+[[PinnedProviders.Providers]]
+Name = "Provider2"
+Addresses = { "tcp" = ["127.0.0.1:30005"] }
+IdentityKey = """-----BEGIN ED25519 SPHINCS+ PUBLIC KEY-----
+0qSNCen0QdXsPnzbbIRl4XXhP1l0ohEYmnNUUBuV6RL1fInMDd1vvpE8Pko6i2Zr
+/lbQXDvyTd+Luq30PqWeTkys/VX9RY9vTtejMYBONeFlC9yam1CTeG9kK7RZdQbL
+-----END ED25519 SPHINCS+ PUBLIC KEY-----"""
+LinkKey = """-----BEGIN KYBER768-X25519 PUBLIC KEY-----
+RmkCmlVmLI3ocrR6m78aYxavBJImXuvqgRdDBtVdNlnKVTixl0o1IHouQDg2AqCU
+KBr91xOVtUcvPFUE5Kl5JB8WRUBAoysJ5aSwmgbvlLDFor1PETAt8k4fRogt5qmn
+qUlQy52w53sJ0DFUe5WkOWew9AKrqozDwgkshLl3eAWafEJUvFVpZ5kWhVgW1pOE
+PCbRsiXd85OFUH6QCax8ahkMjIzrRq+vYi9BsprYrLxfZyvVAVaq6XBzeJYlyQ5L
+5yplAcWZlbisyaysY0UCWSgjU4i9120OaUZetcU51JuYRq4meMWnwM7a9adcB2e+
+ey8YVJDNSFiJMFgBYFSblDVUhbWp+Wfosl0IuW+X6l53K8ZXS6URJrPrZkXwN7Bq
+uYxUOrl+2s4+F08sM4muEaTh9KIEWyOV1rE5ZTDAyJdrF68j0iNCJWLnUnXUyh/J
+G7lhy2lbSSSK8DH44CatpR+WnGw0UnrCcxpx8s+rtiaHd60y/KMra4m3thJb0l3T
+i4D71W+O5hXY94xu5aOurAPYYr5eOztnYhrJunwHALRKGH5MtkZBa2nKp4BX8XJc
+q6vCjA/EAkRaq1Y9uiiKO4y8LAq3Q87VEoWHfIKtUz/8tDrLisKa2o7lulNGYcVF
+w16UE7bQ6SuueKzHimOzU1+cmSYSIqMGGFv9tX0wcal4CaZyaBUcYWznUnau+WU4
+VhloMUMLgROJwWBOtGhURjaOCG36BJdTgjsdFMFd8V2NBageJ6oMA7KGNBYndVb9
+ZEsohK2L2j6/ZEBV6XU0skay12lL4j5xHJePOg+4cJqHO38zJk47KQW1BrpVs1nm
+OZ86ijBo01+zCmIS+y/B0A7TtXTTIB2YIxheKrhfhRkS6iYwyDDj6DDBI2P4c4vQ
+wyi4eJkCllWUZmI5FRMLOYM5TBNtKQrHh8ntwyhQWXOiwmVmJSxaiQqgiJV492C/
+RHTigMh10pHREm/+dp95K3xylhLDqbk5mqQscR5Q0bkgwb35MReUnFpTmxGNR7s+
+pkCOuBeadHzCxotHg7Vrgi9Aak7YMlgXZHAvsnFDCAJiQ8ioVlWAtrDmoUdbJscC
+JmbM674DDF+1upGwOs/qFIN+5DLraFdkOQWGiKSZqDXu1HHeOSsHsZZe/D4p/DHk
+OXKPgBVQ5UU7qiHJ0zRSowm9Vmz/2gh/elL3d3Sep2lLoUnN+1HpRCqJ4w8WUhe7
+lR4mWlTIMsz2YLn71EWAUYSwR5Z9dxKACkdzEjG0IRtluQw+FgovUGYYu5X9Q7ro
+xFX3BxQJUrZ3M2mumgrSgnhcmpUkdyjZlSs3uxtq+ASMBILePK2t0a9BuZTwbH4g
+G37dOraLBiYgeZy4oMCFqi21K5A5RqP3qXMSUj8mlq7eoSxR+LHgqm0rgUUZxjWC
+NqP5WnbQg47JTLWhGLjrZZTHaV1MGgPAapak5kYJdlZpJbg3mTBjsKmv4K9ze7SX
+EjDv6HDnJx0c4KYhdXIxKbKk57EdsGfHOqmYUJ2W5mQDADjBWRJgxmL7UViHmpMz
+PMNqiQdrhTeQ+mVryJJjwJBPajZ1NYvyAFmzGG8EqYKun96YsLwasxUw5S1PYrmU
+pcxC64j9CLhmeD4LeOa5Tw==
+-----END KYBER768-X25519 PUBLIC KEY-----"""
+
+
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
