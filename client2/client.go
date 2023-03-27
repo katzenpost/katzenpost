@@ -1,17 +1,35 @@
 package client2
 
 import (
+	mRand "math/rand"
+	"sync"
 	"time"
+
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
 type Client struct {
-	pki *pki
-	cfg *config.Config
+	pki  *pki
+	cfg  *config.Config
+	log  *logging.Logger
+	conn *connection
+
+	geo    *geo.Geometry
+	sphinx *sphinx.Sphinx
+
+	rng *mRand.Rand
+
+	displayName string
+
+	haltedCh chan interface{}
+	haltOnce sync.Once
 }
 
 /*
