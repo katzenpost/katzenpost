@@ -18,6 +18,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"github.com/fxamacker/cbor/v2"
 	bolt "go.etcd.io/bbolt"
@@ -31,6 +32,7 @@ import (
 
 const (
 	mapBucket = "map"
+	gcBucket  = "gc"
 )
 
 // Map holds reference to the database and logger and provides methods to store and retrieve data
@@ -38,6 +40,9 @@ type Map struct {
 	worker.Worker
 	log *logging.Logger
 	db  *bolt.DB
+
+	mapSize int // number of entries to keep
+	gcSize  int // number of entries to place in each garbage bucket
 }
 
 // Get retrieves an item from the db
@@ -75,14 +80,55 @@ func (m *Map) Put(msgID common.MessageID, payload []byte) error {
 		if err != nil {
 			return err
 		}
+
+		// get current gc bucket
+		bkt = tx.Bucket([]byte(gcBucket))
+		var b [8]byte
+		binary.BigEndian.PutUint64(b[:], bkt.Sequence())
+		gcbkt, err := bkt.CreateBucketIfNotExists(b[:])
+		if err != nil {
+			return err
+		}
+		// create new bucket if current bucket is full
+		if gcbkt.Stats().KeyN >= m.gcSize {
+			i, err := bkt.NextSequence()
+			if err != nil {
+				return err
+			}
+			binary.BigEndian.PutUint64(b[:], i)
+			gcbkt, err = bkt.CreateBucketIfNotExists(b[:])
+			if err != nil {
+				return err
+			}
+		}
+
+		// store msgID in gcBucket
+		gcbkt.Put(msgID[:], []byte{0x1})
+
+		// use gcBktIdex to get handle to gcBkt
+		// if gcBkt is == gcsize increment gcBktIdx, create new bkt, update gcBkt handle
+		// store msgID under gcBkt
 		return nil
 	})
 }
 
-// GarbageCollect prunes items older than time
-// XXX: timestamps must not be granular than an epoch period (weekly or key rotation - which?)
-func (m *Map) GarbageCollect(before time.Time) error {
-	return nil
+// GarbageCollect prunes the oldest bucket of entries when the map size limit is exceeded
+func (m *Map) GarbageCollect() error {
+	return m.db.Update(func(tx *bolt.Tx) error {
+		bkt := tx.Bucket([]byte(gcBucket))
+		size := bkt.Stats().InlineBucketN * m.gcSize
+		if size > m.mapSize {
+			// delete map entries in the oldest gcBkt
+			k, _ := bkt.Cursor().First()
+			gcbkt := bkt.Bucket(k)
+			mbkt := tx.Bucket([]byte(mapBucket))
+			gcbkt.ForEach(func(k, v []byte) error {
+				return mbkt.Delete(k)
+			})
+			bkt.DeleteBucket(k)
+		}
+		return nil
+	})
 }
 
 func (m *Map) Shutdown() {
@@ -98,15 +144,17 @@ func (m *Map) worker() {
 		case <-m.HaltCh():
 			return
 		case <-time.After(1 * time.Hour):
-			m.GarbageCollect(time.Now().Add(-24 * time.Hour))
+			m.GarbageCollect()
 		}
 	}
 }
 
 // NewMap instantiates a map
-func NewMap(fileStore string, log *logging.Logger) (*Map, error) {
+func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Map, error) {
 	m := &Map{
-		log: log,
+		log:     log,
+		mapSize: mapSize,
+		gcSize:  gcSize,
 	}
 	db, err := bolt.Open(fileStore, 0600, nil)
 	if err != nil {
@@ -117,6 +165,9 @@ func NewMap(fileStore string, log *logging.Logger) (*Map, error) {
 	m.db = db
 	if err = m.db.Update(func(tx *bolt.Tx) error {
 		if _, err := tx.CreateBucketIfNotExists([]byte(mapBucket)); err != nil {
+			return err
+		}
+		if _, err := tx.CreateBucketIfNotExists([]byte(gcBucket)); err != nil {
 			return err
 		}
 		return nil

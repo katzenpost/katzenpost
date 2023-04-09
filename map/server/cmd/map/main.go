@@ -29,13 +29,22 @@ import (
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
+const (
+	defaultMapSize = 0x1 << 32 // 4 GB
+	defaultGCSize = 0x1 << 30 // 1 GB
+)
+
 func main() {
 	var logLevel string
 	var logDir string
 	var dbFile string
+	var mapSize int
+	var gcSize int
 	flag.StringVar(&dbFile, "db", "", "database file")
 	flag.StringVar(&logDir, "log_dir", "", "logging directory")
 	flag.StringVar(&logLevel, "log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
+	flag.IntVar(&mapSize, "size", defaultMapSize, "number of entries to retain")
+	flag.IntVar(&gcSize, "gc", defaultGCSize, "number of entries to batch garbage collect")
 	flag.Parse()
 
 	// Verify that a storage path is provided.
@@ -70,7 +79,7 @@ func main() {
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.map.socket", os.Getpid()))
 
-	mapServer, err := server.NewMap(dbFile, serverLog)
+	mapServer, err := server.NewMap(dbFile, serverLog, gcSize, mapSize)
 	if err != nil {
 		panic(err)
 	}
