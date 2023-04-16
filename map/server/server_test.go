@@ -33,7 +33,7 @@ func TestCreateMap(t *testing.T) {
 	require.NoError(err)
 	f := filepath.Join(tmpDir, "map.store")
 	log := logging.MustGetLogger("map")
-	m, err := NewMap(f, log)
+	m, err := NewMap(f, log, 10, 100)
 	require.NoError(err)
 	m.Halt()
 
@@ -49,7 +49,7 @@ func TestMap(t *testing.T) {
 	require.NoError(err)
 	f := filepath.Join(tmpDir, "map.store")
 	log := logging.MustGetLogger("map")
-	m, err := NewMap(f, log)
+	m, err := NewMap(f, log, 10, 100)
 	require.NoError(err)
 
 	// put data in a key
@@ -70,11 +70,70 @@ func TestMap(t *testing.T) {
 	m.Shutdown()
 
 	// restart the server
-	m, err = NewMap(f, log)
+	m, err = NewMap(f, log, 10, 100)
 
 	// verify the data is still there
 	data, err = m.Get(msgID)
 	require.Equal(data, payload)
+
+	// clean up
+	err = os.RemoveAll(tmpDir)
+	require.NoError(err)
+}
+
+func TestGarbageCollect(t *testing.T) {
+	// start a map service
+	require := require.New(t)
+	tmpDir, err := ioutil.TempDir("", "map_test")
+	require.NoError(err)
+	//defer os.RemoveAll(tmpDir)
+	f := filepath.Join(tmpDir, "map.store")
+	log := logging.MustGetLogger("map")
+
+	// garbage collection parameters
+	gcsize := 10
+	mapsize := 100
+
+	m, err := NewMap(f, log, gcsize, mapsize)
+	require.NoError(err)
+
+	msgIDs := make([]common.MessageID, mapsize+1)
+	// fill map to mapSize + 1 to trigger GarbageCollection
+	for i := 0; i< mapsize + 1; i++ {
+		var msgID common.MessageID
+		_, err = rand.Reader.Read(msgID[:])
+		require.NoError(err)
+		payload := []byte("hola")
+		err = m.Put(msgID, payload)
+		require.NoError(err)
+
+		// keep ordered list of msgID
+		msgIDs[i] = msgID
+	}
+
+	// verify that the keys are available
+	for i := 0; i < gcsize; i ++ {
+		d, err := m.Get(msgIDs[i])
+		require.NoError(err)
+		require.Equal(d, []byte("hola"))
+	}
+	err = m.GarbageCollect()
+	require.NoError(err)
+
+	// verify that the keys are gone
+	for i := 0; i < gcsize; i ++ {
+		_, err := m.Get(msgIDs[i])
+		require.Error(err)
+	}
+
+	// verify that the next gcsize keys are still there
+	for i := gcsize; i < 2*gcsize; i ++ {
+		d, err := m.Get(msgIDs[i])
+		require.NoError(err)
+		require.Equal(d, []byte("hola"))
+	}
+
+	m.Shutdown()
 
 	// clean up
 	err = os.RemoveAll(tmpDir)
