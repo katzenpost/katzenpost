@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	defaultMapSize = 0x1 << 32 // 4 GB
-	defaultGCSize = 0x1 << 30 // 1 GB
+	defaultMapSize = 0x1 << 32 // 4B entries
+	defaultGCSize = 0x1 << 30 // 1B entries
 )
 
 func main() {
