@@ -19,6 +19,7 @@
 package client
 
 import (
+	"io"
 	"context"
 	"testing"
 
@@ -56,7 +57,9 @@ func TestCreateMap(t *testing.T) {
 	rwCap := common.NewRWCap(pk)
 
 	// get the id and writeKey for an addrress
-	addr := []byte("we can use whatever byte sequence we like as address here")
+	addr := make([]byte, 32)
+	_, err = io.ReadFull(rand.Reader, addr)
+	require.NoError(err)
 	id := rwCap.Addr(addr)
 	wKey := rwCap.Write(addr)
 
@@ -91,5 +94,6 @@ func TestCreateMap(t *testing.T) {
 	err = c.Put(id, woKey.Sign(payload2), payload2)
 	require.NoError(err)
 	resp, err := c.Get(id, roKey.Sign(id.Bytes()))
+	require.NoError(err)
 	require.Equal(payload2, resp)
 }
