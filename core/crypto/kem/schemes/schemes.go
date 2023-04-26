@@ -6,11 +6,15 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
+// NOTE(david): The CTIDH schemes won't work unless you build with
+// "ctidh" build tag.
 var allSchemes = [...]kem.Scheme{
 	adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
+	adapter.FromNIKE(hybrid.CTIDH1024X25519),
 }
 
 var allSchemeNames map[string]kem.Scheme
