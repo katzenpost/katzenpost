@@ -9,7 +9,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-var CTIDHX25519 nike.Scheme = &scheme{
+var CTIDH1024X25519 nike.Scheme = &scheme{
 	name:   "CTIDH-X25519",
 	first:  nil,
 	second: ecdh.NewEcdhNike(rand.Reader),
