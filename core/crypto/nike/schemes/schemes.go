@@ -15,8 +15,8 @@ import (
 var allSchemes = [...]nike.Scheme{
 	csidh.CSIDHScheme,
 	ecdh.NewEcdhNike(rand.Reader),
-	hybrid.NOBS_CSIDHX25519,
-	hybrid.CTIDHX25519,
+	hybrid.NOBS_CSIDH512X25519,
+	hybrid.CTIDH1024X25519,
 }
 
 var allSchemeNames map[string]nike.Scheme
