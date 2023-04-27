@@ -61,6 +61,15 @@ type Scheme struct {
 	second kem.Scheme
 }
 
+// New creates a new hybrid KEM given the first and second KEMs.
+func New(name string, first kem.Scheme, second kem.Scheme) *Scheme {
+	return &Scheme{
+		name:   name,
+		first:  first,
+		second: second,
+	}
+}
+
 func (sch *Scheme) Name() string { return sch.name }
 func (sch *Scheme) PublicKeySize() int {
 	return sch.first.PublicKeySize() + sch.second.PublicKeySize()
