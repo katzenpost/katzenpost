@@ -2,9 +2,12 @@ package adapter
 
 import (
 	"crypto/hmac"
+
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/cloudflare/circl/kem"
+
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
@@ -117,7 +120,34 @@ func (a *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 		return nil, err
 	}
 	ss := a.nike.DeriveSecret(sk.(*PrivateKey).privateKey, pk.(*PublicKey).publicKey)
-	return ss, nil
+
+	var h blake2b.XOF
+	if len(ss) != 32 {
+		sum := blake2b.Sum256(ss)
+		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), sum[:])
+	} else {
+		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), ss)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = h.Write(sk.Public().(*PublicKey).publicKey.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = h.Write(pk.(*PublicKey).publicKey.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	ss2 := make([]byte, len(ss))
+	_, err = h.Read(ss2)
+	if err != nil {
+		return nil, err
+	}
+	return ss2, nil
 }
 
 // Unmarshals a PublicKey from the provided buffer.
@@ -195,7 +225,7 @@ func (a *Scheme) SeedSize() int {
 // key deterministically from the given seed and encapsulates it into
 // a ciphertext ct. If unsure, you're better off using Encapsulate().
 func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
-	ct, ss []byte, err error) {
+	[]byte, []byte, error) {
 	if len(seed) != a.EncapsulationSeedSize() {
 		return nil, nil, kem.ErrSeedSize
 	}
@@ -205,9 +235,37 @@ func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 	}
 
 	pk2, sk2 := a.DeriveKeyPair(seed)
-	ss = a.nike.DeriveSecret(sk2.(*PrivateKey).privateKey, pub.publicKey)
-	ct, _ = pk2.MarshalBinary()
-	return ct, ss, nil
+	ss := a.nike.DeriveSecret(sk2.(*PrivateKey).privateKey, pub.publicKey)
+
+	var h blake2b.XOF
+	var err error
+	if len(ss) != 32 {
+		sum := blake2b.Sum256(ss)
+		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), sum[:])
+	} else {
+		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), ss)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+
+	_, err = h.Write(pub.publicKey.Bytes())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	_, err = h.Write(pk2.(*PublicKey).publicKey.Bytes())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ss2 := make([]byte, len(ss))
+	_, err = h.Read(ss2)
+	if err != nil {
+		return nil, nil, err
+	}
+	ct, _ := pk2.MarshalBinary()
+	return ct, ss2, nil
 }
 
 // Size of seed used in EncapsulateDeterministically().
