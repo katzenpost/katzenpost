@@ -33,12 +33,18 @@ package hybrid
 import (
 	"errors"
 
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/sha3"
 
 	"github.com/cloudflare/circl/kem"
+
+	"github.com/katzenpost/katzenpost/panda/crypto/rijndael"
 )
 
-var ErrUninitialized = errors.New("public or private key not initialized")
+var (
+	ErrUninitialized            = errors.New("public or private key not initialized")
+	KEM_COMBINER_SPLIT_PRF_INFO = []byte("KEM COMBINER SPLIT PRF INFO")
+)
 
 // Public key of a hybrid KEM.
 type PublicKey struct {
@@ -202,6 +208,27 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	return &PublicKey{sch, pk1, pk2}, &PrivateKey{sch, sk1, sk2}
 }
 
+func prf(key *[32]byte, data *[32]byte) *[32]byte {
+	cipher := rijndael.NewCipher(key)
+	dst := &[32]byte{}
+	cipher.Encrypt(dst, data)
+	return dst
+}
+
+func splitPRF(ss1, ss2 []byte) []byte {
+	// attempt to implement split PRF KEM combiner,
+	// in order to retain IND-CCA2 security
+	// as described here:
+	// https://link.springer.com/chapter/10.1007/978-3-319-76578-5_7
+	key1 := blake2b.Sum256(ss1)
+	key2 := blake2b.Sum256(ss2)
+	info := new([32]byte)
+	copy(info[:len(KEM_COMBINER_SPLIT_PRF_INFO)], KEM_COMBINER_SPLIT_PRF_INFO)
+	ciphertext := prf(&key1, info)
+	ciphertext2 := prf(&key2, ciphertext)
+	return ciphertext2[:]
+}
+
 func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	pub, ok := pk.(*PublicKey)
 	if !ok {
@@ -218,7 +245,9 @@ func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 		return nil, nil, err
 	}
 
-	return append(ct1, ct2...), append(ss1, ss2...), nil
+	ss = splitPRF(ss1, ss2)
+
+	return append(ct1, ct2...), ss, nil
 }
 
 func (sch *Scheme) EncapsulateDeterministically(
@@ -270,7 +299,8 @@ func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(ss1, ss2...), nil
+
+	return splitPRF(ss1, ss2), nil
 }
 
 func (sch *Scheme) UnmarshalBinaryPublicKey(buf []byte) (kem.PublicKey, error) {
