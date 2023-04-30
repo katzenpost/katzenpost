@@ -15,6 +15,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
@@ -200,6 +201,12 @@ type Config struct {
 
 	// Logging
 	Logging *Logging
+
+	// LogBackend is the logging backend to use for client logging.
+	LogBackend *log.Backend
+
+	// PKIClient is the PKI Document data source.
+	PKIClient cpki.Client
 
 	// UpstreamProxy can be used to setup a SOCKS proxy for use with a VPN or Tor.
 	UpstreamProxy *UpstreamProxy

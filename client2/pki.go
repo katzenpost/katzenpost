@@ -284,7 +284,7 @@ func (p *pki) start() {
 func newPKI(c *Client) *pki {
 	p := new(pki)
 	p.c = c
-	p.log = c.cfg.LogBackend.GetLogger("minclient/pki:" + c.displayName)
+	p.log = c.cfg.LogBackend.GetLogger("client2/pki:" + c.displayName)
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
 	// Save cached documents
