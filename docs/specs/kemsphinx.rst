@@ -19,7 +19,9 @@ route length hiding.
 
 We'll express our KEM Sphinx header in pseudo code. The Sphinx body
 will be exactly the same as [SPHINXSPEC]_. Our basic KEM API
-has two functions:
+has three functions:
+
+* privkey, pubkey = GEN_KEYPAIR(RNG)
 
 * ct, ss = ENCAP(PUB_KEY) - Encapsulate generates a shared
   secret, ss, for the public key and encapsulates it into a ciphertext.
@@ -30,7 +32,72 @@ has two functions:
 Therefore we must embed these KEM ciphertexts in the KEMSphinx header,
 one KEM ciphertext per mix hop.
 
-2. KEMSphinx Header Design
+2. Post Quantum Hybrid KEM
+==========================
+
+Special care must be taken in order correctly compose a hybrid post
+quantum KEM that is IND-CCA2 robust.
+
+The hybrid post quantum KEMs found in Cloudflare's circl library are
+suitable to be used with Noise or TLS but not with KEM Sphinx because
+they are not IND-CCA2 robust. Noise and TLS achieve IND-CCA2 security
+by mixing in the public keys and ciphertexts into the hash object and
+therefore do not require an IND-CCA2 KEM.
+
+Firstly, our post quantum KEM is IND-CCA2 however we must specifically take care
+to make our NIKE to KEM adapter have semantic security. Secondly, we must make a
+security preserving KEM combiner.
+
+2.1 NIKE to KEM adapter
+-----------------------
+
+We easily achieve our IND-CCA2 security by means of hashing
+together the DH shared secret along with both of the public keys:
+
+```
+func Encap(their_pubkey publickey) ([]byte, []byte) {
+        my_privkey, my_pubKey = GEN_KEYPAIR(RNG)
+        ss = DH(my_privkey, their_pubkey)
+        ss2 = H(ss || my_pubkey || their_pubkey)
+	return my_pubkey, ss2
+}
+
+func Decap(my_privkey, ciphertext) []byte {
+        s = DH(my_privkey, ciphertext)
+	shared_key = H(ss || my_pubkey || ciphertext)
+	return shared_eky
+}
+```
+
+
+2.2 KEM Combiner
+----------------
+
+The KEM Combiners paper [KEMCOMB]_ makes the observation that if a KEM combiner
+is not security preserving then the resulting hybrid KEM will not have
+IND-CCA2 security if one of the composing KEMs does not have IND-CCA2
+security. Likewise the paper points out that when using a security
+preserving KEM combiner, if only one of the composing KEMs has
+IND-CCA2 security then the resulting hybrid KEM will have IND-CCA2
+security.
+
+Our KEM combiner uses the split PRF design from the paper when combining
+two KEM shared secrets together:
+
+```
+// H is a hash function
+// PRF is our PRF function
+
+func splitPRF(ss1, ss2 []byte) []byte {
+        key1 = H(ss1)
+	key2 = H(ss2)
+	ciphertext1 = PRF(key1, 0)
+	return PRF(key2, ciphertext1)
+}
+```
+
+
+3. KEMSphinx Header Design
 ==========================
 
 NIKE Sphinx header elements:
@@ -124,3 +191,7 @@ Appendix A. References
 .. [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
                Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
                May 2009, <https://cypherpunks.ca/~iang/pubs/Sphinx_Oakland09.pdf>.
+
+.. [KEMCOMB]   Federico Giacon, Felix Heuer, Bertram Poettering, "KEM Combiners",
+	       https://link.springer.com/chapter/10.1007/978-3-319-76578-5_7
+	       PKC 2018
