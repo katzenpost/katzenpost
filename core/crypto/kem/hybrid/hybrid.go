@@ -37,13 +37,10 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/cloudflare/circl/kem"
-
-	"github.com/katzenpost/katzenpost/panda/crypto/rijndael"
 )
 
 var (
-	ErrUninitialized            = errors.New("public or private key not initialized")
-	KEM_COMBINER_SPLIT_PRF_INFO = []byte("KEM COMBINER SPLIT PRF INFO")
+	ErrUninitialized = errors.New("public or private key not initialized")
 )
 
 // Public key of a hybrid KEM.
@@ -208,25 +205,34 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	return &PublicKey{sch, pk1, pk2}, &PrivateKey{sch, sk1, sk2}
 }
 
-func prf(key *[32]byte, data *[32]byte) *[32]byte {
-	cipher := rijndael.NewCipher(key)
-	dst := &[32]byte{}
-	cipher.Encrypt(dst, data)
-	return dst
-}
-
-func splitPRF(ss1, ss2 []byte) []byte {
-	// attempt to implement split PRF KEM combiner,
+func splitPRF(ss1, ss2, ct1, ct2 []byte) []byte {
+	// implement split PRF KEM combiner as:
+	// H(ss1 || ss2 || ct1 || ct2)
 	// in order to retain IND-CCA2 security
 	// as described here:
 	// https://link.springer.com/chapter/10.1007/978-3-319-76578-5_7
-	key1 := blake2b.Sum256(ss1)
-	key2 := blake2b.Sum256(ss2)
-	info := new([32]byte)
-	copy(info[:len(KEM_COMBINER_SPLIT_PRF_INFO)], KEM_COMBINER_SPLIT_PRF_INFO)
-	ciphertext := prf(&key1, info)
-	ciphertext2 := prf(&key2, ciphertext)
-	return ciphertext2[:]
+
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(ss1)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(ss2)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(ct1)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(ct2)
+	if err != nil {
+		panic(err)
+	}
+	return h.Sum(nil)
 }
 
 func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
@@ -245,7 +251,7 @@ func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 		return nil, nil, err
 	}
 
-	ss = splitPRF(ss1, ss2)
+	ss = splitPRF(ss1, ss2, ct1, ct2)
 
 	return append(ct1, ct2...), ss, nil
 }
@@ -300,7 +306,7 @@ func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return splitPRF(ss1, ss2), nil
+	return splitPRF(ss1, ss2, ct[:firstSize], ct[firstSize:]), nil
 }
 
 func (sch *Scheme) UnmarshalBinaryPublicKey(buf []byte) (kem.PublicKey, error) {
