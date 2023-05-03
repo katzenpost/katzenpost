@@ -109,6 +109,34 @@ func (a *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	return a.EncapsulateDeterministically(pk, seed)
 }
 
+func h(publicKeySize int, ss []byte, pubkey1 []byte, pubkey2 []byte) []byte {
+	var h blake2b.XOF
+	var err error
+	if len(ss) != 32 {
+		sum := blake2b.Sum256(ss)
+		h, err = blake2b.NewXOF(uint32(publicKeySize), sum[:])
+	} else {
+		h, err = blake2b.NewXOF(uint32(publicKeySize), ss)
+	}
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(pubkey1)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(pubkey2)
+	if err != nil {
+		panic(err)
+	}
+	ss2 := make([]byte, len(ss))
+	_, err = h.Read(ss2)
+	if err != nil {
+		panic(err)
+	}
+	return ss2
+}
+
 // Returns the shared key encapsulated in ciphertext ct for the
 // private key sk.
 func (a *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
@@ -120,33 +148,7 @@ func (a *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 		return nil, err
 	}
 	ss := a.nike.DeriveSecret(sk.(*PrivateKey).privateKey, pk.(*PublicKey).publicKey)
-
-	var h blake2b.XOF
-	if len(ss) != 32 {
-		sum := blake2b.Sum256(ss)
-		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), sum[:])
-	} else {
-		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), ss)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = h.Write(sk.Public().(*PublicKey).publicKey.Bytes())
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = h.Write(pk.(*PublicKey).publicKey.Bytes())
-	if err != nil {
-		return nil, err
-	}
-
-	ss2 := make([]byte, len(ss))
-	_, err = h.Read(ss2)
-	if err != nil {
-		return nil, err
-	}
+	ss2 := h(a.nike.PublicKeySize(), ss, sk.Public().(*PublicKey).publicKey.Bytes(), pk.(*PublicKey).publicKey.Bytes())
 	return ss2, nil
 }
 
@@ -236,34 +238,7 @@ func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 
 	pk2, sk2 := a.DeriveKeyPair(seed)
 	ss := a.nike.DeriveSecret(sk2.(*PrivateKey).privateKey, pub.publicKey)
-
-	var h blake2b.XOF
-	var err error
-	if len(ss) != 32 {
-		sum := blake2b.Sum256(ss)
-		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), sum[:])
-	} else {
-		h, err = blake2b.NewXOF(uint32(a.nike.PublicKeySize()), ss)
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-
-	_, err = h.Write(pub.publicKey.Bytes())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	_, err = h.Write(pk2.(*PublicKey).publicKey.Bytes())
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ss2 := make([]byte, len(ss))
-	_, err = h.Read(ss2)
-	if err != nil {
-		return nil, nil, err
-	}
+	ss2 := h(a.nike.PublicKeySize(), ss, pub.publicKey.Bytes(), pk2.(*PublicKey).publicKey.Bytes())
 	ct, _ := pk2.MarshalBinary()
 	return ct, ss2, nil
 }
