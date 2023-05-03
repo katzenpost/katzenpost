@@ -82,17 +82,14 @@ IND-CCA2 security then the resulting hybrid KEM will have IND-CCA2
 security.
 
 Our KEM combiner uses the split PRF design from the paper when combining
-two KEM shared secrets together:
+two KEM shared secrets together we use a hash function to also mix
+in the values of both KEM ciphertexts:
 
 ```
 // H is a hash function
-// PRF is our PRF function
 
-func splitPRF(ss1, ss2 []byte) []byte {
-        key1 = H(ss1)
-	key2 = H(ss2)
-	ciphertext1 = PRF(key1, 0)
-	return PRF(key2, ciphertext1)
+func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
+        return H(ss1 || ss2 || cct1 || cct2)
 }
 ```
 
