@@ -27,12 +27,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/katzenpost/core/crypto/kem/schemes"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 // PublicKeyHashSize indicates the hash size returned
@@ -40,7 +44,13 @@ import (
 const PublicKeyHashSize = 32
 
 var DefaultScheme = &scheme{
-	KEM: kem.FromKEM(schemes.ByName("Kyber768-X25519")),
+	KEM: kem.FromKEM(
+		hybrid.New(
+			"Kyber768-X25519",
+			adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
+			kyber768.Scheme(),
+		),
+	),
 }
 
 // PublicKey is an interface used to abstract away the
