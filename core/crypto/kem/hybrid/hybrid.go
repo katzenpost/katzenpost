@@ -279,7 +279,10 @@ func (sch *Scheme) EncapsulateDeterministically(
 	if err != nil {
 		return nil, nil, err
 	}
-	return append(ct1, ct2...), append(ss1, ss2...), nil
+
+	ss = splitPRF(ss1, ss2, ct1, ct2)
+
+	return append(ct1, ct2...), ss, nil
 }
 
 func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
