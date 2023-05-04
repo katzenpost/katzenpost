@@ -183,7 +183,9 @@ func (s *Session) handshake() error {
 	}
 	defer handshake.Reset()
 	var (
-		prologueLen = 1
+		prologueLen  = 1
+		macLen       = 32
+		noiseAuthLen = 16
 
 		// client
 		// -> (prologue), e
@@ -191,15 +193,15 @@ func (s *Session) handshake() error {
 
 		// server
 		// -> ekem, s, (auth)
-		msg2Len = 2368 + authLen
+		msg2Len = s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + macLen + authLen
 
 		// client
 		// -> skem, s, (auth)
-		msg3Len = 2384 + authLen
+		msg3Len = s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + macLen + noiseAuthLen + authLen
 
 		// server
 		// -> skem
-		msg4Len = 1152
+		msg4Len = s.protocol.KEM.CiphertextSize() + macLen
 	)
 
 	if s.isInitiator {
