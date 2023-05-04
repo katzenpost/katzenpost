@@ -858,6 +858,10 @@ func (c *Client) Shutdown() {
 	c.stateWorker.Halt()
 }
 
+func (c *Client) DoubleRatchetPayloadLength() int {
+	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry)
+}
+
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
 	cfg := c.client.GetConfig()
