@@ -8,6 +8,7 @@ import (
 
 func TestHybridKEM(t *testing.T) {
 	s := ByName("Kyber768-X25519")
+
 	t.Logf("ciphertext size %d", s.CiphertextSize())
 	t.Logf("shared key size %d", s.SharedKeySize())
 	t.Logf("private key size %d", s.PrivateKeySize())
