@@ -20,6 +20,8 @@ import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
+	"gopkg.in/op/go-logging.v1"
 	"github.com/katzenpost/katzenpost/core/pki"
 
 	"bytes"
@@ -33,6 +35,7 @@ import (
 var (
 	cfgFile = flag.String("cfg", "proxy.toml", "config file")
 	epName  = flag.String("ep", "", "endpoint name")
+	logLevel = flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	port    = flag.Int("port", 4242, "listener address")
 	cfg     *config.Config
 )
@@ -67,10 +70,15 @@ func getSession(cfgFile string) (*client.Session, error) {
 
 type kttp struct {
 	session *client.Session
+	log         *logging.Logger
 }
 
 func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d, err := k.session.GetService(*epName)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	// serialize the http request
 	buf := new(bytes.Buffer)
 	r.Write(buf)
@@ -91,7 +99,14 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	// Log to stdout
+	logBackend, err := log.New("", *logLevel, false)
+	if err != nil {
+		panic(err)
+	}
+	clientLog := logBackend.GetLogger("http_proxy")
+
 	addr := fmt.Sprintf(":%d", *port)
-	handler := &kttp{session: s}
+	handler := &kttp{session: s, log: clientLog}
 	http.ListenAndServe(addr, handler)
 }
