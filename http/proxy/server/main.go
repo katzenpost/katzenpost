@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"flag"
@@ -27,7 +28,6 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/op/go-logging.v1"
@@ -41,17 +41,32 @@ type proxy struct {
 func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
-		req := &http.Request{}
-		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
-		err := dec.Decode(req)
+		p.log.Debugf("got cborplugin.Request")
+		// deserialize the HTTP/1.1 wire-format request from the kaetzchen payload
+		req, err := http.ReadRequest(bufio.NewReader(bytes.NewBuffer(r.Payload)))
 		if err != nil {
+			p.log.Errorf("http.ReadRequest: %s", err)
 			return nil, err
 		}
+		p.log.Debugf("read http.Request")
 		// make the request
+		if _, ok := p.allowedHost[req.Host]; !ok {
+			p.log.Debugf("request.Host not in allowedHost")
+			if _, ok := p.allowedHost["*"]; !ok {
+				// ignore request or send a http.Response
+				err := errors.New("Request Invalid Host")
+				p.log.Errorf("AllowedHost: %s", err)
+				return nil, err
+			}
+		}
+		p.log.Debugf("doing round trip")
 		resp, err := http.DefaultTransport.RoundTrip(req)
 		if err != nil {
+			p.log.Errorf("http.Request: %v", req)
+			p.log.Errorf("DefaultTransport: %s", err)
 			return nil, err
 		}
+		p.log.Debugf("writing raw response")
 		rawResp := new(bytes.Buffer)
 		resp.Write(rawResp)
 
