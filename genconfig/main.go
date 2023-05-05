@@ -68,6 +68,7 @@ type katzenpost struct {
 	clientIdx   int
 	providerIdx int
 	hasPanda    bool
+	hasProxy    bool
 }
 
 type AuthById []*vConfig.Authority
@@ -207,6 +208,8 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				},
 			}
 			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+
+			// Add a single instance of a PANDA service
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
@@ -221,6 +224,24 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 				}
 				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, pandaCfg)
 				s.hasPanda = true
+			}
+
+			// Add a single instance of a http proxy for a service listening on port 4242
+			if !s.hasProxy {
+				proxyCfg := &sConfig.CBORPluginKaetzchen{
+					Capability:     "http",
+					Endpoint:       "+http",
+					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
+					MaxConcurrency: 1,
+					Config: map[string]interface{}{
+						// allow connections to localhost:4242
+						"host":      ":4242",
+						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+						"log_level": "DEBUG",
+					},
+				}
+				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, proxyCfg)
+				s.hasProxy = true
 			}
 		}
 
