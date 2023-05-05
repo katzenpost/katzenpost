@@ -66,8 +66,6 @@ func (s *Server) worker() {
 			if err != nil {
 				s.log.Debugf("plugin returned err: %s", err)
 			}
-			if reply == nil {
-			}
 			select {
 			case <-s.HaltCh():
 				return
