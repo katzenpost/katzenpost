@@ -27,6 +27,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"net/url"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -59,7 +60,13 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 				return nil, err
 			}
 		}
-		p.log.Debugf("doing round trip")
+		// http.ReadRequest does not populate http.Request.URL
+		u, err := url.Parse("http://" + req.Host)
+		if err != nil {
+			return nil, err
+		}
+		req.URL = u
+		p.log.Debugf("doing round trip with %s", req.URL)
 		resp, err := http.DefaultTransport.RoundTrip(req)
 		if err != nil {
 			p.log.Errorf("http.Request: %v", req)
