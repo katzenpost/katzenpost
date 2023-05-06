@@ -235,7 +235,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
 						// allow connections to localhost:4242
-						"host":      ":4242",
+						"host":      "localhost:4242",
 						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
 						"log_level": "DEBUG",
 					},
