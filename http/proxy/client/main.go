@@ -21,8 +21,8 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
-	"gopkg.in/op/go-logging.v1"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"gopkg.in/op/go-logging.v1"
 
 	"bytes"
 	"context"
@@ -33,11 +33,11 @@ import (
 )
 
 var (
-	cfgFile = flag.String("cfg", "proxy.toml", "config file")
-	epName  = flag.String("ep", "", "endpoint name")
+	cfgFile  = flag.String("cfg", "proxy.toml", "config file")
+	epName   = flag.String("ep", "", "endpoint name")
 	logLevel = flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	port    = flag.Int("port", 4242, "listener address")
-	cfg     *config.Config
+	port     = flag.Int("port", 4242, "listener address")
+	cfg      *config.Config
 )
 
 // getSession waits until pki.Document is available and returns a *client.Session
@@ -70,7 +70,7 @@ func getSession(cfgFile string) (*client.Session, error) {
 
 type kttp struct {
 	session *client.Session
-	log         *logging.Logger
+	log     *logging.Logger
 }
 
 func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
