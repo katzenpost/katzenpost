@@ -21,8 +21,8 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 
