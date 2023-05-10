@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -241,8 +242,13 @@ func (d *mockDialer) waitUntilDialed(address string) {
 
 func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, identityPrivateKey sign.PrivateKey, identityPublicKey sign.PublicKey, wg *sync.WaitGroup) {
 	d.Lock()
+	u, err := url.Parse(address)
+	if err != nil {
+		panic(err)
+	}
+
 	clientConn, serverConn := net.Pipe()
-	d.netMap[address] = &conn{
+	d.netMap[u.Host] = &conn{
 		serverConn:    serverConn,
 		clientConn:    clientConn,
 		dialCh:        make(chan interface{}, 0),
@@ -252,7 +258,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.Unlock()
 	wg.Done()
 
-	d.waitUntilDialed(address)
+	d.waitUntilDialed(u.Host)
 	identityHash := identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          &sphinx.Geometry{},
@@ -268,7 +274,7 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	}
 	defer session.Close()
 	d.Lock()
-	err = session.Initialize(d.netMap[address].serverConn)
+	err = session.Initialize(d.netMap[u.Host].serverConn)
 	d.Unlock()
 	if err != nil {
 		d.log.Errorf("mockServer session Initialize failure: %s", err)
@@ -320,7 +326,7 @@ func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicK
 	authPeer := &config.Authority{
 		IdentityPublicKey: identityPublicKey,
 		LinkPublicKey:     linkPublicKey,
-		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
+		Addresses:         []string{fmt.Sprintf("tcp://127.0.0.1:%d", peerNum)},
 	}
 	err := authPeer.Validate()
 	if err != nil {
@@ -340,7 +346,7 @@ func TestClient(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i,)
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)

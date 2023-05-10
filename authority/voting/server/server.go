@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -30,6 +29,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/gobwas/ws"
+	"github.com/katzenpost/katzenpost/authority/common"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -157,7 +157,7 @@ func (s *Server) listenWorker(l net.Listener) {
 	// NOTREACHED
 }
 
-func (s *Server) listenQUICWorker(l quic.Listener) {
+func (s *Server) listenQUICWorker(l net.Listener) {
 	addr := l.Addr()
 	s.log.Noticef("QUIC Listening on: %v", addr)
 	defer func() {
@@ -166,7 +166,7 @@ func (s *Server) listenQUICWorker(l quic.Listener) {
 		s.Done()
 	}()
 	for {
-		conn, err := l.Accept(context.Background())
+		conn, err := l.Accept()
 		if err != nil {
 			if e, ok := err.(net.Error); ok && !e.Temporary() {
 				s.log.Errorf("Critical accept failure: %v", err)
@@ -174,13 +174,8 @@ func (s *Server) listenQUICWorker(l quic.Listener) {
 			}
 			continue
 		}
-		stream, err := conn.AcceptStream(context.Background())
-		if err != nil {
-			s.log.Errorf("Critical AcceptStream failure: %v", err)
-			continue
-		}
 		s.Add(1)
-		s.onStream(stream)
+		s.onConn(conn)
 	}
 	// NOTREACHED
 }
@@ -388,15 +383,19 @@ func New(cfg *config.Config) (*Server, error) {
 				s.Add(1)
 				go s.listenWorker(l)
 			case "http":
-				l, err := quic.ListenAddr(u.Hostname()+":"+u.Port(), generateTLSConfig(), nil)
+				l, err := quic.ListenAddr(u.Hostname(), generateTLSConfig(), nil)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
 				}
-				s.listeners = append(s.listeners, l)
+				// Wrap quic.Listener with common.QuicListener
+				// so it implements like net.Listener for a
+				// single QUIC Stream
+				ql := &common.QuicListener{Listener: l}
+				s.listeners = append(s.listeners, ql)
 				s.Add(1)
 				// XXX: is there any HTTP3 specific stuff that we want to do?
-				go s.listenQUICWorker(l)
+				go s.listenQUICWorker(ql)
 			}
 		}
 	}

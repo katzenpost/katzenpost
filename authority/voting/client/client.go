@@ -20,12 +20,17 @@ package client
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 
+	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
+	"github.com/katzenpost/katzenpost/authority/common"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -133,12 +138,49 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	idxs := r.Perm(len(peer.Addresses))
 
 	// try each Address until a connection is successful or fail
+loop:
 	for i, idx := range idxs {
-		conn, err = dialFn(ctx, "tcp", peer.Addresses[idx])
+		u, err := url.Parse(peer.Addresses[idx])
 		if err == nil {
-			break
-		}
-		if i == len(idxs)-1 {
+			switch u.Scheme {
+			case "ws":
+				// websocket connector
+				continue
+			case "tcp":
+				conn, err = dialFn(ctx, "tcp", u.Host)
+				if err == nil {
+					break loop
+				}
+			case "http":
+				// http/3 quic connector
+				// XXX: will need to add the TLS certificate
+				// fingerprint to the authority configuration
+				// or obtain valid CA-signed certificates for
+				// the authorities.
+				pool, err := x509.SystemCertPool()
+				if err != nil {
+					panic(err)
+				}
+				tlsConf := &tls.Config{
+					RootCAs:            pool,
+					InsecureSkipVerify: true, // XXX
+				}
+				qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
+				if err != nil {
+					p.log.Debugf("DialAddr %s failed %s", u.Host, err)
+					continue
+				}
+				// open a quic stream
+				stream, err := qconn.OpenStream()
+				if err != nil {
+					p.log.Debugf("Failed to OpenStream with %s", u.Host)
+					continue
+				}
+				// wrap the stream and conn to implement net.Conn
+				conn = &common.QuicConn{Stream: stream, Conn: qconn}
+				break loop
+			}
+		} else if i == len(idxs)-1 {
 			return nil, err
 		}
 	}
