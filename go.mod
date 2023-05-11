@@ -6,7 +6,7 @@ require (
 	filippo.io/edwards25519 v1.0.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
-	github.com/cloudflare/circl v1.3.1
+	github.com/cloudflare/circl v1.3.3
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/golang/protobuf v1.5.2
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
