@@ -29,7 +29,7 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/gobwas/ws"
-	"github.com/katzenpost/katzenpost/authority/common"
+	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -365,7 +365,7 @@ func New(cfg *config.Config) (*Server, error) {
 		if err == nil {
 			switch u.Scheme {
 			case "ws":
-				l, err := net.Listen("tcp", u.Hostname()+":"+u.Port())
+				l, err := net.Listen("tcp", u.Host)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
@@ -374,7 +374,7 @@ func New(cfg *config.Config) (*Server, error) {
 				s.Add(1)
 				go s.listenWSWorker(l)
 			case "tcp":
-				l, err := net.Listen("tcp", u.Hostname()+":"+u.Port())
+				l, err := net.Listen("tcp", u.Host)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
@@ -383,7 +383,7 @@ func New(cfg *config.Config) (*Server, error) {
 				s.Add(1)
 				go s.listenWorker(l)
 			case "http":
-				l, err := quic.ListenAddr(u.Hostname(), generateTLSConfig(), nil)
+				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
@@ -396,6 +396,9 @@ func New(cfg *config.Config) (*Server, error) {
 				s.Add(1)
 				// XXX: is there any HTTP3 specific stuff that we want to do?
 				go s.listenQUICWorker(ql)
+			default:
+				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
+				continue
 			}
 		}
 	}
