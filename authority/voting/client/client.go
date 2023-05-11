@@ -30,7 +30,7 @@ import (
 	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/authority/common"
+	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
