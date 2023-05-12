@@ -5,26 +5,24 @@ import (
 
 	"github.com/cloudflare/circl/kem"
 
-	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
 	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-// NOTE(david): The CTIDH schemes won't work unless you build with
-// "ctidh" build tag.
 var allSchemes = [...]kem.Scheme{
 	adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
-	adapter.FromNIKE(hybrid.CTIDH1024X25519),
-	kemhybrid.New(
-		"Kyber1024-CTIDH1024-X25519",
-		adapter.FromNIKE(hybrid.CTIDH1024X25519),
-		kyber1024.Scheme(),
-	),
+	// Must build with `ctidh` build tag (and other supporting env vars)
+	// for CTIDH usage:
+	// adapter.FromNIKE(hybrid.CTIDH1024X25519),
+	//kemhybrid.New(
+	//	"Kyber1024-CTIDH1024-X25519",
+	//	adapter.FromNIKE(hybrid.CTIDH1024X25519),
+	//	kyber1024.Scheme(),
+	//),
 	kemhybrid.New(
 		"Kyber768-X25519",
 		adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
