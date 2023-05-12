@@ -65,7 +65,7 @@ func ENCAP(their_pub_key publickey) ([]byte, []byte) {
 func DECAP(my_priv_key, their_pub_key) []byte {
         s = DH(my_priv_key, their_pub_key)
 	shared_key = H(ss || my_pub_key || their_pub_key)
-	return shared_eky
+	return shared_key
 }
 ```
 
