@@ -84,13 +84,7 @@ func (sch *Scheme) PrivateKeySize() int {
 }
 
 func (sch *Scheme) SeedSize() int {
-	first := sch.first.SeedSize()
-	second := sch.second.SeedSize()
-	ret := second
-	if first > second {
-		ret = first
-	}
-	return ret
+	return SeedSize
 }
 
 func (sch *Scheme) SharedKeySize() int {
