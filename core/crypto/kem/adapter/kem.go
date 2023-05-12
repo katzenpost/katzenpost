@@ -62,6 +62,8 @@ func (p *PrivateKey) Public() kem.PublicKey {
 }
 
 // Scheme is an adapter for nike.Scheme to kem.Scheme.
+// See docs/specs/kemsphinx.rst for some design notes
+// on this NIKE to KEM adapter.
 type Scheme struct {
 	nike nike.Scheme
 }
@@ -109,7 +111,7 @@ func (a *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	return a.EncapsulateDeterministically(pk, seed)
 }
 
-func h(publicKeySize int, ss []byte, pubkey1 []byte, pubkey2 []byte) []byte {
+func hashSharedSecretWithPublicKeys(publicKeySize int, ss []byte, pubkey1 []byte, pubkey2 []byte) []byte {
 	var h blake2b.XOF
 	var err error
 	if len(ss) != 32 {
@@ -139,6 +141,8 @@ func h(publicKeySize int, ss []byte, pubkey1 []byte, pubkey2 []byte) []byte {
 
 // Returns the shared key encapsulated in ciphertext ct for the
 // private key sk.
+// Implements DECAPSULATE as described in NIKE to KEM adapter,
+// see docs/specs/kemsphinx.rst
 func (a *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 	if len(ct) != a.CiphertextSize() {
 		return nil, kem.ErrCiphertextSize
@@ -148,7 +152,7 @@ func (a *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 		return nil, err
 	}
 	ss := a.nike.DeriveSecret(sk.(*PrivateKey).privateKey, pk.(*PublicKey).publicKey)
-	ss2 := h(a.nike.PublicKeySize(), ss, sk.Public().(*PublicKey).publicKey.Bytes(), pk.(*PublicKey).publicKey.Bytes())
+	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, sk.Public().(*PublicKey).publicKey.Bytes(), pk.(*PublicKey).publicKey.Bytes())
 	return ss2, nil
 }
 
@@ -226,6 +230,8 @@ func (a *Scheme) SeedSize() int {
 // EncapsulateDeterministically generates a shared key ss for the public
 // key deterministically from the given seed and encapsulates it into
 // a ciphertext ct. If unsure, you're better off using Encapsulate().
+// Implements ENCAPSULATE as described in NIKE to KEM adapter,
+// see docs/specs/kemsphinx.rst
 func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 	[]byte, []byte, error) {
 	if len(seed) != a.EncapsulationSeedSize() {
@@ -238,7 +244,7 @@ func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 
 	pk2, sk2 := a.DeriveKeyPair(seed)
 	ss := a.nike.DeriveSecret(sk2.(*PrivateKey).privateKey, pub.publicKey)
-	ss2 := h(a.nike.PublicKeySize(), ss, pub.publicKey.Bytes(), pk2.(*PublicKey).publicKey.Bytes())
+	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, pub.publicKey.Bytes(), pk2.(*PublicKey).publicKey.Bytes())
 	ct, _ := pk2.MarshalBinary()
 	return ct, ss2, nil
 }

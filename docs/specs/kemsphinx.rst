@@ -55,14 +55,14 @@ We easily achieve our IND-CCA2 security by means of hashing
 together the DH shared secret along with both of the public keys:
 
 ```
-func ENCAP(their_pub_key publickey) ([]byte, []byte) {
+func ENCAPSULATE(their_pub_key publickey) ([]byte, []byte) {
         my_priv_key, my_pub_Key = GEN_KEYPAIR(RNG)
         ss = DH(my_priv_key, their_pub_key)
         ss2 = H(ss || my_pubkey || their_pubkey)
 	return my_pub_key, ss2
 }
 
-func DECAP(my_priv_key, their_pub_key) []byte {
+func DECAPSULATE(my_priv_key, their_pub_key) []byte {
         s = DH(my_priv_key, their_pub_key)
 	shared_key = H(ss || my_pub_key || their_pub_key)
 	return shared_key
