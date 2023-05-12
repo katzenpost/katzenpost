@@ -18,13 +18,13 @@ func TestNikeToKemAdapter(t *testing.T) {
 	pubkey1, privkey1, err := s.GenerateKeyPair()
 	require.NoError(t, err)
 
-	ct, ss, err := s.Encapsulate(pubkey1)
+	ct, ss1, err := s.Encapsulate(pubkey1)
 	require.NoError(t, err)
 
 	ss2, err := s.Decapsulate(privkey1, ct)
 	require.NoError(t, err)
 
-	require.Equal(t, ss, ss2)
+	require.Equal(t, ss1, ss2)
 
-	t.Logf("our shared key is %x", ss)
+	t.Logf("our shared key is %x", ss1)
 }
