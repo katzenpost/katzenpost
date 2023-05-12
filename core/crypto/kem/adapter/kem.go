@@ -12,6 +12,11 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
+const (
+	// SeedSize is the number of bytes needed to seed deterministic methods below.
+	SeedSize = 32
+)
+
 // PublicKey is an adapter for nike.PublicKey to kem.PublicKey.
 type PublicKey struct {
 	publicKey nike.PublicKey
@@ -251,5 +256,5 @@ func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 
 // Size of seed used in EncapsulateDeterministically().
 func (a *Scheme) EncapsulationSeedSize() int {
-	return a.nike.PublicKeySize()
+	return SeedSize
 }
