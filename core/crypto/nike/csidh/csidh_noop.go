@@ -13,7 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-// +build !power9
+// +build ppc64le
 
 package csidh
 
@@ -22,7 +22,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/henrydcase/nobs/dh/csidh"
+	//"github.com/henrydcase/nobs/dh/csidh" // does not support ppc64le
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
@@ -41,65 +41,42 @@ func (e *CsidhNike) Name() string {
 }
 
 func (e *CsidhNike) PublicKeySize() int {
-	return csidh.PublicKeySize
+	panic("NotImplemented")
+	return 0
 }
 
 func (e *CsidhNike) PrivateKeySize() int {
-	return csidh.PrivateKeySize
+	panic("NotImplemented")
+	return 0
 }
 
 func (e *CsidhNike) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
-	privateKey := new(csidh.PrivateKey)
-	err := csidh.GeneratePrivateKey(privateKey, rand.Reader)
-	if err != nil {
-		panic(err)
-	}
-	return &PrivateKey{
-		privateKey: privateKey,
-	}
+	panic("NotImplemented")
+	return &PrivateKey{}
 }
 
 func (e *CsidhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
-	privateKey := new(csidh.PrivateKey)
-	err := csidh.GeneratePrivateKey(privateKey, rng)
-	if err != nil {
-		return nil, nil, err
-	}
-	privKey := &PrivateKey{
-		privateKey: privateKey,
-	}
-	publicKey := e.DerivePublicKey(privKey)
+	panic("NotImplemented")
+	privKey := &PrivateKey{}
+	publicKey := &PublicKey{}
 	return publicKey, privKey, nil
 }
 
 func (e *CsidhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
-	privateKey := new(csidh.PrivateKey)
-	err := csidh.GeneratePrivateKey(privateKey, rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	privKey := &PrivateKey{
-		privateKey: privateKey,
-	}
-	publicKey := e.DerivePublicKey(privKey)
+	panic("NotImplemented")
+	privKey := &PrivateKey{}
+	publicKey := &PublicKey{}
 	return publicKey, privKey, nil
 }
 
 func (e *CsidhNike) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
-	sharedSecret := &[64]byte{}
-	ok := csidh.DeriveSecret(sharedSecret, pubKey.(*PublicKey).publicKey, privKey.(*PrivateKey).privateKey, rand.Reader)
-	if !ok {
-		panic("csidh.DeriveSecret failed!")
-	}
-	return sharedSecret[:]
+	panic("NotImplemented")
+	return make([]byte,0)
 }
 
 func (e *CsidhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
-	pubKey := new(csidh.PublicKey)
-	csidh.GeneratePublicKey(pubKey, privKey.(*PrivateKey).privateKey, rand.Reader)
-	return &PublicKey{
-		publicKey: pubKey,
-	}
+	panic("NotImplemented")
+	return &PublicKey{}
 }
 
 func (e CsidhNike) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) (blindedGroupMember nike.PublicKey) {
@@ -107,37 +84,23 @@ func (e CsidhNike) Blind(groupMember nike.PublicKey, blindingFactor nike.Private
 }
 
 func (e *CsidhNike) NewEmptyPublicKey() nike.PublicKey {
-	return &PublicKey{
-		publicKey: new(csidh.PublicKey),
-	}
+	panic("NotImplemented")
+	return &PublicKey{}
 }
 
 func (e *CsidhNike) NewEmptyPrivateKey() nike.PrivateKey {
-	return &PrivateKey{
-		privateKey: new(csidh.PrivateKey),
-	}
+	panic("NotImplemented")
+	return &PrivateKey{}
 }
 
 func (e *CsidhNike) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
-	pubKey := new(csidh.PublicKey)
-	ok := pubKey.Import(b)
-	if !ok {
-		return nil, errors.New("CSIDH public key import failure")
-	}
-	return &PublicKey{
-		publicKey: pubKey,
-	}, nil
+	panic("NotImplemented")
+	return &PublicKey{}, nil
 }
 
 func (e *CsidhNike) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
-	privKey := new(csidh.PrivateKey)
-	ok := privKey.Import(b)
-	if !ok {
-		return nil, errors.New("CSIDH private key import failure")
-	}
-	return &PrivateKey{
-		privateKey: privKey,
-	}, nil
+	panic("NotImplemented")
+	return &PrivateKey{}, nil
 }
 
 type PublicKey struct {
@@ -154,62 +117,52 @@ func (p *PublicKey) Reset() {
 }
 
 func (p *PublicKey) Bytes() []byte {
-	s := make([]byte, csidh.PublicKeySize)
-	p.publicKey.Export(s)
-	return s
+	panic("NotImplemented")
+	return make([]byte, 0)
 }
 
 func (p *PublicKey) FromBytes(b []byte) error {
-	ok := p.publicKey.Import(b)
-	if !ok {
-		return errors.New("csidh public key import failure")
-	}
+	panic("NotImplemented")
 	return nil
 }
 
 // MarshalBinary is an implementation of a method on the
 // BinaryMarshaler interface defined in https://golang.org/pkg/encoding/
 func (p *PublicKey) MarshalBinary() ([]byte, error) {
-	return p.Bytes(), nil
+	panic("NotImplemented")
+	return make([]byte, 0), nil
 }
 
 // UnmarshalBinary is an implementation of a method on the
 // BinaryUnmarshaler interface defined in https://golang.org/pkg/encoding/
 func (p *PublicKey) UnmarshalBinary(data []byte) error {
-	return p.FromBytes(data)
+	panic("NotImplemented")
+	return nil
 }
 
 // MarshalText is an implementation of a method on the
 // TextMarshaler interface defined in https://golang.org/pkg/encoding/
 func (p *PublicKey) MarshalText() ([]byte, error) {
-	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+	panic("NotImplemented")
+	return make([]byte, 0), nil
 }
 
 // UnmarshalText is an implementation of a method on the
 // TextUnmarshaler interface defined in https://golang.org/pkg/encoding/
 func (p *PublicKey) UnmarshalText(data []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(data))
-	if err != nil {
-		return err
-	}
-	return p.FromBytes(raw)
+	panic("NotImplemented")
+	return nil
 }
 
-type PrivateKey struct {
-	privateKey *csidh.PrivateKey
-}
+type PrivateKey struct {}
 
 func (p *PrivateKey) Public() nike.PublicKey {
-	pubKey := new(csidh.PublicKey)
-	csidh.GeneratePublicKey(pubKey, p.privateKey, rand.Reader)
-	return &PublicKey{
-		publicKey: pubKey,
-	}
+	panic("NotImplemented"
+	return &PublicKey{}
 }
 
 func (p *PrivateKey) Reset() {
-	p.privateKey = nil
-	p = nil
+	panic("NotImplemented")
 }
 
 func (p *PrivateKey) Bytes() []byte {
@@ -219,36 +172,27 @@ func (p *PrivateKey) Bytes() []byte {
 }
 
 func (p *PrivateKey) FromBytes(b []byte) error {
-	ok := p.privateKey.Import(b)
-	if !ok {
-		return errors.New("csidh private key import failure")
-	}
 	return nil
 }
 
 func (p *PrivateKey) MarshalBinary() ([]byte, error) {
-	s := make([]byte, csidh.PrivateKeySize)
-	ok := p.privateKey.Export(s)
-	if !ok {
-		return nil, errors.New("MarshalBinary fail")
-	}
-	return s, nil
+	panic("NotImplemented")
+	return make([]byte, 0), nil
 }
 
 func (p *PrivateKey) UnmarshalBinary(data []byte) error {
-	return p.FromBytes(data)
+	panic("NotImplemented")
+	return nil
 }
 
 func (p *PrivateKey) MarshalText() ([]byte, error) {
-	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+	panic("NotImplemented")
+	return make([]byte, 0), nil
 }
 
 func (p *PrivateKey) UnmarshalText(data []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(data))
-	if err != nil {
-		return err
-	}
-	return p.FromBytes(raw)
+	panic("NotImplemented")
+	return nil
 }
 
 func init() {
