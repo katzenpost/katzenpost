@@ -252,7 +252,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 			return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
 		}
 
-		p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, postErrorToString(r.ErrorCode))
+		p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, getErrorToString(r.ErrorCode))
 		if err == pki.ErrNoDocument {
 			continue
 		}
