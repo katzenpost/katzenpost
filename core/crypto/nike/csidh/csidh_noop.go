@@ -13,18 +13,15 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//go:build ppc64le
 // +build ppc64le
 
 package csidh
 
 import (
-	"encoding/base64"
-	"errors"
 	"io"
 
-	//"github.com/henrydcase/nobs/dh/csidh" // does not support ppc64le
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 // CSIDHScheme is the nobs CSIDH-512 NIKE.
@@ -71,7 +68,7 @@ func (e *CsidhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
 
 func (e *CsidhNike) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
 	panic("NotImplemented")
-	return make([]byte,0)
+	return make([]byte, 0)
 }
 
 func (e *CsidhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
@@ -103,17 +100,14 @@ func (e *CsidhNike) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error)
 	return &PrivateKey{}, nil
 }
 
-type PublicKey struct {
-	publicKey *csidh.PublicKey
-}
+type PublicKey struct{}
 
 func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
 	panic("Blind operation no implemented")
 }
 
 func (p *PublicKey) Reset() {
-	p.publicKey = nil
-	p = nil
+	panic("NotImplemented")
 }
 
 func (p *PublicKey) Bytes() []byte {
@@ -154,10 +148,10 @@ func (p *PublicKey) UnmarshalText(data []byte) error {
 	return nil
 }
 
-type PrivateKey struct {}
+type PrivateKey struct{}
 
 func (p *PrivateKey) Public() nike.PublicKey {
-	panic("NotImplemented"
+	panic("NotImplemented")
 	return &PublicKey{}
 }
 
@@ -166,8 +160,8 @@ func (p *PrivateKey) Reset() {
 }
 
 func (p *PrivateKey) Bytes() []byte {
-	s := make([]byte, csidh.PrivateKeySize)
-	p.privateKey.Export(s)
+	panic("NotImplemented")
+	s := make([]byte, 0)
 	return s
 }
 
