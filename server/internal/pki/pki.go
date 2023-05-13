@@ -22,8 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -652,24 +652,14 @@ func New(glue glue.Glue) (glue.PKI, error) {
 	}
 
 	var err error
-	if glue.Config().Server.OnlyAdvertiseAltAddresses {
+	if len(glue.Config().Server.OnlyAdvertiseAddresses) > 0 {
 		p.descAddrMap = make(map[cpki.Transport][]string)
+		// XXX: parse each address and update descAddrMap
+		panic("NotImplemented")
 	} else {
 		if p.descAddrMap, err = makeDescAddrMap(glue.Config().Server.Addresses); err != nil {
 			return nil, err
 		}
-	}
-
-	for k, v := range glue.Config().Server.AltAddresses {
-		p.log.Debugf("AltAddresses map entry: %v %v", k, v)
-		if len(v) == 0 {
-			continue
-		}
-		kTransport := cpki.Transport(strings.ToLower(k))
-		if _, ok := p.descAddrMap[kTransport]; ok {
-			return nil, fmt.Errorf("BUG: pki: AltAddresses overrides existing transport: '%v'", k)
-		}
-		p.descAddrMap[kTransport] = v
 	}
 
 	if len(p.descAddrMap) == 0 {
@@ -733,6 +723,8 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 			t = cpki.TransportTCPv4
 		case ip.To16() != nil:
 			t = cpki.TransportTCPv6
+		case u.Scheme == string(cpki.TransportHTTP):
+			t = cpki.TransportHTTP
 		default:
 			return nil, fmt.Errorf("address '%v' is neither IPv4 nor IPv6", h)
 		}

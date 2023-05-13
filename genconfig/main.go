@@ -134,11 +134,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
-	if isProvider {
-		cfg.Server.AltAddresses = map[string][]string{
-			"TCP": []string{fmt.Sprintf("localhost:%d", s.lastPort)},
-		}
-	}
 
 	// Debug section.
 	cfg.Debug = new(sConfig.Debug)
@@ -254,7 +249,7 @@ func (s *katzenpost) genAuthConfig() error {
 
 	// Server section.
 	cfg.Server = new(aConfig.Server)
-	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.basePort), fmt.Sprintf("ws://127.0.0.1:%d", s.basePort+1)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.basePort), fmt.Sprintf("ws://127.0.0.1:%d", s.basePort+1), fmt.Sprintf("http://127.0.0.1:%d", s.basePort+2)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, "authority")
 
 	// Logging section.
@@ -305,11 +300,12 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg := new(vConfig.Config)
 		cfg.Server = &vConfig.Server{
 			Identifier: fmt.Sprintf("auth%d", i),
-			Addresses:  []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("ws://127.0.0.1:%d", s.lastPort+1)},
+			Addresses:  []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)},
+			//Addresses:  []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("ws://127.0.0.1:%d", s.lastPort+1), fmt.Sprintf("http://127.0.0.1:%d", s.lastPort+2)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
-		s.lastPort += 2
+		s.lastPort += 3
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    "katzenpost.log",

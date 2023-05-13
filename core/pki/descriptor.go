@@ -265,6 +265,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			expectedIPVer = 4
 		case TransportTCPv6:
 			expectedIPVer = 6
+		case TransportHTTP:
 		default:
 			// Unknown transports are only supported between the client and
 			// provider.
@@ -279,21 +280,21 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 
 		// Validate all addresses belonging to the TCP variants.
 		for _, v := range addrs {
-			h, p, err := net.SplitHostPort(v)
+			u, err := url.Parse(v)
 			if err != nil {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
+				return err
 			}
-			if len(h) == 0 {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v'", transport, v)
+			switch Transport(u.Scheme) {
+			case TransportWS: // websocket, NotImplemented
+			case TransportTCP:
+			case TransportHTTP: // "quic" or "https"
+			default:
+				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
 			}
-			if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
-			} else if port == 0 {
-				return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': port is 0", transport, v)
-			}
+
 			switch expectedIPVer {
 			case 4, 6:
-				if ver, err := getIPVer(h); err != nil {
+				if ver, err := getIPVer(u.Hostname()); err != nil {
 					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 				} else if ver != expectedIPVer {
 					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': IP version mismatch", transport, v)
@@ -302,12 +303,13 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 				// This must be TransportTCP or something else that supports
 				// "sensible" DNS style hostnames.  Validate that they are
 				// at least somewhat well formed.
-				if _, err := idna.Lookup.ToASCII(h); err != nil {
+				if _, err := idna.Lookup.ToASCII(u.Hostname()); err != nil {
 					return fmt.Errorf("Descriptor contains invalid address ['%v']'%v': %v", transport, v, err)
 				}
 			}
 		}
 	}
+	// XXX: do not require IPv4 or TCP
 	if len(d.Addresses[TransportTCPv4]) == 0 {
 		return fmt.Errorf("Descriptor contains no TCPv4 addresses")
 	}
