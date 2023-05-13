@@ -68,16 +68,16 @@ for example::
 
   [Server]
     Identifier = "example.com"
-    Addresses = [ "192.0.2.1:29483", "[2001:DB8::1]:29483" ]
+    Addresses = [ "tcp://192.0.2.1:29483", "tcp://[2001:DB8::1]:29483" ]
     DataDir = "/var/lib/katzenpost"
     IsProvider = true
 
 * ``Identifier`` is the human readable identifier for the node (eg:
   FQDN).
 
-* ``Addresses`` are the IP address/port combinations that the server
-  will bind to for incoming connections. IPv4 and/or IPv6 may be
-  specified.
+* ``Addresses`` are the listener types that the server will bind to for
+  incoming connections. The format is a URL: for TCP listeners use tcp:// as
+  the scheme. For HTTP/3 QUIC (UDP): use http:// as the scheme.
 
 * ``DataDir`` is the absolute path to the server's state files.
 
@@ -221,10 +221,6 @@ every field and can therefore be omitted unless you wish
 to deviate from the defaults.
 
 The top-level Provider configuration parameters include:
-
-* ``AltAddresses`` is the map of extra transports and addresses at which
-  the Provider is reachable by clients.  The most useful alternative
-  transport is likely ("tcp") (`core/pki.TransportTCP`).
 
 * ``EnableEphemeralClients`` if set to ``true`` allows ephemeral clients to be
   created when the Provider first receives a given user identity string.

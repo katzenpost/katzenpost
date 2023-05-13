@@ -422,9 +422,6 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = name
 	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", port)}
-	cfg.Server.AltAddresses = map[string][]string{
-		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
-	}
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
 	if err != nil {
