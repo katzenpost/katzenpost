@@ -28,9 +28,9 @@ import (
 	"net/url"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -41,6 +41,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/http/common"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -141,46 +142,55 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 loop:
 	for i, idx := range idxs {
 		u, err := url.Parse(peer.Addresses[idx])
-		if err == nil {
-			switch u.Scheme {
-			case "ws":
-				// websocket connector
-				continue
-			case "tcp":
-				conn, err = dialFn(ctx, "tcp", u.Host)
-				if err == nil {
-					break loop
-				}
-			case "http":
-				// http/3 quic connector
-				// XXX: will need to add the TLS certificate
-				// fingerprint to the authority configuration
-				// or obtain valid CA-signed certificates for
-				// the authorities.
-				pool, err := x509.SystemCertPool()
-				if err != nil {
-					panic(err)
-				}
-				tlsConf := &tls.Config{
-					RootCAs:            pool,
-					InsecureSkipVerify: true, // XXX
-				}
-				qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
-				if err != nil {
-					p.log.Debugf("DialAddr %s failed %s", u.Host, err)
-					continue
-				}
+		if err != nil {
+			continue
+		}
+		switch u.Scheme {
+		case "ws":
+			// websocket connector
+			continue
+		case "tcp":
+			conn, err = dialFn(ctx, "tcp", u.Host)
+			if err == nil {
+				break loop
+			}
+		case "http":
+			// http/3 quic connector
+			// XXX: will need to add the TLS certificate
+			// fingerprint to the authority configuration
+			// or obtain valid CA-signed certificates for
+			// the authorities.
+			pool, err := x509.SystemCertPool()
+			if err != nil {
+				panic(err)
+			}
+			tlsConf := &tls.Config{
+				RootCAs:            pool,
+				InsecureSkipVerify: true, // XXX
+				// ALPN is externally visible as part of the client/server hello,
+				// so pick a common protocol rather than something fingerprintable.
+				NextProtos: []string{http3.NextProtoH3},
+			}
+			p.log.Debugf("Dialing QUIC %v", u.Host)
+
+			qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
+			if err == nil {
 				// open a quic stream
-				stream, err := qconn.OpenStream()
-				if err != nil {
+				stream, err := qconn.OpenStreamSync(ctx)
+				if err == nil {
+					// wrap the stream and conn to implement net.Conn
+					conn = &common.QuicConn{Stream: stream, Conn: qconn}
+					break loop
+				} else {
 					p.log.Debugf("Failed to OpenStream with %s", u.Host)
 					continue
 				}
-				// wrap the stream and conn to implement net.Conn
-				conn = &common.QuicConn{Stream: stream, Conn: qconn}
-				break loop
+			} else {
+				p.log.Debugf("DialAddr %s failed %s", u.Host, err)
+				continue
 			}
-		} else if i == len(idxs)-1 {
+		}
+		if i == len(idxs)-1 {
 			return nil, err
 		}
 	}

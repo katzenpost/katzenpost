@@ -22,13 +22,14 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/ed25519"
 	"encoding/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"math/big"
 	"net"
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
 )
 
 // QuicConn wraps a conn and a single stream and implements net.Conn
@@ -71,10 +72,12 @@ func (q *QuicConn) Close() error {
 	return err
 }
 
+// Read implements net.Conn
 func (q *QuicConn) Read(b []byte) (n int, err error) {
 	return q.Stream.Read(b)
 }
 
+// Write implements net.Conn
 func (q *QuicConn) Write(b []byte) (n int, err error) {
 	return q.Stream.Write(b)
 }
@@ -109,25 +112,28 @@ func (l *QuicListener) Close() error {
 
 // Setup a bare-bones TLS config for the server
 func GenerateTLSConfig() *tls.Config {
-	key, err := eddsa.NewKeypair(rand.Reader)
+	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		panic(err)
 	}
 	template := x509.Certificate{SerialNumber: big.NewInt(1)}
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, key.PublicKey(), key)
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, pubKey, privKey)
 	if err != nil {
 		panic(err)
 	}
-	pkb, err := x509.MarshalPKCS8PrivateKey(key)
+	pkb, err := x509.MarshalPKCS8PrivateKey(privKey)
 	if err != nil {
 		panic(err)
 	}
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: key.KeyType(), Bytes: pkb})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "ED25519 PRIVATE KEY", Bytes: pkb})
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 
 	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		panic(err)
 	}
-	return &tls.Config{Certificates: []tls.Certificate{tlsCert}}
+	// ALPN (NextProtos) is externally visible as part of the QUIC TLS
+	// handshake, in the client/server hello, so pick a common protocol
+	// rather than something uniquely fingerprintable to katzenpost.
+	return &tls.Config{Certificates: []tls.Certificate{tlsCert}, NextProtos: []string{http3.NextProtoH3}}
 }

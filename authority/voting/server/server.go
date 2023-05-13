@@ -29,7 +29,6 @@ import (
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/gobwas/ws"
-	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -37,6 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/quic-go/quic-go"
 )
 
