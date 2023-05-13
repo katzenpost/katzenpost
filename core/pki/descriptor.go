@@ -22,7 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strconv"
+	"net/url"
 
 	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/net/idna"

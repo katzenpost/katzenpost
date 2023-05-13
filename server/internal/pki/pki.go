@@ -711,7 +711,11 @@ func New(glue glue.Glue) (glue.PKI, error) {
 func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 	m := make(map[cpki.Transport][]string)
 	for _, addr := range addrs {
-		h, p, err := net.SplitHostPort(addr)
+		u, err := url.Parse(addr)
+		if err != nil {
+			return nil, err
+		}
+		h, p, err := net.SplitHostPort(u.Host)
 		if err != nil {
 			return nil, err
 		}

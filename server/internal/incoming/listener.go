@@ -23,13 +23,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
+	"github.com/katzenpost/katzenpost/http/common"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -206,9 +209,29 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		closeAllCh: make(chan interface{}),
 	}
 
-	l.l, err = net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
+	// parse the Address line as a URL
+	u, err := url.Parse(addr)
+	if err == nil {
+		switch u.Scheme {
+		case "tcp":
+			l.l, err = net.Listen("tcp", u.Host)
+			if err != nil {
+				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				return nil, err
+			}
+		case "http":
+			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+			if err != nil {
+				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				return nil, err
+			}
+			// Wrap quic.Listener with common.QuicListener
+			// so it implements like net.Listener for a
+			// single QUIC Stream
+			l.l = &common.QuicListener{Listener: ql}
+		default:
+			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
+		}
 	}
 
 	l.Go(l.worker)

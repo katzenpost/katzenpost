@@ -65,7 +65,7 @@ func (cfg *Config) validate() error {
 		return fmt.Errorf("nonvoting/client: LogBackend is mandatory")
 	}
 	if cfg.AuthorityIdentityKey == nil {
-		return fmt.Errorf("nonvoting/client: AuthorityIdentityKeyPublicKey is mandatory")
+		return fmt.Errorf("nonvoting/client: AuthorityIdentityKey is mandatory")
 	}
 	return nil
 }
