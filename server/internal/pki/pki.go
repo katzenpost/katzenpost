@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
 
@@ -710,31 +709,34 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		h, p, err := net.SplitHostPort(u.Host)
-		if err != nil {
-			return nil, err
-		}
-		if _, err = strconv.ParseUint(p, 10, 16); err != nil {
-			return nil, err
-		}
-
-		var t cpki.Transport
-		ip := net.ParseIP(h)
-		if ip == nil {
-			return nil, fmt.Errorf("address '%v' is not an IP", h)
-		}
-		switch {
-		case ip.To4() != nil:
-			t = cpki.TransportTCPv4
-		case ip.To16() != nil:
-			t = cpki.TransportTCPv6
-		case u.Scheme == string(cpki.TransportHTTP):
-			t = cpki.TransportHTTP
+		switch u.Scheme {
+		case string(cpki.TransportHTTP):
+			m[cpki.TransportHTTP] = append(m[cpki.TransportHTTP], addr)
+		case string(cpki.TransportTCP):
+			// See if the URL contains an IP
+			var ips = []net.IP{}
+			var err error
+			ip := net.ParseIP(u.Hostname())
+			if ip == nil {
+				// otherwise attempt to resolve a FQDN
+				ips, err = net.LookupIP(u.Hostname())
+				if err != nil {
+					return nil, fmt.Errorf("address '%v' failed to resolve: %v", u.Hostname())
+				}
+			} else {
+				ips = append(ips, ip)
+			}
+			for _, ip := range ips {
+				if ip.To4() != nil {
+					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp://"+ip.String()+":"+u.Port())
+				} else if ip.To16() != nil {
+					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp://"+ip.String()+":"+u.Port())
+				}
+			}
 		default:
-			return nil, fmt.Errorf("address '%v' is neither IPv4 nor IPv6", h)
+			return nil, fmt.Errorf("address '%v' is invalid", addr)
 		}
 
-		m[t] = append(m[t], addr)
 	}
 	return m, nil
 }
