@@ -330,9 +330,8 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			}
 		}
 	}
-	// XXX: do not require IPv4 or TCP
-	if len(d.Addresses[TransportTCPv4]) == 0 {
-		return fmt.Errorf("Descriptor contains no TCPv4 addresses")
+	if len(d.Addresses) == 0 {
+		return fmt.Errorf("Descriptor contains no addresses")
 	}
 	if !d.Provider {
 		if d.Kaetzchen != nil {
