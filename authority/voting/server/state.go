@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -671,7 +672,12 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	var conn net.Conn
 	var err error
 	for i, a := range peer.Addresses {
-		conn, err = net.Dial("tcp", a)
+		u, err := url.Parse(a)
+		if err != nil {
+			continue
+		}
+		defaultDialer := &net.Dialer{}
+		conn, err = client.DialURL(u, context.Background(), defaultDialer.DialContext)
 		if err == nil {
 			break
 		}
@@ -772,7 +778,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 			s.log.Debug("Sending Vote to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
-				s.log.Error("Failed to send vote to %s", peer.Identifier)
+				s.log.Error("Failed to send vote to %s: %s", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.VoteStatus)
@@ -810,7 +816,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 			s.log.Debug("Sending Reveal to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
-				s.log.Error("Failed to send reveal to %s", peer.Identifier)
+				s.log.Error("Failed to send reveal to %s: %s", peer.Identifier, err)
 				return
 			}
 			r, ok := resp.(*commands.RevealStatus)
