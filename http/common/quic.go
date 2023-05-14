@@ -19,13 +19,15 @@ package common
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"crypto/ed25519"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
+	"net/url"
 	"time"
 
 	"github.com/quic-go/quic-go"
@@ -132,4 +134,47 @@ func GenerateTLSConfig() *tls.Config {
 	// handshake, in the client/server hello, so pick a common protocol
 	// rather than something uniquely fingerprintable to katzenpost.
 	return &tls.Config{Certificates: []tls.Certificate{tlsCert}, NextProtos: []string{http3.NextProtoH3}}
+}
+
+func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
+	switch u.Scheme {
+	case "tcp":
+		// XXX: make sure to use the supplied dialer for proxy users
+		conn, err := dialFn(ctx, "tcp", u.Host)
+		if err != nil {
+			return nil, err
+		} else {
+			return conn, nil
+		}
+	case "http":
+		// http/3 quic connector
+		// XXX: will need to add the TLS certificate
+		// fingerprint to the authority configuration
+		// or obtain valid CA-signed certificates for
+		// the authorities.
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			panic(err)
+		}
+		tlsConf := &tls.Config{
+			RootCAs:            pool,
+			InsecureSkipVerify: true, // XXX
+			// ALPN is externally visible as part of the client/server hello,
+			// so pick a common protocol rather than something fingerprintable.
+			NextProtos: []string{http3.NextProtoH3},
+		}
+		qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
+		if err == nil {
+			// open a quic stream
+			stream, err := qconn.OpenStreamSync(ctx)
+			if err == nil {
+				// wrap the stream and conn to implement net.Conn
+				return &QuicConn{Stream: stream, Conn: qconn}, nil
+			}
+			return nil, err
+		}
+		return nil, err
+	default:
+		return nil, errors.New("Unsupported Scheme")
+	}
 }
