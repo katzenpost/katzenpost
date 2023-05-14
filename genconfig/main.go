@@ -139,7 +139,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = n
-	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1),}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
@@ -246,7 +246,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 		s.nodeIdx++
 	}
 	s.nodeConfigs = append(s.nodeConfigs, cfg)
-	s.lastPort++
+	s.lastPort += 2
 	_ = cfgIdKey(cfg, s.outDir)
 	return cfg.FixupAndValidate()
 }
