@@ -19,6 +19,7 @@ package pki
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"net"
@@ -30,7 +31,6 @@ import (
 	nClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -147,6 +147,11 @@ func (p *pki) worker() {
 					p.setFailedFetch(epoch, err)
 				}
 				continue
+			}
+
+			if !hmac.Equal(d.SphinxGeometryHash, p.glue.Config().SphinxGeometry.Hash()) {
+				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.glue.Config().SphinxGeometry.Display())
+				panic("Sphinx Geometry mismatch!")
 			}
 
 			ent, err := pkicache.New(d, p.glue.IdentityPublicKey(), p.glue.Config().Server.IsProvider)
@@ -388,7 +393,7 @@ func (p *pki) publishDescriptorIfNeeded(pkiCtx context.Context) error {
 			desc.AuthenticationType = cpki.OutOfBandAuth
 		}
 	}
-	desc.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	desc.MixKeys = make(map[uint64][]byte)
 
 	// Ensure that there are mix keys for the epochs [e, ..., e+2],
 	// assuming that key rotation isn't disabled, and fill them into

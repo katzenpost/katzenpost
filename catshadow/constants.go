@@ -20,13 +20,7 @@ package catshadow
 
 import (
 	"time"
-
-	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
-	"github.com/katzenpost/katzenpost/memspool/common"
 )
-
-// DoubleRatchetPayloadLength is the length of the payload encrypted by the ratchet.
-var DoubleRatchetPayloadLength = common.SpoolPayloadLength - ratchet.DoubleRatchetOverhead
 
 const (
 	// MessageExpirationDuration is the duration of time after which messages will be removed.

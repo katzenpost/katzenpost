@@ -32,13 +32,13 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -61,14 +61,14 @@ func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescrip
 	return topology
 }
 
-func generateMixKeys(epoch uint64) (map[uint64]*ecdh.PublicKey, error) {
-	m := make(map[uint64]*ecdh.PublicKey)
+func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
+	m := make(map[uint64][]byte)
 	for i := epoch; i < epoch+3; i++ {
-		privatekey, err := ecdh.NewKeypair(rand.Reader)
+		publickey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
 		if err != nil {
 			return nil, err
 		}
-		m[uint64(i)] = privatekey.PublicKey()
+		m[uint64(i)] = publickey.Bytes()
 	}
 	return m, nil
 }
@@ -258,10 +258,13 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.Unlock()
 	wg.Done()
 
+	mynike := ecdh.EcdhScheme
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
 	d.waitUntilDialed(u.Host)
 	identityHash := identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          &sphinx.Geometry{},
+		Geometry:          mygeo,
 		Authenticator:     d,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: linkPrivateKey,

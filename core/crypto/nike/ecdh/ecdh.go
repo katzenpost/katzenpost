@@ -103,7 +103,7 @@ func FromEcdhKey(key *ecdh.PublicKey) *PublicKey {
 }
 
 func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
-	return p.publicKey.Blind(blindingFactor.(*PrivateKey).privateKey.Bytes())
+	return p.publicKey.Blind(blindingFactor.Bytes())
 }
 
 func (p *PublicKey) Reset() {
