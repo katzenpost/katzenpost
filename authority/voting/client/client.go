@@ -123,6 +123,49 @@ func newConnector(cfg *Config) *connector {
 	return p
 }
 
+func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
+	switch u.Scheme {
+	case "tcp":
+		// XXX: make sure to use the supplied dialer for proxy users
+		conn, err := dialFn(ctx, "tcp", u.Host)
+		if err != nil {
+			return nil, err
+		} else {
+			return conn, nil
+		}
+	case "http":
+		// http/3 quic connector
+		// XXX: will need to add the TLS certificate
+		// fingerprint to the authority configuration
+		// or obtain valid CA-signed certificates for
+		// the authorities.
+		pool, err := x509.SystemCertPool()
+		if err != nil {
+			panic(err)
+		}
+		tlsConf := &tls.Config{
+			RootCAs:            pool,
+			InsecureSkipVerify: true, // XXX
+			// ALPN is externally visible as part of the client/server hello,
+			// so pick a common protocol rather than something fingerprintable.
+			NextProtos: []string{http3.NextProtoH3},
+		}
+		qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
+		if err == nil {
+			// open a quic stream
+			stream, err := qconn.OpenStreamSync(ctx)
+			if err == nil {
+				// wrap the stream and conn to implement net.Conn
+				return &common.QuicConn{Stream: stream, Conn: qconn}, nil
+			}
+			return nil, err
+		}
+		return nil, err
+	default:
+		return nil, errors.New("Unsupported Scheme")
+	}
+}
+
 func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, linkKey wire.PrivateKey, signingKey sign.PublicKey, peer *config.Authority) (*connection, error) {
 	var conn net.Conn
 	var err error
@@ -138,58 +181,16 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	idxs := r.Perm(len(peer.Addresses))
 
 	// try each Address until a connection is successful or fail
-loop:
 	for i, idx := range idxs {
 		u, err := url.Parse(peer.Addresses[idx])
 		if err != nil {
 			continue
 		}
-		switch u.Scheme {
-		case "ws":
-			// websocket connector
-			continue
-		case "tcp":
-			conn, err = dialFn(ctx, "tcp", u.Host)
-			if err == nil {
-				break loop
-			}
-		case "http":
-			// http/3 quic connector
-			// XXX: will need to add the TLS certificate
-			// fingerprint to the authority configuration
-			// or obtain valid CA-signed certificates for
-			// the authorities.
-			pool, err := x509.SystemCertPool()
-			if err != nil {
-				panic(err)
-			}
-			tlsConf := &tls.Config{
-				RootCAs:            pool,
-				InsecureSkipVerify: true, // XXX
-				// ALPN is externally visible as part of the client/server hello,
-				// so pick a common protocol rather than something fingerprintable.
-				NextProtos: []string{http3.NextProtoH3},
-			}
-			p.log.Debugf("Dialing QUIC %v", u.Host)
-
-			qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
-			if err == nil {
-				// open a quic stream
-				stream, err := qconn.OpenStreamSync(ctx)
-				if err == nil {
-					// wrap the stream and conn to implement net.Conn
-					conn = &common.QuicConn{Stream: stream, Conn: qconn}
-					break loop
-				} else {
-					p.log.Debugf("Failed to OpenStream with %s", u.Host)
-					continue
-				}
-			} else {
-				p.log.Debugf("DialAddr %s failed %s", u.Host, err)
-				continue
-			}
+		conn, err = DialURL(u, ctx, dialFn)
+		if err == nil {
+			break
 		}
-		if i == len(idxs)-1 {
+		if i == len(peer.Addresses)-1 {
 			return nil, err
 		}
 	}
@@ -298,6 +299,10 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
+		if err != nil {
+			p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v)", auth.Identifier, epoch, i, err)
+			continue
+		}
 
 		r, ok := resp.(*commands.Consensus)
 		if !ok {

@@ -65,11 +65,7 @@ func (q *QuicConn) SetWriteDeadline(t time.Time) error {
 
 // Close implements net.Conn; all streams are closed.
 func (q *QuicConn) Close() error {
-	err := q.Stream.Close()
-	if err == nil {
-		err = q.Conn.CloseWithError(420, "Closed")
-	}
-	return err
+	return q.Stream.Close()
 }
 
 // Read implements net.Conn
