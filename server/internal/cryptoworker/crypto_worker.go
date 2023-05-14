@@ -315,13 +315,17 @@ func (w *Worker) derefKeys() {
 
 // New constructs a new Worker instance.
 func New(glue glue.Glue, incomingCh <-chan interface{}, id int) *Worker {
+	s, err := sphinx.FromGeometry(glue.Config().SphinxGeometry)
+	if err != nil {
+		panic(err)
+	}
 	w := &Worker{
 		glue:       glue,
 		log:        glue.LogBackend().GetLogger(fmt.Sprintf("crypto:%d", id)),
 		mixKeys:    make(map[uint64]*mixkey.MixKey),
 		incomingCh: incomingCh,
 		updateCh:   make(chan bool),
-		sphinx:     sphinx.DefaultSphinx(),
+		sphinx:     s,
 	}
 
 	w.glue.MixKeys().Shadow(w.mixKeys)

@@ -18,6 +18,7 @@ package client
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
@@ -44,7 +46,7 @@ import (
 type Session struct {
 	worker.Worker
 
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
 	cfg       *config.Config
@@ -85,13 +87,17 @@ func NewSession(
 	cfg *config.Config,
 	linkKey wire.PrivateKey,
 	provider *pki.MixDescriptor) (*Session, error) {
-	var err error
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
+	mysphinx, err := sphinx.FromGeometry(cfg.SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Session{
-		geo:         sphinx.DefaultGeometry(),
-		sphinx:      sphinx.DefaultSphinx(),
+		geo:         cfg.SphinxGeometry,
+		sphinx:      mysphinx,
 		cfg:         cfg,
 		linkKey:     linkKey,
 		provider:    provider,
@@ -111,6 +117,7 @@ func NewSession(
 	// A per-connection tag (for Tor SOCKS5 stream isloation)
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 	clientCfg := &minclient.ClientConfig{
+		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      s.provider.IdentityKey,
@@ -141,6 +148,10 @@ func NewSession(
 	s.Go(s.worker)
 
 	return s, nil
+}
+
+func (s *Session) SphinxGeometry() *geo.Geometry {
+	return s.cfg.SphinxGeometry
 }
 
 // WaitForDocument blocks until a pki fetch has completed
@@ -318,6 +329,12 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): %s", doc)
+
+	if !hmac.Equal(doc.SphinxGeometryHash, s.geo.Hash()) {
+		s.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", s.geo.Display())
+		panic("Sphinx Geometry mismatch!")
+	}
+
 	s.hasPKIDoc = true
 	select {
 	case <-s.HaltCh():

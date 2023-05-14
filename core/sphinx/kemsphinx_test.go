@@ -26,12 +26,12 @@ import (
 	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/require"
 )
 
 type kemNodeParams struct {
-	id         [constants.NodeIDLength]byte
+	id         []byte
 	privateKey kem.PrivateKey
 	publicKey  kem.PublicKey
 }
@@ -40,30 +40,57 @@ func TestKEMSphinxSimple(t *testing.T) {
 	t.Parallel()
 	mykem := hybrid.Kyber768X25519()
 	withSURB := false
-	geo := KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
-	sphinx := NewKEMSphinx(mykem, geo)
+	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, 512, withSURB, 5)
+	sphinx := NewKEMSphinx(mykem, g)
 	require.NotNil(t, sphinx)
 }
 
 func TestKEMSphinxGeometry(t *testing.T) {
 	t.Parallel()
+	require := require.New(t)
+
 	withSURB := false
-	geo := KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber512 10 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber768 5 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber768 10 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber1024 5 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber1024 10 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 5)
-	t.Logf("KEMSphinx Kyber768X25519 5 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 10)
-	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", geo.HeaderLength)
+	g := geo.KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 5)
+	t.Logf("KEMSphinx Kyber512 5 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber512.Scheme(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber512 10 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 5)
+	t.Logf("KEMSphinx Kyber768 5 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber768.Scheme(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber768 10 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 5)
+	t.Logf("KEMSphinx Kyber1024 5 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(kyber1024.Scheme(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber1024 10 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 5)
+	t.Logf("KEMSphinx Kyber768X25519 5 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 10)
+	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 20)
+	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
+
+	mykem := hybrid.Kyber768X25519()
+	withSURB = true
+	payloadLen := 2000
+
+	g = geo.KEMGeometryFromUserForwardPayloadLength(mykem, payloadLen, withSURB, 5)
+
+	t.Logf("\n[SphinxGeometry]\n%s", g.Display())
+
+	err := g.Validate()
+	require.NoError(err)
+
+	sphinx := NewKEMSphinx(mykem, g)
+	nrHops := 5
+	_, path := newKEMPathVector(require, mykem, nrHops, true)
+	payload := make([]byte, g.ForwardPayloadLength)
+
+	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+	require.NoError(err)
+
+	t.Logf("packet length %d", len(pkt))
+	t.Logf("geometry packet length %d", g.PacketLength)
+	require.Equal(len(pkt), g.PacketLength)
 }
 
 func TestKEMForwardSphinx(t *testing.T) {
@@ -72,8 +99,8 @@ func TestKEMForwardSphinx(t *testing.T) {
 
 	mykem := hybrid.Kyber768X25519()
 
-	geo := KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 7)
-	sphinx := NewKEMSphinx(mykem, geo)
+	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 20)
+	sphinx := NewKEMSphinx(mykem, g)
 	testForwardKEMSphinx(t, mykem, sphinx, []byte(testPayload))
 }
 
@@ -138,13 +165,13 @@ func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPa
 
 		// Create the packet.
 		payload := []byte(testPayload)
-		pkt, err := sphinx.NewKEMPacket(rand.Reader, path, payload)
+		pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
 		require.NoError(err, "NewKEMPacket failed")
-		require.Len(pkt, sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
+		require.Equal(len(pkt), sphinx.Geometry().HeaderLength+sphinx.Geometry().PayloadTagLength+len(payload), "Packet Length")
 
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
-			b, _, cmds, err := sphinx.KEMUnwrap(nodes[i].privateKey, pkt)
+			b, _, cmds, err := sphinx.unwrapKem(nodes[i].privateKey, pkt)
 			require.NoErrorf(err, "Hop %d: Unwrap failed", i)
 
 			if i == len(path)-1 {
