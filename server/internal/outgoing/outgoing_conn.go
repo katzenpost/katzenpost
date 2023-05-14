@@ -212,7 +212,7 @@ func (c *outgoingConn) worker() {
 					continue
 				}
 			}
-			c.log.Debugf("TCP connection established.")
+			c.log.Debugf("%v connection established.", u.Scheme)
 			instrument.Outgoing()
 			start := time.Now()
 
