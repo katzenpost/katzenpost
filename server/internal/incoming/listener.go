@@ -221,8 +221,8 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 	u, err := url.Parse(addr)
 	if err == nil {
 		switch u.Scheme {
-		case "tcp":
-			l.l, err = net.Listen("tcp", u.Host)
+		case "tcp", "tcp4", "tcp6":
+			l.l, err = net.Listen(u.Scheme, u.Host)
 			if err != nil {
 				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
 				return nil, err
