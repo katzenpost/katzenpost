@@ -22,6 +22,7 @@ import (
 	"crypto/hmac"
 	"fmt"
 	"net"
+	"net/url"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -30,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/http/common"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -200,7 +202,11 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 	if dialFn == nil {
 		dialFn = defaultDialer.DialContext
 	}
-	conn, err := dialFn(ctx, "tcp", c.cfg.Address)
+	u, err := url.Parse(c.cfg.Address)
+	if err != nil {
+		return nil, nil, err
+	}
+	conn, err := common.DialURL(u, ctx, dialFn)
 	if err != nil {
 		return nil, nil, err
 	}

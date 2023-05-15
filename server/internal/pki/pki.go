@@ -721,7 +721,7 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 				// otherwise attempt to resolve a FQDN
 				ips, err = net.LookupIP(u.Hostname())
 				if err != nil {
-					return nil, fmt.Errorf("address '%v' failed to resolve: %v", u.Hostname())
+					return nil, fmt.Errorf("address '%v' failed to resolve: %v", u.Hostname(), err)
 				}
 			} else {
 				ips = append(ips, ip)

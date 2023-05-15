@@ -84,6 +84,11 @@ func (l *listener) worker() {
 		l.l.Close() // Usually redundant, but harmless.
 	}()
 	for {
+		select {
+		case <-l.closeAllCh:
+			return
+		default:
+		}
 		conn, err := l.l.Accept()
 		if err != nil {
 			l.log.Errorf("accept failure: %v", err)
