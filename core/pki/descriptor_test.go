@@ -44,10 +44,10 @@ func TestDescriptor(t *testing.T) {
 	// Build a well formed descriptor.
 	d.Name = "hydra-dominatus.example.net"
 	d.Addresses = map[Transport][]string{
-		TransportTCPv4:     []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
-		TransportTCPv6:     []string{"[2001:DB8::1]:8901"},
-		Transport("torv2"): []string{"thisisanoldonion.onion:2323"},
-		TransportTCP:       []string{"example.com:4242"},
+		TransportTCPv4:     []string{"tcp4://192.0.2.1:4242", "tcp4://192.0.2.1:1234", "tcp4://198.51.100.2:4567"},
+		TransportTCPv6:     []string{"tcp6://[2001:DB8::1]:8901"},
+		Transport("torv2"): []string{"torv2://thisisanoldonion.onion:2323"},
+		TransportTCP:       []string{"tcp://example.com:4242"},
 	}
 	d.Provider = true
 	d.LoadWeight = 23
