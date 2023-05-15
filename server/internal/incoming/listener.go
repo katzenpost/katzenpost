@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -85,10 +86,7 @@ func (l *listener) worker() {
 	for {
 		conn, err := l.l.Accept()
 		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				l.log.Errorf("Critical accept failure: %v", err)
-				return
-			}
+			l.log.Errorf("accept failure: %v", err)
 			continue
 		}
 
@@ -222,7 +220,11 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 				return nil, err
 			}
 		case "http":
-			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+			qcfg := &quic.Config{
+				HandshakeIdleTimeout: time.Duration(glue.Config().Debug.HandshakeTimeout),
+				KeepAlivePeriod:      time.Duration(glue.Config().Debug.ReauthInterval >> 1),
+			}
+			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), qcfg)
 			if err != nil {
 				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
 				return nil, err
