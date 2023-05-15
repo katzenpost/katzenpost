@@ -201,7 +201,7 @@ func TestVote(t *testing.T) {
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
-		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
+		addr[pki.TransportTCPv4] = []string{"tcp4://127.0.0.1:1234"}
 		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 		desc := &pki.MixDescriptor{
