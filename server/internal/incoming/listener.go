@@ -91,7 +91,10 @@ func (l *listener) worker() {
 		}
 		conn, err := l.l.Accept()
 		if err != nil {
-			l.log.Errorf("accept failure: %v", err)
+			if e, ok := err.(net.Error); ok && !e.Temporary() {
+				l.log.Errorf("accept failure: %v", err)
+				return
+			}
 			continue
 		}
 
