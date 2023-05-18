@@ -35,7 +35,6 @@ import (
 	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/noise"
 )
 
 func TestNyquistPqNoiseParams2(t *testing.T) {
@@ -157,137 +156,17 @@ func TestNyquistPqNoiseParams2(t *testing.T) {
 	require.Nil(t, clientStatus.KEM.RemoteEphemeral)
 	require.Nil(t, serverStatus.KEM.LocalEphemeral)
 
-}
+	// send messages
+	const plaintext = "I tell you: one must still have chaos in oneself in order to be able to give birth to a dancing star. I tell you: you still have chaos within you."
 
-func TestNoiseParams1(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
+	_, clientrx := clientStatus.CipherStates[0], clientStatus.CipherStates[1]
+	_, servertx := serverStatus.CipherStates[0], serverStatus.CipherStates[1]
 
-	clientStaticKeypair, _ := noise.DH25519.GenerateKeypair(rand.Reader)
-	clientConfig := noise.Config{}
-	clientConfig.CipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-	clientConfig.Random = rand.Reader
-	clientConfig.Pattern = noise.HandshakeNN
-	clientConfig.Initiator = true
-	clientConfig.Prologue = []byte{0}
-	clientConfig.StaticKeypair = clientStaticKeypair
-	clientConfig.EphemeralKeypair, _ = noise.DH25519.GenerateKeypair(rand.Reader)
-	clientHs, err := noise.NewHandshakeState(clientConfig)
-	assert.NoError(err, "client NewHandshakeState")
+	serverMsg3, err := servertx.EncryptWithAd(nil, nil, []byte(plaintext))
+	assert.NoError(t, err)
 
-	serverStaticKeypair, _ := noise.DH25519.GenerateKeypair(rand.Reader)
-	serverConfig := noise.Config{}
-	serverConfig.CipherSuite = noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-	serverConfig.Random = rand.Reader
-	serverConfig.Pattern = noise.HandshakeNN
-	serverConfig.Initiator = false
-	serverConfig.Prologue = []byte{0}
-	serverConfig.StaticKeypair = serverStaticKeypair
-	serverConfig.EphemeralKeypair, _ = noise.DH25519.GenerateKeypair(rand.Reader)
-	serverHs, err := noise.NewHandshakeState(serverConfig)
-	assert.NoError(err, "server NewHandshakeState")
+	serverMsg3Plaintext, err := clientrx.DecryptWithAd(nil, nil, serverMsg3)
+	assert.NoError(t, err)
 
-	// handshake phase
-	clientHsMsg, _, _, err := clientHs.WriteMessage(nil, nil)
-	assert.NoError(err, "clientHs WriteMessage")
-	assert.Equal(32, len(clientHsMsg), "client handshake message is unexpected size")
-
-	serverHsResult, _, _, err := serverHs.ReadMessage(nil, clientHsMsg)
-	assert.NoError(err, "server failed to read client handshake message")
-	assert.Equal(0, len(serverHsResult), "server result message is unexpected size")
-
-	serverHsMsg, csR0, csR1, err := serverHs.WriteMessage(nil, nil)
-	assert.NoError(err, "serverHs WriteMessage")
-	assert.Equal(48, len(serverHsMsg), "server handshake message is unexpected size")
-
-	clientHsResult, csI0, csI1, err := clientHs.ReadMessage(nil, serverHsMsg)
-	assert.NoError(err, "client failed to read server handshake message")
-	assert.Equal(0, len(clientHsResult), "client result message is unexpected size")
-
-	// data transfer phase
-	clientMessage := []byte("hello")
-	msg, err := csI0.Encrypt(nil, nil, clientMessage)
-	assert.NoError(err)
-	res, err := csR0.Decrypt(nil, nil, msg)
-	assert.NoError(err, "Decrypt should not have failed")
-	assert.Equal(clientMessage, res, "server received unexpected message")
-
-	serverMessage := []byte("bye")
-	msg, err = csR1.Encrypt(nil, nil, serverMessage)
-	assert.NoError(err)
-	res, err = csI1.Decrypt(nil, nil, msg)
-	assert.NoError(err, "Decrypt should not have failed")
-	assert.Equal(serverMessage, res, "client received unexpected message")
-
-	serverMessage = []byte("bye bye")
-	msg, err = csR1.Encrypt(nil, nil, serverMessage)
-	assert.NoError(err)
-	res, err = csI1.Decrypt(nil, nil, msg)
-	assert.NoError(err, "Decrypt should not have failed")
-	assert.Equal(serverMessage, res, "client received unexpected message")
-
-	clientMessage = []byte("hello again")
-	msg, err = csI0.Encrypt(nil, nil, clientMessage)
-	assert.NoError(err)
-	res, err = csR0.Decrypt(nil, nil, msg)
-	assert.NoError(err, "Decrypt should not have failed")
-	assert.Equal(clientMessage, res, "server received unexpected message")
-
-	serverMessage = []byte("bye again")
-	msg, err = csR1.Encrypt(nil, nil, serverMessage)
-	assert.NoError(err)
-	res, err = csI1.Decrypt(nil, nil, msg)
-	assert.NoError(err, "Decrypt should not have failed")
-	assert.Equal(serverMessage, res, "client received unexpected message")
-}
-
-func TestNoiseParams2(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-
-	const plaintext = "Ich sage euch: man muss noch Chaos in sich haben, um einen tanzenden Stern gebären zu können. Ich sage euch: ihr habt noch Chaos in euch."
-
-	// Both parties generate long term ECDH keypairs, that are known to each
-	// other via some out of band mechanism.
-	csStaticAlice := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-	staticAlice, _ := csStaticAlice.GenerateKeypair(rand.Reader)
-
-	csStaticBob := noise.NewCipherSuite(noise.DH25519, noise.CipherChaChaPoly, noise.HashBLAKE2b)
-	staticBob, _ := csStaticBob.GenerateKeypair(rand.Reader)
-
-	// Alice constructs a handshake state with both static keys.
-	hsAlice, _ := noise.NewHandshakeState(noise.Config{
-		CipherSuite:   csStaticAlice,
-		Random:        rand.Reader,
-		Pattern:       noise.HandshakeX,
-		Initiator:     true,
-		StaticKeypair: staticAlice,
-		PeerStatic:    staticBob.Public,
-	})
-
-	// Build a BlockCiphertext via noise.
-	msgAlice, _, _, err := hsAlice.WriteMessage(nil, []byte(plaintext))
-	assert.NoError(err, "alice WriteMessage")
-	assert.Equal(32+16+32+16+len(plaintext), len(msgAlice))
-
-	// Alice sends msgAlice to Bob and is done.
-
-	// Bob constructs a handshake state with his static key (one use).
-	hsBob, _ := noise.NewHandshakeState(noise.Config{
-		CipherSuite:   csStaticBob,
-		Random:        rand.Reader,
-		Pattern:       noise.HandshakeX,
-		Initiator:     false,
-		StaticKeypair: staticBob,
-	})
-
-	// Bob processes msgAlice all at once.
-	msgBob, _, _, err := hsBob.ReadMessage(nil, msgAlice)
-	assert.NoError(err, "hsBob.ReadMessage()")
-
-	// Ta dah!
-	//   msgBob: plaintext
-	//   hsBob.PeerStatic(): aliceStatic.Public
-	assert.Equal(staticAlice.Public, hsBob.PeerStatic(), "static key mismatch")
-	assert.Equal([]byte(plaintext), msgBob, "plaintext mismatch")
+	assert.Equal(t, serverMsg3Plaintext, []byte(plaintext))
 }
