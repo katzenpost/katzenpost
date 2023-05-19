@@ -1,3 +1,6 @@
+//go:build amd64
+// +build amd64
+
 // csidh.go - Adapts csidh module to our NIKE interface.
 // Copyright (C) 2022  David Stainton.
 //
