@@ -1,5 +1,5 @@
-//go:build !amd64
-// +build !amd64
+//go:build ppc64
+// +build ppc64
 
 package hybrid
 
