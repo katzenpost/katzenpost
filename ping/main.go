@@ -48,7 +48,7 @@ func main() {
 	var concurrency int
 	var printDiff bool
 	flag.StringVar(&configFile, "c", "", "configuration file")
-	flag.StringVar(&service, "s", "", "service name")
+	flag.StringVar(&service, "s", "echo", "service name")
 	flag.IntVar(&count, "n", 5, "count")
 	flag.IntVar(&timeout, "t", 45, "timeout")
 	flag.IntVar(&concurrency, "C", 1, "concurrency")
@@ -58,6 +58,8 @@ func main() {
 	if service == "" {
 		panic("must specify service name with -s")
 	}
+
+	fmt.Printf("%s\n", startupBanner)
 
 	cfg, err := config.LoadFile(configFile)
 	if err != nil {

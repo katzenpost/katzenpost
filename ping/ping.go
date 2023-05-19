@@ -45,6 +45,68 @@ produced various designs. Of these, mix networks are among the most practical
 and can readily scale to millions of users.
 `)
 
+// PingDescriptor describes how to send a ping or burst of ping packets.
+type PingDescriptor struct {
+	TimeOut     time.Duration
+	ServiceName string
+	Concurrency int
+	PrintDiff   bool
+	Count       int
+}
+
+type PingFSM struct {
+	session *client.Session
+	client  *client.Client
+	ctx     context.Context
+}
+
+func Ping(desc *PingDescriptor, fsm *PingFSM) {
+
+}
+
+func FromConfig(cfg *config.Config) *PingFSM {
+	// create a client and connect to the mixnet Provider
+	c, err := client.New(cfg)
+	if err != nil {
+		panic(fmt.Errorf("failed to create client: %s", err))
+	}
+
+	return &PingFSM{
+		client:  c,
+		session: nil,
+	}
+}
+
+func (p *PingFSM) Connect() {
+	var cancel context.CancelFunc
+	p.ctx, cancel = context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	session, err := c.NewTOFUSession(p.ctx)
+	if err != nil {
+		panic(fmt.Errorf("failed to create session: %s", err))
+	}
+	cancel()
+}
+
+func (p *PingFSM) WaitForDocument() {
+	err = session.WaitForDocument(p.ctx)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (p *PingFSM) Ping() {
+	serviceDesc, err := session.GetService(service)
+	if err != nil {
+		panic(err)
+	}
+
+	sendPings(session, serviceDesc, count, concurrency, printDiff)
+}
+
+func (p *PingFSM) Stop() {
+	p.client.Shutdown()
+}
+
 func sendPing(session *client.Session, serviceDesc *utils.ServiceDescriptor, printDiff bool) bool {
 	var nonce [32]byte
 
