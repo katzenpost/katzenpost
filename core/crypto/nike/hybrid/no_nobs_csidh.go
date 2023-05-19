@@ -1,5 +1,5 @@
-//go:build ppc64
-// +build ppc64
+//go:build armbe || arm64be || ppc64 || mips || mips64 || mips64p32 || s390 || s390x || sparc || sparc64
+// +build armbe arm64be ppc64 mips mips64 mips64p32 s390 s390x sparc sparc64
 
 package hybrid
 
