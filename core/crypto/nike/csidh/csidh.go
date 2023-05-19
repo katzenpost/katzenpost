@@ -1,4 +1,4 @@
-//go:build !armbe && !arm64be && !ppc64 && !mips && !mips64 && !mips64p32 && !s390 && !s390x && !sparc && !sparc64
+//go:build !ppc64le
 
 // csidh.go - Adapts csidh module to our NIKE interface.
 // Copyright (C) 2022  David Stainton.
