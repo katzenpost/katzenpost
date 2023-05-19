@@ -18,12 +18,15 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -58,29 +61,27 @@ type PingFSM struct {
 	session *client.Session
 	client  *client.Client
 	ctx     context.Context
+
+	desc *PingDescriptor
 }
 
-func Ping(desc *PingDescriptor, fsm *PingFSM) {
-
-}
-
-func FromConfig(cfg *config.Config) *PingFSM {
-	// create a client and connect to the mixnet Provider
+func FromConfig(cfg *config.Config, desc *PingDescriptor) *PingFSM {
 	c, err := client.New(cfg)
 	if err != nil {
 		panic(fmt.Errorf("failed to create client: %s", err))
 	}
-
 	return &PingFSM{
 		client:  c,
 		session: nil,
+		desc:    desc,
 	}
 }
 
 func (p *PingFSM) Connect() {
 	var cancel context.CancelFunc
-	p.ctx, cancel = context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	session, err := c.NewTOFUSession(p.ctx)
+	p.ctx, cancel = context.WithTimeout(context.Background(), p.desc.Timeout)
+	var err error
+	p.session, err = p.client.NewTOFUSession(p.ctx)
 	if err != nil {
 		panic(fmt.Errorf("failed to create session: %s", err))
 	}
@@ -88,14 +89,14 @@ func (p *PingFSM) Connect() {
 }
 
 func (p *PingFSM) WaitForDocument() {
-	err = session.WaitForDocument(p.ctx)
+	err := p.session.WaitForDocument(p.ctx)
 	if err != nil {
 		panic(err)
 	}
 }
 
 func (p *PingFSM) Ping() {
-	serviceDesc, err := session.GetService(service)
+	serviceDesc, err := p.session.GetService(p.desc.ServiceName)
 	if err != nil {
 		panic(err)
 	}
