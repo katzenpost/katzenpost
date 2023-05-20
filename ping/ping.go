@@ -50,7 +50,7 @@ and can readily scale to millions of users.
 
 // PingDescriptor describes how to send a ping or burst of ping packets.
 type PingDescriptor struct {
-	TimeOut     time.Duration
+	Timeout     time.Duration
 	ServiceName string
 	Concurrency int
 	PrintDiff   bool
@@ -101,7 +101,7 @@ func (p *PingFSM) Ping() {
 		panic(err)
 	}
 
-	sendPings(session, serviceDesc, count, concurrency, printDiff)
+	sendPings(p.session, serviceDesc, p.desc.Count, p.desc.Concurrency, p.desc.PrintDiff)
 }
 
 func (p *PingFSM) Stop() {

@@ -17,27 +17,97 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
-	"github.com/katzenpost/katzenpost/client"
+	"github.com/charmbracelet/bubbles/spinner"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 const (
 	initialPKIConsensusTimeout = 45 * time.Second
 )
 
-func randUser() string {
-	user := [32]byte{}
-	_, err := rand.Reader.Read(user[:])
-	if err != nil {
-		panic(err)
+type errMsg error
+
+type model struct {
+	state    string
+	pingFSM  *PingFSM
+	spinner  spinner.Model
+	quitting bool
+	err      error
+}
+
+func initialModel(fsm *PingFSM) model {
+	s := spinner.New()
+	s.Spinner = spinner.Line
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	return model{
+		spinner: s,
+		state:   "init",
+		pingFSM: fsm,
 	}
-	return fmt.Sprintf("%x", user[:])
+}
+
+func (m model) Init() tea.Cmd {
+	return m.spinner.Tick
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q", "esc":
+			m.pingFSM.Stop()
+			return m, tea.Quit
+		default:
+			return m, nil
+		}
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case errMsg:
+		m.err = msg
+		return m, nil
+	default:
+		switch m.state {
+		case "init":
+			m.state = "connecting"
+			m.pingFSM.Connect()
+		case "connecting":
+			m.state = "connected"
+			m.pingFSM.WaitForDocument()
+		case "connected":
+			m.pingFSM.Ping()
+		}
+		return m, nil
+	}
+}
+
+func (m model) View() string {
+	if m.err != nil {
+		return m.err.Error()
+	}
+	if m.quitting {
+		return "aborting...\n\n\n"
+	}
+
+	status := ""
+	switch m.state {
+	case "init":
+		status = "Connecting to mixnet"
+	case "connecting":
+		status = "Waiting for PKI doc"
+	case "connected":
+		status = "Sending pings"
+	}
+	return fmt.Sprintf("\n\n %s %s...\n\n", m.spinner.View(), status)
 }
 
 func main() {
@@ -66,28 +136,23 @@ func main() {
 		panic(fmt.Errorf("failed to open config: %s", err))
 	}
 
-	// create a client and connect to the mixnet Provider
-	c, err := client.New(cfg)
-	if err != nil {
-		panic(fmt.Errorf("failed to create client: %s", err))
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
-	session, err := c.NewTOFUSession(ctx)
-	if err != nil {
-		panic(fmt.Errorf("failed to create session: %s", err))
+	if cfg.Logging.File == "" {
+		cfg.Logging.File = "/tmp/ping_output.log"
+		fmt.Printf("Logging was set to STDOUT but instead logging to %s\n", cfg.Logging.File)
 	}
 
-	err = session.WaitForDocument(ctx)
-	if err != nil {
-		panic(err)
-	}
-	cancel()
-	serviceDesc, err := session.GetService(service)
-	if err != nil {
-		panic(err)
+	desc := &PingDescriptor{
+		Timeout:     time.Duration(timeout) * time.Second,
+		ServiceName: service,
+		Concurrency: concurrency,
+		PrintDiff:   printDiff,
+		Count:       count,
 	}
 
-	sendPings(session, serviceDesc, count, concurrency, printDiff)
+	m := initialModel(FromConfig(cfg, desc))
 
-	c.Shutdown()
+	if _, err := tea.NewProgram(m).Run(); err != nil {
+		fmt.Println("could not run program:", err)
+		os.Exit(1)
+	}
 }
