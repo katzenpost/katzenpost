@@ -30,7 +30,7 @@ lL=0.0005
 lLMax=1000
 lD=0.0005
 lDMax=3000
-lM=0.2
+lM=0.0005
 lMMax=100
 
 UserForwardPayloadLength=2000
