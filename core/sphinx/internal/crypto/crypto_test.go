@@ -209,7 +209,7 @@ func TestKDF(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, count, okmLength)
 
-	k := KDF(ikm, privateKeySize, ecdh.EcdhScheme)
+	k := KDF(ikm, ecdh.EcdhScheme)
 	require.Equal(t, okm[:MACKeyLength], k.HeaderMAC[:])
 	okm = okm[MACKeyLength:]
 	assert.Equal(okm[:StreamKeyLength], k.HeaderEncryption[:])
@@ -234,7 +234,7 @@ func TestVectorKDFWithECDHNike(t *testing.T) {
 	rawInput, err := hex.DecodeString("9dd74a26535e05ba0ddb62e06ef9b3b29b089707b4652b9172d91e529c938b51")
 	assert.NoError(err)
 	copy(ikm[:], rawInput)
-	k := KDF(ikm, 32, ecdh.EcdhScheme)
+	k := KDF(ikm, ecdh.EcdhScheme)
 
 	rawHeaderMAC, err := hex.DecodeString("56a3cca100da21fa9823df7884132e89e2155dadbf425e62ba43392c81581a69")
 	assert.NoError(err)
@@ -248,7 +248,7 @@ func TestVectorKDFWithECDHNike(t *testing.T) {
 	rawPayloadEncryption, err := hex.DecodeString("82f26dff7fd14e304bce0aa6d464e6e4a440aad784b18c062700c352e7df6c4422884af95653aef353d3bd3e8b7f9ac2")
 	assert.NoError(err)
 	assert.Equal(rawPayloadEncryption, k.PayloadEncryption[:])
-	rawBlindingFactor, err := hex.DecodeString("2c9d4d661bcfbdb3da8c851c11518175a1cd07957c90ba3332e3219d82210701")
+	rawBlindingFactor, err := hex.DecodeString("8e869512c77c2c0ca7b718d68b4a571824e788d38b223b921460769c34a89501")
 	assert.NoError(err)
 	assert.Equal(rawBlindingFactor, k.BlindingFactor.Bytes())
 }

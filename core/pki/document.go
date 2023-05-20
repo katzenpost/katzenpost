@@ -142,6 +142,10 @@ type Document struct {
 	// PriorSharedRandom used by applications that need a longer lived SRV.
 	PriorSharedRandom [][]byte
 
+	// SphinxGeometryHash is used to ensure all mixnet actors have the same
+	// Sphinx Geometry.
+	SphinxGeometryHash []byte
+
 	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.
 	Version string

@@ -18,6 +18,7 @@ package minclient
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"sync"
@@ -177,6 +178,10 @@ func (p *pki) worker() {
 				default:
 				}
 				continue
+			}
+			if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
+				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
+				panic("Sphinx Geometry mismatch!")
 			}
 			p.docs.Store(epoch, d)
 			didUpdate = true

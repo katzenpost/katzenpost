@@ -43,11 +43,11 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	d.IdentityKey = identityPub
 	scheme := wire.DefaultScheme
 	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
-	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey()
+		d.MixKeys[uint64(e)] = mPriv.PublicKey().Bytes()
 	}
 	if provider {
 		d.Kaetzchen = make(map[string]map[string]interface{})

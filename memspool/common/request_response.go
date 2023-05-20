@@ -22,7 +22,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const (
@@ -64,9 +64,6 @@ const (
 	// StatusOK is a status string indicating there was no error on the spool operation.
 	StatusOK = "OK"
 )
-
-// SpoolPayloadLength is the length of the spool append message payload.
-var SpoolPayloadLength = (sphinx.DefaultGeometry().UserForwardPayloadLength - 4) - QueryOverhead
 
 // SpoolRequest is the message sent to the spool server
 type SpoolRequest struct {
@@ -143,8 +140,12 @@ func PurgeSpool(spoolID [SpoolIDSize]byte, privKey *eddsa.PrivateKey) ([]byte, e
 	return s.Marshal()
 }
 
-func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte) ([]byte, error) {
-	if len(message) > SpoolPayloadLength {
+func SpoolPayloadLength(geo *geo.Geometry) int {
+	return (geo.UserForwardPayloadLength - 4) - QueryOverhead
+}
+
+func AppendToSpool(spoolID [SpoolIDSize]byte, message []byte, geo *geo.Geometry) ([]byte, error) {
+	if len(message) > SpoolPayloadLength(geo) {
 		return nil, errors.New("exceeds payload maximum")
 	}
 	s := SpoolRequest{
