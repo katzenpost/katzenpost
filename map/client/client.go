@@ -24,14 +24,13 @@ import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/map/common"
 	"golang.org/x/crypto/hkdf"
 	"sort"
 )
 
 var (
-	PayloadSize       int
+	cborFrameOverhead = 0
 	hash              = sha256.New
 	ErrStatusNotFound = errors.New("StatusNotFound")
 )
@@ -124,6 +123,12 @@ func (c *Client) Put(ID common.MessageID, signature, payload []byte) error {
 	return err
 }
 
+// PayloadSize returns the size of the user payload
+func (c *Client) PayloadSize() int {
+	geo := c.Session.SphinxGeometry()
+	return geo.UserForwardPayloadLength - cborFrameOverhead - eddsa.SignatureSize
+}
+
 // Get requests ID from the chosen storage node and returns a payload or error
 func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 
@@ -160,16 +165,19 @@ func (c *Client) Get(ID common.MessageID, signature []byte) ([]byte, error) {
 type RWClient interface {
 	Put(addr []byte, payload []byte) error
 	Get(addr []byte) ([]byte, error)
+	PayloadSize() int
 }
 
 // ROClient only has Get
 type ROClient interface {
 	Get(addr []byte) ([]byte, error)
+	PayloadSize() int
 }
 
 // WOClient only has Put
 type WOClient interface {
 	Put(addr []byte, payload []byte) error
+	PayloadSize() int
 }
 
 // rwMap implements ReadWriteTranport using a ReadWriteCap and reference to map client
@@ -194,6 +202,11 @@ func (r *rwMap) Put(addr []byte, payload []byte) error {
 	return r.c.Put(i, k.Sign(payload), payload)
 }
 
+// PayloadSize implements RWClient.PayloadSize
+func (r *rwMap) PayloadSize() int {
+	return r.c.PayloadSize()
+}
+
 // roMap implements ReadOnlyTranport using a ReadOnlyCap and reference to map client
 type roMap struct {
 	c     *Client
@@ -207,6 +220,11 @@ func (r *roMap) Get(addr []byte) ([]byte, error) {
 	return r.c.Get(i, k.Sign(i.Bytes()))
 }
 
+// PayloadSize implements ROClient.PayloadSize
+func (r *roMap) PayloadSize() int {
+	return r.c.PayloadSize()
+}
+
 // woMap implements WOClient
 type woMap struct {
 	c     *Client
@@ -218,6 +236,11 @@ func (w *woMap) Put(addr []byte, payload []byte) error {
 	i := w.woCap.Addr(addr)
 	k := w.woCap.Write(addr)
 	return w.c.Put(i, k.Sign(payload), payload)
+}
+
+// PayloadSize implements WOClient.PayloadSize
+func (r *woMap) PayloadSize() int {
+	return r.c.PayloadSize()
 }
 
 // ReadWrite returns a Transport using map that can read or write with Get() and Put()
@@ -293,6 +316,11 @@ func (s *duplex) Get(addr []byte) ([]byte, error) {
 	return s.ro.Get(addr)
 }
 
+// PayloadSize implements RWClient.PayloadSize
+func (s *duplex) PayloadSize() int {
+	return s.ro.PayloadSize()
+}
+
 // Duplex returns a RWclient from a pair of ReadOnly and WriteOnly capabilities
 func Duplex(c *Client, r common.ReadOnlyCap, w common.WriteOnlyCap) RWClient {
 	s := new(duplex)
@@ -303,7 +331,5 @@ func Duplex(c *Client, r common.ReadOnlyCap, w common.WriteOnlyCap) RWClient {
 
 func init() {
 	b, _ := cbor.Marshal(common.MapRequest{})
-	cborFrameOverhead := len(b)
-	geo := sphinx.DefaultGeometry()
-	PayloadSize = geo.UserForwardPayloadLength - cborFrameOverhead - eddsa.SignatureSize
+	cborFrameOverhead = len(b)
 }
