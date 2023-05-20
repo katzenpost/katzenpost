@@ -68,6 +68,10 @@ func (m mockTransport) Get(addr []byte) ([]byte, error) {
 	return d, nil
 }
 
+func (m mockTransport) PayloadSize() int {
+	return 1024
+}
+
 func randPayload() []byte {
 	l := rand.NewMath().Intn(1 << 16)
 	buf := make([]byte, l)

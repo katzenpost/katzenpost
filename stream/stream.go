@@ -29,16 +29,17 @@ const (
 )
 
 var (
-	hash             = sha256.New
-	retryDelay       = epochtime.Period / 16
-	minBackoffDelay  = 1 * time.Millisecond
-	maxBackoffDelay  = 200 * time.Millisecond // epochtime.Period
-	defaultTimeout   = 5 * time.Minute
-	FramePayloadSize int
-	ErrStreamClosed  = errors.New("Stream Closed")
-	ErrFrameDecrypt  = errors.New("Failed to decrypt")
-	ErrInvalidAddr   = errors.New("Invalid StreamAddr")
-	ErrHalted        = errors.New("Halted")
+	hash               = sha256.New
+	cborFrameOverhead  = 0
+	retryDelay         = epochtime.Period / 16
+	minBackoffDelay    = 1 * time.Millisecond
+	maxBackoffDelay    = 200 * time.Millisecond // epochtime.Period
+	defaultTimeout     = 5 * time.Minute
+	ErrStreamClosed    = errors.New("Stream Closed")
+	ErrFrameDecrypt    = errors.New("Failed to decrypt")
+	ErrGeometryChanged = errors.New("Stream Payload Geometry Change")
+	ErrInvalidAddr     = errors.New("Invalid StreamAddr")
+	ErrHalted          = errors.New("Halted")
 )
 
 // FrameType indicates the state of Stream at the current Frame
@@ -125,6 +126,11 @@ type Stream struct {
 	R *ReTx
 
 	// Parameters
+
+	// PayloadSize is the stream frame payload length, and must not change once
+	// a stream has been initialized.
+	PayloadSize int
+
 	// WindowSize is the number of messages ahead of peer's
 	// ackknowledgement that the writeworker will periodically retransmit
 	WindowSize uint64
@@ -466,7 +472,7 @@ func (s *Stream) writer() {
 			s.WState = StreamClosed
 			f.Type = StreamEnd
 		}
-		f.Payload = make([]byte, FramePayloadSize)
+		f.Payload = make([]byte, s.PayloadSize)
 		// Read up to the maximum frame payload size
 		n, err := s.WriteBuf.Read(f.Payload)
 		s.Unlock()
@@ -553,7 +559,7 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	s.Lock()
 	// Retransmit unacknowledged blocks every few epochs
 	//m := &smsg{f: frame, priority: uint64(time.Now().Add(til + 2*epochtime.Period).UnixNano())}
-	m := &smsg{f: frame, priority: uint64(time.Now().Add(10*time.Second).UnixNano())}
+	m := &smsg{f: frame, priority: uint64(time.Now().Add(10 * time.Second).UnixNano())}
 	frame_id := s.txFrameID(frame.id)
 	frame_key := s.txFrameKey(frame.id)
 	// Update reference to last acknowledged message on retransmit
@@ -563,9 +569,9 @@ func (s *Stream) txFrame(frame *Frame) (err error) {
 	}
 	s.Unlock()
 
-	// zero extend ciphertext until maximum FramePayloadSize
-	if FramePayloadSize-len(serialized) > 0 {
-		padding := make([]byte, FramePayloadSize-len(serialized))
+	// zero extend ciphertext until maximum PayloadSize
+	if s.PayloadSize-len(serialized) > 0 {
+		padding := make([]byte, s.PayloadSize-len(serialized))
 		serialized = append(serialized, padding...)
 	}
 
@@ -859,6 +865,7 @@ type Transport mClient.RWClient
 func newStream(c Transport) *Stream {
 	s := new(Stream)
 	s.c = c
+	s.PayloadSize = PayloadSize(c)
 	s.startOnce = new(sync.Once)
 	s.RState = StreamOpen
 	s.WState = StreamOpen
@@ -901,8 +908,13 @@ func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 		return nil, err
 	}
 	c, _ := mClient.NewClient(s)
-	// XXX: we need to save whether this stream was initiator!
 	st.c = mClient.DuplexFromSeed(c, st.Initiator, []byte(st.LocalAddr().String()))
+
+	// Ensure that the frame geometry cannot change an active stream
+	// FIXME: Streams should support resetting sender/receivers on Geometry changes.
+	if st.PayloadSize != PayloadSize(st.c) {
+		panic(ErrGeometryChanged)
+	}
 
 	st.R.s = st
 	st.TQ.NextQ = st.R
@@ -984,6 +996,9 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 
 func init() {
 	b, _ := cbor.Marshal(Frame{})
-	cborFrameOverhead := len(b)
-	FramePayloadSize = mClient.PayloadSize - cborFrameOverhead - secretbox.Overhead - nonceSize
+	cborFrameOverhead = len(b)
+}
+
+func PayloadSize(c Transport) int {
+	return c.PayloadSize() - cborFrameOverhead - secretbox.Overhead - nonceSize
 }
