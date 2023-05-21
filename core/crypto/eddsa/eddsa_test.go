@@ -26,6 +26,7 @@ import (
 )
 
 func TestKeypair(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	var shortBuffer = []byte("Short Buffer")
@@ -55,6 +56,7 @@ func TestKeypair(t *testing.T) {
 }
 
 func TestEdDSAOps(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	privKey, err := NewKeypair(rand.Reader)
@@ -70,6 +72,7 @@ func TestEdDSAOps(t *testing.T) {
 }
 
 func TestCheckEdDSA(t *testing.T) {
+	t.Parallel()
 	// check that EdDSA signing works like the first test vector in
 	// https://ed25519.cr.yp.to/python/sign.input
 	// (this is a sanity check to ensure (R,s) is computed as it should

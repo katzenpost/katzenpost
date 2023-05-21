@@ -27,8 +27,10 @@ import (
 
 	aconfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 )
@@ -60,7 +62,15 @@ func TestServerStartShutdown(t *testing.T) {
 	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
 	require.NoError(t, err)
 
+	geo := geo.GeometryFromUserForwardPayloadLength(
+		ecdh.NewEcdhNike(rand.Reader),
+		2000,
+		true,
+		5,
+	)
+
 	cfg := config.Config{
+		SphinxGeometry: geo,
 		Server: &config.Server{
 			Identifier: "testserver",
 			Addresses:  []string{"127.0.0.1:1234"},

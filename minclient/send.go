@@ -148,7 +148,7 @@ func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBID
 		return nil, time.Time{}, newPKIError("minclient: failed to find destination Provider: %v", err)
 	}
 
-	p, t, err := path.New(c.rng, doc, []byte(recipient), src, dst, surbID, baseTime, true, isForward)
+	p, t, err := path.New(c.rng, c.cfg.SphinxGeometry, doc, []byte(recipient), src, dst, surbID, baseTime, true, isForward)
 	if err == nil {
 		c.logPath(doc, p)
 	}

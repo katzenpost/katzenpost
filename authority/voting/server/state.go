@@ -45,8 +45,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -92,6 +92,7 @@ type state struct {
 	worker.Worker
 
 	s   *Server
+	geo *geo.Geometry
 	log *logging.Logger
 
 	db *bolt.DB
@@ -326,11 +327,8 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 	return vote, nil
 }
 
-func (s *state) doVerifyAndParseDocument(b []byte, verifiers []cert.Verifier) (*pki.Document, error) {
-	verifyAt := monotime.Now()
-	doc, err := pki.VerifyAndParseDocument(b, verifiers)
-	verifiedAt := monotime.Now()
-	s.log.Debugf("pki.VerifyAndParseDocument took %v", verifiedAt-verifyAt)
+func (s *state) doParseDocument(b []byte) (*pki.Document, error) {
+	doc, err := pki.ParseDocument(b)
 	return doc, err
 }
 
@@ -513,23 +511,24 @@ func (s *state) getDocument(descriptors []*pki.MixDescriptor, params *config.Par
 
 	// Build the Document.
 	doc := &pki.Document{
-		Epoch:             s.votingEpoch,
-		GenesisEpoch:      s.genesisEpoch,
-		SendRatePerMinute: params.SendRatePerMinute,
-		Mu:                params.Mu,
-		MuMaxDelay:        params.MuMaxDelay,
-		LambdaP:           params.LambdaP,
-		LambdaPMaxDelay:   params.LambdaPMaxDelay,
-		LambdaL:           params.LambdaL,
-		LambdaLMaxDelay:   params.LambdaLMaxDelay,
-		LambdaD:           params.LambdaD,
-		LambdaDMaxDelay:   params.LambdaDMaxDelay,
-		LambdaM:           params.LambdaM,
-		LambdaMMaxDelay:   params.LambdaMMaxDelay,
-		Topology:          topology,
-		Providers:         providers,
-		SharedRandomValue: srv,
-		PriorSharedRandom: s.priorSRV,
+		Epoch:              s.votingEpoch,
+		GenesisEpoch:       s.genesisEpoch,
+		SendRatePerMinute:  params.SendRatePerMinute,
+		Mu:                 params.Mu,
+		MuMaxDelay:         params.MuMaxDelay,
+		LambdaP:            params.LambdaP,
+		LambdaPMaxDelay:    params.LambdaPMaxDelay,
+		LambdaL:            params.LambdaL,
+		LambdaLMaxDelay:    params.LambdaLMaxDelay,
+		LambdaD:            params.LambdaD,
+		LambdaDMaxDelay:    params.LambdaDMaxDelay,
+		LambdaM:            params.LambdaM,
+		LambdaMMaxDelay:    params.LambdaMMaxDelay,
+		Topology:           topology,
+		Providers:          providers,
+		SharedRandomValue:  srv,
+		PriorSharedRandom:  s.priorSRV,
+		SphinxGeometryHash: s.geo.Hash(),
 	}
 	return doc
 }
@@ -685,13 +684,13 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 	defer s.s.Done()
 	identityHash := s.s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          nil,
 		Authenticator:     s,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: s.s.linkKey,
 		RandomReader:      rand.Reader,
 	}
-	session, err := wire.NewSession(cfg, true)
+	session, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1274,8 +1273,8 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 		return &resp
 	}
 
-	// verify the signature and structure of the certificate
-	doc, err := s.doVerifyAndParseDocument(certificate.Payload, s.getVerifiers())
+	// verify the structure of the certificate
+	doc, err := s.doParseDocument(certificate.Payload)
 	if err != nil {
 		s.log.Error("Cert from %x failed to verify: %s", certificate.PublicKey, err)
 		resp.ErrorCode = commands.CertNotSigned
@@ -1425,9 +1424,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 		return &resp
 	}
 
-	// VerifyAndParseDocument verifies the signatures contained in the vote, but doesn't ensure
-	// that the vote contains a SharedRandom Commit from this peer
-	doc, err := s.doVerifyAndParseDocument(vote.Payload, s.getVerifiers())
+	doc, err := s.doParseDocument(vote.Payload)
 	if err != nil {
 		s.log.Error("Vote failed signature verification.")
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1657,7 +1654,7 @@ func (s *state) restorePersistence() error {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
 					}
-					doc, err := s.doVerifyAndParseDocument(rawDoc, s.getVerifiers())
+					doc, err := s.doParseDocument(rawDoc)
 					if err != nil {
 						s.log.Errorf("Failed to validate persisted document: %v", err)
 					} else if doc.Epoch != epoch {
@@ -1721,6 +1718,7 @@ func newState(s *Server) (*state, error) {
 
 	st := new(state)
 	st.s = s
+	st.geo = s.geo
 	st.log = s.logBackend.GetLogger("state")
 
 	// set voting schedule at runtime
@@ -1833,7 +1831,6 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 				LogBackend:    s.s.logBackend,
 				Authorities:   s.s.cfg.Authorities,
 				DialContextFn: nil,
-				DataDir:       s.s.cfg.Server.DataDir,
 			}
 			c, err := client.New(cfg)
 			if err != nil {

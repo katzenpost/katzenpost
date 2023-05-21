@@ -18,7 +18,6 @@ package client
 
 import (
 	"container/heap"
-	"fmt"
 	"sync"
 	"time"
 
@@ -64,27 +63,6 @@ func (a *TimerQueue) Push(i Item) {
 	a.priq.Enqueue(i.Priority(), i)
 	a.Unlock()
 	a.Signal()
-}
-
-// Remove removes a Message from the TimerQueue
-func (a *TimerQueue) Remove(i Item) error {
-	priority := i.Priority()
-	a.Lock()
-	defer a.Unlock()
-	if mo := a.priq.Peek(); mo != nil {
-		if mo.Value.(Item).Priority() == priority {
-			_ = heap.Pop(a.priq)
-			if a.priq.Len() > 0 {
-				a.Signal()
-			}
-		} else {
-			mo := a.priq.RemovePriority(priority)
-			if mo == nil {
-				return fmt.Errorf("failed to remove item with priority %d", priority)
-			}
-		}
-	}
-	return nil
 }
 
 // wakeupCh() returns the channel that fires upon Signal of the TimerQueue's sync.Cond

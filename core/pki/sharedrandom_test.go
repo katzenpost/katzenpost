@@ -24,6 +24,7 @@ import (
 )
 
 func TestSharedRandomVerify(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
@@ -38,6 +39,7 @@ func TestSharedRandomVerify(t *testing.T) {
 }
 
 func TestSharedRandomCommit(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)
@@ -46,6 +48,7 @@ func TestSharedRandomCommit(t *testing.T) {
 }
 
 func TestSharedRandomSetCommit(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	srv := new(SharedRandom)
 	commit, err := srv.Commit(1234)

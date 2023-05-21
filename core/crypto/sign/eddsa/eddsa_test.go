@@ -24,6 +24,7 @@ import (
 )
 
 func TestEddsaScheme(t *testing.T) {
+	t.Parallel()
 	message := []byte("hello world")
 	privKey, pubKey := Scheme.NewKeypair()
 	signature := privKey.Sign(message)
@@ -34,6 +35,7 @@ func TestEddsaScheme(t *testing.T) {
 }
 
 func TestEddsaSchemeTextUnmarshaler(t *testing.T) {
+	t.Parallel()
 	message := []byte("hello world")
 	privKey, pubKey := Scheme.NewKeypair()
 

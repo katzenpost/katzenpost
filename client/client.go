@@ -55,25 +55,18 @@ func (c *Client) GetConfig() *config.Config {
 }
 
 // PKIBootstrap returns a pkiClient and fetches a consensus.
-func PKIBootstrap(cfg *config.Config, linkKey wire.PrivateKey) (*pki.Client, *pki.Document, error) {
+func PKIBootstrap(ctx context.Context, c *Client, linkKey wire.PrivateKey) (pki.Client, *pki.Document, error) {
 	// Retrieve a copy of the PKI consensus document.
-	backendLog, err := log.New(cfg.Logging.File, "DEBUG", false)
-	if err != nil {
-		return nil, nil, err
-	}
-	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(backendLog, proxyCfg, linkKey, cfg.DataDir)
+	pkiClient, err := c.cfg.NewPKIClient(c.logBackend, c.cfg.UpstreamProxyConfig(), linkKey)
 	if err != nil {
 		return nil, nil, err
 	}
 	currentEpoch, _, _ := epochtime.FromUnix(time.Now().Unix())
-	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
-	defer cancel()
 	doc, _, err := pkiClient.Get(ctx, currentEpoch)
 	if err != nil {
 		return nil, nil, err
 	}
-	return &pkiClient, doc, nil
+	return pkiClient, doc, nil
 }
 
 // SelectProvider returns a provider descriptor or error.
@@ -163,7 +156,7 @@ func (c *Client) halt() {
 }
 
 // NewTOFUSession creates and returns a new ephemeral session or an error.
-func (c *Client) NewTOFUSession() (*Session, error) {
+func (c *Client) NewTOFUSession(ctx context.Context) (*Session, error) {
 	var (
 		err      error
 		doc      *pki.Document
@@ -171,15 +164,12 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 		linkKey  wire.PrivateKey
 	)
 
-	timeout := time.Duration(c.cfg.Debug.SessionDialTimeout) * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
 	// generate a linkKey
 	linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 	// fetch a pki.Document
-	if _, doc, err = PKIBootstrap(c.cfg, linkKey); err != nil {
+	pkiclient, doc, err := PKIBootstrap(ctx, c, linkKey)
+	if err != nil {
 		return nil, err
 	}
 	// choose a provider
@@ -187,6 +177,6 @@ func (c *Client) NewTOFUSession() (*Session, error) {
 		return nil, err
 	}
 
-	c.session, err = NewSession(ctx, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
+	c.session, err = NewSession(ctx, pkiclient, doc, c.fatalErrCh, c.logBackend, c.cfg, linkKey, provider)
 	return c.session, err
 }

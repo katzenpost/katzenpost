@@ -19,7 +19,28 @@ warped?=true
 mixes=3
 auths=3
 providers=2
-params=""
+
+# Parameters
+sr=0
+mu=0.005
+muMax=1000
+lP=0.001
+lPMax=1000
+lL=0.0005
+lLMax=1000
+lD=0.0005
+lDMax=3000
+lM=0.0005
+lMMax=100
+
+UserForwardPayloadLength=2000
+
+# hybrid ctidh PQ can work here, but requires manually building ctidh.
+nike=x25519
+
+# kem can be Kyber1024-X448 or any of the other schemes at https://github.com/cloudflare/circl/blob/main/kem/schemes/schemes.go (and then nike must be unset)
+kem=
+
 DISTROS=alpine debian
 distro=alpine
 net_name=voting_mixnet
@@ -53,8 +74,12 @@ $(net_name):
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} -S .$(distro) -t $(params)\
-		-v -o ./$(net_name) -b /$(net_name) -P $(base_port) -d katzenpost-$(distro)_go_mod'
+		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} \
+		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
+		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
+		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
+		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
+		-UserForwardPayloadLength $(UserForwardPayloadLength)'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
@@ -146,13 +171,13 @@ $(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) $(net
 			$(sh) -c 'cd server && make $(make_args) testnet-build testnet-install'
 
 $(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) $(net_name)
-		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd authority/cmd/voting && go mod verify && \
 			go build -trimpath -ldflags ${ldflags} && \
 			mv voting /$(net_name)/voting.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_go_mod.stamp $(net_name)
-		$(docker) run ${docker_args} $(mount_net_name) katzenpost-$(distro)_go_mod \
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
 

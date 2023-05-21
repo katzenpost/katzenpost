@@ -26,7 +26,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -49,13 +48,13 @@ func (s *Server) onConn(conn net.Conn) {
 	auth := &wireAuthenticator{s: s}
 	keyHash := s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          nil,
 		Authenticator:     auth,
 		AdditionalData:    keyHash[:],
 		AuthenticationKey: s.linkKey,
 		RandomReader:      rand.Reader,
 	}
-	wireConn, err := wire.NewSession(cfg, false)
+	wireConn, err := wire.NewPKISession(cfg, false)
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to initialize session: %v", rAddr, err)
 		return

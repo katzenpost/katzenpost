@@ -28,6 +28,7 @@ import (
 )
 
 func TestPrivateKey(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	var shortBuffer = []byte("Short Buffer")
@@ -54,6 +55,7 @@ func TestPrivateKey(t *testing.T) {
 }
 
 func TestECDHOps(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	aliceKeypair, err := NewKeypair(rand.Reader)
@@ -74,6 +76,7 @@ func TestECDHOps(t *testing.T) {
 }
 
 func TestPublicKeyToFromPEMFile(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	aliceKeypair, err := NewKeypair(rand.Reader)
 	assert.NoError(err)

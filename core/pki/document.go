@@ -19,7 +19,6 @@
 package pki
 
 import (
-	"context"
 	"crypto/hmac"
 	"encoding/base64"
 	"encoding/binary"
@@ -59,9 +58,6 @@ var (
 	// ErrDocumentNotSigned is the error returned when deserializing an unsigned
 	// document
 	ErrDocumentNotSigned = errors.New("document not signed")
-
-	// ErrUnknownVerifier is the error returned when an unknown verifier signed a document
-	ErrUnknownVerifier = errors.New("document has signature by unknown verifier")
 
 	// TrustOnFirstUseAuth is a MixDescriptor.AuthenticationType
 	TrustOnFirstUseAuth = "tofu"
@@ -145,6 +141,10 @@ type Document struct {
 
 	// PriorSharedRandom used by applications that need a longer lived SRV.
 	PriorSharedRandom [][]byte
+
+	// SphinxGeometryHash is used to ensure all mixnet actors have the same
+	// Sphinx Geometry.
+	SphinxGeometryHash []byte
 
 	// Version uniquely identifies the document format as being for the
 	// specified version so that it can be rejected if the format changes.
@@ -328,18 +328,6 @@ var (
 	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
-// Client is the abstract interface used for PKI interaction.
-type Client interface {
-	// Get returns the PKI document along with the raw serialized form for the provided epoch.
-	Get(ctx context.Context, epoch uint64) (*Document, []byte, error)
-
-	// Post posts the node's descriptor to the PKI for the provided epoch.
-	Post(ctx context.Context, epoch uint64, signingPrivateKey sign.PrivateKey, signingPublicKey sign.PublicKey, d *MixDescriptor) error
-
-	// Deserialize returns PKI document given the raw bytes.
-	Deserialize(raw []byte) (*Document, error)
-}
-
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
 func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 	_, err := cert.Verify(verifier, payload)
@@ -404,41 +392,14 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	return signed, nil
 }
 
-// VerifyAndParseDocument verifies the signatures and deserializes the document.
-func VerifyAndParseDocument(b []byte, verifiers []cert.Verifier) (*Document, error) {
-	sigs, err := cert.GetSignatures(b)
-	if err != nil {
-		return nil, err
-	}
-	vmap := make(map[[PublicKeyHashSize]byte]cert.Verifier)
-	for _, v := range verifiers {
-		vmap[v.Sum256()] = v
-	}
-
-	// verify each signature that is present
-	for _, sig := range sigs {
-		v, ok := vmap[sig.PublicKeySum256]
-		if !ok {
-			return nil, ErrUnknownVerifier
-		}
-		_, err := cert.Verify(v, b)
-		if err != nil {
-			return nil, err
-		}
-	}
-
+// ParseDocument deserializes the document.
+func ParseDocument(b []byte) (*Document, error) {
 	// Parse the payload.
 	d := new(Document)
-	err = d.UnmarshalBinary(b)
+	err := d.UnmarshalBinary(b)
 	if err != nil {
 		return nil, err
 	}
-
-	// Check the Document has met requirements.
-	if err = IsDocumentWellFormed(d, verifiers); err != nil {
-		return nil, err
-	}
-
 	return d, nil
 }
 

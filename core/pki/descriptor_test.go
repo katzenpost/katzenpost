@@ -31,6 +31,7 @@ import (
 const debugTestEpoch = 0xFFFFFFFF
 
 func TestDescriptor(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -54,11 +55,11 @@ func TestDescriptor(t *testing.T) {
 	d.IdentityKey = identityPub
 	scheme := wire.DefaultScheme
 	_, d.LinkKey = scheme.GenerateKeypair(rand.Reader)
-	d.MixKeys = make(map[uint64]*ecdh.PublicKey)
+	d.MixKeys = make(map[uint64][]byte)
 	for e := debugTestEpoch; e < debugTestEpoch+3; e++ {
 		mPriv, err := ecdh.NewKeypair(rand.Reader)
 		require.NoError(err, "[%d]: ecdh.NewKeypair()", e)
-		d.MixKeys[uint64(e)] = mPriv.PublicKey()
+		d.MixKeys[uint64(e)] = mPriv.PublicKey().Bytes()
 	}
 	d.Kaetzchen = make(map[string]map[string]interface{})
 	d.Kaetzchen["miau"] = map[string]interface{}{
@@ -88,6 +89,6 @@ func TestDescriptor(t *testing.T) {
 	for k, v := range d.MixKeys {
 		vv := dd.MixKeys[k]
 		require.NotNil(vv)
-		require.Equal(v.Bytes(), vv.Bytes(), "MixKeys[%v]", k)
+		require.Equal(v, vv, "MixKeys[%v]", k)
 	}
 }
