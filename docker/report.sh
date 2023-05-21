@@ -16,8 +16,9 @@ get_path() {
 }
 
 get_pairs() {
-    # this consumes lines of " and "-separated words and outputs a line for each
-    # 2-gram. eg, 'echo foo bar baz|get_pairs' would output these two lines:
+    # this consumes lines of space-separated words and outputs a line for each
+    # 2-gram, with the word " and " in between the words. eg,
+    # 'echo foo bar baz|get_pairs' would output these two lines:
     # foo and bar
     # bar and baz
     while read line; do
@@ -33,8 +34,9 @@ get_pairs() {
 
 get_pairs_with_pos() {
     # this consumes lines of space-separated words and outputs a line for each
-    # 2-gram, but prefixed with the item's position. eg, running
-    # 'echo foo bar baz|get_pairs_with_pos' would output these two lines:
+    # 2-gram, with the word " and " in between, and prefixed with the word's
+    # position. eg, running 'echo foo bar baz|get_pairs_with_pos' would output
+    # these two lines:
     # 1:foo and 2:bar
     # 2:bar and 3:baz
     while read line; do
@@ -48,7 +50,7 @@ get_pairs_with_pos() {
     done
 }
 
-function percent() {
+percent() {
     # this computes a percentage
     echo "$(echo "scale=2; ($1 / $2)*100"|bc|cut -f 1 -d .)%"
 }
