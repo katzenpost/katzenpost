@@ -33,7 +33,7 @@ get_pairs() {
 
 function percent() {
     # this computes a percentage
-    echo "scale=2; ($1 / $2)*100"|bc|cut -f 1 -d .
+    echo "$(echo "scale=2; ($1 / $2)*100"|bc|cut -f 1 -d .)%"
 }
 
 # this is a list of surb IDs of successful pings
