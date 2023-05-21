@@ -25,7 +25,7 @@ environment variable to be set in order to compile:
 
 .. code-block:: bash
 
-  export CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
+  export CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-haraka-256f"
 
 The Katzenpost fork of the sphincs+ ref code was created so that we
 could make some necessary changes to the Makefile. However after a

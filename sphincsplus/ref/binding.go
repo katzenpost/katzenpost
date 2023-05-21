@@ -1,7 +1,7 @@
 package sphincsplus
 
 //#cgo linux LDFLAGS: "-L./ -L/usr/lib/x86_64-linux-gnu/ -lcrypto"
-//#cgo CFLAGS: -DPARAMS=sphincs-shake-256f
+//#cgo CFLAGS: -DPARAMS=sphincs-haraka-256f
 //#include "api.h"
 import "C"
 import (
@@ -35,7 +35,7 @@ var (
 // Name returns the string naming of the current
 // Sphincs+ that this binding is being used with.
 func Name() string {
-	return "Sphincs+shake-256f"
+	return "Sphincs+haraka-256f"
 }
 
 // NewKeypair generates a new Sphincs+ keypair.
