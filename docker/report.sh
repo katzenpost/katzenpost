@@ -31,6 +31,11 @@ get_pairs() {
     done
 }
 
+function percent() {
+    # this computes a percentage
+    echo "scale=2; ($1 / $2)*100"|bc|cut -f 1 -d .
+}
+
 # this is a list of surb IDs of successful pings
 cat ping.log | grep OnACK ping.log |cut -d '[' -f 2|cut -f 1 -d ']' > report_goodsurbs.txt
 
@@ -60,6 +65,12 @@ cat report_all_pairs_uniq.txt| while read pair; do
     total="$(grep "$pair" report_all_pairs.txt|wc -l)"
     good="$(grep "$pair" report_good_pairs.txt|wc -l)"
     bad=$(($total - $good))
-    percent=$(echo "scale=2; ($bad / $total)*100"|bc|cut -f 1 -d .)
-    echo "${percent}% potential packet loss between $pair ($good good, $bad bad, $total total)"
-done | sort -rn | tee report_bad_pairs.txt
+    echo "$(percent $bad $total) potential packet loss between $pair ($good good, $bad bad, $total total)"
+done | sort -n | tee report_bad_pairs.txt
+
+num_total=$(cat report_all_paths.txt|wc -l)
+num_good=$(cat report_good_paths.txt|wc -l)
+num_bad=$(($num_total - $num_good))
+
+echo "Sent $num_total, received $num_good; $(percent $num_bad $num_total) packet loss overall."
+
