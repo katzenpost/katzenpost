@@ -43,13 +43,15 @@ import (
 // from the PublicKey's Sum256 method.
 const PublicKeyHashSize = 32
 
+var KEMScheme = hybrid.New(
+	"Kyber768-X25519",
+	adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
+	kyber768.Scheme(),
+)
+
 var DefaultScheme = &scheme{
 	KEM: kem.FromKEM(
-		hybrid.New(
-			"Kyber768-X25519",
-			adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
-			kyber768.Scheme(),
-		),
+		KEMScheme,
 	),
 }
 
