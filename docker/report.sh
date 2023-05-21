@@ -16,10 +16,10 @@ get_path() {
 }
 
 get_pairs() {
-    # this consumes lines of space-separated words and outputs a line for each
+    # this consumes lines of " and "-separated words and outputs a line for each
     # 2-gram. eg, 'echo foo bar baz|get_pairs' would output these two lines:
-    # foo bar
-    # bar baz
+    # foo and bar
+    # bar and baz
     while read line; do
         last=""
         echo "$line" | xargs -n 1 echo | while read word; do 
@@ -33,9 +33,10 @@ get_pairs() {
 
 get_pairs_with_pos() {
     # this consumes lines of space-separated words and outputs a line for each
-    # 2-gram. eg, 'echo foo bar baz|get_pairs' would output these two lines:
-    # foo bar
-    # bar baz
+    # 2-gram, but prefixed with the item's position. eg, running
+    # 'echo foo bar baz|get_pairs_with_pos' would output these two lines:
+    # 1:foo and 2:bar
+    # 2:bar and 3:baz
     while read line; do
         last=""
         echo "$line" | xargs -n 1 echo | cat -n | perl -pe 's/\t/:/' | while read word; do 
@@ -98,7 +99,7 @@ cat report_all_nodes_uniq.txt| while read node; do
     total="$(grep "$node" report_all_nodes.txt|wc -l)"
     good="$(grep "$node" report_good_nodes.txt|wc -l)"
     bad=$(($total - $good))
-    echo "$(percent $bad $total) potential packet loss on paths including node $node ($good good, $bad bad, $total total)"
+    echo "$(percent $bad $total) packet loss on paths including node $node ($good good, $bad bad, $total total)"
 done | sort -n | tee report_bad_nodes.txt
 
 echo
