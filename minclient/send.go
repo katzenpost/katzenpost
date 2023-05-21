@@ -91,12 +91,15 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 				if err != nil {
 					return nil, nil, 0, err
 				}
+				combinedPath := append(path.NodeNames(c.CurrentDocument(), fwdPath), path.NodeNames(c.CurrentDocument(), revPath)...)
+				c.log.Debugf("Composed Sphinx Packet with path: %s SURB ID %s", combinedPath, fmt.Sprintf("%x", *surbID))
 				return pkt, k, then.Sub(now), err
 			} else {
 				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, payload)
 				if err != nil {
 					return nil, nil, 0, err
 				}
+				c.log.Debugf("Composed Sphinx Packet with path: %s (without SURB)", path.NodeNames(c.CurrentDocument(), fwdPath))
 				return pkt, nil, then.Sub(now), nil
 			}
 		}
@@ -159,6 +162,7 @@ func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBID
 func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
 	s, err := path.ToString(doc, p)
 	if err != nil {
+		c.log.Errorf("Failed to get path as strings: %s", err)
 		return err
 	}
 

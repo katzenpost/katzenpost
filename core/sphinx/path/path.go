@@ -212,3 +212,22 @@ func ToString(doc *pki.Document, p []*sphinx.PathHop) ([]string, error) {
 	}
 	return s, nil
 }
+
+// NodeNames returns a slice of strings with the node names on this path
+func NodeNames(doc *pki.Document, p []*sphinx.PathHop) []string {
+	s := make([]string, 0, len(p))
+	for _, v := range p {
+		desc, err := doc.GetNodeByKeyHash(&v.ID)
+		var name string
+		if err != nil {
+			// use ID in place of string if the node isn't present in the PKI.
+			// this should basically never happen.
+			name = fmt.Sprintf("UNKNOWN_ID:%x", v.ID)
+		} else {
+			name = desc.Name
+		}
+
+		s = append(s, name)
+	}
+	return s
+}
