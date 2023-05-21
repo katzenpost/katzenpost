@@ -51,13 +51,28 @@ cat report_goodsurbs.txt| while read surb; do
 done | get_path > report_good_paths.txt
 
 # this is all of the pairs of nodes found in all paths, with and without duplicates
-cat report_all_paths.txt | get_pairs > report_all_pairs.txt
-cat report_all_pairs.txt | sort | uniq > report_all_pairs_uniq.txt
+cat report_all_paths.txt | get_pairs | tee report_all_pairs.txt | sort | uniq > report_all_pairs_uniq.txt
 
 # this is all of the pairs of nodes found in successful paths, with and without duplicates
-cat report_good_paths.txt | get_pairs > report_good_pairs.txt
-cat report_good_pairs.txt | sort | uniq > report_good_pairs_uniq.txt
+cat report_good_paths.txt | get_pairs | tee report_good_pairs.txt | sort | uniq > report_good_pairs_uniq.txt
 
+# this is all of the names of nodes used, with and without duplicates
+cat report_all_paths.txt | egrep -o '\w+' | tee report_all_nodes.txt | sort | uniq > report_all_nodes_uniq.txt
+
+# this is the names of nodes found in successful paths, with and without duplicates
+cat report_good_paths.txt | egrep -o '\w+' | tee report_good_nodes.txt | sort | uniq > report_good_nodes_uniq.txt
+
+echo "==== by node"
+cat report_all_nodes_uniq.txt| while read node; do
+    total="$(grep "$node" report_all_nodes.txt|wc -l)"
+    good="$(grep "$node" report_good_nodes.txt|wc -l)"
+    bad=$(($total - $good))
+    echo "$(percent $bad $total) potential packet loss on paths including $node ($good good, $bad bad, $total total)"
+done | sort -n | tee report_bad_pairs.txt
+
+echo
+echo
+echo "==== by pair of nodes"
 # finally, this is the percentage of paths which include this pair which
 # failed. we can't know where the loss actually occurred, but this is the
 # maximum packet loss rate that each pair of nodes *could* be responsible for. 
@@ -66,11 +81,12 @@ cat report_all_pairs_uniq.txt| while read pair; do
     good="$(grep "$pair" report_good_pairs.txt|wc -l)"
     bad=$(($total - $good))
     echo "$(percent $bad $total) potential packet loss between $pair ($good good, $bad bad, $total total)"
-done | sort -n | tee report_bad_pairs.txt
+done | sort -n | tee report_pair_loss_rate.txt
 
 num_total=$(cat report_all_paths.txt|wc -l)
 num_good=$(cat report_good_paths.txt|wc -l)
 num_bad=$(($num_total - $num_good))
 
+echo
 echo "Sent $num_total, received $num_good; $(percent $num_bad $num_total) packet loss overall."
 
