@@ -40,9 +40,11 @@ package socks5 // import "gitlab.com/yawning/obfs4.git/common/socks5"
 import (
 	"bufio"
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 	"syscall"
 	"time"
 )
@@ -51,7 +53,8 @@ const (
 	version = 0x05
 	rsv     = 0x00
 
-	cmdConnect = 0x01
+	cmdConnect      = 0x01
+	cmdUDPAssociate = 0x03
 
 	atypIPv4       = 0x01
 	atypDomainName = 0x03
@@ -114,8 +117,11 @@ func ErrorToReplyCode(err error) ReplyCode {
 
 // Request describes a SOCKS 5 request.
 type Request struct {
-	Target string
-	rw     *bufio.ReadWriter
+	Target  string
+	Command byte
+	UDPConn *net.UDPConn
+	Conn    *net.Conn
+	rw      *bufio.ReadWriter
 }
 
 // Handshake attempts to handle a incoming client handshake over the provided
@@ -155,7 +161,21 @@ func Handshake(conn net.Conn) (*Request, error) {
 		return nil, err
 	}
 
+	// Start a local UDP listener
+	if req.Command == cmdUDPAssociate {
+		req.UDPConn = listenUDP()
+	}
+
 	return req, err
+}
+
+func listenUDP() *net.UDPConn {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		// XXX: socket exhaustion
+		panic(err)
+	}
+	return conn
 }
 
 // Reply sends a SOCKS5 reply to the corresponding request.  The BND.ADDR and
@@ -170,13 +190,53 @@ func (req *Request) Reply(code ReplyCode) error {
 	//  uint8_t bnd_addr[]
 	//  uint16_t bnd_port
 
-	var resp [4 + 4 + 2]byte
+	var err error
+	var resp [4 + 16 + 2]byte
 	resp[0] = version
 	resp[1] = byte(code)
 	resp[2] = rsv
-	resp[3] = atypIPv4
 
-	if _, err := req.rw.Write(resp[:]); err != nil {
+	// Return error type for anything other than a Successful response
+	if code != ReplySucceeded {
+		// set to a valid field type
+		resp[3] = atypIPv4
+		_, err = req.rw.Write(resp[:10]) // truncate response
+		return err
+	}
+
+	// Handle responses for each command type
+	switch req.Command {
+	case cmdConnect:
+		resp[3] = atypIPv4
+		// addr resp[4:8] zero
+		// port resp[8:10] zero
+		_, err = req.rw.Write(resp[:10]) // truncate response
+	case cmdUDPAssociate:
+		ap, err := netip.ParseAddrPort(req.UDPConn.LocalAddr().String())
+		if err != nil {
+			return err
+		}
+		if !ap.Addr().IsValid() {
+			return fmt.Errorf("Invalid UDP LocalAddr!")
+		}
+		if ap.Addr().Is4() {
+			resp[3] = atypIPv4
+			ip4 := ap.Addr().As4()
+			copy(resp[4:8], ip4[:])
+			binary.BigEndian.PutUint16(resp[8:10], ap.Port())
+			_, err = req.rw.Write(resp[:10])
+		} else if ap.Addr().Is6() {
+			resp[3] = atypIPv6
+			ip6 := ap.Addr().As16()
+			copy(resp[4:20], ip6[:])
+			binary.BigEndian.PutUint16(resp[20:22], ap.Port())
+			_, err = req.rw.Write(resp[:])
+		}
+	default:
+		panic(fmt.Errorf("Unsupported Command: %x", req.Command))
+	}
+
+	if err != nil {
 		return err
 	}
 
@@ -257,12 +317,16 @@ func (req *Request) readCommand() error {
 		_ = req.Reply(ReplyGeneralFailure)
 		return err
 	}
-	if err = req.readByteVerify("command", cmdConnect); err != nil {
-		_ = req.Reply(ReplyCommandNotSupported)
+	command, err := req.readByte()
+	if err != nil {
+		_ = req.Reply(ReplyGeneralFailure)
 		return err
 	}
-	if err = req.readByteVerify("reserved", rsv); err != nil {
-		_ = req.Reply(ReplyGeneralFailure)
+	switch command {
+	// we support cmdConnect and cmdUDPAssociate
+	case cmdConnect, cmdUDPAssociate:
+	default:
+		_ = req.Reply(ReplyCommandNotSupported)
 		return err
 	}
 
