@@ -3,10 +3,8 @@ package adapter
 import (
 	"crypto/hmac"
 
-	"golang.org/x/crypto/blake2b"
-	"golang.org/x/crypto/sha3"
-
 	"github.com/cloudflare/circl/kem"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -212,8 +210,13 @@ func (a *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	if len(seed) != a.SeedSize() {
 		panic(kem.ErrSeedSize)
 	}
-	h := sha3.NewShake256()
-	_, _ = h.Write(seed)
+	h, err := blake2b.NewXOF(uint32(a.SeedSize()), nil)
+	if err != nil {
+		panic(err)
+	}
+
+	seedHash := blake2b.Sum256(seed)
+	_, _ = h.Write(seedHash[:])
 	pk, sk, err := a.nike.GenerateKeyPairFromEntropy(h)
 	if err != nil {
 		panic(err)
