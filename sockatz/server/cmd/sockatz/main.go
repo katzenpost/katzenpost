@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"runtime"
-	"os"
 	_ "net/http/pprof"
+	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
@@ -80,7 +80,7 @@ func main() {
 	// XXX: consider the possible/typical configuration:
 	// a provider node that is not an entry node to the network
 	// may choose to allow local connections, or add a user account for this worker
-	// TODO: extend cbor worker interface to provide a client configuration 
+	// TODO: extend cbor worker interface to provide a client configuration
 	sockatzServer, err := server.NewSockatz(clientCfg, serverLog, maxRequests)
 	if err != nil {
 		panic(err)

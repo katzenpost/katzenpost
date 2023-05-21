@@ -82,7 +82,7 @@ func NewSockatz(cfgFile string, log *logging.Logger, maxWorkers int) (*Sockatz, 
 // Address of a Stream to proxy to
 type SockatzRequest struct {
 	Endpoint *url.URL
-	Stream string
+	Stream   string
 }
 
 // Marshal implements cborplugin.Command
