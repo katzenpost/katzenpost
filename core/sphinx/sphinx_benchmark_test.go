@@ -33,7 +33,7 @@ func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 	}
 
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(g)
+	sphinx := NewNIKESphinx(mynike, g)
 
 	if sphinx.nike == nil {
 		panic("nike cannot be nil")

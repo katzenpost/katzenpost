@@ -2,6 +2,7 @@ package adapter
 
 import (
 	"crypto/hmac"
+	"fmt"
 
 	"github.com/cloudflare/circl/kem"
 	"golang.org/x/crypto/blake2b"
@@ -208,7 +209,7 @@ func (a *Scheme) PublicKeySize() int {
 // SeedSize.
 func (a *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	if len(seed) != a.SeedSize() {
-		panic(kem.ErrSeedSize)
+		panic(fmt.Errorf("%s: provided seed of length %d is != to correct seed size of %d", kem.ErrSeedSize, len(seed), a.SeedSize()))
 	}
 	h, err := blake2b.NewXOF(uint32(a.SeedSize()), nil)
 	if err != nil {
@@ -232,7 +233,7 @@ func (a *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 
 // Size of seed used in DeriveKey
 func (a *Scheme) SeedSize() int {
-	return a.nike.PublicKeySize()
+	return SeedSize
 }
 
 // EncapsulateDeterministically generates a shared key ss for the public
