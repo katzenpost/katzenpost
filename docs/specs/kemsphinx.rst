@@ -178,6 +178,15 @@ However there are a few notable differences:
 2. Next hop's KEM ciphertext stored in the encrypted routing information.
 
 
+3. Acknowledgments
+==================
+
+I would like to thank Peter Schwabe for the original idea of simply
+replacing the Sphinx NIKE with a KEM and for answering all my questions.
+
+I'd also like to thank Bas Westerbaan for answering questions.
+
+
 Appendix A. References
 ======================
 
