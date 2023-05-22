@@ -55,15 +55,29 @@ type Sphinx struct {
 func FromGeometry(geometry *geo.Geometry) (*Sphinx, error) {
 	if geometry.NIKEName != "" {
 		mynike := schemes.ByName(geometry.NIKEName)
+		if mynike == nil {
+			return nil, fmt.Errorf("cannot lookup NIKE by name: `%s`", geometry.NIKEName)
+		}
 		return &Sphinx{
 			nike:     mynike,
 			geometry: geometry,
 		}, nil
 	}
+	mykem := kemschemes.ByName(geometry.KEMName)
+	if mykem == nil {
+		return nil, fmt.Errorf("cannot lookup KEM by name: `%s`", geometry.KEMName)
+	}
 	return &Sphinx{
-		kem:      kemschemes.ByName(geometry.KEMName),
+		kem:      mykem,
 		geometry: geometry,
 	}, nil
+}
+
+func NewNIKESphinx(mynike nike.Scheme, geo *geo.Geometry) *Sphinx {
+	return &Sphinx{
+		nike:     mynike,
+		geometry: geo,
+	}
 }
 
 // NewSphinx creates a new instance of Sphinx.
