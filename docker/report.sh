@@ -56,10 +56,10 @@ percent() {
 }
 
 # this is a list of surb IDs of successful pings
-cat ping.log | grep OnACK ping.log |cut -d '[' -f 2|cut -f 1 -d ']' > report_goodsurbs.txt
+cat ping.log | grep -v mixy | grep OnACK ping.log |cut -d '[' -f 2|cut -f 1 -d ']' > report_goodsurbs.txt
 
 # this is the path of each successful ping, still retaining its surb ID
-cat ping.log | grep -Eo 'path: .+' > report_surb_and_path.txt
+cat ping.log | grep -v mixy | grep -Eo 'path: .+' > report_surb_and_path.txt
 
 # this is all of the paths (with duplicates)
 cat report_surb_and_path.txt | get_path | tee report_all_paths.txt | sort | uniq > report_all_paths_uniq.txt
@@ -94,44 +94,46 @@ cat report_all_paths.txt | egrep -o '\w+' | tee report_all_nodes.txt | sort | un
 cat report_good_paths.txt | egrep -o '\w+' | tee report_good_nodes.txt | sort | uniq > report_good_nodes_uniq.txt
 
 wc -l ping.log report*txt|sort -rn
-echo
-
-echo "==== by node"
-cat report_all_nodes_uniq.txt| while read node; do
-    total="$(grep "$node" report_all_nodes.txt|wc -l)"
-    good="$(grep "$node" report_good_nodes.txt|wc -l)"
-    bad=$(($total - $good))
-    echo "$(percent $bad $total) packet loss on paths including node $node ($good good, $bad bad, $total total)"
-done | sort -n | tee report_bad_nodes.txt
-
-echo
-echo "==== by pair of nodes, any position"
-cat report_all_pairs_uniq.txt| while read pair; do
-    total="$(grep "$pair" report_all_pairs.txt|wc -l)"
-    good="$(grep "$pair" report_good_pairs.txt|wc -l)"
-    bad=$(($total - $good))
-    echo "$(percent $bad $total) packet loss on paths including pair $pair ($good good, $bad bad, $total total)"
-done | sort -n | tee report_pair_loss_rate.txt
-
-echo
-echo "==== by pair of nodes, with position, sorted by loss"
-cat report_all_pos_pairs_uniq.txt| while read pair; do
-    total="$(grep "$pair" report_all_pos_pairs.txt|wc -l)"
-    good="$(grep "$pair" report_good_pos_pairs.txt|wc -l)"
-    bad=$(($total - $good))
-    echo "$(percent $bad $total) packet loss on paths including pair $pair ($good good, $bad bad, $total total)"
-done | sort -n | tee report_pos_pair_loss_rate.txt
-
-echo
-echo "=== by pair of nodes, with position, sorted by position"
-cat report_pos_pair_loss_rate.txt | perl -pe 's/(\S+ packet loss) on paths including pair (\S+) and (\S+) (.+)/\2 \3\t\1\t\4/'|sort|column -t -s '	'
 
 num_total=$(cat report_all_paths.txt|wc -l)
 num_good=$(cat report_good_paths.txt|wc -l)
 num_bad=$(($num_total - $num_good))
 
 echo
-echo "Sent $num_total, received $num_good; $(percent $num_bad $num_total) packet loss overall."
+echo "==== by node"
+cat report_all_nodes_uniq.txt| while read node; do
+    n_total="$(grep "$node" report_all_nodes.txt|wc -l)"
+    good="$(grep "$node" report_good_nodes.txt|wc -l)"
+    bad=$(($n_total - $good))
+    echo -e "$(percent $bad $n_total) loss on paths with node $node ${good}+${bad}=${n_total}\t$(percent $bad $(($num_bad * 2))) of all drops"
+    # num_bad*2 because everything counts twice here
+done | sort -n | tee report_bad_nodes.txt
 
-# in case any node has 100% packet loss, highlight that at the end (this should generally output nothing)
+echo
+echo "==== by pair of nodes, any position"
+cat report_all_pairs_uniq.txt| while read pair; do
+    p_total="$(grep "$pair" report_all_pairs.txt|wc -l)"
+    good="$(grep "$pair" report_good_pairs.txt|wc -l)"
+    bad=$(($p_total - $good))
+    echo -e "$(percent $bad $p_total) loss on paths w/ $pair ${good}+${bad}=${p_total}\t$(percent $bad $(($num_bad * 2))) of all drops"
+    # num_bad*2 because everything counts twice here
+done | sort -n | tee report_pair_loss_rate.txt
+
+echo
+echo "==== by pair of nodes, with position, sorted by loss"
+cat report_all_pos_pairs_uniq.txt| while read pair; do
+    p_total="$(grep "$pair" report_all_pos_pairs.txt|wc -l)"
+    good="$(grep "$pair" report_good_pos_pairs.txt|wc -l)"
+    bad=$(($p_total - $good))
+    echo -e "$(percent $bad $p_total) loss on paths with pair $pair ${good}+${bad}=${p_total}\t$(percent $bad $num_bad) of all drops"
+done | sort -n | tee report_pos_pair_loss_rate.txt
+
+echo
+echo "=== by pair of nodes, with position, sorted by position"
+cat report_pos_pair_loss_rate.txt | perl -pe 's/(\S+ loss) on paths with pair (\S+) and (\S+) (.+)/\2 \3\t\1\t\4/'|sort|column -t -s '	'
+
+echo
+echo "Sent $num_total, received $num_good dropped $num_bad; $(percent $num_bad $num_total) loss overall."
+
+# in case any node has 100% loss, highlight that at the end (this should generally output nothing)
 diff -u report_all_nodes_uniq.txt report_good_nodes_uniq.txt
