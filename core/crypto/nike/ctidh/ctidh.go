@@ -31,7 +31,7 @@ import (
 // CTIDH implements the Nike interface using our CTIDH module.
 type Ctidh1024Nike struct{}
 
-var CTIDH1024Scheme = &Ctidh1024Nike{}
+var CTIDH1024Scheme *Ctidh1024Nike
 
 var _ nike.PrivateKey = (*PrivateKey)(nil)
 var _ nike.PublicKey = (*PublicKey)(nil)
@@ -228,4 +228,8 @@ func (p *PrivateKey) UnmarshalBinary(data []byte) error {
 
 func (p *PrivateKey) UnmarshalText(data []byte) error {
 	return p.privateKey.UnmarshalText(data)
+}
+
+func init() {
+	CTIDH1024Scheme = &Ctidh1024Nike{}
 }

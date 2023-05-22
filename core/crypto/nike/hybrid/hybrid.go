@@ -13,7 +13,7 @@ import (
 var NOBS_CSIDH512X25519 nike.Scheme = &scheme{
 	name:   "NOBS_CSIDH-X25519",
 	first:  ecdh.NewEcdhNike(rand.Reader),
-	second: csidh.CSIDHScheme,
+	second: csidh.NOBS_CSIDH512Scheme,
 }
 
 var _ nike.PrivateKey = (*privateKey)(nil)

@@ -25,9 +25,16 @@ import (
 	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
+
+	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
+
+func BenchmarkKEMSphinxUnwrapX25519(b *testing.B) {
+	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)))
+}
 
 func BenchmarkKEMSphinxUnwrapKyber512(b *testing.B) {
 	benchmarkKEMSphinxUnwrap(b, kyber512.Scheme())
