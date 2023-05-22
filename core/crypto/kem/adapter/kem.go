@@ -211,7 +211,7 @@ func (a *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	if len(seed) != a.SeedSize() {
 		panic(fmt.Errorf("%s: provided seed of length %d is != to correct seed size of %d", kem.ErrSeedSize, len(seed), a.SeedSize()))
 	}
-	h, err := blake2b.NewXOF(uint32(a.SeedSize()), nil)
+	h, err := blake2b.NewXOF(0, nil)
 	if err != nil {
 		panic(err)
 	}
