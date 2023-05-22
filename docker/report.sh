@@ -105,8 +105,7 @@ cat report_all_nodes_uniq.txt| while read node; do
     n_total="$(grep "$node" report_all_nodes.txt|wc -l)"
     good="$(grep "$node" report_good_nodes.txt|wc -l)"
     bad=$(($n_total - $good))
-    echo -e "$(percent $bad $n_total) loss on paths with node $node ${good}+${bad}=${n_total}\t$(percent $bad $(($num_bad * 2))) of all drops"
-    # num_bad*2 because everything counts twice here
+    echo -e "$(percent $bad $n_total) loss on paths with node $node ${good}+${bad}=${n_total}"
 done | sort -n | tee report_bad_nodes.txt
 
 echo
@@ -115,8 +114,7 @@ cat report_all_pairs_uniq.txt| while read pair; do
     p_total="$(grep "$pair" report_all_pairs.txt|wc -l)"
     good="$(grep "$pair" report_good_pairs.txt|wc -l)"
     bad=$(($p_total - $good))
-    echo -e "$(percent $bad $p_total) loss on paths w/ $pair ${good}+${bad}=${p_total}\t$(percent $bad $(($num_bad * 2))) of all drops"
-    # num_bad*2 because everything counts twice here
+    echo -e "$(percent $bad $p_total) loss on paths w/ $pair ${good}+${bad}=${p_total}"
 done | sort -n | tee report_pair_loss_rate.txt
 
 echo
