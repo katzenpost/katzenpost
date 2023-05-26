@@ -21,7 +21,6 @@ import (
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/require"
 )
@@ -31,12 +30,12 @@ func TestEcdhSphinxGeometry(t *testing.T) {
 	require := require.New(t)
 
 	withSURB := false
-	g := geo.GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 5)
+	g := geo.GeometryFromUserForwardPayloadLength(ecdh.NewEcdhNike(rand.Reader), 512, withSURB, 5)
 	t.Logf("NIKE Sphinx X25519 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 10)
+	g = geo.GeometryFromUserForwardPayloadLength(ecdh.NewEcdhNike(rand.Reader), 512, withSURB, 10)
 	t.Logf("NIKE Sphinx X25519 10 hops: HeaderLength = %d", g.HeaderLength)
 
-	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	mynike := ecdh.NewEcdhNike(rand.Reader)
 	withSURB = true
 	payloadLen := 50000
 	g = geo.GeometryFromUserForwardPayloadLength(mynike, payloadLen, withSURB, 5)
@@ -60,7 +59,7 @@ func TestEcdhForwardSphinx(t *testing.T) {
 	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	mynike := ecdh.NewEcdhNike(rand.Reader)
 	nrHops := 20
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
 	sphinx := NewSphinx(g)
@@ -71,7 +70,7 @@ func TestEcdhSURB(t *testing.T) {
 	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
-	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	mynike := ecdh.NewEcdhNike(rand.Reader)
 	nrHops := 20
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
 	sphinx := NewSphinx(g)
