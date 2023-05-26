@@ -6,6 +6,7 @@ require (
 	filippo.io/edwards25519 v1.0.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
+	github.com/carlmjohnson/versioninfo v0.22.4
 	github.com/cloudflare/circl v1.3.3
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/golang/protobuf v1.5.2
@@ -34,7 +35,6 @@ require (
 require (
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/carlmjohnson/versioninfo v0.22.4 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
