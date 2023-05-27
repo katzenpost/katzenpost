@@ -200,8 +200,11 @@ func (req *Request) Reply(code ReplyCode) error {
 	if code != ReplySucceeded {
 		// set to a valid field type
 		resp[3] = atypIPv4
-		_, err = req.rw.Write(resp[:10]) // truncate response
-		return err
+		_, err := req.rw.Write(resp[:10]) // truncate response
+		if err != nil {
+			return err
+		}
+		return req.flushBuffers()
 	}
 
 	// Handle responses for each command type
@@ -233,7 +236,9 @@ func (req *Request) Reply(code ReplyCode) error {
 			_, err = req.rw.Write(resp[:])
 		}
 	default:
-		panic(fmt.Errorf("Unsupported Command: %x", req.Command))
+		// nil response
+		resp[3] = atypIPv4
+		_, err = req.rw.Write(resp[:10]) // truncate response
 	}
 
 	if err != nil {
@@ -322,11 +327,18 @@ func (req *Request) readCommand() error {
 		_ = req.Reply(ReplyGeneralFailure)
 		return err
 	}
+
 	switch command {
 	// we support cmdConnect and cmdUDPAssociate
 	case cmdConnect, cmdUDPAssociate:
 	default:
 		_ = req.Reply(ReplyCommandNotSupported)
+		return fmt.Errorf("command not supported")
+	}
+
+	// read reserved byte
+	if err = req.readByteVerify("reserved", rsv); err != nil {
+		_ = req.Reply(ReplyGeneralFailure)
 		return err
 	}
 
