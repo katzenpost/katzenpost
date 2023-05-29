@@ -36,7 +36,7 @@ func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
 	sphinx := NewNIKESphinx(mynike, g)
 
 	if sphinx.nike == nil {
-		panic("nike cannot be nil")
+		panic("sphinx.nike cannot be nil")
 	}
 
 	nodes, path := benchNewPathVector(g.NrHops, false, mynike)
