@@ -13,6 +13,7 @@
 package hybrid
 
 import (
+	"crypto/rand"
 	"errors"
 
 	"golang.org/x/crypto/blake2b"
@@ -215,24 +216,12 @@ func splitPRF(ss1, ss2, ct1, ct2 []byte) []byte {
 }
 
 func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
-	pub, ok := pk.(*PublicKey)
-	if !ok {
-		return nil, nil, kem.ErrTypeMismatch
-	}
-
-	ct1, ss1, err := sch.first.Encapsulate(pub.first)
+	seed := make([]byte, sch.EncapsulationSeedSize())
+	_, err = rand.Reader.Read(seed)
 	if err != nil {
-		return nil, nil, err
+		return
 	}
-
-	ct2, ss2, err := sch.second.Encapsulate(pub.second)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ss = splitPRF(ss1, ss2, ct1, ct2)
-
-	return append(ct1, ct2...), ss, nil
+	return sch.EncapsulateDeterministically(pk, seed)
 }
 
 func (sch *Scheme) EncapsulateDeterministically(
