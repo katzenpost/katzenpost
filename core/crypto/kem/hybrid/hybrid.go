@@ -15,6 +15,7 @@ package hybrid
 import (
 	"crypto/rand"
 	"errors"
+	"fmt"
 
 	"golang.org/x/crypto/blake2b"
 
@@ -152,23 +153,12 @@ func (sch *Scheme) GenerateKeyPair() (kem.PublicKey, kem.PrivateKey, error) {
 }
 
 func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
-	if len(seed) != sch.SeedSize() {
-		panic(kem.ErrSeedSize)
+	if len(seed) != sch.first.SeedSize()+sch.second.SeedSize() {
+		panic(fmt.Sprintf("seed size must be %d", sch.first.SeedSize()+sch.second.SeedSize()))
 	}
 
-	h, err := blake2b.NewXOF(uint32(sch.first.SeedSize()+sch.second.SeedSize()), nil)
-	if err != nil {
-		panic(err)
-	}
-	seedHash := blake2b.Sum256(seed)
-	_, _ = h.Write(seedHash[:])
-	first := make([]byte, sch.first.SeedSize())
-	second := make([]byte, sch.second.SeedSize())
-	_, _ = h.Read(first)
-	_, _ = h.Read(second)
-
-	pk1, sk1 := sch.first.DeriveKeyPair(first)
-	pk2, sk2 := sch.second.DeriveKeyPair(second)
+	pk1, sk1 := sch.first.DeriveKeyPair(seed[:sch.first.SeedSize()])
+	pk2, sk2 := sch.second.DeriveKeyPair(seed[sch.first.SeedSize():])
 
 	return &PublicKey{sch, pk1, pk2}, &PrivateKey{sch, sk1, sk2}
 }
