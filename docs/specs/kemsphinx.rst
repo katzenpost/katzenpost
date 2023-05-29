@@ -21,7 +21,7 @@ We'll express our KEM Sphinx header in pseudo code. The Sphinx body
 will be exactly the same as [SPHINXSPEC]_. Our basic KEM API
 has three functions:
 
-* privkey, pubkey = GEN_KEYPAIR(RNG)
+* PRIV_KEY, PUB_KEY = GEN_KEYPAIR(RNG)
 
 * ct, ss = ENCAP(PUB_KEY) - Encapsulate generates a shared
   secret, ss, for the public key and encapsulates it into a ciphertext.
