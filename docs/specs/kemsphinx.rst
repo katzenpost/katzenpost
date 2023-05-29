@@ -83,7 +83,11 @@ security.
 
 Our KEM combiner uses the split PRF design from the paper when combining
 two KEM shared secrets together we use a hash function to also mix
-in the values of both KEM ciphertexts:
+in the values of both KEM ciphertexts. In this pseudo code
+example we are hashing together the two shared secrets
+from the two underlying KEMs, ss1 and ss2. Additionally
+the two ciphertexts from the underlying KEMs, cct1 and cct2,
+are also hashed together:
 
 ```
 // H is a hash function
