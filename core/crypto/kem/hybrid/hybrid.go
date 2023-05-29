@@ -22,11 +22,6 @@ import (
 	"github.com/cloudflare/circl/kem"
 )
 
-const (
-	// SeedSize is the number of bytes needed to seed deterministic methods below.
-	SeedSize = 32
-)
-
 var (
 	ErrUninitialized = errors.New("public or private key not initialized")
 )
@@ -71,7 +66,7 @@ func (sch *Scheme) PrivateKeySize() int {
 }
 
 func (sch *Scheme) SeedSize() int {
-	return SeedSize
+	return sch.first.SeedSize() + sch.second.SeedSize()
 }
 
 func (sch *Scheme) SharedKeySize() int {
@@ -83,7 +78,7 @@ func (sch *Scheme) CiphertextSize() int {
 }
 
 func (sch *Scheme) EncapsulationSeedSize() int {
-	return SeedSize
+	return sch.first.SeedSize() + sch.second.SeedSize()
 }
 
 func (sk *PrivateKey) Scheme() kem.Scheme { return sk.scheme }
