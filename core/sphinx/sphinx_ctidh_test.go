@@ -94,5 +94,5 @@ func TestCTIDHSphinxGeometry(t *testing.T) {
 	g := geo.GeometryFromUserForwardPayloadLength(ctidh.CTIDH1024Scheme, 512, withSURB, 5)
 	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)
 	g = geo.GeometryFromUserForwardPayloadLength(ctidh.CTIDH1024Scheme, 512, withSURB, 10)
-	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)
+	t.Logf("NIKE Sphinx CTIDH 10 hops: HeaderLength = %d", g.HeaderLength)
 }
