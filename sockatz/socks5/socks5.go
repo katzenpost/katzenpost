@@ -160,22 +160,15 @@ func Handshake(conn net.Conn) (*Request, error) {
 	if err = req.readCommand(); err != nil {
 		return nil, err
 	}
-
-	// Start a local UDP listener
-	if req.Command == cmdUDPAssociate {
-		req.UDPConn = listenUDP()
-	}
-
 	return req, err
 }
 
-func listenUDP() *net.UDPConn {
+func listenUDP() (*net.UDPConn, error) {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
-		// XXX: socket exhaustion
-		panic(err)
+		return nil, err
 	}
-	return conn
+	return conn, nil
 }
 
 // Reply sends a SOCKS5 reply to the corresponding request.  The BND.ADDR and
@@ -215,7 +208,12 @@ func (req *Request) Reply(code ReplyCode) error {
 		// port resp[8:10] zero
 		_, err = req.rw.Write(resp[:10]) // truncate response
 	case cmdUDPAssociate:
-		ap, err := netip.ParseAddrPort(req.UDPConn.LocalAddr().String())
+		l, err := listenUDP()
+		if err != nil {
+			return err
+		}
+		req.UDPConn = l
+		ap, err := netip.ParseAddrPort(l.LocalAddr().String())
 		if err != nil {
 			return err
 		}
@@ -328,6 +326,7 @@ func (req *Request) readCommand() error {
 		return err
 	}
 
+	req.Command = command
 	switch command {
 	// we support cmdConnect and cmdUDPAssociate
 	case cmdConnect, cmdUDPAssociate:
