@@ -27,27 +27,19 @@ import (
 	"os"
 	"strings"
 
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
-	"github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/schemes"
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 // PublicKeyHashSize indicates the hash size returned
 // from the PublicKey's Sum256 method.
 const PublicKeyHashSize = 32
 
-var KEMScheme = hybrid.New(
-	"Kyber768-X25519",
-	adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
-	kyber768.Scheme(),
-)
+var KEMScheme = schemes.ByName("Kyber768-X25519")
 
 var DefaultScheme = &scheme{
 	KEM: kem.FromKEM(
