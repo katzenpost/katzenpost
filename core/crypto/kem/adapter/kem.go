@@ -252,8 +252,12 @@ func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 	}
 
 	pk2, sk2 := a.DeriveKeyPair(seed)
+
+	// ss = DH(my_priv_key, their_pub_key)
 	ss := a.nike.DeriveSecret(sk2.(*PrivateKey).privateKey, pub.publicKey)
-	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, pub.publicKey.Bytes(), pk2.(*PublicKey).publicKey.Bytes())
+
+	// ss2 = H(ss || my_pubkey || their_pubkey)
+	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, pk2.(*PublicKey).publicKey.Bytes(), pub.publicKey.Bytes())
 	ct, _ := pk2.MarshalBinary()
 	return ct, ss2, nil
 }
