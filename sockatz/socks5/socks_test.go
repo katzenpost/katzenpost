@@ -31,8 +31,10 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"encoding/binary"
 	"io"
 	"net"
+	"net/netip"
 	"testing"
 )
 
@@ -377,6 +379,40 @@ func TestResponseNil(t *testing.T) {
 	if msg := c.readHex(); msg != "05000001000000000000" {
 		t.Error("Reply(ReplySucceeded) invalid response:", msg)
 	}
+}
+
+func TestRequestUDPAssociate(t *testing.T) {
+	c := new(testReadWriter)
+	req := c.toRequest()
+
+	// open a listening UDP socket to test proxying UDP to
+	l, err := listenUDP()
+	if err != nil {
+		t.Error("listenUDP() failed:", err)
+	}
+	ap, _ := netip.ParseAddrPort(l.LocalAddr().String())
+	var cmd[4 + 4 + 2 ] byte
+	cmd[0] = version
+	cmd[1] = cmdUDPAssociate
+	cmd[3] = atypIPv4
+	ip4 := ap.Addr().As4()
+	copy(cmd[4:8], ip4[:])
+	binary.BigEndian.PutUint16(cmd[8:10], ap.Port())
+	if _, err = c.readBuf.Write(cmd[:]); err != nil {
+		t.Error("readBuf.Write failed:", err)
+	}
+	if err := req.readCommand(); err != nil {
+		t.Error("readCommand(UDPAssociate) failed:", err)
+	}
+
+	if err := req.Reply(ReplySucceeded); err != nil {
+		t.Error("req.Reply(ReplySucceeded) failed:", err)
+	}
+
+	if req.UDPConn == nil {
+		t.Error("No UDPConn opened")
+	}
+
 }
 
 var _ io.ReadWriter = (*testReadWriter)(nil)
