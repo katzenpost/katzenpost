@@ -108,12 +108,6 @@ func (sk *PrivateKey) Equal(other kem.PrivateKey) bool {
 	if !ok {
 		return false
 	}
-	if sk.first == nil && sk.second == nil && oth.first == nil && oth.second == nil {
-		return true
-	}
-	if sk.first == nil || sk.second == nil || oth.first == nil || oth.second == nil {
-		return false
-	}
 	return sk.first.Equal(oth.first) && sk.second.Equal(oth.second)
 }
 
@@ -124,12 +118,6 @@ func (sk *PrivateKey) Public() kem.PublicKey {
 func (pk *PublicKey) Equal(other kem.PublicKey) bool {
 	oth, ok := other.(*PublicKey)
 	if !ok {
-		return false
-	}
-	if pk.first == nil && pk.second == nil && oth.first == nil && oth.second == nil {
-		return true
-	}
-	if pk.first == nil || pk.second == nil || oth.first == nil || oth.second == nil {
 		return false
 	}
 	return pk.first.Equal(oth.first) && pk.second.Equal(oth.second)
