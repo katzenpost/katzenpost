@@ -39,11 +39,9 @@ import (
 // from the PublicKey's Sum256 method.
 const PublicKeyHashSize = 32
 
-var KEMScheme = schemes.ByName("Kyber768-X25519")
-
 var DefaultScheme = &scheme{
 	KEM: kem.FromKEM(
-		KEMScheme,
+		schemes.ByName("Kyber768-X25519"),
 	),
 }
 
