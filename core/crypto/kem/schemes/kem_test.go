@@ -4,13 +4,12 @@ import (
 	"encoding/hex"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
 )
 
-func TestHybridKEM(t *testing.T) {
+func TestHybridKEMOnly(t *testing.T) {
 	// test using the KEM used in our PQ Noise protocol
-	s := wire.KEMScheme
+	s := ByName("Kyber768-X25519")
 
 	t.Logf("ciphertext size %d", s.CiphertextSize())
 	t.Logf("shared key size %d", s.SharedKeySize())
@@ -36,8 +35,10 @@ func TestHybridKEM(t *testing.T) {
 
 func TestHybridKEMVectors(t *testing.T) {
 	// test using the KEM used in our PQ Noise protocol
-	s := wire.KEMScheme
+	s := ByName("Kyber768-X25519")
+
 	/*
+
 		pubkey1, privkey1, err := s.GenerateKeyPair()
 		require.NoError(t, err)
 
