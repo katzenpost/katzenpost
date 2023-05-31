@@ -184,7 +184,7 @@ func (s *Session) handshake() error {
 	defer handshake.Reset()
 	var (
 		prologueLen = 1
-		keyLen      = 32
+		keyLen      = nyquist.SymmetricKeySize
 
 		// client
 		// -> (prologue), e
