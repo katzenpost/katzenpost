@@ -155,9 +155,9 @@ func (a *Scheme) Decapsulate(myPrivkey kem.PrivateKey, ct []byte) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	// s = DH(my_priv_key, their_pub_key)
+	// s = DH(my_privkey, their_pubkey)
 	ss := a.nike.DeriveSecret(myPrivkey.(*PrivateKey).privateKey, theirPubkey.(*PublicKey).publicKey)
-	// shared_key = H(ss || my_pub_key || their_pub_key)
+	// shared_key = H(ss || my_pubkey || their_pubkey)
 	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, myPrivkey.Public().(*PublicKey).publicKey.Bytes(), theirPubkey.(*PublicKey).publicKey.Bytes())
 	return ss2, nil
 }
@@ -206,7 +206,7 @@ func (a *Scheme) PublicKeySize() int {
 	return a.nike.PublicKeySize()
 }
 
-// DeriveKeyPair deterministicallly derives a pair of keys from a seed.
+// DeriveKeyPair deterministically derives a pair of keys from a seed.
 // Panics if the length of seed is not equal to the value returned by
 // SeedSize.
 func (a *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
@@ -219,7 +219,13 @@ func (a *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	}
 
 	seedHash := blake2b.Sum256(seed)
-	_, _ = h.Write(seedHash[:])
+	count, err := h.Write(seedHash[:])
+	if err != nil {
+		panic(err)
+	}
+	if count != len(seedHash) {
+		panic("blake2b.XOR failed")
+	}
 	pk, sk, err := a.nike.GenerateKeyPairFromEntropy(h)
 	if err != nil {
 		panic(err)
@@ -253,7 +259,7 @@ func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 		return nil, nil, kem.ErrTypeMismatch
 	}
 	myPubkey, sk2 := a.DeriveKeyPair(seed)
-	// ss = DH(my_priv_key, their_pub_key)
+	// ss = DH(my_privkey, their_pubkey)
 	ss := a.nike.DeriveSecret(sk2.(*PrivateKey).privateKey, theirPubkey.publicKey)
 	// ss2 = H(ss || their_pubkey || my_pubkey)
 	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, theirPubkey.publicKey.Bytes(), myPubkey.(*PublicKey).publicKey.Bytes())
