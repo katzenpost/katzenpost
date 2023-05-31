@@ -136,34 +136,33 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		HasSURB: surb != nil,
 	}
 	cborResponse := <-pluginClient.ReadChan()
-	switch r := cborResponse.(type) {
-	case *cborplugin.Response:
-		if len(r.Payload) > k.geo.UserForwardPayloadLength {
-			// response is probably invalid, so drop it
-			k.log.Errorf("Got response too long: %d > max (%d)",
-				len(r.Payload), k.geo.UserForwardPayloadLength)
-			instrument.KaetzchenRequestsDropped(1)
-			return
-		}
-		// Iff there is a SURB, generate a SURB-Reply and schedule.
-		if surb != nil {
-			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload, k.glue.Config().SphinxGeometry)
-			if err != nil {
-				k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
-				return
-			}
-
-			k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
-			k.glue.Scheduler().OnPacket(respPkt)
-			return
-		}
-		k.log.Debugf("No SURB provided: %v", pkt.ID)
-	default:
-		// received some unknown command type
-		k.log.Errorf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, cborResponse)
+	payload, err = cborResponse.Marshal()
+	if err != nil {
+		k.log.Errorf("Failed to Marshal CBOR Plugin response: %v", err)
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
+	if len(payload) > k.geo.UserForwardPayloadLength {
+		// response is probably invalid, so drop it
+		k.log.Errorf("Got response too long: %d > max (%d)",
+		len(payload), k.geo.UserForwardPayloadLength)
+		instrument.KaetzchenRequestsDropped(1)
+		return
+	}
+	// Iff there is a SURB, generate a SURB-Reply and schedule.
+	if surb != nil {
+		respPkt, err := packet.NewPacketFromSURB(pkt, surb, payload, k.glue.Config().SphinxGeometry)
+		if err != nil {
+			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
+			return
+		}
+
+		k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
+		k.glue.Scheduler().OnPacket(respPkt)
+		return
+	}
+	k.log.Debugf("No SURB provided: %v", pkt.ID)
+	return
 }
 
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
