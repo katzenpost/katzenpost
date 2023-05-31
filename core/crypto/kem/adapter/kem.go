@@ -115,14 +115,14 @@ func (a *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	return a.EncapsulateDeterministically(pk, seed)
 }
 
-func hashSharedSecretWithPublicKeys(publicKeySize int, ss []byte, pubkey1 []byte, pubkey2 []byte) []byte {
+func (a *Scheme) hash(ss []byte, pubkey1 []byte, pubkey2 []byte) []byte {
 	var h blake2b.XOF
 	var err error
 	if len(ss) != 32 {
 		sum := blake2b.Sum256(ss)
-		h, err = blake2b.NewXOF(uint32(publicKeySize), sum[:])
+		h, err = blake2b.NewXOF(uint32(a.SharedKeySize()), sum[:])
 	} else {
-		h, err = blake2b.NewXOF(uint32(publicKeySize), ss)
+		h, err = blake2b.NewXOF(uint32(a.SharedKeySize()), ss)
 	}
 	if err != nil {
 		panic(err)
@@ -158,7 +158,7 @@ func (a *Scheme) Decapsulate(myPrivkey kem.PrivateKey, ct []byte) ([]byte, error
 	// s = DH(my_privkey, their_pubkey)
 	ss := a.nike.DeriveSecret(myPrivkey.(*PrivateKey).privateKey, theirPubkey.(*PublicKey).publicKey)
 	// shared_key = H(ss || my_pubkey || their_pubkey)
-	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, myPrivkey.Public().(*PublicKey).publicKey.Bytes(), theirPubkey.(*PublicKey).publicKey.Bytes())
+	ss2 := a.hash(ss, myPrivkey.Public().(*PublicKey).publicKey.Bytes(), theirPubkey.(*PublicKey).publicKey.Bytes())
 	return ss2, nil
 }
 
@@ -211,7 +211,7 @@ func (a *Scheme) PublicKeySize() int {
 // SeedSize.
 func (a *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	if len(seed) != a.SeedSize() {
-		panic(fmt.Errorf("%s: provided seed of length %d is != to correct seed size of %d", kem.ErrSeedSize, len(seed), a.SeedSize()))
+		panic(fmt.Errorf("%s: provided len(seed) %d != a.SeedSize() %d", kem.ErrSeedSize, len(seed), a.SeedSize()))
 	}
 	h, err := blake2b.NewXOF(0, nil)
 	if err != nil {
@@ -262,7 +262,7 @@ func (a *Scheme) EncapsulateDeterministically(pk kem.PublicKey, seed []byte) (
 	// ss = DH(my_privkey, their_pubkey)
 	ss := a.nike.DeriveSecret(sk2.(*PrivateKey).privateKey, theirPubkey.publicKey)
 	// ss2 = H(ss || their_pubkey || my_pubkey)
-	ss2 := hashSharedSecretWithPublicKeys(a.nike.PublicKeySize(), ss, theirPubkey.publicKey.Bytes(), myPubkey.(*PublicKey).publicKey.Bytes())
+	ss2 := a.hash(ss, theirPubkey.publicKey.Bytes(), myPubkey.(*PublicKey).publicKey.Bytes())
 	ct, _ := myPubkey.MarshalBinary()
 	return ct, ss2, nil
 }
