@@ -9,6 +9,9 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
+// NOTE that there is a deterministic which covers the behavior this
+// NIKE to KEM adapter, located in core/crypto/kem/schemes/kem_test.go
+
 func TestNikeToKemAdapter(t *testing.T) {
 	ecdhNike := ecdh.NewEcdhNike(rand.Reader)
 	s := FromNIKE(ecdhNike)
