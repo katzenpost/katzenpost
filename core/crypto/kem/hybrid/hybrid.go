@@ -162,8 +162,11 @@ func splitPRF(ss1, ss2, ct1, ct2 []byte) []byte {
 	// implement split PRF KEM combiner as:
 	// H(ss1 || ss2 || ct1 || ct2)
 	// in order to retain IND-CCA2 security
-	// as described here:
-	// https://link.springer.com/chapter/10.1007/978-3-319-76578-5_7
+	// as described here, at the bottom of page 3:
+	// KEM Combiners
+	// by Federico Giacon, Felix Heuer, and Bertram Poettering
+	// https://eprint.iacr.org/2018/024.pdf
+	//
 
 	h, err := blake2b.New256(nil)
 	if err != nil {
