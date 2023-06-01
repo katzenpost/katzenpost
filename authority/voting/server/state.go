@@ -415,6 +415,9 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
 	mixes, params, err := s.tallyVotes(epoch)
+	if err != nil {
+		return nil, err
+	}
 	consensusOfOne := s.getDocument(mixes, params, srv)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
@@ -968,17 +971,19 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 		if len(votes) >= s.threshold {
 			params := &config.Parameters{}
 			d := gob.NewDecoder(strings.NewReader(bs))
-			if err := d.Decode(params); err == nil {
-				sortNodesByPublicKey(nodes)
-				// successful tally
-				return nodes, params, nil
+			if err := d.Decode(params); err != nil {
+				s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
+				return nil, nil, err
 			}
+			sortNodesByPublicKey(nodes)
+			// successful tally
+			return nodes, params, nil
 		} else if len(votes) >= s.dissenters {
 			return nil, nil, errors.New("a consensus partition")
 		}
 
 	}
-	return nil, nil, errors.New("consensus failure")
+	return nil, nil, errors.New("consensus failure (mixParams empty)")
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
