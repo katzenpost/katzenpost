@@ -415,6 +415,9 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
 	mixes, params, err := s.tallyVotes(epoch)
+	if err != nil {
+		return nil, err
+	}
 	consensusOfOne := s.getDocument(mixes, params, srv)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
