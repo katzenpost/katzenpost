@@ -397,7 +397,6 @@ func TestRequestUDPAssociate(t *testing.T) {
 	cmd[1] = UDPAssociateCmd
 	cmd[3] = atypIPv4
 	ip4 := ap.Addr().As4()
-	fmt.Printf("%x\n", ip4[:])
 	copy(cmd[4:8], ip4[:])
 	binary.BigEndian.PutUint16(cmd[8:10], ap.Port())
 	if _, err := c.readBuf.Write(cmd[:]); err != nil {
