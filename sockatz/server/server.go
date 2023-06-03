@@ -48,6 +48,7 @@ var (
 	ErrNoData            = errors.New("ErrNoData")
 	ErrSocketClosed      = errors.New("ErrSocketClosed")
 	ErrInsufficientFunds = errors.New("ErrInsufficientFunds")
+	ErrInvalidFrame      = errors.New("ErrInvalidFrame")
 	ErrNoSession         = errors.New("ErrNoSession")
 	ErrInvalidCommand    = errors.New("ErrInvalidCommand")
 	ErrUnsupportedProto  = errors.New("ErrUnsupportedProtocol")
