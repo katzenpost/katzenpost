@@ -140,9 +140,9 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = n
 	if isProvider {
-		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1),}
+		cfg.Server.Addresses = []string{fmt.Sprintf("quic://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1),}
 	} else {
-		cfg.Server.Addresses = []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)}
+		cfg.Server.Addresses = []string{fmt.Sprintf("quic://127.0.0.1:%d", s.lastPort)}
 	}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
@@ -264,7 +264,7 @@ func (s *katzenpost) genAuthConfig() error {
 
 	// Server section.
 	cfg.Server = new(aConfig.Server)
-	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.basePort), fmt.Sprintf("ws://127.0.0.1:%d", s.basePort+1), fmt.Sprintf("http://127.0.0.1:%d", s.basePort+2)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.basePort), fmt.Sprintf("ws://127.0.0.1:%d", s.basePort+1), fmt.Sprintf("quic://127.0.0.1:%d", s.basePort+2)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, "authority")
 
 	// Logging section.
@@ -316,7 +316,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
 			Identifier: fmt.Sprintf("auth%d", i),
-			Addresses:  []string{fmt.Sprintf("http://127.0.0.1:%d", s.lastPort)},
+			Addresses:  []string{fmt.Sprintf("quic://127.0.0.1:%d", s.lastPort)},
 			//Addresses:  []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("ws://127.0.0.1:%d", s.lastPort+1), fmt.Sprintf("http://127.0.0.1:%d", s.lastPort+2)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
