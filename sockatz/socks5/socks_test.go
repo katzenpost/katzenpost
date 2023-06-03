@@ -30,12 +30,15 @@ package socks5
 import (
 	"bufio"
 	"bytes"
-	"encoding/hex"
+	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"io"
 	"net"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func tcpAddrsEqual(a, b *net.TCPAddr) bool {
@@ -385,34 +388,95 @@ func TestRequestUDPAssociate(t *testing.T) {
 	c := new(testReadWriter)
 	req := c.toRequest()
 
-	// open a listening UDP socket to test proxying UDP to
-	l, err := listenUDP()
-	if err != nil {
-		t.Error("listenUDP() failed:", err)
-	}
-	ap, _ := netip.ParseAddrPort(l.LocalAddr().String())
-	var cmd[4 + 4 + 2 ] byte
+	// bind to a local UDP socket
+	tgt := ListenUDP()
+	ap, _ := netip.ParseAddrPort(tgt.LocalAddr().String())
+	var cmd [4 + 4 + 2]byte
+	var err error
 	cmd[0] = version
-	cmd[1] = cmdUDPAssociate
+	cmd[1] = UDPAssociateCmd
 	cmd[3] = atypIPv4
 	ip4 := ap.Addr().As4()
+	fmt.Printf("%x\n", ip4[:])
 	copy(cmd[4:8], ip4[:])
 	binary.BigEndian.PutUint16(cmd[8:10], ap.Port())
-	if _, err = c.readBuf.Write(cmd[:]); err != nil {
+	if _, err := c.readBuf.Write(cmd[:]); err != nil {
 		t.Error("readBuf.Write failed:", err)
 	}
+
 	if err := req.readCommand(); err != nil {
 		t.Error("readCommand(UDPAssociate) failed:", err)
 	}
 
+	// socks5 server process starts a UDP listener
+	req.Conn = ListenUDP()
 	if err := req.Reply(ReplySucceeded); err != nil {
 		t.Error("req.Reply(ReplySucceeded) failed:", err)
 	}
 
-	if req.UDPConn == nil {
-		t.Error("No UDPConn opened")
+	// verify that there is a listening UDP socket
+	buf := c.writeBuf.Bytes()
+
+	if buf[0] != version || buf[1] != 0 || buf[2] != rsv {
+		t.Error("Invalid response header")
 	}
 
+	// verify that the address
+	var ip net.IP
+	var port uint16
+
+	switch buf[3] {
+	case atypIPv4:
+		if len(buf) != 4+4+2 {
+			t.Error("Reply invalid length")
+		}
+		ip = net.IP(buf[4:8])
+		port = binary.BigEndian.Uint16(buf[8:10])
+	case atypIPv6:
+		if len(buf) != 4+16+2 {
+			t.Error("Reply invalid length")
+		}
+		port = binary.BigEndian.Uint16(buf[20:22])
+		ip = net.IP(buf[4:20])
+	default:
+		t.Error("Invalid address type")
+	}
+
+	// Test that the UDP socket returned is correct by
+	// writing/reading data
+	payload := make([]byte, 420)
+	io.ReadFull(rand.Reader, payload)
+
+	addr := fmt.Sprintf("%s:%d", ip.String(), port)
+	t.Log("Dialing", addr)
+
+	// start waiting for bytes on the listening UDP socket
+	errch := make(chan error)
+	go func() {
+		recvbuf := make([]byte, len(payload))
+		req.Conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		req.Conn.Read(recvbuf)
+		if !bytes.Equal(recvbuf, payload) {
+			errch <- fmt.Errorf("Received UDP payload differed! %x %x", recvbuf, payload)
+		}
+		close(errch)
+	}()
+
+	uconn, err := net.Dial("udp", addr)
+	if err != nil {
+		t.Error("Dialing failure:", err)
+	}
+
+	_, err = uconn.Write(payload)
+	if err != nil {
+		t.Error("writing to UDP socket failed")
+	}
+
+	// wait for ead
+	err, ok := <-errch
+	if ok {
+		t.Error(err)
+	}
 }
 
 var _ io.ReadWriter = (*testReadWriter)(nil)
