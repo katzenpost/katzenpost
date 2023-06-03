@@ -377,8 +377,8 @@ func New(cfg *config.Config) (*Server, error) {
 				s.listeners = append(s.listeners, l)
 				s.Add(1)
 				go s.listenWSWorker(l)
-			case "tcp":
-				l, err := net.Listen("tcp", u.Host)
+			case "tcp", "tcp4", "tcp6":
+				l, err := net.Listen(u.Scheme, u.Host)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
