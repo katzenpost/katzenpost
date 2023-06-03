@@ -53,8 +53,8 @@ const (
 	version = 0x05
 	rsv     = 0x00
 
-	cmdConnect      = 0x01
-	cmdUDPAssociate = 0x03
+	ConnectCmd      = 0x01
+	UDPAssociateCmd = 0x03
 
 	atypIPv4       = 0x01
 	atypDomainName = 0x03
@@ -119,8 +119,7 @@ func ErrorToReplyCode(err error) ReplyCode {
 type Request struct {
 	Target  string
 	Command byte
-	UDPConn *net.UDPConn
-	Conn    *net.Conn
+	Conn    net.Conn
 	rw      *bufio.ReadWriter
 }
 
@@ -160,15 +159,17 @@ func Handshake(conn net.Conn) (*Request, error) {
 	if err = req.readCommand(); err != nil {
 		return nil, err
 	}
+
 	return req, err
 }
 
-func listenUDP() (*net.UDPConn, error) {
+func ListenUDP() net.Conn {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
 	if err != nil {
-		return nil, err
+		// XXX: socket exhaustion
+		panic(err)
 	}
-	return conn, nil
+	return conn
 }
 
 // Reply sends a SOCKS5 reply to the corresponding request.  The BND.ADDR and
@@ -202,22 +203,23 @@ func (req *Request) Reply(code ReplyCode) error {
 
 	// Handle responses for each command type
 	switch req.Command {
-	case cmdConnect:
+	case ConnectCmd:
 		resp[3] = atypIPv4
 		// addr resp[4:8] zero
 		// port resp[8:10] zero
 		_, err = req.rw.Write(resp[:10]) // truncate response
-	case cmdUDPAssociate:
-		l, err := listenUDP()
-		if err != nil {
-			return err
+	case UDPAssociateCmd:
+		if req.Conn == nil {
+			// should have started a listener!
+			panic("No UDP Listener")
 		}
-		req.UDPConn = l
-		ap, err := netip.ParseAddrPort(l.LocalAddr().String())
+		ap, err := netip.ParseAddrPort(req.Conn.LocalAddr().String())
 		if err != nil {
+			_, err = req.rw.Write(resp[:])
 			return err
 		}
 		if !ap.Addr().IsValid() {
+			return req.flushBuffers()
 			return fmt.Errorf("Invalid UDP LocalAddr!")
 		}
 		if ap.Addr().Is4() {
@@ -326,14 +328,14 @@ func (req *Request) readCommand() error {
 		return err
 	}
 
-	req.Command = command
 	switch command {
-	// we support cmdConnect and cmdUDPAssociate
-	case cmdConnect, cmdUDPAssociate:
+	// we support Connect and UDPAssociate
+	case ConnectCmd, UDPAssociateCmd:
 	default:
 		_ = req.Reply(ReplyCommandNotSupported)
 		return fmt.Errorf("command not supported")
 	}
+	req.Command = command
 
 	// read reserved byte
 	if err = req.readByteVerify("reserved", rsv); err != nil {
@@ -355,6 +357,7 @@ func (req *Request) readCommand() error {
 			_ = req.Reply(ReplyGeneralFailure)
 			return err
 		}
+
 		host = net.IPv4(addr[0], addr[1], addr[2], addr[3]).String()
 	case atypDomainName:
 		var alen byte
@@ -392,7 +395,6 @@ func (req *Request) readCommand() error {
 	}
 	port := int(rawPort[0])<<8 | int(rawPort[1])
 	req.Target = fmt.Sprintf("%s:%d", host, port)
-
 	return req.flushBuffers()
 }
 
