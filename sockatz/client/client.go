@@ -160,7 +160,9 @@ func (c *Client) Dial(id []byte, tgt *url.URL) chan error {
 	return errCh
 }
 
-func (c *Client) Proxy(id []byte, conn net.Conn) {
+func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
+	errCh := make(chan error)
+	defer close(errCh)
 	frames := make(map[uint64]*server.Frame)
 	f_read := uint64(1)
 	f_write := uint64(1) // ack 0 must be a special case of nothing yet received, so frames start # from 1
@@ -183,117 +185,130 @@ func (c *Client) Proxy(id []byte, conn net.Conn) {
 		mode = server.TCP
 	}
 
-	// read from the local socket, send a proxy command to peer, and write response to local socket
-	for {
-		// copy from local socket to remote
-		f := &server.Frame{Payload: make([]byte, server.PayloadLen), Ack: lack, Num: f_write}
-		conn.SetReadDeadline(time.Now().Add(server.DefaultDeadline))
-		n, err := conn.Read(f.Payload)
-		// handle short reads
-		if errors.Is(err, io.EOF) && n != 0 {
-			panic(err)
-		} else if errors.Is(err, io.ErrUnexpectedEOF) && n != 0 {
-			panic(err)
-		} else if errors.Is(err, os.ErrDeadlineExceeded) && n == 0 {
-			// skip sending frame
-		} else if err != nil {
-			// handle unexpected error
-			panic(err)
-		}
-
-		// store frame for (re)transmission
-		frames[f.Num] = f
-
-		// XXX: tune retransmit
-		if f.Num > pack+rwin && pack != 0 {
-			// resend pack + 1
-			if f2, ok := frames[pack+1]; ok {
-				f = f2
+	go func() {
+		// read from the local socket, send a proxy command to peer, and write response to local socket
+		for {
+			// copy from local socket to remote
+			f := &server.Frame{Payload: make([]byte, server.PayloadLen), Ack: lack, Num: f_write}
+			conn.SetReadDeadline(time.Now().Add(server.DefaultDeadline))
+			n, err := conn.Read(f.Payload)
+			// handle short reads
+			if errors.Is(err, io.EOF) && n != 0 {
+				errCh <- err
+				return
+			} else if errors.Is(err, io.ErrUnexpectedEOF) && n != 0 {
+				errCh <- err
+				return
+			} else if errors.Is(err, os.ErrDeadlineExceeded) && n == 0 {
+				// skip sending frame
+			} else if err != nil {
+				// handle unexpected error
+				errCh <- err
+				return
 			}
-		}
 
-		serialized, err := (&server.ProxyCommand{ID: id, Frame: f}).Marshal()
-		if err != nil {
-			panic(err)
-		}
-		serialized, err = (&server.Request{Command: server.Proxy, Payload: serialized}).Marshal()
-		// send frame to service and receive a reply
-		// XXX: do not use blocking client because it serializes all the request/response pairs
-		// so there is no interleaving, which adds a lot of delay..
-		// implement a lower level client using minclient and do not use these blocking methods.
-		resp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
-		if err == nil {
-			p := server.ProxyResponse{}
-			err := p.Unmarshal(resp)
+			// store frame for (re)transmission
+			frames[f.Num] = f
+
+			// XXX: tune retransmit
+			if f.Num > pack+rwin && pack != 0 {
+				// resend pack + 1
+				if f2, ok := frames[pack+1]; ok {
+					f = f2
+				}
+			}
+
+			serialized, err := (&server.ProxyCommand{ID: id, Frame: f}).Marshal()
 			if err != nil {
-				// XXX handle unmarshal err
-				panic(err)
+				errCh <- err
+				return
 			}
+			serialized, err = (&server.Request{Command: server.Proxy, Payload: serialized}).Marshal()
+			// send frame to service and receive a reply
+			// XXX: do not use blocking client because it serializes all the request/response pairs
+			// so there is no interleaving, which adds a lot of delay..
+			// implement a lower level client using minclient and do not use these blocking methods.
+			resp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
+			if err == nil {
+				p := server.ProxyResponse{}
+				err := p.Unmarshal(resp)
+				if err != nil {
+					// XXX handle unmarshal err
+					errCh <- err
+					return
+				}
 
-			// check for ErrInsufficientFunds
-			if p.Error != nil {
-				if errors.Is(p.Error, server.ErrInsufficientFunds) {
-					// blocks
-					err := <-c.Topup(id)
-					if err != nil {
-						// XXX: debug
-						panic(err)
-						break
+				// check for ErrInsufficientFunds
+				if p.Error != nil {
+					if errors.Is(p.Error, server.ErrInsufficientFunds) {
+						// blocks
+						err := <-c.Topup(id)
+						if err != nil {
+							// XXX: debug
+							errCh <- err
+							return
+						}
+					}
+				}
+				if p.Frame.Mode != mode {
+					errCh <- server.ErrInvalidFrame
+					return
+				}
+
+				// increment written frame pointer
+				f_write += 1
+
+				// ignore previously seen frames
+				if p.Frame.Num < f_read {
+					break
+				}
+
+				// delete acknowleged frames
+				if p.Frame.Ack > pack {
+					for i := pack; i <= p.Frame.Ack; i++ {
+						delete(frames, i)
+					}
+					pack = p.Frame.Ack
+				}
+
+				// A frame received out of order is placed into a re-order buffer
+				doWrite := false
+				switch {
+				case p.Frame.Num < f_read:
+				case p.Frame.Num > f_read:
+					// XXX: verify that duplicate priority Enqueue is OK.
+					ReorderBuffer.Enqueue(f.Num, f)
+					head := ReorderBuffer.Peek().Value.(*server.Frame)
+					if head != nil && head.Num == f_read {
+						ReorderBuffer.Pop()
+						// f points at the next sequential frame
+						f = head
+						doWrite = true
+					}
+				case p.Frame.Num == f_read:
+					doWrite = true
+				}
+				if doWrite {
+					f_read += 1
+					n, err := conn.Write(f.Payload)
+					// handle short writes
+					if errors.Is(err, io.EOF) && n != 0 {
+						errCh <- err
+						return
+					} else if errors.Is(err, io.ErrUnexpectedEOF) && n != 0 {
+						errCh <- err
+						return
+					} else if errors.Is(err, os.ErrDeadlineExceeded) && n == 0 {
+						// skip sending frame
+					} else if err != nil {
+						// handle unexpected error
+						errCh <- err
+						return
 					}
 				}
 			}
-			if p.Frame.Mode != mode {
-				panic("wtf")
-			}
-
-			// increment written frame pointer
-			f_write += 1
-
-			// ignore previously seen frames
-			if p.Frame.Num < f_read {
-				break
-			}
-
-			// delete acknowleged frames
-			if p.Frame.Ack > pack {
-				for i := pack; i <= p.Frame.Ack; i++ {
-					delete(frames, i)
-				}
-				pack = p.Frame.Ack
-			}
-
-			// A frame received out of order is placed into a re-order buffer
-			doWrite := false
-			switch {
-			case p.Frame.Num < f_read:
-			case p.Frame.Num > f_read:
-				// XXX: verify that duplicate priority Enqueue is OK.
-				ReorderBuffer.Enqueue(f.Num, f)
-				head := ReorderBuffer.Peek().Value.(*server.Frame)
-				if head != nil && head.Num == f_read {
-					ReorderBuffer.Pop()
-					// f points at the next sequential frame
-					f = head
-					doWrite = true
-				}
-			case p.Frame.Num == f_read:
-				doWrite = true
-			}
-			if doWrite {
-				f_read += 1
-				n, err := conn.Write(f.Payload)
-				// handle short writes
-				if errors.Is(err, io.EOF) && n != 0 {
-					panic(err)
-				} else if errors.Is(err, io.ErrUnexpectedEOF) && n != 0 {
-					panic(err)
-				} else if errors.Is(err, os.ErrDeadlineExceeded) && n == 0 {
-					// skip sending frame
-				} else if err != nil {
-					// handle unexpected error
-					panic(err)
-				}
-			}
 		}
-	}
+		errCh <- nil
+	}()
+	return errCh
 }
