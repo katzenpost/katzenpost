@@ -710,8 +710,8 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 			return nil, err
 		}
 		switch u.Scheme {
-		case string(cpki.TransportHTTP):
-			m[cpki.TransportHTTP] = append(m[cpki.TransportHTTP], addr)
+		case string(cpki.TransportQUIC):
+			m[cpki.TransportQUIC] = append(m[cpki.TransportQUIC], addr)
 		case string(cpki.TransportTCP):
 			// See if the URL contains an IP
 			var ips = []net.IP{}

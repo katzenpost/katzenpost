@@ -146,7 +146,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 		} else {
 			return conn, nil
 		}
-	case "http":
+	case "quic":
 		// http/3 quic connector
 		// XXX: will need to add the TLS certificate
 		// fingerprint to the authority configuration
