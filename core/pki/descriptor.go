@@ -286,7 +286,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 			expectedIPVer = 4
 		case TransportTCPv6:
 			expectedIPVer = 6
-		case TransportHTTP:
+		case TransportQUIC:
 		default:
 			// Unknown transports are only supported between the client and
 			// provider.
@@ -306,7 +306,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 				return err
 			}
 			switch Transport(u.Scheme) {
-			case TransportWS,TransportTCP, TransportTCPv4, TransportTCPv6, TransportHTTP:
+			case TransportWS,TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
 			default:
 				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
 			}
