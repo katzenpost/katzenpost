@@ -245,6 +245,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("AEZv5 implementation IS NOT hardware accelerated.")
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
 
 	// Initialize the server identity and link keys.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
