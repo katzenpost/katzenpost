@@ -516,13 +516,15 @@ func main() {
 		)
 	}
 
-	var transports []pki.Transport
+	var transportStrings []string
 	if *onlyTransports != "" {
-		transportStrings := strings.Split(*onlyTransports, ",")
-		transports = make([]pki.Transport, len(transportStrings))
-		for i, str := range transportStrings {
-			transports[i] = pki.Transport(str)
-		}
+		transportStrings = strings.Split(*onlyTransports, ",")
+	} else {
+		transportStrings = strings.Split(validTransports(), ",")
+	}
+	transports := make([]pki.Transport, len(transportStrings))
+	for i, str := range transportStrings {
+		transports[i] = pki.Transport(str)
 	}
 
 	os.Mkdir(s.outDir, 0700)
