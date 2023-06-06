@@ -144,6 +144,19 @@ func TestDocument(t *testing.T) {
 	require.Equal(doc.SharedRandomReveal, ddoc.SharedRandomReveal, "ParseDocument(): SharedRandomReveal")
 	require.Equal(doc.Version, ddoc.Version, "ParseDocument(): Version")
 
+	// Test that marshalling doesn't mutate the document:
+	// (It would have been nice to check that SignDocument was idempotent,
+	// but it seems SPHINCS+ uses randomness?
+	tmpDocBytes := signed
+	for i := 0 ; i < 4 ; i++ {
+		tmpDoc, err := ParseDocument(tmpDocBytes)
+		require.Equal(nil, err)
+		require.Equal(ddoc, tmpDoc)
+		tmpDocBytes, err := tmpDoc.MarshalBinary()
+		require.Equal(nil, err)
+		require.Equal(signed, tmpDocBytes)
+	}
+
 	// check that MixDescriptors are signed correctly and can be deserialized and reserialized from the Document
 	for l, layer := range ddoc.Topology {
 		for i, node := range layer {
