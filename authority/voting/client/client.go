@@ -139,6 +139,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		if err != nil {
 			continue
 		}
+		p.log.Notice("Dialing %s", u)
 		conn, err = common.DialURL(u, ctx, dialFn)
 		if err == nil {
 			break // got working transport
