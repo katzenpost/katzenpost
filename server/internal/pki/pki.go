@@ -730,7 +730,7 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 				if ip.To4() != nil {
 					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp4://"+ip.String()+":"+u.Port())
 				} else if ip.To16() != nil {
-					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp6://"+ip.String()+":"+u.Port())
+					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp6://["+ip.String()+"]:"+u.Port())
 				}
 			}
 		default:
