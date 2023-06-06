@@ -252,6 +252,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 		if err != nil {
 			return nil, err
 		}
+		defer conn.conn.Close() // close connection after use
 		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
