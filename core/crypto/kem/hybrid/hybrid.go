@@ -78,7 +78,7 @@ func (sch *Scheme) CiphertextSize() int {
 }
 
 func (sch *Scheme) EncapsulationSeedSize() int {
-	return sch.first.SeedSize() + sch.second.SeedSize()
+	return sch.first.EncapsulationSeedSize() + sch.second.EncapsulationSeedSize()
 }
 
 func (sk *PrivateKey) Scheme() kem.Scheme { return sk.scheme }
@@ -205,8 +205,8 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 		return nil, nil, kem.ErrSeedSize
 	}
 
-	first := seed[:sch.first.SeedSize()]
-	second := seed[sch.first.SeedSize():]
+	first := seed[:sch.first.EncapsulationSeedSize()]
+	second := seed[sch.first.EncapsulationSeedSize():]
 
 	pub, ok := publicKey.(*PublicKey)
 	if !ok {
