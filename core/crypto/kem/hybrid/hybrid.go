@@ -200,26 +200,15 @@ func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	return sch.EncapsulateDeterministically(pk, seed)
 }
 
-func (sch *Scheme) EncapsulateDeterministically(
-	pk kem.PublicKey, seed []byte,
-) (ct, ss []byte, err error) {
+func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []byte) (ct, ss []byte, err error) {
 	if len(seed) != sch.EncapsulationSeedSize() {
 		return nil, nil, kem.ErrSeedSize
 	}
 
-	h, err := blake2b.NewXOF(uint32(sch.first.EncapsulationSeedSize()+sch.second.EncapsulationSeedSize()), nil)
-	if err != nil {
-		panic(err)
-	}
+	first := seed[:sch.first.SeedSize()]
+	second := seed[sch.first.SeedSize():]
 
-	seedHash := blake2b.Sum256(seed)
-	_, _ = h.Write(seedHash[:])
-	first := make([]byte, sch.first.EncapsulationSeedSize())
-	second := make([]byte, sch.second.EncapsulationSeedSize())
-	_, _ = h.Read(first)
-	_, _ = h.Read(second)
-
-	pub, ok := pk.(*PublicKey)
+	pub, ok := publicKey.(*PublicKey)
 	if !ok {
 		return nil, nil, kem.ErrTypeMismatch
 	}
