@@ -427,10 +427,11 @@ func validTransports() string {
 
 func main() {
 	var err error
+
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
 	nrNodes := flag.Int("n", nrNodes, "Number of mixes.")
 	nrProviders := flag.Int("p", nrProviders, "Number of providers.")
-	voting := flag.Bool("v", false, "Generate voting configuration")
+	voting := flag.Bool("v", true, "Generate voting configuration")
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
 	basePort := flag.Int("P", basePort, "First port number to use")
