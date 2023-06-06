@@ -56,10 +56,10 @@ together the DH shared secret along with both of the public keys:
 
 ```
 func ENCAPSULATE(their_pubkey publickey) ([]byte, []byte) {
-        my_priv_key, my_pubkey = GEN_KEYPAIR(RNG)
+        my_privkey, my_pubkey = GEN_KEYPAIR(RNG)
         ss = DH(my_privkey, their_pubkey)
         ss2 = H(ss || their_pubkey || my_pubkey)
-	return my_pub_key, ss2
+	return my_pubkey, ss2
 }
 
 func DECAPSULATE(my_privkey, their_pubkey) []byte {
