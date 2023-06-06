@@ -1,3 +1,5 @@
+//go:build !ppc64le
+
 // csidh.go - Adapts csidh module to our NIKE interface.
 // Copyright (C) 2022  David Stainton.
 //
