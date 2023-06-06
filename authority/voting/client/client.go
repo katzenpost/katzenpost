@@ -141,7 +141,9 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 		conn, err = common.DialURL(u, ctx, dialFn)
 		if err == nil {
-			break
+			break // got working transport
+		} else {
+			p.log.Debugf("Failed to Dial %s: %v", u, err)
 		}
 		if i == len(peer.Addresses)-1 {
 			return nil, err
