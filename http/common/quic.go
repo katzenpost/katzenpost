@@ -163,6 +163,22 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			// so pick a common protocol rather than something fingerprintable.
 			NextProtos: []string{http3.NextProtoH3},
 		}
+
+		// XXX if an UpstreamProxy is specified, this dial function will fail,
+		// which is what we want
+
+		// TODO: Write SOCKS5 Dialer that wraps quic.Dial
+		// TODO: choose a socks5 client library that supports socks5 UDP Associate
+		// TODO: support QUIC Datagram HTTP Connect proxy dialers
+		_, err = dialFn(ctx, "udp", u.Host)
+		if err != nil {
+			return nil, err
+		}
+		// However the default net.Dialer returns a connected socket that
+		// makes quic.Dial fails with error: use of WriteTo with pre-connected UDP ..
+		// because we need to bind the local listening socket with net.ListenUDP.
+
+		// XXX: verify that quic.Dial does not leak DNS
 		qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
 		if err == nil {
 			// open a quic stream
