@@ -439,7 +439,7 @@ func main() {
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
-	onlyTransports := flag.String("", validTransports(), "Specify transports used.")
+	onlyTransports := flag.String("onlyTransports", validTransports(), "Specify transports used.")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
