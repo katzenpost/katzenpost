@@ -77,7 +77,7 @@ for example::
 
 * ``Addresses`` are the listener types that the server will bind to for
   incoming connections. The format is a URL: for TCP listeners use tcp:// as
-  the scheme. For HTTP/3 QUIC (UDP): use http:// as the scheme.
+  the scheme. For QUIC (UDP): use quic:// as the scheme.
 
 * ``DataDir`` is the absolute path to the server's state files.
 
