@@ -266,7 +266,7 @@ func genAddresses(transports []pki.Transport, lastPort *uint16) []string {
 		case pki.TransportTCPv6:
 			addresses[i] = fmt.Sprintf("%s://[::1]:%d", transport, *lastPort)
 		default:
-			panic("Unknown transport type")
+			panic(fmt.Errorf("Unknown transport type: %s", transport))
 		}
 		*lastPort += 1
 	}

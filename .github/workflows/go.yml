@@ -8,7 +8,7 @@ jobs:
       matrix:
         go-version: [1.19.x]
         os: [ubuntu-22.04]
-        transport: [ "", "tcp", "quic" ]
+        transport: [ "", "-onlyTransports tcp", "-onlyTransports quic" ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Generate mixnet configuration
-        run: cd genconfig && go build && ./genconfig -v -onlyTransports ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
+        run: cd genconfig && go build && ./genconfig -v ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
 
       - name: Run all package unit tests
         run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -timeout 0 ./..."
@@ -36,7 +36,7 @@ jobs:
       matrix:
         go-version: [1.19.x]
         os: [ubuntu-22.04]
-        transport: [ "", "tcp", "quic" ]
+        transport: [ "", "-onlyTransports tcp", "-onlyTransports quic" ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -47,7 +47,7 @@ jobs:
           sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
 
       - name: Generate mixnet configuration
-        run: cd genconfig && go build && ./genconfig -v  -onlyTransports ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
+        run: cd genconfig && go build && ./genconfig -v  ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
 
       - name: Build and start the mixnet
         run: |
@@ -113,7 +113,7 @@ jobs:
       matrix:
         go-version: [1.19.x]
         os: [ubuntu-22.04]
-        transport: [ "", "tcp", "quic" ]
+        transport: [ "", "-onlyTransports tcp", "-onlyTransports quic" ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -124,7 +124,7 @@ jobs:
           sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
 
       - name: Generate mixnet configuration
-        run: cd genconfig && go build && ./genconfig -v  -onlyTransports ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
+        run: cd genconfig && go build && ./genconfig -v  ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
 
       - name: Build and start the mixnet
         run: |
@@ -152,7 +152,7 @@ jobs:
       matrix:
         go-version: [1.19.x]
         os: [ubuntu-22.04]
-        transport: [ "", "tcp", "quic" ]
+        transport: [ "", "-onlyTransports tcp", "-onlyTransports quic" ]
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -164,7 +164,7 @@ jobs:
           sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
 
       - name: Generate mixnet configuration
-        run: cd genconfig && go build && ./genconfig -v  -onlyTransports ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
+        run: cd genconfig && go build && ./genconfig -v  ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
 
       - name: Build and start the mixnet
         run: |
