@@ -290,8 +290,13 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		// preference, by transport.
 		var dstAddrs []string
 		transports := c.c.cfg.PreferedTransports
-		if transports == nil {
-			transports = cpki.ClientTransports
+		if len(transports) == 0 {
+			transports = make([]cpki.Transport, len(cpki.ClientTransports))
+			// Permute DefaultTransports order if unspecified
+			idxs := rand.NewMath().Perm(len(cpki.ClientTransports))
+			for i, idx := range idxs {
+				transports[i] = cpki.ClientTransports[idx]
+			}
 		}
 		for _, t := range transports {
 			if v, ok := c.descriptor.Addresses[t]; ok {
