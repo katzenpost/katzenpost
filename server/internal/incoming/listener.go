@@ -97,13 +97,18 @@ func (l *listener) worker() {
 			continue
 		}
 
-		tcpConn, ok := conn.(*net.TCPConn)
-		if ok {
-			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+		switch conn := conn.(type) {
+		case *net.TCPConn:
+			l.log.Debugf("Accepted new tcp connection: %v", conn.RemoteAddr())
+			conn.SetKeepAlive(true)
+			l.log.Debugf("SetKeepAlive(true)")
+			conn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+			l.log.Debugf("SetKeepAlivePeriod(%d)", constants.KeepAliveInterval)
+		case *common.QuicConn:
+			l.log.Debugf("Accepted new quic connection: %v", conn.RemoteAddr())
+		default:
+			panic("Unsupported Connection Type")
 		}
-
-		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
 		l.onNewConn(conn)
 	}
