@@ -261,11 +261,13 @@ func genAddresses(transports []pki.Transport, lastPort *uint16) []string {
 	addresses := make([]string, len(transports))
 	for i, transport := range transports {
 		switch pki.Transport(transport) {
-		case pki.TransportTCP, pki.TransportTCPv4, pki.TransportTCPv6, pki.TransportQUIC:
+		case pki.TransportTCP, pki.TransportTCPv4, pki.TransportQUIC:
+			addresses[i] = fmt.Sprintf("%s://127.0.0.1:%d", transport, *lastPort)
+		case pki.TransportTCPv6:
+			addresses[i] = fmt.Sprintf("%s://[::1]:%d", transport, *lastPort)
 		default:
 			panic("Unknown transport type")
 		}
-		addresses[i] = fmt.Sprintf("%s://127.0.0.1:%d", transport, *lastPort)
 		*lastPort += 1
 	}
 	return addresses
