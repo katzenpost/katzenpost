@@ -712,7 +712,7 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 		switch u.Scheme {
 		case string(cpki.TransportQUIC):
 			m[cpki.TransportQUIC] = append(m[cpki.TransportQUIC], addr)
-		case string(cpki.TransportTCP):
+		case string(cpki.TransportTCP), string(cpki.TransportTCPv4), string(cpki.TransportTCPv6):
 			// See if the URL contains an IP
 			var ips = []net.IP{}
 			var err error
@@ -728,9 +728,9 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 			}
 			for _, ip := range ips {
 				if ip.To4() != nil {
-					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp://"+ip.String()+":"+u.Port())
+					m[cpki.TransportTCPv4] = append(m[cpki.TransportTCPv4], "tcp4://"+ip.String()+":"+u.Port())
 				} else if ip.To16() != nil {
-					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp://"+ip.String()+":"+u.Port())
+					m[cpki.TransportTCPv6] = append(m[cpki.TransportTCPv6], "tcp6://"+ip.String()+":"+u.Port())
 				}
 			}
 		default:
