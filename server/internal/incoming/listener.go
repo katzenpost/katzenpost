@@ -90,7 +90,7 @@ func (l *listener) worker() {
 		}
 		conn, err := l.l.Accept()
 		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
+			if e, ok := err.(net.Error); ok && !e.Timeout() && !e.Temporary() {
 				l.log.Errorf("accept failure: %v", err)
 				return
 			}
