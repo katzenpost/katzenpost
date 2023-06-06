@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	kemschemes "github.com/cloudflare/circl/kem/schemes"
@@ -36,6 +37,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
@@ -125,7 +127,7 @@ func write(f *os.File, str string, args ...interface{}) {
 	}
 }
 
-func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
+func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []pki.Transport) error {
 	const serverLogFile = "katzenpost.log"
 
 	n := fmt.Sprintf("mix%d", s.nodeIdx+1)
@@ -139,11 +141,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = n
-	if isProvider {
-		cfg.Server.Addresses = []string{fmt.Sprintf("quic://127.0.0.1:%d", s.lastPort), fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort+1),}
-	} else {
-		cfg.Server.Addresses = []string{fmt.Sprintf("quic://127.0.0.1:%d", s.lastPort)}
-	}
+	cfg.Server.Addresses = genAddresses(transports, &s.lastPort)
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
@@ -255,7 +253,25 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	return cfg.FixupAndValidate()
 }
 
-func (s *katzenpost) genAuthConfig() error {
+func genAddresses(transports []pki.Transport, lastPort *uint16) []string {
+	// if transports are not specified, create a listener for every valid transport
+	if len(transports) == 0 {
+		transports = pki.InternalTransports
+	}
+	addresses := make([]string, len(transports))
+	for i, transport := range transports {
+		switch pki.Transport(transport) {
+		case pki.TransportTCP, pki.TransportTCPv4, pki.TransportTCPv6, pki.TransportQUIC:
+		default:
+			panic("Unknown transport type")
+		}
+		addresses[i] = fmt.Sprintf("%s://127.0.0.1:%d", transport, *lastPort)
+		*lastPort += 1
+	}
+	return addresses
+}
+
+func (s *katzenpost) genAuthConfig(transports []pki.Transport) error {
 	const authLogFile = "authority.log"
 
 	cfg := new(aConfig.Config)
@@ -264,7 +280,8 @@ func (s *katzenpost) genAuthConfig() error {
 
 	// Server section.
 	cfg.Server = new(aConfig.Server)
-	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.basePort), fmt.Sprintf("ws://127.0.0.1:%d", s.basePort+1), fmt.Sprintf("quic://127.0.0.1:%d", s.basePort+2)}
+	s.lastPort = s.basePort + 1
+	cfg.Server.Addresses = genAddresses(transports, &s.lastPort)
 	cfg.Server.DataDir = filepath.Join(s.baseDir, "authority")
 
 	// Logging section.
@@ -305,7 +322,7 @@ func (s *katzenpost) genAuthConfig() error {
 	return nil
 }
 
-func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int) error {
+func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int, transports []pki.Transport) error {
 
 	configs := []*vConfig.Config{}
 
@@ -316,12 +333,11 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
 			Identifier: fmt.Sprintf("auth%d", i),
-			Addresses:  []string{fmt.Sprintf("quic://127.0.0.1:%d", s.lastPort)},
-			//Addresses:  []string{fmt.Sprintf("tcp://127.0.0.1:%d", s.lastPort), fmt.Sprintf("ws://127.0.0.1:%d", s.lastPort+1), fmt.Sprintf("http://127.0.0.1:%d", s.lastPort+2)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
+
+		cfg.Server.Addresses = genAddresses(transports, &s.lastPort)
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
-		s.lastPort += 3
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    "katzenpost.log",
@@ -400,6 +416,15 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	return providers, mixes, nil
 }
 
+func validTransports() string {
+	transportString := make([]string, len(pki.InternalTransports))
+	for i, t := range pki.InternalTransports {
+		transportString[i] = string(t)
+	}
+
+	return strings.Join(transportString, ",")
+}
+
 func main() {
 	var err error
 	nrLayers := flag.Int("L", nrLayers, "Number of layers.")
@@ -413,6 +438,7 @@ func main() {
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
+	onlyTransports := flag.String("", validTransports(), "Specify transports used.")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
@@ -487,32 +513,41 @@ func main() {
 		)
 	}
 
+	var transports []pki.Transport
+	if *onlyTransports != "" {
+		transportStrings := strings.Split(*onlyTransports, ",")
+		transports = make([]pki.Transport, len(transportStrings))
+		for i, str := range transportStrings {
+			transports[i] = pki.Transport(str)
+		}
+	}
+
 	os.Mkdir(s.outDir, 0700)
 	os.Mkdir(filepath.Join(s.outDir, s.baseDir), 0700)
 
 	if *voting {
 		// Generate the voting authority configurations
-		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers)
+		err := s.genVotingAuthoritiesCfg(*nrVoting, parameters, *nrLayers, transports)
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
 	} else {
 		panic("non-voting mode is not currently supported")
-		if err = s.genAuthConfig(); err != nil {
+		if err = s.genAuthConfig(transports); err != nil {
 			log.Fatalf("Failed to generate authority config: %v", err)
 		}
 	}
 
 	// Generate the provider configs.
 	for i := 0; i < *nrProviders; i++ {
-		if err = s.genNodeConfig(true, *voting); err != nil {
+		if err = s.genNodeConfig(true, *voting, transports); err != nil {
 			log.Fatalf("Failed to generate provider config: %v", err)
 		}
 	}
 
 	// Generate the node configs.
 	for i := 0; i < *nrNodes; i++ {
-		if err = s.genNodeConfig(false, *voting); err != nil {
+		if err = s.genNodeConfig(false, *voting, transports); err != nil {
 			log.Fatalf("Failed to generate node config: %v", err)
 		}
 	}
