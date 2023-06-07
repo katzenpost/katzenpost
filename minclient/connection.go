@@ -299,10 +299,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 		}
 		for _, t := range transports {
-			// XXX: skip TransportQUIC if UpstreamProxyConfig is not "none"
-			if t == cpki.TransportQUIC && c.c.cfg.UpstreamProxyConfig().Type != "none" {
-				continue
-			}
 			if v, ok := c.descriptor.Addresses[t]; ok {
 				dstAddrs = append(dstAddrs, v...)
 			}
