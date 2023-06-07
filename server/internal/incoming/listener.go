@@ -89,12 +89,18 @@ func (l *listener) worker() {
 		default:
 		}
 		conn, err := l.l.Accept()
-		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Timeout() && !e.Temporary() {
+		switch e := err.(type) {
+		case nil:
+			// No Error
+		case net.Error:
+			if !e.Timeout() && !e.Temporary() {
 				l.log.Errorf("accept failure: %v", err)
 				return
 			}
 			continue
+		default:
+			l.log.Errorf("accept failure: %v", err)
+			return
 		}
 
 		switch conn := conn.(type) {
