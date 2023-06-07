@@ -38,7 +38,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/http/common"
-	"github.com/quic-go/quic-go"
+	quic "github.com/quic-go/quic-go"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization

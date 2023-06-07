@@ -30,7 +30,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/quic-go/quic-go"
+	quic "github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
 )
 
