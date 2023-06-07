@@ -32,7 +32,7 @@ import (
 	"github.com/katzenpost/katzenpost/http/common"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
-	"github.com/quic-go/quic-go"
+	quic "github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 )
 
