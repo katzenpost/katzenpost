@@ -1,74 +1,168 @@
 name: build
 on: [push, pull_request]
+env:
+  CGO_CFLAGS_ALLOW: "-DPARAMS=sphincs-shake-256f"
 jobs:
   test:
     strategy:
       matrix:
-        go-version: [1.17.x]
-        os: [ubuntu-latest]
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Install Go
-        uses: actions/setup-go@v1
+        uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Checkout code
-        uses: actions/checkout@v2
 
-      - name: Install Sphincsplus dependency
-        run: ./.github/scripts/install_sphincs.sh
-        shell: bash
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Generate mixnet configuration
+        run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
 
       - name: Run all package unit tests
-        run: sudo sh -c "ulimit -l 64435 && GORACE=history_size=7 go test -race -v -timeout 0 ./..."
-  test_e2e:
+        run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -timeout 0 ./..."
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
+  test_e2e_client:
     env:
       warped: true
+      XDG_RUNTIME_DIR: /run
     strategy:
       matrix:
-        go-version: [1.17.x]
-        os: [ubuntu-latest]
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Install Go
-        uses: actions/setup-go@v1
-        with:
-          go-version: ${{ matrix.go-version }}
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
-      - name: Install Sphincsplus dependency
-        run: ./.github/scripts/install_sphincs.sh
-        shell: bash
-
-      - name: Build voting authority docker image
+      - name: Configure podman socket
         run: |
-          cd docker && make voting_authority
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
 
-      - name: Build server docker image
+      - name: Build and start the mixnet
         run: |
-          cd docker && make server
-
-      - name: Fix permissions
-        run: chmod -R og-rwx docker/voting_mixnet/conf
-
-      - name: Start the mixnet
-        run: |
-          cd docker/voting_mixnet && docker-compose --verbose up -d
+          cd docker && sudo -E make start
 
       - name: Allow mixnet to settle
         run: |
           sleep 240
 
+      - name: run ping
+        run: cd docker && sudo -E make run-ping
+
       - name: run client end to end tests
-        run: cd client && make dockerdockertest
-
-      - name: run memspool end to end tests
-        run: cd memspool && make dockerdockertest
-
-      - name: run catshadow end to end tests
-        run: cd catshadow && make dockerdockertest
+        run: cd client && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
 
       - name: Stop the mixnet
         run: |
-          cd docker/voting_mixnet && docker-compose down
+          cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
+  test_e2e_memspool:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start
+
+      - name: Allow mixnet to settle
+        run: |
+          sleep 240
+
+      - name: run memspool end to end tests
+        run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
+  test_e2e_catshadow:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start
+
+      - name: Allow mixnet to settle
+        run: |
+          sleep 240
+
+      - name: run catshadow end to end tests
+        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+
+  test_benchmark:
+    env:
+      warped: true
+      XDG_RUNTIME_DIR: /run
+    strategy:
+      matrix:
+        go-version: [1.19.x]
+        os: [ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure podman socket
+        run: |
+          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
+
+      - name: Build and start the mixnet
+        run: |
+          cd docker && sudo -E make start
+
+      - name: Allow mixnet to settle
+        run: |
+          sleep 240
+
+      - name: run benchmark tests
+        run: cd bench && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+
+      - name: Stop the mixnet
+        run: |
+          cd docker && sudo -E make stop

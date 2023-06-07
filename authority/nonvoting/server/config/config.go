@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -67,8 +68,8 @@ var defaultLogging = Logging{
 	Level:   defaultLogLevel,
 }
 
-// Authority is the authority configuration.
-type Authority struct {
+// Server is the authority configuration.
+type Server struct {
 	// Addresses are the IP address/port combinations that the authority will
 	// bind to for incoming connections.
 	Addresses []string
@@ -77,7 +78,7 @@ type Authority struct {
 	DataDir string
 }
 
-func (sCfg *Authority) validate() error {
+func (sCfg *Server) validate() error {
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
 			if err := utils.EnsureAddrIPPort(v); err != nil {
@@ -308,21 +309,32 @@ func (n *Node) validate(isProvider bool) error {
 
 // Config is the top level authority configuration.
 type Config struct {
-	Authority  *Authority
+	Server     *Server
 	Logging    *Logging
 	Parameters *Parameters
 	Debug      *Debug
 
 	Mixes     []*Node
 	Providers []*Node
+
+	SphinxGeometry *geo.Geometry
 }
 
 // FixupAndValidate applies defaults to config entries and validates the
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
+	if cfg.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+
+	err := cfg.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
+
 	// Handle missing sections if possible.
-	if cfg.Authority == nil {
+	if cfg.Server == nil {
 		return errors.New("config: No Authority block was present")
 	}
 	if cfg.Logging == nil {
@@ -336,7 +348,7 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	// Validate and fixup the various sections.
-	if err := cfg.Authority.validate(); err != nil {
+	if err := cfg.Server.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Logging.validate(); err != nil {
@@ -372,7 +384,7 @@ func (cfg *Config) FixupAndValidate() error {
 	pkMap := make(map[[publicKeyHashSize]byte]*Node)
 	for _, v := range allNodes {
 		_, idkey := cert.Scheme.NewKeypair()
-		err := pem.FromFile(filepath.Join(cfg.Authority.DataDir, v.IdentityKeyPem), idkey)
+		err := pem.FromFile(filepath.Join(cfg.Server.DataDir, v.IdentityKeyPem), idkey)
 		if err != nil {
 			return err
 		}
@@ -390,12 +402,9 @@ func (cfg *Config) FixupAndValidate() error {
 // returns the Config.
 func Load(b []byte, forceGenOnly bool) (*Config, error) {
 	cfg := new(Config)
-	md, err := toml.Decode(string(b), cfg)
+	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if undecoded := md.Undecoded(); len(undecoded) != 0 {
-		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err

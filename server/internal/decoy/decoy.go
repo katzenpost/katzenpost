@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -63,7 +64,7 @@ type decoy struct {
 	sync.Mutex
 
 	sphinx *sphinx.Sphinx
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 
 	glue glue.Glue
 	log  *logging.Logger
@@ -203,7 +204,7 @@ func (d *decoy) sendDecoyPacket(ent *pkicache.Entry) {
 	isLoopPkt := true // HACK HACK HACK HACK.
 
 	selfDesc := ent.Self()
-	if selfDesc.Layer == pki.LayerProvider {
+	if selfDesc.Provider {
 		// The code doesn't handle this correctly yet.  It does need to
 		// happen eventually though.
 		panic("BUG: Provider generated decoy traffic not supported yet")
@@ -248,13 +249,13 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
 
-		fwdPath, then, err := path.New(d.rng, doc, recipient, src, dst, &surbID, time.Now(), false, true)
+		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, &surbID, time.Now(), false, true)
 		if err != nil {
 			d.log.Debugf("Failed to select forward path: %v", err)
 			return
 		}
 
-		revPath, then, err := path.New(d.rng, doc, d.recipient, dst, src, &surbID, then, false, false)
+		revPath, then, err := path.New(d.rng, d.geo, doc, d.recipient, dst, src, &surbID, then, false, false)
 		if err != nil {
 			d.log.Debugf("Failed to select reverse path: %v", err)
 			return
@@ -306,7 +307,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
 
-		fwdPath, then, err := path.New(d.rng, doc, recipient, src, dst, nil, time.Now(), false, true)
+		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, nil, time.Now(), false, true)
 		if err != nil {
 			d.log.Debugf("Failed to select forward path: %v", err)
 			return
@@ -328,7 +329,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 }
 
 func (d *decoy) dispatchPacket(fwdPath []*sphinx.PathHop, raw []byte) {
-	pkt, err := packet.New(raw)
+	pkt, err := packet.New(raw, d.geo)
 	if err != nil {
 		d.log.Debugf("Failed to allocate packet: %v", err)
 		return
@@ -365,12 +366,9 @@ func (d *decoy) storeSURBCtx(ctx *surbCtx) {
 	d.Lock()
 	defer d.Unlock()
 
-	ctxList := []*surbCtx{ctx}
-	ctx.etaNode = d.surbETAs.Insert(ctxList)
-	if nCtxList := ctx.etaNode.Value.([]*surbCtx); nCtxList[0] != ctx {
-		// Existing node, append the context to the list stored
-		// as the node value.  This should be exceedingly rare.
-		ctx.etaNode.Value = append(nCtxList, ctx)
+	ctx.etaNode = d.surbETAs.Insert(ctx)
+	if ctx.etaNode.Value.(*surbCtx) != ctx {
+		panic("inserting surbCtx failed, duplicate eta+id?")
 	}
 
 	d.surbStore[ctx.id] = ctx
@@ -385,24 +383,6 @@ func (d *decoy) loadAndDeleteSURBCtx(id uint64) *surbCtx {
 		return nil
 	}
 	delete(d.surbStore, id)
-
-	nCtxList := ctx.etaNode.Value.([]*surbCtx)
-	if l := len(nCtxList); l > 1 {
-		// There is more than 1 SURB with this ETA, remove the context from
-		// the list, and leave the node in the tree.
-		for i, v := range nCtxList {
-			if v == ctx {
-				copy(nCtxList[i:], nCtxList[i+1:])
-				nCtxList[l-1] = nil
-				ctx.etaNode.Value = nCtxList[l-1]
-				ctx.etaNode = nil
-				return ctx
-			}
-		}
-		panic("BUG: SURB missing from node ETA list")
-	} else if nCtxList[0] != ctx {
-		panic("BUG: SURB mismatch in node ETA list")
-	}
 
 	d.surbETAs.Remove(ctx.etaNode)
 	ctx.etaNode = nil
@@ -421,21 +401,25 @@ func (d *decoy) sweepSURBCtxs() {
 
 	now := monotime.Now()
 	slack := time.Duration(d.glue.Config().Debug.DecoySlack) * time.Millisecond
+	// instead of if ctx.eta + slack > now { break } in each loop iteration
+	// we precompute it:
+	now_minus_slack := now - slack
 
 	var swept int
 	iter := d.surbETAs.Iterator(avl.Forward)
 	for node := iter.First(); node != nil; node = iter.Next() {
-		surbCtxs := node.Value.([]*surbCtx)
-		if surbCtxs[0].eta+slack > now {
+		ctx := node.Value.(*surbCtx)
+		if ctx.eta > now_minus_slack {
 			break
 		}
 
-		for _, ctx := range surbCtxs {
-			delete(d.surbStore, ctx.id)
-			// TODO: At some point, this should do more than just log.
-			d.log.Debugf("Sweep: Lost SURB ID: 0x%08x ETA: %v (DeltaT: %v)", ctx.id, ctx.eta, now-ctx.eta)
-			swept++
-		}
+		delete(d.surbStore, ctx.id)
+
+		// TODO: At some point, this should do more than just log.
+		d.log.Debugf("Sweep: Lost SURB ID: 0x%08x ETA: %v (DeltaT: %v)", ctx.id, ctx.eta, now-ctx.eta)
+		swept++
+		// modification is unsupported EXCEPT "removing the current
+		// Node", see godoc for avl/avl.go:Iterator
 		d.surbETAs.Remove(node)
 	}
 
@@ -444,21 +428,28 @@ func (d *decoy) sweepSURBCtxs() {
 
 // New constructs a new decoy instance.
 func New(glue glue.Glue) (glue.Decoy, error) {
+	s, err := sphinx.FromGeometry(glue.Config().SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
 	d := &decoy{
-		geo:       sphinx.DefaultGeometry(),
-		sphinx:    sphinx.DefaultSphinx(),
+		geo:       glue.Config().SphinxGeometry,
+		sphinx:    s,
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("decoy"),
 		recipient: make([]byte, sConstants.RecipientIDLength),
 		rng:       rand.NewMath(),
 		docCh:     make(chan *pkicache.Entry),
 		surbETAs: avl.New(func(a, b interface{}) int {
-			surbCtxsA, surbCtxsB := a.([]*surbCtx), b.([]*surbCtx)
-			etaA, etaB := surbCtxsA[0].eta, surbCtxsB[0].eta
+			surbCtxA, surbCtxB := a.(*surbCtx), b.(*surbCtx)
 			switch {
-			case etaA < etaB:
+			case surbCtxA.eta < surbCtxB.eta:
 				return -1
-			case etaA > etaB:
+			case surbCtxA.eta > surbCtxB.eta:
+				return 1
+			case surbCtxA.id < surbCtxB.id:
+				return -1
+			case surbCtxA.id > surbCtxB.id:
 				return 1
 			default:
 				return 0

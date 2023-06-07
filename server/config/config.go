@@ -32,8 +32,11 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
 	"golang.org/x/text/secure/precis"
 )
@@ -338,19 +341,6 @@ type Provider struct {
 
 	// SpoolDB is the user message spool configuration.
 	SpoolDB *SpoolDB
-
-	// BinaryRecipients disables all Provider side recipient pre-processing,
-	// including removing trailing `NUL` bytes, case normalization, and
-	// delimiter support.
-	BinaryRecipients bool
-
-	// CaseSensitiveRecipients disables recipient case normalization.  If left
-	// unset, all user names will be converted to lower case.
-	CaseSensitiveRecipients bool
-
-	// RecipientDelimiter is the set of characters that separates a user name
-	// from it's extension (eg: `alice+foo`).
-	RecipientDelimiter string
 
 	// Kaetzchen is the list of configured internal Kaetzchen (auto-responder agents)
 	// for this provider.
@@ -698,10 +688,10 @@ type Nonvoting struct {
 	Address string
 
 	// PublicKeyPem is the authority's Identity key PEM filepath.
-	PublicKeyPem string
+	PublicKey sign.PublicKey
 
 	// LinkPublicKeyPem is the authority's public link key PEM filepath.
-	LinkPublicKeyPem string
+	LinkPublicKey wire.PublicKey
 }
 
 func (nCfg *Nonvoting) validate(datadir string) error {
@@ -712,45 +702,14 @@ func (nCfg *Nonvoting) validate(datadir string) error {
 	return nil
 }
 
-// Peer is a voting peer.
-type Peer struct {
-	Addresses            []string
-	IdentityPublicKeyPem string
-	LinkPublicKeyPem     string
-}
-
-func (p *Peer) validate(datadir string) error {
-	for _, address := range p.Addresses {
-		if err := utils.EnsureAddrIPPort(address); err != nil {
-			return fmt.Errorf("Voting Peer: Address is invalid: %v", err)
-		}
-	}
-
-	return nil
-}
-
-// Voting is a voting directory authority.
+// Voting is a set of Authorities that vote on a threshold consensus PKI
 type Voting struct {
-	Peers []*Peer
-}
-
-// AuthorityPeersFromPeers loads keys and instances config.AuthorityPeer for each Peer
-func AuthorityPeersFromPeers(peers []*Peer, datadir string) ([]*config.AuthorityPeer, error) {
-	authPeers := []*config.AuthorityPeer{}
-	for _, peer := range peers {
-		authPeer := &config.AuthorityPeer{
-			IdentityPublicKeyPem: peer.IdentityPublicKeyPem,
-			LinkPublicKeyPem:     peer.LinkPublicKeyPem,
-			Addresses:            peer.Addresses,
-		}
-		authPeers = append(authPeers, authPeer)
-	}
-	return authPeers, nil
+	Authorities []*config.Authority
 }
 
 func (vCfg *Voting) validate(datadir string) error {
-	for _, peer := range vCfg.Peers {
-		err := peer.validate(datadir)
+	for _, auth := range vCfg.Authorities {
+		err := auth.Validate()
 		if err != nil {
 			return err
 		}
@@ -786,11 +745,12 @@ func (mCfg *Management) validate() error {
 
 // Config is the top level Katzenpost server configuration.
 type Config struct {
-	Server     *Server
-	Logging    *Logging
-	Provider   *Provider
-	PKI        *PKI
-	Management *Management
+	Server         *Server
+	Logging        *Logging
+	Provider       *Provider
+	PKI            *PKI
+	Management     *Management
+	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
 }
@@ -799,6 +759,16 @@ type Config struct {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
+
+	if cfg.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+
+	err := cfg.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
+
 	// The Server and PKI sections are mandatory, everything else is optional.
 	if cfg.Server == nil {
 		return errors.New("config: No Server block was present")
@@ -835,7 +805,7 @@ func (cfg *Config) FixupAndValidate() error {
 	} else if cfg.Provider != nil {
 		return errors.New("config: Provider block set when not a Provider")
 	}
-	if err := cfg.Logging.validate(); err != nil {
+	if err = cfg.Logging.validate(); err != nil {
 		return err
 	}
 	cfg.Management.applyDefaults(cfg.Server)
@@ -844,7 +814,6 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	cfg.Debug.applyDefaults()
 
-	var err error
 	cfg.Server.Identifier, err = idna.Lookup.ToASCII(cfg.Server.Identifier)
 	if err != nil {
 		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)
@@ -878,12 +847,9 @@ func Load(b []byte) (*Config, error) {
 	}
 
 	cfg := new(Config)
-	md, err := toml.Decode(string(b), cfg)
+	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if undecoded := md.Undecoded(); len(undecoded) != 0 {
-		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err

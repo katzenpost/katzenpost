@@ -47,6 +47,7 @@ func createRandomStateFile(t *testing.T) string {
 }
 
 func TestBlobStorage(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
@@ -78,6 +79,6 @@ func TestBlobStorage(t *testing.T) {
 	err = cs.DeleteBlob("foo")
 	require.NoError(err)
 	_, err = cs.GetBlob("foo")
-	require.Error(err, errBlobNotFound)
+	require.Error(err, ErrBlobNotFound)
 	stateWorker.Halt()
 }

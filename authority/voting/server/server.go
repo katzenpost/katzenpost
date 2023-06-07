@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -45,6 +46,7 @@ type Server struct {
 	sync.WaitGroup
 
 	cfg *config.Config
+	geo *geo.Geometry
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
@@ -63,7 +65,7 @@ type Server struct {
 
 func (s *Server) initDataDir() error {
 	const dirMode = os.ModeDir | 0700
-	d := s.cfg.Authority.DataDir
+	d := s.cfg.Server.DataDir
 
 	// Initialize the data directory, by ensuring that it exists (or can be
 	// created), and that it has the appropriate permissions.
@@ -91,7 +93,7 @@ func (s *Server) initLogging() error {
 	p := s.cfg.Logging.File
 	if !s.cfg.Logging.Disable && s.cfg.Logging.File != "" {
 		if !filepath.IsAbs(p) {
-			p = filepath.Join(s.cfg.Authority.DataDir, p)
+			p = filepath.Join(s.cfg.Server.DataDir, p)
 		}
 	}
 
@@ -187,6 +189,8 @@ func (s *Server) halt() {
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
+	s.geo = cfg.SphinxGeometry
+
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
 
@@ -204,8 +208,8 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the authority identity key.
-	identityPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.private.pem")
-	identityPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "identity.public.pem")
+	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
+	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
 	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
 	var err error
@@ -232,29 +236,26 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	scheme := wire.DefaultScheme
-	linkPrivateKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.private.pem")
-	linkPublicKeyFile := filepath.Join(s.cfg.Authority.DataDir, "link.public.pem")
+	linkPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.private.pem")
+	linkPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "link.public.pem")
 
-	var linkPrivateKey wire.PrivateKey = nil
-	var linkPublicKey wire.PublicKey = nil
-
+	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
 	if pem.BothExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey, err = scheme.PrivateKeyFromPemFile(linkPrivateKeyFile)
+		err = pem.FromFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		linkPublicKey, err = scheme.PublicKeyFromPemFile(linkPublicKeyFile)
+		err = pem.FromFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
 	} else if pem.BothNotExists(linkPrivateKeyFile, linkPublicKeyFile) {
-		linkPrivateKey = scheme.GenerateKeypair(rand.Reader)
-		linkPublicKey = linkPrivateKey.PublicKey()
-		err = scheme.PrivateKeyToPemFile(linkPrivateKeyFile, linkPrivateKey)
+		linkPrivateKey, linkPublicKey = scheme.GenerateKeypair(rand.Reader)
+		err = pem.ToFile(linkPrivateKeyFile, linkPrivateKey)
 		if err != nil {
 			return nil, err
 		}
-		err = scheme.PublicKeyToPemFile(linkPublicKeyFile, linkPublicKey)
+		err = pem.ToFile(linkPublicKeyFile, linkPublicKey)
 		if err != nil {
 			return nil, err
 		}
@@ -264,9 +265,8 @@ func New(cfg *config.Config) (*Server, error) {
 
 	s.linkKey = linkPrivateKey
 
-	idKeyHash := s.identityPublicKey.Sum256()
-	s.log.Noticef("Authority identity public key hash is: %x", idKeyHash[:])
-	s.log.Noticef("Authority link public key is: %x", s.linkKey.PublicKey().Bytes())
+	s.log.Noticef("Authority identity public key hash is: %x", s.identityPublicKey.Sum256())
+	s.log.Noticef("Authority link public key hash is: %x", s.linkKey.PublicKey().Sum256())
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -306,7 +306,7 @@ func New(cfg *config.Config) (*Server, error) {
 	s.state.Go(s.state.worker)
 
 	// Start up the listeners.
-	for _, v := range s.cfg.Authority.Addresses {
+	for _, v := range s.cfg.Server.Addresses {
 		l, err := net.Listen("tcp", v)
 		if err != nil {
 			s.log.Errorf("Failed to start listener '%v': %v", v, err)

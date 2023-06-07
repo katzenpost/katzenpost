@@ -18,6 +18,7 @@ package client
 
 import (
 	"context"
+	"crypto/hmac"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -27,13 +28,13 @@ import (
 
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	"github.com/katzenpost/katzenpost/client/internal/pkiclient"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/minclient"
@@ -45,7 +46,7 @@ import (
 type Session struct {
 	worker.Worker
 
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
 	cfg       *config.Config
@@ -79,33 +80,24 @@ type Session struct {
 // This method will block until session is connected to the Provider.
 func NewSession(
 	ctx context.Context,
+	pkiClient pki.Client,
+	cachedDoc *pki.Document,
 	fatalErrCh chan error,
 	logBackend *log.Backend,
 	cfg *config.Config,
 	linkKey wire.PrivateKey,
 	provider *pki.MixDescriptor) (*Session, error) {
-	var err error
-
-	// create a pkiclient for our own client lookups
-	// AND create a pkiclient for minclient's use
-	proxyCfg := cfg.UpstreamProxyConfig()
-	pkiClient, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	// create a pkiclient for minclient's use
-	pkiClient2, err := cfg.NewPKIClient(logBackend, proxyCfg, linkKey, cfg.DataDir)
-	if err != nil {
-		return nil, err
-	}
-	pkiCacheClient := pkiclient.New(pkiClient2)
 
 	clientLog := logBackend.GetLogger(fmt.Sprintf("%s_client", provider.Name))
 
+	mysphinx, err := sphinx.FromGeometry(cfg.SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
+
 	s := &Session{
-		geo:         sphinx.DefaultGeometry(),
-		sphinx:      sphinx.DefaultSphinx(),
+		geo:         cfg.SphinxGeometry,
+		sphinx:      mysphinx,
 		cfg:         cfg,
 		linkKey:     linkKey,
 		provider:    provider,
@@ -121,26 +113,23 @@ func NewSession(
 	// Configure the timerQ instance
 	s.timerQ = NewTimerQueue(s)
 	// Configure and bring up the minclient instance.
-	linkKeyText, err := s.linkKey.PublicKey().MarshalText()
-	if err != nil {
-		panic(err)
-	}
-	if len(linkKeyText) > 32 {
-		linkKeyText = linkKeyText[:32]
-	}
-
+	idHash := s.linkKey.PublicKey().Sum256()
+	// A per-connection tag (for Tor SOCKS5 stream isloation)
+	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
 	clientCfg := &minclient.ClientConfig{
-		User:                string(linkKeyText),
+		SphinxGeometry:      cfg.SphinxGeometry,
+		User:                string(idHash[:]),
 		Provider:            s.provider.Name,
 		ProviderKeyPin:      s.provider.IdentityKey,
 		LinkKey:             s.linkKey,
 		LogBackend:          logBackend,
-		PKIClient:           pkiCacheClient,
+		PKIClient:           pkiClient,
+		CachedDocument:      cachedDoc,
 		OnConnFn:            s.onConnection,
 		OnMessageFn:         s.onMessage,
 		OnACKFn:             s.onACK,
 		OnDocumentFn:        s.onDocument,
-		DialContextFn:       proxyCfg.ToDialContext("authority"),
+		DialContextFn:       cfg.UpstreamProxyConfig().ToDialContext(proxyContext),
 		PreferedTransports:  cfg.Debug.PreferedTransports,
 		MessagePollInterval: time.Duration(cfg.Debug.PollingInterval) * time.Millisecond,
 		EnableTimeSync:      false, // Be explicit about it.
@@ -152,14 +141,8 @@ func NewSession(
 
 	s.minclient, err = minclient.New(clientCfg)
 	if err != nil {
-		pkiCacheClient.Halt()
 		return nil, err
 	}
-	// shutdown the pkiCacheClient when minclient halts
-	go func() {
-		s.minclient.Wait()
-		pkiCacheClient.Halt()
-	}()
 
 	// start the worker
 	s.Go(s.worker)
@@ -167,12 +150,19 @@ func NewSession(
 	return s, nil
 }
 
+func (s *Session) SphinxGeometry() *geo.Geometry {
+	return s.cfg.SphinxGeometry
+}
+
 // WaitForDocument blocks until a pki fetch has completed
-func (s *Session) WaitForDocument() {
+func (s *Session) WaitForDocument(ctx context.Context) error {
 	select {
+	case <-ctx.Done():
+		return errors.New("Cancelled")
 	case <-s.newPKIDoc:
 	case <-s.HaltCh():
 	}
+	return nil
 }
 
 func (s *Session) eventSinkWorker() {
@@ -225,39 +215,8 @@ func (s *Session) garbageCollect() {
 	s.surbIDMap.Range(surbIDMapRange)
 }
 
-func (s *Session) awaitFirstPKIDoc(ctx context.Context) error {
-	for {
-		var qo workerOp
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.HaltCh():
-			s.log.Debugf("Await first pki doc worker terminating gracefully")
-			return errors.New("terminating gracefully")
-		case <-time.After(time.Duration(s.cfg.Debug.InitialMaxPKIRetrievalDelay) * time.Second):
-			return errors.New("timeout failure awaiting first PKI document")
-		case qo = <-s.opCh:
-		}
-		switch op := qo.(type) {
-		case opNewDocument:
-			// Determine if PKI doc is valid. If not then abort.
-			err := s.isDocValid(op.doc)
-			if err != nil {
-				s.fatalErrCh <- fmt.Errorf("aborting, PKI doc is not valid for our decoy traffic use case: %v", err)
-				return err
-			}
-			s.setPollIntervalFromDoc(op.doc)
-			return nil
-		default:
-			continue
-		}
-	}
-	// NOT REACHED
-}
-
-// GetService returns a randomly selected service
-// matching the specified service name
-func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, error) {
+// GetServices returns the services matching the specified service name
+func (s *Session) GetServices(serviceName string) ([]*utils.ServiceDescriptor, error) {
 	if s.minclient == nil {
 		return nil, errors.New("minclient is nil")
 	}
@@ -265,11 +224,26 @@ func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, erro
 	if doc == nil {
 		return nil, errors.New("pki doc is nil")
 	}
-	serviceDescriptors := utils.FindServices(serviceName, doc)
-	if len(serviceDescriptors) == 0 {
+	descs := utils.FindServices(serviceName, doc)
+	if len(descs) == 0 {
 		return nil, errors.New("error, GetService failure, service not found in pki doc")
 	}
-	return &serviceDescriptors[rand.NewMath().Intn(len(serviceDescriptors))], nil
+	serviceDescriptors := make([]*utils.ServiceDescriptor, len(descs))
+	for i, s := range descs {
+		s := s
+		serviceDescriptors[i] = &s
+	}
+	return serviceDescriptors, nil
+}
+
+// GetService returns a randomly selected service
+// matching the specified service name
+func (s *Session) GetService(serviceName string) (*utils.ServiceDescriptor, error) {
+	serviceDescriptors, err := s.GetServices(serviceName)
+	if err != nil {
+		return nil, err
+	}
+	return serviceDescriptors[rand.NewMath().Intn(len(serviceDescriptors))], nil
 }
 
 // OnConnection will be called by the minclient api
@@ -282,7 +256,7 @@ func (s *Session) onConnection(err error) {
 	}
 	select {
 	case <-s.HaltCh():
-	case s.opCh <- opConnStatusChanged{ isConnected: err == nil, }:
+	case s.opCh <- opConnStatusChanged{isConnected: err == nil}:
 	}
 }
 
@@ -326,12 +300,6 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 		s.decrementDecoyLoopTally()
 		return nil
 	}
-	if msg.Reliable {
-		err := s.timerQ.Remove(msg)
-		if err != nil {
-			s.fatalErrCh <- fmt.Errorf("Failed removing reliable message from retransmit queue")
-		}
-	}
 
 	if msg.IsBlocking {
 		replyWaitChanRaw, ok := s.replyWaitChanMap.Load(*msg.ID)
@@ -361,6 +329,12 @@ func (s *Session) onACK(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 func (s *Session) onDocument(doc *pki.Document) {
 	s.log.Debugf("onDocument(): %s", doc)
+
+	if !hmac.Equal(doc.SphinxGeometryHash, s.geo.Hash()) {
+		s.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", s.geo.Display())
+		panic("Sphinx Geometry mismatch!")
+	}
+
 	s.hasPKIDoc = true
 	select {
 	case <-s.HaltCh():

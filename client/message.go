@@ -17,6 +17,7 @@
 package client
 
 import (
+	"sync"
 	"time"
 
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
@@ -26,6 +27,7 @@ import (
 // Message is a message reference which is used to match future
 // received SURB replies.
 type Message struct {
+	sync.Mutex
 	// ID is the message identifier
 	ID *[cConstants.MessageIDLength]byte
 
@@ -74,5 +76,13 @@ type Message struct {
 }
 
 func (m *Message) Priority() uint64 {
+	m.Lock()
+	defer m.Unlock()
 	return m.QueuePriority
+}
+
+func (m *Message) SetPriority(priority uint64) {
+	m.Lock()
+	defer m.Unlock()
+	m.QueuePriority = priority
 }

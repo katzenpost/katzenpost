@@ -18,7 +18,6 @@ package sphinx
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,17 +33,17 @@ type nodeParams struct {
 	publicKey  nike.PublicKey
 }
 
-func newNikeNode(require *require.Assertions, mynike nike.Nike) *nodeParams {
+func newNikeNode(require *require.Assertions, mynike nike.Scheme) *nodeParams {
 	n := new(nodeParams)
 
 	_, err := rand.Read(n.id[:])
 	require.NoError(err, "newNikeNode(): failed to generate ID")
-	n.privateKey, n.publicKey = mynike.NewKeypair()
+	n.publicKey, n.privateKey, err = mynike.GenerateKeyPair()
 	require.NoError(err, "newNikeNode(): NewKeypair() failed")
 	return n
 }
 
-func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
+func newNikePathVector(require *require.Assertions, mynike nike.Scheme, nrHops int, isSURB bool) ([]*nodeParams, []*PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
@@ -84,7 +83,7 @@ func newNikePathVector(require *require.Assertions, mynike nike.Nike, nrHops int
 	return nodes, path
 }
 
-func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
+func testForwardSphinx(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
@@ -99,8 +98,6 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 		require.NoError(err)
 		require.Equal(sphinx.Geometry().PacketLength, len(pkt))
 
-		t.Logf("pkt: %s", hex.Dump(pkt))
-
 		// Unwrap the packet, validating the output.
 		for i := range nodes {
 			// There's no sensible way to validate that `tag` is correct.
@@ -112,11 +109,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: recipient mismatch", i)
 
 				require.Equalf(b, payload, "Hop %d: payload mismatch", i)
-
-				t.Logf("Unwrapped payload: %v", hex.Dump(b))
 			} else {
-				t.Logf("Hop %d: Unwrapped pkt: %s", i, hex.Dump(pkt))
-
 				require.Equalf(2, len(cmds), "Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "Hop %d: delay mismatch", i)
 
@@ -130,7 +123,7 @@ func testForwardSphinx(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPaylo
 	}
 }
 
-func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte) {
+func testSURB(t *testing.T, mynike nike.Scheme, sphinx *Sphinx, testPayload []byte) {
 	require := require.New(t)
 
 	for nrHops := 1; nrHops <= sphinx.Geometry().NrHops; nrHops++ {
@@ -164,9 +157,7 @@ func testSURB(t *testing.T, mynike nike.Nike, sphinx *Sphinx, testPayload []byte
 				b, err = sphinx.DecryptSURBPayload(b, surbKeys)
 				require.NoError(err, "DecrytSURBPayload")
 				require.Equalf(b, payload, "SURB Hop %d: payload mismatch", i)
-				t.Logf("Unwrapped payload: %v", hex.Dump(b))
 			} else {
-				t.Logf("Hop %d: Unwrapped pkt: %s", i, hex.Dump(pkt))
 
 				require.Equalf(2, len(cmds), "SURB Hop %d: Unexpected number of commands", i)
 				require.EqualValuesf(path[i].Commands[0], cmds[0], "SURB Hop %d: delay mismatch", i)

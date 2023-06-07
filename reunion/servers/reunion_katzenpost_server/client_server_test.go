@@ -38,6 +38,7 @@ const (
 )
 
 func TestDockerClientExchange1(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/catshadow.toml")
@@ -128,6 +129,7 @@ func TestDockerClientExchange1(t *testing.T) {
 }
 
 func TestDockerClientExchange2(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/catshadow.toml")

@@ -4,8 +4,7 @@
 # The Authority section contains mandatory information.
 #
 
-[Authority]
-
+[Server]
   # Addresses are the IP address/port combinations that the authority will bind
   # to for incoming connections.
   Addresses = [ "127.0.0.1:21483", "[::1]:29483" ]

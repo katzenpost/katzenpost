@@ -19,20 +19,24 @@ package wire
 
 import (
 	"bytes"
-	"crypto/rand"
 	"encoding"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/katzenpost/nyquist/kem"
 	"github.com/katzenpost/nyquist/seec"
+	"golang.org/x/crypto/blake2b"
 
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
-	"github.com/katzenpost/katzenpost/core/utils"
 )
+
+// PublicKeyHashSize indicates the hash size returned
+// from the PublicKey's Sum256 method.
+const PublicKeyHashSize = 32
 
 var DefaultScheme = &scheme{
 	KEM: kem.Kyber768X25519,
@@ -61,6 +65,9 @@ type PublicKey interface {
 
 	// FromBytes deserializes the byte slice b into the PublicKey.
 	FromBytes(b []byte) error
+
+	// Sum256 returns the Blake2b 256-bit checksum of the key's raw bytes.
+	Sum256() [32]byte
 }
 
 // PrivateKey is an interface used to abstract away the
@@ -106,9 +113,6 @@ type Scheme interface {
 	// the specified file path.
 	PublicKeyToPemFile(f string, pubKey PublicKey) error
 
-	// UnmarshalTextPrivateKey loads a private from text encoded in base64.
-	UnmarshalTextPrivateKey([]byte) (PrivateKey, error)
-
 	// UnmarshalTextPublicKey loads a public key from text encoded in base64.
 	UnmarshalTextPublicKey([]byte) (PublicKey, error)
 
@@ -117,51 +121,31 @@ type Scheme interface {
 
 	// GenerateKeypair generates a new KEM keypair using the provided
 	// entropy source.
-	GenerateKeypair(r io.Reader) PrivateKey
+	GenerateKeypair(r io.Reader) (PrivateKey, PublicKey)
+
+	// PublicKeyFromBytes returns a PublicKey using the provided
+	// bytes.
+	PublicKeyFromBytes(b []byte) (PublicKey, error)
+
+	// NewEmptyPublicKey returns an empty public key.
+	NewEmptyPublicKey() PublicKey
 }
 
 type publicKey struct {
 	publicKey kem.PublicKey
 	KEM       kem.KEM
+	hash      [PublicKeyHashSize]byte
 }
 
 func (p *publicKey) KeyType() string {
-	return fmt.Sprintf("%s PUBLIC KEY", p.KEM)
-}
-
-func (p *publicKey) FromPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
-
-	buf, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
-	blk, _ := pem.Decode(buf)
-	if blk == nil {
-		return fmt.Errorf("failed to decode PEM file %v", f)
-	}
-	if blk.Type != keyType {
-		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
-	}
-	return p.FromBytes(blk.Bytes)
-}
-
-func (p *publicKey) ToPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PUBLIC KEY", p.KEM)
-
-	if utils.CtIsZero(p.Bytes()) {
-		return fmt.Errorf("attempted to serialize scrubbed key")
-	}
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: p.Bytes(),
-	}
-	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+	return fmt.Sprintf("%s PUBLIC KEY", strings.ToUpper(p.KEM.String()))
 }
 
 // XXX FIXME
 func (p *publicKey) Reset() {
-	p = nil
+	*p = publicKey{
+		publicKey: nil,
+	}
 }
 
 func (p *publicKey) Equal(publicKey PublicKey) bool {
@@ -190,15 +174,16 @@ func (p *publicKey) UnmarshalBinary(data []byte) error {
 }
 
 func (p *publicKey) MarshalText() (text []byte, err error) {
-	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+	return cpem.ToPEMBytes(p), nil
 }
 
 func (p *publicKey) UnmarshalText(text []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(text))
-	if err != nil {
-		return err
-	}
-	return p.FromBytes(raw)
+	return cpem.FromPEMBytes(text, p)
+}
+
+func (p *publicKey) Sum256() [32]byte {
+	p.hash = blake2b.Sum256(p.Bytes())
+	return p.hash
 }
 
 type privateKey struct {
@@ -207,47 +192,20 @@ type privateKey struct {
 }
 
 func (p *privateKey) KeyType() string {
-	return fmt.Sprintf("%s PRIVATE KEY", p.KEM)
-}
-
-func (p *privateKey) FromPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PRIVATE KEY", p.KEM)
-
-	buf, err := os.ReadFile(f)
-	if err != nil {
-		return err
-	}
-	blk, _ := pem.Decode(buf)
-	if blk == nil {
-		return fmt.Errorf("failed to decode PEM file %v", f)
-	}
-	if blk.Type != keyType {
-		return fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
-	}
-	return p.FromBytes(blk.Bytes)
-}
-
-func (p *privateKey) ToPEMFile(f string) error {
-	keyType := fmt.Sprintf("%s PRIVATE KEY", p.KEM)
-
-	if utils.CtIsZero(p.Bytes()) {
-		return fmt.Errorf("attempted to serialize scrubbed key")
-	}
-	blk := &pem.Block{
-		Type:  keyType,
-		Bytes: p.Bytes(),
-	}
-	return os.WriteFile(f, pem.EncodeToMemory(blk), 0600)
+	return fmt.Sprintf("%s PRIVATE KEY", strings.ToUpper(p.KEM.String()))
 }
 
 // XXX FIXME
 func (p *privateKey) Reset() {
-	p = nil
+	*p = privateKey{
+		privateKey: nil,
+	}
 }
 
 func (p *privateKey) PublicKey() PublicKey {
 	return &publicKey{
 		publicKey: p.privateKey.Public(),
+		hash:      blake2b.Sum256(p.privateKey.Public().Bytes()),
 		KEM:       p.KEM,
 	}
 }
@@ -278,16 +236,13 @@ func (p *privateKey) UnmarshalBinary(data []byte) error {
 }
 
 func (p *privateKey) MarshalText() (text []byte, err error) {
-	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+	return cpem.ToPEMBytes(p), nil
 }
 
 func (p *privateKey) UnmarshalText(text []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(text))
-	if err != nil {
-		return err
-	}
-	return p.FromBytes(raw)
+	return cpem.FromPEMBytes(text, p)
 }
+
 
 type scheme struct {
 	KEM kem.KEM
@@ -295,13 +250,49 @@ type scheme struct {
 
 var _ Scheme = (*scheme)(nil)
 
-func (s *scheme) PrivateKeyFromPemFile(f string) (PrivateKey, error) {
-	privKey := s.GenerateKeypair(rand.Reader)
-	err := cpem.FromFile(f, privKey)
+func (s *scheme) NewEmptyPublicKey() PublicKey {
+	return &publicKey{
+		publicKey: nil,
+		KEM:       s.KEM,
+	}
+}
+
+func (s *scheme) PrivateKeyFromBytes(b []byte) (PrivateKey, error) {
+	privKey, err := s.KEM.ParsePrivateKey(b)
 	if err != nil {
 		return nil, err
 	}
-	return privKey, nil
+	return &privateKey{
+		privateKey: privKey,
+		KEM:        s.KEM,
+	}, nil
+}
+
+func (s *scheme) PublicKeyFromBytes(b []byte) (PublicKey, error) {
+	pubKey, err := s.KEM.ParsePublicKey(b)
+	if err != nil {
+		return nil, err
+	}
+	return &publicKey{
+		publicKey: pubKey,
+		KEM:       s.KEM,
+	}, nil
+}
+
+func (s *scheme) PrivateKeyFromPemFile(f string) (PrivateKey, error) {
+	keyType := fmt.Sprintf("%s PRIVATE KEY", strings.ToUpper(s.KEM.String()))
+	buf, err := os.ReadFile(f)
+	if err != nil {
+		return nil, err
+	}
+	blk, _ := pem.Decode(buf)
+	if blk == nil {
+		return nil, fmt.Errorf("failed to decode PEM file %v", f)
+	}
+	if strings.ToUpper(blk.Type) != keyType {
+		return nil, fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
+	}
+	return s.PrivateKeyFromBytes(blk.Bytes)
 }
 
 func (s *scheme) PrivateKeyToPemFile(f string, privKey PrivateKey) error {
@@ -309,12 +300,19 @@ func (s *scheme) PrivateKeyToPemFile(f string, privKey PrivateKey) error {
 }
 
 func (s *scheme) PublicKeyFromPemFile(f string) (PublicKey, error) {
-	pubKey := s.GenerateKeypair(rand.Reader).PublicKey()
-	err := cpem.FromFile(f, pubKey)
+	keyType := fmt.Sprintf("%s PUBLIC KEY", strings.ToUpper(s.KEM.String()))
+	buf, err := os.ReadFile(f)
 	if err != nil {
 		return nil, err
 	}
-	return pubKey, nil
+	blk, _ := pem.Decode(buf)
+	if blk == nil {
+		return nil, fmt.Errorf("failed to decode PEM file %v", f)
+	}
+	if strings.ToUpper(blk.Type) != keyType {
+		return nil, fmt.Errorf("attempted to decode PEM file with wrong key type %v != %v", blk.Type, keyType)
+	}
+	return s.PublicKeyFromBytes(blk.Bytes)
 }
 
 func (s *scheme) PublicKeyToPemFile(f string, pubKey PublicKey) error {
@@ -322,35 +320,18 @@ func (s *scheme) PublicKeyToPemFile(f string, pubKey PublicKey) error {
 }
 
 func (s *scheme) UnmarshalTextPublicKey(b []byte) (PublicKey, error) {
-	privKey := s.GenerateKeypair(rand.Reader)
-	pubKey := privKey.PublicKey()
-	err := pubKey.UnmarshalText(b)
+	raw, err := base64.StdEncoding.DecodeString(string(b))
 	if err != nil {
 		return nil, err
 	}
-	return pubKey, nil
-}
-
-func (s *scheme) UnmarshalTextPrivateKey(b []byte) (PrivateKey, error) {
-	privKey := s.GenerateKeypair(rand.Reader)
-	err := privKey.UnmarshalText(b)
-	if err != nil {
-		return nil, err
-	}
-	return privKey, nil
+	return s.PublicKeyFromBytes(raw)
 }
 
 func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (PublicKey, error) {
-	privKey := s.GenerateKeypair(rand.Reader)
-	pubKey := privKey.PublicKey()
-	err := pubKey.UnmarshalBinary(b)
-	if err != nil {
-		return nil, err
-	}
-	return pubKey, nil
+	return s.PublicKeyFromBytes(b)
 }
 
-func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
+func (s *scheme) GenerateKeypair(r io.Reader) (PrivateKey, PublicKey) {
 	seecGenRand, err := seec.GenKeyPRPAES(r, 256)
 	if err != nil {
 		panic(err)
@@ -359,8 +340,9 @@ func (s *scheme) GenerateKeypair(r io.Reader) PrivateKey {
 	if err != nil {
 		panic(err)
 	}
-	return &privateKey{
+	privk := &privateKey{
 		KEM:        s.KEM,
 		privateKey: k,
 	}
+	return privk, privk.PublicKey()
 }

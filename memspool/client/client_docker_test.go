@@ -14,12 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:build docker_test
 // +build docker_test
 
 package client
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	cc "github.com/katzenpost/katzenpost/client"
@@ -38,11 +40,11 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
@@ -55,7 +57,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 
 	// append to a spool
 	message := []byte("hello there")
-	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message)
+	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message, s.SphinxGeometry())
 	require.NoError(err)
 	rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
 	require.NoError(err)
@@ -104,6 +106,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 }
 
 func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
+	t.Skip("This test does not handle lossy networks well")
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -112,10 +115,10 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
@@ -128,11 +131,11 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	messageID := uint32(1) // where do we learn messageID?
 	for i := 0; i < 20; i += 1 {
 		// append to a spool
-		message := make([]byte, common.SpoolPayloadLength)
+		message := make([]byte, common.SpoolPayloadLength(s.SphinxGeometry()))
 		rand.Reader.Read(message[:])
-		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:])
+		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:], s.SphinxGeometry())
 		require.NoError(err)
-		rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
+		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
 		require.NoError(err)
 		response := new(common.SpoolResponse)
 		err = response.Unmarshal(rawResponse)
@@ -152,4 +155,30 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 		require.True(bytes.Equal(response.Message, message[:]))
 		messageID += 1
 	}
+}
+
+func TestDockerGetSpoolServices(t *testing.T) {
+	require := require.New(t)
+
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(err)
+
+	client, err := cc.New(cfg)
+	require.NoError(err)
+
+	s, err := client.NewTOFUSession(context.Background())
+	require.NoError(err)
+
+	s.WaitForDocument(context.Background())
+
+	spoolServices, err := s.GetServices(common.SpoolServiceName)
+	require.NoError(err)
+
+	for _, svc := range spoolServices {
+		t.Logf("Got %s ServiceDescriptor: %v", common.SpoolServiceName, svc)
+		rd, err := NewSpoolReadDescriptor(svc.Name, svc.Provider, s)
+		require.NoError(err)
+		t.Logf("Got SpoolReadDescriptor: %v", rd)
+	}
+
 }

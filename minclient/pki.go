@@ -18,11 +18,13 @@ package minclient
 
 import (
 	"context"
+	"crypto/hmac"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
+	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -33,8 +35,10 @@ import (
 var (
 	errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
 	errConsensusNotFound    = errors.New("minclient/pki: consensus not ready yet")
-	nextFetchTill           = 3 * (epochtime.Period / 8)
-	recheckInterval         = 1 * time.Minute
+	PublishDeadline         = vServer.PublishConsensusDeadline
+	mixServerCacheDelay     = epochtime.Period / 16
+	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
+	recheckInterval         = epochtime.Period / 16
 	// WarpedEpoch is a build time flag that accelerates the recheckInterval
 	WarpedEpoch = "false"
 )
@@ -104,9 +108,7 @@ func (p *pki) currentDocument() *cpki.Document {
 }
 
 func (p *pki) worker() {
-	const initialSpawnDelay = 5 * time.Second
-
-	timer := time.NewTimer(initialSpawnDelay)
+	timer := time.NewTimer(0)
 	defer func() {
 		p.log.Debug("Halting PKI worker.")
 		timer.Stop()
@@ -160,6 +162,7 @@ func (p *pki) worker() {
 			}()
 
 			d, err := p.getDocument(pkiCtx, epoch)
+			cancelFn()
 			if err != nil {
 				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {
@@ -170,6 +173,10 @@ func (p *pki) worker() {
 				default:
 				}
 				continue
+			}
+			if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
+				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
+				panic("Sphinx Geometry mismatch!")
 			}
 			p.docs.Store(epoch, d)
 			didUpdate = true
@@ -280,11 +287,10 @@ func newPKI(c *Client) *pki {
 	p.log = c.cfg.LogBackend.GetLogger("minclient/pki:" + c.displayName)
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
-	return p
-}
-
-func init() {
-	if WarpedEpoch == "true" {
-		recheckInterval = 5 * time.Second
+	// Save cached documents
+	d := c.cfg.CachedDocument
+	if d != nil {
+		p.docs.Store(d.Epoch, d)
 	}
+	return p
 }

@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -47,6 +47,7 @@ func (s *stubAuthenticator) IsPeerValid(peer *PeerCredentials) bool {
 }
 
 func TestSessionIntegration(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 	require := require.New(t)
 
@@ -61,25 +62,25 @@ func TestSessionIntegration(t *testing.T) {
 	// Generate the credentials used for authentication.  In a real deployment,
 	// this information is conveyed out of band somehow to the peer a priori.
 	scheme := DefaultScheme
-	authKEMKeyAlice := scheme.GenerateKeypair(rand.Reader)
+	authKEMKeyAlice, authKEMKeyAlicePub := scheme.GenerateKeypair(rand.Reader)
 
 	credsAlice := &PeerCredentials{
 		AdditionalData: []byte("alice@example.com"),
-		PublicKey:      authKEMKeyAlice.PublicKey(),
+		PublicKey:      authKEMKeyAlicePub,
 	}
 
-	authKEMKeyBob := scheme.GenerateKeypair(rand.Reader)
+	authKEMKeyBob, authKEMKeyBobPub := scheme.GenerateKeypair(rand.Reader)
 
 	credsBob := &PeerCredentials{
 		AdditionalData: []byte("katzenpost.example.com"),
-		PublicKey:      authKEMKeyBob.PublicKey(),
+		PublicKey:      authKEMKeyBobPub,
 	}
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	userForwardPayloadLength := 3000
 	withSURB := true
 	nrHops := 5
-	geometry := sphinx.GeometryFromUserForwardPayloadLength(nike,
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
 		userForwardPayloadLength,
 		withSURB,
 		nrHops,
@@ -131,7 +132,8 @@ func TestSessionIntegration(t *testing.T) {
 		t.Logf("ClockSkew: %v", s.ClockSkew())
 		creds, err := s.PeerCredentials()
 		require.NoError(err)
-		assert.Equal(credsBob, creds, "Integration: Alice PeerCredentials")
+		require.Equal(credsBob.AdditionalData, creds.AdditionalData, "Integration: Alice PeerCredentials")
+		assert.True(credsBob.PublicKey.Equal(creds.PublicKey), "Integration: Alice PeerCredentials")
 
 		cmd := &commands.SendPacket{
 			SphinxPacket: []byte(testPayload1),
@@ -157,7 +159,8 @@ func TestSessionIntegration(t *testing.T) {
 		assert.Panics(func() { s.ClockSkew() }, "Integration: Bob ClockSkew()")
 		creds, err := s.PeerCredentials()
 		require.NoError(err)
-		assert.Equal(credsAlice, creds, "Integration: Bob PeerCredentials")
+		require.Equal(credsAlice.AdditionalData, creds.AdditionalData, "Integration: Bob PeerCredentials")
+		require.True(credsAlice.PublicKey.Equal(creds.PublicKey), "Integration: BobPeerCredentials")
 
 		cmd, err := s.RecvCommand()
 		require.NoError(err, "Integration: Bob RecvCommand() 1")
@@ -168,4 +171,170 @@ func TestSessionIntegration(t *testing.T) {
 		requireSendPktEq(cmd, []byte(testPayload2))
 	}(sBob, connBob)
 	wg.Wait()
+}
+
+func TestAuthenticateMessageToBytes(t *testing.T) {
+	t.Parallel()
+	m := authenticateMessage{
+		ad: make([]byte, MaxAdditionalDataLength+1),
+	}
+	f := func() {
+		m.ToBytes(nil)
+	}
+	require.Panics(t, f)
+}
+
+func TestAuthenticateMessageFromBytes(t *testing.T) {
+	t.Parallel()
+	b := make([]byte, authLen-1)
+	f := func() {
+		authenticateMessageFromBytes(b)
+	}
+	require.Panics(t, f)
+}
+
+func TestNewSessionErrors(t *testing.T) {
+	t.Parallel()
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	userForwardPayloadLength := 3000
+	withSURB := true
+	nrHops := 5
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
+		userForwardPayloadLength,
+		withSURB,
+		nrHops,
+	)
+
+	authKEMKeyBob, _ := DefaultScheme.GenerateKeypair(rand.Reader)
+	credsBob := &PeerCredentials{
+		AdditionalData: []byte("katzenpost.example.com"),
+		PublicKey:      authKEMKeyBob.PublicKey(),
+	}
+
+	authKEMKeyWrong, _ := DefaultScheme.GenerateKeypair(rand.Reader)
+
+	// test case if cfg.Geometry == nil
+	cfg := &SessionConfig{
+		Geometry:          geometry,
+		Authenticator:     &stubAuthenticator{creds: credsBob},
+		AdditionalData:    make([]byte, MaxAdditionalDataLength),
+		AuthenticationKey: authKEMKeyWrong,
+		RandomReader:      rand.Reader,
+	}
+	_, err := NewSession(cfg, false)
+	require.NoError(t, err)
+	cfg.Geometry = nil
+	_, err = NewSession(cfg, false)
+	require.Error(t, err)
+
+	// test case if cfg.Authenticator == nil
+	cfg = &SessionConfig{
+		Geometry:          geometry,
+		AdditionalData:    make([]byte, MaxAdditionalDataLength),
+		AuthenticationKey: authKEMKeyWrong,
+		RandomReader:      rand.Reader,
+	}
+	_, err = NewSession(cfg, false)
+	require.Error(t, err)
+
+	// test case if len(cfg.AdditionalData) > MaxAdditionalDataLength
+	cfg = &SessionConfig{
+		Geometry:          geometry,
+		AdditionalData:    make([]byte, MaxAdditionalDataLength+1),
+		AuthenticationKey: authKEMKeyWrong,
+		RandomReader:      rand.Reader,
+	}
+	_, err = NewSession(cfg, false)
+	require.Error(t, err)
+
+	// test case if cfg.AuthenticationKey == nil
+	cfg = &SessionConfig{
+		Geometry:       geometry,
+		Authenticator:  &stubAuthenticator{creds: credsBob},
+		AdditionalData: make([]byte, MaxAdditionalDataLength),
+		RandomReader:   rand.Reader,
+	}
+	_, err = NewSession(cfg, false)
+	require.Error(t, err)
+
+	// test case if cfg.RandomReader == nil {
+	cfg = &SessionConfig{
+		Geometry:          geometry,
+		Authenticator:     &stubAuthenticator{creds: credsBob},
+		AdditionalData:    make([]byte, MaxAdditionalDataLength),
+		AuthenticationKey: authKEMKeyWrong,
+	}
+	_, err = NewSession(cfg, false)
+	require.Error(t, err)
+}
+
+func TestErrorInvalidStatePeerCreds(t *testing.T) {
+	t.Parallel()
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	userForwardPayloadLength := 3000
+	withSURB := true
+	nrHops := 5
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
+		userForwardPayloadLength,
+		withSURB,
+		nrHops,
+	)
+
+	authKEMKeyBob, _ := DefaultScheme.GenerateKeypair(rand.Reader)
+	credsBob := &PeerCredentials{
+		AdditionalData: []byte("katzenpost.example.com"),
+		PublicKey:      authKEMKeyBob.PublicKey(),
+	}
+
+	authKEMKeyWrong, _ := DefaultScheme.GenerateKeypair(rand.Reader)
+
+	// test case if cfg.Geometry == nil
+	cfg := &SessionConfig{
+		Geometry:          geometry,
+		Authenticator:     &stubAuthenticator{creds: credsBob},
+		AdditionalData:    make([]byte, MaxAdditionalDataLength),
+		AuthenticationKey: authKEMKeyWrong,
+		RandomReader:      rand.Reader,
+	}
+	s, err := NewSession(cfg, false)
+	require.NoError(t, err)
+
+	_, err = s.PeerCredentials()
+	require.Error(t, err)
+}
+
+func TestErrorInvalidStateClockSkew(t *testing.T) {
+	t.Parallel()
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	userForwardPayloadLength := 3000
+	withSURB := true
+	nrHops := 5
+	geometry := geo.GeometryFromUserForwardPayloadLength(nike,
+		userForwardPayloadLength,
+		withSURB,
+		nrHops,
+	)
+
+	authKEMKeyBob, _ := DefaultScheme.GenerateKeypair(rand.Reader)
+	credsBob := &PeerCredentials{
+		AdditionalData: []byte("katzenpost.example.com"),
+		PublicKey:      authKEMKeyBob.PublicKey(),
+	}
+
+	authKEMKeyWrong, _ := DefaultScheme.GenerateKeypair(rand.Reader)
+
+	// test case if cfg.Geometry == nil
+	cfg := &SessionConfig{
+		Geometry:          geometry,
+		Authenticator:     &stubAuthenticator{creds: credsBob},
+		AdditionalData:    make([]byte, MaxAdditionalDataLength),
+		AuthenticationKey: authKEMKeyWrong,
+		RandomReader:      rand.Reader,
+	}
+	s, err := NewSession(cfg, false)
+	require.NoError(t, err)
+	f := func() {
+		_ = s.ClockSkew()
+	}
+	require.Panics(t, f)
 }

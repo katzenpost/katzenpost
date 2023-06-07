@@ -19,18 +19,18 @@ Katzenpost now uses hybrid post quantum with classical cryptographic protocols.
 As part of this change in our cryptographic protocols we have added the use
 of Sphincs+, the stateless hash based post quantum signature scheme.
 
-The katzenpost monorepo now has a copy of the sphincsplus git repo in `katzenpost/sphincsplus`.
-
-Install this dependency like this:
+The katzenpost monorepo now has a copy of the sphincsplus git repo in `katzenpost/sphincsplus/ref`
+and in that location we've added some cgo bindings which require this bash
+environment variable to be set in order to compile:
 
 .. code-block:: bash
 
-  cd katzenpost/sphincsplus/ref
-  make libsphincsplus.a
+  export CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
 
-
-The Katzenpost fork of the sphincs+ ref code was created so that we could
-make some necessary changes to the Makefile.
+The Katzenpost fork of the sphincs+ ref code was created so that we
+could make some necessary changes to the Makefile. However after a
+while of using it we realized we also needed to change a few things to
+get our cgo bindings to work.
 
 
 supported by

@@ -31,7 +31,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -53,7 +52,7 @@ var (
 
 	keepAliveInterval   = 3 * time.Minute
 	connectTimeout      = 1 * time.Minute
-	pkiFallbackInterval = 3 * time.Minute
+	pkiFallbackInterval = epochtime.Period / 16
 )
 
 // ConnectError is the error used to indicate that a connect attempt has failed.
@@ -173,9 +172,11 @@ func (c *connection) getDescriptor() error {
 	}()
 
 	doc := c.c.CurrentDocument()
-	if doc == nil {
-		c.log.Debugf("No PKI document for current epoch.")
+	if doc == nil && c.c.cfg.CachedDocument == nil {
+		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
 		return newPKIError("no PKI document for current epoch")
+	} else if c.c.cfg.CachedDocument != nil {
+		doc = c.c.cfg.CachedDocument
 	}
 	desc, err := doc.GetProvider(c.c.cfg.Provider)
 	if err != nil {
@@ -360,7 +361,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          c.c.cfg.SphinxGeometry,
 		Authenticator:     c,
 		AdditionalData:    []byte(c.c.cfg.User),
 		AuthenticationKey: c.c.cfg.LinkKey,
@@ -802,12 +803,4 @@ func newConnection(c *Client) *connection {
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k
-}
-
-func init() {
-	if WarpedEpoch == "true" {
-		keepAliveInterval = 30 * time.Second
-		connectTimeout = 10 * time.Second
-		pkiFallbackInterval = 30 * time.Second
-	}
 }

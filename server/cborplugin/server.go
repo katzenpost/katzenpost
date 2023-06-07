@@ -65,10 +65,6 @@ func (s *Server) worker() {
 			reply, err := s.plugin.OnCommand(cmd)
 			if err != nil {
 				s.log.Debugf("plugin returned err: %s", err)
-				continue
-			}
-			if reply == nil {
-				continue
 			}
 			select {
 			case <-s.HaltCh():

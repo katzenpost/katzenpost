@@ -35,7 +35,7 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
@@ -546,6 +546,44 @@ func (s *Session) ClockSkew() time.Duration {
 	return s.clockSkew
 }
 
+// NewPKISession creates a new session to be used with the PKI (authority).
+// Unlike NewSession, NewPKISession does not require that you pass in
+// a Sphinx geometry.
+func NewPKISession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
+	if cfg.Authenticator == nil {
+		return nil, errors.New("wire/session: missing Authenticator")
+	}
+	if len(cfg.AdditionalData) > MaxAdditionalDataLength {
+		return nil, errors.New("wire/session: oversized AdditionalData")
+	}
+	if cfg.AuthenticationKey == nil {
+		return nil, errors.New("wire/session: missing AuthenticationKEMKey")
+	}
+	if cfg.RandomReader == nil {
+		return nil, errors.New("wire/session: missing RandomReader")
+	}
+
+	s := &Session{
+		protocol: &nyquist.Protocol{
+			Pattern: pattern.PqXX,
+			KEM:     DefaultScheme.KEM,
+			Cipher:  cipher.ChaChaPoly,
+			Hash:    hash.BLAKE2s,
+		},
+		authenticator:  cfg.Authenticator,
+		additionalData: cfg.AdditionalData,
+		randReader:     cfg.RandomReader,
+		isInitiator:    isInitiator,
+		state:          stateInit,
+		rxKeyMutex:     new(sync.RWMutex),
+		txKeyMutex:     new(sync.RWMutex),
+		commands:       commands.NewPKICommands(),
+	}
+	s.authenticationKEMKey = cfg.AuthenticationKey.(*privateKey).privateKey
+
+	return s, nil
+}
+
 // NewSession creates a new Session.
 func NewSession(cfg *SessionConfig, isInitiator bool) (*Session, error) {
 	if cfg.Geometry == nil {
@@ -605,5 +643,5 @@ type SessionConfig struct {
 
 	// Geometry is the geometry of the Sphinx cryptographic packets
 	// that we will use with our wire protocol.
-	Geometry *sphinx.Geometry
+	Geometry *geo.Geometry
 }

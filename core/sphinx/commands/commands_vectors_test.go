@@ -42,6 +42,7 @@ type commandsTest struct {
 }
 
 func TestBuildCommandVectors(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	cmdsTest := commandsTest{
@@ -63,6 +64,7 @@ func TestBuildCommandVectors(t *testing.T) {
 }
 
 func TestCommandVectors(t *testing.T) {
+	t.Parallel()
 	assert := assert.New(t)
 
 	serialized, err := os.ReadFile(sphinxCommandsVectorsFile)
@@ -86,6 +88,7 @@ func TestCommandVectors(t *testing.T) {
 	}
 	nextHop := nextHopCmd.ToBytes([]byte{})
 	nextHopCmdWant, err := hex.DecodeString(cmdsTest.NextHopCmdWant)
+	_, err = hex.DecodeString(cmdsTest.NextHopCmdWant)
 	assert.NoError(err)
 	assert.Equal(nextHopCmdWant, nextHop)
 

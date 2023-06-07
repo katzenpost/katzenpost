@@ -19,11 +19,14 @@
 package catshadow
 
 import (
-	"github.com/katzenpost/katzenpost/memspool/client"
+	"context"
 	"time"
+
+	"github.com/katzenpost/katzenpost/memspool/client"
 )
 
 type opOnline struct {
+	context context.Context
 	responseChan chan error
 }
 
@@ -32,6 +35,7 @@ type opOffline struct {
 }
 
 type opCreateSpool struct {
+	provider     string
 	responseChan chan error
 }
 
@@ -89,4 +93,16 @@ type opRestartSending struct {
 type opWipeConversation struct {
 	name         string
 	responseChan chan error
+}
+
+type opGetPKIDocument struct {
+	responseChan chan interface{}
+}
+
+type opGetSpoolProviders struct {
+	responseChan chan interface{}
+}
+
+type opSpoolWriteDescriptor struct {
+	responseChan chan *client.SpoolWriteDescriptor
 }

@@ -23,32 +23,56 @@ import (
 	"testing"
 
 	ctidhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
-func TestCtidhForwardSphinx(t *testing.T) {
+func TestHybridCtidhForwardSphinx(t *testing.T) {
+	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	mynike := ctidhnike.NewCtidhNike()
-	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(mynike, geo)
+	mynike := hybrid.CTIDHX25519
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+
+	t.Logf("NIKE: %s", g.NIKEName)
+	t.Logf("KEM: %s", g.KEMName)
+
+	sphinx := NewSphinx(g)
+
+	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
+}
+
+func TestCtidhForwardSphinx(t *testing.T) {
+	t.Parallel()
+	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
+
+	mynike := ctidhnike.CTIDHScheme
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(geo)
+	sphinx.nike = mynike // XXX fixes sphinx, currently schemes.ByName doesn't
+	// return CTIDH NIKE because it's guarded by the ctidh build tag for now.
 
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
 
 func TestCtidhSURB(t *testing.T) {
+	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
-	mynike := ctidhnike.NewCtidhNike()
-	geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(mynike, geo)
+	mynike := ctidhnike.CTIDHScheme
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
+	sphinx := NewSphinx(geo)
+	sphinx.nike = mynike // XXX fixes sphinx, currently schemes.ByName doesn't
+	// return CTIDH NIKE because it's guarded by the ctidh build tag for now.
 
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }
 
 func TestCTIDHSphinxGeometry(t *testing.T) {
+	t.Parallel()
 	withSURB := false
-	geo := GeometryFromUserForwardPayloadLength(ctidhnike.NewCtidhNike(), 512, withSURB, 5)
-	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = GeometryFromUserForwardPayloadLength(ctidhnike.NewCtidhNike(), 512, withSURB, 10)
-	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", geo.HeaderLength)
+	g := geo.GeometryFromUserForwardPayloadLength(ctidhnike.CTIDHScheme, 512, withSURB, 5)
+	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.GeometryFromUserForwardPayloadLength(ctidhnike.CTIDHScheme, 512, withSURB, 10)
+	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)
 }

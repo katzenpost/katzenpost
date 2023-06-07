@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,8 +76,8 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	//forwardPayloadLength := len(payload) + (sphinx.SphinxPlaintextHeaderLength + 556)
 	nrHops := 5
 
-	//geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
+	//geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
 	cmds := &Commands{
 		geo: geo,
 	}
@@ -163,8 +164,8 @@ func TestCommandVectors(t *testing.T) {
 
 	nrHops := 5
 
-	geo := sphinx.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -200,6 +201,7 @@ func TestCommandVectors(t *testing.T) {
 
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
+
 	emptyMessage := &MessageEmpty{
 		Cmds:     cmds,
 		Sequence: cmdsTest.MessageEmptySeq,
@@ -220,11 +222,13 @@ func TestCommandVectors(t *testing.T) {
 		Sequence:      cmdsTest.MessageSeq,
 		Payload:       payload,
 	}
+
 	messageCmd := message.ToBytes()
 	assert.Equal(messageCmd, messageWant)
 
 	messageAckWant, err := hex.DecodeString(cmdsTest.MessageAck)
 	assert.NoError(err)
+
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
 	messageAck := &MessageACK{
@@ -235,7 +239,7 @@ func TestCommandVectors(t *testing.T) {
 		Payload:       ackPayload,
 	}
 	messageAckCmd := messageAck.ToBytes()
-	assert.Equal(messageAckCmd, messageAckWant)
+	assert.Equal([]byte(messageAckCmd), []byte(messageAckWant))
 
 	getConsensusWant, err := hex.DecodeString(cmdsTest.GetConsensus)
 	assert.NoError(err)

@@ -29,6 +29,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const maxAttempts = 3
@@ -41,7 +42,15 @@ var errMaxAttempts = errors.New("path: max path selection attempts exceeded")
 // Note: Forward packets originating from a client have slightly different
 // path requirements than internally sourced packets or response packets as it
 // includes the 0th hop.
-func New(rng *mRand.Rand, doc *pki.Document, recipient []byte, src, dst *pki.MixDescriptor, surbID *[constants.SURBIDLength]byte, baseTime time.Time, isFromClient, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+func New(rng *mRand.Rand,
+	sphinxGeometry *geo.Geometry,
+	doc *pki.Document,
+	recipient []byte,
+	src, dst *pki.MixDescriptor,
+	surbID *[constants.SURBIDLength]byte,
+	baseTime time.Time,
+	isFromClient,
+	isForward bool) ([]*sphinx.PathHop, time.Time, error) {
 
 	var then time.Time
 	var path []*sphinx.PathHop
@@ -59,10 +68,21 @@ selectLoop:
 			idHash := desc.IdentityKey.Sum256()
 			copy(h.ID[:], idHash[:])
 			epoch, _, _ := epochtime.FromUnix(then.Unix())
-			if k, ok := desc.MixKeys[epoch]; !ok {
+			if _, ok := desc.MixKeys[epoch]; !ok {
 				continue selectLoop
 			} else {
-				h.NIKEPublicKey = k
+				if sphinxGeometry.NIKEName == "" {
+					h.KEMPublicKey, err = desc.UnmarshalMixKeyAsKEM(epoch, sphinxGeometry)
+					if err != nil {
+						return nil, time.Time{}, err
+					}
+				} else {
+					h.NIKEPublicKey, err = desc.UnmarshalMixKeyAsNike(epoch, sphinxGeometry)
+					if err != nil {
+						return nil, time.Time{}, err
+					}
+				}
+
 			}
 
 			// All non-terminal hops, and the terminal forward hop iff the
@@ -107,40 +127,49 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 	var hops []*pki.MixDescriptor
 
 	var startLayer, nHops int
+	idHash := src.IdentityKey.Sum256()
+	srcLayer, err := doc.GetMixLayer(&idHash)
+	if err != nil {
+		return nil, err
+	}
+	idHash = dst.IdentityKey.Sum256()
+	dstLayer, err := doc.GetMixLayer(&idHash)
+	if err != nil {
+		return nil, err
+	}
 	if isForward {
-		if dst.Layer != pki.LayerProvider {
-			return nil, fmt.Errorf("path: invalid destination layer: %v", dst.Layer)
+		if !dst.Provider {
+			return nil, fmt.Errorf("path: invalid destination (non provider): %x", dst.IdentityKey.Sum256())
 		}
-
 		if isFromClient {
 			// Client packets must span provider to provider.
-			if src.Layer != pki.LayerProvider {
-				return nil, fmt.Errorf("path: invalid source layer: %v", src.Layer)
+			if !src.Provider {
+				return nil, fmt.Errorf("path: invalid source from client (non provider): %x", src.IdentityKey.Sum256())
 			}
 			nHops = len(doc.Topology) + 2
 		} else {
-			switch int(src.Layer) {
+			switch int(srcLayer) {
 			case pki.LayerProvider:
 				startLayer = 0
 			case len(doc.Topology) - 1:
 				return []*pki.MixDescriptor{dst}, nil
 			default:
-				startLayer = int(src.Layer) + 1
+				startLayer = int(srcLayer) + 1
 			}
 			nHops = len(doc.Topology) - startLayer
 		}
 	} else {
-		if src.Layer != pki.LayerProvider {
-			return nil, fmt.Errorf("path: invalid source layer: %v", src.Layer)
+		if srcLayer != pki.LayerProvider {
+			return nil, fmt.Errorf("path: invalid source layer: %v", srcLayer)
 		}
 
-		switch int(dst.Layer) {
+		switch int(dstLayer) {
 		case pki.LayerProvider:
 			nHops = len(doc.Topology) + 1
 		case 0:
 			return []*pki.MixDescriptor{dst}, nil
 		default:
-			nHops = int(dst.Layer) + 1
+			nHops = int(dstLayer) + 1
 		}
 	}
 
@@ -149,7 +178,7 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 		hops = append(hops, src)
 	}
 	for i, nodes := range doc.Topology[startLayer:] {
-		if i == int(dst.Layer) {
+		if i == int(dstLayer) {
 			break
 		}
 		if len(nodes) == 0 {

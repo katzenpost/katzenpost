@@ -25,18 +25,20 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	sphinxConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 func TestNoOp(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -51,6 +53,7 @@ func TestNoOp(t *testing.T) {
 }
 
 func TestDisconnect(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &Disconnect{}
@@ -61,8 +64,8 @@ func TestDisconnect(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -73,6 +76,7 @@ func TestDisconnect(t *testing.T) {
 }
 
 func TestSendPacket(t *testing.T) {
+	t.Parallel()
 	const payload = "A free man must be able to endure it when his fellow men act and live otherwise than he considers proper. He must free himself from the habit, just as soon as something does not please him, of calling for the police."
 
 	require := require.New(t)
@@ -84,8 +88,8 @@ func TestSendPacket(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -99,6 +103,7 @@ func TestSendPacket(t *testing.T) {
 }
 
 func TestRetrieveMessage(t *testing.T) {
+	t.Parallel()
 	const seq = 0xbeefbeef
 
 	require := require.New(t)
@@ -110,8 +115,8 @@ func TestRetrieveMessage(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -125,11 +130,12 @@ func TestRetrieveMessage(t *testing.T) {
 }
 
 func TestMessage(t *testing.T) {
+	t.Parallel()
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 2000
 	nrHops := 5
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	cmds := &Commands{
 		geo: geo,
 	}
@@ -188,7 +194,7 @@ func TestMessage(t *testing.T) {
 	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
 	_, err = rand.Reader.Read(ackPayload)
 	require.NoError(err, "Message: failed to generate ACK payload")
-	id := make([]byte, sphinxConstants.SURBIDLength)
+	id := make([]byte, constants.SURBIDLength)
 	_, err = rand.Reader.Read(id[:])
 	require.NoError(err, "MessageACK: Failed to generate ID")
 
@@ -215,6 +221,7 @@ func TestMessage(t *testing.T) {
 }
 
 func TestGetConsensus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &GetConsensus{
@@ -226,8 +233,8 @@ func TestGetConsensus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -238,6 +245,7 @@ func TestGetConsensus(t *testing.T) {
 }
 
 func TestConsensus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &Consensus{
@@ -250,8 +258,8 @@ func TestConsensus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -276,6 +284,7 @@ func TestConsensus(t *testing.T) {
 }
 
 func TestPostDescriptor(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &PostDescriptor{
@@ -289,8 +298,8 @@ func TestPostDescriptor(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -305,6 +314,7 @@ func TestPostDescriptor(t *testing.T) {
 }
 
 func TestPostDescriptorStatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &PostDescriptorStatus{
@@ -317,8 +327,8 @@ func TestPostDescriptorStatus(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -332,6 +342,7 @@ func TestPostDescriptorStatus(t *testing.T) {
 }
 
 func TestGetVote(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 	_, alicePub := cert.Scheme.NewKeypair()
 
@@ -346,8 +357,8 @@ func TestGetVote(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -359,6 +370,7 @@ func TestGetVote(t *testing.T) {
 }
 
 func TestVote(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
@@ -374,8 +386,8 @@ func TestVote(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -391,6 +403,7 @@ func TestVote(t *testing.T) {
 }
 
 func TestVoteStatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &VoteStatus{
@@ -403,8 +416,8 @@ func TestVoteStatus(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -418,6 +431,7 @@ func TestVoteStatus(t *testing.T) {
 }
 
 func TestReveal(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
@@ -437,8 +451,8 @@ func TestReveal(t *testing.T) {
 	forwardPayloadLength := 123
 	nrHops := 5
 
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 
 	cmds := &Commands{
 		geo: s.Geometry(),
@@ -454,6 +468,7 @@ func TestReveal(t *testing.T) {
 }
 
 func TestRevealtatus(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := &RevealStatus{
@@ -465,8 +480,8 @@ func TestRevealtatus(t *testing.T) {
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
-	geo := sphinx.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
-	s := sphinx.NewSphinx(nike, geo)
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
 	cmds := &Commands{
 		geo: s.Geometry(),
 	}
@@ -475,5 +490,123 @@ func TestRevealtatus(t *testing.T) {
 	require.NoError(err, "RevealStatus: FromBytes() failed")
 	require.IsType(cmd, c, "RevealStatus: FromBytes() invalid type")
 	d := c.(*RevealStatus)
+	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
+
+func TestCert(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	_, alicePub := cert.Scheme.NewKeypair()
+	cmd := &Cert{
+		Epoch:     3141,
+		PublicKey: alicePub,
+		Payload:   []byte{1, 2, 3, 4},
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmdOverhead+certOverhead+len(cmd.Payload), "Cert: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "Reveal: FromBytes() failed")
+	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
+	d := c.(*Cert)
+	require.Equal(d.Epoch, cmd.Epoch)
+	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+	require.Equal(d.Payload, cmd.Payload)
+}
+
+func TestCertStatus(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	cmd := &CertStatus{
+		ErrorCode: 14,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, certStatusLength+cmdOverhead, "CertStatus: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "CertStatus: FromBytes() failed")
+	require.IsType(cmd, c, "CertStatus: FromBytes() invalid type")
+	d := c.(*CertStatus)
+	require.Equal(d.ErrorCode, cmd.ErrorCode)
+}
+
+func TestSig(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	_, alicePub := cert.Scheme.NewKeypair()
+	cmd := &Sig{
+		Epoch:     3141,
+		PublicKey: alicePub,
+		Payload:   []byte{1, 2, 3, 4},
+	}
+	b := cmd.ToBytes()
+	require.Len(b, cmdOverhead+sigOverhead+len(cmd.Payload), "Sig: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "Sig: FromBytes() failed")
+	require.IsType(cmd, c, "Sig: FromBytes() invalid type")
+	d := c.(*Sig)
+	require.Equal(d.Epoch, cmd.Epoch)
+	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
+	require.Equal(d.Payload, cmd.Payload)
+}
+
+func TestSigStatus(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	cmd := &SigStatus{
+		ErrorCode: 23,
+	}
+	b := cmd.ToBytes()
+	require.Len(b, revealStatusLength+cmdOverhead, "SigStatus: ToBytes() length")
+
+	nike := ecdh.NewEcdhNike(rand.Reader)
+	forwardPayloadLength := 123
+	nrHops := 5
+	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
+	s := sphinx.NewSphinx(geo)
+	cmds := &Commands{
+		geo: s.Geometry(),
+	}
+
+	c, err := cmds.FromBytes(b)
+	require.NoError(err, "SigStatus: FromBytes() failed")
+	require.IsType(cmd, c, "SigStatus: FromBytes() invalid type")
+	d := c.(*SigStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }

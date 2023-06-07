@@ -26,8 +26,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/config"
 )
@@ -41,8 +43,8 @@ func TestServerStartShutdown(t *testing.T) {
 	authLinkPubKeyPem := "auth_link_pub_key.pem"
 
 	scheme := wire.DefaultScheme
-	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
-	err = scheme.PublicKeyToPemFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPrivKey.PublicKey())
+	_, authLinkPubKey := scheme.GenerateKeypair(rand.Reader)
+	err = pem.ToFile(filepath.Join(datadir, authLinkPubKeyPem), authLinkPubKey)
 	require.NoError(t, err)
 
 	_, authPubkey := cert.Scheme.NewKeypair()
@@ -59,7 +61,15 @@ func TestServerStartShutdown(t *testing.T) {
 	err = pem.ToFile(filepath.Join(datadir, "identity.public.pem"), mixIdPublicKey)
 	require.NoError(t, err)
 
+	geo := geo.GeometryFromUserForwardPayloadLength(
+		ecdh.NewEcdhNike(rand.Reader),
+		2000,
+		true,
+		5,
+	)
+
 	cfg := config.Config{
+		SphinxGeometry: geo,
 		Server: &config.Server{
 			Identifier: "testserver",
 			Addresses:  []string{"127.0.0.1:1234"},
@@ -74,9 +84,9 @@ func TestServerStartShutdown(t *testing.T) {
 		Provider: nil,
 		PKI: &config.PKI{
 			Nonvoting: &config.Nonvoting{
-				Address:          "127.0.0.1:3321",
-				PublicKeyPem:     authIDPubKeyPem,
-				LinkPublicKeyPem: authLinkPubKeyPem,
+				Address:       "127.0.0.1:3321",
+				PublicKey:     authPubkey,
+				LinkPublicKey: authLinkPubKey,
 			},
 		},
 		Management: &config.Management{

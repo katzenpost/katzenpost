@@ -21,12 +21,11 @@ import (
 	"net"
 	"time"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/sphinx"
+	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -49,13 +48,13 @@ func (s *Server) onConn(conn net.Conn) {
 	auth := &wireAuthenticator{s: s}
 	keyHash := s.identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          nil,
 		Authenticator:     auth,
 		AdditionalData:    keyHash[:],
 		AuthenticationKey: s.linkKey,
 		RandomReader:      rand.Reader,
 	}
-	wireConn, err := wire.NewSession(cfg, false)
+	wireConn, err := wire.NewPKISession(cfg, false)
 	if err != nil {
 		s.log.Debugf("Peer %v: Failed to initialize session: %v", rAddr, err)
 		return
@@ -127,34 +126,23 @@ func (s *Server) onMix(rAddr net.Addr, cmd commands.Command, peerIdentityKeyHash
 }
 
 func (s *Server) onAuthority(rAddr net.Addr, cmd commands.Command) commands.Command {
-	s.log.Debug("onAuthority")
 	var resp commands.Command
 	switch c := cmd.(type) {
 	case *commands.GetConsensus:
 		resp = s.onGetConsensus(rAddr, c)
 	case *commands.Vote:
-		resp = s.onVote(c)
-	case *commands.VoteStatus:
-		s.log.Error("VoteStatus command is not allowed on Authority wire service listener.")
-		return nil
+		resp = s.state.onVoteUpload(c)
+	case *commands.Cert:
+		resp = s.state.onCertUpload(c)
 	case *commands.Reveal:
-		resp = s.onReveal(c)
-	case *commands.RevealStatus:
-		s.log.Error("RevealStatus command is not allowed on Authority wire service listener.")
-		return nil
+		resp = s.state.onRevealUpload(c)
+	case *commands.Sig:
+		resp = s.state.onSigUpload(c)
 	default:
 		s.log.Debugf("Peer %v: Invalid request: %T", rAddr, c)
 		return nil
 	}
 	return resp
-}
-
-func (s *Server) onVote(cmd *commands.Vote) commands.Command {
-	return s.state.onVoteUpload(cmd)
-}
-
-func (s *Server) onReveal(cmd *commands.Reveal) commands.Command {
-	return s.state.onRevealUpload(cmd)
 }
 
 func (s *Server) onGetConsensus(rAddr net.Addr, cmd *commands.GetConsensus) commands.Command {
@@ -195,12 +183,8 @@ func (s *Server) onPostDescriptor(rAddr net.Addr, cmd *commands.PostDescriptor, 
 	}
 
 	// Validate and deserialize the descriptor.
-	verifier, err := s11n.GetVerifierFromDescriptor(cmd.Payload)
-	if err != nil {
-		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
-		return resp
-	}
-	desc, err := s11n.VerifyAndParseDescriptor(verifier, cmd.Payload, cmd.Epoch)
+	desc := new(pki.MixDescriptor)
+	err := desc.UnmarshalBinary(cmd.Payload)
 	if err != nil {
 		s.log.Errorf("Peer %v: Invalid descriptor: %v", rAddr, err)
 		return resp

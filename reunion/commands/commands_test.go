@@ -31,6 +31,7 @@ func fillRand(require *require.Assertions, b []byte) {
 }
 
 func TestFetchStateCommand(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := new(FetchState)
@@ -50,6 +51,7 @@ func TestFetchStateCommand(t *testing.T) {
 }
 
 func TestStateResponseCommand(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := new(StateResponse)
@@ -71,6 +73,7 @@ func TestStateResponseCommand(t *testing.T) {
 }
 
 func TestSendT1Command(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := new(SendT1)
@@ -89,6 +92,7 @@ func TestSendT1Command(t *testing.T) {
 }
 
 func TestSendT2Command(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := new(SendT2)
@@ -115,6 +119,7 @@ func TestSendT2Command(t *testing.T) {
 }
 
 func TestSendT3Command(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := new(SendT3)
@@ -140,6 +145,7 @@ func TestSendT3Command(t *testing.T) {
 }
 
 func TestMessageResponseCommand(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := new(MessageResponse)
@@ -156,6 +162,7 @@ func TestMessageResponseCommand(t *testing.T) {
 }
 
 func TestMessageResponseCommand2(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cmd := new(MessageResponse)

@@ -3,21 +3,22 @@ package ed25519sphincsplus
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
+	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 
-	sphincs "github.com/katzenpost/katzenpost/sphincsplus_cgo"
+	sphincs "github.com/katzenpost/katzenpost/sphincsplus/ref"
 )
 
 var (
 	ErrPrivateKeySize = errors.New("byte slice length must match PrivateKeySize")
 	ErrPublicKeySize  = errors.New("byte slice length must match PublicKeySize")
-
+	PrivateKeyType = "ED25519 SPHINCS+ PRIVATE KEY"
+	PublicKeyType = "ED25519 SPHINCS+ PUBLIC KEY"
 	// Scheme implements our sign.Scheme interface using the ed25519 wrapper.
 	Scheme = &scheme{}
 )
@@ -43,6 +44,10 @@ func (s *scheme) NewKeypair() (sign.PrivateKey, sign.PublicKey) {
 	}
 	pubKey.hash = blake2b.Sum256(pubKey.Bytes())
 	return privKey, pubKey
+}
+
+func (s *scheme) NewEmptyPublicKey() sign.PublicKey {
+	return NewEmptyPublicKey()
 }
 
 func (s *scheme) UnmarshalBinaryPublicKey(b []byte) (sign.PublicKey, error) {
@@ -88,6 +93,14 @@ func (s *scheme) Name() string {
 	return "Ed25519 Sphincs+"
 }
 
+func (s *scheme) PrivateKeyType() string {
+	return PrivateKeyType
+}
+
+func (s *scheme) PublicKeyType() string {
+	return PublicKeyType
+}
+
 type privateKey struct {
 	e *eddsa.PrivateKey
 	s *sphincs.PrivateKey
@@ -101,7 +114,7 @@ func NewEmptyPrivateKey() *privateKey {
 }
 
 func (p *privateKey) KeyType() string {
-	return "ED25519 SPHINCS+ PRIVATE KEY"
+	return PrivateKeyType
 }
 
 func (p *privateKey) Sign(message []byte) (signature []byte) {
@@ -148,7 +161,7 @@ func NewEmptyPublicKey() *publicKey {
 }
 
 func (p *publicKey) KeyType() string {
-	return "ED25519 SPHINCS+ PUBLIC KEY"
+	return PublicKeyType
 }
 
 func (p *publicKey) Sum256() [32]byte {
@@ -196,13 +209,17 @@ func (p *publicKey) FromBytes(data []byte) error {
 }
 
 func (p *publicKey) MarshalText() (text []byte, err error) {
-	return []byte(base64.StdEncoding.EncodeToString(p.Bytes())), nil
+	return pem.ToPEMBytes(p), nil
 }
 
 func (p *publicKey) UnmarshalText(text []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(string(text))
-	if err != nil {
-		return err
-	}
-	return p.FromBytes(raw)
+	return pem.FromPEMBytes(text, p)
+}
+
+func (p *publicKey) MarshalBinary() ([]byte, error) {
+	return p.Bytes(), nil
+}
+
+func (p *publicKey) UnmarshalBinary(bytes []byte) error {
+	return p.FromBytes(bytes)
 }

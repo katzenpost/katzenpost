@@ -27,11 +27,9 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/utils"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/server/internal/debug"
 	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -46,7 +44,7 @@ type incomingConn struct {
 	c   net.Conn
 	e   *list.Element
 	w   *wire.Session
-	geo *sphinx.Geometry
+	geo *geo.Geometry
 
 	id      uint64
 	retrSeq uint32
@@ -66,7 +64,17 @@ type incomingConn struct {
 }
 
 func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
-	if provider := c.l.glue.Provider(); provider != nil && !c.fromMix {
+	provider := c.l.glue.Provider()
+	// this node is a provider
+	if provider != nil {
+		// see if it is from a Mix
+		_, canSend, isValid := c.l.glue.PKI().AuthenticateConnection(creds, false)
+		if isValid {
+			c.fromMix = true
+			c.fromClient = false
+			c.canSend = canSend
+			return isValid
+		}
 		isClient := provider.AuthenticateClient(creds)
 		if !isClient && c.fromClient {
 			// This used to be a client, but is no longer listed in
@@ -132,7 +140,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if isValid {
 		c.fromMix = true
 	} else {
-		c.log.Debugf("Authentication failed: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Authentication failed: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
 	}
 
 	return isValid
@@ -152,7 +160,7 @@ func (c *incomingConn) worker() {
 	// Allocate the session struct.
 	identityHash := c.l.glue.IdentityPublicKey().Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          c.geo,
 		Authenticator:     c,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: c.l.glue.LinkKey(),
@@ -185,9 +193,9 @@ func (c *incomingConn) worker() {
 		c.log.Debugf("Session failure: %s", err)
 	}
 	if c.fromMix {
-		c.log.Debugf("Peer: '%v' (%v)", debug.BytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("Peer: '%x' (%x)", creds.AdditionalData, creds.PublicKey.Sum256())
 	} else {
-		c.log.Debugf("User: '%v', Key: '%v'", utils.ASCIIBytesToPrintString(creds.AdditionalData), creds.PublicKey)
+		c.log.Debugf("User: '%x', Key: '%x'", creds.AdditionalData, creds.PublicKey.Sum256())
 	}
 
 	// Ensure that there's only one incoming conn from any given peer, though
@@ -409,7 +417,7 @@ func (c *incomingConn) onRetrieveMessage(cmd *commands.RetrieveMessage) error {
 }
 
 func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
-	pkt, err := packet.New(cmd.SphinxPacket)
+	pkt, err := packet.New(cmd.SphinxPacket, c.geo)
 	if err != nil {
 		return err
 	}
@@ -459,7 +467,7 @@ func (c *incomingConn) onSendPacket(cmd *commands.SendPacket) error {
 	return nil
 }
 
-func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
+func newIncomingConn(l *listener, conn net.Conn, geo *geo.Geometry) *incomingConn {
 	c := &incomingConn{
 		l:                 l,
 		c:                 conn,
@@ -467,7 +475,7 @@ func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
 		sendTokenLast:     monotime.Now(),
 		maxSendTokens:     4, // Reasonable burst to avoid some unnecessary rate limiting.
 		closeConnectionCh: make(chan bool),
-		geo:               sphinx.DefaultGeometry(),
+		geo:               geo,
 	}
 	c.log = l.glue.LogBackend().GetLogger(fmt.Sprintf("incoming:%d", c.id))
 

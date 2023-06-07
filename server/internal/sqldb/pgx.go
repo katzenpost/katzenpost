@@ -22,7 +22,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx"
-	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/server/spool"
@@ -218,7 +219,8 @@ func (d *pgxUserDB) getAuthKey(u []byte) wire.PublicKey {
 		return nil
 	}
 
-	pk, err := wire.DefaultScheme.UnmarshalBinaryPublicKey(raw)
+	_, pk := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	err := pk.UnmarshalBinary(raw)
 	if err != nil {
 		d.pgx.d.log.Warningf("Failed to deserialize authentication key for user '%v': %v", utils.ASCIIBytesToPrintString(u), err)
 		return nil
@@ -270,7 +272,8 @@ func (d *pgxUserDB) Identity(u []byte) (wire.PublicKey, error) {
 		return nil, userdb.ErrNoIdentity
 	}
 
-	pk, err := wire.DefaultScheme.UnmarshalBinaryPublicKey(raw)
+	_, pk := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	err := pk.UnmarshalBinary(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +303,7 @@ func (s *pgxSpool) StoreMessage(u, msg []byte) error {
 	return s.doStore(u, nil, msg)
 }
 
-func (s *pgxSpool) StoreSURBReply(u []byte, id *[sConstants.SURBIDLength]byte, msg []byte) error {
+func (s *pgxSpool) StoreSURBReply(u []byte, id *[constants.SURBIDLength]byte, msg []byte) error {
 	if id == nil {
 		return fmt.Errorf("pgx/spool: SURBReply is missing ID")
 	}
@@ -330,7 +333,7 @@ func (s *pgxSpool) Remove(u []byte) error {
 	return s.pgx.doUserDelete(u)
 }
 
-func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sConstants.RecipientIDLength]byte]interface{}) error {
+func (s *pgxSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[constants.RecipientIDLength]byte]interface{}) error {
 	panic("failure! VacuumExpired not implemented for pgxSpool :(")
 	return nil // XXX *le sigh* implement me
 }

@@ -19,30 +19,25 @@ package client
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
-	"github.com/ugorji/go/codec"
 	"gopkg.in/op/go-logging.v1"
 
-	"github.com/katzenpost/katzenpost/authority/internal/s11n"
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
-	"github.com/katzenpost/katzenpost/core/crypto/pem"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
@@ -52,93 +47,27 @@ type descriptor struct {
 	raw  []byte
 }
 
-func generateRandomTopology(nodes []*descriptor, layers int) [][][]byte {
+func generateRandomTopology(nodes []*descriptor, layers int) [][]*pki.MixDescriptor {
 	rng := rand.NewMath()
 	nodeIndexes := rng.Perm(len(nodes))
-	topology := make([][][]byte, layers)
+	topology := make([][]*pki.MixDescriptor, layers)
 	for idx, layer := 0, 0; idx < len(nodes); idx++ {
 		n := nodes[nodeIndexes[idx]]
-		topology[layer] = append(topology[layer], n.raw)
+		topology[layer] = append(topology[layer], n.desc)
 		layer++
 		layer = layer % len(topology)
 	}
 	return topology
 }
 
-func generateTopology(nodeList []*descriptor, doc *pki.Document, layers int) [][][]byte {
-	nodeMap := make(map[[constants.NodeIDLength]byte]*descriptor)
-	for _, v := range nodeList {
-		id := v.desc.IdentityKey.Sum256()
-		nodeMap[id] = v
-	}
-
-	// Since there is an existing network topology, use that as the basis for
-	// generating the mix topology such that the number of nodes per layer is
-	// approximately equal, and as many nodes as possible retain their existing
-	// layer assignment to minimise network churn.
-
-	rng := rand.NewMath()
-	targetNodesPerLayer := len(nodeList) / layers
-	topology := make([][][]byte, layers)
-
-	// Assign nodes that still exist up to the target size.
-	for layer, nodes := range doc.Topology {
-		//nodeIndexes := rng.Perm(len(nodes))
-		nodeIndexes := rng.Perm(len(nodes))
-
-		for _, idx := range nodeIndexes {
-			if len(topology[layer]) >= targetNodesPerLayer {
-				break
-			}
-
-			id := nodes[idx].IdentityKey.Sum256()
-			if n, ok := nodeMap[id]; ok {
-				// There is a new descriptor with the same identity key,
-				// as an existing descriptor in the previous document,
-				// so preserve the layering.
-				topology[layer] = append(topology[layer], n.raw)
-				delete(nodeMap, id)
-			}
-		}
-	}
-
-	// Flatten the map containing the nodes pending assignment.
-	toAssign := make([]*descriptor, 0, len(nodeMap))
-	for _, n := range nodeMap {
-		toAssign = append(toAssign, n)
-	}
-	assignIndexes := rng.Perm(len(toAssign))
-
-	// Fill out any layers that are under the target size, by
-	// randomly assigning from the pending list.
-	idx := 0
-	for layer := range doc.Topology {
-		for len(topology[layer]) < targetNodesPerLayer {
-			n := toAssign[assignIndexes[idx]]
-			topology[layer] = append(topology[layer], n.raw)
-			idx++
-		}
-	}
-
-	// Assign the remaining nodes.
-	for layer := 0; idx < len(assignIndexes); idx++ {
-		n := toAssign[assignIndexes[idx]]
-		topology[layer] = append(topology[layer], n.raw)
-		layer++
-		layer = layer % len(topology)
-	}
-
-	return topology
-}
-
-func generateMixKeys(epoch uint64) (map[uint64]*ecdh.PublicKey, error) {
-	m := make(map[uint64]*ecdh.PublicKey)
+func generateMixKeys(epoch uint64) (map[uint64][]byte, error) {
+	m := make(map[uint64][]byte)
 	for i := epoch; i < epoch+3; i++ {
-		privatekey, err := ecdh.NewKeypair(rand.Reader)
+		publickey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
 		if err != nil {
 			return nil, err
 		}
-		m[uint64(i)] = privatekey.PublicKey()
+		m[uint64(i)] = publickey.Bytes()
 	}
 	return m, nil
 }
@@ -151,32 +80,30 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 		if err != nil {
 			return nil, err
 		}
-		var layer uint8
 		var name string
 		if isProvider {
-			layer = pki.LayerProvider
 			name = fmt.Sprintf("NSA_Spy_Satelite_Provider%d", i)
 		} else {
-			layer = 0
 			name = fmt.Sprintf("NSA_Spy_Satelite_Mix%d", i)
 		}
 
 		scheme := wire.DefaultScheme
-		linkKey := scheme.GenerateKeypair(rand.Reader)
+		_, linkPubKey := scheme.GenerateKeypair(rand.Reader)
 
 		mix := &pki.MixDescriptor{
 			Name:        name,
+			Epoch:       epoch,
 			IdentityKey: mixIdentityPublicKey,
-			LinkKey:     linkKey.PublicKey(),
+			LinkKey:     linkPubKey,
 			MixKeys:     mixKeys,
 			Addresses: map[pki.Transport][]string{
 				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:  nil,
-			Layer:      layer,
+			Provider:   isProvider,
 			LoadWeight: 0,
 		}
-		signed, err := s11n.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix)
+		signed, err := pki.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix)
 		if err != nil {
 			return nil, err
 		}
@@ -189,7 +116,7 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 	return mixes, nil
 }
 
-func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, error) {
+func generateMixnet(numMixes, numProviders int, epoch uint64) (*pki.Document, error) {
 	mixes, err := generateNodes(false, numMixes, epoch)
 	if err != nil {
 		return nil, err
@@ -198,16 +125,15 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 	if err != nil {
 		return nil, err
 	}
-	providersRaw := [][]byte{}
-	for _, p := range providers {
-		providersRaw = append(providersRaw, p.raw)
+	pdescs := make([]*pki.MixDescriptor, len(providers))
+	for i, p := range providers {
+		pdescs[i] = p.desc
 	}
 	topology := generateRandomTopology(mixes, 3)
 
-	sharedRandomCommit := make([]byte, s11n.SharedRandomLength)
-	binary.BigEndian.PutUint64(sharedRandomCommit[:8], epoch)
-	doc := &s11n.Document{
-		Version:            s11n.DocumentVersion,
+	sharedRandomCommit := make(map[[pki.PublicKeyHashSize]byte][]byte)
+	doc := &pki.Document{
+		Version:            pki.DocumentVersion,
 		Epoch:              epoch,
 		GenesisEpoch:       epoch,
 		Mu:                 0.25,
@@ -215,31 +141,31 @@ func generateMixnet(numMixes, numProviders int, epoch uint64) (*s11n.Document, e
 		LambdaP:            1.2,
 		LambdaPMaxDelay:    300,
 		Topology:           topology,
-		Providers:          providersRaw,
+		Providers:          pdescs,
 		SharedRandomCommit: sharedRandomCommit,
-		SharedRandomValue:  make([]byte, s11n.SharedRandomValueLength),
+		SharedRandomValue:  make([]byte, pki.SharedRandomValueLength),
 	}
 	return doc, nil
 }
 
 // multiSignTestDocument signs and serializes the document with the provided signing key.
-func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.PublicKey, d *s11n.Document) ([]byte, error) {
-	jsonHandle := new(codec.JsonHandle)
-	jsonHandle.Canonical = true
-	jsonHandle.IntegerAsString = 'A'
-	jsonHandle.MapKeyAsString = true
-
-	d.Version = s11n.DocumentVersion
+func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.PublicKey, d *pki.Document) ([]byte, error) {
 	// Serialize the document.
-	var payload []byte
-	enc := codec.NewEncoderBytes(&payload, jsonHandle)
-	if err := enc.Encode(d); err != nil {
+	opts := cbor.CanonicalEncOptions()
+	ccbor, err := opts.EncMode()
+	if err != nil {
+		return nil, err
+	}
+
+	type document pki.Document
+	payload, err := ccbor.Marshal((*document)(d))
+	if err != nil {
 		return nil, err
 	}
 
 	// Sign the document.
 	current, _, _ := epochtime.Now()
-	signed, err := cert.Sign(signingKeys[0], signingPubKeys[0], payload, current+1)
+	signed, err := cert.Sign(signingKeys[0], signingPubKeys[0], payload, current+4)
 	if err != nil {
 		return nil, err
 	}
@@ -326,10 +252,13 @@ func (d *mockDialer) mockServer(address string, linkPrivateKey wire.PrivateKey, 
 	d.Unlock()
 	wg.Done()
 
+	mynike := ecdh.EcdhScheme
+	mygeo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
 	d.waitUntilDialed(address)
 	identityHash := identityPublicKey.Sum256()
 	cfg := &wire.SessionConfig{
-		Geometry:          &sphinx.Geometry{},
+		Geometry:          mygeo,
 		Authenticator:     d,
 		AdditionalData:    identityHash[:],
 		AuthenticationKey: linkPrivateKey,
@@ -385,18 +314,18 @@ func (d *mockDialer) IsPeerValid(creds *wire.PeerCredentials) bool {
 	return true
 }
 
-func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
+func generatePeer(peerNum int) (*config.Authority, sign.PrivateKey, sign.PublicKey, wire.PrivateKey, error) {
 	identityPrivateKey, identityPublicKey := cert.Scheme.NewKeypair()
 
 	scheme := wire.DefaultScheme
-	linkPrivateKey := scheme.GenerateKeypair(rand.Reader)
+	linkPrivateKey, linkPublicKey := scheme.GenerateKeypair(rand.Reader)
 
-	authPeer := &config.AuthorityPeer{
-		IdentityPublicKeyPem: pem.ToPEMString(identityPublicKey),
-		LinkPublicKeyPem:     pem.ToPEMString(linkPrivateKey.PublicKey()),
-		Addresses:            []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
+	authPeer := &config.Authority{
+		IdentityPublicKey: identityPublicKey,
+		LinkPublicKey:     linkPublicKey,
+		Addresses:         []string{fmt.Sprintf("127.0.0.1:%d", peerNum)},
 	}
-	err := authPeer.Validate(datadir)
+	err := authPeer.Validate()
 	if err != nil {
 		panic(err)
 	}
@@ -404,18 +333,17 @@ func generatePeer(peerNum int, datadir string) (*config.AuthorityPeer, sign.Priv
 }
 
 func TestClient(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	logBackend, err := log.New("", "DEBUG", false)
 	require.NoError(err)
 	dialer := newMockDialer(logBackend)
-	peers := []*config.AuthorityPeer{}
-
-	datadir := os.TempDir()
+	peers := []*config.Authority{}
 
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
-		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i, datadir)
+		peer, idPrivKey, idPubKey, linkPrivKey, err := generatePeer(i)
 		require.NoError(err)
 		peers = append(peers, peer)
 		wg.Add(1)
@@ -423,7 +351,6 @@ func TestClient(t *testing.T) {
 	}
 	wg.Wait()
 	cfg := &Config{
-		DataDir:       datadir,
 		LogBackend:    logBackend,
 		Authorities:   peers,
 		DialContextFn: dialer.dial,

@@ -18,14 +18,12 @@
 package config
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"golang.org/x/crypto/blake2b"
 
 	nvClient "github.com/katzenpost/katzenpost/authority/nonvoting/client"
 	vClient "github.com/katzenpost/katzenpost/authority/voting/client"
@@ -35,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -125,11 +124,10 @@ type NonvotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified non-voting authority config.
-func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	scheme := wire.DefaultScheme
 
-	authLinkPrivKey := scheme.GenerateKeypair(rand.Reader)
-	authLinkKey := authLinkPrivKey.PublicKey()
+	authLinkKey := scheme.NewEmptyPublicKey()
 	err := pem.FromPEMString(nvACfg.LinkPublicKeyPem, authLinkKey)
 	if err != nil {
 		return nil, err
@@ -138,14 +136,13 @@ func (nvACfg *NonvotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKe
 	_, identityPublicKey := cert.Scheme.NewKeypair()
 	pem.FromPEMString(nvACfg.IdentityPublicKeyPem, identityPublicKey)
 
-	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
 	cfg := &nvClient.Config{
 		AuthorityLinkKey:     authLinkKey,
 		LinkKey:              linkKey,
 		LogBackend:           l,
 		Address:              nvACfg.Address,
 		AuthorityIdentityKey: identityPublicKey,
-		DialContextFn:        pCfg.ToDialContext(fmt.Sprintf("nonvoting: %x", linkHash[:])),
+		DialContextFn:        pCfg.ToDialContext(fmt.Sprintf("nonvoting: %x", linkKey.PublicKey().Sum256())),
 	}
 	return nvClient.New(cfg)
 }
@@ -159,18 +156,16 @@ func (nvACfg *NonvotingAuthority) validate() error {
 
 // VotingAuthority is a voting authority configuration.
 type VotingAuthority struct {
-	Peers []*vServerConfig.AuthorityPeer
+	Peers []*vServerConfig.Authority
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
-	linkHash := blake2b.Sum256(linkKey.PublicKey().Bytes())
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	cfg := &vClient.Config{
-		DataDir:       datadir,
 		LinkKey:       linkKey,
 		LogBackend:    l,
 		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkHash[:])),
+		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
 	}
 	return vClient.New(cfg)
 }
@@ -180,7 +175,7 @@ func (vACfg *VotingAuthority) validate() error {
 		return errors.New("error VotingAuthority failure, must specify at least one peer")
 	}
 	for _, peer := range vACfg.Peers {
-		if peer.IdentityPublicKeyPem == "" || peer.LinkPublicKeyPem == "" || len(peer.Addresses) == 0 {
+		if peer.IdentityPublicKey == nil || peer.LinkPublicKey == nil || len(peer.Addresses) == 0 {
 			return errors.New("invalid voting authority peer")
 		}
 	}
@@ -188,12 +183,12 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, datadir string) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	switch {
 	case c.NonvotingAuthority != nil:
-		return c.NonvotingAuthority.New(l, pCfg, linkKey, datadir)
+		return c.NonvotingAuthority.New(l, pCfg, linkKey)
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey, datadir)
+		return c.VotingAuthority.New(l, pCfg, linkKey)
 	}
 	return nil, errors.New("no Authority found")
 }
@@ -234,7 +229,7 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 
 // Config is the top level client configuration.
 type Config struct {
-	DataDir            string
+	SphinxGeometry     *geo.Geometry
 	Logging            *Logging
 	UpstreamProxy      *UpstreamProxy
 	Debug              *Debug
@@ -252,6 +247,13 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+	err := c.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
 	// Handle missing sections if possible.
 	if c.Logging == nil {
 		c.Logging = &defaultLogging
@@ -294,12 +296,9 @@ func (c *Config) FixupAndValidate() error {
 // returns the Config.
 func Load(b []byte) (*Config, error) {
 	cfg := new(Config)
-	md, err := toml.Decode(string(b), cfg)
+	err := toml.Unmarshal(b, cfg)
 	if err != nil {
 		return nil, err
-	}
-	if undecoded := md.Undecoded(); len(undecoded) != 0 {
-		return nil, fmt.Errorf("config: Undecoded keys in config file: %v", undecoded)
 	}
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
