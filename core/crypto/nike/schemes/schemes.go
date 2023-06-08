@@ -13,8 +13,10 @@ import (
 // "ctidh" build tag.
 var allSchemes = [...]nike.Scheme{
 	ecdh.NewEcdhNike(rand.Reader),
-	hybrid.NOBS_CSIDHX25519,
-	hybrid.CTIDHX25519,
+	hybrid.NOBS_CSIDH512X25519,
+	// Must build with `ctidh` build tag (and other supporting env vars)
+	// for CTIDH usage:
+	// hybrid.CTIDH1024X25519,
 }
 
 var allSchemeNames map[string]nike.Scheme
