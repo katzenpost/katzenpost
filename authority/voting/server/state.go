@@ -1831,10 +1831,12 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 	_, ok := s.documents[epoch]
 	if !ok {
 		go func() {
+			self := &config.Authority{Identifier: s.s.cfg.Server.Identifier, IdentityPublicKey: s.s.IdentityKey(), LinkPublicKey: s.s.linkKey.PublicKey(), Addresses: s.s.cfg.Server.Addresses}
+			allAuthorities := append(s.s.cfg.Authorities, self)
 			cfg := &client.Config{
 				LinkKey:       s.s.linkKey,
 				LogBackend:    s.s.logBackend,
-				Authorities:   s.s.cfg.Authorities,
+				Authorities:   allAuthorities,
 				DialContextFn: nil,
 			}
 			c, err := client.New(cfg)
