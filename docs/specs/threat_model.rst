@@ -91,6 +91,10 @@ nodes (Providers). In that context the statistical disclosure attack
 still works but with less certainty because perhaps many users share a
 Provider where received messages are queued.
 
+However if the adversary were to compromise one or more Providers,
+then they could perform the attack using observations about messages
+being routed to specific message spools on the Provider.
+
 The best defense against intersection attacks (be they full
 granularity or not is of no consequence here) is to use end to end
 decoy traffic which is sent and received by clients. Although our mix
@@ -109,9 +113,10 @@ In this example we can say two things for certain:
 
 Therefore a global adversary will be able to keep track of these
 observations of the network perimeter and learn statistical
-information about the social graph. All of that having been said,
-defense-in-depth suggests that we rely on multi mechanisms for
-achieving uncertainty for adversarial correlation.
+information about the social graph, and in particular that Alice
+sends messages to a specific Provider. All of that having been said,
+defense-in-depth suggests that we rely on multiple mechanisms for
+achieving uncertainty for adversarial correlations.
 
 Many of our future protocols will scatter message segments across an
 ever changing set of Providers. We also plan on fixing two more
@@ -180,6 +185,17 @@ in [COMPULS05]_ via a series of routing command extensions.
 
 4. tagging attacks
 ==================
+
+The Sphinx packet format has a very specific scenario in which
+a one bit tagging attack is possible. Here is that contrieved scenario:
+
+If the adversary is allowed to view the final payload decryption and
+can mutate the packet during it's transit then a 1 bit tagging attack
+is possible. Flipping a bit during transit would cause lots of bits
+to be flipped in each subsequent decryption set and thus the final
+payload integrity tag would be destroyed. So for the adversary,
+either the interity tag is intact or it is destroyed; this attack
+leaks 1 bit of information to the advesary.
 
 Besides Sphinx, there may be other types of tagging attacks
 within our mixnet protocols.
