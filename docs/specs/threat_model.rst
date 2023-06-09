@@ -145,14 +145,10 @@ Statistical disclosure attacks such as short term timing correlation
 that the Tor network is known to be trivially vulnerable against do
 not in general apply to mix networks due to the added latency. However
 as latency is decreased we find ourselves pondering the Anonymity
-Trilemma which clearly states that Strong Anonymity is in opposition
-to low latency unless we send lots of decoy traffic. Our intuition
-for what is low latency and what is a lot of decoy traffic is not relevant
-here. This is in fact a math problem that involves an academic paper
-our mathematician friend might get funding to work on in the future.
-At this time we do not posess any formal methodology for tuning
-the mixnet.
-
+Trilemma [ANONTRILEMMA]_ which clearly states that Strong Anonymity is in opposition
+to low latency unless we send lots of decoy traffic. We need a formal
+methodogy for tuning the mixnet AND making the numerical calculations
+of the various tradeoffs that are the result of the mixnet tuning.
 
 2. epistemic attacks
 ====================
@@ -171,6 +167,12 @@ In general we mitigate this attack category by designing our key management and 
 3. compulsion attacks
 =====================
 
+**Adversary capability:** The adversary uses forceful means to
+procure the information they are after: violence, legal system,
+remotely compromising mix nodes using a zero day from the black market etc.
+
+**Conclusion**
+
 Reply Blocks (SURBs), forward and reply Sphinx packets [SPHINX09]_ are all
 vulnerable to the compulsion threat, if they are captured by an
 adversary. The adversary can request iterative decryptions or keys
@@ -186,19 +188,30 @@ in [COMPULS05]_ via a series of routing command extensions.
 4. tagging attacks
 ==================
 
-The Sphinx packet format has a very specific scenario in which
-a one bit tagging attack is possible. Here is that contrieved scenario:
+There are many different types of tagging attacks.
+This is the only one I could think of that applies to
+Katzenpost, in an albeit contrived scenario.
+
+**Adversary capability**
 
 If the adversary is allowed to view the final payload decryption and
 can mutate the packet during it's transit then a 1 bit tagging attack
-is possible. Flipping a bit during transit would cause lots of bits
+is possible.
+
+**Adversary strategy:**
+
+Flipping a bit during transit would cause lots of bits
 to be flipped in each subsequent decryption set and thus the final
 payload integrity tag would be destroyed. So for the adversary,
 either the interity tag is intact or it is destroyed; this attack
 leaks 1 bit of information to the advesary.
 
-Besides Sphinx, there may be other types of tagging attacks
-within our mixnet protocols.
+**Conclusion**
+
+This is Sphinx payload tagging attack is a result of the Sphinx
+design. However it's a very contrived example and we have trouble
+imagining it would apply in the real world.
+
 
 Sphinx Payload Encryption Considerations
 ----------------------------------------
@@ -241,7 +254,11 @@ Can we enumerate some of the more obvious and powerful timing attacks here?
 7. n-1 Attacks
 ==============
 
-There are many variations of n-1 attacks and the one that works on
+**Adversary capability:** Adversary is active and can send messages into the mix network
+AND the adversary can drop or delay messages sent to the mix network. Therefore the adversary
+has compromised the upstream routers for each of the perimeter mix nodes.
+
+**Adversary strategy:** There are many variations of n-1 attacks and the one that works on
 Poisson mix strategy is this:
 
 The adversary must delay or drop input messages to a given mix until
@@ -250,6 +267,7 @@ target message to enter and then exit the mix. The result of this
 attack is that the adversary learns where the target message is being
 sent.
 
+**Primary Mitigation tactic:**
 Our theoretical defense is:
 
 Each mix node uses a loop decoy heartbeat protocol to detect when an adversary is delaying
@@ -258,7 +276,7 @@ message then it has detected this attack. A real world implementation would prob
 some additional heuristics for example, the n-1 attack is detected when 3 heartbeats in a
 row were not received.
 
-Our current status is:
+**Our current status is:**
 
 * Mix loop decoy traffic is only implemented on interior mixes but it should also
   be implemented on Provders.
@@ -313,3 +331,9 @@ Appendix A.1 Normative References
 
 .. [MIXMINION]  Danezis, G., Dingledine, R., Mathewson, N., "Mixminion: Design of a Type III
                 Anonymous Remailer Protocol", <https://www.mixminion.net/minion-design.pdf>.
+
+.. [ANONTRILEMMA] Das, D., Meiser, S., Mohammadi, E., Kate, A.,
+                  IEEE Symposium on Security and Privacy, 2018,
+                  "Anonymity Trilemma: Strong Anonymity, Low Bandwidth Overhead, Low Latency—Choose Two",
+                  <https://eprint.iacr.org/2017/954.pdf>.
+		
