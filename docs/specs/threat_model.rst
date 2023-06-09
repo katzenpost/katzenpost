@@ -70,36 +70,20 @@ combination of several of the above attacks.
 1. statistical disclosure attacks
 =================================
 
-In a statistical disclosure attack, the sufficiently global passive
-adversary only has to watch the perimeter of the network. This attack
-is often described as an intersection attack; The adversary makes a
-note of all the recipients of messages while Alice is sending. These
-sets are built up over time and their intersection reveals to whom
-Alice sends messages. This also works in the other direction where the
-adversary creates sets of potential senders everytime Alice receives
-a message.
+**Adversary capability:** In general for this particular attack
+category we assume that the adversary is a global passive
+adversary. However all of these attacks are actually possible with
+only a view of the perimeter of the mix network.
 
-In the context of Katzenpost/Loopix these classical style set
-intersection attacks don't work at full granularity because
-destination messages are queued on edge nodes (known as Providers)
-along with many other received messages to and from other users of the
-mix network.
+**Adversary strategy:** The adversary's goal is to capture as much of
+the social graph as they can by collecting sets of possible recipients
+of each sender and likewise sets of possible senders for each
+recipient.
 
-In that case we can re-define what we mean by the network perimeter
-and take it to mean the space between interior mixes and the edge
-nodes (Providers). In that context the statistical disclosure attack
-still works but with less certainty because perhaps many users share a
-Provider where received messages are queued.
+**Primary Mitigation tactic:**
 
-However if the adversary were to compromise one or more Providers,
-then they could perform the attack using observations about messages
-being routed to specific message spools on the Provider.
-
-The best defense against intersection attacks (be they full
-granularity or not is of no consequence here) is to use end to end
-decoy traffic which is sent and received by clients. Although our mix
-decoy loop traffic can and should be extended to also work on
-Providers, that is not sufficient as a complete defense.
+The best defense against intersection attacks is to use end to end
+decoy traffic which is sent and received by clients.
 
 Imagine there is a mixnet with 10 Providers and only Alice and Bob are
 currently connected and sending messages. Alice does not send any
@@ -111,29 +95,44 @@ In this example we can say two things for certain:
 1. mix decoy loops will be uniformly distributed over all 10 Providers
 2. Alice's sent messages will go to 1 of 10 Providers
 
-Therefore a global adversary will be able to keep track of these
-observations of the network perimeter and learn statistical
-information about the social graph, and in particular that Alice
-sends messages to a specific Provider. All of that having been said,
-defense-in-depth suggests that we rely on multiple mechanisms for
-achieving uncertainty for adversarial correlations.
+Therefore, without the use of end to end decoy traffic, a global
+adversary would be able to keep track of their observations of the
+network perimeter and learn statistical information about the social
+graph. In this example the uniform distribution of messages is perturbed
+by Alice's behavior on the network.
+
+**Mitigation tactic #1**
+
+In the context of Katzenpost/Loopix these classical style set
+intersection attacks don't work at full granularity because
+destination messages are queued on edge nodes (known as Providers)
+along with many other received messages to and from other users of the
+mix network.
+
+**Mitigation tactic #2**
 
 Many of our future protocols will scatter message segments across an
-ever changing set of Providers. We also plan on fixing two more
-fundamental design flaws in our decoy traffic:
+ever changing set of Providers. This seems likely to increase uncertainty
+for adversaries.
 
-1. Clients will send decoy traffic such that the rate of all messages
-   arriving on all of the Providers will be uniformly distributed even
-   when the client is sending legit messages to a subset of Providers.
+**Mitigation tactic #3**
 
-2. Providers will modulate their decoy traffic send rate to be
-   inversely proportional to the sum of all the rates of incoming
-   messages from all clients directly connected to that Provider. In
-   other words, when clients send zero messages the Provider sends a
-   constant rate of decoy traffic. The Provider reduces it's decoy
-   send rate when clients increase their send rate such that the total
-   rate of messages coming out of the Provider remains the same if
-   measured over a large enough period of time.
+Clients will send decoy traffic such that the rate of all messages
+arriving on all of the Providers will be uniformly distributed even
+when the client is sending legit messages to a subset of Providers.
+
+**Mitigation tactic #4**
+
+Providers will modulate their decoy traffic send rate to be
+inversely proportional to the sum of all the rates of incoming
+messages from all clients directly connected to that Provider. In
+other words, when clients send zero messages the Provider sends a
+constant rate of decoy traffic. The Provider reduces it's decoy
+send rate when clients increase their send rate such that the total
+rate of messages coming out of the Provider remains the same if
+measured over a large enough period of time.
+
+**Conclusion**
 
 The sucess of a statistical disclosure attacks often has a lot to do with
 the advesary's ability to predict user behavior. Likewise if user behavior
@@ -153,6 +152,7 @@ here. This is in fact a math problem that involves an academic paper
 our mathematician friend might get funding to work on in the future.
 At this time we do not posess any formal methodology for tuning
 the mixnet.
+
 
 2. epistemic attacks
 ====================
