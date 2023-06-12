@@ -38,6 +38,24 @@ var (
 			Help: "Number of dropped packets",
 		},
 	)
+	outgoingPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_outgoing_packets_total",
+			Help: "Number of dropped packets",
+		},
+	)
+	invalidPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_invalid_packets_total",
+			Help: "Number of dropped invalid packets",
+		},
+	)
+	deadlineBlownPacketsDropped = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_dropped_deadline_blown_packets_total",
+			Help: "Number of dropped deadline blown packets",
+		},
+	)
 	packetsReplayed = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "katzenpost_replayed_packets_total",
@@ -147,9 +165,12 @@ var fetchedPKIDocsTimer *prometheus.Timer
 // Init initialize instrumentation
 func Init() {
 	// Register metrics
+	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
+	prometheus.MustRegister(invalidPacketsDropped)
 	prometheus.MustRegister(outgoingConns)
 	prometheus.MustRegister(ingressQueueSize)
+	prometheus.MustRegister(outgoingPacketsDropped)
 	prometheus.MustRegister(packetsDropped)
 	prometheus.MustRegister(packetsReplayed)
 	prometheus.MustRegister(ignoredPKIDocs)
@@ -238,6 +259,21 @@ func KaetzchenRequestsFailed() {
 // MixPacketsDropped increments the counter for the number of mix packets dropped
 func MixPacketsDropped() {
 	mixPacketsDropped.Inc()
+}
+
+// OutgoingPacketsDropped increments the counter for the number of packets dropped in the outgoing worker.
+func OutgoingPacketsDropped() {
+	outgoingPacketsDropped.Inc()
+}
+
+// DeadlineBlownPacketsDropped increments the counter for the number of packets dropped due to excessive dwell.
+func DeadlineBlownPacketsDropped() {
+	deadlineBlownPacketsDropped.Inc()
+}
+
+// InvalidPacketsDropped increments the counter for the number of invalid packets dropped.
+func InvalidPacketsDropped() {
+	invalidPacketsDropped.Inc()
 }
 
 // MixQueueSize observes the size of the mix queue
