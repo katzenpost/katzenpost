@@ -17,6 +17,7 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"gopkg.in/op/go-logging.v1"
 	"net"
@@ -95,19 +96,11 @@ const (
 	UDP
 )
 
-// Frame encapsulates data and adds a sequence number
-type Frame struct {
-	Mode    Mode   // TCP or UDP (unreliable) data
-	Ack     uint64 // Acknowledgement of last seen Frame
-	Num     uint64 // number of this Frame
-	Payload []byte // transported data
-}
-
 // DialCommand encapsulates a Dial command sent to the service
 type DialCommand struct {
 	ID     []byte
 	Target *url.URL // supports tcp:// or udp://
-	Frame  *Frame   // may send initial data frame
+	Payload []byte  // may send initial data frame
 }
 
 // Marshal implements cborplugin.Command
@@ -123,7 +116,7 @@ func (d *DialCommand) Unmarshal(b []byte) error {
 // DialResponse is a response to a DialCommand, and may return data
 type DialResponse struct {
 	Error error
-	Frame *Frame // XXX: NotImplemented, Unused.
+	Payload []byte
 }
 
 // Marshal implements cborplugin.Command
@@ -139,7 +132,7 @@ func (d *DialResponse) Unmarshal(b []byte) error {
 // ProxyCommand
 type ProxyCommand struct {
 	ID    []byte // session ID of an existing session
-	Frame *Frame // Encapsulated Payload
+	Payload []byte // Encapsulated Payload
 }
 
 // Marshal implements cborplugin.Command
@@ -155,7 +148,7 @@ func (p *ProxyCommand) Unmarshal(b []byte) error {
 // ProxyResponse is response to a ProxyCommand
 type ProxyResponse struct {
 	Error error
-	Frame *Frame
+	Payload []byte
 }
 
 // Marshal implements cborplugin.Command
@@ -241,29 +234,14 @@ type Session struct {
 	// ValidUntil is when this Session needs to be renewed
 	ValidUntil time.Time
 
-	// LastAck is the last seen Ack
-	LastAck uint64
-
-	// ReadIdx is the Idx of the greatest sequential requested Frame
-	ReadIdx uint64
-
-	// WriteIdx is the Idx of the greatest sequential sent Frame
-	WriteIdx uint64
-
-	// RWin is the number of frames to return ahead of LastAck
-	RWin uint64
+	// Remote is the client peer
+	Remote net.Conn
 
 	// Target is the remote peer
 	Target net.Conn
 
-	// Frames of data read from the remote peer
-	// and stored until acknowleged
-	Frames map[uint64]*Frame
-
-	// Frames of data from the client, stored for re-ordering frames sequentially.
-	// XXX: use a priority queue with a worker that wakes up on every frame received
-	// and checks to see if it can send a frame
-	ReorderBuffer *queue.PriorityQueue
+	// Mode
+	Mode Mode
 }
 
 // Reset clears Session state
@@ -273,17 +251,7 @@ func (s *Session) Reset() {
 	if s.Target != nil {
 		s.Target.Close()
 		s.Target = nil
-		s.LastAck = 0
-		s.ReadIdx = 0
-		s.WriteIdx = 0
-		s.Frames = make(map[uint64]*Frame)
-		s.ReorderBuffer = queue.New()
 	}
-}
-
-// NewSession initializes and returns a Session
-func NewSession() *Session {
-	return &Session{Frames: make(map[uint64]*Frame), ReorderBuffer: queue.New()}
 }
 
 // OnCommand implements cborplugin.ServicePlugin OnCommand
@@ -356,27 +324,24 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 	// Get a net.Conn for the target
 	switch cmd.Target.Scheme {
 	case "tcp":
-		// XXX: Add proxy support
+		// instantiate net.PacketConn proxy
+		ss.tcpProxy = newKatConn()
+		// proxy data to Target
 		conn, err := net.Dial("tcp", cmd.Target.Host)
 		if err != nil {
 			ss.Target = conn
-			if cmd.Frame != nil {
-				//TODO: dial command may include sender's first
-				//Frame of data to reduce round trip latency
-			}
 		} else {
 			// return ErrDialFailed
 			reply.Error = ErrDialFailed
 		}
+
+		// create a wrapper for packetConn
+		// create a local quic.Connection
 	case "udp":
 		// XXX: Add proxy support
 		conn, err := net.Dial("udp", cmd.Target.Host)
 		if err != nil {
 			ss.Target = conn
-			if cmd.Frame != nil {
-				//TODO: dial command may include sender's first
-				//Frame of data to reduce round trip latency
-			}
 		} else {
 			reply.Error = ErrDialFailed
 		}
@@ -386,135 +351,85 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 	return reply, nil
 }
 
-// SendRecv sends a frame and returns a frame or error
-func (s *Session) SendRecv(f *Frame) (*Frame, error) {
-	// ignore duplicate frames that we've already seen
-	err := s.deDup(f)
-	if err != nil {
-		return nil, err
-	}
-
-	// drop acknowledged frames
-	err = s.handleAck(f)
-	if err != nil {
-		return nil, err
-	}
-
-	frame, err := s.readFrame()
-	if err != nil {
-		return nil, err
-	}
-	if frame == nil {
-		panic("nil frame wtf")
-	}
-	return frame, nil
+// katConn implemnets net.PacketConn and wrapper to proxy data from katzenpost requests to a quic connection
+type katConn struct {
+	addr net.Addr
+	buf *bytes.Buffer
 }
 
-func (s *Session) handleAck(f *Frame) error {
-	// update session state
-	s.Lock()
-	defer s.Unlock()
-	// purge Ack'd frames
-	if f.Ack > s.LastAck {
-		for i := s.LastAck; i <= f.Ack; i++ {
-			// XXX: verify the frame existed ? it's an error if missing
-			delete(s.Frames, i)
-		}
-		s.LastAck = f.Ack
+func (k *katConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	// blocking?
+	n, err = k.buf.Read(p)
+	addr = k.addr
+	return n, k.addr, err
+}
+
+func (k *katConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+	if addr.String() != addr.String() {
+		return _, errors.New("WrongAddr")
 	}
+	return k.buf.Write(p)
+}
+
+func (k *katConn) Close() error {
 	return nil
 }
 
-func (s *Session) deDup(f *Frame) error {
-	// drop duplicate / retransmitted frames
-	if f.Num < s.WriteIdx {
-		return ErrDuplicateFrame
-	}
+func (k *katConn) LocalAddr() net.Addr {
+}
+
+func (k *katConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
-func (s *Session) sendFrame(f *Frame) error {
-	s.Lock()
-	defer s.Unlock()
-	doSend := false
-	switch {
-	case f.Num < s.WriteIdx:
-	case f.Num == s.WriteIdx:
-		// f is the next sequential frame
-		doSend = true
-	case f.Num > s.WriteIdx:
-		// Place Frame in ReorderBuffer (a priority queue)
-		s.ReorderBuffer.Enqueue(f.Num, f)
-
-		// Peek and check whether the next frame is available
-		head := s.ReorderBuffer.Peek().Value.(*Frame)
-		if head != nil && head.Num == s.WriteIdx {
-			s.ReorderBuffer.Pop()
-			// f points at the next sequential frame
-			f = head
-			doSend = true
-		}
-	}
-	// send the next sequential frame and increment WriteIdx to point at next sequential Frame
-	if doSend {
-		s.WriteIdx += 1
-		_, err := s.Target.Write(f.Payload)
-		return err
-	}
-	// Frames are expected to arrive out-of-order, which is not an error.
+func (k *katConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (s *Session) readFrame() (*Frame, error) {
-	s.Lock()
-	defer s.Unlock()
+func (k *katConn) SetWriteDeadline(t time.Time) error {
+	return nil
+}
 
-	// XXX: Improve/Tune Acknowledgement protocol.
-	// We can return frames of data read from the Target out-of-order, but eventually need
-	// to retransmit unACK'd frames, and the client only ACK's the last sequentually read frame.
-	// An improvement would be to re-request missing frames pre-emptively, or ACK frames received
-	// out-of-order so that the server only retransmits unACK'd frames.
-	// XXX: This can be tuned better. With RWin = 0, this will always re-send the next Unack'd Frame.
-	if s.ReadIdx > s.LastAck+s.RWin {
-		// dont read-ahead past some number of Ack'd frames
-		// re-send s.LastAck + 1
-		s.ReadIdx = s.LastAck + 1
-	}
+func newKatConn() *katConn {
+	k := &katConn{buf: new(bytes.Buffer)}
+	// instantiate a QUIC Listener
+	l, err := quic.Listen(ss.tcpProxy, tls, nil)
+	return 
+}
 
-	// See if the frame is already cached (e.g. on retransmission)
-	if v, ok := s.Frames[s.ReadIdx]; ok && v != nil {
-		return v, nil
-	}
+// SendRecv reads and writes data from the sockets
+func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 
-	// Try to read a Frame of data from Target before deadline is exceeded
-	f := &Frame{Payload: make([]byte, PayloadLen), Num: s.ReadIdx}
+	resp := make([]byte, 0)
 	switch s.Target.(type) {
-	case *net.UDPConn:
-		f.Mode = UDP
 	case *net.TCPConn:
-		f.Mode = TCP
-	}
-
-	// Try to read a full frame within the deadline (default 100ms)
-	// XXX: Read() may block for (default) 100ms - do not exceed the Kaetzchen worker constraints
-	// cfg.Debug.KaetzchenDelay is (default) 750ms maximum amount of time a request may take before
-	// being dropped.
-	s.Target.SetReadDeadline(time.Now().Add(DefaultDeadline))
-	defer s.Target.SetReadDeadline(time.Time{})
-	n, err := s.Target.Read(f.Payload)
-	if err != nil {
-		if errors.Is(err, os.ErrDeadlineExceeded) {
-			// return ErrNoData rather than an empty Frame
-			if n == 0 {
-				// XXX: log short read
-				return nil, ErrNoData
-			}
-		} else {
+		_, err := s.tcpProxy.Write(payload)
+		if err != nil {
 			return nil, err
 		}
+		s.tcpProxy
+		// if proxying TCP:
+		// write data from the payload to the net.PacketConn "Remote" quic.Connection is consuming data from
+		// copy data to/from "Remote" Stream associated with this TCP stream, to/from Target net.TCPConn
+		// read data from the net.PacketConn "Remote" is writing frames to into katzenpost payload sized frames
+		s
+
+	case *net.UDPConn:
+		// set 
+		n, err := s.Remote.Write(payload)
+		if err != nil {
+			return nil, err
+		}
+		// s.Remote.SetReadDeadline()
+		make([]byte, 
+		s.Remote.Read()
+
+	// if proxying QUIC:
+	// copy data payload to net.UDPConn of Target
+	// read data payload from Target net.UDPConn
 	}
 
-	return f, nil
+	return resp, nil
 }
 
 func (s *Sockatz) findSession(id []byte) (*Session, error) {
@@ -546,7 +461,7 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 		}
 		panic("Invalid type in map")
 	} else {
-		ses := NewSession()
+		ses := new(Session)
 		ses.ID = cmd.ID
 		s.sessions.Store(cmd.ID, ses)
 	}
@@ -554,7 +469,7 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 }
 
 func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
-	// deserialize cmd as a DialCommand
+	// deserialize cmd as a ProxyResponse
 	reply := &ProxyResponse{}
 
 	// locate an existing session by ID
@@ -565,13 +480,13 @@ func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 
 	ss.Lock()
 	defer ss.Unlock()
-	f, err := ss.SendRecv(cmd.Frame)
+	rawReply, err := ss.SendRecv(cmd.Payload)
 
 	if err != nil {
 		reply.Error = err
 		return reply, nil
 	}
-	reply.Frame = f
+	reply.Payload = rawReply
 	return reply, nil
 }
 
