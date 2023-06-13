@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	"github.com/katzenpost/katzenpost/server/internal/instrument"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	bolt "go.etcd.io/bbolt"
 	"gopkg.in/op/go-logging.v1"
@@ -234,8 +235,10 @@ func (q *boltQueue) Pop() {
 			var err error
 			if deltaT := now - prio; deltaT > timerSlack {
 				q.log.Debugf("Dropping packet: %v (Deadline blown by %v)", id, deltaT)
+				instrument.DeadlineBlownPacketsDropped()
 			} else if pkt, err = packetFromBoltBkt(packetsBkt, k, q.glue); err != nil {
 				q.log.Debugf("Dropping packet: %v (s11n failure: %v)", id, err)
+				instrument.InvalidPacketsDropped()
 			}
 
 			// Regardless of what happened, obliterate the bucket.
