@@ -274,13 +274,13 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		// Unregister pluginClient when it halts
 		defer kaetzchenWorker.Go(func() {
 			pluginClient.Wait()
-			delete(kaetzchenWorker.pluginChans,pluginConf.Endpoint)
+			delete(kaetzchenWorker.pluginChans, endpoint)
 			for i, k := range kaetzchenWorker.clients {
 				if k == pluginClient {
 					if len(kaetzchenWorker.clients) == i - 1 {
 						kaetzchenWorker.clients = kaetzchenWorker.clients[:i]
 					} else {
-						kaetzchenWorker.clients = kaetzchenWorker.clients[:i] + kaetzchenWorker.clients[i+1:]
+						kaetzchenWorker.clients = append(kaetzchenWorker.clients[:i], kaetzchenWorker.clients[i+1:]...)
 					}
 				}
 			}
