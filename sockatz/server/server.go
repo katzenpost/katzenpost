@@ -17,26 +17,29 @@
 package server
 
 import (
-	"bytes"
 	"errors"
 	"gopkg.in/op/go-logging.v1"
+	"github.com/katzenpost/katzenpost/core/log"
+	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/queue"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/sockatz/common"
 )
 
 var (
 	// clients must start reading from their streams
 	// or else the worker will abandon the stream
 	connectDeadine = time.Minute
+
+	// hmm
+	sockatzEndpoint = "127.4.2.0:4242"
 
 	// PayloadLen is the size of the transported payload
 	// for QUIC it needs to be minimum ~1200b
@@ -54,11 +57,6 @@ var (
 	ErrInvalidCommand    = errors.New("ErrInvalidCommand")
 	ErrUnsupportedProto  = errors.New("ErrUnsupportedProtocol")
 	ErrDialFailed        = errors.New("ErrDialFailed")
-	ErrDuplicateFrame    = errors.New("ErrDuplicateFrame")
-	// ErrOutOfOrderWrite is returned when a non-sequential write Frame is received.
-	// In order to use non-bocking send, out-of-order frames must be re-assembled
-	// in-order for transported TCP, and this isn't yet implemented.
-	ErrOutOfOrderWrite = errors.New("ErrOutOfOrderWrite")
 )
 
 // SockatzServer is a kaetzchen responder that proxies
@@ -67,13 +65,15 @@ type Sockatz struct {
 	cfg *config.Config
 	worker.Worker
 	log *logging.Logger
+	logBackend *log.Backend
 
 	sessions *sync.Map
 }
 
 // NewSockatz instantiates the Sockatz Kaetzchen responder
-func NewSockatz(cfgFile string, log *logging.Logger) (*Sockatz, error) {
+func NewSockatz(cfgFile string, logBackend *log.Backend) (*Sockatz, error) {
 	cfg, err := config.LoadFile(cfgFile)
+	log := logBackend.GetLogger("sockatz_server")
 	if err != nil {
 		return nil, err
 	}
@@ -98,9 +98,9 @@ const (
 
 // DialCommand encapsulates a Dial command sent to the service
 type DialCommand struct {
-	ID     []byte
-	Target *url.URL // supports tcp:// or udp://
-	Payload []byte  // may send initial data frame
+	ID      []byte
+	Target  *url.URL // supports tcp:// or udp://
+	Payload []byte   // may send initial data frame
 }
 
 // Marshal implements cborplugin.Command
@@ -115,7 +115,7 @@ func (d *DialCommand) Unmarshal(b []byte) error {
 
 // DialResponse is a response to a DialCommand, and may return data
 type DialResponse struct {
-	Error error
+	Error   error
 	Payload []byte
 }
 
@@ -131,7 +131,7 @@ func (d *DialResponse) Unmarshal(b []byte) error {
 
 // ProxyCommand
 type ProxyCommand struct {
-	ID    []byte // session ID of an existing session
+	ID      []byte // session ID of an existing session
 	Payload []byte // Encapsulated Payload
 }
 
@@ -147,7 +147,7 @@ func (p *ProxyCommand) Unmarshal(b []byte) error {
 
 // ProxyResponse is response to a ProxyCommand
 type ProxyResponse struct {
-	Error error
+	Error   error
 	Payload []byte
 }
 
@@ -227,6 +227,9 @@ func (s *Response) Unmarshal(b []byte) error {
 
 // Session holds state associated with reliable in-order framing of transported TCP stream
 type Session struct {
+
+	s *Sockatz
+
 	sync.Mutex
 	// ID is the unique ID for this Session
 	ID []byte
@@ -234,8 +237,9 @@ type Session struct {
 	// ValidUntil is when this Session needs to be renewed
 	ValidUntil time.Time
 
-	// Remote is the client peer
-	Remote net.Conn
+	// Transport provides ordered stream from unreliable katzenpost messages
+	// in this case, we're using QUIC as the transport
+	Transport *common.KatConn
 
 	// Target is the remote peer
 	Target net.Conn
@@ -266,28 +270,34 @@ func (s *Sockatz) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) 
 		req := &Request{}
 		err := cbor.Unmarshal(r.Payload, req)
 		if err != nil {
+			s.log.Debugf("Got request that failed to unmarshal with %v", err)
 			return nil, err
 		}
 		// Call the handler for the Command indicated
 		switch req.Command {
 		case Topup:
+			s.log.Debugf("Got Topup Command")
 			t := &TopupCommand{}
-			if err := t.Unmarshal(r.Payload); err == nil {
+			if err := t.Unmarshal(req.Payload); err == nil {
 				return wrapResponse(s.topup(t))
 			}
 		case Dial:
+			s.log.Debugf("Got Dial Command")
 			d := &DialCommand{}
-			if err := d.Unmarshal(r.Payload); err == nil {
+			if err := d.Unmarshal(req.Payload); err == nil {
 				return wrapResponse(s.dial(d))
 			}
 		case Proxy:
+			s.log.Debugf("Got Proxy Command")
 			p := &ProxyCommand{}
-			if err := p.Unmarshal(r.Payload); err == nil {
+			if err := p.Unmarshal(req.Payload); err == nil {
 				return wrapResponse(s.proxy(p))
 			}
 		default:
+			s.log.Error("Got invalid Command %x", req.Command)
 			return s.invalid(req)
 		}
+		s.log.Errorf("Unmarshal failure")
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("Invalid Command type")
@@ -311,6 +321,7 @@ func wrapResponse(cmd cborplugin.Command, err error) (*cborplugin.Response, erro
 func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 	reply := &DialResponse{}
 
+	s.log.Debugf("Received DialCommand(%x, %s)", cmd.ID, cmd.Target)
 	// locate an existing session by ID
 	ss, err := s.findSession(cmd.ID)
 	if err != nil {
@@ -324,19 +335,9 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 	// Get a net.Conn for the target
 	switch cmd.Target.Scheme {
 	case "tcp":
-		// instantiate net.PacketConn proxy
-		ss.tcpProxy = newKatConn()
-		// proxy data to Target
-		conn, err := net.Dial("tcp", cmd.Target.Host)
-		if err != nil {
-			ss.Target = conn
-		} else {
-			// return ErrDialFailed
-			reply.Error = ErrDialFailed
-		}
-
-		// create a wrapper for packetConn
-		// create a local quic.Connection
+		// start quic transport for tcp
+		l :=s.logBackend.GetLogger(fmt.Sprintf("KatConn:%x", cmd.ID))
+		ss.Transport = common.NewKatConn(l)
 	case "udp":
 		// XXX: Add proxy support
 		conn, err := net.Dial("udp", cmd.Target.Host)
@@ -351,97 +352,45 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 	return reply, nil
 }
 
-// katConn implemnets net.PacketConn and wrapper to proxy data from katzenpost requests to a quic connection
-type katConn struct {
-	addr net.Addr
-	buf *bytes.Buffer
-}
-
-func (k *katConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	// blocking?
-	n, err = k.buf.Read(p)
-	addr = k.addr
-	return n, k.addr, err
-}
-
-func (k *katConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
-	if addr.String() != addr.String() {
-		return _, errors.New("WrongAddr")
-	}
-	return k.buf.Write(p)
-}
-
-func (k *katConn) Close() error {
-	return nil
-}
-
-func (k *katConn) LocalAddr() net.Addr {
-}
-
-func (k *katConn) SetDeadline(t time.Time) error {
-	return nil
-}
-
-func (k *katConn) SetReadDeadline(t time.Time) error {
-	return nil
-}
-
-func (k *katConn) SetWriteDeadline(t time.Time) error {
-	return nil
-}
-
-func newKatConn() *katConn {
-	k := &katConn{buf: new(bytes.Buffer)}
-	// instantiate a QUIC Listener
-	l, err := quic.Listen(ss.tcpProxy, tls, nil)
-	return 
-}
-
 // SendRecv reads and writes data from the sockets
 func (s *Session) SendRecv(payload []byte) ([]byte, error) {
+	s.s.log.Debugf("SendRecv()")
+	s.s.log.Debugf("len(payload): %d", len(payload))
 
-	resp := make([]byte, 0)
-	switch s.Target.(type) {
-	case *net.TCPConn:
-		_, err := s.tcpProxy.Write(payload)
-		if err != nil {
-			return nil, err
-		}
-		s.tcpProxy
-		// if proxying TCP:
-		// write data from the payload to the net.PacketConn "Remote" quic.Connection is consuming data from
-		// copy data to/from "Remote" Stream associated with this TCP stream, to/from Target net.TCPConn
-		// read data from the net.PacketConn "Remote" is writing frames to into katzenpost payload sized frames
-		s
-
-	case *net.UDPConn:
-		// set 
-		n, err := s.Remote.Write(payload)
-		if err != nil {
-			return nil, err
-		}
-		// s.Remote.SetReadDeadline()
-		make([]byte, 
-		s.Remote.Read()
-
-	// if proxying QUIC:
-	// copy data payload to net.UDPConn of Target
-	// read data payload from Target net.UDPConn
+	// write packet to transport
+	s.s.log.Debugf("WritePacket() (blocked)")
+	_, err := s.Transport.WritePacket(payload)
+	if err != nil {
+		s.s.log.Errorf("WritePacket failure: %v", err)
+		return nil, err
 	}
+	s.s.log.Debugf("WritePacket() (unblocked)")
 
-	return resp, nil
+	// read packet from transport
+	buf := make([]byte, len(payload))
+	s.s.log.Debugf("ReadPacket() (blocked)")
+	n, err := s.Transport.ReadPacket(buf)
+	if err != nil {
+		s.s.log.Error("ReadPacket failure: %v", err)
+		return nil, err
+	}
+	s.s.log.Debugf("ReadPacket() (unblocked)")
+	s.s.log.Debugf("len(response): %d", n)
+	return buf, nil
 }
 
 func (s *Sockatz) findSession(id []byte) (*Session, error) {
-	ss, ok := s.sessions.Load(id)
+	ss, ok := s.sessions.Load(string(id))
 	// no session found
 	if !ok {
+		s.log.Errorf("No Session found")
 		return nil, ErrNoSession
 	}
 
 	// wrong type stored
 	ses, ok := ss.(*Session)
 	if !ok {
+		s.log.Errorf("Invalid Session found")
 		return nil, ErrNoSession
 	}
 	return ses, nil
@@ -453,17 +402,19 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 	// if !s.gotNuts(cmd.Nuts) {
 	// 	return &TopupResponse{Error: ErrInsufficientFunds}
 	// }
+	s.log.Debugf("Received TopupCommand(%x, %x)", cmd.ID, cmd.Nuts[:16])
 
-	if ss, ok := s.sessions.Load(cmd.ID); ok {
+	if ss, ok := s.sessions.Load(string(cmd.ID)); ok {
 		if ses, ok := ss.(*Session); ok {
 			ses.ValidUntil = time.Now().Add(60 * time.Minute)
-			s.sessions.Store(cmd.ID, ses)
+			s.sessions.Store(string(cmd.ID), ses)
 		}
 		panic("Invalid type in map")
 	} else {
 		ses := new(Session)
+		ses.s = s
 		ses.ID = cmd.ID
-		s.sessions.Store(cmd.ID, ses)
+		s.sessions.Store(string(cmd.ID), ses)
 	}
 	return &TopupResponse{}, nil
 }
@@ -471,6 +422,7 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 	// deserialize cmd as a ProxyResponse
 	reply := &ProxyResponse{}
+	s.log.Debugf("Received ProxyCommand: %v", cmd)
 
 	// locate an existing session by ID
 	ss, err := s.findSession(cmd.ID)
@@ -480,6 +432,8 @@ func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 
 	ss.Lock()
 	defer ss.Unlock()
+
+	// SendRecv writes payload and reads packets from the session connection
 	rawReply, err := ss.SendRecv(cmd.Payload)
 
 	if err != nil {
