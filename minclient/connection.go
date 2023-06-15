@@ -562,12 +562,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 				nrReqs++
 			}
 			fetchDelay = c.c.GetPollInterval()
+			adjFetchDelay()
 			continue
 		}
 
 		creds, err := w.PeerCredentials()
 		if err != nil {
 			// do not continue processing this command
+			adjFetchDelay()
 			continue
 		}
 		// Update the cached descriptor, and re-validate the connection.
@@ -653,6 +655,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("received unknown command: %T", cmd)
 			return
 		}
+		adjFetchDelay()
 	}
 }
 

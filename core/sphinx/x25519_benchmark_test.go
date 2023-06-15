@@ -1,7 +1,4 @@
-//go:build ctidh1024
-// +build ctidh1024
-
-// ctidh1024_benchmark_test.go - Sphinx Packet Format benchmarks.
+// x25519_benchmark_test.go - Sphinx Packet Format benchmarks.
 // Copyright (C) 2022 David Stainton.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -22,17 +19,9 @@ package sphinx
 import (
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 )
 
-func BenchmarkCtidh1024SphinxUnwrap(b *testing.B) {
-	if ctidh.CTIDH1024Scheme == nil {
-		panic("ctidh.CTIDH1024Scheme is NIL")
-	}
-	benchmarkSphinxUnwrap(b, ctidh.CTIDH1024Scheme)
-}
-
-func BenchmarkKEMSphinxUnwrapCSTIDH1024(b *testing.B) {
-	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ctidh.CTIDH1024Scheme))
+func BenchmarkX25519SphinxUnwrap(b *testing.B) {
+	benchmarkSphinxUnwrap(b, ecdh.EcdhScheme)
 }
