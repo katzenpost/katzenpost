@@ -81,7 +81,7 @@ func main() {
 	// a provider node that is not an entry node to the network
 	// may choose to allow local connections, or add a user account for this worker
 	// TODO: extend cbor worker interface to provide a client configuration
-	sockatzServer, err := server.NewSockatz(clientCfg, serverLog)
+	sockatzServer, err := server.NewSockatz(clientCfg, logBackend)
 	if err != nil {
 		panic(err)
 	}
