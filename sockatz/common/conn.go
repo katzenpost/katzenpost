@@ -76,7 +76,7 @@ func (w *uniqAddr) String() string {
 func NewQUICProxyConn() *QUICProxyConn {
 	addr := &uniqAddr{}
 
-	return &QUICProxyConn{localAddr: addr, incoming: make(chan *pkt), outgoing: make(chan *pkt),
+	return &QUICProxyConn{localAddr: addr, incoming: make(chan *pkt, 1), outgoing: make(chan *pkt, 1),
 		tlsConf: common.GenerateTLSConfig()}
 }
 
