@@ -975,18 +975,20 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 	}
 	// include parameters that have a threshold of votes
 	for bs, votes := range mixParams {
+		params := &config.Parameters{}
+		d := gob.NewDecoder(strings.NewReader(bs))
+		if err := d.Decode(params); err != nil {
+			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
+			continue
+		}
+
 		if len(votes) >= s.threshold {
-			params := &config.Parameters{}
-			d := gob.NewDecoder(strings.NewReader(bs))
-			if err := d.Decode(params); err != nil {
-				s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
-				return nil, nil, err
-			}
 			sortNodesByPublicKey(nodes)
 			// successful tally
 			return nodes, params, nil
 		} else if len(votes) >= s.dissenters {
-			return nil, nil, errors.New("a consensus partition")
+			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
+			continue
 		}
 
 	}
