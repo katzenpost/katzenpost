@@ -18,16 +18,16 @@ package client
 
 import (
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/core/log"
-	"gopkg.in/op/go-logging.v1"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
+	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/sockatz/common"
 	"github.com/katzenpost/katzenpost/sockatz/server"
+	"gopkg.in/op/go-logging.v1"
 
 	"context"
 	"errors"
@@ -35,8 +35,8 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"time"
 	"sync"
+	"time"
 )
 
 var (
@@ -75,7 +75,7 @@ type Client struct {
 	worker.Worker
 
 	desc *utils.ServiceDescriptor
-	log *logging.Logger
+	log  *logging.Logger
 	s    *client.Session
 }
 
@@ -181,14 +181,14 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	k := common.NewQUICProxyConn()
 
 	// start proxy worker that proxies bytes between KatConn and conn
-	
+
 	c.Go(func() {
 		proxyConn, err := k.Dial(ctx, common.UniqAddr(id))
 		if err != nil {
 			errCh <- err
 			return
 		}
-	
+
 		var wg sync.WaitGroup
 		wg.Add(2)
 
@@ -203,13 +203,12 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			defer wg.Done()
 			_, err := io.Copy(proxyConn, conn)
 			if err != nil {
-				errCh<- err
+				errCh <- err
 			}
 		}()
 		wg.Wait()
 		close(errCh)
 	})
-
 
 	// start transport worker that reads frames to/from katzenpost and KatConn
 	c.Go(func() {

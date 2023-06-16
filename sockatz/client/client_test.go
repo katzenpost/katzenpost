@@ -20,12 +20,12 @@
 package client
 
 import (
+	"bytes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
-	"bytes"
+	"io"
 	"net"
 	"net/url"
-	"io"
 	"testing"
 )
 
@@ -67,7 +67,7 @@ func TestDockerProxy(t *testing.T) {
 
 	// dial our socket with proxy
 	u := new(url.URL)
-	u, err = u.Parse("http://"+r.Addr().String())
+	u, err = u.Parse("http://" + r.Addr().String())
 	require.NoError(err)
 	err = <-c.Dial(id, u)
 	require.NoError(err)
