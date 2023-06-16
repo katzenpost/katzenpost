@@ -17,7 +17,6 @@
 package sphinx
 
 import (
-	"crypto/rand"
 	"testing"
 
 	"github.com/cloudflare/circl/kem"
@@ -25,8 +24,17 @@ import (
 	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
+
+	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
+
+func BenchmarkKEMSphinxUnwrapX25519(b *testing.B) {
+	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)))
+}
 
 func BenchmarkKEMSphinxUnwrapKyber512(b *testing.B) {
 	benchmarkKEMSphinxUnwrap(b, kyber512.Scheme())
@@ -47,24 +55,24 @@ func BenchmarkKEMSphinxUnwrapKyber768X25519(b *testing.B) {
 func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	geo := KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 5)
-	sphinx := NewKEMSphinx(mykem, geo)
+	g := geo.KEMGeometryFromUserForwardPayloadLength(mykem, len(testPayload), false, 5)
+	sphinx := NewKEMSphinx(mykem, g)
 
-	nodes, path := newBenchKEMPathVector(mykem, geo.NrHops, false)
+	nodes, path := newBenchKEMPathVector(mykem, g.NrHops, false)
 	payload := []byte(testPayload)
 
-	pkt, err := sphinx.NewKEMPacket(rand.Reader, path, payload)
+	pkt, err := sphinx.newKEMPacket(rand.Reader, path, payload)
 	if err != nil {
 		panic("wtf")
 	}
-	if len(pkt) != geo.HeaderLength+geo.PayloadTagLength+len(payload) {
+	if len(pkt) != g.HeaderLength+g.PayloadTagLength+len(payload) {
 		panic("wtf")
 	}
 
 	for n := 0; n < b.N; n++ {
 		testPacket := make([]byte, len(pkt))
 		copy(testPacket, pkt)
-		_, _, _, err := sphinx.KEMUnwrap(nodes[0].privateKey, testPacket)
+		_, _, _, err := sphinx.Unwrap(nodes[0].privateKey, testPacket)
 		if err != nil {
 			panic("wtf")
 		}
@@ -74,7 +82,7 @@ func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 func benchNewKEMNode(mykem kem.Scheme) *kemNodeParams {
 	n := new(kemNodeParams)
 
-	_, err := rand.Read(n.id[:])
+	_, err := rand.Reader.Read(n.id[:])
 	if err != nil {
 		panic("wtf")
 	}
@@ -108,7 +116,7 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
-			_, err := rand.Read(recipient.ID[:])
+			_, err := rand.Reader.Read(recipient.ID[:])
 			if err != nil {
 				panic(err)
 			}
@@ -117,7 +125,7 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 			// This is a SURB, add a surb_reply.
 			if isSURB {
 				surbReply := new(commands.SURBReply)
-				_, err := rand.Read(surbReply.ID[:])
+				_, err := rand.Reader.Read(surbReply.ID[:])
 				if err != nil {
 					panic(err)
 				}

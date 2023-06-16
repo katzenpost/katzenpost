@@ -25,10 +25,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 const sphinxVectorsFile = "testdata/sphinx_vectors.json"
@@ -55,14 +55,18 @@ type hexSphinxTest struct {
 
 func NoTestBuildFileVectorSphinx(t *testing.T) {
 	require := require.New(t)
+
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	geo := GeometryFromForwardPayloadLength(mynike, 103, 5)
-	sphinx := NewSphinx(mynike, geo)
 
 	withSURB := false
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
+	sphinx := NewSphinx(g)
 	hexTests := buildVectorSphinx(t, mynike, withSURB, sphinx)
 	withSURB = true
+	g = geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
+	sphinx = NewSphinx(g)
 	hexTests2 := buildVectorSphinx(t, mynike, withSURB, sphinx)
+
 	hexTests = append(hexTests, hexTests2...)
 
 	serialized, err := json.Marshal(hexTests)
@@ -75,8 +79,6 @@ func NoTestBuildFileVectorSphinx(t *testing.T) {
 func TestVectorSphinx(t *testing.T) {
 	require := require.New(t)
 	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-	geo := GeometryFromForwardPayloadLength(mynike, 103, 5)
-	sphinx := NewSphinx(mynike, geo)
 
 	serialized, err := os.ReadFile(sphinxVectorsFile)
 	require.NoError(err)
@@ -89,10 +91,17 @@ func TestVectorSphinx(t *testing.T) {
 		packet, err := hex.DecodeString(test.Packets[0])
 		require.NoError(err)
 
+		withSURB := false
+		if test.Surb != "" {
+			withSURB = true
+		}
+		g := geo.GeometryFromUserForwardPayloadLength(mynike, 103, withSURB, 5)
+		sphinx := NewSphinx(g)
+
 		// Unwrap the packet, validating the output.
 		for i := range test.Nodes {
 			// There's no sensible way to validate that `tag` is correct.
-			privateKey := new(ecdh.PrivateKey)
+			privateKey := ecdhnike.EcdhScheme.NewEmptyPrivateKey()
 			rawKey, err := hex.DecodeString(test.Nodes[i].PrivateKey)
 			require.NoError(err)
 			err = privateKey.FromBytes(rawKey)
@@ -149,7 +158,7 @@ func TestVectorSphinx(t *testing.T) {
 	}
 }
 
-func buildVectorSphinx(t *testing.T, mynike nike.Nike, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
+func buildVectorSphinx(t *testing.T, mynike nike.Scheme, withSURB bool, sphinx *Sphinx) []hexSphinxTest {
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
 	require := require.New(t)

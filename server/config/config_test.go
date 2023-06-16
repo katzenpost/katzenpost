@@ -33,6 +33,25 @@ func TestConfig(t *testing.T) {
 	require.EqualError(err, "No nil buffer as config file")
 
 	basicConfig := `# A basic configuration example.
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  SURBIDLength = 16
+  RecipientIDLength = 32
+  NodeIDLength = 32
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
 [server]
 Identifier = "katzenpost.example.com"
 Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
@@ -70,6 +89,25 @@ func TestIncompleteConfig(t *testing.T) {
 	require := require.New(t)
 
 	const incompletePKIConfig = `# A basic configuration example.
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  SURBIDLength = 16
+  RecipientIDLength = 32
+  NodeIDLength = 32
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
 [server]
 Identifier = "katzenpost.example.com"
 Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
@@ -94,6 +132,25 @@ Level = "DEBUG"
 	require.EqualError(err, "config: No PKI block was present")
 
 	const incompleteServerConfig = `# A basic configuration example.
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  SURBIDLength = 16
+  RecipientIDLength = 32
+  NodeIDLength = 32
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
 [server]
 Identifier = ""
 Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]

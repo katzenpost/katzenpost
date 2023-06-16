@@ -28,7 +28,7 @@ func (smp *SimpleMeetingPlace) Padding() int {
 	return paddingSize
 }
 
-func (smp *SimpleMeetingPlace) Exchange(id, message []byte, shutdown chan struct{}) ([]byte, error) {
+func (smp *SimpleMeetingPlace) Exchange(id, message []byte, shutdown <-chan interface{}) ([]byte, error) {
 	i := string(id)
 
 	smp.Lock()
@@ -78,6 +78,7 @@ func NewSimpleMeetingPlace() *SimpleMeetingPlace {
 }
 
 func TestSerialise(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	secret := []byte("foo")
@@ -87,7 +88,7 @@ func TestSerialise(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(err)
 
-	shutdownChan := make(chan struct{})
+	shutdownChan := make(chan interface{})
 	go func() {
 		<-shutdownChan
 	}()
@@ -107,9 +108,9 @@ func TestSerialise(t *testing.T) {
 	require.NoError(err)
 }
 
-func getKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) (*KeyExchange, error) {
+func getKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) (*KeyExchange, chan interface{}, error) {
 
-	shutdownChan := make(chan struct{})
+	shutdownChan := make(chan interface{})
 	pandaChan := make(chan PandaUpdate)
 	go func() {
 		var reply []byte
@@ -126,11 +127,11 @@ func getKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, sr
 	if err != nil {
 		resultChan <- err
 	}
-	return kx, err
+	return kx, shutdownChan, err
 }
 
 func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
-	kx, err := getKX(resultChan, log, mp, srv, secret, message)
+	kx, _, err := getKX(resultChan, log, mp, srv, secret, message)
 	if err == nil {
 		kx.Run()
 	} else {
@@ -139,6 +140,7 @@ func runKX(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, sr
 }
 
 func TestKeyExchange(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a, b := make(chan interface{}), make(chan interface{})
@@ -167,6 +169,7 @@ func TestKeyExchange(t *testing.T) {
 
 // XXX FIXME. This test is broken and sometimes deadlocks or sometimes fails.
 func NoTestUpdateSRV(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a, b := make(chan interface{}), make(chan interface{})
@@ -180,7 +183,7 @@ func NoTestUpdateSRV(t *testing.T) {
 	logBackend, err := log.New("", "debug", false)
 	require.NoError(err)
 
-	kx1, err := getKX(a, logBackend.GetLogger("a_kx"), mp, srv1, secret, msg1)
+	kx1, shutdownChan, err := getKX(a, logBackend.GetLogger("a_kx"), mp, srv1, secret, msg1)
 	require.NoError(err)
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
@@ -192,7 +195,7 @@ func NoTestUpdateSRV(t *testing.T) {
 
 	// stop the exchange, update the srv, and restart the exchange
 	var foo struct{}
-	kx1.shutdownChan <- foo
+	shutdownChan <- foo
 	wg.Wait()
 	kx1.SetSharedRandom(srv2)
 	go kx1.Run()
@@ -210,7 +213,7 @@ func NoTestUpdateSRV(t *testing.T) {
 
 func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp MeetingPlace, srv []byte, secret []byte, message []byte) {
 
-	shutdownChan := make(chan struct{})
+	shutdownChan := make(chan interface{})
 	contactID := uint64(123)
 	pandaChan := make(chan PandaUpdate)
 	kx, err := NewKeyExchange(rand.Reader, log, mp, srv, secret, message, contactID, pandaChan, shutdownChan)
@@ -227,7 +230,7 @@ func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp Mee
 		for {
 			pandaUpdate := <-pandaChan
 			close(shutdownChan)
-			shutdownChan = make(chan struct{})
+			shutdownChan = make(chan interface{})
 			sr := kx.Marshal()
 			kx, err = UnmarshalKeyExchange(rand.Reader, log, mp, sr, contactID, pandaChan, shutdownChan)
 			kx.pandaChan = pandaChan
@@ -248,6 +251,7 @@ func runKXWithSerialize(resultChan chan interface{}, log *logging.Logger, mp Mee
 }
 
 func TestKeyExchangeWithSerialization(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a, b := make(chan interface{}), make(chan interface{})
