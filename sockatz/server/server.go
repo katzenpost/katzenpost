@@ -20,7 +20,6 @@ import (
 	"errors"
 	"gopkg.in/op/go-logging.v1"
 	"github.com/katzenpost/katzenpost/core/log"
-	"fmt"
 	"net"
 	"net/url"
 	"sync"
@@ -116,7 +115,7 @@ func (d *DialCommand) Unmarshal(b []byte) error {
 // DialResponse is a response to a DialCommand, and may return data
 type DialResponse struct {
 	Error   error
-	Payload []byte
+	Peer net.Addr
 }
 
 // Marshal implements cborplugin.Command
@@ -239,9 +238,12 @@ type Session struct {
 
 	// Transport provides ordered stream from unreliable katzenpost messages
 	// in this case, we're using QUIC as the transport
-	Transport *common.KatConn
+	Transport *common.QUICProxyConn
 
-	// Target is the remote peer
+	// Peer is the net.Addr of the client
+	Peer net.Addr
+
+	// Target is the remote host to proxy to
 	Target net.Conn
 
 	// Mode
@@ -336,8 +338,13 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 	switch cmd.Target.Scheme {
 	case "tcp":
 		// start quic transport for tcp
-		l :=s.logBackend.GetLogger(fmt.Sprintf("KatConn:%x", cmd.ID))
-		ss.Transport = common.NewKatConn(l)
+		ss.Transport = common.NewQUICProxyConn()
+		conn, err := net.Dial("tcp", cmd.Target.Host)
+		if err != nil {
+			ss.Target = conn
+		} else {
+			reply.Error = ErrDialFailed
+		}
 	case "udp":
 		// XXX: Add proxy support
 		conn, err := net.Dial("udp", cmd.Target.Host)
@@ -357,9 +364,11 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	s.s.log.Debugf("SendRecv()")
 	s.s.log.Debugf("len(payload): %d", len(payload))
 
+	peer := common.UniqAddr(s.ID)
+
 	// write packet to transport
 	s.s.log.Debugf("WritePacket() (blocked)")
-	_, err := s.Transport.WritePacket(payload)
+	_, err := s.Transport.WritePacket(payload, peer)
 	if err != nil {
 		s.s.log.Errorf("WritePacket failure: %v", err)
 		return nil, err
@@ -369,7 +378,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	// read packet from transport
 	buf := make([]byte, len(payload))
 	s.s.log.Debugf("ReadPacket() (blocked)")
-	n, err := s.Transport.ReadPacket(buf)
+	n, _, err := s.Transport.ReadPacket(buf)
 	if err != nil {
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
