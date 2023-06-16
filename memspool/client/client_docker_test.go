@@ -21,6 +21,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	cc "github.com/katzenpost/katzenpost/client"
@@ -39,11 +40,11 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
@@ -56,7 +57,7 @@ func TestDockerUnreliableSpoolService(t *testing.T) {
 
 	// append to a spool
 	message := []byte("hello there")
-	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message)
+	appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message, s.SphinxGeometry())
 	require.NoError(err)
 	rawResponse, err := s.BlockingSendReliableMessage(desc.Name, desc.Provider, appendCmd)
 	require.NoError(err)
@@ -114,10 +115,10 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	// look up a spool provider
 	desc, err := s.GetService(common.SpoolServiceName)
@@ -130,9 +131,9 @@ func TestDockerUnreliableSpoolServiceMore(t *testing.T) {
 	messageID := uint32(1) // where do we learn messageID?
 	for i := 0; i < 20; i += 1 {
 		// append to a spool
-		message := make([]byte, common.SpoolPayloadLength)
+		message := make([]byte, common.SpoolPayloadLength(s.SphinxGeometry()))
 		rand.Reader.Read(message[:])
-		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:])
+		appendCmd, err := common.AppendToSpool(spoolReadDescriptor.ID, message[:], s.SphinxGeometry())
 		require.NoError(err)
 		rawResponse, err := s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, appendCmd)
 		require.NoError(err)
@@ -165,10 +166,10 @@ func TestDockerGetSpoolServices(t *testing.T) {
 	client, err := cc.New(cfg)
 	require.NoError(err)
 
-	s, err := client.NewTOFUSession()
+	s, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
-	s.WaitForDocument()
+	s.WaitForDocument(context.Background())
 
 	spoolServices, err := s.GetServices(common.SpoolServiceName)
 	require.NoError(err)

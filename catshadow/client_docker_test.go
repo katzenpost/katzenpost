@@ -23,6 +23,7 @@ package catshadow
 
 import (
 	"bytes"
+	"context"
 	"testing"
 	"time"
 
@@ -66,7 +67,7 @@ func createCatshadowClientWithState(t *testing.T, stateFile string) *Client {
 	stateWorker.Start()
 	backendLog, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(err)
-	catShadowClient, err = NewClientAndRemoteSpool(backendLog, c, stateWorker)
+	catShadowClient, err = NewClientAndRemoteSpool(context.Background(), backendLog, c, stateWorker)
 	require.NoError(err)
 
 	return catShadowClient
@@ -101,12 +102,13 @@ func reloadCatshadowState(t *testing.T, stateFile string) *Client {
 	catShadowClient.Start()
 
 	// Bring catshadow online
-	catShadowClient.Online()
+	catShadowClient.Online(context.Background())
 
 	return catShadowClient
 }
 
 func TestDockerPandaSuccess(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
@@ -150,6 +152,7 @@ loop2:
 }
 
 func TestDockerPandaTagContendedError(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	aliceStateFilePath := createRandomStateFile(t)
@@ -256,7 +259,9 @@ func TestDockerSendReceive(t *testing.T) {
 	bobReceivedMessageChan := make(chan bool)
 	bobSentChan := make(chan bool)
 	bobDeliveredChan := make(chan bool)
+
 	go func() {
+		sentEventSeenIds := make(map[MessageID]bool)
 		for {
 			ev, ok := <-bob.EventSink
 			if !ok {
@@ -264,20 +269,28 @@ func TestDockerSendReceive(t *testing.T) {
 			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
+				bob.log.Debugf("CSTDSR: BOB GOT KEYEX COMPLETED")
 				require.Nil(event.Err)
 				bobKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
-				bob.log.Debugf("BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
+				bob.log.Debugf("CSTDSR: BOB RECEIVED MESSAGE from %s:\n%s", event.Nickname, string(event.Message))
 				bobReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
+				bob.log.Debugf("CSTDSR: BOB GOT DELIVERED EVENT")
 				require.Equal(event.Nickname, "mal")
 				bobDeliveredChan <- true
 			case *MessageSentEvent:
-				bob.log.Debugf("BOB SENT MESSAGE to %s", event.Nickname)
+				if _, ok = sentEventSeenIds[event.MessageID]; ok {
+					bob.log.Debugf("CSTDSR: BOB GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+					continue
+				}
+				sentEventSeenIds[event.MessageID] = true
+				bob.log.Debugf("CSTDSR: BOB SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 				require.Equal(event.Nickname, "mal")
 				bobSentChan <- true
 			default:
+				bob.log.Debugf("CSTDSR: BOB EVENTSINK GOT EVENT %t", ev)
 			}
 		}
 	}()
@@ -285,7 +298,9 @@ func TestDockerSendReceive(t *testing.T) {
 	aliceKXFinishedChan := make(chan bool)
 	aliceSentChan := make(chan bool)
 	aliceDeliveredChan := make(chan bool)
+
 	go func() {
+		sentEventSeenIds := make(map[MessageID]bool)
 		for {
 			ev, ok := <-alice.EventSink
 			if !ok {
@@ -293,17 +308,24 @@ func TestDockerSendReceive(t *testing.T) {
 			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
+				alice.log.Debugf("CSTDSR: ALICE GOT KEYEX COMPLETED")
 				require.Nil(event.Err)
 				aliceKXFinishedChan <- true
 				break
-			case *MessageSentEvent:
-				alice.log.Debugf("ALICE SENT MESSAGE to %s", event.Nickname)
-				require.Equal(event.Nickname, "bob")
-				aliceSentChan <- true
 			case *MessageDeliveredEvent:
+				alice.log.Debugf("CSTDSR: ALICE GOT DELIVERED EVENT")
 				require.Equal(event.Nickname, "bob")
 				aliceDeliveredChan <- true
+			case *MessageSentEvent:
+				if _, ok = sentEventSeenIds[event.MessageID]; ok {
+					alice.log.Debugf("CSTDSR: ALICE GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+					continue
+				}
+				alice.log.Debugf("CSTDSR: ALICE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+				require.Equal(event.Nickname, "bob")
+				aliceSentChan <- true
 			default:
+				alice.log.Debugf("CSTDSR: ALICE EVENTSINK GOT EVENT %t", ev)
 			}
 		}
 	}()
@@ -312,7 +334,9 @@ func TestDockerSendReceive(t *testing.T) {
 	malSentChan := make(chan bool)
 	malReceivedMessageChan := make(chan bool)
 	malDeliveredChan := make(chan bool)
+
 	go func() {
+		sentEventSeenIds := make(map[MessageID]bool)
 		for {
 			ev, ok := <-mal.EventSink
 			if !ok {
@@ -320,22 +344,29 @@ func TestDockerSendReceive(t *testing.T) {
 			}
 			switch event := ev.(type) {
 			case *KeyExchangeCompletedEvent:
+				mal.log.Debugf("CSTDSR: MAL GOT KEYEX COMPLETED")
 				require.Nil(event.Err)
 				malKXFinishedChan <- true
 			case *MessageReceivedEvent:
 				// fields: Nickname, Message, Timestamp
 				require.Equal(event.Nickname, "bob")
-				mal.log.Debugf("MAL RECEIVED MESSAGE:\n%s", string(event.Message))
+				mal.log.Debugf("CSTDSR: MAL RECEIVED MESSAGE:\n%s", string(event.Message))
 				malReceivedMessageChan <- true
 			case *MessageDeliveredEvent:
+				mal.log.Debugf("CSTDSR: MAL GOT DELIVERED EVENT")
 				require.Equal(event.Nickname, "bob")
 				malDeliveredChan <- true
 			case *MessageSentEvent:
-				mal.log.Debugf("MAL SENT MESSAGE to %s", event.Nickname)
+				if _, ok = sentEventSeenIds[event.MessageID]; ok {
+					mal.log.Debugf("CSTDSR: MAL GOT DUPE SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
+					continue
+				}
+				mal.log.Debugf("CSTDSR: MAL SENT MESSAGE %x to %s", event.MessageID, event.Nickname)
 				require.Equal(event.Nickname, "bob")
 				malSentChan <- true
 
 			default:
+				mal.log.Debugf("CSTDSR: MAL EVENTSINK GOT EVENT %t", ev)
 			}
 		}
 	}()
@@ -353,6 +384,7 @@ sufficient to protect the meta-data associated with the communications.
 	<-aliceDeliveredChan
 	<-bobReceivedMessageChan
 
+	alice.log.Debugf("CSTDSR: ALICE SENDING SECOND MESSAGE to bob")
 	alice.SendMessage("bob", []byte(`Since 1979, there has been active academic research into communication
 meta-data protection, also called anonymous communication networking, that has
 produced various designs. Of these, mix networks are among the most practical
@@ -456,6 +488,7 @@ and can readily scale to millions of users.
 
 func TestDockerReunionSuccess(t *testing.T) {
 	t.Skip("Reunion does not work with 2KB payloads")
+	t.Parallel()
 	require := require.New(t)
 
 	aliceState := createRandomStateFile(t)
@@ -530,6 +563,7 @@ loop2:
 }
 
 func TestDockerChangeExpiration(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -553,6 +587,7 @@ func TestDockerChangeExpiration(t *testing.T) {
 }
 
 func TestDockerAddRemoveContact(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -651,6 +686,7 @@ loop5:
 }
 
 func TestDockerRenameContact(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	a := createCatshadowClientWithState(t, createRandomStateFile(t))
@@ -663,6 +699,7 @@ func TestDockerRenameContact(t *testing.T) {
 	a.NewContact("b", s[:])
 	b.NewContact("a", s[:])
 
+	// wait for key exchanges to complete
 loop1:
 	for {
 		ev := <-a.EventSink
@@ -687,6 +724,7 @@ loop2:
 
 	t.Log("Sending message to b")
 	a.SendMessage("b", []byte("a->b"))
+	// wait for message to be delivered to spool
 loop3:
 	for {
 		ev := <-a.EventSink
@@ -702,9 +740,22 @@ loop3:
 		}
 	}
 
+	// wait for message to be received by b
+loop3a:
+	for {
+		ev := <-b.EventSink
+		switch event := ev.(type) {
+		case *MessageReceivedEvent:
+			t.Log("Message received by b")
+			if event.Nickname == "a" {
+				break loop3a
+			}
+		default:
+		}
+	}
 	t.Log("Sending message to a")
 	b.SendMessage("a", []byte("b->a"))
-
+	// wait for message to be delivered to spool
 loop4:
 	for {
 		ev := <-b.EventSink
@@ -717,7 +768,21 @@ loop4:
 		default:
 		}
 	}
+	// wait for message to be received by a
+loop4a:
+	for {
+		ev := <-a.EventSink
+		switch event := ev.(type) {
+		case *MessageReceivedEvent:
+			t.Log("Message received by a")
+			if event.Nickname == "b" {
+				break loop4a
+			}
+		default:
+		}
+	}
 
+	// rename the contacts
 	t.Log("Renaming contact b")
 	err = a.RenameContact("b", "b2")
 	require.NoError(err)
@@ -729,6 +794,7 @@ loop4:
 	t.Log("Sending message to b, must fail")
 	a.SendMessage("b", []byte("must fail"))
 
+	// wait for failure sending message
 loop5:
 	for {
 		ev := <-a.EventSink
@@ -743,6 +809,7 @@ loop5:
 
 	// send message to the renamed contact
 	a.SendMessage("b2", []byte("a->b2"))
+	// wait for message to be delivered to spool
 loop6:
 	for {
 		ev := <-a.EventSink
@@ -757,6 +824,7 @@ loop6:
 		default:
 		}
 	}
+	// wait for message to be received by b
 loop7:
 	for {
 		ev := <-b.EventSink
@@ -784,23 +852,10 @@ loop7:
 			received += 1
 		}
 	}
-	require.Equal(sent, 1)
-
-	if received > 2 {
-		t.Logf("Retransmission of message detected")
-		var last *Message
-		for _, msg := range c {
-			if last == nil {
-				last = msg
-			} else {
-				if bytes.Equal(last.Plaintext, msg.Plaintext) {
-					t.Logf("%s was retransmitted", last.Plaintext)
-				}
-			}
-		}
-	} else {
-		require.Equal(received, 2)
-	}
+	require.Equal(1, sent)
+	require.Equal(2, received)
+	require.Equal(1, len(a.conversations))
+	require.Equal(1, len(b.conversations))
 
 	// clear conversation history
 	b.WipeConversation("a")

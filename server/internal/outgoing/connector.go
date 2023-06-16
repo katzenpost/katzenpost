@@ -70,12 +70,14 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 
 	if pkt == nil {
 		co.log.Debug("Dropping packet: packet is nil, wtf")
+		instrument.InvalidPacketsDropped()
 		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
 	}
 	if pkt.NextNodeHop == nil {
 		co.log.Debug("Dropping packet: packet NextNodeHop is nil, wtf")
+		instrument.InvalidPacketsDropped()
 		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
@@ -83,6 +85,7 @@ func (co *connector) DispatchPacket(pkt *packet.Packet) {
 	c, ok := co.conns[pkt.NextNodeHop.ID]
 	if !ok {
 		co.log.Debugf("Dropping packet: %v (No connection for destination)", pkt.ID)
+		instrument.OutgoingPacketsDropped()
 		instrument.PacketsDropped()
 		pkt.Dispose()
 		return
@@ -142,7 +145,7 @@ func (co *connector) spawnNewConns() {
 	// Spawn the new outgoingConn objects.
 	for id, v := range newPeerMap {
 		co.log.Debugf("Spawning connection to: '%x'.", id)
-		c := newOutgoingConn(co, v)
+		c := newOutgoingConn(co, v, co.glue.Config().SphinxGeometry)
 		co.onNewConn(c)
 	}
 }

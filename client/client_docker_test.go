@@ -14,12 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+//go:build docker_test
 // +build docker_test
 
 package client
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"sync"
 	"testing"
@@ -33,6 +35,7 @@ import (
 )
 
 func TestDockerClientConnectShutdown(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -41,7 +44,7 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	session, err := client.NewTOFUSession()
+	session, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
 	<-session.EventSink
@@ -51,6 +54,7 @@ func TestDockerClientConnectShutdown(t *testing.T) {
 }
 
 func TestDockerClientAsyncSendReceive(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -59,10 +63,11 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	ctx := context.Background()
+	clientSession, err := client.NewTOFUSession(ctx)
 	require.NoError(err)
 
-	clientSession.WaitForDocument()
+	clientSession.WaitForDocument(ctx)
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -99,6 +104,7 @@ func TestDockerClientAsyncSendReceive(t *testing.T) {
 }
 
 func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -108,10 +114,11 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	ctx := context.Background()
+	clientSession, err := client.NewTOFUSession(ctx)
 	require.NoError(err)
 
-	clientSession.WaitForDocument()
+	clientSession.WaitForDocument(ctx)
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 
@@ -148,6 +155,7 @@ func TestDockerClientAsyncSendReceiveWithDecoyTraffic(t *testing.T) {
 }
 
 func TestDockerClientTestGarbageCollection(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -156,7 +164,7 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	clientSession, err := client.NewTOFUSession(context.Background())
 	require.NoError(err)
 
 	msgID := [constants.MessageIDLength]byte{}
@@ -178,6 +186,7 @@ func TestDockerClientTestGarbageCollection(t *testing.T) {
 }
 
 func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
+	t.Parallel()
 	require := require.New(t)
 
 	cfg, err := config.LoadFile("testdata/client.toml")
@@ -186,10 +195,11 @@ func TestDockerClientTestIntegrationGarbageCollection(t *testing.T) {
 	client, err := New(cfg)
 	require.NoError(err)
 
-	clientSession, err := client.NewTOFUSession()
+	ctx := context.Background()
+	clientSession, err := client.NewTOFUSession(ctx)
 	require.NoError(err)
 
-	clientSession.WaitForDocument()
+	clientSession.WaitForDocument(ctx)
 	desc, err := clientSession.GetService(constants.LoopService)
 	require.NoError(err)
 

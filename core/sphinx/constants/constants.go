@@ -27,4 +27,7 @@ const (
 
 	// SURBIDLength is the SURB identifier length in bytes.
 	SURBIDLength = 16
+
+	// CommandTagLength is the length of the tag for each Sphinx command.
+	CommandTagLength = 1
 )
