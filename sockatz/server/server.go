@@ -18,8 +18,8 @@ package server
 
 import (
 	"errors"
-	"gopkg.in/op/go-logging.v1"
 	"github.com/katzenpost/katzenpost/core/log"
+	"gopkg.in/op/go-logging.v1"
 	"net"
 	"net/url"
 	"sync"
@@ -63,7 +63,7 @@ var (
 type Sockatz struct {
 	cfg *config.Config
 	worker.Worker
-	log *logging.Logger
+	log        *logging.Logger
 	logBackend *log.Backend
 
 	sessions *sync.Map
@@ -114,8 +114,8 @@ func (d *DialCommand) Unmarshal(b []byte) error {
 
 // DialResponse is a response to a DialCommand, and may return data
 type DialResponse struct {
-	Error   error
-	Peer net.Addr
+	Error error
+	Peer  net.Addr
 }
 
 // Marshal implements cborplugin.Command
@@ -226,7 +226,6 @@ func (s *Response) Unmarshal(b []byte) error {
 
 // Session holds state associated with reliable in-order framing of transported TCP stream
 type Session struct {
-
 	s *Sockatz
 
 	sync.Mutex
