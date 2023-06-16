@@ -5,26 +5,18 @@ import (
 	"context"
 	"errors"
 	"io"
-	"os"
 	"sync"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	quic "github.com/quic-go/quic-go"
-	qlogging "github.com/quic-go/quic-go/logging"
-	"github.com/quic-go/quic-go/qlog"
 	"github.com/stretchr/testify/require"
 )
 
 var payloadSize = 1200 // this is the minimum valid QUIC packet payload size
 
-var quicDebugCfg = &quic.Config{Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
-	return qlog.NewConnectionTracer(os.Stdout, p, connID)
-}}
-
 func TestQUICProxyConnSimple(t *testing.T) {
 	require := require.New(t)
-	k := NewQUICProxyConn(quicDebugCfg)
+	k := NewQUICProxyConn()
 	pkt := make([]byte, payloadSize)
 	cpy := make([]byte, payloadSize)
 	n, err := k.WritePacket(pkt, k.LocalAddr())
@@ -38,8 +30,8 @@ func TestQUICProxyConnSimple(t *testing.T) {
 
 func TestQUICProxyConn(t *testing.T) {
 	require := require.New(t)
-	sender := NewQUICProxyConn(quicDebugCfg)
-	receiver := NewQUICProxyConn(quicDebugCfg)
+	sender := NewQUICProxyConn()
+	receiver := NewQUICProxyConn()
 
 	msg1 := make([]byte, 42*42*42)
 	io.ReadFull(rand.Reader, msg1)
