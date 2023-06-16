@@ -178,12 +178,12 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	errCh := make(chan error)
 
 	ctx := context.Background()
-	k := common.NewKatConn(c.log)
+	k := common.NewQUICProxyConn()
 
 	// start proxy worker that proxies bytes between KatConn and conn
 	
 	c.Go(func() {
-		proxyConn, err := k.Dial(ctx)
+		proxyConn, err := k.Dial(ctx, common.UniqAddr(id))
 		if err != nil {
 			errCh <- err
 			return
@@ -222,7 +222,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			// copy from local socket to remote
 			k.SetReadDeadline(time.Now().Add(server.DefaultDeadline))
 			pkt := make([]byte, payloadLen)
-			n, err := k.ReadPacket(pkt)
+			n, _, err := k.ReadPacket(pkt)
 			// handle short reads
 			if errors.Is(err, io.EOF) && n != 0 {
 				errCh <- err
@@ -273,7 +273,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 				}
 
 				// Write response to to client socket
-				n, err := k.WritePacket(p.Payload)
+				n, err := k.WritePacket(p.Payload, common.UniqAddr(id))
 				// handle short writes
 				if errors.Is(err, io.EOF) && n != 0 {
 					errCh <- err

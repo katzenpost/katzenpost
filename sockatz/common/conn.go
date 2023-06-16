@@ -20,7 +20,7 @@ var errHalted = errors.New("Halted")
 
 type Transport interface {
 	Accept(context.Context) net.Conn
-	Dial(context.Context) net.Conn
+	Dial(context.Context, net.Addr) net.Conn
 }
 
 // this type implements net.PacketConn and sends and receives QUIC protocol messages.
@@ -48,6 +48,10 @@ type pkt struct {
 	dst     net.Addr
 }
 
+func UniqAddr(entropy []byte) net.Addr {
+	return &uniqAddr{r: base64.StdEncoding.EncodeToString(entropy)}
+}
+
 // uniqAddr is a non-routable unique identifier to associate this connection with
 type uniqAddr struct {
 	r string
@@ -69,12 +73,11 @@ func (w *uniqAddr) String() string {
 }
 
 // NewQUICProxyConn returns a
-func NewQUICProxyConn(cfg *quic.Config) *QUICProxyConn {
-	// XXX: create a unix packetconn
+func NewQUICProxyConn() *QUICProxyConn {
 	addr := &uniqAddr{}
 
-	return &QUICProxyConn{localAddr: addr, incoming: make(chan *pkt, 1000), outgoing: make(chan *pkt, 1000),
-		tlsConf: common.GenerateTLSConfig(), qcfg: cfg}
+	return &QUICProxyConn{localAddr: addr, incoming: make(chan *pkt), outgoing: make(chan *pkt),
+		tlsConf: common.GenerateTLSConfig()}
 }
 
 func (k *QUICProxyConn) Config() *quic.Config {
