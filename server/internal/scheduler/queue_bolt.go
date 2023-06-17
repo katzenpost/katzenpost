@@ -80,11 +80,17 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 	}
 	rawBuf := make([]byte, 0, len(pkt.Raw))
 	rawBuf = append(rawBuf, pkt.Raw...)
-	bkt.Put([]byte(boltPacketRawKey), rawBuf)
+	err = bkt.Put([]byte(boltPacketRawKey), rawBuf)
+	if err != nil {
+		return err
+	}
 	if pkt.Payload != nil {
 		payloadBuf := make([]byte, 0, len(pkt.Payload))
 		payloadBuf = append(payloadBuf, pkt.Payload...)
-		bkt.Put([]byte(boltPacketPayloadKey), payloadBuf)
+		err = bkt.Put([]byte(boltPacketPayloadKey), payloadBuf)
+		if err != nil {
+			return err
+		}
 	}
 
 	boltPacketCommandsSize := pkt.Geometry.NextNodeHopLength
@@ -92,22 +98,28 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Durat
 	cmdBuf := make([]byte, 0, boltPacketCommandsSize)
 	cmdBuf = pkt.NextNodeHop.ToBytes(cmdBuf)
 	cmdBuf = pkt.NodeDelay.ToBytes(cmdBuf)
-	bkt.Put([]byte(boltPacketCommandsKey), cmdBuf)
+	err = bkt.Put([]byte(boltPacketCommandsKey), cmdBuf)
+	if err != nil {
+		return err
+	}
 
 	var timesBuf [boltPacketTimesSize]byte
 	binary.BigEndian.PutUint64(timesBuf[0:], uint64(pkt.Delay))
 	binary.BigEndian.PutUint64(timesBuf[8:], uint64(pkt.RecvAt))
 	binary.BigEndian.PutUint64(timesBuf[16:], uint64(pkt.DispatchAt))
-	bkt.Put([]byte(boltPacketTimesKey), timesBuf[:])
+	err = bkt.Put([]byte(boltPacketTimesKey), timesBuf[:])
+	if err != nil {
+		return err
+	}
 
 	// Pointless, this flag isn't examined past the crypto worker,
 	// because it's sole purpose is to prevent a client from sending
 	// to a local user, but save it anyway.
 	if pkt.MustForward {
-		bkt.Put([]byte(boltPacketMustForwardKey), boltPacketMustForward)
+		err = bkt.Put([]byte(boltPacketMustForwardKey), boltPacketMustForward)
 	}
 
-	return nil
+	return err
 }
 
 func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte, g glue.Glue) (*packet.Packet, error) {
@@ -242,7 +254,11 @@ func (q *boltQueue) Pop() {
 			}
 
 			// Regardless of what happened, obliterate the bucket.
-			packetsBkt.DeleteBucket(k)
+			err = packetsBkt.DeleteBucket(k)
+			if err != nil {
+				return err
+			}
+
 			removed++
 
 			if pkt != nil {
@@ -256,6 +272,7 @@ func (q *boltQueue) Pop() {
 	})
 	if err != nil {
 		q.log.Errorf("Pop(): Transaction failed: %v", err)
+		panic("Pop() failed.")
 	} else {
 		q.dbCount -= removed
 		q.log.Debugf("Pop(): Count %v (Removed %v, Elapsed: %v).", q.dbCount, removed, monotime.Now()-now)

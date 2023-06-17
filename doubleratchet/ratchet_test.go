@@ -214,7 +214,8 @@ func testScript(t *testing.T, script []scriptAction) {
 			}
 
 			var msg [20]byte
-			rand.Reader.Read(msg[:])
+			_, err := rand.Reader.Read(msg[:])
+			require.NoError(t, err)
 			encrypted, err := sender.Encrypt(nil, msg[:])
 			require.NoError(t, err)
 
@@ -320,8 +321,10 @@ func Test_serialize_savedkeys(t *testing.T) {
 
 	result, err = l.Decrypt(encrypted3)
 	require.NoError(t, err)
+	require.Equal(t, msg, result)
 	result, err = l.Decrypt(encrypted1)
 	require.NoError(t, err)
+	require.Equal(t, msg, result)
 }
 
 func Test_RatchetDuplicateMessage(t *testing.T) {
@@ -339,7 +342,9 @@ func Test_RatchetDuplicateMessage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, msg2, result)
 	result, err = b.Decrypt(encrypted2)
-	require.Error(t, ErrDuplicateOrDelayed)
+	require.Error(t, err)
+	require.Equal(t, []byte(nil), result)
+	require.Equal(t, err, ErrDuplicateOrDelayed)
 	result, err = b.Decrypt(encrypted1)
 	require.NoError(t, err)
 	require.Equal(t, msg1, result)

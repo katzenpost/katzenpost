@@ -121,12 +121,10 @@ func NewPandaStorage(fileStore string, dwellDuration time.Duration, writeBackInt
 			if len(b) != 1 || b[0] != PandaStorageVersion {
 				return fmt.Errorf("spool storage: incompatible version: %d", uint(b[0]))
 			}
-			err = s.load(tx, postsBucket)
-			return err
+			return s.load(tx, postsBucket)
 		}
 		// database created
-		metaBucket.Put([]byte(versionKey), []byte{PandaStorageVersion})
-		return nil
+		return metaBucket.Put([]byte(versionKey), []byte{PandaStorageVersion})
 	}); err != nil {
 		s.db.Close()
 		return nil, err

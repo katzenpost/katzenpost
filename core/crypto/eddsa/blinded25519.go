@@ -222,6 +222,10 @@ func (k *BlindedPrivateKey) Blind(factor []byte) *BlindedPrivateKey {
 	oldsec := make([]byte, ed25519.PrivateKeySize)
 	copy(oldsec[:32], k.blinded[:32])
 	bb_sc, err := new(edwards25519.Scalar).SetUniformBytes(oldsec)
+	if err != nil {
+		// This only happens if oldsec is not 32 bytes.
+		panic(err)
+	}
 
 	// (ab + c) mod l = ScMulAdd(out, a, b, c)
 	// a := factor
@@ -270,6 +274,9 @@ func (k *PublicKey) Blind(factor []byte) *PublicKey {
 	sum := sha512.Sum512_256(factor)
 	factor = sum[:]
 	factor_sc, err := new(edwards25519.Scalar).SetBytesWithClamping(factor)
+	if err != nil {
+		panic("sha512/256 did not return 32 bytes, impossible")
+	}
 	// out <- factor*pkA + zero*Basepoint
 	out, err := new(edwards25519.Point).SetBytes(k.Bytes())
 	if err != nil {
