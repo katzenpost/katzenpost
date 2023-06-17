@@ -344,23 +344,22 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 // SignDocument signs and serializes the document with the provided signing key.
 func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
 	d.Version = DocumentVersion
-	// Serialize the document.
-	payload, err := ccbor.Marshal((*document)(d))
+	// Marshal the document including any existing d.Signatures
+	certified, err := d.MarshalBinary()
+	if err != nil {
+		panic("failed to marshal our own doc")
+	}
+	recertified, err := cert.SignMulti(signer, verifier, certified)
+	if err != nil {
+		panic("failed to add our own sig to certified doc")
+	}
+	// re-deserialize the recertified certificate to extract our own signature
+	// to d.Signatures etc:
+	err = d.UnmarshalBinary(recertified)
 	if err != nil {
 		return nil, err
 	}
-	// Sign the document.
-	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+5)
-	if err != nil {
-		return nil, err
-	}
-
-	// update Document
-	err = d.UnmarshalBinary(signed)
-	if err != nil {
-		return nil, err
-	}
-	return signed, nil
+	return recertified, nil
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
@@ -520,11 +519,10 @@ func (d *Document) MarshalBinary() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	pk, _ := cert.Scheme.NewKeypair()
 	certified := cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
-		KeyType:    pk.KeyType(),
+		KeyType:    cert.Scheme.PrivateKeyType(),
 		Certified:  payload,
 		Signatures: d.Signatures,
 	}
