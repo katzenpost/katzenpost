@@ -289,12 +289,13 @@ func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 		}
 
 		// We created a new database, so populate the new `metadata` bucket.
-		bkt.Put([]byte(versionKey), []byte{0})
-
-		return nil
+		return bkt.Put([]byte(versionKey), []byte{0})
 	}); err != nil {
 		// The struct isn't getting returned so clean up the database.
-		d.db.Close()
+		err2 := d.db.Close()
+		if err2 != nil {
+			return nil,fmt.Errorf("when closing db after %v: %v", err, err2)
+		}
 		return nil, err
 	}
 

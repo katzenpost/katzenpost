@@ -60,7 +60,7 @@ func TestStorageBasics(t *testing.T) {
 	tag2 := &[common.PandaTagLength]byte{}
 	_, err = rand.Reader.Read(tag2[:])
 	assert.NoError(err)
-	posting2, err = store.Get(tag2)
+	_, err = store.Get(tag2)
 	assert.Error(err)
 
 	// test that Replace works
@@ -83,6 +83,7 @@ func TestStorageBasics(t *testing.T) {
 	_, err = store.Get(tag1)
 	assert.NoError(err)
 	err = store.Replace(tag1, posting1)
+	assert.NoError(err)
 	err = store.Vacuum()
 	assert.NoError(err)
 	_, err = store.Get(tag1)

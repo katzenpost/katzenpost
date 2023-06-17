@@ -32,7 +32,7 @@ func TestCommandSerialization(t *testing.T) {
 	cmd, err := CreateSpool(pk)
 	require.NoError(err)
 	sr := new(SpoolRequest)
-	sr.Unmarshal(cmd)
+	require.NoError(sr.Unmarshal(cmd))
 	require.Equal(sr.Command, uint8(CreateSpoolCommand))
 	require.NotNil(sr.Signature)
 	require.Equal(sr.Signature, signature)

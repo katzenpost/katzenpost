@@ -156,14 +156,7 @@ func (e *EcdhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, ni
 }
 
 func (e *EcdhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
-	privKey, err := ecdh.NewKeypair(e.rng)
-	if err != nil {
-		return nil, nil, err
-	}
-	p := &PrivateKey{
-		privateKey: privKey,
-	}
-	return p.Public(), p, nil
+	return e.GenerateKeyPairFromEntropy(e.rng)
 }
 
 func (e *EcdhNike) Name() string {
