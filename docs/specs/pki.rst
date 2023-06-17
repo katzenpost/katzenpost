@@ -182,6 +182,9 @@ Katzenpost Mix Network Public Key Infrastructure Specification
    to the PKI for at least 3 epochs in advance, unless the mix will
    be otherwise unavailable in the near future due to planned downtime.
 
+   At an epoch boundary, messages encrypted to keys from the previous epoch
+   are accepted for a grace period of 2 minutes.
+
    Thus, at any time, keys for all Mixes for the Nth through N + 2nd
    epoch will be available, allowing for a maximum round trip (forward
    message + SURB) delay + transit time of 40 minutes. SURB lifetime is
