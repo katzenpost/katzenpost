@@ -4,30 +4,28 @@
 
 ![build badge](https://github.com/katzenpost/katzenpost/actions/workflows/go.yml/badge.svg?branch=main)
 
-Katzenpost is a software project dedicated to designing and implementing
-mix network protocols. A mix network is a type of anonymous communication network.
-What is an anonymous communication network? It's a traffic analysis resistant network; that is, it's protocols are designed to resist statistical analysis by passive global adversaries.
+Katzenpost is a software project dedicated to designing and
+implementing mix network protocols. A mix network is a type of
+anonymous communication network. An anonymous communication
+network is also known as a traffic analysis resistant network; that is,
+it's protocols are designed to resist statistical analysis by passive
+global adversaries.
 
-Traffic analysis typically refers to the statistical analysis of encrypted traffic. Traffic analysis is worth defending against given that common network protocols leak lots of information such as source and destination IP addresses, message size, message sequence, message delay pattern, geographical locations, social graph etc. Mere end to end encryption alone cannot protect against this type of information leakage.
+Traffic analysis typically refers to the statistical analysis of
+encrypted traffic. Traffic analysis is worth defending against given
+that common network protocols leak lots of information such as source
+and destination IP addresses, message size, message sequence, message
+delay pattern, geographical locations, social graph etc. Mere end to
+end encryption alone cannot protect against this type of information
+leakage.
 
-It is common for journalists, activists and other people in high risk situations
-to use WhatsApp, Signal, Wire, Telegram, etc. We think this is bad advice and
-instead these encrypted messaging applications should choose to use a mix network
-to anonymize their traffic.
-
-We build anonymous protocols so that everyone can communicate more freely
-in this age of pervasive surveillance.
-
-Our network model has three layers:
-
-1. Post Quantum Hybrid Noise cryptographic protocol
-that routes messages over the Internet. Can use either TCP or QUIC.
-
-2. Post Quantum Hybrid NIKE/KEM Sphinx cryptographic packet protocol layer
-   which mixes, routes and cryptographically transforms Sphinx packets at each hop.
-
-3. Post Quantum Hybrid cryptographic application protocol layer, for example,
-   our double ratchet that uses a hybrid NIKE with [CTIDH](https://ctidh.isogeny.org/) and X25519.
+At the most basic level, mixnets are composed of mix nodes. These are
+a cryptographic packet switching routers which protect our privacy by
+mixing many messages together and cryptographically transforming them
+before routing them on to the next hop. Mix nodes also use shuffling
+or added latency to create uncertainty for network observers. This
+uncertainty is in regards to trying to link incoming messages with the
+outgoing messages.
 
 
 # Project Status
@@ -52,6 +50,9 @@ and you'll be able to use that with many existing applications.
 
 # Server Side: Easy One Step BUILD
 
+You'd want to build the server side if you are
+a developer, mix node operator or dirauth operator.
+
 This builds 3 binaries:
 
 * mix server
@@ -72,7 +73,9 @@ make docker
 
 # Server Side Usage/Configuration
 
-Our docker configuration is the most comprehensive and up to date place to learn about how to configure a Katzenpost mix network. Run the makefile in the docker directory to get a usage menu:
+Our docker configuration is the most comprehensive and up to date
+place to learn about how to configure a Katzenpost mix network. Run
+the makefile in the docker directory to get a usage menu:
 
 ```bash
 $ cd katzenpost/docker; make 
@@ -119,7 +122,11 @@ Every component in a Katzenpost mix network uses our "wire" protocol, the protoc
 
 [The Noise Protocol Framework](https://noiseprotocol.org/)
 
-We believe in the Noise cryptographic protocol framework, that it is good to use it instead of TLS, whenever possible. Noise places all of the protocol decision making during the design phase of the protocol instead of during protocol runtime. This means there are no protocol downgrade attacks, no dynamic selection of ciphersuite and so on.
+We believe in the Noise cryptographic protocol framework, that it is
+good to use it instead of TLS, whenever possible. Noise places all of
+the protocol decision making during the design phase of the protocol
+instead of during protocol runtime. This means there are no protocol
+downgrade attacks, no dynamic selection of ciphersuite and so on.
 
 However, we use a variation of Noise called [Post Quantum Noise](https://eprint.iacr.org/2022/539.pdf), from the paper:
 
@@ -139,7 +146,9 @@ The precise Noise protocol descriptor string we use is:
 
 ``Noise_pqXX_Kyber768X25519_ChaChaPoly_BLAKE2s``
 
-However the hybrid KEM Kyber768X25519 is constructed using a security preserving KEM combiner and a NIKE to KEM adapter with semantic security so that the resulting hybrid KEM is IND-CCA2 in QROM.
+However the hybrid KEM Kyber768X25519 is constructed using a security
+preserving KEM combiner and a NIKE to KEM adapter with semantic
+security so that the resulting hybrid KEM is IND-CCA2 in QROM.
 
 Here's a diagram of the pqXX pattern which we use:
 
@@ -153,7 +162,15 @@ sequenceDiagram
 
 ## Sphinx
 
-We use the Sphinx cryptographic packet format and allow it's geometry to be completely configurable to accomodate various networking requirements. Additionally the Sphinx can use any NIKE (non-interactive key exchange). We also developed a novel post quantum variation called KEM Sphinx. KEM (key encapsulation mechanism) Sphinx is twice as fast on the server side as the original NIKE Sphinx because it only requires one public key operation per hop instead of two. However it has the packet header overhead size penalty that grows linearly with the number of hops.
+We use the Sphinx cryptographic packet format and allow it's geometry
+to be completely configurable to accomodate various networking
+requirements. Additionally the Sphinx can use any NIKE
+(non-interactive key exchange). We also developed a novel post quantum
+variation called KEM Sphinx. KEM (key encapsulation mechanism) Sphinx
+is twice as fast on the server side as the original NIKE Sphinx
+because it only requires one public key operation per hop instead of
+two. However it has the packet header overhead size penalty that grows
+linearly with the number of hops.
 
 And here are some Sphinx benchmarks using different KEMs and NIKEs:
 
@@ -174,17 +191,27 @@ We can draw several conclusions from this table of benchmarks:
 
 1. KEM Sphinx is about twice as fast as NIKE Sphinx
 2. Kyber768 is faster than X25519
-3. Kyber768 X25519 Hybrid KEM Sphinx is almost as fast as X25519 NIKE Sphinx
-but probably a lot more secure given that it's a post quantum hybrid construction
-which still uses the classically secure X25519 NIKE.
-4. CTIDH is very slow and we probably don't want to use it for Sphinx. We instead think it very useful for application level encryption.
+3. Kyber768 X25519 Hybrid KEM Sphinx is almost as fast as X25519 NIKE
+   Sphinx but probably a lot more secure given that it's a post quantum
+   hybrid construction which still uses the classically secure X25519
+   NIKE.
+4. CTIDH is very slow and we probably don't want to use it for
+   Sphinx. We instead think it very useful for application level
+   encryption.
 
-Please also note that hybrid KEMs referred to above are constructed using a security preserving KEM combiner and a NIKE to KEM adapter with semantic security so that the resulting hybrid KEM is IND-CCA2 in QROM.
+Please also note that hybrid KEMs referred to above are constructed
+using a security preserving KEM combiner and a NIKE to KEM adapter
+with semantic security so that the resulting hybrid KEM is IND-CCA2 in
+QROM.
 
 ## PKI/Directory Authority
 
-Mix network key management and distribution is handled by the directory authority system, a decentralized voting protocol that can tolerate (1/2 * n)-1 node outages.
-Clients and mix nodes can talk to the dirauth system to get a published PKI document which is essentially a view of the network which contains public cryptographic keys and network connection information.
+Mix network key management and distribution is handled by the
+directory authority system, a decentralized voting protocol that can
+tolerate (1/2 * n)-1 node outages.  Clients and mix nodes can talk to
+the dirauth system to get a published PKI document which is
+essentially a view of the network which contains public cryptographic
+keys and network connection information.
 
 # License
 
