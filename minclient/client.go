@@ -19,6 +19,7 @@ package minclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	mRand "math/rand"
 	"net"
@@ -31,12 +32,16 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"gopkg.in/op/go-logging.v1"
 )
 
 // ClientConfig is a client configuration.
 type ClientConfig struct {
+	// SphinxGeometry is a Sphinx Geometry.
+	SphinxGeometry *geo.Geometry
+
 	// User is the user identifier used to connect to the Provider.
 	User string
 
@@ -56,6 +61,11 @@ type ClientConfig struct {
 
 	// PKIClient is the PKI Document data source.
 	PKIClient cpki.Client
+
+	// CachedDocument is a PKI Document that has a MixDescriptor
+	// containg the Addresses and LinkKeys of minclient's Provider
+	// so that it can connect directly without contacting an Authority.
+	CachedDocument *cpki.Document
 
 	// OnConnFn is the callback function that will be called when the
 	// connection status changes.  The error parameter will be nil on
@@ -108,6 +118,13 @@ type ClientConfig struct {
 }
 
 func (cfg *ClientConfig) validate() error {
+	if cfg.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+	err := cfg.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
 	if cfg.User == "" || len(cfg.User) > wire.MaxAdditionalDataLength {
 		return fmt.Errorf("minclient: invalid User: '%v'", cfg.User)
 	}
@@ -144,7 +161,7 @@ type Client struct {
 	cfg *ClientConfig
 	log *logging.Logger
 
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 	sphinx *sphinx.Sphinx
 
 	rng  *mRand.Rand
@@ -192,8 +209,12 @@ func New(cfg *ClientConfig) (*Client, error) {
 	}
 
 	c := new(Client)
-	c.geo = sphinx.DefaultGeometry()
-	c.sphinx = sphinx.DefaultSphinx()
+	c.geo = cfg.SphinxGeometry
+	var err error
+	c.sphinx, err = sphinx.FromGeometry(cfg.SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
 	c.cfg = cfg
 	c.displayName = fmt.Sprintf("%x@%s", c.cfg.User, c.cfg.Provider)
 	c.log = cfg.LogBackend.GetLogger("minclient:" + c.displayName)
@@ -208,6 +229,9 @@ func New(cfg *ClientConfig) (*Client, error) {
 	c.pki = newPKI(c)
 	c.pki.start()
 	c.conn.start()
-
+	if c.cfg.CachedDocument != nil {
+		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
+		c.conn.onPKIFetch()
+	}
 	return c, nil
 }

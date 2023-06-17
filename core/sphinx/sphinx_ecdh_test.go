@@ -20,40 +20,121 @@ import (
 	"crypto/rand"
 	"testing"
 
-	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEcdhSphinxGeometry(t *testing.T) {
 	t.Parallel()
+	require := require.New(t)
+
 	withSURB := false
-	geo := GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 5)
-	t.Logf("NIKE Sphinx X25519 5 hops: HeaderLength = %d", geo.HeaderLength)
-	geo = GeometryFromUserForwardPayloadLength(ecdhnike.NewEcdhNike(rand.Reader), 512, withSURB, 10)
-	t.Logf("NIKE Sphinx X25519 10 hops: HeaderLength = %d", geo.HeaderLength)
+	g := geo.GeometryFromUserForwardPayloadLength(ecdh.NewEcdhNike(rand.Reader), 512, withSURB, 5)
+	t.Logf("NIKE Sphinx X25519 5 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.GeometryFromUserForwardPayloadLength(ecdh.NewEcdhNike(rand.Reader), 512, withSURB, 10)
+	t.Logf("NIKE Sphinx X25519 10 hops: HeaderLength = %d", g.HeaderLength)
+
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+	withSURB = true
+	payloadLen := 50000
+	g = geo.GeometryFromUserForwardPayloadLength(mynike, payloadLen, withSURB, 5)
+
+	err := g.Validate()
+	require.NoError(err)
+
+	sphinx := NewSphinx(g)
+	nrHops := 5
+	_, path := newNikePathVector(require, mynike, nrHops, true)
+	payload := make([]byte, g.ForwardPayloadLength)
+	pkt, err := sphinx.NewPacket(rand.Reader, path, payload)
+	require.NoError(err)
+
+	t.Logf("packet length %d", len(pkt))
+	t.Logf("geometry packet length %d", g.PacketLength)
+	require.Equal(len(pkt), g.PacketLength)
 }
 
 func TestEcdhForwardSphinx(t *testing.T) {
 	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	mynike := ecdhnike.NewEcdhNike(rand.Reader)
-
-	for nrHops := 5; nrHops < 20; nrHops++ {
-		geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
-		sphinx := NewSphinx(mynike, geo)
-		testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
-	}
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+	nrHops := 20
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
+	sphinx := NewSphinx(g)
+	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
 
 func TestEcdhSURB(t *testing.T) {
 	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
-	mynike := ecdhnike.NewEcdhNike(rand.Reader)
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+	nrHops := 20
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
+	sphinx := NewSphinx(g)
+	testSURB(t, mynike, sphinx, []byte(testPayload))
+}
 
-	for nrHops := 5; nrHops < 20; nrHops++ {
-		geo := GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, nrHops)
-		sphinx := NewSphinx(mynike, geo)
-		testSURB(t, mynike, sphinx, []byte(testPayload))
-	}
+func TestSphinxProductionSimili(t *testing.T) {
+	nrHops := 5
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+
+	r := require.New(t)
+	_, fwdPath := newNikePathVector(r, mynike, nrHops, true)
+	_, revPath := newNikePathVector(r, mynike, nrHops, true)
+
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
+
+	s, err := FromGeometry(g)
+	require.NoError(t, err)
+
+	zeroBytes := make([]byte, g.UserForwardPayloadLength)
+	payload := make([]byte, 2, g.ForwardPayloadLength)
+	payload[0] = 1 // Packet has a SURB.
+
+	surb, _, err := s.NewSURB(rand.Reader, revPath)
+	require.NoError(t, err)
+
+	payload = append(payload, surb...)
+	payload = append(payload, zeroBytes...)
+
+	require.True(t, len(payload) == g.ForwardPayloadLength)
+
+	pkt, err := s.NewPacket(rand.Reader, fwdPath, payload)
+	require.NoError(t, err)
+
+	require.True(t, len(pkt) == g.PacketLength)
+}
+
+func TestSphinxOneHop(t *testing.T) {
+	nrHops := 1
+	mynike := ecdh.NewEcdhNike(rand.Reader)
+
+	r := require.New(t)
+	_, fwdPath := newNikePathVector(r, mynike, nrHops, true)
+	_, revPath := newNikePathVector(r, mynike, nrHops, true)
+
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
+
+	s, err := FromGeometry(g)
+	require.NoError(t, err)
+
+	zeroBytes := make([]byte, g.UserForwardPayloadLength)
+	payload := make([]byte, 2, g.ForwardPayloadLength)
+	payload[0] = 1 // Packet has a SURB.
+
+	surb, _, err := s.NewSURB(rand.Reader, revPath)
+	require.NoError(t, err)
+
+	payload = append(payload, surb...)
+	payload = append(payload, zeroBytes...)
+
+	require.True(t, len(payload) == g.ForwardPayloadLength)
+
+	pkt, err := s.NewPacket(rand.Reader, fwdPath, payload)
+	require.NoError(t, err)
+
+	require.True(t, len(pkt) == g.PacketLength)
 }

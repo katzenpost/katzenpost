@@ -17,10 +17,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"time"
 
+	"github.com/carlmjohnson/versioninfo"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -43,14 +45,22 @@ func main() {
 	var configFile string
 	var service string
 	var count int
+	var timeout int
 	var concurrency int
 	var printDiff bool
 	flag.StringVar(&configFile, "c", "", "configuration file")
 	flag.StringVar(&service, "s", "", "service name")
 	flag.IntVar(&count, "n", 5, "count")
+	flag.IntVar(&timeout, "t", 45, "timeout")
 	flag.IntVar(&concurrency, "C", 1, "concurrency")
 	flag.BoolVar(&printDiff, "printDiff", false, "print payload contents if reply is different than original")
+	version := flag.Bool("v", false, "Get version info.")
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("version is %s\n", versioninfo.Short())
+		return
+	}
 
 	if service == "" {
 		panic("must specify service name with -s")
@@ -66,13 +76,17 @@ func main() {
 	if err != nil {
 		panic(fmt.Errorf("failed to create client: %s", err))
 	}
-	session, err := c.NewTOFUSession()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	session, err := c.NewTOFUSession(ctx)
 	if err != nil {
 		panic(fmt.Errorf("failed to create session: %s", err))
 	}
 
-	session.WaitForDocument()
-
+	err = session.WaitForDocument(ctx)
+	if err != nil {
+		panic(err)
+	}
+	cancel()
 	serviceDesc, err := session.GetService(service)
 	if err != nil {
 		panic(err)

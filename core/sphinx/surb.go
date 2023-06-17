@@ -29,9 +29,7 @@ const (
 	sprpKeyMaterialLength = crypto.SPRPKeyLength + crypto.SPRPIVLength
 )
 
-// NewSURB creates a new SURB with the provided path using the provided entropy
-// source, and returns the SURB and decrypion keys.
-func (s *Sphinx) NewSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
+func (s *Sphinx) newNikeSURB(r io.Reader, path []*PathHop) ([]byte, []byte, error) {
 	// Create a random SPRP key + iv for the recipient to use to encrypt
 	// the payload when using the SURB.
 	var keyPayload [sprpKeyMaterialLength]byte

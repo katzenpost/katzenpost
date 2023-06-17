@@ -31,15 +31,23 @@ import (
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
+)
+
+var sphinxGeometry = geo.GeometryFromUserForwardPayloadLength(
+	ecdh.NewEcdhNike(rand.Reader),
+	2000,
+	true,
+	5,
 )
 
 func TestVote(t *testing.T) {
@@ -268,7 +276,7 @@ func TestVote(t *testing.T) {
 		require.NotNil(myVote)
 		raw, err := myVote.MarshalBinary()
 		require.NoError(err)
-		_, err = pki.VerifyAndParseDocument(raw, s.getVerifiers())
+		_, err = pki.ParseDocument(raw)
 		require.NoError(err)
 		s.state = stateAcceptVote
 		for j, a := range stateAuthority {
@@ -360,6 +368,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 	peersMap := make(map[[sign.PublicKeyHashSize]byte]*config.Authority)
 	for i := 0; i < numAuthorities; i++ {
 		cfg := new(config.Config)
+		cfg.SphinxGeometry = sphinxGeometry
 		cfg.Logging = &config.Logging{Disable: false, File: "", Level: "DEBUG"}
 		cfg.Parameters = parameters
 
@@ -417,6 +426,8 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	const serverLogFile = ""
 
 	cfg := new(sConfig.Config)
+
+	cfg.SphinxGeometry = sphinxGeometry
 
 	// Server section.
 	cfg.Server = new(sConfig.Server)
@@ -506,6 +517,8 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 
 	cfg := new(sConfig.Config)
 
+	cfg.SphinxGeometry = sphinxGeometry
+
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = name
@@ -574,11 +587,15 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 }
 
 // create epoch keys
-func genMixKeys(votingEpoch uint64) map[uint64]*ecdh.PublicKey {
-	mixKeys := make(map[uint64]*ecdh.PublicKey)
+func genMixKeys(votingEpoch uint64) map[uint64][]byte {
+	mixKeys := make(map[uint64][]byte)
 	for i := votingEpoch; i < votingEpoch+2; i++ {
-		idKey, _ := ecdh.NewKeypair(rand.Reader)
-		mixKeys[i] = idKey.PublicKey()
+		pubkey, _, err := ecdh.EcdhScheme.GenerateKeyPairFromEntropy(rand.Reader)
+		if err != nil {
+			panic(err)
+		}
+
+		mixKeys[i] = pubkey.Bytes()
 	}
 	return mixKeys
 }
