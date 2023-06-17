@@ -163,7 +163,9 @@ func (pkt *Packet) Dispose() {
 func (pkt *Packet) copyToRaw(b []byte) error {
 	if len(b) != pkt.Geometry.PacketLength {
 		// TODO: When we have actual large packets, handle them.
-		return fmt.Errorf("invalid Sphinx packet size: %v", len(b))
+		errInfo := fmt.Sprintf("My Sphinx Geometry: %s\n%s\n", pkt.Geometry.String(),
+			pkt.Geometry.Display())
+		return fmt.Errorf("invalid Sphinx packet size: %v\n%s", len(b), errInfo)
 	}
 
 	// The common case of standard packet sizes uses a pool allocator
