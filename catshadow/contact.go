@@ -23,18 +23,19 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
+
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolClient "github.com/katzenpost/katzenpost/memspool/client"
 )
 
 var nikeScheme nike.Scheme
 
 func init() {
-	nikeScheme = hybrid.NOBS_CSIDHX25519
+	nikeScheme = hybrid.NOBS_CSIDH512X25519
 }
 
 type contactExchange struct {
