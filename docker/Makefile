@@ -199,7 +199,7 @@ clean-image-%:
 	-rm -fv $(patsubst clean-image-%,%,$@).stamp
 
 clean-bin: stop
-	rm -vf $(net_name)/*.$(distro)
+	rm -vf ./$(net_name)/*.$(distro)
 
 clean-local: clean-bin
 	git clean -f -x $(net_name)
