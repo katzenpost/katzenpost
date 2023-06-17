@@ -82,5 +82,8 @@ func main() {
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()
 	server.Wait()
-	os.Remove(socketFile)
+	err = os.Remove(socketFile)
+	if err != nil {
+		panic(err)
+	}
 }
