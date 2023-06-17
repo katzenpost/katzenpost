@@ -4,13 +4,16 @@
 
 ![build badge](https://github.com/katzenpost/katzenpost/actions/workflows/go.yml/badge.svg?branch=main)
 
-We are all under more surveillance today than nearly all of human history.
-
-Katzenpost software project would like to help people communicate more freely. There are many types of surveillance today and Katzenpost is designed to help with a type of surveillance known as traffic analysis. Traffic analysis typically refers to the statistical analysis of encrypted traffic. Much information can be gleaned by analyzing encrypted traffic because our network protocols leak lots of information such as source and destination IP addresses, message size, message sequence, message delay pattern, geographical locations, social graph etc.
-
 Katzenpost is a software project dedicated to designing and implementing
 mix network protocols. A mix network is a type of anonymous communication network.
-What is an anonymous communication network? It's a traffic analysis resistant network; that is, it's protocols are designed to resist statistical analysis by passive global adversaries. We also have some defenses against active adversaries as well.
+What is an anonymous communication network? It's a traffic analysis resistant network; that is, it's protocols are designed to resist statistical analysis by passive global adversaries.
+
+Traffic analysis typically refers to the statistical analysis of encrypted traffic. Traffic analysis is worth defending against given that common network protocols leak lots of information such as source and destination IP addresses, message size, message sequence, message delay pattern, geographical locations, social graph etc. Mere end to end encryption alone cannot protect against this type of information leakage.
+
+It is common for journalists, activists and other people in high risk situations
+to use WhatsApp, Signal, Wire, Telegram, etc. We think this is bad advice and
+instead these encrypted messaging applications should choose to use a mix network
+to anonymize their traffic.
 
 We build anonymous protocols so that everyone can communicate more freely
 in this age of pervasive surveillance.
@@ -29,12 +32,31 @@ that routes messages over the Internet. Can use either TCP or QUIC.
 
 # Project Status
 
-**A status update is forthcoming!**
+Many excited new changes are forthcoming!
+You can watch our progress being tracked, here:
 
+https://github.com/orgs/katzenpost/projects/6/views/5
+
+
+There are essentially two types of interaction with a Katzenpost mixnet:
+1. clients talk to mixnet services and their traffic stays in the mixnet
+2. clients talk to Internet services; proxying through the mixnet onto the Internet.
+
+**Katzenpost architecture diagram**
 ![Katzenpost architecture diagram](diagrams/katzenpost_architecture.png)
 
+# Client:
 
-# Easy One Step BUILD
+Currently, [Katzen](https://github.com/katzenpost/katzen) is the only client available for use with Katzenpost. However a SOCKS proxy client is forthcoming
+and you'll be able to use that with many existing applications.
+
+# Server Side: Easy One Step BUILD
+
+This builds 3 binaries:
+
+* mix server
+* dirauth server
+* mixnet ping CLI command
 
 All you have to do is type:
 
@@ -48,14 +70,7 @@ For Docker users, you can use:
 make docker
 ```
 
-This builds 3 binaries:
-
-* mix server
-* dirauth server
-* mixnet ping CLI command
-
-
-# Usage And Configuration
+# Server Side Usage/Configuration
 
 Our docker configuration is the most comprehensive and up to date place to learn about how to configure a Katzenpost mix network. Run the makefile in the docker directory to get a usage menu:
 
@@ -100,8 +115,7 @@ Our documentation is in progress, but we have some resources for experts:
 
 ## Wire protocol based on Noise
 
-Our "wire" protocol, the protocol that sits on top of either TCP or QUIC,
-is a cryptographic protocol based on Noise:
+Every component in a Katzenpost mix network uses our "wire" protocol, the protocol that sits on top of either TCP or QUIC, is a cryptographic protocol based on Noise:
 
 [The Noise Protocol Framework](https://noiseprotocol.org/)
 
@@ -141,8 +155,40 @@ sequenceDiagram
 
 We use the Sphinx cryptographic packet format and allow it's geometry to be completely configurable to accomodate various networking requirements. Additionally the Sphinx can use any NIKE (non-interactive key exchange). We also developed a novel post quantum variation called KEM Sphinx. KEM (key encapsulation mechanism) Sphinx is twice as fast on the server side as the original NIKE Sphinx because it only requires one public key operation per hop instead of two. However it has the packet header overhead size penalty that grows linearly with the number of hops.
 
-Mix network key management and distribution is handled by the directory authority system, a decentralized voting protocol that can tolerate (1/2 * n)-1 node outages.
+And here are some Sphinx benchmarks using different KEMs and NIKEs:
 
+| Primitive | Sphinx type | nanoseconds/op | seconds/op |
+| :---      |  :---:      |     ---:       | ---:       |
+| X25519 | KEM | 80093 | 8.009×10−5 |
+| X25519 | NIKE | 160233 | 0.000160233 |
+| Kyber512 | KEM | 43758 | 4.3758e-5 |
+| Kyber768 | KEM | 57049 | 5.7049e-5 |
+| Kyber1024 | KEM | 72173 | 7.2173e-5 |
+| Kyber768 X25519 Hybrid | KEM | 87816 | 8.7816e-5 |
+| CTIDH512 | NIKE | 336995975 | 0.336995975 |
+| CTIDH1024 | NIKE | 18599579037 | 18.599579037 |
+| CTIDH2048 | NIKE | 17056742100 | 17.0567421 |
+| CTIDH1024 | KEM | 11408217346 | 11.408217346 |
+
+We can draw several conclusions from this table of benchmarks:
+
+1. KEM Sphinx is about twice as fast as NIKE Sphinx
+2. Kyber768 is faster than X25519
+3. Kyber768 X25519 Hybrid KEM Sphinx is almost as fast as X25519 NIKE Sphinx
+but probably a lot more secure given that it's a post quantum hybrid construction
+which still uses the classically secure X25519 NIKE.
+4. CTIDH is very slow and we probably don't want to use it for Sphinx. We instead think it very useful for application level encryption.
+
+Please also note that hybrid KEMs referred to above are constructed using a security preserving KEM combiner and a NIKE to KEM adapter with semantic security so that the resulting hybrid KEM is IND-CCA2 in QROM.
+
+## PKI/Directory Authority
+
+Mix network key management and distribution is handled by the directory authority system, a decentralized voting protocol that can tolerate (1/2 * n)-1 node outages.
+Clients and mix nodes can talk to the dirauth system to get a published PKI document which is essentially a view of the network which contains public cryptographic keys and network connection information.
+
+# License
+
+GPLv3
 
 # Donations
 
@@ -151,14 +197,15 @@ Your donations are welcomed and can be made through Open Collective [here.](http
 
 # Supported By
 
+[![NGI](https://katzenpost.mixnetworks.org/_static/images/eu-flag-tiny.jpg)](https://www.ngi.eu/about/)
+<a href="https://nlnet.nl"><img src="https://nlnet.nl/logo/banner.svg" width="160" alt="NLnet Foundation"/></a>
+<a href="https://nlnet.nl/assure"><img src="https://nlnet.nl/image/logos/NGIAssure_tag.svg" width="160" alt="NGI Assure"/></a>
+<a href="https://nlnet.nl/NGI0"><img src="https://nlnet.nl/image/logos/NGI0PET_tag.svg" width="160" alt="NGI Zero PET"/></a>
+
 This project has received funding from:
 
 * European Union’s Horizon 2020 research and innovation programme under the Grant Agreement No 653497, Privacy and Accountability in Networks via Optimized Randomized Mix-nets (Panoramix).
-
-
-![tiny eu flag](https://katzenpost.mixnetworks.org/_static/images/eu-flag-tiny.jpg)
-
-* The Samsung Next Stack Zero grant
-* NLnet and the NGI0 PET Fund paid for by the European Commission
-
+* The Samsung Next Stack Zero grant.
+* NGI0 PET Fund, a fund established by NLnet with financial support from the European Commission's Next Generation Internet programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 825310.
+* NGI Assure Fund, a fund established by NLnet with financial support from the European Commission's Next Generation Internet programme, under the aegis of DG Communications Networks, Content and Technology under grant agreement No 957073.
 
