@@ -20,9 +20,14 @@
 package sphinx
 
 import (
+	"crypto/rand"
 	"testing"
 
-	ctidhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ctidh"
+	ecdhnike "github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/hybrid"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
@@ -31,26 +36,43 @@ func TestHybridCtidhForwardSphinx(t *testing.T) {
 	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	mynike := hybrid.CTIDHX25519
+	mynike := hybrid.CTIDH1024X25519
 	g := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
 
 	t.Logf("NIKE: %s", g.NIKEName)
 	t.Logf("KEM: %s", g.KEMName)
 
-	sphinx := NewSphinx(g)
+	sphinx := NewNIKESphinx(mynike, g)
 
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
+}
+
+func TestSphinxConstruction(t *testing.T) {
+	var mynike nike.Scheme
+	mynike = ecdhnike.NewEcdhNike(rand.Reader)
+	g := geo.GeometryFromUserForwardPayloadLength(mynike, 12345, false, 5)
+	t.Logf("NIKEName %s", g.NIKEName)
+	sphinx := NewSphinx(g)
+	require.NotNil(t, sphinx.nike)
+
+	/* XXX this code panics if CTIDH1024Scheme isn't included in the
+	   NIKE Scheme map in the nike/schemes module.
+
+			mynike = ctidh.CTIDH1024Scheme
+			g = geo.GeometryFromUserForwardPayloadLength(mynike, 12345, false, 5)
+			t.Logf("NIKEName %s", g.NIKEName)
+			sphinx = NewSphinx(g)
+			require.NotNil(t, sphinx.nike)
+	*/
 }
 
 func TestCtidhForwardSphinx(t *testing.T) {
 	t.Parallel()
 	const testPayload = "It is the stillest words that bring on the storm.  Thoughts that come on doves’ feet guide the world."
 
-	mynike := ctidhnike.CTIDHScheme
+	mynike := ctidh.CTIDH1024Scheme
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(geo)
-	sphinx.nike = mynike // XXX fixes sphinx, currently schemes.ByName doesn't
-	// return CTIDH NIKE because it's guarded by the ctidh build tag for now.
+	sphinx := NewNIKESphinx(mynike, geo)
 
 	testForwardSphinx(t, mynike, sphinx, []byte(testPayload))
 }
@@ -59,11 +81,9 @@ func TestCtidhSURB(t *testing.T) {
 	t.Parallel()
 	const testPayload = "The smallest minority on earth is the individual.  Those who deny individual rights cannot claim to be defenders of minorities."
 
-	mynike := ctidhnike.CTIDHScheme
+	mynike := ctidh.CTIDH1024Scheme
 	geo := geo.GeometryFromUserForwardPayloadLength(mynike, len(testPayload), false, 5)
-	sphinx := NewSphinx(geo)
-	sphinx.nike = mynike // XXX fixes sphinx, currently schemes.ByName doesn't
-	// return CTIDH NIKE because it's guarded by the ctidh build tag for now.
+	sphinx := NewNIKESphinx(mynike, geo)
 
 	testSURB(t, mynike, sphinx, []byte(testPayload))
 }
@@ -71,8 +91,8 @@ func TestCtidhSURB(t *testing.T) {
 func TestCTIDHSphinxGeometry(t *testing.T) {
 	t.Parallel()
 	withSURB := false
-	g := geo.GeometryFromUserForwardPayloadLength(ctidhnike.CTIDHScheme, 512, withSURB, 5)
+	g := geo.GeometryFromUserForwardPayloadLength(ctidh.CTIDH1024Scheme, 512, withSURB, 5)
 	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)
-	g = geo.GeometryFromUserForwardPayloadLength(ctidhnike.CTIDHScheme, 512, withSURB, 10)
-	t.Logf("NIKE Sphinx CTIDH 5 hops: HeaderLength = %d", g.HeaderLength)
+	g = geo.GeometryFromUserForwardPayloadLength(ctidh.CTIDH1024Scheme, 512, withSURB, 10)
+	t.Logf("NIKE Sphinx CTIDH 10 hops: HeaderLength = %d", g.HeaderLength)
 }

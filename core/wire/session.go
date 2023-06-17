@@ -184,6 +184,7 @@ func (s *Session) handshake() error {
 	defer handshake.Reset()
 	var (
 		prologueLen = 1
+		keyLen      = nyquist.SymmetricKeySize
 
 		// client
 		// -> (prologue), e
@@ -191,15 +192,15 @@ func (s *Session) handshake() error {
 
 		// server
 		// -> ekem, s, (auth)
-		msg2Len = 2368 + authLen
+		msg2Len = s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + keyLen + authLen
 
 		// client
 		// -> skem, s, (auth)
-		msg3Len = 2384 + authLen
+		msg3Len = s.protocol.KEM.PublicKeySize() + s.protocol.KEM.CiphertextSize() + keyLen + macLen + authLen
 
 		// server
 		// -> skem
-		msg4Len = 1152
+		msg4Len = s.protocol.KEM.CiphertextSize() + keyLen
 	)
 
 	if s.isInitiator {
