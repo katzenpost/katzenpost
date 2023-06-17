@@ -1424,7 +1424,7 @@ func (c *Client) Online(ctx context.Context) error {
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
 func (c *Client) goOnline(ctx context.Context) error {
 	c.connMutex.RLock()
-	if c.online || c.connecting || c.session != nil {
+	if c.connected == StateOnline || c.connected == StateConnecting || c.session != nil {
 		c.connMutex.RUnlock()
 		return errors.New("Already Connected")
 	}
