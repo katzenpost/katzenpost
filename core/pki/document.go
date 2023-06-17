@@ -313,9 +313,6 @@ var (
 	// a name server lookup.
 	TransportTCP Transport = "tcp"
 
-	// TransportWS is Websocket
-	TransportWS Transport = "ws"
-
 	// TransportTCPv4 is TCP over IPv4.
 	TransportTCPv4 Transport = "tcp4"
 
@@ -332,7 +329,7 @@ var (
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC, TransportWS}
+	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC}
 )
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
