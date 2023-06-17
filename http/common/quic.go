@@ -164,12 +164,9 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			NextProtos: []string{http3.NextProtoH3},
 		}
 
-		// XXX if an UpstreamProxy is specified, this dial function will fail,
-		// which is what we want
-
-		// TODO: Write SOCKS5 Dialer that wraps quic.Dial
-		// TODO: choose a socks5 client library that supports socks5 UDP Associate
-		// TODO: support QUIC Datagram HTTP Connect proxy dialers
+		// if UpstreamProxy is specified, dialFn fails because we don't support proxying UDP
+		// investigate adding UpstreamProxy support for QUIC transport
+		// https://github.com/katzenpost/katzenpost/issues/326
 		_, err = dialFn(ctx, "udp", u.Host)
 		if err != nil {
 			return nil, err
