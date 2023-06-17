@@ -306,7 +306,7 @@ func IsDescriptorWellFormed(d *MixDescriptor, epoch uint64) error {
 				return err
 			}
 			switch Transport(u.Scheme) {
-			case TransportWS,TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
+			case TransportTCP, TransportTCPv4, TransportTCPv6, TransportQUIC:
 			default:
 				return fmt.Errorf("Unsupported listener scheme '%v': %v", v, u.Scheme)
 			}
