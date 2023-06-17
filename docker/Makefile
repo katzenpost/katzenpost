@@ -10,6 +10,7 @@ help:
 	@echo " status             - show testnet consensus status"
 	@echo " show-latest-vote   - does what it says"
 	@echo " run-ping           - send a ping over the testnet"
+	@echo " clean-bin          - stop, and delete compiled binaries"
 	@echo " clean-local        - stop, and delete data and binaries"
 	@echo " clean-local-dryrun - show what clean-local would delete"
 	@echo " clean              - the above, plus cleans includes go_deps images"
@@ -197,7 +198,10 @@ clean-image-%:
 	-$(docker) rmi $(patsubst clean-image-%,katzenpost-%,$@)
 	-rm -fv $(patsubst clean-image-%,%,$@).stamp
 
-clean-local: stop
+clean-bin: stop
+	rm -vf $(net_name)/*.$(distro)
+
+clean-local: clean-bin
 	git clean -f -x $(net_name)
 	git status .
 
