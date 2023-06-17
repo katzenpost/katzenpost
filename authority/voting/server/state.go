@@ -341,6 +341,10 @@ func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pk
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
 func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
+	if s.TryLock() {
+		panic("write lock not held in getCertificate(epoch)")
+	}
+
 	mixes, params, err := s.tallyVotes(epoch)
 	if err != nil {
 		s.log.Warningf("No document for epoch %v, aborting!, %v", epoch, err)
@@ -382,6 +386,10 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 
 // getConsensus computes the final document using the computed SharedRandomValue
 func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
+	if s.TryLock() {
+		panic("write lock not held in getMyConsensus(epoch)")
+	}
+
 	certificates, ok := s.certificates[epoch]
 	if !ok {
 		return nil, fmt.Errorf("No certificates for epoch %d", epoch)
@@ -430,7 +438,11 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 
 // getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
-	// range over the certifcates we have collected and see if we can collect enough signatures to make a consensus
+	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
+	if s.TryLock() {
+		panic("write lock not held in getThresholdConsensus(epoch)")
+	}
+
 	ourConsensus, ok := s.myconsensus[epoch]
 	if !ok {
 		return nil, fmt.Errorf("We have no view of consensus!")
