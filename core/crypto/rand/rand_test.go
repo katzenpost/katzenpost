@@ -29,7 +29,9 @@ import (
 func ensureHighEntropy(b []byte) error {
 	var zipBuf bytes.Buffer
 	zipper := zlib.NewWriter(&zipBuf)
-	zipper.Write(b)
+	if _, err := zipper.Write(b); err != nil {
+		return err
+	}
 	zipper.Close()
 
 	errorThresh := int(float32(len(b)) * 0.95)
@@ -50,7 +52,10 @@ func tryRandomRead(n int) error {
 	}
 
 	bCmp := make([]byte, n)
-	io.ReadFull(Reader, bCmp)
+	_, err = io.ReadFull(Reader, bCmp)
+	if err != nil {
+		return err
+	}
 	if bytes.Equal(b, bCmp) {
 		return fmt.Errorf("repeated calls produced identical output")
 	}

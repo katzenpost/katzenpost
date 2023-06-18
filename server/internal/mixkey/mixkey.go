@@ -197,7 +197,9 @@ func testAndSetTagDB(bkt *bolt.Bucket, tag []byte) bool {
 	// Write the (potentially incremented) counter.
 	var seenBytes [8]byte
 	binary.LittleEndian.PutUint64(seenBytes[:], seenCount)
-	bkt.Put(tag, seenBytes[:])
+	if err := bkt.Put(tag, seenBytes[:]); err != nil {
+		panic(err)
+	}
 	return seenCount != 1
 }
 
@@ -295,7 +297,9 @@ func (k *MixKey) forceClose() {
 		k.Halt()
 
 		// Force the DB to disk, and close.
-		k.db.Sync()
+		if err := k.db.Sync(); err != nil {
+			panic(err)
+		}
 		k.db.Close()
 		k.db = nil
 
@@ -308,7 +312,12 @@ func (k *MixKey) forceClose() {
 			// given how many levels of indirection there are to files vs
 			// the raw physical media, and the cleanup process being slightly
 			// race prone around epoch transitions.  Use FDE.
-			os.Remove(f)
+			if err := os.Remove(f); err != nil {
+				panic(err)
+			}
+			// people might also complain that os.Remove() is a
+			// no-op without a following sync on the containing
+			// directory. They'd be right to do so.
 		}
 	}
 
@@ -409,12 +418,10 @@ func New(dataDir string, epoch uint64, g *geo.Geometry) (*MixKey, error) {
 			}
 
 			// Rebuild the bloom filter.
-			replayBkt.ForEach(func(tag, rawCount []byte) error {
+			return replayBkt.ForEach(func(tag, rawCount []byte) error {
 				k.f.TestAndSet(tag)
 				return nil
 			})
-
-			return nil
 		}
 
 		// If control reaches here, then a new key needs to be created.
@@ -442,18 +449,25 @@ func New(dataDir string, epoch uint64, g *geo.Geometry) (*MixKey, error) {
 		binary.LittleEndian.PutUint64(epochBytes[:], epoch)
 
 		// Stash the version/key/epoch in the metadata bucket.
-		bkt.Put([]byte(versionKey), []byte{0})
-		bkt.Put([]byte(pkKey), keypairBytes)
-		bkt.Put([]byte(epochKey), epochBytes[:])
-
-		return nil
+		err = bkt.Put([]byte(versionKey), []byte{0})
+		if err != nil {
+			return err
+		}
+		err = bkt.Put([]byte(pkKey), keypairBytes)
+		if err != nil {
+			return err
+		}
+		return bkt.Put([]byte(epochKey), epochBytes[:])
 	}); err != nil {
 		k.db.Close()
 		return nil, err
 	}
 	if didCreate {
 		// Flush the newly created database to disk.
-		k.db.Sync()
+		err = k.db.Sync()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	k.Go(k.worker)

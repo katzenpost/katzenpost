@@ -35,6 +35,7 @@ func BenchmarkBasicTwoClientExchange(b *testing.B) {
 
 	sharedEpochKey1 := [SharedEpochKeySize]byte{}
 	_, err = rand.Reader.Read(sharedEpochKey1[:])
+	require.NoError(err)
 	sharedEpochKey2 := [SharedEpochKeySize]byte{}
 	copy(sharedEpochKey2[:], sharedEpochKey1[:])
 
@@ -184,6 +185,7 @@ func createMultiClientBenchmarkData(b *testing.B, n int) *testData {
 		candidateKey, err := tests.sessions[0].GetCandidateKey(state.t2, beta2PubKey)
 		require.NoError(err)
 		_, err = DecryptT1Beta(candidateKey, state.beta)
+		require.NoError(err)
 	}
 	return &tests
 }
@@ -212,6 +214,7 @@ func BenchmarkPhases(b *testing.B) {
 				candidateKey, err := tests.sessions[0].GetCandidateKey(state.t2, beta2PubKey)
 				require.NoError(err)
 				_, err = DecryptT1Beta(candidateKey, state.beta)
+				require.NoError(err)
 				_, err = tests.sessions[0].ComposeType3Message(beta2PubKey)
 				require.NoError(err)
 			}
