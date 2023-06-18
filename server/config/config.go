@@ -89,6 +89,10 @@ type Server struct {
 	// and do NOT send any of the Addresses.
 	OnlyAdvertiseAddresses []string
 
+	// AllowedTransports is the type of Transport to use for outgoing connections.
+	// If empty, all supported transport types will be used.
+	AllowedTransports []pki.Transport
+
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
 
@@ -120,10 +124,22 @@ func (sCfg *Server) validate() error {
 
 		sCfg.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
 	}
-
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
+	if sCfg.AllowedTransports != nil {
+		// validate each transport string
+		for _, cfgTransport := range sCfg.AllowedTransports {
+			valid := false
+			for _, pkiTransport := range pki.InternalTransports {
+				if cfgTransport == pkiTransport {
+					valid = true
+				}
+			}
+			if !valid {
+				return fmt.Errorf("Invalid AllowedTransport %s specified", cfgTransport)
+			}
+		}
+	} else {
+		// allow all transports
+		sCfg.AllowedTransports = pki.InternalTransports
 	}
 
 	if !filepath.IsAbs(sCfg.DataDir) {
@@ -514,11 +530,6 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
-	}
-
 	if pCfg.SQLDB != nil {
 		if err := pCfg.SQLDB.validate(); err != nil {
 			return err

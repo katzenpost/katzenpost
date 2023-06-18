@@ -181,3 +181,65 @@ PublicKeyPem = "auth_id_pub_key.pem"
 	require.EqualError(err, "config: Server: Identifier is not set")
 
 }
+
+func TestAllowedTransports(t *testing.T) {
+	require := require.New(t)
+
+	_, err := Load(nil)
+	require.Error(err, "no Load() with nil config")
+	require.EqualError(err, "No nil buffer as config file")
+
+	basicConfig := `# A basic configuration example.
+[SphinxGeometry]
+  PacketLength = 3082
+  NrHops = 5
+  HeaderLength = 476
+  RoutingInfoLength = 410
+  PerHopRoutingInfoLength = 82
+  SURBLength = 572
+  SphinxPlaintextHeaderLength = 2
+  PayloadTagLength = 32
+  ForwardPayloadLength = 2574
+  UserForwardPayloadLength = 2000
+  SURBIDLength = 16
+  RecipientIDLength = 32
+  NodeIDLength = 32
+  NextNodeHopLength = 65
+  SPRPKeyMaterialLength = 64
+  NIKEName = "x25519"
+  KEMName = ""
+
+[server]
+Identifier = "katzenpost.example.com"
+Addresses = [ "tcp4://127.0.0.1:29483", "tcp6://[::1]:29483" ]
+OnlyAdvertiseAddresses = [ "http://127.0.0.1:443", "tcp://[::1]:22" ]
+AllowedTransports = [ "quic", "tcp4" ]
+DataDir = "%s"
+IsProvider = true
+
+[Provider]
+  [[Provider.Kaetzchen]]
+    Capability = "echo"
+    Endpoint = "+echo"
+  [[Provider.Kaetzchen]]
+    Capability = "meow"
+	Endpoint = "+meow"
+	Config = { Locale = "ja_JP", Meow = "Nyan", NumMeows = 3 }
+
+[Logging]
+Level = "DEBUG"
+
+[PKI]
+[PKI.Nonvoting]
+Address = "tcp://127.0.0.1:6999"
+PublicKeyPem = "id_pub_key.pem"
+`
+
+	config := fmt.Sprintf(basicConfig, os.TempDir())
+
+	cfg, err := Load([]byte(config))
+	require.NoError(err, "Load() with basic config")
+
+	_, err = json.Marshal(cfg)
+	require.NoError(err)
+}
