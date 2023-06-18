@@ -40,6 +40,7 @@ func TestMessageTypeT1Decoding(t *testing.T) {
 	t1j := [Type1MessageSize - 1]byte{}
 	alpha, beta, gamma, err = DecodeT1Message(t1j[:])
 	require.Error(err)
+	_, _, _ = alpha, beta, gamma
 
 	memguard.Purge()
 }
