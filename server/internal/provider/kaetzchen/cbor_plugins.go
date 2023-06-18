@@ -124,10 +124,10 @@ func (k *CBORPluginWorker) haltAllClients() {
 
 func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin.Client) {
 	defer pkt.Dispose()
-
+	pluginCap := pluginClient.Capability()
 	payload, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
-		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		k.log.Debugf("%v: Dropping Kaetzchen request: %v (%v)", pluginCap, pkt.ID, err)
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
@@ -142,8 +142,8 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	case *cborplugin.Response:
 		if len(r.Payload) > k.geo.UserForwardPayloadLength {
 			// response is probably invalid, so drop it
-			k.log.Errorf("Got response too long: %d > max (%d)",
-				len(r.Payload), k.geo.UserForwardPayloadLength)
+			k.log.Errorf("%v: Got response too long: %d > max (%d)",
+				pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
 			instrument.KaetzchenRequestsDropped(1)
 			return
 		}
@@ -151,18 +151,18 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		if surb != nil {
 			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload, k.glue.Config().SphinxGeometry)
 			if err != nil {
-				k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
+				k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, pkt.ID, err)
 				return
 			}
 
-			k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
+			k.log.Debugf("%v: Handing off newly generated SURB-Reply: %v (Src:%v)", pluginCap, respPkt.ID, pkt.ID)
 			k.glue.Scheduler().OnPacket(respPkt)
 			return
 		}
 		k.log.Debugf("No SURB provided: %v", pkt.ID)
 	default:
 		// received some unknown command type
-		k.log.Errorf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, cborResponse)
+		k.log.Errorf("%v: Failed to handle Kaetzchen request: %v (%v), response: %s", pluginCap, pkt.ID, err, cborResponse)
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
