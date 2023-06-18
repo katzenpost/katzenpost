@@ -294,7 +294,7 @@ func New(f string, opts ...BoltUserDBOption) (userdb.UserDB, error) {
 		// The struct isn't getting returned so clean up the database.
 		err2 := d.db.Close()
 		if err2 != nil {
-			return nil,fmt.Errorf("when closing db after %v: %v", err, err2)
+			return nil, fmt.Errorf("when closing db after %v: %v", err, err2)
 		}
 		return nil, err
 	}
