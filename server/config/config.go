@@ -607,14 +607,14 @@ func (pCfg *PKI) validate(datadir string) error {
 			return err
 		}
 		nrCfg++
-	} else {
+	} else if pCfg.Voting != nil {
 		if err := pCfg.Voting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
 	}
 	if nrCfg != 1 {
-		return fmt.Errorf("config: Only one authority backend should be configured, got: %v", nrCfg)
+		return fmt.Errorf("config: Exactly one authority backend should be configured, got: %v", nrCfg)
 	}
 	return nil
 }

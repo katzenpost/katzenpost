@@ -273,8 +273,7 @@ func (s *state) fsm() <-chan time.Time {
 func (s *state) persistDocument(epoch uint64, doc []byte) {
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(documentsBucket))
-		bkt.Put(epochToBytes(epoch), doc)
-		return nil
+		return bkt.Put(epochToBytes(epoch), doc)
 	}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.fatalErrCh <- err
@@ -1572,8 +1571,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		if err != nil {
 			return err
 		}
-		eBkt.Put(pk[:], rawDesc)
-		return nil
+		return eBkt.Put(pk[:], rawDesc)
 	}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.fatalErrCh <- err
@@ -1721,9 +1719,7 @@ func (s *state) restorePersistence() error {
 		}
 
 		// We created a new database, so populate the new `metadata` bucket.
-		bkt.Put([]byte(versionKey), []byte{0})
-
-		return nil
+		return bkt.Put([]byte(versionKey), []byte{0})
 	})
 }
 
