@@ -83,6 +83,15 @@ func (w *uniqAddr) String() string {
 	return w.r
 }
 
+type wc struct {
+}
+func (w *wc) Write(buf []byte) (int, error) {
+	return os.Stdout.Write(buf)
+}
+func (w *wc) Close() error {
+	return nil
+}
+
 // NewQUICProxyConn returns a
 func NewQUICProxyConn(id []byte) *QUICProxyConn {
 	return &QUICProxyConn{
@@ -91,10 +100,9 @@ func NewQUICProxyConn(id []byte) *QUICProxyConn {
 		outgoing: make(chan *pkt, 1000),
 		qcfg: &quic.Config{
 			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
-				return qlog.NewConnectionTracer(os.Stdout, p, connID)
+				return qlog.NewConnectionTracer(&wc{}, p, connID)
 			},
 		},
-		//tlsConf: common.GenerateTLSConfig(),
 	}
 }
 
