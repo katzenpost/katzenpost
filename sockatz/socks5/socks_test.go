@@ -444,7 +444,9 @@ func TestRequestUDPAssociate(t *testing.T) {
 	// Test that the UDP socket returned is correct by
 	// writing/reading data
 	payload := make([]byte, 420)
-	io.ReadFull(rand.Reader, payload)
+	if err := io.ReadFull(rand.Reader, payload); err != nil {
+		t.Error(err)
+	}
 
 	addr := fmt.Sprintf("%s:%d", ip.String(), port)
 	t.Log("Dialing", addr)
