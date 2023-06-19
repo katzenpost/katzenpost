@@ -226,7 +226,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			}
 			pkt := make([]byte, payloadLen)
 			c.log.Debugf("ReadPacket")
-			n, addr, err := k.ReadPacket(pkt)
+			n, _, err := k.ReadPacket(pkt)
 			if err != nil && err != common.ErrNoPacket {
 				// handle unexpected error
 				c.log.Error("ReadPacket failure: %v", err)
