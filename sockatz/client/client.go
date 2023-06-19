@@ -227,17 +227,13 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			pkt := make([]byte, payloadLen)
 			c.log.Debugf("ReadPacket")
 			n, _, err := k.ReadPacket(pkt)
-			if err != nil && err != common.ErrNoPacket {
+			if err != nil {
 				// handle unexpected error
 				c.log.Error("ReadPacket failure: %v", err)
 				errCh <- err
 				return
 			}
 			c.log.Debugf("Got Packet len %d", n)
-
-			if err == common.ErrNoPacket {
-				c.log.Error("ReadPacket empty response")
-			}
 
 			// wrap packet in a kaetzchen request
 			serialized, err := (&server.ProxyCommand{ID: id, Payload: pkt[:n]}).Marshal()

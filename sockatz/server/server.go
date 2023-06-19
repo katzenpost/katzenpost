@@ -434,16 +434,9 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	// read packet from transport
 	buf := make([]byte, len(payload))
 	n, addr, err := s.Transport.ReadPacket(buf)
-	if err == common.ErrNoPacket {
-		// no payload to return with response
-		return buf[:0], nil
-	}
-	if err != nil && err != common.ErrNoPacket {
+	if err != nil {
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
-	}
-	if err == common.ErrNoPacket {
-		s.s.log.Error("ReadPacket ErrNoPacket")
 	}
 	s.s.log.Debugf("got %d bytes to %v", n, addr)
 	return buf[:n], nil
