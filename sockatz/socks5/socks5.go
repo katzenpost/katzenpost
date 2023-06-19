@@ -185,6 +185,7 @@ func (req *Request) Reply(code ReplyCode) error {
 	//  uint16_t bnd_port
 
 	var err error
+	var err_in_outer_scope error
 	var resp [4 + 16 + 2]byte
 	resp[0] = version
 	resp[1] = byte(code)
@@ -227,13 +228,13 @@ func (req *Request) Reply(code ReplyCode) error {
 			ip4 := ap.Addr().As4()
 			copy(resp[4:8], ip4[:])
 			binary.BigEndian.PutUint16(resp[8:10], ap.Port())
-			_, err = req.rw.Write(resp[:10])
+			_, err_in_outer_scope = req.rw.Write(resp[:10])
 		} else if ap.Addr().Is6() {
 			resp[3] = atypIPv6
 			ip6 := ap.Addr().As16()
 			copy(resp[4:20], ip6[:])
 			binary.BigEndian.PutUint16(resp[20:22], ap.Port())
-			_, err = req.rw.Write(resp[:])
+			_, err_in_outer_scope = req.rw.Write(resp[:])
 		}
 	default:
 		// nil response
@@ -242,6 +243,10 @@ func (req *Request) Reply(code ReplyCode) error {
 	}
 
 	if err != nil {
+		return err
+	}
+
+	if err_in_outer_scope != nil {
 		return err
 	}
 
