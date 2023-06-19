@@ -16,7 +16,7 @@ var payloadSize = 1452 // this is the minimum valid QUIC packet payload size
 
 func TestQUICProxyConnSimple(t *testing.T) {
 	require := require.New(t)
-	k := NewQUICProxyConn("simple")
+	k := NewQUICProxyConn([]byte("simple"))
 	pkt := make([]byte, payloadSize)
 	cpy := make([]byte, payloadSize)
 	n, err := k.WritePacket(pkt, k.LocalAddr())
@@ -30,8 +30,8 @@ func TestQUICProxyConnSimple(t *testing.T) {
 
 func TestQUICProxyConn(t *testing.T) {
 	require := require.New(t)
-	sender := NewQUICProxyConn("sender")
-	receiver := NewQUICProxyConn("receiver")
+	sender := NewQUICProxyConn([]byte("sender"))
+	receiver := NewQUICProxyConn([]byte("receiver"))
 
 	msg1 := make([]byte, 42*42*42)
 	_, err := io.ReadFull(rand.Reader, msg1)
