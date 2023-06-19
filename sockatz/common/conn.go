@@ -21,7 +21,6 @@ import (
 
 var errHalted = errors.New("Halted")
 var errDropped = errors.New("Dropped")
-var ErrNoPacket = errors.New("NoData")
 var zeroTime = (&time.Time{}).Unix()
 
 type Transport interface {
@@ -146,8 +145,6 @@ func (k *QUICProxyConn) ReadPacket(p []byte) (int, net.Addr, error) {
 		return copy(p, pkt.payload), pkt.dst, nil
 	case <-k.HaltCh():
 		return 0, nil, errHalted
-	default:
-		return 0, nil, ErrNoPacket
 	}
 }
 
