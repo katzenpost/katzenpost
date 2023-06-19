@@ -455,8 +455,12 @@ func TestRequestUDPAssociate(t *testing.T) {
 	errch := make(chan error)
 	go func() {
 		recvbuf := make([]byte, len(payload))
-		req.Conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-		req.Conn.Read(recvbuf)
+		if err := req.Conn.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+			panic(err)
+		}
+		if _, err := req.Conn.Read(recvbuf); err != nil {
+			panic(err)
+		}
 		if !bytes.Equal(recvbuf, payload) {
 			errch <- fmt.Errorf("Received UDP payload differed! %x %x", recvbuf, payload)
 		}
