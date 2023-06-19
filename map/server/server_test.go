@@ -29,24 +29,18 @@ import (
 
 func TestCreateMap(t *testing.T) {
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "map_test")
-	require.NoError(err)
+	tmpDir := t.TempDir()
 	f := filepath.Join(tmpDir, "map.store")
 	log := logging.MustGetLogger("map")
 	m, err := NewMap(f, log, 10, 100)
 	require.NoError(err)
 	m.Halt()
-
-	// clean up
-	err = os.RemoveAll(tmpDir)
-	require.NoError(err)
 }
 
 func TestMap(t *testing.T) {
 	// start a map service
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "map_test")
-	require.NoError(err)
+	tmpDir := t.TempDir()
 	f := filepath.Join(tmpDir, "map.store")
 	log := logging.MustGetLogger("map")
 	m, err := NewMap(f, log, 10, 100)
@@ -63,6 +57,7 @@ func TestMap(t *testing.T) {
 
 	// read data from key
 	data, err := m.Get(msgID)
+	require.NoError(err)
 
 	// verify the key was retrieved
 	require.Equal(data, payload)
@@ -71,22 +66,18 @@ func TestMap(t *testing.T) {
 
 	// restart the server
 	m, err = NewMap(f, log, 10, 100)
+	require.NoError(err)
 
 	// verify the data is still there
 	data, err = m.Get(msgID)
 	require.Equal(data, payload)
-
-	// clean up
-	err = os.RemoveAll(tmpDir)
 	require.NoError(err)
 }
 
 func TestGarbageCollect(t *testing.T) {
 	// start a map service
 	require := require.New(t)
-	tmpDir, err := ioutil.TempDir("", "map_test")
-	require.NoError(err)
-	//defer os.RemoveAll(tmpDir)
+	tmpDir := t.TempDir()
 	f := filepath.Join(tmpDir, "map.store")
 	log := logging.MustGetLogger("map")
 
@@ -134,8 +125,4 @@ func TestGarbageCollect(t *testing.T) {
 	}
 
 	m.Shutdown()
-
-	// clean up
-	err = os.RemoveAll(tmpDir)
-	require.NoError(err)
 }
