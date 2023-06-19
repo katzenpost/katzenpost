@@ -34,14 +34,13 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 )
 
 var (
 	cfg        *config.Config
-	payloadLen = 1200
+	payloadLen = 1452
 )
 
 func GetSession(cfgFile string) (*client.Session, error) {
@@ -178,11 +177,11 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	errCh := make(chan error)
 
 	ctx := context.Background()
-	k := common.NewQUICProxyConn()
+	k := common.NewQUICProxyConn(id)
 
-	// start proxy worker that proxies bytes between KatConn and conn
-
+	// start proxy worker that proxies bytes between QUICProxyConn and conn
 	c.Go(func() {
+		c.log.Debugf("Dialing %v", common.UniqAddr(id))
 		proxyConn, err := k.Dial(ctx, common.UniqAddr(id))
 		if err != nil {
 			errCh <- err
@@ -192,6 +191,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		var wg sync.WaitGroup
 		wg.Add(2)
 
+		c.log.Debugf("Starting session %v proxy workers %v <-> %v", common.UniqAddr(id), proxyConn.LocalAddr(), conn.RemoteAddr())
 		go func() {
 			defer wg.Done()
 			_, err := io.Copy(conn, proxyConn)
@@ -210,35 +210,28 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		close(errCh)
 	})
 
-	// start transport worker that reads frames to/from katzenpost and KatConn
+	// start transport worker that reads packets to/from katzenpost responses
 	c.Go(func() {
+		c.log.Debugf("Started kaetzchen proxy worker")
 		for {
 			select {
 			case <-c.HaltCh():
 				return
 			default:
 			}
-			// copy from local socket to remote
-			k.SetReadDeadline(time.Now().Add(server.DefaultDeadline))
 			pkt := make([]byte, payloadLen)
+			c.log.Debugf("ReadPacket")
 			n, _, err := k.ReadPacket(pkt)
-			// handle short reads
-			if errors.Is(err, io.EOF) && n != 0 {
-				errCh <- err
-				return
-			} else if errors.Is(err, io.ErrUnexpectedEOF) && n != 0 {
-				errCh <- err
-				return
-			} else if errors.Is(err, os.ErrDeadlineExceeded) {
-				// send empty or partial forward payload
-			} else if err != nil {
+			if err != nil && err != common.ErrNoPacket {
 				// handle unexpected error
+				c.log.Error("ReadPacket failure: %v", err)
 				errCh <- err
 				return
 			}
+			c.log.Debugf("Got Packet")
 
 			// wrap packet in a kaetzchen request
-			serialized, err := (&server.ProxyCommand{ID: id, Payload: pkt}).Marshal()
+			serialized, err := (&server.ProxyCommand{ID: id, Payload: pkt[:n]}).Marshal()
 			if err != nil {
 				errCh <- err
 				return
@@ -248,8 +241,10 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			// XXX: do not use blocking client because it serializes all the request/response pairs
 			// so there is no interleaving, which adds a lot of delay..
 			// implement a lower level client using minclient and do not use these blocking methods.
+			c.log.Debugf("Send Request{Packet}")
 			resp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
 			if err == nil {
+				c.log.Debugf("Read Response")
 				p := server.ProxyResponse{}
 				err := p.Unmarshal(resp)
 				if err != nil {
@@ -260,6 +255,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 
 				// check for ErrInsufficientFunds
 				if p.Error != nil {
+					c.log.Debugf("Got error %v", p.Error)
 					if errors.Is(p.Error, server.ErrInsufficientFunds) {
 						// blocks
 						err := <-c.Topup(id)
@@ -268,21 +264,14 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 							errCh <- err
 							return
 						}
+					} else {
+						k.Close()
 					}
 				}
 
 				// Write response to to client socket
-				n, err := k.WritePacket(p.Payload, common.UniqAddr(id))
-				// handle short writes
-				if errors.Is(err, io.EOF) && n != 0 {
-					errCh <- err
-					return
-				} else if errors.Is(err, io.ErrUnexpectedEOF) && n != 0 {
-					errCh <- err
-					return
-				} else if errors.Is(err, os.ErrDeadlineExceeded) && n == 0 {
-					// skip sending frame
-				} else if err != nil {
+				_, err = k.WritePacket(p.Payload, common.UniqAddr(id))
+				if err != nil {
 					// handle unexpected error
 					errCh <- err
 					return

@@ -20,13 +20,16 @@
 package client
 
 import (
-	"bytes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 	"io"
 	"net"
 	"net/url"
+	"sync"
 	"testing"
+	"net/http"
+	_ "net/http/pprof"
+	"runtime"
 )
 
 var (
@@ -65,30 +68,46 @@ func TestDockerProxy(t *testing.T) {
 	r, err := net.ListenTCP("tcp", &net.TCPAddr{})
 	require.NoError(err)
 
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
+
+	payload := make([]byte, 4200)
+	io.ReadFull(rand.Reader, payload)
+	proxiedpayload := make([]byte, 4200)
+	// wait for a connection from the proxy server
+	go func() {
+		var err error
+		incoming, err := r.Accept()
+		t.Logf("Accept connection from server")
+		_, err = incoming.Read(proxiedpayload)
+		incoming.Write([]byte("whatever"))
+		t.Logf("Read payload from server")
+		require.NoError(err)
+		incoming.Close()
+		wg.Done()
+	}()
+
 	// dial our socket with proxy
 	u := new(url.URL)
-	u, err = u.Parse("http://" + r.Addr().String())
+	u, err = u.Parse("tcp://" + r.Addr().String())
 	require.NoError(err)
-	err = <-c.Dial(id, u)
-	require.NoError(err)
-
+	errCh := c.Dial(id, u) // Dial returns a channel that may send an error
+	require.NoError(<-errCh)
 	piper, pipew := net.Pipe()
 	proxyCh := c.Proxy(id, pipew)
 
-	payload := make([]byte, 42)
-	proxiedpayload := make([]byte, 42)
-
-	go func() {
-		piper.Write(payload)
-	}()
-
-	incoming, err := r.Accept()
+	_, err = piper.Write(payload)
 	require.NoError(err)
-	_, err = incoming.Read(proxiedpayload)
-	require.NoError(err)
-	err = r.Close()
-	require.NoError(err)
-	require.True(bytes.Equal(proxiedpayload, payload))
+	wg.Wait()
+	require.Equal(proxiedpayload, payload)
 	err = <-proxyCh
 	require.NoError(err)
+}
+
+func init() {
+	go func() {
+		http.ListenAndServe("localhost:0", nil)
+	}()
+	runtime.SetMutexProfileFraction(1)
+	runtime.SetBlockProfileRate(1)
 }

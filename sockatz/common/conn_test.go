@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var payloadSize = 1200 // this is the minimum valid QUIC packet payload size
+var payloadSize = 1452 // this is the minimum valid QUIC packet payload size
 
 func TestQUICProxyConnSimple(t *testing.T) {
 	require := require.New(t)

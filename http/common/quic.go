@@ -42,13 +42,11 @@ type QuicConn struct {
 
 // LocalAddr implements net.Conn
 func (q *QuicConn) LocalAddr() net.Addr {
-	panic("fuck")
 	return q.Conn.LocalAddr()
 }
 
 // RemoteAddr implements net.Conn
 func (q *QuicConn) RemoteAddr() net.Addr {
-	panic("fuck")
 	return q.Conn.RemoteAddr()
 }
 

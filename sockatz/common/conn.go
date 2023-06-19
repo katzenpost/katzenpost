@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -17,10 +18,15 @@ import (
 )
 
 var errHalted = errors.New("Halted")
+var errDropped = errors.New("Dropped")
+var ErrNoPacket = errors.New("NoData")
+var zeroTime = (&time.Time{}).Unix()
 
 type Transport interface {
-	Accept(context.Context) net.Conn
-	Dial(context.Context, net.Addr) net.Conn
+	Accept(context.Context) (net.Conn, error)
+	Dial(context.Context, net.Addr) (net.Conn, error)
+	WritePacket([]byte, net.Addr) (int, error)
+	ReadPacket([]byte) (int, net.Addr, error)
 }
 
 // this type implements net.PacketConn and sends and receives QUIC protocol messages.
@@ -28,6 +34,7 @@ type Transport interface {
 // Method ProxyFrom(conn) returns a net.Conn wrapping a QUIC Stream from the listener
 // uses sends and receives QUIC messages exposes methods WriteMessage and ReadMessage that an application
 type QUICProxyConn struct {
+	sync.Mutex
 	worker.Worker
 
 	qcfg          *quic.Config
@@ -73,10 +80,8 @@ func (w *uniqAddr) String() string {
 }
 
 // NewQUICProxyConn returns a
-func NewQUICProxyConn() *QUICProxyConn {
-	addr := &uniqAddr{}
-
-	return &QUICProxyConn{localAddr: addr, incoming: make(chan *pkt, 1), outgoing: make(chan *pkt, 1),
+func NewQUICProxyConn(id []byte) *QUICProxyConn {
+	return &QUICProxyConn{localAddr: UniqAddr(id), incoming: make(chan *pkt, 1000), outgoing: make(chan *pkt, 1000),
 		tlsConf: common.GenerateTLSConfig()}
 }
 
@@ -105,6 +110,9 @@ func (k *QUICProxyConn) WritePacket(p []byte, addr net.Addr) (int, error) {
 	case k.incoming <- &pkt{payload: p, src: addr}:
 	case <-k.HaltCh():
 		return 0, errHalted
+		//default:
+		//	// discard packet rather than block
+		//	return 0, errDropped
 	}
 	return len(p), nil
 }
@@ -116,12 +124,16 @@ func (k *QUICProxyConn) ReadPacket(p []byte) (int, net.Addr, error) {
 		return copy(p, pkt.payload), pkt.dst, nil
 	case <-k.HaltCh():
 		return 0, nil, errHalted
+	default:
+		return 0, nil, ErrNoPacket
 	}
 }
 
 // ReadFrom implements net.PacketConn
 func (k *QUICProxyConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
-	if k.readDeadline.Unix() == (&time.Time{}).Unix() {
+	k.Lock()
+	if k.readDeadline.Unix() == zeroTime {
+		k.Unlock()
 		select {
 		case pkt := <-k.incoming:
 			return copy(p, pkt.payload), pkt.src, nil
@@ -129,12 +141,14 @@ func (k *QUICProxyConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 			return 0, nil, errHalted
 		}
 	} else {
+		after := k.readDeadline.Sub(time.Now())
+		k.Unlock()
 		select {
 		case pkt := <-k.incoming:
 			return copy(p, pkt.payload), pkt.src, nil
 		case <-k.HaltCh():
 			return 0, nil, errHalted
-		case <-time.After(k.readDeadline.Sub(time.Now())):
+		case <-time.After(after):
 			return 0, nil, os.ErrDeadlineExceeded
 		}
 	}
@@ -142,10 +156,13 @@ func (k *QUICProxyConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 
 // WriteTo implements net.PacketConn
 func (k *QUICProxyConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
+
 	p2 := &pkt{payload: make([]byte, len(p)), dst: addr}
 	copy(p2.payload, p)
 
-	if k.writeDeadline.Unix() == (&time.Time{}).Unix() {
+	k.Lock()
+	if k.writeDeadline.Unix() == zeroTime {
+		k.Unlock()
 		select {
 		case k.outgoing <- p2:
 			return len(p2.payload), nil
@@ -153,10 +170,12 @@ func (k *QUICProxyConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 			return 0, errHalted
 		}
 	} else {
+		after := k.writeDeadline.Sub(time.Now())
+		k.Unlock()
 		select {
 		case k.outgoing <- p2:
 			return len(p2.payload), nil
-		case <-time.After(k.writeDeadline.Sub(time.Now())):
+		case <-time.After(after):
 			return 0, os.ErrDeadlineExceeded
 		case <-k.HaltCh():
 			return 0, errHalted
@@ -176,6 +195,9 @@ func (k *QUICProxyConn) LocalAddr() net.Addr {
 
 // SetDeadline implements net.PacketConn
 func (k *QUICProxyConn) SetDeadline(t time.Time) error {
+	k.Lock()
+	defer k.Unlock()
+
 	k.readDeadline = t
 	k.writeDeadline = t
 	return nil
@@ -183,12 +205,18 @@ func (k *QUICProxyConn) SetDeadline(t time.Time) error {
 
 // SetReadDeadline implements net.PacketConn
 func (k *QUICProxyConn) SetReadDeadline(t time.Time) error {
+	k.Lock()
+	defer k.Unlock()
+
 	k.readDeadline = t
 	return nil
 }
 
 // SetWriteDeadline implements net.PacketConn
 func (k *QUICProxyConn) SetWriteDeadline(t time.Time) error {
+	k.Lock()
+	defer k.Unlock()
+
 	k.writeDeadline = t
 	return nil
 }
