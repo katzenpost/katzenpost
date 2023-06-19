@@ -21,8 +21,6 @@ import (
 	"github.com/katzenpost/katzenpost/map/common"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/op/go-logging.v1"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"testing"
 )
