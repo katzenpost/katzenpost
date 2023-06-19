@@ -17,9 +17,11 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"github.com/katzenpost/katzenpost/core/log"
 	"gopkg.in/op/go-logging.v1"
+	"io"
 	"net"
 	"net/url"
 	"sync"
@@ -42,7 +44,7 @@ var (
 
 	// PayloadLen is the size of the transported payload
 	// for QUIC it needs to be minimum ~1200b
-	PayloadLen = 1200
+	PayloadLen = 1452
 
 	// time to wait before unblocking on Read() and returning ErrNoData
 	DefaultDeadline = time.Millisecond * 100
@@ -242,11 +244,17 @@ type Session struct {
 	// Peer is the net.Addr of the client
 	Peer net.Addr
 
+	// Remote is the client endpoint
+	Remote net.Conn
+
 	// Target is the remote host to proxy to
 	Target net.Conn
 
 	// Mode
 	Mode Mode
+
+	// Errors ?
+	acceptOnce *sync.Once
 }
 
 // Reset clears Session state
@@ -257,6 +265,7 @@ func (s *Session) Reset() {
 		s.Target.Close()
 		s.Target = nil
 	}
+	s.acceptOnce = new(sync.Once)
 }
 
 // OnCommand implements cborplugin.ServicePlugin OnCommand
@@ -326,36 +335,79 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 	// locate an existing session by ID
 	ss, err := s.findSession(cmd.ID)
 	if err != nil {
+		s.log.Debugf("Failed to find session %x: %s", cmd.ID, err)
 		return nil, err
 	}
 	// clear any existing session state
-	ss.Reset()
+	if ss.Transport != nil {
+		s.log.Debugf("Already had Transport?")
+		return nil, ErrDialFailed
+	}
+	//ss.Reset() // XXX: this should be safe?
 
 	// XXX: duplicate dial commands may reset the session state
 
 	// Get a net.Conn for the target
 	switch cmd.Target.Scheme {
 	case "tcp":
-		// start quic transport for tcp
-		ss.Transport = common.NewQUICProxyConn()
+		s.log.Debugf("got tcp target %s", cmd.Target.Host)
+		// start quic transport for tcp, listening on Addr given by client
+		ss.Transport = common.NewQUICProxyConn(cmd.ID)
+
+		// this could happen asynchronously from responding to Dial
+		s.log.Debugf("dialing Target")
 		conn, err := net.Dial("tcp", cmd.Target.Host)
-		if err != nil {
+		if err == nil {
+			s.log.Debugf("Dialed target")
 			ss.Target = conn
 		} else {
+			s.log.Debugf("Failed to Dial target")
 			reply.Error = ErrDialFailed
 		}
 	case "udp":
 		// XXX: Add proxy support
+		s.log.Debugf("got udp target %s", cmd.Target.Host)
 		conn, err := net.Dial("udp", cmd.Target.Host)
-		if err != nil {
+		if err == nil {
+			s.log.Debugf("Dialed target")
 			ss.Target = conn
 		} else {
+			s.log.Debugf("Failed to Dial target")
 			reply.Error = ErrDialFailed
 		}
-	case "":
+	default:
+		s.log.Errorf("Received DialCommand with unsupported protocol field")
 		return nil, ErrUnsupportedProto
 	}
 	return reply, nil
+}
+
+// Accept runs once per Session
+func (s *Session) AcceptOnce(transport common.Transport) {
+	s.acceptOnce.Do(func() {
+		s.s.Go(func() {
+			s.s.log.Debugf("Accepting Client")
+			ctx, cancelFn := context.WithCancel(context.Background())
+			defer cancelFn()
+			go func() {
+				select {
+				case <-s.s.HaltCh():
+					cancelFn()
+				case <-ctx.Done():
+				}
+			}()
+			conn, err := transport.Accept(ctx)
+			panic("Wtf")
+			if err != nil {
+				s.s.log.Error("Failure Accepting: %v", err)
+				return
+			}
+			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
+			s.Lock()
+			s.Remote = conn
+			s.Unlock()
+		})
+	})
 }
 
 // SendRecv reads and writes data from the sockets
@@ -363,35 +415,42 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	s.s.log.Debugf("SendRecv()")
 	s.s.log.Debugf("len(payload): %d", len(payload))
 
-	peer := common.UniqAddr(s.ID)
-
 	// write packet to transport
-	s.s.log.Debugf("WritePacket() (blocked)")
-	_, err := s.Transport.WritePacket(payload, peer)
+	s.Lock()
+	defer s.Unlock()
+	if s.Transport == nil { // wtf
+		s.s.log.Error("SendRecv() called before Transport exists")
+		return nil, errors.New("No Transport")
+	}
+	// AcceptOnce() will only run once per session
+	s.AcceptOnce(s.Transport)
+	s.s.log.Debug("WritePacket to %v", s.Transport.LocalAddr())
+	_, err := s.Transport.WritePacket(payload, s.Transport.LocalAddr())
 	if err != nil {
 		s.s.log.Errorf("WritePacket failure: %v", err)
 		return nil, err
 	}
-	s.s.log.Debugf("WritePacket() (unblocked)")
 
 	// read packet from transport
 	buf := make([]byte, len(payload))
-	s.s.log.Debugf("ReadPacket() (blocked)")
-	n, _, err := s.Transport.ReadPacket(buf)
-	if err != nil {
+	n, addr, err := s.Transport.ReadPacket(buf)
+	if err == common.ErrNoPacket {
+		// no payload to return with response
+		return buf[:0], nil
+	}
+	if err != nil && err != common.ErrNoPacket {
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
 	}
-	s.s.log.Debugf("ReadPacket() (unblocked)")
-	s.s.log.Debugf("len(response): %d", n)
-	return buf, nil
+	s.s.log.Debugf("got %d bytes from %v", n, addr)
+	return buf[:n], nil
 }
 
 func (s *Sockatz) findSession(id []byte) (*Session, error) {
 	ss, ok := s.sessions.Load(string(id))
 	// no session found
 	if !ok {
-		s.log.Errorf("No Session found")
+		s.log.Errorf("No Session found for %x", id)
 		return nil, ErrNoSession
 	}
 
@@ -420,11 +479,38 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 		panic("Invalid type in map")
 	} else {
 		ses := new(Session)
+		ses.acceptOnce = new(sync.Once)
 		ses.s = s
 		ses.ID = cmd.ID
 		s.sessions.Store(string(cmd.ID), ses)
 	}
 	return &TopupResponse{}, nil
+}
+
+func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
+	errCh := make(chan error)
+	s.Go(func() {
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		go func() {
+			defer wg.Done()
+			_, err := io.Copy(a, b)
+			if err != nil {
+				errCh <- err
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			_, err := io.Copy(b, a)
+			if err != nil {
+				errCh <- err
+			}
+		}()
+		wg.Wait()
+		close(errCh)
+	})
+	return errCh
 }
 
 func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
@@ -438,12 +524,13 @@ func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 		return nil, err
 	}
 
-	ss.Lock()
-	defer ss.Unlock()
+	// received proxy command before Transport was established?
+	if ss.Transport == nil {
+		return nil, errors.New("No Transport")
+	}
 
 	// SendRecv writes payload and reads packets from the session connection
 	rawReply, err := ss.SendRecv(cmd.Payload)
-
 	if err != nil {
 		reply.Error = err
 		return reply, nil
