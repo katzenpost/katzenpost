@@ -378,7 +378,9 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	if err = conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		panic(err)
+	}
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		if c.c.cfg.OnConnFn != nil {
@@ -387,7 +389,9 @@ func (c *connection) onTCPConn(conn net.Conn) {
 		return
 	}
 	c.log.Debugf("Handshake completed.")
-	conn.SetDeadline(time.Time{})
+	if err = conn.SetDeadline(time.Time{}); err != nil {
+		panic(err)
+	}
 	c.c.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.onWireConn(w)
