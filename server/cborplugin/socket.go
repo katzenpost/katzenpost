@@ -122,7 +122,8 @@ func (c *CommandIO) reader() {
 		cmd := c.commandBuilder.Build()
 		err := dec.Decode(cmd)
 		if err != nil {
-			panic(err) // XXX
+			c.Halt()
+			return
 		}
 		select {
 		case <-c.HaltCh():
@@ -141,7 +142,8 @@ func (c *CommandIO) writer() {
 		case cmd := <-c.writeCh:
 			err := enc.Encode(cmd)
 			if err != nil {
-				panic(err) // XXX
+				c.Halt()
+				return
 			}
 		}
 	}

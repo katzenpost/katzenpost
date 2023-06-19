@@ -218,6 +218,7 @@ func (c *Client) launch(command string, args []string) error {
 	}
 
 	// proxy stderr to our debug log
+	// also calls Halt() when stderr closes, if the program crashes or is killed
 	c.Go(func() {
 		c.logPluginStderr(stderr)
 	})
