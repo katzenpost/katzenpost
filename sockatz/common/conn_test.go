@@ -34,7 +34,8 @@ func TestQUICProxyConn(t *testing.T) {
 	receiver := NewQUICProxyConn()
 
 	msg1 := make([]byte, 42*42*42)
-	io.ReadFull(rand.Reader, msg1)
+	_, err := io.ReadFull(rand.Reader, msg1)
+	require.NoError(err)
 	ctx := context.Background()
 	peers := new(sync.WaitGroup)
 	peers.Add(2)
@@ -75,6 +76,8 @@ func TestQUICProxyConn(t *testing.T) {
 			if n == 0 {
 				errCh <- err
 				return
+			} else {
+				panic("error but also read something")
 			}
 		}
 		if !bytes.Equal(p, msg1) {

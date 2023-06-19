@@ -72,7 +72,9 @@ func TestDockerProxy(t *testing.T) {
 	wg.Add(1)
 
 	payload := make([]byte, 4200)
-	io.ReadFull(rand.Reader, payload)
+	_, err = io.ReadFull(rand.Reader, payload)
+	require.NoError(err)
+
 	proxiedpayload := make([]byte, 4200)
 	// wait for a connection from the proxy server
 	go func() {
