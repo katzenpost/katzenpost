@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	qlogging "github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlog"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/http/common"
 	quic "github.com/quic-go/quic-go"
@@ -82,7 +84,11 @@ func (w *uniqAddr) String() string {
 // NewQUICProxyConn returns a
 func NewQUICProxyConn(id []byte) *QUICProxyConn {
 	return &QUICProxyConn{localAddr: UniqAddr(id), incoming: make(chan *pkt, 1000), outgoing: make(chan *pkt, 1000),
-		tlsConf: common.GenerateTLSConfig()}
+	qcfg: &quic.Config{Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
+		return qlog.NewConnectionTracer(os.Stdout, p, connID)}},
+	}
+
+	tlsConf: common.GenerateTLSConfig()}
 }
 
 func (k *QUICProxyConn) Config() *quic.Config {
