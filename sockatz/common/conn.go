@@ -75,7 +75,7 @@ func (w *uniqAddr) Network() string {
 func (w *uniqAddr) String() string {
 	if w.r == "" {
 		ip := make([]byte, 20)
-		if err := io.ReadFull(rand.Reader, ip); err != nil {
+		if _, err := io.ReadFull(rand.Reader, ip); err != nil {
 			panic(err)
 		}
 		w.r = base64.StdEncoding.EncodeToString(ip)
