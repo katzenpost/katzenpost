@@ -192,20 +192,24 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		var wg sync.WaitGroup
 		wg.Add(2)
 
-		c.log.Debugf("Starting session %v proxy workers %v <-> %v", common.UniqAddr(id), proxyConn.LocalAddr(), conn.RemoteAddr())
+		c.log.Debugf("Starting session %x proxy workers %v <-> %v", id, proxyConn.LocalAddr(), conn.RemoteAddr())
 		go func() {
 			defer wg.Done()
 			_, err := io.Copy(conn, proxyConn)
 			if err != nil {
+				c.log.Debugf("Proxyworker conn, proxyConn error %v", err)
 				errCh <- err
 			}
+			c.log.Debugf("Proxyworker conn, proxyConn exiting")
 		}()
 		go func() {
 			defer wg.Done()
 			_, err := io.Copy(proxyConn, conn)
 			if err != nil {
+				c.log.Debugf("Proxyworker proxyConn, conn error %v", err)
 				errCh <- err
 			}
+			c.log.Debugf("Proxyworker proxyConn, conn exiting")
 		}()
 		wg.Wait()
 		close(errCh)
@@ -222,14 +226,18 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			}
 			pkt := make([]byte, payloadLen)
 			c.log.Debugf("ReadPacket")
-			n, _, err := k.ReadPacket(pkt)
+			n, addr, err := k.ReadPacket(pkt)
 			if err != nil && err != common.ErrNoPacket {
 				// handle unexpected error
 				c.log.Error("ReadPacket failure: %v", err)
 				errCh <- err
 				return
 			}
-			c.log.Debugf("Got Packet")
+			c.log.Debugf("Got Packet len %d", n)
+
+			if err == common.ErrNoPacket {
+				c.log.Error("ReadPacket empty response")
+			}
 
 			// wrap packet in a kaetzchen request
 			serialized, err := (&server.ProxyCommand{ID: id, Payload: pkt[:n]}).Marshal()
@@ -250,6 +258,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 				err := p.Unmarshal(resp)
 				if err != nil {
 					// XXX handle unmarshal err
+					c.log.Errorf("failure to unmarshal response: %v", err)
 					errCh <- err
 					return
 				}
@@ -269,6 +278,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 						k.Close()
 					}
 				}
+				c.log.Debugf("Got ProxyReponse: %v len(%d)", p.Error, len(p.Payload))
 
 				// Write response to to client socket
 				_, err = k.WritePacket(p.Payload, common.UniqAddr(id))
