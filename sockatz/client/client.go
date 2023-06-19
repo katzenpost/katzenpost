@@ -177,7 +177,8 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	errCh := make(chan error)
 
 	ctx := context.Background()
-	k := common.NewQUICProxyConn(id)
+	myId :=append(id, []byte("client")...)
+	k := common.NewQUICProxyConn(myId)
 
 	// start proxy worker that proxies bytes between QUICProxyConn and conn
 	c.Go(func() {
