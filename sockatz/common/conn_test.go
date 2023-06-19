@@ -95,6 +95,7 @@ func TestQUICProxyConn(t *testing.T) {
 	// read from sender, write to receiver
 	go func() {
 		defer workers.Done()
+		defer t.Logf("worker finished")
 		src := sender.LocalAddr()
 		for {
 			pkt := make([]byte, payloadSize)
@@ -109,7 +110,9 @@ func TestQUICProxyConn(t *testing.T) {
 				errCh <- errors.New("Address mismatch")
 				return
 			}
+			t.Logf("ReadPacket from sender")
 			_, err = receiver.WritePacket(pkt[:n], src)
+			t.Logf("WrotePacket to receiver")
 			if err != nil {
 				errCh <- err
 				return
@@ -119,9 +122,11 @@ func TestQUICProxyConn(t *testing.T) {
 	// read from receiver, write to sender
 	go func() {
 		defer workers.Done()
+		defer t.Logf("worker finished")
 		for {
 			pkt := make([]byte, payloadSize)
 			n, addr, err := receiver.ReadPacket(pkt)
+			t.Logf("ReadPacket from receiver")
 			if err == errHalted {
 				return
 			} else if err != nil {
@@ -132,7 +137,9 @@ func TestQUICProxyConn(t *testing.T) {
 				errCh <- errors.New("Address mismatch")
 				return
 			}
+			t.Logf("ReadPacket from receiver")
 			_, err = sender.WritePacket(pkt[:n], receiver.LocalAddr())
+			t.Logf("WritePacket to sender")
 			if err != nil {
 				errCh <- err
 				return
