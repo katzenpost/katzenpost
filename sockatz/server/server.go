@@ -424,7 +424,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	}
 	// AcceptOnce() will only run once per session
 	s.AcceptOnce(s.Transport)
-	s.s.log.Debug("WritePacket to %v", s.Transport.LocalAddr())
+	s.s.log.Debug("WritePacket(%d) to %v", len(payload), s.Transport.LocalAddr())
 	_, err := s.Transport.WritePacket(payload, s.Transport.LocalAddr())
 	if err != nil {
 		s.s.log.Errorf("WritePacket failure: %v", err)
@@ -442,7 +442,10 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
 	}
-	s.s.log.Debugf("got %d bytes from %v", n, addr)
+	if err == common.ErrNoPacket {
+		s.s.log.Error("ReadPacket ErrNoPacket")
+	}
+	s.s.log.Debugf("got %d bytes to %v", n, addr)
 	return buf[:n], nil
 }
 
@@ -516,11 +519,12 @@ func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
 func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 	// deserialize cmd as a ProxyResponse
 	reply := &ProxyResponse{}
-	s.log.Debugf("Received ProxyCommand: %v", cmd)
+	s.log.Debugf("Received ProxyCommand: %x", cmd.ID)
 
 	// locate an existing session by ID
 	ss, err := s.findSession(cmd.ID)
 	if err != nil {
+		s.log.Debugf("Failed to find Session: %x", cmd.ID)
 		return nil, err
 	}
 
