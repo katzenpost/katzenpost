@@ -83,12 +83,17 @@ func (w *uniqAddr) String() string {
 
 // NewQUICProxyConn returns a
 func NewQUICProxyConn(id []byte) *QUICProxyConn {
-	return &QUICProxyConn{localAddr: UniqAddr(id), incoming: make(chan *pkt, 1000), outgoing: make(chan *pkt, 1000),
-	qcfg: &quic.Config{Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
-		return qlog.NewConnectionTracer(os.Stdout, p, connID)}},
+	return &QUICProxyConn{
+		localAddr: UniqAddr(id),
+		incoming: make(chan *pkt, 1000),
+		outgoing: make(chan *pkt, 1000),
+		qcfg: &quic.Config{
+			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
+				return qlog.NewConnectionTracer(os.Stdout, p, connID)
+			}
+		},
+		//tlsConf: common.GenerateTLSConfig()}
 	}
-
-	tlsConf: common.GenerateTLSConfig()}
 }
 
 func (k *QUICProxyConn) Config() *quic.Config {
