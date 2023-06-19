@@ -98,6 +98,7 @@ func NewQUICProxyConn(id []byte) *QUICProxyConn {
 		localAddr: UniqAddr(id),
 		incoming: make(chan *pkt, 1000),
 		outgoing: make(chan *pkt, 1000),
+		tlsConf: common.GenerateTLSConfig(),
 		qcfg: &quic.Config{
 			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
 				return qlog.NewConnectionTracer(&wc{}, p, connID)
