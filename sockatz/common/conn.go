@@ -90,9 +90,9 @@ func NewQUICProxyConn(id []byte) *QUICProxyConn {
 		qcfg: &quic.Config{
 			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
 				return qlog.NewConnectionTracer(os.Stdout, p, connID)
-			}
+			},
 		},
-		//tlsConf: common.GenerateTLSConfig()}
+		//tlsConf: common.GenerateTLSConfig(),
 	}
 }
 
