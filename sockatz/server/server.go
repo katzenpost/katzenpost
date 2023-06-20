@@ -422,7 +422,6 @@ func (s *Session) AcceptOnce(transport common.Transport) {
 				}
 			}()
 			conn, err := transport.Accept(ctx)
-			panic("Wtf")
 			if err != nil {
 				s.s.log.Error("Failure Accepting: %v", err)
 				return
