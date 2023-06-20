@@ -82,7 +82,6 @@ func TestDockerProxy(t *testing.T) {
 		incoming, err := r.Accept()
 		t.Logf("Accept connection from server")
 		_, err = incoming.Read(proxiedpayload)
-		incoming.Write([]byte("whatever"))
 		t.Logf("Read payload from server")
 		require.NoError(err)
 		incoming.Close()
