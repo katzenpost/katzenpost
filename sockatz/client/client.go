@@ -25,7 +25,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/sockatz/common"
 	"github.com/katzenpost/katzenpost/sockatz/server"
 	"gopkg.in/op/go-logging.v1"
@@ -127,15 +126,8 @@ func (c *Client) Topup(id []byte) chan error {
 			errCh <- err
 			return
 		}
-		cborPluginResponse := &cborplugin.Response{}
-		err = cborPluginResponse.Unmarshal(rawResp)
-		if err != nil {
-			c.log.Errorf("failure to unmarshal cborplugin.Response: %v", err)
-			errCh <- err
-			return
-		}
 		p := &server.TopupResponse{}
-		err = p.Unmarshal(cborPluginResponse.Payload)
+		err = p.Unmarshal(rawResp)
 		if err != nil {
 			errCh <- err
 			return
@@ -167,17 +159,11 @@ func (c *Client) Dial(id []byte, tgt *url.URL) chan error {
 			errCh <- err
 			return
 		}
-		cborPluginResponse := &cborplugin.Response{}
-		err = cborPluginResponse.Unmarshal(rawResp)
-		if err != nil {
-			c.log.Errorf("failure to unmarshal cborplugin.Response: %v", err)
-			errCh <- err
-			return
-		}
 
 		p := &server.DialResponse{}
-		err = p.Unmarshal(cborPluginResponse.Payload)
+		err = p.Unmarshal(rawResp)
 		if err != nil {
+			panic(err)
 			errCh <- err
 			return
 		}
@@ -267,16 +253,8 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			rawResp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
 			if err == nil {
 				c.log.Debugf("Read Response")
-				cborPluginResponse := &cborplugin.Response{}
-				err := cborPluginResponse.Unmarshal(rawResp)
-				if err != nil {
-					c.log.Errorf("failure to unmarshal cborplugin.Response: %v", err)
-					errCh <- err
-					return
-				}
-
 				p := &server.ProxyResponse{}
-				err = p.Unmarshal(cborPluginResponse.Payload)
+				err = p.Unmarshal(rawResp)
 				if err != nil {
 					c.log.Errorf("failure to unmarshal server.ProxyResponse: %v", err)
 					errCh <- err
