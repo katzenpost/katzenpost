@@ -83,7 +83,7 @@ func NewClient(s *client.Session) (*Client, error) {
 	if err != nil {
 		panic(err)
 	}
-	l := logBackend.GetLogger("sockatz_server")
+	l := logBackend.GetLogger("sockatz/client")
 
 	// find a sockatz server descriptor for the request
 	desc, err := s.GetService("sockatz")
