@@ -114,10 +114,18 @@ func (d *DialCommand) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, d)
 }
 
+// DialStatus indicates success or failure
+type DialStatus uint8
+
+const (
+	DialSuccess DialStatus = iota
+	DialFailure
+)
+
 // DialResponse is a response to a DialCommand, and may return data
 type DialResponse struct {
-	Error error
-	Peer  net.Addr
+	Status  DialStatus
+	Payload []byte
 }
 
 // Marshal implements cborplugin.Command
@@ -146,9 +154,18 @@ func (p *ProxyCommand) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, p)
 }
 
+// ProxyStatus indicates success or failure
+type ProxyStatus uint8
+
+const (
+	ProxySuccess ProxyStatus = iota
+	ProxyInsufficientFunds
+	ProxyFailure
+)
+
 // ProxyResponse is response to a ProxyCommand
 type ProxyResponse struct {
-	Error   error
+	Status  ProxyStatus
 	Payload []byte
 }
 
@@ -178,9 +195,17 @@ func (s *TopupCommand) Unmarshal(b []byte) error {
 	return cbor.Unmarshal(b, s)
 }
 
+// TopupStatus indicates success or failure
+type TopupStatus uint8
+
+const (
+	TopupSuccess TopupStatus = iota
+	TopupFailure
+)
+
 // TopupResponse is the response to a TopupCommand
 type TopupResponse struct {
-	Error error // ErrPaymentFailed, NoError
+	Status TopupStatus
 }
 
 // Marshal implements cborplugin.Command
@@ -362,7 +387,7 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 			ss.Target = conn
 		} else {
 			s.log.Debugf("Failed to Dial target")
-			reply.Error = ErrDialFailed
+			reply.Status = DialFailure
 		}
 	case "udp":
 		// XXX: Add proxy support
@@ -373,7 +398,7 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 			ss.Target = conn
 		} else {
 			s.log.Debugf("Failed to Dial target")
-			reply.Error = ErrDialFailed
+			reply.Status = DialFailure
 		}
 	default:
 		s.log.Errorf("Received DialCommand with unsupported protocol field")
@@ -480,7 +505,7 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 		ses.ID = cmd.ID
 		s.sessions.Store(string(cmd.ID), ses)
 	}
-	return &TopupResponse{}, nil
+	return &TopupResponse{Status: TopupSuccess}, nil
 }
 
 func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
@@ -529,9 +554,11 @@ func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 	// SendRecv writes payload and reads packets from the session connection
 	rawReply, err := ss.SendRecv(cmd.Payload)
 	if err != nil {
-		reply.Error = err
+		s.log.Errorf("SendRecv err: %v", err)
+		reply.Status = ProxyFailure
 		return reply, nil
 	}
+	reply.Status = ProxySuccess
 	reply.Payload = rawReply
 	return reply, nil
 }

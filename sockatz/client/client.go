@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/sockatz/common"
 	"github.com/katzenpost/katzenpost/sockatz/server"
 	"gopkg.in/op/go-logging.v1"
@@ -121,17 +122,26 @@ func (c *Client) Topup(id []byte) chan error {
 		}
 
 		// blocks until reply arrives
-		resp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized)
-		if err == nil {
-			p := server.TopupResponse{}
-			err := p.Unmarshal(resp)
-			if err != nil {
-				errCh <- err
-				return
-			}
-		} else {
+		rawResp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized)
+		if err != nil {
 			errCh <- err
 			return
+		}
+		cborPluginResponse := &cborplugin.Response{}
+		err = cborPluginResponse.Unmarshal(rawResp)
+		if err != nil {
+			c.log.Errorf("failure to unmarshal cborplugin.Response: %v", err)
+			errCh <- err
+			return
+		}
+		p := &server.TopupResponse{}
+		err = p.Unmarshal(cborPluginResponse.Payload)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if p.Status != server.TopupSuccess {
+			errCh <- errors.New("Topup failure")
 		}
 		errCh <- nil // NoError
 	}()
@@ -152,22 +162,29 @@ func (c *Client) Dial(id []byte, tgt *url.URL) chan error {
 		// XXX: do not use blocking client because it serializes all the request/response pairs
 		// so there is no interleaving, which adds a lot of delay..
 		// implement a lower level client using minclient and do not use these blocking methods.
-		resp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
-		if err == nil {
-			p := server.DialResponse{}
-			err := p.Unmarshal(resp)
-			if err == nil {
-				if p.Error == nil {
-					// XXX: does not support opportunistic payload yet
-					errCh <- nil
-				} else {
-					errCh <- err
-				}
-			} else {
-				errCh <- err
-			}
-		} else {
+		rawResp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
+		if err != nil {
 			errCh <- err
+			return
+		}
+		cborPluginResponse := &cborplugin.Response{}
+		err = cborPluginResponse.Unmarshal(rawResp)
+		if err != nil {
+			c.log.Errorf("failure to unmarshal cborplugin.Response: %v", err)
+			errCh <- err
+			return
+		}
+
+		p := &server.DialResponse{}
+		err = p.Unmarshal(cborPluginResponse.Payload)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		if p.Status == server.DialSuccess {
+			errCh <- nil
+		} else {
+			errCh <- errors.New("Dial Failed")
 		}
 	}()
 	return errCh
@@ -247,34 +264,41 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			// so there is no interleaving, which adds a lot of delay..
 			// implement a lower level client using minclient and do not use these blocking methods.
 			c.log.Debugf("Send Request{Packet}")
-			resp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
+			rawResp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
 			if err == nil {
 				c.log.Debugf("Read Response")
-				p := server.ProxyResponse{}
-				err := p.Unmarshal(resp)
+				cborPluginResponse := &cborplugin.Response{}
+				err := cborPluginResponse.Unmarshal(rawResp)
 				if err != nil {
-					// XXX handle unmarshal err
-					c.log.Errorf("failure to unmarshal response: %v", err)
+					c.log.Errorf("failure to unmarshal cborplugin.Response: %v", err)
 					errCh <- err
 					return
 				}
 
-				// check for ErrInsufficientFunds
-				if p.Error != nil {
-					c.log.Debugf("Got error %v", p.Error)
-					if errors.Is(p.Error, server.ErrInsufficientFunds) {
-						// blocks
-						err := <-c.Topup(id)
-						if err != nil {
-							// XXX: debug
-							errCh <- err
-							return
-						}
-					} else {
-						k.Close()
-					}
+				p := &server.ProxyResponse{}
+				err = p.Unmarshal(cborPluginResponse.Payload)
+				if err != nil {
+					c.log.Errorf("failure to unmarshal server.ProxyResponse: %v", err)
+					errCh <- err
+					return
 				}
-				c.log.Debugf("Got ProxyReponse: %v len(%d)", p.Error, len(p.Payload))
+
+				// check for ProxyInsufficientFunds or ProxyFailure
+				switch p.Status {
+				case server.ProxyInsufficientFunds:
+					c.log.Debugf("Got ProxyReponse: ProxyInsufficientFunds")
+					err := <-c.Topup(id)
+					if err != nil {
+						errCh <- err
+						return
+					}
+				case server.ProxySuccess:
+					c.log.Debugf("Got ProxyReponse: ProxySuccess: len(%d)", len(p.Payload))
+				case server.ProxyFailure:
+					c.log.Debugf("Got ProxyReponse: ProxyFailure")
+					errCh <- errors.New("ProxyFailure")
+					return
+				}
 
 				// Write response to to client socket
 				_, err = k.WritePacket(p.Payload, common.UniqAddr(id))
