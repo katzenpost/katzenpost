@@ -24,12 +24,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"io"
 	"net"
-	"net/url"
-	"sync"
-	"testing"
 	"net/http"
 	_ "net/http/pprof"
+	"net/url"
 	"runtime"
+	"sync"
+	"testing"
 )
 
 var (
