@@ -234,16 +234,25 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 				return
 			default:
 			}
-			pkt := make([]byte, payloadLen)
-			c.log.Debugf("ReadPacket")
-			n, _, err := k.ReadPacket(pkt)
+			pkt := make([]byte, PayloadLen)
+			c.log.Debugf("ReadPacket from outbound queue")
+			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(10*time.Millisecond))
+			defer cancelFn()
+
+			n, destAddr, err := k.ReadPacket(ctx, pkt)
 			if err != nil {
-				// handle unexpected error
-				c.log.Error("ReadPacket failure: %v", err)
-				errCh <- err
-				return
+				if err.Error() == "Halted" {
+					c.log.Debugf("Halted in ReadPacket")
+					return
+				}
+				if err != os.ErrDeadlineExceeded {
+					// handle unexpected error
+					c.log.Error("ReadPacket failure: %v", err)
+					errCh <- err
+					return
+				}
 			}
-			c.log.Debugf("Got Packet len %d", n)
+			c.log.Debugf("Read len %d byte packet to send to %v", n, destAddr)
 
 			// wrap packet in a kaetzchen request
 			serialized, err := (&server.ProxyCommand{ID: id, Payload: pkt[:n]}).Marshal()
@@ -285,9 +294,15 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					return
 				}
 
+				src := common.UniqAddr(id)
 				// Write response to to client socket
-				_, err = k.WritePacket(p.Payload, common.UniqAddr(id))
+				c.log.Debugf("WritePacket to incoming queue from %v", src)
+				_, err = k.WritePacket(context.Background(), p.Payload, src)
 				if err != nil {
+					if err.Error() == "Halted" {
+						c.log.Debugf("WritePacket Halted()")
+						return
+					}
 					// handle unexpected error
 					errCh <- err
 					return

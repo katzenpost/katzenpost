@@ -24,6 +24,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -430,6 +431,9 @@ func (s *Session) AcceptOnce(transport common.Transport) {
 			s.Lock()
 			s.Remote = conn
 			s.Unlock()
+			errCh := s.s.proxyWorker(s.Remote, s.Target)
+			<-errCh
+			transport.Close()
 		})
 	})
 }
@@ -448,8 +452,11 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	}
 	// AcceptOnce() will only run once per session
 	s.AcceptOnce(s.Transport)
-	s.s.log.Debug("WritePacket(%d) to %v", len(payload), s.Transport.LocalAddr())
-	_, err := s.Transport.WritePacket(payload, s.Transport.LocalAddr())
+	clientAddr := append(s.ID, []byte("client")...)
+	dst := common.UniqAddr(clientAddr)
+
+	s.s.log.Debug("WritePacket(%d) from  %v", len(payload), dst)
+	_, err := s.Transport.WritePacket(context.Background(), payload, dst)
 	if err != nil {
 		s.s.log.Errorf("WritePacket failure: %v", err)
 		return nil, err
@@ -457,8 +464,12 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 
 	// read packet from transport
 	buf := make([]byte, PayloadLen)
-	n, addr, err := s.Transport.ReadPacket(buf)
-	if err != nil {
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond))
+	defer cancelFn()
+	n, addr, err := s.Transport.ReadPacket(ctx, buf)
+	switch err {
+	case nil, os.ErrDeadlineExceeded:
+	default:
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
 	}
@@ -519,6 +530,8 @@ func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
 			if err != nil {
 				errCh <- err
 			}
+			a.Close()
+			b.Close()
 		}()
 		go func() {
 			defer wg.Done()
@@ -526,6 +539,8 @@ func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
 			if err != nil {
 				errCh <- err
 			}
+			a.Close()
+			b.Close()
 		}()
 		wg.Wait()
 		close(errCh)
