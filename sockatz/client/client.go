@@ -33,6 +33,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"net/url"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ import (
 
 var (
 	cfg        *config.Config
-	payloadLen = 1452
+	PayloadLen = 1452
 )
 
 func GetSession(cfgFile string) (*client.Session, error) {
@@ -201,21 +202,26 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			_, err := io.Copy(conn, proxyConn)
 			if err != nil {
 				c.log.Debugf("Proxyworker conn, proxyConn error %v", err)
-				errCh <- err
 			}
 			c.log.Debugf("Proxyworker conn, proxyConn exiting")
+			proxyConn.Close()
+			conn.Close()
 		}()
 		go func() {
 			defer wg.Done()
 			_, err := io.Copy(proxyConn, conn)
 			if err != nil {
 				c.log.Debugf("Proxyworker proxyConn, conn error %v", err)
-				errCh <- err
 			}
 			c.log.Debugf("Proxyworker proxyConn, conn exiting")
+			conn.Close()
+			proxyConn.Close()
 		}()
+		c.log.Debugf("Waiting for workers to finish")
 		wg.Wait()
-		close(errCh)
+		c.log.Debugf("Workers done, halting transport")
+		k.Close()
+		errCh <- nil
 	})
 
 	// start transport worker that reads packets to/from katzenpost responses
@@ -223,7 +229,8 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		c.log.Debugf("Started kaetzchen proxy worker")
 		for {
 			select {
-			case <-c.HaltCh():
+			case <-k.HaltCh():
+				errCh <- nil
 				return
 			default:
 			}
