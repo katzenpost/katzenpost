@@ -456,7 +456,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	}
 
 	// read packet from transport
-	buf := make([]byte, len(payload))
+	buf := make([]byte, PayloadLen)
 	n, addr, err := s.Transport.ReadPacket(buf)
 	if err != nil {
 		s.s.log.Error("ReadPacket failure: %v", err)
