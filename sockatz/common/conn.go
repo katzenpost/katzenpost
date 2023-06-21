@@ -26,8 +26,9 @@ var zeroTime = (&time.Time{}).Unix()
 type Transport interface {
 	Accept(context.Context) (net.Conn, error)
 	Dial(context.Context, net.Addr) (net.Conn, error)
-	WritePacket([]byte, net.Addr) (int, error)
-	ReadPacket([]byte) (int, net.Addr, error)
+	WritePacket(context.Context, []byte, net.Addr) (int, error)
+	ReadPacket(context.Context, []byte) (int, net.Addr, error)
+	Close() error
 }
 
 // this type implements net.PacketConn and sends and receives QUIC protocol messages.
@@ -126,8 +127,10 @@ func (k *QUICProxyConn) SetWriteBuffer(bytes int) error {
 }
 
 // WritePacket into QUICProxyConn
-func (k *QUICProxyConn) WritePacket(p []byte, addr net.Addr) (int, error) {
+func (k *QUICProxyConn) WritePacket(ctx context.Context, p []byte, addr net.Addr) (int, error) {
 	select {
+	case <-ctx.Done():
+		return 0, os.ErrDeadlineExceeded
 	case k.incoming <- &pkt{payload: p, src: addr}:
 	case <-k.HaltCh():
 		return 0, errHalted
@@ -139,8 +142,10 @@ func (k *QUICProxyConn) WritePacket(p []byte, addr net.Addr) (int, error) {
 }
 
 // ReadPacket from QUICProxyConn
-func (k *QUICProxyConn) ReadPacket(p []byte) (int, net.Addr, error) {
+func (k *QUICProxyConn) ReadPacket(ctx context.Context, p []byte) (int, net.Addr, error) {
 	select {
+	case <-ctx.Done():
+		return 0, nil, os.ErrDeadlineExceeded
 	case pkt := <-k.outgoing:
 		return copy(p, pkt.payload), pkt.dst, nil
 	case <-k.HaltCh():
@@ -193,17 +198,18 @@ func (k *QUICProxyConn) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		k.Unlock()
 		select {
 		case k.outgoing <- p2:
-			return len(p2.payload), nil
+			return n, nil
 		case <-time.After(after):
 			return 0, os.ErrDeadlineExceeded
 		case <-k.HaltCh():
-			return 0, errHalted
+			return 0, errHalted // XXX: io.EOF  ?
 		}
 	}
 }
 
 // Close implements net.PacketConn
 func (k *QUICProxyConn) Close() error {
+	k.Halt()
 	return nil
 }
 
