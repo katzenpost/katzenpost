@@ -151,7 +151,6 @@ func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
 
 func (p *PublicKey) Reset() {
 	p.publicKey = nil
-	p = nil
 }
 
 func (p *PublicKey) Bytes() []byte {
@@ -210,7 +209,6 @@ func (p *PrivateKey) Public() nike.PublicKey {
 
 func (p *PrivateKey) Reset() {
 	p.privateKey = nil
-	p = nil
 }
 
 func (p *PrivateKey) Bytes() []byte {
