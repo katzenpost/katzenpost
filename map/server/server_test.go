@@ -63,6 +63,7 @@ func TestMap(t *testing.T) {
 
 	// read data from key
 	data, err := m.Get(msgID)
+	require.NoError(err)
 
 	// verify the key was retrieved
 	require.Equal(data, payload)
