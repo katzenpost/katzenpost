@@ -303,6 +303,7 @@ func TestVote(t *testing.T) {
 
 	// exchange certificates
 	for i, s := range stateAuthority {
+		s.Lock()
 		s.state = stateAcceptCert
 		myCertificate, err := s.getCertificate(s.votingEpoch)
 		require.NoError(err)
@@ -314,11 +315,14 @@ func TestVote(t *testing.T) {
 			}
 			a.certificates[s.votingEpoch][s.s.identityPublicKey.Sum256()] = myCertificate
 		}
+		s.Unlock()
 	}
 
 	// produced a consensus document signed by each authority
 	for _, s := range stateAuthority {
+		s.Lock()
 		_, err := s.getMyConsensus(s.votingEpoch)
+		s.Unlock()
 		require.NoError(err)
 	}
 
@@ -339,7 +343,9 @@ func TestVote(t *testing.T) {
 	// verify that each authority produced an identital consensus
 	consensusHash := ""
 	for _, s := range stateAuthority {
+		s.Lock()
 		doc, err := s.getThresholdConsensus(s.votingEpoch)
+		s.Unlock()
 		require.NoError(err)
 		hash := doc.Sum256()
 		if consensusHash == "" {
