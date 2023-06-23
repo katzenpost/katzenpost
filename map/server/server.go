@@ -186,7 +186,7 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		if !r.HasSURB {
-			return nil, errors.New("No SURB, cannot reply")
+			return nil, errors.New("no SURB, cannot reply")
 		}
 		req := &common.MapRequest{}
 		dec := cbor.NewDecoder(bytes.NewReader(r.Payload))
@@ -231,7 +231,7 @@ func (m *Map) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		return &cborplugin.Response{Payload: rawResp}, nil
 	default:
 		m.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("Invalid Command type")
+		return nil, errors.New("invalid Command type")
 	}
 }
 

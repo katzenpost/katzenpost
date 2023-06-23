@@ -217,7 +217,7 @@ func (req *Request) Reply(code ReplyCode) error {
 			return err
 		}
 		if !ap.Addr().IsValid() {
-			return fmt.Errorf("Invalid UDP LocalAddr!")
+			return fmt.Errorf("invalid UDP LocalAddr!")
 		}
 		if ap.Addr().Is4() {
 			resp[3] = atypIPv4
@@ -233,7 +233,7 @@ func (req *Request) Reply(code ReplyCode) error {
 			_, err = req.rw.Write(resp[:])
 		}
 	default:
-		panic(fmt.Errorf("Unsupported Command: %x", req.Command))
+		panic(fmt.Errorf("unsupported Command: %x", req.Command))
 	}
 
 	if err != nil {
