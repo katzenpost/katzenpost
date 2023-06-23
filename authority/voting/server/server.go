@@ -33,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -45,6 +46,7 @@ type Server struct {
 	sync.WaitGroup
 
 	cfg *config.Config
+	geo *geo.Geometry
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
@@ -187,6 +189,8 @@ func (s *Server) halt() {
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
+	s.geo = cfg.SphinxGeometry
+
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
 

@@ -22,7 +22,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +35,7 @@ var (
 	tmpDir string
 
 	testKeyPath string
-	testKey     ecdh.PrivateKey
+	testKey     *ecdh.PrivateKey
 
 	testPositiveTags, testNegativeTags map[[TagLength]byte]bool
 )
@@ -57,18 +59,38 @@ func doTestCreate(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	k, err := New(tmpDir, testEpoch)
+	mynike := ecdh.EcdhScheme
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	k, err := New(tmpDir, testEpoch, geo)
 	require.NoError(err, "New()")
 	testKeyPath = k.db.Path()
 	defer k.Deref()
 
 	t.Logf("db: %v", testKeyPath)
-	t.Logf("Public Key: %v", hex.EncodeToString(k.PublicKey().Bytes()))
-	t.Logf("Private Key: %v", hex.EncodeToString(k.PrivateKey().Bytes()))
+
+	nikePubKey, _ := k.PublicKey()
+	//nikeScheme, kemScheme := geo.Scheme()
+
+	if nikePubKey != nil {
+		t.Logf("Public Key: %v", hex.EncodeToString(nikePubKey.Bytes()))
+	} else {
+		panic("wtf")
+		//t.Logf("Public Key: %v", hex.EncodeToString(pubBytes))
+	}
+
+	a := k.PrivateKey()
+	require.NotNil(a)
+	key := a.(nike.PrivateKey)
+	t.Logf("Private Key: %v", hex.EncodeToString(key.Bytes()))
 	t.Logf("Epoch: %x", k.Epoch())
 
 	// Save a copy so this can be compared later.
-	err = testKey.FromBytes(k.PrivateKey().Bytes())
+	a = k.PrivateKey()
+	require.NotNil(a)
+
+	key = a.(nike.PrivateKey)
+	err = testKey.FromBytes(key.Bytes())
 	require.NoError(err, "testKey save")
 
 	// Ensure that the 0 byte pathological tag case behaves.
@@ -85,13 +107,22 @@ func doTestLoad(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	k, err := New(tmpDir, testEpoch)
+	mynike := ecdh.EcdhScheme
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+
+	k, err := New(tmpDir, testEpoch, geo)
 	require.NoError(err, "New() load")
 	k.SetUnlinkIfExpired(true)
 	defer k.Deref()
 
-	assert.Equal(&testKey, k.PrivateKey(), "Serialized private key")
-	assert.Equal(testKey.PublicKey(), k.PublicKey(), "Serialized public key")
+	a := k.PrivateKey()
+	key := a.(nike.PrivateKey)
+	assert.Equal(testKey.Bytes(), key.Bytes(), "Serialized private key")
+	require.NotNil(k)
+	d, _ := k.PublicKey()
+	require.NotNil(d)
+
+	assert.Equal(testKey.Public(), d, "Serialized public key")
 	assert.Equal(uint64(testEpoch), k.Epoch(), "Serialized epoch")
 
 	// Ensure that the loaded replay filter is consistent.
@@ -127,7 +158,9 @@ func BenchmarkMixKey(b *testing.B) {
 }
 
 func doBenchIsReplayMiss(b *testing.B) {
-	k, err := New(tmpDir, testEpoch)
+	mynike := ecdh.EcdhScheme
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+	k, err := New(tmpDir, testEpoch, geo)
 	if err != nil {
 		b.Fatalf("Failed to open key: %v", err)
 	}
@@ -139,7 +172,10 @@ func doBenchIsReplayMiss(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		var tag [TagLength]byte
-		rand.Read(tag[:])
+		_, err = rand.Read(tag[:])
+		if err != nil {
+			b.Fatalf("failed to read random tag: %v", err)
+		}
 		b.StartTimer()
 
 		if k.IsReplay(tag[:]) {
@@ -154,7 +190,9 @@ func doBenchIsReplayMiss(b *testing.B) {
 }
 
 func doBenchIsReplayHit(b *testing.B) {
-	k, err := New(tmpDir, testEpoch)
+	mynike := ecdh.EcdhScheme
+	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, 5)
+	k, err := New(tmpDir, testEpoch, geo)
 	if err != nil {
 		b.Fatalf("Failed to open key: %v", err)
 	}
@@ -162,7 +200,10 @@ func doBenchIsReplayHit(b *testing.B) {
 	defer k.Deref()
 
 	var tag [TagLength]byte
-	rand.Read(tag[:])
+	_, err = rand.Read(tag[:])
+	if err != nil {
+		b.Fatalf("Failed to read random tag: %v", err)
+	}
 	k.IsReplay(tag[:]) // Add as a replay.
 	k.doFlush(true)    // Flush the write-back cache.
 
@@ -180,7 +221,13 @@ func doBenchIsReplayHit(b *testing.B) {
 }
 
 func init() {
-	var err error
+	_, privkey, err := ecdh.EcdhScheme.GenerateKeyPair()
+	if err != nil {
+		panic(err)
+	}
+
+	testKey = privkey.(*ecdh.PrivateKey)
+
 	tmpDir, err = os.MkdirTemp("", "mixkey_tests")
 	if err != nil {
 		panic(err)
@@ -189,7 +236,10 @@ func init() {
 	testPositiveTags = make(map[[TagLength]byte]bool)
 	for i := 0; i < 10; {
 		var tag [TagLength]byte
-		rand.Read(tag[:])
+		_, err = rand.Read(tag[:])
+		if err != nil {
+			panic(err)
+		}
 		if !testPositiveTags[tag] {
 			testPositiveTags[tag] = true
 			i++
@@ -199,7 +249,10 @@ func init() {
 	testNegativeTags = make(map[[TagLength]byte]bool)
 	for i := 0; i < 10; {
 		var tag [TagLength]byte
-		rand.Read(tag[:])
+		_, err = rand.Read(tag[:])
+		if err != nil {
+			panic(err)
+		}
 		if !testPositiveTags[tag] && !testNegativeTags[tag] {
 			testNegativeTags[tag] = true
 			i++

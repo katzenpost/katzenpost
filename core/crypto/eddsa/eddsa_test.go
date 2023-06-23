@@ -82,7 +82,7 @@ func TestCheckEdDSA(t *testing.T) {
 	tsk := [64]byte{157, 97, 177, 157, 239, 253, 90, 96, 186, 132, 74, 244, 146, 236, 44, 196, 68, 73, 197, 105, 123, 50, 105, 25, 112, 59, 172, 3, 28, 174, 127, 96, 215, 90, 152, 1, 130, 177, 10, 183, 213, 75, 254, 211, 201, 100, 7, 58, 14, 225, 114, 243, 218, 166, 35, 37, 175, 2, 26, 104, 247, 7, 81, 26}
 	tpk := [32]byte{215, 90, 152, 1, 130, 177, 10, 183, 213, 75, 254, 211, 201, 100, 7, 58, 14, 225, 114, 243, 218, 166, 35, 37, 175, 2, 26, 104, 247, 7, 81, 26}
 	rsk := new(PrivateKey)
-	rsk.FromBytes(tsk[:])
+	assert.NoError(rsk.FromBytes(tsk[:]))
 	assert.Equal(tpk[:], rsk.PublicKey().Bytes())
 	actual_signed := rsk.Sign([]byte{})
 	assert.Equal(vector_signed[:], actual_signed)

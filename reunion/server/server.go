@@ -189,9 +189,9 @@ func (s *Server) sendT3(sendT3 *commands.SendT3) (*commands.MessageResponse, err
 	return response, nil
 }
 
-// RegisterConsumers implemenets cborplugin.PluginClient
+// RegisterConsumers implements cborplugin.PluginClient
 func (s *Server) RegisterConsumer(*cborplugin.Server) {
-	return
+	// this is a no-op
 }
 
 // OnCommand implemenets cborplugin.PluginClient

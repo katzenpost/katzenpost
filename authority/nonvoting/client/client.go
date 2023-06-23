@@ -28,7 +28,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"gopkg.in/op/go-logging.v1"
@@ -172,20 +171,27 @@ func (c *client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	}
 
 	// Validate the document.
-	doc, err := pki.VerifyAndParseDocument(r.Payload, []cert.Verifier{c.cfg.AuthorityIdentityKey})
+	doc, err := pki.ParseDocument(r.Payload)
 	if err != nil {
 		return nil, nil, err
 	} else if doc.Epoch != epoch {
 		c.log.Warningf("nonvoting/Client: Get() authority returned document for wrong epoch: %v", doc.Epoch)
 		return nil, nil, pki.ErrInvalidEpoch
 	}
+
+	err = pki.IsDocumentWellFormed(doc, []cert.Verifier{c.cfg.AuthorityIdentityKey})
+	if err != nil {
+		c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
+		return nil, nil, err
+	}
+
 	c.log.Debugf("Document: %v", doc)
 
 	return doc, r.Payload, nil
 }
 
 func (c *client) Deserialize(raw []byte) (*pki.Document, error) {
-	return pki.VerifyAndParseDocument(raw, []cert.Verifier{c.cfg.AuthorityIdentityKey})
+	return pki.ParseDocument(raw)
 }
 
 func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, signingKey sign.PublicKey, linkKey wire.PrivateKey) (net.Conn, *wire.Session, error) {
@@ -214,13 +220,13 @@ func (c *client) initSession(ctx context.Context, doneCh <-chan interface{}, sig
 
 	// Initialize the wire protocol session.
 	cfg := &wire.SessionConfig{
-		Geometry:          sphinx.DefaultGeometry(),
+		Geometry:          nil,
 		Authenticator:     c,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
-	s, err := wire.NewSession(cfg, true)
+	s, err := wire.NewPKISession(cfg, true)
 	if err != nil {
 		return nil, nil, err
 	}
