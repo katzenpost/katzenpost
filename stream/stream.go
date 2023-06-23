@@ -660,7 +660,10 @@ func (s *Stream) keyAsDialer(addr *StreamAddr) error {
 // generate a new address secret to Listen() or Dial() with
 func generate() string {
 	newsecret := &[keySize]byte{}
-	io.ReadFull(rand.Reader, newsecret[:])
+	_, err := io.ReadFull(rand.Reader, newsecret[:])
+	if err != nil {
+		panic(err)
+	}
 	return base64.StdEncoding.EncodeToString(newsecret[:])
 }
 
@@ -960,7 +963,10 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
 	st.log.Debugf("DialDuplex: DuplexFromSeed: %x", []byte(a.String()))
 
-	st.keyAsDialer(a)
+	err = st.keyAsDialer(a)
+	if err != nil {
+		return nil, err
+	}
 	st.Start()
 	return st, nil
 }
@@ -972,7 +978,10 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	a := &StreamAddr{network: network, address: addr}
 	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
 	st.log.Debugf("ListenDuplex: DuplexFromSeed: %x", []byte(a.String()))
-	st.keyAsListener(a)
+	err := st.keyAsListener(a)
+	if err != nil {
+		return nil, err
+	}
 	st.Start()
 	return st, nil
 }

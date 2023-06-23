@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"sync"
 
@@ -53,7 +54,15 @@ func (b *BufferedStream) CBORDecodeAsync(instance interface{}) chan interface{} 
 
 			err := dec.Decode(instance)
 			if buf.Len() > 0 && b.Buffer.Len() > 0 {
-				io.Copy(buf, b.Buffer) // keep bytes unconsumed from Buffer
+				n, err := io.Copy(buf, b.Buffer) // keep bytes unconsumed from Buffer
+				if err != nil {
+					result <- err
+					return
+				}
+				if int(n) < b.Buffer.Len() {
+					result <- errors.New("Failed to save buffered bytes")
+					return
+				}
 			}
 			buf.Next(dec.NumBytesRead()) // dump the successfully decoded bytes (0 on error)
 			b.Buffer = buf               // save read-but-not-decoded bytes
