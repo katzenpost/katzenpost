@@ -159,7 +159,6 @@ func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Ma
 	db, err := bolt.Open(fileStore, 0600, nil)
 	if err != nil {
 		log.Errorf("%s", err)
-		panic(err)
 		return nil, err
 	}
 	m.db = db
@@ -174,7 +173,6 @@ func NewMap(fileStore string, log *logging.Logger, gcSize int, mapSize int) (*Ma
 	}); err != nil {
 		m.db.Close()
 		log.Errorf("%s", err)
-		panic(err)
 		return nil, err
 	}
 	m.Go(m.worker)
