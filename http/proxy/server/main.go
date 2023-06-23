@@ -72,7 +72,10 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		}
 		p.log.Debugf("writing raw response")
 		rawResp := new(bytes.Buffer)
-		resp.Write(rawResp)
+		err = resp.Write(rawResp)
+		if err != nil {
+			return nil, err
+		}
 
 		/*
 			if len(rawResp.Bytes()) > 10240 {// where do we learn our maximum payload size ?
