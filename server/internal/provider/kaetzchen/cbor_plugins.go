@@ -70,7 +70,9 @@ type CBORPluginWorker struct {
 
 // OnKaetzchen enqueues the pkt for processing by our thread pool of plugins.
 func (k *CBORPluginWorker) OnKaetzchen(pkt *packet.Packet) {
+	k.Lock()
 	handlerCh, ok := k.pluginChans[pkt.Recipient.ID]
+	k.Unlock()
 	if !ok {
 		k.log.Debugf("Failed to find handler. Dropping Kaetzchen request: %v", pkt.ID)
 		return
@@ -122,10 +124,10 @@ func (k *CBORPluginWorker) haltAllClients() {
 
 func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cborplugin.Client) {
 	defer pkt.Dispose()
-
+	pluginCap := pluginClient.Capability()
 	payload, surb, err := packet.ParseForwardPacket(pkt)
 	if err != nil {
-		k.log.Debugf("Dropping Kaetzchen request: %v (%v)", pkt.ID, err)
+		k.log.Debugf("%v: Dropping Kaetzchen request: %v (%v)", pluginCap, pkt.ID, err)
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
@@ -140,8 +142,8 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	case *cborplugin.Response:
 		if len(r.Payload) > k.geo.UserForwardPayloadLength {
 			// response is probably invalid, so drop it
-			k.log.Errorf("Got response too long: %d > max (%d)",
-				len(r.Payload), k.geo.UserForwardPayloadLength)
+			k.log.Errorf("%v: Got response too long: %d > max (%d)",
+				pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
 			instrument.KaetzchenRequestsDropped(1)
 			return
 		}
@@ -149,18 +151,18 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 		if surb != nil {
 			respPkt, err := packet.NewPacketFromSURB(pkt, surb, r.Payload, k.glue.Config().SphinxGeometry)
 			if err != nil {
-				k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
+				k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, pkt.ID, err)
 				return
 			}
 
-			k.log.Debugf("Handing off newly generated SURB-Reply: %v (Src:%v)", respPkt.ID, pkt.ID)
+			k.log.Debugf("%v: Handing off newly generated SURB-Reply: %v (Src:%v)", pluginCap, respPkt.ID, pkt.ID)
 			k.glue.Scheduler().OnPacket(respPkt)
 			return
 		}
 		k.log.Debugf("No SURB provided: %v", pkt.ID)
 	default:
 		// received some unknown command type
-		k.log.Errorf("Failed to handle Kaetzchen request: %v (%v), response: %s", pkt.ID, err, cborResponse)
+		k.log.Errorf("%v: Failed to handle Kaetzchen request: %v (%v), response: %s", pluginCap, pkt.ID, err, cborResponse)
 		instrument.KaetzchenRequestsDropped(1)
 		return
 	}
@@ -169,6 +171,8 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 // KaetzchenForPKI returns the plugins Parameters map for publication in the PKI doc.
 func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 	s := make(ServiceMap)
+	k.Lock()
+	defer k.Unlock()
 	for _, k := range k.clients {
 		capa := k.Capability()
 		if _, ok := s[capa]; ok {
@@ -189,6 +193,8 @@ func (k *CBORPluginWorker) KaetzchenForPKI() ServiceMap {
 
 // IsKaetzchen returns true if the given recipient is one of our workers.
 func (k *CBORPluginWorker) IsKaetzchen(recipient [constants.RecipientIDLength]byte) bool {
+	k.Lock()
+	defer k.Unlock()
 	_, ok := k.pluginChans[recipient]
 	return ok
 }
@@ -198,6 +204,25 @@ func (k *CBORPluginWorker) launch(command, capability, endpoint string, args []s
 	plugin := cborplugin.NewClient(k.glue.LogBackend(), capability, endpoint, &cborplugin.ResponseFactory{})
 	err := plugin.Start(command, args)
 	return plugin, err
+}
+
+func (k *CBORPluginWorker) unregister(endpoint [constants.RecipientIDLength]byte, pluginClient *cborplugin.Client) {
+	k.log.Debugf("Unregistering %s", pluginClient.Capability())
+	k.Lock()
+	defer k.Unlock()
+	delete(k.pluginChans, endpoint)
+	for i, c := range k.clients {
+		if c == pluginClient {
+			// last element in clients
+			if len(k.clients) == i+1 {
+				k.clients = k.clients[:i]
+			} else {
+				k.clients = append(k.clients[:i], k.clients[i+1:]...)
+			}
+			k.log.Debugf("Unregistered %s", pluginClient.Capability())
+			break
+		}
+	}
 }
 
 // NewCBORPluginWorker returns a new CBORPluginWorker
@@ -210,6 +235,10 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		pluginChans: make(PluginChans),
 		clients:     make([]*cborplugin.Client, 0),
 	}
+
+	// hold lock while mutating pluginChans and clients
+	kaetzchenWorker.Lock()
+	defer kaetzchenWorker.Unlock()
 
 	capaMap := make(map[string]bool)
 
@@ -269,6 +298,12 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 		// otherwise the worker() goroutines race this thread.
 		defer kaetzchenWorker.Go(func() {
 			kaetzchenWorker.worker(endpoint, pluginClient)
+		})
+
+		// Unregister pluginClient when it halts
+		defer kaetzchenWorker.Go(func() {
+			<-pluginClient.HaltCh()
+			kaetzchenWorker.unregister(endpoint, pluginClient)
 		})
 
 		capaMap[capa] = true
