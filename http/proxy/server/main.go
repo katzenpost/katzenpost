@@ -52,7 +52,7 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		if _, ok := p.allowedHost[req.Host]; !ok {
 			if _, ok := p.allowedHost["*"]; !ok {
 				// ignore request or send a http.Response
-				err := errors.New("Request Invalid Host")
+				err := errors.New("requested host invalid")
 				p.log.Errorf("AllowedHost: %s", err)
 				return nil, err
 			}
@@ -82,7 +82,7 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		return &cborplugin.Response{Payload: rawResp.Bytes()}, nil
 	default:
 		p.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("Invalid Command type")
+		return nil, errors.New("invalid command type")
 	}
 }
 
