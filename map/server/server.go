@@ -103,7 +103,10 @@ func (m *Map) Put(msgID common.MessageID, payload []byte) error {
 		}
 
 		// store msgID in gcBucket
-		gcbkt.Put(msgID[:], []byte{0x1})
+		err = gcbkt.Put(msgID[:], []byte{0x1})
+		if err != nil {
+			return err
+		}
 
 		// use gcBktIdex to get handle to gcBkt
 		// if gcBkt is == gcsize increment gcBktIdx, create new bkt, update gcBkt handle
