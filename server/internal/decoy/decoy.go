@@ -35,6 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -63,7 +64,7 @@ type decoy struct {
 	sync.Mutex
 
 	sphinx *sphinx.Sphinx
-	geo    *sphinx.Geometry
+	geo    *geo.Geometry
 
 	glue glue.Glue
 	log  *logging.Logger
@@ -248,13 +249,13 @@ func (d *decoy) sendLoopPacket(doc *pki.Document, recipient []byte, src, dst *pk
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
 
-		fwdPath, then, err := path.New(d.rng, doc, recipient, src, dst, &surbID, time.Now(), false, true)
+		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, &surbID, time.Now(), false, true)
 		if err != nil {
 			d.log.Debugf("Failed to select forward path: %v", err)
 			return
 		}
 
-		revPath, then, err := path.New(d.rng, doc, d.recipient, dst, src, &surbID, then, false, false)
+		revPath, then, err := path.New(d.rng, d.geo, doc, d.recipient, dst, src, &surbID, then, false, false)
 		if err != nil {
 			d.log.Debugf("Failed to select reverse path: %v", err)
 			return
@@ -306,7 +307,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		now := time.Now()
 
-		fwdPath, then, err := path.New(d.rng, doc, recipient, src, dst, nil, time.Now(), false, true)
+		fwdPath, then, err := path.New(d.rng, d.geo, doc, recipient, src, dst, nil, time.Now(), false, true)
 		if err != nil {
 			d.log.Debugf("Failed to select forward path: %v", err)
 			return
@@ -328,7 +329,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 }
 
 func (d *decoy) dispatchPacket(fwdPath []*sphinx.PathHop, raw []byte) {
-	pkt, err := packet.New(raw)
+	pkt, err := packet.New(raw, d.geo)
 	if err != nil {
 		d.log.Debugf("Failed to allocate packet: %v", err)
 		return
@@ -427,9 +428,13 @@ func (d *decoy) sweepSURBCtxs() {
 
 // New constructs a new decoy instance.
 func New(glue glue.Glue) (glue.Decoy, error) {
+	s, err := sphinx.FromGeometry(glue.Config().SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
 	d := &decoy{
-		geo:       sphinx.DefaultGeometry(),
-		sphinx:    sphinx.DefaultSphinx(),
+		geo:       glue.Config().SphinxGeometry,
+		sphinx:    s,
 		glue:      glue,
 		log:       glue.LogBackend().GetLogger("decoy"),
 		recipient: make([]byte, sConstants.RecipientIDLength),

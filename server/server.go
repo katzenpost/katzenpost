@@ -245,6 +245,7 @@ func New(cfg *config.Config) (*Server, error) {
 		s.log.Warningf("AEZv5 implementation IS NOT hardware accelerated.")
 	}
 	s.log.Noticef("Server identifier is: '%v'", s.cfg.Server.Identifier)
+	s.log.Noticef("Sphinx Geometry: %s", cfg.SphinxGeometry.Display())
 
 	// Initialize the server identity and link keys.
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
@@ -315,7 +316,7 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Load and or generate mix keys.
-	if s.mixKeys, err = newMixKeys(goo); err != nil {
+	if s.mixKeys, err = newMixKeys(goo, cfg.SphinxGeometry); err != nil {
 		s.log.Errorf("Failed to initialize mix keys: %v", err)
 		return nil, err
 	}

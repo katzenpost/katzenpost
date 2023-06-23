@@ -26,7 +26,7 @@ package cborplugin
 import (
 	"bufio"
 	"io"
-	"net"
+	//"net"
 	"os/exec"
 	"syscall"
 
@@ -132,7 +132,7 @@ type Client struct {
 
 	socketFile string
 	cmd        *exec.Cmd
-	conn       net.Conn
+	//conn       net.Conn
 
 	commandBuilder CommandBuilder
 
@@ -179,8 +179,11 @@ func (c *Client) Start(command string, args []string) error {
 
 func (c *Client) reaper() {
 	<-c.HaltCh()
-	c.cmd.Process.Signal(syscall.SIGTERM)
-	err := c.cmd.Wait()
+	err := c.cmd.Process.Signal(syscall.SIGTERM)
+	if err != nil {
+		c.log.Errorf("CBOR plugin worker, error sending SIGTERM: %s\n", err)
+	}
+	err = c.cmd.Wait()
 	if err != nil {
 		c.log.Errorf("CBOR plugin worker, command exec error: %s\n", err)
 	}
@@ -215,6 +218,7 @@ func (c *Client) launch(command string, args []string) error {
 	}
 
 	// proxy stderr to our debug log
+	// also calls Halt() when stderr closes, if the program crashes or is killed
 	c.Go(func() {
 		c.logPluginStderr(stderr)
 	})

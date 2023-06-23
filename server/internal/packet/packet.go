@@ -25,6 +25,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
@@ -34,18 +35,11 @@ var (
 			return new(Packet)
 		},
 	}
-	rawPacketPool = sync.Pool{
-		New: func() interface{} {
-			geo := sphinx.DefaultGeometry()
-			b := make([]byte, geo.PacketLength)
-			return b
-		},
-	}
 	pktID uint64
 )
 
 type Packet struct {
-	Geometry *sphinx.Geometry
+	Geometry *geo.Geometry
 
 	Raw     []byte
 	Payload []byte
@@ -63,6 +57,8 @@ type Packet struct {
 
 	MustForward   bool
 	MustTerminate bool
+
+	rawPacketPool sync.Pool
 }
 
 // Set sets the Packet's internal components.
@@ -167,12 +163,14 @@ func (pkt *Packet) Dispose() {
 func (pkt *Packet) copyToRaw(b []byte) error {
 	if len(b) != pkt.Geometry.PacketLength {
 		// TODO: When we have actual large packets, handle them.
-		return fmt.Errorf("invalid Sphinx packet size: %v", len(b))
+		errInfo := fmt.Sprintf("My Sphinx Geometry: %s\n%s\n", pkt.Geometry.String(),
+			pkt.Geometry.Display())
+		return fmt.Errorf("invalid Sphinx packet size: %v\n%s", len(b), errInfo)
 	}
 
 	// The common case of standard packet sizes uses a pool allocator
 	// to store the raw packets.
-	pkt.Raw = rawPacketPool.Get().([]byte)
+	pkt.Raw = pkt.rawPacketPool.Get().([]byte)
 
 	// Sanity check, just in case the pool allocator is doing something dumb.
 	if len(pkt.Raw) != len(b) {
@@ -188,25 +186,31 @@ func (pkt *Packet) copyToRaw(b []byte) error {
 func (pkt *Packet) disposeRaw() {
 	if len(pkt.Raw) == pkt.Geometry.PacketLength {
 		utils.ExplicitBzero(pkt.Raw)
-		rawPacketPool.Put(pkt.Raw) // nolint: megacheck
+		pkt.rawPacketPool.Put(pkt.Raw) // nolint: megacheck
 	}
 	pkt.Raw = nil
 }
 
 // New allocates a new Packet, with the specified raw payload.
-func New(raw []byte) (*Packet, error) {
+func New(raw []byte, g *geo.Geometry) (*Packet, error) {
 	id := atomic.AddUint64(&pktID, 1)
-	return NewWithID(raw, id)
+	return NewWithID(raw, id, g)
 }
 
 // NewWithID allocates a new Packet, with the specified raw payload and ID.
 // Most callers should use New, this exists to support serializing packets
 // to external memory.
-func NewWithID(raw []byte, id uint64) (*Packet, error) {
+func NewWithID(raw []byte, id uint64, g *geo.Geometry) (*Packet, error) {
 	v := pktPool.Get()
 	pkt := v.(*Packet)
-	pkt.Geometry = sphinx.DefaultGeometry()
+	pkt.Geometry = g
 	pkt.ID = id
+	pkt.rawPacketPool = sync.Pool{
+		New: func() interface{} {
+			b := make([]byte, pkt.Geometry.PacketLength)
+			return b
+		},
+	}
 	if err := pkt.copyToRaw(raw); err != nil {
 		pkt.Dispose()
 		return nil, err
@@ -256,7 +260,7 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	return ct, surb, nil
 }
 
-func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
+func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*Packet, error) {
 	if !pkt.IsToUser() {
 		return nil, fmt.Errorf("invalid commands to generate a SURB reply")
 	}
@@ -279,7 +283,11 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	// packet processing doesn't constantly utilize the AES-NI units due
 	// to the non-AEZ components of a Sphinx Unwrap operation.
 
-	s := sphinx.DefaultSphinx()
+	pkt.Geometry = geo
+	s, err := sphinx.FromGeometry(pkt.Geometry)
+	if err != nil {
+		return nil, err
+	}
 	rawRespPkt, firstHop, err := s.NewPacketFromSURB(surb, respPayload)
 	if err != nil {
 		return nil, err
@@ -297,16 +305,27 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte) (*Packet, error) {
 	cmds = append(cmds, nodeDelayCmd)
 
 	// Assemble the response packet.
-	respPkt, _ := New(rawRespPkt)
+	respPkt, err := New(rawRespPkt, geo)
+	if err != nil {
+		return nil, err
+	}
 	respPkt.Geometry = pkt.Geometry
-	respPkt.Set(nil, cmds)
+	err = respPkt.Set(nil, cmds)
+	if err != nil {
+		return nil, err
+	}
 
 	respPkt.RecvAt = pkt.RecvAt
-	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
-	respPkt.MustForward = true
-
 	// XXX: This should probably fudge the delay to account for processing
 	// time.
+	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
+	respPkt.MustForward = true
+	respPkt.rawPacketPool = sync.Pool{
+		New: func() interface{} {
+			b := make([]byte, pkt.Geometry.PacketLength)
+			return b
+		},
+	}
 
 	return respPkt, nil
 }

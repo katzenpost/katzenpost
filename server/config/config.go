@@ -34,6 +34,7 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"golang.org/x/net/idna"
@@ -669,14 +670,14 @@ func (pCfg *PKI) validate(datadir string) error {
 			return err
 		}
 		nrCfg++
-	} else {
+	} else if pCfg.Voting != nil {
 		if err := pCfg.Voting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
 	}
 	if nrCfg != 1 {
-		return fmt.Errorf("config: Only one authority backend should be configured, got: %v", nrCfg)
+		return fmt.Errorf("config: Exactly one authority backend should be configured, got: %v", nrCfg)
 	}
 	return nil
 }
@@ -744,11 +745,12 @@ func (mCfg *Management) validate() error {
 
 // Config is the top level Katzenpost server configuration.
 type Config struct {
-	Server     *Server
-	Logging    *Logging
-	Provider   *Provider
-	PKI        *PKI
-	Management *Management
+	Server         *Server
+	Logging        *Logging
+	Provider       *Provider
+	PKI            *PKI
+	Management     *Management
+	SphinxGeometry *geo.Geometry
 
 	Debug *Debug
 }
@@ -757,6 +759,16 @@ type Config struct {
 // supplied configuration.  Most people should call one of the Load variants
 // instead.
 func (cfg *Config) FixupAndValidate() error {
+
+	if cfg.SphinxGeometry == nil {
+		return errors.New("config: No SphinxGeometry block was present")
+	}
+
+	err := cfg.SphinxGeometry.Validate()
+	if err != nil {
+		return err
+	}
+
 	// The Server and PKI sections are mandatory, everything else is optional.
 	if cfg.Server == nil {
 		return errors.New("config: No Server block was present")
@@ -793,7 +805,7 @@ func (cfg *Config) FixupAndValidate() error {
 	} else if cfg.Provider != nil {
 		return errors.New("config: Provider block set when not a Provider")
 	}
-	if err := cfg.Logging.validate(); err != nil {
+	if err = cfg.Logging.validate(); err != nil {
 		return err
 	}
 	cfg.Management.applyDefaults(cfg.Server)
@@ -802,7 +814,6 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 	cfg.Debug.applyDefaults()
 
-	var err error
 	cfg.Server.Identifier, err = idna.Lookup.ToASCII(cfg.Server.Identifier)
 	if err != nil {
 		return fmt.Errorf("config: Failed to normalize Identifier: %v", err)

@@ -22,12 +22,19 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 var (
 	// ErrBlindDataSizeInvalid indicates that the blinding data size was invalid.
 	ErrBlindDataSizeInvalid error = errors.New("ecdh/nike: blinding data size invalid")
 )
+
+var _ nike.PrivateKey = (*PrivateKey)(nil)
+var _ nike.PublicKey = (*PublicKey)(nil)
+var _ nike.Scheme = (*EcdhNike)(nil)
+
+var EcdhScheme nike.Scheme
 
 // EcdhNike implements the Nike interface using our ecdh module.
 type EcdhNike struct {
@@ -41,9 +48,120 @@ func NewEcdhNike(rng io.Reader) *EcdhNike {
 	}
 }
 
-var _ nike.PrivateKey = (*ecdh.PrivateKey)(nil)
-var _ nike.PublicKey = (*ecdh.PublicKey)(nil)
-var _ nike.Nike = (*EcdhNike)(nil)
+func FromECDH(p *ecdh.PrivateKey) *PrivateKey {
+	return &PrivateKey{
+		privateKey: p,
+	}
+}
+
+type PrivateKey struct {
+	privateKey *ecdh.PrivateKey
+}
+
+func (p *PrivateKey) Public() nike.PublicKey {
+	return &PublicKey{
+		publicKey: p.privateKey.PublicKey(),
+	}
+}
+
+func (p *PrivateKey) Reset() {
+	p.privateKey.Reset()
+}
+
+func (p *PrivateKey) Bytes() []byte {
+	return p.privateKey.Bytes()
+}
+
+func (p *PrivateKey) FromBytes(data []byte) error {
+	return p.privateKey.FromBytes(data)
+}
+
+func (p *PrivateKey) MarshalBinary() ([]byte, error) {
+	return p.privateKey.MarshalBinary()
+}
+
+func (p *PrivateKey) MarshalText() ([]byte, error) {
+	return p.privateKey.MarshalText()
+}
+
+func (p *PrivateKey) UnmarshalBinary(data []byte) error {
+	return p.privateKey.UnmarshalBinary(data)
+}
+
+func (p *PrivateKey) UnmarshalText(data []byte) error {
+	return p.privateKey.UnmarshalText(data)
+}
+
+type PublicKey struct {
+	publicKey *ecdh.PublicKey
+}
+
+func FromEcdhKey(key *ecdh.PublicKey) *PublicKey {
+	return &PublicKey{
+		publicKey: key,
+	}
+}
+
+func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
+	return p.publicKey.Blind(blindingFactor.Bytes())
+}
+
+func (p *PublicKey) Reset() {
+	p.publicKey.Reset()
+}
+
+func (p *PublicKey) Bytes() []byte {
+	return p.publicKey.Bytes()
+}
+
+func (p *PublicKey) FromBytes(data []byte) error {
+	return p.publicKey.FromBytes(data)
+}
+
+func (p *PublicKey) MarshalBinary() ([]byte, error) {
+	return p.publicKey.MarshalBinary()
+}
+
+func (p *PublicKey) MarshalText() ([]byte, error) {
+	return p.publicKey.MarshalText()
+}
+
+func (p *PublicKey) UnmarshalBinary(data []byte) error {
+	return p.publicKey.UnmarshalBinary(data)
+}
+
+func (p *PublicKey) UnmarshalText(data []byte) error {
+	return p.publicKey.UnmarshalText(data)
+}
+
+func (e *EcdhNike) GeneratePrivateKey(rng io.Reader) nike.PrivateKey {
+	privKey, err := ecdh.NewKeypair(rng)
+	if err != nil {
+		panic(err)
+	}
+	return &PrivateKey{
+		privateKey: privKey,
+	}
+}
+
+func (e *EcdhNike) GenerateKeyPairFromEntropy(rng io.Reader) (nike.PublicKey, nike.PrivateKey, error) {
+	privKey, err := ecdh.NewKeypair(rng)
+	if err != nil {
+		return nil, nil, err
+	}
+	p := &PrivateKey{
+		privateKey: privKey,
+	}
+	return p.Public(), p, nil
+}
+
+func (e *EcdhNike) GenerateKeyPair() (nike.PublicKey, nike.PrivateKey, error) {
+	return e.GenerateKeyPairFromEntropy(e.rng)
+}
+
+func (e *EcdhNike) Name() string {
+	return "x25519"
+}
 
 // PublicKeySize returns the size in bytes of the public key.
 func (e *EcdhNike) PublicKeySize() int {
@@ -60,7 +178,9 @@ func (e *EcdhNike) PrivateKeySize() int {
 // via some serialization format via FromBytes
 // or FromPEMFile methods.
 func (e *EcdhNike) NewEmptyPublicKey() nike.PublicKey {
-	return new(ecdh.PublicKey)
+	return &PublicKey{
+		publicKey: new(ecdh.PublicKey),
+	}
 }
 
 // NewEmptyPrivateKey returns an uninitialized
@@ -68,49 +188,35 @@ func (e *EcdhNike) NewEmptyPublicKey() nike.PublicKey {
 // via some serialization format via FromBytes
 // or FromPEMFile methods.
 func (e *EcdhNike) NewEmptyPrivateKey() nike.PrivateKey {
-	return new(ecdh.PrivateKey)
-}
-
-// NewKeypair returns a newly generated key pair.
-func (e *EcdhNike) NewKeypair() (nike.PrivateKey, nike.PublicKey) {
-	privKey, err := ecdh.NewKeypair(e.rng)
-	if err != nil {
-		panic(err)
+	return &PrivateKey{
+		privateKey: new(ecdh.PrivateKey),
 	}
-	return privKey, privKey.PublicKey()
 }
 
 // DeriveSecret derives a shared secret given a private key
 // from one party and a public key from another.
 func (e *EcdhNike) DeriveSecret(privKey nike.PrivateKey, pubKey nike.PublicKey) []byte {
-	sharedSecret := privKey.(*ecdh.PrivateKey).Exp(pubKey.(*ecdh.PublicKey))
+	sharedSecret := privKey.(*PrivateKey).privateKey.Exp(pubKey.(*PublicKey).publicKey)
 	return sharedSecret[:]
 }
 
 // DerivePublicKey derives a public key given a private key.
 func (e *EcdhNike) DerivePublicKey(privKey nike.PrivateKey) nike.PublicKey {
-	return privKey.(*ecdh.PrivateKey).PublicKey()
+	return &PublicKey{
+		publicKey: privKey.(*PrivateKey).privateKey.PublicKey(),
+	}
 }
 
-// Blind performs the blinding operation against the
-// two byte slices and returns the blinded value.
-//
-// Note that the two arguments must be the correct lengths:
-//
-// * groupMember must be the size of a public key.
-//
-// * blindingFactor must be the size of a private key.
-//
-// See also PublicKey's Blind method.
-func (e *EcdhNike) Blind(groupMember []byte, blindingFactor []byte) []byte {
-	if len(groupMember) != ecdh.PublicKeySize {
-		panic(ErrBlindDataSizeInvalid)
+func (e *EcdhNike) Blind(groupMember nike.PublicKey, blindingFactor nike.PrivateKey) nike.PublicKey {
+	sharedSecret := ecdh.Exp(groupMember.Bytes(), blindingFactor.Bytes())
+	pubKey := new(ecdh.PublicKey)
+	err := pubKey.FromBytes(sharedSecret)
+	if err != nil {
+		panic(err)
 	}
-	if len(blindingFactor) != ecdh.PrivateKeySize {
-		panic(ErrBlindDataSizeInvalid)
+	return &PublicKey{
+		pubKey,
 	}
-	sharedSecret := ecdh.Exp(groupMember, blindingFactor)
-	return sharedSecret
 }
 
 // UnmarshalBinaryPublicKey loads a public key from byte slice.
@@ -120,5 +226,23 @@ func (e *EcdhNike) UnmarshalBinaryPublicKey(b []byte) (nike.PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pubKey, err
+	return &PublicKey{
+		publicKey: pubKey,
+	}, err
+}
+
+// UnmarshalBinaryPrivateKey loads a private key from byte slice.
+func (e *EcdhNike) UnmarshalBinaryPrivateKey(b []byte) (nike.PrivateKey, error) {
+	privKey := &PrivateKey{
+		privateKey: new(ecdh.PrivateKey),
+	}
+	err := privKey.FromBytes(b)
+	if err != nil {
+		return nil, err
+	}
+	return privKey, err
+}
+
+func init() {
+	EcdhScheme = NewEcdhNike(rand.Reader)
 }

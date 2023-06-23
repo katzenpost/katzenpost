@@ -23,22 +23,12 @@ import (
 	"errors"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/internal/crypto"
 	"github.com/katzenpost/katzenpost/core/utils"
 )
 
 const (
-	// NextNodeHopLength is the length of a NextNodeHop command in bytes.
-	NextNodeHopLength = 1 + constants.NodeIDLength + crypto.MACLength
-
-	// RecipientLength is the length of a Recipient command in bytes.
-	RecipientLength = 1 + constants.RecipientIDLength
-
-	// SURBReplyLength is the length of a SURBReply command in bytes.
-	SURBReplyLength = 1 + constants.SURBIDLength
-
-	// NodeDelayLength is the length of a NodeDelay command in bytes.
-	NodeDelayLength = 1 + 4
 
 	// Generic commands.
 	null        commandID = 0x00
@@ -64,7 +54,7 @@ type RoutingCommand interface {
 
 // FromBytes deserializes the first per-hop routing command in the buffer b,
 // returning a RoutingCommand and the remaining bytes (if any), or an error.
-func FromBytes(b []byte) (cmd RoutingCommand, rest []byte, err error) {
+func FromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
 	if len(b) == 0 {
 		// Treat a 0 length command as a null command.
 		return
@@ -90,11 +80,11 @@ func FromBytes(b []byte) (cmd RoutingCommand, rest []byte, err error) {
 			}
 		}
 	case nextNodeHop:
-		cmd, rest, err = nextNodeHopFromBytes(b)
+		cmd, rest, err = nextNodeHopFromBytes(b, g)
 	case recipient:
-		cmd, rest, err = recipeientFromBytes(b)
+		cmd, rest, err = recipeientFromBytes(b, g)
 	case surbReply:
-		cmd, rest, err = surbReplyFromBytes(b)
+		cmd, rest, err = surbReplyFromBytes(b, g)
 	case nodeDelay:
 		cmd, rest, err = nodeDelayFromBytes(b)
 	default:
@@ -118,12 +108,12 @@ func (cmd *NextNodeHop) ToBytes(b []byte) []byte {
 	return b
 }
 
-func nextNodeHopFromBytes(b []byte) (cmd RoutingCommand, rest []byte, err error) {
-	if len(b) < NextNodeHopLength-1 {
+func nextNodeHopFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
+	if len(b) < g.NextNodeHopLength-1 {
 		err = errInvalidCommand
 		return
 	}
-	rest = b[NextNodeHopLength-1:]
+	rest = b[g.NextNodeHopLength-1:]
 
 	r := new(NextNodeHop)
 	copy(r.ID[:], b[:constants.NodeIDLength])
@@ -145,12 +135,12 @@ func (cmd *Recipient) ToBytes(b []byte) []byte {
 	return b
 }
 
-func recipeientFromBytes(b []byte) (cmd RoutingCommand, rest []byte, err error) {
-	if len(b) < RecipientLength-1 {
+func recipeientFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
+	if len(b) < constants.RecipientIDLength {
 		err = errInvalidCommand
 		return
 	}
-	rest = b[RecipientLength-1:]
+	rest = b[constants.RecipientIDLength:]
 
 	r := new(Recipient)
 	copy(r.ID[:], b[:constants.RecipientIDLength])
@@ -171,12 +161,12 @@ func (cmd *SURBReply) ToBytes(b []byte) []byte {
 	return b
 }
 
-func surbReplyFromBytes(b []byte) (cmd RoutingCommand, rest []byte, err error) {
-	if len(b) < SURBReplyLength-1 {
+func surbReplyFromBytes(b []byte, g *geo.Geometry) (cmd RoutingCommand, rest []byte, err error) {
+	if len(b) < constants.SURBIDLength {
 		err = errInvalidCommand
 		return
 	}
-	rest = b[SURBReplyLength-1:]
+	rest = b[constants.SURBIDLength:]
 
 	r := new(SURBReply)
 	copy(r.ID[:], b[:constants.SURBIDLength])
@@ -200,14 +190,14 @@ func (cmd *NodeDelay) ToBytes(b []byte) []byte {
 }
 
 func nodeDelayFromBytes(b []byte) (cmd RoutingCommand, rest []byte, err error) {
-	if len(b) < NodeDelayLength-1 {
+	nodeDelayLength := 4
+	if len(b) < nodeDelayLength {
 		err = errInvalidCommand
 		return
 	}
-	rest = b[NodeDelayLength-1:]
-
+	rest = b[nodeDelayLength:]
 	r := new(NodeDelay)
-	r.Delay = binary.BigEndian.Uint32(b[:4])
+	r.Delay = binary.BigEndian.Uint32(b[:nodeDelayLength])
 	cmd = r
 	return
 }

@@ -147,7 +147,9 @@ func (k *PublicKey) ToPEMFile(f string) error {
 func (k *PublicKey) ToECDH() *ecdh.PublicKey {
 	ed_pub, _ := new(edwards25519.Point).SetBytes(k.Bytes())
 	r := new(ecdh.PublicKey)
-	r.FromBytes(ed_pub.BytesMontgomery())
+	if r.FromBytes(ed_pub.BytesMontgomery()) != nil {
+		panic("edwards.Point from pub.BytesMontgomery failed, impossible. ")
+	}
 	return r
 }
 
@@ -236,12 +238,14 @@ func (k *PrivateKey) KeyType() string {
 // ToECDH converts the PrivateKey to the corresponding ecdh.PrivateKey.
 func (k *PrivateKey) ToECDH() *ecdh.PrivateKey {
 	dhBytes := sha512.Sum512(k.Bytes()[:32])
+	defer utils.ExplicitBzero(dhBytes[:])
 	dhBytes[0] &= 248
 	dhBytes[31] &= 127
 	dhBytes[31] |= 64
 	r := new(ecdh.PrivateKey)
-	r.FromBytes(dhBytes[:32])
-	utils.ExplicitBzero(dhBytes[:])
+	if r.FromBytes(dhBytes[:32]) != nil {
+		panic("sha512sum < 32 bytes, impossible")
+	}
 	return r
 }
 

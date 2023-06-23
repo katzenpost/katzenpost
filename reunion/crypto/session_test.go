@@ -36,6 +36,7 @@ func TestClientBasics(t *testing.T) {
 
 	sharedEpochKey1 := [SharedEpochKeySize]byte{}
 	_, err = rand.Reader.Read(sharedEpochKey1[:])
+	require.NoError(err)
 	sharedEpochKey2 := [SharedEpochKeySize]byte{}
 	copy(sharedEpochKey2[:], sharedEpochKey1[:])
 
@@ -108,6 +109,7 @@ func TestClientSerialization(t *testing.T) {
 
 	sharedEpochKey := [SharedEpochKeySize]byte{}
 	_, err = rand.Reader.Read(sharedEpochKey[:])
+	require.NoError(err)
 
 	client, err := NewSessionFromKey(&sharedEpochKey, sharedRandom[:], epoch)
 	require.NoError(err)
