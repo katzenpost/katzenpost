@@ -85,15 +85,6 @@ func (req *Request) authRFC1929() (err error) {
 		return
 	}
 
-	// Pluggable transports use the username/password field to pass
-	// per-connection arguments.  The fields contain ASCII strings that
-	// are combined and then parsed into key/value pairs.
-	argStr := string(uname)
-	if !(plen == 1 && passwd[0] == 0x00) {
-		// tor will set the password to 'NUL', if the field doesn't contain any
-		// actual argument data.
-		argStr += string(passwd)
-	}
 	resp := []byte{authRFC1929Ver, authRFC1929Success}
 	_, err = req.rw.Write(resp[:])
 	return
