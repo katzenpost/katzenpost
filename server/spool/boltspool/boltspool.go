@@ -142,7 +142,10 @@ func (s *boltSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining i
 
 		if next == nil {
 			// Deleting the message drained the queue.
-			sBkt.SetSequence(0) // Don't keep a lifetime message count.
+			err = sBkt.SetSequence(0) // Don't keep a lifetime message count.
+			if err != nil {
+				return
+			}
 			remaining = 0
 			err = tx.Commit()
 			return
@@ -200,8 +203,14 @@ func (s *boltSpool) VacuumExpired(udb userdb.UserDB, ignoreIdentities map[[sCons
 			if _, ok := ignoreIdentities[key]; ok {
 				continue
 			}
-			_ = udb.Remove(identity)
-			_ = uBkt.DeleteBucket(identity)
+			err := udb.Remove(identity)
+			if err != nil {
+				return err
+			}
+			err = uBkt.DeleteBucket(identity)
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	})
