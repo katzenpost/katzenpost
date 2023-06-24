@@ -189,10 +189,10 @@ func buildVectorSphinx(t *testing.T, mynike nike.Scheme, withSURB bool, sphinx *
 		}
 
 		// Create the packet.
-		pkt := []byte{}
+		var pkt []byte
 		surb := []byte{}
 		surbKeys := []byte{}
-		firstHop := &[32]byte{}
+		var firstHop *[32]byte
 		payload := []byte(testPayload)
 		var err error
 		if withSURB {

@@ -43,7 +43,9 @@ func (s *randSource) feedForward() {
 	var seed [chacha20.KeySize]byte
 	defer utils.ExplicitBzero(seed[:])
 	s.s.KeyStream(seed[:])
-	s.s.ReKey(seed[:], mNonce[:])
+	if s.s.ReKey(seed[:], mNonce[:]) != nil {
+		panic("chacha20 ReKey failed, not expected.")
+	}
 	s.off = 0
 }
 
@@ -73,7 +75,9 @@ func (s *randSource) Seed(unused int64) {
 	if _, err := io.ReadFull(Reader, seed[:]); err != nil {
 		panic("crypto/rand: failed to read entropy: " + err.Error())
 	}
-	s.s.ReKey(seed[:], mNonce[:])
+	if err := s.s.ReKey(seed[:], mNonce[:]); err != nil {
+		panic("s.s.ReKey(chacha20) failed, not expected")
+	}
 	s.off = 0
 }
 

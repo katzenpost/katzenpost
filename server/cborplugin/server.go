@@ -17,7 +17,7 @@
 package cborplugin
 
 import (
-	"net"
+	//"net"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -31,7 +31,7 @@ type Server struct {
 
 	socket         *CommandIO
 	log            *logging.Logger
-	conn           net.Conn
+	//conn           net.Conn
 	socketFile     string
 	plugin         ServerPlugin
 	commandBuilder CommandBuilder

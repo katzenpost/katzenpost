@@ -75,13 +75,18 @@ func TestBadCertificate(t *testing.T) {
 	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
 	current, _, _ := epochtime.Now()
+	validBeforeEpoch := current + 2
+	// +2 so we it's not impacted by epoch rollover in between Sign()
+	//  and Verify(): it's valid during [current, current+1]
 
 	certified := []byte("hello, i am a message")
 
-	certificate, err := Sign(signingPrivKey, signingPubKey, certified, current+1)
+	certificate, err := Sign(signingPrivKey, signingPubKey, certified, validBeforeEpoch)
 	require.NoError(t, err)
 
-	certificate[1000] = 235 // modify the signed data so that the Verify will fail
+	// modify the signed data so that the Verify will fail.
+	// XOR ensures modification:
+	certificate[1000] ^= 235
 
 	mesg, err := Verify(signingPubKey, certificate)
 	require.Error(t, err)
