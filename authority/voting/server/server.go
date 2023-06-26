@@ -327,7 +327,7 @@ func New(cfg *config.Config) (*Server, error) {
 				s.Add(1)
 				go s.listenWorker(l)
 			case "quic":
-				l, err := quic.ListenAddr(u.Host, quicutil.GenerateTLSConfig(), nil)
+				l, err := quic.ListenAddr(u.Host, kquic.GenerateTLSConfig(), nil)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
