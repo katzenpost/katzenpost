@@ -131,6 +131,7 @@ type MinclientBench struct {
 	minclient       *minclient.Client
 	provider        *pki.MixDescriptor
 	onDoc           chan struct{}
+	onConn          chan struct{}
 
 	msgs  map[[cConstants.MessageIDLength]byte]struct{}
 	surbs map[[sConstants.SURBIDLength]byte]struct{}
@@ -141,6 +142,7 @@ func (b *MinclientBench) setup() {
 	b.msgs = make(map[[cConstants.MessageIDLength]byte]struct{})
 	b.surbs = make(map[[sConstants.SURBIDLength]byte]struct{})
 	b.onDoc = make(chan struct{}, 0)
+	b.onConn = make(chan struct{}, 0)
 
 	cfg := getClientCfg(clientTestCfg)
 	b.cfg = cfg
@@ -179,7 +181,7 @@ func (b *MinclientBench) setup() {
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
-		OnConnFn:            b.onConn,
+		OnConnFn:            b.onConnection,
 		OnMessageFn:         b.onMessage,
 		OnACKFn:             b.onAck,
 		OnDocumentFn:        b.onDocument,
@@ -261,14 +263,22 @@ func (b *MinclientBench) Stop() {
 	b.minclient.Wait()
 }
 
-func (b *MinclientBench) onConn(err error) {
-	// TODO: log and track the nubmer of connections made during the run
-}
-
 func (b *MinclientBench) onEmpty() error {
 	minclientEmptyMessageReceived.Inc()
 	b.log.Debugf("OnEmpty")
 	return nil
+}
+
+func (b *MinclientBench) onConnection(err error) {
+	// TODO: keep track of stats / time / etc
+	b.log.Debugf("OnConnection")
+	if err != nil {
+		return
+	}
+	select {
+	case b.onConn <- struct{}{}:
+	default:
+	}
 }
 
 func (b *MinclientBench) onMessage(mesg []byte) error {
