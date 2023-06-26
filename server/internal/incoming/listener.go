@@ -29,7 +29,7 @@ import (
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
+	kquic "github.com/katzenpost/katzenpost/quic"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
 	quic "github.com/quic-go/quic-go"
@@ -110,7 +110,7 @@ func (l *listener) worker() {
 			l.log.Debugf("SetKeepAlive(true)")
 			conn.SetKeepAlivePeriod(constants.KeepAliveInterval)
 			l.log.Debugf("SetKeepAlivePeriod(%d)", constants.KeepAliveInterval)
-		case *common.QuicConn:
+		case *kquic.QuicConn:
 			l.log.Debugf("Accepted new quic connection: %v", conn.RemoteAddr())
 		default:
 			panic("Unsupported Connection Type")
@@ -238,15 +238,15 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 				return nil, err
 			}
 		case "quic":
-			ql, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+			ql, err := quic.ListenAddr(u.Host, kquic.GenerateTLSConfig(), nil)
 			if err != nil {
 				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
 				return nil, err
 			}
-			// Wrap quic.Listener with common.QuicListener
+			// Wrap quic.Listener with kquic.QuicListener
 			// so it implements like net.Listener for a
 			// single QUIC Stream
-			l.l = &common.QuicListener{Listener: ql}
+			l.l = &kquic.QuicListener{Listener: ql}
 		default:
 			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
 		}

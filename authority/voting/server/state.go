@@ -51,7 +51,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic"
 )
 
 const (
@@ -695,7 +695,7 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 			continue
 		}
 		defaultDialer := &net.Dialer{}
-		conn, err = common.DialURL(u, context.Background(), defaultDialer.DialContext)
+		conn, err = quic.DialURL(u, context.Background(), defaultDialer.DialContext)
 		if err == nil {
 			break
 		}

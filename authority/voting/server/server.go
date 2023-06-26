@@ -36,7 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
-	"github.com/katzenpost/katzenpost/http/common"
+	kquic "github.com/katzenpost/katzenpost/quic"
 	quic "github.com/quic-go/quic-go"
 )
 
@@ -327,15 +327,15 @@ func New(cfg *config.Config) (*Server, error) {
 				s.Add(1)
 				go s.listenWorker(l)
 			case "quic":
-				l, err := quic.ListenAddr(u.Host, common.GenerateTLSConfig(), nil)
+				l, err := quic.ListenAddr(u.Host, quicutil.GenerateTLSConfig(), nil)
 				if err != nil {
 					s.log.Errorf("Failed to start listener '%v': %v", v, err)
 					continue
 				}
-				// Wrap quic.Listener with common.QuicListener
+				// Wrap quic.Listener with kquic.QuicListener
 				// so it implements like net.Listener for a
 				// single QUIC Stream
-				ql := &common.QuicListener{Listener: l}
+				ql := &kquic.QuicListener{Listener: l}
 				s.listeners = append(s.listeners, ql)
 				s.Add(1)
 				go s.listenWorker(ql)

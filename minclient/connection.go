@@ -35,7 +35,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic"
 )
 
 var (
@@ -332,7 +332,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				continue
 			}
 
-			conn, err := common.DialURL(u, dialCtx, dialFn)
+			conn, err := quic.DialURL(u, dialCtx, dialFn)
 			select {
 			case <-c.HaltCh():
 				if conn != nil {

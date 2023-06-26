@@ -34,7 +34,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -199,7 +199,7 @@ func (c *outgoingConn) worker() {
 			}
 			c.log.Debugf("Dialing: %v", u.Host)
 
-			conn, err := common.DialURL(u, dialCtx, dialer.DialContext)
+			conn, err := quic.DialURL(u, dialCtx, dialer.DialContext)
 			select {
 			case <-dialCtx.Done():
 				// Canceled.

@@ -36,7 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -140,7 +140,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 			continue
 		}
 		p.log.Notice("Dialing %s", u)
-		conn, err = common.DialURL(u, ctx, dialFn)
+		conn, err = quic.DialURL(u, ctx, dialFn)
 		if err == nil {
 			break // got working transport
 		} else {
