@@ -1,19 +1,20 @@
-// objective
-// test performance of minclient and client send/receive methods
-// produce key performance metrics:
-//   graph of bandwidth vs cpu / cores (is it linear?)
-//   graph of client traffic showing behavior at epoch transitions
-//   collect latency / round trip statistics
+// bench_test.go - benchmark tests
+// Copyright (C) 2023  Masala
 //
-// tasks
-//   decide how to collect metrics e.g. prometheus
-//   write an instrumented minclient/client to collect
-//   metrics in the onPacket callback
-//   send a message to a echo service, receive reply SendMessage(echo, providerecho)
-//   send a message to self (provider queue) SendMessage(self, providerself)
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//     e.g. start
-
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// Package bench tests performance of minclient and client send/receive methods
 //go:build docker_test
 // +build docker_test
 
