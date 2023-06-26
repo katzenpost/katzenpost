@@ -28,7 +28,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic"
 )
 
 func (s *Server) onConn(conn net.Conn) {
@@ -44,7 +44,7 @@ func (s *Server) onConn(conn net.Conn) {
 		proto = "tcp"
 	case *net.UDPConn:
 		proto = "udp"
-	case *common.QuicConn:
+	case *quic.QuicConn:
 		proto = "quic"
 	}
 
