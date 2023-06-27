@@ -19,7 +19,8 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 
 
 	factor := make([]byte, BlindFactorSize)
-	rng.Read(factor[:])
+	_, err = rng.Read(factor[:])
+	require.NoError(t, err)
 
 	// Blind on uninitialized key should panic:
 	bad_public := new(PublicKey)
@@ -65,7 +66,8 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	assert.Equal(true, CheckPublicKey(f1_derived_public_x))
 
 	factor2 := make([]byte, BlindFactorSize)
-	rng.Read(factor2)
+	_, err = rng.Read(factor2)
+	require.NoError(t, err)
 	// we just need to ensure that the factors are different,
 	// since we hash factor, any bit flip should work.
 	assert.NotEqual(factor, factor2)
@@ -112,7 +114,8 @@ func bothWork(assertx *assert.Assertions, t require.TestingT, rng io.Reader) boo
 	assert.Equal(f12_blind_secret, f21_blind_secret)
 	assert.Equal(f12_blind_secret.PublicKey(), unblinded.Blind(factor).PublicKey().Blind(factor2))
 	factor3 := make([]byte, BlindFactorSize)
-	rng.Read(factor3)
+	_, err = rng.Read(factor3)
+	require.NoError(t, err)
 	f123_blind_secret := f12_blind_secret.Blind(factor3)
 	f213_blind_secret := f21_blind_secret.Blind(factor3)
 	f321_blind_secret := unblinded.Blind(factor3).Blind(factor2).Blind(factor)
