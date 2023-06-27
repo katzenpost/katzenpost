@@ -305,9 +305,15 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*P
 	cmds = append(cmds, nodeDelayCmd)
 
 	// Assemble the response packet.
-	respPkt, _ := New(rawRespPkt, geo)
+	respPkt, err := New(rawRespPkt, geo)
+	if err != nil {
+		return nil, err
+	}
 	respPkt.Geometry = pkt.Geometry
-	respPkt.Set(nil, cmds)
+	err = respPkt.Set(nil, cmds)
+	if err != nil {
+		return nil, err
+	}
 
 	respPkt.RecvAt = pkt.RecvAt
 	// XXX: This should probably fudge the delay to account for processing
