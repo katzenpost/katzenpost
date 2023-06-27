@@ -29,7 +29,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	kemschemes "github.com/cloudflare/circl/kem/schemes"
-	aConfig "github.com/katzenpost/katzenpost/authority/nonvoting/server/config"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
@@ -58,7 +57,6 @@ type katzenpost struct {
 	logWriter io.Writer
 
 	sphinxGeometry    *geo.Geometry
-	authConfig        *aConfig.Config
 	votingAuthConfigs []*vConfig.Config
 	authorities       map[[32]byte]*vConfig.Authority
 	authIdentity      sign.PublicKey
@@ -168,11 +166,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 				Authorities: authorities,
 			},
 		}
-	} else {
-		cfg.PKI = new(sConfig.PKI)
-		cfg.PKI.Nonvoting = new(sConfig.Nonvoting)
-		cfg.PKI.Nonvoting.Address = fmt.Sprintf("tcp://127.0.0.1:%d", s.basePort)
-		cfg.PKI.Nonvoting.PublicKey = s.authIdentity
 	}
 
 	// Logging section.
@@ -273,57 +266,6 @@ func genAddresses(transports []pki.Transport, lastPort *uint16) []string {
 	return addresses
 }
 
-func (s *katzenpost) genAuthConfig(transports []pki.Transport) error {
-	const authLogFile = "authority.log"
-
-	cfg := new(aConfig.Config)
-
-	cfg.SphinxGeometry = s.sphinxGeometry
-
-	// Server section.
-	cfg.Server = new(aConfig.Server)
-	s.lastPort = s.basePort + 1
-	cfg.Server.Addresses = genAddresses(transports, &s.lastPort)
-	cfg.Server.DataDir = filepath.Join(s.baseDir, "authority")
-
-	// Logging section.
-	cfg.Logging = new(aConfig.Logging)
-	cfg.Logging.File = authLogFile
-	cfg.Logging.Level = "DEBUG"
-
-	// Mkdir
-	os.Mkdir(cfg.Server.DataDir, 0700)
-
-	// Generate keys
-	priv := filepath.Join(s.outDir, "authority", "identity.private.pem")
-	public := filepath.Join(s.outDir, "authority", "identity.public.pem")
-
-	// cert.
-	idKey, idPubKey := cert.Scheme.NewKeypair()
-	err := pem.ToFile(priv, idKey)
-	if err != nil {
-		return err
-	}
-	err = pem.ToFile(public, idPubKey)
-	if err != nil {
-		return err
-	}
-
-	s.authIdentity = idPubKey
-	if err != nil {
-		return err
-	}
-
-	// Debug section.
-	cfg.Debug = new(aConfig.Debug)
-
-	if err := cfg.FixupAndValidate(); err != nil {
-		return err
-	}
-	s.authConfig = cfg
-	return nil
-}
-
 func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int, transports []pki.Transport) error {
 
 	configs := []*vConfig.Config{}
@@ -377,25 +319,6 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 	}
 	s.votingAuthConfigs = configs
 	return nil
-}
-
-func (s *katzenpost) genNonVotingAuthorizedNodes() ([]*aConfig.Node, []*aConfig.Node, error) {
-	mixes := []*aConfig.Node{}
-	providers := []*aConfig.Node{}
-	for _, nodeCfg := range s.nodeConfigs {
-		node := &aConfig.Node{
-			Identifier:     nodeCfg.Server.Identifier,
-			IdentityKeyPem: filepath.Join("../", nodeCfg.Server.Identifier, "identity.public.pem"),
-		}
-
-		if nodeCfg.Server.IsProvider {
-			providers = append(providers, node)
-			continue
-		}
-		mixes = append(mixes, node)
-	}
-
-	return providers, mixes, nil
 }
 
 func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, error) {
@@ -536,11 +459,6 @@ func main() {
 		if err != nil {
 			log.Fatalf("getVotingAuthoritiesCfg failed: %s", err)
 		}
-	} else {
-		panic("non-voting mode is not currently supported")
-		if err = s.genAuthConfig(transports); err != nil {
-			log.Fatalf("Failed to generate authority config: %v", err)
-		}
 	}
 
 	// Generate the provider configs.
@@ -583,18 +501,6 @@ func main() {
 				log.Fatalf("Failed to saveCfg of authority with %s", err)
 			}
 		}
-	} else {
-		// The node lists.
-		if providers, mixes, err := s.genNonVotingAuthorizedNodes(); err == nil {
-			s.authConfig.Mixes = mixes
-			s.authConfig.Providers = providers
-		} else {
-			log.Fatalf("Failed to genNonVotingAuthorizedNodes with %s", err)
-		}
-
-		if err := saveCfg(s.authConfig, *outDir); err != nil {
-			log.Fatalf("Failed to saveCfg of authority with %s", err)
-		}
 	}
 	// write the mixes keys and configs to disk
 	for _, v := range s.nodeConfigs {
@@ -620,8 +526,6 @@ func identifier(cfg interface{}) string {
 		return "client"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
-	case *aConfig.Config:
-		return "authority"
 	case *vConfig.Config:
 		return cfg.(*vConfig.Config).Server.Identifier
 	default:
@@ -636,8 +540,6 @@ func toml_name(cfg interface{}) string {
 		return "client"
 	case *sConfig.Config:
 		return "katzenpost"
-	case *aConfig.Config:
-		return "nonvoting"
 	case *vConfig.Config:
 		return "authority"
 	default:
