@@ -33,7 +33,7 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/authority/voting/client"
@@ -1032,7 +1032,11 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 		}
 		sortedreveals = append(sortedreveals, Reveal{PublicKey: pk, Digest: digest})
 	}
-	srv := sha3.New256()
+	srv, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
+
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
 
@@ -1907,7 +1911,7 @@ func sortNodesByPublicKey(nodes []*pki.MixDescriptor) {
 }
 
 func sha256b64(raw []byte) string {
-	var hash = sha3.Sum256(raw)
+	hash := blake2b.Sum256(raw)
 	return base64.StdEncoding.EncodeToString(hash[:])
 }
 
