@@ -71,7 +71,7 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Time)
 	// increasing, but it's something that "should never happen" in the
 	// first place.
 	var pktKey [boltPacketKeySize]byte
-	binary.BigEndian.PutUint64(pktKey[0:], uint64(prio.UnixMicro()))
+	binary.BigEndian.PutUint64(pktKey[0:], uint64(prio.UnixNano()))
 	binary.BigEndian.PutUint64(pktKey[8:], pkt.ID)
 	bkt, err := parentBkt.CreateBucket(pktKey[:])
 	if err != nil {
@@ -104,8 +104,8 @@ func packetToBoltBkt(parentBkt *bolt.Bucket, pkt *packet.Packet, prio time.Time)
 
 	var timesBuf [boltPacketTimesSize]byte
 	binary.BigEndian.PutUint64(timesBuf[0:], uint64(pkt.Delay))
-	binary.BigEndian.PutUint64(timesBuf[8:], uint64(pkt.RecvAt.UnixMicro()))
-	binary.BigEndian.PutUint64(timesBuf[16:], uint64(pkt.DispatchAt.UnixMicro()))
+	binary.BigEndian.PutUint64(timesBuf[8:], uint64(pkt.RecvAt.UnixNano()))
+	binary.BigEndian.PutUint64(timesBuf[16:], uint64(pkt.DispatchAt.UnixNano()))
 	err = bkt.Put([]byte(boltPacketTimesKey), timesBuf[:])
 	if err != nil {
 		return err
@@ -165,8 +165,8 @@ func packetFromBoltBkt(parentBkt *bolt.Bucket, k []byte, g glue.Glue) (*packet.P
 
 	if b := bkt.Get([]byte(boltPacketTimesKey)); len(b) == boltPacketTimesSize {
 		pkt.Delay = time.Duration(binary.BigEndian.Uint64(b[0:]))
-		pkt.RecvAt = time.UnixMicro(int64(binary.BigEndian.Uint64(b[8:])))
-		pkt.DispatchAt = time.UnixMicro(int64(binary.BigEndian.Uint64(b[16:])))
+		pkt.RecvAt = time.Unix(0, int64(binary.BigEndian.Uint64(b[8:])))
+		pkt.DispatchAt = time.Unix(0, int64(binary.BigEndian.Uint64(b[16:])))
 	} else {
 		pkt.Dispose()
 		return nil, errMalformedTimes
@@ -240,7 +240,7 @@ func (q *boltQueue) Pop() {
 			// Figure out if the packet's deadline is blown.  This replicates
 			// some code from scheduler.worker(), but dropping en-mass in a
 			// single transactions is the sensible thing to do.
-			prio := time.UnixMicro(int64(binary.BigEndian.Uint64(k[0:])))
+			prio := time.Unix(0, int64(binary.BigEndian.Uint64(k[0:])))
 			id := binary.BigEndian.Uint64(k[8:])
 			var pkt *packet.Packet
 			var err error
