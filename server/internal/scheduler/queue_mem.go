@@ -46,7 +46,7 @@ func (q *memoryQueue) Peek() (time.Time, *packet.Packet) {
 		return time.Time{}, nil
 	}
 
-	return time.UnixMicro(int64(e.Priority)), e.Value.(*packet.Packet)
+	return time.Unix(0, int64(e.Priority)), e.Value.(*packet.Packet)
 }
 
 func (q *memoryQueue) Pop() {
@@ -63,7 +63,7 @@ func (q *memoryQueue) BulkEnqueue(batch []*packet.Packet) {
 func (q *memoryQueue) doEnqueue(prio time.Time, pkt *packet.Packet) {
 	// Enqueue the packet unconditionally so that it is a
 	// candidate to be dropped.
-	q.q.Enqueue(uint64(prio.UnixMicro()), pkt)
+	q.q.Enqueue(uint64(prio.UnixNano()), pkt)
 
 	// If queue limitations are enabled, check to see if the
 	// queue is over capacity after the new packet was
