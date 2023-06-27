@@ -52,8 +52,8 @@ type Packet struct {
 
 	ID         uint64
 	Delay      time.Duration
-	RecvAt     time.Duration
-	DispatchAt time.Duration
+	RecvAt     time.Time
+	DispatchAt time.Time
 
 	MustForward   bool
 	MustTerminate bool
@@ -151,8 +151,8 @@ func (pkt *Packet) Dispose() {
 	pkt.SurbReply = nil
 	pkt.ID = 0
 	pkt.Delay = 0
-	pkt.RecvAt = 0
-	pkt.DispatchAt = 0
+	pkt.RecvAt = time.Time{}
+	pkt.DispatchAt = time.Time{}
 	pkt.MustForward = false
 	pkt.MustTerminate = false
 
