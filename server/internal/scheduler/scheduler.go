@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/monotime"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/debug"
@@ -35,7 +34,7 @@ import (
 
 type queueImpl interface {
 	Halt()
-	Peek() (time.Duration, *packet.Packet)
+	Peek() (time.Time, *packet.Packet)
 	Pop()
 	BulkEnqueue([]*packet.Packet)
 }
@@ -159,12 +158,12 @@ func (sch *scheduler) worker() {
 			}
 
 			// Figure out if the packet needs to be handled now.
-			now := monotime.Now()
-			if dispatchAt > now {
+			now := time.Now()
+			if dispatchAt.After(now) {
 				// Packet dispatch will happen at a later time, so schedule
 				// the next timer tick, and go back to waiting for something
 				// interesting to happen.
-				timer.Reset(dispatchAt - now)
+				timer.Reset(dispatchAt.Sub(now))
 				break
 			}
 			if nrBurst = nrBurst + 1; nrBurst > maxBurst {
@@ -183,10 +182,10 @@ func (sch *scheduler) worker() {
 
 			// Packet dispatch time is now or in the past, so it needs to be
 			// forwarded to the appropriate hop.
-			if now-dispatchAt > timerSlack {
+			if now.Sub(dispatchAt) > timerSlack {
 				// ... unless the deadline has been blown by more than the
 				// configured slack time.
-				sch.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now-dispatchAt)
+				sch.log.Debugf("Dropping packet: %v (Deadline blown by %v)", pkt.ID, now.Sub(dispatchAt))
 				instrument.PacketsDropped()
 				instrument.MixPacketsDropped()
 				pkt.Dispose()
