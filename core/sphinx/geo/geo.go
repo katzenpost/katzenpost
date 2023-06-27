@@ -8,7 +8,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/fxamacker/cbor/v2"
-	"golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/cloudflare/circl/kem"
 	kemschemes "github.com/cloudflare/circl/kem/schemes"
@@ -106,8 +106,11 @@ func (g *Geometry) bytes() []byte {
 }
 
 func (g *Geometry) Hash() []byte {
-	h := sha3.New256()
-	_, err := h.Write(g.bytes())
+	h, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
+	_, err = h.Write(g.bytes())
 	if err != nil {
 		panic(err)
 	}
