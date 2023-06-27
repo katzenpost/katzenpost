@@ -59,7 +59,7 @@ Mix Network.
 
    Our Noise protocol string:
 
-   ``Noise_pqXX_Kyber768X25519_ChaChaPoly_BLAKE2s``
+   ``Noise_pqXX_Kyber768X25519_ChaChaPoly_BLAKE2b``
 
    The protocol string is a very condensed description of our protocol.
    We use the pqXX two way Noise pattern which is described as follows:
@@ -76,7 +76,7 @@ Mix Network.
    `Kyber768X25519` which is a hybrid KEM where the share secret
    outputs of both X25519 and Kyber768 are combined.
 
-   Finally the `ChaChaPoly_BLAKE2s` parts of the protocol string
+   Finally the `ChaChaPoly_BLAKE2b` parts of the protocol string
    indicate which stream cipher and hash function we are using.
 
    As a non-standard modification to the Noise protocol,
