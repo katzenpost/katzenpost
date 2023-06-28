@@ -17,13 +17,11 @@
 package main
 
 import (
-	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"gopkg.in/op/go-logging.v1"
 
 	"bytes"
@@ -85,22 +83,13 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	buf := new(bytes.Buffer)
 	r.Write(buf)
 	// send the http request
-	rawResponse, err := k.session.BlockingSendUnreliableMessage(d.Name, d.Provider, buf.Bytes())
-	if err != nil {
-		// send http error response
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	// deserialize and write payload
-	response := &cborplugin.Response{}
-	err = cbor.Unmarshal(rawResponse, response)
+	response, err := k.session.BlockingSendUnreliableMessage(d.Name, d.Provider, buf.Bytes())
 	if err != nil {
 		// send http error response
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		// return the http response
-		w.Write(response.Payload)
+		w.Write(response)
 	}
 }
 
