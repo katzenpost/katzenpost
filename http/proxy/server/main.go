@@ -87,8 +87,8 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 		*/
 
 		// wrap response in common.Response to indicate length to client
-		r := &common.Response{Payload: rawResp.Bytes()}
-		serialized, err := cbor.Marshal(r)
+		cr := &common.Response{Payload: rawResp.Bytes()}
+		serialized, err := cbor.Marshal(cr)
 		if err != nil {
 			return nil, err
 		}
