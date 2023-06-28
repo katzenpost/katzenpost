@@ -38,7 +38,7 @@ var (
 	cfgFile  = flag.String("cfg", "proxy.toml", "config file")
 	epName   = flag.String("ep", "", "endpoint name")
 	logLevel = flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
-	port     = flag.Int("port", 4242, "listener address")
+	port     = flag.Int("port", 8080, "listener address")
 	cfg      *config.Config
 )
 
