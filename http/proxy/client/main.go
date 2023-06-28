@@ -26,11 +26,11 @@ import (
 	"github.com/katzenpost/katzenpost/http/proxy/common"
 	"gopkg.in/op/go-logging.v1"
 
-	"bytes"
 	"context"
 	"flag"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"time"
 )
 
@@ -83,10 +83,9 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// serialize the http request
-	buf := new(bytes.Buffer)
-	r.Write(buf)
+	buf, err := httputil.DumpRequest(r, true)
 	// send the http request
-	response, err := k.session.BlockingSendUnreliableMessage(d.Name, d.Provider, buf.Bytes())
+	response, err := k.session.BlockingSendUnreliableMessage(d.Name, d.Provider, buf)
 	if err != nil {
 		// send http error response
 		w.WriteHeader(http.StatusInternalServerError)
