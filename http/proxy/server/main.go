@@ -29,8 +29,11 @@ import (
 	"path"
 	"path/filepath"
 
+	cbor "github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/http/proxy/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
+
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -82,7 +85,15 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 				return nil, errors.New("Response is too long")
 			}
 		*/
-		return &cborplugin.Response{Payload: rawResp.Bytes()}, nil
+
+		// wrap response in common.Response to indicate length to client
+		r := &common.Response{Payload: rawResp.Bytes()}
+		serialized, err := cbor.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+
+		return &cborplugin.Response{Payload: serialized}, nil
 	default:
 		p.log.Errorf("OnCommand called with unknown Command type")
 		return nil, errors.New("invalid command type")
