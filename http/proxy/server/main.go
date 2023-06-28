@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -51,21 +50,15 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 			p.log.Errorf("http.ReadRequest: %s", err)
 			return nil, err
 		}
+		p.log.Debugf("got request for %s", req.URL)
 		// make the request
-		if _, ok := p.allowedHost[req.Host]; !ok {
+		if _, ok := p.allowedHost[req.URL.Host]; !ok {
 			if _, ok := p.allowedHost["*"]; !ok {
 				// ignore request or send a http.Response
-				err := errors.New("requested host invalid")
-				p.log.Errorf("AllowedHost: %s", err)
-				return nil, err
+				p.log.Errorf("invalid AllowedHost: %s", req.Host)
+				return nil, errors.New("requested host invalid")
 			}
 		}
-		// http.ReadRequest does not populate http.Request.URL
-		u, err := url.Parse("http://" + req.Host)
-		if err != nil {
-			return nil, err
-		}
-		req.URL = u
 		p.log.Debugf("doing round trip with %s", req.URL)
 		resp, err := http.DefaultTransport.RoundTrip(req)
 		if err != nil {
