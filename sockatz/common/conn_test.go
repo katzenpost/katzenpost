@@ -19,7 +19,7 @@ func TestQUICProxyConnSimple(t *testing.T) {
 	k := NewQUICProxyConn([]byte("simple"))
 	pkt := make([]byte, payloadSize)
 	cpy := make([]byte, payloadSize)
-	n, err := k.WritePacket(pkt, k.LocalAddr())
+	n, err := k.WritePacket(context.Background(), pkt, k.LocalAddr())
 	require.NoError(err)
 	n2, addr, err := k.ReadFrom(cpy)
 	require.NoError(err)
@@ -99,7 +99,7 @@ func TestQUICProxyConn(t *testing.T) {
 		src := sender.LocalAddr()
 		for {
 			pkt := make([]byte, payloadSize)
-			n, addr, err := sender.ReadPacket(pkt)
+			n, addr, err := sender.ReadPacket(context.Background(), pkt)
 			if err == errHalted {
 				return
 			} else if err != nil {
@@ -111,7 +111,7 @@ func TestQUICProxyConn(t *testing.T) {
 				return
 			}
 			t.Logf("ReadPacket from sender")
-			_, err = receiver.WritePacket(pkt[:n], src)
+			_, err = receiver.WritePacket(context.Background(), pkt[:n], src)
 			t.Logf("WrotePacket to receiver")
 			if err != nil {
 				errCh <- err
@@ -125,7 +125,7 @@ func TestQUICProxyConn(t *testing.T) {
 		defer t.Logf("worker finished")
 		for {
 			pkt := make([]byte, payloadSize)
-			n, addr, err := receiver.ReadPacket(pkt)
+			n, addr, err := receiver.ReadPacket(context.Background(), pkt)
 			t.Logf("ReadPacket from receiver")
 			if err == errHalted {
 				return
@@ -138,7 +138,7 @@ func TestQUICProxyConn(t *testing.T) {
 				return
 			}
 			t.Logf("ReadPacket from receiver")
-			_, err = sender.WritePacket(pkt[:n], receiver.LocalAddr())
+			_, err = sender.WritePacket(context.Background(), pkt[:n], receiver.LocalAddr())
 			t.Logf("WritePacket to sender")
 			if err != nil {
 				errCh <- err
