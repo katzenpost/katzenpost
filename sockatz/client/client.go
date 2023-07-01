@@ -33,15 +33,14 @@ import (
 	"errors"
 	"io"
 	"net"
-	"os"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 )
 
 var (
-	cfg        *config.Config
-	PayloadLen = 1452
+	cfg *config.Config
 )
 
 func GetSession(cfgFile string) (*client.Session, error) {
@@ -74,9 +73,10 @@ func GetSession(cfgFile string) (*client.Session, error) {
 type Client struct {
 	worker.Worker
 
-	desc *utils.ServiceDescriptor
-	log  *logging.Logger
-	s    *client.Session
+	desc       *utils.ServiceDescriptor
+	log        *logging.Logger
+	s          *client.Session
+	payloadLen int
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -91,7 +91,7 @@ func NewClient(s *client.Session) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{desc: desc, s: s, log: l}, nil
+	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength}, nil
 }
 
 // topup sends a TopupCommand and returns a channel. err nil means success.
@@ -181,7 +181,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	errCh := make(chan error)
 
 	ctx := context.Background()
-	myId :=append(id, []byte("client")...)
+	myId := append(id, []byte("client")...)
 	k := common.NewQUICProxyConn(myId)
 
 	// start proxy worker that proxies bytes between QUICProxyConn and conn
@@ -234,7 +234,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 				return
 			default:
 			}
-			pkt := make([]byte, PayloadLen)
+			pkt := make([]byte, c.payloadLen)
 			c.log.Debugf("ReadPacket from outbound queue")
 			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(10*time.Millisecond))
 			defer cancelFn()
