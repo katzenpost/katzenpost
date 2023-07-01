@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	qlogging "github.com/quic-go/quic-go/logging"
-	"github.com/quic-go/quic-go/qlog"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/http/common"
 	quic "github.com/quic-go/quic-go"
+	qlogging "github.com/quic-go/quic-go/logging"
+	"github.com/quic-go/quic-go/qlog"
 )
 
 var errHalted = errors.New("Halted")
@@ -85,6 +85,7 @@ func (w *uniqAddr) String() string {
 
 type wc struct {
 }
+
 func (w *wc) Write(buf []byte) (int, error) {
 	return os.Stdout.Write(buf)
 }
@@ -96,9 +97,9 @@ func (w *wc) Close() error {
 func NewQUICProxyConn(id []byte) *QUICProxyConn {
 	return &QUICProxyConn{
 		localAddr: UniqAddr(id),
-		incoming: make(chan *pkt, 1000),
-		outgoing: make(chan *pkt, 1000),
-		tlsConf: common.GenerateTLSConfig(),
+		incoming:  make(chan *pkt, 1000),
+		outgoing:  make(chan *pkt, 1000),
+		tlsConf:   common.GenerateTLSConfig(),
 		qcfg: &quic.Config{
 			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
 				return qlog.NewConnectionTracer(&wc{}, p, connID)

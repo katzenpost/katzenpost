@@ -68,6 +68,7 @@ type Sockatz struct {
 	worker.Worker
 	log        *logging.Logger
 	logBackend *log.Backend
+	payloadLen int
 
 	sessions *sync.Map
 }
@@ -79,7 +80,7 @@ func NewSockatz(cfgFile string, logBackend *log.Backend) (*Sockatz, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Sockatz{cfg: cfg, log: log, sessions: new(sync.Map)}
+	s := &Sockatz{cfg: cfg, log: log, sessions: new(sync.Map), payloadLen: cfg.SphinxGeometry.UserForwardPayloadLength}
 	return s, nil
 }
 
@@ -463,7 +464,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	}
 
 	// read packet from transport
-	buf := make([]byte, PayloadLen)
+	buf := make([]byte, s.s.payloadLen)
 	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond))
 	defer cancelFn()
 	n, addr, err := s.Transport.ReadPacket(ctx, buf)
