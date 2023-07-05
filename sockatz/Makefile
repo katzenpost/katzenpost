@@ -15,7 +15,9 @@ dockerdockertest:
 test:
 	cd client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 10m -run Docker
 
-all:
-	go mod verify
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+server/cmd/sockatz/sockatz:
 	cd server/cmd/sockatz && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+client/cmd/client/client:
+	cd client/cmd/client && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+clean:
+	rm -f client/cmd/client/client server/cmd/sockatz/sockatz
