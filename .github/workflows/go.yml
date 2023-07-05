@@ -227,7 +227,7 @@ jobs:
           cd docker && sudo -E make mu=0.05 muMax=50 lP=0.2 lPMax=20 start wait
 
       - name: run sockatz end to end tests
-        run: cd sockatz && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
+        run: cd sockatz && sudo -E make dockerdockertest
 
       - name: Stop the mixnet
         run: |
