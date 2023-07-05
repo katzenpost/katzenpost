@@ -22,11 +22,11 @@ import (
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
-	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/sockatz/common"
 	"github.com/katzenpost/katzenpost/sockatz/server"
+	"github.com/katzenpost/katzenpost/sockatz/socks5"
 	"gopkg.in/op/go-logging.v1"
 
 	"context"
@@ -80,12 +80,7 @@ type Client struct {
 }
 
 func NewClient(s *client.Session) (*Client, error) {
-	logBackend, err := log.New("", "DEBUG", false)
-	if err != nil {
-		panic(err)
-	}
-	l := logBackend.GetLogger("sockatz/client")
-
+	l := s.GetLogger("sockatz_client")
 	// find a sockatz server descriptor for the request
 	desc, err := s.GetService("sockatz")
 	if err != nil {
@@ -312,4 +307,78 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		errCh <- nil
 	})
 	return errCh
+}
+
+func (c *Client) SocksHandler(conn net.Conn) {
+	defer conn.Close()
+
+	// Read the client's SOCKS handshake.
+	req, err := socks5.Handshake(conn)
+	if err != nil {
+		//log.Errorf("%s - client failed socks handshake: %s", name, err)
+		panic(err)
+		return
+	}
+
+	c.log.Debugf("Got SOCKS5 request: %v", req)
+
+	// Extract the Target address
+	var target string
+
+	if req.Conn != nil {
+		target = "udp://" + req.Target
+	} else {
+		target = "tcp://" + req.Target
+	}
+	tgtURL, err := url.Parse(target)
+	if err != nil {
+		c.log.Errorf("Failed to parse target: %v", err)
+		return
+	}
+
+	id := make([]byte, 32)
+	_, err = io.ReadFull(rand.Reader, id)
+	if err != nil {
+		panic(err)
+	}
+
+	// send a topup command to create a session
+	err = <-c.Topup(id)
+	if err != nil {
+		// XXX: on an error, send Cashu to self or unmark as pending
+		// if a malicious service takes the money and runs
+		// XXX: debug
+		c.log.Errorf("Failed to topup session %v: %v", id, err)
+		req.Reply(socks5.ReplyNetworkUnreachable)
+		return
+	}
+
+	// if the request is a UDPAssociate command, start a local UDP listener
+	if req.Command == socks5.UDPAssociateCmd {
+		req.Conn = socks5.ListenUDP()
+	}
+
+	// dial the target // add to our conneciton map
+	err = <-c.Dial(id, tgtURL)
+
+	if err != nil {
+		c.log.Errorf("Failed to dial %v", tgtURL)
+		return
+	}
+
+	// XXX: figure out how far in advance we can return success while completing the above
+	// round trips in the background.
+	// respond with success
+	if err := req.Reply(socks5.ReplySucceeded); err != nil {
+		// XXX: debug
+		c.log.Errorf("Failed to encdoe response: %v", err)
+		return
+	}
+
+	// start proxying data
+	errCh := c.Proxy(id, conn)
+	err = <-errCh
+	if err != nil {
+		c.log.Errorf("Proxy failed with error: %v", err)
+	}
 }
