@@ -19,6 +19,7 @@ package client
 import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -72,11 +73,13 @@ func GetSession(cfgFile string) (*client.Session, error) {
 
 type Client struct {
 	worker.Worker
+	sync.Mutex
 
-	desc       *utils.ServiceDescriptor
-	log        *logging.Logger
-	s          *client.Session
-	payloadLen int
+	desc           *utils.ServiceDescriptor
+	log            *logging.Logger
+	s              *client.Session
+	msgToSessionID map[[constants.MessageIDLength]byte][]byte
+	payloadLen     int
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -172,6 +175,51 @@ func (c *Client) Dial(id []byte, tgt *url.URL) chan error {
 	return errCh
 }
 
+// write incoming packets to QUICProxConn
+func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh chan error, rawResp []byte) {
+	c.log.Debugf("Read Response")
+	p := &server.ProxyResponse{}
+	err := p.Unmarshal(rawResp)
+	if err != nil {
+		c.log.Errorf("failure to unmarshal server.ProxyResponse: %v", err)
+		errCh <- err
+		return
+	}
+
+	// check for ProxyInsufficientFunds or ProxyFailure
+	switch p.Status {
+	case server.ProxyInsufficientFunds:
+		c.log.Debugf("Got ProxyReponse: ProxyInsufficientFunds")
+
+		// XXX: must ensure calls to Topup are synchronous, to avoid double Topup
+		err := <-c.Topup(sessionID)
+		if err != nil {
+			errCh <- err
+			return
+		}
+	case server.ProxySuccess:
+		c.log.Debugf("Got ProxyReponse: ProxySuccess: len(%d)", len(p.Payload))
+	case server.ProxyFailure:
+		c.log.Debugf("Got ProxyReponse: ProxyFailure")
+		errCh <- errors.New("ProxyFailure")
+		return
+	}
+
+	src := common.UniqAddr(sessionID)
+	// Write response to to client socket
+	c.log.Debugf("WritePacket to incoming queue from %v", src)
+	_, err = conn.WritePacket(context.Background(), p.Payload, src)
+	if err != nil {
+		if err.Error() == "Halted" {
+			c.log.Debugf("WritePacket Halted()")
+			return
+		}
+		// handle unexpected error
+		errCh <- err
+		return
+	}
+
+}
 func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	errCh := make(chan error)
 
@@ -219,9 +267,36 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		errCh <- nil
 	})
 
-	// start transport worker that reads packets to/from katzenpost responses
+	// start transport worker that receives packets
 	c.Go(func() {
-		c.log.Debugf("Started kaetzchen proxy worker")
+		c.log.Debugf("Started kaetzchen proxy send worker")
+		defer func() {
+			c.log.Debugf("Event sink worker terminating gracefully.")
+		}()
+		for {
+			select {
+			case e := <-c.s.EventSink:
+				switch event := e.(type) {
+				case *client.MessageReplyEvent:
+					c.Lock()
+					sessionID, ok := c.msgToSessionID[*event.MessageID]
+					c.Unlock()
+					if ok {
+						c.handleReply(k, sessionID, errCh, event.Payload)
+					}
+				default:
+					// skip handling event
+				}
+			case <-k.HaltCh():
+				errCh <- nil
+				return
+			}
+		}
+	})
+
+	// start transport worker that sends packets
+	c.Go(func() {
+		c.log.Debugf("Started kaetzchen proxy send worker")
 		for {
 			select {
 			case <-k.HaltCh():
@@ -261,47 +336,17 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			// so there is no interleaving, which adds a lot of delay..
 			// implement a lower level client using minclient and do not use these blocking methods.
 			c.log.Debugf("Send Request{Packet}")
-			rawResp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
-			if err == nil {
-				c.log.Debugf("Read Response")
-				p := &server.ProxyResponse{}
-				err = p.Unmarshal(rawResp)
-				if err != nil {
-					c.log.Errorf("failure to unmarshal server.ProxyResponse: %v", err)
-					errCh <- err
-					return
-				}
 
-				// check for ProxyInsufficientFunds or ProxyFailure
-				switch p.Status {
-				case server.ProxyInsufficientFunds:
-					c.log.Debugf("Got ProxyReponse: ProxyInsufficientFunds")
-					err := <-c.Topup(id)
-					if err != nil {
-						errCh <- err
-						return
-					}
-				case server.ProxySuccess:
-					c.log.Debugf("Got ProxyReponse: ProxySuccess: len(%d)", len(p.Payload))
-				case server.ProxyFailure:
-					c.log.Debugf("Got ProxyReponse: ProxyFailure")
-					errCh <- errors.New("ProxyFailure")
-					return
-				}
+			//XXX: create our own sphinx packet with custom delays
+			//c.SendSphinxPacket()
 
-				src := common.UniqAddr(id)
-				// Write response to to client socket
-				c.log.Debugf("WritePacket to incoming queue from %v", src)
-				_, err = k.WritePacket(context.Background(), p.Payload, src)
-				if err != nil {
-					if err.Error() == "Halted" {
-						c.log.Debugf("WritePacket Halted()")
-						return
-					}
-					// handle unexpected error
-					errCh <- err
-					return
-				}
+			msgID, err := c.s.SendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized)
+			if err != nil {
+				c.log.Errorf("SendUnreliableMessage: %v", err)
+			} else {
+				c.Lock()
+				c.msgToSessionID[*msgID] = id // XXX: must garbage collect ...
+				c.Unlock()
 			}
 		}
 		errCh <- nil
