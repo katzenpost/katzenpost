@@ -404,7 +404,7 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 		}
 	default:
 		s.log.Errorf("Received DialCommand with unsupported protocol field")
-		return nil, ErrUnsupportedProto
+		reply.Status = DialFailure
 	}
 	return reply, nil
 }
