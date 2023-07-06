@@ -469,7 +469,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 
 	// read packet from transport
 	buf := make([]byte, s.s.payloadLen)
-	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(time.Millisecond))
+	ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(100*time.Millisecond))
 	defer cancelFn()
 	n, addr, err := s.Transport.ReadPacket(ctx, buf)
 	switch err {
