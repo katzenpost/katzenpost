@@ -524,7 +524,8 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 }
 
 func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
-	errCh := make(chan error)
+	s.log.Debug("Starting proxyWorker %v %v", a, b)
+	errCh := make(chan error, 2)
 	s.Go(func() {
 		var wg sync.WaitGroup
 		wg.Add(2)
