@@ -297,7 +297,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	// start transport worker that sends packets
 	c.Go(func() {
 		c.log.Debugf("Started kaetzchen proxy send worker")
-		backOffDelay := 1 * time.Millisecond
+		backOffDelay := 42 * time.Second
 		for {
 			select {
 			case <-k.HaltCh():
@@ -306,7 +306,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			default:
 			}
 			pkt := make([]byte, c.payloadLen)
-			c.log.Debugf("ReadPacket from outbound queue")
+			c.log.Debugf("ReadPacket from outbound queue backOff: %v", backOffDelay)
 			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(backOffDelay))
 
 			n, destAddr, err := k.ReadPacket(ctx, pkt)
@@ -347,7 +347,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					<-time.After(backOffDelay)
 					continue
 				} else {
-					backOffDelay = (backOffDelay >> 1) + 1
+					backOffDelay = (backOffDelay >> 1) + time.Millisecond
 					c.Lock()
 					c.msgToSessionID[*msgID] = id // XXX: must garbage collect ...
 					c.Unlock()
