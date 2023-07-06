@@ -89,7 +89,8 @@ func NewClient(s *client.Session) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength}, nil
+	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
+		msgToSessionID: make(map[[constants.MessageIDLength]byte][]byte)}, nil
 }
 
 // topup sends a TopupCommand and returns a channel. err nil means success.
@@ -297,6 +298,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	// start transport worker that sends packets
 	c.Go(func() {
 		c.log.Debugf("Started kaetzchen proxy send worker")
+		backOffDelay := 1 * time.Millisecond
 		for {
 			select {
 			case <-k.HaltCh():
@@ -306,10 +308,10 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			}
 			pkt := make([]byte, c.payloadLen)
 			c.log.Debugf("ReadPacket from outbound queue")
-			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(10*time.Millisecond))
-			defer cancelFn()
+			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(backOffDelay))
 
 			n, destAddr, err := k.ReadPacket(ctx, pkt)
+			cancelFn()
 			if err != nil {
 				if err.Error() == "Halted" {
 					c.log.Debugf("Halted in ReadPacket")
@@ -332,21 +334,26 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			}
 			serialized, err = (&server.Request{Command: server.Proxy, Payload: serialized}).Marshal()
 			// send frame to service and receive a reply
-			// XXX: do not use blocking client because it serializes all the request/response pairs
-			// so there is no interleaving, which adds a lot of delay..
-			// implement a lower level client using minclient and do not use these blocking methods.
 			c.log.Debugf("Send Request{Packet}")
 
 			//XXX: create our own sphinx packet with custom delays
 			//c.SendSphinxPacket()
-
-			msgID, err := c.s.SendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized)
-			if err != nil {
-				c.log.Errorf("SendUnreliableMessage: %v", err)
-			} else {
-				c.Lock()
-				c.msgToSessionID[*msgID] = id // XXX: must garbage collect ...
-				c.Unlock()
+			// don't drop serialized on the floor if SendUnreliableMessage returns "ErrQueueIsFull"
+			for {
+				msgID, err := c.s.SendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized)
+				if err != nil {
+					c.log.Errorf("SendUnreliableMessage: %v", err)
+					c.log.Errorf("SendUnreliableMessage: backoffDelay %v", backOffDelay)
+					backOffDelay += backOffDelay
+					<-time.After(backOffDelay)
+					continue
+				} else {
+					backOffDelay = (backOffDelay >> 1) + 1
+					c.Lock()
+					c.msgToSessionID[*msgID] = id // XXX: must garbage collect ...
+					c.Unlock()
+					break
+				}
 			}
 		}
 		errCh <- nil
