@@ -456,11 +456,14 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	clientAddr := append(s.ID, []byte("client")...)
 	dst := common.UniqAddr(clientAddr)
 
-	s.s.log.Debug("WritePacket(%d) from  %v", len(payload), dst)
-	_, err := s.Transport.WritePacket(context.Background(), payload, dst)
-	if err != nil {
-		s.s.log.Errorf("WritePacket failure: %v", err)
-		return nil, err
+	// Nothing was sent
+	if len(payload) != 0 {
+		s.s.log.Debug("WritePacket(%d) from  %v", len(payload), dst)
+		_, err := s.Transport.WritePacket(context.Background(), payload, dst)
+		if err != nil {
+			s.s.log.Errorf("WritePacket failure: %v", err)
+			return nil, err
+		}
 	}
 
 	// read packet from transport
