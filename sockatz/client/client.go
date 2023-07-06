@@ -207,18 +207,19 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 
 	src := common.UniqAddr(sessionID)
 	// Write response to to client socket
-	c.log.Debugf("WritePacket to incoming queue from %v", src)
-	_, err = conn.WritePacket(context.Background(), p.Payload, src)
-	if err != nil {
-		if err.Error() == "Halted" {
-			c.log.Debugf("WritePacket Halted()")
+	if len(p.Payload) != 0 {
+		c.log.Debugf("WritePacket to incoming queue from %v", src)
+		_, err = conn.WritePacket(context.Background(), p.Payload, src)
+		if err != nil {
+			if err.Error() == "Halted" {
+				c.log.Debugf("WritePacket Halted()")
+				return
+			}
+			// handle unexpected error
+			errCh <- err
 			return
 		}
-		// handle unexpected error
-		errCh <- err
-		return
 	}
-
 }
 func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	errCh := make(chan error)
