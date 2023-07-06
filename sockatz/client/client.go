@@ -163,7 +163,6 @@ func (c *Client) Dial(id []byte, tgt *url.URL) chan error {
 		p := &server.DialResponse{}
 		err = p.Unmarshal(rawResp)
 		if err != nil {
-			panic(err)
 			errCh <- err
 			return
 		}
