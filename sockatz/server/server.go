@@ -432,6 +432,7 @@ func (s *Session) AcceptOnce(transport common.Transport) {
 			s.Lock()
 			s.Remote = conn
 			s.Unlock()
+			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
 			errCh := s.s.proxyWorker(s.Remote, s.Target)
 			<-errCh
 			transport.Close()
