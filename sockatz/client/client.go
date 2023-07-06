@@ -344,7 +344,11 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					c.log.Errorf("SendUnreliableMessage: %v", err)
 					c.log.Errorf("SendUnreliableMessage: backoffDelay %v", backOffDelay)
 					backOffDelay += backOffDelay
-					<-time.After(backOffDelay)
+					// XXX: maxBackoffDelay or select on connection status event
+					select {
+					case <-time.After(backOffDelay):
+					case <-c.HaltCh():
+					}
 					continue
 				} else {
 					backOffDelay = (backOffDelay >> 1) + time.Millisecond
