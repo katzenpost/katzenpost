@@ -74,7 +74,9 @@ func (r *nonShitRandReader) Read(b []byte) (int, error) {
 	if err := r.getentropyFn(xofEntropy[:]); err != nil {
 		return 0, err
 	}
-	xof.Write(xofEntropy[:])
+	if _, err := xof.Write(xofEntropy[:]); err != nil {
+		return 0, err
+	}
 	return xof.Read(b)
 }
 

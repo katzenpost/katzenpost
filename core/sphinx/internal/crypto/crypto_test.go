@@ -30,6 +30,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/hkdf"
+	ourVeryOwnRand "github.com/katzenpost/katzenpost/core/crypto/rand"
+
 )
 
 func TestHash(t *testing.T) {
@@ -218,6 +220,14 @@ func TestKDF(t *testing.T) {
 	okm = okm[StreamIVLength:]
 	assert.Equal(okm[:SPRPKeyLength], k.PayloadEncryption[:])
 	okm = okm[SPRPKeyLength:]
+
+	priv_reader, err := ourVeryOwnRand.NewDeterministicRandReader(okm[:privateKeySeedSize])
+	require.NoError(t, err)
+	tmpBlindingFactor := ecdh.EcdhScheme.GeneratePrivateKey(priv_reader)
+	assert.Equal(k.BlindingFactor.Bytes(), tmpBlindingFactor.Bytes())
+	okm = okm[privateKeySeedSize:]
+
+	assert.Equal(0, len(okm))
 
 	k.Reset()
 	assert.Zero(k.HeaderMAC)

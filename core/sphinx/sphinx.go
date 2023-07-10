@@ -174,7 +174,10 @@ func (s *Sphinx) createHeader(r io.Reader, path []*PathHop) ([]byte, []*sprpKey,
 		}
 		keys[i] = crypto.KDF(sharedSecret, s.nike)
 		defer keys[i].Reset()
-		clientPublicKey.Blind(keys[i-1].BlindingFactor)
+		err = clientPublicKey.Blind(keys[i-1].BlindingFactor)
+		if err != nil {
+			panic(err)
+		}
 		groupElements[i], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 		if err != nil {
 			panic(err)
@@ -399,7 +402,10 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 	// Transform the packet for forwarding to the next mix, iff the
 	// routing commands vector included a NextNodeHopCommand.
 	if nextNode != nil {
-		groupElement.Blind(keys.BlindingFactor)
+		err := groupElement.Blind(keys.BlindingFactor)
+		if err != nil {
+			panic(err)
+		}
 		copy(pkt[geOff:riOff], groupElement.Bytes()[:])
 		copy(pkt[riOff:macOff], newRoutingInfo)
 		copy(pkt[macOff:payloadOff], nextNode.MAC[:])
