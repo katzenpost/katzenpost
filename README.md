@@ -212,7 +212,7 @@ keys and network connection information.
 
 # License
 
-GPLv3
+AGPLv3
 
 # Donations
 
