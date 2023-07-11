@@ -17,7 +17,7 @@
 package cborplugin
 
 import (
-	"net"
+	//"net"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -31,7 +31,7 @@ type Server struct {
 
 	socket         *CommandIO
 	log            *logging.Logger
-	conn           net.Conn
+	//conn           net.Conn
 	socketFile     string
 	plugin         ServerPlugin
 	commandBuilder CommandBuilder
@@ -65,10 +65,6 @@ func (s *Server) worker() {
 			reply, err := s.plugin.OnCommand(cmd)
 			if err != nil {
 				s.log.Debugf("plugin returned err: %s", err)
-				continue
-			}
-			if reply == nil {
-				continue
 			}
 			select {
 			case <-s.HaltCh():

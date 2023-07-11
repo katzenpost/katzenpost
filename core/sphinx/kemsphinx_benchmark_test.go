@@ -17,7 +17,6 @@
 package sphinx
 
 import (
-	"crypto/rand"
 	"testing"
 
 	"github.com/cloudflare/circl/kem"
@@ -25,10 +24,18 @@ import (
 	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
+
+	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
+	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
+
+func BenchmarkKEMSphinxUnwrapX25519(b *testing.B) {
+	benchmarkKEMSphinxUnwrap(b, adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)))
+}
 
 func BenchmarkKEMSphinxUnwrapKyber512(b *testing.B) {
 	benchmarkKEMSphinxUnwrap(b, kyber512.Scheme())
@@ -76,7 +83,7 @@ func benchmarkKEMSphinxUnwrap(b *testing.B, mykem kem.Scheme) {
 func benchNewKEMNode(mykem kem.Scheme) *kemNodeParams {
 	n := new(kemNodeParams)
 
-	_, err := rand.Read(n.id[:])
+	_, err := rand.Reader.Read(n.id[:])
 	if err != nil {
 		panic("wtf")
 	}
@@ -110,7 +117,7 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
-			_, err := rand.Read(recipient.ID[:])
+			_, err := rand.Reader.Read(recipient.ID[:])
 			if err != nil {
 				panic(err)
 			}
@@ -119,7 +126,7 @@ func newBenchKEMPathVector(mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNod
 			// This is a SURB, add a surb_reply.
 			if isSURB {
 				surbReply := new(commands.SURBReply)
-				_, err := rand.Read(surbReply.ID[:])
+				_, err := rand.Reader.Read(surbReply.ID[:])
 				if err != nil {
 					panic(err)
 				}

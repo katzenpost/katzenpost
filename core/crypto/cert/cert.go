@@ -138,7 +138,10 @@ type Certificate struct {
 	// this certificate.
 	Certified []byte
 
-	// Signatures are the signature of the certificate.
+	// Signatures is a map PublicKeySum256 -> {PublicKeySum256, Payload}
+	// where PublicKeySum256 is the signer's public key and Payload is
+	// a signature over Certificate.message() (canonical encoding of
+	// the previous fields of the Certificate)
 	Signatures map[[32]byte]Signature
 }
 
@@ -180,6 +183,11 @@ func (c *Certificate) sanityCheck() error {
 	}
 	if len(c.Certified) == 0 || c.Certified == nil {
 		return ErrInvalidCertified
+	}
+	if c.Signatures == nil {
+		// it seems cbor will faithfully unmarshal a nil map as nil,
+		// so we need to correct that:
+		c.Signatures = make(map[[32]byte]Signature)
 	}
 	return nil
 }

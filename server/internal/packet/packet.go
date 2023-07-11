@@ -163,7 +163,9 @@ func (pkt *Packet) Dispose() {
 func (pkt *Packet) copyToRaw(b []byte) error {
 	if len(b) != pkt.Geometry.PacketLength {
 		// TODO: When we have actual large packets, handle them.
-		return fmt.Errorf("invalid Sphinx packet size: %v", len(b))
+		errInfo := fmt.Sprintf("My Sphinx Geometry: %s\n%s\n", pkt.Geometry.String(),
+			pkt.Geometry.Display())
+		return fmt.Errorf("invalid Sphinx packet size: %v\n%s", len(b), errInfo)
 	}
 
 	// The common case of standard packet sizes uses a pool allocator
@@ -303,9 +305,15 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*P
 	cmds = append(cmds, nodeDelayCmd)
 
 	// Assemble the response packet.
-	respPkt, _ := New(rawRespPkt, geo)
+	respPkt, err := New(rawRespPkt, geo)
+	if err != nil {
+		return nil, err
+	}
 	respPkt.Geometry = pkt.Geometry
-	respPkt.Set(nil, cmds)
+	err = respPkt.Set(nil, cmds)
+	if err != nil {
+		return nil, err
+	}
 
 	respPkt.RecvAt = pkt.RecvAt
 	// XXX: This should probably fudge the delay to account for processing

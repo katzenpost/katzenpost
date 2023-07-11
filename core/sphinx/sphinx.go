@@ -57,15 +57,29 @@ type Sphinx struct {
 func FromGeometry(geometry *geo.Geometry) (*Sphinx, error) {
 	if geometry.NIKEName != "" {
 		mynike := schemes.ByName(geometry.NIKEName)
+		if mynike == nil {
+			return nil, fmt.Errorf("cannot lookup NIKE by name: `%s`", geometry.NIKEName)
+		}
 		return &Sphinx{
 			nike:     mynike,
 			geometry: geometry,
 		}, nil
 	}
+	mykem := kemschemes.ByName(geometry.KEMName)
+	if mykem == nil {
+		return nil, fmt.Errorf("cannot lookup KEM by name: `%s`", geometry.KEMName)
+	}
 	return &Sphinx{
-		kem:      kemschemes.ByName(geometry.KEMName),
+		kem:      mykem,
 		geometry: geometry,
 	}, nil
+}
+
+func NewNIKESphinx(mynike nike.Scheme, geo *geo.Geometry) *Sphinx {
+	return &Sphinx{
+		nike:     mynike,
+		geometry: geo,
+	}
 }
 
 // NewSphinx creates a new instance of Sphinx.
@@ -153,7 +167,10 @@ func (s *Sphinx) createHeader(r io.Reader, path []*path.PathHop) ([]byte, []*spr
 		}
 		keys[i] = crypto.KDF(sharedSecret, s.nike)
 		defer keys[i].Reset()
-		clientPublicKey.Blind(keys[i-1].BlindingFactor)
+		err = clientPublicKey.Blind(keys[i-1].BlindingFactor)
+		if err != nil {
+			panic(err)
+		}
 		groupElements[i], err = s.nike.UnmarshalBinaryPublicKey(clientPublicKey.Bytes())
 		if err != nil {
 			panic(err)
@@ -378,7 +395,10 @@ func (s *Sphinx) unwrapNike(privKey nike.PrivateKey, pkt []byte) ([]byte, []byte
 	// Transform the packet for forwarding to the next mix, iff the
 	// routing commands vector included a NextNodeHopCommand.
 	if nextNode != nil {
-		groupElement.Blind(keys.BlindingFactor)
+		err := groupElement.Blind(keys.BlindingFactor)
+		if err != nil {
+			panic(err)
+		}
 		copy(pkt[geOff:riOff], groupElement.Bytes()[:])
 		copy(pkt[riOff:macOff], newRoutingInfo)
 		copy(pkt[macOff:payloadOff], nextNode.MAC[:])
