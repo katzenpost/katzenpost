@@ -281,6 +281,7 @@ type Session struct {
 	Mode Mode
 
 	// Errors ?
+	Errors chan error
 	acceptOnce *sync.Once
 }
 
@@ -431,8 +432,12 @@ func (s *Session) AcceptOnce(transport common.Transport) {
 			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
 			s.Lock()
 			s.Remote = conn
-			s.Unlock()
 			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
+			if s.Errors != nil {
+				panic("session.Errors not nil")
+			}
+			s.Errors = s.s.proxyWorker(s.Remote, s.Target)
+			s.Unlock()
 		})
 	})
 }
@@ -449,12 +454,20 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 		s.s.log.Error("SendRecv() called before Transport exists")
 		return nil, errors.New("No Transport")
 	}
-	// AcceptOnce() will only run once per session
 	s.AcceptOnce(s.Transport)
 	clientAddr := append(s.ID, []byte("client")...)
 	dst := common.UniqAddr(clientAddr)
 
-	// Nothing was sent
+	// Read s.Errors
+	select {
+	case err := <-s.Errors:
+		s.s.log.Error("SendRecv() session.Error: %v", err)
+		s.Reset()
+		return nil, err
+	default:
+	}
+
+	// WritePacket into transport
 	if len(payload) != 0 {
 		s.s.log.Debug("WritePacket(%d) from  %v", len(payload), dst)
 		_, err := s.Transport.WritePacket(context.Background(), payload, dst)
@@ -462,6 +475,15 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 			s.s.log.Errorf("WritePacket failure: %v", err)
 			return nil, err
 		}
+	}
+
+	// Read s.Errors
+	select {
+	case err := <-s.Errors:
+		s.s.log.Error("SendRecv() session.Error: %v", err)
+		s.Reset()
+		return nil, err
+	default:
 	}
 
 	// read packet from transport
@@ -475,6 +497,16 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
 	}
+
+	// Read s.Errors
+	select {
+	case err := <-s.Errors:
+		s.s.log.Error("SendRecv() session.Error: %v", err)
+		s.Reset()
+		return nil, err
+	default:
+	}
+
 	s.s.log.Debugf("got %d bytes to %v", n, addr)
 	return buf[:n], nil
 }
