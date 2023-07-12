@@ -497,12 +497,15 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
 	}
-
 	// Read s.Errors
 	select {
 	case err := <-s.Errors:
-		s.s.log.Error("SendRecv() session.Error: %v", err)
 		s.Reset()
+		if err == nil {
+			// Connection Finished
+			return buf[:n], io.EOF
+		}
+		s.s.log.Error("SendRecv() session.Error: %v", err)
 		return nil, err
 	default:
 	}
