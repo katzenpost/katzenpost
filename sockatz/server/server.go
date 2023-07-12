@@ -544,7 +544,6 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 			ses.ValidUntil = time.Now().Add(60 * time.Minute)
 			s.sessions.Store(string(cmd.ID), ses)
 		}
-		panic("Invalid type in map")
 	} else {
 		ses := new(Session)
 		ses.acceptOnce = new(sync.Once)
