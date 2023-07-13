@@ -292,6 +292,7 @@ func (s *Session) reset() {
 		s.Target = nil
 	}
 	s.acceptOnce = new(sync.Once)
+	s.Transport = nil
 }
 
 // OnCommand implements cborplugin.ServicePlugin OnCommand
