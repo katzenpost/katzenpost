@@ -36,6 +36,9 @@ func TestServer(t *testing.T) {
 	conn, err := net.Dial(cfg.Net, cfg.Addr)
 	require.NoError(t, err)
 
+	conn2, err := net.Dial(cfg.Net, cfg.Addr)
+	require.NoError(t, err)
+
 	header := make([]byte, 4)
 	message := []byte("hello")
 	binary.BigEndian.PutUint32(header, uint32(len(message)))
@@ -44,8 +47,6 @@ func TestServer(t *testing.T) {
 	require.Equal(t, count, 4+len(message))
 	require.NoError(t, err)
 
-	conn2, err := net.Dial(cfg.Net, cfg.Addr)
-	require.NoError(t, err)
 	count, err = conn2.Write(append(header[:4], message...))
 	require.Equal(t, count, 4+len(message))
 	require.NoError(t, err)
