@@ -12,7 +12,7 @@ testnet-build:
 	cd ../panda/server/cmd/panda_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
 	cd ../server_plugins/cbor_plugins/echo-go ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -o echo_server -ldflags ${ldflags}
 
-testnet-install:
+testnet-install: testnet-build
 	mv /go/katzenpost/server/cmd/server/server /$(net_name)/server.$(distro)
 	mv /go/katzenpost/memspool/server/cmd/memspool/memspool /$(net_name)/memspool.$(distro)
 	mv /go/katzenpost/map/server/cmd/map/map /$(net_name)/map.$(distro)
