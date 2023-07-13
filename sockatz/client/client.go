@@ -42,6 +42,8 @@ import (
 
 var (
 	cfg *config.Config
+	// set a minimum floor for the polling loop
+	backOffFloor = 420 * time.Millisecond
 )
 
 func GetSession(cfgFile string) (*client.Session, error) {
@@ -310,6 +312,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			c.log.Debugf("ReadPacket from outbound queue backOff: %v", backOffDelay)
 			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(backOffDelay))
 
+			// do not block waiting for client to send data
 			n, destAddr, err := k.ReadPacket(ctx, pkt)
 			cancelFn()
 			if err != nil {
@@ -353,6 +356,9 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					continue
 				} else {
 					backOffDelay = (backOffDelay >> 1) + time.Millisecond
+					if backOffDelay < backOffFloor {
+						backOffDelay = backOffFloor
+					}
 					c.Lock()
 					c.msgToSessionID[*msgID] = id // XXX: must garbage collect ...
 					c.Unlock()
