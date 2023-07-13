@@ -281,14 +281,12 @@ type Session struct {
 	Mode Mode
 
 	// Errors ?
-	Errors chan error
+	Errors     chan error
 	acceptOnce *sync.Once
 }
 
-// Reset clears Session state
-func (s *Session) Reset() {
-	s.Lock()
-	defer s.Unlock()
+// reset clears Session state
+func (s *Session) reset() {
 	if s.Target != nil {
 		s.Target.Close()
 		s.Target = nil
@@ -371,9 +369,6 @@ func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
 		s.log.Debugf("Already had Transport?")
 		return nil, ErrDialFailed
 	}
-	//ss.Reset() // XXX: this should be safe?
-
-	// XXX: duplicate dial commands may reset the session state
 
 	// Get a net.Conn for the target
 	switch cmd.Target.Scheme {
@@ -462,7 +457,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	select {
 	case err := <-s.Errors:
 		s.s.log.Error("SendRecv() session.Error: %v", err)
-		s.Reset()
+		s.reset()
 		return nil, err
 	default:
 	}
@@ -481,7 +476,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	select {
 	case err := <-s.Errors:
 		s.s.log.Error("SendRecv() session.Error: %v", err)
-		s.Reset()
+		s.reset()
 		return nil, err
 	default:
 	}
@@ -500,7 +495,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	// Read s.Errors
 	select {
 	case err := <-s.Errors:
-		s.Reset()
+		s.reset()
 		if err == nil {
 			// Connection Finished
 			return buf[:n], io.EOF
