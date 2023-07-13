@@ -298,7 +298,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	// start transport worker that sends packets
 	c.Go(func() {
 		c.log.Debugf("Started kaetzchen proxy send worker")
-		backOffDelay := 42 * time.Second
+		backOffDelay := 42 * time.Millisecond
 		for {
 			select {
 			case <-k.HaltCh():
