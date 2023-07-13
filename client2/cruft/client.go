@@ -4,7 +4,7 @@ import (
 	mRand "math/rand"
 	"sync"
 
-	"github.com/charmbracelet/log"
+	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -13,10 +13,10 @@ import (
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
 type Client struct {
-	//	pki  *pki
-	cfg *config.Config
-	log *log.Logger
-	//	conn *connection
+	pki  *pki
+	cfg  *config.Config
+	log  *logging.Logger
+	conn *connection
 
 	geo *geo.Geometry
 
