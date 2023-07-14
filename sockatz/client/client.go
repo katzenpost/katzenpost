@@ -140,7 +140,6 @@ func (c *Client) Topup(id []byte) chan error {
 		if p.Status != server.TopupSuccess {
 			errCh <- errors.New("Topup failure")
 		}
-		errCh <- nil // NoError
 	}()
 	return errCh
 }
@@ -187,7 +186,6 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 	err := p.Unmarshal(rawResp)
 	if err != nil {
 		c.log.Errorf("failure to unmarshal server.ProxyResponse: %v", err)
-		conn.Close()
 		errCh <- err
 		return
 	}
@@ -207,7 +205,6 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 		c.log.Debugf("Got ProxyReponse: ProxySuccess: len(%d)", len(p.Payload))
 	case server.ProxyFailure:
 		c.log.Debugf("Got ProxyReponse: ProxyFailure")
-		conn.Close()
 		errCh <- errors.New("ProxyFailure")
 		return
 	}
@@ -228,8 +225,8 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 		}
 	}
 }
-func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
-	errCh := make(chan error)
+func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan error) {
+	errCh := make(chan error, 3)
 
 	ctx := context.Background()
 	myId := append(id, []byte("client")...)
@@ -237,6 +234,10 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 
 	// start proxy worker that proxies bytes between QUICProxyConn and conn
 	c.Go(func() {
+		defer func() {
+			c.log.Debugf("Gracefully halting client proxy worker")
+		}()
+
 		c.log.Debugf("Dialing %v", common.UniqAddr(id))
 		proxyConn, err := qconn.Dial(ctx, common.UniqAddr(id))
 		if err != nil {
@@ -271,15 +272,14 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 
 		c.log.Debugf("Waiting for workers to finish")
 		wg.Wait()
-		c.log.Debugf("Workers done, closing Conn")
 		c.log.Debugf("Workers done, halting transport")
-		qconn.Close()
+		errCh <- nil
 	})
 
 	// start transport worker that receives packets
 	c.receiveOnce.Do(func() {
 		c.Go(func() {
-			c.log.Debugf("Started kaetzchen proxy send worker")
+			c.log.Debugf("Started kaetzchen proxy receive worker")
 			defer func() {
 				c.log.Debugf("Event sink worker terminating gracefully.")
 			}()
@@ -299,8 +299,9 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					default:
 						// skip handling event
 					}
-				case <-k.HaltCh():
-					errCh <- nil
+				// XXX: restart transport worker on new session
+				//case <-c.s.HaltCh():
+				case <-c.HaltCh():
 					return
 				}
 			}
@@ -310,9 +311,14 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	// start transport worker that sends packets
 	c.Go(func() {
 		c.log.Debugf("Started kaetzchen proxy send worker")
+		defer func() {
+			c.log.Debugf("Gracefully halting transport send worker")
+		}()
 		backOffDelay := 42 * time.Millisecond
 		for {
 			select {
+			case <-c.HaltCh():
+				return
 			case <-qconn.HaltCh():
 				return
 			default:
@@ -362,6 +368,8 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					case <-time.After(backOffDelay):
 					case <-c.HaltCh():
 						return
+					case <-qconn.HaltCh():
+						return
 					}
 					continue
 				} else {
@@ -384,7 +392,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			}
 		}
 	})
-	return errCh
+	return qconn, errCh
 }
 
 func (c *Client) SocksHandler(conn net.Conn) {
@@ -454,9 +462,13 @@ func (c *Client) SocksHandler(conn net.Conn) {
 	}
 
 	// start proxying data
-	errCh := c.Proxy(id, conn)
+	qconn, errCh := c.Proxy(id, conn)
 	err = <-errCh
 	if err != nil {
 		c.log.Errorf("Proxy failed with error: %v", err)
+	}
+	err = qconn.Close()
+	if err != nil {
+		c.log.Errorf("QUICProxyConn.Close failed with error: %v", err)
 	}
 }
