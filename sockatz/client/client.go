@@ -43,7 +43,7 @@ import (
 var (
 	cfg *config.Config
 	// set a minimum floor for the polling loop
-	backOffFloor = 420 * time.Millisecond
+	backOffFloor = 100 * time.Millisecond
 )
 
 func GetSession(cfgFile string) (*client.Session, error) {
@@ -82,6 +82,7 @@ type Client struct {
 	s              *client.Session
 	msgToSessionID map[[constants.MessageIDLength]byte][]byte
 	payloadLen     int
+	receiveOnce    *sync.Once
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -92,7 +93,9 @@ func NewClient(s *client.Session) (*Client, error) {
 		return nil, err
 	}
 	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
-		msgToSessionID: make(map[[constants.MessageIDLength]byte][]byte)}, nil
+		msgToSessionID: make(map[[constants.MessageIDLength]byte][]byte),
+		receiveOnce:    new(sync.Once),
+	}, nil
 }
 
 // topup sends a TopupCommand and returns a channel. err nil means success.
@@ -231,6 +234,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	k := common.NewQUICProxyConn(myId)
 
 	// start proxy worker that proxies bytes between QUICProxyConn and conn
+	closedConn := make(chan bool)
 	c.Go(func() {
 		c.log.Debugf("Dialing %v", common.UniqAddr(id))
 		proxyConn, err := k.Dial(ctx, common.UniqAddr(id))
@@ -263,38 +267,43 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			conn.Close()
 			proxyConn.Close()
 		}()
+
 		c.log.Debugf("Waiting for workers to finish")
 		wg.Wait()
+		c.log.Debugf("Workers done, closing Conn")
+		close(closedConn)
 		c.log.Debugf("Workers done, halting transport")
 		k.Close()
 		errCh <- nil
 	})
 
 	// start transport worker that receives packets
-	c.Go(func() {
-		c.log.Debugf("Started kaetzchen proxy send worker")
-		defer func() {
-			c.log.Debugf("Event sink worker terminating gracefully.")
-		}()
-		for {
-			select {
-			case e := <-c.s.EventSink:
-				switch event := e.(type) {
-				case *client.MessageReplyEvent:
-					c.Lock()
-					sessionID, ok := c.msgToSessionID[*event.MessageID]
-					c.Unlock()
-					if ok {
-						c.handleReply(k, sessionID, errCh, event.Payload)
+	c.receiveOnce.Do(func() {
+		c.Go(func() {
+			c.log.Debugf("Started kaetzchen proxy send worker")
+			defer func() {
+				c.log.Debugf("Event sink worker terminating gracefully.")
+			}()
+			for {
+				select {
+				case e := <-c.s.EventSink:
+					switch event := e.(type) {
+					case *client.MessageReplyEvent:
+						c.Lock()
+						sessionID, ok := c.msgToSessionID[*event.MessageID]
+						c.Unlock()
+						if ok {
+							c.handleReply(k, sessionID, errCh, event.Payload)
+						}
+					default:
+						// skip handling event
 					}
-				default:
-					// skip handling event
+				case <-k.HaltCh():
+					errCh <- nil
+					return
 				}
-			case <-k.HaltCh():
-				errCh <- nil
-				return
 			}
-		}
+		})
 	})
 
 	// start transport worker that sends packets
