@@ -207,6 +207,7 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 		c.log.Debugf("Got ProxyReponse: ProxySuccess: len(%d)", len(p.Payload))
 	case server.ProxyFailure:
 		c.log.Debugf("Got ProxyReponse: ProxyFailure")
+		conn.Close()
 		errCh <- errors.New("ProxyFailure")
 		return
 	}
@@ -272,9 +273,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		wg.Wait()
 		c.log.Debugf("Workers done, closing Conn")
 		c.log.Debugf("Workers done, halting transport")
-		k.Close()
-		k.Halt()
-		errCh <- nil
+		errCh <- k.Close()
 	})
 
 	// start transport worker that receives packets

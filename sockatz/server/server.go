@@ -601,9 +601,11 @@ func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 		return nil, err
 	}
 
-	// received proxy command before Transport was established?
+	// XXX: received messages after session reset ?
 	if ss.Transport == nil {
-		return nil, errors.New("No Transport")
+		s.log.Errorf("Received ProxyCommand with no Transport")
+		reply.Status = ProxyFailure
+		return reply, nil
 	}
 
 	// SendRecv writes payload and reads packets from the session connection
