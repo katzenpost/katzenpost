@@ -561,19 +561,27 @@ func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
 			defer wg.Done()
 			_, err := io.Copy(a, b)
 			if err != nil {
+				s.log.Errorf("proxyWorker io.Copy returned: %v", err)
 				errCh <- err
 			}
-			a.Close()
-			b.Close()
+			s.log.Debugf("Closing %v", b)
+			err = b.Close()
+			if err != nil {
+				s.log.Errorf("proxyWorker Close returned: %v", err)
+			}
 		}()
 		go func() {
 			defer wg.Done()
 			_, err := io.Copy(b, a)
 			if err != nil {
+				s.log.Errorf("proxyWorker io.Copy returned: %v", err)
 				errCh <- err
 			}
-			a.Close()
-			b.Close()
+			s.log.Debugf("Closing %v", a)
+			err = a.Close()
+			if err != nil {
+				s.log.Errorf("proxyWorker Close returned: %v", err)
+			}
 		}()
 		wg.Wait()
 		close(errCh)
