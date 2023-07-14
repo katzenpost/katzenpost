@@ -187,6 +187,7 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 	err := p.Unmarshal(rawResp)
 	if err != nil {
 		c.log.Errorf("failure to unmarshal server.ProxyResponse: %v", err)
+		conn.Close()
 		errCh <- err
 		return
 	}
