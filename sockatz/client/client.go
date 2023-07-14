@@ -80,7 +80,7 @@ type Client struct {
 	desc           *utils.ServiceDescriptor
 	log            *logging.Logger
 	s              *client.Session
-	msgToSessionID map[[constants.MessageIDLength]byte][]byte
+	msgCallbacks   map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
 	payloadLen     int
 	receiveOnce    *sync.Once
 }
@@ -93,7 +93,7 @@ func NewClient(s *client.Session) (*Client, error) {
 		return nil, err
 	}
 	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
-		msgToSessionID: make(map[[constants.MessageIDLength]byte][]byte),
+		msgCallbacks:   make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
 		receiveOnce:    new(sync.Once),
 	}, nil
 }
@@ -233,12 +233,12 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 
 	ctx := context.Background()
 	myId := append(id, []byte("client")...)
-	k := common.NewQUICProxyConn(myId)
+	qconn := common.NewQUICProxyConn(myId)
 
 	// start proxy worker that proxies bytes between QUICProxyConn and conn
 	c.Go(func() {
 		c.log.Debugf("Dialing %v", common.UniqAddr(id))
-		proxyConn, err := k.Dial(ctx, common.UniqAddr(id))
+		proxyConn, err := qconn.Dial(ctx, common.UniqAddr(id))
 		if err != nil {
 			errCh <- err
 			return
@@ -273,7 +273,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		wg.Wait()
 		c.log.Debugf("Workers done, closing Conn")
 		c.log.Debugf("Workers done, halting transport")
-		errCh <- k.Close()
+		qconn.Close()
 	})
 
 	// start transport worker that receives packets
@@ -289,10 +289,12 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					switch event := e.(type) {
 					case *client.MessageReplyEvent:
 						c.Lock()
-						sessionID, ok := c.msgToSessionID[*event.MessageID]
+						callback, ok := c.msgCallbacks[*event.MessageID]
 						c.Unlock()
 						if ok {
-							c.handleReply(k, sessionID, errCh, event.Payload)
+							callback(event)
+						} else {
+							c.log.Errorf("No callback for ReplyEvent")
 						}
 					default:
 						// skip handling event
@@ -311,8 +313,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		backOffDelay := 42 * time.Millisecond
 		for {
 			select {
-			case <-k.HaltCh():
-				errCh <- nil
+			case <-qconn.HaltCh():
 				return
 			default:
 			}
@@ -321,7 +322,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(backOffDelay))
 
 			// do not block waiting for client to send data
-			n, destAddr, err := k.ReadPacket(ctx, pkt)
+			n, destAddr, err := qconn.ReadPacket(ctx, pkt)
 			cancelFn()
 			if err != nil {
 				if err.Error() == "Halted" {
@@ -364,18 +365,24 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					}
 					continue
 				} else {
-					backOffDelay = (backOffDelay >> 1) + time.Millisecond
+					backOffDelay = (backOffDelay >> 1)
 					if backOffDelay < backOffFloor {
 						backOffDelay = backOffFloor
 					}
 					c.Lock()
-					c.msgToSessionID[*msgID] = id // XXX: must garbage collect ...
+					c.msgCallbacks[*msgID] = func (event *client.MessageReplyEvent) {
+						if event.Err == nil {
+							c.handleReply(qconn, id, errCh, event.Payload)
+						}
+						c.Lock()
+						delete(c.msgCallbacks, *msgID)
+						c.Unlock()
+					}
 					c.Unlock()
 					break
 				}
 			}
 		}
-		errCh <- nil
 	})
 	return errCh
 }
