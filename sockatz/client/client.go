@@ -361,6 +361,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 					select {
 					case <-time.After(backOffDelay):
 					case <-c.HaltCh():
+						return
 					}
 					continue
 				} else {
