@@ -235,7 +235,6 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 	k := common.NewQUICProxyConn(myId)
 
 	// start proxy worker that proxies bytes between QUICProxyConn and conn
-	closedConn := make(chan bool)
 	c.Go(func() {
 		c.log.Debugf("Dialing %v", common.UniqAddr(id))
 		proxyConn, err := k.Dial(ctx, common.UniqAddr(id))
@@ -272,9 +271,9 @@ func (c *Client) Proxy(id []byte, conn net.Conn) chan error {
 		c.log.Debugf("Waiting for workers to finish")
 		wg.Wait()
 		c.log.Debugf("Workers done, closing Conn")
-		close(closedConn)
 		c.log.Debugf("Workers done, halting transport")
 		k.Close()
+		k.Halt()
 		errCh <- nil
 	})
 
