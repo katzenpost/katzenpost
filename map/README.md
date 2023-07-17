@@ -16,7 +16,7 @@ Unit tests are run using go test:
 go test -v ./...
 ```
 
-## gitlab CI tests
+## GitHub CI tests
 
 End-to-End tests are run using dockerized instances of the Katzenpost mixnet.
 
