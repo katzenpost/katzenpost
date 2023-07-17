@@ -38,8 +38,6 @@ type incomingConn struct {
 	id          uint64
 	retrySeq    uint32
 
-	isInitialized bool // Set by listener.
-
 	closeConnectionCh chan bool
 }
 
@@ -68,7 +66,7 @@ func (c *incomingConn) RecvRequest() (*Request, error) {
 }
 
 func (c *incomingConn) handleRequest(req *Request) error {
-	c.log.Infof("do something with the request")
+	c.log.Infof("handleRequest: ID %d, Operation: %x, Payload: %x\n", req.ID, req.Operation, req.Payload)
 	return nil // XXX FIXME
 }
 
@@ -79,14 +77,12 @@ func (c *incomingConn) worker() {
 		c.listener.onClosedConn(c) // Remove from the connection list.
 	}()
 
-	c.listener.onInitializedConn(c)
-
-	// Start reading from the peer.
-	commandCh := make(chan *Request)
-	commandCloseCh := make(chan interface{})
-	defer close(commandCloseCh)
+	// Start reading from the unix socket peer.
+	requestCh := make(chan *Request)
+	requestCloseCh := make(chan interface{})
+	defer close(requestCloseCh)
 	go func() {
-		defer close(commandCh)
+		defer close(requestCh)
 		for {
 			rawCmd, err := c.RecvRequest()
 			if err != nil {
@@ -94,8 +90,8 @@ func (c *incomingConn) worker() {
 				return
 			}
 			select {
-			case commandCh <- rawCmd:
-			case <-commandCloseCh:
+			case requestCh <- rawCmd:
+			case <-requestCloseCh:
 				// c.worker() is returning for some reason, give up on
 				// trying to write the command, and just return.
 				return
@@ -103,7 +99,7 @@ func (c *incomingConn) worker() {
 		}
 	}()
 
-	// Process incoming packets.
+	// Process incoming requests.
 	for {
 		var rawReq *Request
 		var ok bool
@@ -112,7 +108,7 @@ func (c *incomingConn) worker() {
 		case <-c.listener.closeAllCh:
 			// Server is getting shutdown, all connections are being closed.
 			return
-		case rawReq, ok = <-commandCh:
+		case rawReq, ok = <-requestCh:
 			if !ok {
 				return
 			}

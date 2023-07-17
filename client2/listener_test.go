@@ -1,55 +1,47 @@
 package client2
 
 import (
-	"context"
-	"encoding/binary"
 	"net"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/log"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/stretchr/testify/require"
 )
 
-func TestServer(t *testing.T) {
-	cfg := &Config{
-		Net:       "tcp",
-		Addr:      "localhost:6667",
-		LogModule: "handler_",
-		NewLoggerFn: func(prefix string) *log.Logger {
-			logger := log.NewWithOptions(os.Stderr, log.Options{
-				Prefix: prefix,
-			})
-			logger.SetLevel(log.DebugLevel)
-			return logger
-		},
-	}
+func TestListener(t *testing.T) {
+	s, err := NewListener(123)
+	require.NoError(t, err)
 
-	s := NewServer(cfg)
-	ctx, _ := context.WithCancel(context.Background())
-	err := s.Start(ctx)
+	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", "@testapp1")
+	require.NoError(t, err)
+
+	destUnixAddr, err := net.ResolveUnixAddr("unixpacket", "@katzenpost")
+	require.NoError(t, err)
+
+	conn, err := net.DialUnix("unixpacket", srcUnixAddr, destUnixAddr)
 	require.NoError(t, err)
 
 	time.Sleep(500 * time.Millisecond)
 
-	conn, err := net.Dial(cfg.Net, cfg.Addr)
+	req := new(Request)
+	req.ID = 1234
+	req.Operation = []byte("hello")
+	req.Payload = []byte("yoyoyo")
+
+	requestCbor, err := cbor.Marshal(req)
 	require.NoError(t, err)
 
-	conn2, err := net.Dial(cfg.Net, cfg.Addr)
-	require.NoError(t, err)
+	oob := make([]byte, 0)
 
-	header := make([]byte, 4)
-	message := []byte("hello")
-	binary.BigEndian.PutUint32(header, uint32(len(message)))
-
-	count, err := conn.Write(append(header[:4], message...))
-	require.Equal(t, count, 4+len(message))
+	count, oobCount, err := conn.WriteMsgUnix(requestCbor, oob, destUnixAddr)
 	require.NoError(t, err)
+	require.Equal(t, count, len(requestCbor))
+	require.Equal(t, oobCount, 0)
 
-	count, err = conn2.Write(append(header[:4], message...))
-	require.Equal(t, count, 4+len(message))
-	require.NoError(t, err)
+	t.Logf("WriteMsgUnix: count is %d, oob count is %d", count, oobCount)
+
+	time.Sleep(2000 * time.Millisecond)
 
 	s.Halt()
 }

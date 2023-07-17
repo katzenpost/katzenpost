@@ -39,7 +39,6 @@ type listener struct {
 
 	conns *list.List
 
-	incomingCh chan<- interface{}
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 }
@@ -94,13 +93,6 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	c.listElement = l.conns.PushFront(c)
 }
 
-func (l *listener) onInitializedConn(c *incomingConn) {
-	l.Lock()
-	defer l.Unlock()
-
-	c.isInitialized = true
-}
-
 func (l *listener) onClosedConn(c *incomingConn) {
 	l.Lock()
 	defer func() {
@@ -111,7 +103,7 @@ func (l *listener) onClosedConn(c *incomingConn) {
 }
 
 // New creates a new listener.
-func New(incomingCh chan<- interface{}, id int) (*listener, error) {
+func NewListener(id int) (*listener, error) {
 	var err error
 
 	l := &listener{
@@ -120,7 +112,6 @@ func New(incomingCh chan<- interface{}, id int) (*listener, error) {
 			Prefix:          fmt.Sprintf("listener:%d", id),
 		}),
 		conns:      list.New(),
-		incomingCh: incomingCh,
 		closeAllCh: make(chan interface{}),
 	}
 
