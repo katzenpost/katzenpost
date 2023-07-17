@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListener(t *testing.T) {
+func TestListenerEchoOperation(t *testing.T) {
 	s, err := NewListener(123)
 	require.NoError(t, err)
 
@@ -26,7 +26,7 @@ func TestListener(t *testing.T) {
 
 	req := new(Request)
 	req.ID = 1234
-	req.Operation = []byte("hello")
+	req.Operation = []byte("echo")
 	req.Payload = []byte("yoyoyo")
 
 	requestCbor, err := cbor.Marshal(req)
@@ -41,7 +41,20 @@ func TestListener(t *testing.T) {
 
 	t.Logf("WriteMsgUnix: count is %d, oob count is %d", count, oobCount)
 
-	time.Sleep(2000 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
+
+	t.Log("ReadMsgUnix")
+
+	buff := make([]byte, 65536)
+	oob2 := make([]byte, 65536)
+	count, oobCount, _, _, err = conn.ReadMsgUnix(buff, oob2)
+	require.Equal(t, oobCount, 0)
+
+	response := new(Response)
+	err = cbor.Unmarshal(buff[:count], response)
+	require.NoError(t, err)
+	require.Equal(t, response.ID, req.ID)
+	require.Equal(t, response.Payload, req.Payload)
 
 	s.Halt()
 }

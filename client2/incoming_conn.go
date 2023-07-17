@@ -1,23 +1,9 @@
-// incoming_conn.go - Katzenpost server incoming connection handler.
-// Copyright (C) 2017  Yawning Angel.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
 package client2
 
 import (
+	"bytes"
 	"container/list"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -33,7 +19,7 @@ type incomingConn struct {
 	listener *listener
 	log      *log.Logger
 
-	netConn     *net.UnixConn
+	unixConn    *net.UnixConn
 	listElement *list.Element
 	id          uint64
 	retrySeq    uint32
@@ -48,7 +34,7 @@ func (c *incomingConn) Close() {
 func (c *incomingConn) RecvRequest() (*Request, error) {
 	buff := make([]byte, 65536)
 	oob := make([]byte, 65536)
-	reqLen, oobLen, _, _, err := c.netConn.ReadMsgUnix(buff, oob)
+	reqLen, oobLen, _, _, err := c.unixConn.ReadMsgUnix(buff, oob)
 	if err != nil {
 		return nil, err
 	}
@@ -65,15 +51,40 @@ func (c *incomingConn) RecvRequest() (*Request, error) {
 	return req, nil
 }
 
-func (c *incomingConn) handleRequest(req *Request) error {
-	c.log.Infof("handleRequest: ID %d, Operation: %x, Payload: %x\n", req.ID, req.Operation, req.Payload)
-	return nil // XXX FIXME
+func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
+	c.log.Infof("handleRequest: ID %d, Operation: %x, Payload: %x", req.ID, req.Operation, req.Payload)
+	if bytes.Equal(req.Operation, []byte("echo")) {
+		c.log.Info("echo command")
+		payload := make([]byte, len(req.Payload))
+		copy(payload, req.Payload)
+		return &Response{
+			ID:      req.ID,
+			Payload: payload,
+		}, nil
+	}
+
+	return nil, errors.New("invalid operation specified")
+}
+
+func (c *incomingConn) sendResponse(response *Response) error {
+	blob, err := cbor.Marshal(response)
+	if err != nil {
+		return err
+	}
+	count, err := c.unixConn.Write(blob)
+	if err != nil {
+		return err
+	}
+	if count != len(blob) {
+		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(blob))
+	}
+	return nil
 }
 
 func (c *incomingConn) worker() {
 	defer func() {
 		c.log.Debugf("Closing.")
-		c.netConn.Close()
+		c.unixConn.Close()
 		c.listener.onClosedConn(c) // Remove from the connection list.
 	}()
 
@@ -114,10 +125,17 @@ func (c *incomingConn) worker() {
 			}
 		}
 
-		c.log.Debugf("Received Request from peer application.")
-		if err := c.handleRequest(rawReq); err != nil {
-			c.log.Debugf("Failed to handle Request: %v", err)
+		c.log.Infof("Received Request from peer application.")
+		response, err := c.handleRequest(rawReq)
+		if err != nil {
+			c.log.Infof("Failed to handle Request: %v", err)
 			return
+		}
+
+		c.log.Info("before sendResponse")
+		err = c.sendResponse(response)
+		if err != nil {
+			c.log.Infof("received error sending Response: %s", err.Error())
 		}
 		continue
 	}
@@ -128,7 +146,7 @@ func (c *incomingConn) worker() {
 func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 	c := &incomingConn{
 		listener:          l,
-		netConn:           conn,
+		unixConn:          conn,
 		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		closeConnectionCh: make(chan bool),
 	}
