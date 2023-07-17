@@ -33,13 +33,9 @@ func (c *incomingConn) Close() {
 
 func (c *incomingConn) RecvRequest() (*Request, error) {
 	buff := make([]byte, 65536)
-	oob := make([]byte, 65536)
-	reqLen, oobLen, _, _, err := c.unixConn.ReadMsgUnix(buff, oob)
+	reqLen, _, _, _, err := c.unixConn.ReadMsgUnix(buff, nil)
 	if err != nil {
 		return nil, err
-	}
-	if oobLen != 0 {
-		log.Infof("client sent %d bytes of oob data\n", oobLen)
 	}
 	req := new(Request)
 	err = cbor.Unmarshal(buff[:reqLen], &req)
@@ -132,7 +128,6 @@ func (c *incomingConn) worker() {
 			return
 		}
 
-		c.log.Info("before sendResponse")
 		err = c.sendResponse(response)
 		if err != nil {
 			c.log.Infof("received error sending Response: %s", err.Error())

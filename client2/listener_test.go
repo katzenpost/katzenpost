@@ -32,9 +32,7 @@ func TestListenerEchoOperation(t *testing.T) {
 	requestCbor, err := cbor.Marshal(req)
 	require.NoError(t, err)
 
-	oob := make([]byte, 0)
-
-	count, oobCount, err := conn.WriteMsgUnix(requestCbor, oob, destUnixAddr)
+	count, oobCount, err := conn.WriteMsgUnix(requestCbor, nil, destUnixAddr)
 	require.NoError(t, err)
 	require.Equal(t, count, len(requestCbor))
 	require.Equal(t, oobCount, 0)
@@ -46,9 +44,7 @@ func TestListenerEchoOperation(t *testing.T) {
 	t.Log("ReadMsgUnix")
 
 	buff := make([]byte, 65536)
-	oob2 := make([]byte, 65536)
-	count, oobCount, _, _, err = conn.ReadMsgUnix(buff, oob2)
-	require.Equal(t, oobCount, 0)
+	count, _, _, _, err = conn.ReadMsgUnix(buff, nil)
 
 	response := new(Response)
 	err = cbor.Unmarshal(buff[:count], response)
