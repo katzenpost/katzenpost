@@ -21,15 +21,17 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/log"
 
 	vServer "github.com/katzenpost/katzenpost/authority/voting/server"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"gopkg.in/op/go-logging.v1"
 )
 
 var (
@@ -48,7 +50,7 @@ type pki struct {
 	worker.Worker
 
 	c   *Client
-	log *logging.Logger
+	log *log.Logger
 
 	docs          sync.Map
 	failedFetches map[uint64]error
@@ -164,7 +166,7 @@ func (p *pki) worker() {
 			d, err := p.getDocument(pkiCtx, epoch)
 			cancelFn()
 			if err != nil {
-				p.log.Warningf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+				p.log.Warnf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {
 				case cpki.ErrNoDocument:
 					p.failedFetches[epoch] = err
@@ -284,7 +286,11 @@ func (p *pki) start() {
 func newPKI(c *Client) *pki {
 	p := new(pki)
 	p.c = c
-	p.log = c.cfg.LogBackend.GetLogger("client2/pki:" + c.displayName)
+	p.log = log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          fmt.Sprintf("client2/pki:%s", c.displayName),
+	})
+
 	p.failedFetches = make(map[uint64]error)
 	p.forceUpdateCh = make(chan interface{}, 1)
 	// Save cached documents

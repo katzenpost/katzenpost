@@ -31,7 +31,7 @@ func (c *incomingConn) Close() {
 	c.closeConnectionCh <- true
 }
 
-func (c *incomingConn) RecvRequest() (*Request, error) {
+func (c *incomingConn) recvRequest() (*Request, error) {
 	buff := make([]byte, 65536)
 	reqLen, _, _, _, err := c.unixConn.ReadMsgUnix(buff, nil)
 	if err != nil {
@@ -91,7 +91,7 @@ func (c *incomingConn) worker() {
 	go func() {
 		defer close(requestCh)
 		for {
-			rawCmd, err := c.RecvRequest()
+			rawCmd, err := c.recvRequest()
 			if err != nil {
 				c.log.Debugf("Failed to receive command: %v", err)
 				return

@@ -22,11 +22,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"gopkg.in/op/go-logging.v1"
+	"github.com/charmbracelet/log"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
@@ -106,7 +107,7 @@ type connection struct {
 	worker.Worker
 
 	c   *Client
-	log *logging.Logger
+	log *log.Logger
 
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
@@ -299,7 +300,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			}
 		}
 		if len(dstAddrs) == 0 {
-			c.log.Warningf("Aborting connect loop, no suitable addresses found.")
+			c.log.Warnf("Aborting connect loop, no suitable addresses found.")
 			c.descriptor = nil // Give up till the next PKI fetch.
 			connErr = newConnectError("no suitable addreses found")
 			return
@@ -330,7 +331,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 				return
 			default:
 				if err != nil {
-					c.log.Warningf("Failed to connect to %v: %v", addrPort, err)
+					c.log.Warnf("Failed to connect to %v: %v", addrPort, err)
 					if c.c.cfg.OnConnFn != nil {
 						c.c.cfg.OnConnFn(&ConnectError{Err: err})
 					}
@@ -361,12 +362,15 @@ func (c *connection) onTCPConn(conn net.Conn) {
 		conn.Close()
 	}()
 
+	linkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+
 	// Allocate the session struct.
+	idHash := linkKey.PublicKey().Sum256()
 	cfg := &wire.SessionConfig{
 		Geometry:          c.c.cfg.SphinxGeometry,
 		Authenticator:     c,
-		AdditionalData:    []byte(c.c.cfg.User),
-		AuthenticationKey: c.c.cfg.LinkKey,
+		AdditionalData:    []byte(idHash[:]),
+		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
 	w, err := wire.NewSession(cfg, true)
@@ -433,7 +437,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				}
 				return
 			}
-			// XXX: why retryDelay 0?
 			atomic.StoreInt64(&c.retryDelay, 0)
 			select {
 			case <-c.HaltCh():
@@ -575,7 +578,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		}
 		// Update the cached descriptor, and re-validate the connection.
 		if !c.IsPeerValid(creds) {
-			c.log.Warningf("No longer have a descriptor for current peer.")
+			c.log.Warnf("No longer have a descriptor for current peer.")
 			wireErr = newProtocolError("current consensus no longer lists the Provider")
 			return
 		}
@@ -799,7 +802,11 @@ func (c *connection) start() {
 func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.c = c
-	k.log = c.cfg.LogBackend.GetLogger("minclient/conn:" + c.displayName)
+	k.log = log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          fmt.Sprintf("client2/conn:%s", c.displayName),
+	})
+
 	k.pkiFetchCh = make(chan interface{}, 1)
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)

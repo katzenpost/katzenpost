@@ -5,8 +5,10 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 
@@ -220,6 +223,46 @@ type Config struct {
 	CachedDocument *cpki.Document
 
 	upstreamProxy *proxy.Config
+
+	// OnConnFn is the callback function that will be called when the
+	// connection status changes.  The error parameter will be nil on
+	// successful connection establishment, otherwise it will be set
+	// with the reason why a connection has been torn down (or a connect
+	// attempt has failed).
+	OnConnFn func(error)
+
+	// OnMessageEmptyFn is the callback function that will be called
+	// when the user's server side spool is empty.  This can happen
+	// as the result of periodic background fetches.  Calls to the callback
+	// that return an error will be treated as a signal to tear down the
+	// connection.
+	OnEmptyFn func() error
+
+	// OnMessageFn is the callback function that will be called when
+	// a message is retrived from the user's server side spool.  Callers
+	// MUST be prepared to receive multiple callbacks with the same
+	// message body.  Calls to the callback that return an error will
+	// be treated as a signal to tear down the connection.
+	OnMessageFn func([]byte) error
+
+	// OnACKFn is the callback function that will be called when a
+	// message CK is retreived from the user's server side spool.  Callers
+	// MUST be prepared to receive multiple callbacks with the same
+	// SURB ID and SURB ciphertext.  Calls to the callback that return
+	// an error will be treated as a signal to tear down the connection.
+	OnACKFn func(*[constants.SURBIDLength]byte, []byte) error
+
+	// OnDocumentFn is the callback function taht will be called when a
+	// new directory document is retreived for the current epoch.
+	OnDocumentFn func(*cpki.Document)
+
+	// DialContextFn is the optional alternative Dialer.DialContext function
+	// to be used when creating outgoing network connections.
+	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
+
+	// PreferedTransports is a list of the transports will be used to make
+	// outgoing network connections, with the most prefered first.
+	PreferedTransports []cpki.Transport
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for

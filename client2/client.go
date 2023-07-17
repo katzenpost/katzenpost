@@ -1,26 +1,35 @@
 package client2
 
 import (
-	mRand "math/rand"
+	"fmt"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/log"
 
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
 type Client struct {
-	//	pki  *pki
-	cfg *config.Config
-	log *log.Logger
-	//	conn *connection
+	sync.RWMutex
 
-	geo *geo.Geometry
+	// messagePollInterval is the interval at which the server will be
+	// polled for new messages if the queue is believed to be empty.
+	// this will go away when we have the server push received messages.
+	messagePollInterval time.Duration
 
-	rng *mRand.Rand
+	pki  *pki
+	cfg  *config.Config
+	log  *log.Logger
+	conn *connection
+
+	sphinx *sphinx.Sphinx
+	geo    *geo.Geometry
 
 	displayName string
 
@@ -28,21 +37,45 @@ type Client struct {
 	haltOnce sync.Once
 }
 
-/*
-	// ReconnectOldSession reuses the old noise protocol key to reconnect to
-	// a previously selected entry mix.
-	ReconnectOldSession(Session) error
+// Shutdown cleanly shuts down a given Client instance.
+func (c *Client) Shutdown() {
+	c.haltOnce.Do(func() { c.halt() })
+}
 
-	// NewSession generates a new noise protocol key and connects to a randomly
-	// selected entry mix.
-	NewSession() (Session, error)
-4
-	// Wait waits for the client to shut down.
-	Wait()
+// Wait waits till the Client is terminated for any reason.
+func (c *Client) Wait() {
+	<-c.haltedCh
+}
 
-	// Shutdown shuts down the client.
-	Shutdown()
-*/
+func (c *Client) halt() {
+	c.log.Info("Starting graceful shutdown.")
+
+	if c.conn != nil {
+		c.conn.Halt()
+		// nil out after the PKI is torn down due to a dependency.
+	}
+
+	if c.pki != nil {
+		c.pki.Halt()
+		c.pki = nil
+	}
+	c.conn = nil
+
+	c.log.Info("Shutdown complete.")
+	close(c.haltedCh)
+}
+
+func (c *Client) SetPollInterval(interval time.Duration) {
+	c.Lock()
+	c.messagePollInterval = interval
+	c.Unlock()
+}
+
+func (c *Client) GetPollInterval() time.Duration {
+	c.RLock()
+	defer c.RUnlock()
+	return c.messagePollInterval
+}
 
 // SendMessageDescriptor describes a message to be sent.
 type SendMessageDescriptor struct {
@@ -66,10 +99,6 @@ type SendMessageDescriptor struct {
 	Payload []byte
 }
 
-// Session is the cryptographic noise protocol session with the entry mix and
-// manages all that is related to sending and receiving messages.
-type Session struct{}
-
 /*
 	// Start initiates the network connections and starts the worker thread.
 	Start()
@@ -86,3 +115,38 @@ type Session struct{}
 	// Shutdown shuts down the session.
 	Shutdown()
 */
+
+// New creates a new Client with the provided configuration.
+func New(cfg *config.Config) (*Client, error) {
+	if err := cfg.FixupAndValidate(); err != nil {
+		return nil, err
+	}
+
+	c := new(Client)
+	c.geo = cfg.SphinxGeometry
+	var err error
+	c.sphinx, err = sphinx.FromGeometry(cfg.SphinxGeometry)
+	if err != nil {
+		return nil, err
+	}
+	c.cfg = cfg
+	c.displayName = "fluffy_canada_lynx"
+	c.log = log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          fmt.Sprintf("client2:%s", c.displayName),
+	})
+
+	c.haltedCh = make(chan interface{})
+
+	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
+
+	c.conn = newConnection(c)
+	c.pki = newPKI(c)
+	c.pki.start()
+	c.conn.start()
+	if c.cfg.CachedDocument != nil {
+		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
+		c.conn.onPKIFetch()
+	}
+	return c, nil
+}
