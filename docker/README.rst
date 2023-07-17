@@ -27,7 +27,14 @@ you can override the automatic choice of podman over docker by prefixing the
 ``make`` argument list with ``docker=docker``.
 
 Also note that if you are using podman, you'll need to have the podman system
-service running, and pointed to by DOCKER_HOST environment variable.
+service running. For systemd:
+::
+
+   systemctl --user daemon-reload
+   systemctl --user enable podman.service
+   systemctl --user start podman.service
+
+For other systems you can start the podman API service directly:
 ::
 
    export DOCKER_HOST=unix:///var/run/user/$(id -u)/podman/podman.sock
