@@ -45,29 +45,6 @@ There are essentially two types of interaction with a Katzenpost mixnet:
 Currently, [Katzen](https://github.com/katzenpost/katzen) is the only client available for use with Katzenpost. However a SOCKS proxy client is forthcoming
 and you'll be able to use that with many existing applications.
 
-# Server Side: Easy One Step BUILD
-
-You'd want to build the server side if you are
-a developer, mix node operator or dirauth operator.
-
-This builds 3 binaries:
-
-* mix server
-* dirauth server
-* mixnet ping CLI command
-
-All you have to do is type:
-
-```bash
-make
-```
-
-For Docker users, you can use:
-
-```bash
-make docker
-```
-
 # Server Side Usage/Configuration
 
 Our docker configuration is the most comprehensive and up to date
