@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"path"
 	"path/filepath"
@@ -67,20 +68,19 @@ func (p proxy) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 			return nil, err
 		}
 		p.log.Debugf("writing raw response")
-		rawResp := new(bytes.Buffer)
-		err = resp.Write(rawResp)
+		rawResp, err := httputil.DumpResponse(resp, true)
 		if err != nil {
 			return nil, err
 		}
 
 		/*
-			if len(rawResp.Bytes()) > 10240 {// where do we learn our maximum payload size ?
+			if len(rawResp) > 10240 {// where do we learn our maximum payload size ?
 				return nil, errors.New("Response is too long")
 			}
 		*/
 
 		// wrap response in common.Response to indicate length to client
-		cr := &common.Response{Payload: rawResp.Bytes()}
+		cr := &common.Response{Payload: rawResp}
 		serialized, err := cbor.Marshal(cr)
 		if err != nil {
 			return nil, err
