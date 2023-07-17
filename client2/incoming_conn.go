@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 
 	"github.com/charmbracelet/log"
+	"github.com/fxamacker/cbor/v2"
 )
 
 var incomingConnID uint64
@@ -32,10 +33,10 @@ type incomingConn struct {
 	listener *listener
 	log      *log.Logger
 
-	netConn     net.Conn
+	netConn     *net.UnixConn
 	listElement *list.Element
 	id          uint64
-	retrSeq     uint32
+	retrySeq    uint32
 
 	isInitialized bool // Set by listener.
 
@@ -47,7 +48,23 @@ func (c *incomingConn) Close() {
 }
 
 func (c *incomingConn) RecvRequest() (*Request, error) {
-	return &Request{}, nil // XXX FIXME
+	buff := make([]byte, 65536)
+	oob := make([]byte, 65536)
+	reqLen, oobLen, _, _, err := c.netConn.ReadMsgUnix(buff, oob)
+	if err != nil {
+		return nil, err
+	}
+	if oobLen != 0 {
+		log.Infof("client sent %d bytes of oob data\n", oobLen)
+	}
+	req := new(Request)
+	err = cbor.Unmarshal(buff[:reqLen], &req)
+	if err != nil {
+		fmt.Printf("error decoding cbor from client: %s\n", err)
+		return nil, err
+	}
+
+	return req, nil
 }
 
 func (c *incomingConn) handleRequest(req *Request) error {
@@ -112,7 +129,7 @@ func (c *incomingConn) worker() {
 	// NOTREACHED
 }
 
-func newIncomingConn(l *listener, conn net.Conn) *incomingConn {
+func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 	c := &incomingConn{
 		listener:          l,
 		netConn:           conn,

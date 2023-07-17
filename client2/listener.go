@@ -76,13 +76,13 @@ func (l *listener) worker() {
 
 		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
 
-		l.onNewConn(conn)
+		l.onNewConn(conn.(*net.UnixConn))
 	}
 
 	// NOTREACHED
 }
 
-func (l *listener) onNewConn(conn net.Conn) {
+func (l *listener) onNewConn(conn *net.UnixConn) {
 	c := newIncomingConn(l, conn)
 
 	l.closeAllWg.Add(1)
@@ -124,7 +124,7 @@ func New(incomingCh chan<- interface{}, id int) (*listener, error) {
 		closeAllCh: make(chan interface{}),
 	}
 
-	network := "unix"
+	network := "unixpacket"
 	address := "@katzenpost"
 	unixAddr, err := net.ResolveUnixAddr(network, address)
 	if err != nil {
