@@ -138,10 +138,6 @@ func (uCfg *UpstreamProxy) toProxyConfig() (*proxy.Config, error) {
 	return cfg, nil
 }
 
-type PinnedProviders struct {
-	Providers []*Provider
-}
-
 // Provider describes all necessary Provider connection information
 // so that clients can connect to the Provider and use the mixnet
 // and retrieve cached PKI documents.
@@ -196,8 +192,6 @@ func (p *Provider) UnmarshalTOML(v interface{}) error {
 
 // Config is the top level client configuration.
 type Config struct {
-	// PinnedProviders
-	PinnedProviders *PinnedProviders
 
 	// SphinxGeometry
 	SphinxGeometry *geo.Geometry
@@ -274,13 +268,6 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
-	if c.PinnedProviders == nil {
-		return errors.New("config: No PinnedProviders block was present")
-	}
-	if len(c.PinnedProviders.Providers) == 0 {
-		return errors.New("config: No PinnedProviders block was present")
-	}
-
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
 	}
