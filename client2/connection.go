@@ -106,8 +106,8 @@ type connection struct {
 	sync.Mutex
 	worker.Worker
 
-	c   *Client
-	log *log.Logger
+	client *Client
+	log    *log.Logger
 
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
@@ -175,12 +175,12 @@ func (c *connection) getDescriptor() error {
 		}
 	}()
 
-	doc := c.c.CurrentDocument()
-	if doc == nil && c.c.cfg.CachedDocument == nil {
+	doc := c.client.CurrentDocument()
+	if doc == nil && c.client.cfg.CachedDocument == nil {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
 		return newPKIError("no PKI document for current epoch")
-	} else if c.c.cfg.CachedDocument != nil {
-		doc = c.c.cfg.CachedDocument
+	} else if c.client.cfg.CachedDocument != nil {
+		doc = c.client.cfg.CachedDocument
 	}
 	n := len(doc.Providers)
 	if n == 0 {
@@ -229,7 +229,7 @@ func (c *connection) connectWorker() {
 		// Wait for a signal from the PKI (or a fallback timer to pass)
 		// before querying the PKI for a document iff we do not have the
 		// Provider's current descriptor.
-		if now, _, _ := epochtime.FromUnix(c.c.pki.skewedUnixTime()); now != c.pkiEpoch {
+		if now, _, _ := epochtime.FromUnix(c.client.pki.skewedUnixTime()); now != c.pkiEpoch {
 			select {
 			case <-c.HaltCh():
 				return
@@ -258,9 +258,9 @@ func (c *connection) connectWorker() {
 		if err := c.getDescriptor(); err == nil {
 			// Attempt to connect.
 			c.doConnect(dialCtx)
-		} else if c.c.cfg.OnConnFn != nil {
+		} else if c.client.cfg.OnConnFn != nil {
 			// Can't connect due to lacking descriptor.
-			c.c.cfg.OnConnFn(err)
+			c.client.cfg.OnConnFn(err)
 		}
 		timer.Reset(pkiFallbackInterval)
 	}
@@ -274,7 +274,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		maxRetryDelay  = 2 * time.Minute
 	)
 
-	dialFn := c.c.cfg.DialContextFn
+	dialFn := c.client.cfg.DialContextFn
 	if dialFn == nil {
 		dialFn = defaultDialer.DialContext
 	}
@@ -284,8 +284,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		if connErr == nil {
 			panic("BUG: connErr is nil on connection teardown.")
 		}
-		if c.c.cfg.OnConnFn != nil {
-			c.c.cfg.OnConnFn(connErr)
+		if c.client.cfg.OnConnFn != nil {
+			c.client.cfg.OnConnFn(connErr)
 		}
 	}()
 
@@ -298,7 +298,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		// Build the list of candidate addresses, in decreasing order of
 		// preference, by transport.
 		var dstAddrs []string
-		transports := c.c.cfg.PreferedTransports
+		transports := c.client.cfg.PreferedTransports
 		if transports == nil {
 			transports = cpki.ClientTransports
 		}
@@ -340,8 +340,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			default:
 				if err != nil {
 					c.log.Warnf("Failed to connect to %v: %v", addrPort, err)
-					if c.c.cfg.OnConnFn != nil {
-						c.c.cfg.OnConnFn(&ConnectError{Err: err})
+					if c.client.cfg.OnConnFn != nil {
+						c.client.cfg.OnConnFn(&ConnectError{Err: err})
 					}
 					continue
 				}
@@ -376,7 +376,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	idHash := linkKey.PublicKey().Sum256()
 	copy(c.queueID, idHash[:])
 	cfg := &wire.SessionConfig{
-		Geometry:          c.c.cfg.SphinxGeometry,
+		Geometry:          c.client.cfg.SphinxGeometry,
 		Authenticator:     c,
 		AdditionalData:    c.queueID,
 		AuthenticationKey: linkKey,
@@ -385,8 +385,8 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
-		if c.c.cfg.OnConnFn != nil {
-			c.c.cfg.OnConnFn(&ConnectError{Err: err})
+		if c.client.cfg.OnConnFn != nil {
+			c.client.cfg.OnConnFn(&ConnectError{Err: err})
 		}
 		return
 	}
@@ -396,14 +396,14 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
-		if c.c.cfg.OnConnFn != nil {
-			c.c.cfg.OnConnFn(&ConnectError{Err: err})
+		if c.client.cfg.OnConnFn != nil {
+			c.client.cfg.OnConnFn(&ConnectError{Err: err})
 		}
 		return
 	}
 	c.log.Debugf("Handshake completed.")
 	conn.SetDeadline(time.Time{})
-	c.c.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
+	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.onWireConn(w)
 }
@@ -458,11 +458,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 	}()
 
 	dispatchOnEmpty := func() error {
-		if c.c.cfg.OnEmptyFn != nil {
+		if c.client.cfg.OnEmptyFn != nil {
 			cbWg.Add(1)
 			go func() {
 				defer cbWg.Done()
-				if err := c.c.cfg.OnEmptyFn(); err != nil {
+				if err := c.client.cfg.OnEmptyFn(); err != nil {
 					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
 					forceCloseConn(err)
 				}
@@ -576,7 +576,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
-			fetchDelay = c.c.GetPollInterval()
+			fetchDelay = c.client.GetPollInterval()
 			continue
 		}
 
@@ -617,11 +617,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			if c.c.cfg.OnMessageFn != nil {
+			if c.client.cfg.OnMessageFn != nil {
 				cbWg.Add(1)
 				go func() {
 					defer cbWg.Done()
-					if err := c.c.cfg.OnMessageFn(cmd.Payload); err != nil {
+					if err := c.client.cfg.OnMessageFn(cmd.Payload); err != nil {
 						c.log.Debugf("Caller failed to handle Message: %v", err)
 						forceCloseConn(err)
 					}
@@ -642,11 +642,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			if c.c.cfg.OnACKFn != nil {
+			if c.client.cfg.OnACKFn != nil {
 				cbWg.Add(1)
 				go func() {
 					defer cbWg.Done()
-					if err := c.c.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
+					if err := c.client.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
 						c.log.Debugf("Caller failed to handle MessageACK: %v", err)
 						forceCloseConn(err)
 					}
@@ -712,8 +712,8 @@ func (c *connection) onConnStatusChange(err error) {
 	}
 	c.Unlock()
 
-	if c.c.cfg.OnConnFn != nil {
-		c.c.cfg.OnConnFn(err)
+	if c.client.cfg.OnConnFn != nil {
+		c.client.cfg.OnConnFn(err)
 	}
 }
 
@@ -810,7 +810,7 @@ func (c *connection) start() {
 
 func newConnection(c *Client) *connection {
 	k := new(connection)
-	k.c = c
+	k.client = c
 	k.log = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          fmt.Sprintf("client2/conn:%s", c.displayName),

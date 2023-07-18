@@ -15,6 +15,7 @@ import (
 
 var incomingConnID uint64
 
+// incomingConn type is used along with listener type
 type incomingConn struct {
 	listener *listener
 	log      *log.Logger
