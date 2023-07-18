@@ -183,6 +183,9 @@ func (c *connection) getDescriptor() error {
 		doc = c.c.cfg.CachedDocument
 	}
 	n := len(c.c.cfg.PinnedProviders.Providers)
+	if n == 0 {
+		return errors.New("zero PinnedProviders")
+	}
 	provider := c.c.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
 	c.provider = provider.Name
 	desc, err := doc.GetProvider(provider.Name)
