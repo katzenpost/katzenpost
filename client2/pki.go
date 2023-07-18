@@ -217,7 +217,8 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	case cpki.ErrNoDocument:
 		return nil, err
 	default:
-		p.log.Debugf("Failed to fetch PKI doc for epoch %v from Provider: %v", epoch, err)
+		p.log.Infof("Failed to fetch PKI doc for epoch %v from Provider: %v", epoch, err)
+		p.log.Info("Now fetching document directly from the directory authorities...")
 		return p.getDocumentDirect(ctx, epoch)
 	}
 

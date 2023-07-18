@@ -119,6 +119,9 @@ type connection struct {
 
 	retryDelay  int64 // used as atomic time.Duration
 	isConnected bool
+
+	provider string
+	queueID  []byte
 }
 
 type getConsensusCtx struct {
@@ -181,6 +184,7 @@ func (c *connection) getDescriptor() error {
 	}
 	n := len(c.c.cfg.PinnedProviders.Providers)
 	provider := c.c.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
+	c.provider = provider.Name
 	desc, err := doc.GetProvider(provider.Name)
 	if err != nil {
 		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
@@ -366,10 +370,11 @@ func (c *connection) onTCPConn(conn net.Conn) {
 
 	// Allocate the session struct.
 	idHash := linkKey.PublicKey().Sum256()
+	copy(c.queueID, idHash[:])
 	cfg := &wire.SessionConfig{
 		Geometry:          c.c.cfg.SphinxGeometry,
 		Authenticator:     c,
-		AdditionalData:    []byte(idHash[:]),
+		AdditionalData:    c.queueID,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
