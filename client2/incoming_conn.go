@@ -51,12 +51,21 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 	c.log.Infof("handleRequest: ID %d, Operation: %x, Payload: %x", req.ID, req.Operation, req.Payload)
 	if bytes.Equal(req.Operation, []byte("echo")) {
-		c.log.Info("echo command")
+		c.log.Info("echo operation")
 		payload := make([]byte, len(req.Payload))
 		copy(payload, req.Payload)
 		return &Response{
 			ID:      req.ID,
 			Payload: payload,
+		}, nil
+	}
+
+	if bytes.Equal(req.Operation, []byte("send")) {
+		c.log.Info("send operation")
+		// XXX FIXME
+		return &Response{
+			ID:      req.ID,
+			Payload: []byte{},
 		}, nil
 	}
 
