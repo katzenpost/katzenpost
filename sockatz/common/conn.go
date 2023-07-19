@@ -162,8 +162,12 @@ func (k *QUICProxyConn) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 	if k.readDeadline.Unix() == zeroTime {
 		k.Unlock()
 		select {
-		case pkt := <-k.incoming:
-			return copy(p, pkt.payload), pkt.src, nil
+		case pkt, ok := <-k.incoming:
+			if ok {
+				return copy(p, pkt.payload), pkt.src, nil
+			} else {
+				return 0, nil, io.EOF
+			}
 		case <-k.HaltCh():
 			return 0, nil, errHalted
 		}
