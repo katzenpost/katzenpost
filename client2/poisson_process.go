@@ -9,7 +9,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
-type workerOp interface{}
+type poissonWorkerOp interface{}
 
 type opConnStatusChanged struct {
 	isConnected bool
@@ -22,7 +22,7 @@ type opNewRate struct {
 type poissonProcess struct {
 	worker.Worker
 
-	opCh chan workerOp
+	opCh chan poissonWorkerOp
 
 	lambda float64
 	action func()
@@ -30,7 +30,7 @@ type poissonProcess struct {
 
 func NewPoissonProcess(lambda float64, action func()) *poissonProcess {
 	p := &poissonProcess{
-		opCh:   make(chan workerOp),
+		opCh:   make(chan poissonWorkerOp),
 		lambda: lambda,
 		action: action,
 	}
@@ -71,7 +71,7 @@ func (p *poissonProcess) worker() {
 
 	for {
 		var lambdaFired bool
-		var qo workerOp
+		var qo poissonWorkerOp
 
 		select {
 		case <-p.HaltCh():
