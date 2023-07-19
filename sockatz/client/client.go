@@ -401,8 +401,7 @@ func (c *Client) SocksHandler(conn net.Conn) {
 	// Read the client's SOCKS handshake.
 	req, err := socks5.Handshake(conn)
 	if err != nil {
-		//log.Errorf("%s - client failed socks handshake: %s", name, err)
-		panic(err)
+		c.log.Errorf("client failed socks handshake: %s", err)
 		return
 	}
 
