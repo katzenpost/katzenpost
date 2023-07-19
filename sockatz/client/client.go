@@ -406,7 +406,9 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 					c.Lock()
 					c.msgCallbacks[*msgID] = func (event *client.MessageReplyEvent) {
 						if event.Err == nil {
-							c.handleReply(qconn, id, errCh, event.Payload)
+							c.Go(func() {
+								c.handleReply(qconn, id, errCh, event.Payload)
+							})
 						}
 						c.Lock()
 						delete(c.msgCallbacks, *msgID)
