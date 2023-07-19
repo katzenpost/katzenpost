@@ -26,7 +26,7 @@ func TestListenerEchoOperation(t *testing.T) {
 
 	req := new(Request)
 	req.ID = 1234
-	req.Operation = []byte("echo")
+	req.IsEchoOp = true
 	req.Payload = []byte("yoyoyo")
 
 	requestCbor, err := cbor.Marshal(req)

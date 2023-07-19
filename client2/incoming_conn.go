@@ -1,7 +1,6 @@
 package client2
 
 import (
-	"bytes"
 	"container/list"
 	"errors"
 	"fmt"
@@ -49,8 +48,8 @@ func (c *incomingConn) recvRequest() (*Request, error) {
 }
 
 func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
-	c.log.Infof("handleRequest: ID %d, Operation: %x, Payload: %x", req.ID, req.Operation, req.Payload)
-	if bytes.Equal(req.Operation, []byte("echo")) {
+	c.log.Infof("handleRequest: ID %d, Payload: %x", req.ID, req.Payload)
+	if req.IsEchoOp {
 		c.log.Info("echo operation")
 		payload := make([]byte, len(req.Payload))
 		copy(payload, req.Payload)
@@ -60,8 +59,9 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 		}, nil
 	}
 
-	if bytes.Equal(req.Operation, []byte("send")) {
+	if req.IsSendOp {
 		c.log.Info("send operation")
+
 		// XXX FIXME
 		return &Response{
 			ID:      req.ID,
