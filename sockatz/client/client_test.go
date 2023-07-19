@@ -20,6 +20,8 @@
 package client
 
 import (
+	"bufio"
+	"bytes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/stretchr/testify/require"
 	"io"
@@ -95,13 +97,13 @@ func TestDockerProxy(t *testing.T) {
 	errCh := c.Dial(id, u) // Dial returns a channel that may send an error
 	require.NoError(<-errCh)
 	piper, pipew := net.Pipe()
-	proxyCh := c.Proxy(id, pipew)
-
-	_, err = piper.Write(payload)
+	proxyConn, errCh := c.Proxy(id, pipew)
+	_, err = io.Copy(piper, bufio.NewReader(bytes.NewReader(payload)))
 	require.NoError(err)
 	wg.Wait()
+	proxyConn.Close()
+	require.NoError(<-errCh)
 	require.Equal(proxiedpayload, payload)
-	err = <-proxyCh
 	require.NoError(err)
 }
 
