@@ -11,7 +11,7 @@ type Request struct {
 
 	// DestinationIdHash is 32 byte hash of the destination's
 	// identity public key.
-	DestinationIdHash []byte `cbor:destination_id_hash`
+	DestinationIdHash *[32]byte `cbor:destination_id_hash`
 
 	// RecipientQueueID is the queue identity which will receive the message.
 	RecipientQueueID []byte `cbor:recipient_queue_id`

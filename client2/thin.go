@@ -35,7 +35,7 @@ func (t *ThinClient) Dial() error {
 	return nil
 }
 
-func (t *ThinClient) SendMessage(id int, payload []byte, destNode, destQueue []byte) error {
+func (t *ThinClient) SendMessage(id int, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := new(Request)
 	req.ID = id
 	req.IsSendOp = true
