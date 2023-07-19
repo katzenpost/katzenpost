@@ -325,7 +325,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 			}
 			pkt := make([]byte, c.payloadLen)
 			c.log.Debugf("ReadPacket from outbound queue backOff: %v", backOffDelay)
-			ctx, cancelFn := context.WithDeadline(context.Background(), time.Now().Add(backOffDelay))
+			ctx, cancelFn := context.WithTimeout(context.Background(), backOffDelay)
 
 			// do not block waiting for client to send data
 			n, destAddr, err := qconn.ReadPacket(ctx, pkt)
