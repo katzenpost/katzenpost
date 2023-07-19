@@ -389,6 +389,10 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 					c.log.Errorf("SendUnreliableMessage: %v", err)
 					c.log.Errorf("SendUnreliableMessage: backoffDelay %v", backOffDelay)
 					backOffDelay += backOffDelay
+
+					if n == 0 {
+						break // short circuit to blocking read for backOffDelay
+					}
 					// XXX: maxBackoffDelay or select on connection status event
 					select {
 					case <-time.After(backOffDelay):
