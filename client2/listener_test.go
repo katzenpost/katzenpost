@@ -25,7 +25,7 @@ func TestListenerEchoOperation(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	req := new(Request)
-	req.ID = 1234
+	req.AppID = 1234
 	req.IsEchoOp = true
 	req.Payload = []byte("yoyoyo")
 
@@ -49,7 +49,7 @@ func TestListenerEchoOperation(t *testing.T) {
 	response := new(Response)
 	err = cbor.Unmarshal(buff[:count], response)
 	require.NoError(t, err)
-	require.Equal(t, response.ID, req.ID)
+	require.Equal(t, response.AppID, req.AppID)
 	require.Equal(t, response.Payload, req.Payload)
 
 	s.Halt()
