@@ -35,19 +35,21 @@ func (t *ThinClient) Dial() error {
 	return nil
 }
 
-func (t *ThinClient) SendMessage(id int, payload []byte, destNode *[32]byte, destQueue []byte) error {
+func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := new(Request)
-	req.AppID = id
 	req.IsSendOp = true
 	req.Payload = payload
 	req.DestinationIdHash = destNode
 	req.RecipientQueueID = destQueue
+	req.IsSendOp = true
 
 	blob, err := cbor.Marshal(req)
-
+	if err != nil {
+		return err
+	}
 	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
 	if err != nil {
-		return nil
+		return err
 	}
 	if count != len(blob) {
 		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
