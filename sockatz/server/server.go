@@ -47,8 +47,10 @@ var (
 	// for QUIC it needs to be minimum ~1200b
 	PayloadLen = 1452
 
-	// time to wait before unblocking on Read() and returning ErrNoData
-	DefaultDeadline = time.Millisecond * 100
+	// DefaultDeadline determines how long the worker will block reading
+	// the QUICProxyConn socket for a reply after it has written the
+	// client request payload to the socket.
+	DefaultDeadline = time.Millisecond
 
 	ErrShutdown          = errors.New("Halted")
 	ErrNoData            = errors.New("ErrNoData")
@@ -484,7 +486,12 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 
 	// read packet from transport
 	buf := make([]byte, s.s.payloadLen)
-	ctx, cancelFn := context.WithTimeout(context.Background(), 100*time.Millisecond)
+
+	// XXX
+	// DefaultDeadline controls how long the server will block reading a message
+	// to send to the client. If there is no response available before DefaultDeadline,
+	// then an empty payload is returned to the client.
+	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultDeadline)
 	defer cancelFn()
 	n, addr, err := s.Transport.ReadPacket(ctx, buf)
 	switch err {
