@@ -82,7 +82,6 @@ type Client struct {
 	s              *client.Session
 	msgCallbacks   map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
 	payloadLen     int
-	receiveOnce    *sync.Once
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -94,7 +93,6 @@ func NewClient(s *client.Session) (*Client, error) {
 	}
 	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
 		msgCallbacks:   make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
-		receiveOnce:    new(sync.Once),
 	}, nil
 }
 
@@ -296,36 +294,36 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 		}
 	})
 
-	// start transport worker that receives packets
-	c.receiveOnce.Do(func() {
-		c.Go(func() {
-			c.log.Debugf("Started kaetzchen proxy receive worker")
-			defer func() {
-				c.log.Debugf("Event sink worker terminating gracefully.")
-			}()
-			for {
-				select {
-				case e := <-c.s.EventSink:
-					switch event := e.(type) {
-					case *client.MessageReplyEvent:
-						c.Lock()
-						callback, ok := c.msgCallbacks[*event.MessageID]
-						c.Unlock()
-						if ok {
-							callback(event)
-						} else {
-							c.log.Errorf("No callback for ReplyEvent")
-						}
-					default:
-						// skip handling event
+	// start a transport worker that receives packets for this qconn
+	c.Go(func() {
+		c.log.Debugf("Started kaetzchen proxy receive worker")
+		defer func() {
+			c.log.Debugf("Event sink worker terminating gracefully.")
+		}()
+		for {
+			select {
+			case e := <-c.s.EventSink:
+				switch event := e.(type) {
+				case *client.MessageReplyEvent:
+					c.Lock()
+					callback, ok := c.msgCallbacks[*event.MessageID]
+					c.Unlock()
+					if ok {
+						callback(event)
+					} else {
+						c.log.Errorf("No callback for ReplyEvent")
 					}
-				// XXX: restart transport worker on new session
-				//case <-c.s.HaltCh():
-				case <-c.HaltCh():
-					return
+				default:
+					// skip handling event
 				}
+			// XXX: restart transport worker on new session
+			//case <-c.s.HaltCh():
+			case <-qconn.HaltCh():
+				return
+			case <-c.HaltCh():
+				return
 			}
-		})
+		}
 	})
 
 	// start transport worker that sends packets
