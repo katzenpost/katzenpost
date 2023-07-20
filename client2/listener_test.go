@@ -10,7 +10,10 @@ import (
 )
 
 func TestListenerEchoOperation(t *testing.T) {
-	s, err := NewListener(123)
+
+	rates := &Rates{}
+	egressCh := make(chan *Request)
+	listener, err := NewListener(rates, egressCh)
 	require.NoError(t, err)
 
 	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", "@testapp1")
@@ -52,5 +55,5 @@ func TestListenerEchoOperation(t *testing.T) {
 	require.Equal(t, response.AppID, req.AppID)
 	require.Equal(t, response.Payload, req.Payload)
 
-	s.Halt()
+	listener.Halt()
 }

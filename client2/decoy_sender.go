@@ -19,13 +19,13 @@ func newDropDecoy() *Request {
 	}
 }
 
-func newDecoySender(rates *Rates, ingressCh chan interface{}, egressCh chan interface{}) *decoySender {
+func newDecoySender(rates *Rates, ingressCh chan *Request, egressCh chan *Request) *decoySender {
 	haltCh := make(chan interface{})
 
 	return &decoySender{
 		haltCh: haltCh,
 		sendMessageOrLoopDecoy: NewPoissonProcess(rates.messageOrLoop, rates.messageOrLoopMaxDelay, func() {
-			var m interface{}
+			var m *Request
 			select {
 			case <-haltCh:
 				return
@@ -54,6 +54,12 @@ func newDecoySender(rates *Rates, ingressCh chan interface{}, egressCh chan inte
 			}
 		}),
 	}
+}
+
+func (d *decoySender) UpdateRates(rates *Rates) {
+	d.sendMessageOrLoopDecoy.UpdateRate(rates.messageOrLoop, rates.messageOrLoopMaxDelay)
+	d.sendLoopDecoy.UpdateRate(rates.loop, rates.loopMaxDelay)
+	d.sendDropDecoy.UpdateRate(rates.drop, rates.dropMaxDelay)
 }
 
 func (d *decoySender) Halt() {

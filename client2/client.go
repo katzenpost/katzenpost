@@ -148,5 +148,9 @@ func New(cfg *config.Config) (*Client, error) {
 		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
 		c.conn.onPKIFetch()
 	}
+
+	// FIXME TODO: add listener... and ensure it's pki doc gets updates
+	//listener, err := NewListener(rates, egressCh)
+
 	return c, nil
 }

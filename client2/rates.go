@@ -13,6 +13,13 @@ type Rates struct {
 	dropMaxDelay uint64
 }
 
-func RatesFromPKIDoc(doc *cpki.Document) *Rates {
-	return nil // XXX FIXME
+func ratesFromPKIDoc(doc *cpki.Document) *Rates {
+	return &Rates{
+		messageOrLoop:         doc.LambdaP,
+		messageOrLoopMaxDelay: doc.LambdaPMaxDelay,
+		loop:                  doc.LambdaL,
+		loopMaxDelay:          doc.LambdaLMaxDelay,
+		drop:                  doc.LambdaD,
+		dropMaxDelay:          doc.LambdaDMaxDelay,
+	}
 }

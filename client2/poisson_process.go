@@ -42,9 +42,10 @@ func NewPoissonProcess(lambda float64, lambdaMaxDelay uint64, action func()) *po
 	return p
 }
 
-func (p *poissonProcess) UpdateRate(lambda float64) {
+func (p *poissonProcess) UpdateRate(lambda float64, lambdaMaxDelay uint64) {
 	p.opCh <- &opNewRate{
-		lambda: lambda,
+		lambda:         lambda,
+		lambdaMaxDelay: lambdaMaxDelay,
 	}
 }
 
@@ -92,6 +93,7 @@ func (p *poissonProcess) worker() {
 				mustResetTimer = true
 			case opNewRate:
 				p.lambda = op.lambda
+				p.lambdaMaxDelay = op.lambdaMaxDelay
 				mustResetTimer = true
 			default:
 				panic(fmt.Sprintf("BUG: Worker received nonsensical op: %T", op))

@@ -26,6 +26,7 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -38,13 +39,15 @@ type listener struct {
 	listener *net.UnixListener
 	conns    *list.List
 
-	ingressCh chan *Request
+	ingressCh   chan *Request
+	decoySender *decoySender
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
 }
 
 func (l *listener) Halt() {
+	l.decoySender.Halt()
 	// Close the listener, wait for worker() to return.
 	l.listener.Close()
 	l.Worker.Halt()
@@ -103,19 +106,25 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	l.conns.Remove(c.listElement)
 }
 
+func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
+	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
+}
+
 // New creates a new listener.
-func NewListener(id int) (*listener, error) {
+func NewListener(rates *Rates, egressCh chan *Request) (*listener, error) {
 	var err error
 
 	l := &listener{
 		log: log.NewWithOptions(os.Stderr, log.Options{
 			ReportTimestamp: true,
-			Prefix:          fmt.Sprintf("listener:%d", id),
+			Prefix:          fmt.Sprintf("listener:%d", 0),
 		}),
 		conns:      list.New(),
 		closeAllCh: make(chan interface{}),
 		ingressCh:  make(chan *Request),
 	}
+
+	l.decoySender = newDecoySender(rates, l.ingressCh, egressCh)
 
 	network := "unixpacket"
 	address := "@katzenpost"
