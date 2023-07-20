@@ -16,7 +16,8 @@ type opConnStatusChanged struct {
 }
 
 type opNewRate struct {
-	lambda float64
+	lambda         float64
+	lambdaMaxDelay uint64
 }
 
 type poissonProcess struct {
@@ -24,15 +25,18 @@ type poissonProcess struct {
 
 	opCh chan poissonWorkerOp
 
-	lambda float64
+	lambda         float64
+	lambdaMaxDelay uint64
+
 	action func()
 }
 
-func NewPoissonProcess(lambda float64, action func()) *poissonProcess {
+func NewPoissonProcess(lambda float64, lambdaMaxDelay uint64, action func()) *poissonProcess {
 	p := &poissonProcess{
-		opCh:   make(chan poissonWorkerOp),
-		lambda: lambda,
-		action: action,
+		opCh:           make(chan poissonWorkerOp),
+		lambda:         lambda,
+		lambdaMaxDelay: lambdaMaxDelay,
+		action:         action,
 	}
 	p.Go(p.worker)
 	return p
@@ -61,7 +65,6 @@ func (p *poissonProcess) worker() {
 		lambdaMsec     uint64
 		lambdaTimer    = time.NewTimer(maxDuration)
 		lambdaInterval = time.Duration(maxDuration)
-		lambdaMaxDelay = uint64(maxDuration)
 	)
 
 	defer lambdaTimer.Stop()
@@ -104,8 +107,8 @@ func (p *poissonProcess) worker() {
 		if isConnected {
 			mRng := rand.NewMath()
 			lambdaMsec = uint64(rand.Exp(mRng, p.lambda))
-			if lambdaMsec > lambdaMaxDelay {
-				lambdaMsec = lambdaMaxDelay
+			if lambdaMsec > p.lambdaMaxDelay {
+				lambdaMsec = p.lambdaMaxDelay
 			}
 			lambdaInterval = time.Duration(lambdaMsec) * time.Millisecond
 		} else {

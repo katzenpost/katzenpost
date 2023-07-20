@@ -1,11 +1,5 @@
 package client2
 
-type Rates struct {
-	messageOrLoop float64
-	loop          float64
-	drop          float64
-}
-
 type decoySender struct {
 	haltCh                 chan interface{}
 	sendMessageOrLoopDecoy *poissonProcess
@@ -30,7 +24,7 @@ func newDecoySender(rates *Rates, ingressCh chan interface{}, egressCh chan inte
 
 	return &decoySender{
 		haltCh: haltCh,
-		sendMessageOrLoopDecoy: NewPoissonProcess(rates.messageOrLoop, func() {
+		sendMessageOrLoopDecoy: NewPoissonProcess(rates.messageOrLoop, rates.messageOrLoopMaxDelay, func() {
 			var m interface{}
 			select {
 			case <-haltCh:
@@ -45,14 +39,14 @@ func newDecoySender(rates *Rates, ingressCh chan interface{}, egressCh chan inte
 			case egressCh <- m:
 			}
 		}),
-		sendLoopDecoy: NewPoissonProcess(rates.loop, func() {
+		sendLoopDecoy: NewPoissonProcess(rates.loop, rates.loopMaxDelay, func() {
 			select {
 			case <-haltCh:
 				return
 			case egressCh <- newLoopDecoy():
 			}
 		}),
-		sendDropDecoy: NewPoissonProcess(rates.drop, func() {
+		sendDropDecoy: NewPoissonProcess(rates.drop, rates.dropMaxDelay, func() {
 			select {
 			case <-haltCh:
 				return

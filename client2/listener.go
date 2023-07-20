@@ -36,8 +36,9 @@ type listener struct {
 	log *log.Logger
 
 	listener *net.UnixListener
+	conns    *list.List
 
-	conns *list.List
+	ingressCh chan *Request
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
@@ -113,6 +114,7 @@ func NewListener(id int) (*listener, error) {
 		}),
 		conns:      list.New(),
 		closeAllCh: make(chan interface{}),
+		ingressCh:  make(chan *Request),
 	}
 
 	network := "unixpacket"

@@ -22,7 +22,6 @@ type incomingConn struct {
 	unixConn    *net.UnixConn
 	listElement *list.Element
 	id          uint64
-	retrySeq    uint32
 
 	closeConnectionCh chan bool
 }
@@ -61,8 +60,8 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 
 	if req.IsSendOp {
 		c.log.Info("send operation")
-
-		// XXX FIXME
+		req.AppID = c.id
+		c.listener.ingressCh <- req
 		return &Response{
 			AppID:   req.AppID,
 			Payload: []byte{},

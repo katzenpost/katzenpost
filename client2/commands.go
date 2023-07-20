@@ -3,7 +3,7 @@ package client2
 type Response struct {
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
-	AppID int `cbor:id`
+	AppID uint64 `cbor:id`
 
 	// Payload contains the Response payload, a SURB reply.
 	Payload []byte `cbor:payload`
@@ -12,7 +12,7 @@ type Response struct {
 type Request struct {
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
-	AppID int `cbor:id`
+	AppID uint64 `cbor:id`
 
 	// DestinationIdHash is 32 byte hash of the destination's
 	// identity public key.
