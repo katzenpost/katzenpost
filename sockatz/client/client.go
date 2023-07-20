@@ -224,6 +224,9 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 		}
 	}
 }
+
+// Proxy starts proxying data from conn and the remote Target. It returns the QUICProxyConn
+// used to transport data from conn, and a channel where any errors are passed
 func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan error) {
 	errCh := make(chan error, 3)
 
