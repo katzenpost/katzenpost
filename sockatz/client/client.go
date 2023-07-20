@@ -184,11 +184,7 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 	err := p.Unmarshal(rawResp)
 	if err != nil {
 		c.log.Errorf("failure to unmarshal server.ProxyResponse: %v", err)
-
-		select {
-		case errCh <- err:
-		default:
-		}
+		errCh <- err
 		return
 	}
 
@@ -200,10 +196,7 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 		// XXX: must ensure calls to Topup are synchronous, to avoid double Topup
 		err := <-c.Topup(sessionID)
 		if err != nil {
-			select {
-			case errCh <- err:
-			default:
-			}
+			errCh <- err
 			return
 		}
 	case server.ProxySuccess:
@@ -211,10 +204,7 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 	case server.ProxyFailure:
 		c.log.Debugf("Got ProxyReponse: ProxyFailure")
 		err := errors.New("ProxyFailure")
-		select {
-		case errCh <- err:
-		default:
-		}
+		errCh <- err
 		return
 	}
 
@@ -229,10 +219,7 @@ func (c *Client) handleReply(conn *common.QUICProxyConn, sessionID []byte, errCh
 				return
 			}
 			// handle unexpected error
-			select {
-			case errCh <- err:
-			default:
-			}
+			errCh <- err
 			return
 		}
 	}
@@ -253,10 +240,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 		c.log.Debugf("Dialing %v", common.UniqAddr(id))
 		proxyConn, err := qconn.Dial(ctx, common.UniqAddr(id))
 		if err != nil {
-			select {
-			case errCh <- err:
-			default:
-			}
+			errCh <- err
 			return
 		}
 
@@ -288,10 +272,6 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 		c.log.Debugf("Waiting for workers to finish")
 		wg.Wait()
 		c.log.Debugf("Workers done, halting transport")
-		select {
-		case errCh <- nil:
-		default:
-		}
 	})
 
 	// start a transport worker that receives packets for this qconn
@@ -356,10 +336,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 				if err != os.ErrDeadlineExceeded {
 					// handle unexpected error
 					c.log.Error("ReadPacket failure: %v", err)
-					select {
-					case errCh <- err:
-					default:
-					}
+					errCh <- err
 					return
 				}
 			}
@@ -368,10 +345,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 			// wrap packet in a kaetzchen request
 			serialized, err := (&server.ProxyCommand{ID: id, Payload: pkt[:n]}).Marshal()
 			if err != nil {
-				select {
-				case errCh <- err:
-				default:
-				}
+				errCh <- err
 				return
 			}
 			serialized, err = (&server.Request{Command: server.Proxy, Payload: serialized}).Marshal()
@@ -486,18 +460,21 @@ func (c *Client) SocksHandler(conn net.Conn) {
 	// respond with success
 	if err := req.Reply(socks5.ReplySucceeded); err != nil {
 		// XXX: debug
-		c.log.Errorf("Failed to encdoe response: %v", err)
+		c.log.Errorf("Failed to encode response: %v", err)
 		return
 	}
 
 	// start proxying data
 	qconn, errCh := c.Proxy(id, conn)
-	err = <-errCh
-	if err != nil {
-		c.log.Errorf("Proxy failed with error: %v", err)
-	}
-	err = qconn.Close()
-	if err != nil {
-		c.log.Errorf("QUICProxyConn.Close failed with error: %v", err)
+
+	// consume all errors
+	for err := range errCh {
+		if err != nil {
+			c.log.Errorf("Proxy returned error: %v", err)
+			err = qconn.Close()
+			if err != nil {
+				c.log.Errorf("QUICProxyConn.Close failed with error: %v", err)
+			}
+		}
 	}
 }
