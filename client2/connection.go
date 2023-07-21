@@ -813,7 +813,7 @@ func newConnection(c *Client) *connection {
 	k.client = c
 	k.log = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
-		Prefix:          fmt.Sprintf("client2/conn:%s", c.displayName),
+		Prefix:          "client2/conn",
 	})
 
 	k.pkiFetchCh = make(chan interface{}, 1)

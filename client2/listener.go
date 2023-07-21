@@ -19,7 +19,6 @@ package client2
 
 import (
 	"container/list"
-	"fmt"
 	"net"
 	"os"
 	"sync"
@@ -117,7 +116,7 @@ func NewListener(rates *Rates, egressCh chan *Request) (*listener, error) {
 	l := &listener{
 		log: log.NewWithOptions(os.Stderr, log.Options{
 			ReportTimestamp: true,
-			Prefix:          fmt.Sprintf("listener:%d", 0),
+			Prefix:          "listener",
 		}),
 		conns:      list.New(),
 		closeAllCh: make(chan interface{}),

@@ -106,7 +106,7 @@ func (p *poissonProcess) worker() {
 			}
 		}
 
-		if isConnected {
+		if isConnected && p.lambda != 0 && p.lambdaMaxDelay != 0 {
 			mRng := rand.NewMath()
 			lambdaMsec = uint64(rand.Exp(mRng, p.lambda))
 			if lambdaMsec > p.lambdaMaxDelay {

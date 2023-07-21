@@ -1,7 +1,6 @@
 package client2
 
 import (
-	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -20,7 +19,7 @@ type Client struct {
 
 	// messagePollInterval is the interval at which the server will be
 	// polled for new messages if the queue is believed to be empty.
-	// this will go away when we have the server push received messages.
+	// XXX This will go away once we get rid of polling.
 	messagePollInterval time.Duration
 
 	pki  *pki
@@ -30,8 +29,6 @@ type Client struct {
 
 	sphinx *sphinx.Sphinx
 	geo    *geo.Geometry
-
-	displayName string
 
 	haltedCh chan interface{}
 	haltOnce sync.Once
@@ -65,12 +62,14 @@ func (c *Client) halt() {
 	close(c.haltedCh)
 }
 
+// XXX This will go away once we get rid of polling.
 func (c *Client) SetPollInterval(interval time.Duration) {
 	c.Lock()
 	c.messagePollInterval = interval
 	c.Unlock()
 }
 
+// XXX This will go away once we get rid of polling.
 func (c *Client) GetPollInterval() time.Duration {
 	c.RLock()
 	defer c.RUnlock()
@@ -99,23 +98,6 @@ type SendMessageDescriptor struct {
 	Payload []byte
 }
 
-/*
-	// Start initiates the network connections and starts the worker thread.
-	Start()
-
-	// SendMessage returns the chosen Round Trip Time of the Sphinx packet which was sent.
-	SendMessage(message *SendMessageDescriptor) (rtt time.Duration, err error)
-
-	// SendSphinxPacket sends the given Sphinx packet.
-	SendSphinxPacket(pkt []byte) error
-
-	// CurrentDocument returns the current PKI doc.
-	CurrentDocument() *cpki.Document
-
-	// Shutdown shuts down the session.
-	Shutdown()
-*/
-
 // New creates a new Client with the provided configuration.
 func New(cfg *config.Config) (*Client, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
@@ -130,10 +112,9 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 	c.cfg = cfg
-	c.displayName = "fluffy_canada_lynx"
 	c.log = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
-		Prefix:          fmt.Sprintf("client2:%s", c.displayName),
+		Prefix:          "client2",
 	})
 
 	c.haltedCh = make(chan interface{})
@@ -148,9 +129,6 @@ func New(cfg *config.Config) (*Client, error) {
 		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
 		c.conn.onPKIFetch()
 	}
-
-	// FIXME TODO: add listener... and ensure it's pki doc gets updates
-	//listener, err := NewListener(rates, egressCh)
 
 	return c, nil
 }

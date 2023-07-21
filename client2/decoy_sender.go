@@ -56,6 +56,12 @@ func newDecoySender(rates *Rates, ingressCh chan *Request, egressCh chan *Reques
 	}
 }
 
+func (d *decoySender) UpdateConnectionStatus(isConnected bool) {
+	d.sendMessageOrLoopDecoy.UpdateConnectionStatus(isConnected)
+	d.sendLoopDecoy.UpdateConnectionStatus(isConnected)
+	d.sendDropDecoy.UpdateConnectionStatus(isConnected)
+}
+
 func (d *decoySender) UpdateRates(rates *Rates) {
 	d.sendMessageOrLoopDecoy.UpdateRate(rates.messageOrLoop, rates.messageOrLoopMaxDelay)
 	d.sendLoopDecoy.UpdateRate(rates.loop, rates.loopMaxDelay)

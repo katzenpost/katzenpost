@@ -289,7 +289,7 @@ func newPKI(c *Client) *pki {
 	p.c = c
 	p.log = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
-		Prefix:          fmt.Sprintf("client2/pki:%s", c.displayName),
+		Prefix:          "client2/pki",
 	})
 
 	p.failedFetches = make(map[uint64]error)
