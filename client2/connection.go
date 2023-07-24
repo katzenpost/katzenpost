@@ -120,7 +120,7 @@ type connection struct {
 	retryDelay  int64 // used as atomic time.Duration
 	isConnected bool
 
-	provider string
+	provider *[32]byte
 	queueID  []byte
 }
 
@@ -188,7 +188,8 @@ func (c *connection) getDescriptor() error {
 	}
 
 	provider := doc.Providers[rand.NewMath().Intn(n)]
-	c.provider = provider.Name
+	idHash := provider.IdentityKey.Sum256()
+	c.provider = &idHash
 	desc, err := doc.GetProvider(provider.Name)
 	if err != nil {
 		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
