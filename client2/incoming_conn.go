@@ -22,7 +22,6 @@ type incomingConn struct {
 	appID    uint64
 
 	closeConnectionCh chan bool
-	replyCh           chan Response
 }
 
 func (c *incomingConn) Close() {
@@ -122,11 +121,6 @@ func (c *incomingConn) worker() {
 		case <-c.listener.closeAllCh:
 			// Server is getting shutdown, all connections are being closed.
 			return
-		case reply := <-c.replyCh:
-			err := c.sendResponse(&reply)
-			if err != nil {
-				c.log.Infof("received error sending Reply: %s", err.Error())
-			}
 		case rawReq, ok = <-requestCh:
 			// Process incoming requests.
 			if !ok {
@@ -156,7 +150,6 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 		unixConn:          conn,
 		appID:             atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		closeConnectionCh: make(chan bool),
-		replyCh:           make(chan Response),
 	}
 
 	c.log = log.NewWithOptions(os.Stderr, log.Options{

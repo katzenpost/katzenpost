@@ -64,7 +64,6 @@ func (d *Daemon) Start() error {
 	}
 	d.cfg.OnACKFn = d.handleReplies
 	d.Go(d.egressWorker)
-
 	return nil
 }
 
@@ -89,6 +88,7 @@ func (d *Daemon) egressWorker() {
 			if !ok {
 				d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
 			}
+			delete(d.replies, *reply.surbID)
 			s, err := sphinx.FromGeometry(d.client.cfg.SphinxGeometry)
 			if err != nil {
 				panic(err)
