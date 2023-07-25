@@ -63,6 +63,8 @@ func (d *Daemon) Start() error {
 		return err
 	}
 	d.cfg.OnACKFn = d.handleReplies
+	d.cfg.OnConnFn = d.listener.updateConnectionStatus
+	d.cfg.OnDocumentFn = d.listener.updateRatesFromPKIDoc
 	d.Go(d.egressWorker)
 	return nil
 }

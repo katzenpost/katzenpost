@@ -104,6 +104,10 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	delete(l.conns, c.appID)
 }
 
+func (l *listener) updateConnectionStatus(err error) {
+	l.decoySender.UpdateConnectionStatus(err == nil)
+}
+
 func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
 	l.decoySender.UpdateRates(ratesFromPKIDoc(doc))
 }
