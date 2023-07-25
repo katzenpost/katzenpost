@@ -18,7 +18,6 @@
 package client2
 
 import (
-	"container/list"
 	"net"
 	"os"
 	"sync"
@@ -36,7 +35,7 @@ type listener struct {
 	log *log.Logger
 
 	listener *net.UnixListener
-	conns    *list.List
+	conns    map[uint64]*incomingConn // appID -> *incomingConn
 
 	ingressCh   chan *Request
 	decoySender *decoySender
@@ -93,7 +92,7 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 		l.Unlock()
 		go c.worker()
 	}()
-	c.listElement = l.conns.PushFront(c)
+	l.conns[c.appID] = c
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
@@ -102,7 +101,7 @@ func (l *listener) onClosedConn(c *incomingConn) {
 		l.Unlock()
 		l.closeAllWg.Done()
 	}()
-	l.conns.Remove(c.listElement)
+	delete(l.conns, c.appID)
 }
 
 func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
@@ -118,7 +117,7 @@ func NewListener(rates *Rates, egressCh chan *Request) (*listener, error) {
 			ReportTimestamp: true,
 			Prefix:          "listener",
 		}),
-		conns:      list.New(),
+		conns:      make(map[uint64]*incomingConn),
 		closeAllCh: make(chan interface{}),
 		ingressCh:  make(chan *Request),
 	}

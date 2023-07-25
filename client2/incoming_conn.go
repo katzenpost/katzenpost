@@ -1,7 +1,6 @@
 package client2
 
 import (
-	"container/list"
 	"errors"
 	"fmt"
 	"net"
@@ -19,11 +18,11 @@ type incomingConn struct {
 	listener *listener
 	log      *log.Logger
 
-	unixConn    *net.UnixConn
-	listElement *list.Element
-	id          uint64
+	unixConn *net.UnixConn
+	appID    uint64
 
 	closeConnectionCh chan bool
+	replyCh           chan Response
 }
 
 func (c *incomingConn) Close() {
@@ -60,7 +59,7 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 
 	if req.IsSendOp {
 		c.log.Info("send operation")
-		req.AppID = c.id
+		req.AppID = c.appID
 		c.listener.ingressCh <- req
 		return &Response{
 			AppID:   req.AppID,
@@ -115,7 +114,6 @@ func (c *incomingConn) worker() {
 		}
 	}()
 
-	// Process incoming requests.
 	for {
 		var rawReq *Request
 		var ok bool
@@ -124,24 +122,29 @@ func (c *incomingConn) worker() {
 		case <-c.listener.closeAllCh:
 			// Server is getting shutdown, all connections are being closed.
 			return
+		case reply := <-c.replyCh:
+			err := c.sendResponse(&reply)
+			if err != nil {
+				c.log.Infof("received error sending Reply: %s", err.Error())
+			}
 		case rawReq, ok = <-requestCh:
+			// Process incoming requests.
 			if !ok {
 				return
 			}
+			c.log.Infof("Received Request from peer application.")
+			response, err := c.handleRequest(rawReq)
+			if err != nil {
+				c.log.Infof("Failed to handle Request: %v", err)
+				return
+			}
+
+			err = c.sendResponse(response)
+			if err != nil {
+				c.log.Infof("received error sending Response: %s", err.Error())
+			}
 		}
 
-		c.log.Infof("Received Request from peer application.")
-		response, err := c.handleRequest(rawReq)
-		if err != nil {
-			c.log.Infof("Failed to handle Request: %v", err)
-			return
-		}
-
-		err = c.sendResponse(response)
-		if err != nil {
-			c.log.Infof("received error sending Response: %s", err.Error())
-		}
-		continue
 	}
 
 	// NOTREACHED
@@ -151,13 +154,14 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 	c := &incomingConn{
 		listener:          l,
 		unixConn:          conn,
-		id:                atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
+		appID:             atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		closeConnectionCh: make(chan bool),
+		replyCh:           make(chan Response),
 	}
 
 	c.log = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
-		Prefix:          fmt.Sprintf("incoming:%d", c.id),
+		Prefix:          fmt.Sprintf("incoming:%d", c.appID),
 	})
 
 	c.log.Debugf("New incoming connection: %v", conn.RemoteAddr())
