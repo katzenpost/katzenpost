@@ -27,13 +27,15 @@ type replyDescriptor struct {
 type Daemon struct {
 	worker.Worker
 
-	log      *log.Logger
-	cfg      *config.Config
-	client   *Client
-	listener *listener
-	egressCh chan *Request
-	replies  map[[sConstants.SURBIDLength]byte]replyDescriptor
-	replyCh  chan sphinxReply
+	log        *log.Logger
+	cfg        *config.Config
+	client     *Client
+	listener   *listener
+	egressCh   chan *Request
+	replies    map[[sConstants.SURBIDLength]byte]replyDescriptor
+	timerQueue *TimerQueue
+	replyCh    chan sphinxReply
+	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
 }
 
 func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
@@ -42,9 +44,10 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 			ReportTimestamp: true,
 			Prefix:          "client2_daemon",
 		}),
-		cfg:      cfg,
-		egressCh: make(chan *Request, egressSize),
-		replies:  make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
+		cfg:        cfg,
+		egressCh:   make(chan *Request, egressSize),
+		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
+		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
 	}, nil
 }
 
@@ -65,6 +68,17 @@ func (d *Daemon) Start() error {
 	d.cfg.OnACKFn = d.handleReplies
 	d.cfg.OnConnFn = d.listener.updateConnectionStatus
 	d.cfg.OnDocumentFn = d.listener.updateRatesFromPKIDoc
+	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
+		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
+		if !ok {
+			panic("wtf, failed type assertion!")
+		}
+		select {
+		case d.gcSurbIDCh <- surbID:
+		case <-d.HaltCh():
+			return
+		}
+	})
 	d.Go(d.egressWorker)
 	return nil
 }
@@ -85,6 +99,8 @@ func (d *Daemon) egressWorker() {
 		select {
 		case <-d.HaltCh():
 			return
+		case surbID := <-d.gcSurbIDCh:
+			delete(d.replies, *surbID)
 		case reply := <-d.replyCh:
 			desc, ok := d.replies[*reply.surbID]
 			if !ok {
@@ -100,15 +116,14 @@ func (d *Daemon) egressWorker() {
 				d.log.Infof("SURB reply decryption error: %s", err.Error())
 				continue
 			}
-			response := &Response{
-				AppID:   desc.appID,
-				Payload: plaintext,
-			}
 			conn, ok := d.listener.conns[desc.appID]
 			if !ok {
 				d.log.Infof("no connection associated with AppID %d", desc.appID)
 			}
-			conn.sendResponse(response)
+			conn.sendResponse(&Response{
+				AppID:   desc.appID,
+				Payload: plaintext,
+			})
 		case request := <-d.egressCh:
 			surbID := &[sConstants.SURBIDLength]byte{}
 			_, err := rand.Reader.Read(surbID[:])
@@ -119,10 +134,10 @@ func (d *Daemon) egressWorker() {
 			if err != nil {
 				d.log.Infof("SendCiphertext error: %s", err.Error())
 			}
-			slop := time.Second * 1
+			slop := time.Second * 20
 			replyArrivalTime := time.Now().Add(rtt + slop)
 			d.log.Infof("reply arrival time: %s", replyArrivalTime)
-			// XXX FIXME: ADD GC
+			d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
 			d.replies[*surbID] = replyDescriptor{
 				appID:   request.AppID,
 				surbKey: surbKey,
