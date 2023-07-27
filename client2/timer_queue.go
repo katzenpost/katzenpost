@@ -20,9 +20,14 @@ type TimerQueue struct {
 
 func NewTimerQueue(action func(interface{})) *TimerQueue {
 	return &TimerQueue{
-		timer: time.NewTimer(0),
-		queue: queue.New(),
+		timer:  time.NewTimer(0),
+		queue:  queue.New(),
+		action: action,
 	}
+}
+
+func (t *TimerQueue) Start() {
+	t.Go(t.worker)
 }
 
 func (t *TimerQueue) Push(priority uint64, surbID *[sConstants.SURBIDLength]byte) {
@@ -40,6 +45,7 @@ func (t *TimerQueue) worker() {
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
+				t.queue.Pop()
 				t.mutex.Unlock()
 				t.action(m.Value)
 				continue
@@ -52,6 +58,9 @@ func (t *TimerQueue) worker() {
 		case <-t.HaltCh():
 			return
 		case <-waitCh:
+			t.mutex.Lock()
+			t.queue.Pop()
+			t.mutex.Unlock()
 			t.action(m.Value)
 		}
 	}

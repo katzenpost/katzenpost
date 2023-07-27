@@ -43,14 +43,14 @@ func NewPoissonProcess(lambda float64, lambdaMaxDelay uint64, action func()) *po
 }
 
 func (p *poissonProcess) UpdateRate(lambda float64, lambdaMaxDelay uint64) {
-	p.opCh <- &opNewRate{
+	p.opCh <- opNewRate{
 		lambda:         lambda,
 		lambdaMaxDelay: lambdaMaxDelay,
 	}
 }
 
 func (p *poissonProcess) UpdateConnectionStatus(isConnected bool) {
-	p.opCh <- &opConnStatusChanged{
+	p.opCh <- opConnStatusChanged{
 		isConnected: isConnected,
 	}
 }
