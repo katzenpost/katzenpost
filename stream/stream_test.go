@@ -199,7 +199,7 @@ func TestStreamFragmentation(t *testing.T) {
 			msg, ok := <-sidechannel
 			// channel was closed by writer, we're done
 			if !ok {
-				// verify that EOF is (eventuallY) returned on a Read after Stream.Close()
+				// verify that EOF is (eventually) returned on a Read after Stream.Close()
 				foo := make([]byte, 42)
 				var n int
 				var err error
