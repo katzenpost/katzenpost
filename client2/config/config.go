@@ -190,8 +190,8 @@ func (p *Provider) UnmarshalTOML(v interface{}) error {
 	return nil
 }
 
-// PKI is a voting authority peer public configuration: key material, connection info etc.
-type PKI struct {
+// VotingAuthority is a voting authority peer public configuration: key material, connection info etc.
+type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
 }
 
@@ -215,8 +215,8 @@ type Config struct {
 	// so that it can connect directly without contacting an Authority.
 	CachedDocument *cpki.Document
 
-	// PKI contains the voting authority peer public configuration.
-	PKI *PKI
+	// VotingAuthority contains the voting authority peer public configuration.
+	VotingAuthority *VotingAuthority
 
 	upstreamProxy *proxy.Config
 

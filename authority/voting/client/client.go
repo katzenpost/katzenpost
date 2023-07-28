@@ -164,7 +164,6 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		ad = keyHash[:]
 	}
 	cfg := &wire.SessionConfig{
-		Geometry:          nil,
 		Authenticator:     peerAuthenticator,
 		AdditionalData:    ad,
 		AuthenticationKey: linkKey,

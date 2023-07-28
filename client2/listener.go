@@ -42,6 +42,9 @@ type listener struct {
 
 	closeAllCh chan interface{}
 	closeAllWg sync.WaitGroup
+
+	connectionStatusMutex sync.Mutex
+	connectionStatus      error
 }
 
 func (l *listener) Halt() {
@@ -93,6 +96,9 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 		go c.worker()
 	}()
 	l.conns[c.appID] = c
+
+	status := l.getConnectionStatus()
+	c.updateConnectionStatus(status)
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
@@ -104,8 +110,28 @@ func (l *listener) onClosedConn(c *incomingConn) {
 	delete(l.conns, c.appID)
 }
 
-func (l *listener) updateConnectionStatus(err error) {
-	l.decoySender.UpdateConnectionStatus(err == nil)
+func (l *listener) getConnectionStatus() error {
+	l.connectionStatusMutex.Lock()
+	status := l.connectionStatus
+	l.connectionStatusMutex.Unlock()
+	return status
+}
+
+func (l *listener) updateConnectionStatus(status error) {
+
+	l.connectionStatusMutex.Lock()
+	l.connectionStatus = status
+	l.connectionStatusMutex.Unlock()
+
+	l.decoySender.UpdateConnectionStatus(status == nil)
+
+	l.connectionStatusMutex.Lock()
+	conns := l.conns
+	l.connectionStatusMutex.Unlock()
+
+	for key, _ := range conns {
+		l.conns[key].updateConnectionStatus(status)
+	}
 }
 
 func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {

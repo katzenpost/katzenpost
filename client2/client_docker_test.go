@@ -22,6 +22,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 
 	err = thin.Dial()
 	require.NoError(t, err)
+	require.Nil(t, err)
 
 	doc := thin.PKIDocument()
 	require.NotNil(t, doc)

@@ -1,6 +1,7 @@
 package client2
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -69,6 +70,9 @@ func (t *ThinClient) Dial() error {
 	}
 	if !response.IsStatus {
 		panic("did not receive a connection status message")
+	}
+	if !response.IsConnected {
+		return errors.New("not connected")
 	}
 
 	return nil

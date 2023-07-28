@@ -133,10 +133,13 @@ func New(cfg *config.Config) (*Client, error) {
 	pkiClientConfig := &client.Config{
 		LinkKey:       pkilinkKey,
 		LogBackend:    os.Stderr,
-		Authorities:   c.cfg.PKI.Peers,
+		Authorities:   c.cfg.VotingAuthority.Peers,
 		DialContextFn: nil,
 	}
 	c.PKIClient, err = client.New(pkiClientConfig)
+	if err != nil {
+		return nil, err
+	}
 	c.pki = newPKI(c)
 	c.pki.start()
 	c.conn.start()

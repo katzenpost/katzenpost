@@ -40,7 +40,7 @@ import (
 var (
 	// ErrNotConnected is the error returned when an operation fails due to the
 	// client not currently being connected to the Provider.
-	ErrNotConnected = errors.New("minclient/conn: not connected to the Provider")
+	ErrNotConnected = errors.New("client/conn: not connected to the Provider")
 
 	// ErrShutdown is the error returned when the connection is closed due to
 	// a call to Shutdown().
@@ -64,7 +64,7 @@ type ConnectError struct {
 
 // Error implements the error interface.
 func (e *ConnectError) Error() string {
-	return fmt.Sprintf("minclient/conn: connect error: %v", e.Err)
+	return fmt.Sprintf("client/conn: connect error: %v", e.Err)
 }
 
 func newConnectError(f string, a ...interface{}) error {
@@ -79,7 +79,7 @@ type PKIError struct {
 
 // Error implements the error interface.
 func (e *PKIError) Error() string {
-	return fmt.Sprintf("minclient/conn: PKI error: %v", e.Err)
+	return fmt.Sprintf("client/conn: PKI error: %v", e.Err)
 }
 
 func newPKIError(f string, a ...interface{}) error {
@@ -95,7 +95,7 @@ type ProtocolError struct {
 
 // Error implements the error interface.
 func (e *ProtocolError) Error() string {
-	return fmt.Sprintf("minclient/conn: protocol error: %v", e.Err)
+	return fmt.Sprintf("client/conn: protocol error: %v", e.Err)
 }
 
 func newProtocolError(f string, a ...interface{}) error {
@@ -146,7 +146,7 @@ func (c *Client) ForceFetch() {
 	}
 }
 
-// ForceFetchPKI attempts to force minclient's pkiclient to wake and fetch
+// ForceFetchPKI attempts to force client's pkiclient to wake and fetch
 // consensus documents immediately.
 func (c *Client) ForceFetchPKI() {
 	c.log.Debugf("ForceFetchPKI()")

@@ -79,6 +79,7 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
+
 	d.Go(d.egressWorker)
 	return nil
 }

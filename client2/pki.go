@@ -35,8 +35,8 @@ import (
 )
 
 var (
-	errGetConsensusCanceled = errors.New("minclient/pki: consensus fetch canceled")
-	errConsensusNotFound    = errors.New("minclient/pki: consensus not ready yet")
+	errGetConsensusCanceled = errors.New("client/pki: consensus fetch canceled")
+	errConsensusNotFound    = errors.New("client/pki: consensus not ready yet")
 	PublishDeadline         = vServer.PublishConsensusDeadline
 	mixServerCacheDelay     = epochtime.Period / 16
 	nextFetchTill           = epochtime.Period - (PublishDeadline + mixServerCacheDelay)
@@ -229,7 +229,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	case commands.ConsensusNotFound:
 		return nil, errConsensusNotFound
 	default:
-		return nil, fmt.Errorf("minclient/pki: GetConsensus failed: %v", resp.ErrorCode)
+		return nil, fmt.Errorf("client/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
 
 	d, err = p.c.PKIClient.Deserialize(resp.Payload)

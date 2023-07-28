@@ -22,6 +22,7 @@ type incomingConn struct {
 	appID    uint64
 
 	closeConnectionCh chan bool
+	connectionStatus  chan error
 }
 
 func (c *incomingConn) Close() {
@@ -84,6 +85,10 @@ func (c *incomingConn) sendResponse(response *Response) error {
 	return nil
 }
 
+func (c *incomingConn) updateConnectionStatus(status error) {
+	c.connectionStatus <- status
+}
+
 func (c *incomingConn) worker() {
 	defer func() {
 		c.log.Debugf("Closing.")
@@ -118,6 +123,15 @@ func (c *incomingConn) worker() {
 		var ok bool
 
 		select {
+		case status := <-c.connectionStatus:
+			response := &Response{
+				IsStatus:    true,
+				IsConnected: status == nil,
+			}
+			err := c.sendResponse(response)
+			if err != nil {
+				c.log.Infof("received error sending Response: %s", err.Error())
+			}
 		case <-c.listener.closeAllCh:
 			// Server is getting shutdown, all connections are being closed.
 			return
@@ -150,6 +164,7 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 		unixConn:          conn,
 		appID:             atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		closeConnectionCh: make(chan bool),
+		connectionStatus:  make(chan error, 1),
 	}
 
 	c.log = log.NewWithOptions(os.Stderr, log.Options{
