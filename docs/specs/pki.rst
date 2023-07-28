@@ -589,7 +589,7 @@ Shared Random Subsystem [TORSRV]_.
 Each voting round a commit value is included in the votes sent to
 other authorities. These are produced as follows:
 
-   H = SHA3-256
+   H = blake2b-256
 
    COMMIT = Uint64(epoch) | H(REVEAL)
    REVEAL = Uint64(epoch) | H(RN)
