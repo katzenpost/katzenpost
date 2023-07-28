@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/katzenpost/katzenpost/sockatz/client"
+	"github.com/katzenpost/katzenpost/katzensocks/client"
 
 	"flag"
 	"fmt"
@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	cfgFile = flag.String("cfg", "sockatz.toml", "config file")
+	cfgFile = flag.String("cfg", "katzensocks.toml", "config file")
 	port    = flag.Int("port", 4242, "listener address")
 )
 
