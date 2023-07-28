@@ -205,7 +205,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
 
-  test_e2e_sockatz:
+  test_e2e_katzensocks:
     env:
       warped: true
       XDG_RUNTIME_DIR: /run
@@ -226,8 +226,8 @@ jobs:
         run: |
           cd docker && sudo -E make mu=0.05 muMax=50 lP=0.2 lPMax=20 start wait
 
-      - name: run sockatz end to end tests
-        run: cd sockatz && sudo -E make dockerdockertest
+      - name: run katzensocks end to end tests
+        run: cd katzensocks && sudo -E make dockerdockertest
 
       - name: Stop the mixnet
         run: |

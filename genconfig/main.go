@@ -212,7 +212,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			katzensocksCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "katzensocks",
 				Endpoint:       "+katzensocks",
-				Command:        s.baseDir + "/katzensocks" + s.binSuffix,
+				Command:        s.baseDir + "/katzensocks_server" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
 					//"max_requests": 42,
