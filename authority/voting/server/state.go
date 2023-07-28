@@ -1865,7 +1865,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		go func() {
 			cfg := &client.Config{
 				LinkKey:       s.s.linkKey,
-				LogBackend:    s.s.logBackend,
+				LogBackend:    s.s.logBackend.GetLogWriter("pki", "Info"),
 				Authorities:   s.s.cfg.Authorities,
 				DialContextFn: nil,
 			}

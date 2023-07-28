@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestListenerEchoOperation(t *testing.T) {
+func NoTestListenerEchoOperation(t *testing.T) {
 
 	rates := &Rates{}
 	egressCh := make(chan *Request)

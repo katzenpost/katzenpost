@@ -7,10 +7,14 @@ import (
 
 	"github.com/charmbracelet/log"
 
+	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/wire"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
@@ -32,6 +36,8 @@ type Client struct {
 
 	haltedCh chan interface{}
 	haltOnce sync.Once
+
+	PKIClient cpki.Client
 }
 
 // Shutdown cleanly shuts down a given Client instance.
@@ -122,6 +128,15 @@ func New(cfg *config.Config) (*Client, error) {
 	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
 	c.conn = newConnection(c)
+
+	pkilinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	pkiClientConfig := &client.Config{
+		LinkKey:       pkilinkKey,
+		LogBackend:    os.Stderr,
+		Authorities:   c.cfg.PKI.Peers,
+		DialContextFn: nil,
+	}
+	c.PKIClient, err = client.New(pkiClientConfig)
 	c.pki = newPKI(c)
 	c.pki.start()
 	c.conn.start()

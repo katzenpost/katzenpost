@@ -232,7 +232,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 		return nil, fmt.Errorf("minclient/pki: GetConsensus failed: %v", resp.ErrorCode)
 	}
 
-	d, err = p.c.cfg.PKIClient.Deserialize(resp.Payload)
+	d, err = p.c.PKIClient.Deserialize(resp.Payload)
 	if err != nil {
 		p.log.Errorf("Failed to deserialize consensus received from provider: %v", err)
 		return nil, cpki.ErrNoDocument
@@ -248,7 +248,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 func (p *pki) getDocumentDirect(ctx context.Context, epoch uint64) (*cpki.Document, error) {
 	p.log.Debugf("Fetching PKI doc for epoch %v directly from authority.", epoch)
 
-	d, _, err := p.c.cfg.PKIClient.Get(ctx, epoch)
+	d, _, err := p.c.PKIClient.Get(ctx, epoch)
 	select {
 	case <-ctx.Done():
 		// Canceled mid-fetch.

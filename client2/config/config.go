@@ -14,6 +14,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	vServerConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
@@ -189,6 +190,11 @@ func (p *Provider) UnmarshalTOML(v interface{}) error {
 	return nil
 }
 
+// PKI is a voting authority peer public configuration: key material, connection info etc.
+type PKI struct {
+	Peers []*vServerConfig.Authority
+}
+
 // Config is the top level client configuration.
 type Config struct {
 
@@ -197,9 +203,6 @@ type Config struct {
 
 	// Logging
 	Logging *Logging
-
-	// PKIClient is the PKI Document data source.
-	PKIClient cpki.Client
 
 	// UpstreamProxy can be used to setup a SOCKS proxy for use with a VPN or Tor.
 	UpstreamProxy *UpstreamProxy
@@ -211,6 +214,9 @@ type Config struct {
 	// containg the Addresses and LinkKeys of minclient's Provider
 	// so that it can connect directly without contacting an Authority.
 	CachedDocument *cpki.Document
+
+	// PKI contains the voting authority peer public configuration.
+	PKI *PKI
 
 	upstreamProxy *proxy.Config
 

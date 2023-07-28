@@ -351,7 +351,7 @@ func TestClient(t *testing.T) {
 	}
 	wg.Wait()
 	cfg := &Config{
-		LogBackend:    logBackend,
+		LogBackend:    logBackend.GetLogWriter("pki", "info"),
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
 	}

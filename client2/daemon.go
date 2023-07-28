@@ -52,16 +52,12 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 }
 
 func (d *Daemon) Start() error {
+	var err error
 	rates := &Rates{}
 	if d.cfg.CachedDocument != nil {
 		rates = ratesFromPKIDoc(d.cfg.CachedDocument)
 	}
-	var err error
 	d.listener, err = NewListener(rates, d.egressCh)
-	if err != nil {
-		return err
-	}
-	d.client, err = New(d.cfg)
 	if err != nil {
 		return err
 	}
@@ -79,6 +75,10 @@ func (d *Daemon) Start() error {
 			return
 		}
 	})
+	d.client, err = New(d.cfg)
+	if err != nil {
+		return err
+	}
 	d.Go(d.egressWorker)
 	return nil
 }

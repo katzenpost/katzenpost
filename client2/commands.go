@@ -7,6 +7,12 @@ type Response struct {
 
 	// Payload contains the Response payload, a SURB reply.
 	Payload []byte `cbor:payload`
+
+	// IsStatus is set to true if Payload should be nil and IsConnected
+	// regarded as the latest connection status.
+	IsStatus bool
+	// IsConnected is the latest connection status if IsStatus is true.
+	IsConnected bool
 }
 
 type Request struct {

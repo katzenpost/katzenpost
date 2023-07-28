@@ -22,16 +22,16 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 
-	"gopkg.in/op/go-logging.v1"
+	"github.com/charmbracelet/log"
 
 	"github.com/katzenpost/katzenpost/authority/voting/server/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
-	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
@@ -43,7 +43,7 @@ var defaultDialer = &net.Dialer{}
 type authorityAuthenticator struct {
 	IdentityPublicKey sign.PublicKey
 	LinkPublicKey     wire.PublicKey
-	log               *logging.Logger
+	log               *log.Logger
 }
 
 // IsPeerValid authenticates the remote peer's credentials, returning true
@@ -51,11 +51,11 @@ type authorityAuthenticator struct {
 func (a *authorityAuthenticator) IsPeerValid(creds *wire.PeerCredentials) bool {
 	identityHash := a.IdentityPublicKey.Sum256()
 	if !hmac.Equal(identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize]) {
-		a.log.Warningf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
+		a.log.Warnf("voting/Client: IsPeerValid(): AD mismatch: %x != %x", identityHash[:], creds.AdditionalData[:sign.PublicKeyHashSize])
 		return false
 	}
 	if !hmac.Equal(a.LinkPublicKey.Bytes(), creds.PublicKey.Bytes()) {
-		a.log.Warningf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", pem.ToPEMString(a.LinkPublicKey), pem.ToPEMString(creds.PublicKey))
+		a.log.Warnf("voting/Client: IsPeerValid(): Link Public Key mismatch: %s != %s", pem.ToPEMString(a.LinkPublicKey), pem.ToPEMString(creds.PublicKey))
 		return false
 	}
 	return true
@@ -66,8 +66,8 @@ type Config struct {
 	// LinkKey is the link key for the client's wire connections.
 	LinkKey wire.PrivateKey
 
-	// LogBackend is the `core/log` Backend instance to use for logging.
-	LogBackend *log.Backend
+	// LogBackend is the io.WriterCloser to use for logging.
+	LogBackend io.Writer
 
 	// Authorities is the set of Directory Authority servers.
 	Authorities []*config.Authority
@@ -105,14 +105,16 @@ type connection struct {
 // connector is used to make connections.
 type connector struct {
 	cfg *Config
-	log *logging.Logger
+	log *log.Logger
 }
 
 // newConnector returns a connector initialized from a Config.
 func newConnector(cfg *Config) *connector {
 	p := &connector{
 		cfg: cfg,
-		log: cfg.LogBackend.GetLogger("pki/voting/client/connector"),
+		log: log.NewWithOptions(cfg.LogBackend, log.Options{
+			Prefix: "pki/voting/client/connector",
+		}),
 	}
 	return p
 }
@@ -176,7 +178,7 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	go func() {
 		select {
 		case <-ctx.Done():
-			p.log.Warning("closing connection due to context Done event... most likely a timeout")
+			p.log.Warn("closing connection due to context Done event... most likely a timeout")
 			conn.Close()
 		case <-doneCh:
 		}
@@ -208,12 +210,12 @@ func (p *connector) allPeersRoundTrip(ctx context.Context, linkKey wire.PrivateK
 	for _, peer := range p.cfg.Authorities {
 		conn, err := p.initSession(ctx, doneCh, linkKey, signingKey, peer)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, peer.IdentityPublicKey.Sum256())
+			p.log.Infof("pki/voting/client: failure to connect to Authority %s (%x)\n", peer.Identifier, peer.IdentityPublicKey.Sum256())
 			continue
 		}
 		resp, err := p.roundTrip(conn.session, cmd)
 		if err != nil {
-			p.log.Noticef("pki/voting/client: failure in sending command to Authority peer %s: %s", peer, err)
+			p.log.Infof("pki/voting/client: failure in sending command to Authority peer %s: %s", peer, err)
 			continue
 		}
 		responses = append(responses, resp)
@@ -252,7 +254,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 			return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
 		}
 
-		p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, getErrorToString(r.ErrorCode))
+		p.log.Infof("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, getErrorToString(r.ErrorCode))
 		if err == pki.ErrNoDocument {
 			continue
 		}
@@ -264,7 +266,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 // Client is a PKI client.
 type Client struct {
 	cfg       *Config
-	log       *logging.Logger
+	log       *log.Logger
 	pool      *connector
 	verifiers []cert.Verifier
 	threshold int
@@ -352,13 +354,13 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		return nil, nil, fmt.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 	}
 	if len(good) == len(c.cfg.Authorities) {
-		c.log.Notice("OK, received fully signed consensus document.")
+		c.log.Info("OK, received fully signed consensus document.")
 	} else {
-		c.log.Noticef("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
+		c.log.Infof("OK, received consensus document with %d of %d signatures)", len(good), len(c.cfg.Authorities))
 		for _, auth := range c.cfg.Authorities {
 			for _, badauth := range bad {
 				if badauth == auth.IdentityPublicKey {
-					c.log.Noticef("missing or invalid signature from %s", auth.Identifier)
+					c.log.Infof("missing or invalid signature from %s", auth.Identifier)
 					break
 				}
 			}
@@ -407,7 +409,9 @@ func New(cfg *Config) (pki.Client, error) {
 
 	c := new(Client)
 	c.cfg = cfg
-	c.log = cfg.LogBackend.GetLogger("pki/voting/Client")
+	c.log = log.NewWithOptions(c.cfg.LogBackend, log.Options{
+		Prefix: "pki/voting/client",
+	})
 	c.pool = newConnector(cfg)
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
 	for i, auth := range c.cfg.Authorities {

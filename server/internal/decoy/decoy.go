@@ -328,7 +328,7 @@ func (d *decoy) sendDiscardPacket(doc *pki.Document, recipient []byte, src, dst 
 	d.log.Debugf("Failed to generate discard decoy packet: %v", errMaxAttempts)
 }
 
-func (d *decoy) dispatchPacket(fwdPath []*sphinx.PathHop, raw []byte) {
+func (d *decoy) dispatchPacket(fwdPath []*path.PathHop, raw []byte) {
 	pkt, err := packet.New(raw, d.geo)
 	if err != nil {
 		d.log.Debugf("Failed to allocate packet: %v", err)
@@ -350,7 +350,7 @@ func (d *decoy) makeSURBID(surbID *[sConstants.SURBIDLength]byte) {
 	binary.BigEndian.PutUint64(surbID[8:], d.rng.Uint64())
 }
 
-func (d *decoy) logPath(doc *pki.Document, p []*sphinx.PathHop) error {
+func (d *decoy) logPath(doc *pki.Document, p []*path.PathHop) error {
 	s, err := path.ToString(doc, p)
 	if err != nil {
 		return err

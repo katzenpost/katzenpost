@@ -7,6 +7,7 @@ import (
 	"syscall"
 
 	"github.com/fxamacker/cbor/v2"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
 type ClientLauncher struct {
@@ -61,7 +62,21 @@ func (t *ThinClient) Dial() error {
 		return err
 	}
 
+	// WAIT UNTIL we have a Noise cryptographic connection with an edge node
+	response, err := t.ReceiveMessage()
+	if err != nil {
+		return err
+	}
+	if !response.IsStatus {
+		panic("did not receive a connection status message")
+	}
+
 	return nil
+}
+
+func (t *ThinClient) PKIDocument() *cpki.Document {
+
+	return nil // XXX FIXME
 }
 
 func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte) error {
@@ -85,4 +100,18 @@ func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue [
 	}
 
 	return nil
+}
+
+func (t *ThinClient) ReceiveMessage() (*Response, error) {
+	buff := make([]byte, 65536)
+	msgLen, _, _, _, err := t.unixConn.ReadMsgUnix(buff, nil)
+	if err != nil {
+		return nil, err
+	}
+	response := Response{}
+	err = cbor.Unmarshal(buff[:msgLen], &response)
+	if err != nil {
+		return nil, err
+	}
+	return &response, nil
 }
