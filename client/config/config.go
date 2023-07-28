@@ -117,7 +117,7 @@ type VotingAuthority struct {
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	cfg := &vClient.Config{
 		LinkKey:       linkKey,
-		LogBackend:    l,
+		LogBackend:    l.GetLogWriter("client", "info"),
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
 	}
