@@ -11,13 +11,13 @@ docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e G
 
 dockerdockertest:
 	$(docker) run ${docker_args} $(image) \
-		sh -c 'cd /go/katzenpost/sockatz/client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 10m -run Docker'
+		sh -c 'cd /go/katzenpost/katzensocks/client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 10m -run Docker'
 test:
 	cd client/; GORACE=history_size=7 CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test $(testargs) -ldflags ${ldflags} -tags=docker_test -race -v -timeout 10m -run Docker
 
-server/cmd/sockatz/sockatz:
-	cd server/cmd/sockatz && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
+server/cmd/katzensocks/katzensocks:
+	cd server/cmd/server && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
 client/cmd/client/client:
 	cd client/cmd/client && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
 clean:
-	rm -f client/cmd/client/client server/cmd/sockatz/sockatz
+	rm -f client/cmd/client/client server/cmd/server/server

@@ -32,7 +32,7 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"github.com/katzenpost/katzenpost/sockatz/common"
+	"github.com/katzenpost/katzenpost/katzensocks/common"
 )
 
 var (
@@ -63,9 +63,9 @@ var (
 	ErrDialFailed        = errors.New("ErrDialFailed")
 )
 
-// SockatzServer is a kaetzchen responder that proxies
+// Server is a kaetzchen responder that proxies
 // a TCP connection to the host specified in a Stream
-type Sockatz struct {
+type Server struct {
 	cfg *config.Config
 	worker.Worker
 	log        *logging.Logger
@@ -75,14 +75,14 @@ type Sockatz struct {
 	sessions *sync.Map
 }
 
-// NewSockatz instantiates the Sockatz Kaetzchen responder
-func NewSockatz(cfgFile string, logBackend *log.Backend) (*Sockatz, error) {
+// NewServer instantiates the Katzensocks Kaetzchen responder
+func NewServer(cfgFile string, logBackend *log.Backend) (*Server, error) {
 	cfg, err := config.LoadFile(cfgFile)
-	log := logBackend.GetLogger("sockatz_server")
+	log := logBackend.GetLogger("katzensocks_server")
 	if err != nil {
 		return nil, err
 	}
-	s := &Sockatz{cfg: cfg, log: log, sessions: new(sync.Map), payloadLen: cfg.SphinxGeometry.UserForwardPayloadLength}
+	s := &Server{cfg: cfg, log: log, sessions: new(sync.Map), payloadLen: cfg.SphinxGeometry.UserForwardPayloadLength}
 	return s, nil
 }
 
@@ -257,7 +257,7 @@ func (s *Response) Unmarshal(b []byte) error {
 
 // Session holds state associated with reliable in-order framing of transported TCP stream
 type Session struct {
-	s *Sockatz
+	s *Server
 
 	sync.Mutex
 	// ID is the unique ID for this Session
@@ -298,7 +298,7 @@ func (s *Session) reset() {
 }
 
 // OnCommand implements cborplugin.ServicePlugin OnCommand
-func (s *Sockatz) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *Server) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		if !r.HasSURB {
@@ -357,7 +357,7 @@ func wrapResponse(cmd cborplugin.Command, err error) (*cborplugin.Response, erro
 	return &cborplugin.Response{Payload: p}, nil
 }
 
-func (s *Sockatz) dial(cmd *DialCommand) (*DialResponse, error) {
+func (s *Server) dial(cmd *DialCommand) (*DialResponse, error) {
 	reply := &DialResponse{}
 
 	s.log.Debugf("Received DialCommand(%x, %s)", cmd.ID, cmd.Target)
@@ -517,7 +517,7 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	return buf[:n], nil
 }
 
-func (s *Sockatz) findSession(id []byte) (*Session, error) {
+func (s *Server) findSession(id []byte) (*Session, error) {
 	ss, ok := s.sessions.Load(string(id))
 	// no session found
 	if !ok {
@@ -534,7 +534,7 @@ func (s *Sockatz) findSession(id []byte) (*Session, error) {
 	return ses, nil
 }
 
-func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
+func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 	// FIXME XXX: for testing only
 	// validate topup
 	// if !s.gotNuts(cmd.Nuts) {
@@ -557,7 +557,7 @@ func (s *Sockatz) topup(cmd *TopupCommand) (*TopupResponse, error) {
 	return &TopupResponse{Status: TopupSuccess}, nil
 }
 
-func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
+func (s *Server) proxyWorker(a, b net.Conn) chan error {
 	s.log.Debug("Starting proxyWorker %v %v", a, b)
 	errCh := make(chan error, 2)
 	s.Go(func() {
@@ -596,7 +596,7 @@ func (s *Sockatz) proxyWorker(a, b net.Conn) chan error {
 	return errCh
 }
 
-func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
+func (s *Server) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 	// deserialize cmd as a ProxyResponse
 	reply := &ProxyResponse{}
 	s.log.Debugf("Received ProxyCommand: %x", cmd.ID)
@@ -627,7 +627,7 @@ func (s *Sockatz) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 	return reply, nil
 }
 
-func (s *Sockatz) invalid(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *Server) invalid(cmd cborplugin.Command) (cborplugin.Command, error) {
 	resp := Response{Error: ErrInvalidCommand}
 	rawResp, err := resp.Marshal()
 	if err != nil {
@@ -636,6 +636,6 @@ func (s *Sockatz) invalid(cmd cborplugin.Command) (cborplugin.Command, error) {
 	return &cborplugin.Response{Payload: rawResp}, nil
 }
 
-func (s *Sockatz) RegisterConsumer(svr *cborplugin.Server) {
+func (s *Server) RegisterConsumer(svr *cborplugin.Server) {
 	s.log.Debugf("RegisterConsumer called")
 }

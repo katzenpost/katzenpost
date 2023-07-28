@@ -1,4 +1,4 @@
-// main.go - sockatz katzenpost service daemon
+// main.go - katzensocks service daemon
 // Copyright (C) 2023  Masala
 //
 // This program is free software: you can redistribute it and/or modify
@@ -29,7 +29,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"github.com/katzenpost/katzenpost/sockatz/server"
+	"github.com/katzenpost/katzenpost/katzensocks/server"
 )
 
 func main() {
@@ -55,19 +55,19 @@ func main() {
 	}
 
 	// Log to a file.
-	logFile := path.Join(logDir, fmt.Sprintf("sockatz.%d.log", os.Getpid()))
+	logFile := path.Join(logDir, fmt.Sprintf("katzensocks.%d.log", os.Getpid()))
 	logBackend, err := log.New(logFile, logLevel, false)
 	if err != nil {
 		panic(err)
 	}
-	serverLog := logBackend.GetLogger("sockatz_server")
+	serverLog := logBackend.GetLogger("katzensocks_server")
 
 	// start service
-	tmpDir, err := ioutil.TempDir("", "sockatz_server")
+	tmpDir, err := ioutil.TempDir("", "katzensocks_server")
 	if err != nil {
 		panic(err)
 	}
-	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.sockatz.socket", os.Getpid()))
+	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.katzensocks.socket", os.Getpid()))
 
 	// get a client connection to the mixnet
 	s, err = os.Stat(clientCfg)
@@ -81,12 +81,12 @@ func main() {
 	// a provider node that is not an entry node to the network
 	// may choose to allow local connections, or add a user account for this worker
 	// TODO: extend cbor worker interface to provide a client configuration
-	sockatzServer, err := server.NewSockatz(clientCfg, logBackend)
+	katzensocksServer, err := server.NewSockatz(clientCfg, logBackend)
 	if err != nil {
 		panic(err)
 	}
 	cmdBuilder := new(cborplugin.RequestFactory)
-	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, sockatzServer)
+	server := cborplugin.NewServer(serverLog, socketFile, cmdBuilder, katzensocksServer)
 	// XXX: MUST PRINT THIS LINE FOR KATZENPOST SERVER TO CONNECT !!!
 	fmt.Printf("%s\n", socketFile)
 	server.Accept()

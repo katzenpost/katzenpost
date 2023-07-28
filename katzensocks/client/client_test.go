@@ -1,4 +1,4 @@
-// client_test.go - stream socket client tests
+// client_test.go - katzensocks client tests
 // Copyright (C) 2023  Masala
 //
 // This program is free software: you can redistribute it and/or modify

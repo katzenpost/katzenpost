@@ -25,9 +25,9 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/sockatz/common"
-	"github.com/katzenpost/katzenpost/sockatz/server"
-	"github.com/katzenpost/katzenpost/sockatz/socks5"
+	"github.com/katzenpost/katzenpost/katzensocks/common"
+	"github.com/katzenpost/katzenpost/katzensocks/server"
+	"github.com/katzenpost/katzenpost/katzensocks/socks5"
 	"gopkg.in/op/go-logging.v1"
 
 	"context"
@@ -85,9 +85,9 @@ type Client struct {
 }
 
 func NewClient(s *client.Session) (*Client, error) {
-	l := s.GetLogger("sockatz_client")
-	// find a sockatz server descriptor for the request
-	desc, err := s.GetService("sockatz")
+	l := s.GetLogger("katzensocks_client")
+	// find a katzensocks server descriptor for the request
+	desc, err := s.GetService("katzensocks")
 	if err != nil {
 		return nil, err
 	}
