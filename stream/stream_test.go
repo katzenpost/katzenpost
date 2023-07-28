@@ -225,8 +225,9 @@ func TestStreamFragmentation(t *testing.T) {
 				n, err := s.Read(b[readOff:])
 				if err != nil {
 					t.Logf("read %d, total %d", n, readOff)
-					if readOff != len(msg) {
-						panic(err)
+					if readOff + n < len(msg) {
+						t.Fail("Read() returned incomplete with err: %v", err)
+						return
 					}
 				}
 				t.Logf("Read %d bytes", n)
