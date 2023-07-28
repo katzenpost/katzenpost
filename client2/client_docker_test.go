@@ -34,6 +34,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 			pingTargets = append(pingTargets, doc.Providers[i])
 		}
 	}
+	require.True(t, len(pingTargets) > 0)
 	message := []byte("hello alice, this is bob.")
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 	thin.SendMessage(message, &nodeIdKey, []byte("echo"))

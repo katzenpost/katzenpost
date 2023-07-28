@@ -16,9 +16,12 @@ type Response struct {
 }
 
 type Request struct {
+	// ID must be a unique identity for each request per application.
+	ID uint64 `cbor:id`
+
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
-	AppID uint64 `cbor:id`
+	AppID uint64 `cbor:app_id`
 
 	// DestinationIdHash is 32 byte hash of the destination's
 	// identity public key.

@@ -79,9 +79,27 @@ func (t *ThinClient) Dial() error {
 }
 
 func (t *ThinClient) PKIDocument() *cpki.Document {
-
-	return nil // XXX FIXME
+	return nil
 }
+
+/*
+func (t *ThinClient) PKIDocument() (*cpki.Document, error) {
+	req := new(Request)
+	req.IsSendOp = false
+	blob, err := cbor.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
+	if err != nil {
+		return nil, err
+	}
+	if count != len(blob) {
+		panic("impossible")
+	}
+	return nil, doc
+}
+*/
 
 func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := new(Request)

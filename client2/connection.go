@@ -690,6 +690,7 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *connection) onConnStatusChange(err error) {
+	c.log.Info("onConnStatusChange")
 	c.Lock()
 	if err == nil {
 		c.isConnected = true

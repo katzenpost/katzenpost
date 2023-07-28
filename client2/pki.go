@@ -218,8 +218,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 		return nil, err
 	default:
 		p.log.Infof("Failed to fetch PKI doc for epoch %v from Provider: %v", epoch, err)
-		p.log.Info("Now fetching document directly from the directory authorities...")
-		return p.getDocumentDirect(ctx, epoch)
+		return nil, err
 	}
 
 	switch resp.ErrorCode {
@@ -239,22 +238,9 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	}
 	if d.Epoch != epoch {
 		p.log.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
-		return p.getDocumentDirect(ctx, epoch)
+		return nil, fmt.Errorf("BUG: Provider returned document for incorrect epoch: %v", d.Epoch)
 	}
 
-	return d, err
-}
-
-func (p *pki) getDocumentDirect(ctx context.Context, epoch uint64) (*cpki.Document, error) {
-	p.log.Debugf("Fetching PKI doc for epoch %v directly from authority.", epoch)
-
-	d, _, err := p.c.PKIClient.Get(ctx, epoch)
-	select {
-	case <-ctx.Done():
-		// Canceled mid-fetch.
-		return nil, errGetConsensusCanceled
-	default:
-	}
 	return d, err
 }
 
