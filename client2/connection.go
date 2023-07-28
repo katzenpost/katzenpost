@@ -211,6 +211,8 @@ func (c *connection) getDescriptor() error {
 }
 
 func (c *connection) connectWorker() {
+	c.log.Debug("connectWorker begin")
+
 	defer c.log.Debugf("Terminating connect worker.")
 
 	dialCtx, cancelFn := context.WithCancel(context.Background())
@@ -231,6 +233,7 @@ func (c *connection) connectWorker() {
 		// before querying the PKI for a document iff we do not have the
 		// Provider's current descriptor.
 		if now, _, _ := epochtime.FromUnix(c.client.pki.skewedUnixTime()); now != c.pkiEpoch {
+			log.Debug("waiting for PKI doc")
 			select {
 			case <-c.HaltCh():
 				return
@@ -270,6 +273,7 @@ func (c *connection) connectWorker() {
 }
 
 func (c *connection) doConnect(dialCtx context.Context) {
+	c.log.Debug("doConnect begin")
 	const (
 		retryIncrement = 15 * time.Second
 		maxRetryDelay  = 2 * time.Minute
@@ -814,8 +818,8 @@ func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
 	k.log = log.NewWithOptions(os.Stderr, log.Options{
-		ReportTimestamp: true,
-		Prefix:          "client2/conn",
+		Prefix: "client2/conn",
+		Level:  log.DebugLevel,
 	})
 
 	k.pkiFetchCh = make(chan interface{}, 1)

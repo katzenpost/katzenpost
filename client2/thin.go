@@ -7,7 +7,9 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
@@ -39,15 +41,23 @@ func (l *ClientLauncher) Launch(args ...string) error {
 }
 
 type ThinClient struct {
+	log          *log.Logger
 	unixConn     *net.UnixConn
 	destUnixAddr *net.UnixAddr
+	pkidoc       *cpki.Document
 }
 
 func NewThinClient() *ThinClient {
-	return &ThinClient{}
+	return &ThinClient{
+		log: log.NewWithOptions(os.Stderr, log.Options{
+			Prefix: "thin_client",
+			Level:  log.DebugLevel,
+		}),
+	}
 }
 
 func (t *ThinClient) Dial() error {
+	t.log.Debug("Dial begin")
 	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", "@katzenpost_golang_thin_client")
 	if err != nil {
 		return err
@@ -58,48 +68,46 @@ func (t *ThinClient) Dial() error {
 		return err
 	}
 
+	t.log.Debugf("Dial unixpacket %s %s", srcUnixAddr, t.destUnixAddr)
 	t.unixConn, err = net.DialUnix("unixpacket", srcUnixAddr, t.destUnixAddr)
 	if err != nil {
 		return err
 	}
 
 	// WAIT UNTIL we have a Noise cryptographic connection with an edge node
-	response, err := t.ReceiveMessage()
+	t.log.Debugf("Waiting for a connection status message")
+	message1, err := t.ReceiveMessage()
 	if err != nil {
 		return err
 	}
-	if !response.IsStatus {
+	if !message1.IsStatus {
 		panic("did not receive a connection status message")
 	}
-	if !response.IsConnected {
+	if !message1.IsConnected {
 		return errors.New("not connected")
 	}
+
+	t.log.Debugf("Waiting for a PKI doc message")
+	message2, err := t.ReceiveMessage()
+	if err != nil {
+		return err
+	}
+	doc := &cpki.Document{}
+	err = cbor.Unmarshal(message2.Payload, doc)
+	if err != nil {
+		return err
+	}
+
+	t.pkidoc = doc
+
+	t.log.Debug("Dial end")
 
 	return nil
 }
 
 func (t *ThinClient) PKIDocument() *cpki.Document {
-	return nil
+	return t.pkidoc
 }
-
-/*
-func (t *ThinClient) PKIDocument() (*cpki.Document, error) {
-	req := new(Request)
-	req.IsSendOp = false
-	blob, err := cbor.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
-	if err != nil {
-		return nil, err
-	}
-	if count != len(blob) {
-		panic("impossible")
-	}
-	return nil, doc
-}
-*/
 
 func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := new(Request)

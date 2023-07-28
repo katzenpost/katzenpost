@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 )
 
 var incomingConnID uint64
@@ -22,7 +23,7 @@ type incomingConn struct {
 	appID    uint64
 
 	closeConnectionCh chan bool
-	connectionStatus  chan error
+	sendToClientCh    chan *Response
 }
 
 func (c *incomingConn) Close() {
@@ -70,6 +71,26 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 	return nil, errors.New("invalid operation specified")
 }
 
+func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
+	blob, err := cbor.Marshal(doc)
+	if err != nil {
+		return err
+	}
+	message := &Response{
+		Payload: blob,
+	}
+	c.sendToClientCh <- message
+	return nil
+}
+
+func (c *incomingConn) updateConnectionStatus(status error) {
+	message := &Response{
+		IsStatus:    true,
+		IsConnected: status == nil,
+	}
+	c.sendToClientCh <- message
+}
+
 func (c *incomingConn) sendResponse(response *Response) error {
 	blob, err := cbor.Marshal(response)
 	if err != nil {
@@ -83,10 +104,6 @@ func (c *incomingConn) sendResponse(response *Response) error {
 		return fmt.Errorf("sendResponse error: only wrote %d bytes whereas buffer is size %d", count, len(blob))
 	}
 	return nil
-}
-
-func (c *incomingConn) updateConnectionStatus(status error) {
-	c.connectionStatus <- status
 }
 
 func (c *incomingConn) worker() {
@@ -123,14 +140,10 @@ func (c *incomingConn) worker() {
 		var ok bool
 
 		select {
-		case status := <-c.connectionStatus:
-			response := &Response{
-				IsStatus:    true,
-				IsConnected: status == nil,
-			}
-			err := c.sendResponse(response)
+		case message := <-c.sendToClientCh:
+			err := c.sendResponse(message)
 			if err != nil {
-				c.log.Infof("received error sending Response: %s", err.Error())
+				c.log.Infof("received error sending client a message: %s", err.Error())
 			}
 		case <-c.listener.closeAllCh:
 			// Server is getting shutdown, all connections are being closed.
@@ -164,7 +177,7 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 		unixConn:          conn,
 		appID:             atomic.AddUint64(&incomingConnID, 1), // Diagnostic only, wrapping is fine.
 		closeConnectionCh: make(chan bool),
-		connectionStatus:  make(chan error, 1),
+		sendToClientCh:    make(chan *Response, 2),
 	}
 
 	c.log = log.NewWithOptions(os.Stderr, log.Options{

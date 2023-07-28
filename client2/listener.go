@@ -32,6 +32,8 @@ type listener struct {
 	sync.Mutex
 	worker.Worker
 
+	client *Client
+
 	log *log.Logger
 
 	listener *net.UnixListener
@@ -62,6 +64,7 @@ func (l *listener) Halt() {
 }
 
 func (l *listener) worker() {
+	l.log.Debug("Listener worker begin")
 	addr := l.listener.Addr()
 	l.log.Infof("Listening on: %v", addr)
 	defer func() {
@@ -87,6 +90,7 @@ func (l *listener) worker() {
 }
 
 func (l *listener) onNewConn(conn *net.UnixConn) {
+	l.log.Debug("onNewConn begin")
 	c := newIncomingConn(l, conn)
 
 	l.closeAllWg.Add(1)
@@ -97,8 +101,15 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	}()
 	l.conns[c.appID] = c
 
+	l.log.Debug("get connection status")
 	status := l.getConnectionStatus()
+	l.log.Debug("send connection status")
 	c.updateConnectionStatus(status)
+	l.log.Debug("getting current pki doc")
+	doc := l.client.CurrentDocument()
+	l.log.Debug("send pki doc")
+	c.sendPKIDoc(doc)
+	l.log.Debug("onNewConn end")
 }
 
 func (l *listener) onClosedConn(c *incomingConn) {
@@ -139,13 +150,14 @@ func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
 }
 
 // New creates a new listener.
-func NewListener(rates *Rates, egressCh chan *Request) (*listener, error) {
+func NewListener(client *Client, rates *Rates, egressCh chan *Request) (*listener, error) {
 	var err error
 
 	l := &listener{
+		client: client,
 		log: log.NewWithOptions(os.Stderr, log.Options{
-			ReportTimestamp: true,
-			Prefix:          "listener",
+			Prefix: "listener",
+			Level:  log.DebugLevel,
 		}),
 		conns:      make(map[uint64]*incomingConn),
 		closeAllCh: make(chan interface{}),

@@ -210,7 +210,7 @@ func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, er
 	var d *cpki.Document
 	var err error
 
-	p.log.Debug("Fetching PKI doc for epoch %v from Provider.", epoch)
+	p.log.Debugf("Fetching PKI doc for epoch %v from Provider.", epoch)
 	resp, err := p.c.conn.getConsensus(ctx, epoch)
 	switch err {
 	case nil:
@@ -276,6 +276,7 @@ func newPKI(c *Client) *pki {
 	p.log = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "client2/pki",
+		Level:           log.DebugLevel,
 	})
 
 	p.failedFetches = make(map[uint64]error)

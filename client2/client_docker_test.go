@@ -20,12 +20,16 @@ func TestDockerClientSendReceive(t *testing.T) {
 
 	thin := NewThinClient()
 
+	t.Log("thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)
 	require.Nil(t, err)
+	t.Log("thin client connected")
 
+	t.Log("thin client getting PKI doc")
 	doc := thin.PKIDocument()
 	require.NotNil(t, doc)
+	require.NotEqual(t, doc.LambdaP, 0.0)
 
 	pingTargets := []*cpki.MixDescriptor{}
 	for i := 0; i < len(doc.Providers); i++ {
@@ -37,6 +41,8 @@ func TestDockerClientSendReceive(t *testing.T) {
 	require.True(t, len(pingTargets) > 0)
 	message := []byte("hello alice, this is bob.")
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
+
+	t.Log("thin client send ping")
 	thin.SendMessage(message, &nodeIdKey, []byte("echo"))
 
 	d.Halt()

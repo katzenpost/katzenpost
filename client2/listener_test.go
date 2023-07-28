@@ -13,7 +13,7 @@ func NoTestListenerEchoOperation(t *testing.T) {
 
 	rates := &Rates{}
 	egressCh := make(chan *Request)
-	listener, err := NewListener(rates, egressCh)
+	listener, err := NewListener(nil, rates, egressCh)
 	require.NoError(t, err)
 
 	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", "@testapp1")
