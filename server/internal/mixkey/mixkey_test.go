@@ -172,7 +172,10 @@ func doBenchIsReplayMiss(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
 		var tag [TagLength]byte
-		rand.Read(tag[:])
+		_, err = rand.Read(tag[:])
+		if err != nil {
+			b.Fatalf("failed to read random tag: %v", err)
+		}
 		b.StartTimer()
 
 		if k.IsReplay(tag[:]) {
@@ -197,7 +200,10 @@ func doBenchIsReplayHit(b *testing.B) {
 	defer k.Deref()
 
 	var tag [TagLength]byte
-	rand.Read(tag[:])
+	_, err = rand.Read(tag[:])
+	if err != nil {
+		b.Fatalf("Failed to read random tag: %v", err)
+	}
 	k.IsReplay(tag[:]) // Add as a replay.
 	k.doFlush(true)    // Flush the write-back cache.
 
@@ -230,7 +236,10 @@ func init() {
 	testPositiveTags = make(map[[TagLength]byte]bool)
 	for i := 0; i < 10; {
 		var tag [TagLength]byte
-		rand.Read(tag[:])
+		_, err = rand.Read(tag[:])
+		if err != nil {
+			panic(err)
+		}
 		if !testPositiveTags[tag] {
 			testPositiveTags[tag] = true
 			i++
@@ -240,7 +249,10 @@ func init() {
 	testNegativeTags = make(map[[TagLength]byte]bool)
 	for i := 0; i < 10; {
 		var tag [TagLength]byte
-		rand.Read(tag[:])
+		_, err = rand.Read(tag[:])
+		if err != nil {
+			panic(err)
+		}
 		if !testPositiveTags[tag] && !testNegativeTags[tag] {
 			testNegativeTags[tag] = true
 			i++

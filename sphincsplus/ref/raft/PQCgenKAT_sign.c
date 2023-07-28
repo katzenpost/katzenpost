@@ -35,7 +35,7 @@ main()
     unsigned char       entropy_input[48];
     unsigned char       *m, *sm, *m1;
     unsigned long long  mlen, smlen, mlen1;
-    int                 count;
+    int                 count = 0;
     int                 done;
     unsigned char       pk[CRYPTO_PUBLICKEYBYTES], sk[CRYPTO_SECRETKEYBYTES];
     int                 ret_val;
