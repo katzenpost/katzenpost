@@ -92,6 +92,7 @@ func TestMockTransport(t *testing.T) {
 			binary.BigEndian.PutUint64(addr, uint64(i))
 			garbage.Put(addr, randPayload())
 		}
+		wg.Done()
 	}()
 	go func() {
 		addr := make([]byte, 8)
@@ -99,8 +100,9 @@ func TestMockTransport(t *testing.T) {
 			binary.BigEndian.PutUint64(addr, uint64(i))
 			garbage.Put(addr, randPayload())
 		}
+		wg.Done()
 	}()
-
+	wg.Wait()
 }
 
 type msg struct {
