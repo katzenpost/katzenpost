@@ -37,7 +37,7 @@ func newStreams(t Transport) (*Stream, *Stream) {
 	b.keyAsDialer(addr)
 
 	if a == nil || b == nil {
-		panic("wtf")
+		panic("newStream returned nil")
 	}
 	return a, b
 }
