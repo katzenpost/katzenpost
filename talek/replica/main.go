@@ -17,6 +17,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"gopkg.in/op/go-logging.v1"
@@ -26,9 +27,11 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"github.com/privacylab/talek/common"
+	"github.com/katzenpost/katzenpost/talek/replica/common"
+	tCommon "github.com/privacylab/talek/common"
 	"github.com/privacylab/talek/server"
 )
 
@@ -81,11 +84,11 @@ func main() {
 
 	// instantiate replica configuration, with defaults
 	serverConfig := server.Config{
-		Config:           &common.Config{},
+		Config:           &tCommon.Config{},
 		WriteInterval:    time.Second,
 		ReadInterval:     time.Second,
 		ReadBatch:        8,
-		TrustDomain:      &common.TrustDomainConfig{},
+		TrustDomain:      &tCommon.TrustDomainConfig{},
 		TrustDomainIndex: 0,
 	}
 	// read commonCfgFile
@@ -112,7 +115,56 @@ func main() {
 }
 
 func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
-	panic("NotImplemented")
+	// deserialize request
+	switch cmd := cmd.(type) {
+	case *cborplugin.Request:
+		// expected type
+		r := new(common.ReplicaRequest)
+		err := cbor.Unmarshal(cmd.Payload, r)
+		if err != nil {
+			return nil, err
+		}
+		switch r.Command {
+		case common.ReplicaRequestCommand:
+			// deserialize talek command
+			args := new(tCommon.BatchReadRequest)
+			reply := new(tCommon.BatchReadReply)
+			err = cbor.Unmarshal(cmd.Payload, args)
+			if err != nil {
+				return nil, err
+			}
+			err = s.replica.BatchRead(args, reply)
+			if err != nil {
+				return nil, err
+			}
+			serialized, err := cbor.Marshal(reply)
+			if err != nil {
+				return nil, err
+			}
+			return &cborplugin.Response{Payload: serialized}, nil
+		case common.ReplicaWriteCommand:
+			args := new(tCommon.ReplicaWriteArgs)
+			err = cbor.Unmarshal(r.Payload, args)
+			if err != nil {
+				return nil, err
+			}
+			reply := new(tCommon.ReplicaWriteReply)
+			err = s.replica.Write(args, reply)
+			if err != nil {
+				return nil, err
+			}
+			serialized, err := cbor.Marshal(reply)
+			if err != nil {
+				return nil, err
+			}
+			return &cborplugin.Response{Payload: serialized}, nil
+		default:
+			return nil, errors.New("Invalid ReplicaCommand type")
+		}
+	default:
+		return nil, errors.New("Invalid Command, expected cborplugin.Request")
+	}
+
 	return nil, nil
 }
 
