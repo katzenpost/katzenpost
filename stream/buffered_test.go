@@ -29,11 +29,11 @@ type mockTransport struct {
 func newStreams(t Transport) (*Stream, *Stream) {
 
 	a := newStream(t)
-	a.log = logBackend.GetLogger(fmt.Sprintf("Stream %x", &a))
+	a.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", a))
 	addr := &StreamAddr{address: generate()}
 	a.keyAsListener(addr)
 	b := newStream(t)
-	b.log = logBackend.GetLogger(fmt.Sprintf("Stream %x", &b))
+	b.log = logBackend.GetLogger(fmt.Sprintf("Stream %p", b))
 	b.keyAsDialer(addr)
 
 	if a == nil || b == nil {

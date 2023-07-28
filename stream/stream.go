@@ -892,7 +892,7 @@ func NewStream(s *client.Session) *Stream {
 	addr := &StreamAddr{network: "", address: generate()}
 	t := mClient.DuplexFromSeed(c, true, []byte(addr.String()))
 	st := newStream(t)
-	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
+	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err := st.keyAsListener(addr)
 	if err != nil {
 		panic(err)
@@ -904,7 +904,7 @@ func NewStream(s *client.Session) *Stream {
 // LoadStream initializes a Stream from state saved by Save()
 func LoadStream(s *client.Session, state []byte) (*Stream, error) {
 	st := new(Stream)
-	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
+	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	st.startOnce = new(sync.Once)
 	err := cbor.Unmarshal(state, st)
 	if err != nil {
@@ -960,7 +960,7 @@ func DialDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	t := mClient.DuplexFromSeed(c, false, []byte(addr))
 	st := newStream(t)
 	a := &StreamAddr{network: network, address: addr}
-	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
+	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	st.log.Debugf("DialDuplex: DuplexFromSeed: %x", []byte(a.String()))
 
 	err = st.keyAsDialer(a)
@@ -976,7 +976,7 @@ func ListenDuplex(s *client.Session, network, addr string) (*Stream, error) {
 	c, _ := mClient.NewClient(s)
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(addr)))
 	a := &StreamAddr{network: network, address: addr}
-	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
+	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	st.log.Debugf("ListenDuplex: DuplexFromSeed: %x", []byte(a.String()))
 	err := st.keyAsListener(a)
 	if err != nil {
@@ -994,7 +994,7 @@ func NewDuplex(s *client.Session) (*Stream, error) {
 	}
 	a := &StreamAddr{network: "", address: generate()}
 	st := newStream(mClient.DuplexFromSeed(c, true, []byte(a.String())))
-	st.log = s.GetLogger(fmt.Sprintf("Stream %x", &st))
+	st.log = s.GetLogger(fmt.Sprintf("Stream %p", st))
 	err = st.keyAsListener(a)
 	if err != nil {
 		return nil, err
