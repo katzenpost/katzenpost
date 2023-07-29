@@ -195,31 +195,11 @@ type VotingAuthority struct {
 	Peers []*vServerConfig.Authority
 }
 
-// Config is the top level client configuration.
-type Config struct {
+type Providers struct {
+	Providers []*Provider
+}
 
-	// SphinxGeometry
-	SphinxGeometry *geo.Geometry
-
-	// Logging
-	Logging *Logging
-
-	// UpstreamProxy can be used to setup a SOCKS proxy for use with a VPN or Tor.
-	UpstreamProxy *UpstreamProxy
-
-	// Debug is used to set various parameters.
-	Debug *Debug
-
-	// CachedDocument is a PKI Document that has a MixDescriptor
-	// containg the Addresses and LinkKeys of minclient's Provider
-	// so that it can connect directly without contacting an Authority.
-	CachedDocument *cpki.Document
-
-	// VotingAuthority contains the voting authority peer public configuration.
-	VotingAuthority *VotingAuthority
-
-	upstreamProxy *proxy.Config
-
+type Callbacks struct {
 	// OnConnFn is the callback function that will be called when the
 	// connection status changes.  The error parameter will be nil on
 	// successful connection establishment, otherwise it will be set
@@ -255,6 +235,38 @@ type Config struct {
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
+}
+
+// Config is the top level client configuration.
+type Config struct {
+
+	// SphinxGeometry
+	SphinxGeometry *geo.Geometry
+
+	// Logging
+	Logging *Logging
+
+	// UpstreamProxy can be used to setup a SOCKS proxy for use with a VPN or Tor.
+	UpstreamProxy *UpstreamProxy
+
+	// Debug is used to set various parameters.
+	Debug *Debug
+
+	// CachedDocument is a PKI Document that has a MixDescriptor
+	// containg the Addresses and LinkKeys of minclient's Provider
+	// so that it can connect directly without contacting an Authority.
+	CachedDocument *cpki.Document
+
+	// PinnedProviders is information about a set of Providers; the required information that lets clients initially
+	// connect and download a cached PKI document.
+	PinnedProviders *Providers
+
+	// VotingAuthority contains the voting authority peer public configuration.
+	VotingAuthority *VotingAuthority
+
+	Callbacks *Callbacks
+
+	upstreamProxy *proxy.Config
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
@@ -270,6 +282,9 @@ func (c *Config) UpstreamProxyConfig() *proxy.Config {
 // FixupAndValidate applies defaults to config entries and validates the
 // configuration sections.
 func (c *Config) FixupAndValidate() error {
+	if c.PinnedProviders == nil {
+		return errors.New("config: No PinnedProviders block was present")
+	}
 	if c.SphinxGeometry == nil {
 		return errors.New("config: No SphinxGeometry block was present")
 	}

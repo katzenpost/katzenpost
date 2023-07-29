@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Katzenpost developers union
+// SPDX-License-Identifier: AGPL-3.0-only
 package client2
 
 import (
@@ -141,7 +143,7 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 	c.pki = newPKI(c)
-	c.pki.start()
+	//c.pki.start()
 	c.conn.start()
 	if c.cfg.CachedDocument != nil {
 		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker

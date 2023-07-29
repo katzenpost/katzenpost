@@ -2,6 +2,7 @@ package client2
 
 import (
 	"testing"
+	"time"
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
@@ -18,8 +19,9 @@ func TestDockerClientSendReceive(t *testing.T) {
 	err = d.Start()
 	require.NoError(t, err)
 
-	thin := NewThinClient()
+	time.Sleep(time.Second * 3)
 
+	thin := NewThinClient()
 	t.Log("thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)

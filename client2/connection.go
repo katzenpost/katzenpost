@@ -112,10 +112,11 @@ type connection struct {
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
 
-	pkiFetchCh     chan interface{}
-	fetchCh        chan interface{}
-	sendCh         chan *connSendCtx
-	getConsensusCh chan *getConsensusCtx
+	pkiFetchCh          chan interface{}
+	fetchCh             chan interface{}
+	sendCh              chan *connSendCtx
+	getConsensusCh      chan *getConsensusCtx
+	waitForConnectionCh chan interface{}
 
 	retryDelay  int64 // used as atomic time.Duration
 	isConnected bool
@@ -262,9 +263,9 @@ func (c *connection) connectWorker() {
 		if err := c.getDescriptor(); err == nil {
 			// Attempt to connect.
 			c.doConnect(dialCtx)
-		} else if c.client.cfg.OnConnFn != nil {
+		} else if c.client.cfg.Callbacks.OnConnFn != nil {
 			// Can't connect due to lacking descriptor.
-			c.client.cfg.OnConnFn(err)
+			c.client.cfg.Callbacks.OnConnFn(err)
 		}
 		timer.Reset(pkiFallbackInterval)
 	}
@@ -279,7 +280,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		maxRetryDelay  = 2 * time.Minute
 	)
 
-	dialFn := c.client.cfg.DialContextFn
+	dialFn := c.client.cfg.Callbacks.DialContextFn
 	if dialFn == nil {
 		dialFn = defaultDialer.DialContext
 	}
@@ -289,8 +290,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		if connErr == nil {
 			panic("BUG: connErr is nil on connection teardown.")
 		}
-		if c.client.cfg.OnConnFn != nil {
-			c.client.cfg.OnConnFn(connErr)
+		if c.client.cfg.Callbacks.OnConnFn != nil {
+			c.client.cfg.Callbacks.OnConnFn(connErr)
 		}
 	}()
 
@@ -345,8 +346,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			default:
 				if err != nil {
 					c.log.Warnf("Failed to connect to %v: %v", addrPort, err)
-					if c.client.cfg.OnConnFn != nil {
-						c.client.cfg.OnConnFn(&ConnectError{Err: err})
+					if c.client.cfg.Callbacks.OnConnFn != nil {
+						c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
 					}
 					continue
 				}
@@ -367,6 +368,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 }
 
 func (c *connection) onTCPConn(conn net.Conn) {
+	c.log.Debug("onTCPConn")
 	const handshakeTimeout = 1 * time.Minute
 	var err error
 
@@ -390,8 +392,8 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
-		if c.client.cfg.OnConnFn != nil {
-			c.client.cfg.OnConnFn(&ConnectError{Err: err})
+		if c.client.cfg.Callbacks.OnConnFn != nil {
+			c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
 		}
 		return
 	}
@@ -401,8 +403,8 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
-		if c.client.cfg.OnConnFn != nil {
-			c.client.cfg.OnConnFn(&ConnectError{Err: err})
+		if c.client.cfg.Callbacks.OnConnFn != nil {
+			c.client.cfg.Callbacks.OnConnFn(&ConnectError{Err: err})
 		}
 		return
 	}
@@ -414,6 +416,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 }
 
 func (c *connection) onWireConn(w *wire.Session) {
+	c.log.Debug("onWireConn")
 	c.onConnStatusChange(nil)
 
 	var wireErr error
@@ -463,11 +466,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 	}()
 
 	dispatchOnEmpty := func() error {
-		if c.client.cfg.OnEmptyFn != nil {
+		if c.client.cfg.Callbacks.OnEmptyFn != nil {
 			cbWg.Add(1)
 			go func() {
 				defer cbWg.Done()
-				if err := c.client.cfg.OnEmptyFn(); err != nil {
+				if err := c.client.cfg.Callbacks.OnEmptyFn(); err != nil {
 					c.log.Debugf("Caller failed to handle MessageEmpty: %v", err)
 					forceCloseConn(err)
 				}
@@ -622,11 +625,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			if c.client.cfg.OnMessageFn != nil {
+			if c.client.cfg.Callbacks.OnMessageFn != nil {
 				cbWg.Add(1)
 				go func() {
 					defer cbWg.Done()
-					if err := c.client.cfg.OnMessageFn(cmd.Payload); err != nil {
+					if err := c.client.cfg.Callbacks.OnMessageFn(cmd.Payload); err != nil {
 						c.log.Debugf("Caller failed to handle Message: %v", err)
 						forceCloseConn(err)
 					}
@@ -647,11 +650,11 @@ func (c *connection) onWireConn(w *wire.Session) {
 				return
 			}
 			nrResps++
-			if c.client.cfg.OnACKFn != nil {
+			if c.client.cfg.Callbacks.OnACKFn != nil {
 				cbWg.Add(1)
 				go func() {
 					defer cbWg.Done()
-					if err := c.client.cfg.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
+					if err := c.client.cfg.Callbacks.OnACKFn(&cmd.ID, cmd.Payload); err != nil {
 						c.log.Debugf("Caller failed to handle MessageACK: %v", err)
 						forceCloseConn(err)
 					}
@@ -678,6 +681,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 }
 
 func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
+	c.log.Debug("IsPeerValid")
 	// Refresh the cached Provider descriptor.
 	if err := c.getDescriptor(); err != nil {
 		return false
@@ -718,12 +722,13 @@ func (c *connection) onConnStatusChange(err error) {
 	}
 	c.Unlock()
 
-	if c.client.cfg.OnConnFn != nil {
-		c.client.cfg.OnConnFn(err)
+	if c.client.cfg.Callbacks.OnConnFn != nil {
+		c.client.cfg.Callbacks.OnConnFn(err)
 	}
 }
 
 func (c *connection) sendPacket(pkt []byte) error {
+	c.log.Debug("sendPacket")
 	c.Lock()
 	if !c.isConnected {
 		c.Unlock()
@@ -753,6 +758,7 @@ func (c *connection) sendPacket(pkt []byte) error {
 }
 
 func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
+	c.log.Debug("getConsensus")
 	c.Lock()
 	if !c.isConnected {
 		c.Unlock()
@@ -810,7 +816,12 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 	// NOTREACHED
 }
 
+func (c *connection) waitForConnected() {
+	<-c.waitForConnectionCh
+}
+
 func (c *connection) start() {
+	c.log.Debug("start")
 	c.Go(c.connectWorker)
 }
 
@@ -822,9 +833,12 @@ func newConnection(c *Client) *connection {
 		Level:  log.DebugLevel,
 	})
 
+	k.log.Debug("newConnection")
+
 	k.pkiFetchCh = make(chan interface{}, 1)
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)
+	k.waitForConnectionCh = make(chan interface{}, 1)
 	return k
 }

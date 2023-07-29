@@ -43,6 +43,7 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 		log: log.NewWithOptions(os.Stderr, log.Options{
 			ReportTimestamp: true,
 			Prefix:          "client2_daemon",
+			Level:           log.DebugLevel,
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
@@ -52,6 +53,7 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 }
 
 func (d *Daemon) Start() error {
+	d.log.Debug("Start")
 	var err error
 	rates := &Rates{}
 	if d.cfg.CachedDocument != nil {
@@ -67,9 +69,11 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
-	d.cfg.OnACKFn = d.handleReplies
-	d.cfg.OnConnFn = d.listener.updateConnectionStatus
-	d.cfg.OnDocumentFn = d.listener.updateRatesFromPKIDoc
+
+	d.cfg.Callbacks = &config.Callbacks{}
+	d.cfg.Callbacks.OnACKFn = d.handleReplies
+	d.cfg.Callbacks.OnConnFn = d.listener.updateConnectionStatus
+	d.cfg.Callbacks.OnDocumentFn = d.listener.updateRatesFromPKIDoc
 	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
 		if !ok {
@@ -98,6 +102,7 @@ func (d *Daemon) handleReplies(surbID *[constants.SURBIDLength]byte, ciphertext 
 }
 
 func (d *Daemon) egressWorker() {
+	d.log.Debug("egressWorker")
 	for {
 		select {
 		case <-d.HaltCh():

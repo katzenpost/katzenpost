@@ -193,10 +193,10 @@ func (p *pki) worker() {
 				p.c.conn.onPKIFetch()
 			}
 		}
-		if now != lastCallbackEpoch && p.c.cfg.OnDocumentFn != nil {
+		if now != lastCallbackEpoch && p.c.cfg.Callbacks.OnDocumentFn != nil {
 			if d, ok := p.docs.Load(now); ok {
 				lastCallbackEpoch = now
-				p.c.cfg.OnDocumentFn(d.(*cpki.Document))
+				p.c.cfg.Callbacks.OnDocumentFn(d.(*cpki.Document))
 			}
 		}
 
