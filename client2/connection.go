@@ -367,12 +367,15 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	linkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 	// Allocate the session struct.
-	idHash := linkKey.PublicKey().Sum256()
-	copy(c.queueID, idHash[:])
+	userId := make([]byte, 32)
+	_, err = rand.Reader.Read(userId)
+	if err != nil {
+		panic(err)
+	}
 	cfg := &wire.SessionConfig{
 		Geometry:          c.client.cfg.SphinxGeometry,
 		Authenticator:     c,
-		AdditionalData:    c.queueID,
+		AdditionalData:    userId,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
