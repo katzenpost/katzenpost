@@ -408,7 +408,7 @@ func main() {
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
-	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
+	mu := flag.Float64("mu", 0.0005, "Inverse of mean of per hop delay.")
 	muMax := flag.Uint64("muMax", 1000, "Maximum delay for Mu.")
 	lP := flag.Float64("lP", 0.0005, "Inverse of mean for client send rate LambdaP")
 	lPMax := flag.Uint64("lPMax", 1000, "Maximum delay for LambdaP.")
