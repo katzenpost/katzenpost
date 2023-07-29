@@ -112,11 +112,10 @@ type connection struct {
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
 
-	pkiFetchCh          chan interface{}
-	fetchCh             chan interface{}
-	sendCh              chan *connSendCtx
-	getConsensusCh      chan *getConsensusCtx
-	waitForConnectionCh chan interface{}
+	pkiFetchCh     chan interface{}
+	fetchCh        chan interface{}
+	sendCh         chan *connSendCtx
+	getConsensusCh chan *getConsensusCtx
 
 	retryDelay  int64 // used as atomic time.Duration
 	isConnected bool
@@ -150,7 +149,7 @@ func (c *Client) ForceFetch() {
 // ForceFetchPKI attempts to force client's pkiclient to wake and fetch
 // consensus documents immediately.
 func (c *Client) ForceFetchPKI() {
-	c.log.Debugf("ForceFetchPKI()")
+	c.log.Debug("ForceFetchPKI()")
 	select {
 	case c.pki.forceUpdateCh <- true:
 	default:
@@ -158,6 +157,7 @@ func (c *Client) ForceFetchPKI() {
 }
 
 func (c *connection) onPKIFetch() {
+	c.log.Debug("onPKIFetch")
 	select {
 	case c.pkiFetchCh <- true:
 	default:
@@ -168,6 +168,7 @@ func (c *connection) onPKIFetch() {
 }
 
 func (c *connection) getDescriptor() error {
+	c.log.Debug("getDescriptor")
 	ok := false
 	defer func() {
 		if !ok {
@@ -225,52 +226,15 @@ func (c *connection) connectWorker() {
 		}
 	}()
 
-	timer := time.NewTimer(pkiFallbackInterval)
-	defer timer.Stop()
 	for {
-		var timerFired bool
-
-		// Wait for a signal from the PKI (or a fallback timer to pass)
-		// before querying the PKI for a document iff we do not have the
-		// Provider's current descriptor.
-		if now, _, _ := epochtime.FromUnix(c.client.pki.skewedUnixTime()); now != c.pkiEpoch {
-			log.Debug("waiting for PKI doc")
-			select {
-			case <-c.HaltCh():
-				return
-			case <-c.pkiFetchCh:
-				c.log.Debugf("PKI fetch successful.")
-			case <-timer.C:
-				c.log.Debugf("PKI fetch fallback timer.")
-				timerFired = true
-			}
-		}
-
 		select {
 		case <-c.HaltCh():
 			return
 		default:
 		}
-		if !timerFired && !timer.Stop() {
-			select {
-			case <-c.HaltCh():
-				return
-			case <-timer.C:
-			}
-		}
 
-		// Query the PKI for the current descriptor.
-		if err := c.getDescriptor(); err == nil {
-			// Attempt to connect.
-			c.doConnect(dialCtx)
-		} else if c.client.cfg.Callbacks.OnConnFn != nil {
-			// Can't connect due to lacking descriptor.
-			c.client.cfg.Callbacks.OnConnFn(err)
-		}
-		timer.Reset(pkiFallbackInterval)
+		c.doConnect(dialCtx)
 	}
-
-	// NOTREACHED
 }
 
 func (c *connection) doConnect(dialCtx context.Context) {
@@ -290,16 +254,36 @@ func (c *connection) doConnect(dialCtx context.Context) {
 		if connErr == nil {
 			panic("BUG: connErr is nil on connection teardown.")
 		}
-		if c.client.cfg.Callbacks.OnConnFn != nil {
-			c.client.cfg.Callbacks.OnConnFn(connErr)
+
+		if c.client.cfg.Callbacks != nil {
+			if c.client.cfg.Callbacks.OnConnFn != nil {
+				c.client.cfg.Callbacks.OnConnFn(connErr)
+			}
 		}
 	}()
 
 	for {
-		if connErr = c.getDescriptor(); connErr != nil {
-			c.log.Debugf("Aborting connect loop, descriptor no longer present.")
-			return
+		doc := c.client.CurrentDocument()
+		if doc == nil && c.client.cfg.CachedDocument == nil {
+			c.log.Debug("no current doc and no cached doc, creating partial descriptor from PinnedProviders")
+			n := len(c.client.cfg.PinnedProviders.Providers)
+			provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
+			c.descriptor = &cpki.MixDescriptor{
+				Name:        provider.Name,
+				IdentityKey: provider.IdentityKey,
+				LinkKey:     provider.LinkKey,
+				Addresses:   provider.Addresses,
+				Provider:    true,
+			}
+		} else {
+			connErr = c.getDescriptor()
+			if connErr != nil {
+				c.log.Debugf("Aborting connect loop, descriptor no longer present.")
+				return
+			}
 		}
+
+		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
 
 		// Build the list of candidate addresses, in decreasing order of
 		// preference, by transport.
@@ -319,6 +303,8 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			connErr = newConnectError("no suitable addreses found")
 			return
 		}
+
+		c.log.Debug("doConnect, before for loop")
 
 		for _, addrPort := range dstAddrs {
 			select {
@@ -368,7 +354,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 }
 
 func (c *connection) onTCPConn(conn net.Conn) {
-	c.log.Debug("onTCPConn")
+	c.log.Debug("onTCPConn begin")
 	const handshakeTimeout = 1 * time.Minute
 	var err error
 
@@ -377,6 +363,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 		conn.Close()
 	}()
 
+	c.log.Debug("onTCPConn: GenerateKeypair")
 	linkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 	// Allocate the session struct.
@@ -389,6 +376,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
+	c.log.Debug("onTCPConn: NewSession")
 	w, err := wire.NewSession(cfg, true)
 	if err != nil {
 		c.log.Errorf("Failed to allocate session: %v", err)
@@ -400,6 +388,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
+	c.log.Debug("onTCPConn: before handshake")
 	conn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
@@ -408,10 +397,11 @@ func (c *connection) onTCPConn(conn net.Conn) {
 		}
 		return
 	}
-	c.log.Debugf("Handshake completed.")
+	c.log.Debugf("onTCPConn: Handshake completed.")
 	conn.SetDeadline(time.Time{})
 	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
+	c.log.Debug("onTCPConn end")
 	c.onWireConn(w)
 }
 
@@ -682,18 +672,14 @@ func (c *connection) onWireConn(w *wire.Session) {
 
 func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 	c.log.Debug("IsPeerValid")
-	// Refresh the cached Provider descriptor.
-	if err := c.getDescriptor(); err != nil {
+	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
 		return false
 	}
-
 	identityHash := c.descriptor.IdentityKey.Sum256()
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
 	}
-	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
-		return false
-	}
+	c.log.Debug("IsPeerValid TRUE")
 	return true
 }
 
@@ -816,10 +802,6 @@ func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.
 	// NOTREACHED
 }
 
-func (c *connection) waitForConnected() {
-	<-c.waitForConnectionCh
-}
-
 func (c *connection) start() {
 	c.log.Debug("start")
 	c.Go(c.connectWorker)
@@ -839,6 +821,5 @@ func newConnection(c *Client) *connection {
 	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)
-	k.waitForConnectionCh = make(chan interface{}, 1)
 	return k
 }

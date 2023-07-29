@@ -83,10 +83,6 @@ type Debug struct {
 	// transmit performance.
 	PollingInterval int
 
-	// PreferedTransports is a list of the transports will be used to make
-	// outgoing network connections, with the most prefered first.
-	PreferedTransports []cpki.Transport
-
 	// EnableTimeSync enables the use of skewed remote provider time
 	// instead of system time when available.
 	EnableTimeSync bool
@@ -264,13 +260,14 @@ type Config struct {
 	// VotingAuthority contains the voting authority peer public configuration.
 	VotingAuthority *VotingAuthority
 
+	// Callbacks should not be set by the config file.
 	Callbacks *Callbacks
-
-	upstreamProxy *proxy.Config
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []cpki.Transport
+	PreferedTransports []string
+
+	upstreamProxy *proxy.Config
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for

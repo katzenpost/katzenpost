@@ -110,6 +110,7 @@ func (p *pki) currentDocument() *cpki.Document {
 }
 
 func (p *pki) worker() {
+	p.log.Debug("worker")
 	timer := time.NewTimer(0)
 	defer func() {
 		p.log.Debug("Halting PKI worker.")
@@ -207,6 +208,7 @@ func (p *pki) worker() {
 }
 
 func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, error) {
+	p.log.Debug("getDocument")
 	var d *cpki.Document
 	var err error
 
@@ -267,6 +269,7 @@ func (p *pki) pruneFailures(now uint64) {
 }
 
 func (p *pki) start() {
+	p.log.Debug("start")
 	p.Go(p.worker)
 }
 
@@ -274,9 +277,8 @@ func newPKI(c *Client) *pki {
 	p := new(pki)
 	p.c = c
 	p.log = log.NewWithOptions(os.Stderr, log.Options{
-		ReportTimestamp: true,
-		Prefix:          "client2/pki",
-		Level:           log.DebugLevel,
+		Prefix: "client2/pki",
+		Level:  log.DebugLevel,
 	})
 
 	p.failedFetches = make(map[uint64]error)

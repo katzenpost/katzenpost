@@ -87,7 +87,7 @@ func (d *Daemon) Start() error {
 	})
 
 	d.Go(d.egressWorker)
-	return nil
+	return d.client.Start()
 }
 
 func (d *Daemon) handleReplies(surbID *[constants.SURBIDLength]byte, ciphertext []byte) error {

@@ -14,7 +14,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
-	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
@@ -84,26 +83,32 @@ func (c *Client) GetPollInterval() time.Duration {
 	return c.messagePollInterval
 }
 
-// SendMessageDescriptor describes a message to be sent.
-type SendMessageDescriptor struct {
+func (c *Client) Start() error {
+	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
 
-	// Priority is the per-application message priority
-	Priority uint64
+	c.conn = newConnection(c)
 
-	// DestinationIdHash is 32 byte hash of the destination's
-	// identity public key.
-	DestinationIdHash []byte
+	pkilinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+	pkiClientConfig := &client.Config{
+		LinkKey:       pkilinkKey,
+		LogBackend:    os.Stderr,
+		Authorities:   c.cfg.VotingAuthority.Peers,
+		DialContextFn: nil,
+	}
+	var err error
+	c.PKIClient, err = client.New(pkiClientConfig)
+	if err != nil {
+		return err
+	}
+	c.pki = newPKI(c)
+	//c.pki.start()
+	c.conn.start()
+	if c.cfg.CachedDocument != nil {
+		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
+		c.conn.onPKIFetch()
+	}
 
-	// RecipientQueueID is the queue identity which will receive the message.
-	RecipientQueueID []byte
-
-	// SurbID can be set to nil in which case no SURB is generated.
-	// If SurbID is set then a SURB will be embedded
-	// in the Sphinx packet payload so that the remote side may reply.
-	SurbID *[constants.SURBIDLength]byte
-
-	// Payload is the message payload.
-	Payload []byte
+	return nil
 }
 
 // New creates a new Client with the provided configuration.
@@ -126,29 +131,6 @@ func New(cfg *config.Config) (*Client, error) {
 	})
 
 	c.haltedCh = make(chan interface{})
-
-	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
-
-	c.conn = newConnection(c)
-
-	pkilinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
-	pkiClientConfig := &client.Config{
-		LinkKey:       pkilinkKey,
-		LogBackend:    os.Stderr,
-		Authorities:   c.cfg.VotingAuthority.Peers,
-		DialContextFn: nil,
-	}
-	c.PKIClient, err = client.New(pkiClientConfig)
-	if err != nil {
-		return nil, err
-	}
-	c.pki = newPKI(c)
-	//c.pki.start()
-	c.conn.start()
-	if c.cfg.CachedDocument != nil {
-		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
-		c.conn.onPKIFetch()
-	}
 
 	return c, nil
 }
