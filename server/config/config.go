@@ -139,7 +139,7 @@ func (sCfg *Server) validate() error {
 
 	for k, v := range sCfg.AltAddresses {
 		lowkey := strings.ToLower(k)
-		switch pki.Transport(lowkey) {
+		switch lowkey {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
@@ -562,7 +562,7 @@ func (pCfg *Provider) validate() error {
 		if internalTransports[kLower] {
 			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
 		}
-		switch pki.Transport(kLower) {
+		switch kLower {
 		case pki.TransportTCP:
 			for _, a := range v {
 				h, p, err := net.SplitHostPort(a)
