@@ -106,6 +106,8 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	l.log.Debug("send connection status")
 	c.updateConnectionStatus(status)
 	l.log.Debug("getting current pki doc")
+
+	l.client.WaitForCurrentDocument()
 	doc := l.client.CurrentDocument()
 	l.log.Debug("send pki doc")
 	c.sendPKIDoc(doc)

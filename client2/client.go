@@ -107,7 +107,6 @@ func (c *Client) Start() error {
 		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
 		c.conn.onPKIFetch()
 	}
-
 	return nil
 }
 

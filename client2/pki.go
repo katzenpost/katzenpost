@@ -77,6 +77,17 @@ func (c *Client) CurrentDocument() *cpki.Document {
 	return c.pki.currentDocument()
 }
 
+func (c *Client) WaitForCurrentDocument() {
+	if c.CurrentDocument() != nil {
+		return
+	}
+	epoch, _, _ := epochtime.Now()
+	err := c.pki.updateDocument(epoch)
+	if err != nil {
+		c.log.Errorf("WaitForCurrentDocument failed on updateDocument with err: %s", err.Error())
+	}
+}
+
 func (p *pki) setClockSkew(skew int64) {
 	p.log.Debugf("New clock skew: %v sec", skew)
 	p.Lock()
@@ -106,6 +117,7 @@ func (p *pki) currentDocument() *cpki.Document {
 	if d, _ := p.docs.Load(now); d != nil {
 		return d.(*cpki.Document)
 	}
+
 	return nil
 }
 
@@ -155,17 +167,7 @@ func (p *pki) worker() {
 				continue
 			}
 
-			pkiCtx, cancelFn := context.WithCancel(context.Background())
-			go func() {
-				select {
-				case <-p.HaltCh():
-					cancelFn()
-				case <-pkiCtx.Done():
-				}
-			}()
-
-			d, err := p.getDocument(pkiCtx, epoch)
-			cancelFn()
+			err := p.updateDocument(epoch)
 			if err != nil {
 				p.log.Warnf("Failed to fetch PKI for epoch %v: %v", epoch, err)
 				switch err {
@@ -177,11 +179,6 @@ func (p *pki) worker() {
 				}
 				continue
 			}
-			if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
-				p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
-				panic("Sphinx Geometry mismatch!")
-			}
-			p.docs.Store(epoch, d)
 			didUpdate = true
 		}
 		p.pruneFailures(now)
@@ -205,6 +202,30 @@ func (p *pki) worker() {
 	}
 
 	// NOTREACHED
+}
+
+func (p *pki) updateDocument(epoch uint64) error {
+	pkiCtx, cancelFn := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-p.HaltCh():
+			cancelFn()
+		case <-pkiCtx.Done():
+		}
+	}()
+
+	d, err := p.getDocument(pkiCtx, epoch)
+	cancelFn()
+	if err != nil {
+		p.log.Warnf("Failed to fetch PKI for epoch %v: %v", epoch, err)
+		return err
+	}
+	if !hmac.Equal(d.SphinxGeometryHash, p.c.cfg.SphinxGeometry.Hash()) {
+		p.log.Errorf("Sphinx Geometry mismatch is set to: \n %s\n", p.c.cfg.SphinxGeometry.Display())
+		panic("Sphinx Geometry mismatch!")
+	}
+	p.docs.Store(epoch, d)
+	return nil
 }
 
 func (p *pki) getDocument(ctx context.Context, epoch uint64) (*cpki.Document, error) {
