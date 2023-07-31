@@ -302,38 +302,38 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
-// Transport is a link transport protocol.
-type Transport string
-
 var (
 	// TransportInvalid is the invalid transport.
-	TransportInvalid Transport
+	TransportInvalid string
 
 	// TransportTCP is TCP, with the IP version determined by the results of
 	// a name server lookup.
-	TransportTCP Transport = "tcp"
+	TransportTCP string = "tcp"
 
 	// TransportTCPv4 is TCP over IPv4.
-	TransportTCPv4 Transport = "tcp4"
+	TransportTCPv4 string = "tcp4"
 
 	// TransportTCPv6 is TCP over IPv6.
-	TransportTCPv6 Transport = "tcp6"
+	TransportTCPv6 string = "tcp6"
 
 	// InternalTransports is the list of transports used for non-client related
 	// communications.
-	InternalTransports = []Transport{TransportTCPv4, TransportTCPv6}
+	InternalTransports = []string{TransportTCPv4, TransportTCPv6}
 
 	// ClientTransports is the list of transports used by default for client
 	// to provider communication.
-	ClientTransports = []Transport{TransportTCP, TransportTCPv4, TransportTCPv6}
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
-// FromPayload deserializes, then verifies a Document, and returns the Document or error.
-func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
-	_, err := cert.Verify(verifier, payload)
+func ToCertificate(payload []byte) (*cert.Certificate, error) {
+	doc, err := Unmarshal(payload)
 	if err != nil {
 		return nil, err
 	}
+	return doc.ToCertificate()
+}
+
+func Unmarshal(payload []byte) (*Document, error) {
 	d := new(Document)
 	if err := d.UnmarshalBinary(payload); err != nil {
 		return nil, err
@@ -341,15 +341,19 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 	return d, nil
 }
 
+func Verify(d *Document, verifiers []cert.Verifier, currentEpoch uint64) error {
+	return IsDocumentWellFormed(d, verifiers, currentEpoch)
+}
+
 // SignDocument signs and serializes the document with the provided signing key.
-func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]byte, error) {
+func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document, currentEpoch uint64) ([]byte, error) {
 	d.Version = DocumentVersion
 	// Marshal the document including any existing d.Signatures
 	certified, err := d.MarshalBinary()
 	if err != nil {
 		panic("failed to marshal our own doc")
 	}
-	recertified, err := cert.SignMulti(signer, verifier, certified)
+	recertified, err := cert.SignMulti(signer, verifier, certified, currentEpoch)
 	if err != nil {
 		panic("failed to add our own sig to certified doc")
 	}
@@ -363,7 +367,7 @@ func SignDocument(signer cert.Signer, verifier cert.Verifier, d *Document) ([]by
 }
 
 // MultiSignDocument signs and serializes the document with the provided signing key, adding the signature to the existing signatures.
-func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document) ([]byte, error) {
+func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignatures []*cert.Signature, verifiers map[[32]byte]cert.Verifier, d *Document, currentEpoch uint64) ([]byte, error) {
 	d.Version = DocumentVersion
 
 	// Serialize the document.
@@ -373,7 +377,7 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	}
 
 	// Sign the document.
-	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+5)
+	signed, err := cert.Sign(signer, verifier, payload, d.Epoch+5, currentEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +386,7 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	for _, signature := range peerSignatures {
 		s := signature.PublicKeySum256
 		verifier := verifiers[s]
-		signed, err = cert.AddSignature(verifier, *signature, signed)
+		signed, err = cert.AddSignature(verifier, *signature, signed, currentEpoch)
 		if err != nil {
 			return nil, err
 		}
@@ -404,7 +408,7 @@ func ParseDocument(b []byte) (*Document, error) {
 
 // IsDocumentWellFormed validates the document and returns a descriptive error
 // iff there are any problems that invalidates the document.
-func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
+func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch uint64) error {
 	// Ensure the document is well formed.
 	if d.Version != DocumentVersion {
 		return fmt.Errorf("Invalid Document Version: '%v'", d.Version)
@@ -427,9 +431,13 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 		if !ok {
 			return fmt.Errorf("Document has unknown verifier on a SharedRandomCommit")
 		}
-		commit, err := cert.Verify(verifier, signedCommit)
+		mycert, err := cert.Unmarshal(signedCommit)
 		if err != nil {
-			return fmt.Errorf("Document has invalid signed SharedRandomCommit")
+			return fmt.Errorf("signedCommit is malformed after ")
+		}
+		commit, err := cert.Verify(verifier, mycert, currentEpoch-1)
+		if err != nil {
+			return fmt.Errorf("Document has invalid signed SharedRandomCommit: %s", err.Error())
 		}
 		if len(commit) == SharedRandomLength {
 			srvEpoch := binary.BigEndian.Uint64(commit[0:8])
@@ -458,7 +466,11 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 				return fmt.Errorf("Document is missing a SharedRandomReveal for %x", id)
 			}
 			// Verify the reveal
-			reveal, err := cert.Verify(verifier, signedReveal)
+			mycert, err := cert.Unmarshal(signedReveal)
+			if err != nil {
+				return err
+			}
+			reveal, err := cert.Verify(verifier, mycert, currentEpoch)
 			if err != nil {
 				return fmt.Errorf("Document has an Invalid Signature on SharedRandomReveal for %x", id)
 			}
@@ -513,20 +525,27 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier) error {
 // MarshalBinary implements encoding.BinaryMarshaler interface
 // and wraps a Document with a cert.Certificate
 func (d *Document) MarshalBinary() ([]byte, error) {
+	cert, err := d.ToCertificate()
+	if err != nil {
+		return nil, err
+	}
+	return cert.Marshal()
+}
+
+func (d *Document) ToCertificate() (*cert.Certificate, error) {
 	// Serialize Document without calling this method
 	d.Version = DocumentVersion
 	payload, err := ccbor.Marshal((*document)(d))
 	if err != nil {
 		return nil, err
 	}
-	certified := cert.Certificate{
+	return &cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
 		KeyType:    cert.Scheme.PrivateKeyType(),
 		Certified:  payload,
 		Signatures: d.Signatures,
-	}
-	return certified.Marshal()
+	}, nil
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
@@ -555,7 +574,7 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 }
 
 // AddSignature will add a Signature over this Document if it is signed by verifier.
-func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature) error {
+func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature, currentEpoch uint64) error {
 	// Serialize this Document
 	payload, err := d.MarshalBinary()
 	if err != nil {
@@ -563,7 +582,7 @@ func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature
 	}
 
 	// if AddSignature succeeds, add the Signature to d.Signatures
-	_, err = cert.AddSignature(verifier, signature, payload)
+	_, err = cert.AddSignature(verifier, signature, payload, currentEpoch)
 	if err != nil {
 		return err
 	}

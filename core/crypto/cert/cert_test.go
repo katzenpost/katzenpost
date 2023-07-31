@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/stretchr/testify/assert"
@@ -29,23 +28,27 @@ import (
 
 func TestExpiredCertificate(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
 
 	scheme := Scheme
-	_, ephemeralPubKey := scheme.NewKeypair()
+	payload := make([]byte, 123)
+	_, err := rand.Reader.Read(payload)
+	require.NoError(t, err)
 
 	signingPrivKey, signingPubKey := scheme.NewKeypair()
-	signingPrivKey, err := eddsa.NewKeypair(rand.Reader)
-	assert.NoError(err)
 
 	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), current-12)
-	assert.Error(err)
+	certificate, err := Sign(signingPrivKey, signingPubKey, payload, current-12, current-13)
+	require.NoError(t, err)
+	require.NotNil(t, certificate)
 
-	certified, err := Verify(ephemeralPubKey, certificate)
-	assert.Error(err)
-	assert.Nil(certified)
+	cert, err := Unmarshal(certificate)
+	require.NoError(t, err)
+	require.NotNil(t, cert)
+
+	certified, err := Verify(signingPubKey, cert, current)
+	require.Error(t, err)
+	require.Nil(t, certified)
 }
 
 func TestCertificate(t *testing.T) {
@@ -60,10 +63,13 @@ func TestCertificate(t *testing.T) {
 	current, _, _ := epochtime.Now()
 
 	toSign := ephemeralPubKey.Bytes()
-	certificate, err := Sign(signingPrivKey, signingPubKey, toSign, current+123)
+	certificate, err := Sign(signingPrivKey, signingPubKey, toSign, current+123, current)
 	assert.NoError(err)
 
-	mesg, err := Verify(signingPubKey, certificate)
+	cert, err := Unmarshal(certificate)
+	require.NoError(t, err)
+
+	mesg, err := Verify(signingPubKey, cert, current)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 	assert.Equal(mesg, toSign)
@@ -81,14 +87,17 @@ func TestBadCertificate(t *testing.T) {
 
 	certified := []byte("hello, i am a message")
 
-	certificate, err := Sign(signingPrivKey, signingPubKey, certified, validBeforeEpoch)
+	certificate, err := Sign(signingPrivKey, signingPubKey, certified, validBeforeEpoch, current)
 	require.NoError(t, err)
 
 	// modify the signed data so that the Verify will fail.
 	// XOR ensures modification:
 	certificate[1000] ^= 235
 
-	mesg, err := Verify(signingPubKey, certificate)
+	cert, err := Unmarshal(certificate)
+	require.NoError(t, err)
+
+	mesg, err := Verify(signingPubKey, cert, current)
 	require.Error(t, err)
 	require.Equal(t, ErrBadSignature, err)
 	require.Nil(t, mesg)
@@ -102,10 +111,13 @@ func TestWrongCertificate(t *testing.T) {
 	signingPrivKey, signingPubKey := Scheme.NewKeypair()
 
 	current, _, _ := epochtime.Now()
-	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), current+1)
+	certificate, err := Sign(signingPrivKey, signingPubKey, ephemeralPubKey.Bytes(), current+1, current)
 	assert.NoError(err)
 
-	mesg, err := Verify(ephemeralPubKey, certificate)
+	cert, err := Unmarshal(certificate)
+	require.NoError(t, err)
+
+	mesg, err := Verify(ephemeralPubKey, cert, current)
 	assert.Error(err)
 	assert.Nil(mesg)
 }
@@ -122,51 +134,27 @@ func TestMultiSignatureCertificate(t *testing.T) {
 
 	message := []byte("hi. i'm a message.")
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, message, current+1)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, message, current+1, current)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate, current)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate, current)
 	assert.NoError(err)
 
-	mesg, err := Verify(signingPubKey1, certificate)
+	cert, err := Unmarshal(certificate)
+	require.NoError(t, err)
+
+	mesg, err := Verify(signingPubKey1, cert, current)
+	assert.NoError(err)
+	assert.NotNil(mesg)
+
+	mesg, err = Verify(signingPubKey2, cert, current)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 
-	mesg, err = Verify(signingPubKey2, certificate)
-	assert.NoError(err)
-	assert.NotNil(mesg)
-
-	mesg, err = Verify(signingPubKey3, certificate)
-	assert.NoError(err)
-	assert.NotNil(mesg)
-}
-
-func TestVerifyAll(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-
-	_, ephemeralPubKey := Scheme.NewKeypair()
-
-	signingPrivKey1, signingPubKey1 := Scheme.NewKeypair()
-	signingPrivKey2, signingPubKey2 := Scheme.NewKeypair()
-	signingPrivKey3, signingPubKey3 := Scheme.NewKeypair()
-
-	current, _, _ := epochtime.Now()
-
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
-	assert.NoError(err)
-
-	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
-	assert.NoError(err)
-
-	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
-	assert.NoError(err)
-
-	verifiers := []Verifier{signingPubKey1, signingPubKey2, signingPubKey2}
-	mesg, err := VerifyAll(verifiers, certificate)
+	mesg, err = Verify(signingPubKey3, cert, current)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 }
@@ -184,18 +172,21 @@ func TestVerifyThreshold(t *testing.T) {
 
 	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1, current)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate)
+	certificate, err = SignMulti(signingPrivKey2, signingPubKey2, certificate, current)
 	assert.NoError(err)
 
-	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate)
+	certificate, err = SignMulti(signingPrivKey3, signingPubKey3, certificate, current)
 	assert.NoError(err)
 
 	verifiers := []Verifier{signingPubKey1, signingPubKey2, signingPubKey4}
 	threshold := 2
-	mesg, good, bad, err := VerifyThreshold(verifiers, threshold, certificate)
+
+	cert, err := Unmarshal(certificate)
+	require.NoError(t, err)
+	mesg, good, bad, err := VerifyThreshold(verifiers, threshold, cert, current)
 	assert.NoError(err)
 	assert.NotNil(mesg)
 	assert.Equal(len(verifiers), len(good)+len(bad))
@@ -227,17 +218,17 @@ func TestAddSignature(t *testing.T) {
 
 	current, _, _ := epochtime.Now()
 
-	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1)
+	certificate, err := Sign(signingPrivKey1, signingPubKey1, ephemeralPubKey.Bytes(), current+1, current)
 	assert.NoError(err)
 
-	certificate2, err := SignMulti(signingPrivKey2, signingPubKey2, certificate)
+	certificate2, err := SignMulti(signingPrivKey2, signingPubKey2, certificate, current)
 	assert.NoError(err)
 
 	hash := signingPubKey2.Sum256()
-	sig, err := GetSignature(hash[:], certificate2)
+	sig, err := GetSignature(hash[:], certificate2, current)
 	assert.NoError(err)
 	assert.NotNil(sig)
-	certificate3, err := AddSignature(signingPubKey2, *sig, certificate)
+	certificate3, err := AddSignature(signingPubKey2, *sig, certificate, current)
 	assert.NoError(err)
 
 	assert.Equal(certificate2, certificate3)

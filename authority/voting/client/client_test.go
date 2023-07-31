@@ -96,14 +96,14 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			IdentityKey: mixIdentityPublicKey,
 			LinkKey:     linkPubKey,
 			MixKeys:     mixKeys,
-			Addresses: map[pki.Transport][]string{
-				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			Addresses: map[string][]string{
+				"tcp4": []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:  nil,
 			Provider:   isProvider,
 			LoadWeight: 0,
 		}
-		signed, err := pki.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix)
+		signed, err := pki.SignDescriptor(mixIdentityPrivateKey, mixIdentityPublicKey, mix, epoch)
 		if err != nil {
 			return nil, err
 		}
@@ -165,12 +165,12 @@ func multiSignTestDocument(signingKeys []sign.PrivateKey, signingPubKeys []sign.
 
 	// Sign the document.
 	current, _, _ := epochtime.Now()
-	signed, err := cert.Sign(signingKeys[0], signingPubKeys[0], payload, current+4)
+	signed, err := cert.Sign(signingKeys[0], signingPubKeys[0], payload, current+4, current)
 	if err != nil {
 		return nil, err
 	}
 	for i := 1; i < len(signingKeys); i++ {
-		signed, err = cert.SignMulti(signingKeys[i], signingPubKeys[i], signed)
+		signed, err = cert.SignMulti(signingKeys[i], signingPubKeys[i], signed, current)
 	}
 	return signed, nil
 }
@@ -351,7 +351,7 @@ func TestClient(t *testing.T) {
 	}
 	wg.Wait()
 	cfg := &Config{
-		LogBackend:    logBackend,
+		LogBackend:    logBackend.GetLogWriter("pki", "info"),
 		Authorities:   peers,
 		DialContextFn: dialer.dial,
 	}

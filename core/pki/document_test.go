@@ -25,14 +25,15 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
+	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/stretchr/testify/require"
 )
 
-func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte) {
+func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDescriptor, []byte, sign.PublicKey) {
 	d := new(MixDescriptor)
 	d.Name = fmt.Sprintf("gen%d.example.net", idx)
-	d.Addresses = map[Transport][]string{
+	d.Addresses = map[string][]string{
 		TransportTCPv4: []string{fmt.Sprintf("192.0.2.%d:4242", idx)},
 	}
 	d.Provider = provider
@@ -59,10 +60,10 @@ func genDescriptor(require *require.Assertions, idx int, provider bool) (*MixDes
 	err := IsDescriptorWellFormed(d, debugTestEpoch)
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
-	signed, err := SignDescriptor(identityPriv, identityPub, d)
+	signed, err := SignDescriptor(identityPriv, identityPub, d, debugTestEpoch)
 	require.NoError(err, "SignDescriptor()")
 
-	return d, []byte(signed)
+	return d, []byte(signed), identityPub
 }
 
 func TestDocument(t *testing.T) {
@@ -95,8 +96,9 @@ func TestDocument(t *testing.T) {
 	for l := 0; l < 3; l++ {
 		for i := 0; i < 5; i++ {
 			provider := false
-			_, rawDesc := genDescriptor(require, idx, provider)
+			_, rawDesc, idkey := genDescriptor(require, idx, provider)
 			d := new(MixDescriptor)
+			d.IdentityKey = idkey
 			err := d.UnmarshalBinary(rawDesc)
 			require.NoError(err)
 			foo, err := d.MarshalBinary()
@@ -108,9 +110,13 @@ func TestDocument(t *testing.T) {
 	}
 	for i := 0; i < 3; i++ {
 		provider := true
-		_, rawDesc := genDescriptor(require, idx, provider)
+		_, rawDesc, idkey := genDescriptor(require, idx, provider)
 		d := new(MixDescriptor)
-		err := d.UnmarshalBinary(rawDesc)
+		d.Kaetzchen = make(map[string]map[string]interface{})
+		d.IdentityKey = idkey
+		err := d.UnmarshalBinaryAndVerify(rawDesc, debugTestEpoch)
+		require.NoError(err)
+		err = d.UnmarshalBinary(rawDesc)
 		require.NoError(err)
 		foo, err := d.MarshalBinary()
 		require.NoError(err)
@@ -120,7 +126,7 @@ func TestDocument(t *testing.T) {
 	}
 
 	// Serialize and sign.
-	signed, err := SignDocument(k, idPub, doc)
+	signed, err := SignDocument(k, idPub, doc, debugTestEpoch)
 	require.NoError(err, "SignDocument()")
 
 	// Validate and deserialize.
@@ -148,7 +154,7 @@ func TestDocument(t *testing.T) {
 	// (It would have been nice to check that SignDocument was idempotent,
 	// but it seems SPHINCS+ uses randomness?
 	tmpDocBytes := signed
-	for i := 0 ; i < 4 ; i++ {
+	for i := 0; i < 4; i++ {
 		tmpDoc, err := ParseDocument(tmpDocBytes)
 		require.Equal(nil, err)
 		require.Equal(ddoc, tmpDoc)
@@ -165,9 +171,9 @@ func TestDocument(t *testing.T) {
 			require.NoError(err)
 			rawDesc, err := node.MarshalBinary()
 			require.NoError(err)
-			_, err = VerifyDescriptor(rawDesc)
+			_, err = VerifyDescriptor(rawDesc, debugTestEpoch)
 			require.NoError(err)
-			_, err = VerifyDescriptor(otherDesc)
+			_, err = VerifyDescriptor(otherDesc, debugTestEpoch)
 			require.NoError(err)
 			require.True(bytes.Equal(otherDesc, rawDesc)) // require the serialization be the same
 		}

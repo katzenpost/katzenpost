@@ -25,6 +25,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -43,11 +44,11 @@ func TestDescriptor(t *testing.T) {
 
 	// Build a well formed descriptor.
 	d.Name = "hydra-dominatus.example.net"
-	d.Addresses = map[Transport][]string{
-		TransportTCPv4:     []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
-		TransportTCPv6:     []string{"[2001:DB8::1]:8901"},
-		Transport("torv2"): []string{"thisisanoldonion.onion:2323"},
-		TransportTCP:       []string{"example.com:4242"},
+	d.Addresses = map[string][]string{
+		TransportTCPv4: []string{"192.0.2.1:4242", "192.0.2.1:1234", "198.51.100.2:4567"},
+		TransportTCPv6: []string{"[2001:DB8::1]:8901"},
+		"torv2":        []string{"thisisanoldonion.onion:2323"},
+		TransportTCP:   []string{"example.com:4242"},
 	}
 	d.Provider = true
 	d.LoadWeight = 23
@@ -70,11 +71,13 @@ func TestDescriptor(t *testing.T) {
 	require.NoError(err, "IsDescriptorWellFormed(good)")
 
 	// Sign the descriptor.
-	signed, err := SignDescriptor(identityPriv, identityPub, d)
+	epoch, _, _ := epochtime.Now()
+	signed, err := SignDescriptor(identityPriv, identityPub, d, epoch)
 	require.NoError(err, "SignDescriptor()")
 
 	// Verify and deserialize the signed descriptor.
 	dd := new(MixDescriptor)
+	dd.IdentityKey = identityPub
 	err = dd.UnmarshalBinary(signed)
 	require.NoError(err)
 

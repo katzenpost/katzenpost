@@ -200,7 +200,7 @@ func TestVote(t *testing.T) {
 	providerDescs := make([]*pki.MixDescriptor, 0)
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
-		addr := make(map[pki.Transport][]string)
+		addr := make(map[string][]string)
 		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
 		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
@@ -217,7 +217,7 @@ func TestVote(t *testing.T) {
 		err = pki.IsDescriptorWellFormed(desc, votingEpoch)
 		require.NoError(err)
 		// Make a serialized + signed + serialized descriptor.
-		_, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc)
+		_, err := pki.SignDescriptor(idKeys[i].privKey, idKeys[i].pubKey, desc, votingEpoch)
 		require.NoError(err)
 
 		if mixCfgs[i].Server.IsProvider {
@@ -239,13 +239,13 @@ func TestVote(t *testing.T) {
 		srv := new(pki.SharedRandom)
 		commit, err := srv.Commit(votingEpoch)
 		require.NoError(err)
-		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1)
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1, votingEpoch)
 		require.NoError(err)
 		commits[votingEpoch][s.s.identityPublicKey.Sum256()] = signedCommit
 		s.commits = commits
 
 		reveal := srv.Reveal()
-		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+1)
+		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+1, votingEpoch)
 		require.NoError(err)
 		reveals[votingEpoch][s.s.identityPublicKey.Sum256()] = signedReveal
 		s.reveals = reveals
@@ -307,7 +307,8 @@ func TestVote(t *testing.T) {
 		s.state = stateAcceptCert
 		myCertificate, err := s.getCertificate(s.votingEpoch)
 		require.NoError(err)
-		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate)
+
+		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate, s.votingEpoch)
 		require.NoError(err)
 		for j, a := range stateAuthority {
 			if j == i {

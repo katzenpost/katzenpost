@@ -26,7 +26,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	"github.com/katzenpost/katzenpost/core/crypto/sign/ed25519sphincsplus"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 )
 
 const (
@@ -145,6 +144,19 @@ type Certificate struct {
 	Signatures map[[32]byte]Signature
 }
 
+func Unmarshal(raw []byte) (*Certificate, error) {
+	if raw == nil {
+		return nil, errors.New("ERROR: Unmarshal received a nil byte blob.")
+	}
+	cert := new(Certificate)
+	cert.Signatures = make(map[[32]byte]Signature)
+	err := cbor.Unmarshal(raw, cert)
+	if err != nil {
+		return nil, err
+	}
+	return cert, nil
+}
+
 func (c *Certificate) Marshal() ([]byte, error) {
 	return ccbor.Marshal(c)
 }
@@ -170,12 +182,11 @@ func (c *Certificate) message() ([]byte, error) {
 	return message.Bytes(), nil
 }
 
-func (c *Certificate) sanityCheck() error {
+func (c *Certificate) SanityCheck(currentEpoch uint64) error {
 	if c.Version != CertVersion {
 		return ErrVersionMismatch
 	}
-	current, _, _ := epochtime.Now()
-	if current >= c.Expiration {
+	if currentEpoch >= c.Expiration {
 		return ErrCertificateExpired
 	}
 	if len(c.KeyType) == 0 {
@@ -194,14 +205,14 @@ func (c *Certificate) sanityCheck() error {
 
 // Sign uses the given Signer to create a certificate which
 // certifies the given data.
-func Sign(signer Signer, verifier Verifier, data []byte, expiration uint64) ([]byte, error) {
+func Sign(signer Signer, verifier Verifier, data []byte, expirationEpoch, currentEpoch uint64) ([]byte, error) {
 	cert := Certificate{
 		Version:    CertVersion,
-		Expiration: expiration,
+		Expiration: expirationEpoch,
 		KeyType:    signer.KeyType(),
 		Certified:  data,
 	}
-	err := cert.sanityCheck()
+	err := cert.SanityCheck(currentEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -224,10 +235,6 @@ func GetCertified(rawCert []byte) ([]byte, error) {
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
-	err = cert.sanityCheck()
-	if err != nil {
-		return nil, err
-	}
 	return cert.Certified, nil
 }
 
@@ -237,10 +244,6 @@ func GetSignatures(rawCert []byte) ([]Signature, error) {
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
-	}
-	err = cert.sanityCheck()
-	if err != nil {
-		return nil, err
 	}
 	s := make([]Signature, len(cert.Signatures))
 	i := 0
@@ -253,13 +256,13 @@ func GetSignatures(rawCert []byte) ([]Signature, error) {
 
 // GetSignature returns a signature that signs the certificate
 // if it matches with the given identity.
-func GetSignature(identity []byte, rawCert []byte) (*Signature, error) {
+func GetSignature(identity []byte, rawCert []byte, currentEpoch uint64) (*Signature, error) {
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
-	err = cert.sanityCheck()
+	err = cert.SanityCheck(currentEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -290,14 +293,14 @@ func (d byIdentity) Less(i, j int) bool {
 
 // SignMulti uses the given signer to create a signature
 // and appends it to the certificate and returns it.
-func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error) {
+func SignMulti(signer Signer, verifier Verifier, rawCert []byte, currentEpoch uint64) ([]byte, error) {
 	// decode certificate
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
-	err = cert.sanityCheck()
+	err = cert.SanityCheck(currentEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -327,14 +330,14 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte) ([]byte, error)
 
 // AddSignature adds the signature to the certificate if the verifier
 // can verify the signature signs the certificate.
-func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byte, error) {
+func AddSignature(verifier Verifier, signature Signature, rawCert []byte, currentEpoch uint64) ([]byte, error) {
 	// decode certificate
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
-	err = cert.sanityCheck()
+	err = cert.SanityCheck(currentEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -367,17 +370,11 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byt
 
 // Verify is used to verify one of the signatures attached to the certificate.
 // It returns the certified data if the signature is valid.
-func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
-	cert := new(Certificate)
-	err := cbor.Unmarshal(rawCert, cert)
-	if err != nil {
-		return nil, ErrImpossibleEncode
-	}
-	err = cert.sanityCheck()
+func Verify(verifier Verifier, cert *Certificate, currentEpoch uint64) ([]byte, error) {
+	err := cert.SanityCheck(currentEpoch)
 	if err != nil {
 		return nil, err
 	}
-
 	for _, sig := range cert.Signatures {
 		hash := verifier.Sum256()
 		if hmac.Equal(hash[:], sig.PublicKeySum256[:]) {
@@ -394,25 +391,11 @@ func Verify(verifier Verifier, rawCert []byte) ([]byte, error) {
 	return nil, ErrIdentitySignatureNotFound
 }
 
-// VerifyAll returns the certified data if all of the given verifiers
-// can verify the certificate. Otherwise nil is returned along with an error.
-func VerifyAll(verifiers []Verifier, rawCert []byte) ([]byte, error) {
-	var err error
-	certified := []byte{}
-	for _, verifier := range verifiers {
-		certified, err = Verify(verifier, rawCert)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return certified, nil
-}
-
 // VerifyThreshold returns the certified data, the succeeded verifiers
 // and the failed verifiers if at least a threshold number of verifiers
 // can verify the certificate. Otherwise nil is returned along with an
 // error.
-func VerifyThreshold(verifiers []Verifier, threshold int, rawCert []byte) ([]byte, []Verifier, []Verifier, error) {
+func VerifyThreshold(verifiers []Verifier, threshold int, cert *Certificate, currentEpoch uint64) ([]byte, []Verifier, []Verifier, error) {
 	if threshold > len(verifiers) {
 		return nil, nil, nil, ErrInvalidThreshold
 	}
@@ -421,7 +404,7 @@ func VerifyThreshold(verifiers []Verifier, threshold int, rawCert []byte) ([]byt
 	good := make(map[[32]byte]*Verifier)
 	bad := []Verifier{}
 	for i, verifier := range verifiers {
-		c, err := Verify(verifier, rawCert)
+		c, err := Verify(verifier, cert, currentEpoch)
 		if err != nil {
 			bad = append(bad, verifier)
 			continue
