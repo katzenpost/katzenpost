@@ -169,6 +169,7 @@ func (c *connection) onPKIFetch() {
 
 func (c *connection) getDescriptor() error {
 	c.log.Debug("getDescriptor")
+
 	ok := false
 	defer func() {
 		if !ok {
@@ -180,13 +181,26 @@ func (c *connection) getDescriptor() error {
 	doc := c.client.CurrentDocument()
 	if doc == nil && c.client.cfg.CachedDocument == nil {
 		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
-		return newPKIError("no PKI document for current epoch")
-	} else if c.client.cfg.CachedDocument != nil {
+		n := len(c.client.cfg.PinnedProviders.Providers)
+		if n == 0 {
+			return errors.New("No PinnedProviders")
+		}
+		provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
+		c.descriptor = &cpki.MixDescriptor{
+			Name:        provider.Name,
+			IdentityKey: provider.IdentityKey,
+			LinkKey:     provider.LinkKey,
+			Addresses:   provider.Addresses,
+			Provider:    true,
+		}
+		ok = true
+		return nil
+	} else {
 		doc = c.client.cfg.CachedDocument
 	}
 	n := len(doc.Providers)
 	if n == 0 {
-		return errors.New("zero PinnedProviders")
+		return errors.New("invalid PKI doc, zero Providers")
 	}
 
 	provider := doc.Providers[rand.NewMath().Intn(n)]
@@ -263,24 +277,10 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	}()
 
 	for {
-		doc := c.client.CurrentDocument()
-		if doc == nil && c.client.cfg.CachedDocument == nil {
-			c.log.Debug("no current doc and no cached doc, creating partial descriptor from PinnedProviders")
-			n := len(c.client.cfg.PinnedProviders.Providers)
-			provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
-			c.descriptor = &cpki.MixDescriptor{
-				Name:        provider.Name,
-				IdentityKey: provider.IdentityKey,
-				LinkKey:     provider.LinkKey,
-				Addresses:   provider.Addresses,
-				Provider:    true,
-			}
-		} else {
-			connErr = c.getDescriptor()
-			if connErr != nil {
-				c.log.Debugf("Aborting connect loop, descriptor no longer present.")
-				return
-			}
+		connErr = c.getDescriptor()
+		if connErr != nil {
+			c.log.Debugf("Aborting connect loop, descriptor no longer present.")
+			return
 		}
 
 		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
@@ -375,7 +375,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	cfg := &wire.SessionConfig{
 		Geometry:          c.client.cfg.SphinxGeometry,
 		Authenticator:     c,
-		AdditionalData:    userId,
+		AdditionalData:    []byte(fmt.Sprintf("%x", userId)), // random 64 char string
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
