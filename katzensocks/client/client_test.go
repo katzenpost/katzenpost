@@ -108,6 +108,8 @@ func TestDockerProxy(t *testing.T) {
 		if err == nil {
 			break
 		}
+		err = proxyConn.Close()
+		require.NoError(err)
 	}
 	require.Equal(proxiedpayload, payload)
 }
