@@ -275,6 +275,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 		c.log.Debugf("Waiting for workers to finish")
 		wg.Wait()
 		c.log.Debugf("Workers done, halting transport")
+		errCh <- nil
 	})
 
 	// start a transport worker that receives packets for this qconn
