@@ -77,11 +77,11 @@ type Client struct {
 	worker.Worker
 	sync.Mutex
 
-	desc           *utils.ServiceDescriptor
-	log            *logging.Logger
-	s              *client.Session
-	msgCallbacks   map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
-	payloadLen     int
+	desc         *utils.ServiceDescriptor
+	log          *logging.Logger
+	s            *client.Session
+	msgCallbacks map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
+	payloadLen   int
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -92,7 +92,7 @@ func NewClient(s *client.Session) (*Client, error) {
 		return nil, err
 	}
 	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
-		msgCallbacks:   make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
+		msgCallbacks: make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
 	}, nil
 }
 
@@ -384,7 +384,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 						backOffDelay = backOffFloor
 					}
 					c.Lock()
-					c.msgCallbacks[*msgID] = func (event *client.MessageReplyEvent) {
+					c.msgCallbacks[*msgID] = func(event *client.MessageReplyEvent) {
 						if event.Err == nil {
 							c.handleReply(qconn, id, errCh, event.Payload)
 						}

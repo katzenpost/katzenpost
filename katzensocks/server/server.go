@@ -31,8 +31,8 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/katzensocks/common"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
 var (

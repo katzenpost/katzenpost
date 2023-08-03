@@ -28,8 +28,8 @@ import (
 	"runtime"
 
 	"github.com/katzenpost/katzenpost/core/log"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/katzensocks/server"
+	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
 
 func main() {
