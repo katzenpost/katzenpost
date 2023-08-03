@@ -72,10 +72,15 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 }
 
 func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
+	c.log.Debug("sendPKIDoc begin")
 	blob, err := cbor.Marshal(doc)
 	if err != nil {
+		c.log.Debugf("cbor marshal failed: %s", err.Error())
 		return err
 	}
+
+	c.log.Debugf("sendPKIDoc: stripped PKI Doc size is %d", len(blob))
+
 	message := &Response{
 		Payload: blob,
 	}
@@ -96,6 +101,7 @@ func (c *incomingConn) sendResponse(response *Response) error {
 	if err != nil {
 		return err
 	}
+	c.log.Debug("unixConn Write")
 	count, err := c.unixConn.Write(blob)
 	if err != nil {
 		return err
@@ -182,6 +188,7 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 
 	c.log = log.NewWithOptions(os.Stderr, log.Options{
 		ReportTimestamp: true,
+		Level:           log.DebugLevel,
 		Prefix:          fmt.Sprintf("incoming:%d", c.appID),
 	})
 

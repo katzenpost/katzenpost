@@ -95,6 +95,7 @@ func (t *ThinClient) Dial() error {
 	doc := &cpki.Document{}
 	err = cbor.Unmarshal(message2.Payload, doc)
 	if err != nil {
+		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return err
 	}
 
