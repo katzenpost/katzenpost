@@ -101,10 +101,15 @@ func TestDockerProxy(t *testing.T) {
 	_, err = io.Copy(piper, bufio.NewReader(bytes.NewReader(payload)))
 	require.NoError(err)
 	wg.Wait()
-	proxyConn.Close()
-	require.NoError(<-errCh)
+
+	// consume all errors
+	for err := range errCh {
+		require.NoError(err)
+		if err == nil {
+			break
+		}
+	}
 	require.Equal(proxiedpayload, payload)
-	require.NoError(err)
 }
 
 func init() {
