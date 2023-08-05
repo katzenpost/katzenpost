@@ -58,7 +58,6 @@ func TestVote(t *testing.T) {
 	authNum := 3
 	stateAuthority := make([]*state, authNum)
 	votingEpoch, _, _ := epochtime.Now()
-	votingEpoch += 5
 	parameters := &config.Parameters{
 		SendRatePerMinute: 100, Mu: 0.001, MuMaxDelay: 9000,
 		LambdaP: 0.002, LambdaPMaxDelay: 9000,
@@ -239,13 +238,13 @@ func TestVote(t *testing.T) {
 		srv := new(pki.SharedRandom)
 		commit, err := srv.Commit(votingEpoch)
 		require.NoError(err)
-		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+1, votingEpoch)
+		signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, votingEpoch+5, votingEpoch)
 		require.NoError(err)
 		commits[votingEpoch][s.s.identityPublicKey.Sum256()] = signedCommit
 		s.commits = commits
 
 		reveal := srv.Reveal()
-		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+1, votingEpoch)
+		signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, reveal, votingEpoch+5, votingEpoch)
 		require.NoError(err)
 		reveals[votingEpoch][s.s.identityPublicKey.Sum256()] = signedReveal
 		s.reveals = reveals
@@ -270,9 +269,9 @@ func TestVote(t *testing.T) {
 	for i, s := range stateAuthority {
 		s.votingEpoch = votingEpoch
 		s.genesisEpoch = s.votingEpoch
-		myVote, err := s.getVote(s.votingEpoch)
-		require.Equal(len(myVote.Signatures), 1)
+		myVote, err := s.getVote()
 		require.NoError(err)
+		require.Equal(len(myVote.Signatures), 1)
 		require.NotNil(myVote)
 		raw, err := myVote.MarshalBinary()
 		require.NoError(err)
