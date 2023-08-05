@@ -133,9 +133,10 @@ type Certificate struct {
 	// that is certified by this certificate.
 	KeyType string
 
-	// Certified is the data that is certified by
-	// this certificate.
-	Certified []byte
+	// Payload is the bulk of the data that is certified by
+	// this certificate. The other signed elements can be found
+	// in the certified() method below.
+	Payload []byte
 
 	// Signatures is a map PublicKeySum256 -> {PublicKeySum256, Payload}
 	// where PublicKeySum256 is the signer's public key and Payload is
@@ -161,7 +162,7 @@ func (c *Certificate) Marshal() ([]byte, error) {
 	return ccbor.Marshal(c)
 }
 
-func (c *Certificate) message() ([]byte, error) {
+func (c *Certificate) certified() ([]byte, error) {
 	message := new(bytes.Buffer)
 	err := binary.Write(message, binary.LittleEndian, c.Version)
 	if err != nil {
@@ -175,7 +176,7 @@ func (c *Certificate) message() ([]byte, error) {
 	if err != nil {
 		return nil, ErrImpossibleOutOfMemory
 	}
-	_, err = message.Write(c.Certified)
+	_, err = message.Write(c.Payload)
 	if err != nil {
 		return nil, ErrImpossibleOutOfMemory
 	}
@@ -192,7 +193,7 @@ func (c *Certificate) SanityCheck(currentEpoch uint64) error {
 	if len(c.KeyType) == 0 {
 		return ErrInvalidKeyType
 	}
-	if len(c.Certified) == 0 || c.Certified == nil {
+	if len(c.Payload) == 0 || c.Payload == nil {
 		return ErrInvalidCertified
 	}
 	if c.Signatures == nil {
@@ -210,13 +211,13 @@ func Sign(signer Signer, verifier Verifier, data []byte, expirationEpoch, curren
 		Version:    CertVersion,
 		Expiration: expirationEpoch,
 		KeyType:    signer.KeyType(),
-		Certified:  data,
+		Payload:    data,
 	}
 	err := cert.SanityCheck(currentEpoch)
 	if err != nil {
 		return nil, err
 	}
-	mesg, err := cert.message()
+	mesg, err := cert.certified()
 	if err != nil {
 		return nil, err
 	}
@@ -228,14 +229,23 @@ func Sign(signer Signer, verifier Verifier, data []byte, expirationEpoch, curren
 	return cert.Marshal()
 }
 
-// GetCertified returns the certified data.
-func GetCertified(rawCert []byte) ([]byte, error) {
+func GetPayload(rawCert []byte) ([]byte, error) {
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
 	}
-	return cert.Certified, nil
+	return cert.Payload, nil
+}
+
+// GetCertified returns the certified data.
+func GetCertificate(rawCert []byte) (*Certificate, error) {
+	cert := new(Certificate)
+	err := cbor.Unmarshal(rawCert, cert)
+	if err != nil {
+		return nil, ErrImpossibleDecode
+	}
+	return cert, nil
 }
 
 // GetSignatures returns all the signatures.
@@ -309,7 +319,7 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte, currentEpoch ui
 	}
 
 	// sign the certificate's message contents
-	mesg, err := cert.message()
+	mesg, err := cert.certified()
 	if err != nil {
 		return nil, err
 	}
@@ -330,16 +340,12 @@ func SignMulti(signer Signer, verifier Verifier, rawCert []byte, currentEpoch ui
 
 // AddSignature adds the signature to the certificate if the verifier
 // can verify the signature signs the certificate.
-func AddSignature(verifier Verifier, signature Signature, rawCert []byte, currentEpoch uint64) ([]byte, error) {
+func AddSignature(verifier Verifier, signature Signature, rawCert []byte) ([]byte, error) {
 	// decode certificate
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
 		return nil, ErrImpossibleDecode
-	}
-	err = cert.SanityCheck(currentEpoch)
-	if err != nil {
-		return nil, err
 	}
 
 	// dedup
@@ -350,7 +356,7 @@ func AddSignature(verifier Verifier, signature Signature, rawCert []byte, curren
 	}
 
 	// sign the certificate's message contents
-	mesg, err := cert.message()
+	mesg, err := cert.certified()
 	if err != nil {
 		return nil, err
 	}
@@ -378,12 +384,12 @@ func Verify(verifier Verifier, cert *Certificate, currentEpoch uint64) ([]byte, 
 	for _, sig := range cert.Signatures {
 		hash := verifier.Sum256()
 		if hmac.Equal(hash[:], sig.PublicKeySum256[:]) {
-			mesg, err := cert.message()
+			mesg, err := cert.certified()
 			if err != nil {
 				return nil, err
 			}
 			if verifier.Verify(sig.Payload, mesg) {
-				return cert.Certified, nil
+				return cert.Payload, nil
 			}
 			return nil, ErrBadSignature
 		}

@@ -1046,7 +1046,7 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	}
 	sortedreveals := make([]Reveal, 0, len(reveals))
 	for pk, srr := range reveals {
-		digest, err := cert.GetCertified(srr)
+		digest, err := cert.GetPayload(srr)
 		if err != nil {
 			return nil, err
 		}

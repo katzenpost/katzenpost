@@ -178,15 +178,15 @@ func (d *Document) String() string {
 	s += "}}\n"
 
 	for id, signedCommit := range d.SharedRandomCommit {
-		commit, err := cert.GetCertified(signedCommit)
+		payload, err := cert.GetPayload(signedCommit)
 		if err != nil {
 			panic("corrupted document")
 		}
-		src := base64.StdEncoding.EncodeToString(commit)
+		src := base64.StdEncoding.EncodeToString(payload)
 		s += fmt.Sprintf("  SharedRandomCommit: %x, %s\n", id, src)
 	}
 	for id, signedReveal := range d.SharedRandomReveal {
-		reveal, err := cert.GetCertified(signedReveal)
+		reveal, err := cert.GetPayload(signedReveal)
 		if err != nil {
 			panic("corrupted document")
 		}
@@ -386,7 +386,7 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	for _, signature := range peerSignatures {
 		s := signature.PublicKeySum256
 		verifier := verifiers[s]
-		signed, err = cert.AddSignature(verifier, *signature, signed, currentEpoch)
+		signed, err = cert.AddSignature(verifier, *signature, signed)
 		if err != nil {
 			return nil, err
 		}
@@ -435,7 +435,7 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch u
 		if err != nil {
 			return fmt.Errorf("signedCommit is malformed after ")
 		}
-		commit, err := cert.Verify(verifier, mycert, currentEpoch-1)
+		commit, err := cert.Verify(verifier, mycert, currentEpoch)
 		if err != nil {
 			return fmt.Errorf("Document has invalid signed SharedRandomCommit: %s", err.Error())
 		}
@@ -543,7 +543,7 @@ func (d *Document) ToCertificate() (*cert.Certificate, error) {
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
 		KeyType:    cert.Scheme.PrivateKeyType(),
-		Certified:  payload,
+		Payload:    payload,
 		Signatures: d.Signatures,
 	}, nil
 }
@@ -552,7 +552,7 @@ func (d *Document) ToCertificate() (*cert.Certificate, error) {
 // and populates Document with detached Signatures
 func (d *Document) UnmarshalBinary(data []byte) error {
 	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
-	certified, err := cert.GetCertified(data)
+	certified, err := cert.GetPayload(data)
 	if err != nil {
 		return err
 	}
@@ -582,7 +582,7 @@ func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature
 	}
 
 	// if AddSignature succeeds, add the Signature to d.Signatures
-	_, err = cert.AddSignature(verifier, signature, payload, currentEpoch)
+	_, err = cert.AddSignature(verifier, signature, payload)
 	if err != nil {
 		return err
 	}

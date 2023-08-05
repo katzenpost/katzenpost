@@ -161,6 +161,9 @@ const (
 	// CertTooLate signifies that the certificate from that peer arrived too late.
 	CertTooLate = 19
 
+	// CertMalFormed indicates a malformed cert.
+	CertMalformed = 255
+
 	// SigOK signifies that the signature was accepted by the peer.
 	SigOk = 20
 

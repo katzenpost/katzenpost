@@ -93,6 +93,12 @@ type MixDescriptor struct {
 
 type mixdescriptor MixDescriptor
 
+func (d *MixDescriptor) Verify(currentEpoch uint64) error {
+	mycert, err := d.ToCertificate()
+	_, err = cert.Verify(d.IdentityKey, mycert, currentEpoch)
+	return err
+}
+
 func (d *MixDescriptor) UnmarshalMixKeyAsNike(epoch uint64, g *geo.Geometry) (nike.PublicKey, error) {
 	s := schemes.ByName(g.NIKEName)
 	if s == nil {
@@ -122,7 +128,7 @@ func (d *MixDescriptor) String() string {
 }
 
 func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
-	certified, err := cert.GetCertified(data)
+	payload, err := cert.GetPayload(data)
 	if err != nil {
 		return err
 	}
@@ -131,7 +137,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	d.IdentityKey = idPublicKey
 	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
 	d.LinkKey = linkPub
-	err = cbor.Unmarshal(certified, (*mixdescriptor)(d))
+	err = cbor.Unmarshal(payload, (*mixdescriptor)(d))
 	if err != nil {
 		return err
 	}
@@ -145,50 +151,26 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 		// no signature
 	case 1:
 		// must have only 1 signature
-	default:
-		return ErrTooManySignatures
+		d.Signature = &sigs[0]
 	}
 
-	d.Signature = &sigs[0]
-	return nil
-}
-
-// UnmarshalBinaryAndVerify parses and verifies the raw descriptor data.
-func (d *MixDescriptor) UnmarshalBinaryAndVerify(data []byte, currentEpoch uint64) error {
-	sigs, err := cert.GetSignatures(data)
-	if err != nil {
-		return err
-	}
-	switch len(sigs) {
-	case 0:
-		return ErrNoSignature
-	case 1:
-	default:
-		return ErrTooManySignatures
-	}
-	err = d.UnmarshalBinary(data)
-	if err != nil {
-		return err
-	}
-	mycert, err := cert.Unmarshal(data)
-	if err != nil {
-		return err
-	}
-	_, err = cert.Verify(d.IdentityKey, mycert, currentEpoch)
-	if err != nil {
-		return err
-	}
-	err = mycert.SanityCheck(currentEpoch)
-	if err != nil {
-		return err
-	}
-	d.Signature = &sigs[0]
 	return nil
 }
 
 // MarshalBinary implmements encoding.BinaryMarshaler
 func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
-	// reconstruct a serialized certificate from the detached Signature
+	certificate, err := d.ToCertificate()
+	if err != nil {
+		return nil, err
+	}
+	data, err := certificate.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	return data, err
+}
+
+func (d *MixDescriptor) ToCertificate() (*cert.Certificate, error) {
 	rawDesc, err := ccbor.Marshal((*mixdescriptor)(d))
 	if err != nil {
 		return nil, err
@@ -200,18 +182,14 @@ func (d *MixDescriptor) MarshalBinary() ([]byte, error) {
 		signatures[d.IdentityKey.Sum256()] = *d.Signature
 	}
 	pk, _ := cert.Scheme.NewKeypair()
-	certified := cert.Certificate{
+	certificate := &cert.Certificate{
 		Version:    cert.CertVersion,
 		Expiration: d.Epoch + 5,
 		KeyType:    pk.KeyType(),
-		Certified:  rawDesc,
+		Payload:    rawDesc,
 		Signatures: signatures,
 	}
-	data, err := certified.Marshal()
-	if err != nil {
-		panic(err)
-	}
-	return data, err
+	return certificate, nil
 }
 
 // SignDescriptor signs and serializes the descriptor with the provided signing
@@ -250,7 +228,11 @@ func VerifyDescriptor(rawDesc []byte, currentEpoch uint64) (*MixDescriptor, erro
 	linkPub := wire.DefaultScheme.NewEmptyPublicKey()
 	d.IdentityKey = idPubKey
 	d.LinkKey = linkPub
-	err := d.UnmarshalBinaryAndVerify(rawDesc, currentEpoch)
+	err := d.UnmarshalBinary(rawDesc)
+	if err != nil {
+		return nil, err
+	}
+	err = d.Verify(currentEpoch)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +246,7 @@ func VerifyDescriptor(rawDesc []byte, currentEpoch uint64) (*MixDescriptor, erro
 // mix descriptor certificate.
 func GetVerifierFromDescriptor(rawDesc []byte, currentEpoch uint64) (cert.Verifier, error) {
 	d := new(MixDescriptor)
-	err := d.UnmarshalBinaryAndVerify(rawDesc, currentEpoch)
+	err := d.UnmarshalBinary(rawDesc)
 	if err != nil {
 		return nil, err
 	}

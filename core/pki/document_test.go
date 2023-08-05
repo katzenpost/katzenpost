@@ -114,7 +114,9 @@ func TestDocument(t *testing.T) {
 		d := new(MixDescriptor)
 		d.Kaetzchen = make(map[string]map[string]interface{})
 		d.IdentityKey = idkey
-		err := d.UnmarshalBinaryAndVerify(rawDesc, debugTestEpoch)
+		err := d.UnmarshalBinary(rawDesc)
+		require.NoError(err)
+		err = d.Verify(debugTestEpoch)
 		require.NoError(err)
 		err = d.UnmarshalBinary(rawDesc)
 		require.NoError(err)

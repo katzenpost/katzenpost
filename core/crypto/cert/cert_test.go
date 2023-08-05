@@ -228,7 +228,7 @@ func TestAddSignature(t *testing.T) {
 	sig, err := GetSignature(hash[:], certificate2, current)
 	assert.NoError(err)
 	assert.NotNil(sig)
-	certificate3, err := AddSignature(signingPubKey2, *sig, certificate, current)
+	certificate3, err := AddSignature(signingPubKey2, *sig, certificate)
 	assert.NoError(err)
 
 	assert.Equal(certificate2, certificate3)
