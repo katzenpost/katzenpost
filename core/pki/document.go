@@ -426,6 +426,8 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch u
 		vmap[v.Sum256()] = v
 	}
 
+	fmt.Println("fu0")
+
 	for id, signedCommit := range d.SharedRandomCommit {
 		verifier, ok := vmap[id]
 		if !ok {
@@ -435,8 +437,10 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch u
 		if err != nil {
 			return fmt.Errorf("signedCommit is malformed after ")
 		}
+		fmt.Println("fu1")
 		commit, err := cert.Verify(verifier, mycert, currentEpoch)
 		if err != nil {
+			fmt.Println("fu2")
 			return fmt.Errorf("Document has invalid signed SharedRandomCommit: %s", err.Error())
 		}
 		if len(commit) == SharedRandomLength {

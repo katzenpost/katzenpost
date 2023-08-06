@@ -204,7 +204,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.state = stateAcceptReveal
 		sleep = AuthorityRevealDeadline - elapsed
 	case stateAcceptReveal:
-		signed, err := s.getCertificate(s.votingEpoch)
+		signed, err := s.getCertificate()
 		if err == nil {
 			serialized, err := signed.MarshalBinary()
 			if err == nil {
@@ -298,8 +298,10 @@ func (s *state) getVote() (*pki.Document, error) {
 	var zeros [32]byte
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
 	// create our SharedRandom Commit
-	notValidAfterEpoch := s.votingEpoch + 2
-	signedCommit, err := s.doCommit(notValidAfterEpoch, s.votingEpoch)
+	currentEpoch, _, _ := epochtime.Now()
+	notValidAfterEpoch := s.votingEpoch
+
+	signedCommit, err := s.doCommit(notValidAfterEpoch, currentEpoch)
 	if err != nil {
 		s.log.Errorf("doCommit failed with error: %s", err.Error())
 		return nil, err
@@ -339,51 +341,56 @@ func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pk
 }
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
-func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
-
+func (s *state) getCertificate() (*pki.Document, error) {
 	if s.TryLock() {
 		panic("write lock not held in getCertificate(epoch)")
 	}
-
-	mixes, params, err := s.tallyVotes(epoch)
+	mixes, params, err := s.tallyVotes(s.votingEpoch)
 	if err != nil {
-		s.log.Warningf("No document for epoch %v, aborting!, %v", epoch, err)
+		s.log.Warningf("No document for epoch %v, aborting!, %v", s.votingEpoch, err)
 		return nil, err
 	}
-
 	s.log.Debug("Mixes tallied, now making a document")
 	var zeros [32]byte
 	srv := zeros[:]
+	s.log.Debug("yo1")
 	doc := s.getDocument(mixes, params, srv)
+	s.log.Debug("yo2")
 	// add the SharedRandomCommit and SharedRandomReveal that we have seen
-	doc.SharedRandomCommit = s.commits[epoch]
-	doc.SharedRandomReveal = s.reveals[epoch]
+	doc.SharedRandomCommit = s.commits[s.votingEpoch]
+	doc.SharedRandomReveal = s.reveals[s.votingEpoch]
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.priorSRV) == 0 {
 		s.priorSRV = [][]byte{srv, srv}
-	} else if (s.genesisEpoch-epoch)%weekOfEpochs == 0 {
+	} else if (s.genesisEpoch-s.votingEpoch)%weekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
+	s.log.Debug("yo3")
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, doc)
 	if err != nil {
 		return nil, err
 	}
 
-	err = pki.IsDocumentWellFormed(doc, s.getVerifiers(), epoch)
+	s.log.Debug("yo4")
+	err = pki.IsDocumentWellFormed(doc, s.getVerifiers(), s.votingEpoch)
 	if err != nil {
+		s.log.Debug("yo5")
 		return nil, err
 	}
+	s.log.Debug("yo6")
 
 	// save our own certificate
-	if _, ok := s.certificates[epoch]; !ok {
-		s.certificates[epoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
+	if _, ok := s.certificates[s.votingEpoch]; !ok {
+		s.certificates[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
 	}
-	if _, ok := s.certificates[epoch][s.identityPubKeyHash()]; !ok {
-		s.certificates[epoch][s.identityPubKeyHash()] = doc
+	if _, ok := s.certificates[s.votingEpoch][s.identityPubKeyHash()]; !ok {
+		s.certificates[s.votingEpoch][s.identityPubKeyHash()] = doc
 	} else {
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
+
+	s.log.Debug("yo7")
 	return doc, nil
 }
 
@@ -1976,34 +1983,34 @@ func (s *state) verifyTopology(topology [][]*pki.MixDescriptor) error {
 }
 
 // generate commit and reveal values and save them
-func (s *state) doCommit(notValidAfterEpoch, commitEpoch uint64) ([]byte, error) {
-	s.log.Debugf("Generating SharedRandom Commit for %d", commitEpoch)
+func (s *state) doCommit(notValidAfterEpoch, currentEpoch uint64) ([]byte, error) {
+	s.log.Debugf("Generating SharedRandom Commit for %d", notValidAfterEpoch)
 	srv := new(pki.SharedRandom)
-	commit, err := srv.Commit(commitEpoch)
+	commit, err := srv.Commit(notValidAfterEpoch)
 	if err != nil {
 		return nil, err
 	}
 	// sign the serialized commit
-	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, notValidAfterEpoch, commitEpoch)
+	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, notValidAfterEpoch, currentEpoch)
 	if err != nil {
 		return nil, err
 	}
 	// sign the reveal
-	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), notValidAfterEpoch, commitEpoch)
+	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), notValidAfterEpoch, currentEpoch)
 	if err != nil {
 		return nil, err
 	}
 	// save our commit
-	if _, ok := s.commits[commitEpoch]; !ok {
-		s.commits[commitEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+	if _, ok := s.commits[notValidAfterEpoch]; !ok {
+		s.commits[notValidAfterEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
-	s.commits[commitEpoch][s.identityPubKeyHash()] = signedCommit
+	s.commits[notValidAfterEpoch][s.identityPubKeyHash()] = signedCommit
 
 	// save our reveal
-	if _, ok := s.reveals[commitEpoch]; !ok {
-		s.reveals[commitEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+	if _, ok := s.reveals[notValidAfterEpoch]; !ok {
+		s.reveals[notValidAfterEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
-	s.reveals[commitEpoch][s.identityPubKeyHash()] = signedReveal
+	s.reveals[notValidAfterEpoch][s.identityPubKeyHash()] = signedReveal
 	return signedCommit, nil
 }
 

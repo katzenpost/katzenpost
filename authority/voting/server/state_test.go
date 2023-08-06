@@ -58,6 +58,7 @@ func TestVote(t *testing.T) {
 	authNum := 3
 	stateAuthority := make([]*state, authNum)
 	votingEpoch, _, _ := epochtime.Now()
+	votingEpoch += 123
 	parameters := &config.Parameters{
 		SendRatePerMinute: 100, Mu: 0.001, MuMaxDelay: 9000,
 		LambdaP: 0.002, LambdaPMaxDelay: 9000,
@@ -304,7 +305,7 @@ func TestVote(t *testing.T) {
 	for i, s := range stateAuthority {
 		s.Lock()
 		s.state = stateAcceptCert
-		myCertificate, err := s.getCertificate(s.votingEpoch)
+		myCertificate, err := s.getCertificate()
 		require.NoError(err)
 
 		_, err = pki.SignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, myCertificate, s.votingEpoch)
