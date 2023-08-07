@@ -395,19 +395,8 @@ func MultiSignDocument(signer cert.Signer, verifier cert.Verifier, peerSignature
 	return signed, nil
 }
 
-// ParseDocument deserializes the document.
-func ParseDocument(b []byte) (*Document, error) {
-	// Parse the payload.
-	d := new(Document)
-	err := d.UnmarshalBinary(b)
-	if err != nil {
-		return nil, err
-	}
-	return d, nil
-}
-
 // IsDocumentWellFormed validates the document and returns a descriptive error
-// iff there are any problems that invalidates the document.
+// if there are any problems that invalidates the document.
 func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch uint64) error {
 	// Ensure the document is well formed.
 	if d.Version != DocumentVersion {
@@ -426,8 +415,6 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch u
 		vmap[v.Sum256()] = v
 	}
 
-	fmt.Println("fu0")
-
 	for id, signedCommit := range d.SharedRandomCommit {
 		verifier, ok := vmap[id]
 		if !ok {
@@ -437,10 +424,8 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch u
 		if err != nil {
 			return fmt.Errorf("signedCommit is malformed after ")
 		}
-		fmt.Println("fu1")
 		commit, err := cert.Verify(verifier, mycert, currentEpoch)
 		if err != nil {
-			fmt.Println("fu2")
 			return fmt.Errorf("Document has invalid signed SharedRandomCommit: %s", err.Error())
 		}
 		if len(commit) == SharedRandomLength {
@@ -526,6 +511,14 @@ func IsDocumentWellFormed(d *Document, verifiers []cert.Verifier, currentEpoch u
 	return nil
 }
 
+func (d *Document) VerifyThreshold(verifiers []cert.Verifier, threshold int, currentEpoch uint64) ([]byte, []cert.Verifier, []cert.Verifier, error) {
+	mycert, err := d.ToCertificate()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return cert.VerifyThreshold(verifiers, threshold, mycert, currentEpoch)
+}
+
 // MarshalBinary implements encoding.BinaryMarshaler interface
 // and wraps a Document with a cert.Certificate
 func (d *Document) MarshalBinary() ([]byte, error) {
@@ -555,22 +548,17 @@ func (d *Document) ToCertificate() (*cert.Certificate, error) {
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
 func (d *Document) UnmarshalBinary(data []byte) error {
+	mycert := new(cert.Certificate)
+	err := cbor.Unmarshal(data, mycert)
+	if err != nil {
+		return err
+	}
+	sigs := cert.GetSignatures(mycert)
 	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
-	certified, err := cert.GetPayload(data)
-	if err != nil {
-		return err
-	}
-	sigs, err := cert.GetSignatures(data)
-	if err != nil {
-		return err
-	}
-	if len(sigs) == 0 {
-		return ErrDocumentNotSigned
-	}
 	for _, s := range sigs {
 		d.Signatures[s.PublicKeySum256] = s
 	}
-	err = cbor.Unmarshal(certified, (*document)(d))
+	err = cbor.Unmarshal(mycert.Payload, (*document)(d))
 	if err != nil {
 		return err
 	}

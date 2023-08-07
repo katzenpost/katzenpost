@@ -132,7 +132,7 @@ func TestDocument(t *testing.T) {
 	require.NoError(err, "SignDocument()")
 
 	// Validate and deserialize.
-	ddoc, err := ParseDocument(signed)
+	ddoc, err := Unmarshal(signed)
 	require.NoError(err, "ParseDocument()")
 	require.Equal(doc.Epoch, ddoc.Epoch, "ParseDocument(): Epoch")
 	require.Equal(doc.SendRatePerMinute, testSendRate, "ParseDocument(): SendRatePerMinute")
@@ -157,7 +157,7 @@ func TestDocument(t *testing.T) {
 	// but it seems SPHINCS+ uses randomness?
 	tmpDocBytes := signed
 	for i := 0; i < 4; i++ {
-		tmpDoc, err := ParseDocument(tmpDocBytes)
+		tmpDoc, err := Unmarshal(tmpDocBytes)
 		require.Equal(nil, err)
 		require.Equal(ddoc, tmpDoc)
 		tmpDocBytes, err := tmpDoc.MarshalBinary()

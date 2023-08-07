@@ -351,12 +351,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		return nil, nil, err
 	}
 
-	mycert, err := doc.ToCertificate()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	_, good, bad, err := cert.VerifyThreshold(c.verifiers, c.threshold, mycert, epoch)
+	_, good, bad, err := doc.VerifyThreshold(c.verifiers, c.threshold, epoch)
 	if err != nil {
 		c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
 		return nil, nil, fmt.Errorf("voting/Client: Get() invalid consensus document: %s", err)
@@ -374,7 +369,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 			}
 		}
 	}
-	doc, err = pki.ParseDocument(r.Payload)
+	doc, err = pki.Unmarshal(r.Payload)
 	if err != nil {
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err

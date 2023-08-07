@@ -229,13 +229,15 @@ func Sign(signer Signer, verifier Verifier, data []byte, expirationEpoch, curren
 	return cert.Marshal()
 }
 
-func GetPayload(rawCert []byte) ([]byte, error) {
-	cert := new(Certificate)
-	err := cbor.Unmarshal(rawCert, cert)
-	if err != nil {
-		return nil, ErrImpossibleDecode
+// GetSignatures returns all the signatures.
+func GetSignatures(cert *Certificate) []Signature {
+	s := make([]Signature, len(cert.Signatures))
+	i := 0
+	for _, v := range cert.Signatures {
+		s[i] = v
+		i++
 	}
-	return cert.Payload, nil
+	return s
 }
 
 // GetCertified returns the certified data.
@@ -248,20 +250,13 @@ func GetCertificate(rawCert []byte) (*Certificate, error) {
 	return cert, nil
 }
 
-// GetSignatures returns all the signatures.
-func GetSignatures(rawCert []byte) ([]Signature, error) {
+func GetPayload(rawCert []byte) ([]byte, error) {
 	cert := new(Certificate)
 	err := cbor.Unmarshal(rawCert, cert)
 	if err != nil {
-		return nil, ErrImpossibleDecode
+		return nil, err
 	}
-	s := make([]Signature, len(cert.Signatures))
-	i := 0
-	for _, v := range cert.Signatures {
-		s[i] = v
-		i++
-	}
-	return s, nil
+	return cert.Payload, nil
 }
 
 // GetSignature returns a signature that signs the certificate

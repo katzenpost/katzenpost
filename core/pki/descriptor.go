@@ -142,7 +142,11 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 		return err
 	}
 
-	sigs, err := cert.GetSignatures(data)
+	mycert, err := cert.Unmarshal(data)
+	if err != nil {
+		return err
+	}
+	sigs := cert.GetSignatures(mycert)
 	if err != nil {
 		return err
 	}
