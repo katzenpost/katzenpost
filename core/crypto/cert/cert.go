@@ -22,6 +22,7 @@ import (
 	"crypto/hmac"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
 
@@ -407,6 +408,7 @@ func VerifyThreshold(verifiers []Verifier, threshold int, cert *Certificate, cur
 	for i, verifier := range verifiers {
 		c, err := Verify(verifier, cert, currentEpoch)
 		if err != nil {
+			fmt.Println("BAD")
 			bad = append(bad, verifier)
 			continue
 		}

@@ -351,6 +351,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 		return nil, nil, err
 	}
 
+	c.log.Debug("VerifyThreshold")
 	_, good, bad, err := doc.VerifyThreshold(c.verifiers, c.threshold, epoch)
 	if err != nil {
 		c.log.Errorf("VerifyThreshold failure: %d good signatures, %d bad signatures: %v", len(good), len(bad), err)
@@ -369,12 +370,14 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 			}
 		}
 	}
+	c.log.Debug("Unmarshal")
 	doc, err = pki.Unmarshal(r.Payload)
 	if err != nil {
 		c.log.Errorf("voting/Client: Get() invalid consensus document: %s", err)
 		return nil, nil, err
 	}
 
+	c.log.Debug("IsDocumentWellFormed")
 	err = pki.IsDocumentWellFormed(doc, c.verifiers, epoch)
 	if err != nil {
 		c.log.Errorf("voting/Client: IsDocumentWellFormed: %s", err)
@@ -390,7 +393,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 
 // Deserialize returns PKI document given the raw bytes.
 func (c *Client) Deserialize(raw []byte) (*pki.Document, error) {
-	doc, err := pki.ParseDocument(raw)
+	doc, err := pki.Unmarshal(raw)
 	if err != nil {
 		fmt.Errorf("Deserialize failure: %s", err)
 	}
@@ -414,6 +417,7 @@ func New(cfg *Config) (pki.Client, error) {
 	c.cfg = cfg
 	c.log = log.NewWithOptions(c.cfg.LogBackend, log.Options{
 		Prefix: "pki/voting/client",
+		Level:  log.DebugLevel,
 	})
 	c.pool = newConnector(cfg)
 	c.verifiers = make([]cert.Verifier, len(c.cfg.Authorities))
