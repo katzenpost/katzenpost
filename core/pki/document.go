@@ -551,6 +551,16 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
+// UnmarshalBinary implements encoding.BinaryUnmarshaler interface
+// and populates Document with detached Signatures
+func (d *Document) Deserialize(data []byte) error {
+	err := cbor.Unmarshal(data, (*document)(d))
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // AddSignature will add a Signature over this Document if it is signed by verifier.
 func (d *Document) AddSignature(verifier cert.Verifier, signature cert.Signature) error {
 	// Serialize this Document
