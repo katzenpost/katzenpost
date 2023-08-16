@@ -47,5 +47,8 @@ func TestDockerClientSendReceive(t *testing.T) {
 	t.Log("thin client send ping")
 	thin.SendMessage(message, &nodeIdKey, []byte("echo"))
 
+	_, err = thin.ReceiveMessage()
+	require.NoError(t, err)
+
 	d.Halt()
 }
