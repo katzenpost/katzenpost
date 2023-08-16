@@ -67,6 +67,27 @@ var (
 
 	// Create reusable EncMode interface with immutable options, safe for concurrent use.
 	ccbor cbor.EncMode
+
+	// TransportInvalid is the invalid transport.
+	TransportInvalid string
+
+	// TransportTCP is TCP, with the IP version determined by the results of
+	// a name server lookup.
+	TransportTCP string = "tcp"
+
+	// TransportTCPv4 is TCP over IPv4.
+	TransportTCPv4 string = "tcp4"
+
+	// TransportTCPv6 is TCP over IPv6.
+	TransportTCPv6 string = "tcp6"
+
+	// InternalTransports is the list of transports used for non-client related
+	// communications.
+	InternalTransports = []string{TransportTCPv4, TransportTCPv6}
+
+	// ClientTransports is the list of transports used by default for client
+	// to provider communication.
+	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6}
 )
 
 // Document is a PKI document.
@@ -302,28 +323,20 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
-var (
-	// TransportInvalid is the invalid transport.
-	TransportInvalid string
-
-	// TransportTCP is TCP, with the IP version determined by the results of
-	// a name server lookup.
-	TransportTCP string = "tcp"
-
-	// TransportTCPv4 is TCP over IPv4.
-	TransportTCPv4 string = "tcp4"
-
-	// TransportTCPv6 is TCP over IPv6.
-	TransportTCPv6 string = "tcp6"
-
-	// InternalTransports is the list of transports used for non-client related
-	// communications.
-	InternalTransports = []string{TransportTCPv4, TransportTCPv6}
-
-	// ClientTransports is the list of transports used by default for client
-	// to provider communication.
-	ClientTransports = []string{TransportTCP, TransportTCPv4, TransportTCPv6}
-)
+// StripSignatures removes all cryptographic signatures from the document.
+func (d *Document) StripSignatures() {
+	d.Signatures = nil
+	d.SharedRandomCommit = nil
+	d.SharedRandomReveal = nil
+	for i := 0; i < len(d.Topology); i++ {
+		for j := 0; j < len(d.Topology[i]); j++ {
+			d.Topology[i][j].Signature = nil
+		}
+	}
+	for i := 0; i < len(d.Providers); i++ {
+		d.Providers[i].Signature = nil
+	}
+}
 
 // FromPayload deserializes, then verifies a Document, and returns the Document or error.
 func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
@@ -549,6 +562,10 @@ func (d *Document) UnmarshalBinary(data []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (d *Document) Serialize() ([]byte, error) {
+	return ccbor.Marshal((*document)(d))
 }
 
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface

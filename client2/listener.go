@@ -115,17 +115,8 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 	if doc == nil {
 		panic("doc is nil")
 	}
-	doc.Signatures = nil
-	doc.SharedRandomCommit = nil
-	doc.SharedRandomReveal = nil
-	for i := 0; i < len(doc.Topology); i++ {
-		for j := 0; j < len(doc.Topology[i]); j++ {
-			doc.Topology[i][j].Signature = nil
-		}
-	}
-	for i := 0; i < len(doc.Providers); i++ {
-		doc.Providers[i].Signature = nil
-	}
+
+	doc.StripSignatures()
 	l.log.Debug("send pki doc")
 	c.sendPKIDoc(doc)
 	l.log.Debug("onNewConn end")
