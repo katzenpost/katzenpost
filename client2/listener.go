@@ -155,6 +155,7 @@ func (l *listener) updateConnectionStatus(status error) {
 
 	l.decoySender.UpdateConnectionStatus(status == nil)
 
+	l.Lock()
 	l.connectionStatusMutex.Lock()
 	conns := l.conns
 	l.connectionStatusMutex.Unlock()
@@ -162,6 +163,8 @@ func (l *listener) updateConnectionStatus(status error) {
 	for key, _ := range conns {
 		l.conns[key].updateConnectionStatus(status)
 	}
+	l.Unlock()
+
 }
 
 func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
