@@ -482,14 +482,15 @@ func (c *connection) onWireConn(w *wire.Session) {
 		}
 	}()
 
-	var fetchDelay time.Duration
+	//var fetchDelay time.Duration
+	fetchDelay := time.Second * 3
 	var selectAt time.Time
 	adjFetchDelay := func() {
 		sendAt := time.Now()
 		if deltaT := sendAt.Sub(selectAt); deltaT < fetchDelay {
 			fetchDelay = fetchDelay - deltaT
 		} else {
-			fetchDelay = 0
+			fetchDelay = time.Second * 3
 		}
 	}
 	var seq uint32
@@ -574,6 +575,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
 					return
 				}
+				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
 			fetchDelay = c.client.GetPollInterval()
@@ -584,6 +586,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 		creds, err := w.PeerCredentials()
 		if err != nil {
 			// do not continue processing this command
+			adjFetchDelay()
 			continue
 		}
 		// Update the cached descriptor, and re-validate the connection.
@@ -602,6 +605,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("peer send Disconnect")
 			return
 		case *commands.MessageEmpty:
+			c.log.Debugf("Received MessageEmpty: %v", cmd.Sequence)
 			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
 				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
 				return
@@ -669,6 +673,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("received unknown command: %T", cmd)
 			return
 		}
+		adjFetchDelay()
 	}
 }
 
@@ -676,6 +681,7 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 	if !c.descriptor.LinkKey.Equal(creds.PublicKey) {
 		return false
 	}
+
 	identityHash := c.descriptor.IdentityKey.Sum256()
 	if !hmac.Equal(identityHash[:], creds.AdditionalData) {
 		return false
