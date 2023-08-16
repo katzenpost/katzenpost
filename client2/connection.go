@@ -577,6 +577,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 				nrReqs++
 			}
 			fetchDelay = c.client.GetPollInterval()
+			adjFetchDelay()
 			continue
 		}
 
