@@ -73,7 +73,7 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 
 func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
 	c.log.Debug("sendPKIDoc begin")
-	blob, err := cbor.Marshal(doc)
+	blob, err := doc.Serialize()
 	if err != nil {
 		c.log.Debugf("cbor marshal failed: %s", err.Error())
 		return err
