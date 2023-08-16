@@ -128,18 +128,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	sigs, err := cert.GetSignatures(data)
-	if err != nil {
-		return err
-	}
-	switch len(sigs) {
-	case 0:
-		return ErrNoSignature
-	case 1:
-		// must have only 1 signature
-	default:
-		return ErrTooManySignatures
-	}
+	sigs, _ := cert.GetSignatures(data)
 
 	// Instantiate concrete instances so we deserialize into the right types
 	idPublicKey := cert.Scheme.NewEmptyPublicKey()
@@ -152,11 +141,9 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = cert.Verify(d.IdentityKey, data)
-	if err != nil {
-		return err
+	if sigs != nil && len(sigs) != 0 {
+		d.Signature = &sigs[0]
 	}
-	d.Signature = &sigs[0]
 	return nil
 }
 

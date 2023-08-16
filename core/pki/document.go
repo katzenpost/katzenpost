@@ -571,6 +571,7 @@ func (d *Document) Serialize() ([]byte, error) {
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 // and populates Document with detached Signatures
 func (d *Document) Deserialize(data []byte) error {
+	d.Signatures = make(map[[PublicKeyHashSize]byte]cert.Signature)
 	err := cbor.Unmarshal(data, (*document)(d))
 	if err != nil {
 		return err
