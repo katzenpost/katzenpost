@@ -323,6 +323,25 @@ func (d *Document) GetNodeByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: node not found")
 }
 
+func (d *Document) VerifyDescriptors() error {
+	var err error
+	for i := 0; i < len(d.Topology); i++ {
+		for j := 0; j < len(d.Topology[i]); j++ {
+			err = d.Topology[i][j].Verify()
+			if err != nil {
+				return err
+			}
+		}
+	}
+	for i := 0; i < len(d.Providers); i++ {
+		err = d.Providers[i].Verify()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // StripSignatures removes all cryptographic signatures from the document.
 func (d *Document) StripSignatures() {
 	d.Signatures = nil
@@ -346,6 +365,11 @@ func FromPayload(verifier cert.Verifier, payload []byte) (*Document, error) {
 	}
 	d := new(Document)
 	if err := d.UnmarshalBinary(payload); err != nil {
+		return nil, err
+	}
+
+	err = d.VerifyDescriptors()
+	if err != nil {
 		return nil, err
 	}
 	return d, nil

@@ -121,6 +121,39 @@ func (d *MixDescriptor) String() string {
 	return s
 }
 
+func (d *MixDescriptor) Certificate() (*cert.Certificate, error) {
+	pk, _ := cert.Scheme.NewKeypair()
+	rawDesc, err := ccbor.Marshal((*mixdescriptor)(d))
+	if err != nil {
+		return nil, err
+	}
+	signatures := make(map[[32]byte]cert.Signature)
+	if d.Signature != nil {
+		signatures[d.IdentityKey.Sum256()] = *d.Signature
+	}
+	certified := cert.Certificate{
+		Version:    cert.CertVersion,
+		Expiration: d.Epoch + 5,
+		KeyType:    pk.KeyType(),
+		Certified:  rawDesc,
+		Signatures: signatures,
+	}
+	return &certified, nil
+}
+
+func (d *MixDescriptor) Verify() error {
+	c, err := d.Certificate()
+	if err != nil {
+		return err
+	}
+	rawCert, err := c.Marshal()
+	if err != nil {
+		return err
+	}
+	cert.Verify(d.IdentityKey, rawCert)
+	return nil
+}
+
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	// extract the embedded IdentityKey and verify it signs the payload
@@ -217,6 +250,10 @@ func VerifyDescriptor(rawDesc []byte) (*MixDescriptor, error) {
 	}
 	if d.Version != DescriptorVersion {
 		return nil, fmt.Errorf("Invalid Document Version: '%v'", d.Version)
+	}
+	err = d.Verify()
+	if err != nil {
+		return nil, err
 	}
 	return d, nil
 }
