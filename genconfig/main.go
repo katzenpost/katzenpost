@@ -250,6 +250,9 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			cfg.Provider.TrustOnFirstUse = true
 			cfg.Provider.EnableEphemeralClients = true
 		} else {
+			cfg.Provider.TrustOnFirstUse = true
+			cfg.Provider.EnableEphemeralClients = true
+
 			spoolCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "spool",
 				Endpoint:       "+spool",

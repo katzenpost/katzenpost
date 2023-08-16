@@ -367,7 +367,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	linkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 	// Allocate the session struct.
-	userId := make([]byte, 32)
+	userId := make([]byte, 16)
 	_, err = rand.Reader.Read(userId)
 	if err != nil {
 		panic(err)
