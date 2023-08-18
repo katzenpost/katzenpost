@@ -102,6 +102,7 @@ func (c *Client) Topup(id []byte) chan error {
 	go func() {
 		defer close(errCh)
 		// XXX: Get Cashu from wallet API
+		// TODO: Cash payment from client to server goes here
 		nuts := make([]byte, 512)
 		_, err := io.ReadFull(rand.Reader, nuts)
 		if err != nil {
