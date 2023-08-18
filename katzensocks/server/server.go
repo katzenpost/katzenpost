@@ -536,6 +536,7 @@ func (s *Server) findSession(id []byte) (*Session, error) {
 
 func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 	// FIXME XXX: for testing only
+	// TODO: Validate Cashu payment here
 	// validate topup
 	// if !s.gotNuts(cmd.Nuts) {
 	// 	return &TopupResponse{Error: ErrInsufficientFunds}
