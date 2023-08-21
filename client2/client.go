@@ -101,7 +101,7 @@ func (c *Client) Start() error {
 		return err
 	}
 	c.pki = newPKI(c)
-	//c.pki.start()
+	c.pki.start()
 	c.conn.start()
 	if c.cfg.CachedDocument != nil {
 		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker

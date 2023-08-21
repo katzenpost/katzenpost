@@ -74,6 +74,7 @@ func (d *Daemon) Start() error {
 	d.cfg.Callbacks.OnACKFn = d.handleReplies
 	d.cfg.Callbacks.OnConnFn = d.listener.updateConnectionStatus
 	d.cfg.Callbacks.OnDocumentFn = d.listener.updateRatesFromPKIDoc
+
 	d.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
 		if !ok {

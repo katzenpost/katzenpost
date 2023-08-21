@@ -60,6 +60,9 @@ func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbI
 
 		revPath := make([]*path.PathHop, 0)
 		if surbID != nil {
+			if c.conn.queueID == nil {
+				panic("sender queueID cannot be nil")
+			}
 			revPath, then, err = c.makePath(c.conn.queueID, provider, surbID, then, false)
 			if err != nil {
 				return nil, nil, 0, err
@@ -126,6 +129,9 @@ func (c *Client) SendCiphertext(recipient []byte, provider *[32]byte, surbID *[s
 }
 
 func (c *Client) makePath(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
+	if c.conn.provider == nil {
+		panic("source provider cannot be nil")
+	}
 	srcProvider, dstProvider := c.conn.provider, provider
 	if !isForward {
 		srcProvider, dstProvider = dstProvider, srcProvider

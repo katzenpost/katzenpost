@@ -109,9 +109,6 @@ func (l *listener) onNewConn(conn *net.UnixConn) {
 
 	l.client.WaitForCurrentDocument()
 	doc := l.client.CurrentDocument()
-
-	// make the doc smaller, hop it fits in
-	// the unix domain socket packet limit 65k?
 	if doc == nil {
 		panic("doc is nil")
 	}
