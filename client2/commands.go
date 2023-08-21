@@ -10,9 +10,13 @@ type Response struct {
 
 	// IsStatus is set to true if Payload should be nil and IsConnected
 	// regarded as the latest connection status.
-	IsStatus bool
+	IsStatus bool `cbor:is_status`
 	// IsConnected is the latest connection status if IsStatus is true.
-	IsConnected bool
+	IsConnected bool `cbor:is_connected`
+
+	// IsPKIDoc is to to true if the Payload contains a PKI document stripped
+	// of signatures.
+	IsPKIDoc bool `cbor:is_pki_doc`
 }
 
 type Request struct {

@@ -186,6 +186,8 @@ func (c *connection) getDescriptor() error {
 			return errors.New("No PinnedProviders")
 		}
 		provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
+		idHash := provider.IdentityKey.Sum256()
+		c.provider = &idHash
 		c.descriptor = &cpki.MixDescriptor{
 			Name:        provider.Name,
 			IdentityKey: provider.IdentityKey,
@@ -282,7 +284,6 @@ func (c *connection) doConnect(dialCtx context.Context) {
 			c.log.Debugf("Aborting connect loop, descriptor no longer present.")
 			return
 		}
-
 		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
 
 		// Build the list of candidate addresses, in decreasing order of

@@ -139,17 +139,38 @@ func (d *Daemon) egressWorker() {
 			if err != nil {
 				panic(err)
 			}
-			surbKey, rtt, err := d.client.SendCiphertext(request.RecipientQueueID, request.DestinationIdHash, surbID, request.Payload)
-			if err != nil {
-				d.log.Infof("SendCiphertext error: %s", err.Error())
-			}
-			slop := time.Second * 20
-			replyArrivalTime := time.Now().Add(rtt + slop)
-			d.log.Infof("reply arrival time: %s", replyArrivalTime)
-			d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
-			d.replies[*surbID] = replyDescriptor{
-				appID:   request.AppID,
-				surbKey: surbKey,
+
+			switch {
+			// XXX FIX ME FIXME FIXME
+			case request.IsLoopDecoy == true:
+			case request.IsDropDecoy == true:
+			case request.IsSendOp == true:
+				if request.Payload == nil {
+					panic("sending payload cannot be nil")
+				}
+				if len(request.Payload) == 0 {
+					panic("sending payload cannot be zero length")
+				}
+
+				d.log.Debug("SENDING NOW!")
+
+				surbKey, rtt, err := d.client.SendCiphertext(request.RecipientQueueID, request.DestinationIdHash, surbID, request.Payload)
+				if err != nil {
+					d.log.Infof("SendCiphertext error: %s", err.Error())
+				}
+
+				d.log.Debug("SENT!")
+
+				slop := time.Second * 20
+				replyArrivalTime := time.Now().Add(rtt + slop)
+				d.log.Infof("reply arrival time: %s", replyArrivalTime)
+				d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
+				d.replies[*surbID] = replyDescriptor{
+					appID:   request.AppID,
+					surbKey: surbKey,
+				}
+			default:
+				panic("send operation not fully specified")
 			}
 		}
 	}

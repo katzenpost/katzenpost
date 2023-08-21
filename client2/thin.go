@@ -5,46 +5,25 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"syscall"
 
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/worker"
 )
 
-type ClientLauncher struct {
-	process *os.Process
-}
-
-func (l *ClientLauncher) Halt() {
-	err := l.process.Signal(syscall.SIGHUP)
-	if err != nil {
-		panic(err)
-	}
-	_, err = l.process.Wait()
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (l *ClientLauncher) Launch(args ...string) error {
-	var procAttr os.ProcAttr
-	procAttr.Files = []*os.File{os.Stdin,
-		os.Stdout, os.Stderr}
-	var err error
-	l.process, err = os.StartProcess(args[0], args, &procAttr)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 type ThinClient struct {
+	worker.Worker
+
 	log          *log.Logger
 	unixConn     *net.UnixConn
 	destUnixAddr *net.UnixAddr
-	pkidoc       *cpki.Document
+
+	pkidoc      *cpki.Document
+	isConnected bool
+
+	receivedCh chan []byte
 }
 
 func NewThinClient() *ThinClient {
@@ -53,6 +32,7 @@ func NewThinClient() *ThinClient {
 			Prefix: "thin_client",
 			Level:  log.DebugLevel,
 		}),
+		receivedCh: make(chan []byte),
 	}
 }
 
@@ -76,7 +56,7 @@ func (t *ThinClient) Dial() error {
 
 	// WAIT UNTIL we have a Noise cryptographic connection with an edge node
 	t.log.Debugf("Waiting for a connection status message")
-	message1, err := t.ReceiveMessage()
+	message1, err := t.readNextMessage()
 	if err != nil {
 		return err
 	}
@@ -88,21 +68,52 @@ func (t *ThinClient) Dial() error {
 	}
 
 	t.log.Debugf("Waiting for a PKI doc message")
-	message2, err := t.ReceiveMessage()
+	message2, err := t.readNextMessage()
 	if err != nil {
 		return err
 	}
+	t.parsePKIDoc(message2.Payload)
+	t.Go(t.worker)
+	t.log.Debug("Dial end")
+	return nil
+}
+
+func (t *ThinClient) worker() {
+	for {
+		select {
+		case <-t.HaltCh():
+		default:
+		}
+
+		message, err := t.readNextMessage()
+		if err != nil {
+			t.log.Infof("thin client ReceiveMessage failed: %s", err.Error())
+		}
+
+		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE")
+
+		switch {
+		case message.IsStatus == true:
+			t.isConnected = message.IsConnected
+		case message.IsPKIDoc == true:
+			t.parsePKIDoc(message.Payload)
+		default:
+			if message.Payload == nil {
+				t.log.Infof("message.Payload is nil")
+			}
+			t.receivedCh <- message.Payload
+		}
+	}
+}
+
+func (t *ThinClient) parsePKIDoc(payload []byte) error {
 	doc := &cpki.Document{}
-	err = doc.Deserialize(message2.Payload)
+	err := doc.Deserialize(payload)
 	if err != nil {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return err
 	}
-
 	t.pkidoc = doc
-
-	t.log.Debug("Dial end")
-
 	return nil
 }
 
@@ -133,7 +144,7 @@ func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue [
 	return nil
 }
 
-func (t *ThinClient) ReceiveMessage() (*Response, error) {
+func (t *ThinClient) readNextMessage() (*Response, error) {
 	buff := make([]byte, 65536)
 	msgLen, _, _, _, err := t.unixConn.ReadMsgUnix(buff, nil)
 	if err != nil {
@@ -145,4 +156,9 @@ func (t *ThinClient) ReceiveMessage() (*Response, error) {
 		return nil, err
 	}
 	return &response, nil
+}
+
+func (t *ThinClient) ReceiveMessage() []byte {
+	msg := <-t.receivedCh
+	return msg
 }

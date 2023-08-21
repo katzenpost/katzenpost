@@ -41,14 +41,20 @@ func TestDockerClientSendReceive(t *testing.T) {
 		}
 	}
 	require.True(t, len(pingTargets) > 0)
-	message := []byte("hello alice, this is bob.")
+	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 
 	t.Log("thin client send ping")
-	thin.SendMessage(message, &nodeIdKey, []byte("echo"))
+	thin.SendMessage(message1, &nodeIdKey, []byte("echo"))
 
-	_, err = thin.ReceiveMessage()
+	time.Sleep(time.Second * 3)
+
+	message2 := thin.ReceiveMessage()
+
 	require.NoError(t, err)
+	require.NotEqual(t, message1, []byte{})
+	require.NotEqual(t, message2, []byte{})
+	require.Equal(t, message1, message2)
 
 	d.Halt()
 }
