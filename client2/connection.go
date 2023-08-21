@@ -372,10 +372,11 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	if err != nil {
 		panic(err)
 	}
+	c.queueID = []byte(fmt.Sprintf("%x", userId))
 	cfg := &wire.SessionConfig{
 		Geometry:          c.client.cfg.SphinxGeometry,
 		Authenticator:     c,
-		AdditionalData:    []byte(fmt.Sprintf("%x", userId)), // random 64 char string
+		AdditionalData:    c.queueID,
 		AuthenticationKey: linkKey,
 		RandomReader:      rand.Reader,
 	}
