@@ -62,10 +62,7 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 		c.log.Info("send operation")
 		req.AppID = c.appID
 		c.listener.ingressCh <- req
-		return &Response{
-			AppID:   req.AppID,
-			Payload: []byte{},
-		}, nil
+		return nil, nil
 	}
 
 	return nil, errors.New("invalid operation specified")
@@ -166,9 +163,11 @@ func (c *incomingConn) worker() {
 				return
 			}
 
-			err = c.sendResponse(response)
-			if err != nil {
-				c.log.Infof("received error sending Response: %s", err.Error())
+			if response != nil {
+				err = c.sendResponse(response)
+				if err != nil {
+					c.log.Infof("received error sending Response: %s", err.Error())
+				}
 			}
 		}
 

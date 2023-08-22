@@ -94,13 +94,19 @@ func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbI
 				payload = append(payload, surb...)
 				payload = append(payload, message...)
 
-				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, payload)
+				blob := make([]byte, c.geo.ForwardPayloadLength)
+				copy(blob, payload)
+
+				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, blob)
 				if err != nil {
 					return nil, nil, 0, err
 				}
 				return pkt, k, then.Sub(now), err
 			} else {
-				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, payload)
+				blob := make([]byte, c.geo.ForwardPayloadLength)
+				copy(blob, payload)
+
+				pkt, err := c.sphinx.NewPacket(rand.Reader, fwdPath, blob)
 				if err != nil {
 					return nil, nil, 0, err
 				}
@@ -119,8 +125,7 @@ func (c *Client) SendCiphertext(recipient []byte, provider *[32]byte, surbID *[s
 	pkt, k, rtt, err := c.ComposeSphinxPacket(recipient, provider, surbID, b)
 	c.log.Info("AFTER COMPOSE SPHINX PACKET")
 	if err != nil {
-		c.log.Infof("COMPOSE SPHINX PACKET FAIL %s", err.Error())
-		return nil, 0, err
+		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
 	}
 	c.log.Info("BEFORE sendPacket")
 	err = c.conn.sendPacket(pkt)

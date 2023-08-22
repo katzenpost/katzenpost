@@ -162,8 +162,9 @@ func (d *Daemon) egressWorker() {
 				d.log.Debug("SENT!")
 
 				slop := time.Second * 20
-				replyArrivalTime := time.Now().Add(rtt + slop)
-				d.log.Infof("reply arrival time: %s", replyArrivalTime)
+				duration := rtt + slop
+				replyArrivalTime := time.Now().Add(duration)
+				d.log.Infof("reply arrival duration: %s", duration)
 				d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
 				d.replies[*surbID] = replyDescriptor{
 					appID:   request.AppID,
