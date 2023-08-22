@@ -83,9 +83,12 @@ type Kaetzchen interface {
 // BuiltInCtorFn is the constructor type for a built-in Kaetzchen.
 type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
 
+const TestCapability = "testdest"
+
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
 	EchoCapability:      NewEcho,
+	TestCapability:      NewEcho,
 	keyserverCapability: NewKeyserver,
 }
 
