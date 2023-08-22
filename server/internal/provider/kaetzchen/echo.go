@@ -54,6 +54,18 @@ func (k *kaetzchenEcho) Halt() {
 
 // NewEcho constructs a new Echo Kaetzchen instance, providing the "echo"
 // capability, on the configured endpoint.
+func NewTestDest(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
+	k := &kaetzchenEcho{
+		log:    glue.LogBackend().GetLogger("kaetzchen/testdest"),
+		params: make(Parameters),
+	}
+	k.params[ParameterEndpoint] = cfg.Endpoint
+
+	return k, nil
+}
+
+// NewEcho constructs a new Echo Kaetzchen instance, providing the "echo"
+// capability, on the configured endpoint.
 func NewEcho(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	k := &kaetzchenEcho{
 		log:    glue.LogBackend().GetLogger("kaetzchen/echo"),
