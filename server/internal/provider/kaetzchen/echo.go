@@ -29,10 +29,11 @@ type kaetzchenEcho struct {
 	log *logging.Logger
 
 	params Parameters
+	cap    string
 }
 
 func (k *kaetzchenEcho) Capability() string {
-	return EchoCapability
+	return k.cap
 }
 
 func (k *kaetzchenEcho) Parameters() Parameters {
@@ -58,6 +59,7 @@ func NewTestDest(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	k := &kaetzchenEcho{
 		log:    glue.LogBackend().GetLogger("kaetzchen/testdest"),
 		params: make(Parameters),
+		cap:    "testdest",
 	}
 	k.params[ParameterEndpoint] = cfg.Endpoint
 
@@ -70,6 +72,7 @@ func NewEcho(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	k := &kaetzchenEcho{
 		log:    glue.LogBackend().GetLogger("kaetzchen/echo"),
 		params: make(Parameters),
+		cap:    EchoCapability,
 	}
 	k.params[ParameterEndpoint] = cfg.Endpoint
 
