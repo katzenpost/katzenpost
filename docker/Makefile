@@ -216,6 +216,11 @@ run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
         /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
 
+run-ping-testdest: $(net_name)/ping.$(distro) $(net_name)/running.stamp
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s testdest -printDiff -n 1
+
+
 shell: $(distro)_go_mod.stamp $(net_name)
 	$(docker) run -e --network=host ${docker_args} $(mount_net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)
 
