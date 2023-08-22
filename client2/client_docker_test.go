@@ -45,7 +45,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 
 	t.Log("thin client send ping")
-	thin.SendMessage(message1, &nodeIdKey, []byte("echo"))
+	thin.SendMessage(message1, &nodeIdKey, []byte("testdest"))
 
 	time.Sleep(time.Second * 3)
 
