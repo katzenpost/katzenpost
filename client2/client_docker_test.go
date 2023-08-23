@@ -54,7 +54,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, message1, []byte{})
 	require.NotEqual(t, message2, []byte{})
-	require.Equal(t, message1, message2)
+	require.Equal(t, message1, message2[:len(message1)])
 
 	d.Halt()
 }

@@ -657,6 +657,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 						forceCloseConn(err)
 					}
 				}()
+			} else {
+				panic("client.cfg.Callbacks.OnACKFn must not be nil")
 			}
 			seq++
 		case *commands.Consensus:

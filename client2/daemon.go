@@ -47,6 +47,7 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
+		replyCh:    make(chan sphinxReply),
 		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
 	}, nil
@@ -103,7 +104,6 @@ func (d *Daemon) handleReplies(surbID *[constants.SURBIDLength]byte, ciphertext 
 }
 
 func (d *Daemon) egressWorker() {
-	d.log.Debug("egressWorker")
 	for {
 		select {
 		case <-d.HaltCh():
@@ -152,14 +152,10 @@ func (d *Daemon) egressWorker() {
 					panic("sending payload cannot be zero length")
 				}
 
-				d.log.Debug("SENDING NOW!")
-
 				surbKey, rtt, err := d.client.SendCiphertext(request.RecipientQueueID, request.DestinationIdHash, surbID, request.Payload)
 				if err != nil {
 					d.log.Infof("SendCiphertext error: %s", err.Error())
 				}
-
-				d.log.Debug("SENT!")
 
 				slop := time.Second * 20
 				duration := rtt + slop
