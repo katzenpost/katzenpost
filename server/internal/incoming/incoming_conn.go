@@ -147,7 +147,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *incomingConn) Close() {
-	c.closeConnectionCh <- true
+	close(c.closeConnectionCh)
 }
 
 func (c *incomingConn) worker() {
@@ -235,6 +235,25 @@ func (c *incomingConn) worker() {
 		}
 	}()
 
+	// XXX FIXME add duration to PKI doc via dirauth config
+	if c.fromClient {
+		receivedMessageTimer := time.NewTicker(time.Second * 1)
+		go func() {
+			for {
+				select {
+				case <-c.l.closeAllCh:
+					// Server is getting shutdown, all connections are being closed.
+					return
+				case <-c.closeConnectionCh:
+					c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+					return
+				case <-receivedMessageTimer.C:
+					c.sendNextMessage()
+				}
+			}
+		}()
+	}
+
 	// Process incoming packets.
 	for {
 		var rawCmd commands.Command
@@ -306,6 +325,72 @@ func (c *incomingConn) worker() {
 	}
 
 	// NOTREACHED
+}
+
+func (c *incomingConn) sendNextMessage() error {
+	// Get the message from the user's spool, advancing as appropriate.
+	creds, err := c.w.PeerCredentials()
+	if err != nil {
+		return err
+	}
+
+	c.retrSeq++ // Advance the sequence number.
+	advance := true
+
+	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
+	if err != nil {
+		return err
+	}
+	if remaining > math.MaxUint8 {
+		// The count hint is an 8 bit value and is clamped.
+		remaining = math.MaxUint8
+	}
+	hint := uint8(remaining)
+	instrument.IngressQueue(hint)
+
+	var respCmd commands.Command
+	if surbID != nil {
+		// This was a SURBReply.
+		surbCmd := &commands.MessageACK{
+			Geo: c.geo,
+
+			QueueSizeHint: hint,
+			Sequence:      c.retrSeq,
+			Payload:       msg,
+		}
+		copy(surbCmd.ID[:], surbID)
+		respCmd = surbCmd
+
+		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
+		}
+	} else if msg != nil {
+		// This was a message.
+		respCmd = &commands.Message{
+			Geo:  c.geo,
+			Cmds: commands.NewCommands(c.geo),
+
+			QueueSizeHint: hint,
+			Sequence:      c.retrSeq,
+			Payload:       msg,
+		}
+		if len(msg) != c.geo.UserForwardPayloadLength {
+			return fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
+		}
+	} else {
+		// Queue must be empty.
+		if hint != 0 {
+			// This should NEVER happen, but it's probably not worth crashing
+			// the server over if it does.
+			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
+		}
+		respCmd = &commands.MessageEmpty{
+			Cmds:     commands.NewCommands(c.geo),
+			Sequence: c.retrSeq,
+		}
+	}
+
+	return c.w.SendCommand(respCmd)
 }
 
 func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
