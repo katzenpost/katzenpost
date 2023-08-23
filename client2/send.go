@@ -34,7 +34,6 @@ func (c *Client) SendSphinxPacket(pkt []byte) error {
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
 func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, message []byte) ([]byte, []byte, time.Duration, error) {
-	c.log.Info("ComposeSphinxPacket START")
 	if len(recipient) > sConstants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", recipient)
 	}
@@ -120,14 +119,10 @@ func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbI
 // SURB identified by surbID, and returns the SURB decryption key and total
 // round trip delay.
 func (c *Client) SendCiphertext(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, b []byte) ([]byte, time.Duration, error) {
-	c.log.Info("SendCiphertext")
-	c.log.Info("BEFORE COMPOSE SPHINX PACKET")
 	pkt, k, rtt, err := c.ComposeSphinxPacket(recipient, provider, surbID, b)
-	c.log.Info("AFTER COMPOSE SPHINX PACKET")
 	if err != nil {
 		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
 	}
-	c.log.Info("BEFORE sendPacket")
 	err = c.conn.sendPacket(pkt)
 	return k, rtt, err
 }
