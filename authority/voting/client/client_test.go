@@ -96,8 +96,8 @@ func generateNodes(isProvider bool, num int, epoch uint64) ([]*descriptor, error
 			IdentityKey: mixIdentityPublicKey,
 			LinkKey:     linkPubKey,
 			MixKeys:     mixKeys,
-			Addresses: map[pki.Transport][]string{
-				pki.Transport("tcp4"): []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
+			Addresses: map[string][]string{
+				"tcp4": []string{fmt.Sprintf("127.0.0.1:%d", i+1)},
 			},
 			Kaetzchen:  nil,
 			Provider:   isProvider,
