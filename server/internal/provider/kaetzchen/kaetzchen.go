@@ -222,7 +222,7 @@ func (k *KaetzchenWorker) processKaetzchen(pkt *packet.Packet) {
 
 	// Iff there is a SURB, generate a SURB-Reply and schedule.
 	if surb != nil {
-		respPkt, err := packet.NewPacketFromSURB(pkt, surb, resp, k.glue.Config().SphinxGeometry)
+		respPkt, err := packet.NewPacketFromSURB(surb, resp, k.glue.Config().SphinxGeometry)
 		if err != nil {
 			k.log.Debugf("Failed to generate SURB-Reply: %v (%v)", pkt.ID, err)
 			return
