@@ -297,9 +297,15 @@ func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error)
 	copy(nextHopCmd.ID[:], firstHop[:])
 	cmds = append(cmds, nextHopCmd)
 
-	nodeDelayCmd := new(commands.NodeDelay)
-	nodeDelayCmd.Delay = pkt.NodeDelay.Delay
-	cmds = append(cmds, nodeDelayCmd)
+	// pick a random delay to use for firstHop
+	//doc := 
+	//delay := uint64(rand.Exp(rng, doc.Mu)) + 1
+	//if doc.MuMaxDelay > 0 && delay > doc.MuMaxDelay {
+	//	delay = doc.MuMaxDelay
+	//}
+	//nodeDelayCmd := new(commands.NodeDelay)
+	//nodeDelayCmd.Delay = delay
+	//cmds = append(cmds, nodeDelayCmd)
 
 	// Assemble the response packet.
 	respPkt, err := New(rawRespPkt, geo)
@@ -312,10 +318,10 @@ func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error)
 		return nil, err
 	}
 
-	respPkt.RecvAt = time.Now()
+	//respPkt.RecvAt = time.Now()
 	// XXX: This should probably fudge the delay to account for processing
 	// time.
-	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
+	//respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
 	respPkt.MustForward = true
 	respPkt.rawPacketPool = sync.Pool{
 		New: func() interface{} {
