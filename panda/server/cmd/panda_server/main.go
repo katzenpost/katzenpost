@@ -114,7 +114,7 @@ func (s *pandaRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		// know how long it is, so we will use a streaming
 		// decoder and simply return the first cbor object
 		// and then discard the decoder and buffer
-		pandaResponse, err := s.p.OnRequest(r.ID, r.Payload, r.HasSURB)
+		pandaResponse, err := s.p.OnRequest(r.ID, r.Payload, len(r.SURB) > 0)
 		if err != nil {
 			s.log.Errorf("OnCommand called with invalid request")
 			return nil, err
