@@ -40,7 +40,7 @@ import (
 type Request struct {
 	ID      uint64
 	Payload []byte
-	HasSURB bool
+	SURB    []byte
 }
 
 // Marshal serializes Request
@@ -64,7 +64,9 @@ func (r *RequestFactory) Build() Command {
 
 // Response is the response received after sending a Request to the plugin.
 type Response struct {
+	ID      uint64
 	Payload []byte
+	SURB    []byte
 }
 
 // Marshal serializes Response
