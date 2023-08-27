@@ -334,9 +334,7 @@ func (c *incomingConn) sendNextMessage() error {
 		return err
 	}
 
-	c.retrSeq++ // Advance the sequence number.
 	advance := true
-
 	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
 	if err != nil {
 		return err
@@ -360,10 +358,10 @@ func (c *incomingConn) sendNextMessage() error {
 		}
 		copy(surbCmd.ID[:], surbID)
 		respCmd = surbCmd
-
 		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
 			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
 		}
+		c.log.Info("MESSAGE REPLY")
 	} else if msg != nil {
 		// This was a message.
 		respCmd = &commands.Message{
@@ -377,6 +375,7 @@ func (c *incomingConn) sendNextMessage() error {
 		if len(msg) != c.geo.UserForwardPayloadLength {
 			return fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
 		}
+		c.log.Info("MESSAGE MESSAGE")
 	} else {
 		// Queue must be empty.
 		if hint != 0 {
@@ -388,6 +387,7 @@ func (c *incomingConn) sendNextMessage() error {
 			Cmds:     commands.NewCommands(c.geo),
 			Sequence: c.retrSeq,
 		}
+		c.log.Info("MESSAGE EMPTY")
 	}
 
 	return c.w.SendCommand(respCmd)

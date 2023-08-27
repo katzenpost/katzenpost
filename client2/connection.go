@@ -496,12 +496,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 		}
 	}
 	var seq uint32
-	checkSeq := func(cmdSeq uint32) error {
-		if seq != cmdSeq {
-			return newProtocolError("invalid/unexpected sequence: %v (Expecting: %v)", cmdSeq, seq)
-		}
-		return nil
-	}
 	nrReqs, nrResps := 0, 0
 	for {
 		var rawCmd commands.Command
@@ -608,20 +602,12 @@ func (c *connection) onWireConn(w *wire.Session) {
 			return
 		case *commands.MessageEmpty:
 			c.log.Debugf("Received MessageEmpty: %v", cmd.Sequence)
-			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
-				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
-				return
-			}
 			nrResps++
 			if wireErr = dispatchOnEmpty(); wireErr != nil {
 				return
 			}
 		case *commands.Message:
 			c.log.Debugf("Received Message: %v", cmd.Sequence)
-			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
-				c.log.Errorf("Message sequence unexpected: %v", cmd.Sequence)
-				return
-			}
 			nrResps++
 			if c.client.cfg.Callbacks.OnMessageFn != nil {
 				cbWg.Add(1)
@@ -643,10 +629,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 		case *commands.MessageACK:
 			c.log.Debugf("Received MessageACK: %v", cmd.Sequence)
-			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
-				c.log.Errorf("MessageACK sequence unexpected: %v", cmd.Sequence)
-				return
-			}
 			nrResps++
 			if c.client.cfg.Callbacks.OnACKFn != nil {
 				cbWg.Add(1)
