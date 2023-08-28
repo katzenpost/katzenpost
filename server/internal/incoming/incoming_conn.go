@@ -248,7 +248,10 @@ func (c *incomingConn) worker() {
 					c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
 					return
 				case <-receivedMessageTimer.C:
-					c.sendNextMessage()
+					err := c.sendNextMessage()
+					if err != nil {
+						c.log.Infof("sendNextMessage error: %s", err.Error())
+					}
 				}
 			}
 		}()
@@ -327,7 +330,52 @@ func (c *incomingConn) worker() {
 	// NOTREACHED
 }
 
+func (c *incomingConn) messageToCommand(msg, surbID []byte, hint uint8) (commands.Command, error) {
+	var respCmd commands.Command
+	if surbID != nil {
+		// This was a SURBReply.
+		surbCmd := &commands.MessageACK{
+			Geo: c.geo,
+
+			QueueSizeHint: hint,
+			Payload:       msg,
+		}
+		copy(surbCmd.ID[:], surbID)
+		respCmd = surbCmd
+		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+			return nil, fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
+		}
+		c.log.Info("MESSAGE REPLY")
+	} else if msg != nil {
+		// This was a forward message.
+		respCmd = &commands.Message{
+			Geo:  c.geo,
+			Cmds: commands.NewCommands(c.geo),
+
+			QueueSizeHint: hint,
+			Payload:       msg,
+		}
+		if len(msg) != c.geo.UserForwardPayloadLength {
+			return nil, fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
+		}
+		c.log.Info("MESSAGE MESSAGE")
+	} else {
+		// Queue must be empty.
+		if hint != 0 {
+			// This should NEVER happen, but it's probably not worth crashing
+			// the server over if it does.
+			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
+		}
+		respCmd = &commands.MessageEmpty{
+			Cmds: commands.NewCommands(c.geo),
+		}
+		c.log.Info("MESSAGE EMPTY")
+	}
+	return respCmd, nil
+}
+
 func (c *incomingConn) sendNextMessage() error {
+	c.log.Info("SEND NEXT MESSAGE")
 	// Get the message from the user's spool, advancing as appropriate.
 	creds, err := c.w.PeerCredentials()
 	if err != nil {
@@ -346,48 +394,9 @@ func (c *incomingConn) sendNextMessage() error {
 	hint := uint8(remaining)
 	instrument.IngressQueue(hint)
 
-	var respCmd commands.Command
-	if surbID != nil {
-		// This was a SURBReply.
-		surbCmd := &commands.MessageACK{
-			Geo: c.geo,
-
-			QueueSizeHint: hint,
-			Sequence:      c.retrSeq,
-			Payload:       msg,
-		}
-		copy(surbCmd.ID[:], surbID)
-		respCmd = surbCmd
-		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
-			return fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
-		}
-		c.log.Info("MESSAGE REPLY")
-	} else if msg != nil {
-		// This was a message.
-		respCmd = &commands.Message{
-			Geo:  c.geo,
-			Cmds: commands.NewCommands(c.geo),
-
-			QueueSizeHint: hint,
-			Sequence:      c.retrSeq,
-			Payload:       msg,
-		}
-		if len(msg) != c.geo.UserForwardPayloadLength {
-			return fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
-		}
-		c.log.Info("MESSAGE MESSAGE")
-	} else {
-		// Queue must be empty.
-		if hint != 0 {
-			// This should NEVER happen, but it's probably not worth crashing
-			// the server over if it does.
-			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
-		}
-		respCmd = &commands.MessageEmpty{
-			Cmds:     commands.NewCommands(c.geo),
-			Sequence: c.retrSeq,
-		}
-		c.log.Info("MESSAGE EMPTY")
+	respCmd, err := c.messageToCommand(msg, surbID, hint)
+	if err != nil {
+		return err
 	}
 
 	return c.w.SendCommand(respCmd)
