@@ -241,11 +241,11 @@ func (c *incomingConn) worker() {
 		go func() {
 			for {
 				select {
+				case <-commandCloseCh:
+					// connection closed
+					return
 				case <-c.l.closeAllCh:
 					// Server is getting shutdown, all connections are being closed.
-					return
-				case <-c.closeConnectionCh:
-					c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
 					return
 				case <-receivedMessageTimer.C:
 					err := c.sendNextMessage()
