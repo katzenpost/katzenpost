@@ -158,7 +158,11 @@ func (t *ThinClient) readNextMessage() (*Response, error) {
 	return &response, nil
 }
 
-func (t *ThinClient) ReceiveMessage() []byte {
-	msg := <-t.receivedCh
-	return msg
+func (t *ThinClient) ReceiveMessage() ([]byte, error) {
+	select {
+	case msg := <-t.receivedCh:
+		return msg, nil
+	case <-t.HaltCh():
+		return nil, errors.New("shutting down, cannot receive message")
+	}
 }
