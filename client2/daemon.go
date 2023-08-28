@@ -157,7 +157,7 @@ func (d *Daemon) egressWorker() {
 					d.log.Infof("SendCiphertext error: %s", err.Error())
 				}
 
-				slop := time.Second * 20
+				slop := time.Second * 3
 				duration := rtt + slop
 				replyArrivalTime := time.Now().Add(duration)
 				d.log.Infof("reply arrival duration: %s", duration)
