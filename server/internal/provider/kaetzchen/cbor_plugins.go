@@ -153,26 +153,25 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 					k.log.Errorf("%v: Got response too long: %d > max (%d)",
 					pluginCap, len(r.Payload), k.geo.UserForwardPayloadLength)
 					instrument.KaetzchenRequestsDropped(1)
-					return
+					continue
 				}
 				// Iff there is a SURB, generate a SURB-Reply and schedule.
 				if len(r.SURB) == surbLength {
 					respPkt, err := packet.NewPacketFromSURB(r.SURB, r.Payload, k.geo)
 					if err != nil {
 						k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, r.ID, err)
-						return
+						continue
 					}
 
 					k.log.Debugf("%v: Handing off newly generated SURB-Reply: %v (Src:%v)", pluginCap, respPkt.ID, r.ID)
 					k.glue.Scheduler().OnPacket(respPkt)
-					return
+				} else {
+					k.log.Debugf("No SURB provided: %v", r.ID)
 				}
-				k.log.Debugf("No SURB provided: %v", r.ID)
 			default:
 				// received some unknown command type
 				k.log.Errorf("%v: Failed to handle Kaetzchen request, unknown command type: (%v), response: %s", pluginCap, r, cborResponse)
 				instrument.KaetzchenRequestsDropped(1)
-				return
 			}
 		}
 	}
