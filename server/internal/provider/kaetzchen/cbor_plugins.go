@@ -311,7 +311,7 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 
 		// start the sendworker
 		defer kaetzchenWorker.Go(func() {
-			kaetzchenWorker.sendworker(endpoint, pluginClient)
+			kaetzchenWorker.sendworker(pluginClient)
 		})
 
 
