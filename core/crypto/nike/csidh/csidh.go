@@ -29,7 +29,7 @@ import (
 )
 
 // CSIDHScheme is the nobs CSIDH-512 NIKE.
-var CSIDHScheme *CsidhNike
+var NOBS_CSIDH512Scheme *CsidhNike
 
 var _ nike.PrivateKey = (*PrivateKey)(nil)
 var _ nike.PublicKey = (*PublicKey)(nil)
@@ -151,7 +151,6 @@ func (p *PublicKey) Blind(blindingFactor nike.PrivateKey) error {
 
 func (p *PublicKey) Reset() {
 	p.publicKey = nil
-	p = nil
 }
 
 func (p *PublicKey) Bytes() []byte {
@@ -210,7 +209,6 @@ func (p *PrivateKey) Public() nike.PublicKey {
 
 func (p *PrivateKey) Reset() {
 	p.privateKey = nil
-	p = nil
 }
 
 func (p *PrivateKey) Bytes() []byte {
@@ -253,5 +251,5 @@ func (p *PrivateKey) UnmarshalText(data []byte) error {
 }
 
 func init() {
-	CSIDHScheme = new(CsidhNike)
+	NOBS_CSIDH512Scheme = new(CsidhNike)
 }
