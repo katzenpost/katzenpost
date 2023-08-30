@@ -309,6 +309,12 @@ func NewCBORPluginWorker(glue glue.Glue) (*CBORPluginWorker, error) {
 			kaetzchenWorker.worker(endpoint, pluginClient)
 		})
 
+		// start the sendworker
+		defer kaetzchenWorker.Go(func() {
+			kaetzchenWorker.sendworker(endpoint, pluginClient)
+		})
+
+
 		// Unregister pluginClient when it halts
 		defer kaetzchenWorker.Go(func() {
 			<-pluginClient.HaltCh()
