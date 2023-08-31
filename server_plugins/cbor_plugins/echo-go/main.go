@@ -36,7 +36,7 @@ func (e *Echo) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		go func() {
-			e.write(&cborplugin.Response{Payload: r.Payload})
+			e.write(&cborplugin.Response{ID: r.ID, SURB: r.SURB, Payload: r.Payload})
 		}()
 		return nil
 	default:
