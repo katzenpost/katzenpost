@@ -1,5 +1,5 @@
 // client.go - client of new cbor plugin system for kaetzchen services
-// Copyright (C) 2021  David Stainton.
+// Copyright (C) 2021  David Stainton, Masala
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as
@@ -26,9 +26,9 @@ package cborplugin
 import (
 	"bufio"
 	"io"
-	//"net"
 	"os/exec"
 	"syscall"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
