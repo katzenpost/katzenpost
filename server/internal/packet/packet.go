@@ -297,15 +297,9 @@ func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error)
 	copy(nextHopCmd.ID[:], firstHop[:])
 	cmds = append(cmds, nextHopCmd)
 
-	// pick a random delay to use for firstHop
-	//doc := 
-	//delay := uint64(rand.Exp(rng, doc.Mu)) + 1
-	//if doc.MuMaxDelay > 0 && delay > doc.MuMaxDelay {
-	//	delay = doc.MuMaxDelay
-	//}
-	//nodeDelayCmd := new(commands.NodeDelay)
-	//nodeDelayCmd.Delay = delay
-	//cmds = append(cmds, nodeDelayCmd)
+	nodeDelayCmd := new(commands.NodeDelay)
+	nodeDelayCmd.Delay = 0
+	cmds = append(cmds, nodeDelayCmd)
 
 	// Assemble the response packet.
 	respPkt, err := New(rawRespPkt, geo)

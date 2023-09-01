@@ -38,9 +38,16 @@ import (
 
 // Request is the struct type used in service query requests to plugins.
 type Request struct {
-	ID      uint64
-	Payload []byte
-	SURB    []byte
+	// RequestAt is the time when the Request corresponding to this Response was received
+	RequestAt time.Time
+	// Delay is the amount of time that the Response should be delayed before transmission
+	Delay     time.Duration // the Delay specififed for this hop
+	// ID is the Request's packet ID
+	ID        uint64
+	// Payload is the encrypted Request
+	Payload   []byte
+	// SURB is the routing header used to return the Response to the requesting client
+	SURB      []byte
 }
 
 // Marshal serializes Request
@@ -62,11 +69,18 @@ func (r *RequestFactory) Build() Command {
 	return new(Request)
 }
 
-// Response is the response received after sending a Request to the plugin.
+// Response is the response received after sending a Request to the plugin
 type Response struct {
-	ID      uint64
-	Payload []byte
-	SURB    []byte
+	// RequestAt is the time when the Request corresponding to this Response was received
+	RequestAt time.Time
+	// Delay is the amount of time that the Response should be delayed before transmission
+	Delay     time.Duration
+	// ID is the Request's packet ID
+	ID        uint64
+	// Payload is the encrypted response
+	Payload   []byte
+	// SURB is the routing header used to return the Response to the requesting client
+	SURB      []byte
 }
 
 // Marshal serializes Response

@@ -132,9 +132,11 @@ func (k *CBORPluginWorker) processKaetzchen(pkt *packet.Packet, pluginClient *cb
 	}
 
 	pluginClient.WriteChan() <- &cborplugin.Request{
-		ID:      pkt.ID,
-		Payload: payload,
-		SURB:    surb,
+		ID:        pkt.ID,
+		RequestAt: time.Now(),
+		Delay:     pkt.Delay,
+		Payload:   payload,
+		SURB:      surb,
 	}
 }
 
@@ -161,6 +163,13 @@ func (k *CBORPluginWorker) sendworker(pluginClient *cborplugin.Client) {
 					if err != nil {
 						k.log.Debugf("%v: Failed to generate SURB-Reply: %v (%v)", pluginCap, r.ID, err)
 						continue
+					}
+					// Set the packet queue delay
+					delay := r.Delay-time.Since(r.RequestAt)
+					if delay < 0 {
+						respPkt.Delay = 0
+					} else {
+						respPkt.Delay = delay
 					}
 
 					k.log.Debugf("%v: Handing off newly generated SURB-Reply: %v (Src:%v)", pluginCap, respPkt.ID, r.ID)
