@@ -212,9 +212,14 @@ func (c *incomingConn) worker() {
 	reauthMs := time.Duration(c.l.glue.Config().Debug.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
-
+	var receivedMessageTimer *time.Ticker
 	// Start reading from the peer.
 	commandCh := make(chan commands.Command)
+
+	if c.fromClient {
+		// XXX FIXME add duration to PKI doc via dirauth config
+		receivedMessageTimer = time.NewTicker(time.Second * 1)
+	}
 	commandCloseCh := make(chan interface{})
 	defer close(commandCloseCh)
 	go func() {
@@ -235,58 +240,67 @@ func (c *incomingConn) worker() {
 		}
 	}()
 
-	// XXX FIXME add duration to PKI doc via dirauth config
-	if c.fromClient {
-		receivedMessageTimer := time.NewTicker(time.Second * 1)
-		go func() {
-			for {
-				select {
-				case <-commandCloseCh:
-					// connection closed
-					return
-				case <-c.l.closeAllCh:
-					// Server is getting shutdown, all connections are being closed.
-					return
-				case <-receivedMessageTimer.C:
-					err := c.sendNextMessage()
-					if err != nil {
-						c.log.Infof("sendNextMessage error: %s", err.Error())
-					}
-				}
-			}
-		}()
-	}
-
 	// Process incoming packets.
 	for {
 		var rawCmd commands.Command
 		var ok bool
 
-		select {
-		case <-c.l.closeAllCh:
-			// Server is getting shutdown, all connections are being closed.
-			return
-		case <-reauth.C:
-			// Each incoming conn has a periodic 1/15 Hz timer to wake up
-			// and re-authenticate the connection to handle the PKI document(s)
-			// and or the user database changing.
-			//
-			// Doing it this way avoids a good amount of complexity at the
-			// the cost of extra authenticates (which should be fairly fast).
-			if !c.IsPeerValid(creds) {
-				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+		if c.fromClient {
+			select {
+			case <-receivedMessageTimer.C:
+				err := c.sendNextMessage()
+				if err != nil {
+					c.log.Infof("sendNextMessage error: %s", err.Error())
+				}
+			case <-c.l.closeAllCh:
+				// Server is getting shutdown, all connections are being closed.
 				return
+			case <-reauth.C:
+				// Each incoming conn has a periodic 1/15 Hz timer to wake up
+				// and re-authenticate the connection to handle the PKI document(s)
+				// and or the user database changing.
+				//
+				// Doing it this way avoids a good amount of complexity at the
+				// the cost of extra authenticates (which should be fairly fast).
+				if !c.IsPeerValid(creds) {
+					c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+					return
+				}
+				continue
+			case <-c.closeConnectionCh:
+				c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+				return
+			case rawCmd, ok = <-commandCh:
+				if !ok {
+					return
+				}
 			}
-			continue
-		case <-c.closeConnectionCh:
-			c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
-			return
-		case rawCmd, ok = <-commandCh:
-			if !ok {
+		} else {
+			select {
+			case <-c.l.closeAllCh:
+				// Server is getting shutdown, all connections are being closed.
 				return
+			case <-reauth.C:
+				// Each incoming conn has a periodic 1/15 Hz timer to wake up
+				// and re-authenticate the connection to handle the PKI document(s)
+				// and or the user database changing.
+				//
+				// Doing it this way avoids a good amount of complexity at the
+				// the cost of extra authenticates (which should be fairly fast).
+				if !c.IsPeerValid(creds) {
+					c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+					return
+				}
+				continue
+			case <-c.closeConnectionCh:
+				c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+				return
+			case rawCmd, ok = <-commandCh:
+				if !ok {
+					return
+				}
 			}
 		}
-
 		// TODO: It's possible that a peer connects right at the tail end
 		// before we start allowing "early" packets, resulting in c.canSend
 		// being false till the reauth timer fires.  This probably isn't a
