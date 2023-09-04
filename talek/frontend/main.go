@@ -16,18 +16,18 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"time"
 
-	//"github.com/fxamacker/cbor/v2"
+	"github.com/fxamacker/cbor/v2"
 	"github.com/gorilla/rpc"
 	"github.com/gorilla/rpc/json"
 	"github.com/katzenpost/katzenpost/client"
 	//"github.com/katzenpost/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/talek/replica/common"
 	tCommon "github.com/privacylab/talek/common"
 	"github.com/privacylab/talek/libtalek"
 	"github.com/privacylab/talek/server"
@@ -50,13 +50,30 @@ type ReplicaKPC struct {
 }
 
 func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.ReplicaWriteReply) error {
-	// TODO: send a replica Write command
-	return errors.New("NotImplemented")
+	serialized, err := cbor.Marshal(args)
+	if err != nil {
+		return err
+	}
+	// wrap the serialized command in ReplicaCommand
+	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaRequestCommand, Payload: serialized})
+	rawResp, err := r.session.BlockingSendUnreliableMessage(r.name, r.provider, serialized)
+	return cbor.Unmarshal(rawResp, reply)
+
 }
 
 func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.BatchReadReply) error {
-	// TODO: send a replica BatchRead command
-	return errors.New("NotImplemented")
+	serialized, err := cbor.Marshal(args)
+	if err != nil {
+		return err
+	}
+
+	// wrap the serialized command in ReplicaCommand
+	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaWriteCommand, Payload: serialized})
+	rawResp, err := r.session.BlockingSendUnreliableMessage(r.name, r.provider, serialized)
+	if err != nil {
+		return err
+	}
+	return cbor.Unmarshal(rawResp, reply)
 }
 
 func NewReplicaKPC(name string, session *client.Session, config *tCommon.TrustDomainConfig) *ReplicaKPC {
