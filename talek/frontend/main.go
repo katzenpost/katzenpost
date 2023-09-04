@@ -18,34 +18,35 @@ package main
 import (
 	"errors"
 	"flag"
-	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"path"
-	"path/filepath"
+	"os/signal"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
+	//"github.com/fxamacker/cbor/v2"
+	"github.com/gorilla/rpc"
+	"github.com/gorilla/rpc/json"
 	"github.com/katzenpost/katzenpost/client"
-	"github.com/katzenpost/katzenpost/server/cborplugin"
-	"github.com/katzenpost/katzenpost/talek/replica/common"
+	//"github.com/katzenpost/katzenpost/server/cborplugin"
 	tCommon "github.com/privacylab/talek/common"
-	"github.com/privacylab/talek/server"
 	"github.com/privacylab/talek/libtalek"
+	"github.com/privacylab/talek/server"
 )
 
 type kpTalekFrontend struct {
-	frontend *server.Frontend
+	Frontend *server.Frontend
+	log      *log.Logger
+	name     string
+	*rpc.Server
 }
 
 // ReplicaKPC is a stub for the replica RPC interface
 // it wraps Write and BatchRead commands to Replicas using Katzenpost
 type ReplicaKPC struct {
-	log          *log.Logger
-	session      *client.Session
-	name         string // name of the kaetzchen service
-	provider     string // name of the provider hosting the service
+	log      *tCommon.Logger
+	session  *client.Session
+	name     string // name of the kaetzchen service
+	provider string // name of the provider hosting the service
 }
 
 func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.ReplicaWriteReply) error {
@@ -58,28 +59,26 @@ func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.Ba
 	return errors.New("NotImplemented")
 }
 
-func NewReplicaKPC(name, provider string, config *tCommon.TrustDomainConfig, client *client.Client) *ReplicaKPC {
-	session, err := client.NewTOFUSession(context.Background())
+func NewReplicaKPC(name string, session *client.Session, config *tCommon.TrustDomainConfig) *ReplicaKPC {
 	return &ReplicaKPC{
-		name: name,
-		provider: provider,
-		log: client.GetLogger(fmt.Sprintf("%s:%s", name, provider)),
-		session: 
+		name:    name,
+		log:     tCommon.NewLogger(name),
+		session: session,
 	}
 }
 
 // NewKPFrontendServer creates a new Frontend implementing HTTP.Handler and using Replicas reached via Katzenpost
-func NewKPFrontendServer(name string, serverConfig *tCommon.Config, replicas []*common.TrustDomainConfig) *FrontendServer {
-	fe := &FrontendServer{}
-	fe.log = log.New(os.Stdout, "[FrontendServer:"+name+"] ", log.Ldate|log.Ltime|log.Lshortfile)
-	fe.name = name
+func NewKPFrontendServer(name string, session *client.Session, serverConfig *server.Config, replicas []*tCommon.TrustDomainConfig) *kpTalekFrontend {
+	fe := &kpTalekFrontend{}
 
-	rpcs := make([]common.ReplicaInterface, len(replicas))
+	rpcs := make([]tCommon.ReplicaInterface, len(replicas))
 	for i, r := range replicas {
-		rpcs[i] = common.NewReplicaKP(r.Name, r)
+		rk := NewReplicaKPC(r.Name, session, r)
+		rpcs[i] = rk
 	}
 
-	fe.Frontend = NewFrontend(name, serverConfig, rpcs)
+	// Create a Frontend
+	fe.Frontend = server.NewFrontend(name, serverConfig, rpcs)
 
 	// Set up the RPC server component.
 	fe.Server = rpc.NewServer()
@@ -89,12 +88,11 @@ func NewKPFrontendServer(name string, serverConfig *tCommon.Config, replicas []*
 	return fe
 }
 
-
 func main() {
 	var configPath string
 	var commonPath string
 	var listen string
-	var verbose bool 
+	var verbose bool
 
 	// add mixnet config
 	//flag.StringVar(&backing, "backing", "cpu.0", "PIR daemon method")
@@ -104,8 +102,8 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
 	flag.Parse()
 
-	// createa  server Config
-	serverConfig := server.Config{
+	// create a server.Config
+	serverConfig := &server.Config{
 		Config:           &tCommon.Config{},
 		WriteInterval:    time.Second,
 		ReadInterval:     time.Second,
@@ -114,21 +112,19 @@ func main() {
 		TrustDomainIndex: 0,
 	}
 
-	config := libtalek.ClientConfigFromFile(*configPath)
+	config := libtalek.ClientConfigFromFile(configPath)
 	if config == nil {
 		flag.Usage()
 		return
 	}
-	serverConfig := server.ConfigFromFile(commonPath, config.Config)
 
 	f := server.NewFrontendServer("Talek Frontend", serverConfig, config.TrustDomains)
 
-
 	// TODO: bootstrap mixnet, find replicas from pki
-	replicas := make([]*server.Replica, 0)
+	replicas := make([]tCommon.ReplicaInterface, 0)
 
 	// instantiate Frontend
-	frontend := server.NewFrontend(serverConfig.TrustDomain.Name, serverConfig, replicas)
+	f.Frontend = server.NewFrontend(serverConfig.TrustDomain.Name, serverConfig, replicas)
 
 	// make a new frontend server for kp
 
