@@ -16,7 +16,9 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -27,11 +29,14 @@ import (
 	"github.com/gorilla/rpc/json"
 	"github.com/katzenpost/katzenpost/client"
 	//"github.com/katzenpost/katzenpost/server/cborplugin"
+	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/talek/replica/common"
 	tCommon "github.com/privacylab/talek/common"
 	"github.com/privacylab/talek/libtalek"
 	"github.com/privacylab/talek/server"
 )
+
+const talekReplicaService = "talek_replica"
 
 type kpTalekFrontend struct {
 	Frontend *server.Frontend
@@ -110,17 +115,35 @@ func NewKPFrontendServer(name string, session *client.Session, serverConfig *ser
 
 func main() {
 	var configPath string
+	var kpConfigPath string
 	var commonPath string
 	var listen string
 	var verbose bool
 
 	// add mixnet config
+	flag.StringVar(&kpConfigPath, "kpconfig", "client.toml", "Katzenpost Configuration")
 	//flag.StringVar(&backing, "backing", "cpu.0", "PIR daemon method")
 	flag.StringVar(&configPath, "config", "replica.conf", "Talek Replica Configuration")
 	flag.StringVar(&commonPath, "common", "common.conf", "Talek Common Configuration")
 	flag.StringVar(&listen, "listen", ":8080", "Listening Address")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
 	flag.Parse()
+
+	// load katzenpost client configuration
+	var cfg *config.Config
+	var err error
+	cfg, err = config.LoadFile(kpConfigPath)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	// create a client
+	c, err := client.New(cfg)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
 
 	// create a server.Config
 	serverConfig := &server.Config{
@@ -138,16 +161,93 @@ func main() {
 		return
 	}
 
-	f := server.NewFrontendServer("Talek Frontend", serverConfig, config.TrustDomains)
+	// bootstrap mixnet
+	ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*30)
+	session, err := c.NewTOFUSession(ctx)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+	cancelFn()
 
-	// TODO: bootstrap mixnet, find replicas from pki
-	replicas := make([]tCommon.ReplicaInterface, 0)
+	// get a pki doc
+	pkiDoc := session.CurrentDocument()
+	if pkiDoc == nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	// find replicas from pki
+	descs, err := session.GetServices(talekReplicaService)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
+
+	replicas := make([]tCommon.ReplicaInterface, len(descs), 0)
+	for i, d := range descs {
+		// get the publickeys from the MixDescriptor
+		md, err := pkiDoc.GetProvider(d.Provider)
+		if err != nil {
+			fmt.Println(err)
+			continue
+		}
+
+		// obtain the plugin parameters
+		kpReplicaParams, ok := md.Kaetzchen[talekReplicaService]
+		if !ok {
+			fmt.Println("Failed to find talek replica plugin parameters for ", d.Provider)
+			continue
+		}
+
+		pubKey, ok := kpReplicaParams["PublicKey"]
+		if !ok {
+			fmt.Println("Failed to find talek replica parameter PublickKey for ", d.Provider)
+			continue
+		}
+		signPubKey, ok := kpReplicaParams["SignPublicKey"]
+		if !ok {
+			fmt.Println("Failed to find talek replica parameter SignPublickKey for ", d.Provider)
+			continue
+		}
+
+		// copy the key material into arrays
+		var signPubKeyArray [32]byte
+		var pubKeyArray [32]byte
+		if signPubKey, ok := signPubKey.([]byte); ok {
+			copy(signPubKeyArray[:], signPubKey)
+		} else {
+			fmt.Println("Invalid type for SignPublicKey")
+			continue
+		}
+		if pubKey, ok := pubKey.([]byte); ok {
+			copy(pubKeyArray[:], pubKey)
+		} else {
+			fmt.Println("Invalid type for PublicKey")
+			continue
+		}
+
+		// make a TrustDomainConfig for this replica
+		trustDomainCfg := tCommon.TrustDomainConfig{
+			Name:          d.Name + "@" + d.Provider,
+			Address:       "kp://" + d.Name + "@" + d.Provider,
+			IsValid:       true,
+			IsDistributed: true,
+			PublicKey:     pubKeyArray,
+			SignPublicKey: signPubKeyArray,
+		}
+
+		replicaName := d.Name + "@" + d.Provider
+		replicas[i] = NewReplicaKPC(replicaName, session, &trustDomainCfg)
+	}
+
+	// XXX: can TrustDomainConfig have an Address of format kaetchen@provider
+	f := server.NewFrontendServer("Talek Frontend", serverConfig, config.TrustDomains)
 
 	// instantiate Frontend
 	f.Frontend = server.NewFrontend(serverConfig.TrustDomain.Name, serverConfig, replicas)
 
 	// make a new frontend server for kp
-
 	f.Frontend.Verbose = true // *verbose
 	listener, err := f.Run(listen)
 	if err != nil {
@@ -157,8 +257,8 @@ func main() {
 
 	log.Println("Running.")
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt)
+	<-sigCh
 	listener.Close()
 }
