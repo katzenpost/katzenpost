@@ -57,6 +57,9 @@ func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.Replic
 	// wrap the serialized command in ReplicaCommand
 	serialized, err = cbor.Marshal(&common.ReplicaRequest{Command: common.ReplicaRequestCommand, Payload: serialized})
 	rawResp, err := r.session.BlockingSendUnreliableMessage(r.name, r.provider, serialized)
+	if err != nil {
+		return err
+	}
 	return cbor.Unmarshal(rawResp, reply)
 
 }
