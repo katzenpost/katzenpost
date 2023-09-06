@@ -29,6 +29,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 	"github.com/katzenpost/katzenpost/talek/replica/common"
 	tCommon "github.com/privacylab/talek/common"
@@ -36,8 +37,10 @@ import (
 )
 
 type talekRequestHandler struct {
+	worker.Worker
 	replica *server.Replica
 	log     *logging.Logger
+	write   func(cborplugin.Command)
 }
 
 func main() {
@@ -114,7 +117,7 @@ func main() {
 	os.Remove(socketFile)
 }
 
-func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 	// deserialize request
 	switch cmd := cmd.(type) {
 	case *cborplugin.Request:
@@ -122,7 +125,7 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 		r := new(common.ReplicaRequest)
 		err := cbor.Unmarshal(cmd.Payload, r)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		switch r.Command {
 		case common.ReplicaRequestCommand:
@@ -131,43 +134,51 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) (cborplugin.Comm
 			reply := new(tCommon.BatchReadReply)
 			err = cbor.Unmarshal(cmd.Payload, args)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			err = s.replica.BatchRead(args, reply)
-			if err != nil {
-				return nil, err
-			}
-			serialized, err := cbor.Marshal(reply)
-			if err != nil {
-				return nil, err
-			}
-			return &cborplugin.Response{Payload: serialized}, nil
+			s.Go(func() {
+				// run the comand asynchronously
+				err = s.replica.BatchRead(args, reply)
+				if err != nil {
+					s.log.Errorf("BatchRead failure: %v", err)
+				}
+				serialized, err := cbor.Marshal(reply)
+				if err != nil {
+					s.log.Errorf("cbor.Marshal failure: %v", err)
+				}
+				s.write(&cborplugin.Response{Payload: serialized})
+			})
 		case common.ReplicaWriteCommand:
 			args := new(tCommon.ReplicaWriteArgs)
 			err = cbor.Unmarshal(r.Payload, args)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			reply := new(tCommon.ReplicaWriteReply)
-			err = s.replica.Write(args, reply)
-			if err != nil {
-				return nil, err
-			}
-			serialized, err := cbor.Marshal(reply)
-			if err != nil {
-				return nil, err
-			}
-			return &cborplugin.Response{Payload: serialized}, nil
+
+			// run the comand asynchronously
+			s.Go(func() {
+
+				reply := new(tCommon.ReplicaWriteReply)
+				err = s.replica.Write(args, reply)
+				if err != nil {
+					s.log.Errorf("replica.Write failure: %v", err)
+				}
+				serialized, err := cbor.Marshal(reply)
+				if err != nil {
+					s.log.Errorf("cbor.Marshal failure: %v", err)
+				}
+				s.write(&cborplugin.Response{Payload: serialized})
+			})
 		default:
-			return nil, errors.New("Invalid ReplicaCommand type")
+			return errors.New("Invalid ReplicaCommand type")
 		}
 	default:
-		return nil, errors.New("Invalid Command, expected cborplugin.Request")
+		return errors.New("Invalid Command, expected cborplugin.Request")
 	}
 
-	return nil, nil
+	return nil
 }
 
 func (s *talekRequestHandler) RegisterConsumer(svr *cborplugin.Server) {
-	//
+	s.write = svr.Write
 }
