@@ -9,6 +9,7 @@ testnet-build:
 	cd ../reunion/servers/reunion_katzenpost_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
 	cd ../panda/server/cmd/panda_server ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
 	cd ../server_plugins/cbor_plugins/echo-go ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -o echo_server -ldflags ${ldflags}
+	cd ../talek/replica ; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -trimpath -ldflags ${ldflags}
 
 testnet-install:
 	mv /go/katzenpost/server/cmd/server/server /$(net_name)/server.$(distro)
@@ -16,3 +17,4 @@ testnet-install:
 	mv /go/katzenpost/reunion/servers/reunion_katzenpost_server/reunion_katzenpost_server /$(net_name)/reunion_katzenpost_server.$(distro)
 	mv /go/katzenpost/panda/server/cmd/panda_server/panda_server /$(net_name)/panda_server.$(distro)
 	mv /go/katzenpost/server_plugins/cbor_plugins/echo-go/echo_server /$(net_name)/echo_server.$(distro)
+	mv /go/katzenpost/talek/replica/replica /$(net_name)/replica.$(distro)
