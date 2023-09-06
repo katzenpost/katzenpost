@@ -52,6 +52,7 @@ type katzenpost struct {
 	baseDir   string
 	outDir    string
 	binSuffix string
+	logLevel  string
 	logWriter io.Writer
 
 	sphinxGeometry    *geo.Geometry
@@ -89,7 +90,7 @@ func (s *katzenpost) genClientCfg() error {
 	s.clientIdx++
 
 	// Logging section.
-	cfg.Logging = &cConfig.Logging{File: "", Level: "DEBUG"}
+	cfg.Logging = &cConfig.Logging{File: "", Level: s.logLevel}
 
 	// UpstreamProxy section
 	cfg.UpstreamProxy = &cConfig.UpstreamProxy{Type: "none"}
@@ -174,7 +175,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	// Logging section.
 	cfg.Logging = new(sConfig.Logging)
 	cfg.Logging.File = serverLogFile
-	cfg.Logging.Level = "DEBUG"
+	cfg.Logging.Level = s.logLevel
 
 	if isProvider {
 		// Enable the thwack interface.
@@ -209,7 +210,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					Config: map[string]interface{}{
 						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
 						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
-						"log_level": "DEBUG",
+						"log_level": s.logLevel,
 					},
 				}
 				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, pandaCfg)
@@ -268,7 +269,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
 			File:    "katzenpost.log",
-			Level:   "DEBUG",
+			Level:   s.logLevel,
 		}
 		cfg.Parameters = parameters
 		cfg.Debug = &vConfig.Debug{
@@ -336,6 +337,7 @@ func main() {
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
+	logLevel := flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	omitTopology := flag.Bool("D", false, "Dynamic topology (omit fixed topology definition)")
 	kem := flag.String("kem", "", "Name of the KEM Scheme to be used with Sphinx")
 	nike := flag.String("nike", "x25519", "Name of the NIKE Scheme to be used with Sphinx")
@@ -383,6 +385,7 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+	s.logLevel = *logLevel
 
 	nrHops := *nrLayers + 2
 
