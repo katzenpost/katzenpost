@@ -13,7 +13,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/http/common"
+	"github.com/katzenpost/katzenpost/quic/common"
 	quic "github.com/quic-go/quic-go"
 	qlogging "github.com/quic-go/quic-go/logging"
 	"github.com/quic-go/quic-go/qlog"
