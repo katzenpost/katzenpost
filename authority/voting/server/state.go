@@ -33,7 +33,7 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
-	"golang.org/x/crypto/sha3"
+	"golang.org/x/crypto/blake2b"
 	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/authority/voting/client"
@@ -271,8 +271,7 @@ func (s *state) fsm() <-chan time.Time {
 func (s *state) persistDocument(epoch uint64, doc []byte) {
 	if err := s.db.Update(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket([]byte(documentsBucket))
-		bkt.Put(epochToBytes(epoch), doc)
-		return nil
+		return bkt.Put(epochToBytes(epoch), doc)
 	}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.fatalErrCh <- err
@@ -342,6 +341,10 @@ func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pk
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
 func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
+	if s.TryLock() {
+		panic("write lock not held in getCertificate(epoch)")
+	}
+
 	mixes, params, err := s.tallyVotes(epoch)
 	if err != nil {
 		s.log.Warningf("No document for epoch %v, aborting!, %v", epoch, err)
@@ -383,6 +386,10 @@ func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
 
 // getConsensus computes the final document using the computed SharedRandomValue
 func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
+	if s.TryLock() {
+		panic("write lock not held in getMyConsensus(epoch)")
+	}
+
 	certificates, ok := s.certificates[epoch]
 	if !ok {
 		return nil, fmt.Errorf("No certificates for epoch %d", epoch)
@@ -415,6 +422,9 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
 	mixes, params, err := s.tallyVotes(epoch)
+	if err != nil {
+		return nil, err
+	}
 	consensusOfOne := s.getDocument(mixes, params, srv)
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, consensusOfOne)
 	if err != nil {
@@ -428,7 +438,11 @@ func (s *state) getMyConsensus(epoch uint64) (*pki.Document, error) {
 
 // getThresholdConsensus returns a *pki.Document iff a threshold consensus is reached or error
 func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
-	// range over the certifcates we have collected and see if we can collect enough signatures to make a consensus
+	// range over the certificates we have collected and see if we can collect enough signatures to make a consensus
+	if s.TryLock() {
+		panic("write lock not held in getThresholdConsensus(epoch)")
+	}
+
 	ourConsensus, ok := s.myconsensus[epoch]
 	if !ok {
 		return nil, fmt.Errorf("We have no view of consensus!")
@@ -553,7 +567,10 @@ func (s *state) hasEnoughDescriptors(m map[[publicKeyHashSize]byte]*pki.MixDescr
 }
 
 func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte, map[[publicKeyHashSize]byte][]byte) {
-	// Lock is held (called from the onWakeup hook).
+	if s.TryLock() {
+		panic("write lock not held in verifyCommits(epoch)")
+	}
+
 	// check that each authority presented the same commit to every other authority
 	badnodes := make(map[[publicKeyHashSize]byte]bool)
 	comitted := make(map[[publicKeyHashSize]byte][]byte)
@@ -712,7 +729,10 @@ func (s *state) sendCommandToPeer(peer *config.Authority, cmd commands.Command) 
 
 // sendCommitToAuthorities sends our cert to all Directory Authorities
 func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
-	// Lock is held (called from the onWakeup hook).
+	if s.TryLock() {
+		panic("write lock not held in sendCertToAuthorities(cert, epoch)")
+	}
+
 	s.log.Noticef("Sending Certificate for epoch %v, to all Directory Authorities.", epoch)
 	cmd := &commands.Cert{
 		Epoch:     epoch,
@@ -756,7 +776,9 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 
 // sendVoteToAuthorities sends s.descriptors[epoch] to all Directory Authorities
 func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
-	// Lock is held (called from the onWakeup hook).
+	if s.TryLock() {
+		panic("write lock not held in sendVoteToAuthorities(vote, epoch)")
+	}
 
 	s.log.Noticef("Sending Vote for epoch %v, to all Directory Authorities.", epoch)
 
@@ -839,7 +861,9 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 }
 
 func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
-	// Lock is held (called from the onWakeup hook).
+	if s.TryLock() {
+		panic("write lock not held in sendSigToAuthorities(sig, epoch)")
+	}
 
 	s.log.Noticef("Sending Signature for epoch %v, to all Directory Authorities.", epoch)
 
@@ -878,7 +902,10 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 }
 
 func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Parameters, error) {
-	// Lock is held (called from the onWakeup hook).
+	if s.TryLock() {
+		panic("write lock not held in tallyVotes(epoch)")
+	}
+
 	_, ok := s.votes[epoch]
 	if !ok {
 		return nil, nil, fmt.Errorf("no votes for epoch %v", epoch)
@@ -965,20 +992,24 @@ func (s *state) tallyVotes(epoch uint64) ([]*pki.MixDescriptor, *config.Paramete
 	}
 	// include parameters that have a threshold of votes
 	for bs, votes := range mixParams {
+		params := &config.Parameters{}
+		d := gob.NewDecoder(strings.NewReader(bs))
+		if err := d.Decode(params); err != nil {
+			s.log.Errorf("tallyVotes: failed to decode params: err=%v: bs=%v", err, bs)
+			continue
+		}
+
 		if len(votes) >= s.threshold {
-			params := &config.Parameters{}
-			d := gob.NewDecoder(strings.NewReader(bs))
-			if err := d.Decode(params); err == nil {
-				sortNodesByPublicKey(nodes)
-				// successful tally
-				return nodes, params, nil
-			}
+			sortNodesByPublicKey(nodes)
+			// successful tally
+			return nodes, params, nil
 		} else if len(votes) >= s.dissenters {
-			return nil, nil, errors.New("a consensus partition")
+			s.log.Errorf("tallyVotes: failed threshold with params: %v", params)
+			continue
 		}
 
 	}
-	return nil, nil, errors.New("consensus failure")
+	return nil, nil, errors.New("consensus failure (mixParams empty)")
 }
 
 func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize]byte][]byte, reveals map[[publicKeyHashSize]byte][]byte) ([]byte, error) {
@@ -1001,7 +1032,11 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 		}
 		sortedreveals = append(sortedreveals, Reveal{PublicKey: pk, Digest: digest})
 	}
-	srv := sha3.New256()
+	srv, err := blake2b.New256(nil)
+	if err != nil {
+		panic(err)
+	}
+
 	srv.Write([]byte("shared-random"))
 	srv.Write(epochToBytes(epoch))
 
@@ -1175,7 +1210,9 @@ func (s *state) generateRandomTopology(nodes []*pki.MixDescriptor, srv []byte) [
 }
 
 func (s *state) pruneDocuments() {
-	// Lock is held (called from the onWakeup hook).
+	if s.TryLock() {
+		panic("write lock not held in pruneDocuments()")
+	}
 
 	// Looking a bit into the past is probably ok, if more past documents
 	// need to be accessible, then methods that query the DB could always
@@ -1558,8 +1595,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 		if err != nil {
 			return err
 		}
-		eBkt.Put(pk[:], rawDesc)
-		return nil
+		return eBkt.Put(pk[:], rawDesc)
 	}); err != nil {
 		// Persistence failures are FATAL.
 		s.s.fatalErrCh <- err
@@ -1707,9 +1743,7 @@ func (s *state) restorePersistence() error {
 		}
 
 		// We created a new database, so populate the new `metadata` bucket.
-		bkt.Put([]byte(versionKey), []byte{0})
-
-		return nil
+		return bkt.Put([]byte(versionKey), []byte{0})
 	})
 }
 
@@ -1820,7 +1854,10 @@ func newState(s *Server) (*state, error) {
 }
 
 func (s *state) backgroundFetchConsensus(epoch uint64) {
-	// lock must already be held!
+	if s.TryLock() {
+		panic("write lock not held in backgroundFetchConsensus(epoch)")
+	}
+
 	// If there isn't a consensus for the previous epoch, ask the other
 	// authorities for a consensus.
 	_, ok := s.documents[epoch]
@@ -1874,7 +1911,7 @@ func sortNodesByPublicKey(nodes []*pki.MixDescriptor) {
 }
 
 func sha256b64(raw []byte) string {
-	var hash = sha3.Sum256(raw)
+	hash := blake2b.Sum256(raw)
 	return base64.StdEncoding.EncodeToString(hash[:])
 }
 
