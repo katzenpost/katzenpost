@@ -392,7 +392,9 @@ func (c *connection) onNetConn(conn net.Conn) {
 	defer w.Close()
 
 	// Bind the session to the conn, handshake, authenticate.
-	conn.SetDeadline(time.Now().Add(handshakeTimeout))
+	if err = conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		panic(err)
+	}
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		if c.c.cfg.OnConnFn != nil {
@@ -401,7 +403,9 @@ func (c *connection) onNetConn(conn net.Conn) {
 		return
 	}
 	c.log.Debugf("Handshake completed.")
-	conn.SetDeadline(time.Time{})
+	if err = conn.SetDeadline(time.Time{}); err != nil {
+		panic(err)
+	}
 	c.c.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.onWireConn(w)
@@ -573,7 +577,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 					c.log.Debugf("Failed to send RetrieveMessage: %v", wireErr)
 					return
 				}
-				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
 			fetchDelay = c.c.GetPollInterval()
@@ -603,7 +606,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("peer send Disconnect")
 			return
 		case *commands.MessageEmpty:
-			c.log.Debugf("Received MessageEmpty: %v", cmd.Sequence)
 			if wireErr = checkSeq(cmd.Sequence); wireErr != nil {
 				c.log.Errorf("MessageEmpty sequence unexpected: %v", cmd.Sequence)
 				return

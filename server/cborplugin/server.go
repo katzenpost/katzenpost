@@ -29,8 +29,8 @@ import (
 type Server struct {
 	worker.Worker
 
-	socket         *CommandIO
-	log            *logging.Logger
+	socket *CommandIO
+	log    *logging.Logger
 	//conn           net.Conn
 	socketFile     string
 	plugin         ServerPlugin
