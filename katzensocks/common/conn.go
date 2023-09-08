@@ -99,7 +99,7 @@ func NewQUICProxyConn(id []byte) *QUICProxyConn {
 		localAddr: UniqAddr(id),
 		incoming:  make(chan *pkt, 1000),
 		outgoing:  make(chan *pkt, 1000),
-		tlsConf:   quic.GenerateTLSConfig(),
+		tlsConf:   kquic.GenerateTLSConfig(),
 		qcfg: &quic.Config{
 			KeepAlivePeriod: 24 * time.Minute,
 			MaxIdleTimeout:  42 * time.Minute,
