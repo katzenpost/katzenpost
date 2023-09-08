@@ -131,7 +131,7 @@ func GenerateTLSConfig() *tls.Config {
 	// ALPN (NextProtos) is externally visible as part of the QUIC TLS
 	// handshake, in the client/server hello, so pick a common protocol
 	// rather than something uniquely fingerprintable to katzenpost.
-	return &tls.Config{Certificates: []tls.Certificate{tlsCert}, NextProtos: []string{http3.NextProtoH3}}
+	return &tls.Config{Certificates: []tls.Certificate{tlsCert}, NextProtos: []string{http3.NextProtoH3}, InsecureSkipVerify: true}
 }
 
 func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, network, address string) (net.Conn, error)) (net.Conn, error) {
