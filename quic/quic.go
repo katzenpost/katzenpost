@@ -80,7 +80,7 @@ func (q *QuicConn) Write(b []byte) (n int, err error) {
 
 // QuicListener implements net.Listener
 type QuicListener struct {
-	Listener quic.Listener
+	Listener *quic.Listener
 }
 
 // Accept implements net.Listener. It starts a single QUIC Stream and returns a
@@ -174,7 +174,7 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 		// because we need to bind the local listening socket with net.ListenUDP.
 
 		// XXX: verify that quic.Dial does not leak DNS
-		qconn, err := quic.DialAddr(u.Host, tlsConf, nil)
+		qconn, err := quic.DialAddr(ctx, u.Host, tlsConf, nil)
 		if err == nil {
 			// open a quic stream
 			stream, err := qconn.OpenStreamSync(ctx)
