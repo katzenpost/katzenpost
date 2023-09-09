@@ -21,6 +21,7 @@ import (
 	"crypto/hmac"
 	"fmt"
 	"net"
+	"net/url"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/quic"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/packet"
 	"gopkg.in/op/go-logging.v1"
@@ -158,7 +160,8 @@ func (c *outgoingConn) worker() {
 
 		// Flatten the lists of addresses to Dial to.
 		var dstAddrs []string
-		for _, t := range cpki.InternalTransports {
+
+		for _, t := range c.co.glue.Config().Server.AllowedTransports {
 			if v, ok := c.dst.Addresses[t]; ok {
 				dstAddrs = append(dstAddrs, v...)
 			}
@@ -170,7 +173,7 @@ func (c *outgoingConn) worker() {
 			return
 		}
 
-		for _, addrPort := range dstAddrs {
+		for _, addr := range dstAddrs {
 			select {
 			case <-time.After(c.retryDelay):
 				// Back off incrementally on reconnects.
@@ -189,8 +192,14 @@ func (c *outgoingConn) worker() {
 			}
 
 			// Dial.
-			c.log.Debugf("Dialing: %v", addrPort)
-			conn, err := dialer.DialContext(dialCtx, "tcp", addrPort)
+			u, err := url.Parse(addr)
+			if err != nil {
+				c.log.Warningf("Failed to parse addr: %v", err)
+				continue
+			}
+			c.log.Debugf("Dialing: %v", u.Host)
+
+			conn, err := quic.DialURL(u, dialCtx, dialer.DialContext)
 			select {
 			case <-dialCtx.Done():
 				// Canceled.
@@ -200,11 +209,11 @@ func (c *outgoingConn) worker() {
 				return
 			default:
 				if err != nil {
-					c.log.Warningf("Failed to connect to '%v': %v", addrPort, err)
+					c.log.Warningf("Failed to connect to '%v': %v", u.Host, err)
 					continue
 				}
 			}
-			c.log.Debugf("TCP connection established.")
+			c.log.Debugf("%v connection established.", u.Scheme)
 			instrument.Outgoing()
 			start := time.Now()
 
@@ -252,13 +261,17 @@ func (c *outgoingConn) onConnEstablished(conn net.Conn, closeCh <-chan struct{})
 
 	// Bind the session to the conn, handshake, authenticate.
 	timeoutMs := time.Duration(c.co.glue.Config().Debug.HandshakeTimeout) * time.Millisecond
-	conn.SetDeadline(time.Now().Add(timeoutMs))
+	if err = conn.SetDeadline(time.Now().Add(timeoutMs)); err != nil {
+		panic(err)
+	}
 	if err = w.Initialize(conn); err != nil {
 		c.log.Errorf("Handshake failed: %v", err)
 		return
 	}
 	c.log.Debugf("Handshake completed.")
-	conn.SetDeadline(time.Time{})
+	if err = conn.SetDeadline(time.Time{}); err != nil {
+		panic(err)
+	}
 	c.retryDelay = 0 // Reset the retry delay on successful handshakes.
 
 	// Since outgoing connections have no reverse traffic, read from the

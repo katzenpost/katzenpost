@@ -227,6 +227,16 @@ func (c *Config) FixupAndValidate() error {
 	} else {
 		return err
 	}
+
+	// XXX: Our SOCKS proxy client does not yet support UDP
+	for _, pt := range c.Debug.PreferedTransports {
+		if pt == pki.TransportQUIC {
+			if c.UpstreamProxyConfig().Type != "none" {
+				return fmt.Errorf("config: cannot have UpstreamProxy and TransportQUIC as a PreferedTransport")
+			}
+		}
+	}
+
 	switch {
 	case c.VotingAuthority != nil:
 		if err := c.VotingAuthority.validate(); err != nil {

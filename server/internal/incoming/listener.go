@@ -23,13 +23,16 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"sync"
 	"sync/atomic"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
+	kquic "github.com/katzenpost/katzenpost/quic"
 	"github.com/katzenpost/katzenpost/server/internal/constants"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
+	quic "github.com/quic-go/quic-go"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -80,20 +83,38 @@ func (l *listener) worker() {
 		l.l.Close() // Usually redundant, but harmless.
 	}()
 	for {
+		select {
+		case <-l.closeAllCh:
+			return
+		default:
+		}
 		conn, err := l.l.Accept()
-		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				l.log.Errorf("Critical accept failure: %v", err)
+		switch e := err.(type) {
+		case nil:
+			// No Error
+		case net.Error:
+			if !e.Timeout() && !e.Temporary() {
+				l.log.Errorf("accept failure: %v", err)
 				return
 			}
 			continue
+		default:
+			l.log.Errorf("accept failure: %v", err)
+			return
 		}
 
-		tcpConn := conn.(*net.TCPConn)
-		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(constants.KeepAliveInterval)
-
-		l.log.Debugf("Accepted new connection: %v", conn.RemoteAddr())
+		switch conn := conn.(type) {
+		case *net.TCPConn:
+			l.log.Debugf("Accepted new tcp connection: %v", conn.RemoteAddr())
+			conn.SetKeepAlive(true)
+			l.log.Debugf("SetKeepAlive(true)")
+			conn.SetKeepAlivePeriod(constants.KeepAliveInterval)
+			l.log.Debugf("SetKeepAlivePeriod(%d)", constants.KeepAliveInterval)
+		case *kquic.QuicConn:
+			l.log.Debugf("Accepted new quic connection: %v", conn.RemoteAddr())
+		default:
+			panic("Unsupported Connection Type")
+		}
 
 		l.onNewConn(conn)
 	}
@@ -206,9 +227,29 @@ func New(glue glue.Glue, incomingCh chan<- interface{}, id int, addr string) (gl
 		closeAllCh: make(chan interface{}),
 	}
 
-	l.l, err = net.Listen("tcp", addr)
-	if err != nil {
-		return nil, err
+	// parse the Address line as a URL
+	u, err := url.Parse(addr)
+	if err == nil {
+		switch u.Scheme {
+		case "tcp", "tcp4", "tcp6":
+			l.l, err = net.Listen(u.Scheme, u.Host)
+			if err != nil {
+				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				return nil, err
+			}
+		case "quic":
+			ql, err := quic.ListenAddr(u.Host, kquic.GenerateTLSConfig(), nil)
+			if err != nil {
+				l.log.Errorf("Failed to start listener '%v': %v", addr, err)
+				return nil, err
+			}
+			// Wrap quic.Listener with kquic.QuicListener
+			// so it implements like net.Listener for a
+			// single QUIC Stream
+			l.l = &kquic.QuicListener{Listener: ql}
+		default:
+			return nil, fmt.Errorf("Unsupported listener scheme '%v': %v", addr, err)
+		}
 	}
 
 	l.Go(l.worker)
