@@ -36,6 +36,9 @@ lMMax=100
 
 UserForwardPayloadLength=2000
 
+# specify which transport types to listen on
+onlyTransports=
+
 # hybrid ctidh PQ can work here, but requires manually building ctidh.
 nike=x25519
 
@@ -80,7 +83,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
-		-UserForwardPayloadLength $(UserForwardPayloadLength)'
+		-onlyTransports "$(onlyTransports)" -UserForwardPayloadLength $(UserForwardPayloadLength)'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start

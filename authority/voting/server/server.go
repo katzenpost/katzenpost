@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -35,6 +36,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
+	kquic "github.com/katzenpost/katzenpost/quic"
+	quic "github.com/quic-go/quic-go"
 )
 
 // ErrGenerateOnly is the error returned when the server initialization
@@ -140,18 +143,21 @@ func (s *Server) listenWorker(l net.Listener) {
 	}()
 	for {
 		conn, err := l.Accept()
-		if err != nil {
-			if e, ok := err.(net.Error); ok && !e.Temporary() {
-				s.log.Errorf("Critical accept failure: %v", err)
+		switch e := err.(type) {
+		case nil: // No Error
+		case net.Error:
+			if !e.Timeout() && !e.Temporary() {
+				s.log.Errorf("accept failure: %v", err)
 				return
 			}
 			continue
+		default:
+			s.log.Errorf("accept failure: %v", err)
+			return
 		}
-
 		s.Add(1)
 		s.onConn(conn)
 	}
-
 	// NOTREACHED
 }
 
@@ -307,14 +313,37 @@ func New(cfg *config.Config) (*Server, error) {
 
 	// Start up the listeners.
 	for _, v := range s.cfg.Server.Addresses {
-		l, err := net.Listen("tcp", v)
-		if err != nil {
-			s.log.Errorf("Failed to start listener '%v': %v", v, err)
-			continue
+		// parse the Address line as a URL
+		u, err := url.Parse(v)
+		if err == nil {
+			switch u.Scheme {
+			case "tcp", "tcp4", "tcp6":
+				l, err := net.Listen(u.Scheme, u.Host)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				s.listeners = append(s.listeners, l)
+				s.Add(1)
+				go s.listenWorker(l)
+			case "quic":
+				l, err := quic.ListenAddr(u.Host, kquic.GenerateTLSConfig(), nil)
+				if err != nil {
+					s.log.Errorf("Failed to start listener '%v': %v", v, err)
+					continue
+				}
+				// Wrap quic.Listener with kquic.QuicListener
+				// so it implements like net.Listener for a
+				// single QUIC Stream
+				ql := &kquic.QuicListener{Listener: l}
+				s.listeners = append(s.listeners, ql)
+				s.Add(1)
+				go s.listenWorker(ql)
+			default:
+				s.log.Errorf("Unsupported listener scheme '%v': %v", v, err)
+				continue
+			}
 		}
-		s.listeners = append(s.listeners, l)
-		s.Add(1)
-		go s.listenWorker(l)
 	}
 	if len(s.listeners) == 0 {
 		s.log.Errorf("Failed to start all listeners.")

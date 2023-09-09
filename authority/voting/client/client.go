@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 
 	"gopkg.in/op/go-logging.v1"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/quic"
 )
 
 var defaultDialer = &net.Dialer{}
@@ -133,11 +135,18 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// try each Address until a connection is successful or fail
 	for i, idx := range idxs {
-		conn, err = dialFn(ctx, "tcp", peer.Addresses[idx])
-		if err == nil {
-			break
+		u, err := url.Parse(peer.Addresses[idx])
+		if err != nil {
+			continue
 		}
-		if i == len(idxs)-1 {
+		p.log.Notice("Dialing %s", u)
+		conn, err = quic.DialURL(u, ctx, dialFn)
+		if err == nil {
+			break // got working transport
+		} else {
+			p.log.Debugf("Failed to Dial %s: %v", u, err)
+		}
+		if i == len(peer.Addresses)-1 {
 			return nil, err
 		}
 	}
@@ -243,9 +252,14 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 		if err != nil {
 			return nil, err
 		}
+		defer conn.conn.Close() // close connection after use
 		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
 		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
+		if err != nil {
+			p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v)", auth.Identifier, epoch, i, err)
+			continue
+		}
 
 		r, ok := resp.(*commands.Consensus)
 		if !ok {

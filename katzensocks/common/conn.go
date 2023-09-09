@@ -13,7 +13,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/worker"
-	"github.com/katzenpost/katzenpost/quic/common"
+	kquic "github.com/katzenpost/katzenpost/quic"
 	quic "github.com/quic-go/quic-go"
 	qlogging "github.com/quic-go/quic-go/logging"
 	"github.com/quic-go/quic-go/qlog"
@@ -99,7 +99,7 @@ func NewQUICProxyConn(id []byte) *QUICProxyConn {
 		localAddr: UniqAddr(id),
 		incoming:  make(chan *pkt, 1000),
 		outgoing:  make(chan *pkt, 1000),
-		tlsConf:   common.GenerateTLSConfig(),
+		tlsConf:   kquic.GenerateTLSConfig(),
 		qcfg: &quic.Config{
 			KeepAlivePeriod: 24 * time.Minute,
 			MaxIdleTimeout:  42 * time.Minute,
@@ -116,7 +116,7 @@ func (k *QUICProxyConn) Config() *quic.Config {
 
 func (k *QUICProxyConn) TLSConfig() *tls.Config {
 	if k.tlsConf == nil {
-		k.tlsConf = common.GenerateTLSConfig()
+		k.tlsConf = kquic.GenerateTLSConfig()
 	}
 	return k.tlsConf
 }
@@ -287,7 +287,7 @@ func (k *QUICProxyConn) Accept(ctx context.Context) (net.Conn, error) {
 			return nil, err
 		}
 
-		qc := &common.QuicConn{Stream: s, Conn: c}
+		qc := &kquic.QuicConn{Stream: s, Conn: c}
 		return qc, nil
 	}
 }
@@ -325,6 +325,6 @@ func (k *QUICProxyConn) Dial(ctx context.Context, addr net.Addr) (net.Conn, erro
 		if err != nil {
 			return nil, err
 		}
-		return &common.QuicConn{Stream: s, Conn: c}, nil
+		return &kquic.QuicConn{Stream: s, Conn: c}, nil
 	}
 }

@@ -201,7 +201,7 @@ func TestVote(t *testing.T) {
 	for i := 0; i < len(mixCfgs); i++ {
 		mkeys := genMixKeys(votingEpoch)
 		addr := make(map[pki.Transport][]string)
-		addr[pki.TransportTCPv4] = []string{"127.0.0.1:1234"}
+		addr[pki.TransportTCPv4] = []string{"tcp4://127.0.0.1:1234"}
 		_, linkPubKey := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 
 		desc := &pki.MixDescriptor{
@@ -385,7 +385,7 @@ func genVotingAuthoritiesCfg(parameters *config.Parameters, numAuthorities int) 
 
 		cfg.Server = new(config.Server)
 		cfg.Server.Identifier = fmt.Sprintf("authority-%v", i)
-		cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", lastPort)}
+		cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", lastPort)}
 		cfg.Server.DataDir = datadir
 		lastPort += 1
 
@@ -438,10 +438,7 @@ func genProviderConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = name
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
-	cfg.Server.AltAddresses = map[string][]string{
-		"TCP": []string{fmt.Sprintf("localhost:%d", port)},
-	}
+	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", port)}
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("provider_%s", name))
 	if err != nil {
@@ -528,7 +525,7 @@ func genMixConfig(name string, pki *sConfig.PKI, port uint16) (*identityKey, *sC
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = name
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", port)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("tcp://127.0.0.1:%d", port)}
 	cfg.Server.IsProvider = false
 
 	datadir, err := os.MkdirTemp("", fmt.Sprintf("mix_%s", name))

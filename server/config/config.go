@@ -20,13 +20,11 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net"
 	"net/mail"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -87,26 +85,19 @@ type Server struct {
 	// to for incoming connections.
 	Addresses []string
 
-	// AltAddresses is the map of extra transports and addresses at which
-	// the mix is reachable by clients.  The most useful alternative
-	// transport is likely ("tcp") (`core/pki.TransportTCP`).
-	AltAddresses map[string][]string
-
-	// If set to true then only advertise to the PKI the AltAddresses
+	// If present then only advertise to the PKI these Addresses
 	// and do NOT send any of the Addresses.
-	OnlyAdvertiseAltAddresses bool
+	OnlyAdvertiseAddresses []string
+
+	// AllowedTransports is the type of Transport to use for outgoing connections.
+	// If empty, all supported transport types will be used.
+	AllowedTransports []pki.Transport
 
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
 
 	// IsProvider specifies if the server is a provider (vs a mix).
 	IsProvider bool
-}
-
-func (sCfg *Server) applyDefaults() {
-	if sCfg.AltAddresses == nil {
-		sCfg.AltAddresses = make(map[string][]string)
-	}
 }
 
 func (sCfg *Server) validate() error {
@@ -116,8 +107,10 @@ func (sCfg *Server) validate() error {
 
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
-			if err := utils.EnsureAddrIPPort(v); err != nil {
-				return fmt.Errorf("config: Server: Address '%v' is invalid: %v", v, err)
+			if u, err := url.Parse(v); err != nil {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+			} else if u.Port() == "" {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
 		}
 	} else {
@@ -129,34 +122,24 @@ func (sCfg *Server) validate() error {
 			return err
 		}
 
-		sCfg.Addresses = []string{addr.String() + defaultAddress}
+		sCfg.Addresses = []string{"tcp://" + addr.String() + defaultAddress}
 	}
-
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
-	}
-
-	for k, v := range sCfg.AltAddresses {
-		lowkey := strings.ToLower(k)
-		switch pki.Transport(lowkey) {
-		case pki.TransportTCP:
-			for _, a := range v {
-				h, p, err := net.SplitHostPort(a)
-				if err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				}
-				if len(h) == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", a)
-				}
-				if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				} else if port == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", a)
+	if sCfg.AllowedTransports != nil {
+		// validate each transport string
+		for _, cfgTransport := range sCfg.AllowedTransports {
+			valid := false
+			for _, pkiTransport := range pki.InternalTransports {
+				if cfgTransport == pkiTransport {
+					valid = true
 				}
 			}
-		default:
+			if !valid {
+				return fmt.Errorf("Invalid AllowedTransport %s specified", cfgTransport)
+			}
 		}
+	} else {
+		// allow all transports
+		sCfg.AllowedTransports = pki.InternalTransports
 	}
 
 	if !filepath.IsAbs(sCfg.DataDir) {
@@ -327,11 +310,6 @@ type Provider struct {
 	// allow ephemeral clients to be created when the Provider
 	// first receives a given user identity string.
 	EnableEphemeralClients bool
-
-	// AltAddresses is the map of extra transports and addresses at which
-	// the Provider is reachable by clients.  The most useful alternative
-	// transport is likely ("tcp") (`core/pki.TransportTCP`).
-	AltAddresses map[string][]string
 
 	// SQLDB is the SQL database backend configuration.
 	SQLDB *SQLDB
@@ -552,36 +530,6 @@ func (pCfg *Provider) applyDefaults(sCfg *Server) {
 }
 
 func (pCfg *Provider) validate() error {
-	internalTransports := make(map[string]bool)
-	for _, v := range pki.InternalTransports {
-		internalTransports[strings.ToLower(string(v))] = true
-	}
-
-	for k, v := range pCfg.AltAddresses {
-		kLower := strings.ToLower(k)
-		if internalTransports[kLower] {
-			return fmt.Errorf("config: Provider: AltAddress is overriding internal transport: %v", kLower)
-		}
-		switch pki.Transport(kLower) {
-		case pki.TransportTCP:
-			for _, a := range v {
-				h, p, err := net.SplitHostPort(a)
-				if err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				}
-				if len(h) == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing host", a)
-				}
-				if port, err := strconv.ParseUint(p, 10, 16); err != nil {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: %v", a, err)
-				} else if port == 0 {
-					return fmt.Errorf("config: Provider: AltAddress '%v' is invalid: missing port", a)
-				}
-			}
-		default:
-		}
-	}
-
 	if pCfg.SQLDB != nil {
 		if err := pCfg.SQLDB.validate(); err != nil {
 			return err
@@ -695,10 +643,11 @@ type Nonvoting struct {
 }
 
 func (nCfg *Nonvoting) validate(datadir string) error {
-	if err := utils.EnsureAddrIPPort(nCfg.Address); err != nil {
-		return fmt.Errorf("config: PKI/Nonvoting: Address is invalid: %v", err)
+	if u, err := url.Parse(nCfg.Address); err != nil {
+		return fmt.Errorf("config: PKI/Nonvoting: Address '%v' is invalid: %v", nCfg.Address, err)
+	} else if u.Port() == "" {
+		return fmt.Errorf("config: PKI/Nonvoting: Address '%v' is invalid: Must contain Port", nCfg.Address)
 	}
-
 	return nil
 }
 
@@ -787,7 +736,6 @@ func (cfg *Config) FixupAndValidate() error {
 	}
 
 	// Perform basic validation.
-	cfg.Server.applyDefaults()
 	if err := cfg.Server.validate(); err != nil {
 		return err
 	}

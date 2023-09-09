@@ -1,6 +1,6 @@
 module github.com/katzenpost/katzenpost
 
-go 1.19
+go 1.20
 
 require (
 	filippo.io/edwards25519 v1.0.0
@@ -59,7 +59,6 @@ require (
 	github.com/prometheus/common v0.44.0 // indirect
 	github.com/prometheus/procfs v0.10.1 // indirect
 	github.com/quic-go/qpack v0.4.0 // indirect
-	github.com/quic-go/qtls-go1-19 v0.3.2 // indirect
 	github.com/quic-go/qtls-go1-20 v0.3.4 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect

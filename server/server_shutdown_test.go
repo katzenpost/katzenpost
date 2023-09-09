@@ -72,7 +72,8 @@ func TestServerStartShutdown(t *testing.T) {
 		SphinxGeometry: geo,
 		Server: &config.Server{
 			Identifier: "testserver",
-			Addresses:  []string{"127.0.0.1:1234"},
+			Addresses:  []string{"tcp://127.0.0.1:1234", "quic://127.0.0.1:4678"},
+			OnlyAdvertiseAddresses:  []string{"tcp://127.0.0.1:80", "quic://127.0.0.1:443"},
 			DataDir:    datadir,
 			IsProvider: false,
 		},
@@ -84,7 +85,7 @@ func TestServerStartShutdown(t *testing.T) {
 		Provider: nil,
 		PKI: &config.PKI{
 			Nonvoting: &config.Nonvoting{
-				Address:       "127.0.0.1:3321",
+				Address:       "http://127.0.0.1:3321",
 				PublicKey:     authPubkey,
 				LinkPublicKey: authLinkPubKey,
 			},

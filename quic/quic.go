@@ -13,9 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-// Package common contains things shared by client and server
-package common
+package quic
 
 import (
 	"context"
@@ -82,7 +80,7 @@ func (q *QuicConn) Write(b []byte) (n int, err error) {
 
 // QuicListener implements net.Listener
 type QuicListener struct {
-	Listener quic.Listener
+	Listener *quic.Listener
 }
 
 // Accept implements net.Listener. It starts a single QUIC Stream and returns a
@@ -100,12 +98,10 @@ func (l *QuicListener) Accept() (net.Conn, error) {
 	return &QuicConn{Conn: conn, Stream: stream}, nil
 }
 
-// Addr wraps Listener.Addr
 func (l *QuicListener) Addr() net.Addr {
 	return l.Listener.Addr()
 }
 
-// Close wraps Listener.Close
 func (l *QuicListener) Close() error {
 	return l.Listener.Close()
 }
@@ -166,12 +162,9 @@ func DialURL(u *url.URL, ctx context.Context, dialFn func(ctx context.Context, n
 			NextProtos: []string{http3.NextProtoH3},
 		}
 
-		// XXX if an UpstreamProxy is specified, this dial function will fail,
-		// which is what we want
-
-		// TODO: Write SOCKS5 Dialer that wraps quic.Dial
-		// TODO: choose a socks5 client library that supports socks5 UDP Associate
-		// TODO: support QUIC Datagram HTTP Connect proxy dialers
+		// if UpstreamProxy is specified, dialFn fails because we don't support proxying UDP
+		// investigate adding UpstreamProxy support for QUIC transport
+		// https://github.com/katzenpost/katzenpost/issues/326
 		_, err = dialFn(ctx, "udp", u.Host)
 		if err != nil {
 			return nil, err

@@ -21,6 +21,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -288,8 +289,10 @@ func (a *Authority) UnmarshalTOML(v interface{}) error {
 // Validate parses and checks the Authority configuration.
 func (a *Authority) Validate() error {
 	for _, v := range a.Addresses {
-		if err := utils.EnsureAddrIPPort(v); err != nil {
-			return fmt.Errorf("config: Authority : Address '%v' is invalid: %v", v, err)
+		if u, err := url.Parse(v); err != nil {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+		} else if u.Port() == "" {
+			return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 		}
 	}
 	if a.IdentityPublicKey == nil {
@@ -351,8 +354,10 @@ type Server struct {
 func (sCfg *Server) validate() error {
 	if sCfg.Addresses != nil {
 		for _, v := range sCfg.Addresses {
-			if err := utils.EnsureAddrIPPort(v); err != nil {
+			if u, err := url.Parse(v); err != nil {
 				return fmt.Errorf("config: Authority: Address '%v' is invalid: %v", v, err)
+			} else if u.Port() == "" {
+				return fmt.Errorf("config: Authority: Address '%v' is invalid: Must contain Port", v)
 			}
 		}
 	} else {
