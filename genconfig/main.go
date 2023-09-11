@@ -68,6 +68,7 @@ type katzenpost struct {
 	clientIdx   int
 	providerIdx int
 	hasPanda    bool
+	hasProxy    bool
 }
 
 type AuthById []*vConfig.Authority
@@ -186,16 +187,6 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 			cfg.Provider.TrustOnFirstUse = true
 			cfg.Provider.EnableEphemeralClients = true
 		} else {
-			spoolCfg := &sConfig.CBORPluginKaetzchen{
-				Capability:     "spool",
-				Endpoint:       "+spool",
-				Command:        s.baseDir + "/memspool" + s.binSuffix,
-				MaxConcurrency: 1,
-				Config: map[string]interface{}{
-					"data_store": s.baseDir + "/" + cfg.Server.Identifier + "/memspool.storage",
-					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
-				},
-			}
 			katzensocksCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "katzensocks",
 				Endpoint:       "+katzensocks",
@@ -209,21 +200,22 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 				},
 			}
 
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, katzensocksCfg}
-			if !s.hasPanda {
-				pandaCfg := &sConfig.CBORPluginKaetzchen{
-					Capability:     "panda",
-					Endpoint:       "+panda",
-					Command:        s.baseDir + "/panda_server" + s.binSuffix,
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{katzensocksCfg}
+			// Add an instance of a http proxy for the Cashu mint service listening on 3338
+			if !s.hasProxy {
+				proxyCfg := &sConfig.CBORPluginKaetzchen{
+					Capability:     "cashu",
+					Endpoint:       "+cashu",
+					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
-						"fileStore": s.baseDir + "/" + cfg.Server.Identifier + "/panda.storage",
+						"host":      "localhost:3338",
 						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
 						"log_level": "DEBUG",
 					},
 				}
-				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, pandaCfg)
-				s.hasPanda = true
+				cfg.Provider.CBORPluginKaetzchen = append(cfg.Provider.CBORPluginKaetzchen, proxyCfg)
+				s.hasProxy = true
 			}
 		}
 

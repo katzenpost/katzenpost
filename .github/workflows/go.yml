@@ -67,77 +67,6 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
 
-  test_e2e_memspool:
-    env:
-      warped: true
-      XDG_RUNTIME_DIR: /run
-    strategy:
-      matrix:
-        go-version: [1.20.x]
-        os: [ubuntu-22.04]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Configure podman socket
-        run: |
-          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && sudo -E make onlyTransports=${{ matrix.transport }} clean-local start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
-
-      - name: run memspool end to end tests
-        run: cd memspool && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat client/coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && sudo -E make stop
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-
-  test_e2e_catshadow:
-    env:
-      warped: true
-      XDG_RUNTIME_DIR: /run
-    strategy:
-      matrix:
-        go-version: [1.20.x]
-        os: [ubuntu-22.04]
-        transport: [ "", "tcp", "quic" ]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Configure podman socket
-        run: |
-          sudo systemctl restart dbus && sudo systemctl enable --now podman.socket
-
-      - name: Build and start the mixnet
-        run: |
-          cd docker && sudo -E make onlyTransports=${{ matrix.transport }} clean-local start
-
-      - name: Allow mixnet to settle
-        run: |
-          sleep 240
-
-      - name: run catshadow end to end tests
-        run: cd catshadow && sudo -E make testargs=-coverprofile=coverage.part dockerdockertest && cat coverage.part >> ../coverage.out
-
-      - name: Stop the mixnet
-        run: |
-          cd docker && sudo -E make stop
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-
   test_benchmark:
     env:
       warped: true
@@ -182,6 +111,7 @@ jobs:
       matrix:
         go-version: [1.20.x]
         os: [ubuntu-22.04]
+        transport: [ "", "tcp", "quic" ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
@@ -193,7 +123,7 @@ jobs:
 
       - name: Build and start the mixnet with low latency tuning parameters
         run: |
-          cd docker && sudo -E make mu=0.05 muMax=50 lP=0.2 lPMax=20 start wait
+          cd docker && sudo -E make onlyTransports=${{ matrix.transport }} mu=0.05 muMax=50 lP=0.2 lPMax=20 start wait
 
       - name: run katzensocks end to end tests
         run: cd katzensocks && sudo -E make dockerdockertest
