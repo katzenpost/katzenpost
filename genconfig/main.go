@@ -694,5 +694,45 @@ services:
     network_mode: host
 `, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
 	}
+
+	// add a HTTP proxy to the Cashu mint for the proxy client
+	write(f, `
+  %s:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/http_proxy_client%s -cfg %s/client/client.toml -ep cashu -port 8080
+    network_mode: host
+    expose:
+     - "8080/tcp"
+`, "proxy_cashu_client", dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir)
+
+	// add a HTTP proxy to the Cashu mint for the proxy service
+	write(f, `
+  %s:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/http_proxy_client%s -cfg %s/client/client.toml -ep cashu -port 8081
+    network_mode: host
+    expose:
+     - "8081/tcp"
+`, "proxy_cashu_server", dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir)
+
+	// add katzensocks proxy client
+	write(f, `
+  %s:
+    restart: "no"
+    image: %s
+    volumes:
+      - ./:%s
+    command: %s/katzensocks%s -cfg %s/client/client.toml -port 4242
+    network_mode: host
+    expose:
+     - "4242/tcp"
+`, "katzensocks", dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir)
+
 	return nil
 }

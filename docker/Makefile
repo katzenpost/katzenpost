@@ -88,12 +88,12 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
 
-run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
+run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro) $(net_name)/http_proxy_client.$(distro) $(net_name)/katzensocks.$(distro)
 	-cd $(net_name) && touch running.stamp \
 	&& DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
 	cd $(net_name) && rm -v running.stamp
 
-start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro)
+start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro) $(net_name)/http_proxy_client.$(distro) $(net_name)/katzensocks.$(distro)
 	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
 	touch $(net_name)/running.stamp
 
@@ -184,6 +184,16 @@ $(net_name)/ping.$(distro): $(distro)_go_mod.stamp $(net_name)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
 			$(sh) -c 'cd ping && go mod verify && go build -ldflags ${ldflags} && \
 			mv ping /$(net_name)/ping.$(distro)'
+
+$(net_name)/http_proxy_client.$(distro): $(distro)_go_mod.stamp $(net_name)
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
+			$(sh) -c 'cd http/proxy && make $(make_args) clean client/client && \
+			mv client/client /$(net_name)/http_proxy_client.$(distro)'
+
+$(net_name)/katzensocks.$(distro): $(distro)_go_mod.stamp $(net_name)
+		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
+			$(sh) -c 'cd katzensocks && make $(make_args) clean client/cmd/client/client && \
+			mv client/cmd/client/client /$(net_name)/katzensocks.$(distro)'
 
 clean-images: stop
 	@-for distro in $(DISTROS); do \
