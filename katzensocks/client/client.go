@@ -17,6 +17,8 @@
 package client
 
 import (
+	"fmt"
+
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/constants"
@@ -25,6 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/katzensocks/cashu"
 	"github.com/katzenpost/katzenpost/katzensocks/common"
 	"github.com/katzenpost/katzenpost/katzensocks/server"
 	"github.com/katzenpost/katzenpost/katzensocks/socks5"
@@ -44,6 +47,9 @@ var (
 	cfg *config.Config
 	// set a minimum floor for the polling loop
 	backOffFloor = 100 * time.Millisecond
+
+	// Cashu configuration
+	cashuWalletUrl = "http://localhost:4448"
 )
 
 func GetSession(cfgFile string) (*client.Session, error) {
@@ -82,6 +88,7 @@ type Client struct {
 	s            *client.Session
 	msgCallbacks map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
 	payloadLen   int
+	cashuClient  *cashu.CashuApiClient
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -91,9 +98,10 @@ func NewClient(s *client.Session) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	cashuClient := cashu.NewCashuApiClient(nil, cashuWalletUrl)
+
 	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
-		msgCallbacks: make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
-	}, nil
+		msgCallbacks: make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)), cashuClient: cashuClient}, nil
 }
 
 // topup sends a TopupCommand and returns a channel. err nil means success.
@@ -101,14 +109,25 @@ func (c *Client) Topup(id []byte) chan error {
 	errCh := make(chan error)
 	go func() {
 		defer close(errCh)
-		// XXX: Get Cashu from wallet API
-		// TODO: Cash payment from client to server goes here
-		nuts := make([]byte, 512)
-		_, err := io.ReadFull(rand.Reader, nuts)
+
+		send_request := cashu.SendRequest{Amount: 1}
+		send_resp, err := c.cashuClient.SendToken(send_request)
 		if err != nil {
-			errCh <- err
+			fmt.Println("Send Error:", err)
 			return
 		}
+		nuts := make([]byte, 512)
+		// fill nuts with send_resp.Token from beginning
+		copy(nuts, send_resp.Token)
+
+		// // XXX: Get Cashu from wallet API
+		// // TODO: Cash payment from client to server goes here
+		// nuts := make([]byte, 512)
+		// _, err := io.ReadFull(rand.Reader, nuts)
+		// if err != nil {
+		// 	errCh <- err
+		// 	return
+		// }
 
 		// Send a TopupCommand to create a proxy session on the server
 		serialized, err := (&server.TopupCommand{ID: id, Nuts: nuts}).Marshal()

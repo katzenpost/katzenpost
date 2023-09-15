@@ -19,8 +19,7 @@ package server
 import (
 	"context"
 	"errors"
-	"github.com/katzenpost/katzenpost/core/log"
-	"gopkg.in/op/go-logging.v1"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -28,9 +27,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/log"
+	"gopkg.in/op/go-logging.v1"
+
 	"github.com/fxamacker/cbor/v2"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/katzensocks/cashu"
 	"github.com/katzenpost/katzenpost/katzensocks/common"
 	"github.com/katzenpost/katzenpost/server/cborplugin"
 )
@@ -61,6 +64,9 @@ var (
 	ErrInvalidCommand    = errors.New("ErrInvalidCommand")
 	ErrUnsupportedProto  = errors.New("ErrUnsupportedProtocol")
 	ErrDialFailed        = errors.New("ErrDialFailed")
+
+	// Cashu configuration
+	cashuWalletUrl = "http://localhost:4449"
 )
 
 // Server is a kaetzchen responder that proxies
@@ -68,11 +74,11 @@ var (
 type Server struct {
 	cfg *config.Config
 	worker.Worker
-	log        *logging.Logger
-	logBackend *log.Backend
-	payloadLen int
-
-	sessions *sync.Map
+	log         *logging.Logger
+	logBackend  *log.Backend
+	payloadLen  int
+	cashuClient *cashu.CashuApiClient
+	sessions    *sync.Map
 }
 
 // NewServer instantiates the Katzensocks Kaetzchen responder
@@ -82,7 +88,8 @@ func NewServer(cfgFile string, logBackend *log.Backend) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, log: log, sessions: new(sync.Map), payloadLen: cfg.SphinxGeometry.UserForwardPayloadLength}
+	cashuClient := cashu.NewCashuApiClient(nil, cashuWalletUrl)
+	s := &Server{cfg: cfg, log: log, sessions: new(sync.Map), payloadLen: cfg.SphinxGeometry.UserForwardPayloadLength, cashuClient: cashuClient}
 	return s, nil
 }
 
@@ -535,12 +542,14 @@ func (s *Server) findSession(id []byte) (*Session, error) {
 }
 
 func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
-	// FIXME XXX: for testing only
-	// TODO: Validate Cashu payment here
 	// validate topup
-	// if !s.gotNuts(cmd.Nuts) {
-	// 	return &TopupResponse{Error: ErrInsufficientFunds}
-	// }
+	cashuTokenStr := string(cmd.Nuts)
+	_, err := s.cashuClient.Receive(cashu.ReceiveParameters{Token: &cashuTokenStr})
+	if err != nil {
+		fmt.Println("Receive Error:", err)
+		return &TopupResponse{Status: TopupFailure}, err
+	}
+
 	s.log.Debugf("Received TopupCommand(%x, %x)", cmd.ID, cmd.Nuts[:16])
 
 	if ss, ok := s.sessions.Load(string(cmd.ID)); ok {
