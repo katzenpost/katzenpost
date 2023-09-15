@@ -53,6 +53,9 @@ docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
 
+# log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
+log_level=DEBUG
+
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
 ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
@@ -83,7 +86,8 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
-		-onlyTransports "$(onlyTransports)" -UserForwardPayloadLength $(UserForwardPayloadLength)'
+		-onlyTransports "$(onlyTransports)" -UserForwardPayloadLength $(UserForwardPayloadLength) \
+		-log_level $(log_level)'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
