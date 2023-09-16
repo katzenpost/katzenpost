@@ -558,6 +558,7 @@ func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 		ses.acceptOnce = new(sync.Once)
 		ses.s = s
 		ses.ID = cmd.ID
+		ses.ValidUntil = time.Now().Add(60 * time.Minute)
 		s.sessions.Store(string(cmd.ID), ses)
 	}
 	return &TopupResponse{Status: TopupSuccess}, nil
