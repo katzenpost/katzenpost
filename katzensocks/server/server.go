@@ -19,7 +19,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -543,8 +542,8 @@ func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 	cashuTokenStr := string(cmd.Nuts)
 	_, err := s.cashuClient.Receive(cashu.ReceiveParameters{Token: &cashuTokenStr})
 	if err != nil {
-		fmt.Println("Receive Error:", err)
-		return &TopupResponse{Status: TopupFailure}, err
+		s.log.Error("topup cashu: %v", err)
+		return &TopupResponse{Status: TopupFailure}, nil
 	}
 
 	s.log.Debugf("Received TopupCommand(%x, %x)", cmd.ID, cmd.Nuts[:16])
