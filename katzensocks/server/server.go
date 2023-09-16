@@ -43,9 +43,6 @@ var (
 	// or else the worker will abandon the stream
 	connectDeadine = time.Minute
 
-	// hmm
-	sockatzEndpoint = "127.4.2.0:4242"
-
 	// PayloadLen is the size of the transported payload
 	// for QUIC it needs to be minimum ~1200b
 	PayloadLen = 1452
