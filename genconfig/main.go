@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"net/url"
 	"io"
 	"log"
 	"os"
@@ -658,10 +659,27 @@ services:
     command: %s/server%s -f %s/%s/katzenpost.toml
     network_mode: host
 
+
     depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, p.Identifier)
 		for _, authCfg := range s.votingAuthConfigs {
 			write(f, `
       - %s`, authCfg.Server.Identifier)
+		}
+		write(f, `
+    expose:`)
+		for _, cfg := range s.nodeConfigs {
+			if cfg.Server.Identifier != p.Identifier {
+				continue
+			}
+			for _, addr := range cfg.Server.Addresses {
+				u, _ := url.Parse(addr)
+				proto := "tcp"
+				if u.Scheme == string(pki.TransportQUIC) {
+					proto = "udp"
+				}
+				write(f, `
+      - "%s"`, u.Port()+"/"+proto)
+			}
 		}
 	}
 
@@ -695,7 +713,16 @@ services:
       - ./:%s
     command: %s/voting%s -f %s/%s/authority.toml
     network_mode: host
-`, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
+    expose:`, authCfg.Server.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, authCfg.Server.Identifier)
+		for _, addr := range authCfg.Server.Addresses {
+			u, _ := url.Parse(addr)
+			proto := "tcp"
+			if u.Scheme == string(pki.TransportQUIC) {
+				proto = "udp"
+			}
+			write(f, `
+      - "%s"`, u.Port()+"/"+proto)
+		}
 	}
 
 	// add a HTTP proxy to the Cashu mint for the proxy client
