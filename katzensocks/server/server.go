@@ -615,6 +615,12 @@ func (s *Server) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 		return nil, err
 	}
 
+	// check balance of session
+	if time.Now().After(ss.ValidUntil) {
+		reply.Status = ProxyInsufficientFunds
+		return reply, nil
+	}
+
 	// XXX: received messages after session reset ?
 	if ss.Transport == nil {
 		s.log.Errorf("Received ProxyCommand with no Transport")
