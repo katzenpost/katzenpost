@@ -2,13 +2,13 @@ module github.com/katzenpost/katzenpost
 
 go 1.20
 
-replace gioui.org => github.com/mixmasala/gio v0.0.0-20230916171119-2d942a27389f
+replace gioui.org => github.com/mixmasala/gio v0.0.0-20230917185150-1c97118905a5
 
-replace gioui.org/cmd => github.com/mixmasala/gio-cmd v0.0.0-20230916172430-82dd445198dd
+replace gioui.org/cmd => github.com/mixmasala/gio-cmd v0.0.0-20230917190002-697be40b7aa6
 
 require (
 	filippo.io/edwards25519 v1.0.0
-	gioui.org v0.0.0-20220628163331-e21c665e70ae
+	gioui.org v0.3.0
 	github.com/BurntSushi/toml v1.3.2
 	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
@@ -39,8 +39,10 @@ require (
 )
 
 require (
+	gioui.org/cmd v0.0.0-20230822165948-7cb98d0557e7 // indirect
 	gioui.org/cpu v0.0.0-20210817075930-8d6a761490d2 // indirect
 	gioui.org/shader v1.0.7 // indirect
+	github.com/akavel/rsrc v0.10.1 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -75,6 +77,7 @@ require (
 	golang.org/x/exp/shiny v0.0.0-20220827204233-334a2380cb91 // indirect
 	golang.org/x/image v0.5.0 // indirect
 	golang.org/x/mod v0.12.0 // indirect
+	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.12.0 // indirect
 	golang.org/x/tools v0.13.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
