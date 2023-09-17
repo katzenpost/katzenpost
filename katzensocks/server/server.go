@@ -62,7 +62,7 @@ var (
 	ErrDialFailed        = errors.New("ErrDialFailed")
 
 	// Cashu configuration
-	cashuWalletUrl = "http://localhost:4449"
+	cashuWalletUrl = "http://127.0.0.1:4449"
 )
 
 // Server is a kaetzchen responder that proxies
@@ -543,7 +543,9 @@ func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 	_, err := s.cashuClient.Receive(cashu.ReceiveParameters{Token: &cashuTokenStr})
 	if err != nil {
 		s.log.Error("topup cashu: %v", err)
-		return &TopupResponse{Status: TopupFailure}, nil
+		// XXX: ignore Cashu errors for now
+		//return &TopupResponse{Status: TopupFailure}, nil
+		return &TopupResponse{Status: TopupSuccess}, nil
 	}
 
 	s.log.Debugf("Received TopupCommand(%x, %x)", cmd.ID, cmd.Nuts[:16])
