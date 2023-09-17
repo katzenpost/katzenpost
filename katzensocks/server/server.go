@@ -545,7 +545,6 @@ func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 		s.log.Error("topup cashu: %v", err)
 		// XXX: ignore Cashu errors for now
 		//return &TopupResponse{Status: TopupFailure}, nil
-		return &TopupResponse{Status: TopupSuccess}, nil
 	}
 
 	s.log.Debugf("Received TopupCommand(%x, %x)", cmd.ID, cmd.Nuts[:16])
