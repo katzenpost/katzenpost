@@ -576,13 +576,17 @@ func (s *Server) proxyWorker(a, b net.Conn) chan error {
 			defer wg.Done()
 			_, err := io.Copy(a, b)
 			if err != nil {
-				s.log.Errorf("proxyWorker io.Copy returned: %v", err)
+				s.log.Errorf("proxyWorker(a,b) io.Copy returned: %v", err)
 				errCh <- err
 			}
 			s.log.Debugf("Closing %v", b)
 			err = b.Close()
 			if err != nil {
-				s.log.Errorf("proxyWorker Close returned: %v", err)
+				s.log.Errorf("proxyWorker(a,b) b.Close returned: %v", err)
+			}
+			err = a.Close()
+			if err != nil {
+				s.log.Errorf("proxyWorker(a,b) a.Close returned: %v", err)
 			}
 		}()
 		go func() {
@@ -595,7 +599,11 @@ func (s *Server) proxyWorker(a, b net.Conn) chan error {
 			s.log.Debugf("Closing %v", a)
 			err = a.Close()
 			if err != nil {
-				s.log.Errorf("proxyWorker Close returned: %v", err)
+				s.log.Errorf("proxyWorker(b,a) a.Close returned: %v", err)
+			}
+			err = b.Close()
+			if err != nil {
+				s.log.Errorf("proxyWorker(b,a) b.Close returned: %v", err)
 			}
 		}()
 		wg.Wait()
