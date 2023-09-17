@@ -45,6 +45,7 @@ import (
 
 const (
 	basePort      = 30000
+	bindAddr      = "127.0.0.1"
 	nrLayers      = 3
 	nrNodes       = 6
 	nrProviders   = 2
@@ -66,6 +67,7 @@ type katzenpost struct {
 	nodeConfigs []*sConfig.Config
 	basePort    uint16
 	lastPort    uint16
+	bindAddr    string
 	nodeIdx     int
 	clientIdx   int
 	providerIdx int
@@ -142,7 +144,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = n
-	cfg.Server.Addresses = genAddresses(transports, &s.lastPort)
+	cfg.Server.Addresses = genAddresses(transports, s.bindAddr, &s.lastPort)
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
@@ -253,7 +255,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 	return cfg.FixupAndValidate()
 }
 
-func genAddresses(transports []pki.Transport, lastPort *uint16) []string {
+func genAddresses(transports []pki.Transport, bindAddr string, lastPort *uint16) []string {
 	// if transports are not specified, create a listener for every valid transport
 	if len(transports) == 0 {
 		transports = pki.InternalTransports
@@ -262,7 +264,7 @@ func genAddresses(transports []pki.Transport, lastPort *uint16) []string {
 	for i, transport := range transports {
 		switch pki.Transport(transport) {
 		case pki.TransportTCP, pki.TransportTCPv4, pki.TransportQUIC:
-			addresses[i] = fmt.Sprintf("%s://127.0.0.1:%d", transport, *lastPort)
+			addresses[i] = fmt.Sprintf("%s://%s:%d", transport, bindAddr, *lastPort)
 		case pki.TransportTCPv6:
 			addresses[i] = fmt.Sprintf("%s://[::1]:%d", transport, *lastPort)
 		default:
@@ -287,7 +289,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 
-		cfg.Server.Addresses = genAddresses(transports, &s.lastPort)
+		cfg.Server.Addresses = genAddresses(transports, s.bindAddr, &s.lastPort)
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 		cfg.Logging = &vConfig.Logging{
 			Disable: false,
@@ -367,6 +369,7 @@ func main() {
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
 	basePort := flag.Int("P", basePort, "First port number to use")
+	bindAddr := flag.String("a", bindAddr, "Address to bind to")
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
@@ -419,6 +422,7 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+	s.bindAddr = *bindAddr
 	s.logLevel = *logLevel
 
 	nrHops := *nrLayers + 2
