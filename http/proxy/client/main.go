@@ -26,9 +26,12 @@ import (
 	"github.com/katzenpost/katzenpost/http/proxy/common"
 	"gopkg.in/op/go-logging.v1"
 
+	"bufio"
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httputil"
 	"time"
@@ -97,12 +100,28 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	err = cbor.Unmarshal(response, proxyResponse)
 	if err != nil {
 		// send http error response
+		k.log.Errorf("Err unmarshalling kaetzchen response: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	// return the http response
-	w.Write(proxyResponse.Payload)
+	responseReader := bufio.NewReader(bytes.NewBuffer(proxyResponse.Payload))
+	resp, err := http.ReadResponse(responseReader, r)
+	if err != nil {
+		// send http error response
+		k.log.Errorf("Err parsing http response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	defer resp.Body.Close()
+	_, err = io.Copy(w, resp.Body)
+	// log err
+	if err != nil {
+		k.log.Errorf("Err proxying: %v", err)
+	}
+	return
 }
 
 func main() {
