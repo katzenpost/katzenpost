@@ -19,7 +19,6 @@ package server
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -42,9 +41,6 @@ var (
 	// clients must start reading from their streams
 	// or else the worker will abandon the stream
 	connectDeadine = time.Minute
-
-	// hmm
-	sockatzEndpoint = "127.4.2.0:4242"
 
 	// PayloadLen is the size of the transported payload
 	// for QUIC it needs to be minimum ~1200b
@@ -546,8 +542,8 @@ func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 	cashuTokenStr := string(cmd.Nuts)
 	_, err := s.cashuClient.Receive(cashu.ReceiveParameters{Token: &cashuTokenStr})
 	if err != nil {
-		fmt.Println("Receive Error:", err)
-		return &TopupResponse{Status: TopupFailure}, err
+		s.log.Error("topup cashu: %v", err)
+		return &TopupResponse{Status: TopupFailure}, nil
 	}
 
 	s.log.Debugf("Received TopupCommand(%x, %x)", cmd.ID, cmd.Nuts[:16])
@@ -562,6 +558,7 @@ func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
 		ses.acceptOnce = new(sync.Once)
 		ses.s = s
 		ses.ID = cmd.ID
+		ses.ValidUntil = time.Now().Add(60 * time.Minute)
 		s.sessions.Store(string(cmd.ID), ses)
 	}
 	return &TopupResponse{Status: TopupSuccess}, nil
@@ -616,6 +613,12 @@ func (s *Server) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 	if err != nil {
 		s.log.Debugf("Failed to find Session: %x", cmd.ID)
 		return nil, err
+	}
+
+	// check balance of session
+	if time.Now().After(ss.ValidUntil) {
+		reply.Status = ProxyInsufficientFunds
+		return reply, nil
 	}
 
 	// XXX: received messages after session reset ?

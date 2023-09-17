@@ -14,7 +14,6 @@ var (
 	port    = flag.Int("port", 4242, "listener address")
 )
 
-// getSession waits until pki.Document is available and returns a *client.Session
 func main() {
 	flag.Parse()
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))

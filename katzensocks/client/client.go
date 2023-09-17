@@ -17,8 +17,6 @@
 package client
 
 import (
-	"fmt"
-
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/client/constants"
@@ -113,21 +111,13 @@ func (c *Client) Topup(id []byte) chan error {
 		send_request := cashu.SendRequest{Amount: 1}
 		send_resp, err := c.cashuClient.SendToken(send_request)
 		if err != nil {
-			fmt.Println("Send Error:", err)
+			c.log.Error("topup cashu: %v", err)
+			errCh <- err
 			return
 		}
 		nuts := make([]byte, 512)
 		// fill nuts with send_resp.Token from beginning
 		copy(nuts, send_resp.Token)
-
-		// // XXX: Get Cashu from wallet API
-		// // TODO: Cash payment from client to server goes here
-		// nuts := make([]byte, 512)
-		// _, err := io.ReadFull(rand.Reader, nuts)
-		// if err != nil {
-		// 	errCh <- err
-		// 	return
-		// }
 
 		// Send a TopupCommand to create a proxy session on the server
 		serialized, err := (&server.TopupCommand{ID: id, Nuts: nuts}).Marshal()
