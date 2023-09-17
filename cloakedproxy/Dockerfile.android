@@ -1,0 +1,56 @@
+FROM docker.io/golang:bullseye AS builder
+
+LABEL authors="Masala: masala@riseup.net"
+
+# Install build requirements and JDK
+RUN echo 'deb https://deb.debian.org/debian bullseye main\ndeb https://deb.debian.org/debian bullseye-updates main\ndeb https://deb.debian.org/debian-security bullseye-security main' > /etc/apt/sources.list && cat /etc/apt/sources.list
+RUN apt update \
+&& apt install --no-install-recommends -y git make ca-certificates \
+openjdk-11-jdk openjdk-11-jre-headless build-essential libgles2 \
+libgles2-mesa-dev libglib2.0-dev libxkbcommon-dev libxkbcommon-x11-dev \
+libglu1-mesa-dev libxcursor-dev libwayland-dev libx11-xcb-dev libvulkan-dev \
+unzip && update-ca-certificates
+
+ENV ANDROID_SDK_ROOT /opt/android-sdk
+ENV ANDROID_HOME ${ANDROID_SDK_ROOT}
+ENV ANDROID_NDK_ROOT /opt/android-ndk
+ENV NDK_VERSION r23b
+ENV NDK_ZIP android-ndk-${NDK_VERSION}-linux.zip
+ENV NDK_SHA1SUM f47ec4c4badd11e9f593a8450180884a927c330d
+ENV TOOLS_ZIP commandlinetools-linux-6858069_latest.zip
+ENV TOOLS_SHA256SUM 87f6dcf41d4e642e37ba03cb2e387a542aa0bd73cb689a9e7152aad40a6e7a08
+ENV JAVA_BIN /usr/lib/jvm/java-11-openjdk-amd64/bin
+ENV PATH $JAVA_BIN:${PATH}
+ENV ANDROID_ABI android-31
+
+# Android command-line tools
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools \
+&& mkdir -p /opt/tmp \
+&& cd /opt/tmp \
+&& wget https://dl.google.com/android/repository/${TOOLS_ZIP} \
+&& echo -n "${TOOLS_SHA256SUM}  ${TOOLS_ZIP}" | sha256sum -c - \
+&& unzip -q ${TOOLS_ZIP} \
+# Needs to be extracted into 'latest' path
+&& mv cmdline-tools ${ANDROID_SDK_ROOT}/cmdline-tools/latest \
+&& rm ${TOOLS_ZIP}
+
+# Android NDK
+RUN cd /opt \
+&& wget https://dl.google.com/android/repository/${NDK_ZIP} \
+&& echo -n "${NDK_SHA1SUM}  ${NDK_ZIP}" | sha1sum -c - \
+&& unzip -q ${NDK_ZIP} && mv ./android-ndk-${NDK_VERSION} ${ANDROID_NDK_ROOT} \
+&& rm ${NDK_ZIP}
+
+# Update PATH
+ENV PATH ${ANDROID_SDK_ROOT}/platform-tools:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:${PATH}
+
+# Install the android platform-tools
+RUN yes | sdkmanager --licenses \
+&& touch /root/.android/repositories.cfg \
+&& yes | sdkmanager "platform-tools" \
+&& yes | sdkmanager "build-tools;30.0.3" \
+&& yes | sdkmanager "ndk-bundle" \
+&& yes | sdkmanager "platforms;${ANDROID_ABI}"
+
+# Set the working directory for the container
+WORKDIR /go/build
