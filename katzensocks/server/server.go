@@ -320,19 +320,25 @@ func (s *Server) OnCommand(cmd cborplugin.Command) error {
 				s.log.Debugf("Got Topup Command")
 				t := &TopupCommand{}
 				if err := t.Unmarshal(req.Payload); err == nil {
-					s.topup(t)
+					if resp, err := s.topup(t); err == nil {
+						s.writeResponse(r, resp)
+					}
 				}
 			case Dial:
 				s.log.Debugf("Got Dial Command")
 				d := &DialCommand{}
 				if err := d.Unmarshal(req.Payload); err == nil {
-					s.dial(d)
+					if resp, err := s.dial(d); err == nil {
+						s.writeResponse(r, resp)
+					}
 				}
 			case Proxy:
 				s.log.Debugf("Got Proxy Command")
 				p := &ProxyCommand{}
 				if err := p.Unmarshal(req.Payload); err == nil {
-					s.proxy(p)
+					if resp, err := s.proxy(p); err == nil {
+						s.writeResponse(r, resp)
+					}
 				}
 			default:
 				s.log.Error("Got invalid Command %x", req.Command)
@@ -349,15 +355,15 @@ func (s *Server) OnCommand(cmd cborplugin.Command) error {
 
 // we need to return a cborplugin.Response
 // https://github.com/katzenpost/katzenpost/issues/300
-func (s *Server) writeResponse(cmd cborplugin.Command) {
+func (s *Server) writeResponse(req *cborplugin.Request, cmd cborplugin.Command) {
 	p, err := cmd.Marshal()
 	if err != nil {
 		return
 	}
-	s.write(&cborplugin.Response{Payload: p})
+	s.write(&cborplugin.Response{SURB: req.SURB, ID: req.ID, Payload: p})
 }
 
-func (s *Server) dial(cmd *DialCommand) {
+func (s *Server) dial(cmd *DialCommand) (cborplugin.Command, error) {
 	reply := &DialResponse{}
 
 	s.log.Debugf("Received DialCommand(%x, %s)", cmd.ID, cmd.Target)
@@ -365,12 +371,12 @@ func (s *Server) dial(cmd *DialCommand) {
 	ss, err := s.findSession(cmd.ID)
 	if err != nil {
 		s.log.Error("Failed to find session %x: %s", cmd.ID, err)
-		return
+		return nil, err
 	}
 	// clear any existing session state
 	if ss.Transport != nil {
 		s.log.Error("Already had Transport?")
-		return
+		return nil, err
 	}
 
 	// Get a net.Conn for the target
@@ -405,7 +411,7 @@ func (s *Server) dial(cmd *DialCommand) {
 		s.log.Errorf("Received DialCommand with unsupported protocol field")
 		reply.Status = DialFailure
 	}
-	s.writeResponse(reply)
+	return reply, nil
 }
 
 // Accept runs once per Session
@@ -534,7 +540,7 @@ func (s *Server) findSession(id []byte) (*Session, error) {
 	return ses, nil
 }
 
-func (s *Server) topup(cmd *TopupCommand) {
+func (s *Server) topup(cmd *TopupCommand) (cborplugin.Command, error) {
 	// validate topup
 	cashuTokenStr := string(cmd.Nuts)
 	permissive := true // topups always succeed
@@ -542,8 +548,7 @@ func (s *Server) topup(cmd *TopupCommand) {
 	if err != nil {
 		s.log.Error("topup cashu: %v", err)
 		if !permissive {
-			s.writeResponse(&TopupResponse{Status: TopupFailure})
-			return
+			return &TopupResponse{Status: TopupFailure}, nil
 		}
 	}
 
@@ -562,7 +567,7 @@ func (s *Server) topup(cmd *TopupCommand) {
 		ses.ValidUntil = time.Now().Add(60 * time.Minute)
 		s.sessions.Store(string(cmd.ID), ses)
 	}
-	s.writeResponse(&TopupResponse{Status: TopupSuccess})
+	return &TopupResponse{Status: TopupSuccess}, nil
 }
 
 func (s *Server) proxyWorker(a, b net.Conn) chan error {
@@ -604,7 +609,7 @@ func (s *Server) proxyWorker(a, b net.Conn) chan error {
 	return errCh
 }
 
-func (s *Server) proxy(cmd *ProxyCommand) {
+func (s *Server) proxy(cmd *ProxyCommand) (cborplugin.Command, error){
 	// deserialize cmd as a ProxyResponse
 	reply := &ProxyResponse{}
 	s.log.Debugf("Received ProxyCommand: %x", cmd.ID)
@@ -613,22 +618,20 @@ func (s *Server) proxy(cmd *ProxyCommand) {
 	ss, err := s.findSession(cmd.ID)
 	if err != nil {
 		s.log.Debugf("Failed to find Session: %x", cmd.ID)
-		return
+		return nil, err
 	}
 
 	// check balance of session
 	if time.Now().After(ss.ValidUntil) {
 		reply.Status = ProxyInsufficientFunds
-		s.writeResponse(reply)
-		return
+		return reply, nil
 	}
 
 	// XXX: received messages after session reset ?
 	if ss.Transport == nil {
 		s.log.Errorf("Received ProxyCommand with no Transport")
 		reply.Status = ProxyFailure
-		s.writeResponse(reply)
-		return
+		return reply, nil
 	}
 
 	// SendRecv writes payload and reads packets from the session connection
@@ -636,21 +639,16 @@ func (s *Server) proxy(cmd *ProxyCommand) {
 	if err != nil {
 		s.log.Errorf("SendRecv err: %v", err)
 		reply.Status = ProxyFailure
-		s.writeResponse(reply)
-		return
+		return reply, nil
 	}
 	reply.Status = ProxySuccess
 	reply.Payload = rawReply
-	s.writeResponse(reply)
+	return reply, nil
 }
 
-func (s *Server) invalid(cmd cborplugin.Command) {
-	resp := Response{Error: ErrInvalidCommand}
-	rawResp, err := resp.Marshal()
-	if err != nil {
-		return
-	}
-	s.writeResponse(&cborplugin.Response{Payload: rawResp})
+func (s *Server) invalid(cmd cborplugin.Command) (cborplugin.Command, error) {
+	resp := &Response{Error: ErrInvalidCommand}
+	return resp, nil
 }
 
 func (s *Server) RegisterConsumer(svr *cborplugin.Server) {
