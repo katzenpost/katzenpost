@@ -787,8 +787,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.cashu
-    container_name: cashu-mint
+    container_name: client-cashu-wallet
     network_mode: host
+    depends_on:
+      - cashu-mint	
     expose:
      - "4448/tcp"
     environment:
@@ -805,8 +807,10 @@ server-cashu-wallet:
     build:
       context: .
       dockerfile: Dockerfile.cashu
-    container_name: cashu-mint
+    container_name: server-cashu-wallet
     network_mode: host
+    depends_on:
+      - cashu-mint	
     expose:
      - "4449/tcp"
     environment:
