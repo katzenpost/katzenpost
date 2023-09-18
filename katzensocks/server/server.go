@@ -338,7 +338,6 @@ func (s *Server) OnCommand(cmd cborplugin.Command) error {
 				s.log.Error("Got invalid Command %x", req.Command)
 				s.invalid(req)
 			}
-			s.log.Errorf("Unmarshal failure")
 		})
 		return nil
 	default:
