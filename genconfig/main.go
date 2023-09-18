@@ -771,6 +771,8 @@ services:
 	// add cashu mint
 	write(f, `
   cashu_mint:
+    restart: "no"
+    image: katzenpost-alpine_go_mod  
     build:
       context: .
       dockerfile: Dockerfile.cashu
@@ -784,6 +786,8 @@ services:
 	// add client cashu wallet
 	write(f, `
   client_cashu_wallet:
+    restart: "no"
+    image: katzenpost-alpine_go_mod  
     build:
       context: .
       dockerfile: Dockerfile.cashu
@@ -804,6 +808,8 @@ services:
 	// add server cashu wallet
 	write(f, `
   server_cashu_wallet:
+    restart: "no"
+    image: katzenpost-alpine_go_mod
     build:
       context: .
       dockerfile: Dockerfile.cashu
