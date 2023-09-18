@@ -770,11 +770,11 @@ services:
 
 	// add cashu mint
 	write(f, `
-  cashu-mint:
+  cashu_mint:
     build:
       context: .
       dockerfile: Dockerfile.cashu
-    container_name: cashu-mint
+    container_name: cashu_mint
     network_mode: host
     expose:
      - "3338/tcp"
@@ -783,14 +783,14 @@ services:
 
 	// add client cashu wallet
 	write(f, `
-  client-cashu-wallet:
+  client_cashu_wallet:
     build:
       context: .
       dockerfile: Dockerfile.cashu
-    container_name: client-cashu-wallet
+    container_name: client_cashu_wallet
     network_mode: host
     depends_on:
-      - cashu-mint	
+     - cashu_mint
     expose:
      - "4448/tcp"
     environment:
@@ -803,14 +803,14 @@ services:
 
 	// add server cashu wallet
 	write(f, `
-server-cashu-wallet:
+  server_cashu_wallet:
     build:
       context: .
       dockerfile: Dockerfile.cashu
-    container_name: server-cashu-wallet
+    container_name: server_cashu_wallet
     network_mode: host
     depends_on:
-      - cashu-mint	
+     - cashu_mint
     expose:
      - "4449/tcp"
     environment:
