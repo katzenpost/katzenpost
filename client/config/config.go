@@ -114,12 +114,13 @@ type VotingAuthority struct {
 }
 
 // New constructs a pki.Client with the specified voting authority config.
-func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, transports []pki.Transport) (pki.Client, error) {
 	cfg := &vClient.Config{
-		LinkKey:       linkKey,
-		LogBackend:    l,
-		Authorities:   vACfg.Peers,
-		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
+		LinkKey:            linkKey,
+		LogBackend:         l,
+		Authorities:        vACfg.Peers,
+		PreferedTransports: transports,
+		DialContextFn:      pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
 	}
 	return vClient.New(cfg)
 }
@@ -137,10 +138,10 @@ func (vACfg *VotingAuthority) validate() error {
 }
 
 // NewPKIClient returns a voting or nonvoting implementation of pki.Client or error
-func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
+func (c *Config) NewPKIClient(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey, transports []pki.Transport) (pki.Client, error) {
 	switch {
 	case c.VotingAuthority != nil:
-		return c.VotingAuthority.New(l, pCfg, linkKey)
+		return c.VotingAuthority.New(l, pCfg, linkKey, transports)
 	}
 	return nil, errors.New("no Authority found")
 }
