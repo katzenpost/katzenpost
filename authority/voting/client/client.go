@@ -74,6 +74,10 @@ type Config struct {
 	// Authorities is the set of Directory Authority servers.
 	Authorities []*config.Authority
 
+	// PreferedTransports is a list of the transports will be used to make
+	// outgoing network connections, with the most prefered first.
+	PreferedTransports []pki.Transport
+
 	// DialContextFn is the optional alternative Dialer.DialContext function
 	// to be used when creating outgoing network connections.
 	DialContextFn func(ctx context.Context, network, address string) (net.Conn, error)
@@ -128,27 +132,44 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 	if dialFn == nil {
 		dialFn = defaultDialer.DialContext
 	}
-
-	// permute the order the client tries Addresses
-	r := rand.NewMath()
-	idxs := r.Perm(len(peer.Addresses))
+	transports := p.cfg.PreferedTransports
+	if len(transports) == 0 {
+		transports = make([]pki.Transport, len(pki.ClientTransports))
+		// Permute DefaultTransports order if unspecified
+		idxs := rand.NewMath().Perm(len(pki.ClientTransports))
+		for i, idx := range idxs {
+			transports[i] = pki.ClientTransports[idx]
+		}
+	}
 
 	// try each Address until a connection is successful or fail
-	for i, idx := range idxs {
-		u, err := url.Parse(peer.Addresses[idx])
-		if err != nil {
-			continue
+	found := false
+	var u *url.URL
+	for _, transport := range transports {
+		for _, addr := range peer.Addresses {
+			u, err = url.Parse(addr)
+			if err != nil {
+				continue
+			}
+
+			if string(transport) == u.Scheme {
+				// PreferedTransport found
+				found = true
+				break
+			}
 		}
+	}
+
+	if found {
 		p.log.Notice("Dialing %s", u)
 		conn, err = quic.DialURL(u, ctx, dialFn)
-		if err == nil {
-			break // got working transport
-		} else {
-			p.log.Debugf("Failed to Dial %s: %v", u, err)
+		if err != nil {
+			p.log.Error("Failed to Dial %s: %v", u, err)
 		}
-		if i == len(peer.Addresses)-1 {
-			return nil, err
-		}
+	} else {
+		err := errors.New("PreferedTransport not found")
+		p.log.Errorf("%s", err)
+		return nil, err
 	}
 
 	var isOk bool
