@@ -101,7 +101,8 @@ func NewQUICProxyConn(id []byte) *QUICProxyConn {
 		outgoing:  make(chan *pkt, 1000),
 		tlsConf:   kquic.GenerateTLSConfig(),
 		qcfg: &quic.Config{
-			KeepAlivePeriod: 24 * time.Minute,
+			KeepAlivePeriod: 1 * time.Second,
+			HandshakeIdleTimeout: 42 * time.Minute,
 			MaxIdleTimeout:  42 * time.Minute,
 			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
 				return qlog.NewConnectionTracer(&wc{}, p, connID)
