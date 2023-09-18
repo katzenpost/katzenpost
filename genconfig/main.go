@@ -20,9 +20,9 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"net/url"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -199,8 +199,8 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 				Config: map[string]interface{}{
 					//"max_requests": 42,
 					"log_level": "DEBUG",
-					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
-					"cfg":    s.baseDir + "/client/client.toml",
+					"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
+					"cfg":       s.baseDir + "/client/client.toml",
 				},
 			}
 
@@ -260,17 +260,13 @@ func genAddresses(transports []pki.Transport, bindAddr string, lastPort *uint16)
 	if len(transports) == 0 {
 		transports = pki.InternalTransports
 	}
-	addresses := make([]string, 0, len(transports))
-	for _, transport := range transports {
+	addresses := make([]string, len(transports))
+	for i, transport := range transports {
 		switch pki.Transport(transport) {
 		case pki.TransportTCP, pki.TransportTCPv4, pki.TransportQUIC:
-			addresses = append(addresses, fmt.Sprintf("%s://%s:%d", transport, bindAddr, *lastPort))
+			addresses[i] = fmt.Sprintf("%s://%s:%d", transport, bindAddr, *lastPort)
 		case pki.TransportTCPv6:
-			// do not generate a TCPv6 entry with loopback if bindAddr is specified
-			if bindAddr != "127.0.0.1" {
-				continue
-			}
-			addresses = append(addresses, fmt.Sprintf("%s://[::1]:%d", transport, *lastPort))
+			addresses[i] = fmt.Sprintf("%s://[::1]:%d", transport, *lastPort)
 		default:
 			panic(fmt.Errorf("Unknown transport type: %s", transport))
 		}
@@ -772,5 +768,53 @@ services:
      - "4242/tcp"
 `, "katzensocks", dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir)
 
+	// add cashu mint
+	write(f, `
+  cashu-mint:
+    build:
+      context: .
+      dockerfile: Dockerfile.cashu
+    container_name: cashu-mint
+    network_mode: host
+    expose:
+     - "3338/tcp"
+    command: ["poetry", "run", "mint", "--port", "3338", "--host", "0.0.0.0"]
+`)
+
+	// add client cashu wallet
+	write(f, `
+  client-cashu-wallet:
+    build:
+      context: .
+      dockerfile: Dockerfile.cashu
+    container_name: cashu-mint
+    network_mode: host
+    expose:
+     - "4448/tcp"
+    environment:
+      - HTTP_PROXY=http://127.0.0.1:8080
+      - MINT_URL=http://127.0.0.1:3338
+      - API_HOST=0.0.0.0
+      - API_PORT=4448
+    command: ["poetry", "run", "cashu", "-d"]
+`)
+
+	// add server cashu wallet
+	write(f, `
+server-cashu-wallet:
+    build:
+      context: .
+      dockerfile: Dockerfile.cashu
+    container_name: cashu-mint
+    network_mode: host
+    expose:
+     - "4449/tcp"
+    environment:
+      - HTTP_PROXY=http://127.0.0.1:8081
+      - MINT_URL=http://127.0.0.1:3338
+      - API_HOST=0.0.0.0
+      - API_PORT=4448
+    command: ["poetry", "run", "cashu", "-d"]
+`)
 	return nil
 }
