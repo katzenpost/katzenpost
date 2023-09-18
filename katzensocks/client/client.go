@@ -117,12 +117,14 @@ func (c *Client) Topup(id []byte) chan error {
 		send_resp, err := c.cashuClient.SendToken(send_request)
 		if err != nil {
 			c.log.Error("topup cashu: %v", err)
-			errCh <- err
-			return
+			//errCh <- err
+			//return
 		}
 		nuts := make([]byte, 512)
 		// fill nuts with send_resp.Token from beginning
-		copy(nuts, send_resp.Token)
+		if err == nil {
+			copy(nuts, send_resp.Token)
+		}
 
 		// Send a TopupCommand to create a proxy session on the server
 		serialized, err := (&server.TopupCommand{ID: id, Nuts: nuts}).Marshal()
