@@ -12,6 +12,8 @@ import (
 var (
 	cfgFile = flag.String("cfg", "katzensocks.toml", "config file")
 	port    = flag.Int("port", 4242, "listener address")
+	retry   = flag.Int("retry", -1, "limit number of reconnection attempts")
+	delay   = flag.Int("delay", 30, "time to wait between connection attempts (seconds)>")
 )
 
 func main() {
@@ -21,7 +23,7 @@ func main() {
 		panic(err)
 	}
 
-	s, err := client.GetSession(*cfgFile)
+	s, err := client.GetSession(*cfgFile, *retry, *delay)
 	if err != nil {
 		panic(err)
 	}

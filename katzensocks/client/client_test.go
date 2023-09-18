@@ -40,7 +40,7 @@ var (
 
 func TestDockerNewClient(t *testing.T) {
 	require := require.New(t)
-	session, err := GetSession(cfgFile)
+	session, err := GetSession(cfgFile, 5, 10)
 	require.NoError(err)
 	require.NotNil(session)
 	c, err := NewClient(session)
@@ -50,7 +50,7 @@ func TestDockerNewClient(t *testing.T) {
 
 func TestDockerProxy(t *testing.T) {
 	require := require.New(t)
-	session, err := GetSession(cfgFile)
+	session, err := GetSession(cfgFile, 5, 10)
 	require.NoError(err)
 	require.NotNil(session)
 	c, err := NewClient(session)
