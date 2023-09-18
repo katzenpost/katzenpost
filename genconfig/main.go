@@ -260,13 +260,17 @@ func genAddresses(transports []pki.Transport, bindAddr string, lastPort *uint16)
 	if len(transports) == 0 {
 		transports = pki.InternalTransports
 	}
-	addresses := make([]string, len(transports))
-	for i, transport := range transports {
+	addresses := make([]string, 0, len(transports))
+	for _, transport := range transports {
 		switch pki.Transport(transport) {
 		case pki.TransportTCP, pki.TransportTCPv4, pki.TransportQUIC:
-			addresses[i] = fmt.Sprintf("%s://%s:%d", transport, bindAddr, *lastPort)
+			addresses = append(addresses, fmt.Sprintf("%s://%s:%d", transport, bindAddr, *lastPort))
 		case pki.TransportTCPv6:
-			addresses[i] = fmt.Sprintf("%s://[::1]:%d", transport, *lastPort)
+			// do not generate a TCPv6 entry with loopback if bindAddr is specified
+			if bindAddr != "127.0.0.1" {
+				continue
+			}
+			addresses = append(addresses, fmt.Sprintf("%s://[::1]:%d", transport, *lastPort))
 		default:
 			panic(fmt.Errorf("Unknown transport type: %s", transport))
 		}
