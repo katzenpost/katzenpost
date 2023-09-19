@@ -49,7 +49,7 @@ var (
 	// DefaultDeadline determines how long the worker will block reading
 	// the QUICProxyConn socket for a reply after it has written the
 	// client request payload to the socket.
-	DefaultDeadline = 5000 * time.Millisecond
+	DefaultDeadline = 42 * time.Second
 
 	ErrShutdown          = errors.New("Halted")
 	ErrNoData            = errors.New("ErrNoData")
