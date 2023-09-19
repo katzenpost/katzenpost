@@ -106,6 +106,9 @@ func TestDockerProxy(t *testing.T) {
 
 	// consume all errors
 	for err := range errCh {
+		if err == io.EOF {
+			continue
+		}
 		require.NoError(err)
 		if err == nil {
 			break

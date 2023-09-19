@@ -160,6 +160,9 @@ func TestQUICProxyConn(t *testing.T) {
 		if !ok {
 			return
 		}
+		if err == io.EOF {
+			continue
+		}
 		require.NoError(err)
 	}
 }

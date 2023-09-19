@@ -137,7 +137,7 @@ func (k *QUICProxyConn) WritePacket(ctx context.Context, p []byte, addr net.Addr
 		return 0, os.ErrDeadlineExceeded
 	case k.incoming <- &pkt{payload: p, src: addr}:
 	case <-k.HaltCh():
-		return 0, errHalted
+		return 0, io.EOF
 		//default:
 		//	// discard packet rather than block
 		//	return 0, errDropped
@@ -153,7 +153,7 @@ func (k *QUICProxyConn) ReadPacket(ctx context.Context, p []byte) (int, net.Addr
 	case pkt := <-k.outgoing:
 		return copy(p, pkt.payload), pkt.dst, nil
 	case <-k.HaltCh():
-		return 0, nil, errHalted
+		return 0, nil, io.EOF
 	}
 }
 

@@ -293,10 +293,13 @@ type Session struct {
 
 // reset clears Session state
 func (s *Session) reset() {
+	s.Lock()
+	defer s.Unlock()
 	if s.Target != nil {
 		s.Target.Close()
 		s.Target = nil
 	}
+	s.Transport.Close()
 	s.acceptOnce = new(sync.Once)
 	s.Transport = nil
 }
@@ -415,7 +418,7 @@ func (s *Server) dial(cmd *DialCommand) (cborplugin.Command, error) {
 }
 
 // Accept runs once per Session
-func (s *Session) AcceptOnce(transport common.Transport) {
+func (s *Session) AcceptOnce(transport common.Transport, target net.Conn) {
 	s.acceptOnce.Do(func() {
 		s.s.Go(func() {
 			s.s.log.Debugf("Accepting Client")
@@ -434,14 +437,13 @@ func (s *Session) AcceptOnce(transport common.Transport) {
 				return
 			}
 			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
-			s.Lock()
-			s.Remote = conn
-			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
-			if s.Errors != nil {
-				panic("session.Errors not nil")
+			errCh := s.s.proxyWorker(conn, target)
+			select {
+			case <-s.s.HaltCh():
+			case err := <-errCh:
+				s.s.log.Errorf("proxyWorker: %v: %v", target, err)
 			}
-			s.Errors = s.s.proxyWorker(s.Remote, s.Target)
-			s.Unlock()
+			s.reset()
 		})
 	})
 }
@@ -451,43 +453,27 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	s.s.log.Debugf("SendRecv()")
 	s.s.log.Debugf("len(payload): %d", len(payload))
 
-	// write packet to transport
 	s.Lock()
-	defer s.Unlock()
-	if s.Transport == nil { // wtf
-		s.s.log.Error("SendRecv() called before Transport exists")
+	// write packet to transport
+	transport := s.Transport
+	target := s.Target
+	s.Unlock()
+	if transport == nil || target == nil { // wtf
+		s.s.log.Error("SendRecv() called before Transport or Target exists")
 		return nil, errors.New("No Transport")
 	}
-	s.AcceptOnce(s.Transport)
+	s.AcceptOnce(transport, target)
 	clientAddr := append(s.ID, []byte("client")...)
 	dst := common.UniqAddr(clientAddr)
-
-	// Read s.Errors
-	select {
-	case err := <-s.Errors:
-		s.s.log.Error("SendRecv() session.Error: %v", err)
-		s.reset()
-		return nil, err
-	default:
-	}
 
 	// WritePacket into transport
 	if len(payload) != 0 {
 		s.s.log.Debug("WritePacket(%d) from  %v", len(payload), dst)
-		_, err := s.Transport.WritePacket(context.Background(), payload, dst)
+		_, err := transport.WritePacket(context.Background(), payload, dst)
 		if err != nil {
 			s.s.log.Errorf("WritePacket failure: %v", err)
 			return nil, err
 		}
-	}
-
-	// Read s.Errors
-	select {
-	case err := <-s.Errors:
-		s.s.log.Error("SendRecv() session.Error: %v", err)
-		s.reset()
-		return nil, err
-	default:
 	}
 
 	// read packet from transport
@@ -499,26 +485,13 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	// then an empty payload is returned to the client.
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultDeadline)
 	defer cancelFn()
-	n, addr, err := s.Transport.ReadPacket(ctx, buf)
+	n, addr, err := transport.ReadPacket(ctx, buf)
 	switch err {
 	case nil, os.ErrDeadlineExceeded:
 	default:
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
 	}
-	// Read s.Errors
-	select {
-	case err := <-s.Errors:
-		s.reset()
-		if err == nil {
-			// Connection Finished
-			return buf[:n], io.EOF
-		}
-		s.s.log.Error("SendRecv() session.Error: %v", err)
-		return nil, err
-	default:
-	}
-
 	s.s.log.Debugf("got %d bytes to %v", n, addr)
 	return buf[:n], nil
 }
