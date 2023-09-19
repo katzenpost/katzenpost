@@ -596,6 +596,7 @@ func (s *Server) proxy(cmd *ProxyCommand) (cborplugin.Command, error){
 
 	// check balance of session
 	if time.Now().After(ss.ValidUntil) {
+		s.log.Debugf("Insufficient funds: %x", cmd.ID)
 		reply.Status = ProxyInsufficientFunds
 		return reply, nil
 	}
