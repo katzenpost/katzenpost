@@ -93,12 +93,12 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
 
-run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro) $(net_name)/http_proxy_client.$(distro) $(net_name)/katzensocks.$(distro)
+run: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro) $(net_name)/http_proxy_client.$(distro) $(net_name)/katzensocks.$(distro) cashu.stamp
 	-cd $(net_name) && touch running.stamp \
 	&& DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans
 	cd $(net_name) && rm -v running.stamp
 
-start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro) $(net_name)/http_proxy_client.$(distro) $(net_name)/katzensocks.$(distro)
+start: $(docker_compose_yml) $(net_name)/server.$(distro) $(net_name)/voting.$(distro) $(net_name)/http_proxy_client.$(distro) $(net_name)/katzensocks.$(distro) cashu.stamp
 	cd $(net_name); DOCKER_USER=${docker_user} $(docker_compose) up --remove-orphans -d; $(docker_compose) top
 	touch $(net_name)/running.stamp
 
@@ -153,6 +153,10 @@ alpine_base.stamp:
 	$(docker) run $(replace_name) katzenpost_alpine_base docker.io/golang:alpine sh -c 'adduser katzenpost --gecos "" --disabled-password  && apk update && apk upgrade && apk add gcc musl-dev make' \
 	&& $(docker) commit katzenpost_alpine_base katzenpost-alpine_base \
 	&& $(docker) rm katzenpost_alpine_base
+	touch $@
+
+cashu.stamp:
+	$(docker) build -t cashu -f Dockerfile.cashu
 	touch $@
 
 $(distro)_go_mod.stamp: $(distro)_base.stamp

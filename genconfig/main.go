@@ -773,35 +773,28 @@ services:
 	write(f, `
   cashu_mint:
     restart: "no"
-    image: katzenpost-alpine_go_mod  
+    image: cashu
     build:
       context: .
       dockerfile: Dockerfile.cashu
-    container_name: cashu_mint
     network_mode: host
     expose:
      - "3338/tcp"
-    command: ["poetry", "run", "mint", "--port", "3338", "--host", "0.0.0.0"]
+    command: ["poetry", "run", "mint", "--port", "3338", "--host", "127.0.0.1"]
 `)
 
 	// add client cashu wallet
 	write(f, `
   client_cashu_wallet:
     restart: "no"
-    image: katzenpost-alpine_go_mod  
-    build:
-      context: .
-      dockerfile: Dockerfile.cashu
-    container_name: client_cashu_wallet
+    image: cashu
     network_mode: host
-    depends_on:
-     - cashu_mint
     expose:
      - "4448/tcp"
     environment:
       - HTTP_PROXY=http://127.0.0.1:8080
       - MINT_URL=http://127.0.0.1:3338
-      - API_HOST=0.0.0.0
+      - API_HOST=127.0.0.1
       - API_PORT=4448
     command: ["poetry", "run", "cashu", "-d"]
 `)
@@ -810,20 +803,15 @@ services:
 	write(f, `
   server_cashu_wallet:
     restart: "no"
-    image: katzenpost-alpine_go_mod
-    build:
-      context: .
-      dockerfile: Dockerfile.cashu
+    image: cashu
     container_name: server_cashu_wallet
     network_mode: host
-    depends_on:
-     - cashu_mint
     expose:
      - "4449/tcp"
     environment:
       - HTTP_PROXY=http://127.0.0.1:8081
       - MINT_URL=http://127.0.0.1:3338
-      - API_HOST=0.0.0.0
+      - API_HOST=127.0.0.1
       - API_PORT=4448
     command: ["poetry", "run", "cashu", "-d"]
 `)
