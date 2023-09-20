@@ -381,7 +381,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 				if err != nil {
 					c.log.Errorf("SendUnreliableMessage: %v", err)
 					c.log.Errorf("SendUnreliableMessage: backoffDelay %v", backOffDelay)
-					backOffDelay += backOffDelay
+					backOffDelay = backOffDelay << 2
 
 					if n == 0 {
 						break // short circuit to blocking read for backOffDelay
@@ -396,7 +396,11 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 					}
 					continue
 				} else {
-					backOffDelay = (backOffDelay >> 1)
+					if n != 0 {
+						backOffDelay = (backOffDelay >> 1)
+					} else {
+						backOffDelay = (backOffDelay << 1)
+					}
 					if backOffDelay < backOffFloor {
 						backOffDelay = backOffFloor
 					}
