@@ -23,6 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -36,6 +37,7 @@ var (
 		},
 	}
 	pktID uint64
+	rng = rand.NewMath()
 )
 
 type Packet struct {
@@ -52,8 +54,8 @@ type Packet struct {
 
 	ID         uint64
 	Delay      time.Duration
-	RecvAt     time.Duration
-	DispatchAt time.Duration
+	RecvAt     time.Time
+	DispatchAt time.Time
 
 	MustForward   bool
 	MustTerminate bool
@@ -151,8 +153,8 @@ func (pkt *Packet) Dispose() {
 	pkt.SurbReply = nil
 	pkt.ID = 0
 	pkt.Delay = 0
-	pkt.RecvAt = 0
-	pkt.DispatchAt = 0
+	pkt.RecvAt = time.Time{}
+	pkt.DispatchAt = time.Time{}
 	pkt.MustForward = false
 	pkt.MustTerminate = false
 
@@ -260,16 +262,12 @@ func ParseForwardPacket(pkt *Packet) ([]byte, []byte, error) {
 	return ct, surb, nil
 }
 
-func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*Packet, error) {
-	if !pkt.IsToUser() {
-		return nil, fmt.Errorf("invalid commands to generate a SURB reply")
-	}
-
+func NewPacketFromSURB(surb, payload []byte, geo *geo.Geometry) (*Packet, error) {
 	// Pad out payloads to the full packet size.
-	respPayload := make([]byte, pkt.Geometry.ForwardPayloadLength)
+	respPayload := make([]byte, geo.ForwardPayloadLength)
 	switch {
 	case len(payload) == 0:
-	case len(payload) > pkt.Geometry.ForwardPayloadLength:
+	case len(payload) > geo.ForwardPayloadLength:
 		return nil, fmt.Errorf("oversized response payload: %v", len(payload))
 	default:
 		copy(respPayload, payload)
@@ -283,8 +281,7 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*P
 	// packet processing doesn't constantly utilize the AES-NI units due
 	// to the non-AEZ components of a Sphinx Unwrap operation.
 
-	pkt.Geometry = geo
-	s, err := sphinx.FromGeometry(pkt.Geometry)
+	s, err := sphinx.FromGeometry(geo)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +298,7 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*P
 	cmds = append(cmds, nextHopCmd)
 
 	nodeDelayCmd := new(commands.NodeDelay)
-	nodeDelayCmd.Delay = pkt.NodeDelay.Delay
+	nodeDelayCmd.Delay = 0
 	cmds = append(cmds, nodeDelayCmd)
 
 	// Assemble the response packet.
@@ -309,20 +306,20 @@ func NewPacketFromSURB(pkt *Packet, surb, payload []byte, geo *geo.Geometry) (*P
 	if err != nil {
 		return nil, err
 	}
-	respPkt.Geometry = pkt.Geometry
+	respPkt.Geometry = geo
 	err = respPkt.Set(nil, cmds)
 	if err != nil {
 		return nil, err
 	}
 
-	respPkt.RecvAt = pkt.RecvAt
+	//respPkt.RecvAt = time.Now()
 	// XXX: This should probably fudge the delay to account for processing
 	// time.
-	respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
+	//respPkt.Delay = time.Duration(nodeDelayCmd.Delay) * time.Millisecond
 	respPkt.MustForward = true
 	respPkt.rawPacketPool = sync.Pool{
 		New: func() interface{} {
-			b := make([]byte, pkt.Geometry.PacketLength)
+			b := make([]byte, geo.PacketLength)
 			return b
 		},
 	}

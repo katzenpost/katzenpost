@@ -50,7 +50,7 @@ var (
 	cashuWalletUrl = "http://localhost:4448"
 )
 
-func GetSession(cfgFile string) (*client.Session, error) {
+func GetSession(cfgFile string, delay, retry int) (*client.Session, error) {
 	var err error
 	cfg, err = config.LoadFile(cfgFile)
 	if err != nil {
@@ -62,6 +62,7 @@ func GetSession(cfgFile string) (*client.Session, error) {
 	}
 
 	var session *client.Session
+	retries := 0
 	for session == nil {
 		session, err = cc.NewTOFUSession(context.Background())
 		switch err {
@@ -70,8 +71,12 @@ func GetSession(cfgFile string) (*client.Session, error) {
 			_, _, till := epochtime.Now()
 			<-time.After(till)
 		default:
-			return nil, err
+			if retries == retry {
+				return nil, errors.New("Failed to connect within retry limit")
+			}
+			<-time.After(time.Duration(delay) * time.Second)
 		}
+		retries += 1
 	}
 	session.WaitForDocument(context.Background())
 	return session, nil

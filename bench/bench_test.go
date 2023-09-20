@@ -24,12 +24,10 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 
@@ -153,7 +151,7 @@ func (b *MinclientBench) setup() {
 	b.linkKey, _ = wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	idHash := b.linkKey.PublicKey().Sum256()
 	proxyContext := fmt.Sprintf("session %d", rand.NewMath().Uint64())
-	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey)
+	pkiClient, err := cfg.NewPKIClient(logBackend, cfg.UpstreamProxyConfig(), b.linkKey, nil)
 	currentEpoch, _, _ := epochtime.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), initialPKIConsensusTimeout)
 	defer cancel()
@@ -167,11 +165,8 @@ func (b *MinclientBench) setup() {
 	}
 	b.provider = desc
 
-	mynike := ecdh.NewEcdhNike(rand.Reader)
-	nrHops := 5
-	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 	b.minclientConfig = &minclient.ClientConfig{
-		SphinxGeometry:      geo,
+		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            b.provider.Name,
 		ProviderKeyPin:      b.provider.IdentityKey,
@@ -236,10 +231,7 @@ func (b *MinclientBench) sendWorker() {
 		if err != nil {
 			panic(err)
 		}
-		mynike := ecdh.NewEcdhNike(rand.Reader)
-		nrHops := 5
-		geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
-		crap := make([]byte, geo.UserForwardPayloadLength)
+		crap := make([]byte, b.cfg.SphinxGeometry.UserForwardPayloadLength)
 		_, _, err = b.minclient.SendCiphertext(desc.Name, desc.Provider, surbID, crap)
 		if err != nil {
 			panic(err)
@@ -345,10 +337,7 @@ func (b *ClientBench) sendWorker() {
 	if err != nil {
 		panic(err)
 	}
-	mynike := ecdh.NewEcdhNike(rand.Reader)
-	nrHops := 5
-	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
-	crap := make([]byte, geo.UserForwardPayloadLength)
+	crap := make([]byte, b.cfg.SphinxGeometry.UserForwardPayloadLength)
 
 	for {
 		// keep sending till we fill the egressQueue, then block onSent

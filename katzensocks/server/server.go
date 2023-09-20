@@ -49,7 +49,7 @@ var (
 	// DefaultDeadline determines how long the worker will block reading
 	// the QUICProxyConn socket for a reply after it has written the
 	// client request payload to the socket.
-	DefaultDeadline = 100 * time.Millisecond
+	DefaultDeadline = 42 * time.Second
 
 	ErrShutdown          = errors.New("Halted")
 	ErrNoData            = errors.New("ErrNoData")
@@ -75,6 +75,7 @@ type Server struct {
 	payloadLen  int
 	cashuClient *cashu.CashuApiClient
 	sessions    *sync.Map
+	write func(cborplugin.Command)
 }
 
 // NewServer instantiates the Katzensocks Kaetzchen responder
@@ -292,88 +293,93 @@ type Session struct {
 
 // reset clears Session state
 func (s *Session) reset() {
+	s.Lock()
+	defer s.Unlock()
 	if s.Target != nil {
 		s.Target.Close()
 		s.Target = nil
 	}
+	s.Transport.Close()
 	s.acceptOnce = new(sync.Once)
 	s.Transport = nil
 }
 
 // OnCommand implements cborplugin.ServicePlugin OnCommand
-func (s *Server) OnCommand(cmd cborplugin.Command) (cborplugin.Command, error) {
+func (s *Server) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
-		if !r.HasSURB {
-			s.log.Notice("Got request with no SURB, no reply to send")
-		}
-
 		// deserialize Request.Payload into a sockatz Request
-		req := &Request{}
-		err := cbor.Unmarshal(r.Payload, req)
-		if err != nil {
-			s.log.Debugf("Got request that failed to unmarshal with %v", err)
-			return nil, err
-		}
-		// Call the handler for the Command indicated
-		switch req.Command {
-		case Topup:
-			s.log.Debugf("Got Topup Command")
-			t := &TopupCommand{}
-			if err := t.Unmarshal(req.Payload); err == nil {
-				return wrapResponse(s.topup(t))
+		s.Go(func() {
+			req := &Request{}
+			err := cbor.Unmarshal(r.Payload, req)
+			if err != nil {
+				s.log.Error("Got request that failed to unmarshal with %v", err)
+				return
 			}
-		case Dial:
-			s.log.Debugf("Got Dial Command")
-			d := &DialCommand{}
-			if err := d.Unmarshal(req.Payload); err == nil {
-				return wrapResponse(s.dial(d))
+
+			// Call the handler for the Command indicated
+			switch req.Command {
+			case Topup:
+				s.log.Debugf("Got Topup Command")
+				t := &TopupCommand{}
+				if err := t.Unmarshal(req.Payload); err == nil {
+					if resp, err := s.topup(t); err == nil {
+						s.writeResponse(r, resp)
+					}
+				}
+			case Dial:
+				s.log.Debugf("Got Dial Command")
+				d := &DialCommand{}
+				if err := d.Unmarshal(req.Payload); err == nil {
+					if resp, err := s.dial(d); err == nil {
+						s.writeResponse(r, resp)
+					}
+				}
+			case Proxy:
+				s.log.Debugf("Got Proxy Command")
+				p := &ProxyCommand{}
+				if err := p.Unmarshal(req.Payload); err == nil {
+					if resp, err := s.proxy(p); err == nil {
+						s.writeResponse(r, resp)
+					}
+				}
+			default:
+				s.log.Error("Got invalid Command %x", req.Command)
+				s.invalid(req)
 			}
-		case Proxy:
-			s.log.Debugf("Got Proxy Command")
-			p := &ProxyCommand{}
-			if err := p.Unmarshal(req.Payload); err == nil {
-				return wrapResponse(s.proxy(p))
-			}
-		default:
-			s.log.Error("Got invalid Command %x", req.Command)
-			return s.invalid(req)
-		}
-		s.log.Errorf("Unmarshal failure")
+		})
+		return nil
 	default:
 		s.log.Errorf("OnCommand called with unknown Command type")
-		return nil, errors.New("Invalid Command type")
+		return errors.New("Invalid Command type")
 	}
 	panic("NotReached")
 }
 
 // we need to return a cborplugin.Response
 // https://github.com/katzenpost/katzenpost/issues/300
-func wrapResponse(cmd cborplugin.Command, err error) (*cborplugin.Response, error) {
-	if err != nil {
-		return nil, err
-	}
+func (s *Server) writeResponse(req *cborplugin.Request, cmd cborplugin.Command) {
 	p, err := cmd.Marshal()
 	if err != nil {
-		return nil, err
+		return
 	}
-	return &cborplugin.Response{Payload: p}, nil
+	s.write(&cborplugin.Response{SURB: req.SURB, ID: req.ID, Payload: p})
 }
 
-func (s *Server) dial(cmd *DialCommand) (*DialResponse, error) {
+func (s *Server) dial(cmd *DialCommand) (cborplugin.Command, error) {
 	reply := &DialResponse{}
 
 	s.log.Debugf("Received DialCommand(%x, %s)", cmd.ID, cmd.Target)
 	// locate an existing session by ID
 	ss, err := s.findSession(cmd.ID)
 	if err != nil {
-		s.log.Debugf("Failed to find session %x: %s", cmd.ID, err)
+		s.log.Error("Failed to find session %x: %s", cmd.ID, err)
 		return nil, err
 	}
 	// clear any existing session state
 	if ss.Transport != nil {
-		s.log.Debugf("Already had Transport?")
-		return nil, ErrDialFailed
+		s.log.Error("Already had Transport?")
+		return nil, err
 	}
 
 	// Get a net.Conn for the target
@@ -412,7 +418,7 @@ func (s *Server) dial(cmd *DialCommand) (*DialResponse, error) {
 }
 
 // Accept runs once per Session
-func (s *Session) AcceptOnce(transport common.Transport) {
+func (s *Session) AcceptOnce(transport common.Transport, target net.Conn) {
 	s.acceptOnce.Do(func() {
 		s.s.Go(func() {
 			s.s.log.Debugf("Accepting Client")
@@ -431,14 +437,13 @@ func (s *Session) AcceptOnce(transport common.Transport) {
 				return
 			}
 			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
-			s.Lock()
-			s.Remote = conn
-			s.s.log.Debugf("Accepted %v", conn.RemoteAddr())
-			if s.Errors != nil {
-				panic("session.Errors not nil")
+			errCh := s.s.proxyWorker(conn, target)
+			select {
+			case <-s.s.HaltCh():
+			case err := <-errCh:
+				s.s.log.Errorf("proxyWorker: %v: %v", target, err)
 			}
-			s.Errors = s.s.proxyWorker(s.Remote, s.Target)
-			s.Unlock()
+			s.reset()
 		})
 	})
 }
@@ -448,43 +453,27 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	s.s.log.Debugf("SendRecv()")
 	s.s.log.Debugf("len(payload): %d", len(payload))
 
-	// write packet to transport
 	s.Lock()
-	defer s.Unlock()
-	if s.Transport == nil { // wtf
-		s.s.log.Error("SendRecv() called before Transport exists")
+	// write packet to transport
+	transport := s.Transport
+	target := s.Target
+	s.Unlock()
+	if transport == nil || target == nil { // wtf
+		s.s.log.Error("SendRecv() called before Transport or Target exists")
 		return nil, errors.New("No Transport")
 	}
-	s.AcceptOnce(s.Transport)
+	s.AcceptOnce(transport, target)
 	clientAddr := append(s.ID, []byte("client")...)
 	dst := common.UniqAddr(clientAddr)
-
-	// Read s.Errors
-	select {
-	case err := <-s.Errors:
-		s.s.log.Error("SendRecv() session.Error: %v", err)
-		s.reset()
-		return nil, err
-	default:
-	}
 
 	// WritePacket into transport
 	if len(payload) != 0 {
 		s.s.log.Debug("WritePacket(%d) from  %v", len(payload), dst)
-		_, err := s.Transport.WritePacket(context.Background(), payload, dst)
+		_, err := transport.WritePacket(context.Background(), payload, dst)
 		if err != nil {
 			s.s.log.Errorf("WritePacket failure: %v", err)
 			return nil, err
 		}
-	}
-
-	// Read s.Errors
-	select {
-	case err := <-s.Errors:
-		s.s.log.Error("SendRecv() session.Error: %v", err)
-		s.reset()
-		return nil, err
-	default:
 	}
 
 	// read packet from transport
@@ -496,26 +485,13 @@ func (s *Session) SendRecv(payload []byte) ([]byte, error) {
 	// then an empty payload is returned to the client.
 	ctx, cancelFn := context.WithTimeout(context.Background(), DefaultDeadline)
 	defer cancelFn()
-	n, addr, err := s.Transport.ReadPacket(ctx, buf)
+	n, addr, err := transport.ReadPacket(ctx, buf)
 	switch err {
 	case nil, os.ErrDeadlineExceeded:
 	default:
 		s.s.log.Error("ReadPacket failure: %v", err)
 		return nil, err
 	}
-	// Read s.Errors
-	select {
-	case err := <-s.Errors:
-		s.reset()
-		if err == nil {
-			// Connection Finished
-			return buf[:n], io.EOF
-		}
-		s.s.log.Error("SendRecv() session.Error: %v", err)
-		return nil, err
-	default:
-	}
-
 	s.s.log.Debugf("got %d bytes to %v", n, addr)
 	return buf[:n], nil
 }
@@ -537,14 +513,16 @@ func (s *Server) findSession(id []byte) (*Session, error) {
 	return ses, nil
 }
 
-func (s *Server) topup(cmd *TopupCommand) (*TopupResponse, error) {
+func (s *Server) topup(cmd *TopupCommand) (cborplugin.Command, error) {
 	// validate topup
 	cashuTokenStr := string(cmd.Nuts)
+	permissive := true // topups always succeed
 	_, err := s.cashuClient.Receive(cashu.ReceiveParameters{Token: &cashuTokenStr})
 	if err != nil {
 		s.log.Error("topup cashu: %v", err)
-		// XXX: ignore Cashu errors for now
-		//return &TopupResponse{Status: TopupFailure}, nil
+		if !permissive {
+			return &TopupResponse{Status: TopupFailure}, nil
+		}
 	}
 
 	s.log.Debugf("Received TopupCommand(%x, %x)", cmd.ID, cmd.Nuts[:16])
@@ -612,7 +590,7 @@ func (s *Server) proxyWorker(a, b net.Conn) chan error {
 	return errCh
 }
 
-func (s *Server) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
+func (s *Server) proxy(cmd *ProxyCommand) (cborplugin.Command, error){
 	// deserialize cmd as a ProxyResponse
 	reply := &ProxyResponse{}
 	s.log.Debugf("Received ProxyCommand: %x", cmd.ID)
@@ -626,6 +604,7 @@ func (s *Server) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 
 	// check balance of session
 	if time.Now().After(ss.ValidUntil) {
+		s.log.Debugf("Insufficient funds: %x", cmd.ID)
 		reply.Status = ProxyInsufficientFunds
 		return reply, nil
 	}
@@ -650,14 +629,10 @@ func (s *Server) proxy(cmd *ProxyCommand) (*ProxyResponse, error) {
 }
 
 func (s *Server) invalid(cmd cborplugin.Command) (cborplugin.Command, error) {
-	resp := Response{Error: ErrInvalidCommand}
-	rawResp, err := resp.Marshal()
-	if err != nil {
-		return nil, err
-	}
-	return &cborplugin.Response{Payload: rawResp}, nil
+	resp := &Response{Error: ErrInvalidCommand}
+	return resp, nil
 }
 
 func (s *Server) RegisterConsumer(svr *cborplugin.Server) {
-	s.log.Debugf("RegisterConsumer called")
+	s.write = svr.Write
 }
