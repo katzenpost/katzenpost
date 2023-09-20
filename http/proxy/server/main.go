@@ -38,7 +38,7 @@ import (
 )
 
 type proxy struct {
-	write func(cborplugin.Command)
+	write       func(cborplugin.Command)
 	allowedHost map[string]struct{}
 	log         *logging.Logger
 }
