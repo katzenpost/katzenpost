@@ -42,8 +42,34 @@ There are essentially two types of interaction with a Katzenpost mixnet:
 
 # Client:
 
-Currently, [Katzen](https://github.com/katzenpost/katzen) is the only client available for use with Katzenpost. However a SOCKS proxy client is forthcoming
-and you'll be able to use that with many existing applications.
+There is a proxy client application that exposes a SOCKS5 proxy.
+A publicly reachable testnet instance configuration is baked into the binary when you build it.
+
+### Building the client
+
+   apt install -y make podman git
+   git clone https://github.com/CloakedServices/CloakedNetworkPOC
+   cd CloakedNetworkPOC
+   podman build -f cloakedproxy/Dockerfile -t gobuild
+   podman run --rm -i  -v $(pwd):/build/demo --workdir /build/demo -t gobuild sh -c "cd cloakedproxy && make warped=false"
+   ./cloakedproxy/cloakedproxy -help
+
+By default, it will listen on 127.0.0.1:4242 and exit traffic from the demo instance.
+(If this doesn't work, this instance has probably been halted)
+
+You can run a local (or publicly reachable) copy of the network by:
+
+### Building the services
+
+   git clone https://github.com/CloakedServices/CloakedNetworkPOC
+   cd CloakedNetworkPOC/docker
+   make mu=0.06 warped=false onlyTransports=tcp4 muMax=50 lP=0.4 lPMax=20 log_level=NOTICE UserForwardPayloadLength=6000 bind_addr="YOUR_PUBLIC_IPV4_HERE" clean-local start
+
+
+A generated client configuration file can be found in CloakedNetworkPOC/docker/voting_mixnet/client/client.toml, which can be consumed by ./cloakedproxy -cfg
+
+'warped=false' means to run your testnet with the default Epoch (key rotation period) of 20 minutes, and will take a while to bootstrap before it will be usable.
+'warped=true' means to run your testnet with a 2 minute Epoch for local or CI testing. The other runtime variables are passed to CloakedNetworkPOC/genconfig which generates the testnet configuration.
 
 # Server Side Usage/Configuration
 
