@@ -165,19 +165,13 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		conn, err = quic.DialURL(u, ctx, dialFn)
 		if err != nil {
 			p.log.Error("Failed to Dial %s: %v", u, err)
+			return nil, err
 		}
 	} else {
 		err := errors.New("PreferedTransport not found")
 		p.log.Errorf("%s", err)
 		return nil, err
 	}
-
-	var isOk bool
-	defer func() {
-		if !isOk {
-			conn.Close()
-		}
-	}()
 
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
@@ -214,9 +208,9 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// Handshake.
 	if err = s.Initialize(conn); err != nil {
+		conn.Close()
 		return nil, err
 	}
-	isOk = true
 
 	return &connection{
 		conn:    conn,

@@ -50,7 +50,7 @@ var (
 	cashuWalletUrl = "http://localhost:4448"
 )
 
-func GetSession(cfgFile string) (*client.Session, error) {
+func GetSession(cfgFile string, delay, retry int) (*client.Session, error) {
 	var err error
 	cfg, err = config.LoadFile(cfgFile)
 	if err != nil {
@@ -62,6 +62,7 @@ func GetSession(cfgFile string) (*client.Session, error) {
 	}
 
 	var session *client.Session
+	retries := 0
 	for session == nil {
 		session, err = cc.NewTOFUSession(context.Background())
 		switch err {
@@ -70,8 +71,12 @@ func GetSession(cfgFile string) (*client.Session, error) {
 			_, _, till := epochtime.Now()
 			<-time.After(till)
 		default:
-			return nil, err
+			if retries == retry {
+				return nil, errors.New("Failed to connect within retry limit")
+			}
+			<-time.After(time.Duration(delay) * time.Second)
 		}
+		retries += 1
 	}
 	session.WaitForDocument(context.Background())
 	return session, nil
@@ -112,12 +117,14 @@ func (c *Client) Topup(id []byte) chan error {
 		send_resp, err := c.cashuClient.SendToken(send_request)
 		if err != nil {
 			c.log.Error("topup cashu: %v", err)
-			errCh <- err
-			return
+			//errCh <- err
+			//return
 		}
 		nuts := make([]byte, 512)
 		// fill nuts with send_resp.Token from beginning
-		copy(nuts, send_resp.Token)
+		if err == nil {
+			copy(nuts, send_resp.Token)
+		}
 
 		// Send a TopupCommand to create a proxy session on the server
 		serialized, err := (&server.TopupCommand{ID: id, Nuts: nuts}).Marshal()

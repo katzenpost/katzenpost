@@ -29,6 +29,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -42,6 +43,8 @@ var (
 	epName   = flag.String("ep", "", "endpoint name")
 	logLevel = flag.String("log_level", "DEBUG", "logging level could be set to: DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL")
 	port     = flag.Int("port", 8080, "listener address")
+	retry    = flag.Int("retry", -1, "limit number of reconnection attempts")
+	delay    = flag.Int("delay", 30, "time to wait between connection attempts (seconds)>")
 	cfg      *config.Config
 )
 
@@ -58,6 +61,7 @@ func getSession(cfgFile string) (*client.Session, error) {
 	}
 
 	var session *client.Session
+	retries := 0
 	for session == nil {
 		session, err = cc.NewTOFUSession(context.Background())
 		switch err {
@@ -66,8 +70,12 @@ func getSession(cfgFile string) (*client.Session, error) {
 			_, _, till := epochtime.Now()
 			<-time.After(till)
 		default:
-			return nil, err
+			<-time.After(time.Duration(*delay) * time.Second)
+			if retries == *retry {
+				return nil, errors.New("Failed to connect within retry limit")
+			}
 		}
+		retries += 1
 	}
 	session.WaitForDocument(context.Background())
 	return session, nil
