@@ -231,7 +231,6 @@ func setupClient() (*client.Client, error) {
 			return nil, err
 		}
 	} else {
-		return nil, errors.New("No public default network available")
 		// detect running Tor and use configuration
 		var useTor = false
 		if hasDefaultTor() {

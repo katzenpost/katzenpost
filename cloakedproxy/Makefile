@@ -1,4 +1,4 @@
-warped?=true
+warped?=false
 KEYSTORE := sign.keystore
 KEYPASS := password
 CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
