@@ -780,7 +780,12 @@ services:
     network_mode: host
     expose:
      - "3338/tcp"
-    command: ["poetry", "run", "mint", "--port", "3338", "--host", "127.0.0.1"]
+    environment:
+     - MINT_LIGHTNING_BACKEND=FakeWallet
+     - MINT_PRIVATE_KEY=TEST_PRIVATE_KEY
+     - MINT_LISTEN_HOST=0.0.0.0
+     - MINT_LISTEN_PORT=3338
+    command: ["poetry", "run", "mint"]
 `)
 
 	// add client cashu wallet
@@ -812,7 +817,7 @@ services:
       - HTTP_PROXY=http://127.0.0.1:8081
       - MINT_URL=http://127.0.0.1:3338
       - API_HOST=127.0.0.1
-      - API_PORT=4448
+      - API_PORT=4449
     command: ["poetry", "run", "cashu", "-d"]
 `)
 	return nil
