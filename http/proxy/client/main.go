@@ -89,6 +89,7 @@ type kttp struct {
 func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d, err := k.session.GetService(*epName)
 	if err != nil {
+		k.log.Errorf("Err finding proxy service: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -99,6 +100,7 @@ func (k *kttp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	response, err := k.session.BlockingSendUnreliableMessage(d.Name, d.Provider, buf)
 	if err != nil {
 		// send http error response
+		k.log.Errorf("Err sending proxy request: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
