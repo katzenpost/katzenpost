@@ -86,7 +86,7 @@ func (p *proxy) OnCommand(cmd cborplugin.Command) error {
 		if err != nil {
 			return err
 		}
-		p.write(&cborplugin.Response{Payload: serialized})
+		p.write(&cborplugin.Response{SURB: r.SURB, ID: r.ID, Payload: serialized})
 		return nil
 	default:
 		p.log.Errorf("OnCommand called with unknown Command type")
