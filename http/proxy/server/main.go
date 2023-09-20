@@ -43,7 +43,7 @@ type proxy struct {
 	log         *logging.Logger
 }
 
-func (p proxy) OnCommand(cmd cborplugin.Command) error {
+func (p *proxy) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		// deserialize the HTTP/1.1 wire-format request from the kaetzchen payload
@@ -129,7 +129,7 @@ func main() {
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
 
-	p := proxy{allowedHost: make(map[string]struct{}), log: serverLog}
+	p := &proxy{allowedHost: make(map[string]struct{}), log: serverLog}
 	// TODO: support csv host arg
 	p.allowedHost[host] = struct{}{}
 
@@ -141,6 +141,6 @@ func main() {
 	os.Remove(socketFile)
 }
 
-func (p proxy) RegisterConsumer(svr *cborplugin.Server) {
+func (p *proxy) RegisterConsumer(svr *cborplugin.Server) {
 	p.write = svr.Write
 }
