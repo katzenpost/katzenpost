@@ -394,6 +394,9 @@ Appendix A.1 Normative References
 .. [KATZMIXE2E]  Angel, Y., Danezis, G., Diaz, C., Piotrowska, A., Stainton, D.,
                  "Katzenpost Mix Network End-to-end Protocol Specification", July 2017,
                  <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/old/end_to_end.rst>.
+.. [KATZMIXWIRE] Angel, Y., Stainton, D.,
+                 "Katzenpost Mix Network Wire Protocol Specification", August 2017,
+                 <https://github.com/katzenpost/katzenpost/blob/main/docs/specs/wire-protocol.rst>.
 
 .. [KATZDEADDROP] Stainton, D., "Katzenpost Dead Drop Extension", February 2018,
                   <https://github.com/katzenpost/katzenpost/blob/main/docs/drafts/deaddrop.rst>.

@@ -67,7 +67,7 @@ func TestKEMSphinxGeometry(t *testing.T) {
 	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 10)
 	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
 	g = geo.KEMGeometryFromUserForwardPayloadLength(hybrid.Kyber768X25519(), 512, withSURB, 20)
-	t.Logf("KEMSphinx Kyber768X25519 10 hops: HeaderLength = %d", g.HeaderLength)
+	t.Logf("KEMSphinx Kyber768X25519 20 hops: HeaderLength = %d", g.HeaderLength)
 
 	mykem := hybrid.Kyber768X25519()
 	withSURB = true
