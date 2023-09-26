@@ -1,3 +1,5 @@
+//go:build gio
+
 package main
 
 import (
