@@ -38,12 +38,12 @@ import (
 )
 
 type proxy struct {
-	write func(cborplugin.Command)
+	write       func(cborplugin.Command)
 	allowedHost map[string]struct{}
 	log         *logging.Logger
 }
 
-func (p proxy) OnCommand(cmd cborplugin.Command) error {
+func (p *proxy) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:
 		// deserialize the HTTP/1.1 wire-format request from the kaetzchen payload
@@ -86,7 +86,7 @@ func (p proxy) OnCommand(cmd cborplugin.Command) error {
 		if err != nil {
 			return err
 		}
-		p.write(&cborplugin.Response{Payload: serialized})
+		p.write(&cborplugin.Response{SURB: r.SURB, ID: r.ID, Payload: serialized})
 		return nil
 	default:
 		p.log.Errorf("OnCommand called with unknown Command type")
@@ -129,7 +129,7 @@ func main() {
 	}
 	socketFile := filepath.Join(tmpDir, fmt.Sprintf("%d.http_proxy.socket", os.Getpid()))
 
-	p := proxy{allowedHost: make(map[string]struct{}), log: serverLog}
+	p := &proxy{allowedHost: make(map[string]struct{}), log: serverLog}
 	// TODO: support csv host arg
 	p.allowedHost[host] = struct{}{}
 
@@ -141,6 +141,6 @@ func main() {
 	os.Remove(socketFile)
 }
 
-func (p proxy) RegisterConsumer(svr *cborplugin.Server) {
+func (p *proxy) RegisterConsumer(svr *cborplugin.Server) {
 	p.write = svr.Write
 }

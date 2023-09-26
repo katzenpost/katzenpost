@@ -115,14 +115,14 @@ func (c *Client) Topup(id []byte) chan error {
 
 		send_request := cashu.SendRequest{Amount: 1}
 		send_resp, err := c.cashuClient.SendToken(send_request)
+		nuts := make([]byte, 512)
 		if err != nil {
 			c.log.Error("topup cashu: %v", err)
+			// XXX: ignore Cashu errors
 			//errCh <- err
 			//return
-		}
-		nuts := make([]byte, 512)
-		// fill nuts with send_resp.Token from beginning
-		if err == nil {
+		} else {
+			// fill nuts with send_resp.Token from beginning
 			copy(nuts, send_resp.Token)
 		}
 
@@ -381,7 +381,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 				if err != nil {
 					c.log.Errorf("SendUnreliableMessage: %v", err)
 					c.log.Errorf("SendUnreliableMessage: backoffDelay %v", backOffDelay)
-					backOffDelay += backOffDelay
+					backOffDelay = backOffDelay << 2
 
 					if n == 0 {
 						break // short circuit to blocking read for backOffDelay
@@ -396,7 +396,11 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 					}
 					continue
 				} else {
-					backOffDelay = (backOffDelay >> 1)
+					if n != 0 {
+						backOffDelay = (backOffDelay >> 1)
+					} else {
+						backOffDelay = (backOffDelay << 1)
+					}
 					if backOffDelay < backOffFloor {
 						backOffDelay = backOffFloor
 					}

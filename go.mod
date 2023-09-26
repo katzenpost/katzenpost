@@ -2,8 +2,13 @@ module github.com/katzenpost/katzenpost
 
 go 1.20
 
+replace gioui.org => github.com/mixmasala/gio v0.0.0-20230917185150-1c97118905a5
+
+replace gioui.org/cmd => github.com/mixmasala/gio-cmd v0.0.0-20230917190002-697be40b7aa6
+
 require (
 	filippo.io/edwards25519 v1.0.0
+	gioui.org v0.3.0
 	github.com/BurntSushi/toml v1.3.2
 	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
@@ -34,6 +39,10 @@ require (
 )
 
 require (
+	gioui.org/cmd v0.0.0-20230822165948-7cb98d0557e7 // indirect
+	gioui.org/cpu v0.0.0-20210817075930-8d6a761490d2 // indirect
+	gioui.org/shader v1.0.7 // indirect
+	github.com/akavel/rsrc v0.10.1 // indirect
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
@@ -43,6 +52,7 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
+	github.com/go-text/typesetting v0.0.0-20230803102845-24e03d8b5372 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/pprof v0.0.0-20230906154834-20cde9067b3b // indirect
@@ -64,7 +74,10 @@ require (
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
+	golang.org/x/exp/shiny v0.0.0-20220827204233-334a2380cb91 // indirect
+	golang.org/x/image v0.5.0 // indirect
 	golang.org/x/mod v0.12.0 // indirect
+	golang.org/x/sync v0.3.0 // indirect
 	golang.org/x/sys v0.12.0 // indirect
 	golang.org/x/tools v0.13.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
