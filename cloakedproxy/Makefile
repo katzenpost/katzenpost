@@ -10,7 +10,7 @@ docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache -e CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" --workdir /go/katzenpost --network=host --rm
 
 all:
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -ldflags ${ldflags} .
+	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -tags gio -ldflags ${ldflags} .
 
 go_package_cache:
 	mkdir -p go_package_cache
