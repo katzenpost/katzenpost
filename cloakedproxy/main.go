@@ -25,7 +25,6 @@ import (
 	"image/color"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -38,8 +37,6 @@ var (
 
 	// obtain the default data location
 	dataDirName = "cloakedproxy"
-	dir, _      = app.DataDir()
-	dataDir     = filepath.Join(dir, dataDirName, "default")
 
 	// application command line falgs
 	clientConfigFile = flag.String("cfg", "", "Path to the client config file.")
