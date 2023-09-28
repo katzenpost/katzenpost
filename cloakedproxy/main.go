@@ -21,6 +21,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	kclient "github.com/katzenpost/katzenpost/katzensocks/client"
 	"image/color"
+	"log"
 	"net"
 	"os"
 	"sync"
@@ -145,14 +146,14 @@ func (a *App) doConnectClick() {
 		// create a katzensocks client
 		kc, err := kclient.NewClient(s)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 
 		// add SOCKS5 listener
 		a.Go(func() {
 			ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *socksPort))
 			if err != nil {
-				panic(err)
+				log.Fatal(err)
 			}
 			// Close connection when katzensocks client is halted
 			a.Go(func() {
@@ -201,7 +202,7 @@ func main() {
 		)
 		c, err := setupClient()
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 		a := &App{
 			c:           c,
@@ -236,7 +237,6 @@ func setupClient() (*client.Client, error) {
 		if useTor {
 			cfg, err = config.Load(cfgWithTor)
 			if err != nil {
-				panic(err)
 				return nil, err
 			}
 		} else {
