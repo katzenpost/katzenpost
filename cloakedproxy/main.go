@@ -73,6 +73,7 @@ func rgb(c uint32) color.NRGBA {
 }
 
 type App struct {
+	endBg func()
 	sync.Mutex
 	worker.Worker
 	w   *app.Window
@@ -108,6 +109,16 @@ func (a *App) handleGioEvents(e interface{}) error {
 		a.Layout(gtx)
 		e.Frame(gtx.Ops)
 	case system.StageEvent:
+		a.Lock()
+		if e.Stage == system.StagePaused {
+			a.endBg, _ = app.Start("Is running in the background", "")
+		} else {
+			if a.endBg != nil {
+				a.endBg()
+				a.endBg = nil
+			}
+		}
+		a.Unlock()
 	}
 	return nil
 }
