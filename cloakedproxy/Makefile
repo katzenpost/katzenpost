@@ -11,7 +11,7 @@ docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e G
 distro?=alpine
 
 all:
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -tags gio -ldflags ${ldflags} .
+	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build -ldflags ${ldflags} .
 
 go_package_cache:
 	mkdir -p go_package_cache
@@ -28,10 +28,10 @@ docker-build-android: go_package_cache docker-android-base $(KEYSTORE)
 	$(docker) run $(docker_args) katzen/android_sdk bash -c "go install gioui.org/cmd/gogio && cd cloakedproxy && gogio -arch arm64,amd64 -x -target android -appid proxy.cloaked -version 1 -signkey $(KEYSTORE) -signpass ${KEYPASS} ."
 
 docker-build-linux: docker-$(distro)-base
-	$(docker) run $(docker_args)  katzen/$(distro)_base bash -c 'cd cloakedproxy; go build -tags gio -trimpath -ldflags=${ldflags}'
+	$(docker) run $(docker_args)  katzen/$(distro)_base bash -c 'cd cloakedproxy; go build -trimpath -ldflags=${ldflags}'
 
 docker-build-windows: docker-debian-base
-	$(docker) run $(docker_args) katzen/$(distro)_base bash -c 'cd cloakedproxy; GOOS=windows CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build tags gio -trimpath -ldflags="-H windowsgui ${ldflags}" -o cloakedproxy.exe'
+	$(docker) run $(docker_args) katzen/$(distro)_base bash -c 'cd cloakedproxy; GOOS=windows CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc go build -trimpath -ldflags="-H windowsgui ${ldflags}" -o cloakedproxy.exe'
 
 docker-android-shell: docker-android-base
 	$(docker) run $(docker_args) --rm -it katzen/android_sdk bash

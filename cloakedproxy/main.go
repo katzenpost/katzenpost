@@ -1,5 +1,3 @@
-//go:build gio
-
 package main
 
 import (
@@ -23,9 +21,9 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	kclient "github.com/katzenpost/katzenpost/katzensocks/client"
 	"image/color"
+	"log"
 	"net"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 )
@@ -38,8 +36,6 @@ var (
 
 	// obtain the default data location
 	dataDirName = "cloakedproxy"
-	dir, _      = app.DataDir()
-	dataDir     = filepath.Join(dir, dataDirName, "default")
 
 	// application command line falgs
 	clientConfigFile = flag.String("cfg", "", "Path to the client config file.")
@@ -77,6 +73,7 @@ func rgb(c uint32) color.NRGBA {
 }
 
 type App struct {
+	endBg func()
 	sync.Mutex
 	worker.Worker
 	w   *app.Window
@@ -112,6 +109,16 @@ func (a *App) handleGioEvents(e interface{}) error {
 		a.Layout(gtx)
 		e.Frame(gtx.Ops)
 	case system.StageEvent:
+		a.Lock()
+		if e.Stage == system.StagePaused {
+			a.endBg, _ = app.Start("Is running in the background", "")
+		} else {
+			if a.endBg != nil {
+				a.endBg()
+				a.endBg = nil
+			}
+		}
+		a.Unlock()
 	}
 	return nil
 }
@@ -150,14 +157,14 @@ func (a *App) doConnectClick() {
 		// create a katzensocks client
 		kc, err := kclient.NewClient(s)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 
 		// add SOCKS5 listener
 		a.Go(func() {
 			ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *socksPort))
 			if err != nil {
-				panic(err)
+				log.Fatal(err)
 			}
 			// Close connection when katzensocks client is halted
 			a.Go(func() {
@@ -206,7 +213,7 @@ func main() {
 		)
 		c, err := setupClient()
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 		a := &App{
 			c:           c,
@@ -241,7 +248,6 @@ func setupClient() (*client.Client, error) {
 		if useTor {
 			cfg, err = config.Load(cfgWithTor)
 			if err != nil {
-				panic(err)
 				return nil, err
 			}
 		} else {
