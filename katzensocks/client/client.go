@@ -19,6 +19,7 @@ package client
 import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -50,16 +51,32 @@ var (
 	cashuWalletUrl = "http://localhost:4448"
 )
 
+func GetPKI(ctx context.Context, cfgFile string) (pki.Client, *pki.Document, error) {
+	c, err := GetClient(cfgFile)
+	if err != nil {
+		panic(err)
+	}
+	// generate a linkKey
+	linkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
+
+	// fetch a pki.Document
+	return client.PKIBootstrap(ctx, c, linkKey)
+}
+
+func GetClient(cfgFile string) (*client.Client, error) {
+	cfg, err := config.LoadFile(cfgFile)
+	if err != nil {
+		return nil, err
+	}
+	return client.New(cfg)
+}
+
 func GetSession(cfgFile string, delay, retry int) (*client.Session, error) {
-	var err error
-	cfg, err = config.LoadFile(cfgFile)
+	cc, err := GetClient(cfgFile)
 	if err != nil {
 		return nil, err
 	}
-	cc, err := client.New(cfg)
-	if err != nil {
-		return nil, err
-	}
+	l := cc.GetLogger("GetSession")
 
 	var session *client.Session
 	retries := 0
@@ -69,11 +86,14 @@ func GetSession(cfgFile string, delay, retry int) (*client.Session, error) {
 		case nil:
 		case pki.ErrNoDocument:
 			_, _, till := epochtime.Now()
+			l.Debug("No document, waiting %v for document", till)
 			<-time.After(till)
 		default:
 			if retries == retry {
 				return nil, errors.New("Failed to connect within retry limit")
 			}
+			l.Errorf("NewTOFUSession: %v", err)
+			l.Debugf("Waiting for %d seconds", delay)
 			<-time.After(time.Duration(delay) * time.Second)
 		}
 		retries += 1
@@ -86,7 +106,9 @@ type Client struct {
 	worker.Worker
 	sync.Mutex
 
-	desc         *utils.ServiceDescriptor
+	desc          *utils.ServiceDescriptor
+	descs         []*utils.ServiceDescriptor
+	sessionToDesc map[string]*utils.ServiceDescriptor
 	log          *logging.Logger
 	s            *client.Session
 	msgCallbacks map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
@@ -97,14 +119,15 @@ type Client struct {
 func NewClient(s *client.Session) (*Client, error) {
 	l := s.GetLogger("katzensocks_client")
 	// find a katzensocks server descriptor for the request
-	desc, err := s.GetService("katzensocks")
+	descs, err := s.GetServices("katzensocks")
 	if err != nil {
 		return nil, err
 	}
 	cashuClient := cashu.NewCashuApiClient(nil, cashuWalletUrl)
 
-	return &Client{desc: desc, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
-		msgCallbacks: make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)), cashuClient: cashuClient}, nil
+	return &Client{descs: descs, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
+		msgCallbacks: make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
+		sessionToDesc: make(map[string]*utils.ServiceDescriptor), cashuClient: cashuClient}, nil
 }
 
 // topup sends a TopupCommand and returns a channel. err nil means success.
@@ -112,6 +135,14 @@ func (c *Client) Topup(id []byte) chan error {
 	errCh := make(chan error)
 	go func() {
 		defer close(errCh)
+		c.Lock()
+		desc, ok := c.sessionToDesc[string(id)]
+		if !ok {
+			c.Unlock()
+			errCh <- errors.New("Gateway descriptor missing")
+			return
+		}
+		c.Unlock()
 
 		send_request := cashu.SendRequest{Amount: 1}
 		send_resp, err := c.cashuClient.SendToken(send_request)
@@ -141,7 +172,7 @@ func (c *Client) Topup(id []byte) chan error {
 		}
 
 		// blocks until reply arrives
-		rawResp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized)
+		rawResp, err := c.s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, serialized)
 		if err != nil {
 			errCh <- err
 			return
@@ -163,6 +194,15 @@ func (c *Client) Topup(id []byte) chan error {
 func (c *Client) Dial(id []byte, tgt *url.URL) chan error {
 	errCh := make(chan error)
 	go func() {
+		c.Lock()
+		desc, ok := c.sessionToDesc[string(id)]
+		if !ok {
+			c.Unlock()
+			errCh <- errors.New("Gateway descriptor missing")
+			return
+		}
+		c.Unlock()
+
 		defer close(errCh)
 		serialized, err := (&server.DialCommand{ID: id, Target: tgt}).Marshal()
 		if err != nil {
@@ -173,7 +213,7 @@ func (c *Client) Dial(id []byte, tgt *url.URL) chan error {
 		// XXX: do not use blocking client because it serializes all the request/response pairs
 		// so there is no interleaving, which adds a lot of delay..
 		// implement a lower level client using minclient and do not use these blocking methods.
-		rawResp, err := c.s.BlockingSendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized) // blocks until reply arrives
+		rawResp, err := c.s.BlockingSendUnreliableMessage(desc.Name, desc.Provider, serialized) // blocks until reply arrives
 		if err != nil {
 			errCh <- err
 			return
@@ -251,6 +291,17 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 	myId := append(id, []byte("client")...)
 	qconn := common.NewQUICProxyConn(myId)
 
+	c.Lock()
+	desc, ok := c.sessionToDesc[string(id)]
+	if !ok {
+		c.Unlock()
+		go func() {
+			errCh <- errors.New("Gateway descriptor missing")
+		}()
+		return nil, errCh
+	}
+	c.Unlock()
+
 	// start proxy worker that proxies bytes between QUICProxyConn and conn
 	c.Go(func() {
 		defer func() {
@@ -314,8 +365,11 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 					} else {
 						c.log.Errorf("No callback for ReplyEvent")
 					}
-				default:
-					// skip handling event
+				case *client.ConnectionStatusEvent:
+					c.log.Notice(event.String())
+				case *client.NewDocumentEvent:
+					// TODO update descriptors, kill sessions that use missing descriptors
+					c.log.Errorf("Got new document, but haven't implemented handlers")
 				}
 			// XXX: restart transport worker on new session
 			//case <-c.s.HaltCh():
@@ -377,7 +431,7 @@ func (c *Client) Proxy(id []byte, conn net.Conn) (*common.QUICProxyConn, chan er
 			//c.SendSphinxPacket()
 			// don't drop serialized on the floor if SendUnreliableMessage returns "ErrQueueIsFull"
 			for {
-				msgID, err := c.s.SendUnreliableMessage(c.desc.Name, c.desc.Provider, serialized)
+				msgID, err := c.s.SendUnreliableMessage(desc.Name, desc.Provider, serialized)
 				if err != nil {
 					c.log.Errorf("SendUnreliableMessage: %v", err)
 					c.log.Errorf("SendUnreliableMessage: backoffDelay %v", backOffDelay)
@@ -453,6 +507,17 @@ func (c *Client) SocksHandler(conn net.Conn) {
 	if err != nil {
 		panic(err)
 	}
+
+	// map the id to the selected exit descriptor
+	c.Lock()
+	if _, ok := c.sessionToDesc[string(id)]; !ok {
+		if len(c.descs) == 0 {
+			c.log.Errorf("No Gateway descriptors available")
+			return
+		}
+		c.sessionToDesc[string(id)] = c.descs[0] // pick the descriptor somehow
+	}
+	c.Unlock()
 
 	// send a topup command to create a session
 	err = <-c.Topup(id)
