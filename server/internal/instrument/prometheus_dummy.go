@@ -1,5 +1,5 @@
-//go:build !prometheus
-// +build !prometheus
+//go:build noprometheus
+// +build noprometheus
 
 package instrument
 
