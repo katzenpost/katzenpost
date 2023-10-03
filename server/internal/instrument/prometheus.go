@@ -2,9 +2,13 @@ package instrument
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -159,9 +163,9 @@ var (
 var kaetzchenRequestsTimer *prometheus.Timer
 var fetchedPKIDocsTimer *prometheus.Timer
 
-// Init initialize instrumentation
-func Init() {
-	// Register metrics
+// StartPrometheusListener starts the Prometheus metrics UNIX domain socket listener.
+func StartPrometheusListener(glue glue.Glue) {
+
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
 	prometheus.MustRegister(invalidPacketsDropped)
@@ -186,9 +190,19 @@ func Init() {
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
 
-	// Expose registered metrics via HTTP
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe("127.0.0.1:6543", nil)
+	socketPath := filepath.Join(glue.Config().Server.DataDir, "prom.socket")
+
+	os.Remove(socketPath)
+
+	server := http.Server{
+		Handler: promhttp.Handler(),
+	}
+
+	unixListener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		panic(err)
+	}
+	go server.Serve(unixListener)
 }
 
 // Incoming increments the counter for incoming requests
