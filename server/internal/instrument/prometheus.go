@@ -160,9 +160,6 @@ var (
 	)
 )
 
-var kaetzchenRequestsTimer *prometheus.Timer
-var fetchedPKIDocsTimer *prometheus.Timer
-
 // StartPrometheusListener starts the Prometheus metrics UNIX domain socket listener.
 func StartPrometheusListener(glue glue.Glue) {
 
@@ -247,16 +244,6 @@ func KaetzchenRequests() {
 	kaetzchenRequests.Inc()
 }
 
-// SetKaetzchenRequestsTimer sets the kaetzchen requests timer struct
-func SetKaetzchenRequestsTimer() {
-	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
-}
-
-// TimeKaetzchenRequestsDuration times how long it takes for a ketzchen request to execute
-func TimeKaetzchenRequestsDuration() {
-	kaetzchenRequestsTimer.ObserveDuration()
-}
-
 // KaetzchenRequestsDropped increments the counter for the number of dropped kaetzchen requests
 func KaetzchenRequestsDropped(dropCounter uint64) {
 	kaetzchenRequestsDropped.Add(float64(dropCounter))
@@ -305,16 +292,6 @@ func CancelledOutgoing() {
 // FetchedPKIDocs increments the counter for the number of fetched PKI docs per epoch
 func FetchedPKIDocs(epoch string) {
 	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch})
-}
-
-// SetFetchedPKIDocsTimer sets a timer for the fetchedPKIDocs variable
-func SetFetchedPKIDocsTimer() {
-	fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
-}
-
-// TimeFetchedPKIDocsDuration times the duration of how long it takes to fetch a PKI Doc
-func TimeFetchedPKIDocsDuration() {
-	fetchedPKIDocsTimer.ObserveDuration()
 }
 
 // FailedFetchPKIDocs increments the counter for the number of times fetching a PKI doc failed per epoch
