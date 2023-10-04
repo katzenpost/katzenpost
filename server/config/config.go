@@ -166,8 +166,10 @@ func (sCfg *Server) validate() error {
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
 	}
-	if _, err := netip.ParseAddrPort(sCfg.MetricsAddress); err != nil {
-		return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
+	if sCfg.MetricsAddress != ""  {
+		if _, err := netip.ParseAddrPort(sCfg.MetricsAddress); err != nil {
+			return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
+		}
 	}
 	return nil
 }

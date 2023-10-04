@@ -5,10 +5,11 @@ package instrument
 
 import (
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 )
 
-// Init instrumentation
-func Init() {}
+// StartPrometheusListener does nothing
+func StartPrometheusListener(glue glue.Glue) {}
 
 // Incoming increments the counter for incoming requests
 func Incoming(cmd commands.Command) {}

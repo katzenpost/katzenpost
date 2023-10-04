@@ -5,10 +5,7 @@ package instrument
 
 import (
 	"fmt"
-	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/katzenpost/katzenpost/server/internal/glue"
@@ -163,7 +160,7 @@ var (
 	)
 )
 
-// StartPrometheusListener starts the Prometheus metrics UNIX domain socket listener.
+// StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
 func StartPrometheusListener(glue glue.Glue) {
 
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
@@ -190,19 +187,12 @@ func StartPrometheusListener(glue glue.Glue) {
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
 
-	socketPath := filepath.Join(glue.Config().Server.DataDir, "prom.socket")
-
-	os.Remove(socketPath)
-
-	server := http.Server{
-		Handler: promhttp.Handler(),
+	metricsAddress := glue.Config().Server.MetricsAddress
+	if metricsAddress != "" {
+		// Expose registered metrics via HTTP
+		http.Handle("/metrics", promhttp.Handler())
+		go http.ListenAndServe(metricsAddress, nil)
 	}
-
-	unixListener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		panic(err)
-	}
-	go server.Serve(unixListener)
 }
 
 // Incoming increments the counter for incoming requests
@@ -214,7 +204,6 @@ func Incoming(cmd commands.Command) {
 // Outgoing increments the counter for outgoing connections
 func Outgoing() {
 	outgoingConns.Inc()
-
 }
 
 // IngressQueue observes the size of the ingress queue
