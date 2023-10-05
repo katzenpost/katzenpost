@@ -515,7 +515,13 @@ func (c *Client) SocksHandler(conn net.Conn) {
 			c.log.Errorf("No Gateway descriptors available")
 			return
 		}
-		c.sessionToDesc[string(id)] = c.descs[0] // pick the descriptor somehow
+		if c.desc != nil {
+			c.sessionToDesc[string(id)] = c.desc
+		} else {
+			m := rand.NewMath()
+			i := m.Intn(len(c.descs))
+			c.sessionToDesc[string(id)] = c.descs[i]
+		}
 	}
 	c.Unlock()
 
@@ -565,4 +571,24 @@ func (c *Client) SocksHandler(conn net.Conn) {
 			}
 		}
 	}
+}
+
+// SetGateway tells client to use a specific provider's gateway service
+func (c *Client) SetGateway(provider string) error {
+	// try to find the gateway by provider name
+	doc := c.s.CurrentDocument()
+	if doc == nil {
+		return errors.New("No current PKI document")
+	}
+
+	descs := utils.FindServices("katzensocks", doc)
+	for _, desc := range descs {
+		if desc.Provider == provider {
+			c.Lock()
+			c.desc = &desc
+			c.Unlock()
+			return nil
+		}
+	}
+	return errors.New("Gateway not found")
 }
