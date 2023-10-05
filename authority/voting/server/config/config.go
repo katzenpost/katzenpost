@@ -21,6 +21,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -472,13 +473,36 @@ func (cfg *Config) FixupAndValidate() error {
 		pkMap[tmp] = v
 	}
 
+	// if our own identity is not in cfg.Authorities return error
+	selfInAuthorities := false
+
+	ourPubKeyFile := filepath.Join(cfg.Server.DataDir, "identity.public.pem")
+	f, err := os.Open(ourPubKeyFile)
+	if err != nil {
+		return err
+	}
+	pemData, err := io.ReadAll(f)
+	if err != nil {
+		return err
+	}
+	ourPubKey := cert.Scheme.NewEmptyPublicKey()
+	err = ourPubKey.UnmarshalText(pemData)
+	if err != nil {
+		return err
+	}
+	ourPubKeyHash := ourPubKey.Sum256()
 	for _, auth := range cfg.Authorities {
 		err := auth.Validate()
 		if err != nil {
 			return err
 		}
+		if auth.IdentityPublicKey.Sum256() == ourPubKeyHash {
+			selfInAuthorities = true
+		}
 	}
-
+	if !selfInAuthorities {
+		return errors.New("Authorities section must contain self")
+	}
 	return nil
 }
 
