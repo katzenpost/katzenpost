@@ -16,4 +16,8 @@ type Client interface {
 
 	// Deserialize returns PKI document given the raw bytes.
 	Deserialize(raw []byte) (*Document, error)
+
+	// Verify verifies the document has at least a threshold number of valid signatures otherwise
+	// returns an error.
+	Verify(d *Document, currentEpoch uint64) error
 }

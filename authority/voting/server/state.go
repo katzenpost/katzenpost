@@ -185,7 +185,7 @@ func (s *state) fsm() <-chan time.Time {
 			s.state = stateBootstrap
 			break
 		}
-		signed, err := s.getVote(s.votingEpoch)
+		signed, err := s.getVote()
 		if err == nil {
 			serialized, err := signed.MarshalBinary()
 			if err == nil {
@@ -204,7 +204,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.state = stateAcceptReveal
 		sleep = AuthorityRevealDeadline - elapsed
 	case stateAcceptReveal:
-		signed, err := s.getCertificate(s.votingEpoch)
+		signed, err := s.getCertificate()
 		if err == nil {
 			serialized, err := signed.MarshalBinary()
 			if err == nil {
@@ -234,7 +234,8 @@ func (s *state) fsm() <-chan time.Time {
 				s.s.fatalErrCh <- err
 				break
 			}
-			signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, serialized, s.votingEpoch)
+			epoch, _, _ := epochtime.Now()
+			signed, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, serialized, s.votingEpoch, epoch)
 			if err != nil {
 				s.log.Errorf("Failed to sign our signature for epoch %v: %s", s.votingEpoch, err)
 				s.s.fatalErrCh <- err
@@ -279,7 +280,7 @@ func (s *state) persistDocument(epoch uint64, doc []byte) {
 }
 
 // getVote produces a pki.Document using all MixDescriptors that we have seen
-func (s *state) getVote(epoch uint64) (*pki.Document, error) {
+func (s *state) getVote() (*pki.Document, error) {
 	// Is there a prior consensus? If so, obtain the GenesisEpoch and prior SRV values
 	if d, ok := s.documents[s.votingEpoch-1]; ok {
 		s.log.Debugf("Restoring genesisEpoch %d from document cache", d.GenesisEpoch)
@@ -289,37 +290,36 @@ func (s *state) getVote(epoch uint64) (*pki.Document, error) {
 		s.log.Debugf("Setting genesisEpoch %d from votingEpoch", s.votingEpoch)
 		s.genesisEpoch = s.votingEpoch
 	}
-
 	descriptors := []*pki.MixDescriptor{}
-	for _, desc := range s.descriptors[epoch] {
+	for _, desc := range s.descriptors[s.votingEpoch] {
 		descriptors = append(descriptors, desc)
 	}
-
 	// vote topology is irrelevent.
 	var zeros [32]byte
 	vote := s.getDocument(descriptors, s.s.cfg.Parameters, zeros[:])
-
 	// create our SharedRandom Commit
-	signedCommit, err := s.doCommit(epoch)
+	currentEpoch, _, _ := epochtime.Now()
+	notValidAfterEpoch := s.votingEpoch
+
+	signedCommit, err := s.doCommit(notValidAfterEpoch, currentEpoch)
 	if err != nil {
+		s.log.Errorf("doCommit failed with error: %s", err.Error())
 		return nil, err
 	}
 	commits := make(map[[sign.PublicKeyHashSize]byte][]byte)
 	commits[s.identityPubKeyHash()] = signedCommit
 	vote.SharedRandomCommit = commits
-
 	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, vote)
 	if err != nil {
 		return nil, err
 	}
-
 	s.log.Debugf("Ready to send our vote:\n%s", vote)
 	// save our own vote
-	if _, ok := s.votes[epoch]; !ok {
-		s.votes[epoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
+	if _, ok := s.votes[s.votingEpoch]; !ok {
+		s.votes[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
 	}
-	if _, ok := s.votes[epoch][s.identityPubKeyHash()]; !ok {
-		s.votes[epoch][s.identityPubKeyHash()] = vote
+	if _, ok := s.votes[s.votingEpoch][s.identityPubKeyHash()]; !ok {
+		s.votes[s.votingEpoch][s.identityPubKeyHash()] = vote
 	} else {
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
@@ -333,55 +333,65 @@ func (s *state) doParseDocument(b []byte) (*pki.Document, error) {
 
 func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pki.Document) ([]byte, error) {
 	signAt := monotime.Now()
-	sig, err := pki.SignDocument(signer, verifier, d)
+	epoch, _, _ := epochtime.Now()
+	sig, err := pki.SignDocument(signer, verifier, d, epoch)
 	signedAt := monotime.Now()
 	s.log.Debugf("pki.SignDocument took %v", signedAt-signAt)
 	return sig, err
 }
 
 // getCertificate is the same as a vote but it contains all SharedRandomCommits and SharedRandomReveals seen
-func (s *state) getCertificate(epoch uint64) (*pki.Document, error) {
+func (s *state) getCertificate() (*pki.Document, error) {
 	if s.TryLock() {
 		panic("write lock not held in getCertificate(epoch)")
 	}
-
-	mixes, params, err := s.tallyVotes(epoch)
+	mixes, params, err := s.tallyVotes(s.votingEpoch)
 	if err != nil {
-		s.log.Warningf("No document for epoch %v, aborting!, %v", epoch, err)
+		s.log.Warningf("No document for epoch %v, aborting!, %v", s.votingEpoch, err)
 		return nil, err
 	}
 	s.log.Debug("Mixes tallied, now making a document")
 	var zeros [32]byte
 	srv := zeros[:]
-	certificate := s.getDocument(mixes, params, srv)
+	s.log.Debug("yo1")
+	doc := s.getDocument(mixes, params, srv)
+	s.log.Debug("yo2")
 	// add the SharedRandomCommit and SharedRandomReveal that we have seen
-	certificate.SharedRandomCommit = s.commits[epoch]
-	certificate.SharedRandomReveal = s.reveals[epoch]
+	doc.SharedRandomCommit = s.commits[s.votingEpoch]
+	doc.SharedRandomReveal = s.reveals[s.votingEpoch]
 	// if there are no prior SRV values, copy the current srv twice
 	if len(s.priorSRV) == 0 {
 		s.priorSRV = [][]byte{srv, srv}
-	} else if (s.genesisEpoch-epoch)%weekOfEpochs == 0 {
+	} else if (s.genesisEpoch-s.votingEpoch)%weekOfEpochs == 0 {
 		// rotate the weekly epochs if it is time to do so.
 		s.priorSRV = [][]byte{srv, s.priorSRV[0]}
 	}
-	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, certificate)
+	s.log.Debug("yo3")
+	_, err = s.doSignDocument(s.s.identityPrivateKey, s.s.identityPublicKey, doc)
 	if err != nil {
 		return nil, err
 	}
-	err = pki.IsDocumentWellFormed(certificate, s.getVerifiers())
+
+	s.log.Debug("yo4")
+	err = pki.IsDocumentWellFormed(doc, s.getVerifiers(), s.votingEpoch)
 	if err != nil {
+		s.log.Debug("yo5")
 		return nil, err
 	}
+	s.log.Debug("yo6")
+
 	// save our own certificate
-	if _, ok := s.certificates[epoch]; !ok {
-		s.certificates[epoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
+	if _, ok := s.certificates[s.votingEpoch]; !ok {
+		s.certificates[s.votingEpoch] = make(map[[publicKeyHashSize]byte]*pki.Document)
 	}
-	if _, ok := s.certificates[epoch][s.identityPubKeyHash()]; !ok {
-		s.certificates[epoch][s.identityPubKeyHash()] = certificate
+	if _, ok := s.certificates[s.votingEpoch][s.identityPubKeyHash()]; !ok {
+		s.certificates[s.votingEpoch][s.identityPubKeyHash()] = doc
 	} else {
 		return nil, errors.New("failure: vote already present, this should never happen")
 	}
-	return certificate, nil
+
+	s.log.Debug("yo7")
+	return doc, nil
 }
 
 // getConsensus computes the final document using the computed SharedRandomValue
@@ -450,7 +460,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	for pk, signature := range s.signatures[epoch] {
 		s.log.Debugf("Checking signature from %x on our certificates", pk)
 		v := s.reverseHash[pk]
-		err := ourConsensus.AddSignature(v, *signature)
+		err := ourConsensus.AddSignature(v, *signature, epoch)
 		if err != nil {
 			s.log.Errorf("Failed to AddSignature from %x on our consensus: %s", pk, err)
 		}
@@ -460,7 +470,11 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, signedConsensus)
+	mycert, err := cert.Unmarshal(signedConsensus)
+	if err != nil {
+		return nil, err
+	}
+	_, good, bad, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, mycert, epoch)
 	for _, b := range bad {
 		s.log.Errorf("Consensus NOT signed by %x", b.Sum256())
 	}
@@ -595,7 +609,12 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 				break
 			}
 			// verify that the allged commit is signed by pk2
-			commit, err := cert.Verify(v, signedCommit)
+			mycert, err := cert.Unmarshal(signedCommit)
+			if err != nil {
+				s.log.Errorf("failed to unmarshal certificate")
+				return nil, nil
+			}
+			commit, err := cert.Verify(v, mycert, epoch)
 			if err != nil {
 				// pk didn't validate commit in its certificate!
 				badnodes[pk] = true
@@ -612,7 +631,8 @@ func (s *state) verifyCommits(epoch uint64) (map[[publicKeyHashSize]byte][]byte,
 				break
 			}
 			// verify that the alleged reveal is signed by pk2
-			reveal, err := cert.Verify(v, signedReveal)
+			mycert, err = cert.Unmarshal(signedReveal)
+			reveal, err := cert.Verify(v, mycert, epoch)
 			if err != nil {
 				s.log.Errorf("Reveal in certificate from %x has invalid signature on reveal from %x", pk, pk2)
 				badnodes[pk] = true
@@ -1026,7 +1046,7 @@ func (s *state) computeSharedRandom(epoch uint64, commits map[[publicKeyHashSize
 	}
 	sortedreveals := make([]Reveal, 0, len(reveals))
 	for pk, srr := range reveals {
-		digest, err := cert.GetCertified(srr)
+		digest, err := cert.GetPayload(srr)
 		if err != nil {
 			return nil, err
 		}
@@ -1303,7 +1323,14 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 	}
 
 	// ensure certificate.PublicKey verifies the payload (ie Vote has a signature from this peer)
-	_, err := cert.Verify(certificate.PublicKey, certificate.Payload)
+	epoch, _, _ := epochtime.Now()
+	mycert, err := cert.Unmarshal(certificate.Payload)
+	if err != nil {
+		s.log.Error("Cert malformed")
+		resp.ErrorCode = commands.CertMalformed
+		return &resp
+	}
+	_, err = cert.Verify(certificate.PublicKey, mycert, epoch)
 	if err != nil {
 		s.log.Error("Cert from %s failed to verify.", certificate.PublicKey)
 		resp.ErrorCode = commands.CertNotSigned
@@ -1356,9 +1383,16 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 	}
 
 	// verify the signature on the payload
-	certified, err := cert.Verify(reveal.PublicKey, reveal.Payload)
+	epoch, _, _ := epochtime.Now()
+	mycert, err := cert.Unmarshal(reveal.Payload)
 	if err != nil {
-		s.log.Error("Reveal from %s failed to verify.", reveal.PublicKey)
+		s.log.Error("Malformed certificate.")
+		resp.ErrorCode = commands.RevealNotSigned
+		return &resp
+	}
+	certified, err := cert.Verify(reveal.PublicKey, mycert, epoch)
+	if err != nil {
+		s.log.Errorf("Reveal from %s failed to verify.", reveal.PublicKey)
 		resp.ErrorCode = commands.RevealNotSigned
 		return &resp
 	}
@@ -1454,7 +1488,14 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	}
 
 	// ensure vote.PublicKey verifies the payload (ie Vote has a signature from this peer)
-	_, err := cert.Verify(vote.PublicKey, vote.Payload)
+	epoch, _, _ := epochtime.Now()
+	mycert, err := cert.Unmarshal(vote.Payload)
+	if err != nil {
+		s.log.Error("Malformed cert.")
+		resp.ErrorCode = commands.VoteMalformed
+		return &resp
+	}
+	_, err = cert.Verify(vote.PublicKey, mycert, epoch)
 	if err != nil {
 		s.log.Error("Vote from %s failed to verify.", vote.PublicKey)
 		resp.ErrorCode = commands.VoteNotSigned
@@ -1517,7 +1558,14 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 		return &resp
 	}
 
-	verified, err := cert.Verify(sig.PublicKey, sig.Payload)
+	epoch, _, _ := epochtime.Now()
+	mycert, err := cert.Unmarshal(sig.Payload)
+	if err != nil {
+		s.log.Error("Sig malformed")
+		resp.ErrorCode = commands.SigInvalid
+		return &resp
+	}
+	verified, err := cert.Verify(sig.PublicKey, mycert, epoch)
 	if err != nil {
 		s.log.Error("Sig failed signature verification.")
 		resp.ErrorCode = commands.SigNotSigned
@@ -1685,7 +1733,12 @@ func (s *state) restorePersistence() error {
 			for _, epoch := range epochs {
 				epochBytes := epochToBytes(epoch)
 				if rawDoc := docsBkt.Get(epochBytes); rawDoc != nil {
-					_, _, _, err := cert.VerifyThreshold(s.getVerifiers(), s.threshold, rawDoc)
+					mycert, err := cert.Unmarshal(rawDoc)
+					if err != nil {
+						s.log.Errorf("Malformed certificate.")
+						break // or continue?
+					}
+					_, _, _, err = cert.VerifyThreshold(s.getVerifiers(), s.threshold, mycert, epoch)
 					if err != nil {
 						s.log.Errorf("Failed to verify threshold on restored document")
 						break // or continue?
@@ -1865,7 +1918,7 @@ func (s *state) backgroundFetchConsensus(epoch uint64) {
 		go func() {
 			cfg := &client.Config{
 				LinkKey:       s.s.linkKey,
-				LogBackend:    s.s.logBackend,
+				LogBackend:    s.s.logBackend.GetLogWriter("pki", "Info"),
 				Authorities:   s.s.cfg.Authorities,
 				DialContextFn: nil,
 			}
@@ -1930,34 +1983,34 @@ func (s *state) verifyTopology(topology [][]*pki.MixDescriptor) error {
 }
 
 // generate commit and reveal values and save them
-func (s *state) doCommit(epoch uint64) ([]byte, error) {
-	s.log.Debugf("Generating SharedRandom Commit for %d", epoch)
+func (s *state) doCommit(notValidAfterEpoch, currentEpoch uint64) ([]byte, error) {
+	s.log.Debugf("Generating SharedRandom Commit for %d", notValidAfterEpoch)
 	srv := new(pki.SharedRandom)
-	commit, err := srv.Commit(epoch)
+	commit, err := srv.Commit(notValidAfterEpoch)
 	if err != nil {
 		return nil, err
 	}
 	// sign the serialized commit
-	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, epoch)
+	signedCommit, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, commit, notValidAfterEpoch, currentEpoch)
 	if err != nil {
 		return nil, err
 	}
 	// sign the reveal
-	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), epoch)
+	signedReveal, err := cert.Sign(s.s.identityPrivateKey, s.s.identityPublicKey, srv.Reveal(), notValidAfterEpoch, currentEpoch)
 	if err != nil {
 		return nil, err
 	}
 	// save our commit
-	if _, ok := s.commits[epoch]; !ok {
-		s.commits[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+	if _, ok := s.commits[notValidAfterEpoch]; !ok {
+		s.commits[notValidAfterEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
-	s.commits[epoch][s.identityPubKeyHash()] = signedCommit
+	s.commits[notValidAfterEpoch][s.identityPubKeyHash()] = signedCommit
 
 	// save our reveal
-	if _, ok := s.reveals[epoch]; !ok {
-		s.reveals[epoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
+	if _, ok := s.reveals[notValidAfterEpoch]; !ok {
+		s.reveals[notValidAfterEpoch] = make(map[[pki.PublicKeyHashSize]byte][]byte)
 	}
-	s.reveals[epoch][s.identityPubKeyHash()] = signedReveal
+	s.reveals[notValidAfterEpoch][s.identityPubKeyHash()] = signedReveal
 	return signedCommit, nil
 }
 
