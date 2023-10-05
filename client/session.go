@@ -54,6 +54,7 @@ type Session struct {
 	minclient *minclient.Client
 	provider  *pki.MixDescriptor
 	log       *logging.Logger
+	logBackend *log.Backend
 
 	fatalErrCh chan error
 	opCh       chan workerOp
@@ -102,6 +103,7 @@ func NewSession(
 		linkKey:     linkKey,
 		provider:    provider,
 		pkiClient:   pkiClient,
+		logBackend:  logBackend,
 		log:         clientLog,
 		fatalErrCh:  fatalErrCh,
 		eventCh:     channels.NewInfiniteChannel(),
@@ -135,7 +137,7 @@ func NewSession(
 		EnableTimeSync:      false, // Be explicit about it.
 	}
 
-	s.timerQ.Go(s.timerQ.worker)
+	s.timerQ.Start()
 	s.Go(s.eventSinkWorker)
 	s.Go(s.garbageCollectionWorker)
 
@@ -369,6 +371,10 @@ func (s *Session) Push(i Item) error {
 		s.opCh <- opRetransmit{msg: m}
 	}
 	return nil
+}
+
+func (s *Session) GetLogger(component string) *logging.Logger {
+	return s.logBackend.GetLogger(component)
 }
 
 func (s *Session) ForceFetchPKI() {

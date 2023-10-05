@@ -62,7 +62,9 @@ func (s *Server) onConn(conn net.Conn) {
 	defer wireConn.Close()
 
 	// Handshake.
-	conn.SetDeadline(time.Now().Add(initialDeadline))
+	if err = conn.SetDeadline(time.Now().Add(initialDeadline)); err != nil {
+		panic(err)
+	}
 	if err = wireConn.Initialize(conn); err != nil {
 		s.log.Debugf("Peer %v: Failed session handshake: %v", rAddr, err)
 		return
@@ -74,7 +76,9 @@ func (s *Server) onConn(conn net.Conn) {
 		s.log.Debugf("Peer %v: Failed to receive command: %v", rAddr, err)
 		return
 	}
-	conn.SetDeadline(time.Time{})
+	if err = conn.SetDeadline(time.Time{}); err != nil {
+		panic(err)
+	}
 
 	// Parse the command, and craft the response.
 	var resp commands.Command
@@ -90,7 +94,9 @@ func (s *Server) onConn(conn net.Conn) {
 
 	// Send the response, if any.
 	if resp != nil {
-		conn.SetDeadline(time.Now().Add(responseDeadline))
+		if err = conn.SetDeadline(time.Now().Add(responseDeadline)); err != nil {
+			panic(err)
+		}
 		if err = wireConn.SendCommand(resp); err != nil {
 			s.log.Debugf("Peer %v: Failed to send response: %v", rAddr, err)
 		}
