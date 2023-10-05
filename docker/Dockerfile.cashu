@@ -1,7 +1,7 @@
 FROM docker.io/library/python:3.11-bookworm
 RUN /usr/bin/echo -e "deb https://deb.debian.org/debian bookworm main\ndeb https://deb.debian.org/debian bookworm-updates main\ndeb https://deb.debian.org/debian-security bookworm-security main" > /etc/apt/sources.list && cat /etc/apt/sources.list
 RUN apt-get update
-RUN apt-get install -y curl python3-dev autoconf g++ git
+RUN apt-get install -y curl python3-dev autoconf g++ git procps
 RUN apt-get install -y libpq-dev
 
 # Deps for building secp256k1-py
