@@ -46,9 +46,13 @@ DISTROS=alpine debian
 distro=alpine
 net_name=voting_mixnet
 base_port=30000
+bind_addr=127.0.0.1
 docker_compose_yml=$(net_name)/docker-compose.yml
 sh=$(shell if echo ${distro}|grep -q alpine; then echo sh; else echo bash; fi)
 SHELL=/bin/bash
+
+# log_level can be DEBUG, INFO, NOTICE, WARNING, ERROR, CRITICAL
+log_level=DEBUG
 
 docker=$(shell if which podman|grep -q .; then echo podman; else echo docker; fi)
 
@@ -75,12 +79,12 @@ $(net_name):
 $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 	$(docker) run -e --network=host ${docker_args} --rm katzenpost-$(distro)_go_mod \
 		$(sh) -c 'cd genconfig && go build && cd ../docker \
-		&& ../genconfig/genconfig -nv ${auths} -n ${mixes} -p ${providers} \
+		&& ../genconfig/genconfig -a ${bind_addr} -nv ${auths} -n ${mixes} -p ${providers} \
 		-sr ${sr} -mu ${mu} -muMax ${muMax} -lP ${lP} -lPMax ${lPMax} -lL ${lL} \
 		-lLMax ${lLMax} -lD ${lD} -lDMax ${lDMax} -lM ${lM} -lMMax ${lMMax} \
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
-		-UserForwardPayloadLength $(UserForwardPayloadLength)'
+		-UserForwardPayloadLength $(UserForwardPayloadLength) -log_level $(log_level)'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
