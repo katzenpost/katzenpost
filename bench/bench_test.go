@@ -1,19 +1,20 @@
-// objective
-// test performance of minclient and client send/receive methods
-// produce key performance metrics:
-//   graph of bandwidth vs cpu / cores (is it linear?)
-//   graph of client traffic showing behavior at epoch transitions
-//   collect latency / round trip statistics
+// bench_test.go - benchmark tests
+// Copyright (C) 2023  Masala
 //
-// tasks
-//   decide how to collect metrics e.g. prometheus
-//   write an instrumented minclient/client to collect
-//   metrics in the onPacket callback
-//   send a message to a echo service, receive reply SendMessage(echo, providerecho)
-//   send a message to self (provider queue) SendMessage(self, providerself)
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//     e.g. start
-
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// Package bench tests performance of minclient and client send/receive methods
 //go:build docker_test
 // +build docker_test
 
@@ -24,12 +25,10 @@ import (
 	"github.com/katzenpost/katzenpost/client/config"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
-	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 
@@ -130,6 +129,7 @@ type MinclientBench struct {
 	minclient       *minclient.Client
 	provider        *pki.MixDescriptor
 	onDoc           chan struct{}
+	onConn          chan struct{}
 
 	msgs  map[[cConstants.MessageIDLength]byte]struct{}
 	surbs map[[sConstants.SURBIDLength]byte]struct{}
@@ -140,6 +140,7 @@ func (b *MinclientBench) setup() {
 	b.msgs = make(map[[cConstants.MessageIDLength]byte]struct{})
 	b.surbs = make(map[[sConstants.SURBIDLength]byte]struct{})
 	b.onDoc = make(chan struct{}, 0)
+	b.onConn = make(chan struct{}, 0)
 
 	cfg := getClientCfg(clientTestCfg)
 	b.cfg = cfg
@@ -167,18 +168,15 @@ func (b *MinclientBench) setup() {
 	}
 	b.provider = desc
 
-	mynike := ecdh.NewEcdhNike(rand.Reader)
-	nrHops := 5
-	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
 	b.minclientConfig = &minclient.ClientConfig{
-		SphinxGeometry:      geo,
+		SphinxGeometry:      cfg.SphinxGeometry,
 		User:                string(idHash[:]),
 		Provider:            b.provider.Name,
 		ProviderKeyPin:      b.provider.IdentityKey,
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
-		OnConnFn:            b.onConn,
+		OnConnFn:            b.onConnection,
 		OnMessageFn:         b.onMessage,
 		OnACKFn:             b.onAck,
 		OnDocumentFn:        b.onDocument,
@@ -236,10 +234,7 @@ func (b *MinclientBench) sendWorker() {
 		if err != nil {
 			panic(err)
 		}
-		mynike := ecdh.NewEcdhNike(rand.Reader)
-		nrHops := 5
-		geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
-		crap := make([]byte, geo.UserForwardPayloadLength)
+		crap := make([]byte, b.cfg.SphinxGeometry.UserForwardPayloadLength)
 		_, _, err = b.minclient.SendCiphertext(desc.Name, desc.Provider, surbID, crap)
 		if err != nil {
 			panic(err)
@@ -260,14 +255,22 @@ func (b *MinclientBench) Stop() {
 	b.minclient.Wait()
 }
 
-func (b *MinclientBench) onConn(err error) {
-	// TODO: log and track the nubmer of connections made during the run
-}
-
 func (b *MinclientBench) onEmpty() error {
 	minclientEmptyMessageReceived.Inc()
 	b.log.Debugf("OnEmpty")
 	return nil
+}
+
+func (b *MinclientBench) onConnection(err error) {
+	// TODO: keep track of stats / time / etc
+	b.log.Debugf("OnConnection")
+	if err != nil {
+		return
+	}
+	select {
+	case b.onConn <- struct{}{}:
+	default:
+	}
 }
 
 func (b *MinclientBench) onMessage(mesg []byte) error {
@@ -345,10 +348,7 @@ func (b *ClientBench) sendWorker() {
 	if err != nil {
 		panic(err)
 	}
-	mynike := ecdh.NewEcdhNike(rand.Reader)
-	nrHops := 5
-	geo := geo.GeometryFromUserForwardPayloadLength(mynike, 2000, true, nrHops)
-	crap := make([]byte, geo.UserForwardPayloadLength)
+	crap := make([]byte, b.cfg.SphinxGeometry.UserForwardPayloadLength)
 
 	for {
 		// keep sending till we fill the egressQueue, then block onSent
