@@ -17,7 +17,7 @@
 package server
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
@@ -59,14 +59,13 @@ func TestMemSpoolMapBasics(t *testing.T) {
 	assert.NoError(err)
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
 
-	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
-	assert.NoError(err)
+	fileStoreName := filepath.Join(t.TempDir(), "catshadow_test_filestore")
 
 	logBackend, err := log.New("", "debug", false)
 	assert.NoError(err)
 	logger := logBackend.GetLogger("test_logger")
 
-	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
+	spoolMap, err := NewMemSpoolMap(fileStoreName, logger)
 	assert.NoError(err)
 	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
 	assert.NoError(err)
@@ -100,14 +99,12 @@ func TestPersistence(t *testing.T) {
 	privKey, err := eddsa.NewKeypair(rand.NewMath())
 	assert.NoError(err)
 	signature := privKey.Sign(privKey.PublicKey().Bytes())
-	fileStore, err := os.CreateTemp("", "catshadow_test_filestore")
-	assert.NoError(err)
-
+	fileStoreName := filepath.Join(t.TempDir(), "catshadow_test_filestore")
 	logBackend, err := log.New("", "debug", false)
 	assert.NoError(err)
 	logger := logBackend.GetLogger("test_logger")
 
-	spoolMap, err := NewMemSpoolMap(fileStore.Name(), logger)
+	spoolMap, err := NewMemSpoolMap(fileStoreName, logger)
 	assert.NoError(err)
 	spoolID, err := spoolMap.CreateSpool(privKey.PublicKey(), signature)
 	assert.NoError(err)
@@ -130,7 +127,7 @@ func TestPersistence(t *testing.T) {
 		assert.NoError(err)
 		assert.Equal(message, msg)
 		spoolMap.Shutdown()
-		spoolMap, err = NewMemSpoolMap(fileStore.Name(), logger)
+		spoolMap, err = NewMemSpoolMap(fileStoreName, logger)
 		assert.NoError(err)
 	}
 	spoolMap.Shutdown()

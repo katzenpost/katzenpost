@@ -19,7 +19,6 @@ package config
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -77,7 +76,7 @@ Address = "127.0.0.1:6999"
 PublicKeyPem = "id_pub_key.pem"
 `
 
-	config := fmt.Sprintf(basicConfig, os.TempDir())
+	config := fmt.Sprintf(basicConfig, t.TempDir())
 
 	cfg, err := Load([]byte(config))
 	require.NoError(err, "Load() with basic config")

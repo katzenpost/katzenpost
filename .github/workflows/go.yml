@@ -10,19 +10,20 @@ jobs:
         os: [ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
       - name: Install Go
         uses: actions/setup-go@v3
         with:
           go-version: ${{ matrix.go-version }}
-
-      - name: Checkout code
-        uses: actions/checkout@v3
+          cache: true
+          check-latest: true
 
       - name: Generate mixnet configuration
         run: cd genconfig && go build && ./genconfig -v -b /conf -o ../docker/voting_mixnet/
 
       - name: Run all package unit tests
-        run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -timeout 0 ./..."
+        run: sudo sh -c "ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -shuffle on -failfast -coverprofile=coverage.out -race -v -timeout 30m ./..."
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3

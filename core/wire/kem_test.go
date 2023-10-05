@@ -50,7 +50,7 @@ func TestSignatureScheme(t *testing.T) {
 e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 -----END ED25519 SPHINCS+ PUBLIC KEY-----
 `
-	wrongPemPath := filepath.Join(os.TempDir(), "wrongpubkey1.pem")
+	wrongPemPath := filepath.Join(t.TempDir(), "wrongpubkey1.pem")
 	err = os.WriteFile(wrongPemPath, []byte(wrongPemData), 0666)
 	require.NoError(t, err)
 	_, err = DefaultScheme.PublicKeyFromPemFile(wrongPemPath)
@@ -61,7 +61,7 @@ e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 -----END KYBER768-X25519 PUBLIC KEY-----
 `
-	badPemPath := filepath.Join(os.TempDir(), "bad.pem")
+	badPemPath := filepath.Join(t.TempDir(), "bad.pem")
 	err = os.WriteFile(badPemPath, []byte(badPemData), 0666)
 	require.NoError(t, err)
 	_, err = DefaultScheme.PrivateKeyFromPemFile(badPemPath)
@@ -72,13 +72,13 @@ e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 -----END KYBER768-X25519 PUBLIC KEY-----
 `
-	badPemPath = filepath.Join(os.TempDir(), "badpub.pem")
+	badPemPath = filepath.Join(t.TempDir(), "badpub.pem")
 	err = os.WriteFile(badPemPath, []byte(badPemData), 0666)
 	require.NoError(t, err)
 	_, err = DefaultScheme.PublicKeyFromPemFile(badPemPath)
 	require.Error(t, err)
 
-	pubkeypempath := filepath.Join(os.TempDir(), "pubKey1.pem")
+	pubkeypempath := filepath.Join(t.TempDir(), "pubKey1.pem")
 	err = DefaultScheme.PublicKeyToPemFile(pubkeypempath, pubKey1)
 	require.NoError(t, err)
 	pubKey4, err := DefaultScheme.PublicKeyFromPemFile(pubkeypempath)
@@ -91,7 +91,7 @@ e/o5l00d9jhM5Gr51yY5FT8acP8IdPeDS1ccwW1HTpmAWMQOJyZwvo9jwiog9IVq
 	_, err = DefaultScheme.PrivateKeyFromPemFile(wrongPemPath)
 	require.Error(t, err)
 
-	privkeypempath := filepath.Join(os.TempDir(), "privkey2.pem")
+	privkeypempath := filepath.Join(t.TempDir(), "privkey2.pem")
 	err = DefaultScheme.PrivateKeyToPemFile(privkeypempath, privKey1)
 	require.NoError(t, err)
 	privKey2, err := DefaultScheme.PrivateKeyFromPemFile(privkeypempath)

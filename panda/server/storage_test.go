@@ -17,7 +17,7 @@
 package server
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,12 +30,11 @@ func TestStorageBasics(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	storeFile, err := os.CreateTemp("", "pandaStorageBasics")
-	assert.NoError(err)
+	storeFileName := filepath.Join(t.TempDir(), "pandaStorageBasics")
 
 	dwellDuration := time.Second * 30
 	writeBackInterval := time.Second * 30
-	store, err := NewPandaStorage(storeFile.Name(), dwellDuration, writeBackInterval)
+	store, err := NewPandaStorage(storeFileName, dwellDuration, writeBackInterval)
 	assert.NoError(err)
 	tag1 := &[common.PandaTagLength]byte{}
 	posting1 := &PandaPosting{
@@ -96,12 +95,11 @@ func TestStorageLoadTags(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	storeFile, err := os.CreateTemp("", "pandaStorageLoadTags")
-	assert.NoError(err)
+	storeFileName := filepath.Join(t.TempDir(), "pandaStorageLoadTags")
 
 	dwellDuration := time.Hour * 3
 	writeBackInterval := time.Second * 30
-	store, err := NewPandaStorage(storeFile.Name(), dwellDuration, writeBackInterval)
+	store, err := NewPandaStorage(storeFileName, dwellDuration, writeBackInterval)
 	assert.NoError(err)
 	tag1 := &[common.PandaTagLength]byte{}
 	_, err = rand.Reader.Read(tag1[:])
@@ -117,7 +115,7 @@ func TestStorageLoadTags(t *testing.T) {
 
 	dwellDuration = time.Hour * 3
 	writeBackInterval = time.Second * 30
-	store, err = NewPandaStorage(storeFile.Name(), dwellDuration, writeBackInterval)
+	store, err = NewPandaStorage(storeFileName, dwellDuration, writeBackInterval)
 	assert.NoError(err)
 	err = store.Put(tag1, posting1)
 	assert.Error(err)
@@ -127,12 +125,11 @@ func TestStoragePurgeTags(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
-	storeFile, err := os.CreateTemp("", "pandaStoragePurgeTags")
-	assert.NoError(err)
+	storeFileName := filepath.Join(t.TempDir(), "pandaStoragePurgeTags")
 
 	dwellDuration := time.Second * 30
 	writeBackInterval := time.Second * 30
-	store, err := NewPandaStorage(storeFile.Name(), dwellDuration, writeBackInterval)
+	store, err := NewPandaStorage(storeFileName, dwellDuration, writeBackInterval)
 	assert.NoError(err)
 	tag1 := &[common.PandaTagLength]byte{}
 	_, err = rand.Reader.Read(tag1[:])
@@ -160,7 +157,7 @@ func TestStoragePurgeTags(t *testing.T) {
 
 	dwellDuration = time.Second * 30
 	writeBackInterval = time.Second * 30
-	store, err = NewPandaStorage(storeFile.Name(), dwellDuration, writeBackInterval)
+	store, err = NewPandaStorage(storeFileName, dwellDuration, writeBackInterval)
 	assert.NoError(err)
 	err = store.Put(tag1, posting1)
 	assert.Error(err)
@@ -169,7 +166,7 @@ func TestStoragePurgeTags(t *testing.T) {
 
 	dwellDuration = time.Second * 30
 	writeBackInterval = time.Second * 30
-	store, err = NewPandaStorage(storeFile.Name(), dwellDuration, writeBackInterval)
+	store, err = NewPandaStorage(storeFileName, dwellDuration, writeBackInterval)
 	assert.NoError(err)
 	err = store.Put(tag1, posting1)
 	assert.NoError(err)

@@ -18,7 +18,7 @@ package main
 
 import (
 	"fmt"
-	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -37,11 +37,9 @@ func TestHTTPServer2(t *testing.T) {
 	logPath := ""
 	logLevel := "DEBUG"
 	clock := new(katzenpost.Clock)
-	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
-	require.NoError(err)
-	stateFile.Close()
+	stateFileName := filepath.Join(t.TempDir(), "catshadow_test_statefile")
 
-	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
+	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFileName)
 	require.NoError(err)
 
 	epoch, _, _ := clock.Now()
@@ -127,11 +125,9 @@ func TestHTTPServer3(t *testing.T) {
 	logPath := ""
 	logLevel := "DEBUG"
 	clock := new(katzenpost.Clock)
-	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
-	require.NoError(err)
-	stateFile.Close()
+	stateFileName := filepath.Join(t.TempDir(), "catshadow_test_statefile")
 
-	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFile.Name())
+	_, reunionServer, err := runHTTPServer(address, urlPath, logPath, logLevel, clock, stateFileName)
 	require.NoError(err)
 
 	epoch, _, _ := clock.Now()

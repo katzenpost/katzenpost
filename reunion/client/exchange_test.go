@@ -19,6 +19,7 @@ package client
 
 import (
 	"fmt"
+	"path/filepath"
 	"os"
 	"sync"
 	"testing"
@@ -37,20 +38,26 @@ type MockReunionDB struct {
 	log    *logging.Logger
 }
 
-func NewMockReunionDB(mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
-	stateFile, err := os.CreateTemp("", "catshadow_test_statefile")
-	if err != nil {
-		return nil, err
+func NewMockReunionDB(pathPrefix string, mylog *logging.Logger, clock epochtime.EpochClock) (*MockReunionDB, error) {
+	debugs, debuge := os.Stat(pathPrefix)
+	if debuge != nil {
+		panic("mockdir stat failed")
+	} else if !debugs.IsDir() {
+		panic("mockdir is not dir")
 	}
-	stateFile.Close()
+	stateFileName := filepath.Join(pathPrefix, "catshadow_test_statefile")
 
 	logPath := ""
 	logLevel := "DEBUG"
-	s, err := server.NewServer(clock, stateFile.Name(), logPath, logLevel)
+	s, err := server.NewServer(clock, stateFileName, logPath, logLevel)
 	return &MockReunionDB{
 		server: s,
 		log:    mylog,
 	}, err
+}
+
+func (m *MockReunionDB) Halt() {
+	m.server.Halt()
 }
 
 func (m *MockReunionDB) Query(command commands.Command) (commands.Command, error) {
@@ -82,7 +89,7 @@ func TestClientServerBasics1(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -102,12 +109,14 @@ func TestClientServerBasics1(t *testing.T) {
 	go func() {
 		for {
 			update := <-aliceUpdateCh
+			require.NoError(update.Error)
 			if len(update.Result) > 0 {
 				aliceResult = update.Result
-				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
-				wg.Done()
+				t.Log("Alice got result:", update.Result)
+				break
 			}
 		}
+		wg.Done()
 	}()
 
 	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
@@ -124,13 +133,15 @@ func TestClientServerBasics1(t *testing.T) {
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		for {
-			update := <-bobUpdateCh
+			update := <-bobUpdateCh // this never gets shut down
+			require.NoError(update.Error)
 			if len(update.Result) > 0 {
 				bobResult = update.Result
-				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
-				wg.Done()
+				t.Log("Bob got result:", update.Result)
+				break
 			}
 		}
+		wg.Done()
 	}()
 
 	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
@@ -167,13 +178,17 @@ func TestClientServerBasics1(t *testing.T) {
 	err = bobExchange.fetchState()
 	require.NoError(err)
 
-	aliceExchange.processT3Messages()
+	aDidProcess := aliceExchange.processT3Messages()
+	t.Log("alice processT3Messages", aDidProcess)
+	bDidProcess := bobExchange.processT3Messages()
+	t.Log("bob processT3Messages", bDidProcess)
 	aliceExchange.sentUpdateOK()
+	// this blocks for 30min in e.updateChan <- ReunionUpdate
 
-	bobExchange.processT3Messages()
 	bobExchange.sentUpdateOK()
 
 	wg.Wait()
+	reunionDB.Halt()
 	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
@@ -195,7 +210,7 @@ func TestClientServerBasics2(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -254,10 +269,19 @@ func TestClientServerBasics2(t *testing.T) {
 
 	// Run reunion client exchanges.
 
-	go aliceExchange.Run()
-	go bobExchange.Run()
+	wg.Add(1)
+	go func() {
+		aliceExchange.Run()
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		bobExchange.Run()
+		wg.Done()
+	}()
 
 	wg.Wait()
+	reunionDB.Halt()
 	close(shutdownChan)
 
 	require.Equal(aliceResult, bobPayload)
@@ -279,7 +303,7 @@ func NoTestClientServerBasics3(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -296,24 +320,24 @@ func NoTestClientServerBasics3(t *testing.T) {
 	aliceExchangelog := logBackend.GetLogger("alice_exchange")
 
 	var wg sync.WaitGroup
-	wg.Add(2)
+	wg.Add(1)
 	aliceUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		count := 0
 		for {
 			if count == 2 {
-				return
+				break
 			}
 			update := <-aliceUpdateCh
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					aliceResult = update.Result
-					fmt.Printf("\nAlice got result: %s\n\n", update.Result)
-					wg.Done()
+					t.Log("Alice got result:", update.Result)
 					count++
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase, srv, epoch, aliceUpdateCh, shutdownChan)
@@ -326,24 +350,24 @@ func NoTestClientServerBasics3(t *testing.T) {
 	require.NoError(err)
 	bobExchangelog := bobLogBackend.GetLogger("bob_exchange")
 
-	wg.Add(2)
+	wg.Add(1)
 	bobUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		count := 0
 		for {
 			if count == 2 {
-				return
+				break
 			}
 			update := <-bobUpdateCh
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					bobResult = update.Result
-					fmt.Printf("\nBob got result: %s\n\n", update.Result)
-					wg.Done()
+					t.Log("Bob got result:", update.Result)
 					count++
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase, srv, epoch, bobUpdateCh, shutdownChan)
@@ -356,24 +380,24 @@ func NoTestClientServerBasics3(t *testing.T) {
 	require.NoError(err)
 	nsaExchangelog := nsaLogBackend.GetLogger("nsa_exchange")
 
-	wg.Add(2)
+	wg.Add(1)
 	nsaUpdateCh := make(chan ReunionUpdate)
 	go func() {
 		count := 0
 		for {
 			if count == 2 {
-				return
+				break
 			}
 			update := <-nsaUpdateCh
 			if update.Result != nil {
 				if len(update.Result) > 0 {
 					nsaResult = update.Result
-					fmt.Printf("\nNsa got result: %s\n\n", update.Result)
-					wg.Done()
+					t.Log("Nsa got result:", update.Result)
 					count++
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase, srv, epoch, nsaUpdateCh, shutdownChan)
@@ -381,11 +405,22 @@ func NoTestClientServerBasics3(t *testing.T) {
 
 	// Run reunion client exchanges.
 
-	go aliceExchange.Run()
-	go bobExchange.Run()
-	go nsaExchange.Run()
+	wg.Add(3)
+	go func() {
+		aliceExchange.Run()
+		wg.Done()
+	}()
+	go func(){
+		bobExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		nsaExchange.Run()
+		wg.Done()
+	}()
 
 	wg.Wait()
+	reunionDB.Halt()
 	close(shutdownChan)
 
 	//require.Equal(aliceResult, bobPayload)
@@ -410,7 +445,7 @@ func TestClientServerBasics4(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -438,10 +473,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					aliceResult = update.Result
 					fmt.Printf("\nAlice got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	aliceExchange, err := NewExchange(alicePayload, aliceExchangelog, reunionDB, aliceContactID, passphrase1, srv, epoch, aliceUpdateCh, shutdownChan)
@@ -463,10 +499,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					bobResult = update.Result
 					fmt.Printf("\nBob got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	bobExchange, err := NewExchange(bobPayload, bobExchangelog, reunionDB, bobContactID, passphrase1, srv, epoch, bobUpdateCh, shutdownChan)
@@ -488,10 +525,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					nsaResult = update.Result
 					fmt.Printf("\nNSA got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	nsaExchange, err := NewExchange(nsaPayload, nsaExchangelog, reunionDB, nsaContactID, passphrase2, srv, epoch, nsaUpdateCh, shutdownChan)
@@ -513,10 +551,11 @@ func TestClientServerBasics4(t *testing.T) {
 				if len(update.Result) > 0 {
 					gchqResult = update.Result
 					fmt.Printf("\nGCHQ got result: %s\n\n", update.Result)
-					wg.Done()
+					break
 				}
 			}
 		}
+		wg.Done()
 	}()
 
 	gchqExchange, err := NewExchange(gchqPayload, gchqExchangelog, reunionDB, gchqContactID, passphrase2, srv, epoch, gchqUpdateCh, shutdownChan)
@@ -524,13 +563,28 @@ func TestClientServerBasics4(t *testing.T) {
 
 	// Run reunion client exchanges.
 
-	go aliceExchange.Run()
-	go bobExchange.Run()
-	go nsaExchange.Run()
-	go gchqExchange.Run()
+	wg.Add(4)
+	go func() {
+		aliceExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		bobExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		nsaExchange.Run()
+		wg.Done()
+	}()
+	go func() {
+		gchqExchange.Run()
+		wg.Done()
+	}()
 
 	wg.Wait()
+	reunionDB.Halt()
 
+	t.Log("comparing results in TestClientServerBasics4 after wg.Wait()")
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)
 	require.Equal(nsaResult, gchqPayload)
@@ -552,7 +606,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	clock := new(katzenpost.Clock)
 	epoch, _, _ := clock.Now()
 	dblog := logBackend.GetLogger("Reunion_DB")
-	reunionDB, err := NewMockReunionDB(dblog, clock)
+	reunionDB, err := NewMockReunionDB(t.TempDir(), dblog, clock)
 	require.NoError(err)
 
 	srv := []byte{1, 2, 3}
@@ -577,6 +631,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 				aliceResult = update.Result
 				fmt.Printf("\n Alice got result: %s\n\n", update.Result)
 				wg.Done()
+				break
 			}
 		}
 	}()
@@ -600,6 +655,7 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 				bobResult = update.Result
 				fmt.Printf("\n Bob got result: %s\n\n", update.Result)
 				wg.Done()
+				break
 			}
 		}
 	}()
@@ -672,6 +728,8 @@ func TestClientStateSavingAndRecovery(t *testing.T) {
 	bobExchange.processT3Messages()
 
 	wg.Wait()
+	reunionDB.Halt()
+
 
 	require.Equal(aliceResult, bobPayload)
 	require.Equal(bobResult, alicePayload)
