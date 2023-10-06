@@ -804,7 +804,6 @@ services:
   server_cashu_wallet:
     restart: "no"
     image: cashu
-    container_name: server_cashu_wallet
     network_mode: host
     expose:
      - "4449/tcp"
