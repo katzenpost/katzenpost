@@ -142,13 +142,6 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 		}
 	}
 
-	var isOk bool
-	defer func() {
-		if !isOk {
-			conn.Close()
-		}
-	}()
-
 	peerAuthenticator := &authorityAuthenticator{
 		IdentityPublicKey: peer.IdentityPublicKey,
 		LinkPublicKey:     peer.LinkPublicKey,
@@ -184,9 +177,9 @@ func (p *connector) initSession(ctx context.Context, doneCh <-chan interface{}, 
 
 	// Handshake.
 	if err = s.Initialize(conn); err != nil {
+		conn.Close()
 		return nil, err
 	}
-	isOk = true
 
 	return &connection{
 		conn:    conn,
