@@ -48,7 +48,7 @@ var (
 	backOffFloor = 100 * time.Millisecond
 
 	// Cashu configuration
-	cashuWalletUrl = "http://localhost:4448"
+	cashuWalletUrl = "http://127.0.0.1:4448"
 )
 
 func GetPKI(ctx context.Context, cfgFile string) (pki.Client, *pki.Document, error) {
