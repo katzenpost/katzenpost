@@ -1616,7 +1616,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Store the parsed descriptor
 	s.descriptors[epoch][pk] = desc
 
-	s.log.Debugf("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
+	s.log.Noticef("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
 	s.onUpdate()
 	return nil
 }
