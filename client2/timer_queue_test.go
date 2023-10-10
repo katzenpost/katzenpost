@@ -19,6 +19,7 @@ func TestTimerQueue(t *testing.T) {
 	_, err := rand.Reader.Read(surbID[:])
 	require.NoError(t, err)
 	q.Push(uint64(time.Now().UnixNano()), &surbID)
-	q.Halt()
+	go q.Halt()
+	q.Wait()
 	require.Equal(t, 0, q.queue.Len())
 }
