@@ -742,6 +742,9 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
+		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
+			continue // skip self
+		}
 		go func() {
 			s.log.Debug("Sending cert to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
@@ -790,6 +793,9 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
+		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
+			continue // skip self
+		}
 		go func() {
 			s.log.Debug("Sending Vote to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
@@ -828,6 +834,9 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 	}
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
+		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
+			continue // skip self
+		}
 		go func() {
 			s.log.Debug("Sending Reveal to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
@@ -875,6 +884,9 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 
 	for _, peer := range s.s.cfg.Authorities {
 		peer := peer
+		if peer.IdentityPublicKey.Equal(s.s.identityPublicKey) {
+			continue // skip self
+		}
 		go func() {
 			s.log.Debug("Sending Signature to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
