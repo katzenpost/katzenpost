@@ -57,6 +57,7 @@ Identifier = "katzenpost.example.com"
 Addresses = [ "127.0.0.1:29483", "[::1]:29483" ]
 DataDir = "%s"
 IsProvider = true
+MetricsAddress = "127.0.0.1:6543"
 
 [Provider]
   [[Provider.Kaetzchen]]
