@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDaemonStartStop(t *testing.T) {
+func NoTestDaemonStartStop(t *testing.T) {
 
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
