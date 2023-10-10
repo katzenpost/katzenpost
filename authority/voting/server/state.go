@@ -1348,7 +1348,7 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 		resp.ErrorCode = commands.CertAlreadyReceived
 		return &resp
 	}
-	s.log.Debugf("Cert OK from: %x\n%s", certificate.PublicKey.Sum256(), doc)
+	s.log.Noticef("Cert OK from: %x\n%s", certificate.PublicKey.Sum256(), doc)
 	s.certificates[s.votingEpoch][certificate.PublicKey.Sum256()] = doc
 	resp.ErrorCode = commands.CertOk
 	return &resp
@@ -1415,7 +1415,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		resp.ErrorCode = commands.RevealAlreadyReceived
 		return &resp
 	}
-	s.log.Debugf("Reveal OK from: %x\n%x", reveal.PublicKey.Sum256(), certified)
+	s.log.Noticef("Reveal OK from: %x\n%x", reveal.PublicKey.Sum256(), certified)
 	s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()] = reveal.Payload
 	resp.ErrorCode = commands.RevealOk
 	return &resp
@@ -1502,7 +1502,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	s.votes[s.votingEpoch][vote.PublicKey.Sum256()] = doc
 	// save the commit
 	s.commits[s.votingEpoch][vote.PublicKey.Sum256()] = commit
-	s.log.Debugf("Vote OK from: %x\n%s", vote.PublicKey.Sum256(), doc)
+	s.log.Noticef("Vote OK from: %x\n%s", vote.PublicKey.Sum256(), doc)
 	resp.ErrorCode = commands.VoteOk
 	return &resp
 }
@@ -1550,7 +1550,7 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 			s.log.Errorf("Signature failed to deserialize from: %x", sig.PublicKey.Sum256())
 			return &resp
 		}
-		s.log.Debugf("Signature OK from: %x", sig.PublicKey.Sum256())
+		s.log.Noticef("Signature OK from: %x", sig.PublicKey.Sum256())
 		s.signatures[s.votingEpoch][sig.PublicKey.Sum256()] = csig
 		resp.ErrorCode = commands.SigOk
 		return &resp
