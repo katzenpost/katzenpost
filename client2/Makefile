@@ -10,3 +10,7 @@ ldflags="-X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped
 
 test:
 	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags} -run TestDockerClientSendReceive
+
+
+tests:
+	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags}
