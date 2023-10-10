@@ -248,7 +248,7 @@ func (s *state) fsm() <-chan time.Time {
 		sleep = PublishConsensusDeadline - elapsed
 	case stateAcceptSignature:
 		// combine signatures over a certificate and see if we make a threshold consensus
-		s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
+		s.log.Noticef("Combining signatures for epoch %v", s.votingEpoch)
 		_, err := s.getThresholdConsensus(s.votingEpoch)
 		if err == nil {
 			s.state = stateAcceptDescriptor
@@ -746,7 +746,7 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending cert to %s", peer.Identifier)
+			s.log.Noticef("Sending cert to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send cert to %s", peer.Identifier)
@@ -797,7 +797,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending Vote to %s", peer.Identifier)
+			s.log.Noticef("Sending Vote to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send vote to %s", peer.Identifier)
@@ -838,7 +838,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending Reveal to %s", peer.Identifier)
+			s.log.Noticef("Sending Reveal to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send reveal to %s", peer.Identifier)
@@ -888,7 +888,7 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending Signature to %s", peer.Identifier)
+			s.log.Noticef("Sending Signature to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send Signature to %s", peer.Identifier)
