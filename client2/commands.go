@@ -3,6 +3,9 @@ package client2
 import sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 
 type Response struct {
+	// SURBID must be a unique identity for each request.
+	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
+
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
 	AppID uint64 `cbor:id`

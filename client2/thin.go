@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
@@ -14,6 +15,23 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
+// ThinResponse is used to encapsulate a message response
+// that are passed to the client application.
+type ThinResponse struct {
+
+	// SURBID, a unique indentifier for this response,
+	// which should precisely match the application's chosen
+	// SURBID of the sent message.
+	SURBID *[sConstants.SURBIDLength]byte
+
+	// Payload is the decrypted payload plaintext.
+	Payload []byte
+}
+
+// ThinClient is the client that handles communication between the mixnet application
+// and the client daemon. It does not do any encryption or decryption or checking
+// of cryptographic signatures; those responsibilities are left to the client daemon
+// process.
 type ThinClient struct {
 	worker.Worker
 
@@ -22,21 +40,25 @@ type ThinClient struct {
 	destUnixAddr *net.UnixAddr
 
 	pkidoc      *cpki.Document
+	pkidocMutex sync.RWMutex
+
 	isConnected bool
 
-	receivedCh chan []byte
+	receivedCh chan ThinResponse
 }
 
+// NewThinClient creates a new thing client.
 func NewThinClient() *ThinClient {
 	return &ThinClient{
 		log: log.NewWithOptions(os.Stderr, log.Options{
 			Prefix: "thin_client",
 			Level:  log.DebugLevel,
 		}),
-		receivedCh: make(chan []byte),
+		receivedCh: make(chan ThinResponse),
 	}
 }
 
+// Dial dials the client daemon via our agreed upon abstract unix domain socket.
 func (t *ThinClient) Dial() error {
 	t.log.Debug("Dial begin")
 	srcUnixAddr, err := net.ResolveUnixAddr("unixpacket", "@katzenpost_golang_thin_client")
@@ -83,6 +105,7 @@ func (t *ThinClient) worker() {
 	for {
 		select {
 		case <-t.HaltCh():
+			return
 		default:
 		}
 
@@ -102,7 +125,15 @@ func (t *ThinClient) worker() {
 			if message.Payload == nil {
 				t.log.Infof("message.Payload is nil")
 			}
-			t.receivedCh <- message.Payload
+			response := ThinResponse{
+				SURBID:  message.SURBID,
+				Payload: message.Payload,
+			}
+			select {
+			case <-t.HaltCh():
+				return
+			case t.receivedCh <- response:
+			}
 		}
 	}
 }
@@ -114,14 +145,24 @@ func (t *ThinClient) parsePKIDoc(payload []byte) error {
 		t.log.Errorf("failed to unmarshal CBOR PKI doc: %s", err.Error())
 		return err
 	}
+	t.pkidocMutex.Lock()
 	t.pkidoc = doc
+	t.pkidocMutex.Unlock()
 	return nil
 }
 
+// PKIDocument returns the thin client's current reference to the PKI doc
 func (t *ThinClient) PKIDocument() *cpki.Document {
+	t.pkidocMutex.RLock()
+	defer t.pkidocMutex.RUnlock()
 	return t.pkidoc
 }
 
+// SendMessage takes a message payload, a destination node, destination queue ID and a SURB ID and sends a message
+// along with a SURB so that you can later receive the reply along with the SURBID you choose.
+// This method of sending messages should be considered to be asynchronous because it does NOT actually wait until
+// the client daemon sends the message. Nor does it wait for a reply. The only blocking aspect to it's behavior is
+// merely blocking until the client daemon receives our request to send a message.
 func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte, surbID *[sConstants.SURBIDLength]byte) error {
 	if surbID == nil {
 		return errors.New("surbID cannot be nil")
@@ -164,7 +205,15 @@ func (t *ThinClient) readNextMessage() (*Response, error) {
 	return &response, nil
 }
 
-func (t *ThinClient) ReceiveMessage() []byte {
-	msg := <-t.receivedCh
-	return msg
+// ResponseChan returns the channel that receives message responses
+// from the client daemon, of type ThinResponse.
+func (t *ThinClient) ResponseChan() chan ThinResponse {
+	return t.receivedCh
+}
+
+// ReceiveMessage blocks until a message is received.
+// Use ResponseChan instead if you want an async way to receive messages.
+func (t *ThinClient) ReceiveMessage() (*[sConstants.SURBIDLength]byte, []byte) {
+	resp := <-t.receivedCh
+	return resp.SURBID, resp.Payload
 }

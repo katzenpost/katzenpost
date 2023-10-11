@@ -58,12 +58,13 @@ func TestDockerClientSendReceive(t *testing.T) {
 
 	time.Sleep(time.Second * 3)
 
-	message2 := thin.ReceiveMessage()
+	replyID, message2 := thin.ReceiveMessage()
 
 	require.NoError(t, err)
 	require.NotEqual(t, message1, []byte{})
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
+	require.Equal(t, replyID, surbID)
 
 	d.Halt()
 }

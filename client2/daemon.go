@@ -129,6 +129,7 @@ func (d *Daemon) egressWorker() {
 				d.log.Infof("no connection associated with AppID %d", desc.appID)
 			}
 			conn.sendResponse(&Response{
+				SURBID:  reply.surbID,
 				AppID:   desc.appID,
 				Payload: plaintext,
 			})
