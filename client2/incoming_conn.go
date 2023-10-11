@@ -1,7 +1,6 @@
 package client2
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -58,14 +57,10 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 		}, nil
 	}
 
-	if req.IsSendOp {
-		c.log.Info("send operation")
-		req.AppID = c.appID
-		c.listener.ingressCh <- req
-		return nil, nil
-	}
-
-	return nil, errors.New("invalid operation specified")
+	c.log.Info("send operation")
+	req.AppID = c.appID
+	c.listener.ingressCh <- req
+	return nil, nil
 }
 
 func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
