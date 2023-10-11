@@ -10,6 +10,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
 )
 
@@ -121,8 +122,13 @@ func (t *ThinClient) PKIDocument() *cpki.Document {
 	return t.pkidoc
 }
 
-func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte) error {
+func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte, surbID *[sConstants.SURBIDLength]byte) error {
+	if surbID == nil {
+		return errors.New("surbID cannot be nil")
+	}
+
 	req := new(Request)
+	req.SURBID = surbID
 	req.IsSendOp = true
 	req.Payload = payload
 	req.DestinationIdHash = destNode

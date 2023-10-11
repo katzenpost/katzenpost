@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/log"
 
 	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -134,12 +133,6 @@ func (d *Daemon) egressWorker() {
 				Payload: plaintext,
 			})
 		case request := <-d.egressCh:
-			surbID := &[sConstants.SURBIDLength]byte{}
-			_, err := rand.Reader.Read(surbID[:])
-			if err != nil {
-				panic(err)
-			}
-
 			switch {
 			// XXX FIX ME FIXME FIXME
 			case request.IsLoopDecoy == true:
@@ -152,7 +145,7 @@ func (d *Daemon) egressWorker() {
 					panic("sending payload cannot be zero length")
 				}
 
-				surbKey, rtt, err := d.client.SendCiphertext(request.RecipientQueueID, request.DestinationIdHash, surbID, request.Payload)
+				surbKey, rtt, err := d.client.SendCiphertext(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, request.Payload)
 				if err != nil {
 					d.log.Infof("SendCiphertext error: %s", err.Error())
 				}
@@ -161,8 +154,8 @@ func (d *Daemon) egressWorker() {
 				duration := rtt + slop
 				replyArrivalTime := time.Now().Add(duration)
 				d.log.Infof("reply arrival duration: %s", duration)
-				d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
-				d.replies[*surbID] = replyDescriptor{
+				d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
+				d.replies[*request.SURBID] = replyDescriptor{
 					appID:   request.AppID,
 					surbKey: surbKey,
 				}

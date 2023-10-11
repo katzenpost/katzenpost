@@ -1,5 +1,7 @@
 package client2
 
+import sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+
 type Response struct {
 	// AppID must be a unique identity for the client application
 	// that is receiving this Response.
@@ -20,14 +22,14 @@ type Response struct {
 }
 
 type Request struct {
-	// ID must be a unique identity for each request per application.
-	ID uint64 `cbor:id`
+	// SURBID must be a unique identity for each request.
+	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
 
 	// AppID must be a unique identity for the client application
 	// that is sending this Request.
 	AppID uint64 `cbor:app_id`
 
-	// DestinationIdHash is 32 byte hash of the destination's
+	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
 	DestinationIdHash *[32]byte `cbor:destination_id_hash`
 

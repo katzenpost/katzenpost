@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/client2/config"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,7 +47,14 @@ func TestDockerClientSendReceive(t *testing.T) {
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 
 	t.Log("thin client send ping")
-	thin.SendMessage(message1, &nodeIdKey, []byte("testdest"))
+
+	surbID := &[sConstants.SURBIDLength]byte{}
+	_, err = rand.Reader.Read(surbID[:])
+	if err != nil {
+		panic(err)
+
+	}
+	thin.SendMessage(message1, &nodeIdKey, []byte("testdest"), surbID)
 
 	time.Sleep(time.Second * 3)
 
