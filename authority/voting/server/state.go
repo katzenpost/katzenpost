@@ -164,7 +164,7 @@ func (s *state) fsm() <-chan time.Time {
 		s.backgroundFetchConsensus(epoch - 1)
 		s.backgroundFetchConsensus(epoch)
 		if elapsed > MixPublishDeadline {
-			s.log.Debugf("Too late to vote this round, sleeping until %s", nextEpoch)
+			s.log.Errorf("Too late to vote this round, sleeping until %s", nextEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2
 			s.state = stateBootstrap
@@ -175,11 +175,11 @@ func (s *state) fsm() <-chan time.Time {
 			if sleep < 0 {
 				sleep = 0
 			}
-			s.log.Debugf("Bootstrapping for %d", s.votingEpoch)
+			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
 		}
 	case stateAcceptDescriptor:
 		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
-			s.log.Debugf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
+			s.log.Errorf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
 			sleep = nextEpoch
 			s.votingEpoch = epoch + 2 // wait until next epoch begins and bootstrap
 			s.state = stateBootstrap
@@ -220,7 +220,7 @@ func (s *state) fsm() <-chan time.Time {
 	case stateAcceptCert:
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
-			s.log.Debugf("my view of consensus: %x\n%s", s.identityPubKeyHash(), doc)
+			s.log.Noticef("my view of consensus: %x\n%s", s.identityPubKeyHash(), doc)
 			// detach signature and send to authorities
 			sig, ok := doc.Signatures[s.identityPubKeyHash()]
 			if !ok {
@@ -248,7 +248,7 @@ func (s *state) fsm() <-chan time.Time {
 		sleep = PublishConsensusDeadline - elapsed
 	case stateAcceptSignature:
 		// combine signatures over a certificate and see if we make a threshold consensus
-		s.log.Debugf("Combining signatures for epoch %v", s.votingEpoch)
+		s.log.Noticef("Combining signatures for epoch %v", s.votingEpoch)
 		_, err := s.getThresholdConsensus(s.votingEpoch)
 		if err == nil {
 			s.state = stateAcceptDescriptor
@@ -468,7 +468,7 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		s.log.Noticef("Consensus signed by %x", g.Sum256())
 	}
 	if err == nil {
-		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
+		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
@@ -746,7 +746,7 @@ func (s *state) sendCertToAuthorities(cert []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending cert to %s", peer.Identifier)
+			s.log.Noticef("Sending cert to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send cert to %s", peer.Identifier)
@@ -797,7 +797,7 @@ func (s *state) sendVoteToAuthorities(vote []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending Vote to %s", peer.Identifier)
+			s.log.Noticef("Sending Vote to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send vote to %s", peer.Identifier)
@@ -838,7 +838,7 @@ func (s *state) sendRevealToAuthorities(reveal []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending Reveal to %s", peer.Identifier)
+			s.log.Noticef("Sending Reveal to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send reveal to %s", peer.Identifier)
@@ -888,7 +888,7 @@ func (s *state) sendSigToAuthorities(sig []byte, epoch uint64) {
 			continue // skip self
 		}
 		go func() {
-			s.log.Debug("Sending Signature to %s", peer.Identifier)
+			s.log.Noticef("Sending Signature to %s", peer.Identifier)
 			resp, err := s.sendCommandToPeer(peer, cmd)
 			if err != nil {
 				s.log.Error("Failed to send Signature to %s", peer.Identifier)
@@ -1348,7 +1348,7 @@ func (s *state) onCertUpload(certificate *commands.Cert) commands.Command {
 		resp.ErrorCode = commands.CertAlreadyReceived
 		return &resp
 	}
-	s.log.Debugf("Cert OK from: %x\n%s", certificate.PublicKey.Sum256(), doc)
+	s.log.Noticef("Cert OK from: %x\n%s", certificate.PublicKey.Sum256(), doc)
 	s.certificates[s.votingEpoch][certificate.PublicKey.Sum256()] = doc
 	resp.ErrorCode = commands.CertOk
 	return &resp
@@ -1415,7 +1415,7 @@ func (s *state) onRevealUpload(reveal *commands.Reveal) commands.Command {
 		resp.ErrorCode = commands.RevealAlreadyReceived
 		return &resp
 	}
-	s.log.Debugf("Reveal OK from: %x\n%x", reveal.PublicKey.Sum256(), certified)
+	s.log.Noticef("Reveal OK from: %x\n%x", reveal.PublicKey.Sum256(), certified)
 	s.reveals[s.votingEpoch][reveal.PublicKey.Sum256()] = reveal.Payload
 	resp.ErrorCode = commands.RevealOk
 	return &resp
@@ -1502,7 +1502,7 @@ func (s *state) onVoteUpload(vote *commands.Vote) commands.Command {
 	s.votes[s.votingEpoch][vote.PublicKey.Sum256()] = doc
 	// save the commit
 	s.commits[s.votingEpoch][vote.PublicKey.Sum256()] = commit
-	s.log.Debugf("Vote OK from: %x\n%s", vote.PublicKey.Sum256(), doc)
+	s.log.Noticef("Vote OK from: %x\n%s", vote.PublicKey.Sum256(), doc)
 	resp.ErrorCode = commands.VoteOk
 	return &resp
 }
@@ -1550,7 +1550,7 @@ func (s *state) onSigUpload(sig *commands.Sig) commands.Command {
 			s.log.Errorf("Signature failed to deserialize from: %x", sig.PublicKey.Sum256())
 			return &resp
 		}
-		s.log.Debugf("Signature OK from: %x", sig.PublicKey.Sum256())
+		s.log.Noticef("Signature OK from: %x", sig.PublicKey.Sum256())
 		s.signatures[s.votingEpoch][sig.PublicKey.Sum256()] = csig
 		resp.ErrorCode = commands.SigOk
 		return &resp
@@ -1616,7 +1616,7 @@ func (s *state) onDescriptorUpload(rawDesc []byte, desc *pki.MixDescriptor, epoc
 	// Store the parsed descriptor
 	s.descriptors[epoch][pk] = desc
 
-	s.log.Debugf("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
+	s.log.Noticef("Node %x: Successfully submitted descriptor for epoch %v.", pk, epoch)
 	s.onUpdate()
 	return nil
 }
