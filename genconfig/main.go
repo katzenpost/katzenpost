@@ -201,7 +201,20 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
-			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg}
+			katzensocksCfg := &sConfig.CBORPluginKaetzchen{
+				Capability:     "katzensocks",
+				Endpoint:       "+katzensocks",
+				Command:        s.baseDir + "/katzensocks_server" + s.binSuffix,
+				MaxConcurrency: 1,
+				Config: map[string]interface{}{
+					//"max_requests": 42,
+					"log_level": "DEBUG",
+					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
+					"cfg":    s.baseDir + "/client/client.toml",
+				},
+			}
+
+			cfg.Provider.CBORPluginKaetzchen = []*sConfig.CBORPluginKaetzchen{spoolCfg, katzensocksCfg}
 			if !s.hasPanda {
 				pandaCfg := &sConfig.CBORPluginKaetzchen{
 					Capability:     "panda",
