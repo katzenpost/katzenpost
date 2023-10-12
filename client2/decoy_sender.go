@@ -9,12 +9,14 @@ type decoySender struct {
 
 func newLoopDecoy() *Request {
 	return &Request{
+		WithSURB:    true,
 		IsLoopDecoy: true,
 	}
 }
 
 func newDropDecoy() *Request {
 	return &Request{
+		WithSURB:    false,
 		IsDropDecoy: true,
 	}
 }

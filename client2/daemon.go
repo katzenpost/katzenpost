@@ -172,16 +172,24 @@ func (d *Daemon) egressWorker() {
 }
 
 func (d *Daemon) send(request *Request) {
-	surbKey, rtt, err := d.client.SendCiphertext(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, request.Payload)
-	if err != nil {
-		d.log.Infof("SendCiphertext error: %s", err.Error())
-	}
+	surbKey := []byte{}
+	var rtt time.Duration
+	var err error
 
-	slop := time.Second * 20 // XXX perhaps make this configurable if needed
-	duration := rtt + slop
-	replyArrivalTime := time.Now().Add(duration)
-	d.log.Infof("reply arrival duration: %s", duration)
-	d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
+	if request.WithSURB {
+		surbKey, rtt, err = d.client.SendCiphertext(request)
+		if err != nil {
+			d.log.Infof("SendCiphertext error: %s", err.Error())
+		}
+
+		slop := time.Second * 20 // XXX perhaps make this configurable if needed
+		duration := rtt + slop
+		replyArrivalTime := time.Now().Add(duration)
+		d.log.Infof("reply arrival duration: %s", duration)
+		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
+	} else {
+
+	}
 
 	if request.IsSendOp {
 		d.replies[*request.SURBID] = replyDescriptor{
@@ -236,7 +244,6 @@ func FindServices(capability string, doc *cpki.Document) []ServiceDescriptor {
 	return services
 }
 
-// XXX FIX ME FIXME FIXME
 func (d *Daemon) sendLoopDecoy(request *Request) {
 	// XXX FIXME consume statistics on our echo decoys for n-1 detection
 
@@ -264,7 +271,22 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	d.send(request)
 }
 
-// XXX FIX ME FIXME FIXME
 func (d *Daemon) sendDropDecoy() {
+	doc := d.client.CurrentDocument()
+	echoServices := FindServices(EchoService, doc)
+	if len(echoServices) == 0 {
+		panic("wtf no echo services")
+	}
+	echoService := &echoServices[mrand.Intn(len(echoServices))]
 
+	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
+	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
+
+	request := &Request{}
+	request.WithSURB = false
+	request.Payload = payload
+	request.DestinationIdHash = &serviceIdHash
+	request.RecipientQueueID = echoService.RecipientQueueID
+
+	d.send(request)
 }

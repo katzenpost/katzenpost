@@ -158,6 +158,32 @@ func (t *ThinClient) PKIDocument() *cpki.Document {
 	return t.pkidoc
 }
 
+// SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
+// No reply will be possible.
+func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte, destQueue []byte) error {
+	req := new(Request)
+	req.WithSURB = false
+	req.IsSendOp = true
+	req.Payload = payload
+	req.DestinationIdHash = destNode
+	req.RecipientQueueID = destQueue
+	req.IsSendOp = true
+
+	blob, err := cbor.Marshal(req)
+	if err != nil {
+		return err
+	}
+	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
+	if err != nil {
+		return err
+	}
+	if count != len(blob) {
+		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
+	}
+
+	return nil
+}
+
 // SendMessage takes a message payload, a destination node, destination queue ID and a SURB ID and sends a message
 // along with a SURB so that you can later receive the reply along with the SURBID you choose.
 // This method of sending messages should be considered to be asynchronous because it does NOT actually wait until
@@ -169,6 +195,7 @@ func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue [
 	}
 
 	req := new(Request)
+	req.WithSURB = true
 	req.SURBID = surbID
 	req.IsSendOp = true
 	req.Payload = payload

@@ -25,7 +25,12 @@ type Response struct {
 }
 
 type Request struct {
+	// WithSURB indicates if the message should be sent with a SURB
+	// in the Sphinx payload.
+	WithSURB bool
+
 	// SURBID must be a unique identity for each request.
+	// This field should be nil if WithSURB is false.
 	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
 
 	// AppID must be a unique identity for the client application
