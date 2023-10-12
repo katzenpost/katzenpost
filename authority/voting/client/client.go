@@ -268,7 +268,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 			return nil, err
 		}
 		defer conn.conn.Close() // close connection after use
-		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
+		p.log.Noticef("sending getConsensus to %s", auth.Identifier)
 		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
 		if err != nil {
@@ -343,7 +343,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
-	c.log.Debugf("Get(ctx, %d)", epoch)
+	c.log.Noticef("Get(ctx, %d)", epoch)
 
 	// Generate a random keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
@@ -408,7 +408,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
-	c.log.Debugf("voting/Client: Get() document:\n%s", doc)
+	c.log.Noticef("voting/Client: Get() document:\n%s", doc)
 	return doc, r.Payload, nil
 }
 

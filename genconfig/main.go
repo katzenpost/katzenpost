@@ -17,7 +17,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -317,12 +316,9 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
-		h := cfgIdKey(configs[i], s.outDir).Sum256()
 		peers := []*vConfig.Authority{}
-		for id, peer := range s.authorities {
-			if !bytes.Equal(id[:], h[:]) {
-				peers = append(peers, peer)
-			}
+		for _, peer := range s.authorities {
+			peers = append(peers, peer)
 		}
 		sort.Sort(AuthById(peers))
 		configs[i].Authorities = peers
