@@ -58,6 +58,14 @@ func NewThinClient() *ThinClient {
 	}
 }
 
+// Close halts the thin client worker thread and closes the socket
+// connection with the client daemon.
+func (t *ThinClient) Close() error {
+	err := t.unixConn.Close()
+	t.Halt()
+	return err
+}
+
 // Dial dials the client daemon via our agreed upon abstract unix domain socket.
 func (t *ThinClient) Dial() error {
 	t.log.Debug("Dial begin")
@@ -111,7 +119,10 @@ func (t *ThinClient) worker() {
 
 		message, err := t.readNextMessage()
 		if err != nil {
-			t.log.Infof("thin client ReceiveMessage failed: %s", err.Error())
+			t.log.Infof("thin client ReceiveMessage failed: %v", err)
+		}
+		if message == nil {
+			return
 		}
 
 		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE")
@@ -224,6 +235,7 @@ func (t *ThinClient) readNextMessage() (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	response := Response{}
 	err = cbor.Unmarshal(buff[:msgLen], &response)
 	if err != nil {

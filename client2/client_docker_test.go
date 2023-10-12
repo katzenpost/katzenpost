@@ -1,14 +1,17 @@
+//go:build docker_test
+
 package client2
 
 import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDockerClientSendReceive(t *testing.T) {
@@ -52,7 +55,6 @@ func TestDockerClientSendReceive(t *testing.T) {
 	_, err = rand.Reader.Read(surbID[:])
 	if err != nil {
 		panic(err)
-
 	}
 	thin.SendMessage(message1, &nodeIdKey, []byte("testdest"), surbID)
 
