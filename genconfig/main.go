@@ -781,6 +781,7 @@ services:
      - MINT_PRIVATE_KEY=TEST_PRIVATE_KEY
      - MINT_LISTEN_HOST=0.0.0.0
      - MINT_LISTEN_PORT=3338
+     - TOR=False
     command: ["poetry", "run", "mint"]
 `)
 
@@ -797,6 +798,7 @@ services:
       - MINT_URL=http://127.0.0.1:3338
       - API_HOST=127.0.0.1
       - API_PORT=4448
+      - TOR=False
     command: ["poetry", "run", "cashu", "-d"]
 `)
 
@@ -814,6 +816,7 @@ services:
       - MINT_URL=http://127.0.0.1:3338
       - API_HOST=127.0.0.1
       - API_PORT=4449
+      - TOR=False
     command: ["poetry", "run", "cashu", "-d"]
 `)
 	return nil
