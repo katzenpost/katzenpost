@@ -23,7 +23,7 @@ jobs:
         run: cd genconfig && go build && ./genconfig -v -onlyTransports ${{ matrix.transport }} -b /conf -o ../docker/voting_mixnet/
 
       - name: Install build dependencies
-        run: sudo apt install --no-install-recommends -y build-essential libgles2 libgles2-mesa-dev libglib2.0-dev libxkbcommon-dev libxkbcommon-x11-dev libglu1-mesa-dev libxcursor-dev libwayland-dev libx11-xcb-dev libvulkan-dev gcc-mingw-w64-x86-64
+        run: sudo apt update && sudo apt install --no-install-recommends -y build-essential libgles2 libgles2-mesa-dev libglib2.0-dev libxkbcommon-dev libxkbcommon-x11-dev libglu1-mesa-dev libxcursor-dev libwayland-dev libx11-xcb-dev libvulkan-dev gcc-mingw-w64-x86-64
 
       - name: Run authority unit tests
         run: sudo sh -c "cd authority && ulimit -l 64435 && CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f GORACE=history_size=7 go test -coverprofile=coverage.out -race -v -failfast -timeout 30m ./..."
