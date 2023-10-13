@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package commands
+package commands_test
 
 import (
 	"testing"
@@ -27,6 +27,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
 func TestNoOp(t *testing.T) {
@@ -39,13 +40,13 @@ func TestNoOp(t *testing.T) {
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
-	cmd := &NoOp{}
+	cmd := &commands.NoOp{}
 	b := cmd.ToBytes()
-	require.Equal(cmdOverhead, len(b), "NoOp: ToBytes() length")
+	require.Equal(commands.CmdOverhead, len(b), "NoOp: ToBytes() length")
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "NoOp: FromBytes() failed")
@@ -56,9 +57,9 @@ func TestDisconnect(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &Disconnect{}
+	cmd := &commands.Disconnect{}
 	b := cmd.ToBytes()
-	require.Equal(cmdOverhead, len(b), "Disconnect: ToBytes() length")
+	require.Equal(commands.CmdOverhead, len(b), "Disconnect: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -66,8 +67,8 @@ func TestDisconnect(t *testing.T) {
 
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
@@ -81,24 +82,24 @@ func TestSendPacket(t *testing.T) {
 
 	require := require.New(t)
 
-	cmd := &SendPacket{SphinxPacket: []byte(payload)}
+	cmd := &commands.SendPacket{SphinxPacket: []byte(payload)}
 	b := cmd.ToBytes()
-	require.Equal(cmdOverhead+len(payload), len(b), "SendPacket: ToBytes() length")
+	require.Equal(commands.CmdOverhead+len(payload), len(b), "SendPacket: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "SendPacket: FromBytes() failed")
 	require.IsType(cmd, c, "SendPacket: FromBytes() invalid type")
 
-	cmd = c.(*SendPacket)
+	cmd = c.(*commands.SendPacket)
 	require.Equal([]byte(payload), cmd.SphinxPacket, "SendPacket: FromBytes() SphinxPacket")
 }
 
@@ -108,24 +109,24 @@ func TestRetrieveMessage(t *testing.T) {
 
 	require := require.New(t)
 
-	cmd := &RetrieveMessage{Sequence: seq}
+	cmd := &commands.RetrieveMessage{Sequence: seq}
 	b := cmd.ToBytes()
-	require.Equal(cmdOverhead+4, len(b), "RetrieveMessage: ToBytes() length")
+	require.Equal(commands.CmdOverhead+4, len(b), "RetrieveMessage: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "RetrieveMessage: FromBytes() failed")
 	require.IsType(cmd, c, "RetrieveMessage: FromBytes() invalid type")
 
-	cmd = c.(*RetrieveMessage)
+	cmd = c.(*commands.RetrieveMessage)
 	require.Equal(uint32(seq), cmd.Sequence, "RetrieveMessage: FromBytes() Sequence")
 }
 
@@ -136,11 +137,11 @@ func TestMessage(t *testing.T) {
 	forwardPayloadLength := 2000
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
-	cmds := &Commands{
-		geo: geo,
+	cmds := &commands.Commands{
+		Geo: geo,
 	}
 
-	var expectedLen = cmdOverhead + cmds.messageEmptyLength()
+	var expectedLen = commands.CmdOverhead + cmds.MessageEmptyLength()
 	const (
 		hint = 0x17
 		seq  = 0xa5a5a5a5
@@ -149,12 +150,12 @@ func TestMessage(t *testing.T) {
 	require := require.New(t)
 
 	// Generate the payload.
-	payload := make([]byte, cmds.geo.ForwardPayloadLength)
+	payload := make([]byte, cmds.Geo.ForwardPayloadLength)
 	_, err := rand.Reader.Read(payload)
 	require.NoError(err, "Message: failed to generate payload")
 
 	// MessageEmpty
-	cmdEmpty := &MessageEmpty{
+	cmdEmpty := &commands.MessageEmpty{
 		Cmds:     cmds,
 		Sequence: seq,
 	}
@@ -165,12 +166,12 @@ func TestMessage(t *testing.T) {
 	require.NoError(err, "MessageEmpty: FromBytes() failed")
 	require.IsType(cmdEmpty, c, "MessageEmpty: FromBytes() invalid type")
 
-	cmdEmpty = c.(*MessageEmpty)
+	cmdEmpty = c.(*commands.MessageEmpty)
 	require.Equal(uint32(seq), cmdEmpty.Sequence, "MessageEmpty: FromBytes() Sequence")
 
 	// Message
-	msgPayload := payload[:cmds.geo.UserForwardPayloadLength]
-	cmdMessage := &Message{
+	msgPayload := payload[:cmds.Geo.UserForwardPayloadLength]
+	cmdMessage := &commands.Message{
 		Geo:  geo,
 		Cmds: cmds,
 
@@ -185,20 +186,20 @@ func TestMessage(t *testing.T) {
 	require.NoError(err, "Message: FromBytes() failed")
 	require.IsType(cmdMessage, c, "Message: FromBytes() invalid type")
 
-	cmdMessage = c.(*Message)
+	cmdMessage = c.(*commands.Message)
 	require.Equal(uint8(hint), cmdMessage.QueueSizeHint, "Message: FromBytes() QueueSizeHint")
 	require.Equal(uint32(seq), cmdMessage.Sequence, "Message: FromBytes() Sequence")
 	require.Equal(msgPayload, cmdMessage.Payload, "Message: FromBytes() Payload")
 
 	// MessageACK
-	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
+	ackPayload := make([]byte, cmds.Geo.PayloadTagLength+cmds.Geo.ForwardPayloadLength)
 	_, err = rand.Reader.Read(ackPayload)
 	require.NoError(err, "Message: failed to generate ACK payload")
 	id := make([]byte, constants.SURBIDLength)
 	_, err = rand.Reader.Read(id[:])
 	require.NoError(err, "MessageACK: Failed to generate ID")
 
-	cmdMessageACK := &MessageACK{
+	cmdMessageACK := &commands.MessageACK{
 		Geo: geo,
 
 		QueueSizeHint: hint,
@@ -213,7 +214,7 @@ func TestMessage(t *testing.T) {
 	require.NoError(err, "MessageACK: FromBytes() failed")
 	require.IsType(cmdMessageACK, c, "MessageACK: FromBytes() invalid type")
 
-	cmdMessageACK = c.(*MessageACK)
+	cmdMessageACK = c.(*commands.MessageACK)
 	require.Equal(uint8(hint), cmdMessageACK.QueueSizeHint, "MessageACK: FromBytes() QueueSizeHint")
 	require.Equal(uint32(seq), cmdMessageACK.Sequence, "MessageACK: FromBytes() Sequence")
 	require.Equal(id[:], cmdMessageACK.ID[:], "MessageACK: FromBytes() ID")
@@ -224,19 +225,19 @@ func TestGetConsensus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &GetConsensus{
+	cmd := &commands.GetConsensus{
 		Epoch: 123,
 	}
 	b := cmd.ToBytes()
-	require.Equal(getConsensusLength+cmdOverhead, len(b), "GetConsensus: ToBytes() length")
+	require.Equal(commands.GetConsensusLength+commands.CmdOverhead, len(b), "GetConsensus: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
@@ -248,37 +249,37 @@ func TestConsensus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &Consensus{
+	cmd := &commands.Consensus{
 		Payload:   []byte("TANSTAFL: There's ain't no such thing as a free lunch."),
-		ErrorCode: ConsensusOk,
+		ErrorCode: commands.ConsensusOk,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, consensusBaseLength+len(cmd.Payload)+cmdOverhead, "GetConsensus: ToBytes() length")
+	require.Len(b, commands.ConsensusBaseLength+len(cmd.Payload)+commands.CmdOverhead, "GetConsensus: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Consensus: FromBytes() failed")
 	require.IsType(cmd, c, "Consensus: FromBytes() invalid type")
-	d := c.(*Consensus)
+	d := c.(*commands.Consensus)
 	require.Equal(d.Payload, cmd.Payload)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 
 	cmd.Payload = nil
-	cmd.ErrorCode = ConsensusNotFound // Just set it to something non 0.
+	cmd.ErrorCode = commands.ConsensusNotFound // Just set it to something non 0.
 	b = cmd.ToBytes()
-	require.Len(b, consensusBaseLength+len(cmd.Payload)+cmdOverhead, "GetConsensus: ToBytes() length")
+	require.Len(b, commands.ConsensusBaseLength+len(cmd.Payload)+commands.CmdOverhead, "GetConsensus: ToBytes() length")
 	c, err = cmds.FromBytes(b)
 	require.NoError(err, "Consensus: FromBytes() failed")
 	require.IsType(cmd, c, "Consensus: FromBytes() invalid type")
-	d = c.(*Consensus)
+	d = c.(*commands.Consensus)
 	require.Equal(d.Payload, cmd.Payload)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
@@ -287,12 +288,12 @@ func TestPostDescriptor(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &PostDescriptor{
+	cmd := &commands.PostDescriptor{
 		Epoch:   0xdeadbabecafebeef,
 		Payload: []byte("This is my descriptor."),
 	}
 	b := cmd.ToBytes()
-	require.Equal(postDescriptorLength+len(cmd.Payload)+cmdOverhead, len(b), "PostDescriptor: ToBytes() length")
+	require.Equal(commands.PostDescriptorLength+len(cmd.Payload)+commands.CmdOverhead, len(b), "PostDescriptor: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -301,14 +302,14 @@ func TestPostDescriptor(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "PostDescriptor: FromBytes() failed")
 	require.IsType(cmd, c, "PostDescriptor: FromBytes() invalid type")
-	d := c.(*PostDescriptor)
+	d := c.(*commands.PostDescriptor)
 	require.Equal(d.Epoch, cmd.Epoch)
 	require.Equal(d.Payload, cmd.Payload)
 }
@@ -317,11 +318,11 @@ func TestPostDescriptorStatus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &PostDescriptorStatus{
+	cmd := &commands.PostDescriptorStatus{
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, postDescriptorStatusLength+cmdOverhead, "PostDescriptorStatus: ToBytes() length")
+	require.Len(b, commands.PostDescriptorStatusLength+commands.CmdOverhead, "PostDescriptorStatus: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -330,14 +331,14 @@ func TestPostDescriptorStatus(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "PostDescriptorStatus: FromBytes() failed")
 	require.IsType(cmd, c, "PostDescriptorStatus: FromBytes() invalid type")
-	d := c.(*PostDescriptorStatus)
+	d := c.(*commands.PostDescriptorStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
 
@@ -346,12 +347,12 @@ func TestGetVote(t *testing.T) {
 	require := require.New(t)
 	_, alicePub := cert.Scheme.NewKeypair()
 
-	cmd := &GetVote{
+	cmd := &commands.GetVote{
 		Epoch:     123,
 		PublicKey: alicePub,
 	}
 	b := cmd.ToBytes()
-	require.Equal(voteOverhead+cmdOverhead, len(b), "GetVote: ToBytes() length")
+	require.Equal(commands.VoteOverhead+commands.CmdOverhead, len(b), "GetVote: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -360,8 +361,8 @@ func TestGetVote(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
@@ -374,13 +375,13 @@ func TestVote(t *testing.T) {
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
-	cmd := &Vote{
+	cmd := &commands.Vote{
 		Epoch:     3141,
 		PublicKey: alicePub,
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+voteOverhead+len(cmd.Payload), "Vote: ToBytes() length")
+	require.Len(b, commands.CmdOverhead+commands.VoteOverhead+len(cmd.Payload), "Vote: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -389,14 +390,14 @@ func TestVote(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Vote: FromBytes() failed")
 	require.IsType(cmd, c, "Vote: FromBytes() invalid type")
-	d := c.(*Vote)
+	d := c.(*commands.Vote)
 	require.Equal(d.Epoch, cmd.Epoch)
 	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
 	require.Equal(d.Payload, cmd.Payload)
@@ -406,11 +407,11 @@ func TestVoteStatus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &VoteStatus{
+	cmd := &commands.VoteStatus{
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, voteStatusLength+cmdOverhead, "VoteStatus: ToBytes() length")
+	require.Len(b, commands.VoteStatusLength+commands.CmdOverhead, "VoteStatus: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -419,14 +420,14 @@ func TestVoteStatus(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "VoteStatus: FromBytes() failed")
 	require.IsType(cmd, c, "VoteStatus: FromBytes() invalid type")
-	d := c.(*VoteStatus)
+	d := c.(*commands.VoteStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
 
@@ -439,13 +440,13 @@ func TestReveal(t *testing.T) {
 	for i := 0; i < 32; i++ {
 		digest[i] = uint8(i)
 	}
-	cmd := &Reveal{
+	cmd := &commands.Reveal{
 		Epoch:     3141,
 		PublicKey: alicePub,
 		Payload:   digest,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+revealOverhead+32, "Reveal: ToBytes() length")
+	require.Len(b, commands.CmdOverhead+commands.RevealOverhead+32, "Reveal: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -454,14 +455,14 @@ func TestReveal(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Reveal: FromBytes() failed")
 	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
-	d := c.(*Reveal)
+	d := c.(*commands.Reveal)
 	require.Equal(d.Epoch, cmd.Epoch)
 	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
 	require.Equal(d.Payload, cmd.Payload)
@@ -471,25 +472,25 @@ func TestRevealtatus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &RevealStatus{
+	cmd := &commands.RevealStatus{
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, revealStatusLength+cmdOverhead, "RevealStatus: ToBytes() length")
+	require.Len(b, commands.RevealStatusLength+commands.CmdOverhead, "RevealStatus: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "RevealStatus: FromBytes() failed")
 	require.IsType(cmd, c, "RevealStatus: FromBytes() invalid type")
-	d := c.(*RevealStatus)
+	d := c.(*commands.RevealStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
 
@@ -498,13 +499,13 @@ func TestCert(t *testing.T) {
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
-	cmd := &Cert{
+	cmd := &commands.Cert{
 		Epoch:     3141,
 		PublicKey: alicePub,
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+certOverhead+len(cmd.Payload), "Cert: ToBytes() length")
+	require.Len(b, commands.CmdOverhead+commands.CertOverhead+len(cmd.Payload), "Cert: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -513,14 +514,14 @@ func TestCert(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Reveal: FromBytes() failed")
 	require.IsType(cmd, c, "Reveal: FromBytes() invalid type")
-	d := c.(*Cert)
+	d := c.(*commands.Cert)
 	require.Equal(d.Epoch, cmd.Epoch)
 	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
 	require.Equal(d.Payload, cmd.Payload)
@@ -530,25 +531,25 @@ func TestCertStatus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &CertStatus{
+	cmd := &commands.CertStatus{
 		ErrorCode: 14,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, certStatusLength+cmdOverhead, "CertStatus: ToBytes() length")
+	require.Len(b, commands.CertStatusLength+commands.CmdOverhead, "CertStatus: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "CertStatus: FromBytes() failed")
 	require.IsType(cmd, c, "CertStatus: FromBytes() invalid type")
-	d := c.(*CertStatus)
+	d := c.(*commands.CertStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }
 
@@ -557,13 +558,13 @@ func TestSig(t *testing.T) {
 	require := require.New(t)
 
 	_, alicePub := cert.Scheme.NewKeypair()
-	cmd := &Sig{
+	cmd := &commands.Sig{
 		Epoch:     3141,
 		PublicKey: alicePub,
 		Payload:   []byte{1, 2, 3, 4},
 	}
 	b := cmd.ToBytes()
-	require.Len(b, cmdOverhead+sigOverhead+len(cmd.Payload), "Sig: ToBytes() length")
+	require.Len(b, commands.CmdOverhead+commands.SigOverhead+len(cmd.Payload), "Sig: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
@@ -572,14 +573,14 @@ func TestSig(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "Sig: FromBytes() failed")
 	require.IsType(cmd, c, "Sig: FromBytes() invalid type")
-	d := c.(*Sig)
+	d := c.(*commands.Sig)
 	require.Equal(d.Epoch, cmd.Epoch)
 	require.Equal(d.PublicKey.Bytes(), cmd.PublicKey.Bytes())
 	require.Equal(d.Payload, cmd.Payload)
@@ -589,24 +590,24 @@ func TestSigStatus(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 
-	cmd := &SigStatus{
+	cmd := &commands.SigStatus{
 		ErrorCode: 23,
 	}
 	b := cmd.ToBytes()
-	require.Len(b, revealStatusLength+cmdOverhead, "SigStatus: ToBytes() length")
+	require.Len(b, commands.RevealStatusLength+commands.CmdOverhead, "SigStatus: ToBytes() length")
 
 	nike := ecdh.NewEcdhNike(rand.Reader)
 	forwardPayloadLength := 123
 	nrHops := 5
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, forwardPayloadLength, true, nrHops)
 	s := sphinx.NewSphinx(geo)
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	c, err := cmds.FromBytes(b)
 	require.NoError(err, "SigStatus: FromBytes() failed")
 	require.IsType(cmd, c, "SigStatus: FromBytes() invalid type")
-	d := c.(*SigStatus)
+	d := c.(*commands.SigStatus)
 	require.Equal(d.ErrorCode, cmd.ErrorCode)
 }

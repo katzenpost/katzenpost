@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-package commands
+package vector_test
 
 import (
 	"crypto/rand"
@@ -26,6 +26,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -60,13 +61,13 @@ type commandsTest struct {
 func NoTestBuildCommandVectors(t *testing.T) {
 	assert := assert.New(t)
 
-	noOp := NoOp{}
-	disconnect := &Disconnect{}
+	noOp := commands.NoOp{}
+	disconnect := &commands.Disconnect{}
 
-	sendPacket := &SendPacket{SphinxPacket: []byte(payload)}
+	sendPacket := &commands.SendPacket{SphinxPacket: []byte(payload)}
 
 	var retrieveMessageSeq uint32 = 12345
-	retrieveMessage := &RetrieveMessage{Sequence: retrieveMessageSeq}
+	retrieveMessage := &commands.RetrieveMessage{Sequence: retrieveMessageSeq}
 
 	const (
 		hint = 0x17
@@ -78,21 +79,21 @@ func NoTestBuildCommandVectors(t *testing.T) {
 
 	//geo := geo.GeometryFromForwardPayloadLength(nike, forwardPayloadLength, nrHops)
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
-	cmds := &Commands{
-		geo: geo,
+	cmds := &commands.Commands{
+		Geo: geo,
 	}
 
 	var emptyMsgSeq uint32 = 9876
-	messageEmpty := &MessageEmpty{
+	messageEmpty := &commands.MessageEmpty{
 		Cmds:     cmds,
 		Sequence: emptyMsgSeq,
 	}
 
-	msgPayload := make([]byte, cmds.geo.ForwardPayloadLength)
+	msgPayload := make([]byte, cmds.Geo.ForwardPayloadLength)
 	_, err := rand.Read(msgPayload)
 	assert.NoError(err)
 	var msgSeq uint32 = 9876
-	message := &Message{
+	message := &commands.Message{
 		Cmds: cmds,
 		Geo:  geo,
 
@@ -101,10 +102,10 @@ func NoTestBuildCommandVectors(t *testing.T) {
 		Payload:       msgPayload[:geo.UserForwardPayloadLength],
 	}
 
-	ackPayload := make([]byte, cmds.geo.PayloadTagLength+cmds.geo.ForwardPayloadLength)
+	ackPayload := make([]byte, cmds.Geo.PayloadTagLength+cmds.Geo.ForwardPayloadLength)
 	_, err = rand.Read(ackPayload)
 	assert.NoError(err)
-	cmdMessageACK := &MessageACK{
+	cmdMessageACK := &commands.MessageACK{
 		Geo:           geo,
 		QueueSizeHint: hint,
 		Sequence:      msgSeq,
@@ -112,13 +113,13 @@ func NoTestBuildCommandVectors(t *testing.T) {
 	}
 
 	getConsensusEpoch := uint64(123)
-	getConsensus := &GetConsensus{
+	getConsensus := &commands.GetConsensus{
 		Epoch: getConsensusEpoch,
 	}
 
-	consensus := &Consensus{
+	consensus := &commands.Consensus{
 		Payload:   []byte("TANSTAFL: There's ain't no such thing as a free lunch."),
-		ErrorCode: ConsensusOk,
+		ErrorCode: commands.ConsensusOk,
 	}
 
 	cmdsTest := commandsTest{
@@ -132,7 +133,7 @@ func NoTestBuildCommandVectors(t *testing.T) {
 		MessageEmptySeq:    emptyMsgSeq,
 		MessageHint:        hint,
 		MessageSeq:         msgSeq,
-		MessagePayload:     hex.EncodeToString(msgPayload[:cmds.geo.UserForwardPayloadLength]),
+		MessagePayload:     hex.EncodeToString(msgPayload[:cmds.Geo.UserForwardPayloadLength]),
 		Message:            hex.EncodeToString(message.ToBytes()),
 		MessageAck:         hex.EncodeToString(cmdMessageACK.ToBytes()),
 		MessageAckHint:     hint,
@@ -167,33 +168,33 @@ func TestCommandVectors(t *testing.T) {
 	geo := geo.GeometryFromUserForwardPayloadLength(nike, len(payload), true, nrHops)
 	s := sphinx.NewSphinx(geo)
 
-	cmds := &Commands{
-		geo: s.Geometry(),
+	cmds := &commands.Commands{
+		Geo: s.Geometry(),
 	}
 
 	noOpBytes, err := hex.DecodeString(cmdsTest.NoOp)
 	assert.NoError(err)
 	cmd, err := cmds.FromBytes(noOpBytes)
 	assert.NoError(err)
-	_, ok := cmd.(*NoOp)
+	_, ok := cmd.(*commands.NoOp)
 	assert.True(ok)
 
 	disconnectBytes, err := hex.DecodeString(cmdsTest.Disconnect)
 	assert.NoError(err)
 	cmd, err = cmds.FromBytes(disconnectBytes)
 	assert.NoError(err)
-	_, ok = cmd.(*Disconnect)
+	_, ok = cmd.(*commands.Disconnect)
 	assert.True(ok)
 
 	sphinxPacket, err := hex.DecodeString(cmdsTest.SendPacketPayload)
 	assert.NoError(err)
 	sendPacketCommand, err := hex.DecodeString(cmdsTest.SendPacket)
 	assert.NoError(err)
-	sendPacket := &SendPacket{SphinxPacket: sphinxPacket}
+	sendPacket := &commands.SendPacket{SphinxPacket: sphinxPacket}
 	sendPacketBytes := sendPacket.ToBytes()
 	assert.Equal(sendPacketBytes, sendPacketCommand)
 
-	retrieveMessage := &RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq}
+	retrieveMessage := &commands.RetrieveMessage{Sequence: cmdsTest.RetrieveMessageSeq}
 	retrieveMessageBytes := retrieveMessage.ToBytes()
 	retrieveMessageWant, err := hex.DecodeString(cmdsTest.RetrieveMessage)
 	assert.NoError(err)
@@ -202,7 +203,7 @@ func TestCommandVectors(t *testing.T) {
 	messageEmptyWant, err := hex.DecodeString(cmdsTest.MessageEmpty)
 	assert.NoError(err)
 
-	emptyMessage := &MessageEmpty{
+	emptyMessage := &commands.MessageEmpty{
 		Cmds:     cmds,
 		Sequence: cmdsTest.MessageEmptySeq,
 	}
@@ -215,7 +216,7 @@ func TestCommandVectors(t *testing.T) {
 	payload, err := hex.DecodeString(cmdsTest.MessagePayload)
 	assert.NoError(err)
 
-	message := &Message{
+	message := &commands.Message{
 		Geo:           geo,
 		Cmds:          cmds,
 		QueueSizeHint: cmdsTest.MessageHint,
@@ -231,7 +232,7 @@ func TestCommandVectors(t *testing.T) {
 
 	ackPayload, err := hex.DecodeString(cmdsTest.MessageAckPayload)
 	assert.NoError(err)
-	messageAck := &MessageACK{
+	messageAck := &commands.MessageACK{
 		Geo: geo,
 
 		QueueSizeHint: cmdsTest.MessageAckHint,
@@ -243,7 +244,7 @@ func TestCommandVectors(t *testing.T) {
 
 	getConsensusWant, err := hex.DecodeString(cmdsTest.GetConsensus)
 	assert.NoError(err)
-	getConsensus := &GetConsensus{
+	getConsensus := &commands.GetConsensus{
 		Epoch: cmdsTest.GetConsensusEpoch,
 	}
 	getConsensusCmd := getConsensus.ToBytes()
@@ -253,7 +254,7 @@ func TestCommandVectors(t *testing.T) {
 	assert.NoError(err)
 	consensusPayload, err := hex.DecodeString(cmdsTest.ConsensusPayload)
 	assert.NoError(err)
-	consensus := &Consensus{
+	consensus := &commands.Consensus{
 		Payload:   consensusPayload,
 		ErrorCode: cmdsTest.ConsensusErrorCode,
 	}

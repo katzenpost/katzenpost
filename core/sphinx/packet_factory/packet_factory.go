@@ -1,4 +1,4 @@
-package sphinx
+package packet_factory
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/sphinx"
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -17,7 +18,7 @@ import (
 type PacketFactory struct {
 	pathFactory *path.PathFactory
 	geo         *geo.Geometry
-	sphinx      *Sphinx
+	sphinx      *sphinx.Sphinx
 }
 
 // PacketFactoryOption is an option to the Sphinx packet factory.
