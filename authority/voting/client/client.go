@@ -230,7 +230,7 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 
 	// try each authority
 	for i := 0; i < len(p.cfg.Authorities); i++ {
-		auth := p.cfg.Authorities[peerIndex+i%len(p.cfg.Authorities)]
+		auth := p.cfg.Authorities[(peerIndex+i)%len(p.cfg.Authorities)]
 		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
 		if err != nil {
 			return nil, err
