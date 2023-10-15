@@ -178,13 +178,6 @@ func (s *state) fsm() <-chan time.Time {
 			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
 		}
 	case stateAcceptDescriptor:
-		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
-			s.log.Errorf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
-			sleep = nextEpoch
-			s.votingEpoch = epoch + 2 // wait until next epoch begins and bootstrap
-			s.state = stateBootstrap
-			break
-		}
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
 			serialized, err := signed.MarshalBinary()
@@ -197,12 +190,14 @@ func (s *state) fsm() <-chan time.Time {
 			s.log.Errorf("Failed to compute vote for epoch %v: %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptVote
-		sleep = AuthorityVoteDeadline - elapsed
+		_, nowelapsed, _ := epochtime.Now()
+		sleep = AuthorityVoteDeadline - nowelapsed
 	case stateAcceptVote:
 		signed := s.reveal(s.votingEpoch)
 		s.sendRevealToAuthorities(signed, s.votingEpoch)
 		s.state = stateAcceptReveal
-		sleep = AuthorityRevealDeadline - elapsed
+		_, nowelapsed, _ := epochtime.Now()
+		sleep = AuthorityRevealDeadline - nowelapsed
 	case stateAcceptReveal:
 		signed, err := s.getCertificate(s.votingEpoch)
 		if err == nil {
@@ -216,7 +211,8 @@ func (s *state) fsm() <-chan time.Time {
 			s.log.Errorf("Failed to compute certificate for epoch %v", s.votingEpoch)
 		}
 		s.state = stateAcceptCert
-		sleep = AuthorityCertDeadline - elapsed
+		_, nowelapsed, _ := epochtime.Now()
+		sleep = AuthorityCertDeadline - nowelapsed
 	case stateAcceptCert:
 		doc, err := s.getMyConsensus(s.votingEpoch)
 		if err == nil {
@@ -245,11 +241,13 @@ func (s *state) fsm() <-chan time.Time {
 			s.log.Errorf("Failed to compute our view of consensus for %v with %s", s.votingEpoch, err)
 		}
 		s.state = stateAcceptSignature
-		sleep = PublishConsensusDeadline - elapsed
+		_, nowelapsed, _ := epochtime.Now()
+		sleep = PublishConsensusDeadline - nowelapsed
 	case stateAcceptSignature:
 		// combine signatures over a certificate and see if we make a threshold consensus
 		s.log.Noticef("Combining signatures for epoch %v", s.votingEpoch)
 		_, err := s.getThresholdConsensus(s.votingEpoch)
+		_, _, nextEpoch := epochtime.Now()
 		if err == nil {
 			s.state = stateAcceptDescriptor
 			sleep = MixPublishDeadline + nextEpoch
@@ -335,7 +333,7 @@ func (s *state) doSignDocument(signer cert.Signer, verifier cert.Verifier, d *pk
 	signAt := monotime.Now()
 	sig, err := pki.SignDocument(signer, verifier, d)
 	signedAt := monotime.Now()
-	s.log.Debugf("pki.SignDocument took %v", signedAt-signAt)
+	s.log.Notice("pki.SignDocument took %v", signedAt-signAt)
 	return sig, err
 }
 
