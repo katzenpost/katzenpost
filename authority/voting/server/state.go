@@ -178,13 +178,6 @@ func (s *state) fsm() <-chan time.Time {
 			s.log.Noticef("Bootstrapping for %d", s.votingEpoch)
 		}
 	case stateAcceptDescriptor:
-		if !s.hasEnoughDescriptors(s.descriptors[s.votingEpoch]) {
-			s.log.Errorf("Not voting because insufficient descriptors uploaded for epoch %d!", s.votingEpoch)
-			sleep = nextEpoch
-			s.votingEpoch = epoch + 2 // wait until next epoch begins and bootstrap
-			s.state = stateBootstrap
-			break
-		}
 		signed, err := s.getVote(s.votingEpoch)
 		if err == nil {
 			serialized, err := signed.MarshalBinary()
