@@ -2,8 +2,11 @@ package client2
 
 import (
 	"errors"
+	"os"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/log"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -61,13 +64,12 @@ type ARQMessage struct {
 // ARQ is a very simple Automatic Repeat reQuest error correction stategy.
 // Lost packets will be retransmitted. Not an optimized design.
 type ARQ struct {
+	log *log.Logger
+
 	timerQueue *TimerQueue
-
-	lock sync.RWMutex
-
+	lock       sync.RWMutex
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
-
-	surbIDMap map[[sConstants.SURBIDLength]byte]*ARQMessage
+	surbIDMap  map[[sConstants.SURBIDLength]byte]*ARQMessage
 	//sentWaitChanMap  map[[sConstants.SURBIDLength]byte]chan *ARQMessage
 	//replyWaitChanMap map[[sConstants.SURBIDLength]byte]chan []byte
 
@@ -77,6 +79,11 @@ type ARQ struct {
 // NewARQ creates a new ARQ.
 func NewARQ(sphinxComposerSender SphinxComposerSender) *ARQ {
 	return &ARQ{
+		log: log.NewWithOptions(os.Stderr, log.Options{
+			ReportTimestamp: true,
+			Level:           log.DebugLevel,
+			Prefix:          "_ARQ_",
+		}),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
 		surbIDMap:  make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
 		//sentWaitChanMap:      make(map[[sConstants.SURBIDLength]byte]chan *ARQMessage),
@@ -129,11 +136,11 @@ func (a *ARQ) gc(surbID *[sConstants.SURBIDLength]byte) {
 
 		err = a.sphinxComposerSender.SendSphinxPacket(pkt)
 		if err != nil {
-			// XXX Log an error message.
+			a.log.Errorf("gc sphinx composer failure: %s", err.Error())
 		}
 
 	} else {
-		// XXX Log an error message.
+		a.log.Error("gc SURB ID not found")
 	}
 	a.lock.Unlock()
 }
@@ -154,7 +161,7 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 	m, ok := a.surbIDMap[*surbID]
 	if !ok {
-		// XXX log error message
+		a.log.Error("failed to find SURB ID in ARQ map")
 		return nil, errors.New("failed to find SURB ID in ARQ map")
 	}
 	delete(a.surbIDMap, *surbID)
