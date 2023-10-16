@@ -70,8 +70,6 @@ type ARQ struct {
 	lock       sync.RWMutex
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
 	surbIDMap  map[[sConstants.SURBIDLength]byte]*ARQMessage
-	//sentWaitChanMap  map[[sConstants.SURBIDLength]byte]chan *ARQMessage
-	//replyWaitChanMap map[[sConstants.SURBIDLength]byte]chan []byte
 
 	sphinxComposerSender SphinxComposerSender
 }
@@ -84,10 +82,8 @@ func NewARQ(sphinxComposerSender SphinxComposerSender, logbackend io.Writer) *AR
 			Level:           log.DebugLevel,
 			Prefix:          "_ARQ_",
 		}),
-		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
-		surbIDMap:  make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
-		//sentWaitChanMap:      make(map[[sConstants.SURBIDLength]byte]chan *ARQMessage),
-		//replyWaitChanMap:     make(map[[sConstants.SURBIDLength]byte]chan []byte),
+		gcSurbIDCh:           make(chan *[sConstants.SURBIDLength]byte),
+		surbIDMap:            make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
 		sphinxComposerSender: sphinxComposerSender,
 	}
 }
