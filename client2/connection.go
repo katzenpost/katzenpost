@@ -199,32 +199,35 @@ func (c *connection) getDescriptor() error {
 	} else {
 		doc = c.client.cfg.CachedDocument
 	}
-	n := len(doc.Providers)
-	if n == 0 {
-		return errors.New("invalid PKI doc, zero Providers")
+	if doc != nil {
+		n := len(doc.Providers)
+		if n == 0 {
+			return errors.New("invalid PKI doc, zero Providers")
+		}
+		provider := doc.Providers[rand.NewMath().Intn(n)]
+		idHash := provider.IdentityKey.Sum256()
+		c.provider = &idHash
+		desc, err := doc.GetProvider(provider.Name)
+		if err != nil {
+			c.log.Debugf("Failed to find descriptor for Provider: %v", err)
+			return newPKIError("failed to find descriptor for Provider: %v", err)
+		}
+		if !provider.IdentityKey.Equal(desc.IdentityKey) {
+			c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
+			return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
+		}
+		if desc != c.descriptor {
+			c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
+		}
+
+		c.descriptor = desc
+		c.pkiEpoch = doc.Epoch
+		ok = true
+
+		return nil
 	}
 
-	provider := doc.Providers[rand.NewMath().Intn(n)]
-	idHash := provider.IdentityKey.Sum256()
-	c.provider = &idHash
-	desc, err := doc.GetProvider(provider.Name)
-	if err != nil {
-		c.log.Debugf("Failed to find descriptor for Provider: %v", err)
-		return newPKIError("failed to find descriptor for Provider: %v", err)
-	}
-	if !provider.IdentityKey.Equal(desc.IdentityKey) {
-		c.log.Errorf("Provider identity key does not match pinned key: %v", desc.IdentityKey)
-		return newPKIError("identity key for Provider does not match pinned key: %v", desc.IdentityKey)
-	}
-	if desc != c.descriptor {
-		c.log.Debugf("Descriptor for epoch %v: %+v", doc.Epoch, desc)
-	}
-
-	c.descriptor = desc
-	c.pkiEpoch = doc.Epoch
-	ok = true
-
-	return nil
+	return errors.New("current pki doc is nil")
 }
 
 func (c *connection) connectWorker() {
@@ -267,7 +270,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	var connErr error
 	defer func() {
 		if connErr == nil {
-			panic("BUG: connErr is nil on connection teardown.")
+			//panic("BUG: connErr is nil on connection teardown.")
 		}
 
 		if c.client.cfg.Callbacks != nil {

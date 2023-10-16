@@ -18,7 +18,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = 30 * time.Second
+	RoundTripTimeSlop = 15 * time.Second
 )
 
 type SphinxComposerSender interface {
@@ -134,6 +134,8 @@ func (a *ARQ) gc(surbID *[sConstants.SURBIDLength]byte) {
 		message.Retransmissions += 1
 
 		a.surbIDMap[*newsurbID] = message
+		priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
+		a.timerQueue.Push(priority, surbID)
 
 		err = a.sphinxComposerSender.SendSphinxPacket(pkt)
 		if err != nil {

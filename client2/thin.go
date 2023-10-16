@@ -24,6 +24,8 @@ type ThinResponse struct {
 	// SURBID of the sent message.
 	SURBID *[sConstants.SURBIDLength]byte
 
+	ID *[MessageIDLength]byte
+
 	// Payload is the decrypted payload plaintext.
 	Payload []byte
 }
@@ -138,6 +140,7 @@ func (t *ThinClient) worker() {
 			}
 			response := ThinResponse{
 				SURBID:  message.SURBID,
+				ID:      message.ID,
 				Payload: message.Payload,
 			}
 			select {
@@ -278,4 +281,11 @@ func (t *ThinClient) ARQSend(ID *[MessageIDLength]byte, payload []byte, destNode
 	}
 
 	return nil
+}
+
+// ARQReceiveMessage blocks until a message is received.
+// Use ResponseChan instead if you want an async way to receive messages.
+func (t *ThinClient) ARQReceiveMessage() (*[MessageIDLength]byte, []byte) {
+	resp := <-t.receivedCh
+	return resp.ID, resp.Payload
 }

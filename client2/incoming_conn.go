@@ -56,7 +56,6 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 		}, nil
 	}
 
-	c.log.Info("send operation")
 	req.AppID = c.appID
 	c.listener.ingressCh <- req
 	return nil, nil
