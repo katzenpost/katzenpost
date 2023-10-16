@@ -212,6 +212,8 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 		ReplyETA: rtt,
 	}
 	a.surbIDMap[*surbID] = message
+	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
+	a.timerQueue.Push(priority, surbID)
 
 	err = a.sphinxComposerSender.SendSphinxPacket(pkt)
 	if err != nil {
