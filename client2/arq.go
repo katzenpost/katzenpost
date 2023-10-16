@@ -74,6 +74,7 @@ type ARQ struct {
 	sphinxComposerSender SphinxComposerSender
 }
 
+// NewARQ creates a new ARQ.
 func NewARQ(sphinxComposerSender SphinxComposerSender) *ARQ {
 	return &ARQ{
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
@@ -84,6 +85,7 @@ func NewARQ(sphinxComposerSender SphinxComposerSender) *ARQ {
 	}
 }
 
+// Start starts the ARQ worker thread. You MUST start before using.
 func (a *ARQ) Start() {
 	a.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
 		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
@@ -136,6 +138,7 @@ func (a *ARQ) gc(surbID *[sConstants.SURBIDLength]byte) {
 	a.lock.Unlock()
 }
 
+// Has checks if a given SURB ID exists.
 func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 	a.lock.RLock()
 	_, ok := a.surbIDMap[*surbID]
@@ -143,6 +146,9 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 	return ok
 }
 
+// HandleACK removes the map entry for the given SURB ID AND returns
+// the APP ID and SURB Key so that the reply and be decrypted and routed
+// to the correct application.
 func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) (*replyDescriptor, error) {
 	a.lock.Lock()
 
@@ -161,9 +167,8 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 	}, nil
 }
 
-// Send sends a message asynchronously. Sometime later, perhaps a reply with
-// the given SURB ID will be received.
-func (a *ARQ) Send(id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
+// Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
+func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
@@ -186,6 +191,7 @@ func (a *ARQ) Send(id *[MessageIDLength]byte, payload []byte, providerHash *[32]
 	}
 
 	message := &ARQMessage{
+		AppID:    appid,
 		ID:       id,
 		SURBID:   surbID,
 		Payload:  payload,
