@@ -229,10 +229,9 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 	r := rand.NewMath()
 	peerIndex := r.Intn(len(p.cfg.Authorities))
 
-	// check for a document from threshold authorities
-
-	for i := 0; i < len(p.cfg.Authorities)/2; i++ {
-		auth := p.cfg.Authorities[peerIndex+i%len(p.cfg.Authorities)]
+	// try each authority
+	for i := 0; i < len(p.cfg.Authorities); i++ {
+		auth := p.cfg.Authorities[(peerIndex+i)%len(p.cfg.Authorities)]
 		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
 		if err != nil {
 			return nil, err
@@ -241,9 +240,15 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
 
+		if err != nil {
+			p.log.Errorf("voting/Client: GetConsensus() error from %v %s", err, auth.Identifier)
+			continue
+		}
+
 		r, ok := resp.(*commands.Consensus)
 		if !ok {
-			return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
+			p.log.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
+			continue
 		}
 
 		p.log.Infof("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, getErrorToString(r.ErrorCode))
