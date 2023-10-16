@@ -56,7 +56,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	thin.SendMessage(message1, &nodeIdKey, []byte("testdest"), surbID)
+	thin.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
 
 	time.Sleep(time.Second * 3)
 

@@ -206,11 +206,26 @@ func (d *Daemon) egressWorker() {
 			case request.IsDropDecoy == true:
 				d.sendDropDecoy()
 			case request.IsSendOp == true:
-				d.sendMessage(request)
+				d.send(request)
+			case request.IsARQSendOp == true:
+				d.sendARQMessage(request)
 			default:
 				panic("send operation not fully specified")
 			}
 		}
+	}
+}
+
+func (d *Daemon) sendARQMessage(request *Request) {
+	id := &[MessageIDLength]byte{}
+	_, err := rand.Reader.Read(id[:])
+	if err != nil {
+		panic(err)
+	}
+
+	err = d.arq.Send(request.AppID, id, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -249,17 +264,6 @@ func (d *Daemon) send(request *Request) {
 		}
 		return
 	}
-}
-
-func (d *Daemon) sendMessage(request *Request) {
-	if request.Payload == nil {
-		panic("sending payload cannot be nil")
-	}
-	if len(request.Payload) == 0 {
-		panic("sending payload cannot be zero length")
-	}
-
-	d.send(request)
 }
 
 // ServiceDescriptor describe a mixnet Provider-side service.

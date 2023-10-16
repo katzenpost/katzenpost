@@ -3,6 +3,10 @@ package client2
 import sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 
 type Response struct {
+	// ID is the unique identifier with respect to the Request Payload.
+	// This is only used by the ARQ.
+	ID *[MessageIDLength]byte
+
 	// SURBID must be a unique identity for each request.
 	SURBID *[sConstants.SURBIDLength]byte `cbor:surbid`
 
@@ -25,6 +29,10 @@ type Response struct {
 }
 
 type Request struct {
+	// ID is the unique identifier with respect to the Payload.
+	// This is only used by the ARQ.
+	ID *[MessageIDLength]byte
+
 	// WithSURB indicates if the message should be sent with a SURB
 	// in the Sphinx payload.
 	WithSURB bool
@@ -50,6 +58,10 @@ type Request struct {
 	// IsSendOp is set to true if the intent is to send a message through
 	// the mix network.
 	IsSendOp bool `cbor:is_send_op`
+
+	// IsARQSendOp is set to true if the intent is to send a message through
+	// the mix network using the naive ARQ error correction scheme.
+	IsARQSendOp bool `cbor:is_arq_send_op`
 
 	// IsEchoOp is set to true if the intent is to merely test that the unix
 	// socket listener is working properly; the Response payload will be

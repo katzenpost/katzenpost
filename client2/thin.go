@@ -200,7 +200,7 @@ func (t *ThinClient) SendMessageWithoutReply(payload []byte, destNode *[32]byte,
 // This method of sending messages should be considered to be asynchronous because it does NOT actually wait until
 // the client daemon sends the message. Nor does it wait for a reply. The only blocking aspect to it's behavior is
 // merely blocking until the client daemon receives our request to send a message.
-func (t *ThinClient) SendMessage(payload []byte, destNode *[32]byte, destQueue []byte, surbID *[sConstants.SURBIDLength]byte) error {
+func (t *ThinClient) SendMessage(surbID *[sConstants.SURBIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	if surbID == nil {
 		return errors.New("surbID cannot be nil")
 	}
@@ -255,4 +255,27 @@ func (t *ThinClient) ResponseChan() chan ThinResponse {
 func (t *ThinClient) ReceiveMessage() (*[sConstants.SURBIDLength]byte, []byte) {
 	resp := <-t.receivedCh
 	return resp.SURBID, resp.Payload
+}
+
+func (t *ThinClient) ARQSend(ID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
+	req := new(Request)
+	req.WithSURB = true
+	req.IsARQSendOp = true
+	req.Payload = payload
+	req.DestinationIdHash = destNode
+	req.RecipientQueueID = destQueue
+
+	blob, err := cbor.Marshal(req)
+	if err != nil {
+		return err
+	}
+	count, _, err := t.unixConn.WriteMsgUnix(blob, nil, t.destUnixAddr)
+	if err != nil {
+		return err
+	}
+	if count != len(blob) {
+		return fmt.Errorf("SendMessage error: wrote %d instead of %d bytes", count, len(blob))
+	}
+
+	return nil
 }
