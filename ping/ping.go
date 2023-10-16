@@ -70,7 +70,7 @@ func sendPing(client *client2.ThinClient, serviceDesc *client2.ServiceDescriptor
 	}
 
 	dest := serviceDesc.MixDescriptor.IdentityKey.Sum256()
-	err = client.SendMessage(cborPayload, &dest, serviceDesc.RecipientQueueID, &surbID)
+	err = client.SendMessage(&surbID, cborPayload, &dest, serviceDesc.RecipientQueueID)
 	if err != nil {
 		fmt.Printf("\nerror: %v\n", err)
 		fmt.Printf(".") // Fail, did not receive a reply.
