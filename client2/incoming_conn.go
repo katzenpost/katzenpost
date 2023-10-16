@@ -3,7 +3,6 @@ package client2
 import (
 	"fmt"
 	"net"
-	"os"
 	"sync/atomic"
 
 	"github.com/charmbracelet/log"
@@ -180,7 +179,7 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 		sendToClientCh:    make(chan *Response, 2),
 	}
 
-	c.log = log.NewWithOptions(os.Stderr, log.Options{
+	c.log = log.NewWithOptions(l.logbackend, log.Options{
 		ReportTimestamp: true,
 		Level:           log.DebugLevel,
 		Prefix:          fmt.Sprintf("incoming:%d", c.appID),

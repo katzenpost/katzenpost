@@ -21,7 +21,6 @@ import (
 	"crypto/hmac"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -297,7 +296,7 @@ func (p *pki) start() {
 func newPKI(c *Client) *pki {
 	p := new(pki)
 	p.c = c
-	p.log = log.NewWithOptions(os.Stderr, log.Options{
+	p.log = log.NewWithOptions(c.logbackend, log.Options{
 		Prefix: "client2/pki",
 		Level:  log.DebugLevel,
 	})

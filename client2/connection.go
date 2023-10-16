@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -820,7 +819,7 @@ func (c *connection) start() {
 func newConnection(c *Client) *connection {
 	k := new(connection)
 	k.client = c
-	k.log = log.NewWithOptions(os.Stderr, log.Options{
+	k.log = log.NewWithOptions(c.logbackend, log.Options{
 		Prefix: "client2/conn",
 		Level:  log.DebugLevel,
 	})

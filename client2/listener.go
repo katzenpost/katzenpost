@@ -18,8 +18,8 @@
 package client2
 
 import (
+	"io"
 	"net"
-	"os"
 	"sync"
 
 	"github.com/charmbracelet/log"
@@ -34,7 +34,8 @@ type listener struct {
 
 	client *Client
 
-	log *log.Logger
+	log        *log.Logger
+	logbackend io.Writer
 
 	listener *net.UnixListener
 	conns    map[uint64]*incomingConn // appID -> *incomingConn
@@ -160,15 +161,16 @@ func (l *listener) updateRatesFromPKIDoc(doc *cpki.Document) {
 }
 
 // New creates a new listener.
-func NewListener(client *Client, rates *Rates, egressCh chan *Request) (*listener, error) {
+func NewListener(client *Client, rates *Rates, egressCh chan *Request, logbackend io.Writer) (*listener, error) {
 	var err error
 
 	l := &listener{
 		client: client,
-		log: log.NewWithOptions(os.Stderr, log.Options{
+		log: log.NewWithOptions(logbackend, log.Options{
 			Prefix: "listener",
 			Level:  log.DebugLevel,
 		}),
+		logbackend: logbackend,
 		conns:      make(map[uint64]*incomingConn),
 		closeAllCh: make(chan interface{}),
 		ingressCh:  make(chan *Request),

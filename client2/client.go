@@ -3,7 +3,7 @@
 package client2
 
 import (
-	"os"
+	"io"
 	"sync"
 	"time"
 
@@ -22,14 +22,17 @@ import (
 type Client struct {
 	sync.RWMutex
 
+	log        *log.Logger
+	logbackend io.Writer
+
 	// messagePollInterval is the interval at which the server will be
 	// polled for new messages if the queue is believed to be empty.
 	// XXX This will go away once we get rid of polling.
 	messagePollInterval time.Duration
 
-	pki  *pki
-	cfg  *config.Config
-	log  *log.Logger
+	pki *pki
+	cfg *config.Config
+
 	conn *connection
 
 	sphinx *sphinx.Sphinx
@@ -91,7 +94,7 @@ func (c *Client) Start() error {
 	pkilinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	pkiClientConfig := &client.Config{
 		LinkKey:       pkilinkKey,
-		LogBackend:    os.Stderr,
+		LogBackend:    c.logbackend,
 		Authorities:   c.cfg.VotingAuthority.Peers,
 		DialContextFn: nil,
 	}
@@ -111,12 +114,13 @@ func (c *Client) Start() error {
 }
 
 // New creates a new Client with the provided configuration.
-func New(cfg *config.Config) (*Client, error) {
+func New(cfg *config.Config, logbackend io.Writer) (*Client, error) {
 	if err := cfg.FixupAndValidate(); err != nil {
 		return nil, err
 	}
 
 	c := new(Client)
+	c.logbackend = logbackend
 	c.geo = cfg.SphinxGeometry
 	var err error
 	c.sphinx, err = sphinx.FromGeometry(cfg.SphinxGeometry)
@@ -124,7 +128,7 @@ func New(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 	c.cfg = cfg
-	c.log = log.NewWithOptions(os.Stderr, log.Options{
+	c.log = log.NewWithOptions(logbackend, log.Options{
 		ReportTimestamp: true,
 		Prefix:          "client2",
 	})

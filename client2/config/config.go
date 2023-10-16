@@ -54,7 +54,7 @@ type Logging struct {
 func (lCfg *Logging) validate() error {
 	lvl := strings.ToUpper(lCfg.Level)
 	switch lvl {
-	case "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG":
+	case "ERROR", "WARNING", "INFO", "DEBUG":
 	case "":
 		lCfg.Level = defaultLogLevel
 	default:

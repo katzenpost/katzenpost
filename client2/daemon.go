@@ -1,6 +1,8 @@
 package client2
 
 import (
+	"fmt"
+	"io"
 	mrand "math/rand"
 	"os"
 	"time"
@@ -29,11 +31,12 @@ type replyDescriptor struct {
 type Daemon struct {
 	worker.Worker
 
-	log      *log.Logger
-	cfg      *config.Config
-	client   *Client
-	listener *listener
-	egressCh chan *Request
+	logbackend io.Writer
+	log        *log.Logger
+	cfg        *config.Config
+	client     *Client
+	listener   *listener
+	egressCh   chan *Request
 
 	replies map[[sConstants.SURBIDLength]byte]replyDescriptor
 	decoys  map[[sConstants.SURBIDLength]byte]replyDescriptor
@@ -46,11 +49,31 @@ type Daemon struct {
 }
 
 func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
+	var err error
+	var logbackend io.Writer
+
+	if cfg.Logging.Disable {
+		fmt.Println("WARNING: disabling logging")
+		logbackend, err = os.OpenFile("/dev/null", os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if cfg.Logging.File == "" {
+			logbackend = os.Stderr
+		} else {
+			logbackend, err = os.OpenFile(cfg.Logging.File, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
 	d := &Daemon{
-		log: log.NewWithOptions(os.Stderr, log.Options{
+		logbackend: logbackend,
+		log: log.NewWithOptions(logbackend, log.Options{
 			ReportTimestamp: true,
 			Prefix:          "client2_daemon",
-			Level:           log.DebugLevel,
+			Level:           log.ParseLevel(cfg.Logging.Level),
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
@@ -71,15 +94,15 @@ func (d *Daemon) Start() error {
 		rates = ratesFromPKIDoc(d.cfg.CachedDocument)
 	}
 
-	d.client, err = New(d.cfg)
+	d.client, err = New(d.cfg, d.logbackend)
 	if err != nil {
 		return err
 	}
 
-	d.arq = NewARQ(d.client)
+	d.arq = NewARQ(d.client, d.logbackend)
 	d.arq.Start()
 
-	d.listener, err = NewListener(d.client, rates, d.egressCh)
+	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
 	if err != nil {
 		return err
 	}
