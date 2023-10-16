@@ -41,10 +41,12 @@ type Daemon struct {
 	timerQueue *TimerQueue
 	replyCh    chan sphinxReply
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
+
+	arq *ARQ
 }
 
 func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
-	return &Daemon{
+	d := &Daemon{
 		log: log.NewWithOptions(os.Stderr, log.Options{
 			ReportTimestamp: true,
 			Prefix:          "client2_daemon",
@@ -56,7 +58,9 @@ func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
 		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
-	}, nil
+	}
+
+	return d, nil
 }
 
 func (d *Daemon) Start() error {
@@ -71,6 +75,9 @@ func (d *Daemon) Start() error {
 	if err != nil {
 		return err
 	}
+
+	d.arq = NewARQ(d.client)
+	d.arq.Start()
 
 	d.listener, err = NewListener(d.client, rates, d.egressCh)
 	if err != nil {
@@ -124,8 +131,17 @@ func (d *Daemon) egressWorker() {
 			if !ok {
 				desc, ok = d.decoys[*reply.surbID]
 				if !ok {
-					d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
-					continue
+					if d.arq.Has(reply.surbID) {
+						myDesc, err := d.arq.HandleAck(reply.surbID, reply.ciphertext)
+						if err != nil {
+							d.log.Infof("failed to handle ACK")
+							continue
+						}
+						desc = *myDesc
+					} else {
+						d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
+						continue
+					}
 				}
 				isDecoy = true
 			}
