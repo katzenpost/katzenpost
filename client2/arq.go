@@ -103,6 +103,11 @@ func (a *ARQ) Start() {
 	})
 }
 
+func (a *ARQ) Stop() {
+	a.timerQueue.Halt()
+	a.timerQueue.Wait()
+}
+
 func (a *ARQ) gc(surbID *[sConstants.SURBIDLength]byte) {
 	a.lock.Lock()
 	message, ok := a.surbIDMap[*surbID]

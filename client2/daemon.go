@@ -143,6 +143,10 @@ func (d *Daemon) egressWorker() {
 	for {
 		select {
 		case <-d.HaltCh():
+			d.listener.Halt()
+			d.client.Shutdown()
+			d.timerQueue.Halt()
+			d.arq.Stop()
 			return
 		case surbID := <-d.gcSurbIDCh:
 			delete(d.replies, *surbID)
