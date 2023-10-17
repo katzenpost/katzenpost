@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2023, David Stainton <dstainton415@gmail.com>
+// SPDX-FileCopyrightText: Copyright (C) 2018-2023  Yawning Angel, David Stainton.
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 // Package config implements the configuration for the Katzenpost client.

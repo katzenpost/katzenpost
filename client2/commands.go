@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
 package client2
 
 import sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
