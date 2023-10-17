@@ -159,7 +159,7 @@ func (d *Daemon) egressWorker() {
 				desc, ok = d.decoys[*reply.surbID]
 				if !ok {
 					if d.arq.Has(reply.surbID) {
-						myDesc, err := d.arq.HandleAck(reply.surbID, reply.ciphertext)
+						myDesc, err := d.arq.HandleAck(reply.surbID)
 						if err != nil {
 							d.log.Infof("failed to handle ACK")
 							continue

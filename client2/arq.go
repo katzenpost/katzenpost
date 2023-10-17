@@ -18,7 +18,7 @@ const (
 
 	// RoundTripTimeSlop is the slop added to the expected packet
 	// round trip timeout threshold.
-	RoundTripTimeSlop = 15 * time.Second
+	RoundTripTimeSlop = 3 * time.Second
 )
 
 type SphinxComposerSender interface {
@@ -76,12 +76,14 @@ type ARQ struct {
 
 // NewARQ creates a new ARQ.
 func NewARQ(sphinxComposerSender SphinxComposerSender, logbackend io.Writer) *ARQ {
+	log := log.NewWithOptions(logbackend, log.Options{
+		ReportTimestamp: true,
+		Level:           log.DebugLevel,
+		Prefix:          "_ARQ_",
+	})
+	log.Info("NewARQ")
 	return &ARQ{
-		log: log.NewWithOptions(logbackend, log.Options{
-			ReportTimestamp: true,
-			Level:           log.DebugLevel,
-			Prefix:          "_ARQ_",
-		}),
+		log:                  log,
 		gcSurbIDCh:           make(chan *[sConstants.SURBIDLength]byte),
 		surbIDMap:            make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
 		sphinxComposerSender: sphinxComposerSender,
@@ -90,21 +92,28 @@ func NewARQ(sphinxComposerSender SphinxComposerSender, logbackend io.Writer) *AR
 
 // Start starts the ARQ worker thread. You MUST start before using.
 func (a *ARQ) Start() {
+	a.log.Info("Start")
 	a.timerQueue = NewTimerQueue(func(rawSurbID interface{}) {
+		a.log.Info("TimerQueue callback!")
 		surbID, ok := rawSurbID.(*[sConstants.SURBIDLength]byte)
 		if !ok {
 			panic("wtf, failed type assertion!")
 		}
-		a.gc(surbID)
+		a.resend(surbID)
 	})
+	a.timerQueue.Start()
 }
 
+// Stop stops the ARQ's timer queue worker thread.
 func (a *ARQ) Stop() {
+	a.log.Info("Stop")
 	a.timerQueue.Halt()
 	a.timerQueue.Wait()
 }
 
-func (a *ARQ) gc(surbID *[sConstants.SURBIDLength]byte) {
+func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
+	a.log.Info("resend")
+
 	a.lock.Lock()
 	message, ok := a.surbIDMap[*surbID]
 	if ok {
@@ -150,6 +159,8 @@ func (a *ARQ) gc(surbID *[sConstants.SURBIDLength]byte) {
 
 // Has checks if a given SURB ID exists.
 func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
+	a.log.Info("Has")
+
 	a.lock.RLock()
 	_, ok := a.surbIDMap[*surbID]
 	a.lock.RUnlock()
@@ -159,7 +170,9 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 // HandleACK removes the map entry for the given SURB ID AND returns
 // the APP ID and SURB Key so that the reply and be decrypted and routed
 // to the correct application.
-func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte) (*replyDescriptor, error) {
+func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
+	a.log.Info("HandleAck")
+
 	a.lock.Lock()
 
 	m, ok := a.surbIDMap[*surbID]
@@ -179,6 +192,8 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte, ciphertext []byte
 
 // Send sends a message asynchronously. Sometime later, perhaps a reply will be received.
 func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, providerHash *[32]byte, queueID []byte) error {
+	a.log.Info("Send")
+
 	a.lock.Lock()
 	defer a.lock.Unlock()
 
@@ -210,7 +225,9 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 		ReplyETA: rtt,
 	}
 	a.surbIDMap[*surbID] = message
+	p := message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop)
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
+
 	a.timerQueue.Push(priority, surbID)
 
 	err = a.sphinxComposerSender.SendSphinxPacket(pkt)
@@ -219,10 +236,4 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 	}
 
 	return nil
-}
-
-// BlockingSend sends a message and blocks until the reply is received.
-func (a *ARQ) BlockingSend(surbID [sConstants.SURBIDLength]byte, message []byte) (replay []byte, err error) {
-	// XXX FIXME
-	return nil, nil
 }
