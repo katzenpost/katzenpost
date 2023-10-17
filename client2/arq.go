@@ -225,7 +225,8 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 		ReplyETA: rtt,
 	}
 	a.surbIDMap[*surbID] = message
-	p := message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop)
+	p := time.Duration(message.ReplyETA + RoundTripTimeSlop)
+	a.log.Infof("Push to timer queue with priorit %s", p)
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
 
 	a.timerQueue.Push(priority, surbID)
