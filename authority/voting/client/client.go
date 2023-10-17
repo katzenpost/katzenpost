@@ -228,21 +228,26 @@ func (p *connector) fetchConsensus(ctx context.Context, linkKey wire.PrivateKey,
 	r := rand.NewMath()
 	peerIndex := r.Intn(len(p.cfg.Authorities))
 
-	// check for a document from threshold authorities
-
-	for i := 0; i < len(p.cfg.Authorities)/2; i++ {
-		auth := p.cfg.Authorities[peerIndex+i%len(p.cfg.Authorities)]
+	// try each authority
+	for i := 0; i < len(p.cfg.Authorities); i++ {
+		auth := p.cfg.Authorities[(peerIndex+i)%len(p.cfg.Authorities)]
 		conn, err := p.initSession(ctx, doneCh, linkKey, nil, auth)
 		if err != nil {
 			return nil, err
 		}
-		p.log.Debugf("sending getConsensus to %s", auth.Identifier)
+		p.log.Noticef("sending getConsensus to %s", auth.Identifier)
 		cmd := &commands.GetConsensus{Epoch: epoch}
 		resp, err := p.roundTrip(conn.session, cmd)
 
+		if err != nil {
+			p.log.Errorf("voting/Client: GetConsensus() error from %v %s", err, auth.Identifier)
+			continue
+		}
+
 		r, ok := resp.(*commands.Consensus)
 		if !ok {
-			return nil, fmt.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
+			p.log.Errorf("voting/Client: GetConsensus() unexpected reply from %s %T", auth.Identifier, resp)
+			continue
 		}
 
 		p.log.Noticef("got response from %s to GetConsensus(%d) (attempt %d, err=%v, res=%s)", auth.Identifier, epoch, i, err, getErrorToString(r.ErrorCode))
@@ -307,7 +312,7 @@ func (c *Client) Post(ctx context.Context, epoch uint64, signingPrivateKey sign.
 
 // Get returns the PKI document along with the raw serialized form for the provided epoch.
 func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, error) {
-	c.log.Debugf("Get(ctx, %d)", epoch)
+	c.log.Noticef("Get(ctx, %d)", epoch)
 
 	// Generate a random keypair to use for the link authentication.
 	scheme := wire.DefaultScheme
@@ -372,7 +377,7 @@ func (c *Client) Get(ctx context.Context, epoch uint64) (*pki.Document, []byte, 
 	if doc.Epoch != epoch {
 		return nil, nil, fmt.Errorf("voting/Client: Get() consensus document for WRONG epoch: %v", doc.Epoch)
 	}
-	c.log.Debugf("voting/Client: Get() document:\n%s", doc)
+	c.log.Noticef("voting/Client: Get() document:\n%s", doc)
 	return doc, r.Payload, nil
 }
 
