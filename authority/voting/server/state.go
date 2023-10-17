@@ -466,7 +466,8 @@ func (s *state) getThresholdConsensus(epoch uint64) (*pki.Document, error) {
 		s.log.Noticef("Consensus signed by %x", g.Sum256())
 	}
 	if err == nil {
-		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures: %v", epoch, len(good), len(s.verifiers), ourConsensus)
+		s.log.Noticef("Consensus made for epoch %d with %d/%d signatures", epoch, len(good), len(s.verifiers))
+		s.log.Noticef("%v", ourConsensus)
 		// Persist the document to disk.
 		s.persistDocument(epoch, signedConsensus)
 		s.documents[epoch] = ourConsensus
