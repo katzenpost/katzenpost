@@ -119,24 +119,8 @@ show-latest-vote:
 	@grep -A30 'Ready to send' voting_mixnet/auth1/katzenpost.log |tail -30|sed /Sending/q
 
 wait: $(net_name)/running.stamp
-	# this waiting approach still needs a lot of improvement, and will wait
-	# significantly longer than necessary (including when waiting isn't
-	# necessary at all).
-	#
-	# ideally we should make the ping command be usable for waiting, instead..
-	#
-	tail -F $(net_name)/auth1/katzenpost.log |while read line; do \
-        echo "$$line"; \
-        if echo "$$line"|grep -qE '^\S+ \S+ GenesisEpoch: \S+'; then \
-            while read a b c d; do \
-                echo "$$(date) Network has been running for $$(($$b - $$d)) epochs"; \
-                if [ $$(($$b - $$d)) -gt 1 ]; then \
-                    echo "OK! Network should be ready to use now."; \
-                    break 2; \
-                fi; \
-            done < <(echo "$$line"); \
-        fi; \
-    done
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_base \
+	/$(net_name)/fetch.$(distro) -f /$(net_name)/client/client.toml
 
 debian_base.stamp:
 	$(docker) run $(replace_name) katzenpost_debian_base docker.io/golang:bullseye $(sh) -c 'adduser katzenpost --gecos "" --disabled-password --uid ${uid} && apt update && apt upgrade -y'
@@ -177,9 +161,9 @@ $(net_name)/server.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) | $(n
 
 $(net_name)/voting.$(distro): $(distro)_go_mod.stamp $(docker_compose_yml) | $(net_name)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
-			$(sh) -c 'cd authority/cmd/voting && go mod verify && \
-			go build -trimpath -ldflags ${ldflags} && \
-			mv voting /$(net_name)/voting.$(distro)'
+			$(sh) -c 'cd authority && make $(make_args) cmd/voting/voting cmd/fetch/fetch && \
+			mv cmd/voting/voting /$(net_name)/voting.$(distro) && \
+			mv cmd/fetch/fetch /$(net_name)/fetch.$(distro)'
 
 $(net_name)/ping.$(distro): $(distro)_go_mod.stamp | $(net_name)
 		$(docker) run ${docker_args} $(mount_net_name) --rm katzenpost-$(distro)_go_mod \
@@ -233,4 +217,3 @@ test: wait
 	cd ../client    && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../catshadow && make $(make_args) testargs=$(testargs) dockerdockertest
 	cd ../memspool  && make $(make_args) testargs=$(testargs) dockerdockertest
-
