@@ -1,19 +1,20 @@
-// objective
-// test performance of minclient and client send/receive methods
-// produce key performance metrics:
-//   graph of bandwidth vs cpu / cores (is it linear?)
-//   graph of client traffic showing behavior at epoch transitions
-//   collect latency / round trip statistics
+// bench_test.go - benchmark tests
+// Copyright (C) 2023  Masala
 //
-// tasks
-//   decide how to collect metrics e.g. prometheus
-//   write an instrumented minclient/client to collect
-//   metrics in the onPacket callback
-//   send a message to a echo service, receive reply SendMessage(echo, providerecho)
-//   send a message to self (provider queue) SendMessage(self, providerself)
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
 //
-//     e.g. start
-
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+//
+// Package bench tests performance of minclient and client send/receive methods
 //go:build docker_test
 // +build docker_test
 
@@ -128,6 +129,7 @@ type MinclientBench struct {
 	minclient       *minclient.Client
 	provider        *pki.MixDescriptor
 	onDoc           chan struct{}
+	onConn          chan struct{}
 
 	msgs  map[[cConstants.MessageIDLength]byte]struct{}
 	surbs map[[sConstants.SURBIDLength]byte]struct{}
@@ -138,6 +140,7 @@ func (b *MinclientBench) setup() {
 	b.msgs = make(map[[cConstants.MessageIDLength]byte]struct{})
 	b.surbs = make(map[[sConstants.SURBIDLength]byte]struct{})
 	b.onDoc = make(chan struct{}, 0)
+	b.onConn = make(chan struct{}, 0)
 
 	cfg := getClientCfg(clientTestCfg)
 	b.cfg = cfg
@@ -173,7 +176,7 @@ func (b *MinclientBench) setup() {
 		LinkKey:             b.linkKey,
 		LogBackend:          logBackend,
 		PKIClient:           pkiClient,
-		OnConnFn:            b.onConn,
+		OnConnFn:            b.onConnection,
 		OnMessageFn:         b.onMessage,
 		OnACKFn:             b.onAck,
 		OnDocumentFn:        b.onDocument,
@@ -191,7 +194,7 @@ func (b *MinclientBench) setup() {
 
 func (b *MinclientBench) Start(t *testing.T) {
 	b.setup()
-	<-b.onDoc
+	<-b.onConn
 	// TODO: start benchmark timers
 	b.Go(b.sendWorker)
 }
@@ -252,14 +255,22 @@ func (b *MinclientBench) Stop() {
 	b.minclient.Wait()
 }
 
-func (b *MinclientBench) onConn(err error) {
-	// TODO: log and track the nubmer of connections made during the run
-}
-
 func (b *MinclientBench) onEmpty() error {
 	minclientEmptyMessageReceived.Inc()
 	b.log.Debugf("OnEmpty")
 	return nil
+}
+
+func (b *MinclientBench) onConnection(err error) {
+	// TODO: keep track of stats / time / etc
+	b.log.Debugf("OnConnection")
+	if err != nil {
+		return
+	}
+	select {
+	case b.onConn <- struct{}{}:
+	default:
+	}
 }
 
 func (b *MinclientBench) onMessage(mesg []byte) error {
