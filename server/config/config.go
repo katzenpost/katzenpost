@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"net/mail"
 	"net/url"
 	"os"
@@ -96,6 +97,9 @@ type Server struct {
 	// and do NOT send any of the Addresses.
 	OnlyAdvertiseAltAddresses bool
 
+	// MetricsAddress is the address/port to bind the prometheus metrics endpoint to.
+	MetricsAddress string
+
 	// DataDir is the absolute path to the server's state files.
 	DataDir string
 
@@ -161,6 +165,11 @@ func (sCfg *Server) validate() error {
 
 	if !filepath.IsAbs(sCfg.DataDir) {
 		return fmt.Errorf("config: Server: DataDir '%v' is not an absolute path", sCfg.DataDir)
+	}
+	if sCfg.MetricsAddress != ""  {
+		if _, err := netip.ParseAddrPort(sCfg.MetricsAddress); err != nil {
+			return fmt.Errorf("config: Server: MetricsAddress '%v' is invalid: %v", sCfg.MetricsAddress, err)
+		}
 	}
 	return nil
 }
@@ -670,14 +679,14 @@ func (pCfg *PKI) validate(datadir string) error {
 			return err
 		}
 		nrCfg++
-	} else {
+	} else if pCfg.Voting != nil {
 		if err := pCfg.Voting.validate(datadir); err != nil {
 			return err
 		}
 		nrCfg++
 	}
 	if nrCfg != 1 {
-		return fmt.Errorf("config: Only one authority backend should be configured, got: %v", nrCfg)
+		return fmt.Errorf("config: Exactly one authority backend should be configured, got: %v", nrCfg)
 	}
 	return nil
 }

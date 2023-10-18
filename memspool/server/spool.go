@@ -150,8 +150,7 @@ func NewMemSpoolMap(fileStore string, log *logging.Logger) (*MemSpoolMap, error)
 			return err
 		}
 		// database created
-		metaBucket.Put([]byte(versionKey), []byte{SpoolStorageVersion})
-		return nil
+		return metaBucket.Put([]byte(versionKey), []byte{SpoolStorageVersion})
 	}); err != nil {
 		m.db.Close()
 		return nil, err
@@ -424,7 +423,9 @@ func (m *MemSpoolMap) worker() {
 func (m *MemSpoolMap) Shutdown() {
 	m.log.Debug("halting spool worker and persisting db to disk")
 	m.Halt()
-	m.db.Sync()
+	if err := m.db.Sync(); err != nil {
+		panic(err)
+	}
 	m.db.Close()
 }
 

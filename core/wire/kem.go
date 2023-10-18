@@ -31,6 +31,7 @@ import (
 	"github.com/katzenpost/nyquist/seec"
 	"golang.org/x/crypto/blake2b"
 
+	"github.com/katzenpost/katzenpost/core/crypto/kem/schemes"
 	cpem "github.com/katzenpost/katzenpost/core/crypto/pem"
 )
 
@@ -39,7 +40,9 @@ import (
 const PublicKeyHashSize = 32
 
 var DefaultScheme = &scheme{
-	KEM: kem.Kyber768X25519,
+	KEM: kem.FromKEM(
+		schemes.ByName("Kyber768-X25519"),
+	),
 }
 
 // PublicKey is an interface used to abstract away the
@@ -242,7 +245,6 @@ func (p *privateKey) MarshalText() (text []byte, err error) {
 func (p *privateKey) UnmarshalText(text []byte) error {
 	return cpem.FromPEMBytes(text, p)
 }
-
 
 type scheme struct {
 	KEM kem.KEM

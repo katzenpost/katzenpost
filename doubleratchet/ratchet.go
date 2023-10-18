@@ -121,7 +121,10 @@ func (s *savedKeys) MarshalBinary() ([]byte, error) {
 func (s *savedKeys) UnmarshalBinary(data []byte) error {
 	tmp := &cborSavedKeys{}
 
-	cbor.Unmarshal(data, &tmp)
+	err := cbor.Unmarshal(data, &tmp)
+	if err != nil {
+		return err
+	}
 	if len(tmp.HeaderKey) == keySize {
 		s.HeaderKey = memguard.NewBufferFromBytes(tmp.HeaderKey)
 		for _, m := range tmp.MessageKeys {
@@ -131,7 +134,7 @@ func (s *savedKeys) UnmarshalBinary(data []byte) error {
 			}
 		}
 	}
-	return nil
+	return err
 }
 
 // state constains all the data associated with a ratchet

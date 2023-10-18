@@ -153,6 +153,13 @@ func (c *Client) ForceFetchPKI() {
 }
 
 func (c *connection) onPKIFetch() {
+	doc := c.c.CurrentDocument()
+	if doc != nil {
+		slopFactor := 0.8
+		pollProviderMsec := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
+		c.c.setPollInterval(pollProviderMsec)
+	}
+
 	select {
 	case c.pkiFetchCh <- true:
 	default:
@@ -562,13 +569,15 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
-			fetchDelay = c.c.GetPollInterval()
+			fetchDelay = c.c.getPollInterval()
+			adjFetchDelay()
 			continue
 		}
 
 		creds, err := w.PeerCredentials()
 		if err != nil {
 			// do not continue processing this command
+			adjFetchDelay()
 			continue
 		}
 		// Update the cached descriptor, and re-validate the connection.
@@ -655,6 +664,7 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("received unknown command: %T", cmd)
 			return
 		}
+		adjFetchDelay()
 	}
 }
 

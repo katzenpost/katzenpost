@@ -1,3 +1,5 @@
+//go:build !ppc64le
+
 package csidh
 
 import (
@@ -7,7 +9,7 @@ import (
 )
 
 func TestCtidhNike(t *testing.T) {
-	scheme := CSIDHScheme
+	scheme := NOBS_CSIDH512Scheme
 
 	alicePublicKey, alicePrivateKey, err := scheme.GenerateKeyPair()
 	require.NoError(t, err)

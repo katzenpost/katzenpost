@@ -1,5 +1,4 @@
-//go:build !ctidh
-// +build !ctidh
+//go:build ppc64le
 
 package hybrid
 
@@ -9,8 +8,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
-var CTIDHX25519 nike.Scheme = &scheme{
-	name:   "CTIDH-X25519",
-	first:  nil,
-	second: ecdh.NewEcdhNike(rand.Reader),
+var NOBS_CSIDH512X25519 nike.Scheme = &scheme{
+	name:   "NOBS_CSIDH-X25519",
+	first:  ecdh.NewEcdhNike(rand.Reader),
+	second: nil,
 }
