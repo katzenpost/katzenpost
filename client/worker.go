@@ -136,7 +136,6 @@ func (s *Session) worker() {
 				}
 
 				doc = op.doc
-				s.setPollIntervalFromDoc(doc)
 				lambdaP = doc.LambdaP
 				lambdaL = doc.LambdaL
 				lambdaD = doc.LambdaD
@@ -230,11 +229,4 @@ func (s *Session) isDocValid(doc *pki.Document) error {
 		}
 	}
 	return nil
-}
-
-func (s *Session) setPollIntervalFromDoc(doc *pki.Document) {
-	slopFactor := 0.8
-	pollProviderMsec := time.Duration((1.0 / (doc.LambdaP + doc.LambdaL)) * slopFactor * float64(time.Millisecond))
-	s.log.Debugf("onDocument(): setting PollInterval to %s", pollProviderMsec)
-	s.minclient.SetPollInterval(pollProviderMsec)
 }
