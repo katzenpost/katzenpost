@@ -1,3 +1,6 @@
+//SPDX-FileCopyrightText: (C) 2023  David Stainton.
+//SPDX-License-Identifier: AGPL-3.0-only
+
 package bench
 
 import (
