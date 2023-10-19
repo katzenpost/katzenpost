@@ -1,4 +1,4 @@
-// server.go - Katzenpost non-voting authority server.
+// server.go - Katzenpost voting authority server.
 // Copyright (C) 2017  Yawning Angel.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,11 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Package server implements the Katzenpost non-voting authority server.
-//
-// The non-voting authority server is intended to be a stop gap for debugging
-// and testing and is likely only suitable for very small networks where the
-// lack of distributed trust and or quality of life features is a non-issue.
+// Package server implements the Katzenpost voting authority server.
 package server
 
 import (
@@ -37,6 +33,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/crypto/sign"
 	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -44,11 +41,12 @@ import (
 // terminates due to the `GenerateOnly` debug config option.
 var ErrGenerateOnly = errors.New("server: GenerateOnly set")
 
-// Server is a non-voting authority server instance.
+// Server is a voting authority server instance.
 type Server struct {
 	sync.WaitGroup
 
 	cfg *config.Config
+	geo *geo.Geometry
 
 	identityPrivateKey sign.PrivateKey
 	identityPublicKey  sign.PublicKey
@@ -84,7 +82,7 @@ func (s *Server) initDataDir() error {
 			return fmt.Errorf("authority: DataDir '%v' is not a directory", d)
 		}
 		if fi.Mode() != dirMode {
-			return fmt.Errorf("authority: DataDir '%v' has invalid permissions '%v', should be '%v'", d, fi.Mode(), dirMode)
+			return fmt.Errorf("authority: DataDir '%v' has invalid permissions '%v'", d, fi.Mode())
 		}
 	}
 
@@ -177,8 +175,8 @@ func (s *Server) halt() {
 		s.state = nil
 	}
 
-	s.identityPrivateKey.Reset()
 	s.identityPublicKey.Reset()
+	s.identityPrivateKey.Reset()
 	s.linkKey.Reset()
 	close(s.fatalErrCh)
 
@@ -191,6 +189,8 @@ func (s *Server) halt() {
 func New(cfg *config.Config) (*Server, error) {
 	s := new(Server)
 	s.cfg = cfg
+	s.geo = cfg.SphinxGeometry
+
 	s.fatalErrCh = make(chan error)
 	s.haltedCh = make(chan interface{})
 
@@ -208,35 +208,11 @@ func New(cfg *config.Config) (*Server, error) {
 	}
 
 	// Initialize the authority identity key.
-	var err error
 	identityPrivateKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.private.pem")
 	identityPublicKeyFile := filepath.Join(s.cfg.Server.DataDir, "identity.public.pem")
 
 	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
-
-	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err := pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		err = pem.FromFile(identityPublicKeyFile, s.identityPublicKey)
-		if err != nil {
-			return nil, err
-		}
-	} else if pem.BothNotExists(identityPrivateKeyFile, identityPublicKeyFile) {
-		err = pem.ToFile(identityPrivateKeyFile, s.identityPrivateKey)
-		if err != nil {
-			return nil, err
-		}
-		err = pem.ToFile(identityPublicKeyFile, s.identityPublicKey)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		return nil, fmt.Errorf("%s and %s must either both exist or not exist", identityPrivateKeyFile, identityPublicKeyFile)
-	}
-
-	s.identityPrivateKey, s.identityPublicKey = cert.Scheme.NewKeypair()
+	var err error
 	if pem.BothExists(identityPrivateKeyFile, identityPublicKeyFile) {
 		err = pem.FromFile(identityPrivateKeyFile, s.identityPrivateKey)
 		if err != nil {
@@ -284,13 +260,13 @@ func New(cfg *config.Config) (*Server, error) {
 			return nil, err
 		}
 	} else {
-		panic("Improbable: Only found one link PEM file, expected both Private and Public PEM files.")
+		panic("Improbable: Only found one link PEM file.")
 	}
 
 	s.linkKey = linkPrivateKey
 
-	idKeyHash := s.identityPublicKey.Sum256()
-	s.log.Noticef("Authority identity public key is: %x", idKeyHash[:])
+	s.log.Noticef("Authority identity public key hash is: %x", s.identityPublicKey.Sum256())
+	s.log.Noticef("Authority link public key hash is: %x", s.linkKey.PublicKey().Sum256())
 
 	if s.cfg.Debug.GenerateOnly {
 		return nil, ErrGenerateOnly
@@ -327,6 +303,7 @@ func New(cfg *config.Config) (*Server, error) {
 	if s.state, err = newState(s); err != nil {
 		return nil, err
 	}
+	s.state.Go(s.state.worker)
 
 	// Start up the listeners.
 	for _, v := range s.cfg.Server.Addresses {

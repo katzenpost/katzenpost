@@ -122,10 +122,20 @@ func (p *pki) worker() {
 			<-timer.C
 		}
 
+		// Check to see if we need to publish the descriptor, and do so, along
+		// with all the key rotation bits.
+		err := p.publishDescriptorIfNeeded(pkiCtx)
+		if isCanceled() {
+			// Canceled mid-post
+			return
+		}
+		if err != nil {
+			p.log.Warningf("Failed to post to PKI: %v", err)
+		}
+
 		// Fetch the PKI documents as required.
 		var didUpdate bool
 		for _, epoch := range p.documentsToFetch() {
-			instrument.SetFetchedPKIDocsTimer()
 			// Certain errors in fetching documents are treated as hard
 			// failures that suppress further attempts to fetch the document
 			// for the epoch.
@@ -173,7 +183,6 @@ func (p *pki) worker() {
 			p.Unlock()
 			didUpdate = true
 			instrument.FetchedPKIDocs(fmt.Sprintf("%v", epoch))
-			instrument.TimeFetchedPKIDocsDuration()
 		}
 
 		p.pruneFailures()
@@ -183,17 +192,6 @@ func (p *pki) worker() {
 
 			// If the PKI document map changed, kick the connector worker.
 			p.glue.Connector().ForceUpdate()
-		}
-
-		// Check to see if we need to publish the descriptor, and do so, along
-		// with all the key rotation bits.
-		err := p.publishDescriptorIfNeeded(pkiCtx)
-		if isCanceled() {
-			// Canceled mid-post
-			return
-		}
-		if err != nil {
-			p.log.Warningf("Failed to post to PKI: %v", err)
 		}
 
 		// Internal component depend on network wide paramemters, and or the
@@ -737,7 +735,6 @@ func makeDescAddrMap(addrs []string) (map[cpki.Transport][]string, error) {
 		default:
 			return nil, fmt.Errorf("address '%v' is invalid", addr)
 		}
-
 	}
 	return m, nil
 }

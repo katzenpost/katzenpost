@@ -58,6 +58,7 @@ Addresses = [ "tcp4://127.0.0.1:29483", "tcp6://[::1]:29483" ]
 OnlyAdvertiseAddresses = [ "http://127.0.0.1:443", "tcp://[::1]:22" ]
 DataDir = "%s"
 IsProvider = true
+MetricsAddress = "127.0.0.1:6543"
 
 [Provider]
   [[Provider.Kaetzchen]]
