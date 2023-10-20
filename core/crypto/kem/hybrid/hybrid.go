@@ -20,6 +20,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/cloudflare/circl/kem"
+	"github.com/go-faster/xor"
 )
 
 var (
@@ -158,17 +159,6 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	return &PublicKey{sch, pk1, pk2}, &PrivateKey{sch, sk1, sk2}
 }
 
-func xor(a, b []byte) []byte {
-	if len(a) != len(b) {
-		panic("xor error, two slices must be equal in length")
-	}
-	out := make([]byte, len(a))
-	for i := 0; i < len(a); i++ {
-		out[i] = a[i] ^ b[i]
-	}
-	return out
-}
-
 func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 
 	// implement split PRF KEM combiner as:
@@ -215,7 +205,9 @@ func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 	}
 	hash2 := h2.Sum(nil)
 
-	return xor(hash1, hash2)
+	out := make([]byte, len(hash1))
+	xor.Bytes(out, hash1, hash2)
+	return out
 }
 
 func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
