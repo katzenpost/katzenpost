@@ -93,7 +93,8 @@ are also hashed together:
 // H is a hash function
 
 func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
-        return H(ss1 || ss2 || cct1 || cct2)
+    cct := cct1 || cct2
+    return H(ss1 || cct) XOR H(ss2, cct)
 }
 ```
 

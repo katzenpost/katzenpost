@@ -158,9 +158,26 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	return &PublicKey{sch, pk1, pk2}, &PrivateKey{sch, sk1, sk2}
 }
 
-func splitPRF(ss1, ss2, ct1, ct2 []byte) []byte {
+func xor(a, b []byte) []byte {
+	if len(a) != len(b) {
+		panic("xor error, two slices must be equal in length")
+	}
+	out := make([]byte, len(a))
+	for i := 0; i < len(a); i++ {
+		out[i] = a[i] ^ b[i]
+	}
+	return out
+}
+
+func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
+
 	// implement split PRF KEM combiner as:
-	// H(ss1 || ss2 || ct1 || ct2)
+	//
+	// func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
+	//         cct := cct1 || cct2
+	//         return H(ss1 || cct) XOR H(ss2, cct)
+	// }
+	//
 	// in order to retain IND-CCA2 security
 	// as described here, at the bottom of page 3:
 	// KEM Combiners
@@ -168,27 +185,37 @@ func splitPRF(ss1, ss2, ct1, ct2 []byte) []byte {
 	// https://eprint.iacr.org/2018/024.pdf
 	//
 
-	h, err := blake2b.New256(nil)
+	cct := append(cct1, cct2...)
+
+	h1, err := blake2b.New256(nil)
 	if err != nil {
 		panic(err)
 	}
-	_, err = h.Write(ss1)
+	_, err = h1.Write(ss1)
 	if err != nil {
 		panic(err)
 	}
-	_, err = h.Write(ss2)
+	_, err = h1.Write(cct)
 	if err != nil {
 		panic(err)
 	}
-	_, err = h.Write(ct1)
+	hash1 := h1.Sum(nil)
+
+	h2, err := blake2b.New256(nil)
 	if err != nil {
 		panic(err)
 	}
-	_, err = h.Write(ct2)
+	_, err = h2.Write(ss2)
 	if err != nil {
 		panic(err)
 	}
-	return h.Sum(nil)
+	_, err = h2.Write(cct)
+	if err != nil {
+		panic(err)
+	}
+	hash2 := h2.Sum(nil)
+
+	return xor(hash1, hash2)
 }
 
 func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
