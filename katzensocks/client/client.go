@@ -19,12 +19,12 @@ package client
 import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
-	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/client/constants"
 	"github.com/katzenpost/katzenpost/client/utils"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
+	"github.com/katzenpost/katzenpost/core/wire"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/katzensocks/cashu"
 	"github.com/katzenpost/katzenpost/katzensocks/common"
@@ -48,7 +48,9 @@ var (
 	backOffFloor = 100 * time.Millisecond
 
 	// Cashu configuration
-	cashuWalletUrl = "http://localhost:4448"
+	cashuWalletUrl = "http://127.0.0.1:4448"
+
+	errNoGatewayDescriptor = errors.New("No Gateway descriptors available")
 )
 
 func GetPKI(ctx context.Context, cfgFile string) (pki.Client, *pki.Document, error) {
@@ -109,11 +111,11 @@ type Client struct {
 	desc          *utils.ServiceDescriptor
 	descs         []*utils.ServiceDescriptor
 	sessionToDesc map[string]*utils.ServiceDescriptor
-	log          *logging.Logger
-	s            *client.Session
-	msgCallbacks map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
-	payloadLen   int
-	cashuClient  *cashu.CashuApiClient
+	log           *logging.Logger
+	s             *client.Session
+	msgCallbacks  map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)
+	payloadLen    int
+	cashuClient   *cashu.CashuApiClient
 }
 
 func NewClient(s *client.Session) (*Client, error) {
@@ -126,7 +128,7 @@ func NewClient(s *client.Session) (*Client, error) {
 	cashuClient := cashu.NewCashuApiClient(nil, cashuWalletUrl)
 
 	return &Client{descs: descs, s: s, log: l, payloadLen: s.SphinxGeometry().UserForwardPayloadLength,
-		msgCallbacks: make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
+		msgCallbacks:  make(map[[constants.MessageIDLength]byte]func(*client.MessageReplyEvent)),
 		sessionToDesc: make(map[string]*utils.ServiceDescriptor), cashuClient: cashuClient}, nil
 }
 
@@ -502,22 +504,11 @@ func (c *Client) SocksHandler(conn net.Conn) {
 		return
 	}
 
-	id := make([]byte, 32)
-	_, err = io.ReadFull(rand.Reader, id)
+	id, err := c.NewSession()
 	if err != nil {
-		panic(err)
+		c.log.Errorf("NewSession failure: %v", err)
+		return
 	}
-
-	// map the id to the selected exit descriptor
-	c.Lock()
-	if _, ok := c.sessionToDesc[string(id)]; !ok {
-		if len(c.descs) == 0 {
-			c.log.Errorf("No Gateway descriptors available")
-			return
-		}
-		c.sessionToDesc[string(id)] = c.descs[0] // pick the descriptor somehow
-	}
-	c.Unlock()
 
 	// send a topup command to create a session
 	err = <-c.Topup(id)
@@ -565,4 +556,51 @@ func (c *Client) SocksHandler(conn net.Conn) {
 			}
 		}
 	}
+}
+
+// SetGateway tells client to use a specific provider's gateway service
+func (c *Client) SetGateway(provider string) error {
+	// try to find the gateway by provider name
+	doc := c.s.CurrentDocument()
+	if doc == nil {
+		return errors.New("No current PKI document")
+	}
+
+	descs := utils.FindServices("katzensocks", doc)
+	for _, desc := range descs {
+		if desc.Provider == provider {
+			c.Lock()
+			c.desc = &desc
+			c.Unlock()
+			return nil
+		}
+	}
+	return errors.New("Gateway not found")
+}
+
+func (c *Client) NewSession() ([]byte, error) {
+	id := make([]byte, 32)
+	_, err := io.ReadFull(rand.Reader, id)
+	if err != nil {
+		panic(err)
+	}
+	sessionID := string(id)
+
+	// map the id to the selected exit descriptor
+	c.Lock()
+	if _, ok := c.sessionToDesc[sessionID]; !ok {
+		if len(c.descs) == 0 {
+			return nil, errNoGatewayDescriptor
+		}
+		if c.desc != nil {
+			c.sessionToDesc[sessionID] = c.desc
+		} else {
+			m := rand.NewMath()
+			i := m.Intn(len(c.descs))
+			c.sessionToDesc[sessionID] = c.descs[i]
+			c.log.Debugf("Added session %x", sessionID)
+		}
+	}
+	c.Unlock()
+	return id, nil
 }

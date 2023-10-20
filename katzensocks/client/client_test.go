@@ -57,9 +57,8 @@ func TestDockerProxy(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(c)
 
-	// make a unique id
-	id := make([]byte, 32)
-	_, err = io.ReadFull(rand.Reader, id)
+	// get a new session
+	id, err :=  c.NewSession()
 	require.NoError(err)
 
 	// add some credit

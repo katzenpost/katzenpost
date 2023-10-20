@@ -17,7 +17,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -214,7 +213,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
-						"host":      "localhost:3338",
+						"host":      "127.0.0.1:3338",
 						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
 						"log_level": s.logLevel,
 					},
@@ -317,12 +316,9 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
-		h := cfgIdKey(configs[i], s.outDir).Sum256()
 		peers := []*vConfig.Authority{}
-		for id, peer := range s.authorities {
-			if !bytes.Equal(id[:], h[:]) {
-				peers = append(peers, peer)
-			}
+		for _, peer := range s.authorities {
+			peers = append(peers, peer)
 		}
 		sort.Sort(AuthById(peers))
 		configs[i].Authorities = peers
@@ -663,8 +659,6 @@ services:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
     network_mode: host
-
-
     depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, p.Identifier)
 		for _, authCfg := range s.votingAuthConfigs {
 			write(f, `
@@ -772,11 +766,8 @@ services:
 	// add cashu mint
 	write(f, `
   cashu_mint:
-    restart: "no"
+    restart: on-failure
     image: cashu
-    build:
-      context: .
-      dockerfile: Dockerfile.cashu
     network_mode: host
     expose:
      - "3338/tcp"
@@ -785,6 +776,7 @@ services:
      - MINT_PRIVATE_KEY=TEST_PRIVATE_KEY
      - MINT_LISTEN_HOST=0.0.0.0
      - MINT_LISTEN_PORT=3338
+     - TOR=False
     command: ["poetry", "run", "mint"]
 `)
 
@@ -801,6 +793,7 @@ services:
       - MINT_URL=http://127.0.0.1:3338
       - API_HOST=127.0.0.1
       - API_PORT=4448
+      - TOR=False
     command: ["poetry", "run", "cashu", "-d"]
 `)
 
@@ -809,7 +802,6 @@ services:
   server_cashu_wallet:
     restart: "no"
     image: cashu
-    container_name: server_cashu_wallet
     network_mode: host
     expose:
      - "4449/tcp"
@@ -818,6 +810,7 @@ services:
       - MINT_URL=http://127.0.0.1:3338
       - API_HOST=127.0.0.1
       - API_PORT=4449
+      - TOR=False
     command: ["poetry", "run", "cashu", "-d"]
 `)
 	return nil
