@@ -14,6 +14,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/text"
+	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
 	"github.com/katzenpost/katzenpost/client"
@@ -23,6 +24,7 @@ import (
 	"image/color"
 	"log"
 	"net"
+	"net/netip"
 	"os"
 	"sync"
 	"time"
@@ -33,15 +35,18 @@ const (
 )
 
 var (
-
-	// obtain the default data location
-	dataDirName = "cloakedproxy"
-
 	// application command line falgs
 	clientConfigFile = flag.String("cfg", "", "Path to the client config file.")
 	socksPort        = flag.Int("socks_port", 4242, "SOCKS5 TCP listening port")
-	debug            = flag.Int("d", 0, "Port for net/http/pprof listener")
 
+	// socks port selector
+	portSelect = &PortSelect{Editor: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}}
+	debug      = flag.Int("d", 0, "Port for net/http/pprof listener")
+
+	// wallet state
+	wallet = &Wallet{Balance: 0}
+
+	// application theme
 	th = func() *material.Theme {
 		th := material.NewTheme()
 		// XXX: for some reason I get no fonts when building/running in podman alpine without the next line
@@ -52,6 +57,9 @@ var (
 		th.ContrastFg = rgb(0x77777777)
 		return th
 	}()
+
+	// proxy connected toggle:
+	connected widget.Bool
 
 	//go:embed default_config_without_tor.toml
 	cfgWithoutTor []byte
@@ -70,6 +78,56 @@ func argb(c uint32) color.NRGBA {
 
 func rgb(c uint32) color.NRGBA {
 	return argb((0xff << 24) | c)
+}
+
+type Wallet struct {
+	Balance int
+}
+
+func (w *Wallet) Layout(gtx C) D {
+	return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx C) D {
+		return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Start}.Layout(gtx,
+			layout.Rigid(material.H6(th, "Balance").Layout),
+			layout.Rigid(material.H6(th, fmt.Sprintf("%d", w.Balance)).Layout),
+		)
+	})
+}
+
+// widget to select socks proxy port
+type PortSelect struct {
+	Editor *widget.Editor
+}
+
+// Layout renders the port selector widget
+func (p *PortSelect) Layout(gtx C) D {
+	return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx C) D {
+		return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Start}.Layout(gtx,
+			layout.Rigid(material.H6(th, "SOCKS5 Port").Layout),
+			layout.Rigid(material.Editor(th, p.Editor, "port").Layout),
+		)
+	})
+}
+
+// Update processes the Editor events and validates the input
+func (p *PortSelect) Update() {
+	for _, e := range p.Editor.Events() {
+		switch e.(type) {
+		case widget.SubmitEvent:
+			ap := "127.0.0.1:" + p.Editor.Text()
+			addr, err := netip.ParseAddrPort(ap)
+			if err != nil {
+				log.Print(err)
+			} else {
+				port := int(addr.Port())
+				if port >= 1024 {
+					*socksPort = port
+				} else {
+					log.Printf("port %d too low (<1024)", port)
+				}
+			}
+			p.Editor.SetText(fmt.Sprintf("%d", *socksPort))
+		}
+	}
 }
 
 type App struct {
@@ -106,6 +164,7 @@ func (a *App) handleGioEvents(e interface{}) error {
 		return errors.New("system.DestroyEvent receieved")
 	case system.FrameEvent:
 		gtx := layout.NewContext(a.ops, e)
+		a.Update()
 		a.Layout(gtx)
 		e.Frame(gtx.Ops)
 	case system.StageEvent:
@@ -123,19 +182,32 @@ func (a *App) handleGioEvents(e interface{}) error {
 	return nil
 }
 
+// Update reads events from the app elements
+func (a *App) Update() {
+	portSelect.Update()
+	a.updateConnectedSwitch()
+}
+
+func (a *App) updateConnectedSwitch() {
+	a.Lock()
+	defer a.Unlock()
+	if connected.Changed() {
+		go a.doConnectClick()
+	}
+}
+
+// This is the main app layout
 func (a *App) Layout(gtx layout.Context) {
 	// display connected status
 	// display disconnect/connect button
-	layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.End}.Layout(gtx,
-		layout.Rigid(material.H2(th, "Click Start Proxy to connect").Layout),
-		layout.Rigid(func(gtx C) D {
-			// check to see if the connect button was clicked
-			if a.connect.Clicked() {
-				go a.doConnectClick()
-			}
-			// XXX: show "Stop Proxy if it is running"
-			return material.Button(th, a.connect, "Start Proxy").Layout(gtx)
-		}),
+	layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceAround, Alignment: layout.Baseline}.Layout(gtx,
+		// wallet balance
+		layout.Rigid(wallet.Layout),
+		// Proxy Port Selector
+		layout.Rigid(portSelect.Layout),
+		// layout the exit node selection
+		//layout.Rigid(exitSelect.Layout),
+		layout.Rigid(material.Switch(th, &connected, "").Layout),
 	)
 }
 
@@ -150,6 +222,7 @@ func (a *App) doConnectClick() {
 			cancel()
 			a.Lock()
 			a.connectOnce = new(sync.Once)
+			connected.Value = false
 			a.Unlock()
 			return
 		}
@@ -196,6 +269,7 @@ func (a *App) doConnectClick() {
 			}
 			a.Lock()
 			a.connectOnce = new(sync.Once)
+			connected.Value = false
 			a.Unlock()
 		})
 	})
@@ -204,6 +278,7 @@ func (a *App) doConnectClick() {
 func main() {
 
 	flag.Parse()
+	portSelect.Editor.SetText(fmt.Sprintf("%d", *socksPort))
 	go func() {
 		w := app.NewWindow(
 			//app.Size(unit.Dp(400), unit.Dp(400)),
