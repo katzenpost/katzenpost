@@ -213,7 +213,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool, transports []
 					Command:        s.baseDir + "/proxy_server" + s.binSuffix,
 					MaxConcurrency: 1,
 					Config: map[string]interface{}{
-						"host":      "localhost:3338",
+						"host":      "127.0.0.1:3338",
 						"log_dir":   s.baseDir + "/" + cfg.Server.Identifier,
 						"log_level": s.logLevel,
 					},
@@ -659,8 +659,6 @@ services:
       - ./:%s
     command: %s/server%s -f %s/%s/katzenpost.toml
     network_mode: host
-
-
     depends_on:`, p.Identifier, dockerImage, s.baseDir, s.baseDir, s.binSuffix, s.baseDir, p.Identifier)
 		for _, authCfg := range s.votingAuthConfigs {
 			write(f, `
@@ -768,11 +766,8 @@ services:
 	// add cashu mint
 	write(f, `
   cashu_mint:
-    restart: "no"
+    restart: on-failure
     image: cashu
-    build:
-      context: .
-      dockerfile: Dockerfile.cashu
     network_mode: host
     expose:
      - "3338/tcp"
@@ -807,7 +802,6 @@ services:
   server_cashu_wallet:
     restart: "no"
     image: cashu
-    container_name: server_cashu_wallet
     network_mode: host
     expose:
      - "4449/tcp"

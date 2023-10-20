@@ -2,28 +2,55 @@ package main
 
 import (
 	"github.com/katzenpost/katzenpost/katzensocks/client"
+	"github.com/katzenpost/katzenpost/client/utils"
 
 	"flag"
 	"fmt"
+	"context"
 	"net"
 	"sync"
+	"time"
 )
 
 var (
 	cfgFile = flag.String("cfg", "katzensocks.toml", "config file")
+	gateway = flag.String("gw", "", "gateway provider name, default uses random gateway for each connection")
+	pkiOnly = flag.Bool("list", false, "fetch and display pki and gateways, does not connect")
 	port    = flag.Int("port", 4242, "listener address")
 	retry   = flag.Int("retry", -1, "limit number of reconnection attempts")
 	delay   = flag.Int("delay", 30, "time to wait between connection attempts (seconds)>")
 )
 
+func showPKI() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*delay) * time.Second)
+	defer cancel()
+
+	_, doc, err := client.GetPKI(ctx, *cfgFile)
+	if err != nil {
+		panic(err)
+	}
+	// display the pki.Document
+	fmt.Println(doc.String())
+
+	// display the gateway services
+	descs := utils.FindServices("katzensocks", doc)
+	for _, desc := range descs {
+		fmt.Println(desc)
+	}
+}
+
 func main() {
 	flag.Parse()
+	if *pkiOnly {
+		showPKI()
+		return
+	}
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
 	if err != nil {
 		panic(err)
 	}
 
-	s, err := client.GetSession(*cfgFile, *retry, *delay)
+	s, err := client.GetSession(*cfgFile, *delay, *retry)
 	if err != nil {
 		panic(err)
 	}
