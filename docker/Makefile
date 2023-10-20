@@ -23,10 +23,10 @@ providers=2
 
 # Parameters
 sr=0
-mu=0.005
-muMax=1000
-lP=0.001
-lPMax=1000
+mu=0.06
+muMax=50
+lP=0.4
+lPMax=20
 lL=0.0005
 lLMax=1000
 lD=0.0005
@@ -34,7 +34,7 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 
-UserForwardPayloadLength=2000
+UserForwardPayloadLength=6000
 
 # specify which transport types to listen on
 onlyTransports=
