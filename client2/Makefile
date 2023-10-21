@@ -16,7 +16,7 @@ image=katzenpost-$(distro)_go_mod
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --rm
 
 test:
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags}
+	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags} ./...
 
 lint:
 	golint ./...

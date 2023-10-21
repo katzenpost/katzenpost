@@ -17,6 +17,21 @@ import (
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
+func TestDockerClientShutdown(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	egressSize := 100
+	d, err := NewDaemon(cfg, egressSize)
+	require.NoError(t, err)
+	err = d.Start()
+	require.NoError(t, err)
+
+	time.Sleep(time.Second * 3)
+
+	d.Halt()
+}
+
 func TestDockerClientSendReceive(t *testing.T) {
 	cfg, err := config.LoadFile("testdata/client.toml")
 	require.NoError(t, err)
@@ -80,7 +95,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 	thin.ARQSend(id, message1, &nodeIdKey, []byte("testdest"))
 	time.Sleep(time.Second * 3)
 
-	replyID, message2 := thin.ARQReceiveMessage()
+	replyID, message2 = thin.ARQReceiveMessage()
 
 	require.NotNil(t, replyID)
 	require.NoError(t, err)
