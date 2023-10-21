@@ -70,7 +70,7 @@ func NewTestDest(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 // capability, on the configured endpoint.
 func NewEcho(cfg *config.Kaetzchen, glue glue.Glue) (Kaetzchen, error) {
 	k := &kaetzchenEcho{
-		log:    glue.LogBackend().GetLogger("kaetzchen/echo"),
+		log:    glue.LogBackend().GetLogger("kaetzchen/echo2"),
 		params: make(Parameters),
 		cap:    EchoCapability,
 	}

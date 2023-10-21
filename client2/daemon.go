@@ -26,6 +26,7 @@ type sphinxReply struct {
 }
 
 type replyDescriptor struct {
+	ID      *[MessageIDLength]byte
 	appID   uint64
 	surbKey []byte
 }
@@ -159,7 +160,9 @@ func (d *Daemon) egressWorker() {
 			desc, ok := d.replies[*reply.surbID]
 			if !ok {
 				desc, ok = d.decoys[*reply.surbID]
-				if !ok {
+				if ok {
+					isDecoy = true
+				} else {
 					if d.arq.Has(reply.surbID) {
 						myDesc, err := d.arq.HandleAck(reply.surbID)
 						if err != nil {
@@ -172,7 +175,7 @@ func (d *Daemon) egressWorker() {
 						continue
 					}
 				}
-				isDecoy = true
+
 			}
 			delete(d.replies, *reply.surbID)
 			delete(d.decoys, *reply.surbID)
@@ -188,15 +191,16 @@ func (d *Daemon) egressWorker() {
 
 			// XXX FIXME consume statistics on our loop decoys for n-1 detection
 			if isDecoy {
+				d.log.Info("decoy message ---")
 				continue
 			}
-
 			conn, ok := d.listener.conns[desc.appID]
 			if !ok {
 				d.log.Infof("no connection associated with AppID %d", desc.appID)
 				panic("no connection associated with AppID")
 			}
 			conn.sendResponse(&Response{
+				ID:      desc.ID,
 				SURBID:  reply.surbID,
 				AppID:   desc.appID,
 				Payload: plaintext,
@@ -219,13 +223,7 @@ func (d *Daemon) egressWorker() {
 }
 
 func (d *Daemon) sendARQMessage(request *Request) {
-	id := &[MessageIDLength]byte{}
-	_, err := rand.Reader.Read(id[:])
-	if err != nil {
-		panic(err)
-	}
-
-	err = d.arq.Send(request.AppID, id, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
+	err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
 	if err != nil {
 		panic(err)
 	}
@@ -247,8 +245,6 @@ func (d *Daemon) send(request *Request) {
 		replyArrivalTime := time.Now().Add(duration)
 		d.log.Infof("reply arrival duration: %s", duration)
 		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
-	} else {
-
 	}
 
 	if request.IsSendOp {

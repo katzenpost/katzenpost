@@ -90,6 +90,7 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 }
 
 func (c *incomingConn) sendResponse(response *Response) error {
+	c.log.Debug("sendResponse")
 	blob, err := cbor.Marshal(response)
 	if err != nil {
 		return err

@@ -95,7 +95,7 @@ func main() {
 		panic("pki doc cannot be nil")
 	}
 
-	echoServices := client2.FindServices("echo", doc)
+	echoServices := client2.FindServices(service, doc)
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}

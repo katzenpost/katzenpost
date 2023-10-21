@@ -265,6 +265,7 @@ func (t *ThinClient) ReceiveMessage() (*[sConstants.SURBIDLength]byte, []byte) {
 
 func (t *ThinClient) ARQSend(ID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := new(Request)
+	req.ID = ID
 	req.WithSURB = true
 	req.IsARQSendOp = true
 	req.Payload = payload

@@ -87,8 +87,8 @@ const TestCapability = "testdest"
 
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
-	EchoCapability:      NewEcho,
 	TestCapability:      NewTestDest,
+	EchoCapability:      NewEcho,
 	keyserverCapability: NewKeyserver,
 }
 

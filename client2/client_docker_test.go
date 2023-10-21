@@ -14,7 +14,7 @@ import (
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	//sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
+	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 )
 
 func TestDockerClientSendReceive(t *testing.T) {
@@ -43,7 +43,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 
 	pingTargets := []*cpki.MixDescriptor{}
 	for i := 0; i < len(doc.Providers); i++ {
-		_, ok := doc.Providers[i].Kaetzchen["echo"]
+		_, ok := doc.Providers[i].Kaetzchen["testdest"]
 		if ok {
 			pingTargets = append(pingTargets, doc.Providers[i])
 		}
@@ -52,47 +52,42 @@ func TestDockerClientSendReceive(t *testing.T) {
 	message1 := []byte("hello alice, this is bob.")
 	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 
-	/*
-		        t.Log("thin client send ping")
-			surbID := &[sConstants.SURBIDLength]byte{}
-			_, err = rand.Reader.Read(surbID[:])
-			require.NoError(t, err)
+	// Test send/receive
 
-			thin.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
-
-			time.Sleep(time.Second * 3)
-
-			replyID, message2 := thin.ReceiveMessage()
-
-			require.NoError(t, err)
-			require.NotEqual(t, message1, []byte{})
-			require.NotEqual(t, message2, []byte{})
-			require.Equal(t, message1, message2[:len(message1)])
-			require.Equal(t, replyID, surbID)
-	*/
-
-	t.Log("thin client ARQ SEND")
-
-	id := &[MessageIDLength]byte{}
-	_, err = rand.Reader.Read(id[:])
+	t.Log("thin client send ping")
+	surbID := &[sConstants.SURBIDLength]byte{}
+	_, err = rand.Reader.Read(surbID[:])
 	require.NoError(t, err)
 
-	t.Log("BEGIN -----------------------------------------------------------------------------------------------------------")
-	thin.ARQSend(id, message1, &nodeIdKey, []byte("testdest"))
-	t.Log("END -------------------------------------------------------------------------------------------------------------")
+	thin.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
+
 	time.Sleep(time.Second * 3)
 
-	t.Log("thin client ARQ RECEIVE")
-
-	t.Log("BEGIN -----------------------------------------------------------------------------------------------------------")
 	replyID, message2 := thin.ReceiveMessage()
-	t.Log("END -------------------------------------------------------------------------------------------------------------")
 
 	require.NoError(t, err)
 	require.NotEqual(t, message1, []byte{})
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
-	require.Equal(t, replyID, id)
+	require.Equal(t, replyID, surbID)
+
+	// Test ARQ send/receive
+
+	id := &[MessageIDLength]byte{}
+	_, err = rand.Reader.Read(id[:])
+	require.NoError(t, err)
+
+	thin.ARQSend(id, message1, &nodeIdKey, []byte("testdest"))
+	time.Sleep(time.Second * 3)
+
+	replyID, message2 := thin.ARQReceiveMessage()
+
+	require.NotNil(t, replyID)
+	require.NoError(t, err)
+	require.NotEqual(t, message1, []byte{})
+	require.NotEqual(t, message2, []byte{})
+	require.Equal(t, message1, message2[:len(message1)])
+	require.Equal(t, replyID[:], id[:])
 
 	d.Halt()
 }
