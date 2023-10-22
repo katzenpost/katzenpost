@@ -25,7 +25,9 @@ func SplitPRF(ss, cct [][]byte) []byte {
 
 	cctcat := []byte{}
 	for i := 0; i < len(cct); i++ {
-		cctcat = append(cctcat, cct[i]...)
+		ciphertext := make([]byte, len(cct[i]))
+		copy(ciphertext, cct[i])
+		cctcat = append(cctcat, ciphertext...)
 	}
 
 	hashes := make([][]byte, len(ss))
@@ -55,6 +57,10 @@ func SplitPRF(ss, cct [][]byte) []byte {
 }
 
 func PairSplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
+	return SplitPRF([][]byte{ss1, ss2}, [][]byte{cct1, cct2})
+}
+
+func NoPairSplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 
 	// implement split PRF KEM combiner as:
 	//
@@ -65,7 +71,7 @@ func PairSplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 	//
 	// Which simplifies to:
 	//
-	// splitPRF := PRF(ss1, cct2) xor PRF(ss2, cct1)
+	// splitPRF := PRF(ss1, cct2) XOR PRF(ss2, cct1)
 	//
 	// in order to retain IND-CCA2 security
 	// as described in KEM Combiners

@@ -275,11 +275,19 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 
 	seeds := make([][]byte, len(sch.schemes))
 	offset := sch.schemes[0].EncapsulationSeedSize()
-	seeds[0] = seed[:offset]
+	seeds[0] = make([]byte, sch.schemes[0].EncapsulationSeedSize())
+	copy(seeds[0], seed[:offset])
 	for i := 1; i < len(sch.schemes); i++ {
 		seedSize := sch.schemes[i].EncapsulationSeedSize()
-		seeds[i] = seed[offset:seedSize]
+		seeds[i] = make([]byte, sch.schemes[i].EncapsulationSeedSize())
+		copy(seeds[i], seed[offset:seedSize])
 		offset += seedSize
+	}
+
+	for i := 0; i < len(sch.schemes); i++ {
+		if len(seeds[i]) != sch.schemes[i].EncapsulationSeedSize() {
+			panic("wtf")
+		}
 	}
 
 	pub, ok := publicKey.(*PublicKey)
@@ -296,9 +304,13 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 		if err != nil {
 			return nil, nil, err
 		}
-		ciphertexts[i] = cct
-		sharedSecrets[i] = ss
-		ciphertextBlob = append(ciphertextBlob, cct...)
+		ciphertexts[i] = make([]byte, sch.schemes[i].CiphertextSize())
+		copy(ciphertexts[i], cct)
+		sharedSecrets[i] = make([]byte, sch.schemes[i].SharedKeySize())
+		copy(sharedSecrets[i], ss)
+		cct2 := make([]byte, len(cct))
+		copy(cct2, cct)
+		ciphertextBlob = append(ciphertextBlob, cct2...)
 	}
 
 	ss = utils.SplitPRF(ciphertexts, sharedSecrets)
@@ -325,15 +337,23 @@ func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sharedSecrets[0] = ss
+	sharedSecrets[0] = make([]byte, sch.schemes[0].SharedKeySize())
+	copy(sharedSecrets[0], ss)
 
 	for i := 1; i < len(sch.schemes); i++ {
-		ss, err = sch.schemes[i].Decapsulate(priv.keys[i], ct[offset:])
+		ciphertextSize := sch.schemes[i].CiphertextSize()
+
+		ciphertext := make([]byte, ciphertextSize)
+		copy(ciphertext, ct[offset:ciphertextSize])
+
+		ciphertexts[i] = make([]byte, ciphertextSize)
+		copy(ciphertexts[i], ciphertext)
+
+		sharedSecrets[i], err = sch.schemes[i].Decapsulate(priv.keys[i], ciphertext)
 		if err != nil {
 			return nil, err
 		}
-		offset += sch.schemes[1].CiphertextSize()
-		sharedSecrets[i] = ss
+		offset += ciphertextSize
 	}
 
 	return utils.SplitPRF(sharedSecrets, ciphertexts), nil
