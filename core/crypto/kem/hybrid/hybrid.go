@@ -17,10 +17,8 @@ import (
 	"errors"
 	"fmt"
 
-	"golang.org/x/crypto/blake2b"
-
 	"github.com/cloudflare/circl/kem"
-	"github.com/go-faster/xor"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/utils"
 )
 
 var (
@@ -159,57 +157,6 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	return &PublicKey{sch, pk1, pk2}, &PrivateKey{sch, sk1, sk2}
 }
 
-func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
-
-	// implement split PRF KEM combiner as:
-	//
-	// func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
-	//         cct := cct1 || cct2
-	//         return H(ss1 || cct) XOR H(ss2, cct)
-	// }
-	//
-	// in order to retain IND-CCA2 security
-	// as described here, at the bottom of page 3:
-	// KEM Combiners
-	// by Federico Giacon, Felix Heuer, and Bertram Poettering
-	// https://eprint.iacr.org/2018/024.pdf
-	//
-
-	cct := append(cct1, cct2...)
-
-	h1, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h1.Write(ss1)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h1.Write(cct)
-	if err != nil {
-		panic(err)
-	}
-	hash1 := h1.Sum(nil)
-
-	h2, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h2.Write(ss2)
-	if err != nil {
-		panic(err)
-	}
-	_, err = h2.Write(cct)
-	if err != nil {
-		panic(err)
-	}
-	hash2 := h2.Sum(nil)
-
-	out := make([]byte, len(hash1))
-	xor.Bytes(out, hash1, hash2)
-	return out
-}
-
 func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	seed := make([]byte, sch.EncapsulationSeedSize())
 	_, err = rand.Reader.Read(seed)
@@ -241,7 +188,7 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 		return nil, nil, err
 	}
 
-	ss = splitPRF(ss1, ss2, ct1, ct2)
+	ss = utils.PairSplitPRF(ss1, ss2, ct1, ct2)
 
 	return append(ct1, ct2...), ss, nil
 }
@@ -266,7 +213,7 @@ func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return splitPRF(ss1, ss2, ct[:firstSize], ct[firstSize:]), nil
+	return utils.PairSplitPRF(ss1, ss2, ct[:firstSize], ct[firstSize:]), nil
 }
 
 func (sch *Scheme) UnmarshalBinaryPublicKey(buf []byte) (kem.PublicKey, error) {

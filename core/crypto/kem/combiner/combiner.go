@@ -11,8 +11,7 @@ import (
 	"fmt"
 
 	"github.com/cloudflare/circl/kem"
-	"github.com/go-faster/xor"
-	"golang.org/x/crypto/blake2b"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/utils"
 )
 
 var (
@@ -256,52 +255,6 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 		}
 }
 
-func splitPRF(ss, cct [][]byte) []byte {
-
-	// implement split PRF KEM combiner as:
-	//         cct := cct1 || cct2 || cct3 || ...
-	//         return H(ss1 || cct) XOR H(ss2, cct) XOR H(ss3, cct)
-	//
-	// in order to retain IND-CCA2 security
-	// as described in KEM Combiners
-	// by Federico Giacon, Felix Heuer, and Bertram Poettering
-	// https://eprint.iacr.org/2018/024.pdf
-
-	if len(ss) != len(cct) {
-		panic("mismatched slices")
-	}
-
-	cctcat := []byte{}
-	for i := 0; i < len(cct); i++ {
-		cctcat = append(cctcat, cct[i]...)
-	}
-
-	hashes := make([][]byte, len(ss))
-	for i := 0; i < len(ss); i++ {
-		h, err := blake2b.New256(nil)
-		if err != nil {
-			panic(err)
-		}
-		_, err = h.Write(ss[i])
-		if err != nil {
-			panic(err)
-		}
-		_, err = h.Write(cctcat)
-		if err != nil {
-			panic(err)
-		}
-		hashes[i] = h.Sum(nil)
-	}
-
-	acc := hashes[0]
-	for i := 1; i < len(ss); i++ {
-		out := make([]byte, 32)
-		xor.Bytes(out, acc, hashes[i])
-		acc = out
-	}
-	return acc
-}
-
 // Encapsulate creates a shared secret and ciphertext given a public key.
 func (sch *Scheme) Encapsulate(pk kem.PublicKey) (ct, ss []byte, err error) {
 	seed := make([]byte, sch.EncapsulationSeedSize())
@@ -343,7 +296,7 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 		sharedSecrets[i] = ss
 	}
 
-	ss = splitPRF(ciphertexts, sharedSecrets)
+	ss = utils.SplitPRF(ciphertexts, sharedSecrets)
 
 	for i := 1; i < len(sch.schemes); i++ {
 		ct = append(ct, ciphertexts[i]...)
@@ -381,7 +334,7 @@ func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 		sharedSecrets[i] = ss
 	}
 
-	return splitPRF(sharedSecrets, ciphertexts), nil
+	return utils.SplitPRF(sharedSecrets, ciphertexts), nil
 }
 
 // UnmarshalBinaryPublicKey unmarshals a binary blob representing a public key.
