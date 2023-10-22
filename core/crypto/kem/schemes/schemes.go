@@ -8,6 +8,7 @@ import (
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/combiner"
 	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
@@ -27,6 +28,14 @@ var allSchemes = [...]kem.Scheme{
 		"Kyber768-X25519",
 		adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
 		kyber768.Scheme(),
+	),
+
+	combiner.New(
+		"Kyber768-X25519_test",
+		[]kem.Scheme{
+			adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
+			kyber768.Scheme(),
+		},
 	),
 }
 

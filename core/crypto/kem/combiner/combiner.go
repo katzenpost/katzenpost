@@ -240,10 +240,12 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	pubKeys := make([]kem.PublicKey, len(sch.schemes))
 	privKeys := make([]kem.PrivateKey, len(sch.schemes))
 
-	for i := 0; i < len(sch.schemes); i++ {
-		pk, sk := sch.schemes[i].DeriveKeyPair(seed[:sch.schemes[i].SeedSize()])
-		pubKeys[i] = pk
-		privKeys[i] = sk
+	offset := sch.schemes[0].SeedSize()
+	pubKeys[0], privKeys[0] = sch.schemes[0].DeriveKeyPair(seed[:offset])
+
+	for i := 1; i < len(sch.schemes); i++ {
+		pubKeys[i], privKeys[i] = sch.schemes[i].DeriveKeyPair(seed[offset:])
+		offset += sch.schemes[i].SeedSize()
 	}
 
 	return &PublicKey{
@@ -275,8 +277,9 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 	offset := sch.schemes[0].EncapsulationSeedSize()
 	seeds[0] = seed[:offset]
 	for i := 1; i < len(sch.schemes); i++ {
-		seeds[i] = seed[offset:]
-		offset += sch.schemes[i].EncapsulationSeedSize()
+		seedSize := sch.schemes[i].EncapsulationSeedSize()
+		seeds[i] = seed[offset:seedSize]
+		offset += seedSize
 	}
 
 	pub, ok := publicKey.(*PublicKey)
@@ -286,23 +289,21 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 
 	ciphertexts := make([][]byte, len(sch.schemes))
 	sharedSecrets := make([][]byte, len(sch.schemes))
+	ciphertextBlob := []byte{}
 
-	for i := 1; i < len(sch.schemes); i++ {
+	for i := 0; i < len(sch.schemes); i++ {
 		cct, ss, err := sch.schemes[i].EncapsulateDeterministically(pub.keys[i], seeds[i])
 		if err != nil {
 			return nil, nil, err
 		}
 		ciphertexts[i] = cct
 		sharedSecrets[i] = ss
+		ciphertextBlob = append(ciphertextBlob, cct...)
 	}
 
 	ss = utils.SplitPRF(ciphertexts, sharedSecrets)
 
-	for i := 1; i < len(sch.schemes); i++ {
-		ct = append(ct, ciphertexts[i]...)
-	}
-
-	return ct, ss, nil
+	return ciphertextBlob, ss, nil
 }
 
 // Decapsulate decrypts a given KEM ciphertext using the given private key.
@@ -319,6 +320,7 @@ func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 	sharedSecrets := make([][]byte, len(sch.schemes))
 	ciphertexts := make([][]byte, len(sch.schemes))
 	offset := sch.schemes[0].CiphertextSize()
+
 	ss, err := sch.schemes[0].Decapsulate(priv.keys[0], ct[:offset])
 	if err != nil {
 		return nil, err
