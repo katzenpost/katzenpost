@@ -1,6 +1,8 @@
 package schemes
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
 	"encoding/hex"
 	"testing"
 
@@ -10,6 +12,7 @@ import (
 func TestHybridKEMOnly(t *testing.T) {
 	// test using the KEM used in our PQ Noise protocol
 	s := ByName("Kyber768-X25519")
+	s2 := ByName("Kyber768-X25519_test")
 
 	t.Logf("ciphertext size %d", s.CiphertextSize())
 	t.Logf("shared key size %d", s.SharedKeySize())
@@ -18,22 +21,49 @@ func TestHybridKEMOnly(t *testing.T) {
 	t.Logf("seed size %d", s.SeedSize())
 	t.Logf("encapsulation seed size %d", s.EncapsulationSeedSize())
 
-	pubkey1, privkey1, err := s.GenerateKeyPair()
+	t.Logf("ciphertext size %d", s2.CiphertextSize())
+	t.Logf("shared key size %d", s2.SharedKeySize())
+	t.Logf("private key size %d", s2.PrivateKeySize())
+	t.Logf("public key size %d", s2.PublicKeySize())
+	t.Logf("seed size %d", s2.SeedSize())
+	t.Logf("encapsulation seed size %d", s2.EncapsulationSeedSize())
+
+	seed := make([]byte, s.SeedSize())
+	_, err := rand.Reader.Read(seed)
 	require.NoError(t, err)
-	ct1, ss1, err := s.Encapsulate(pubkey1)
+
+	pubkey1, privkey1 := s.DeriveKeyPair(seed)
+	pubkey2, privkey2 := s2.DeriveKeyPair(seed)
+
+	pubkey1blob, err := pubkey1.MarshalBinary()
 	require.NoError(t, err)
+	pubkey2blob, err := pubkey2.MarshalBinary()
+	require.NoError(t, err)
+
+	require.True(t, hmac.Equal(pubkey1blob, pubkey2blob))
+
+	encapseed := make([]byte, s.EncapsulationSeedSize())
+	_, err = rand.Reader.Read(encapseed)
+	require.NoError(t, err)
+
+	ct1, ss1, err := s.EncapsulateDeterministically(pubkey1, encapseed)
+	require.NoError(t, err)
+	ct2, ss2, err := s2.EncapsulateDeterministically(pubkey2, encapseed)
+	require.NoError(t, err)
+
+	require.Equal(t, ct1, ct2)
+	require.Equal(t, ss1, ss2)
+
 	ss1b, err := s.Decapsulate(privkey1, ct1)
 	require.NoError(t, err)
 
-	t.Logf("our shared key is %x", ss1)
-	t.Logf("our shared key is %x", ss1b)
-
-	require.Equal(t, ss1, ss1b) // XXX
-
-	ct2, ss2, err := s.Encapsulate(pubkey1)
+	ss2b, err := s2.Decapsulate(privkey2, ct2)
 	require.NoError(t, err)
-	require.NotEqual(t, ct1, ct2)
-	require.NotEqual(t, ss1, ss2)
+
+	require.Equal(t, ss1b, ss1)
+	require.Equal(t, ss2b, ss1)
+
+	require.Equal(t, ss1, ss1b)
 }
 
 func NoTestHybridKEMOnly(t *testing.T) {

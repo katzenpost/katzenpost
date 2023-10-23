@@ -232,7 +232,6 @@ func (sch *Scheme) GenerateKeyPair() (kem.PublicKey, kem.PrivateKey, error) {
 
 // DeriveKeyPair uses a seed value to deterministically generate a key pair.
 func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
-
 	if len(seed) != sch.SeedSize() {
 		panic(fmt.Sprintf("seed size must be %d", sch.SeedSize()))
 	}
@@ -244,8 +243,9 @@ func (sch *Scheme) DeriveKeyPair(seed []byte) (kem.PublicKey, kem.PrivateKey) {
 	pubKeys[0], privKeys[0] = sch.schemes[0].DeriveKeyPair(seed[:offset])
 
 	for i := 1; i < len(sch.schemes); i++ {
-		pubKeys[i], privKeys[i] = sch.schemes[i].DeriveKeyPair(seed[offset:])
-		offset += sch.schemes[i].SeedSize()
+		seedSize := sch.schemes[i].SeedSize()
+		pubKeys[i], privKeys[i] = sch.schemes[i].DeriveKeyPair(seed[offset : offset+seedSize])
+		offset += seedSize
 	}
 
 	return &PublicKey{
@@ -275,19 +275,12 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 
 	seeds := make([][]byte, len(sch.schemes))
 	offset := sch.schemes[0].EncapsulationSeedSize()
-	seeds[0] = make([]byte, sch.schemes[0].EncapsulationSeedSize())
-	copy(seeds[0], seed[:offset])
+	seeds[0] = seed[:offset]
+
 	for i := 1; i < len(sch.schemes); i++ {
 		seedSize := sch.schemes[i].EncapsulationSeedSize()
-		seeds[i] = make([]byte, sch.schemes[i].EncapsulationSeedSize())
-		copy(seeds[i], seed[offset:seedSize])
+		seeds[i] = seed[offset : offset+seedSize]
 		offset += seedSize
-	}
-
-	for i := 0; i < len(sch.schemes); i++ {
-		if len(seeds[i]) != sch.schemes[i].EncapsulationSeedSize() {
-			panic("wtf")
-		}
 	}
 
 	pub, ok := publicKey.(*PublicKey)
@@ -304,16 +297,12 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 		if err != nil {
 			return nil, nil, err
 		}
-		ciphertexts[i] = make([]byte, sch.schemes[i].CiphertextSize())
-		copy(ciphertexts[i], cct)
-		sharedSecrets[i] = make([]byte, sch.schemes[i].SharedKeySize())
-		copy(sharedSecrets[i], ss)
-		cct2 := make([]byte, len(cct))
-		copy(cct2, cct)
-		ciphertextBlob = append(ciphertextBlob, cct2...)
+		ciphertexts[i] = cct
+		sharedSecrets[i] = ss
+		ciphertextBlob = append(ciphertextBlob, cct...)
 	}
 
-	ss = utils.SplitPRF(ciphertexts, sharedSecrets)
+	ss = utils.SplitPRF(sharedSecrets, ciphertexts)
 
 	return ciphertextBlob, ss, nil
 }
@@ -337,19 +326,14 @@ func (sch *Scheme) Decapsulate(sk kem.PrivateKey, ct []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sharedSecrets[0] = make([]byte, sch.schemes[0].SharedKeySize())
-	copy(sharedSecrets[0], ss)
+
+	sharedSecrets[0] = ss
+	ciphertexts[0] = ct[:offset]
 
 	for i := 1; i < len(sch.schemes); i++ {
 		ciphertextSize := sch.schemes[i].CiphertextSize()
-
-		ciphertext := make([]byte, ciphertextSize)
-		copy(ciphertext, ct[offset:ciphertextSize])
-
-		ciphertexts[i] = make([]byte, ciphertextSize)
-		copy(ciphertexts[i], ciphertext)
-
-		sharedSecrets[i], err = sch.schemes[i].Decapsulate(priv.keys[i], ciphertext)
+		ciphertexts[i] = ct[offset : offset+ciphertextSize]
+		sharedSecrets[i], err = sch.schemes[i].Decapsulate(priv.keys[i], ciphertexts[i])
 		if err != nil {
 			return nil, err
 		}
@@ -372,7 +356,7 @@ func (sch *Scheme) UnmarshalBinaryPublicKey(buf []byte) (kem.PublicKey, error) {
 	}
 	publicKeys[0] = pk1
 	for i := 0; i < len(sch.schemes); i++ {
-		pk, err := sch.schemes[i].UnmarshalBinaryPublicKey(buf[offset:])
+		pk, err := sch.schemes[i].UnmarshalBinaryPublicKey(buf[offset : offset+sch.schemes[i].PublicKeySize()])
 		if err != nil {
 			return nil, err
 		}
@@ -398,7 +382,7 @@ func (sch *Scheme) UnmarshalBinaryPrivateKey(buf []byte) (kem.PrivateKey, error)
 	}
 	privateKeys[0] = pk1
 	for i := 0; i < len(sch.schemes); i++ {
-		pk, err := sch.schemes[i].UnmarshalBinaryPrivateKey(buf[offset:])
+		pk, err := sch.schemes[i].UnmarshalBinaryPrivateKey(buf[offset : offset+sch.schemes[i].PrivateKeySize()])
 		if err != nil {
 			return nil, err
 		}

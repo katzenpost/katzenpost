@@ -8,16 +8,16 @@ import (
 	"golang.org/x/crypto/blake2b"
 )
 
+// SplitPRF can be used with any number of KEMs
+// and it implement split PRF KEM combiner as:
+//
+//	cct := cct1 || cct2 || cct3 || ...
+//	return H(ss1 || cct) XOR H(ss2, cct) XOR H(ss3, cct)
+//
+// in order to retain IND-CCA2 security
+// as described in KEM Combiners  https://eprint.iacr.org/2018/024.pdf
+// by Federico Giacon, Felix Heuer, and Bertram Poettering
 func SplitPRF(ss, cct [][]byte) []byte {
-
-	// implement split PRF KEM combiner as:
-	//         cct := cct1 || cct2 || cct3 || ...
-	//         return H(ss1 || cct) XOR H(ss2, cct) XOR H(ss3, cct)
-	//
-	// in order to retain IND-CCA2 security
-	// as described in KEM Combiners
-	// by Federico Giacon, Felix Heuer, and Bertram Poettering
-	// https://eprint.iacr.org/2018/024.pdf
 
 	if len(ss) != len(cct) {
 		panic("mismatched slices")
@@ -25,9 +25,13 @@ func SplitPRF(ss, cct [][]byte) []byte {
 
 	cctcat := []byte{}
 	for i := 0; i < len(cct); i++ {
-		ciphertext := make([]byte, len(cct[i]))
-		copy(ciphertext, cct[i])
-		cctcat = append(cctcat, ciphertext...)
+		if cct[i] == nil {
+			panic("ciphertext cannot be nil")
+		}
+		if len(cct[i]) == 0 {
+			panic("ciphertext cannot be zero length")
+		}
+		cctcat = append(cctcat, cct[i]...)
 	}
 
 	hashes := make([][]byte, len(ss))
@@ -35,6 +39,12 @@ func SplitPRF(ss, cct [][]byte) []byte {
 		h, err := blake2b.New256(nil)
 		if err != nil {
 			panic(err)
+		}
+		if ss[i] == nil {
+			panic("shared secret cannot be nil")
+		}
+		if len(ss[i]) == 0 {
+			panic("shared secret cannot be zero length")
 		}
 		_, err = h.Write(ss[i])
 		if err != nil {
@@ -56,11 +66,20 @@ func SplitPRF(ss, cct [][]byte) []byte {
 	return acc
 }
 
+// PairSplitPRF is a split PRF that operates on only two KEMs.
 func PairSplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 	return SplitPRF([][]byte{ss1, ss2}, [][]byte{cct1, cct2})
 }
 
-func NoPairSplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
+// This is a simplified split PRF construction
+// that only works for combining two KEMs. If we
+// were to use this it would make our hybrid KEM combiner
+// NOT binary compatible with our multi KEM combiner when
+// it's combinging only two KEMs.
+// Keeping it here for posterity and just in case we only want
+// to combiner two KEMs we could just use this and get rid of
+// the other combiner. That's one possible future route to take.
+func nopePairSplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 
 	// implement split PRF KEM combiner as:
 	//

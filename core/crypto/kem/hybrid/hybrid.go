@@ -183,6 +183,7 @@ func (sch *Scheme) EncapsulateDeterministically(publicKey kem.PublicKey, seed []
 	if err != nil {
 		return nil, nil, err
 	}
+
 	ct2, ss2, err := sch.second.EncapsulateDeterministically(pub.second, second)
 	if err != nil {
 		return nil, nil, err
