@@ -55,4 +55,13 @@ func TestSNTRUPKEM(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, ct1, ct2)
 	require.NotEqual(t, ss1, ss2)
+
+	seed := make([]byte, s.SeedSize())
+	pubkey4, privkey4 := s.DeriveKeyPair(seed)
+	encapseed := make([]byte, s.EncapsulationSeedSize())
+	ct3, ss3, err := s.EncapsulateDeterministically(pubkey4, encapseed)
+	require.NoError(t, err)
+	ss3b, err := s.Decapsulate(privkey4, ct3)
+	require.NoError(t, err)
+	require.Equal(t, ss3, ss3b)
 }
