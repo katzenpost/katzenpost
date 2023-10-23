@@ -9,6 +9,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
 	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
+	"github.com/katzenpost/katzenpost/core/crypto/kem/sntrup"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
@@ -28,6 +29,8 @@ var allSchemes = [...]kem.Scheme{
 		adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
 		kyber768.Scheme(),
 	),
+
+	sntrup.Scheme(),
 }
 
 var allSchemeNames map[string]kem.Scheme
