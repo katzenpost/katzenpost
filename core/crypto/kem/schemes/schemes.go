@@ -30,7 +30,11 @@ var allSchemes = [...]kem.Scheme{
 		kyber768.Scheme(),
 	),
 
-	sntrup.Scheme(),
+	kemhybrid.New(
+		"sntrup4591761-X25519",
+		adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
+		sntrup.Scheme(),
+	),
 }
 
 var allSchemeNames map[string]kem.Scheme
