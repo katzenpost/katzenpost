@@ -604,3 +604,5 @@ func (c *Client) NewSession() ([]byte, error) {
 	c.Unlock()
 	return id, nil
 }
+
+// GetSessions returns the set of active sessions

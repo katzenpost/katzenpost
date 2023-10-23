@@ -10,9 +10,12 @@ import (
 	_ "gioui.org/app/permission/foreground"
 	_ "gioui.org/font"
 	"gioui.org/font/gofont"
+	"gioui.org/gesture"
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -20,7 +23,10 @@ import (
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/worker"
+	"github.com/katzenpost/katzenpost/katzensocks/cashu"
 	kclient "github.com/katzenpost/katzenpost/katzensocks/client"
+	qrcode "github.com/skip2/go-qrcode"
+	"image"
 	"image/color"
 	"log"
 	"net"
@@ -38,13 +44,21 @@ var (
 	// application command line falgs
 	clientConfigFile = flag.String("cfg", "", "Path to the client config file.")
 	socksPort        = flag.Int("socks_port", 4242, "SOCKS5 TCP listening port")
+	cli              = flag.Bool("cli", false, "cli mode")
 
 	// socks port selector
-	portSelect = &PortSelect{Editor: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}}
-	debug      = flag.Int("d", 0, "Port for net/http/pprof listener")
+	portSelect    = &PortSelect{Editor: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}}
+	debug         = flag.Int("d", 0, "Port for net/http/pprof listener")
+	invoiceAmount = 42
 
 	// wallet state
-	wallet = &Wallet{Balance: 0}
+	wallet = &Wallet{balance: 0}
+
+	// invoice display
+	invoice = &Invoice{amount: int64(invoiceAmount), amountEd: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}, invoice: &cashu.Invoice{}, clicked: new(gesture.Click)}
+
+	// cashu wallet api client
+	cwallet = cashu.NewCashuApiClient(nil, "http://127.0.0.1:4448")
 
 	// application theme
 	th = func() *material.Theme {
@@ -59,7 +73,7 @@ var (
 	}()
 
 	// proxy connected toggle:
-	connected widget.Bool
+	connectSwitch =  ConnectSwitch{connected: new(widget.Bool)}
 
 	//go:embed default_config_without_tor.toml
 	cfgWithoutTor []byte
@@ -80,15 +94,162 @@ func rgb(c uint32) color.NRGBA {
 	return argb((0xff << 24) | c)
 }
 
-type Wallet struct {
-	Balance int
+// ConnectSwitch is a widget to display the on/off switch
+type ConnectSwitch struct {
+	sync.Mutex
+	connected *widget.Bool
 }
 
+func (c *ConnectSwitch) Off() {
+	c.Lock()
+	c.connected.Value = false
+	defer c.Unlock()
+}
+
+func (c *ConnectSwitch) On() {
+	c.Lock()
+	c.connected.Value = on
+	defer c.Unlock()
+}
+
+func (c *ConnectSwitch) Layout(gtx C) D {
+	return material.Switch(th, c.connected, "Connect").Layout(gtx)
+}
+
+// Invoice is a widget to display a lightning invoice to buy nuts
+type Invoice struct {
+	sync.Mutex
+	invoice  *cashu.Invoice
+	amount   int64
+	amountEd *widget.Editor
+
+	clicked *gesture.Click
+}
+
+func (i *Invoice) QR() (*qrcode.QRCode, error) {
+	i.Lock()
+	defer i.Unlock()
+	return qrcode.New(i.invoice.Pr, qrcode.High)
+}
+
+func (i *Invoice) layoutQr(gtx C) D {
+	in := layout.Inset{}
+	dims := in.Layout(gtx, func(gtx C) D {
+		x := gtx.Constraints.Max.X
+		y := gtx.Constraints.Max.Y
+		if x > y {
+			x = y
+		}
+
+		sz := image.Point{X: x, Y: x}
+		gtx.Constraints = layout.Exact(gtx.Constraints.Constrain(sz))
+		qr, err := i.QR()
+		if err != nil {
+			return layout.Center.Layout(gtx, material.Caption(th, "Get Invoice").Layout)
+		}
+		qr.BackgroundColor = th.Bg
+		qr.ForegroundColor = th.Fg
+
+		i := qr.Image(x)
+		return widget.Image{Fit: widget.ScaleDown, Src: paint.NewImageOp(i)}.Layout(gtx)
+
+	})
+	a := clip.Rect(image.Rectangle{Max: dims.Size})
+	t := a.Push(gtx.Ops)
+	i.clicked.Add(gtx.Ops)
+	t.Pop()
+	return dims
+}
+
+func (i *Invoice) get() {
+	i.Lock()
+	amount := i.amount
+	i.Unlock()
+	invoice_request := cashu.InvoiceRequest{Amount: amount}
+	resp, err := cwallet.CreateInvoice(invoice_request)
+	if err != nil {
+		log.Print(err)
+	} else {
+		i.Lock()
+		i.invoice = &resp.Invoice
+		i.Unlock()
+	}
+}
+
+func (i *Invoice) update(gtx layout.Context) {
+	// request a new invoice if clicked
+	for _, e := range i.clicked.Events(gtx.Queue) {
+		if e.Type == gesture.TypeClick {
+			go i.get()
+			break
+		}
+	}
+	// update the invoice amount from the editor
+	for _, e := range i.amountEd.Events() {
+		switch e.(type) {
+		case widget.SubmitEvent:
+			x := int64(0)
+			_, err := fmt.Sscanf(i.amountEd.Text(), "%d", &x)
+			if err == nil {
+				i.Lock()
+				i.amount = x
+				i.Unlock()
+				go i.get()
+				break
+			}
+		}
+	}
+}
+
+// Layout a QR code representing a lightning invoice for the topup amount
+func (i *Invoice) Layout(gtx C) D {
+	return layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx C) D {
+			return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx C) D {
+				return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(material.H6(th, "Get Nuts: ").Layout),
+					layout.Rigid(material.Editor(th, i.amountEd, "").Layout),
+				)
+			})
+		}),
+		layout.Flexed(.2, i.layoutQr), // hide/expand QR
+		layout.Rigid(material.H6(th, fmt.Sprintf("Amount: %v", i.invoice.Amount)).Layout),
+		layout.Rigid(material.H6(th, fmt.Sprintf("Paid: %v", i.invoice.Paid)).Layout),
+	)
+}
+
+// Wallet is a widget that holds the current balance of nuts
+type Wallet struct {
+	balance int
+	sync.Mutex
+}
+
+// Balance returns the remaining nuts
+func (w *Wallet) Balance() int {
+	w.Lock()
+	defer w.Unlock()
+	return w.balance
+}
+
+func (w *Wallet) update() {
+	w.Lock()
+	defer w.Unlock()
+	balance, err := cwallet.GetBalance()
+	if err == nil {
+		log.Printf("got balance %d", balance.Balance)
+		w.balance = balance.Balance
+
+	} else {
+		log.Print(err)
+	}
+}
+
+// Layout renders the wallet balance
 func (w *Wallet) Layout(gtx C) D {
 	return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx C) D {
-		return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Start}.Layout(gtx,
-			layout.Rigid(material.H6(th, "Balance").Layout),
-			layout.Rigid(material.H6(th, fmt.Sprintf("%d", w.Balance)).Layout),
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(material.H6(th, "Balance: ").Layout),
+			layout.Rigid(material.H6(th, fmt.Sprintf("%d", w.Balance())).Layout),
 		)
 	})
 }
@@ -101,8 +262,8 @@ type PortSelect struct {
 // Layout renders the port selector widget
 func (p *PortSelect) Layout(gtx C) D {
 	return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx C) D {
-		return layout.Flex{Axis: layout.Horizontal, Spacing: layout.SpaceBetween, Alignment: layout.Start}.Layout(gtx,
-			layout.Rigid(material.H6(th, "SOCKS5 Port").Layout),
+		return layout.Flex{Axis: layout.Horizontal, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(material.H6(th, "SOCKS5 Port: ").Layout),
 			layout.Rigid(material.Editor(th, p.Editor, "port").Layout),
 		)
 	})
@@ -145,6 +306,12 @@ type App struct {
 
 func (a *App) run() error {
 
+	// fetch an inital invoice
+	go func() {
+		invoice.get()
+		a.w.Invalidate()
+	}()
+
 	for {
 		select {
 		case e := <-a.w.Events():
@@ -164,7 +331,7 @@ func (a *App) handleGioEvents(e interface{}) error {
 		return errors.New("system.DestroyEvent receieved")
 	case system.FrameEvent:
 		gtx := layout.NewContext(a.ops, e)
-		a.Update()
+		a.Update(gtx)
 		a.Layout(gtx)
 		e.Frame(gtx.Ops)
 	case system.StageEvent:
@@ -183,31 +350,35 @@ func (a *App) handleGioEvents(e interface{}) error {
 }
 
 // Update reads events from the app elements
-func (a *App) Update() {
+func (a *App) Update(gtx layout.Context) {
+	log.Print("Update")
 	portSelect.Update()
-	a.updateConnectedSwitch()
+	invoice.update(gtx)
+	connectSwitch.update()
 }
 
-func (a *App) updateConnectedSwitch() {
-	a.Lock()
-	defer a.Unlock()
-	if connected.Changed() {
+func (c *ConnectSwitch) update() {
+	c.Lock()
+	defer c.Unlock()
+	if c.connected.Changed() {
 		go a.doConnectClick()
 	}
 }
 
 // This is the main app layout
-func (a *App) Layout(gtx layout.Context) {
+func (a *App) Layout(gtx C) {
 	// display connected status
 	// display disconnect/connect button
-	layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceAround, Alignment: layout.Baseline}.Layout(gtx,
-		// wallet balance
-		layout.Rigid(wallet.Layout),
+	layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Start}.Layout(gtx,
 		// Proxy Port Selector
 		layout.Rigid(portSelect.Layout),
 		// layout the exit node selection
 		//layout.Rigid(exitSelect.Layout),
-		layout.Rigid(material.Switch(th, &connected, "").Layout),
+		layout.Rigid(connectSwitch.Layout),
+		// layout add credit topup invoice
+		layout.Rigid(invoice.Layout),
+		// wallet balance
+		layout.Rigid(wallet.Layout),
 	)
 }
 
@@ -222,7 +393,7 @@ func (a *App) doConnectClick() {
 			cancel()
 			a.Lock()
 			a.connectOnce = new(sync.Once)
-			connected.Value = false
+			connectSwitch.Off()
 			a.Unlock()
 			return
 		}
@@ -269,19 +440,35 @@ func (a *App) doConnectClick() {
 			}
 			a.Lock()
 			a.connectOnce = new(sync.Once)
-			connected.Value = false
+			connectSwitch.Off()
 			a.Unlock()
 		})
 	})
 }
 
 func main() {
-
+	flag.IntVar(&invoiceAmount, "a", 42, "Amount of Cashu to make a lightning invoice for")
 	flag.Parse()
+	invoice.amountEd.SetText(fmt.Sprintf("%d", invoiceAmount))
 	portSelect.Editor.SetText(fmt.Sprintf("%d", *socksPort))
+	if *cli {
+		c, err := setupClient()
+		if err != nil {
+			log.Fatal(err)
+		}
+		a := &App{
+			c:           c,
+			clicked:     make(chan struct{}, 2),
+			connect:     &widget.Clickable{},
+			connectOnce: new(sync.Once),
+		}
+
+		go a.doConnectClick()
+		a.Wait()
+		return
+	}
 	go func() {
 		w := app.NewWindow(
-			//app.Size(unit.Dp(400), unit.Dp(400)),
 			app.Title("CloakedProxy"),
 			app.NavigationColor(rgb(0x0)),
 			app.StatusColor(rgb(0x0)),
