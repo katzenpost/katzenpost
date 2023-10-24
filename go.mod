@@ -16,6 +16,7 @@ require (
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a
 	github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b
+	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.1
 	github.com/ugorji/go/codec v1.2.8
@@ -47,7 +48,6 @@ require (
 	github.com/mattn/go-pointer v0.0.1 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/oasislabs/deoxysii v0.0.0-20190807103041-6159f99c2236 // indirect
-	github.com/oasisprotocol/deoxysii v0.0.0-20220228165953-2091330c22b7 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
