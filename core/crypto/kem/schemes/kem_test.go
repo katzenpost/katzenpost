@@ -12,7 +12,7 @@ import (
 func TestHybridKEMOnly(t *testing.T) {
 	// test using the KEM used in our PQ Noise protocol
 	s := ByName("Kyber768-X25519")
-	s2 := ByName("Kyber768-X25519_test")
+	s2 := ByName("Kyber768-X25519_combiner")
 
 	t.Logf("ciphertext size %d", s.CiphertextSize())
 	t.Logf("shared key size %d", s.SharedKeySize())
