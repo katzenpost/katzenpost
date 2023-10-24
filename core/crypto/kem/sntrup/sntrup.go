@@ -13,7 +13,8 @@ import (
 	"golang.org/x/crypto/hkdf"
 
 	"github.com/cloudflare/circl/kem"
-	sntrup "github.com/companyzero/sntrup4591761"
+
+	sntrup "github.com/katzenpost/sntrup4591761"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )

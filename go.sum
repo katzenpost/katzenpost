@@ -52,6 +52,8 @@ github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a h1:E/wT0j3Bo1
 github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a/go.mod h1:xqyj8Y3rR3PfAPoDvhriOtNLPr2VXjlFj1LqGR5xA88=
 github.com/katzenpost/nyquist v0.0.0-20230504173433-e12f6b943410 h1:OcytpGaFl46cx6t1TNaJpYSYOIVQa2hFeC/asau0HRA=
 github.com/katzenpost/nyquist v0.0.0-20230504173433-e12f6b943410/go.mod h1:9EM6KMlfKreGS7JIj3UCQm0G8xEVgyVlzVAapWEQbAc=
+github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8 h1:TsKxH0x2RUwf5rBw67k15bqVM3oVbexA9oaTZQLIy3Y=
+github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8/go.mod h1:Hmcrwom7jcEmGdo0CsyuJNnldPeyS+M07FuCbo7I8fw=
 github.com/kr/pretty v0.3.1 h1:flRD4NNwYAUpkphVc1HcthR4KEIFJ65n8Mw5qdRn3LE=
 github.com/kr/pretty v0.3.1/go.mod h1:hoEshYVHaxMs3cyo3Yncou5ZscifuDolrwPKZanG3xk=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
