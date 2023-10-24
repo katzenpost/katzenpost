@@ -183,9 +183,25 @@ QROM.
 Mix network key management and distribution is handled by the
 directory authority system, a decentralized voting protocol that can
 tolerate (1/2 * n)-1 node outages.  Clients and mix nodes can talk to
-the dirauth system to get a published PKI document which is
+the dirauth (directory authority) system to get a published PKI document which is
 essentially a view of the network which contains public cryptographic
 keys and network connection information.
+
+The mix descriptors are signed by the mix nodes. Each dirauth also signs their
+interactions in the voting protocol and the final published PKI document.
+
+Mix nodes and dirauth (directory authority) nodes use our hybrid post quantum signature
+scheme which is currently:
+
+* ed25519 + Sphincs+
+
+Note that we could have just used Sphincs+ since hash based signature schemes have a
+solid theoretical foundation, however there can still be mistakes in the hyper tree design
+and so pairing it with ed25519 is prudent defense in dept.
+
+Clients also use this signature scheme to verify PKI documents.
+
+We are using the *SHAKE-256f* parameterization of Sphincs+ via the reference implementation.
 
 # License
 
