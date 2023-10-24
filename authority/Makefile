@@ -1,21 +1,34 @@
+warped?=false
+CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f"
+ldflags="-buildid= -X github.com/katzenpost/katzenpost/core/epochtime.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/server/internal/pki.WarpedEpoch=${warped} -X github.com/katzenpost/katzenpost/minclient/pki.WarpedEpoch=${warped}"
+
 test:
-	go test -cover -v ./...
+	CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go test -race -cover -v ./...
 
 lint:
 	golint ./...
 
 test-internal:
-	go test -cover -v ./internal/...
+	CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go test -race -cover -v ./internal/...
 
 test-voting:
-	go test -cover -v ./voting/...
+	CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go test -race -cover -v ./voting/...
 
 # no tests here
 test-nonvoting:
-	go test -cover -v ./nonvoting/...
+	CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go test -race -cover -v ./nonvoting/...
 
 coverage-file:
-	go test ./... -coverprofile=coverage.out
+	CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go test ./... -coverprofile=coverage.out
 
 coverage-html:
-	go tool cover -html=coverage.out
+	CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go tool cover -html=coverage.out
+
+cmd/voting/voting: clean
+	cd cmd/voting && CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go build -trimpath -ldflags ${ldflags}
+
+cmd/fetch/fetch: clean
+	cd cmd/fetch && CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go build -trimpath -ldflags ${ldflags}
+
+clean:
+	rm -f cmd/fetch/fetch cmd/voting/voting cmd/nonvoting/nonvoting
