@@ -354,10 +354,10 @@ func (a *App) Update(gtx layout.Context) {
 	log.Print("Update")
 	portSelect.Update()
 	invoice.update(gtx)
-	connectSwitch.update()
+	connectSwitch.update(a)
 }
 
-func (c *ConnectSwitch) update() {
+func (c *ConnectSwitch) update(a *App) {
 	c.Lock()
 	defer c.Unlock()
 	if c.connected.Changed() {
