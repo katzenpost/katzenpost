@@ -108,7 +108,7 @@ func (c *ConnectSwitch) Off() {
 
 func (c *ConnectSwitch) On() {
 	c.Lock()
-	c.connected.Value = on
+	c.connected.Value = true
 	defer c.Unlock()
 }
 
