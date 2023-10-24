@@ -104,7 +104,7 @@ func NewQUICProxyConn(id []byte) *QUICProxyConn {
 			KeepAlivePeriod: 42 * time.Minute,
 			HandshakeIdleTimeout: 42 * time.Minute,
 			MaxIdleTimeout:  42 * time.Minute,
-			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) qlogging.ConnectionTracer {
+			Tracer: func(ctx context.Context, p qlogging.Perspective, connID quic.ConnectionID) *qlogging.ConnectionTracer {
 				return qlog.NewConnectionTracer(&wc{}, p, connID)
 			},
 		},

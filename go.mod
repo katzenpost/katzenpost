@@ -22,7 +22,8 @@ require (
 	github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a
 	github.com/katzenpost/nyquist v0.0.0-20230509162347-757d62695b4e
 	github.com/prometheus/client_golang v1.15.1
-	github.com/quic-go/quic-go v0.38.1
+	github.com/quic-go/quic-go v0.39.0
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.8.1
 	github.com/ugorji/go/codec v1.2.11
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
@@ -52,7 +53,6 @@ require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/go-text/typesetting v0.0.0-20230803102845-24e03d8b5372 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
-	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/pprof v0.0.0-20230906154834-20cde9067b3b // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -70,8 +70,8 @@ require (
 	github.com/quic-go/qtls-go1-20 v0.3.4 // indirect
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
-	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.uber.org/mock v0.3.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/exp/shiny v0.0.0-20220827204233-334a2380cb91 // indirect
 	golang.org/x/image v0.5.0 // indirect
