@@ -7,13 +7,13 @@ require (
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
 	github.com/carlmjohnson/versioninfo v0.22.4
-	github.com/katzenpost/circl v0.0.0
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/golang/protobuf v1.5.2
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
+	github.com/katzenpost/circl v0.0.0
 	github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a
 	github.com/katzenpost/nyquist v0.0.0-20230504173433-e12f6b943410
 	github.com/prometheus/client_golang v1.14.0
@@ -36,6 +36,7 @@ require (
 	github.com/awnumar/memcall v0.1.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/cockroachdb/apd v1.1.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
