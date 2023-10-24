@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/katzenpost/circl/kem"
-
 	"github.com/katzenpost/circl/kem/kyber/kyber768"
+	mceliece "github.com/katzenpost/circl/kem/mceliece/mceliece460896"
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
 	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
@@ -27,6 +27,12 @@ var allSchemes = [...]kem.Scheme{
 		"Kyber768-X25519",
 		adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
 		kyber768.Scheme(),
+	),
+
+	kemhybrid.New(
+		"McEliece-X25519",
+		adapter.FromNIKE(ecdh.NewEcdhNike(rand.Reader)),
+		mceliece.Scheme(),
 	),
 }
 
