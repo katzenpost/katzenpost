@@ -101,13 +101,13 @@ are also hashed together:
 ```
 func SplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
     cct := cct1 || cct2
-    return PRF(ss1 || cct) XOR PRF(ss2, cct)
+    return PRF(ss1 || cct) XOR PRF(ss2 || cct)
 }
 ```
 
 Which simplifies to:
 
-SplitPRF := PRF(ss1, cct2) XOR PRF(ss2, cct1)
+SplitPRF := PRF(ss1 || cct2) XOR PRF(ss2 || cct1)
 
 The Split PRF can be used to combine an arbitrary number of KEMs.
 Here's what it looks like with three KEMs:
@@ -115,7 +115,7 @@ Here's what it looks like with three KEMs:
 ```
 func SplitPRF(ss1, ss2, ss3, cct1, cct2, cct3 []byte) []byte {
     cct := cct1 || cct2 || cct3
-    return PRF(ss1 || cct) XOR PRF(ss2, cct) XOR PRF(ss3, cct)
+    return PRF(ss1 || cct) XOR PRF(ss2 || cct) XOR PRF(ss3 || cct)
 }
 ```
 

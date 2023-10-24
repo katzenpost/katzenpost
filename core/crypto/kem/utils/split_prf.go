@@ -12,7 +12,7 @@ import (
 // and it implement split PRF KEM combiner as:
 //
 //	cct := cct1 || cct2 || cct3 || ...
-//	return H(ss1 || cct) XOR H(ss2, cct) XOR H(ss3, cct)
+//	return H(ss1 || cct) XOR H(ss2 || cct) XOR H(ss3 || cct)
 //
 // in order to retain IND-CCA2 security
 // as described in KEM Combiners  https://eprint.iacr.org/2018/024.pdf
@@ -85,12 +85,12 @@ func nopePairSplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 	//
 	// func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
 	//         cct := cct1 || cct2
-	//         return H(ss1 || cct) XOR H(ss2, cct)
+	//         return H(ss1 || cct) XOR H(ss2 || cct)
 	// }
 	//
 	// Which simplifies to:
 	//
-	// splitPRF := PRF(ss1, cct2) XOR PRF(ss2, cct1)
+	// splitPRF := PRF(ss1 || cct2) XOR PRF(ss2 || cct1)
 	//
 	// in order to retain IND-CCA2 security
 	// as described in KEM Combiners
