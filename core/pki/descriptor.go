@@ -24,11 +24,11 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/circl/kem"
 	"github.com/fxamacker/cbor/v2"
 	"golang.org/x/net/idna"
 
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+	kemschemes "github.com/katzenpost/circl/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"

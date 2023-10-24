@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/circl/kem"
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"

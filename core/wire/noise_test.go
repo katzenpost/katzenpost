@@ -29,7 +29,7 @@ import (
 	"github.com/katzenpost/nyquist/pattern"
 	"github.com/katzenpost/nyquist/seec"
 
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
+	"github.com/katzenpost/circl/kem/kyber/kyber768"
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
 	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"

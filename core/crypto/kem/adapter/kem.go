@@ -4,7 +4,7 @@ import (
 	"crypto/hmac"
 	"fmt"
 
-	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/circl/kem"
 	"golang.org/x/crypto/blake2b"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"

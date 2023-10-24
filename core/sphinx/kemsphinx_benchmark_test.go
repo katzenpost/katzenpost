@@ -19,11 +19,11 @@ package sphinx
 import (
 	"testing"
 
-	"github.com/cloudflare/circl/kem"
-	"github.com/cloudflare/circl/kem/hybrid"
-	"github.com/cloudflare/circl/kem/kyber/kyber1024"
-	"github.com/cloudflare/circl/kem/kyber/kyber512"
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
+	"github.com/katzenpost/circl/kem"
+	"github.com/katzenpost/circl/kem/hybrid"
+	"github.com/katzenpost/circl/kem/kyber/kyber1024"
+	"github.com/katzenpost/circl/kem/kyber/kyber512"
+	"github.com/katzenpost/circl/kem/kyber/kyber768"
 
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
