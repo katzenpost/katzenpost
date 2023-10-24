@@ -40,6 +40,15 @@ There are essentially two types of interaction with a Katzenpost mixnet:
 1. clients talk to mixnet services and their traffic stays in the mixnet
 2. clients talk to Internet services; proxying through the mixnet onto the Internet.
 
+# Building Katzenpost
+
+To build all server related components, type "make" when inside this repo:
+
+```bash
+cd katzenpost
+make
+```
+
 # Client:
 
 Currently, [Katzen](https://github.com/katzenpost/katzen) is the only client available for use with Katzenpost. However a SOCKS proxy client is forthcoming
