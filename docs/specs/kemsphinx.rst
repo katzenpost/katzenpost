@@ -29,8 +29,16 @@ has three functions:
 * ss = DECAP(PRIV_KEY, ct) - Decapsulate computes the shared key, ss,
   encapsulated in the ciphertext, ct, for the private key.
 
+
+Additional notation includes:
+
+* || = concatenate two binary blobs together
+
+* PRF = pseudo random function, a cryptographic hash function, e.g. Blake2b.
+
 Therefore we must embed these KEM ciphertexts in the KEMSphinx header,
 one KEM ciphertext per mix hop.
+
 
 2. Post Quantum Hybrid KEM
 ==========================
@@ -58,13 +66,13 @@ together the DH shared secret along with both of the public keys:
 func ENCAPSULATE(their_pubkey publickey) ([]byte, []byte) {
         my_privkey, my_pubkey = GEN_KEYPAIR(RNG)
         ss = DH(my_privkey, their_pubkey)
-        ss2 = H(ss || their_pubkey || my_pubkey)
+        ss2 = PRF(ss || their_pubkey || my_pubkey)
 	return my_pubkey, ss2
 }
 
 func DECAPSULATE(my_privkey, their_pubkey) []byte {
         s = DH(my_privkey, their_pubkey)
-	shared_key = H(ss || my_pubkey || their_pubkey)
+	shared_key = PRF(ss || my_pubkey || their_pubkey)
 	return shared_key
 }
 ```
@@ -89,11 +97,25 @@ from the two underlying KEMs, ss1 and ss2. Additionally
 the two ciphertexts from the underlying KEMs, cct1 and cct2,
 are also hashed together:
 
-```
-// H is a hash function
 
-func splitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
-        return H(ss1 || ss2 || cct1 || cct2)
+```
+func SplitPRF(ss1, ss2, cct1, cct2 []byte) []byte {
+    cct := cct1 || cct2
+    return PRF(ss1 || cct) XOR PRF(ss2 || cct)
+}
+```
+
+Which simplifies to:
+
+SplitPRF := PRF(ss1 || cct2) XOR PRF(ss2 || cct1)
+
+The Split PRF can be used to combine an arbitrary number of KEMs.
+Here's what it looks like with three KEMs:
+
+```
+func SplitPRF(ss1, ss2, ss3, cct1, cct2, cct3 []byte) []byte {
+    cct := cct1 || cct2 || cct3
+    return PRF(ss1 || cct) XOR PRF(ss2 || cct) XOR PRF(ss3 || cct)
 }
 ```
 
