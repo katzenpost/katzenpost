@@ -26,7 +26,7 @@ import (
 	"sort"
 
 	"github.com/BurntSushi/toml"
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+	kemschemes "github.com/katzenpost/circl/kem/schemes"
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"

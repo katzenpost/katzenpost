@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/cloudflare/circl/kem"
-	kemschemes "github.com/cloudflare/circl/kem/schemes"
+	"github.com/katzenpost/circl/kem"
+	kemschemes "github.com/katzenpost/circl/kem/schemes"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"

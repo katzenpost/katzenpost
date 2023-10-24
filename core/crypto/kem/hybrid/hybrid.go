@@ -19,7 +19,7 @@ import (
 
 	"golang.org/x/crypto/blake2b"
 
-	"github.com/cloudflare/circl/kem"
+	"github.com/katzenpost/circl/kem"
 )
 
 var (

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/cloudflare/circl/kem/kyber/kyber768"
+	"github.com/katzenpost/circl/kem/kyber/kyber768"
 	"github.com/katzenpost/katzenpost/core/crypto/kem/adapter"
 	kemhybrid "github.com/katzenpost/katzenpost/core/crypto/kem/hybrid"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/ecdh"
