@@ -20,6 +20,7 @@ package client
 import (
 	"context"
 	"errors"
+	"net/http"
 	"path/filepath"
 	"sync"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"gopkg.in/op/go-logging.v1"
 )
 
@@ -98,6 +100,13 @@ func New(cfg *config.Config) (*Client, error) {
 	}
 
 	c.log.Noticef("😼 Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY. 😼")
+
+	metricsAddress := cfg.MetricsAddress
+	if metricsAddress != "" {
+		// Expose registered metrics via HTTP
+		http.Handle("/metrics", promhttp.Handler())
+		go http.ListenAndServe(metricsAddress, nil)
+	}
 
 	// Start the fatal error watcher.
 	go c.fatalErr()

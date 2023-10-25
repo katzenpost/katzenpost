@@ -188,6 +188,7 @@ type Config struct {
 	Debug           *Debug
 	VotingAuthority *VotingAuthority
 	upstreamProxy   *proxy.Config
+	MetricsAddress  string
 }
 
 // UpstreamProxyConfig returns the configured upstream proxy, suitable for

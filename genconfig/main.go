@@ -72,6 +72,7 @@ type katzenpost struct {
 	providerIdx int
 	hasPanda    bool
 	hasProxy    bool
+	metricsAddr string
 }
 
 type AuthById []*vConfig.Authority
@@ -113,6 +114,9 @@ func (s *katzenpost) genClientCfg() error {
 
 	// Debug section
 	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: true}
+
+	// Metrics listener
+	cfg.MetricsAddress = s.metricsAddr
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
@@ -367,6 +371,7 @@ func main() {
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
 	basePort := flag.Int("P", basePort, "First port number to use")
 	bindAddr := flag.String("a", bindAddr, "Address to bind to")
+	metricsAddr := flag.String("client_metrics", "", "addr:port to provide prometheus metrics http listener")
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")

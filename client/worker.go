@@ -27,6 +27,30 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 	mrand "math/rand"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// prometheus counters
+var (
+	promet_lamdaP = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_lambdaP",
+			Help: "Counter that increments on lambdaP interrupt",
+		},
+	)
+	promet_lamdaL = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_lambdaL",
+			Help: "Counter that increments on lambdaL interrupt",
+		},
+	)
+	promet_lamdaD = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "katzenpost_client_lambdaD",
+			Help: "Counter that increments on lambdaD interrupt",
+		},
+	)
 )
 
 type workerOp interface{}
@@ -196,12 +220,15 @@ func (s *Session) worker() {
 		} else {
 			// reset only the timer that fired
 			if lambdaPFired {
+				promet_lamdaP.Inc()
 				lambdaPTimer.Reset(lambdaPInterval)
 			}
 			if lambdaLFired {
+				promet_lamdaL.Inc()
 				lambdaLTimer.Reset(lambdaLInterval)
 			}
 			if lambdaDFired {
+				promet_lamdaD.Inc()
 				lambdaDTimer.Reset(lambdaDInterval)
 			}
 		}

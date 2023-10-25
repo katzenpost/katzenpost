@@ -34,6 +34,8 @@ lDMax=3000
 lM=0.0005
 lMMax=100
 
+# address prometheus listener binds
+clientMetricsAddress=127.0.0.1:4678
 UserForwardPayloadLength=6000
 
 # specify which transport types to listen on
@@ -88,7 +90,7 @@ $(docker_compose_yml): ../genconfig/main.go $(distro)_go_mod.stamp $(net_name)
 		-S .$(distro) -v -o ./$(net_name) -b /$(net_name) -P $(base_port) \
 		-nike "$(nike)" -kem "$(kem)" -d katzenpost-$(distro)_go_mod \
 		-onlyTransports "$(onlyTransports)" -UserForwardPayloadLength $(UserForwardPayloadLength) \
-		-log_level $(log_level)'
+		-log_level $(log_level) -client_metrics $(clientMetricsAddress)'
 
 $(net_name)/running.stamp: $(net_name)
 	make $(make_args) start
