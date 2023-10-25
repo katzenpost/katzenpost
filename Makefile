@@ -1,18 +1,18 @@
 
-.PHONY: all test clean server dirauth
+.PHONY: all test clean server dirauth genconfig ping
 
 all: server dirauth genconfig ping
 
-server: clean
+server:
 	cd server/cmd/server; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
 
-dirauth: clean
+dirauth:
 	cd authority/cmd/voting; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
 
-genconfig: clean
+genconfig:
 	cd genconfig; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
 
-ping: clean
+ping:
 	cd ping; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
 
 clean:
