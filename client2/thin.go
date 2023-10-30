@@ -4,6 +4,7 @@
 package client2
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -263,9 +264,9 @@ func (t *ThinClient) ReceiveMessage() (*[sConstants.SURBIDLength]byte, []byte) {
 	return resp.SURBID, resp.Payload
 }
 
-func (t *ThinClient) ARQSend(ID *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
+func (t *ThinClient) ARQSend(id *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := new(Request)
-	req.ID = ID
+	req.ID = id
 	req.WithSURB = true
 	req.IsARQSendOp = true
 	req.Payload = payload
@@ -292,4 +293,16 @@ func (t *ThinClient) ARQSend(ID *[MessageIDLength]byte, payload []byte, destNode
 func (t *ThinClient) ARQReceiveMessage() (*[MessageIDLength]byte, []byte) {
 	resp := <-t.receivedCh
 	return resp.ID, resp.Payload
+}
+
+func (t *ThinClient) BlockingSendReliableMessage(id *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
+	err = t.ARQSend(id, payload, destNode, destQueue)
+	if err != nil {
+		return nil, err
+	}
+	id2, reply := t.ARQReceiveMessage()
+	if !bytes.Equal(id[:], id2[:]) {
+		return nil, errors.New("received unexpected ARQ reply")
+	}
+	return reply, nil
 }
