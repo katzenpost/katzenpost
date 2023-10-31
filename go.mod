@@ -6,6 +6,8 @@ replace gioui.org => github.com/mixmasala/gio v0.0.0-20230917185150-1c97118905a5
 
 replace gioui.org/cmd => github.com/mixmasala/gio-cmd v0.0.0-20230917190002-697be40b7aa6
 
+replace github.com/quic-go/quic-go => github.com/katzenpost/quic-go v0.39.1-0.20231025145305-ca6eb3dec945
+
 require (
 	filippo.io/edwards25519 v1.0.0
 	gioui.org v0.3.0
@@ -52,7 +54,6 @@ require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/go-text/typesetting v0.0.0-20230803102845-24e03d8b5372 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
-	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/pprof v0.0.0-20230906154834-20cde9067b3b // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -71,6 +72,7 @@ require (
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	go.uber.org/mock v0.3.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/exp/shiny v0.0.0-20220827204233-334a2380cb91 // indirect
 	golang.org/x/image v0.5.0 // indirect
