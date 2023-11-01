@@ -396,8 +396,7 @@ func (c *incomingConn) sendNextMessage() error {
 		return err
 	}
 
-	advance := true
-	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Get(creds.AdditionalData, advance)
+	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Pop(creds.AdditionalData)
 	if err != nil {
 		return err
 	}
