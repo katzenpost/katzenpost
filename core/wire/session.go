@@ -21,6 +21,7 @@ import (
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"sync"
@@ -468,7 +469,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	// Read, decrypt and parse the CiphertextHeader.
 	var ctHdrCt [macLen + 4]byte
 	if _, err := io.ReadFull(s.conn, ctHdrCt[:]); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("io.ReadFull 1 error %s", err.Error())
 	}
 	s.rxKeyMutex.RLock()
 	ctHdr, err := s.rx.DecryptWithAd(nil, nil, ctHdrCt[:])
@@ -484,7 +485,7 @@ func (s *Session) recvCommandImpl() (commands.Command, error) {
 	// Read and decrypt the Ciphertext.
 	ct := make([]byte, ctLen)
 	if _, err := io.ReadFull(s.conn, ct); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("io.ReadFull 2 error %s", err.Error())
 	}
 	s.rxKeyMutex.RLock()
 	pt, err := s.rx.DecryptWithAd(nil, nil, ct)
