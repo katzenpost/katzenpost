@@ -1,10 +1,11 @@
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package client2
 
 import (
-	"errors"
 	"fmt"
 	"net"
-	"os"
 	"sync/atomic"
 
 	"github.com/charmbracelet/log"
@@ -58,14 +59,9 @@ func (c *incomingConn) handleRequest(req *Request) (*Response, error) {
 		}, nil
 	}
 
-	if req.IsSendOp {
-		c.log.Info("send operation")
-		req.AppID = c.appID
-		c.listener.ingressCh <- req
-		return nil, nil
-	}
-
-	return nil, errors.New("invalid operation specified")
+	req.AppID = c.appID
+	c.listener.ingressCh <- req
+	return nil, nil
 }
 
 func (c *incomingConn) sendPKIDoc(doc *cpki.Document) error {
@@ -94,6 +90,7 @@ func (c *incomingConn) updateConnectionStatus(status error) {
 }
 
 func (c *incomingConn) sendResponse(response *Response) error {
+	c.log.Debug("sendResponse")
 	blob, err := cbor.Marshal(response)
 	if err != nil {
 		return err
@@ -185,7 +182,7 @@ func newIncomingConn(l *listener, conn *net.UnixConn) *incomingConn {
 		sendToClientCh:    make(chan *Response, 2),
 	}
 
-	c.log = log.NewWithOptions(os.Stderr, log.Options{
+	c.log = log.NewWithOptions(l.logbackend, log.Options{
 		ReportTimestamp: true,
 		Level:           log.DebugLevel,
 		Prefix:          fmt.Sprintf("incoming:%d", c.appID),

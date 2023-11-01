@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
 package client2
 
 import (
@@ -36,10 +38,17 @@ func (t *TimerQueue) Push(priority uint64, surbID *[sConstants.SURBIDLength]byte
 	t.queue.Enqueue(priority, surbID)
 }
 
+func (t *TimerQueue) Len() int {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	return t.queue.Len()
+}
+
 func (t *TimerQueue) worker() {
 	for {
 		var waitCh <-chan time.Time
 		t.mutex.Lock()
+
 		m := t.queue.Peek()
 		if m != nil {
 			// Figure out if the message needs to be handled now.

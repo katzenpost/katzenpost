@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package client2
 
 type decoySender struct {
@@ -9,12 +12,14 @@ type decoySender struct {
 
 func newLoopDecoy() *Request {
 	return &Request{
+		WithSURB:    true,
 		IsLoopDecoy: true,
 	}
 }
 
 func newDropDecoy() *Request {
 	return &Request{
+		WithSURB:    false,
 		IsDropDecoy: true,
 	}
 }

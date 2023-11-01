@@ -1,18 +1,5 @@
-// send.go - Send related routines.
-// Copyright (C) 2017  Yawning Angel.
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Copyright (C) 2017  Yawning Angel.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package client2
 
@@ -33,17 +20,18 @@ func (c *Client) SendSphinxPacket(pkt []byte) error {
 }
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
-func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, message []byte) ([]byte, []byte, time.Duration, error) {
-	if len(recipient) > sConstants.RecipientIDLength {
-		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", recipient)
+func (c *Client) ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Duration, error) {
+
+	if len(request.RecipientQueueID) > sConstants.RecipientIDLength {
+		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", request.RecipientQueueID)
 	}
 
-	if len(message) > c.geo.UserForwardPayloadLength {
-		return nil, nil, 0, fmt.Errorf("message too large: %v > %v", len(message), c.geo.UserForwardPayloadLength)
+	if len(request.Payload) > c.geo.UserForwardPayloadLength {
+		return nil, nil, 0, fmt.Errorf("message too large: %v > %v", len(request.Payload), c.geo.UserForwardPayloadLength)
 	}
 
 	payload := make([]byte, c.geo.UserForwardPayloadLength)
-	copy(payload, message)
+	copy(payload, request.Payload)
 
 	for {
 		unixTime := c.pki.skewedUnixTime()
@@ -57,17 +45,17 @@ func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbI
 			panic("source provider cannot be nil")
 		}
 
-		fwdPath, then, err := c.makePath(recipient, provider, surbID, now, true)
+		fwdPath, then, err := c.makePath(request.RecipientQueueID, request.DestinationIdHash, request.SURBID, now, true)
 		if err != nil {
 			return nil, nil, 0, err
 		}
 
 		revPath := make([]*path.PathHop, 0)
-		if surbID != nil {
+		if request.SURBID != nil {
 			if c.conn.queueID == nil {
 				panic("sender queueID cannot be nil")
 			}
-			revPath, then, err = c.makePath(c.conn.queueID, provider, surbID, then, false)
+			revPath, then, err = c.makePath(c.conn.queueID, request.DestinationIdHash, request.SURBID, then, false)
 			if err != nil {
 				return nil, nil, 0, err
 			}
@@ -83,15 +71,15 @@ func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbI
 		// the PKI publication imposted limitations will be selected.  When
 		// that happens, the path selection must be redone.
 		if then.Sub(now) < epochtime.Period*2 {
-			if surbID != nil {
-				payload := make([]byte, 2, 2+c.geo.SURBLength+len(message))
+			if request.WithSURB {
+				payload := make([]byte, 2, 2+c.geo.SURBLength+len(request.Payload))
 				payload[0] = 1 // Packet has a SURB.
 				surb, k, err := c.sphinx.NewSURB(rand.Reader, revPath)
 				if err != nil {
 					return nil, nil, 0, err
 				}
 				payload = append(payload, surb...)
-				payload = append(payload, message...)
+				payload = append(payload, request.Payload...)
 
 				blob := make([]byte, c.geo.ForwardPayloadLength)
 				copy(blob, payload)
@@ -118,8 +106,8 @@ func (c *Client) ComposeSphinxPacket(recipient []byte, provider *[32]byte, surbI
 // SendCiphertext sends the ciphertext b to the recipient/provider, with a
 // SURB identified by surbID, and returns the SURB decryption key and total
 // round trip delay.
-func (c *Client) SendCiphertext(recipient []byte, provider *[32]byte, surbID *[sConstants.SURBIDLength]byte, b []byte) ([]byte, time.Duration, error) {
-	pkt, k, rtt, err := c.ComposeSphinxPacket(recipient, provider, surbID, b)
+func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
+	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
 	if err != nil {
 		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
 	}

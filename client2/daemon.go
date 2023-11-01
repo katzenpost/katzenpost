@@ -1,6 +1,12 @@
+// SPDX-FileCopyrightText: © 2023 David Stainton
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package client2
 
 import (
+	"fmt"
+	"io"
+	mrand "math/rand"
 	"os"
 	"time"
 
@@ -8,6 +14,7 @@ import (
 
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -20,6 +27,7 @@ type sphinxReply struct {
 }
 
 type replyDescriptor struct {
+	ID      *[MessageIDLength]byte
 	appID   uint64
 	surbKey []byte
 }
@@ -27,46 +35,78 @@ type replyDescriptor struct {
 type Daemon struct {
 	worker.Worker
 
+	logbackend io.Writer
 	log        *log.Logger
 	cfg        *config.Config
 	client     *Client
 	listener   *listener
 	egressCh   chan *Request
-	replies    map[[sConstants.SURBIDLength]byte]replyDescriptor
+
+	replies map[[sConstants.SURBIDLength]byte]replyDescriptor
+	decoys  map[[sConstants.SURBIDLength]byte]replyDescriptor
+
 	timerQueue *TimerQueue
 	replyCh    chan sphinxReply
 	gcSurbIDCh chan *[sConstants.SURBIDLength]byte
+
+	arq *ARQ
 }
 
 func NewDaemon(cfg *config.Config, egressSize int) (*Daemon, error) {
-	return &Daemon{
-		log: log.NewWithOptions(os.Stderr, log.Options{
+	var err error
+	var logbackend io.Writer
+
+	if cfg.Logging.Disable {
+		fmt.Println("WARNING: disabling logging")
+		logbackend, err = os.OpenFile("/dev/null", os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		if cfg.Logging.File == "" {
+			logbackend = os.Stderr
+		} else {
+			logbackend, err = os.OpenFile(cfg.Logging.File, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	d := &Daemon{
+		logbackend: logbackend,
+		log: log.NewWithOptions(logbackend, log.Options{
 			ReportTimestamp: true,
 			Prefix:          "client2_daemon",
-			Level:           log.DebugLevel,
+			Level:           log.ParseLevel(cfg.Logging.Level),
 		}),
 		cfg:        cfg,
 		egressCh:   make(chan *Request, egressSize),
 		replyCh:    make(chan sphinxReply),
 		replies:    make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
+		decoys:     make(map[[sConstants.SURBIDLength]byte]replyDescriptor),
 		gcSurbIDCh: make(chan *[sConstants.SURBIDLength]byte),
-	}, nil
+	}
+
+	return d, nil
 }
 
 func (d *Daemon) Start() error {
-	d.log.Debug("Start")
+	d.log.Debug("Start daemon")
 	var err error
 	rates := &Rates{}
 	if d.cfg.CachedDocument != nil {
 		rates = ratesFromPKIDoc(d.cfg.CachedDocument)
 	}
 
-	d.client, err = New(d.cfg)
+	d.client, err = New(d.cfg, d.logbackend)
 	if err != nil {
 		return err
 	}
 
-	d.listener, err = NewListener(d.client, rates, d.egressCh)
+	d.arq = NewARQ(d.client, d.logbackend)
+	d.arq.Start()
+
+	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
 	if err != nil {
 		return err
 	}
@@ -107,15 +147,39 @@ func (d *Daemon) egressWorker() {
 	for {
 		select {
 		case <-d.HaltCh():
+			d.client.Shutdown()
+			d.timerQueue.Halt()
+			d.arq.Stop()
+			d.listener.Halt()
 			return
 		case surbID := <-d.gcSurbIDCh:
 			delete(d.replies, *surbID)
+			// XXX FIXME consume statistics on our loop decoys for n-1 detection
+			delete(d.decoys, *surbID)
 		case reply := <-d.replyCh:
+			isDecoy := false
 			desc, ok := d.replies[*reply.surbID]
 			if !ok {
-				d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
+				desc, ok = d.decoys[*reply.surbID]
+				if ok {
+					isDecoy = true
+				} else {
+					if d.arq.Has(reply.surbID) {
+						myDesc, err := d.arq.HandleAck(reply.surbID)
+						if err != nil {
+							d.log.Infof("failed to handle ACK")
+							continue
+						}
+						desc = *myDesc
+					} else {
+						d.log.Infof("reply descriptor not found for SURB ID %x", reply.surbID[:])
+						continue
+					}
+				}
+
 			}
 			delete(d.replies, *reply.surbID)
+			delete(d.decoys, *reply.surbID)
 			s, err := sphinx.FromGeometry(d.client.cfg.SphinxGeometry)
 			if err != nil {
 				panic(err)
@@ -125,50 +189,150 @@ func (d *Daemon) egressWorker() {
 				d.log.Infof("SURB reply decryption error: %s", err.Error())
 				continue
 			}
+
+			// XXX FIXME consume statistics on our loop decoys for n-1 detection
+			if isDecoy {
+				d.log.Info("decoy message ---")
+				continue
+			}
 			conn, ok := d.listener.conns[desc.appID]
 			if !ok {
 				d.log.Infof("no connection associated with AppID %d", desc.appID)
+				panic("no connection associated with AppID")
 			}
 			conn.sendResponse(&Response{
+				ID:      desc.ID,
+				SURBID:  reply.surbID,
 				AppID:   desc.appID,
 				Payload: plaintext,
 			})
 		case request := <-d.egressCh:
-			surbID := &[sConstants.SURBIDLength]byte{}
-			_, err := rand.Reader.Read(surbID[:])
-			if err != nil {
-				panic(err)
-			}
-
 			switch {
-			// XXX FIX ME FIXME FIXME
 			case request.IsLoopDecoy == true:
+				d.sendLoopDecoy(request)
 			case request.IsDropDecoy == true:
+				d.sendDropDecoy()
 			case request.IsSendOp == true:
-				if request.Payload == nil {
-					panic("sending payload cannot be nil")
-				}
-				if len(request.Payload) == 0 {
-					panic("sending payload cannot be zero length")
-				}
-
-				surbKey, rtt, err := d.client.SendCiphertext(request.RecipientQueueID, request.DestinationIdHash, surbID, request.Payload)
-				if err != nil {
-					d.log.Infof("SendCiphertext error: %s", err.Error())
-				}
-
-				slop := time.Second * 3
-				duration := rtt + slop
-				replyArrivalTime := time.Now().Add(duration)
-				d.log.Infof("reply arrival duration: %s", duration)
-				d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), surbID)
-				d.replies[*surbID] = replyDescriptor{
-					appID:   request.AppID,
-					surbKey: surbKey,
-				}
+				d.send(request)
+			case request.IsARQSendOp == true:
+				d.sendARQMessage(request)
 			default:
 				panic("send operation not fully specified")
 			}
 		}
 	}
+}
+
+func (d *Daemon) sendARQMessage(request *Request) {
+	err := d.arq.Send(request.AppID, request.ID, request.Payload, request.DestinationIdHash, request.RecipientQueueID)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (d *Daemon) send(request *Request) {
+	surbKey := []byte{}
+	var rtt time.Duration
+	var err error
+
+	if request.WithSURB {
+		surbKey, rtt, err = d.client.SendCiphertext(request)
+		if err != nil {
+			d.log.Infof("SendCiphertext error: %s", err.Error())
+		}
+
+		slop := time.Second * 20 // XXX perhaps make this configurable if needed
+		duration := rtt + slop
+		replyArrivalTime := time.Now().Add(duration)
+		d.log.Infof("reply arrival duration: %s", duration)
+		d.timerQueue.Push(uint64(replyArrivalTime.UnixNano()), request.SURBID)
+	}
+
+	if request.IsSendOp {
+		d.replies[*request.SURBID] = replyDescriptor{
+			appID:   request.AppID,
+			surbKey: surbKey,
+		}
+		return
+	}
+
+	if request.IsLoopDecoy {
+		d.decoys[*request.SURBID] = replyDescriptor{
+			appID:   request.AppID,
+			surbKey: surbKey,
+		}
+		return
+	}
+}
+
+// ServiceDescriptor describe a mixnet Provider-side service.
+type ServiceDescriptor struct {
+	// RecipientQueueID is the service name or queue ID.
+	RecipientQueueID []byte
+	// Provider name.
+	MixDescriptor *cpki.MixDescriptor
+}
+
+// FindServices is a helper function for finding Provider-side services in the PKI document.
+func FindServices(capability string, doc *cpki.Document) []ServiceDescriptor {
+	services := []ServiceDescriptor{}
+	for _, provider := range doc.Providers {
+		for cap := range provider.Kaetzchen {
+			if cap == capability {
+				serviceID := ServiceDescriptor{
+					RecipientQueueID: []byte(provider.Kaetzchen[cap]["endpoint"].(string)),
+					MixDescriptor:    provider,
+				}
+				services = append(services, serviceID)
+			}
+		}
+	}
+	return services
+}
+
+func (d *Daemon) sendLoopDecoy(request *Request) {
+	// XXX FIXME consume statistics on our echo decoys for n-1 detection
+
+	doc := d.client.CurrentDocument()
+	echoServices := FindServices(EchoService, doc)
+	if len(echoServices) == 0 {
+		panic("wtf no echo services")
+	}
+	echoService := &echoServices[mrand.Intn(len(echoServices))]
+
+	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
+	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
+	surbID := &[sConstants.SURBIDLength]byte{}
+	_, err := rand.Reader.Read(surbID[:])
+	if err != nil {
+		panic(err)
+
+	}
+
+	request.Payload = payload
+	request.SURBID = surbID
+	request.DestinationIdHash = &serviceIdHash
+	request.RecipientQueueID = echoService.RecipientQueueID
+
+	d.send(request)
+}
+
+func (d *Daemon) sendDropDecoy() {
+	doc := d.client.CurrentDocument()
+	echoServices := FindServices(EchoService, doc)
+	if len(echoServices) == 0 {
+		panic("wtf no echo services")
+	}
+	echoService := &echoServices[mrand.Intn(len(echoServices))]
+
+	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
+	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
+
+	request := &Request{}
+	request.WithSURB = false
+	request.Payload = payload
+	request.DestinationIdHash = &serviceIdHash
+	request.RecipientQueueID = echoService.RecipientQueueID
+
+	d.send(request)
 }
