@@ -99,7 +99,6 @@ type connection struct {
 	descriptor *cpki.MixDescriptor
 
 	pkiFetchCh     chan interface{}
-	fetchCh        chan interface{}
 	sendCh         chan *connSendCtx
 	getConsensusCh chan *getConsensusCtx
 
@@ -119,17 +118,6 @@ type getConsensusCtx struct {
 type connSendCtx struct {
 	pkt    []byte
 	doneFn func(error)
-}
-
-// ForceFetch attempts to force an otherwise idle client to attempt to fetch
-// the contents of the user's spool.  This call has no effect if a connection
-// is not established or if the connection is already in the middle of a
-// fetch cycle, and should be considered a best effort operation.
-func (c *Client) ForceFetch() {
-	select {
-	case c.conn.fetchCh <- true:
-	default:
-	}
 }
 
 // ForceFetchPKI attempts to force client's pkiclient to wake and fetch
@@ -473,28 +461,12 @@ func (c *connection) onWireConn(w *wire.Session) {
 		}
 	}()
 
-	//var fetchDelay time.Duration
-	fetchDelay := time.Second * 3
-	var selectAt time.Time
-	adjFetchDelay := func() {
-		sendAt := time.Now()
-		if deltaT := sendAt.Sub(selectAt); deltaT < fetchDelay {
-			fetchDelay = fetchDelay - deltaT
-		} else {
-			fetchDelay = time.Second * 3
-		}
-	}
 	var seq uint32
 	nrReqs, nrResps := 0, 0
 	for {
 		var rawCmd commands.Command
 		var doFetch bool
-		selectAt = time.Now()
 		select {
-		case <-time.After(fetchDelay):
-			doFetch = true
-		case <-c.fetchCh:
-			doFetch = true
 		case ctx := <-c.getConsensusCh:
 			c.log.Debugf("Dequeued GetConsesus for send.")
 			if consensusCtx != nil {
@@ -513,7 +485,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Sent GetConsensus.")
 			}
 
-			adjFetchDelay()
 			continue
 		case ctx := <-c.sendCh:
 			c.log.Debugf("Dequeued packet for send.")
@@ -528,7 +499,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			c.log.Debugf("Sent SendPacket.")
 
-			adjFetchDelay()
 			continue
 		case tmp, ok := <-cmdCh:
 			if !ok {
@@ -563,15 +533,12 @@ func (c *connection) onWireConn(w *wire.Session) {
 				c.log.Debugf("Sent RetrieveMessage: %d", seq)
 				nrReqs++
 			}
-			fetchDelay = c.client.GetPollInterval()
-			adjFetchDelay()
 			continue
 		}
 
 		creds, err := w.PeerCredentials()
 		if err != nil {
 			// do not continue processing this command
-			adjFetchDelay()
 			continue
 		}
 		// Update the cached descriptor, and re-validate the connection.
@@ -648,7 +615,6 @@ func (c *connection) onWireConn(w *wire.Session) {
 			wireErr = newProtocolError("received unknown command: %T", cmd)
 			return
 		}
-		adjFetchDelay()
 	}
 }
 
@@ -680,10 +646,6 @@ func (c *connection) onConnStatusChange(err error) {
 		select {
 		case ctx := <-c.getConsensusCh:
 			ctx.doneFn(ErrNotConnected)
-		default:
-		}
-		select {
-		case <-c.fetchCh:
 		default:
 		}
 	}
@@ -799,7 +761,6 @@ func newConnection(c *Client) *connection {
 	k.log.Debug("newConnection")
 
 	k.pkiFetchCh = make(chan interface{}, 1)
-	k.fetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
 	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k
