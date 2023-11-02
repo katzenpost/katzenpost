@@ -153,27 +153,30 @@ func (c *connection) getDescriptor() error {
 	}()
 
 	doc := c.client.CurrentDocument()
-	if doc == nil && c.client.cfg.CachedDocument == nil {
-		c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
-		n := len(c.client.cfg.PinnedProviders.Providers)
-		if n == 0 {
-			return errors.New("No PinnedProviders")
+	if doc == nil {
+		if c.client.cfg.CachedDocument == nil {
+			c.log.Debugf("No PKI document for current epoch or cached PKI document provide.")
+			n := len(c.client.cfg.PinnedProviders.Providers)
+			if n == 0 {
+				return errors.New("No PinnedProviders")
+			}
+			provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
+			idHash := provider.IdentityKey.Sum256()
+			c.provider = &idHash
+			c.descriptor = &cpki.MixDescriptor{
+				Name:        provider.Name,
+				IdentityKey: provider.IdentityKey,
+				LinkKey:     provider.LinkKey,
+				Addresses:   provider.Addresses,
+				Provider:    true,
+			}
+			ok = true
+			return nil
+		} else {
+			doc = c.client.cfg.CachedDocument
 		}
-		provider := c.client.cfg.PinnedProviders.Providers[rand.NewMath().Intn(n)]
-		idHash := provider.IdentityKey.Sum256()
-		c.provider = &idHash
-		c.descriptor = &cpki.MixDescriptor{
-			Name:        provider.Name,
-			IdentityKey: provider.IdentityKey,
-			LinkKey:     provider.LinkKey,
-			Addresses:   provider.Addresses,
-			Provider:    true,
-		}
-		ok = true
-		return nil
-	} else {
-		doc = c.client.cfg.CachedDocument
 	}
+
 	if doc != nil {
 		n := len(doc.Providers)
 		if n == 0 {
@@ -219,15 +222,13 @@ func (c *connection) connectWorker() {
 		}
 	}()
 
-	for {
-		select {
-		case <-c.HaltCh():
-			return
-		default:
-		}
-
-		c.doConnect(dialCtx)
+	select {
+	case <-c.HaltCh():
+		return
+	default:
 	}
+
+	c.doConnect(dialCtx)
 }
 
 func (c *connection) doConnect(dialCtx context.Context) {
@@ -258,7 +259,7 @@ func (c *connection) doConnect(dialCtx context.Context) {
 	for {
 		connErr = c.getDescriptor()
 		if connErr != nil {
-			c.log.Debugf("Aborting connect loop, descriptor no longer present.")
+			c.log.Debugf("Aborting connect loop, descriptor no longer present: %s", connErr.Error())
 			return
 		}
 		c.log.Debugf("doConnect, got descriptor %v", c.descriptor)
