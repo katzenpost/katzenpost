@@ -13,25 +13,19 @@ import (
 	"github.com/katzenpost/katzenpost/authority/voting/client"
 	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
+	"github.com/katzenpost/katzenpost/core/wire/commands"
 )
 
 // Client manages startup, shutdow, creating new connections and reconnecting.
 type Client struct {
-	sync.RWMutex
-
 	log        *log.Logger
 	logbackend io.Writer
 
-	// messagePollInterval is the interval at which the server will be
-	// polled for new messages if the queue is believed to be empty.
-	// XXX This will go away once we get rid of polling.
-	messagePollInterval time.Duration
-
-	pki *pki
 	cfg *config.Config
 
 	conn *connection
@@ -43,6 +37,74 @@ type Client struct {
 	haltOnce sync.Once
 
 	PKIClient cpki.Client
+
+	lock      *sync.RWMutex
+	clockSkew int64
+	docs      sync.Map
+	wg        sync.WaitGroup
+}
+
+// ClockSkew returns the current best guess difference between the client's
+// system clock and the network's global clock, rounded to the nearest second,
+// as measured against the provider during the handshake process.  Calls to
+// this routine should not be made until the first `ClientConfig.OnConnFn(true)`
+// callback.
+func (c *Client) ClockSkew() time.Duration {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	return time.Duration(c.clockSkew) * time.Second
+}
+
+func (c *Client) skewedUnixTime() int64 {
+	if !c.cfg.Debug.EnableTimeSync {
+		return time.Now().Unix()
+	}
+
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+
+	return time.Now().Unix() + c.clockSkew
+}
+
+func (c *Client) setClockSkew(skew int64) {
+	c.log.Debugf("New clock skew: %v sec", skew)
+	c.lock.Lock()
+	c.clockSkew = skew
+	c.lock.Unlock()
+}
+
+func (c *Client) CurrentDocument() *cpki.Document {
+	now, _, _ := epochtime.FromUnix(c.skewedUnixTime())
+	if d, _ := c.docs.Load(now); d != nil {
+		return d.(*cpki.Document)
+	}
+
+	return nil
+}
+
+// XXX FIXME call c.wg.Done() from another thread!!!
+func (c *Client) WaitForCurrentDocument() {
+	if c.CurrentDocument() == nil {
+		c.wg.Wait()
+	}
+	return
+}
+
+func (c *Client) receivedConsensus(consensus *commands.Consensus) {
+	if consensus.ErrorCode != commands.ConsensusOk {
+		c.log.Error("received consensus with error")
+		return
+	}
+	doc, err := c.PKIClient.Deserialize(consensus.Payload)
+	if err != nil {
+		c.log.Error(err)
+	}
+	c.docs.Store(doc.Epoch, doc)
+
+	if c.CurrentDocument() == nil {
+		c.wg.Done()
+	}
 }
 
 // Shutdown cleanly shuts down a given Client instance.
@@ -63,34 +125,14 @@ func (c *Client) halt() {
 		// nil out after the PKI is torn down due to a dependency.
 	}
 
-	if c.pki != nil {
-		c.pki.Halt()
-		c.pki = nil
-	}
 	c.conn = nil
 
 	c.log.Info("Shutdown complete.")
 	close(c.haltedCh)
 }
 
-// XXX This will go away once we get rid of polling.
-func (c *Client) SetPollInterval(interval time.Duration) {
-	c.Lock()
-	c.messagePollInterval = interval
-	c.Unlock()
-}
-
-// XXX This will go away once we get rid of polling.
-func (c *Client) GetPollInterval() time.Duration {
-	c.RLock()
-	defer c.RUnlock()
-	return c.messagePollInterval
-}
-
 func (c *Client) Start() error {
 	c.log.Info("Katzenpost is still pre-alpha.  DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.")
-
-	c.conn = newConnection(c)
 
 	pkilinkKey, _ := wire.DefaultScheme.GenerateKeypair(rand.Reader)
 	pkiClientConfig := &client.Config{
@@ -104,13 +146,10 @@ func (c *Client) Start() error {
 	if err != nil {
 		return err
 	}
-	c.pki = newPKI(c)
-	c.pki.start()
+
+	c.wg.Add(1)
+	c.conn = newConnection(c)
 	c.conn.start()
-	if c.cfg.CachedDocument != nil {
-		// connectWorker waits for a pki fetch, we already have a document cached, so wake the worker
-		c.conn.onPKIFetch()
-	}
 	return nil
 }
 
@@ -121,6 +160,7 @@ func New(cfg *config.Config, logbackend io.Writer) (*Client, error) {
 	}
 
 	c := new(Client)
+	c.lock = new(sync.RWMutex)
 	c.logbackend = logbackend
 	c.geo = cfg.SphinxGeometry
 	var err error

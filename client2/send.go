@@ -34,7 +34,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Dur
 	copy(payload, request.Payload)
 
 	for {
-		unixTime := c.pki.skewedUnixTime()
+		unixTime := c.skewedUnixTime()
 		_, _, budget := epochtime.FromUnix(unixTime)
 		start := time.Now()
 

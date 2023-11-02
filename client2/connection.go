@@ -24,6 +24,8 @@ import (
 )
 
 var (
+	errGetConsensusCanceled = errors.New("client/pki: consensus fetch canceled")
+
 	// ErrNotConnected is the error returned when an operation fails due to the
 	// client not currently being connected to the Provider.
 	ErrNotConnected = errors.New("client/conn: not connected to the Provider")
@@ -98,9 +100,7 @@ type connection struct {
 	pkiEpoch   uint64
 	descriptor *cpki.MixDescriptor
 
-	pkiFetchCh     chan interface{}
-	sendCh         chan *connSendCtx
-	getConsensusCh chan *getConsensusCtx
+	sendCh chan *connSendCtx
 
 	retryDelay  int64 // used as atomic time.Duration
 	isConnected bool
@@ -109,36 +109,9 @@ type connection struct {
 	queueID  []byte
 }
 
-type getConsensusCtx struct {
-	replyCh chan interface{}
-	epoch   uint64
-	doneFn  func(error)
-}
-
 type connSendCtx struct {
 	pkt    []byte
 	doneFn func(error)
-}
-
-// ForceFetchPKI attempts to force client's pkiclient to wake and fetch
-// consensus documents immediately.
-func (c *Client) ForceFetchPKI() {
-	c.log.Debug("ForceFetchPKI()")
-	select {
-	case c.pki.forceUpdateCh <- true:
-	default:
-	}
-}
-
-func (c *connection) onPKIFetch() {
-	c.log.Debug("onPKIFetch")
-	select {
-	case c.pkiFetchCh <- true:
-	default:
-		// Probably a connection is in progress, the right thing will happen
-		// regardless of if the signal gets dropped, though it might require
-		// the fallback timer to fire.
-	}
 }
 
 func (c *connection) getDescriptor() error {
@@ -382,7 +355,7 @@ func (c *connection) onTCPConn(conn net.Conn) {
 	}
 	c.log.Debugf("onTCPConn: Handshake completed.")
 	conn.SetDeadline(time.Time{})
-	c.client.pki.setClockSkew(int64(w.ClockSkew().Seconds()))
+	c.client.setClockSkew(int64(w.ClockSkew().Seconds()))
 
 	c.log.Debug("onTCPConn end")
 	c.onWireConn(w)
@@ -452,41 +425,12 @@ func (c *connection) onWireConn(w *wire.Session) {
 		return nil
 	}
 
-	var consensusCtx *getConsensusCtx
-	defer func() {
-		if consensusCtx != nil {
-			select {
-			case <-c.HaltCh():
-			case consensusCtx.replyCh <- ErrNotConnected:
-			}
-		}
-	}()
-
 	var seq uint32
 	nrReqs, nrResps := 0, 0
 	for {
 		var rawCmd commands.Command
 		var doFetch bool
 		select {
-		case ctx := <-c.getConsensusCh:
-			c.log.Debugf("Dequeued GetConsesus for send.")
-			if consensusCtx != nil {
-				ctx.doneFn(fmt.Errorf("outstanding GetConsensus already exists: %v", consensusCtx.epoch))
-			} else {
-				consensusCtx = ctx
-				cmd := &commands.GetConsensus{
-					Epoch: ctx.epoch,
-				}
-				wireErr = w.SendCommand(cmd)
-				ctx.doneFn(wireErr)
-				if wireErr != nil {
-					c.log.Debugf("Failed to send GetConsensus: %v", wireErr)
-					return
-				}
-				c.log.Debugf("Sent GetConsensus.")
-			}
-
-			continue
 		case ctx := <-c.sendCh:
 			c.log.Debugf("Dequeued packet for send.")
 			cmd := &commands.SendPacket{
@@ -601,16 +545,8 @@ func (c *connection) onWireConn(w *wire.Session) {
 			}
 			seq++
 		case *commands.Consensus:
-			if consensusCtx != nil {
-				c.log.Debugf("Received Consensus: ErrorCode: %v, Payload %v bytes", cmd.ErrorCode, len(cmd.Payload))
-				consensusCtx.replyCh <- cmd
-				consensusCtx = nil
-			} else {
-				// Spurious Consensus replies are a protocol violation.
-				c.log.Errorf("Received spurious Consensus.")
-				wireErr = newProtocolError("received spurious Consensus")
-				return
-			}
+			c.log.Debugf("Received Consensus: ErrorCode: %v, Payload %v bytes", cmd.ErrorCode, len(cmd.Payload))
+			c.client.receivedConsensus(cmd)
 		default:
 			c.log.Errorf("Received unexpected command: %T", cmd)
 			wireErr = newProtocolError("received unknown command: %T", cmd)
@@ -641,11 +577,6 @@ func (c *connection) onConnStatusChange(err error) {
 		// Force drain the channels used to poke the loop.
 		select {
 		case ctx := <-c.sendCh:
-			ctx.doneFn(ErrNotConnected)
-		default:
-		}
-		select {
-		case ctx := <-c.getConsensusCh:
 			ctx.doneFn(ErrNotConnected)
 		default:
 		}
@@ -687,65 +618,6 @@ func (c *connection) sendPacket(pkt []byte) error {
 	}
 }
 
-func (c *connection) getConsensus(ctx context.Context, epoch uint64) (*commands.Consensus, error) {
-	c.log.Debug("getConsensus")
-	c.Lock()
-	if !c.isConnected {
-		c.Unlock()
-		return nil, ErrNotConnected
-	}
-	c.Unlock()
-
-	errCh := make(chan error)
-	replyCh := make(chan interface{})
-	select {
-	case c.getConsensusCh <- &getConsensusCtx{
-		replyCh: replyCh,
-		epoch:   epoch,
-		doneFn: func(err error) {
-			errCh <- err
-		},
-	}:
-	case <-c.HaltCh():
-		return nil, ErrShutdown
-	}
-	c.log.Debug("Enqueued GetConsensus command for send.")
-
-	// Ensure the dispatch succeeded.
-	select {
-	case <-c.HaltCh():
-		return nil, ErrShutdown
-	case err := <-errCh:
-		if err != nil {
-			c.log.Debugf("Failed to dispatch GetConsensus: %v", err)
-			return nil, err
-		}
-	case <-ctx.Done():
-		// Canceled mid-fetch.
-		return nil, errGetConsensusCanceled
-	}
-
-	// Wait for the dispatch to complete.
-	select {
-	case <-c.HaltCh():
-		return nil, ErrShutdown
-	case rawResp := <-replyCh:
-		switch resp := rawResp.(type) {
-		case error:
-			return nil, resp
-		case *commands.Consensus:
-			return resp, nil
-		default:
-			panic("BUG: Worker returned invalid Consensus response")
-		}
-	case <-ctx.Done():
-		// Canceled mid-fetch.
-		return nil, errGetConsensusCanceled
-	}
-
-	// NOTREACHED
-}
-
 func (c *connection) start() {
 	c.log.Debug("start")
 	c.Go(c.connectWorker)
@@ -761,8 +633,6 @@ func newConnection(c *Client) *connection {
 
 	k.log.Debug("newConnection")
 
-	k.pkiFetchCh = make(chan interface{}, 1)
 	k.sendCh = make(chan *connSendCtx)
-	k.getConsensusCh = make(chan *getConsensusCtx, 1)
 	return k
 }
