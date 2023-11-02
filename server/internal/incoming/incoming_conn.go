@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -217,6 +218,11 @@ func (c *incomingConn) worker() {
 	commandCh := make(chan commands.Command)
 
 	if c.fromClient {
+		err = c.sendPKIDoc()
+		if err != nil {
+			c.log.Errorf("failed to send new client connection the PKI doc: %s", err.Error())
+			return
+		}
 		// XXX FIXME add duration to PKI doc via dirauth config
 		receivedMessageTimer = time.NewTicker(time.Second * 1)
 	}
@@ -386,6 +392,14 @@ func (c *incomingConn) messageToCommand(msg, surbID []byte, hint uint8) (command
 		c.log.Info("MESSAGE EMPTY")
 	}
 	return respCmd, nil
+}
+
+func (c *incomingConn) sendPKIDoc() error {
+	current, _, _ := epochtime.Now()
+	getConsensus := &commands.GetConsensus{
+		Epoch: current,
+	}
+	return c.onGetConsensus(getConsensus)
 }
 
 func (c *incomingConn) sendNextMessage() error {
