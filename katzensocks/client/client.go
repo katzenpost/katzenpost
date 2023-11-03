@@ -151,9 +151,8 @@ func (c *Client) Topup(id []byte) chan error {
 		nuts := make([]byte, 512)
 		if err != nil {
 			c.log.Error("topup cashu: %v", err)
-			// XXX: ignore Cashu errors
-			//errCh <- err
-			//return
+			errCh <- err
+			return
 		} else {
 			// fill nuts with send_resp.Token from beginning
 			copy(nuts, send_resp.Token)

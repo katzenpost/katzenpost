@@ -23,6 +23,7 @@ import (
 	"bufio"
 	"bytes"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
+	"github.com/katzenpost/katzenpost/katzensocks/cashu"
 	"github.com/stretchr/testify/require"
 	"io"
 	"net"
@@ -46,6 +47,34 @@ func TestDockerNewClient(t *testing.T) {
 	c, err := NewClient(session)
 	require.NoError(err)
 	require.NotNil(c)
+}
+
+func TestDockerTopup(t *testing.T) {
+	require := require.New(t)
+	// get mixnet session
+	session, err := GetSession(cfgFile, 5, 10)
+	require.NoError(err)
+	require.NotNil(session)
+	// get katzensocks client
+	c, err := NewClient(session)
+	require.NoError(err)
+	require.NotNil(c)
+
+	// get a handle to dockerized cashu wallet and add some credit
+	w := cashu.NewCashuApiClient(nil, cashuWalletUrl)
+	r, err := w.GetBalance()
+	require.NoError(err)
+	require.Equal(r.Balance, 0)
+	req := cashu.InvoiceRequest{Amount: 42}
+	resp, err := w.CreateInvoice(req)
+	require.NoError(err)
+	require.Equal(resp.Amount, 42)
+
+	// create a new session and add some credit
+	id, err := c.NewSession()
+	require.NoError(err)
+	err = <-c.Topup(id)
+	require.NoError(err)
 }
 
 func TestDockerProxy(t *testing.T) {
