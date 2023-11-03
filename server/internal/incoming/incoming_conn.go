@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/monotime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -395,38 +394,45 @@ func (c *incomingConn) messageToCommand(msg, surbID []byte, hint uint8) (command
 }
 
 func (c *incomingConn) sendPKIDoc() error {
-	current, _, _ := epochtime.Now()
-	getConsensus := &commands.GetConsensus{
-		Epoch: current,
-	}
-	return c.onGetConsensus(getConsensus)
+	c.log.Info("SEND PKI DOC")
+	/*
+		current, _, _ := epochtime.Now()
+		getConsensus := &commands.GetConsensus{
+			Epoch: current,
+		}
+		return c.onGetConsensus(getConsensus)
+	*/
+	return nil
 }
 
 func (c *incomingConn) sendNextMessage() error {
 	c.log.Info("SEND NEXT MESSAGE")
-	// Get the message from the user's spool, advancing as appropriate.
-	creds, err := c.w.PeerCredentials()
-	if err != nil {
-		return err
-	}
+	/*
+		// Get the message from the user's spool, advancing as appropriate.
+		creds, err := c.w.PeerCredentials()
+		if err != nil {
+			return err
+		}
 
-	msg, surbID, remaining, err := c.l.glue.Provider().Spool().Pop(creds.AdditionalData)
-	if err != nil {
-		return err
-	}
-	if remaining > math.MaxUint8 {
-		// The count hint is an 8 bit value and is clamped.
-		remaining = math.MaxUint8
-	}
-	hint := uint8(remaining)
-	instrument.IngressQueue(hint)
+		msg, surbID, remaining, err := c.l.glue.Provider().Spool().Pop(creds.AdditionalData)
+		if err != nil {
+			return err
+		}
+		if remaining > math.MaxUint8 {
+			// The count hint is an 8 bit value and is clamped.
+			remaining = math.MaxUint8
+		}
+		hint := uint8(remaining)
+		instrument.IngressQueue(hint)
 
-	respCmd, err := c.messageToCommand(msg, surbID, hint)
-	if err != nil {
-		return err
-	}
+		respCmd, err := c.messageToCommand(msg, surbID, hint)
+		if err != nil {
+			return err
+		}
 
-	return c.w.SendCommand(respCmd)
+		return c.w.SendCommand(respCmd)
+	*/
+	return nil
 }
 
 func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {

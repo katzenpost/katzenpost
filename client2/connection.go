@@ -568,11 +568,12 @@ func (c *connection) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *connection) onConnStatusChange(err error) {
-	c.log.Info("onConnStatusChange")
 	c.Lock()
 	if err == nil {
+		c.log.Info("onConnStatusChange is connected")
 		c.isConnected = true
 	} else {
+		c.log.Info("onConnStatusChange is NOT connected")
 		c.isConnected = false
 		// Force drain the channels used to poke the loop.
 		select {
