@@ -44,6 +44,7 @@ var (
 	// application command line falgs
 	clientConfigFile = flag.String("cfg", "", "Path to the client config file.")
 	socksPort        = flag.Int("socks_port", 4242, "SOCKS5 TCP listening port")
+	cashuAPI         = flag.String("cashu_api", "http://127.0.0.1:4448", "Cashu wallet API endpoint")
 	cli              = flag.Bool("cli", false, "cli mode")
 
 	// socks port selector
@@ -58,7 +59,7 @@ var (
 	invoice = &Invoice{amount: int64(invoiceAmount), amountEd: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}, invoice: &cashu.Invoice{}, clicked: new(gesture.Click)}
 
 	// cashu wallet api client
-	cwallet = cashu.NewCashuApiClient(nil, "http://127.0.0.1:4448")
+	cwallet = cashu.NewCashuApiClient(nil, *cashuAPI)
 
 	// application theme
 	th = func() *material.Theme {
