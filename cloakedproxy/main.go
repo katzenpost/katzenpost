@@ -56,7 +56,7 @@ var (
 	wallet = &Wallet{balance: 0}
 
 	// invoice display
-	invoice = &Invoice{amount: int64(invoiceAmount), amountEd: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}, invoice: &cashu.Invoice{}, clicked: new(gesture.Click)}
+	invoice = &Invoice{amount: int64(invoiceAmount), amountEd: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}, clicked: new(gesture.Click)}
 
 	// cashu wallet api client
 	cwallet = cashu.NewCashuApiClient(nil, *cashuAPI)
@@ -119,8 +119,12 @@ func (c *ConnectSwitch) Layout(gtx C) D {
 
 // Invoice is a widget to display a lightning invoice to buy nuts
 type Invoice struct {
+	// TODO: obtain data from these cashu api objects
+	// casu.InvoiceRequest
+	// casu.Invoice Response
+	// casu.Payment Status
 	sync.Mutex
-	invoice  *cashu.Invoice
+	paymentRequest string
 	amount   int64
 	amountEd *widget.Editor
 
@@ -130,7 +134,7 @@ type Invoice struct {
 func (i *Invoice) QR() (*qrcode.QRCode, error) {
 	i.Lock()
 	defer i.Unlock()
-	return qrcode.New(i.invoice.Pr, qrcode.High)
+	return qrcode.New(i.paymentRequest, qrcode.High)
 }
 
 func (i *Invoice) layoutQr(gtx C) D {
@@ -172,7 +176,7 @@ func (i *Invoice) get() {
 		log.Print(err)
 	} else {
 		i.Lock()
-		i.invoice = &resp.Invoice
+		i.paymentRequest = resp.PaymentRequest
 		i.Unlock()
 	}
 }
@@ -214,8 +218,8 @@ func (i *Invoice) Layout(gtx C) D {
 			})
 		}),
 		layout.Flexed(.2, i.layoutQr), // hide/expand QR
-		layout.Rigid(material.H6(th, fmt.Sprintf("Amount: %v", i.invoice.Amount)).Layout),
-		layout.Rigid(material.H6(th, fmt.Sprintf("Paid: %v", i.invoice.Paid)).Layout),
+		//layout.Rigid(material.H6(th, fmt.Sprintf("Amount: %v", i.invoice.Amount)).Layout),
+		//layout.Rigid(material.H6(th, fmt.Sprintf("Paid: %v", i.invoice.Paid)).Layout),
 	)
 }
 
