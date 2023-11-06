@@ -1,16 +1,10 @@
-The Katzenpost Decryption Mix Network Anonymity System:
-fast, safe and correct mixnet protocol design
+---
+title: "The Katzenpost Decryption Mix Network Anonymity System: fast, safe and correct mixnet protocol design"
+author: ["Yawning Angel", "George Danezis", "Claudia Diaz", "Ania Piotrowska", "David Stainton"]
+version: 0
+---
 
-Yawning Angel
-George Danezis
-Claudia Diaz
-Ania Piotrowska
-David Stainton
-
-Version 0
-
-
-Abstract
+**Abstract**
 
 This document describes the high level architecture and design of the
 Katzenpost Decryption Mix Network. Here we also present a novel
@@ -19,8 +13,7 @@ introduces design ideas from the packet switching network literature
 used in concert with the latest innovations in mix network design from
 the Loopix anonymity system [LOOPIX].
 
-
-Introduction
+## Introduction
 
 Here we present cryptographic messaging system which uses many Loopix
 designs such as Poisson mix strategy, decoy traffic and Sphinx packet
@@ -47,21 +40,14 @@ connects to the user's mixnet Provider(s), retrieves queued message
 ciphertext and decrypts the messages making them available for
 retrieval locally by POP3.
 
+## Terminology
 
-Terminology
+- ACK: a protocol acknowledgement message used to achieve reliability in ARQ schemes
+- ARQ: Automatic Repeat reQuest, a reliable network protocol utilizing automatic repeat request
+- AQM: Active Queue Management
+- SURB: Single Use Reply Block
 
-* ACK: a protocol acknowledgement message used to achieve reliability
-  in ARQ schemes
-
-* ARQ: Automatic Repeat reQuest, a reliable network protocol utilizing
-  automatic repeat request
-
-* AQM: Active Queue Management
-
-* SURB: Single Use Reply Block
-
-
-System Overview
+## System Overview
 
 Unlike the Tor Network, this system is not volunteer
 operated. Operators are a part of a fixed set who all agree to
@@ -115,35 +101,40 @@ suited for our end to end mixnet messaging protocol:
 
 "Katzenpost Decryption Mix Network User Interface Design"
 
+## Layers of Mix Network Encryption
 
-Layers of Mix Network Encryption
+```
+diagram of mixnet crypto protocol layer cake
+```
 
-<diagram of mixnet crypto protocol layer cake>
+`link layer` - The mix network link layer consists of TCP and an
+interactive Noise protocol pattern.  Our Noise-based link layer
+crypto is post-quantum and uses
+Noise_NNhfs_25519+NewHope-Simple_ChaChaPoly_Blake2b, described in:
 
+```
+Katzenpost Mix Network Wire Protocol Specification
+```
 
-* link layer - The mix network link layer consists of TCP and an
-  interactive Noise protocol pattern.  Our Noise-based link layer
-  crypto is post-quantum and uses
-  Noise_NNhfs_25519+NewHope-Simple_ChaChaPoly_Blake2b, described in:
+`mix packets` - The Sphinx mix cryptographic packet format is used to
+send mix network messages. Our implementation uses X25519,
+HMAC-SHA256-128, HKDF-SHA256, CTR-AES128, AEZv5.  as described in:
 
-     "Katzenpost Mix Network Wire Protocol Specification".
+```
+Sphinx Mix Network Cryptographic Packet Format Specification
+```
 
-* mix packets - The Sphinx mix cryptographic packet format is used to
-  send mix network messages. Our implementation uses X25519,
-  HMAC-SHA256-128, HKDF-SHA256, CTR-AES128, AEZv5.  as described in:
+`mix packet payload` - Mix network messages are encrypted end to end
+by mix network Clients using Noise_X_25519_ChaChaPoly_Blake2b,
+a one-way Noise framework pattern. [NOISE17] Details can be found in:
 
-     "Sphinx Mix Network Cryptographic Packet Format Specification".
-
-* mix packet payload - Mix network messages are encrypted end to end
-  by mix network Clients using Noise_X_25519_ChaChaPoly_Blake2b,
-  a one-way Noise framework pattern. [NOISE17] Details can be found in:
-
-     "Katzenpost Mix Network End-to-end Protocol Specification".
-
+```
+Katzenpost Mix Network End-to-end Protocol Specification
+```
 
 The Poisson Stop and Wait Automatic Repeat Request Protocol
 
-<Stop and Wait ARQ timeline diagram>
+**Stop and Wait ARQ timeline diagram**
 
 Stop and Wait ARQ is the most simple protocol design that achieves
 reliability [ARQ17] where the sender uses a transmission window of
@@ -173,9 +164,7 @@ from within the forward packet payload makes this protocol half duplex
 similar to various acoustic network mediums many of which also use
 Stop and Wait ARQ.
 
-
-Setting the Stop and Wait Timeout durations
-
+**Setting the Stop and Wait Timeout durations**
 
 Normally, Stop and Wait ARQ implementations would apply knowledge of a
 smoothed RTT estimate for dynamically adjusting protocol
@@ -190,27 +179,30 @@ means that protocol timers are set in accordance to the per-hop delays
 encoded in the Sphinx headers for the forward message and the reply
 block used for the ACK, a protocol control message.
 
-
-Stop and Wait ARQ Channel Efficiency
+**Stop and Wait ARQ Channel Efficiency**
 
 (Discuss Stop and Wait ARQ channel efficiency characteristics.)
 
+```
 R = link rate
 frame_size = frame size
 frame_header_size = size of frame header
 ack_size = ack size
 t_prop = processing delay
-
 t0 = 2 * t_prop + 2 * t_prop + frame_size/R + ack_size/R
+```
 
 effective transmission rate:
 
+```
 R0eff = (frame_size - frame_header_size)/t0
+```
 
 transmission efficiency:
 
+```
 efficiency = ((frame_size - frame_header_size)/t0) / R
-
+```
 
 Internal queues used to compose component mixes
 
@@ -225,14 +217,12 @@ ingress AQM since they alone have Client IP address visibility and
 therefore can distinguish traffic flows with a per-Client granularity
 and provide some measure of fairness and potential DDoS protection.
 
-
-Link Layer Congestion Considerations
+**Link Layer Congestion Considerations**
 
 A KIST scheme should be utilized whenever TCP is used to avoid
 suboptimal mixnet packet send scheduling to adjacent mixes. [KIST14]
 
-
-Explicit Congestion Notification
+**Explicit Congestion Notification**
 
 Classical network protocol literature often describes implicit
 upstream congestion signaling via packetloss, however various explicit
@@ -252,15 +242,12 @@ Alternatively, the Client-Provider protocol could require the Provider
 to reply to Send Packet commands with Packet Received commands such
 that a variant of Stop and Wait ARQ is formed.
 
+**Non-TCP Link Layer Performance Advantages**
 
-Non-TCP Link Layer Performance Advantages
+- no head-of-line blocking performance issues
+- KIST scheme not needed because implementation of the link layer protocol must handle scheduling explicitly
 
-* no head-of-line blocking performance issues
-* KIST scheme not needed because implementation of the link layer protocol
-  must handle scheduling explicitly
-
-
-Future Research
+## Future Research
 
 It should be informative to utilize ns-3, the network simulator to
 simulate mix networks.  This could help us answer security and
@@ -272,67 +259,85 @@ tail, determine if a fair AQM on the perimeter can protect the
 mixnet from a DoS or DDoS attack et cetera.
 
 
-Availability
+## References
 
-Source code: https://github.com/Katzenpost
-License: AGPL
+[LOOPIX]
+Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
+and Danezis, G., “The Loopix Anonymity System”,
+USENIX,
+August, 2017
+https://arxiv.org/pdf/1703.00536.pdf
 
+[SPHINX09]
+Danezis, G., Goldberg, I., "Sphinx: A Compact and
+Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
+May 2009,
+http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf
 
-References
+[KESDOGAN98]
+Kesdogan, D., Egner, J., and Büschkes, R.,
+"Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System."
+Information Hiding,
+1998.
 
-   [LOOPIX]    Piotrowska, A., Hayes, J., Elahi, T., Meiser, S.,
-               and Danezis, G., “The Loopix Anonymity System”,
-               USENIX, August, 2017
-               <https://arxiv.org/pdf/1703.00536.pdf>
+[MIXTOPO10]
+Diaz, C., Murdoch, S., Troncoso, C., "Impact of Network Topology on Anonymity
+and Overhead in Low-Latency Anonymity Networks",
+PETS,
+July 2010,
+https://www.esat.kuleuven.be/cosic/publications/article-1230.pdf
 
-   [SPHINX09]  Danezis, G., Goldberg, I., "Sphinx: A Compact and
-               Provably Secure Mix Format", DOI 10.1109/SP.2009.15,
-               May 2009, <http://research.microsoft.com/en-us/um/people/gdane/papers/sphinx-eprint.pdf>.
+[CONGAVOID]
+Jacobson, V., Karels, M., "Congestion Avoidance and Control",
+Symposium proceedings on Communications architectures and protocols,
+November 1988,
+http://ee.lbl.gov/papers/congavoid.pdf
 
-   [KESDOGAN98]   Kesdogan, D., Egner, J., and Büschkes, R.,
-                  "Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System."
-                  Information Hiding, 1998.
+[SMODELS]
+Kelly, F., "Stochastic Models of Computer Communication Systems",
+Journal of the Royal Statistical Society, 1985,
+http://www.yaroslavvb.com/papers/notes/kelly-stochastic.pdf?origin=publication_detail
 
-   [MIXTOPO10]  Diaz, C., Murdoch, S., Troncoso, C., "Impact of Network Topology on Anonymity
-                and Overhead in Low-Latency Anonymity Networks", PETS, July 2010,
-                <https://www.esat.kuleuven.be/cosic/publications/article-1230.pdf>.
+[RFC896]
+Nagle, J., "Congestion Control in IP/TCP Internetworks",
+January 1984,
+https://tools.ietf.org/html/rfc896
 
-   [CONGAVOID] Jacobson, V., Karels, M., "Congestion Avoidance and Control",
-               Symposium proceedings on Communications architectures and protocols,
-               November 1988, <http://ee.lbl.gov/papers/congavoid.pdf>.
+[KIST14]
+Jansen, R., Geddes, J., Wacek, C., Sherr, M., Syverson, P.,
+"Never Been KIST: Tor’s Congestion Management Blossoms with Kernel-Informed Socket Transport",
+Proceedings of 23rd USENIX Security Symposium, August 2014,
+https://www.usenix.org/system/files/conference/usenixsecurity14/sec14-paper-jansen.pdf
 
-   [SMODELS]  Kelly, F., "Stochastic Models of Computer Communication Systems",
-              Journal of the Royal Statistical Society, 1985,
-              <http://www.yaroslavvb.com/papers/notes/kelly-stochastic.pdf?origin=publication_detail>.
+[NOISE17]
+Perrin, T., "The Noise Protocol Framework",
+Revision 31,
+2016-10-07
+http://noiseprotocol.org/noise.pdf
 
-   [RFC896]  Nagle, J., "Congestion Control in IP/TCP Internetworks",
-             January 1984, <https://tools.ietf.org/html/rfc896>.
+[ARQ17]
+Bada, A., "Automatic Repeat Request (Arq) Protocols",
+Volume 6, Issue 5 of The International Journal of Engineering and Science,
+2017,
+http://www.theijes.com/paper/vol6-issue5/J0605016466.pdf
 
-   [KIST14]  Jansen, R., Geddes, J., Wacek, C., Sherr, M., Syverson, P.,
-             "Never Been KIST: Tor’s Congestion Management Blossoms with Kernel-Informed Socket Transport",
-             Proceedings of 23rd USENIX Security Symposium, August 2014,
-             <https://www.usenix.org/system/files/conference/usenixsecurity14/sec14-paper-jansen.pdf>.
+[RSFBLUE]
+Zhang, C., Yin, J., Cai, Z., "RSFB: a Resilient Stochastic
+Fair Blue algorithmagainst spoofing DDoS attacks", December 2009,
+https://sites.google.com/site/cwzhangres/home/files/RSFBaResilientStochasticFairBluealgorithmagainstspoofingDDoSattacks.pdf
 
-   [NOISE17] Perrin, T., "The Noise Protocol Framework",
-             Revision 31, 2016-10-07 <http://noiseprotocol.org/noise.pdf>.
+[SFBLUE]
+Feng, W., Kandlur, D., Saha, D., Shin. K.,
+"Stochastic Fair Blue: A Queue Management Alogirthm
+for Enforcing Fairness", 2001,
+http://www.thefengs.com/wuchang/blue/41_2.PDF
 
-   [ARQ17] Bada, A., "Automatic Repeat Request (Arq) Protocols",
-           Volume 6, Issue 5 of The International Journal of Engineering and Science,
-           2017, <http://www.theijes.com/paper/vol6-issue5/J0605016466.pdf>
+[CODEL17]
+Nichols, K., Jacobson, V., McGregor, A., Iyengar, J.,
+"Controlled Delay Active Queue Management", March 2017,
+https://tools.ietf.org/html/draft-ietf-aqm-codel-07
 
-   [RSFBLUE]  Zhang, C., Yin, J., Cai, Z., "RSFB: a Resilient Stochastic
-              Fair Blue algorithmagainst spoofing DDoS attacks", December 2009,
-              <https://sites.google.com/site/cwzhangres/home/files/RSFBaResilientStochasticFairBluealgorithmagainstspoofingDDoSattacks.pdf>.
-
-   [SFBLUE]  Feng, W., Kandlur, D., Saha, D., Shin. K.,
-             "Stochastic Fair Blue: A Queue Management Alogirthm
-             for Enforcing Fairness", 2001,
-             <http://www.thefengs.com/wuchang/blue/41_2.PDF>.
-
-   [CODEL17]  Nichols, K., Jacobson, V., McGregor, A., Iyengar, J.,
-              "Controlled Delay Active Queue Management", March 2017,
-              <https://tools.ietf.org/html/draft-ietf-aqm-codel-07>.
-
-   [RFC5404]  Eggert, L., Fairhurst, G.,
-              "Unicast UDP Usage Guidelines for Application Designers", November 2008,
-              <https://www.rfc-editor.org/rfc/rfc5405.txt>.
+[RFC5404]
+Eggert, L., Fairhurst, G.,
+"Unicast UDP Usage Guidelines for Application Designers", November 2008,
+https://www.rfc-editor.org/rfc/rfc5405.txt
