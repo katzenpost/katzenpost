@@ -22,6 +22,8 @@ import (
 	"gioui.org/widget/material"
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/client/config"
+	"github.com/katzenpost/katzenpost/client/utils"
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/katzensocks/cashu"
 	kclient "github.com/katzenpost/katzenpost/katzensocks/client"
@@ -51,6 +53,9 @@ var (
 	portSelect    = &PortSelect{Editor: &widget.Editor{SingleLine: true, Submit: true, Filter: "0123456789"}}
 	debug         = flag.Int("d", 0, "Port for net/http/pprof listener")
 	invoiceAmount = 42
+
+	// gateway selection
+	gatewaySelect = &GatewaySelect{gatewayList: &layout.List{Axis: layout.Vertical}, gateways: []utils.ServiceDescriptor{}, clicks: make(map[string]*gesture.Click)}
 
 	// wallet state
 	wallet = &Wallet{balance: 0}
@@ -296,12 +301,77 @@ func (p *PortSelect) Update() {
 	}
 }
 
+// widget to select gateway
+type GatewaySelect struct {
+	sync.Mutex
+	selected    string
+	gatewayList *layout.List
+	gateways    []utils.ServiceDescriptor
+	clicks      map[string]*gesture.Click
+}
+
+func (g *GatewaySelect) update(a *App, gtx C) {
+	a.Lock()
+	defer a.Unlock()
+	if a.kc != nil {
+		g.gateways = a.kc.GetGateways()
+	}
+	for p, c := range g.clicks {
+		for _, e := range c.Events(gtx.Queue) {
+			if e.Type == gesture.TypeClick {
+				g.selected = p
+				if a.kc != nil {
+					a.kc.SetGateway(p)
+				}
+				a.w.Invalidate()
+			}
+		}
+	}
+}
+
+func (g *GatewaySelect) Layout(gtx C) D {
+	if len(g.gateways) == 0 {
+		return D{}
+	}
+	return layout.UniformInset(unit.Dp(10)).Layout(gtx, func(gtx C) D {
+		return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+			layout.Rigid(material.H6(th, "Choose Gateway: ").Layout),
+			layout.Rigid(func(gtx C) D {
+				return g.gatewayList.Layout(gtx, len(g.gateways), func(gtx C, i int) layout.Dimensions {
+					// TODO: style this appropriately
+					gw := ""
+					if g.selected == g.gateways[i].Provider {
+						gw = "* " + g.gateways[i].Provider
+					} else {
+						gw = g.gateways[i].Provider
+					}
+
+					// add a click handler to gateway
+					dims := layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+						layout.Rigid(material.H6(th, gw).Layout),
+					)
+
+					a := clip.Rect(image.Rectangle{Max: dims.Size})
+					t := a.Push(gtx.Ops)
+					if _, ok := g.clicks[g.gateways[i].Provider]; !ok {
+						g.clicks[g.gateways[i].Provider] = new(gesture.Click)
+					}
+					g.clicks[g.gateways[i].Provider].Add(gtx.Ops)
+					t.Pop()
+					return dims
+				})
+			}),
+		)
+	})
+}
+
 type App struct {
 	endBg func()
 	sync.Mutex
 	worker.Worker
 	w   *app.Window
 	c   *client.Client
+	kc  *kclient.Client
 	ops *op.Ops
 
 	connect     *widget.Clickable
@@ -311,9 +381,21 @@ type App struct {
 
 func (a *App) run() error {
 
-	// fetch an inital invoice
+	// fetch an inital invoice and gateway list
 	go func() {
 		invoice.get()
+		_, doc, err := kclient.GetPKI(context.Background(), *clientConfigFile)
+		if err == nil && doc != nil {
+			gatewaySelect.Lock()
+			gatewaySelect.gateways = utils.FindServices("katzensocks", doc)
+			// choose random gateway
+			if len(gatewaySelect.gateways) > 0 {
+				m := rand.NewMath()
+				n := m.Intn(len(gatewaySelect.gateways))
+				gatewaySelect.selected = gatewaySelect.gateways[n].Provider
+			}
+			gatewaySelect.Unlock()
+		}
 		a.w.Invalidate()
 	}()
 
@@ -356,8 +438,8 @@ func (a *App) handleGioEvents(e interface{}) error {
 
 // Update reads events from the app elements
 func (a *App) Update(gtx layout.Context) {
-	log.Print("Update")
 	portSelect.Update()
+	gatewaySelect.update(a, gtx)
 	invoice.update(gtx)
 	connectSwitch.update(a)
 }
@@ -384,6 +466,8 @@ func (a *App) Layout(gtx C) {
 		layout.Rigid(invoice.Layout),
 		// wallet balance
 		layout.Rigid(wallet.Layout),
+		// layout the exit node selection
+		layout.Flexed(1, gatewaySelect.Layout),
 	)
 }
 
@@ -408,6 +492,14 @@ func (a *App) doConnectClick() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		a.Lock()
+		if a.kc != nil {
+			panic("must be nil")
+		}
+		a.kc = kc
+
+		a.kc.SetGateway(gatewaySelect.selected)
+		a.Unlock()
 
 		// add SOCKS5 listener
 		a.Go(func() {
@@ -444,6 +536,7 @@ func (a *App) doConnectClick() {
 				s.Shutdown()
 			}
 			a.Lock()
+			a.kc = nil
 			a.connectOnce = new(sync.Once)
 			connectSwitch.Off()
 			a.Unlock()

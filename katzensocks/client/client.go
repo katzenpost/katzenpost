@@ -557,6 +557,17 @@ func (c *Client) SocksHandler(conn net.Conn) {
 	}
 }
 
+// GetGateways returns the set of gateway services
+func (c *Client) GetGateways() []utils.ServiceDescriptor {
+	// try to find the gateway by provider name
+	doc := c.s.CurrentDocument()
+	if doc == nil {
+		return []utils.ServiceDescriptor{}
+	}
+
+	return utils.FindServices("katzensocks", doc)
+}
+
 // SetGateway tells client to use a specific provider's gateway service
 func (c *Client) SetGateway(provider string) error {
 	// try to find the gateway by provider name
