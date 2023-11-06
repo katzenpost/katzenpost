@@ -68,7 +68,17 @@ func TestDockerTopup(t *testing.T) {
 	req := cashu.InvoiceRequest{Amount: 42}
 	resp, err := w.CreateInvoice(req)
 	require.NoError(err)
-	require.Equal(resp.Amount, 42)
+	require.True(resp.Ok)
+
+	// verify the invoice is paid
+	payStatus, err := w.CheckInvoice(*resp)
+	require.NoError(err)
+	require.True(payStatus.Paid)
+
+	// verify the balance is now 42
+	r, err = w.GetBalance()
+	require.NoError(err)
+	require.Equal(r.Balance, 42)
 
 	// create a new session and add some credit
 	id, err := c.NewSession()
