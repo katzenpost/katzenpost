@@ -468,6 +468,7 @@ func (a *App) Layout(gtx C) {
 }
 
 func (a *App) doConnectClick() {
+	defer a.w.Invalidate()
 	a.clicked <- struct{}{}
 	a.connectOnce.Do(func() {
 		<-a.clicked
