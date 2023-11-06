@@ -222,9 +222,7 @@ func (i *Invoice) Layout(gtx C) D {
 				)
 			})
 		}),
-		layout.Flexed(.2, i.layoutQr), // hide/expand QR
-		//layout.Rigid(material.H6(th, fmt.Sprintf("Amount: %v", i.invoice.Amount)).Layout),
-		//layout.Rigid(material.H6(th, fmt.Sprintf("Paid: %v", i.invoice.Paid)).Layout),
+		layout.Rigid(i.layoutQr),
 	)
 }
 
@@ -458,8 +456,7 @@ func (a *App) Layout(gtx C) {
 	layout.Flex{Axis: layout.Vertical, Spacing: layout.SpaceBetween, Alignment: layout.Start}.Layout(gtx,
 		// Proxy Port Selector
 		layout.Rigid(portSelect.Layout),
-		// layout the exit node selection
-		//layout.Rigid(exitSelect.Layout),
+		// layout the connect/disconnect switch
 		layout.Rigid(connectSwitch.Layout),
 		// layout add credit topup invoice
 		layout.Rigid(invoice.Layout),
