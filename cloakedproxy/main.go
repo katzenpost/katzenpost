@@ -560,7 +560,7 @@ func main() {
 			connectOnce: new(sync.Once),
 		}
 
-		go a.doConnectClick()
+		a.doConnectClick()
 		a.Wait()
 		return
 	}
