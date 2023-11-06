@@ -16,6 +16,9 @@ all:
 go_package_cache:
 	mkdir -p go_package_cache
 
+build-linux:
+	CGO_CFLAGS_ALLOW="-DPARAMS=sphincs-shake-256f" go build -trimpath -ldflags=${ldflags}
+
 docker-android-base:
 	if ! $(docker) images|grep katzen/android_sdk; then \
 		$(docker) build -t katzen/android_sdk -f Dockerfile.android .; \
