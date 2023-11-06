@@ -459,9 +459,9 @@ func (a *App) Layout(gtx C) {
 		// layout the connect/disconnect switch
 		layout.Rigid(connectSwitch.Layout),
 		// layout add credit topup invoice
-		layout.Rigid(invoice.Layout),
+		layout.Flexed(1, invoice.Layout),
 		// wallet balance
-		layout.Rigid(wallet.Layout),
+		layout.Flexed(1, wallet.Layout),
 		// layout the exit node selection
 		layout.Flexed(1, gatewaySelect.Layout),
 	)
