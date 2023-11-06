@@ -79,7 +79,7 @@ var (
 	}()
 
 	// proxy connected toggle:
-	connectSwitch =  ConnectSwitch{connected: new(widget.Bool)}
+	connectSwitch = ConnectSwitch{connected: new(widget.Bool)}
 
 	//go:embed default_config_without_tor.toml
 	cfgWithoutTor []byte
@@ -130,8 +130,8 @@ type Invoice struct {
 	// casu.Payment Status
 	sync.Mutex
 	paymentRequest string
-	amount   int64
-	amountEd *widget.Editor
+	amount         int64
+	amountEd       *widget.Editor
 
 	clicked *gesture.Click
 }
