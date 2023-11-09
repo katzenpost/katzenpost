@@ -68,6 +68,7 @@ func NewThinClient() *ThinClient {
 // connection with the client daemon.
 func (t *ThinClient) Close() error {
 	err := t.unixConn.Close()
+	close(t.receivedCh)
 	t.Halt()
 	return err
 }
