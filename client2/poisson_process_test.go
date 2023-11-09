@@ -10,6 +10,8 @@ import (
 )
 
 func TestPoissonProcessUpdateConnectionStatus(t *testing.T) {
+	// check that the callback associated with
+	// the connection status change is called.
 	lambda := 0.0005
 	lambdaMaxDelay := uint64(1000)
 	actions := 0
@@ -26,6 +28,7 @@ func TestPoissonProcessUpdateConnectionStatus(t *testing.T) {
 }
 
 func TestPoissonProcessUpdateRate(t *testing.T) {
+	// check that the rate was updated.
 	lambda := 0.0005
 	lambdaMaxDelay := uint64(1000)
 	actions := 0
