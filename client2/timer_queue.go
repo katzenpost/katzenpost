@@ -16,7 +16,7 @@ type TimerQueue struct {
 
 	queue  *queue.PriorityQueue
 	timer  *time.Timer
-	mutex  sync.Mutex
+	mutex  sync.RWMutex
 	action func(interface{})
 }
 
@@ -39,21 +39,23 @@ func (t *TimerQueue) Push(priority uint64, surbID *[sConstants.SURBIDLength]byte
 }
 
 func (t *TimerQueue) Len() int {
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
+	t.mutex.RLock()
+	defer t.mutex.RUnlock()
 	return t.queue.Len()
 }
 
 func (t *TimerQueue) worker() {
 	for {
 		var waitCh <-chan time.Time
-		t.mutex.Lock()
+		t.mutex.RLock()
 
 		m := t.queue.Peek()
 		if m != nil {
 			// Figure out if the message needs to be handled now.
 			timeLeft := int64(m.Priority) - time.Now().UnixNano()
 			if timeLeft < 0 || m.Priority < uint64(time.Now().UnixNano()) {
+				t.mutex.RUnlock()
+				t.mutex.Lock()
 				t.queue.Pop()
 				t.mutex.Unlock()
 				t.action(m.Value)
@@ -62,7 +64,7 @@ func (t *TimerQueue) worker() {
 				waitCh = time.After(time.Duration(timeLeft))
 			}
 		}
-		t.mutex.Unlock()
+		t.mutex.RUnlock()
 		select {
 		case <-t.HaltCh():
 			return
