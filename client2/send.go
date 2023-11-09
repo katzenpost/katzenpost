@@ -20,7 +20,7 @@ func (c *Client) SendSphinxPacket(pkt []byte) error {
 }
 
 // ComposeSphinxPacket is used to compose Sphinx packets.
-func (c *Client) ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Duration, error) {
+func (c *Client) ComposeSphinxPacket(request *Request) (pkt []byte, surbkey []byte, rtt time.Duration, err error) {
 
 	if len(request.RecipientQueueID) > sConstants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("client2: invalid recipient: '%v'", request.RecipientQueueID)
