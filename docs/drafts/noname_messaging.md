@@ -2,6 +2,7 @@
 title: "Noname Message Protocol Specification"
 author: ["David Stainton"]
 version: 0
+draft: true
 ---
 
 **Abstract**

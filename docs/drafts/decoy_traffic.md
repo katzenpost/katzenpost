@@ -1,7 +1,8 @@
 ---
-title: Katzenpost Mix Network Decoy Traffic Specification
+title: "Katzenpost Mix Network Decoy Traffic Specification"
 author: ["Sofi Celi", "Leif Ryge", "David Stainton"]
 version: 0
+draft: true
 ---
 
 **Abstract**

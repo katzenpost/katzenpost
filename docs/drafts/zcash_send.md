@@ -1,7 +1,8 @@
 ---
-title: Katzenpost Zcash Submission Protocol Specification
+title: "Katzenpost Zcash Submission Protocol Specification"
 author: ["David Stainton"]
 version: 0
+draft: true
 ---
 
 **Abstract**

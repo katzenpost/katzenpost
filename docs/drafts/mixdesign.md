@@ -2,6 +2,7 @@
 title: "The Katzenpost Decryption Mix Network Anonymity System: fast, safe and correct mixnet protocol design"
 author: ["Yawning Angel", "George Danezis", "Claudia Diaz", "Ania Piotrowska", "David Stainton"]
 version: 0
+draft: true
 ---
 
 **Abstract**

@@ -1,7 +1,8 @@
 ---
 title: "Katzenpost PANDA Autoresponder Extension"
-author: ["David Stainton"
+author: ["David Stainton"]
 version: 0
+draft: true
 ---
 
 **Abstract**

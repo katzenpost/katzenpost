@@ -2,6 +2,7 @@
 title: "Katzenpost client library design specification"
 author: ["David Stainton", "Masala"]
 version: 0
+draft: true
 ---
 
 **Abstract**
