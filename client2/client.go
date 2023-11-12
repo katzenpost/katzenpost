@@ -16,6 +16,7 @@ import (
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	sphinxFactory "github.com/katzenpost/katzenpost/core/sphinx/packet_factory"
 	"github.com/katzenpost/katzenpost/core/wire"
 )
 
@@ -25,6 +26,8 @@ type Client struct {
 
 	log        *log.Logger
 	logbackend io.Writer
+
+	packetFactory *sphinxFactory.PacketFactory
 
 	// messagePollInterval is the interval at which the server will be
 	// polled for new messages if the queue is believed to be empty.
@@ -121,6 +124,7 @@ func New(cfg *config.Config, logbackend io.Writer) (*Client, error) {
 	}
 
 	c := new(Client)
+	c.packetFactory = sphinxFactory.NewPacketFactory(cfg.SphinxGeometry)
 	c.logbackend = logbackend
 	c.geo = cfg.SphinxGeometry
 	var err error

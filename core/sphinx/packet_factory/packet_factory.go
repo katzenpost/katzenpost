@@ -11,12 +11,12 @@ import (
 
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/katzenpost/katzenpost/core/sphinx/path"
+	sphinxPath "github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 // PacketFactory is used to compose Sphinx packets.
 type PacketFactory struct {
-	pathFactory *path.PathFactory
+	pathFactory *sphinxPath.PathFactory
 	geo         *geo.Geometry
 	sphinx      *sphinx.Sphinx
 }
@@ -25,7 +25,7 @@ type PacketFactory struct {
 type PacketFactoryOption func(*PacketFactory)
 
 // WithPathFactory is used to set the path factory.
-func WithPathFactory(pathFactory *path.PathFactory) PacketFactoryOption {
+func WithPathFactory(pathFactory *sphinxPath.PathFactory) PacketFactoryOption {
 	return func(PacketFactory *PacketFactory) {
 		PacketFactory.pathFactory = pathFactory
 	}
@@ -33,7 +33,7 @@ func WithPathFactory(pathFactory *path.PathFactory) PacketFactoryOption {
 
 func NewPacketFactory(geo *geo.Geometry, opts ...PacketFactoryOption) *PacketFactory {
 	factory := &PacketFactory{
-		pathFactory: new(path.PathFactory),
+		pathFactory: new(sphinxPath.PathFactory),
 		geo:         geo,
 	}
 	for _, opt := range opts {
@@ -54,12 +54,11 @@ func (p *PacketFactory) ComposePacket(
 	if len(dstId) > constants.RecipientIDLength {
 		return nil, nil, 0, fmt.Errorf("minclient: invalid recipient: '%v'", dstId)
 	}
-	if len(message) != p.geo.UserForwardPayloadLength {
+	if len(message) > p.geo.UserForwardPayloadLength {
 		return nil, nil, 0, fmt.Errorf("minclient: invalid ciphertext size: %v", len(message))
 	}
 
-	// Wrap the ciphertext in a BlockSphinxCiphertext.
-	payload := make([]byte, 2+p.geo.SURBLength, 2+p.geo.SURBLength+len(message))
+	payload := make([]byte, p.geo.UserForwardPayloadLength)
 	payload = append(payload, message...)
 
 	for {
@@ -83,7 +82,7 @@ func (p *PacketFactory) ComposePacket(
 			return nil, nil, 0, err
 		}
 
-		revPath := make([]*path.PathHop, 0)
+		revPath := make([]*sphinxPath.PathHop, 0)
 		if surbID != nil {
 			revPath, then, err = p.pathFactory.ComposePath(
 				p.geo,
