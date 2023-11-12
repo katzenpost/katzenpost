@@ -60,7 +60,7 @@ func (lCfg *Logging) validate() error {
 	default:
 		return fmt.Errorf("config: Logging: Level '%v' is invalid", lCfg.Level)
 	}
-	lCfg.Level = lvl // Force uppercase.
+	lCfg.Level = lvl
 	return nil
 }
 
