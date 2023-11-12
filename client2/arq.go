@@ -50,8 +50,8 @@ type ARQMessage struct {
 	// SURBID is the SURB identifier.
 	SURBID *[sConstants.SURBIDLength]byte
 
-	// Key is the SURB decryption keys
-	Key []byte
+	// SURBDecryptionKey is the SURB decryption keys
+	SURBDecryptionKeys []byte
 
 	// Retransmissions counts the number of times the message has been retransmitted.
 	Retransmissions uint32
@@ -139,7 +139,7 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 		}
 
 		message.SURBID = newsurbID
-		message.Key = k
+		message.SURBDecryptionKeys = k
 		message.ReplyETA = rtt
 		message.SentAt = time.Now()
 		message.Retransmissions += 1
@@ -187,7 +187,7 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 	return &replyDescriptor{
 		ID:      m.MessageID,
 		appID:   m.AppID,
-		surbKey: m.Key,
+		surbKey: m.SURBDecryptionKeys,
 	}, nil
 }
 
@@ -217,13 +217,13 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 	}
 
 	message := &ARQMessage{
-		AppID:     appid,
-		MessageID: id,
-		SURBID:    surbID,
-		Payload:   payload,
-		Key:       k,
-		SentAt:    time.Now(),
-		ReplyETA:  rtt,
+		AppID:              appid,
+		MessageID:          id,
+		SURBID:             surbID,
+		Payload:            payload,
+		SURBDecryptionKeys: k,
+		SentAt:             time.Now(),
+		ReplyETA:           rtt,
 	}
 	a.surbIDMap[*surbID] = message
 	p := time.Duration(message.ReplyETA + RoundTripTimeSlop)
