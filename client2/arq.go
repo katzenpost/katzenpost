@@ -34,8 +34,8 @@ type ARQMessage struct {
 	// AppID identifies the application sending/receiving the message/reply.
 	AppID uint64
 
-	// ID is the unique message identifier
-	ID *[MessageIDLength]byte
+	// MessageID is the unique message identifier
+	MessageID *[MessageIDLength]byte
 
 	// DestinationIdHash is 32 byte hash of the destination Provider's
 	// identity public key.
@@ -185,7 +185,7 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 	a.lock.Unlock()
 
 	return &replyDescriptor{
-		ID:      m.ID,
+		ID:      m.MessageID,
 		appID:   m.AppID,
 		surbKey: m.Key,
 	}, nil
@@ -217,13 +217,13 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 	}
 
 	message := &ARQMessage{
-		AppID:    appid,
-		ID:       id,
-		SURBID:   surbID,
-		Payload:  payload,
-		Key:      k,
-		SentAt:   time.Now(),
-		ReplyETA: rtt,
+		AppID:     appid,
+		MessageID: id,
+		SURBID:    surbID,
+		Payload:   payload,
+		Key:       k,
+		SentAt:    time.Now(),
+		ReplyETA:  rtt,
 	}
 	a.surbIDMap[*surbID] = message
 	p := time.Duration(message.ReplyETA + RoundTripTimeSlop)

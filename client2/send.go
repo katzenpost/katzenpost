@@ -17,22 +17,18 @@ func (c *Client) SendSphinxPacket(pkt []byte) error {
 	return c.conn.sendPacket(pkt)
 }
 
-// SendCiphertext sends the ciphertext b to the recipient/provider, with a
-// SURB identified by surbID, and returns the SURB decryption key and total
-// round trip delay.
-func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
-
-	// Get the current PKI document.
+func (c *Client) ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Duration, error) {
 	doc := c.CurrentDocument()
 	if doc == nil {
-		return nil, 0, errors.New("client2: no PKI document for current epoch")
+		return nil, nil, 0, errors.New("client2: no PKI document for current epoch")
 	}
 	src, err := doc.GetProviderByKeyHash(c.conn.provider)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 	source := src.IdentityKey.Sum256()
-	pkt, k, rtt, err := c.packetFactory.ComposePacket(
+
+	return c.packetFactory.ComposePacket(
 		doc,
 		request.RecipientQueueID,
 		&source,
@@ -41,6 +37,13 @@ func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error)
 		request.SURBID,
 		request.Payload,
 	)
+}
+
+// SendCiphertext sends the ciphertext b to the recipient/provider, with a
+// SURB identified by surbID, and returns the SURB decryption key and total
+// round trip delay.
+func (c *Client) SendCiphertext(request *Request) ([]byte, time.Duration, error) {
+	pkt, k, rtt, err := c.ComposeSphinxPacket(request)
 	if err != nil {
 		panic(fmt.Sprintf("COMPOSE SPHINX PACKET FAIL %s", err.Error()))
 	}
