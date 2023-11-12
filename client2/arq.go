@@ -50,7 +50,7 @@ type ARQMessage struct {
 	// SURBID is the SURB identifier.
 	SURBID *[sConstants.SURBIDLength]byte
 
-	// SURBDecryptionKey is the SURB decryption keys
+	// SURBDecryptionKeys is the SURB decryption keys
 	SURBDecryptionKeys []byte
 
 	// Retransmissions counts the number of times the message has been retransmitted.
@@ -117,6 +117,7 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 	a.log.Info("resend")
 
 	a.lock.Lock()
+	defer a.lock.Unlock()
 	message, ok := a.surbIDMap[*surbID]
 	if ok {
 		delete(a.surbIDMap, *surbID)
@@ -156,7 +157,6 @@ func (a *ARQ) resend(surbID *[sConstants.SURBIDLength]byte) {
 	} else {
 		a.log.Error("gc SURB ID not found")
 	}
-	a.lock.Unlock()
 }
 
 // Has checks if a given SURB ID exists.
@@ -174,6 +174,7 @@ func (a *ARQ) Has(surbID *[sConstants.SURBIDLength]byte) bool {
 // to the correct application.
 func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor, error) {
 	a.lock.Lock()
+	defer a.lock.Unlock()
 
 	m, ok := a.surbIDMap[*surbID]
 	if !ok {
@@ -181,8 +182,6 @@ func (a *ARQ) HandleAck(surbID *[sConstants.SURBIDLength]byte) (*replyDescriptor
 		return nil, errors.New("failed to find SURB ID in ARQ map")
 	}
 	delete(a.surbIDMap, *surbID)
-
-	a.lock.Unlock()
 
 	return &replyDescriptor{
 		ID:      m.MessageID,
@@ -196,11 +195,10 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 	a.log.Info("Send")
 
 	a.lock.Lock()
-	defer a.lock.Unlock()
-
 	surbID := &[sConstants.SURBIDLength]byte{}
 	_, err := rand.Reader.Read(surbID[:])
 	if err != nil {
+		a.lock.Unlock()
 		panic(err)
 	}
 
@@ -213,6 +211,7 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 		IsSendOp:          true,
 	})
 	if err != nil {
+		a.lock.Unlock()
 		panic(err)
 	}
 
@@ -226,6 +225,7 @@ func (a *ARQ) Send(appid uint64, id *[MessageIDLength]byte, payload []byte, prov
 		ReplyETA:           rtt,
 	}
 	a.surbIDMap[*surbID] = message
+	a.lock.Unlock()
 	p := time.Duration(message.ReplyETA + RoundTripTimeSlop)
 	a.log.Infof("Push to timer queue with priorit %s", p)
 	priority := uint64(message.SentAt.Add(message.ReplyETA).Add(RoundTripTimeSlop).UnixNano())
