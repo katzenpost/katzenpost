@@ -19,7 +19,6 @@
 package crypto
 
 import (
-	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -27,6 +26,7 @@ import (
 
 	bsaes "github.com/katzenpost/bsaes/ct64"
 	"github.com/katzenpost/bsaes/ctr"
+	"github.com/katzenpost/bsaes/interfaces"
 	"gitlab.com/yawning/aez.git"
 	"golang.org/x/crypto/hkdf"
 
@@ -78,15 +78,12 @@ func (m *macWrapper) Sum(b []byte) []byte {
 
 // Stream is the Sphinx stream cipher.
 type Stream struct {
-	cipher.Stream
+	interfaces.Stream
 }
 
 // KeyStream fills the buffer dst with key stream output.
 func (s *Stream) KeyStream(dst []byte) {
-	// TODO: Add a fast path for implementations that support it, to
-	// shave off the memset and XOR.
-	utils.ExplicitBzero(dst)
-	s.XORKeyStream(dst, dst)
+	s.Stream.KeyStream(dst)
 }
 
 // Reset clears the Stream instance such that no sensitive data is left in
