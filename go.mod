@@ -13,6 +13,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
 	github.com/jackc/pgx v3.6.2+incompatible
+	github.com/katzenpost/bsaes v0.0.0-20231115204639-a0fa9686e9bb
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a
@@ -24,7 +25,6 @@ require (
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
 	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344
 	gitlab.com/yawning/avl.git v0.0.0-20180224045358-04c7c776e391
-	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec
 	go.etcd.io/bbolt v1.3.6
 	golang.org/x/crypto v0.14.0
 	golang.org/x/net v0.17.0
@@ -57,6 +57,7 @@ require (
 	github.com/rfjakob/eme v1.1.2 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	gitlab.com/yawning/bsaes.git v0.0.0-20190805113838-0a714cd429ec // indirect
 	gitlab.com/yawning/slice.git v0.0.0-20190714152416-bc4ae2510529 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

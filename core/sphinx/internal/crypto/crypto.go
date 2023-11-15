@@ -25,8 +25,9 @@ import (
 	"crypto/sha512"
 	"hash"
 
+	bsaes "github.com/katzenpost/bsaes/ct64"
+	"github.com/katzenpost/bsaes/ctr"
 	"gitlab.com/yawning/aez.git"
-	"gitlab.com/yawning/bsaes.git"
 	"golang.org/x/crypto/hkdf"
 
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
@@ -117,12 +118,8 @@ func NewStream(key *[StreamKeyLength]byte, iv *[StreamIVLength]byte) *Stream {
 	//
 	// TODO: The AES-NI `crypto/aes` CTR mode implementation is horrid and
 	// massively underperforms so eventually bsaes should include assembly.
-	blk, err := bsaes.NewCipher(key[:])
-	if err != nil {
-		// Not covered by unit tests because this indicates a bug in bsaes.
-		panic("crypto/NewStream: failed to create AES instance: " + err.Error())
-	}
-	return &Stream{cipher.NewCTR(blk, iv[:])}
+	blk := bsaes.NewCipher(key[:])
+	return &Stream{ctr.NewCTR(blk, iv[:])}
 }
 
 // SPRPEncrypt returns the ciphertext of the message msg, encrypted via the
