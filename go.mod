@@ -13,7 +13,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
 	github.com/jackc/pgx v3.6.2+incompatible
-	github.com/katzenpost/bsaes v0.0.0
+	github.com/katzenpost/bsaes v0.0.1
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a
