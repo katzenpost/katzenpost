@@ -24,7 +24,7 @@ import (
 	"crypto/sha512"
 	"hash"
 
-	bsaes "github.com/katzenpost/bsaes/ct64"
+	bsaes "github.com/katzenpost/bsaes"
 	"github.com/katzenpost/bsaes/ctr"
 	"github.com/katzenpost/bsaes/interfaces"
 	"gitlab.com/yawning/aez.git"
@@ -115,7 +115,10 @@ func NewStream(key *[StreamKeyLength]byte, iv *[StreamIVLength]byte) *Stream {
 	//
 	// TODO: The AES-NI `crypto/aes` CTR mode implementation is horrid and
 	// massively underperforms so eventually bsaes should include assembly.
-	blk := bsaes.NewCipher(key[:])
+	blk, err := bsaes.NewCipher(key[:])
+	if err != nil {
+		panic(err)
+	}
 	return &Stream{ctr.NewCTR(blk, iv[:])}
 }
 
