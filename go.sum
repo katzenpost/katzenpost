@@ -47,6 +47,8 @@ github.com/jackc/pgx v3.6.2+incompatible h1:2zP5OD7kiyR3xzRYMhOcXVvkDZsImVXfj+yI
 github.com/jackc/pgx v3.6.2+incompatible/go.mod h1:0ZGrqGqkRlliWnWB4zKnWtjbSWbGkVEFm4TeybAXq+I=
 github.com/katzenpost/bsaes v0.0.1 h1:FJR7cQQHEISbR1Jamvrb7kh8CtFOgDAcE6Yuh+TevVU=
 github.com/katzenpost/bsaes v0.0.1/go.mod h1:AbiO2m1WYmq7XDEBPsbLRnvjDds22z1Mi2Ejp9Qvcf0=
+github.com/katzenpost/bsaes v0.0.2 h1:wsOHBfYpPwCcTvXpo696Bs5XX5sQHdjDP+kjpQe7kAE=
+github.com/katzenpost/bsaes v0.0.2/go.mod h1:AbiO2m1WYmq7XDEBPsbLRnvjDds22z1Mi2Ejp9Qvcf0=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556 h1:9gHByAWH1LydGefFGorN1ZBRZ/Oz9iozdzMvRTWpyRw=
 github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556/go.mod h1:d9kxwmGOcutgP6bQwr2xaLInaW5yJsxsoPRyUIG0J/E=
 github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129 h1:BkXIK2/3bAtqFbzea4tMVfhu8BQ9j05yCVy/z8iCz3s=
