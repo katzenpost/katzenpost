@@ -1,6 +1,9 @@
 ---
-subtitle: Getting started in Katzenpost development
-title: Hacking Katzenpost
+title: "Getting started in Katzenpost development"
+description: "Getting started in Katzenpost development"
+weight: "30"
+categories: [""]
+tags: [""]
 ---
 
 This guide assumes you are familiar with golang, git and Unix like

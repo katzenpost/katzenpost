@@ -1,5 +1,9 @@
 ---
-title: Katzenpost Software Bill of Materials
+title: "Dependencies"
+description: "Software Bill of Materials"
+weight: "50"
+categories: [""]
+tags: [""]
 ---
 
 **Abstract**

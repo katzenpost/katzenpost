@@ -1,5 +1,8 @@
 ---
-title: "Katzenpost client library design specification"
+title: "Client Library Design"
+description: ""
+categories: [""]
+tags: [""]
 author: ["David Stainton", "Masala"]
 version: 0
 draft: true

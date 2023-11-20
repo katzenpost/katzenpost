@@ -1,5 +1,8 @@
 ---
-title: Certificate Format Specification
+title: "Certificate Format"
+description: ""
+categories: [""]
+tags: [""]
 author: "David Stainton"
 version: "0"
 --- 
