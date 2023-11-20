@@ -1,5 +1,8 @@
 ---
-title: Glossary
+title: "Glossary"
+description: ""
+categories: [""]
+tags: [""]
 ---
 
 ## Traffic Analysis Resistance
