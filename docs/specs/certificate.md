@@ -1,10 +1,12 @@
 ---
 title: "Certificate Format"
+linkTitle: ""
 description: ""
 categories: [""]
 tags: [""]
-author: "David Stainton"
+author: ["David Stainton"]
 version: "0"
+draft: false
 --- 
 
 **Abstract**

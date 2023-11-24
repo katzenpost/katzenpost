@@ -1,5 +1,12 @@
-Run Local Test Network
-======================
+---
+title: "Run a Test Network"
+linkTitle: "Run a Test Network"
+description: "Getting started in Katzenpost development"
+weight: 20
+categories: [""]
+tags: ["development", "testing", "network"]
+draft: false
+---
 
 The following is steps to run an actual katzenpost network from a single
 computer for development testing purposes. The default is the following:

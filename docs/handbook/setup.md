@@ -1,5 +1,12 @@
 ---
-title: Setup Your Own Katzenpost Mixnet
+title: "Setup Your Own Mixnet"
+linkTitle: ""
+description: ""
+categories: [""]
+tags: [""]
+author: []
+version: 0
+draft: false
 ---
 
 **Katzenpost is still pre-alpha.DO NOT DEPEND ON IT FOR STRONG SECURITY OR ANONYMITY.**

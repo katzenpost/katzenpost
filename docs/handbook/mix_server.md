@@ -1,5 +1,12 @@
 ---
-title: Katzenpost Mix Server Infrastructure
+title: "Mix Server Infrastructure"
+linkTitle: ""
+description: ""
+categories: [""]
+tags: [""]
+author: []
+version: 0
+draft: false
 ---
 
 ## Overview

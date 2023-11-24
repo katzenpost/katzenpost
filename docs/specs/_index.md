@@ -1,6 +1,9 @@
 ---
 title: "Specifications"
 linkTitle: "Specifications"
+description: ""
+categories: [""]
+tags: [""]
 weight: "40"
 ---
 

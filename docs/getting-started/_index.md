@@ -1,7 +1,8 @@
 ---
-title: "Getting started in Katzenpost development"
+title: "Getting Started"
+linkTitle: "Getting Started"
 description: "Getting started in Katzenpost development"
-weight: "30"
+weight: "20"
 categories: [""]
 tags: [""]
 ---
@@ -9,11 +10,11 @@ tags: [""]
 This guide assumes you are familiar with golang, git and Unix like
 operating system environment.
 
-# Overview of our git repositories
+## Overview of our git repositories
 
 We do some additional ticket tracking in:
 
--   mixnet_uprising - Repository for tracking open tasks for the Katzenpost mixnet framework.
+- mixnet_uprising - Repository for tracking open tasks for the Katzenpost mixnet framework.
 
 Our specs, drafts and other documents are in:
 
@@ -22,36 +23,36 @@ Our specs, drafts and other documents are in:
 The mix server and directory authority libraries both make use of our
 core library:
 
--   core - Core library
--   server - Mix server
--   authority - Mix PKI, nonvoting and voting Directory Authority servers and clients
--   tools - Tools are programs that we use for testing and debugging.
+- core - Core library
+- server - Mix server
+- authority - Mix PKI, nonvoting and voting Directory Authority servers and clients
+- tools - Tools are programs that we use for testing and debugging.
 
-Our core library\'s wire protocol depends on our fork of the golang
+Our core library's wire protocol depends on our fork of the golang
 noise library:
 
--   noise - The Katzenpost fork of flynn\'s golang Noise crypto library implementation which has the ablity to use the New Hope Simple post quantum hybrid key exchange for forward secrecy.
+- noise - The Katzenpost fork of flynn's golang Noise crypto library implementation which has the ablity to use the New Hope Simple post quantum hybrid key exchange for forward secrecy.
 
 Clients also use the core library:
 
--   minclient - Minimal client library which is the basis for all other mix clients.
--   mailproxy - High-level client library with optional reliability and optional SMTP and POP3 listeners.
--   client - Experimental client library implementing proper Loopix decoy traffic et cetera.
+- minclient - Minimal client library which is the basis for all other mix clients.
+- mailproxy - High-level client library with optional reliability and optional SMTP and POP3 listeners.
+- client - Experimental client library implementing proper Loopix decoy traffic et cetera.
 
 Our website:
 
--   website - The Katzenpost website
+- website - The Katzenpost website
 
 The rest of these repositories do not currently have a maintainer
 associated with them and it is likely they have bitrot:
 
--   bindings - Language bindings for Java and Python. STATUS: NOT finished.
--   nixops - NixOS automated configuration for Katzenpost server components.
--   nixpkg - NixOS packages for Katzenpost components.
--   pykatzenpost - Python client library for Katzenpost.
--   katzsim - Client simulator for load testing mix servers.
--   katzenpost-android-mail - A Katzenpost client, based on K-9 Mail.
--   pykatzen-auth - Optional Katzenpost server authentication module in python.
+- bindings - Language bindings for Java and Python. STATUS: NOT finished.
+- nixops - NixOS automated configuration for Katzenpost server components.
+- nixpkg - NixOS packages for Katzenpost components.
+- pykatzenpost - Python client library for Katzenpost.
+- katzsim - Client simulator for load testing mix servers.
+- katzenpost-android-mail - A Katzenpost client, based on K-9 Mail.
+- pykatzen-auth - Optional Katzenpost server authentication module in python.
 
 
 ## Development workflow
@@ -60,17 +61,17 @@ associated with them and it is likely they have bitrot:
     use the go-modules features for dependency version pinning! Read
     about go-modules here:
 
-    -   <https://github.com/golang/go/wiki/Modules>
+    - https://github.com/golang/go/wiki/Modules
 
 1.  Setup proper golang environment variables such as GOPATH, GOROOT and
-    GO111MODULE, for example: :
+    GO111MODULE, for example:
 
         export GO111MODULE=on
         export GOPATH=/home/user/gopath
         export GOROOT=/home/user/code/go
 
 2.  Checkout the latest master branch of the component you are
-    interested in building: :
+    interested in building:
 
         cd $GOPATH/src/github.com/katzenpost/
         git clone https://github.com/katzenpost/katzenpost/server.git
@@ -78,23 +79,20 @@ associated with them and it is likely they have bitrot:
         git checkout master
 
 3.  Edit the source code and make it do cool stuff.
-
-4.  Track a new dependency with go-modules: :
+4.  Track a new dependency with go-modules:
 
         cd $GOPATH/src/github.com/katzenpost/katzenpost/server/
         go get github.com/foo/bar@v1.2.3
 
-    Or perhaps you\'d like to build with the master branch of such a
-    dependency: :
+Or perhaps you'd like to build with the master branch of such a dependency:
 
         cd $GOPATH/src/github.com/katzenpost/katzenpost/server/
         go get github.com/foo/bar@master
 
-5.  Build the binary. :
+5.  Build the binary
 
         cd $GOPATH/src/github.com/katzenpost/katzenpost/server/cmd/server
         go build
-
 
 ### client and server internals
 
@@ -110,7 +108,7 @@ code path unlike many golang examples on the Internet. Struct types
 which act as worker goroutines MUST be a composite struct type with the
 Worker type which is defined in our \"core\" repository here:
 
--   <https://github.com/katzenpost/katzenpost/blob/master/core/worker/worker.go>
+- https://github.com/katzenpost/katzenpost/blob/master/core/worker/worker.go
 
 Correctly implementing a composite Worker type means that your code uses
 the Worker\'s Go method to spawn new goroutines and will halt it\'s
@@ -122,15 +120,15 @@ HaltCh method. There are plenty of examples of this in our code.
 The Katzenpost mix server and mailproxy both use the EApache Channels
 library:
 
--   <https://gopkg.in/eapache/channels.v1>
+- https://gopkg.in/eapache/channels.v1
 
 Channels API docs:
 
--   <https://godoc.org/gopkg.in/eapache/channels.v1>
+- https://godoc.org/gopkg.in/eapache/channels.v1
 
 Channels code:
 
--   <https://github.com/eapache/channels/tree/v1.1.0>
+- https://github.com/eapache/channels/tree/v1.1.0
 
 The extended functionality of these channels is well suited to building
 various kinds of computational pipelines. In particular throughout the
@@ -156,8 +154,9 @@ increased work load.
 If you\'d like to learn more about the SEDA computation model we
 recommend reading:
 
--   \"SEDA: An Architecture for Well-Conditioned, Scalable Internet
-    Services\", <http://www.sosp.org/2001/papers/welsh.pdf>
+- "SEDA: An Architecture for Well-Conditioned, Scalable Internet Services"
+
+http://www.sosp.org/2001/papers/welsh.pdf
 
 ## the mix strategy
 
@@ -165,10 +164,8 @@ Currently Katzenpost only supports the Poisson mix strategy and
 therefore the mix strategy AQM is implemented using a priority queue. To
 learn more about the Poisson mix strategy you should read:
 
--   \"The Loopix Anonymity System\",
-    <https://arxiv.org/pdf/1703.00536.pdf>
--   \"Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open
-    System\", <https://www.freehaven.net/anonbib/cache/stop-and-go.pdf>
+- "The Loopix Anonymity System", https://arxiv.org/pdf/1703.00536.pdf
+- "Stop-and-Go-MIXes Providing Probabilistic Anonymity in an Open System, <https://www.freehaven.net/anonbib/cache/stop-and-go.pdf>
 
 ### Mix Pipeline Diagram
 
@@ -231,7 +228,7 @@ be very difficult to detect.
 
     Chat with the Katzenpost developers on irc: #katzenpost on the OFTC
     network or reach out to us on our mailing list:
-    <https://lists.mixnetworks.org/listinfo/katzenpost>
+    https://lists.mixnetworks.org/listinfo/katzenpost
 
     It is a good idea to discuss your code change with us before
     investing your time in writing the code.
@@ -250,7 +247,7 @@ be very difficult to detect.
 2.  Document the work task
 
     Open a ticket to document your feature addition or code change using
-    the repository\'s issue tracker.
+    the repository's issue tracker.
 
 3.  Testing your code
 
