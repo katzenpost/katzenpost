@@ -23,10 +23,12 @@ import (
 	mRand "math/rand"
 	"time"
 
+	"github.com/cloudflare/circl/kem"
+
+	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	"github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
@@ -35,6 +37,15 @@ import (
 const maxAttempts = 3
 
 var errMaxAttempts = errors.New("path: max path selection attempts exceeded")
+
+// PathHop describes a hop that a Sphinx Packet will traverse, along with
+// all of the per-hop Commands (excluding NextNodeHop).
+type PathHop struct {
+	ID            [constants.NodeIDLength]byte
+	NIKEPublicKey nike.PublicKey
+	KEMPublicKey  kem.PublicKey
+	Commands      []commands.RoutingCommand
+}
 
 // New creates a new path suitable for use in creating a Sphinx packet with the
 // specified parameters.
@@ -50,10 +61,10 @@ func New(rng *mRand.Rand,
 	surbID *[constants.SURBIDLength]byte,
 	baseTime time.Time,
 	isFromClient,
-	isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+	isForward bool) ([]*PathHop, time.Time, error) {
 
 	var then time.Time
-	var path []*sphinx.PathHop
+	var path []*PathHop
 selectLoop:
 	for attempts := 0; attempts < maxAttempts; attempts++ {
 		descs, err := selectHops(rng, doc, src, dst, isFromClient, isForward)
@@ -62,9 +73,9 @@ selectLoop:
 		}
 
 		then = baseTime
-		path = make([]*sphinx.PathHop, 0, len(descs))
+		path = make([]*PathHop, 0, len(descs))
 		for idx, desc := range descs {
-			h := &sphinx.PathHop{}
+			h := &PathHop{}
 			idHash := desc.IdentityKey.Sum256()
 			copy(h.ID[:], idHash[:])
 			epoch, _, _ := epochtime.FromUnix(then.Unix())
@@ -193,7 +204,7 @@ func selectHops(rng *mRand.Rand, doc *pki.Document, src, dst *pki.MixDescriptor,
 
 // ToString returns a slice of strings representing the "useful" component of
 // each PathHop, suitable for debugging.
-func ToString(doc *pki.Document, p []*sphinx.PathHop) ([]string, error) {
+func ToString(doc *pki.Document, p []*PathHop) ([]string, error) {
 	s := make([]string, 0, len(p))
 	for idx, v := range p {
 		desc, err := doc.GetNodeByKeyHash(&v.ID)

@@ -28,21 +28,21 @@ import (
 )
 
 const (
-	cmdOverhead = 1 + 1 + 4
+	CmdOverhead = 1 + 1 + 4
 
 	retreiveMessageLength = 4
 	messageBaseLength     = 1 + 1 + 4
 
-	getConsensusLength  = 8
-	consensusBaseLength = 1
+	GetConsensusLength  = 8
+	ConsensusBaseLength = 1
 
-	postDescriptorStatusLength = 1
-	postDescriptorLength       = 8
+	PostDescriptorStatusLength = 1
+	PostDescriptorLength       = 8
 
-	certStatusLength   = 1
-	revealStatusLength = 1
+	CertStatusLength   = 1
+	RevealStatusLength = 1
 	sigStatusLength    = 1
-	voteStatusLength   = 1
+	VoteStatusLength   = 1
 
 	messageTypeMessage messageType = 0
 	messageTypeACK     messageType = 1
@@ -186,10 +186,10 @@ const (
 var (
 	errInvalidCommand = errors.New("wire: invalid wire protocol command")
 
-	voteOverhead   = 8 + cert.Scheme.PublicKeySize()
-	revealOverhead = 8 + cert.Scheme.PublicKeySize()
-	certOverhead   = 8 + cert.Scheme.PublicKeySize()
-	sigOverhead    = 8 + cert.Scheme.PublicKeySize()
+	VoteOverhead   = 8 + cert.Scheme.PublicKeySize()
+	RevealOverhead = 8 + cert.Scheme.PublicKeySize()
+	CertOverhead   = 8 + cert.Scheme.PublicKeySize()
+	SigOverhead    = 8 + cert.Scheme.PublicKeySize()
 )
 
 type (
@@ -206,20 +206,20 @@ type Command interface {
 // Commands encapsulates all of the wire protocol commands so that it can
 // pass around a sphinx geometry where needed.
 type Commands struct {
-	geo *geo.Geometry
+	Geo *geo.Geometry
 }
 
 // NewPKICommands returns a Commands without a given sphinx geometry.
 func NewPKICommands() *Commands {
 	return &Commands{
-		geo: nil,
+		Geo: nil,
 	}
 }
 
 // NewCommands returns a Commands given a sphinx geometry.
 func NewCommands(geo *geo.Geometry) *Commands {
 	return &Commands{
-		geo: geo,
+		Geo: geo,
 	}
 }
 
@@ -231,12 +231,12 @@ func messageACKLength() int {
 	return messageBaseLength + constants.SURBIDLength
 }
 
-func (c *Commands) messageEmptyLength() int {
-	return messageACKLength() + c.geo.PayloadTagLength + c.geo.ForwardPayloadLength
+func (c *Commands) MessageEmptyLength() int {
+	return messageACKLength() + c.Geo.PayloadTagLength + c.Geo.ForwardPayloadLength
 }
 
 func (c *Commands) messageMsgPaddingLength() int {
-	return constants.SURBIDLength + c.geo.SphinxPlaintextHeaderLength + c.geo.SURBLength + c.geo.PayloadTagLength
+	return constants.SURBIDLength + c.Geo.SphinxPlaintextHeaderLength + c.Geo.SURBLength + c.Geo.PayloadTagLength
 }
 
 // NoOp is a de-serialized noop command.
@@ -244,7 +244,7 @@ type NoOp struct{}
 
 // ToBytes serializes the NoOp and returns the resulting slice.
 func (c *NoOp) ToBytes() []byte {
-	out := make([]byte, cmdOverhead)
+	out := make([]byte, CmdOverhead)
 	out[0] = byte(noOp)
 	return out
 }
@@ -256,15 +256,15 @@ type GetConsensus struct {
 
 // ToBytes serializes the GetConsensus and returns the resulting byte slice.
 func (c *GetConsensus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+getConsensusLength)
+	out := make([]byte, CmdOverhead+GetConsensusLength)
 	out[0] = byte(getConsensus)
-	binary.BigEndian.PutUint32(out[2:6], getConsensusLength)
+	binary.BigEndian.PutUint32(out[2:6], GetConsensusLength)
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	return out
 }
 
 func getConsensusFromBytes(b []byte) (Command, error) {
-	if len(b) != getConsensusLength {
+	if len(b) != GetConsensusLength {
 		return nil, errInvalidCommand
 	}
 
@@ -281,16 +281,16 @@ type GetVote struct {
 
 // ToBytes serializes the GetVote and returns the resulting slice.
 func (v *GetVote) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead)
+	out := make([]byte, CmdOverhead+8, CmdOverhead+VoteOverhead)
 	out[0] = byte(getVote)
-	binary.BigEndian.PutUint32(out[2:6], uint32(voteOverhead))
+	binary.BigEndian.PutUint32(out[2:6], uint32(VoteOverhead))
 	binary.BigEndian.PutUint64(out[6:14], v.Epoch)
 	out = append(out, v.PublicKey.Bytes()...)
 	return out
 }
 
 func getVoteFromBytes(b []byte) (Command, error) {
-	if len(b) != voteOverhead {
+	if len(b) != VoteOverhead {
 		return nil, errInvalidCommand
 	}
 	r := new(GetVote)
@@ -311,8 +311,8 @@ type Consensus struct {
 
 // ToBytes serializes the Consensus and returns the resulting byte slice.
 func (c *Consensus) ToBytes() []byte {
-	consensusLength := uint32(consensusBaseLength + len(c.Payload))
-	out := make([]byte, cmdOverhead+consensusBaseLength, cmdOverhead+consensusLength)
+	consensusLength := uint32(ConsensusBaseLength + len(c.Payload))
+	out := make([]byte, CmdOverhead+ConsensusBaseLength, CmdOverhead+consensusLength)
 	out[0] = byte(consensus) // out[1] is reserved
 	binary.BigEndian.PutUint32(out[2:6], consensusLength)
 	out[6] = c.ErrorCode
@@ -321,15 +321,15 @@ func (c *Consensus) ToBytes() []byte {
 }
 
 func consensusFromBytes(b []byte) (Command, error) {
-	if len(b) < consensusBaseLength {
+	if len(b) < ConsensusBaseLength {
 		return nil, errInvalidCommand
 	}
 
 	r := new(Consensus)
 	r.ErrorCode = b[0]
-	if payloadLength := len(b) - consensusBaseLength; payloadLength > 0 {
+	if payloadLength := len(b) - ConsensusBaseLength; payloadLength > 0 {
 		r.Payload = make([]byte, 0, payloadLength)
-		r.Payload = append(r.Payload, b[consensusBaseLength:]...)
+		r.Payload = append(r.Payload, b[ConsensusBaseLength:]...)
 	}
 	return r, nil
 }
@@ -342,23 +342,23 @@ type PostDescriptor struct {
 
 // ToBytes serializes the PostDescriptor and returns the resulting byte slice.
 func (c *PostDescriptor) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+postDescriptorLength, cmdOverhead+postDescriptorLength+len(c.Payload))
+	out := make([]byte, CmdOverhead+PostDescriptorLength, CmdOverhead+PostDescriptorLength+len(c.Payload))
 	out[0] = byte(postDescriptor)
-	binary.BigEndian.PutUint32(out[2:6], postDescriptorLength+uint32(len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], PostDescriptorLength+uint32(len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	out = append(out, c.Payload...)
 	return out
 }
 
 func postDescriptorFromBytes(b []byte) (Command, error) {
-	if len(b) < postDescriptorLength {
+	if len(b) < PostDescriptorLength {
 		return nil, errInvalidCommand
 	}
 
 	r := new(PostDescriptor)
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
-	r.Payload = make([]byte, 0, len(b)-postDescriptorLength)
-	r.Payload = append(r.Payload, b[postDescriptorLength:]...)
+	r.Payload = make([]byte, 0, len(b)-PostDescriptorLength)
+	r.Payload = append(r.Payload, b[PostDescriptorLength:]...)
 	return r, nil
 }
 
@@ -368,7 +368,7 @@ type PostDescriptorStatus struct {
 }
 
 func postDescriptorStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != postDescriptorStatusLength {
+	if len(b) != PostDescriptorStatusLength {
 		return nil, errInvalidCommand
 	}
 
@@ -380,9 +380,9 @@ func postDescriptorStatusFromBytes(b []byte) (Command, error) {
 // ToBytes serializes the PostDescriptorStatus and returns the resulting byte
 // slice.
 func (c *PostDescriptorStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+postDescriptorStatusLength)
+	out := make([]byte, CmdOverhead+PostDescriptorStatusLength)
 	out[0] = byte(postDescriptorStatus)
-	binary.BigEndian.PutUint32(out[2:6], postDescriptorStatusLength)
+	binary.BigEndian.PutUint32(out[2:6], PostDescriptorStatusLength)
 	out[6] = c.ErrorCode
 	return out
 }
@@ -396,10 +396,10 @@ type Reveal struct {
 
 // ToBytes serializes the Reveal and returns the resulting byte slice.
 func (r *Reveal) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+revealOverhead)
+	out := make([]byte, CmdOverhead+RevealOverhead)
 	out[0] = byte(reveal)
 	// out[1] reserved
-	binary.BigEndian.PutUint32(out[2:6], uint32(revealOverhead+len(r.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(RevealOverhead+len(r.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], r.Epoch)
 	copy(out[14:14+cert.Scheme.PublicKeySize()], r.PublicKey.Bytes())
 	out = append(out, r.Payload...)
@@ -407,7 +407,7 @@ func (r *Reveal) ToBytes() []byte {
 }
 
 func revealFromBytes(b []byte) (Command, error) {
-	if len(b) < revealOverhead {
+	if len(b) < RevealOverhead {
 		return nil, errors.New(" wtf: errInvalidCommand")
 	}
 
@@ -418,8 +418,8 @@ func revealFromBytes(b []byte) (Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.Payload = make([]byte, 0, len(b)-revealOverhead)
-	r.Payload = append(r.Payload, b[revealOverhead:]...)
+	r.Payload = make([]byte, 0, len(b)-RevealOverhead)
+	r.Payload = append(r.Payload, b[RevealOverhead:]...)
 	return r, nil
 }
 
@@ -429,7 +429,7 @@ type RevealStatus struct {
 }
 
 func revealStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != revealStatusLength {
+	if len(b) != RevealStatusLength {
 		return nil, errors.New(" wtf: errInvalidCommand")
 	}
 
@@ -440,9 +440,9 @@ func revealStatusFromBytes(b []byte) (Command, error) {
 
 // ToBytes serializes the RevealStatus and returns the resulting byte slice.
 func (r *RevealStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+revealStatusLength)
+	out := make([]byte, CmdOverhead+RevealStatusLength)
 	out[0] = byte(revealStatus)
-	binary.BigEndian.PutUint32(out[2:6], revealStatusLength)
+	binary.BigEndian.PutUint32(out[2:6], RevealStatusLength)
 	out[6] = r.ErrorCode
 	return out
 }
@@ -456,7 +456,7 @@ type Vote struct {
 
 func voteFromBytes(b []byte) (Command, error) {
 	r := new(Vote)
-	if len(b) < voteOverhead {
+	if len(b) < VoteOverhead {
 		return nil, errInvalidCommand
 	}
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
@@ -465,16 +465,16 @@ func voteFromBytes(b []byte) (Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.Payload = make([]byte, 0, len(b)-voteOverhead)
-	r.Payload = append(r.Payload, b[voteOverhead:]...)
+	r.Payload = make([]byte, 0, len(b)-VoteOverhead)
+	r.Payload = append(r.Payload, b[VoteOverhead:]...)
 	return r, nil
 }
 
 // ToBytes serializes the Vote and returns the resulting slice.
 func (c *Vote) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+voteOverhead+len(c.Payload))
+	out := make([]byte, CmdOverhead+8, CmdOverhead+VoteOverhead+len(c.Payload))
 	out[0] = byte(vote)
-	binary.BigEndian.PutUint32(out[2:6], uint32(voteOverhead+len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(VoteOverhead+len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	out = append(out, c.PublicKey.Bytes()...)
 	out = append(out, c.Payload...)
@@ -488,15 +488,15 @@ type VoteStatus struct {
 
 // ToBytes serializes the VoteStatus and returns the resulting slice.
 func (c *VoteStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+voteStatusLength)
+	out := make([]byte, CmdOverhead+VoteStatusLength)
 	out[0] = byte(voteStatus)
-	binary.BigEndian.PutUint32(out[2:6], voteStatusLength)
+	binary.BigEndian.PutUint32(out[2:6], VoteStatusLength)
 	out[6] = c.ErrorCode
 	return out
 }
 
 func voteStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != voteStatusLength {
+	if len(b) != VoteStatusLength {
 		return nil, errInvalidCommand
 	}
 
@@ -514,7 +514,7 @@ type Cert struct {
 
 func certFromBytes(b []byte) (Command, error) {
 	r := new(Cert)
-	if len(b) < certOverhead {
+	if len(b) < CertOverhead {
 		return nil, errInvalidCommand
 	}
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
@@ -523,16 +523,16 @@ func certFromBytes(b []byte) (Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.Payload = make([]byte, 0, len(b)-certOverhead)
-	r.Payload = append(r.Payload, b[certOverhead:]...)
+	r.Payload = make([]byte, 0, len(b)-CertOverhead)
+	r.Payload = append(r.Payload, b[CertOverhead:]...)
 	return r, nil
 }
 
 // ToBytes serializes the Cert and returns the resulting slice.
 func (c *Cert) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+certOverhead+len(c.Payload))
+	out := make([]byte, CmdOverhead+8, CmdOverhead+CertOverhead+len(c.Payload))
 	out[0] = byte(certificate)
-	binary.BigEndian.PutUint32(out[2:6], uint32(certOverhead+len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(CertOverhead+len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	out = append(out, c.PublicKey.Bytes()...)
 	out = append(out, c.Payload...)
@@ -546,15 +546,15 @@ type CertStatus struct {
 
 // ToBytes serializes the CertStatus and returns the resulting slice.
 func (c *CertStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+certStatusLength)
+	out := make([]byte, CmdOverhead+CertStatusLength)
 	out[0] = byte(certStatus)
-	binary.BigEndian.PutUint32(out[2:6], certStatusLength)
+	binary.BigEndian.PutUint32(out[2:6], CertStatusLength)
 	out[6] = c.ErrorCode
 	return out
 }
 
 func certStatusFromBytes(b []byte) (Command, error) {
-	if len(b) != certStatusLength {
+	if len(b) != CertStatusLength {
 		return nil, errInvalidCommand
 	}
 
@@ -572,7 +572,7 @@ type Sig struct {
 
 func sigFromBytes(b []byte) (Command, error) {
 	r := new(Sig)
-	if len(b) < sigOverhead {
+	if len(b) < SigOverhead {
 		return nil, errInvalidCommand
 	}
 	r.Epoch = binary.BigEndian.Uint64(b[0:8])
@@ -581,16 +581,16 @@ func sigFromBytes(b []byte) (Command, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.Payload = make([]byte, 0, len(b)-sigOverhead)
-	r.Payload = append(r.Payload, b[sigOverhead:]...)
+	r.Payload = make([]byte, 0, len(b)-SigOverhead)
+	r.Payload = append(r.Payload, b[SigOverhead:]...)
 	return r, nil
 }
 
 // ToBytes serializes the Sig and returns the resulting slice.
 func (c *Sig) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+8, cmdOverhead+sigOverhead+len(c.Payload))
+	out := make([]byte, CmdOverhead+8, CmdOverhead+SigOverhead+len(c.Payload))
 	out[0] = byte(sig)
-	binary.BigEndian.PutUint32(out[2:6], uint32(sigOverhead+len(c.Payload)))
+	binary.BigEndian.PutUint32(out[2:6], uint32(SigOverhead+len(c.Payload)))
 	binary.BigEndian.PutUint64(out[6:14], c.Epoch)
 	out = append(out, c.PublicKey.Bytes()...)
 	out = append(out, c.Payload...)
@@ -604,7 +604,7 @@ type SigStatus struct {
 
 // ToBytes serializes the Status and returns the resulting slice.
 func (c *SigStatus) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+sigStatusLength)
+	out := make([]byte, CmdOverhead+sigStatusLength)
 	out[0] = byte(sigStatus)
 	binary.BigEndian.PutUint32(out[2:6], sigStatusLength)
 	out[6] = c.ErrorCode
@@ -626,7 +626,7 @@ type Disconnect struct{}
 
 // ToBytes serializes the Disconnect and returns the resulting slice.
 func (c *Disconnect) ToBytes() []byte {
-	out := make([]byte, cmdOverhead)
+	out := make([]byte, CmdOverhead)
 	out[0] = byte(disconnect)
 	return out
 }
@@ -638,7 +638,7 @@ type SendPacket struct {
 
 // ToBytes serializes the SendPacket and returns the resulting slice.
 func (c *SendPacket) ToBytes() []byte {
-	out := make([]byte, cmdOverhead, cmdOverhead+len(c.SphinxPacket))
+	out := make([]byte, CmdOverhead, CmdOverhead+len(c.SphinxPacket))
 	out[0] = byte(sendPacket)
 	binary.BigEndian.PutUint32(out[2:6], uint32(len(c.SphinxPacket)))
 	out = append(out, c.SphinxPacket...)
@@ -659,7 +659,7 @@ type RetrieveMessage struct {
 
 // ToBytes serializes the RetrieveMessage and returns the resulting slice.
 func (c *RetrieveMessage) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+retreiveMessageLength)
+	out := make([]byte, CmdOverhead+retreiveMessageLength)
 	out[0] = byte(retreiveMessage)
 	binary.BigEndian.PutUint32(out[2:6], retreiveMessageLength)
 	binary.BigEndian.PutUint32(out[6:10], c.Sequence)
@@ -692,7 +692,7 @@ func (c *MessageACK) ToBytes() []byte {
 		panic("wire: invalid MessageACK payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+messageACKLength(), cmdOverhead+messageACKLength()+c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength)
+	out := make([]byte, CmdOverhead+messageACKLength(), CmdOverhead+messageACKLength()+c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength)
 
 	out[0] = byte(message)
 	binary.BigEndian.PutUint32(out[2:6], uint32(messageACKLength()+len(c.Payload)))
@@ -720,7 +720,7 @@ func (c *Message) ToBytes() []byte {
 		panic("wire: invalid Message payload when serializing")
 	}
 
-	out := make([]byte, cmdOverhead+c.Cmds.messageMsgLength()+len(c.Payload))
+	out := make([]byte, CmdOverhead+c.Cmds.messageMsgLength()+len(c.Payload))
 	out[0] = byte(message)
 	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageMsgLength()+len(c.Payload)))
 	out[6] = byte(messageTypeMessage)
@@ -739,10 +739,10 @@ type MessageEmpty struct {
 
 // ToBytes serializes the MessageEmpty and returns the resulting slice.
 func (c *MessageEmpty) ToBytes() []byte {
-	out := make([]byte, cmdOverhead+c.Cmds.messageEmptyLength())
+	out := make([]byte, CmdOverhead+c.Cmds.MessageEmptyLength())
 
 	out[0] = byte(message)
-	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.messageEmptyLength()))
+	binary.BigEndian.PutUint32(out[2:6], uint32(c.Cmds.MessageEmptyLength()))
 	out[6] = byte(messageTypeEmpty)
 	binary.BigEndian.PutUint32(out[8:12], c.Sequence)
 	return out
@@ -761,7 +761,7 @@ func (c *Commands) messageFromBytes(b []byte) (Command, error) {
 
 	switch t {
 	case messageTypeACK:
-		if len(b) != constants.SURBIDLength+c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+		if len(b) != constants.SURBIDLength+c.Geo.PayloadTagLength+c.Geo.ForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
@@ -774,15 +774,15 @@ func (c *Commands) messageFromBytes(b []byte) (Command, error) {
 		r.Payload = append(r.Payload, b...)
 		return r, nil
 	case messageTypeMessage:
-		if len(b) != c.messageMsgPaddingLength()+c.geo.UserForwardPayloadLength {
+		if len(b) != c.messageMsgPaddingLength()+c.Geo.UserForwardPayloadLength {
 			return nil, errInvalidCommand
 		}
 
-		padding := b[c.geo.UserForwardPayloadLength:]
+		padding := b[c.Geo.UserForwardPayloadLength:]
 		if !utils.CtIsZero(padding) {
 			return nil, errInvalidCommand
 		}
-		b = b[:c.geo.UserForwardPayloadLength]
+		b = b[:c.Geo.UserForwardPayloadLength]
 
 		r := new(Message)
 		r.QueueSizeHint = hint
@@ -791,7 +791,7 @@ func (c *Commands) messageFromBytes(b []byte) (Command, error) {
 		r.Payload = append(r.Payload, b...)
 		return r, nil
 	case messageTypeEmpty:
-		if len(b) != c.messageEmptyLength()-messageBaseLength {
+		if len(b) != c.MessageEmptyLength()-messageBaseLength {
 			return nil, errInvalidCommand
 		}
 
@@ -810,7 +810,7 @@ func (c *Commands) messageFromBytes(b []byte) (Command, error) {
 // FromBytes de-serializes the command in the buffer b, returning a Command or
 // an error.
 func (c *Commands) FromBytes(b []byte) (Command, error) {
-	if len(b) < cmdOverhead {
+	if len(b) < CmdOverhead {
 		return nil, errInvalidCommand
 	}
 
@@ -820,7 +820,7 @@ func (c *Commands) FromBytes(b []byte) (Command, error) {
 		return nil, errInvalidCommand
 	}
 	cmdLen := binary.BigEndian.Uint32(b[2:6])
-	b = b[cmdOverhead:]
+	b = b[CmdOverhead:]
 	if uint32(len(b)) < cmdLen {
 		return nil, errInvalidCommand
 	}

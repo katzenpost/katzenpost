@@ -315,6 +315,10 @@ func (s *pgxSpool) doStore(u, id, msg []byte) error {
 	return err
 }
 
+func (s *pgxSpool) Pop(u []byte) (msg, surbID []byte, remaining int, err error) {
+	panic("pgxSpool doesn't implement Pop method")
+}
+
 func (s *pgxSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining int, err error) {
 	if err = s.pgx.pool.QueryRow(pgxTagSpoolGet, u, advance).Scan(&msg, &surbID, &remaining); err != nil {
 		s.pgx.d.log.Debugf("spool_get() failed: %v", err)

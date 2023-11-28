@@ -83,8 +83,11 @@ type Kaetzchen interface {
 // BuiltInCtorFn is the constructor type for a built-in Kaetzchen.
 type BuiltInCtorFn func(*config.Kaetzchen, glue.Glue) (Kaetzchen, error)
 
+const TestCapability = "testdest"
+
 // BuiltInCtors are the constructors for all built-in Kaetzchen.
 var BuiltInCtors = map[string]BuiltInCtorFn{
+	TestCapability:      NewTestDest,
 	EchoCapability:      NewEcho,
 	keyserverCapability: NewKeyserver,
 }
@@ -261,7 +264,15 @@ func New(glue glue.Glue) (*KaetzchenWorker, error) {
 
 	// Initialize the internal Kaetzchen.
 	capaMap := make(map[string]bool)
-	for _, v := range glue.Config().Provider.Kaetzchen {
+
+	testdest := &config.Kaetzchen{
+		Capability: "testdest",
+		Endpoint:   "testdest",
+		Config:     nil,
+		Disable:    false,
+	}
+
+	for _, v := range append(glue.Config().Provider.Kaetzchen, testdest) {
 		capa := v.Capability
 		if v.Disable {
 			kaetzchenWorker.log.Noticef("Skipping disabled Kaetzchen: '%v'.", capa)

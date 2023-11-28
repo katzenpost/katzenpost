@@ -93,7 +93,7 @@ type Debug struct {
 
 	// PreferedTransports is a list of the transports will be used to make
 	// outgoing network connections, with the most prefered first.
-	PreferedTransports []pki.Transport
+	PreferedTransports []string
 }
 
 func (d *Debug) fixup() {
@@ -117,7 +117,7 @@ type VotingAuthority struct {
 func (vACfg *VotingAuthority) New(l *log.Backend, pCfg *proxy.Config, linkKey wire.PrivateKey) (pki.Client, error) {
 	cfg := &vClient.Config{
 		LinkKey:       linkKey,
-		LogBackend:    l,
+		LogBackend:    l.GetLogWriter("client", "info"),
 		Authorities:   vACfg.Peers,
 		DialContextFn: pCfg.ToDialContext(fmt.Sprintf("voting: %x", linkKey.PublicKey().Sum256())),
 	}

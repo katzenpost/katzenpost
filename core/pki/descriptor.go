@@ -71,7 +71,7 @@ type MixDescriptor struct {
 
 	// Addresses is the map of transport to address combinations that can
 	// be used to reach the node.
-	Addresses map[Transport][]string
+	Addresses map[string][]string
 
 	// Kaetzchen is the map of provider autoresponder agents by capability
 	// to parameters.
@@ -121,6 +121,39 @@ func (d *MixDescriptor) String() string {
 	return s
 }
 
+func (d *MixDescriptor) Certificate() (*cert.Certificate, error) {
+	pk, _ := cert.Scheme.NewKeypair()
+	rawDesc, err := ccbor.Marshal((*mixdescriptor)(d))
+	if err != nil {
+		return nil, err
+	}
+	signatures := make(map[[32]byte]cert.Signature)
+	if d.Signature != nil {
+		signatures[d.IdentityKey.Sum256()] = *d.Signature
+	}
+	certified := cert.Certificate{
+		Version:    cert.CertVersion,
+		Expiration: d.Epoch + 5,
+		KeyType:    pk.KeyType(),
+		Certified:  rawDesc,
+		Signatures: signatures,
+	}
+	return &certified, nil
+}
+
+func (d *MixDescriptor) Verify() error {
+	c, err := d.Certificate()
+	if err != nil {
+		return err
+	}
+	rawCert, err := c.Marshal()
+	if err != nil {
+		return err
+	}
+	cert.Verify(d.IdentityKey, rawCert)
+	return nil
+}
+
 // UnmarshalBinary implements encoding.BinaryUnmarshaler interface
 func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	// extract the embedded IdentityKey and verify it signs the payload
@@ -128,18 +161,7 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	sigs, err := cert.GetSignatures(data)
-	if err != nil {
-		return err
-	}
-	switch len(sigs) {
-	case 0:
-		return ErrNoSignature
-	case 1:
-		// must have only 1 signature
-	default:
-		return ErrTooManySignatures
-	}
+	sigs, _ := cert.GetSignatures(data)
 
 	// Instantiate concrete instances so we deserialize into the right types
 	idPublicKey := cert.Scheme.NewEmptyPublicKey()
@@ -152,11 +174,9 @@ func (d *MixDescriptor) UnmarshalBinary(data []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = cert.Verify(d.IdentityKey, data)
-	if err != nil {
-		return err
+	if sigs != nil && len(sigs) != 0 {
+		d.Signature = &sigs[0]
 	}
-	d.Signature = &sigs[0]
 	return nil
 }
 
@@ -230,6 +250,10 @@ func VerifyDescriptor(rawDesc []byte) (*MixDescriptor, error) {
 	}
 	if d.Version != DescriptorVersion {
 		return nil, fmt.Errorf("Invalid Document Version: '%v'", d.Version)
+	}
+	err = d.Verify()
+	if err != nil {
+		return nil, err
 	}
 	return d, nil
 }

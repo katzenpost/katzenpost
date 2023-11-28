@@ -1,18 +1,5 @@
-// genconfig.go - Katzenpost self contained test network.
-// Copyright (C) 2022  Yawning Angel, David Stainton, Masala
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Affero General Public License as
-// published by the Free Software Foundation, either version 3 of the
-// License, or (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Affero General Public License for more details.
-//
-// You should have received a copy of the GNU Affero General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// SPDX-FileCopyrightText: Katzenpost developers union
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package main
 
@@ -20,15 +7,17 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"github.com/BurntSushi/toml"
+	"github.com/charmbracelet/log"
 	kemschemes "github.com/cloudflare/circl/kem/schemes"
+
 	vConfig "github.com/katzenpost/katzenpost/authority/voting/server/config"
 	cConfig "github.com/katzenpost/katzenpost/client/config"
+	cConfig2 "github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/cert"
 	"github.com/katzenpost/katzenpost/core/crypto/nike/schemes"
 	"github.com/katzenpost/katzenpost/core/crypto/pem"
@@ -82,7 +71,76 @@ func (a NodeById) Len() int           { return len(a) }
 func (a NodeById) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a NodeById) Less(i, j int) bool { return a[i].Identifier < a[j].Identifier }
 
+func (s *katzenpost) genClient2Cfg() error {
+	log.Debug("genClient2Cfg begin")
+	os.Mkdir(filepath.Join(s.outDir, "client2"), 0700)
+	cfg := new(cConfig2.Config)
+
+	cfg.SphinxGeometry = s.sphinxGeometry
+
+	// Logging section.
+	cfg.Logging = &cConfig2.Logging{File: "", Level: "DEBUG"}
+
+	// UpstreamProxy section
+	cfg.UpstreamProxy = &cConfig2.UpstreamProxy{Type: "none"}
+
+	cfg.PreferedTransports = []string{"tcp"}
+
+	// VotingAuthority section
+
+	peers := make([]*vConfig.Authority, 0)
+	for _, peer := range s.authorities {
+		peers = append(peers, peer)
+	}
+
+	sort.Sort(AuthById(peers))
+
+	cfg.VotingAuthority = &cConfig2.VotingAuthority{Peers: peers}
+
+	// Debug section
+	cfg.Debug = &cConfig2.Debug{DisableDecoyTraffic: false}
+
+	log.Debug("before gathering providers")
+	providers := make([]*cConfig2.Provider, 0)
+	for i := 0; i < len(s.nodeConfigs); i++ {
+		if s.nodeConfigs[i].Provider == nil {
+			continue
+		}
+
+		idPubKey := cfgIdKey(s.nodeConfigs[i], s.outDir)
+		linkPubKey := cfgLinkKey(s.nodeConfigs[i], s.outDir)
+
+		provider := &cConfig2.Provider{
+			Name:        s.nodeConfigs[i].Server.Identifier,
+			IdentityKey: idPubKey,
+			LinkKey:     linkPubKey,
+			Addresses: map[string][]string{
+				"tcp": s.nodeConfigs[i].Server.Addresses,
+			},
+		}
+		providers = append(providers, provider)
+	}
+	if len(providers) == 0 {
+		panic("wtf 0 providers")
+	}
+	log.Debug("after gathering providers")
+	cfg.PinnedProviders = &cConfig2.Providers{
+		Providers: providers,
+	}
+
+	log.Debug("before save config")
+	err := saveCfg(cfg, s.outDir)
+	if err != nil {
+		log.Debugf("save config failure %s", err.Error())
+		return err
+	}
+	log.Debug("after save config")
+	log.Debug("genClient2Cfg end")
+	return nil
+}
+
 func (s *katzenpost) genClientCfg() error {
+	log.Debug("genClientCfg begin")
 	os.Mkdir(filepath.Join(s.outDir, "client"), 0700)
 	cfg := new(cConfig.Config)
 
@@ -109,10 +167,12 @@ func (s *katzenpost) genClientCfg() error {
 
 	// Debug section
 	cfg.Debug = &cConfig.Debug{DisableDecoyTraffic: false}
+
 	err := saveCfg(cfg, s.outDir)
 	if err != nil {
 		return err
 	}
+	log.Debug("genClientCfg end")
 	return nil
 }
 
@@ -126,6 +186,7 @@ func write(f *os.File, str string, args ...interface{}) {
 }
 
 func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
+	log.Debug("genNodeConfig begin")
 	const serverLogFile = "katzenpost.log"
 
 	n := fmt.Sprintf("mix%d", s.nodeIdx+1)
@@ -191,6 +252,9 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 			cfg.Provider.TrustOnFirstUse = true
 			cfg.Provider.EnableEphemeralClients = true
 		} else {
+			cfg.Provider.TrustOnFirstUse = true
+			cfg.Provider.EnableEphemeralClients = true
+
 			spoolCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "spool",
 				Endpoint:       "+spool",
@@ -248,11 +312,13 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	s.nodeConfigs = append(s.nodeConfigs, cfg)
 	s.lastPort++
 	_ = cfgIdKey(cfg, s.outDir)
+	_ = cfgLinkKey(cfg, s.outDir)
+	log.Debug("genNodeConfig end")
 	return cfg.FixupAndValidate()
 }
 
 func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vConfig.Parameters, nrLayers int) error {
-
+	log.Debug("genVotingAuthoritiesCfg begin")
 	configs := []*vConfig.Config{}
 
 	// initial generation of key material for each authority
@@ -300,10 +366,12 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		configs[i].Authorities = peers
 	}
 	s.votingAuthConfigs = configs
+	log.Debug("genVotingAuthoritiesCfg end")
 	return nil
 }
 
 func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, error) {
+	log.Debug("genAuthorizedNodes begin")
 	mixes := []*vConfig.Node{}
 	providers := []*vConfig.Node{}
 	for _, nodeCfg := range s.nodeConfigs {
@@ -320,6 +388,7 @@ func (s *katzenpost) genAuthorizedNodes() ([]*vConfig.Node, []*vConfig.Node, err
 	sort.Sort(NodeById(mixes))
 	sort.Sort(NodeById(providers))
 
+	log.Debug("genAuthorizedNodes end")
 	return providers, mixes, nil
 }
 
@@ -343,18 +412,21 @@ func main() {
 	UserForwardPayloadLength := flag.Int("UserForwardPayloadLength", 2000, "UserForwardPayloadLength")
 
 	sr := flag.Uint64("sr", 0, "Sendrate limit")
-	mu := flag.Float64("mu", 0.005, "Inverse of mean of per hop delay.")
+	mu := flag.Float64("mu", 0.0005, "Inverse of mean of per hop delay.")
 	muMax := flag.Uint64("muMax", 1000, "Maximum delay for Mu.")
-	lP := flag.Float64("lP", 0.001, "Inverse of mean for client send rate LambdaP")
+	lP := flag.Float64("lP", 0.0005, "Inverse of mean for client send rate LambdaP")
 	lPMax := flag.Uint64("lPMax", 1000, "Maximum delay for LambdaP.")
 	lL := flag.Float64("lL", 0.0005, "Inverse of mean of loop decoy send rate LambdaL")
 	lLMax := flag.Uint64("lLMax", 1000, "Maximum delay for LambdaL")
 	lD := flag.Float64("lD", 0.0005, "Inverse of mean of drop decoy send rate LambdaD")
 	lDMax := flag.Uint64("lDMax", 3000, "Maximum delay for LambaD")
-	lM := flag.Float64("lM", 0.2, "Inverse of mean of mix decoy send rate")
+	lM := flag.Float64("lM", 0.0005, "Inverse of mean of mix decoy send rate")
 	lMMax := flag.Uint64("lMMax", 100, "Maximum delay for LambdaM")
 
 	flag.Parse()
+
+	mylog := log.Default()
+	mylog.SetLevel(log.DebugLevel)
 
 	if *kem == "" && *nike == "" {
 		log.Fatal("either nike or kem must be set")
@@ -478,6 +550,11 @@ func main() {
 		log.Fatalf("%s", err)
 	}
 
+	err = s.genClient2Cfg()
+	if err != nil {
+		log.Fatalf("%s", err)
+	}
+
 	err = s.genDockerCompose(*dockerImage)
 	if err != nil {
 		log.Fatalf("%s", err)
@@ -488,6 +565,8 @@ func identifier(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
 		return "client"
+	case *cConfig2.Config:
+		return "client2"
 	case *sConfig.Config:
 		return cfg.(*sConfig.Config).Server.Identifier
 	case *vConfig.Config:
@@ -502,6 +581,8 @@ func toml_name(cfg interface{}) string {
 	switch cfg.(type) {
 	case *cConfig.Config:
 		return "client"
+	case *cConfig2.Config:
+		return "client"
 	case *sConfig.Config:
 		return "katzenpost"
 	case *vConfig.Config:
@@ -514,7 +595,7 @@ func toml_name(cfg interface{}) string {
 
 func saveCfg(cfg interface{}, outDir string) error {
 	fileName := filepath.Join(outDir, identifier(cfg), fmt.Sprintf("%s.toml", toml_name(cfg)))
-	log.Printf("writing %s", fileName)
+	log.Infof("saveCfg writing %s", fileName)
 	f, err := os.Create(fileName)
 	if err != nil {
 		return err
@@ -523,7 +604,12 @@ func saveCfg(cfg interface{}, outDir string) error {
 
 	// Serialize the descriptor.
 	enc := toml.NewEncoder(f)
-	return enc.Encode(cfg)
+	err = enc.Encode(cfg)
+	if err != nil {
+		log.Debugf("toml encode error %s", err.Error())
+		return err
+	}
+	return nil
 }
 
 func cfgIdKey(cfg interface{}, outDir string) sign.PublicKey {
@@ -557,6 +643,9 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 	var linkpublic string
 
 	switch cfg.(type) {
+	case *sConfig.Config:
+		linkpriv = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.private.pem")
+		linkpublic = filepath.Join(outDir, cfg.(*sConfig.Config).Server.Identifier, "link.public.pem")
 	case *vConfig.Config:
 		linkpriv = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.private.pem")
 		linkpublic = filepath.Join(outDir, cfg.(*vConfig.Config).Server.Identifier, "link.public.pem")

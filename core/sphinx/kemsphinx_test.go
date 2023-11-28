@@ -20,14 +20,17 @@ import (
 	"crypto/rand"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/cloudflare/circl/kem"
 	"github.com/cloudflare/circl/kem/hybrid"
 	"github.com/cloudflare/circl/kem/kyber/kyber1024"
 	"github.com/cloudflare/circl/kem/kyber/kyber512"
 	"github.com/cloudflare/circl/kem/kyber/kyber768"
+
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
-	"github.com/stretchr/testify/require"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 type kemNodeParams struct {
@@ -114,7 +117,7 @@ func newKEMNode(require *require.Assertions, mykem kem.Scheme) *kemNodeParams {
 	return n
 }
 
-func newKEMPathVector(require *require.Assertions, mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNodeParams, []*PathHop) {
+func newKEMPathVector(require *require.Assertions, mykem kem.Scheme, nrHops int, isSURB bool) ([]*kemNodeParams, []*path.PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
@@ -124,34 +127,34 @@ func newKEMPathVector(require *require.Assertions, mykem kem.Scheme, nrHops int,
 	}
 
 	// Assemble the path vector.
-	path := make([]*PathHop, nrHops)
-	for i := range path {
-		path[i] = new(PathHop)
-		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].KEMPublicKey = nodes[i].publicKey
+	p := make([]*path.PathHop, nrHops)
+	for i := range p {
+		p[i] = new(path.PathHop)
+		copy(p[i].ID[:], nodes[i].id[:])
+		p[i].KEMPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
 			delay.Delay = delayBase * uint32(i+1)
-			path[i].Commands = append(path[i].Commands, delay)
+			p[i].Commands = append(p[i].Commands, delay)
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
 			_, err := rand.Read(recipient.ID[:])
 			require.NoError(err, "failed to generate recipient")
-			path[i].Commands = append(path[i].Commands, recipient)
+			p[i].Commands = append(p[i].Commands, recipient)
 
 			// This is a SURB, add a surb_reply.
 			if isSURB {
 				surbReply := new(commands.SURBReply)
 				_, err := rand.Read(surbReply.ID[:])
 				require.NoError(err, "failed to generate surb_reply")
-				path[i].Commands = append(path[i].Commands, surbReply)
+				p[i].Commands = append(p[i].Commands, surbReply)
 			}
 		}
 	}
 
-	return nodes, path
+	return nodes, p
 }
 
 func testForwardKEMSphinx(t *testing.T, mykem kem.Scheme, sphinx *Sphinx, testPayload []byte) {

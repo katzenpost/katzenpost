@@ -23,6 +23,7 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/nike"
 	"github.com/katzenpost/katzenpost/core/sphinx/commands"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
+	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
 
 func benchmarkSphinxUnwrap(b *testing.B, mynike nike.Scheme) {
@@ -73,7 +74,7 @@ func benchNewNode(mynike nike.Scheme) *nodeParams {
 	return n
 }
 
-func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodeParams, []*PathHop) {
+func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodeParams, []*path.PathHop) {
 	const delayBase = 0xdeadbabe
 
 	// Generate the keypairs and node identifiers for the "nodes".
@@ -83,16 +84,16 @@ func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodePar
 	}
 
 	// Assemble the path vector.
-	path := make([]*PathHop, nrHops)
-	for i := range path {
-		path[i] = new(PathHop)
-		copy(path[i].ID[:], nodes[i].id[:])
-		path[i].NIKEPublicKey = nodes[i].publicKey
+	p := make([]*path.PathHop, nrHops)
+	for i := range p {
+		p[i] = new(path.PathHop)
+		copy(p[i].ID[:], nodes[i].id[:])
+		p[i].NIKEPublicKey = nodes[i].publicKey
 		if i < nrHops-1 {
 			// Non-terminal hop, add the delay.
 			delay := new(commands.NodeDelay)
 			delay.Delay = delayBase * uint32(i+1)
-			path[i].Commands = append(path[i].Commands, delay)
+			p[i].Commands = append(p[i].Commands, delay)
 		} else {
 			// Terminal hop, add the recipient.
 			recipient := new(commands.Recipient)
@@ -100,7 +101,7 @@ func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodePar
 			if err != nil {
 				panic("wtf")
 			}
-			path[i].Commands = append(path[i].Commands, recipient)
+			p[i].Commands = append(p[i].Commands, recipient)
 
 			// This is a SURB, add a surb_reply.
 			if isSURB {
@@ -109,10 +110,10 @@ func benchNewPathVector(nrHops int, isSURB bool, mynike nike.Scheme) ([]*nodePar
 				if err != nil {
 					panic("wtf")
 				}
-				path[i].Commands = append(path[i].Commands, surbReply)
+				p[i].Commands = append(p[i].Commands, surbReply)
 			}
 		}
 	}
 
-	return nodes, path
+	return nodes, p
 }

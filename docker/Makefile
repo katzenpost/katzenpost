@@ -23,16 +23,16 @@ providers=2
 
 # Parameters
 sr=0
-mu=0.005
-muMax=1000
-lP=0.001
-lPMax=1000
-lL=0.0005
-lLMax=1000
-lD=0.0005
+mu=0.00025
+muMax=3000
+lP=0.00025
+lPMax=3000
+lL=0.00025
+lLMax=3000
+lD=0.00025
 lDMax=3000
-lM=0.0005
-lMMax=100
+lM=0.00025
+lMMax=3000
 
 UserForwardPayloadLength=2000
 
@@ -202,7 +202,11 @@ clean: clean-images clean-local
 
 run-ping: $(net_name)/ping.$(distro) $(net_name)/running.stamp
 	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
-        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client/client.toml -s echo -printDiff -n 1
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s echo -printDiff -n 1
+
+run-ping-testdest: $(net_name)/ping.$(distro) $(net_name)/running.stamp
+	$(docker) run --network=host ${docker_args} $(mount_net_name) --rm  katzenpost-$(distro)_go_mod \
+        /$(net_name)/ping.$(distro) -c /go/katzenpost/docker/$(net_name)/client2/client.toml -s testdest -printDiff -n 1
 
 shell: $(distro)_go_mod.stamp $(net_name)
 	$(docker) run -e --network=host ${docker_args} $(mount_net_name) --rm -it katzenpost-$(distro)_go_mod $(sh)

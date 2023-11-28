@@ -109,7 +109,6 @@ func (q *PriorityQueue) DequeueRandom(r *rand.Rand) *Entry {
 	}
 	e := heap.Remove(q, r.Intn(q.Len())).(*Entry)
 	return e
-
 }
 
 // Remove removes and returns element from the heap with given index

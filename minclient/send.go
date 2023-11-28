@@ -23,7 +23,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/epochtime"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
-	"github.com/katzenpost/katzenpost/core/sphinx"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/sphinx/path"
 )
@@ -59,7 +58,7 @@ func (c *Client) ComposeSphinxPacket(recipient, provider string, surbID *[sConst
 			return nil, nil, 0, err
 		}
 
-		revPath := make([]*sphinx.PathHop, 0)
+		revPath := make([]*path.PathHop, 0)
 		if surbID != nil {
 			revPath, then, err = c.makePath(c.cfg.User, provider, surbID, then, false)
 			if err != nil {
@@ -126,7 +125,7 @@ func (c *Client) SendCiphertext(recipient, provider string, surbID *[sConstants.
 	return k, rtt, err
 }
 
-func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*sphinx.PathHop, time.Time, error) {
+func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBIDLength]byte, baseTime time.Time, isForward bool) ([]*path.PathHop, time.Time, error) {
 	srcProvider, dstProvider := c.cfg.Provider, provider
 	if !isForward {
 		srcProvider, dstProvider = dstProvider, srcProvider
@@ -156,7 +155,7 @@ func (c *Client) makePath(recipient, provider string, surbID *[sConstants.SURBID
 	return p, t, err
 }
 
-func (c *Client) logPath(doc *cpki.Document, p []*sphinx.PathHop) error {
+func (c *Client) logPath(doc *cpki.Document, p []*path.PathHop) error {
 	s, err := path.ToString(doc, p)
 	if err != nil {
 		return err

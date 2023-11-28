@@ -94,6 +94,70 @@ func (s *boltSpool) doStore(u []byte, id *[sConstants.SURBIDLength]byte, msg []b
 	})
 }
 
+func (s *boltSpool) Pop(u []byte) (msg, surbID []byte, remaining int, err error) {
+	var tx *bolt.Tx
+	tx, err = s.db.Begin(true)
+	if err != nil {
+		return
+	}
+	defer tx.Rollback()
+
+	// Grab the `users` bucket.
+	uBkt := tx.Bucket([]byte(usersBucket))
+
+	// Grab the user's spool bucket.
+	sBkt := uBkt.Bucket(u)
+	if sBkt == nil {
+		// If the user's spool bucket is missing, the spool is empty.
+		return
+	}
+
+	// Grab a cursor into the user's spool.
+	cur := sBkt.Cursor()
+	mKey, _ := cur.First()
+	if mKey == nil {
+		// If the user's spool bucket is empty, the spool is empty.
+		return
+	}
+
+	// Well, there has to be at least one message in the spool, and this
+	// is merely a hint, so just return 0 if the queue is empty or there
+	// is only one message, and 1 if there are any number of messages.
+	remaining = 1
+	next, _ := cur.Next()
+
+	// Retrieve the stored message and (optional) SURB ID.
+	mBkt := sBkt.Bucket(mKey)
+	if m := mBkt.Get([]byte(msgKey)); m != nil {
+		msg = make([]byte, 0, len(m))
+		msg = append(msg, m...)
+	}
+	if id := mBkt.Get([]byte(surbIDKey)); id != nil {
+		surbID = make([]byte, 0, len(id))
+		surbID = append(surbID, id...)
+	}
+
+	// Delete the 0th message.
+	if err = sBkt.DeleteBucket(mKey); err != nil {
+		return
+	}
+
+	err = tx.Commit()
+
+	if next == nil {
+		// Deleting the message drained the queue.
+		err = sBkt.SetSequence(0) // Don't keep a lifetime message count.
+		if err != nil {
+			return
+		}
+		remaining = 0
+		err = tx.Commit()
+		return
+	}
+
+	return
+}
+
 func (s *boltSpool) Get(u []byte, advance bool) (msg, surbID []byte, remaining int, err error) {
 	// This uses manual transaction management because there is a trivial
 	// amount of extra work for the `advance == true` case that requires

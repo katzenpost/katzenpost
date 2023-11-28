@@ -147,7 +147,7 @@ func (c *incomingConn) IsPeerValid(creds *wire.PeerCredentials) bool {
 }
 
 func (c *incomingConn) Close() {
-	c.closeConnectionCh <- true
+	close(c.closeConnectionCh)
 }
 
 func (c *incomingConn) worker() {
@@ -212,9 +212,19 @@ func (c *incomingConn) worker() {
 	reauthMs := time.Duration(c.l.glue.Config().Debug.ReauthInterval) * time.Millisecond
 	reauth := time.NewTicker(reauthMs)
 	defer reauth.Stop()
-
+	var receivedMessageTimer *time.Ticker
 	// Start reading from the peer.
 	commandCh := make(chan commands.Command)
+
+	if c.fromClient {
+		err = c.sendPKIDoc()
+		if err != nil {
+			c.log.Errorf("failed to send new client connection the PKI doc: %s", err.Error())
+			return
+		}
+		// XXX FIXME add duration to PKI doc via dirauth config
+		receivedMessageTimer = time.NewTicker(time.Second * 1)
+	}
 	commandCloseCh := make(chan interface{})
 	defer close(commandCloseCh)
 	go func() {
@@ -240,31 +250,62 @@ func (c *incomingConn) worker() {
 		var rawCmd commands.Command
 		var ok bool
 
-		select {
-		case <-c.l.closeAllCh:
-			// Server is getting shutdown, all connections are being closed.
-			return
-		case <-reauth.C:
-			// Each incoming conn has a periodic 1/15 Hz timer to wake up
-			// and re-authenticate the connection to handle the PKI document(s)
-			// and or the user database changing.
-			//
-			// Doing it this way avoids a good amount of complexity at the
-			// the cost of extra authenticates (which should be fairly fast).
-			if !c.IsPeerValid(creds) {
-				c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+		if c.fromClient {
+			select {
+			case <-receivedMessageTimer.C:
+				err := c.sendNextMessage()
+				if err != nil {
+					c.log.Infof("sendNextMessage error: %s", err.Error())
+				}
+			case <-c.l.closeAllCh:
+				// Server is getting shutdown, all connections are being closed.
 				return
+			case <-reauth.C:
+				// Each incoming conn has a periodic 1/15 Hz timer to wake up
+				// and re-authenticate the connection to handle the PKI document(s)
+				// and or the user database changing.
+				//
+				// Doing it this way avoids a good amount of complexity at the
+				// the cost of extra authenticates (which should be fairly fast).
+				if !c.IsPeerValid(creds) {
+					c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+					return
+				}
+				continue
+			case <-c.closeConnectionCh:
+				c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+				return
+			case rawCmd, ok = <-commandCh:
+				if !ok {
+					return
+				}
 			}
-			continue
-		case <-c.closeConnectionCh:
-			c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
-			return
-		case rawCmd, ok = <-commandCh:
-			if !ok {
+		} else {
+			select {
+			case <-c.l.closeAllCh:
+				// Server is getting shutdown, all connections are being closed.
 				return
+			case <-reauth.C:
+				// Each incoming conn has a periodic 1/15 Hz timer to wake up
+				// and re-authenticate the connection to handle the PKI document(s)
+				// and or the user database changing.
+				//
+				// Doing it this way avoids a good amount of complexity at the
+				// the cost of extra authenticates (which should be fairly fast).
+				if !c.IsPeerValid(creds) {
+					c.log.Debugf("Disconnecting, peer reauthenticate failed.")
+					return
+				}
+				continue
+			case <-c.closeConnectionCh:
+				c.log.Debugf("Disconnecting to make room for a newer connection from the same peer.")
+				return
+			case rawCmd, ok = <-commandCh:
+				if !ok {
+					return
+				}
 			}
 		}
-
 		// TODO: It's possible that a peer connects right at the tail end
 		// before we start allowing "early" packets, resulting in c.canSend
 		// being false till the reauth timer fires.  This probably isn't a
@@ -306,6 +347,92 @@ func (c *incomingConn) worker() {
 	}
 
 	// NOTREACHED
+}
+
+func (c *incomingConn) messageToCommand(msg, surbID []byte, hint uint8) (commands.Command, error) {
+	var respCmd commands.Command
+	if surbID != nil {
+		// This was a SURBReply.
+		surbCmd := &commands.MessageACK{
+			Geo: c.geo,
+
+			QueueSizeHint: hint,
+			Payload:       msg,
+		}
+		copy(surbCmd.ID[:], surbID)
+		respCmd = surbCmd
+		if len(msg) != c.geo.PayloadTagLength+c.geo.ForwardPayloadLength {
+			return nil, fmt.Errorf("stored SURBReply payload is mis-sized: %v", len(msg))
+		}
+		c.log.Info("MESSAGE REPLY")
+	} else if msg != nil {
+		// This was a forward message.
+		respCmd = &commands.Message{
+			Geo:  c.geo,
+			Cmds: commands.NewCommands(c.geo),
+
+			QueueSizeHint: hint,
+			Payload:       msg,
+		}
+		if len(msg) != c.geo.UserForwardPayloadLength {
+			return nil, fmt.Errorf("stored user payload is mis-sized: %v", len(msg))
+		}
+		c.log.Info("MESSAGE MESSAGE")
+	} else {
+		// Queue must be empty.
+		if hint != 0 {
+			// This should NEVER happen, but it's probably not worth crashing
+			// the server over if it does.
+			c.log.Errorf("BUG: Get() failed to return a message, and the queue is not empty.")
+		}
+		respCmd = &commands.MessageEmpty{
+			Cmds: commands.NewCommands(c.geo),
+		}
+		c.log.Info("MESSAGE EMPTY")
+	}
+	return respCmd, nil
+}
+
+func (c *incomingConn) sendPKIDoc() error {
+	c.log.Info("SEND PKI DOC")
+	/*
+		current, _, _ := epochtime.Now()
+		getConsensus := &commands.GetConsensus{
+			Epoch: current,
+		}
+		return c.onGetConsensus(getConsensus)
+	*/
+	return nil
+}
+
+func (c *incomingConn) sendNextMessage() error {
+	c.log.Info("SEND NEXT MESSAGE")
+	/*
+		// Get the message from the user's spool, advancing as appropriate.
+		creds, err := c.w.PeerCredentials()
+		if err != nil {
+			return err
+		}
+
+		msg, surbID, remaining, err := c.l.glue.Provider().Spool().Pop(creds.AdditionalData)
+		if err != nil {
+			return err
+		}
+		if remaining > math.MaxUint8 {
+			// The count hint is an 8 bit value and is clamped.
+			remaining = math.MaxUint8
+		}
+		hint := uint8(remaining)
+		instrument.IngressQueue(hint)
+
+		respCmd, err := c.messageToCommand(msg, surbID, hint)
+		if err != nil {
+			return err
+		}
+
+		return c.w.SendCommand(respCmd)
+	*/
+	return nil
 }
 
 func (c *incomingConn) onMixCommand(rawCmd commands.Command) bool {
