@@ -4,6 +4,7 @@ linkTitle: "Drafts"
 description: ""
 categories: [""]
 tags: [""]
+draft: true
 ---
 
 {{% pageinfo %}}
