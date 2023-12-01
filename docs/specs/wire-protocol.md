@@ -1,5 +1,8 @@
 ---
-title: "Katzenpost Mix Network Wire Protocol Specification"
+title: "Wire Protocol"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel", "David Stainton"]
 version: 3
 ---

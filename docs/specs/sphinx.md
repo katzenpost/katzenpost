@@ -1,5 +1,8 @@
 ---
-title: Sphinx Mix Network Cryptographic Packet Format Specification
+title: "Sphinx Cryptographic Packet Format"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel", "George Danezis", "Claudia Diaz", "Ania Piotrowska", "David Stainton"]
 version: 0
 ---

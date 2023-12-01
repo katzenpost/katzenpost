@@ -1,5 +1,9 @@
 ---
-title: Katzenpost Mix Network End-to-end Protocol Specification
+title: "End-to-end Protocol"
+linkTitle: ""
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel", "George Danezis", "Claudia Diaz", "Ania Piotrowska", "David Stainton"]
 version: 0
 draft: true

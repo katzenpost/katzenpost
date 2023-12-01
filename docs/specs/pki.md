@@ -1,5 +1,8 @@
 ---
-title: Katzenpost Mix Network Public Key Infrastructure Specification
+title: "Public Key Infrastructure"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel", "Claudia Diaz", "Ania Piotrowska", "David Stainton","Masala"]
 version: 1
 ---

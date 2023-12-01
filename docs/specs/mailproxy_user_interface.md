@@ -1,5 +1,8 @@
 ---
-title: Katzenpost Decryption Mix Network User Interface Design
+title: "Mailproxy User Interface Design"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel", "Claudia Diaz", "Kali Kaneko", "David Stainton"]
 version: 0
 draft: true

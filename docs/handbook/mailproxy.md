@@ -1,5 +1,12 @@
 ---
-title: Mailproxy Client Daemon
+title: "Mailproxy Client Daemon"
+linkTitle: "Administrators Guide"
+description: ""
+categories: [""]
+tags: [""]
+author: []
+version: 0
+draft: false
 ---
 
 ## Overview

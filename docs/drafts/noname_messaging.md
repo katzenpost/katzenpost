@@ -1,5 +1,8 @@
 ---
-title: "Noname Message Protocol Specification"
+title: "Noname Message Protocol"
+description: ""
+categories: [""]
+tags: [""]
 author: ["David Stainton"]
 version: 0
 draft: true

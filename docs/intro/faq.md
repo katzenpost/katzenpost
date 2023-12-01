@@ -1,5 +1,12 @@
 ---
-title: Frequently Asked Questions
+title: "Frequently Asked Questions"
+linkTitle: "FAQ"
+description: ""
+categories: [""]
+tags: [""]
+author: []
+version: 0
+draft: false
 ---
 
 ## What is a mix network?

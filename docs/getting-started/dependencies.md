@@ -1,5 +1,11 @@
 ---
-title: Katzenpost Software Bill of Materials
+title: "Dependencies"
+linkTitle: "Dependencies"
+description: "A Software Bill of Materials"
+weight: 100
+categories: [""]
+tags: [""]
+draft: false
 ---
 
 **Abstract**
@@ -10,7 +16,7 @@ catshadow anonymous messaging system with QT user interface. This
 document is meant to be useful for determining software license
 compliance and to assist in audits.
 
-# Dependencies and Licenses
+## Dependencies and Licenses
 
 We use [go-modules](https://github.com/golang/go/wiki/Modules) in
 each golang git repository to pin dependencies. Therefore these
@@ -56,21 +62,20 @@ Forks of external dependencies:
 
 - `github.com/katzenpost/newhope` with license `CC0 1.0 Universal`
 
-fork of <https://git.schwanenlied.me/yawning/newhope>
+Fork of https://git.schwanenlied.me/yawning/newhope
 
-depends on: \* github.com/katzenpost/chacha20 with license AGPL-3.0 \*
-golang.org/x/crypto with license
-<https://github.com/golang/crypto/blob/master/LICENSE>
+Depends on: `github.com/katzenpost/chacha20` with license AGPL-3.0 and
+golang.org/x/crypto with [license](https://github.com/golang/crypto/blob/master/LICENSE)
 
 ## Chacha20
 
-<https://github.com/katzenpost/chacha20> with license AGPL-3.0 fork of
-<https://git.schwanenlied.me/yawning/chacha20>
+https://github.com/katzenpost/chacha20 with license AGPL-3.0 fork of
+https://git.schwanenlied.me/yawning/chacha20
 
 depends on:
 
 - github.com/stretchr/testify with license MIT
-- golang.org/x/sys with license https://github.com/golang/sys/blob/master/LICENSE>
+- golang.org/x/sys with license https://github.com/golang/sys/blob/master/LICENSE
 
 ## Authority
 
@@ -83,8 +88,8 @@ The Katzenpost Authority depends on:
 - go.etcd.io/bbolt with license MIT
 - github.com/stretchr/testify with license MIT
 - github.com/ugorji/go/codec with license MIT
-- golang.org/x/crypto with license https://github.com/golang/crypto/blob/master/LICENSE>
-- golang.org/x/net with license https://github.com/golang/net/blob/master/LICENSE>
+- golang.org/x/crypto with license https://github.com/golang/crypto/blob/master/LICENSE
+- golang.org/x/net with license https://github.com/golang/net/blob/master/LICENSE
 - gopkg.in/op/go-logging.v1 with license BSD-3-Clause
 
 Forks of external dependencies:
@@ -166,16 +171,16 @@ Client depends on:
 
 Forks of external dependencies:
 
-- https://github.com/katzenpost/katzenpost/tree/master/panda/crypto> with [license](https://github.com/katzenpost/katzenpost/panda/blob/master/crypto/LICENSE)
+- https://github.com/katzenpost/katzenpost/tree/master/panda/crypto with [license](https://github.com/katzenpost/katzenpost/panda/blob/master/crypto/LICENSE)
 
 ## Catchat
 
-- https://github.com/katzenpost/catchat> with license AGPL-3.0
+- https://github.com/katzenpost/catchat with license AGPL-3.0
 
 depends on:
 
 - QT, the C++ library with license LGPL-3.0
-  <https://doc.qt.io/qt-5/opensourcelicense.html>
+- https://doc.qt.io/qt-5/opensourcelicense.html
 - github.com/therecipe/qt/core with license LGPL-3.0
 - github.com/katzenpost/katzenpost/catshadow with license AGPL-3.0
 - github.com/katzenpost/katzenpost/client with license AGPL-3.0
@@ -213,7 +218,7 @@ depends on:
 
 ## Registration Client
 
-https://github.com/katzenpost/katzenpost/registration_client> with license AGPL-3.0
+https://github.com/katzenpost/katzenpost/registration_client with license AGPL-3.0
 
 This component will hopefully go away soon but we include it for
 completeness.

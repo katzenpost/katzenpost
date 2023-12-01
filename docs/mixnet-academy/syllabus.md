@@ -1,5 +1,11 @@
 ---
-title: Learn Mix Networks for Great Good
+title: "Syllabus, Learn Mix Networks for Great Good"
+linkTitle: "Syllabus"
+description: ""
+categories: [""]
+tags: [""]
+author: []
+version: 0
 ---
 
 (maybe the second title should be: Prevent Murder using Mathematics)

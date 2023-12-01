@@ -1,5 +1,8 @@
 ---
-title: Katzenpost Dead Drop Extension
+title: "Dead Drop Extension"
+description: ""
+categories: [""]
+tags: [""]
 author: ["David Stainton"]
 version: 0
 draft: true
