@@ -1,4 +1,12 @@
-=== Scatter map/stream/whatever the fuck
+---
+title: "Scatter Map/Stream"
+linkTitle: "Scatter"
+description: ""
+categories: [""]
+tags: [""]
+author: ["David Stainton", "threebithacker", "Masala"]
+version: 0
+---
 
 == Glossary
 
