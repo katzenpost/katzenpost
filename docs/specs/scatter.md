@@ -6,6 +6,7 @@ categories: [""]
 tags: [""]
 author: ["David Stainton", "threebithacker", "Masala"]
 version: 0
+draft: true
 ---
 
 == Glossary
