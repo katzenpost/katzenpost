@@ -1,5 +1,8 @@
 ---
-title: "Katzenpost Key Discovery Extension"
+title: "Key Discovery Extension"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel", "Claudia Diaz", "Kali Kaneko", "kwadronaut", "Ruben Pollan", "mo", "David Stainton"]
 version: 0
 draft: true

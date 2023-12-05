@@ -1,7 +1,12 @@
 ---
-title: Certificate Format Specification
-author: "David Stainton"
+title: "Certificate Format"
+linkTitle: ""
+description: ""
+categories: [""]
+tags: [""]
+author: ["David Stainton"]
 version: "0"
+draft: false
 --- 
 
 **Abstract**

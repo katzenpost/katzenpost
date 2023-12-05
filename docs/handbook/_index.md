@@ -1,6 +1,11 @@
 ---
-title: Katzenpost Handbook
-author: David Stainton
+title: "Administrators Guide"
+linkTitle: "Administrators Guide"
+description: ""
+categories: [""]
+tags: [""]
+weight: "30"
+author: ["David Stainton"]
 version: 0
 ---
 
