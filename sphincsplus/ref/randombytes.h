@@ -3,6 +3,6 @@
 
 extern void randombytes(unsigned char * x,unsigned long long xlen);
 
-#define _randombytes(x) randombytes(x)
+#define _randombytes(x, xlen) randombytes(x, xlen)
 
 #endif
