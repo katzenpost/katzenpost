@@ -4,16 +4,16 @@
 all: server dirauth genconfig ping
 
 server:
-	cd server/cmd/server; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
+	cd server/cmd/server; go build
 
 dirauth:
-	cd authority/cmd/voting; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
+	cd authority/cmd/voting; go build
 
 genconfig:
-	cd genconfig; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
+	cd genconfig; go build
 
 ping:
-	cd ping; CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go build
+	cd ping; go build
 
 clean:
 	rm -f server/cmd/server/server authority/cmd/voting/voting genconfig/genconfig ping/ping
