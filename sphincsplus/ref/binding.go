@@ -1,7 +1,6 @@
 package sphincsplus
 
 //#cgo linux LDFLAGS: "-L./ -L/usr/lib/x86_64-linux-gnu/ -lcrypto"
-//#cgo CFLAGS: -DPARAMS=sphincs-shake-256f
 //#include "api.h"
 import "C"
 import (
