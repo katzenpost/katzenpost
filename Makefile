@@ -1,5 +1,5 @@
 
-.PHONY: all test clean server dirauth genconfig ping
+.PHONY: all test sphincsplus clean server dirauth genconfig ping
 
 all: server dirauth genconfig ping
 
@@ -18,6 +18,9 @@ ping:
 clean:
 	rm -f server/cmd/server/server authority/cmd/voting/voting genconfig/genconfig ping/ping
 
+sphincsplus:
+	cd sphincsplus/ref && go test -v -race -timeout 0 ./...
+
 test:
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 ./...
+	go test -v -race -timeout 0 ./...
 
