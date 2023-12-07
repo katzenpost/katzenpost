@@ -623,17 +623,17 @@ func Dial(c Transport, network, addr string) (*Stream, error) {
 	return s, nil
 }
 
-// configure keymaterial as dialer
+// configure keymaterial as dialer from a shared secret
 func (s *Stream) keyAsDialer(addr *StreamAddr) error {
-	a, b, err := decode(addr.String())
+	listenerSecret, dialerSecret, err := deriveListenerDialerSecrets(addr.String())
 	if err != nil {
 		return err
 	}
 	s.Addr = addr
 	s.Initiator = false
 	salt := []byte("stream_reader_writer_keymaterial")
-	reader_keymaterial := hkdf.New(hash, a[:], salt, nil)
-	writer_keymaterial := hkdf.New(hash, b[:], salt, nil)
+	reader_keymaterial := hkdf.New(hash, listenerSecret[:], salt, nil)
+	writer_keymaterial := hkdf.New(hash, dialerSecret[:], salt, nil)
 
 	// obtain the frame encryption key and sequence seed
 	_, err = io.ReadFull(writer_keymaterial, s.WriteKey[:])
@@ -668,7 +668,7 @@ func generate() string {
 }
 
 // convert base64 string into tuple of secrets for reader/writer
-func decode(addr string) ([]byte, []byte, error) {
+func deriveListenerDialerSecrets(addr string) ([]byte, []byte, error) {
 	// get base secret
 	secret, err := base64.StdEncoding.DecodeString(addr)
 	if err != nil {
@@ -679,17 +679,17 @@ func decode(addr string) ([]byte, []byte, error) {
 	}
 	salt := []byte("stream_reader_writer_keymaterial")
 	keymaterial := hkdf.New(hash, secret, salt, nil)
-	a := &[keySize]byte{}
-	b := &[keySize]byte{}
-	_, err = io.ReadFull(keymaterial, a[:])
+	listenerSecret := &[keySize]byte{}
+	dialerSecret := &[keySize]byte{}
+	_, err = io.ReadFull(keymaterial, listenerSecret[:])
 	if err != nil {
 		panic(err)
 	}
-	_, err = io.ReadFull(keymaterial, b[:])
+	_, err = io.ReadFull(keymaterial, dialerSecret[:])
 	if err != nil {
 		panic(err)
 	}
-	return a[:], b[:], nil
+	return listenerSecret[:], dialerSecret[:], nil
 }
 
 // Listen should be net.Listener
@@ -703,17 +703,17 @@ func Listen(c Transport, network string, addr *StreamAddr) (*Stream, error) {
 	return s, nil
 }
 
-// configure keymaterial as listener
+// configure keymaterial as dialer from a shared secret
 func (s *Stream) keyAsListener(addr *StreamAddr) error {
-	a, b, err := decode(addr.String())
+	listenerSecret, dialerSecret, err := deriveListenerDialerSecrets(addr.String())
 	if err != nil {
 		return err
 	}
 	s.Addr = addr
 	s.Initiator = true
 	salt := []byte("stream_reader_writer_keymaterial")
-	reader_keymaterial := hkdf.New(hash, b[:], salt, nil)
-	writer_keymaterial := hkdf.New(hash, a[:], salt, nil)
+	reader_keymaterial := hkdf.New(hash, dialerSecret[:], salt, nil)
+	writer_keymaterial := hkdf.New(hash, listenerSecret[:], salt, nil)
 
 	// obtain the frame encryption key and sequence seed
 	_, err = io.ReadFull(writer_keymaterial, s.WriteKey[:])
