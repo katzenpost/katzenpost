@@ -168,6 +168,52 @@ func (s *Stream) Close() error
 ```
 Close terminates the stream with a final frame and blocks future writes. It does not drain WriteBuf; use Sync() to flush WriteBuf first.
 
+### Halting the workers
+### Halt
+```go
+func (s *Stream) Halt()
+```
+Stream inherits Halt from https://github.com/katzenpost/katzenpost/core/worker. Calling Halt causes the reader and writer routines to terminate.
+
+### Saving Stream state
+```go
+func (s *Stream) Save() ([]byte, error)
+```
+Save() returns the CBOR serialization of a Stream struct
+
+### Restoring Stream state
+```go
+func LoadStream(s *client.Session, state []byte) (*Stream, error)
+```
+LoadStream initializes a Stream from state saved by Stream.Save()
+
+### Restarting a Stream
+```go
+func (s *Stream) Start()
+```
+Start initializes and starts the reader and writer workers
+
+### Example
+
+```go
+// session is provided by https://github.com/katzenpost/katzenpost/client
+s := NewStream(session)
+r, _ := DialDuplex(session, "", s.RemoteAddr().String())
+
+msg := []byte("Hello World")
+s.Write(msg)
+io.ReadAtLeast(r, make([]byte, len(msg)), len(msg))
+r.Write([]byte("Goodbye World"))
+io.ReadAtLeast(s, make([]byte, len(msg)), len(msg))
+
+s.Sync()
+s.Close()
+r.Sync()
+r.Close()
+s.Halt()
+r.Halt()
+```
+
 ## unit tests
 
 Unit tests are run using go test:
