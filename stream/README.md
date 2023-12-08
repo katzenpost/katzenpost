@@ -64,7 +64,7 @@ The writer routine transmits frames of data from the write buffer when available
 
 ## Finite State Machine ##
 
-a Stream consists of two finite state machines - a reader and writer thread, each of which can be in state StreamOpen, StreamClosing, or StreamClosed.
+A Stream consists of two finite state machines, which correspond to a reader and writer thread, each of which can be in state StreamOpen, StreamClosing, or StreamClosed.
 
 When a Stream is created, it starts in state StreamOpen.
 
@@ -93,66 +93,79 @@ The StreamClosed state indicates that the stream is closed, and no further data 
 Stream implements the io.Writer, io.Reader, and net.Conn interfaces.
 Streams need a Transport:
 ```go
-	Put(addr []byte, payload []byte) error
-	Get(addr []byte) ([]byte, error)
-	PayloadSize() int
+Put(addr []byte, payload []byte) error
+Get(addr []byte) ([]byte, error)
+PayloadSize() int
 ```
 
-For now, Stream uses github.com/katzenpost/katzenpost/map/client as the Transport.
-Map uses a cryptographic capability system that uses blinded ed25519 to derive message storage addresses that are valid ed25519 public keys and verify a self-signed payload.
+At present, Stream uses https://github.com/katzenpost/katzenpost/tree/add_reliable_streams/map/client as the Transport.
+Map uses a cryptographic capability system that uses blinded ed25519 to derive message storage addresses that are valid ed25519 public keys and are used to verify the payload signed by the corresponding private key.
+
+```go
+func DuplexFromSeed(c *Client, initiator bool, secret []byte) RWClient
+```
+DuplexFromSeed Map may be initialized from a shared secret, as currently used by Stream, using the DuplexFromSeed method which returns a RWClient.
+RWClient implements Transport and encapsulates a pair of capabilities, a read capability to access messages written by another peer using the same shared secret and , and a write capability to write messages to that peer. Only onepeer must be the "initiator", which corresponds to the Listener role in a Stream.
 
 ## Usage
 ### Creating a Stream
-```go
 
+```go
 func Dial(c Transport, network, addr string) (*Stream, error)
 ```
-
 Dial creates a new Stream for initiating communication. It takes a transport, network identifier, and address, and returns a Stream initialized with the provided parameters.
-Listen
 
 ```go
-
 func Listen(c Transport, network string, addr *StreamAddr) (*Stream, error)
 ```
+Listen creates a new Stream for listening. It takes a transport, network identifier, and a StreamAddr, and returns a Stream initialized with the provided parameters.
 
-Listen creates a new Stream for listening. It takes a transport, network identifier, and StreamAddr, and returns a Stream initialized with the provided parameters.
+```go
+// StreamAddr implements net.Addr
+type StreamAddr struct {
+	network, address string
+}
+```
+StreamAddr implements net.Addr interface and encapsulates a network and address string. By convesntion, address is base64 encoded and is the shared secret used to initialize a Stream. Stream implements net.Conn, and both tream.LocalAddr() and Stream.RemoteAddr() returns a StreamAddr containing the shared secret.
+
+```go
+func ListenDuplex(s *client.Session, network, addr string) (*Stream, error)
+```
+ListenDuplex creates a new Stream as the Listener, and uses a map.Client initialized from the shared secret for the Transport.
+
+```go
+func DialDuplex(s *client.Session, network, addr string) (*Stream, error)
+```
+DialDuplex creates a new Stream as the Dialer, and uses a map.Client initialized from the shared secret for the Transport.
 
 ### Reading and Writing
 ### Read
 
 ```go
-
 func (s *Stream) Read(p []byte) (n int, err error)
 ```
-
 Read reads data from the stream into the provided byte slice. It blocks until data is available or the stream is closed.
+
 ### Write
 
 ```go
-
 func (s *Stream) Write(p []byte) (n int, err error)
 ```
-
 Write writes data to the stream. It blocks until the data is written or the stream is closed.
 
 ### Sync
 
 ```go
-
 func (s *Stream) Sync() error
 ```
-
 Sync blocks until the WriteBuf is flushed.
 
 ### Closing a Stream
 ### Close
 
 ```go
-
 func (s *Stream) Close() error
 ```
-
 Close terminates the stream with a final frame and blocks future writes. It does not drain WriteBuf; use Sync() to flush WriteBuf first.
 
 ## unit tests
