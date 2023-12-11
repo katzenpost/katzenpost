@@ -63,10 +63,23 @@ The writer routine transmits frames of data from the write buffer when available
 The writer routine waits until there is more data to send or is signalled by the reader routine in order to send an Acknowledgement.
 Retransmissions are accomplished by the TimerQueue worker routine that waits until a timeout has occurred and re-sends an unacknowledged frame.
 
-## Finite State Machine ##
+### Receiving Frames
+The reader routine is responsible for reading frames from a stream. If a read operation returns an error, it increases the interval that it waits before trying to read another frame. On successful reads, the fetch interval is decreased. When a StreamEnd frame is encountered, the reader routine terminates.
+
+### Transmitting Frames
+The writer routine is responsible for reading frames of data from the write buffer, chunking data into frames, sending frames to the storage service and adding frames to the re-transmission queue.
+When there is data available to send and WriteIdx-PeerAckIdx < WindowSize, the writer sends Frames of data. When the WindowSize is reached, the writer routine sleeps until woken by the reader routine to acknowledge data or woken by a call to Write. In the latter case, the writer may buffer addtional data but must not transmit additional frames.
+
+### Re-Transmission of UnAcknowledged Frames
+When the writer routine sends a frame, a copy of the frame is placed into a re-transmisison queue. Unacknowledged frames are periodically re-transmitted.
+Contents of the re-transmission queue are preserved and restored by Save and LoadStream.
+
+### Acknowledging Received Frames
+When a sequential frame is successfully read the reader routine updates the AckIdx to ReadIdx, and increments ReadIdx. If ReadIdx exceeds AckIdx by the WindowSize, the reader must signal to the writer routine to transmit an acknowledgement.
+
+## Finite State Machine
 
 A Stream consists of two finite state machines, which correspond to a reader and writer thread, each of which can be in state StreamOpen, StreamClosing, or StreamClosed.
-
 When a Stream is created, it starts in state StreamOpen.
 
 ### Transition to StreamClosing (writer):
