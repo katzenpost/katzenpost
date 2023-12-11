@@ -32,7 +32,7 @@ ReadIDBase: Similar to WriteIDBase, ReadIDBase is a common.MessageID representin
 ## Data Frames
 
 The fundamental unit of communication is a "Frame." Frames are CBOR-encoded go structs, and a Frame contains metadata and payload data.
-Metadata of a frame is the type of the frame (StreamStart, StreamData, or StreamEnd), an identifier (id), and an acknowledgment sequence number (Ack).
+Metadata of a frame is the type of the frame (StreamStart, StreamData, or StreamEnd), and an acknowledgment sequence number (Ack).
 The Payload field in the Frame holds the actual data being transported.
  
 ### Types of Frames
