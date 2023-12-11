@@ -121,7 +121,6 @@ func DuplexFromSeed(c *Client, initiator bool, secret []byte) RWClient
 A Transport may be initialized from a shared secret, as currently used by Stream, using the map.DuplexFromSeed method which returns a RWClient.
 RWClient implements Transport and encapsulates a pair of capabilities, a read capability to access messages written by another peer and a write capability to write messages to that peer. Only one peer must be the "initiator", which corresponds to the Listener role in a Stream. Instead of deriving both capabilities from the same shared secret, a key exchange may be performed (for example, using PANDA or REUNION with the shared secret) which will enable clients to exchange read-only capabilities so that multiple readers may share the same read-only capability.
 
-## Usage
 ### Creating a Stream
 
 ```go
