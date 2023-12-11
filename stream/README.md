@@ -58,8 +58,10 @@ Stream has separate states for reading (RState) and writing (WState) that corres
 ## Stream worker routines
 
 Each Stream has two goroutines, a reader and writer routine, which are responsible for handling read and write operations, respectively.
-The reader continuously polls for incoming frames, processes acknowledgments, and updates the read buffer.
+The reader continuously polls for incoming frames, processes acknowledgments, and updates the read buffer. When the ReadIdx exceeds the AckIdx + WindowSize it prodes the writer routine to send an Acknowledgement, even if there is no Payload data to send.
 The writer routine transmits frames of data from the write buffer when available, re-transmits unacknowledged frames, and Acknowledges received frames.
+The writer routine waits until there is more data to send or is signalled by the reader routine in order to send an Acknowledgement.
+Retransmissions are accomplished by the TimerQueue worker routine that waits until a timeout has occurred and re-sends an unacknowledged frame.
 
 ## Finite State Machine ##
 
