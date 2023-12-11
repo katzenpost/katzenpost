@@ -228,6 +228,15 @@ func (d *Document) GetProvider(name string) (*MixDescriptor, error) {
 	return nil, fmt.Errorf("pki: provider '%v' not found", name)
 }
 
+func (d *Document) GetProviderKeyHash(provider string) (*[32]byte, error) {
+	desc, err := d.GetProvider(provider)
+	if err != nil {
+		return nil, err
+	}
+	key := desc.IdentityKey.Sum256()
+	return &key, nil
+}
+
 // GetProviderByKeyHash returns the specific provider descriptor corresponding
 // to the specified IdentityKey hash.
 func (d *Document) GetProviderByKeyHash(keyhash *[32]byte) (*MixDescriptor, error) {
