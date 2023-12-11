@@ -1,5 +1,8 @@
 ---
-title: Sphinx Packet Replay Detection Specification
+title: "Sphinx Packet Replay Detection"
+description: ""
+categories: [""]
+tags: [""]
 author: ["David Stainton"]
 version: 0
 ---

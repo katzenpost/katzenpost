@@ -1,5 +1,8 @@
 ---
-title: Katzenpost Mix Network Specification
+title: "Mix Network Specification"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel", "George Danezis", "Claudia Diaz", "Ania Piotrowska", "David Stainton"]
 version: 1
 ---

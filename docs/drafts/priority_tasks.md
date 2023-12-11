@@ -1,7 +1,12 @@
 ---
 title: "Priority Development tasks (which do not include design work)"
+description: ""
+categories: [""]
+tags: [""]
 draft: true
 ---
+
+Here is where we outline which developments tasks are urgent and less so.
 
 ## Unit tests
 

@@ -1,5 +1,12 @@
 ---
-title: Katzenpost Voting Directory Authority
+title: "Voting Directory Authority"
+linkTitle: ""
+description: ""
+categories: [""]
+tags: [""]
+author: []
+version: 0
+draft: false
 ---
 
 # Overview

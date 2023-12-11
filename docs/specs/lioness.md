@@ -1,5 +1,8 @@
 ---
-title: The LIONESS Wide-Block-Cipher Specification
+title: "LIONESS Wide-Block-Cipher"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Yawning Angel"]
 version: 0
 ---

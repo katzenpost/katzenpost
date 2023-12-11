@@ -1,5 +1,8 @@
 ---
 title: "DSpool: Durable ephemeral soft-queues without single points of failure"
+description: ""
+categories: [""]
+tags: [""]
 author: ["Leif Ryge", "David Stainton"]
 version: 0
 draft: true

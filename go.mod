@@ -3,6 +3,7 @@ module github.com/katzenpost/katzenpost
 go 1.19
 
 require (
+	codeberg.org/vula/highctidh v1.0.2023120600
 	filippo.io/edwards25519 v1.0.0
 	github.com/BurntSushi/toml v1.2.1
 	github.com/awnumar/memguard v0.22.3
@@ -16,11 +17,10 @@ require (
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
-	github.com/katzenpost/ctidh_cgo v0.0.0-20230423225118-4c507e31dd9a
 	github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
 	github.com/prometheus/client_golang v1.14.0
-	github.com/stretchr/testify v1.8.3
+	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.8
 	github.com/yawning/bloom v0.0.0-20181019144233-44d6c5c71ed1
 	gitlab.com/yawning/aez.git v0.0.0-20211027044916-e49e68abd344

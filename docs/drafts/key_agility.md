@@ -1,5 +1,8 @@
 ---
-title: "Katzenpost Key Agility Specification"
+title: "Key Agility Specification"
+description: ""
+categories: [""]
+tags: [""]
 author: ["David Stainton"]
 version: 0
 draft: true
