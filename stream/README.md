@@ -6,18 +6,18 @@ The stream package provides an implementation of an asynchronous, reliable, and 
 
 This library is provided for establishing reliable bidirectional communication channel between a pair of clients using a shared secret, and a key-value scratchpad service for exchanging messages. From the shared secret, sequences of message storage addresses (32 bytes) and symmetric message encryption keys are derived. Each client runs protocol state machines that fetch, transmit and acknowledge frames of data, and re-transmit unacknowledged frames in order to provide a reliable delivery of data via a lossy storage service. Storage addresses are mapped to nodes published in Katzenpost's Directory Authority system, which runs a service called "Map" that provides a simple lossy storage service where content is limited to a configurable buffer size and automatically expire.
 
-## Protocol description ##
+## Protocol description
 
 Stream establishes an asynchronous bidirectional reliable communication channel between 2 parties: by convention, one is a Listener and the other the Dialer. The 2 parties must exchange a shared secret, which is used to derive secrets for encrypting and addressing Frames of a Stream. Each Frame is identified by a cryptographically secure random ID chosen from a deterministic CSPRNG so that each party knows the sequence of Frame ID's used to address messages to and from the other party. Similarly, a deterministic sequence of symmetric Frame encryption keys are used to encrypt each Frame. Frames are written to a storage service, so that each party may send or receive messages while the other party is offline, and Frames are acknowledged by transmitting the greatest sequential frame seen. Frames that are not acknowledged are periodically re-transmitted, so that reliable delivery is provided end-to-end by the clients and not the storage service.
 
-## Establishing secrets ##
+## Establishing secrets
 
 A cryptographically strong (32 byte) shared secret is used as initial keying material and expanded by HKDF (HMAC-based Key Derivation Function) to produce 4 secrets which are the seeds for a deterministic CSPRNG (SHA256 of the seed + an 8 byte counter) that produce the sequences of Frame ID's and encryption keys for each peer. This implies that each party knows the other party's keys and can impersonate the other party, which is not considered to be a problem for the 2 party design of Stream, however future work may establish secrets from a cryptographic handshake so that read-only capabilities can be exchanged so that multiple readers may read messages from a peer without being able to modify ciphertext on the storage service.
 
-## Frame Encryption ##
+## Frame Encryption
   The txFrame method is responsible for encrypting and transmitting frames. It uses secretbox from the NaCl library for encryption. Encryption keys are derived from hashing the frame encryption key with the frame ID, and a 24 byte random nonce is prepended to the ciphertext.
 
-## Key Derivation ##
+## Key Derivation
 
 Stream uses HKDF (HMAC-based Key Derivation Function) for deriving encryption keys and frame ID sequence seeds from the provided shared secret.
 
@@ -29,17 +29,17 @@ WriteIDBase: This is a common.MessageID (a 32-byte array) representing the base 
 
 ReadIDBase: Similar to WriteIDBase, ReadIDBase is a common.MessageID representing the base for deriving message IDs during frame reception. It is used in the rxFrameID function to generate a unique identifier for each received frame. The message ID is combined with a frame-specific value to create a unique identifier for each frame.
 
-## Data Frames ##
+## Data Frames
 
 The fundamental unit of communication is a "Frame." Frames are CBOR-encoded go structs, and a Frame contains metadata and payload data.
 Metadata of a frame is the type of the frame (StreamStart, StreamData, or StreamEnd), an identifier (id), and an acknowledgment sequence number (Ack).
 The Payload field in the Frame holds the actual data being transported.
  
-### Types of Frames ###
+### Types of Frames
 
 There are 3 FrameTypes: StreamStart, StreamData, and StreamEnd. The first frame in a Stream must be type StreamStart, following data frames are StreamData, and the final frame must be a StreamEnd.
 
-## Stream  State ##
+## Stream  State
 
 The Stream type manages the state of communication. It includes parameters such as PayloadSize, WindowSize, MaxWriteBufSize, and others.
 
@@ -56,7 +56,7 @@ The Stream type manages the state of communication. It includes parameters such 
 Stream has separate states for reading (RState) and writing (WState) that correspond to the reader and writer routines. Both finite state machines have 3 valid states: StreamOpen, StreamClosing, and StreamClosed.
 The stream uses sequence numbers (ReadIdx, WriteIdx, AckIdx, PeerAckIdx) to keep track of the progress of data transfer.
 
-## Stream worker routines ##
+## Stream worker routines
 
 Each Stream has two goroutines, a reader and writer routine, which are responsible for handling read and write operations, respectively.
 The reader continuously polls for incoming frames, processes acknowledgments, and updates the read buffer.
@@ -88,7 +88,7 @@ During the finalization, it sets the WState to StreamClosed and transmits a fina
 After transmitting the final frame, it signals the onStreamClose channel to unblock any blocked calls to Close.
 The StreamClosed state indicates that the stream is closed, and no further data can be written or read.
 
-## Usage ##
+## Usage
 
 Stream implements the io.Writer, io.Reader, and net.Conn interfaces.
 Streams need a Transport:
