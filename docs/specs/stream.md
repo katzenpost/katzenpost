@@ -1,3 +1,13 @@
+---
+title: "ScatterStream Design"
+description: ""
+categories: [""]
+tags: [""]
+author: ["Masala"]
+version: 0
+draft: true
+---
+
 # Katzenpost Mix Network ScatterStream Library
 
 ## Overview
