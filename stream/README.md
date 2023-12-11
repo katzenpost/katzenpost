@@ -54,7 +54,6 @@ The Stream type manages the state of communication. It includes parameters such 
 * MaxWriteBufSize is the buffered bytes that Stream will hold before blocking calls to Write.
   
 Stream has separate states for reading (RState) and writing (WState) that correspond to the reader and writer routines. Both finite state machines have 3 valid states: StreamOpen, StreamClosing, and StreamClosed.
-The stream uses sequence numbers (ReadIdx, WriteIdx, AckIdx, PeerAckIdx) to keep track of the progress of data transfer.
 
 ## Stream worker routines
 
