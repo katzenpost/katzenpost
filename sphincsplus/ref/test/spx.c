@@ -25,7 +25,7 @@ int main()
     unsigned long long smlen;
     unsigned long long mlen;
 
-    randombytes(m, SPX_MLEN);
+    _randombytes(m, SPX_MLEN);
 
     printf("Generating keypair.. ");
 
