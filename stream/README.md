@@ -21,13 +21,13 @@ A cryptographically strong (32 byte) shared secret is used as initial keying mat
 
 Stream uses HKDF (HMAC-based Key Derivation Function) for deriving encryption keys and frame ID sequence seeds from the provided shared secret.
 
-WriteKey: This is a pointer to a [keySize]byte array, representing the encryption key used for encrypting data frames before transmitting them. It is used in the txFrame function to derive the encryption key for a specific frame during transmission. This key ensures the confidentiality and integrity of the transmitted data.
+**WriteKey:** This is a pointer to a [keySize]byte array, representing the encryption key used for encrypting data frames before transmitting them. It is used in the txFrame function to derive the encryption key for a specific frame during transmission. This key ensures the confidentiality and integrity of the transmitted data.
 
-ReadKey: Similar to WriteKey, ReadKey is a pointer to a [keySize]byte array, representing the decryption key used for decrypting incoming data frames. It is used in the readFrame function to derive the decryption key for a specific frame during reception. This key is crucial for decrypting and processing the received data.
+**ReadKey:** Similar to WriteKey, ReadKey is a pointer to a [keySize]byte array, representing the decryption key used for decrypting incoming data frames. It is used in the readFrame function to derive the decryption key for a specific frame during reception. This key is crucial for decrypting and processing the received data.
 
-WriteIDBase: This is a common.MessageID (a 32-byte array) representing the base for deriving message IDs during frame transmission. It is used in the txFrameID function to generate a unique identifier for each transmitted frame. The message ID is combined with a frame-specific value to create a unique identifier for each frame.
+**WriteIDBase:** This is a common.MessageID (a 32-byte array) representing the base for deriving message IDs during frame transmission. It is used in the txFrameID function to generate a unique identifier for each transmitted frame. The message ID is combined with a frame-specific value to create a unique identifier for each frame.
 
-ReadIDBase: Similar to WriteIDBase, ReadIDBase is a common.MessageID representing the base for deriving message IDs during frame reception. It is used in the rxFrameID function to generate a unique identifier for each received frame. The message ID is combined with a frame-specific value to create a unique identifier for each frame.
+**ReadIDBase:** Similar to WriteIDBase, ReadIDBase is a common.MessageID representing the base for deriving message IDs during frame reception. It is used in the rxFrameID function to generate a unique identifier for each received frame. The message ID is combined with a frame-specific value to create a unique identifier for each frame.
 
 ## Data Frames
 
@@ -43,15 +43,18 @@ There are 3 FrameTypes: StreamStart, StreamData, and StreamEnd. The first frame 
 
 The Stream type manages the state of communication. It includes parameters such as PayloadSize, WindowSize, MaxWriteBufSize, and others.
 
-* Addr is the "address" of a Stream which is the shared secret used to establish the Stream.
-* Initiator is true if the Stream state was established by the Listener party.
-* WriteKey and ReadKey are used to derive frame encryption secrets
-* WriteIDBase and ReadIDBase are used to derive the frame storage IDs.
-* PayloadSize is the frame payload length, and must not change after a Stream has been established.
-* ReadIdx and WriteIdx are the counters that keep track of the most-recently requested and stored frames.
-* AckIdx is the counter that keeps track of the last acknowledgement sent.
-* WindowSize is the number of frames ahead of the remote peer's Acknowledgement that will be transmitted, which peers must agree on. Stream does not presently support dynamically adjusting the WindowSize.
-* MaxWriteBufSize is the buffered bytes that Stream will hold before blocking calls to Write.
+**Addr:** is the "address" of a Stream which is the shared secret used to establish the Stream.
+**Initiator:** is true if the Stream state was established by the Listener party.
+**WriteKey:** and ReadKey are used to derive frame encryption secrets
+**WriteIDBase:** The secret derived from the shared secret used to derive each frame ID written.
+**ReadIDBase:** The secret derived from the shared secret used to derive each frame ID read.
+**PayloadSize:** is the frame payload length, and must not change after a Stream has been established.
+**ReadIdx:** The counter corresponding to the current frame being requested, and used to derive the storage location address in combination with ReadIDBase.
+**WriteIdx:** The counter corresponding to the next frame to be written and used to derive the storage location address in combination with WriteIDBase.
+**AckIdx:** The counter that keeps track of the last acknowledgement sent to the peer.
+**PeerAckIdx:** The counter tracking the last acknowledgement sent from the peer.
+**WindowSize:** The number of frames ahead of the remote peer's PeerAckIDxthat will be transmitted. Peers which peers must agree on WindowSize as Stream does not presently support dynamically adjusting WindowSize.
+**MaxWriteBufSize is the buffered bytes that Stream will hold before blocking calls to Write.
   
 Stream has separate states for reading (RState) and writing (WState) that correspond to the reader and writer routines. Both finite state machines have 3 valid states: StreamOpen, StreamClosing, and StreamClosed.
 
