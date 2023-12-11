@@ -17,7 +17,7 @@
 package client
 
 import (
-	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/crypto/eddsa"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/memspool/common"
@@ -71,7 +71,7 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
-func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) (*SpoolReadDescriptor, error) {
+func NewSpoolReadDescriptor(receiver, provider string, session *client2.ThinClient) (*SpoolReadDescriptor, error) {
 	privateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,13 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client.Session) 
 	}
 
 	// create a kaetzchen Request
-	reply, err := session.BlockingSendReliableMessage(receiver, provider, createCmd)
+	doc := session.PKIDocument()
+	providerKey, err := doc.GetProviderKeyHash(provider)
+	if err != nil {
+		return nil, err
+	}
+	id := session.NewMessageID()
+	reply, err := session.BlockingSendReliableMessage(id, createCmd, providerKey, []byte(receiver))
 	if err != nil {
 		return nil, err
 	}

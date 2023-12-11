@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
 	"github.com/katzenpost/katzenpost/core/worker"
@@ -175,6 +176,15 @@ func (t *ThinClient) PKIDocument() *cpki.Document {
 	t.pkidocMutex.RLock()
 	defer t.pkidocMutex.RUnlock()
 	return t.pkidoc
+}
+
+func (t *ThinClient) NewMessageID() *[MessageIDLength]byte {
+	id := new([MessageIDLength]byte)
+	_, err := rand.Reader.Read(id[:])
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 
 // SendMessageWithoutReply sends a message encapsulated in a Sphinx packet, without any SURB.
