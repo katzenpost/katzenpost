@@ -17,13 +17,16 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/BurntSushi/toml"
 	kemschemes "github.com/cloudflare/circl/kem/schemes"
@@ -37,6 +40,8 @@ import (
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/wire"
 	sConfig "github.com/katzenpost/katzenpost/server/config"
+	tCommon "github.com/privacylab/talek/common"
+	tServer "github.com/privacylab/talek/server"
 )
 
 const (
@@ -201,17 +206,19 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
 				},
 			}
+			// generate talek common and replica configs
+			s.genTalekCfg(filepath.Join(s.outDir, cfg.Server.Identifier))
 			talekReplicaCfg := &sConfig.CBORPluginKaetzchen{
 				Capability:     "talek_replica",
 				Endpoint:       "+talek_replica",
 				Command:        s.baseDir + "/replica" + s.binSuffix,
 				MaxConcurrency: 1,
 				Config: map[string]interface{}{
-					"backing":    "cpu.0",        // PIR daemon method
-					"config":     "replica.conf", // Talek Replica Configuration
-					"common":     "common.conf",  // Talek Common Configuration
-					"log_dir":    s.baseDir + "/" + cfg.Server.Identifier,
-					"log_level":  s.logLevel,
+					"backing":   "cpu.0",
+					"config":    filepath.Join(s.baseDir, cfg.Server.Identifier, "replica.json"),
+					"common":    filepath.Join(s.baseDir, cfg.Server.Identifier, "common.json"),
+					"log_dir":   filepath.Join(s.baseDir, cfg.Server.Identifier),
+					"log_level": s.logLevel,
 				},
 			}
 
@@ -595,6 +602,78 @@ func cfgLinkKey(cfg interface{}, outDir string) wire.PublicKey {
 		panic(err)
 	}
 	return linkPubKey
+}
+
+// generate talek replica configuration files
+func (s *katzenpost) genTalekCfg(cfgPath string) {
+	// write common.json
+	m := rand.NewMath()
+	com := tCommon.Config{
+		NumBuckets:         1024,
+		BucketDepth:        4,
+		DataSize:           1024,
+		BloomFalsePositive: .05,
+		WriteInterval:      time.Second,
+		ReadInterval:       time.Second,
+		InterestMultiple:   10,
+		InterestSeed:       int64(m.Uint64()),
+		MaxLoadFactor:      0.95,
+		LoadFactorStep:     0.05,
+	}
+	sc := tServer.Config{
+		ReadBatch:     8,
+		WriteInterval: time.Second,
+		ReadInterval:  time.Second,
+		Config:        &com,
+	}
+
+	commonDat, err := json.MarshalIndent(sc, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	ioutil.WriteFile(filepath.Join(cfgPath, "common.json"), commonDat, 0640)
+
+	// write replica.json
+	// first encode
+	servraw, err := json.Marshal(sc)
+	if err != nil {
+		fmt.Printf("Cannot flatten replica: %v\n", err)
+		return
+	}
+	// reload both replica config and trustdomain config as JSON messages
+	var servstruct map[string]interface{}
+	err = json.Unmarshal(servraw, &servstruct)
+	if err != nil {
+		fmt.Printf("Failed to unmarshal replica: %v\n", err)
+		return
+	}
+	delete(servstruct, "CommonConfig")
+	delete(servstruct, "TrustDomain")
+	tdc := *tCommon.NewTrustDomainConfig("talek", fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort), true, false)
+	s.lastPort += 1
+	tdb, err := json.MarshalIndent(tdc, "", "  ")
+	if err != nil {
+		fmt.Printf("Failed to marshal trust domain: %v\n", err)
+	}
+	var tdstruct map[string]interface{}
+	err = json.Unmarshal(tdb, &tdstruct)
+	if err != nil {
+		fmt.Printf("Failed to unmarshal trust domain: %v\n", err)
+		return
+	}
+	servstruct["TrustDomain"] = tdstruct
+
+	servraw, err = json.MarshalIndent(servstruct, "", "  ")
+	if err != nil {
+		fmt.Printf("Could not flatten combined replica config: %v\n", err)
+		return
+	}
+
+	err = ioutil.WriteFile(filepath.Join(cfgPath, "replica.json"), servraw, 0640)
+	if err != nil {
+		fmt.Printf("Failed to write file: %v\n", err)
+		return
+	}
 }
 
 func (s *katzenpost) genDockerCompose(dockerImage string) error {

@@ -12,12 +12,14 @@ require (
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-faster/xor v1.0.0
 	github.com/golang/protobuf v1.5.2
+	github.com/gorilla/rpc v1.1.0
 	github.com/henrydcase/nobs v0.0.0-20210422124615-3a8ac85da11b
 	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/katzenpost/chacha20 v0.0.0-20190910113340-7ce890d6a556
 	github.com/katzenpost/chacha20poly1305 v0.0.0-20211026103954-7b6fb2fc0129
 	github.com/katzenpost/nyquist v0.0.0-20231024064113-96ae83e5c09b
 	github.com/katzenpost/sntrup4591761 v0.0.0-20231024131303-8755eb1986b8
+	github.com/privacylab/talek v0.0.0-20230726095920-a7c09fc17f64
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.8.4
 	github.com/ugorji/go/codec v1.2.8
@@ -45,7 +47,6 @@ require (
 	github.com/eapache/queue v1.1.0 // indirect
 	github.com/foobaz/go-zopfli v0.0.0-20140122214029-7432051485e2 // indirect
 	github.com/gofrs/uuid v4.0.0+incompatible // indirect
-	github.com/gorilla/rpc v1.1.0 // indirect
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lib/pq v1.10.3 // indirect
@@ -54,7 +55,6 @@ require (
 	github.com/oasislabs/deoxysii v0.0.0-20190807103041-6159f99c2236 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/privacylab/talek v0.0.0-20230726095920-a7c09fc17f64 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
 	github.com/prometheus/common v0.39.0 // indirect
 	github.com/prometheus/procfs v0.9.0 // indirect
