@@ -1,5 +1,5 @@
-//go:build prometheus
-// +build prometheus
+//go:build !noprometheus
+// +build !noprometheus
 
 package instrument
 
@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/katzenpost/katzenpost/core/wire/commands"
+	"github.com/katzenpost/katzenpost/server/internal/glue"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -159,12 +160,9 @@ var (
 	)
 )
 
-var kaetzchenRequestsTimer *prometheus.Timer
-var fetchedPKIDocsTimer *prometheus.Timer
+// StartPrometheusListener starts the Prometheus metrics TCP/HTTP Listener
+func StartPrometheusListener(glue glue.Glue) {
 
-// Init initialize instrumentation
-func Init() {
-	// Register metrics
 	prometheus.MustRegister(deadlineBlownPacketsDropped)
 	prometheus.MustRegister(incomingConns)
 	prometheus.MustRegister(invalidPacketsDropped)
@@ -189,9 +187,12 @@ func Init() {
 	prometheus.MustRegister(failedPKICacheGeneration)
 	prometheus.MustRegister(invalidPKICache)
 
-	// Expose registered metrics via HTTP
-	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe("127.0.0.1:6543", nil)
+	metricsAddress := glue.Config().Server.MetricsAddress
+	if metricsAddress != "" {
+		// Expose registered metrics via HTTP
+		http.Handle("/metrics", promhttp.Handler())
+		go http.ListenAndServe(metricsAddress, nil)
+	}
 }
 
 // Incoming increments the counter for incoming requests
@@ -203,7 +204,6 @@ func Incoming(cmd commands.Command) {
 // Outgoing increments the counter for outgoing connections
 func Outgoing() {
 	outgoingConns.Inc()
-
 }
 
 // IngressQueue observes the size of the ingress queue
@@ -234,16 +234,6 @@ func KaetzchenPacketsDropped() {
 // KaetzchenRequests increments the counter for the number of kaetzchen requests
 func KaetzchenRequests() {
 	kaetzchenRequests.Inc()
-}
-
-// SetKaetzchenRequestsTimer sets the kaetzchen requests timer struct
-func SetKaetzchenRequestsTimer() {
-	kaetzchenRequestsTimer = prometheus.NewTimer(kaetzchenRequestsDuration)
-}
-
-// TimeKaetzchenRequestsDuration times how long it takes for a ketzchen request to execute
-func TimeKaetzchenRequestsDuration() {
-	kaetzchenRequestsTimer.ObserveDuration()
 }
 
 // KaetzchenRequestsDropped increments the counter for the number of dropped kaetzchen requests
@@ -294,16 +284,6 @@ func CancelledOutgoing() {
 // FetchedPKIDocs increments the counter for the number of fetched PKI docs per epoch
 func FetchedPKIDocs(epoch string) {
 	fetchedPKIDocs.With(prometheus.Labels{"epoch": epoch})
-}
-
-// SetFetchedPKIDocsTimer sets a timer for the fetchedPKIDocs variable
-func SetFetchedPKIDocsTimer() {
-	fetchedPKIDocsTimer = prometheus.NewTimer(fetchedPKIDocsDuration)
-}
-
-// TimeFetchedPKIDocsDuration times the duration of how long it takes to fetch a PKI Doc
-func TimeFetchedPKIDocsDuration() {
-	fetchedPKIDocsTimer.ObserveDuration()
 }
 
 // FailedFetchPKIDocs increments the counter for the number of times fetching a PKI doc failed per epoch

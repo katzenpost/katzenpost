@@ -17,7 +17,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
@@ -42,6 +41,7 @@ import (
 
 const (
 	basePort      = 30000
+	bindAddr      = "127.0.0.1"
 	nrLayers      = 3
 	nrNodes       = 6
 	nrProviders   = 2
@@ -63,6 +63,7 @@ type katzenpost struct {
 	nodeConfigs []*sConfig.Config
 	basePort    uint16
 	lastPort    uint16
+	bindAddr    string
 	nodeIdx     int
 	clientIdx   int
 	providerIdx int
@@ -138,7 +139,7 @@ func (s *katzenpost) genNodeConfig(isProvider bool, isVoting bool) error {
 	// Server section.
 	cfg.Server = new(sConfig.Server)
 	cfg.Server.Identifier = n
-	cfg.Server.Addresses = []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)}
+	cfg.Server.Addresses = []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)}
 	cfg.Server.DataDir = filepath.Join(s.baseDir, n)
 	os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
 	cfg.Server.IsProvider = isProvider
@@ -275,7 +276,7 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 		cfg.SphinxGeometry = s.sphinxGeometry
 		cfg.Server = &vConfig.Server{
 			Identifier: fmt.Sprintf("auth%d", i),
-			Addresses:  []string{fmt.Sprintf("127.0.0.1:%d", s.lastPort)},
+			Addresses:  []string{fmt.Sprintf("%s:%d", s.bindAddr, s.lastPort)},
 			DataDir:    filepath.Join(s.baseDir, fmt.Sprintf("auth%d", i)),
 		}
 		os.Mkdir(filepath.Join(s.outDir, cfg.Server.Identifier), 0700)
@@ -305,12 +306,9 @@ func (s *katzenpost) genVotingAuthoritiesCfg(numAuthorities int, parameters *vCo
 
 	// tell each authority about it's peers
 	for i := 0; i < numAuthorities; i++ {
-		h := cfgIdKey(configs[i], s.outDir).Sum256()
 		peers := []*vConfig.Authority{}
-		for id, peer := range s.authorities {
-			if !bytes.Equal(id[:], h[:]) {
-				peers = append(peers, peer)
-			}
+		for _, peer := range s.authorities {
+			peers = append(peers, peer)
 		}
 		sort.Sort(AuthById(peers))
 		configs[i].Authorities = peers
@@ -348,6 +346,7 @@ func main() {
 	nrVoting := flag.Int("nv", nrAuthorities, "Generate voting configuration")
 	baseDir := flag.String("b", "", "Path to use as baseDir option")
 	basePort := flag.Int("P", basePort, "First port number to use")
+	bindAddr := flag.String("a", bindAddr, "Address to bind to")
 	outDir := flag.String("o", "", "Path to write files to")
 	dockerImage := flag.String("d", "katzenpost-go_mod", "Docker image for compose-compose")
 	binSuffix := flag.String("S", "", "suffix for binaries in docker-compose.yml")
@@ -399,6 +398,7 @@ func main() {
 	s.binSuffix = *binSuffix
 	s.basePort = uint16(*basePort)
 	s.lastPort = s.basePort + 1
+	s.bindAddr = *bindAddr
 	s.logLevel = *logLevel
 
 	nrHops := *nrLayers + 2
