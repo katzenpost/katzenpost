@@ -28,6 +28,13 @@ func (c *Client) ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Dur
 	}
 	source := src.IdentityKey.Sum256()
 
+	if len(request.Payload) > c.geo.UserForwardPayloadLength {
+		return nil, nil, 0, errors.New("payload exceeds geo.UserForwardPayloadLength")
+	}
+
+	payload := make([]byte, c.geo.UserForwardPayloadLength)
+	copy(payload, request.Payload)
+
 	return c.packetFactory.ComposePacket(
 		doc,
 		request.RecipientQueueID,
@@ -35,7 +42,7 @@ func (c *Client) ComposeSphinxPacket(request *Request) ([]byte, []byte, time.Dur
 		request.RecipientQueueID,
 		request.DestinationIdHash,
 		request.SURBID,
-		request.Payload,
+		payload,
 	)
 }
 
