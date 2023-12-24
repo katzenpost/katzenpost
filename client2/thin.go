@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
 
+	"github.com/katzenpost/katzenpost/client2/config"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	cpki "github.com/katzenpost/katzenpost/core/pki"
 	sConstants "github.com/katzenpost/katzenpost/core/sphinx/constants"
@@ -42,6 +43,8 @@ type ThinResponse struct {
 type ThinClient struct {
 	worker.Worker
 
+	cfg *config.Config
+
 	log          *log.Logger
 	unixConn     *net.UnixConn
 	destUnixAddr *net.UnixAddr
@@ -49,20 +52,30 @@ type ThinClient struct {
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
 
+	eventSink          chan Event
+	eventSinkDrainStop chan interface{}
+
 	isConnected bool
 
 	receivedCh chan ThinResponse
 }
 
 // NewThinClient creates a new thing client.
-func NewThinClient() *ThinClient {
+func NewThinClient(cfg *config.Config) *ThinClient {
 	return &ThinClient{
+		cfg: cfg,
 		log: log.NewWithOptions(os.Stderr, log.Options{
 			Prefix: "thin_client",
 			Level:  log.DebugLevel,
 		}),
-		receivedCh: make(chan ThinResponse),
+		receivedCh:         make(chan ThinResponse),
+		eventSink:          make(chan Event),
+		eventSinkDrainStop: make(chan interface{}),
 	}
+}
+
+func (t *ThinClient) GetConfig() *config.Config {
+	return t.cfg
 }
 
 // Close halts the thin client worker thread and closes the socket
@@ -113,6 +126,7 @@ func (t *ThinClient) Dial() error {
 	}
 	t.parsePKIDoc(message2.Payload)
 	t.Go(t.worker)
+	t.Go(t.eventSinkDrain)
 	t.log.Debug("Dial end")
 	return nil
 }
@@ -158,6 +172,31 @@ func (t *ThinClient) worker() {
 	}
 }
 
+func (t *ThinClient) EventSink() chan Event {
+	t.stopDrain()
+	return t.eventSink
+}
+
+func (t *ThinClient) stopDrain() {
+	close(t.eventSinkDrainStop)
+}
+
+// drain the eventSink until stopDrain() is called
+func (t *ThinClient) eventSinkDrain() {
+	for {
+		select {
+		case <-t.HaltCh():
+			// stop thread on shutdown
+			return
+		case <-t.eventSinkDrainStop:
+			// stop thread on drain stop
+			return
+		case <-t.eventSink:
+			continue
+		}
+	}
+}
+
 func (t *ThinClient) parsePKIDoc(payload []byte) error {
 	doc := &cpki.Document{}
 	err := doc.Deserialize(payload)
@@ -178,8 +217,39 @@ func (t *ThinClient) PKIDocument() *cpki.Document {
 	return t.pkidoc
 }
 
+// GetServices returns the services matching the specified service name
+func (t *ThinClient) GetServices(capability string) ([]*ServiceDescriptor, error) {
+	doc := t.PKIDocument()
+	descriptors := FindServices(capability, doc)
+	if len(descriptors) == 0 {
+		return nil, errors.New("error, GetService failure, service not found in pki doc")
+	}
+	return descriptors, nil
+}
+
+// GetService returns a randomly selected service
+// matching the specified service name
+func (t *ThinClient) GetService(serviceName string) (*ServiceDescriptor, error) {
+	serviceDescriptors, err := t.GetServices(serviceName)
+	if err != nil {
+		return nil, err
+	}
+	return serviceDescriptors[rand.NewMath().Intn(len(serviceDescriptors))], nil
+}
+
+// NewMessageID returns a new message id.
 func (t *ThinClient) NewMessageID() *[MessageIDLength]byte {
 	id := new([MessageIDLength]byte)
+	_, err := rand.Reader.Read(id[:])
+	if err != nil {
+		panic(err)
+	}
+	return id
+}
+
+// NewSURBID returns a new surb id.
+func (t *ThinClient) NewSURBID() *[sConstants.SURBIDLength]byte {
+	id := new([sConstants.SURBIDLength]byte)
 	_, err := rand.Reader.Read(id[:])
 	if err != nil {
 		panic(err)
@@ -275,6 +345,7 @@ func (t *ThinClient) ReceiveMessage() (*[sConstants.SURBIDLength]byte, []byte) {
 	return resp.SURBID, resp.Payload
 }
 
+// ARQSend uses a naive ARQ scheme for error correction in the sending of the message.
 func (t *ThinClient) ARQSend(id *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) error {
 	req := new(Request)
 	req.ID = id
@@ -306,6 +377,7 @@ func (t *ThinClient) ARQReceiveMessage() (*[MessageIDLength]byte, []byte) {
 	return resp.ID, resp.Payload
 }
 
+// BlockingSendReliableMessage blocks until the message is reliably sent and the ARQ reply is received.
 func (t *ThinClient) BlockingSendReliableMessage(id *[MessageIDLength]byte, payload []byte, destNode *[32]byte, destQueue []byte) (reply []byte, err error) {
 	err = t.ARQSend(id, payload, destNode, destQueue)
 	if err != nil {

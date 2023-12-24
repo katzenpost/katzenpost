@@ -274,12 +274,12 @@ type ServiceDescriptor struct {
 }
 
 // FindServices is a helper function for finding Provider-side services in the PKI document.
-func FindServices(capability string, doc *cpki.Document) []ServiceDescriptor {
-	services := []ServiceDescriptor{}
+func FindServices(capability string, doc *cpki.Document) []*ServiceDescriptor {
+	services := []*ServiceDescriptor{}
 	for _, provider := range doc.Providers {
 		for cap := range provider.Kaetzchen {
 			if cap == capability {
-				serviceID := ServiceDescriptor{
+				serviceID := &ServiceDescriptor{
 					RecipientQueueID: []byte(provider.Kaetzchen[cap]["endpoint"].(string)),
 					MixDescriptor:    provider,
 				}
@@ -298,7 +298,7 @@ func (d *Daemon) sendLoopDecoy(request *Request) {
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
-	echoService := &echoServices[mrand.Intn(len(echoServices))]
+	echoService := echoServices[mrand.Intn(len(echoServices))]
 
 	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
@@ -323,7 +323,7 @@ func (d *Daemon) sendDropDecoy() {
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
-	echoService := &echoServices[mrand.Intn(len(echoServices))]
+	echoService := echoServices[mrand.Intn(len(echoServices))]
 
 	serviceIdHash := echoService.MixDescriptor.IdentityKey.Sum256()
 	payload := make([]byte, d.client.geo.UserForwardPayloadLength)
