@@ -29,7 +29,7 @@ type SpoolWriteDescriptor struct {
 	ID [common.SpoolIDSize]byte
 
 	// Receiver is the responding service name of the SURB based spool service.
-	Receiver string
+	Receiver []byte
 
 	// Provider is the name of the Provider hosting the spool.
 	Provider string
@@ -44,7 +44,7 @@ type SpoolReadDescriptor struct {
 	ID [common.SpoolIDSize]byte
 
 	// Receiver is the responding service name of the SURB based spool service.
-	Receiver string
+	Receiver []byte
 
 	// Provider is the name of the Provider hosting the spool.
 	Provider string
@@ -71,7 +71,7 @@ func (r *SpoolReadDescriptor) GetWriteDescriptor() *SpoolWriteDescriptor {
 
 // NewSpoolReadDescriptor blocks until the remote spool is created
 // or the round trip timeout is reached.
-func NewSpoolReadDescriptor(receiver, provider string, session *client2.ThinClient) (*SpoolReadDescriptor, error) {
+func NewSpoolReadDescriptor(receiver []byte, provider string, session *client2.ThinClient) (*SpoolReadDescriptor, error) {
 	privateKey, err := eddsa.NewKeypair(rand.Reader)
 	if err != nil {
 		return nil, err
@@ -88,7 +88,7 @@ func NewSpoolReadDescriptor(receiver, provider string, session *client2.ThinClie
 		return nil, err
 	}
 	id := session.NewMessageID()
-	reply, err := session.BlockingSendReliableMessage(id, createCmd, providerKey, []byte(receiver))
+	reply, err := session.BlockingSendReliableMessage(id, createCmd, providerKey, receiver)
 	if err != nil {
 		return nil, err
 	}

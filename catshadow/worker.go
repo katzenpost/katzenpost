@@ -76,7 +76,7 @@ func (c *Client) worker() {
 			switch op := qo.(type) {
 			case *opOnline:
 				// this operation is run in another goroutine, and is thread safe
-				go func() { op.responseChan <- c.goOnline(op.context) }()
+				go func() { op.responseChan <- c.goOnline() }()
 			case *opOffline:
 				op.responseChan <- c.goOffline()
 				isConnected = false
@@ -133,8 +133,10 @@ func (c *Client) worker() {
 			continue
 		case rawClientEvent := <-c.sessionEvents():
 			switch event := rawClientEvent.(type) {
+			/* do we really need this?
 			case *client.MessageIDGarbageCollected:
-				c.garbageCollectSendMap(event)
+							c.garbageCollectSendMap(event)
+			*/
 			case *client.ConnectionStatusEvent:
 				c.log.Infof("Connection status change: isConnected %v", event.IsConnected)
 				if isConnected != event.IsConnected && event.IsConnected {

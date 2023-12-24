@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+
 	"github.com/katzenpost/katzenpost/client"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	pclient "github.com/katzenpost/katzenpost/panda/client"
@@ -38,9 +39,9 @@ func (c *Client) doPANDAExchange(contact *Contact) error {
 	}
 
 	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
-	meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaClient, p.Name, p.Provider)
+	meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaClient, p.RecipientQueueID, p.MixDescriptor.Name)
 	// get the current document and shared random
-	doc := c.session.CurrentDocument()
+	doc := c.session.PKIDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
 	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 
@@ -88,7 +89,7 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
 			}
 
-			meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaMeeting, p.Name, p.Provider)
+			meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaMeeting, p.RecipientQueueID, p.MixDescriptor.Name)
 			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 			if err != nil {
