@@ -25,18 +25,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/katzenpost/katzenpost/client"
+	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/reunion/commands"
 )
 
 // Transport is used by Reunion protocol
 // clients to send queries to the Reunion DB service.
 type Transport struct {
-	// Session is a client Session which
+	// Session is a thin client which
 	// can be used to send mixnet messages.
-	Session *client.Session
+	Session *client2.ThinClient
 	// Recipient is the destination service.
-	Recipient string
+	Recipient []byte
 	// Provider is the destination Provider.
 	Provider string
 }
@@ -44,7 +44,7 @@ type Transport struct {
 // CurrentSharedRandoms returns the valid SharedRandoms in the PKI
 // but in the future may return a transport specific SharedRandom
 func (k *Transport) CurrentSharedRandoms() ([][]byte, error) {
-	doc := k.Session.CurrentDocument()
+	doc := k.Session.PKIDocument()
 	return doc.PriorSharedRandom, nil
 }
 
@@ -64,7 +64,7 @@ func (k *Transport) CurrentEpochs() ([]uint64, error) {
 	}
 
 	// Verify the service is still advertising valid epochs in the current PKI
-	doc := k.Session.CurrentDocument()
+	doc := k.Session.PKIDocument()
 	p, err := doc.GetProvider(k.Provider)
 	if err != nil {
 		return nil, errors.New("Provider not found in PKI")
@@ -84,7 +84,13 @@ func (k *Transport) CurrentEpochs() ([]uint64, error) {
 // Query sends the command to the destination Reunion DB service
 // over a Katzenpost mix network.
 func (k *Transport) Query(command commands.Command) (commands.Command, error) {
-	reply, err := k.Session.BlockingSendReliableMessage(k.Recipient, k.Provider, command.ToBytes())
+	mesgID := k.Session.NewMessageID()
+	doc := k.Session.PKIDocument()
+	providerKey, err := doc.GetProviderKeyHash(k.Provider)
+	if err != nil {
+		return nil, err
+	}
+	reply, err := k.Session.BlockingSendReliableMessage(mesgID, command.ToBytes(), providerKey, k.Recipient)
 	if err != nil {
 		return nil, err
 	}

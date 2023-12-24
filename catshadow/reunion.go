@@ -19,8 +19,10 @@
 package catshadow
 
 import (
+	"crypto/hmac"
 	"errors"
 	"fmt"
+
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 	rTrans "github.com/katzenpost/katzenpost/reunion/transports/katzenpost"
 )
@@ -129,7 +131,7 @@ func (c *Client) restartReunionExchanges() {
 				// see if the transport still exists in current transports
 				m := false
 				for _, tr := range transports {
-					if tr.Recipient == ex.recipient && tr.Provider == ex.provider {
+					if hmac.Equal(tr.Recipient, ex.recipient) && tr.Provider == ex.provider {
 						m = true
 						lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
 						dblog := c.logBackend.GetLogger(lstr)
@@ -154,7 +156,7 @@ func (c *Client) restartReunionExchanges() {
 
 func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	// Get consensus
-	doc := c.session.CurrentDocument()
+	doc := c.session.PKIDocument()
 	if doc == nil {
 		return nil, errors.New("No current document, wtf")
 	}
@@ -164,8 +166,12 @@ func (c *Client) getReunionTransports() ([]*rTrans.Transport, error) {
 	for _, p := range doc.Providers {
 		if r, ok := p.Kaetzchen["reunion"]; ok {
 			if ep, ok := r["endpoint"]; ok {
-				ep := ep.(string)
-				trans := &rTrans.Transport{Session: c.session, Recipient: ep, Provider: p.Name}
+				ep := ep.([]byte)
+				trans := &rTrans.Transport{
+					Session:   c.session,
+					Recipient: ep,
+					Provider:  p.Name,
+				}
 				c.log.Debugf("Adding transport %v", trans)
 				transports = append(transports, trans)
 			} else {

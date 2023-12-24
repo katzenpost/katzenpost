@@ -33,11 +33,11 @@ import (
 	"gopkg.in/eapache/channels.v1"
 	"gopkg.in/op/go-logging.v1"
 
-	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
-
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	cUtils "github.com/katzenpost/katzenpost/client/utils"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
+
+	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
@@ -46,7 +46,6 @@ import (
 	"github.com/katzenpost/katzenpost/core/worker"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
-	"github.com/katzenpost/katzenpost/minclient"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
 	rClient "github.com/katzenpost/katzenpost/reunion/client"
 )
@@ -99,8 +98,7 @@ type Client struct {
 	online     bool
 	connecting bool
 
-	client    *client.Client
-	session   *client.Session
+	session   *client2.ThinClient
 	providers []*pki.MixDescriptor
 
 	log        *logging.Logger
@@ -111,7 +109,7 @@ type MessageID [MessageIDLen]byte
 
 type queuedSpoolCommand struct {
 	Provider string
-	Receiver string
+	Receiver []byte
 	Command  []byte
 	ID       MessageID
 }
@@ -122,7 +120,7 @@ type queuedSpoolCommand struct {
 // encrypted statefile, of course.  This constructor of Client is used when
 // creating a new Client as opposed to loading the previously saved state for
 // an existing Client.
-func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter) (*Client, error) {
+func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixnetClient *client2.ThinClient, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
@@ -147,7 +145,7 @@ func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixne
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
-func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *StateWriter, state *State) (*Client, error) {
+func New(logBackend *log.Backend, mixnetClient *client2.ThinClient, stateWorker *StateWriter, state *State) (*Client, error) {
 	if state == nil {
 		state = &State{
 			Blob:          make(map[string][]byte),
@@ -175,7 +173,7 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 		conversationsMutex:  new(sync.Mutex),
 		connMutex:           new(sync.RWMutex),
 		stateWorker:         stateWorker,
-		client:              mixnetClient,
+		session:             mixnetClient,
 		log:                 logBackend.GetLogger("catshadow"),
 		logBackend:          logBackend,
 	}
@@ -188,11 +186,11 @@ func New(logBackend *log.Backend, mixnetClient *client.Client, stateWorker *Stat
 
 // sessionEvents() is called by the worker routine. It returns
 // events from the established session or nil, if the client is in offline mode
-func (c *Client) sessionEvents() chan client.Event {
+func (c *Client) sessionEvents() chan client2.Event {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 	if c.session != nil {
-		return c.session.EventSink
+		return c.session.EventSink()
 	}
 	return nil
 }
@@ -216,7 +214,7 @@ func (c *Client) Start() {
 
 	// Shutdown if the client halts for some reason
 	go func() {
-		c.client.Wait()
+		c.session.Close()
 		c.Shutdown()
 	}()
 
@@ -389,7 +387,7 @@ func (c *Client) doGetPKIDocument() interface{} {
 		return ErrNotOnline
 
 	} else {
-		doc := c.session.CurrentDocument()
+		doc := c.session.PKIDocument()
 		if doc == nil {
 			return ErrNoCurrentDocument
 		} else {
@@ -428,15 +426,15 @@ func (c *Client) doGetSpoolProviders() interface{} {
 	if !c.online || c.session == nil {
 		return ErrNotOnline
 	}
-	doc := c.session.CurrentDocument()
+	doc := c.session.PKIDocument()
 	if doc == nil {
 		return ErrNoCurrentDocument
 	}
 
-	spoolProviders := cUtils.FindServices(common.SpoolServiceName, doc)
+	spoolProviders := client2.FindServices(common.SpoolServiceName, doc)
 	providerNames := make([]string, len(spoolProviders))
 	for i, d := range spoolProviders {
-		providerNames[i] = d.Provider
+		providerNames[i] = d.MixDescriptor.Name
 	}
 	return providerNames
 }
@@ -494,7 +492,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 		responseChan <- ErrNotOnline
 		return
 	}
-	var desc *cUtils.ServiceDescriptor
+	var desc *client2.ServiceDescriptor
 	var err error
 	// if no provider is specified, pick a random one
 	if provider == "" {
@@ -511,7 +509,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 			return
 		}
 		for _, d := range descs {
-			if d.Provider == provider {
+			if d.MixDescriptor.Name == provider {
 				desc = d
 				break
 			}
@@ -524,7 +522,7 @@ func (c *Client) doCreateRemoteSpool(provider string, responseChan chan error) {
 	go func() {
 		// NewSpoolReadDescriptor blocks, so we run this in another thread and then use
 		// another workerOp to save the spool descriptor.
-		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.Name, desc.Provider, c.session)
+		spool, err := memspoolclient.NewSpoolReadDescriptor(desc.RecipientQueueID, desc.MixDescriptor.Name, c.session)
 		if err != nil {
 			select {
 			case <-c.HaltCh():
@@ -854,17 +852,17 @@ func (c *Client) haltKeyExchanges() {
 func (c *Client) Shutdown() {
 	c.log.Info("Shutting down now.")
 	c.Halt()
-	c.client.Shutdown()
+	c.session.Close()
 	c.stateWorker.Halt()
 }
 
 func (c *Client) DoubleRatchetPayloadLength() int {
-	return DoubleRatchetPayloadLength(c.client.GetConfig().SphinxGeometry)
+	return DoubleRatchetPayloadLength(c.session.GetConfig().SphinxGeometry)
 }
 
 // SendMessage sends a message to the Client contact with the given nickname.
 func (c *Client) SendMessage(nickname string, message []byte) MessageID {
-	cfg := c.client.GetConfig()
+	cfg := c.session.GetConfig()
 
 	if len(message)+4 > DoubleRatchetPayloadLength(cfg.SphinxGeometry) {
 		return MessageID{}
@@ -936,7 +934,7 @@ func (c *Client) doSendMessage(convoMesgID MessageID, nickname string, message [
 	}
 	contact.ratchetMutex.Unlock()
 
-	cfg := c.client.GetConfig()
+	cfg := c.session.GetConfig()
 	appendCmd, err := common.AppendToSpool(contact.spoolWriteDescriptor.ID, ciphertext, cfg.SphinxGeometry)
 	if err != nil {
 		c.log.Errorf("failed to compute spool append command: %s", err)
@@ -990,8 +988,14 @@ func (c *Client) sendMessage(contact *Contact) {
 		return
 	}
 
-	// XXX: unfortunately this command does not tell us when to expect the message delivery to have occurred even though minclient knows it...
-	mesgID, err := c.session.SendReliableMessage(cmd.Receiver, cmd.Provider, cmd.Command)
+	doc := c.session.PKIDocument()
+	providerKeyHash, err := doc.GetProviderKeyHash(cmd.Provider)
+	if err != nil {
+		c.log.Errorf("failed to get provider key hash: %s", err)
+		return
+	}
+	mesgID := c.session.NewMessageID()
+	err = c.session.ARQSend(mesgID, cmd.Command, providerKeyHash, cmd.Receiver)
 	if err != nil {
 		c.log.Errorf("failed to send ciphertext to remote spool: %s", err)
 		return
@@ -1015,11 +1019,19 @@ func (c *Client) sendReadInbox() {
 		c.fatalErrCh <- errors.New("failed to compose spool read command")
 		return
 	}
-	mesgID, err := c.session.SendUnreliableMessage(c.spoolReadDescriptor.Receiver, c.spoolReadDescriptor.Provider, cmd)
-	switch err.(type) {
-	case *minclient.PKIError:
-		c.session.ForceFetchPKI()
+
+	doc := c.session.PKIDocument()
+	providerKeyHash, err := doc.GetProviderKeyHash(c.spoolReadDescriptor.Provider)
+	if err != nil {
+		c.log.Errorf("failed to get provider key hash: %s", err)
 		return
+	}
+
+	surbid := c.session.NewSURBID()
+	mesgID := make([]byte, len(surbid[:]))
+	copy(mesgID, surbid[:])
+	err = c.session.SendMessage(surbid, cmd, providerKeyHash, c.spoolReadDescriptor.Receiver)
+	switch err.(type) {
 	case nil:
 	default:
 		c.log.Errorf("sendReadInbox failure: %v", err)
@@ -1028,7 +1040,7 @@ func (c *Client) sendReadInbox() {
 	c.log.Debug("Message enqueued for reading remote spool %x:%d, message-ID: %x", c.spoolReadDescriptor.ID, sequence, mesgID)
 	var a MessageID
 	binary.BigEndian.PutUint32(a[:4], sequence)
-	c.sendMap.Store(*mesgID, &ReadMessageDescriptor{MessageID: a})
+	c.sendMap.Store(mesgID, &ReadMessageDescriptor{MessageID: a})
 }
 
 func (c *Client) garbageCollectSendMap(gcEvent *client.MessageIDGarbageCollected) {
@@ -1408,7 +1420,7 @@ func (c *Client) Online(ctx context.Context) error {
 }
 
 // goOnline is called by worker routine when a goOnline is received. currently only a single session is supported.
-func (c *Client) goOnline(ctx context.Context) error {
+func (c *Client) goOnline() error {
 	c.connMutex.RLock()
 	if c.online || c.connecting || c.session != nil {
 		c.connMutex.RUnlock()
@@ -1422,22 +1434,17 @@ func (c *Client) goOnline(ctx context.Context) error {
 	c.connMutex.Unlock()
 
 	// try to connect
-	s, err := c.client.NewTOFUSession(ctx)
+	s := client2.NewThinClient(nil)
 
 	// re-obtain lock
 	c.connMutex.Lock()
 	c.connecting = false
-	if err != nil {
-		c.online = false
-		c.connMutex.Unlock()
-		return err
-	}
 	c.session = s
 	c.online = true
 	c.connMutex.Unlock()
+
 	// wait for pki document to arrive
-	err = s.WaitForDocument(ctx)
-	return err
+	return s.Dial()
 }
 
 // Offline() tells the client to disconnect from network services and blocks until the client has disconnected.
@@ -1481,7 +1488,7 @@ func (c *Client) goOffline() error {
 		return errors.New("Already Offline")
 	}
 
-	c.session.Shutdown()
+	c.session.Close()
 	c.online = false
 	c.session = nil
 	return nil
