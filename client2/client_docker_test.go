@@ -44,7 +44,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 
 	time.Sleep(time.Second * 3)
 
-	thin := NewThinClient()
+	thin := NewThinClient(cfg)
 	t.Log("thin client Dialing")
 	err = thin.Dial()
 	require.NoError(t, err)
