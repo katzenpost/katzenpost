@@ -52,8 +52,9 @@ type ThinClient struct {
 	pkidoc      *cpki.Document
 	pkidocMutex sync.RWMutex
 
-	eventSink          chan Event
-	eventSinkDrainStop chan interface{}
+	eventSink     chan Event
+	drainStop     chan interface{}
+	drainStopOnce sync.Once
 
 	isConnected bool
 
@@ -68,9 +69,9 @@ func NewThinClient(cfg *config.Config) *ThinClient {
 			Prefix: "thin_client",
 			Level:  log.DebugLevel,
 		}),
-		receivedCh:         make(chan ThinResponse),
-		eventSink:          make(chan Event),
-		eventSinkDrainStop: make(chan interface{}),
+		receivedCh: make(chan ThinResponse),
+		eventSink:  make(chan Event),
+		drainStop:  make(chan interface{}),
 	}
 }
 
@@ -182,7 +183,9 @@ func (t *ThinClient) EventSink() chan Event {
 }
 
 func (t *ThinClient) stopDrain() {
-	close(t.eventSinkDrainStop)
+	t.drainStopOnce.Do(func() {
+		close(t.drainStop)
+	})
 }
 
 // drain the eventSink until stopDrain() is called
@@ -192,7 +195,7 @@ func (t *ThinClient) eventSinkDrain() {
 		case <-t.HaltCh():
 			// stop thread on shutdown
 			return
-		case <-t.eventSinkDrainStop:
+		case <-t.drainStop:
 			// stop thread on drain stop
 			return
 		case <-t.eventSink:
