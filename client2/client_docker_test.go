@@ -76,7 +76,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 
 	thin.SendMessage(surbID, message1, &nodeIdKey, []byte("testdest"))
 
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 1)
 
 	replyID, message2 := thin.ReceiveMessage()
 
@@ -85,6 +85,44 @@ func TestDockerClientSendReceive(t *testing.T) {
 	require.NotEqual(t, message2, []byte{})
 	require.Equal(t, message1, message2[:len(message1)])
 	require.Equal(t, replyID, surbID)
+
+	d.Halt()
+}
+
+func TestDockerClientARQSendReceive(t *testing.T) {
+	cfg, err := config.LoadFile("testdata/client.toml")
+	require.NoError(t, err)
+
+	egressSize := 100
+	d, err := NewDaemon(cfg, egressSize)
+	require.NoError(t, err)
+	err = d.Start()
+	require.NoError(t, err)
+
+	time.Sleep(time.Second * 3)
+
+	thin := NewThinClient(cfg)
+	t.Log("thin client Dialing")
+	err = thin.Dial()
+	require.NoError(t, err)
+	require.Nil(t, err)
+	t.Log("thin client connected")
+
+	t.Log("thin client getting PKI doc")
+	doc := thin.PKIDocument()
+	require.NotNil(t, doc)
+	require.NotEqual(t, doc.LambdaP, 0.0)
+
+	pingTargets := []*cpki.MixDescriptor{}
+	for i := 0; i < len(doc.Providers); i++ {
+		_, ok := doc.Providers[i].Kaetzchen["testdest"]
+		if ok {
+			pingTargets = append(pingTargets, doc.Providers[i])
+		}
+	}
+	require.True(t, len(pingTargets) > 0)
+	message1 := []byte("hello alice, this is bob.")
+	nodeIdKey := pingTargets[0].IdentityKey.Sum256()
 
 	// Test ARQ send/receive
 
@@ -95,7 +133,7 @@ func TestDockerClientSendReceive(t *testing.T) {
 	thin.ARQSend(id, message1, &nodeIdKey, []byte("testdest"))
 	time.Sleep(time.Second * 3)
 
-	replyID, message2 = thin.ARQReceiveMessage()
+	replyID, message2 := thin.ARQReceiveMessage()
 
 	require.NotNil(t, replyID)
 	require.NoError(t, err)

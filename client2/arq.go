@@ -4,7 +4,6 @@ package client2
 
 import (
 	"errors"
-	"io"
 	"sync"
 	"time"
 
@@ -77,15 +76,11 @@ type ARQ struct {
 }
 
 // NewARQ creates a new ARQ.
-func NewARQ(sphinxComposerSender SphinxComposerSender, logbackend io.Writer) *ARQ {
-	log := log.NewWithOptions(logbackend, log.Options{
-		ReportTimestamp: true,
-		Level:           log.DebugLevel,
-		Prefix:          "_ARQ_",
-	})
-	log.Info("NewARQ")
+func NewARQ(sphinxComposerSender SphinxComposerSender, mylog *log.Logger) *ARQ {
+	arqlog := mylog.WithPrefix("_ARQ_")
+	arqlog.Info("NewARQ")
 	return &ARQ{
-		log:                  log,
+		log:                  arqlog,
 		gcSurbIDCh:           make(chan *[sConstants.SURBIDLength]byte),
 		surbIDMap:            make(map[[sConstants.SURBIDLength]byte]*ARQMessage),
 		sphinxComposerSender: sphinxComposerSender,

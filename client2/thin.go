@@ -144,7 +144,9 @@ func (t *ThinClient) worker() {
 		default:
 		}
 
+		t.log.Debug("-----------------------------BEFORE readNextMessage")
 		message, err := t.readNextMessage()
+		t.log.Debug("-----------------------------AFTER readNextMessage")
 		if err != nil {
 			t.log.Infof("thin client ReceiveMessage failed: %v", err)
 		}
@@ -152,7 +154,7 @@ func (t *ThinClient) worker() {
 			return
 		}
 
-		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE")
+		t.log.Debug("THIN CLIENT WORKER RECEIVED A MESSAGE---------------------")
 
 		switch {
 		case message.IsStatus == true:
