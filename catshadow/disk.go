@@ -24,15 +24,17 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/nacl/secretbox"
+
 	"github.com/awnumar/memguard"
+	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
+
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/worker"
 	"github.com/katzenpost/katzenpost/memspool/client"
-	"golang.org/x/crypto/argon2"
-	"golang.org/x/crypto/nacl/secretbox"
-	"gopkg.in/op/go-logging.v1"
 )
 
 const (
@@ -59,7 +61,7 @@ type State struct {
 type StateWriter struct {
 	worker.Worker
 
-	log *logging.Logger
+	log *log.Logger
 
 	stateCh   chan *memguard.LockedBuffer
 	stateFile string
@@ -155,7 +157,7 @@ func encryptStateFile(stateFile string, state []byte, key *[32]byte) error {
 
 // LoadStateWriter decrypts the given stateFile and returns the State
 // as well as a new StateWriter.
-func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
+func LoadStateWriter(log *log.Logger, stateFile string, passphrase []byte) (*StateWriter, *State, error) {
 	worker := &StateWriter{
 		log:       log,
 		stateCh:   make(chan *memguard.LockedBuffer),
@@ -172,7 +174,7 @@ func LoadStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (
 
 // NewStateWriter is a constructor for StateWriter which is to be used when creating
 // the statefile for the first time.
-func NewStateWriter(log *logging.Logger, stateFile string, passphrase []byte) (*StateWriter, error) {
+func NewStateWriter(log *log.Logger, stateFile string, passphrase []byte) (*StateWriter, error) {
 	key := stretchKey(passphrase)
 	worker := &StateWriter{
 		log:       log,

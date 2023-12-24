@@ -78,6 +78,10 @@ func (t *ThinClient) GetConfig() *config.Config {
 	return t.cfg
 }
 
+func (t *ThinClient) GetLogger(prefix string) *log.Logger {
+	return t.log.WithPrefix(prefix)
+}
+
 // Close halts the thin client worker thread and closes the socket
 // connection with the client daemon.
 func (t *ThinClient) Close() error {
