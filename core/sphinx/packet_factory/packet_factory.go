@@ -32,9 +32,14 @@ func WithPathFactory(pathFactory *sphinxPath.PathFactory) PacketFactoryOption {
 }
 
 func NewPacketFactory(geo *geo.Geometry, opts ...PacketFactoryOption) *PacketFactory {
+	s, err := sphinx.FromGeometry(geo)
+	if err != nil {
+		panic(err)
+	}
 	factory := &PacketFactory{
-		pathFactory: new(sphinxPath.PathFactory),
+		pathFactory: sphinxPath.NewPathFactory(),
 		geo:         geo,
+		sphinx:      s,
 	}
 	for _, opt := range opts {
 		opt(factory)
