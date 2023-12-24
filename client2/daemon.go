@@ -103,7 +103,7 @@ func (d *Daemon) Start() error {
 		return err
 	}
 
-	d.arq = NewARQ(d.client, d.logbackend)
+	d.arq = NewARQ(d.client, d.log)
 	d.arq.Start()
 
 	d.listener, err = NewListener(d.client, rates, d.egressCh, d.logbackend)
