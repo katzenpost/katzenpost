@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/client2/config"
@@ -59,7 +60,7 @@ func TestBlobStorage(t *testing.T) {
 	require.NoError(t, err)
 
 	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	//time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 3)
 
 	aliceState := createRandomStateFile(t)
 	passphrase := []byte("")
