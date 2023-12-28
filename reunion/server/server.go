@@ -189,12 +189,12 @@ func (s *Server) sendT3(sendT3 *commands.SendT3) (*commands.MessageResponse, err
 	return response, nil
 }
 
-// RegisterConsumers implements cborplugin.PluginClient
+// RegisterConsumers implements cborplugin.ServerPlugin
 func (s *Server) RegisterConsumer(svr *cborplugin.Server) {
 	s.write = svr.Write
 }
 
-// OnCommand implemenets cborplugin.PluginClient
+// OnCommand implemenets cborplugin.ServerPlugin
 func (s *Server) OnCommand(cmd cborplugin.Command) error {
 	switch r := cmd.(type) {
 	case *cborplugin.Request:

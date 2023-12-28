@@ -30,11 +30,6 @@ type ServerPlugin interface {
 	RegisterConsumer(*Server)
 }
 
-type ClientPlugin interface {
-	OnCommand(Command) error
-	RegisterConsumer(*Client)
-}
-
 type Command interface {
 	Marshal() ([]byte, error)
 	Unmarshal(b []byte) error
