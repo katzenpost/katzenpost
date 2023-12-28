@@ -182,3 +182,8 @@ func (s *talekRequestHandler) OnCommand(cmd cborplugin.Command) error {
 func (s *talekRequestHandler) RegisterConsumer(svr *cborplugin.Server) {
 	s.write = svr.Write
 }
+
+func (s *talekRequestHandler) GetParameters() *cborplugin.Parameters {
+	// return empty map
+	return make(cborplugin.Parameters)
+}
