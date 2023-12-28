@@ -20,6 +20,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -48,6 +49,7 @@ type kpTalekFrontend struct {
 // ReplicaKPC is a stub for the replica RPC interface
 // it wraps Write and BatchRead commands to Replicas using Katzenpost
 type ReplicaKPC struct {
+	config   *tCommon.TrustDomainConfig
 	log      *tCommon.Logger
 	session  *client.Session
 	name     string // name of the kaetzchen service
@@ -84,21 +86,22 @@ func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.Ba
 	return cbor.Unmarshal(rawResp, reply)
 }
 
-func NewReplicaKPC(name string, session *client.Session, config *tCommon.TrustDomainConfig) *ReplicaKPC {
+func NewReplicaKPC(name string, provider string, session *client.Session, config *tCommon.TrustDomainConfig) *ReplicaKPC {
 	return &ReplicaKPC{
-		name:    name,
-		log:     tCommon.NewLogger(name),
-		session: session,
+		name:     name,
+		provider: provider,
+		log:      tCommon.NewLogger(name),
+		session:  session,
 	}
 }
 
 // NewKPFrontendServer creates a new Frontend implementing HTTP.Handler and using Replicas reached via Katzenpost
-func NewKPFrontendServer(name string, session *client.Session, serverConfig *server.Config, replicas []*tCommon.TrustDomainConfig) *kpTalekFrontend {
+func NewKPFrontendServer(name string, session *client.Session, serverConfig *server.Config, replicas []*ReplicaKPC) *kpTalekFrontend {
 	fe := &kpTalekFrontend{}
 
 	rpcs := make([]tCommon.ReplicaInterface, len(replicas))
 	for i, r := range replicas {
-		rk := NewReplicaKPC(r.Name, session, r)
+		rk := NewReplicaKPC(r.name, r.provider, session, r.config)
 		rpcs[i] = rk
 	}
 
@@ -109,7 +112,7 @@ func NewKPFrontendServer(name string, session *client.Session, serverConfig *ser
 	fe.Server = rpc.NewServer()
 	fe.Server.RegisterCodec(&json.Codec{}, "application/json")
 	fe.Server.RegisterTCPService(fe.Frontend, "Frontend")
-
+	http.Handle("/rpc", fe.Server)
 	return fe
 }
 
@@ -184,7 +187,7 @@ func main() {
 		os.Exit(-1)
 	}
 
-	replicas := make([]tCommon.ReplicaInterface, len(descs), 0)
+	replicas := make([]*ReplicaKPC, 0, len(descs))
 	for i, d := range descs {
 		// get the publickeys from the MixDescriptor
 		md, err := pkiDoc.GetProvider(d.Provider)
@@ -237,28 +240,15 @@ func main() {
 			SignPublicKey: signPubKeyArray,
 		}
 
-		replicaName := d.Name + "@" + d.Provider
-		replicas[i] = NewReplicaKPC(replicaName, session, &trustDomainCfg)
+		// make a replica instance
+		replicas[i] = NewReplicaKPC(d.Name, d.Provider, session, &trustDomainCfg)
 	}
 
 	// XXX: can TrustDomainConfig have an Address of format kaetchen@provider
-	f := server.NewFrontendServer("Talek Frontend", serverConfig, config.TrustDomains)
-
-	// instantiate Frontend
-	f.Frontend = server.NewFrontend(serverConfig.TrustDomain.Name, serverConfig, replicas)
-
-	// make a new frontend server for kp
+	//f := server.NewFrontendServer("Talek Frontend", serverConfig, config.TrustDomains)
+	f := NewKPFrontendServer("Talek Frontend", session, serverConfig, replicas)
 	f.Frontend.Verbose = true // *verbose
-	listener, err := f.Run(listen)
-	if err != nil {
-		log.Printf("Couldn't listen to frontend address: %v\n", err)
-		return
-	}
-
-	log.Println("Running.")
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	<-sigCh
-	listener.Close()
 }
