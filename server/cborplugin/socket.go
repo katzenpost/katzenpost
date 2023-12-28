@@ -28,6 +28,7 @@ import (
 type ServerPlugin interface {
 	OnCommand(Command) error
 	RegisterConsumer(*Server)
+	GetParameters() *Parameters
 }
 
 type Command interface {
