@@ -56,6 +56,7 @@ type ReplicaKPC struct {
 	provider string // name of the provider hosting the service
 }
 
+// Write implements libtalek/common.ReplicaInterface
 func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.ReplicaWriteReply) error {
 	serialized, err := cbor.Marshal(args)
 	if err != nil {
@@ -71,6 +72,7 @@ func (r *ReplicaKPC) Write(args *tCommon.ReplicaWriteArgs, reply *tCommon.Replic
 
 }
 
+// BatchRead implements libtalek/common.ReplicaInterface
 func (r *ReplicaKPC) BatchRead(args *tCommon.BatchReadRequest, reply *tCommon.BatchReadReply) error {
 	serialized, err := cbor.Marshal(args)
 	if err != nil {
