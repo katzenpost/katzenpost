@@ -127,7 +127,6 @@ func main() {
 
 	// add mixnet config
 	flag.StringVar(&kpConfigPath, "kpconfig", "client.toml", "Katzenpost Configuration")
-	//flag.StringVar(&backing, "backing", "cpu.0", "PIR daemon method")
 	flag.StringVar(&configPath, "config", "replica.conf", "Talek Replica Configuration")
 	flag.StringVar(&commonPath, "common", "common.conf", "Talek Common Configuration")
 	flag.StringVar(&listen, "listen", ":8080", "Listening Address")
