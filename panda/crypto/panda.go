@@ -7,13 +7,16 @@ import (
 	"io"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
-	panda_proto "github.com/katzenpost/katzenpost/panda/crypto/proto"
-	"github.com/katzenpost/katzenpost/panda/crypto/rijndael"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/secretbox"
-	"gopkg.in/op/go-logging.v1"
+
+	"github.com/golang/protobuf/proto"
+
+	"github.com/charmbracelet/log"
+
+	panda_proto "github.com/katzenpost/katzenpost/panda/crypto/proto"
+	"github.com/katzenpost/katzenpost/panda/crypto/rijndael"
 )
 
 var ShutdownErrMessage = "panda: shutdown requested"
@@ -33,7 +36,7 @@ type PandaUpdate struct {
 type KeyExchange struct {
 	sync.Mutex
 
-	log          *logging.Logger
+	log          *log.Logger
 	shutdownChan <-chan interface{}
 
 	pandaChan chan PandaUpdate
@@ -53,7 +56,7 @@ type KeyExchange struct {
 	message1, message2      []byte
 }
 
-func NewKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPlace, sharedRandom []byte, sharedSecret []byte, kxBytes []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan <-chan interface{}) (*KeyExchange, error) {
+func NewKeyExchange(rand io.Reader, log *log.Logger, meetingPlace MeetingPlace, sharedRandom []byte, sharedSecret []byte, kxBytes []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan <-chan interface{}) (*KeyExchange, error) {
 	if 24 /* nonce */ +4 /* length */ +len(kxBytes)+secretbox.Overhead > meetingPlace.Padding() {
 		return nil, errors.New("panda: key exchange too large for meeting place")
 	}
@@ -86,7 +89,7 @@ func NewKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPla
 	return kx, nil
 }
 
-func UnmarshalKeyExchange(rand io.Reader, log *logging.Logger, meetingPlace MeetingPlace, serialised []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan <-chan interface{}) (*KeyExchange, error) {
+func UnmarshalKeyExchange(rand io.Reader, log *log.Logger, meetingPlace MeetingPlace, serialised []byte, contactID uint64, pandaChan chan PandaUpdate, shutdownChan <-chan interface{}) (*KeyExchange, error) {
 	var p panda_proto.KeyExchange
 	if err := proto.Unmarshal(serialised, &p); err != nil {
 		return nil, err

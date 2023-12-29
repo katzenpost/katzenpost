@@ -23,10 +23,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/charmbracelet/log"
+	"github.com/ugorji/go/codec"
+
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/panda/common"
-	"github.com/ugorji/go/codec"
-	"gopkg.in/op/go-logging.v1"
 )
 
 type Error string
@@ -44,7 +45,7 @@ const (
 // to communicate with the PANDA kaetzchen service.
 type Panda struct {
 	session    *client2.ThinClient
-	log        *logging.Logger
+	log        *log.Logger
 	blobSize   int
 	jsonHandle codec.JsonHandle
 	recipient  []byte
@@ -89,7 +90,7 @@ func (p *Panda) Exchange(id, message []byte, shutdown <-chan interface{}) ([]byt
 			return nil, fmt.Errorf("Failed to decode PANDA response: (%v)", err)
 		}
 		if response.Version != common.PandaVersion {
-			p.log.Warning("warning, PANDA server version mismatch")
+			p.log.Warn("warning, PANDA server version mismatch")
 		}
 		switch response.StatusCode {
 		case common.PandaStatusReceived1:
@@ -135,7 +136,7 @@ func (p *Panda) Exchange(id, message []byte, shutdown <-chan interface{}) ([]byt
 }
 
 // New creates a new Panda instance.
-func New(blobSize int, s *client2.ThinClient, log *logging.Logger, recipient []byte, provider string) *Panda {
+func New(blobSize int, s *client2.ThinClient, log *log.Logger, recipient []byte, provider string) *Panda {
 	p := &Panda{
 		session:   s,
 		blobSize:  blobSize,

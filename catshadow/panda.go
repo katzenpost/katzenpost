@@ -38,12 +38,12 @@ func (c *Client) doPANDAExchange(contact *Contact) error {
 		return err
 	}
 
-	logPandaClient := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
+	logPandaClient := c.log.WithPrefix(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
 	meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaClient, p.RecipientQueueID, p.MixDescriptor.Name)
 	// get the current document and shared random
 	doc := c.session.PKIDocument()
 	sharedRandom := doc.PriorSharedRandom[0]
-	kxLog := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
+	kxLog := c.log.WithPrefix(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 
 	var kx *panda.KeyExchange
 	if contact.pandaKeyExchange != nil {
@@ -83,14 +83,14 @@ func (c *Client) processPANDAUpdate(update *panda.PandaUpdate) {
 		// restart the handshake with the current state if the error is due to SURB-ACK timeout
 		if update.Err == client.ErrReplyTimeout {
 			c.log.Error("PANDA handshake for client %s timed-out; restarting exchange", contact.Nickname)
-			logPandaMeeting := c.logBackend.GetLogger(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
+			logPandaMeeting := c.log.WithPrefix(fmt.Sprintf("PANDA_meetingplace_%s", contact.Nickname))
 			p, err := c.session.GetService(pCommon.PandaCapability)
 			if err != nil {
 				c.log.Errorf("Failed to get %s: %s", pCommon.PandaCapability, err)
 			}
 
 			meetingPlace := pclient.New(pandaBlobSize, c.session, logPandaMeeting, p.RecipientQueueID, p.MixDescriptor.Name)
-			logPandaKx := c.logBackend.GetLogger(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
+			logPandaKx := c.log.WithPrefix(fmt.Sprintf("PANDA_keyexchange_%s", contact.Nickname))
 			kx, err := panda.UnmarshalKeyExchange(rand.Reader, logPandaKx, meetingPlace, contact.pandaKeyExchange, contact.ID(), c.pandaChan, contact.pandaShutdownChan)
 			if err != nil {
 				c.log.Errorf("Failed to UnmarshalKeyExchange for %s: %s", contact.Nickname, err)

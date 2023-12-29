@@ -116,7 +116,7 @@ func (c *Client) processReunionUpdate(update *rClient.ReunionUpdate) {
 func (c *Client) restartReunionExchanges() {
 	transports, err := c.getReunionTransports()
 	if err != nil {
-		c.log.Warningf("Reunion configured, but no transports found")
+		c.log.Warnf("Reunion configured, but no transports found")
 		return
 	}
 	for _, contact := range c.contacts {
@@ -134,10 +134,10 @@ func (c *Client) restartReunionExchanges() {
 					if hmac.Equal(tr.Recipient, ex.recipient) && tr.Provider == ex.provider {
 						m = true
 						lstr := fmt.Sprintf("reunion with %s at %s@%s", contact.Nickname, tr.Recipient, tr.Provider)
-						dblog := c.logBackend.GetLogger(lstr)
+						dblog := c.log.WithPrefix(lstr)
 						exchange, err := rClient.NewExchangeFromSnapshot(ex.serialized, dblog, tr, c.reunionChan, contact.reunionShutdownChan)
 						if err != nil {
-							c.log.Warningf("Reunion failed: %v", err)
+							c.log.Warnf("Reunion failed: %v", err)
 						} else {
 							c.Go(exchange.Run)
 							break
@@ -146,7 +146,7 @@ func (c *Client) restartReunionExchanges() {
 				}
 				// transport not found
 				if m == false {
-					c.log.Warningf("Reunion transport %s@%s no longer exists!", ex.recipient, ex.provider)
+					c.log.Warnf("Reunion transport %s@%s no longer exists!", ex.recipient, ex.provider)
 					delete(contact.reunionKeyExchange, eid)
 				}
 			}
@@ -206,7 +206,7 @@ func (c *Client) doReunion(contact *Contact) error {
 		for _, srv := range srvs[0:1] {
 			for _, epoch := range epochs {
 				lstr := fmt.Sprintf("reunion with %s at %s@%s:%d", contact.Nickname, tr.Recipient, tr.Provider, epoch)
-				dblog := c.logBackend.GetLogger(lstr)
+				dblog := c.log.WithPrefix(lstr)
 				ex, err := rClient.NewExchange(contact.keyExchange, dblog, tr, contact.ID(), contact.sharedSecret, srv, epoch, c.reunionChan, contact.reunionShutdownChan)
 				if err != nil {
 					return err

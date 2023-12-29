@@ -28,22 +28,19 @@ import (
 	"time"
 
 	"github.com/awnumar/memguard"
-
+	"github.com/charmbracelet/log"
 	"github.com/fxamacker/cbor/v2"
 	"gopkg.in/eapache/channels.v1"
-	"gopkg.in/op/go-logging.v1"
 
 	"github.com/katzenpost/katzenpost/client"
 	cConstants "github.com/katzenpost/katzenpost/client/constants"
-	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
-
 	"github.com/katzenpost/katzenpost/client2"
 	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/log"
 	"github.com/katzenpost/katzenpost/core/pki"
 	"github.com/katzenpost/katzenpost/core/sphinx/geo"
 	"github.com/katzenpost/katzenpost/core/utils"
 	"github.com/katzenpost/katzenpost/core/worker"
+	ratchet "github.com/katzenpost/katzenpost/doubleratchet"
 	memspoolclient "github.com/katzenpost/katzenpost/memspool/client"
 	"github.com/katzenpost/katzenpost/memspool/common"
 	panda "github.com/katzenpost/katzenpost/panda/crypto"
@@ -101,8 +98,7 @@ type Client struct {
 	session   *client2.ThinClient
 	providers []*pki.MixDescriptor
 
-	log        *logging.Logger
-	logBackend *log.Backend
+	log *log.Logger
 }
 
 type MessageID [MessageIDLen]byte
@@ -120,13 +116,13 @@ type queuedSpoolCommand struct {
 // encrypted statefile, of course.  This constructor of Client is used when
 // creating a new Client as opposed to loading the previously saved state for
 // an existing Client.
-func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixnetClient *client2.ThinClient, stateWorker *StateWriter) (*Client, error) {
+func NewClientAndRemoteSpool(ctx context.Context, log *log.Logger, mixnetClient *client2.ThinClient, stateWorker *StateWriter) (*Client, error) {
 	state := &State{
 		Blob:          make(map[string][]byte),
 		Contacts:      make([]*Contact, 0),
 		Conversations: make(map[string]map[MessageID]*Message),
 	}
-	c, err := New(logBackend, mixnetClient, stateWorker, state)
+	c, err := New(log, mixnetClient, stateWorker, state)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +141,7 @@ func NewClientAndRemoteSpool(ctx context.Context, logBackend *log.Backend, mixne
 
 // New creates a new Client instance given a mixnetClient, stateWorker and state.
 // This constructor is used to load the previously saved state of a Client.
-func New(logBackend *log.Backend, mixnetClient *client2.ThinClient, stateWorker *StateWriter, state *State) (*Client, error) {
+func New(log *log.Logger, mixnetClient *client2.ThinClient, stateWorker *StateWriter, state *State) (*Client, error) {
 	if state == nil {
 		state = &State{
 			Blob:          make(map[string][]byte),
@@ -174,8 +170,7 @@ func New(logBackend *log.Backend, mixnetClient *client2.ThinClient, stateWorker 
 		connMutex:           new(sync.RWMutex),
 		stateWorker:         stateWorker,
 		session:             mixnetClient,
-		log:                 logBackend.GetLogger("catshadow"),
-		logBackend:          logBackend,
+		log:                 log.WithPrefix("catshadow"),
 	}
 	for _, contact := range state.Contacts {
 		c.contacts[contact.id] = contact
@@ -204,7 +199,7 @@ func (c *Client) Start() {
 		if !ok {
 			return
 		}
-		c.log.Warningf("Shutting down due to error: %v", err)
+		c.log.Warnf("Shutting down due to error: %v", err)
 		c.Shutdown()
 	}()
 
@@ -594,13 +589,13 @@ func (c *Client) createContact(nickname string, sharedSecret []byte) error {
 		c.initKeyExchange(contact)
 		err = c.doPANDAExchange(contact)
 		if err != nil {
-			c.log.Notice("PANDA Failure for %v: %v", contact, err)
+			c.log.Info("PANDA Failure for %v: %v", contact, err)
 		}
 
 		// FIXME: #157
 		//err = c.doReunion(contact)
 		//if err != nil {
-		//	c.log.Notice("Reunion Failure for %v: %v", contact, err)
+		//	c.log.Info("Reunion Failure for %v: %v", contact, err)
 		//}
 		return err
 	}
@@ -1170,11 +1165,11 @@ func (c *Client) handleReply(replyEvent *client.MessageReplyEvent) {
 					c.log.Debugf("failure to decrypt tip of spool - MessageID: %x", *replyEvent.MessageID)
 					for _, contact := range c.contacts {
 						if contact.IsPending {
-							c.log.Warning("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
+							c.log.Warn("received message we could not decrypt while key exchange pending, delaying spool read descriptor increment")
 							return
 						}
 					}
-					c.log.Warning("received message we could not decrypt while NO key exchange pending, skipping this message")
+					c.log.Warn("received message we could not decrypt while NO key exchange pending, skipping this message")
 				case nil:
 					// message was decrypted successfully
 					c.log.Debugf("successfully decrypted tip of spool - MessageID: %x", *replyEvent.MessageID)

@@ -24,13 +24,11 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
-	"time"
 
-	"github.com/katzenpost/katzenpost/client2"
-	"github.com/katzenpost/katzenpost/client2/config"
-	"github.com/katzenpost/katzenpost/core/crypto/rand"
-	"github.com/katzenpost/katzenpost/core/log"
+	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
+
+	"github.com/katzenpost/katzenpost/core/crypto/rand"
 )
 
 func createRandomStateFile(t *testing.T) string {
@@ -50,36 +48,24 @@ func createRandomStateFile(t *testing.T) string {
 func TestBlobStorage(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := config.LoadFile("testdata/catshadow.toml")
-	require.NoError(t, err)
-
-	egressSize := 100
-	d, err := client2.NewDaemon(cfg, egressSize)
-	require.NoError(t, err)
-	err = d.Start()
-	require.NoError(t, err)
-
-	// maybe we need to sleep first to ensure the daemon is listening first before dialing
-	time.Sleep(time.Second * 3)
-
 	aliceState := createRandomStateFile(t)
 	passphrase := []byte("")
 
-	c := client2.NewThinClient(cfg)
-	err = c.Dial()
-	require.NoError(t, err)
+	mylog := log.NewWithOptions(os.Stderr, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "catshadow",
+		Level:           log.ParseLevel("debug"),
+	})
 
-	stateWorker, err := NewStateWriter(c.GetLogger("catshadow_state"), aliceState, passphrase)
+	stateWorker, err := NewStateWriter(mylog.WithPrefix("state_writer"), aliceState, passphrase)
 	require.NoError(t, err)
 
 	stateWorker.Start()
-	logBackend, err := log.New(cfg.Logging.File, cfg.Logging.Level, cfg.Logging.Disable)
 	require.NoError(t, err)
 
 	cs := &Client{blob: make(map[string][]byte),
-		logBackend:         logBackend,
-		session:            c,
-		log:                logBackend.GetLogger("foo"),
+		session:            nil,
+		log:                mylog,
 		contacts:           make(map[uint64]*Contact),
 		conversationsMutex: new(sync.Mutex),
 		blobMutex:          new(sync.Mutex),
