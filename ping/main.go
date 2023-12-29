@@ -84,7 +84,7 @@ func main() {
 		time.Sleep(time.Second * 3)
 	}
 
-	thin := client2.NewThinClient()
+	thin := client2.NewThinClient(cfg)
 	err = thin.Dial()
 	if err != nil {
 		panic(err)
@@ -99,7 +99,7 @@ func main() {
 	if len(echoServices) == 0 {
 		panic("wtf no echo services")
 	}
-	echoService := &echoServices[mrand.Intn(len(echoServices))]
+	echoService := echoServices[mrand.Intn(len(echoServices))]
 
 	sendPings(thin, echoService, count, concurrency, printDiff)
 
