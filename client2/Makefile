@@ -15,16 +15,16 @@ image=katzenpost-$(distro)_go_mod
 docker_args=--user ${docker_user} -v $(shell readlink -f ..):/go/katzenpost -e GOCACHE=/tmp/gocache --network=host --rm
 
 test:
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test -v -race -timeout 0 -ldflags ${ldflags} ./...
+	go test -v -race -timeout 0 -ldflags ${ldflags} ./...
 
 lint:
 	golint ./...
 
 coverage-file:
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go test ./... -coverprofile=coverage.out
+	go test ./... -coverprofile=coverage.out
 
 coverage-html:
-	CGO_CFLAGS_ALLOW=-DPARAMS=sphincs-shake-256f go tool cover -html=coverage.out
+	go tool cover -html=coverage.out
 
 
 dockerdockertest:
