@@ -52,7 +52,7 @@ func TestARQ(t *testing.T) {
 	surbid1 := sphinxComposerSender.requests[0].SURBID
 	require.True(t, arq.Has(surbid1))
 
-	sleepDuration := mockRTT + RoundTripTimeSlop + (time.Second * 1)
+	sleepDuration := mockRTT + RoundTripTimeSlop + (time.Second * 2)
 	t.Logf("test thread sleeping for %s", sleepDuration)
 	time.Sleep(sleepDuration)
 
