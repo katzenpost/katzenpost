@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,7 +35,13 @@ func TestARQ(t *testing.T) {
 		requests: make([]*Request, 0),
 	}
 	logbackend := os.Stderr
-	arq := NewARQ(sphinxComposerSender, logbackend)
+	logger := log.NewWithOptions(logbackend, log.Options{
+		ReportTimestamp: true,
+		Prefix:          "TestARQ",
+		Level:           log.ParseLevel("debug"),
+	})
+
+	arq := NewARQ(sphinxComposerSender, logger)
 	arq.Start()
 
 	appid := uint64(0)
